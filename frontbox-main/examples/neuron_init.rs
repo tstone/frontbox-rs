@@ -8,6 +8,7 @@ async fn main() {
 
   let mut neuron = Mainboard::new(MainboardConfig {
     io_net_port_path: "/dev/ttyACM0",
+    exp_port_path: "/dev/ttyACM1",
     platform: FastPlatform::Neuron,
     ..Default::default()
   });

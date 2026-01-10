@@ -10,14 +10,16 @@ use crate::serial_interface::SerialInterface;
 
 pub struct Mainboard {
   config: MainboardConfig,
-  command_tx: Option<mpsc::Sender<String>>,
+  io_tx: Option<mpsc::Sender<String>>,
+  exp_tx: Option<mpsc::Sender<String>>,
 }
 
 impl Mainboard {
   pub fn new(config: MainboardConfig) -> Self {
     Mainboard {
       config,
-      command_tx: None,
+      io_tx: None,
+      exp_tx: None,
     }
   }
 
@@ -34,7 +36,7 @@ impl Mainboard {
             firmware_version,
           } => {
             log::info!(
-              "🥾 Connected to mainboard: processor={}, product_number={}, firmware_version={}",
+              "🥾 Connected to mainboard {} {} with firmware: {}",
               processor,
               product_number,
               firmware_version
@@ -73,18 +75,21 @@ impl Mainboard {
     let mut io_port = SerialInterface::new(self.config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
 
+    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
     self.initialize_io_port(&mut io_port).await;
 
     // open EXP port
-    // let mut exp_port = SerialInterface::new(self.config.exp_port_path)
-    //   .await
-    //   .expect("Failed to open EXP port");
-    // log::info!("🥾 Opened EXP port at {}", self.config.exp_port_path);
+    let mut exp_port = SerialInterface::new(self.config.exp_port_path)
+      .await
+      .expect("Failed to open EXP port");
+    log::info!("🥾 Opened EXP port at {}", self.config.exp_port_path);
 
-    let (command_tx, mut command_rx) = mpsc::channel::<String>(32);
-    self.command_tx = Some(command_tx);
+    let (io_tx, mut io_rx) = mpsc::channel::<String>(32);
+    self.io_tx = Some(io_tx);
+
+    let (exp_tx, mut exp_rx) = mpsc::channel::<String>(32);
+    self.exp_tx = Some(exp_tx);
 
     // start system loop
     loop {
@@ -118,8 +123,13 @@ impl Mainboard {
           // TODO: run game logic
 
           // write outgoing messages
-          Some(cmd) = command_rx.recv() => {
+          Some(cmd) = io_rx.recv() => {
             io_port.send(cmd.as_bytes()).await;
+            log::debug!("🖥️ -> 👾 : {}", cmd);
+          }
+
+          Some(cmd) = exp_rx.recv() => {
+            exp_port.send(cmd.as_bytes()).await;
             log::debug!("🖥️ -> 👾 : {}", cmd);
           }
       }
