@@ -8,20 +8,6 @@ env_logger = "0.11.8"
 log = "0.4.29"
 serialport = "4.7.2"
 
-[dev-dependencies]
-# These dependencies are only available during development and testing
-tokio = { version = "1.0", features = ["full"] }
-mockall = "0.13"
-
-# Examples are only included in development, not when published
 [[example]]
-name = "serial_test"
-path = "examples/serial_test.rs"
-
-[[example]]
-name = "mainboard_demo"
-path = "examples/mainboard_demo.rs"
-
-[[example]]
-name = "mock_serial_test"
-path = "examples/mock_serial_test.rs"
+name = "neutron_init"
+path = "examples/neutron_init.rs"

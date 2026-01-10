@@ -1,3 +1,3 @@
 pub trait Mainboard {
-    fn initialize(&mut self);
+  fn initialize(&mut self);
 }
