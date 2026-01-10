@@ -1,2 +1,3 @@
 [workspace]
 members = ["fast-pinball-protocol", "tokio-pinball"]
+resolver = "2"

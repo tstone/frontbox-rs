@@ -1,3 +1,4 @@
+pub mod configure_hardware;
 pub mod id;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

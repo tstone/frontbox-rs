@@ -1,7 +1,9 @@
-mod line_parser;
-mod parser;
 pub mod protocol;
 
-pub use line_parser::LINE_PARSER;
-pub use parser::{FastResponseError, SerialParser};
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum FastResponseError {
+  InvalidFormat,
+  UnknownResponse,
+}
+
 pub use protocol::FastResponse;
