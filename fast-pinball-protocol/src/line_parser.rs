@@ -1,6 +1,7 @@
+use crate::FastResponseError;
+use crate::SerialParser;
 use crate::protocol::FastResponse;
 use crate::protocol::id;
-use crate::serial::parser::{FastResponseError, SerialParser};
 
 fn parse_line(data: &[u8]) -> Result<FastResponse, FastResponseError> {
   if data.len() < 3 {
