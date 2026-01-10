@@ -9,5 +9,5 @@ log = "0.4.29"
 serialport = "4.7.2"
 
 [[example]]
-name = "neutron_init"
-path = "examples/neutron_init.rs"
+name = "neuron_init"
+path = "examples/neuron_init.rs"

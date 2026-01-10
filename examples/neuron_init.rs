@@ -1,5 +1,5 @@
 use env_logger;
-use fast_pinball_rs::{Mainboard, Neutron, NeutronConfig};
+use fast_pinball_rs::{Mainboard, Neuron, NeuronConfig};
 use log::{error, info};
 use std::io;
 
@@ -39,15 +39,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   // let exp_port_name: &'static str = Box::leak(input.trim().to_string().into_boxed_str());
 
   println!(
-    "Initializing Neutron mainboard on port: '{}'",
+    "Initializing Neuron mainboard on port: '{}'",
     io_net_port_name
   );
-  let mut neutron = Neutron::define(NeutronConfig {
+  let mut neuron = Neuron::define(NeuronConfig {
     io_net_port_path: io_net_port_name,
     exp_port_path: "",
   });
 
-  neutron.initialize();
+  neuron.initialize();
 
   println!("Serial port initialization complete.");
   Ok(())

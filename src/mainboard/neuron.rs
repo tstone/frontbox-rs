@@ -5,19 +5,19 @@ use crate::protocol::FastResponse;
 use crate::protocol::id;
 use crate::serial::serial_interface::SerialInterface;
 
-pub struct Neutron {
-  config: NeutronConfig,
+pub struct Neuron {
+  config: NeuronConfig,
   io_net_port: Option<SerialInterface>,
   exp_port: Option<SerialInterface>,
 }
 
-pub struct NeutronConfig {
+pub struct NeuronConfig {
   pub io_net_port_path: &'static str,
   pub exp_port_path: &'static str,
 }
 
-impl Neutron {
-  pub fn define(config: NeutronConfig) -> Self {
+impl Neuron {
+  pub fn define(config: NeuronConfig) -> Self {
     Self {
       config,
       io_net_port: None,
@@ -26,7 +26,7 @@ impl Neutron {
   }
 }
 
-impl Mainboard for Neutron {
+impl Mainboard for Neuron {
   fn initialize(&mut self) {
     let mut io_net_port = SerialInterface::open(self.config.io_net_port_path);
 

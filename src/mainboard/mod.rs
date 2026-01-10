@@ -1,2 +1,2 @@
 pub mod mainboard;
-pub mod neutron;
+pub mod neuron;
