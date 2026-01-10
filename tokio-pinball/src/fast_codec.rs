@@ -1,3 +1,4 @@
+use fast_pinball_protocol::{self, FastResponse};
 use tokio_util::bytes::{Buf, BytesMut};
 use tokio_util::codec::Decoder;
 
@@ -10,7 +11,7 @@ impl FastCodec {
 }
 
 impl Decoder for FastCodec {
-  type Item = String;
+  type Item = FastResponse;
   type Error = std::io::Error;
 
   fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
@@ -21,9 +22,9 @@ impl Decoder for FastCodec {
       // Remove the \r itself so it's not in the next message
       src.advance(1);
 
-      // Convert to a string
+      // Parse to FastResponse
       let s = String::from_utf8_lossy(&data).to_string();
-      return Ok(Some(s));
+      return Ok(fast_pinball_protocol::parse(s));
     }
     // Not enough data for a full line yet
     Ok(None)

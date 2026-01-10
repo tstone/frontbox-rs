@@ -6,24 +6,20 @@ pub fn request() -> &'static [u8] {
   ID_REQUEST
 }
 
-pub fn response(data: String) -> Result<FastResponse, FastResponseError> {
-  if data == "F" {
-    Ok(FastResponse::Failed("ID".to_string()))
-  } else {
-    let parts: Vec<&str> = data.split(' ').filter(|part| !part.is_empty()).collect();
-    if parts.len() != 3 {
-      return Err(FastResponseError::InvalidFormat);
-    }
-
-    let processor = parts[0].trim().to_string();
-    let product_number = parts[1].trim().to_string();
-    let firmware_version = parts[2].trim().to_string();
-    Ok(FastResponse::IdResponse {
-      processor,
-      product_number,
-      firmware_version,
-    })
+pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
+  let parts: Vec<&str> = data.split(' ').filter(|part| !part.is_empty()).collect();
+  if parts.len() != 3 {
+    return Err(FastResponseError::InvalidFormat);
   }
+
+  let processor = parts[0].trim().to_string();
+  let product_number = parts[1].trim().to_string();
+  let firmware_version = parts[2].trim().to_string();
+  Ok(FastResponse::IdResponse {
+    processor,
+    product_number,
+    firmware_version,
+  })
 }
 
 #[cfg(test)]
@@ -32,7 +28,7 @@ mod tests {
 
   #[test]
   fn test_response_success() {
-    let data = "FP-CPU-002  3208 2.00\r".to_string();
+    let data = "FP-CPU-002  3208 2.00";
     let result = response(data);
 
     assert!(result.is_ok());
@@ -48,14 +44,5 @@ mod tests {
       }
       _ => panic!("Expected IdResponse"),
     }
-  }
-
-  #[test]
-  fn test_response_failed() {
-    let data = "F".to_string();
-    let result = response(data);
-
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), FastResponse::Failed("ID".to_string()));
   }
 }

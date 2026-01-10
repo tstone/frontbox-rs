@@ -4,6 +4,8 @@ pub mod protocol;
 pub enum FastResponseError {
   InvalidFormat,
   UnknownResponse,
+  UnknownPrefix(String),
 }
 
 pub use protocol::FastResponse;
+pub use protocol::parse;
