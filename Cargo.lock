@@ -147,11 +147,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "fast-pinball-protocol"
+name = "frontbox-fast"
 version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
+]
+
+[[package]]
+name = "frontbox-main"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "frontbox-fast",
+ "futures-util",
+ "log",
+ "tokio",
+ "tokio-serial",
+ "tokio-util",
 ]
 
 [[package]]
@@ -613,19 +626,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tokio-pinball"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "fast-pinball-protocol",
- "futures-util",
- "log",
- "tokio",
- "tokio-serial",
- "tokio-util",
 ]
 
 [[package]]

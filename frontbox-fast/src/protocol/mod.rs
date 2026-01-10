@@ -7,6 +7,7 @@ pub enum FastResponse {
   Unrecognized(String),
   Failed(String),
   Invalid(String),
+  Processed(String),
 
   IdResponse {
     processor: String,
@@ -14,7 +15,6 @@ pub enum FastResponse {
     firmware_version: String,
   },
 
-  WatchdogProcessed,
   WatchdogDisabled,
   WatchdogExpired,
   WatchdogRemaining(u16),
@@ -28,6 +28,8 @@ pub fn parse(line: String) -> Option<FastResponse> {
     return Some(FastResponse::Failed(prefix[..2].to_string()));
   } else if suffix == "X" {
     return Some(FastResponse::Invalid(prefix[..2].to_string()));
+  } else if suffix == "P" {
+    return Some(FastResponse::Processed(prefix[..2].to_string()));
   }
 
   let msg = if prefix == "ID:" {

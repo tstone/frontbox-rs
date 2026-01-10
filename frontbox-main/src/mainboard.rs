@@ -1,6 +1,6 @@
-use fast_pinball_protocol::FastResponse;
-use fast_pinball_protocol::protocol::configure_hardware::{self, SwitchReporting};
-use fast_pinball_protocol::protocol::{id, watchdog};
+use frontbox_fast::FastResponse;
+use frontbox_fast::protocol::configure_hardware::{self, SwitchReporting};
+use frontbox_fast::protocol::{id, watchdog};
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
@@ -97,7 +97,7 @@ impl Mainboard {
     let mut io_port = SerialInterface::new(self.config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
-    log::info!("Opened IO NET port at {}", self.config.io_net_port_path);
+    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
 
     // boot sequence
     io_port
@@ -111,7 +111,7 @@ impl Mainboard {
             firmware_version,
           } => {
             log::info!(
-              "Connected to mainboard: processor={}, product_number={}, firmware_version={}",
+              "🥾 Connected to mainboard: processor={}, product_number={}, firmware_version={}",
               processor,
               product_number,
               firmware_version
@@ -129,7 +129,7 @@ impl Mainboard {
       self.config.switch_reporting.clone(),
     );
     log::info!(
-      "Configuring mainboard hardware as platform {:?} with switch verbosity {:?}",
+      "🥾 Configuring mainboard hardware as platform {:?} with switch verbosity {:?}",
       self.config.platform,
       self.config.switch_reporting
     );
@@ -145,7 +145,7 @@ impl Mainboard {
         |msg| !matches!(msg, FastResponse::Failed(_)),
       )
       .await;
-    log::info!("Watchdog timer started");
+    log::info!("🕙 Watchdog timer started");
 
     let (command_tx, mut command_rx) = mpsc::channel::<String>(32);
     self.command_tx = Some(command_tx);
@@ -155,19 +155,26 @@ impl Mainboard {
       tokio::select! {
           // watchdog
           _ = sleep(Duration::from_secs(1)) => {
-            log::trace!("Watchdog tick");
+            log::trace!("🖥️ -> 👾 : Watchdog tick");
             io_port.send(watchdog::set(Some(1250)).as_bytes()).await;
           }
 
           // read incoming messages
           result = io_port.read() => {
-            if let Some(Ok(line)) = result {
-              if matches!(line, FastResponse::Failed(_)) || matches!(line, FastResponse::Invalid(_)) {
-                log::warn!("Received error from mainboard: {:?}", line);
-              } else if matches!(line, FastResponse::WatchdogProcessed) {
-                log::trace!("Received watchdog ack from mainboard");
-              } else {
-                log::debug!("👾 -> 🖥️: {:?}", line);
+            if let Some(Ok(msg)) = result {
+              match msg {
+                FastResponse::Processed(cmd) => {
+                  log::trace!("👾 -> 🖥️ : Processed {} ", cmd);
+                }
+                FastResponse::Failed(cmd) => {
+                  log::warn!("👾 -> 🖥️ : ⚠️ Failed {}", cmd);
+                }
+                FastResponse::Invalid(cmd) => {
+                  log::warn!("👾 -> 🖥️ : ⚠️ Invalid {}", cmd);
+                }
+                _ => {
+                  log::debug!("👾 -> 🖥️: {:?}", msg);
+                }
               }
             }
           }

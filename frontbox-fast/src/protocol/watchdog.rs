@@ -10,9 +10,7 @@ pub fn set(seconds: Option<u16>) -> String {
 }
 
 pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
-  if data == "P" {
-    Ok(FastResponse::WatchdogProcessed)
-  } else if data == "00000000" {
+  if data == "00000000" {
     Ok(FastResponse::WatchdogDisabled)
   } else if data == "FFFFFFFF" {
     Ok(FastResponse::WatchdogExpired)

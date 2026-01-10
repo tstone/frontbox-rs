@@ -1,6 +1,6 @@
-extern crate tokio_pinball;
+extern crate frontbox_main;
 
-use tokio_pinball::{FastPlatform, Mainboard, MainboardConfig};
+use frontbox_main::{FastPlatform, Mainboard, MainboardConfig};
 
 #[tokio::main]
 async fn main() {

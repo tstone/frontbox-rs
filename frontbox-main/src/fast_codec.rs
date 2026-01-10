@@ -1,4 +1,4 @@
-use fast_pinball_protocol::{self, FastResponse};
+use frontbox_fast::{self, FastResponse};
 use tokio_util::bytes::{Buf, BytesMut};
 use tokio_util::codec::Decoder;
 
@@ -24,7 +24,7 @@ impl Decoder for FastCodec {
 
       // Parse to FastResponse
       let s = String::from_utf8_lossy(&data).to_string();
-      return Ok(fast_pinball_protocol::parse(s));
+      return Ok(frontbox_fast::parse(s));
     }
     // Not enough data for a full line yet
     Ok(None)
