@@ -1,83 +1,12 @@
+use std::time::Duration;
+
 use frontbox_fast::FastResponse;
 use frontbox_fast::protocol::configure_hardware::{self, SwitchReporting};
 use frontbox_fast::protocol::{id, watchdog};
-use futures_util::StreamExt;
-use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
-use tokio::time::{self, Duration, sleep};
-use tokio_serial::*;
-use tokio_util::codec::FramedRead;
+use tokio::time::sleep;
 
-use crate::FastCodec;
-
-const BAUD_RATE: u32 = 921_600;
-
-pub struct SerialInterface {
-  port_name: String,
-  reader: FramedRead<ReadHalf<SerialStream>, FastCodec>,
-  writer: WriteHalf<SerialStream>,
-}
-
-impl SerialInterface {
-  pub async fn new(port_path: &str) -> tokio_serial::Result<Self> {
-    // let port = Mainboard::open_port(port_path)?;
-    let port = tokio_serial::new(port_path, BAUD_RATE)
-      .data_bits(DataBits::Eight)
-      .parity(Parity::None)
-      .stop_bits(StopBits::One)
-      .flow_control(FlowControl::None);
-
-    let port = SerialStream::open(&port)?;
-    let (reader, writer) = tokio::io::split(port);
-    let framed_reader = FramedRead::new(reader, FastCodec::new());
-
-    Ok(SerialInterface {
-      port_name: port_path.to_string(),
-      reader: framed_reader,
-      writer,
-    })
-  }
-
-  pub async fn read(&mut self) -> Option<tokio_serial::Result<FastResponse>> {
-    self.reader.next().await.map(|result| {
-      result
-        .map_err(|e| tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string()))
-    })
-  }
-
-  pub async fn send(&mut self, cmd: &[u8]) {
-    match self.writer.write_all(cmd).await {
-      Ok(_) => (),
-      Err(e) => {
-        log::error!("Failed to send on {}: {:?}", self.port_name, e);
-      }
-    }
-  }
-
-  pub async fn poll_for_response(
-    &mut self,
-    cmd: &[u8],
-    timeout_duration: Duration,
-    predicate: fn(FastResponse) -> bool,
-  ) {
-    loop {
-      self.send(cmd).await;
-
-      let timeout = time::timeout(timeout_duration, self.reader.next());
-      match timeout.await {
-        Ok(Some(Ok(msg))) => {
-          if predicate(msg.clone()) {
-            break;
-          }
-        }
-        Ok(Some(Err(e))) => {
-          log::error!("Error waiting for response: {:?}", e);
-        }
-        _ => (),
-      }
-    }
-  }
-}
+use crate::serial_interface::SerialInterface;
 
 pub struct Mainboard {
   config: MainboardConfig,
@@ -92,14 +21,8 @@ impl Mainboard {
     }
   }
 
-  pub async fn run(&mut self) {
-    // open IO port
-    let mut io_port = SerialInterface::new(self.config.io_net_port_path)
-      .await
-      .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
-
-    // boot sequence
+  async fn initialize_io_port(&mut self, io_port: &mut SerialInterface) {
+    // wait for mainboard ID response (boot cycle complete)
     io_port
       .poll_for_response(
         &id::request(),
@@ -129,15 +52,12 @@ impl Mainboard {
       self.config.switch_reporting.clone(),
     );
     log::info!(
-      "🥾 Configuring mainboard hardware as platform {:?} with switch verbosity {:?}",
+      "🥾 Configuring mainboard hardware as platform {:?}",
       self.config.platform,
-      self.config.switch_reporting
     );
     io_port.send(ch.as_bytes()).await;
 
-    // TODO: open EXP port
-
-    // verify watchdog is running
+    // verify watchdog is ready
     io_port
       .poll_for_response(
         watchdog::set(Some(1250)).as_bytes(),
@@ -146,6 +66,22 @@ impl Mainboard {
       )
       .await;
     log::info!("🕙 Watchdog timer started");
+  }
+
+  pub async fn run(&mut self) {
+    // open IO port
+    let mut io_port = SerialInterface::new(self.config.io_net_port_path)
+      .await
+      .expect("Failed to open IO NET port");
+    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
+
+    self.initialize_io_port(&mut io_port).await;
+
+    // open EXP port
+    // let mut exp_port = SerialInterface::new(self.config.exp_port_path)
+    //   .await
+    //   .expect("Failed to open EXP port");
+    // log::info!("🥾 Opened EXP port at {}", self.config.exp_port_path);
 
     let (command_tx, mut command_rx) = mpsc::channel::<String>(32);
     self.command_tx = Some(command_tx);
