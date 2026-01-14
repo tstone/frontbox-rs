@@ -10,18 +10,47 @@ use crate::serial_interface::SerialInterface;
 
 pub struct Mainboard {
   config: MainboardConfig,
+  internal_tx: mpsc::Sender<Internal>,
+  internal_rx: mpsc::Receiver<Internal>,
   io_tx: Option<mpsc::Sender<String>>,
   exp_tx: Option<mpsc::Sender<String>>,
+  enable_watchdog: bool,
 }
 
 impl Mainboard {
   pub fn new(config: MainboardConfig) -> Self {
+    let (tx, rx) = mpsc::channel::<Internal>(32);
     Mainboard {
       config,
       io_tx: None,
       exp_tx: None,
+      enable_watchdog: false,
+      internal_tx: tx,
+      internal_rx: rx,
     }
   }
+
+  pub fn enable_watchdog(&self) {
+    let _ = self.internal_tx.try_send(Internal::Watchdog(true));
+  }
+
+  pub fn disable_watchdog(&self) {
+    let _ = self.internal_tx.try_send(Internal::Watchdog(false));
+  }
+
+  pub fn send_io(&self, cmd: String) {
+    if let Some(tx) = &self.io_tx {
+      let _ = tx.try_send(cmd);
+    }
+  }
+
+  pub fn send_exp(&self, cmd: String) {
+    if let Some(tx) = &self.exp_tx {
+      let _ = tx.try_send(cmd);
+    }
+  }
+
+  // how to let subscriptions (e.g. switch events)
 
   async fn initialize_io_port(&mut self, io_port: &mut SerialInterface) {
     // wait for mainboard ID response (boot cycle complete)
@@ -94,8 +123,17 @@ impl Mainboard {
     // start system loop
     loop {
       tokio::select! {
+          Some(msg) = self.internal_rx.recv() => {
+            match msg {
+              Internal::Watchdog(enable) => {
+                self.enable_watchdog = enable;
+                log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
+              }
+            }
+          }
+
           // watchdog
-          _ = sleep(Duration::from_secs(1)) => {
+          _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
             log::trace!("🖥️ -> 👾 : Watchdog tick");
             io_port.send(watchdog::set(Some(1250)).as_bytes()).await;
           }
@@ -161,4 +199,8 @@ pub enum FastPlatform {
   RetroSystem11 = 11,
   RetroWPC89 = 89,
   RetroWPC95 = 95,
+}
+
+enum Internal {
+  Watchdog(bool),
 }
