@@ -1,6 +1,9 @@
 pub mod configure_hardware;
+mod error;
 pub mod id;
 pub mod watchdog;
+
+pub use error::FastResponseError;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum FastResponse {

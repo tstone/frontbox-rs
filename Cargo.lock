@@ -147,19 +147,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-fast"
+name = "frontbox"
 version = "0.1.0"
 dependencies = [
  "env_logger",
- "log",
-]
-
-[[package]]
-name = "frontbox-main"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "frontbox-fast",
  "futures-util",
  "log",
  "tokio",

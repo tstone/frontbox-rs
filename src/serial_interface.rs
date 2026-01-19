@@ -1,4 +1,3 @@
-use frontbox_fast::FastResponse;
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::time::{self, Duration};
@@ -6,6 +5,7 @@ use tokio_serial::*;
 use tokio_util::codec::FramedRead;
 
 use crate::FastCodec;
+use crate::protocol::FastResponse;
 
 const BAUD_RATE: u32 = 921_600;
 

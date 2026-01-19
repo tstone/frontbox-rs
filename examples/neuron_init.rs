@@ -1,6 +1,4 @@
-extern crate frontbox_main;
-
-use frontbox_main::{FastPlatform, Mainboard, MainboardConfig};
+use frontbox::{FastPlatform, Mainboard, MainboardConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 

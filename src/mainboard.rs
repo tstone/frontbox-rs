@@ -1,8 +1,7 @@
 use std::time::Duration;
 
-use frontbox_fast::FastResponse;
-use frontbox_fast::protocol::configure_hardware::{self, SwitchReporting};
-use frontbox_fast::protocol::{id, watchdog};
+use crate::protocol::configure_hardware::{self, SwitchReporting};
+use crate::protocol::{FastResponse, id, watchdog};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 

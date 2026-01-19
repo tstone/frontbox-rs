@@ -1,5 +1,4 @@
-use crate::FastResponseError;
-use crate::protocol::FastResponse;
+use crate::protocol::{FastResponse, FastResponseError};
 
 pub fn set(seconds: Option<u16>) -> String {
   match seconds {

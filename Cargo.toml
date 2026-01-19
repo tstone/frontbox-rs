@@ -1,3 +1,19 @@
-[workspace]
-members = ["frontbox-fast", "frontbox-main"]
-resolver = "2"
+[package]
+name = "frontbox"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["mainboard"]
+protocol = []
+mainboard = ["protocol"]
+
+[dependencies]
+log = "0.4.29"
+futures-util = "0.3"
+tokio = { version = "1", features = ["full"] }
+tokio-serial = "5.4.4"
+tokio-util = { version = "0.7.18", features = ["codec"] }
+
+[dev-dependencies]
+env_logger = "0.11.8"

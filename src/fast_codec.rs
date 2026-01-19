@@ -1,6 +1,7 @@
-use frontbox_fast::{self, FastResponse};
 use tokio_util::bytes::{Buf, BytesMut};
 use tokio_util::codec::Decoder;
+
+use crate::protocol::{self, FastResponse};
 
 pub struct FastCodec;
 
@@ -24,7 +25,7 @@ impl Decoder for FastCodec {
 
       // Parse to FastResponse
       let s = String::from_utf8_lossy(&data).to_string();
-      return Ok(frontbox_fast::parse(s));
+      return Ok(protocol::parse(s));
     }
     // Not enough data for a full line yet
     Ok(None)

@@ -1,5 +1,4 @@
-use crate::FastResponseError;
-use crate::protocol::FastResponse;
+use crate::protocol::{FastResponse, FastResponseError};
 
 const ID_REQUEST: &[u8] = b"ID:\r";
 pub fn request() -> &'static [u8] {
