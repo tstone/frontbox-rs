@@ -1,7 +1,5 @@
-mod fast_codec;
 mod hardware;
 mod mainboard;
-mod serial_interface;
 
 // --- protocol ----
 

@@ -1,11 +1,10 @@
 use std::time::Duration;
 
+use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
 use crate::protocol::{FastResponse, id, watchdog};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-
-use crate::serial_interface::SerialInterface;
 
 pub struct Mainboard {
   config: MainboardConfig,
