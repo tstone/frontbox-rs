@@ -5,8 +5,7 @@ use frontbox::protocol::configure_hardware::SwitchReporting;
 use frontbox::{define_io_network, prelude::*};
 use std::time::Duration;
 
-#[tokio::main]
-async fn main() {
+fn main() {
   env_logger::init();
 
   let io_network = define_io_network! {

@@ -7,57 +7,65 @@ An asynchronous, Rust native framework for interacting with Fast pinball hardwar
 
 ### Preview (Subject to Change)
 
-#### 1. Define Your IO network
+#### 1. Define IO Network
+
+Boards are listed in order connected. For example, if the hardware is layed out as `Neuron => Cabinet IO => Io 3208 => Neuron` then the IO network would be defined as follows. Defining pins over what the board allows will panic on startup.
 
 ```rust
-let cabinet = FastBoard::CabinetIO::new();
-let playfield_front = FastBoard::IO3208::new();
-let playfield_rear = FastBoard::IO1616::new();
-
-let io_net = IoNetwork.define([ cabinet, playfield_front, playfield_rear ]);
+let io_network = define_io_network! {
+  cabinet: FastIoBoards::cabinet() => {
+    switches {
+      // label each pin
+      0: start_button,
+      1: left_flipper_button,
+      2: right_flipper_button,
+    }
+    drivers {
+      0: start_button_light,
+    }
+  },
+  playfield: FastIoBoards::io_3208() => {
+    switches {
+      0: left_outlane,
+      4: left_inlane,
+    }
+    drivers {
+      0: left_flipper_main,
+      1: left_flipper_hold,
+      // ...
+    }
+  }
+};
 ```
 
-#### 2. Define Your Devices
+#### 2. Define App Startup
 
 ```rust
-let left_sling = io_net.define_device(
-  Slingshot {
-    // port assignments are relative to the board, not the IO network
-    // reconfiguring network order does not affect device port assignments
-    driver: playfield_front.drivers(0),
-    // these assignments always match what is silkscreened on the PCB
-    switch: playfield_front.switches(31),
-    ..Default::default()
-  }
-)
-
-// ...
-
-let left_flipper = io_net.define_device(
-  // more complex devices can handle multiple coils
-  DualWoundFlipper {
-    main_driver: playfield_front.drivers(1),
-    hold_driver: playfield_front.drivers(2),
-    eos_switch: playfield_front.switches(30),
-    flipper_button: cabinet.switches(15),
-    ..Default::default()
-  }
-)
-```
-
-#### 3. Run the IO loop
-
-```rust
-#[tokio::main]
-async fn main() {
+fn main() {
   env_logger::init();
 
-  let mut neuron = Mainboard::new(MainboardConfig {
-    platform: FastPlatform::Neuron,
-    io_net,
-    ..Default::default()
-  });
+  App::new()
+    // ... Bevy preamble ...
+    .add_plugins(Frontbox {
+      mainboard_config: MainboardConfig {
+        platform: FastPlatform::Neuron,
+        io_net_port_path: "/dev/ttyACM0",
+        exp_port_path: "/dev/ttyACM1",
+        ..Default::default()
+      },
+      io_network,
+    })
+    .run();
+}
+```
 
-  neuron.run().await;
+#### 3. Spawn Hardware into World
+
+```rust
+  // ... as above ...
+  .add_systems(Startup, spawn_hardware)
+
+fn spawn_hardware() {
+  // TODO
 }
 ```
