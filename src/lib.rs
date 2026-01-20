@@ -16,9 +16,7 @@ pub mod prelude {
   #[cfg(feature = "mainboard")]
   pub use crate::frontbox::Frontbox;
   #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::Mainboard;
+  pub use crate::mainboard::mainboard_comms::*;
   #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::mainboard_comms::FastPlatform;
-  #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::mainboard_comms::MainboardConfig;
+  pub use crate::mainboard::*;
 }

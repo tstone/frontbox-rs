@@ -51,8 +51,6 @@ impl MainboardComms {
     }
   }
 
-  // how to let subscriptions (e.g. switch events)
-
   async fn initialize_io_port(&mut self, io_port: &mut SerialInterface) {
     // wait for mainboard ID response (boot cycle complete)
     io_port

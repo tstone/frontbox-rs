@@ -9,6 +9,7 @@ use crate::prelude::*;
 
 pub struct Frontbox {
   pub mainboard_config: MainboardConfig,
+  pub io_network: IoNetwork,
 }
 
 impl Plugin for Frontbox {
@@ -16,6 +17,8 @@ impl Plugin for Frontbox {
     let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(64);
     let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(64);
     let mut mainboard = MainboardComms::new(self.mainboard_config.clone(), command_rx, event_tx);
+
+    // TODO: separate boot from run
 
     // start serial communication in separate thread
     std::thread::spawn(move || {
@@ -28,6 +31,8 @@ impl Plugin for Frontbox {
         mainboard.run().await;
       });
     });
+
+    // TODO: spawn entities for io network boards + child pins
 
     app
       .add_systems(Update, bridge_mainboard_events)
