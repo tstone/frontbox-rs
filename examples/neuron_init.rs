@@ -1,5 +1,6 @@
 use bevy_app::{ScheduleRunnerPlugin, prelude::*};
 use bevy_ecs::prelude::*;
+use frontbox::mainboard_comms::MainboardIncoming;
 use frontbox::prelude::*;
 use std::time::Duration;
 
@@ -18,10 +19,16 @@ async fn main() {
       },
     })
     .add_systems(Startup, startup)
+    .add_observer(on_mainboard_event)
     .run();
 }
 
 fn startup(mut mainboard: ResMut<Mainboard>) {
-  log::info!("App started with mainboard: {:?}", mainboard);
+  log::info!("😀 Neuron init example started");
   mainboard.enable_watchdog();
+}
+
+// example of listening to raw events from the Neuron
+fn on_mainboard_event(event: On<MainboardIncoming>) {
+  log::info!("📧 Received mainboard event: {:?}", event);
 }

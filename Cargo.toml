@@ -23,11 +23,11 @@ tokio-util = { version = "0.7.18", features = ["codec"] }
 #[cfg(feature = "mainboard")]
 bevy_app = "0.18"
 #[cfg(feature = "mainboard")]
-bevy_ecs = "0.18"
-#[cfg(feature = "mainboard")]
-bevy_reflect = "0.18"
+bevy_ecs = { version = "0.18", features = ["bevy_reflect"] }
 #[cfg(feature = "mainboard")]
 bevy_state = "0.18"
+
+# bevy_time = "0.18"
 
 [dev-dependencies]
 env_logger = "0.11.8"

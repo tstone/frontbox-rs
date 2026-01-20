@@ -1,27 +1,41 @@
 use std::time::Duration;
 
+use crate::FastChannel;
 use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
 use crate::protocol::{FastResponse, id, watchdog};
+use bevy_ecs::event::Event;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
 pub struct MainboardComms {
   config: MainboardConfig,
-  bridge_rx: mpsc::Receiver<MainboardCommand>,
+  commands_rx: mpsc::Receiver<MainboardCommand>,
+  events_tx: mpsc::Sender<MainboardIncoming>,
   io_tx: Option<mpsc::Sender<String>>,
   exp_tx: Option<mpsc::Sender<String>>,
   enable_watchdog: bool,
 }
 
+#[derive(Debug, Clone, Event)]
+pub struct MainboardIncoming {
+  pub data: FastResponse,
+  pub channel: FastChannel,
+}
+
 impl MainboardComms {
-  pub fn new(config: MainboardConfig, bridge_rx: mpsc::Receiver<MainboardCommand>) -> Self {
+  pub fn new(
+    config: MainboardConfig,
+    commands_rx: mpsc::Receiver<MainboardCommand>,
+    events_tx: mpsc::Sender<MainboardIncoming>,
+  ) -> Self {
     MainboardComms {
       config,
       io_tx: None,
       exp_tx: None,
       enable_watchdog: false,
-      bridge_rx,
+      commands_rx,
+      events_tx,
     }
   }
 
@@ -110,11 +124,17 @@ impl MainboardComms {
     // start system loop
     loop {
       tokio::select! {
-          Some(msg) = self.bridge_rx.recv() => {
+          Some(msg) = self.commands_rx.recv() => {
             match msg {
               MainboardCommand::Watchdog(enable) => {
                 self.enable_watchdog = enable;
                 log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
+              },
+              MainboardCommand::SendIo(cmd) => {
+                self.send_io(cmd);
+              },
+              MainboardCommand::SendExp(cmd) => {
+                self.send_exp(cmd);
               }
             }
           }
@@ -128,7 +148,7 @@ impl MainboardComms {
           // read incoming messages
           result = io_port.read() => {
             if let Some(Ok(msg)) = result {
-              match msg {
+              match msg.clone() {
                 FastResponse::Processed(cmd) => {
                   log::trace!("👾 -> 🖥️ : Processed {} ", cmd);
                 }
@@ -142,6 +162,7 @@ impl MainboardComms {
                   log::debug!("👾 -> 🖥️: {:?}", msg);
                 }
               }
+              self.events_tx.send(MainboardIncoming { data: msg, channel: FastChannel::Io }).await.unwrap();
             }
           }
 
@@ -190,4 +211,6 @@ pub enum FastPlatform {
 #[derive(Debug, Clone)]
 pub enum MainboardCommand {
   Watchdog(bool),
+  SendIo(String),
+  SendExp(String),
 }
