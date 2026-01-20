@@ -2,6 +2,7 @@ use bevy_app::{ScheduleRunnerPlugin, prelude::*};
 use bevy_ecs::prelude::*;
 use frontbox::mainboard_comms::MainboardIncoming;
 use frontbox::prelude::*;
+use frontbox::protocol::configure_hardware::SwitchReporting;
 use std::time::Duration;
 
 #[tokio::main]
@@ -15,7 +16,7 @@ async fn main() {
         io_net_port_path: "/dev/ttyACM0",
         exp_port_path: "/dev/ttyACM1",
         platform: FastPlatform::Neuron,
-        switch_reporting: None,
+        switch_reporting: Some(SwitchReporting::Verbose),
       },
     })
     .add_systems(Startup, startup)
