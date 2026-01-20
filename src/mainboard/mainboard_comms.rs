@@ -160,6 +160,7 @@ impl MainboardComms {
   }
 }
 
+#[derive(Debug, Clone)]
 pub struct MainboardConfig {
   pub io_net_port_path: &'static str,
   pub exp_port_path: &'static str,
@@ -186,6 +187,7 @@ pub enum FastPlatform {
   RetroWPC95 = 95,
 }
 
+#[derive(Debug, Clone)]
 pub enum MainboardCommand {
   Watchdog(bool),
 }
