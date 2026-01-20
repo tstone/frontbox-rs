@@ -3,6 +3,8 @@ mod error;
 pub mod id;
 pub mod watchdog;
 
+use std::time::Duration;
+
 pub use error::FastResponseError;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -20,7 +22,7 @@ pub enum FastResponse {
 
   WatchdogDisabled,
   WatchdogExpired,
-  WatchdogRemaining(u16),
+  WatchdogRemaining(Duration),
 }
 
 pub fn parse(line: String) -> Option<FastResponse> {

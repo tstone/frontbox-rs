@@ -1,11 +1,18 @@
+use std::time::Duration;
+
 use crate::protocol::{FastResponse, FastResponseError};
 
-pub fn set(seconds: Option<u16>) -> String {
-  match seconds {
-    // Convert decimal to hex string for seconds
-    Some(t) => format!("WD:{:X}\r", t),
-    None => "WD:\r".to_string(),
-  }
+pub fn get() -> String {
+  "WD:\r".to_string()
+}
+
+pub fn set(duration: Duration) -> String {
+  // Convert decimal to hex string for milliseconds
+  format!("WD:{:X}\r", duration.as_millis() / 1000)
+}
+
+pub fn end() -> String {
+  "WD:0\r".to_string()
 }
 
 pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
@@ -14,8 +21,10 @@ pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
   } else if data == "FFFFFFFF" {
     Ok(FastResponse::WatchdogExpired)
   } else {
-    match data.parse::<u16>() {
-      Ok(remaining) => Ok(FastResponse::WatchdogRemaining(remaining)),
+    match data.parse::<u64>() {
+      Ok(remaining) => Ok(FastResponse::WatchdogRemaining(Duration::from_millis(
+        remaining,
+      ))),
       Err(_) => Err(FastResponseError::InvalidFormat),
     }
   }
@@ -27,14 +36,8 @@ mod tests {
 
   #[test]
   fn test_set_with_time() {
-    let result = set(Some(1500));
+    let result = set(Duration::from_millis(1500));
     assert_eq!(result, "WD:5DC\r");
-  }
-
-  #[test]
-  fn test_set_without_time() {
-    let result = set(None);
-    assert_eq!(result, "WD:\r");
   }
 
   #[test]

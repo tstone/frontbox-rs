@@ -1,204 +1,50 @@
-use std::time::Duration;
-
-use crate::mainboard::serial_interface::SerialInterface;
-use crate::protocol::configure_hardware::{self, SwitchReporting};
-use crate::protocol::{FastResponse, id, watchdog};
+use crate::mainboard_comms::{MainboardCommand, MainboardIncoming};
+use bevy_ecs::resource::Resource;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
 
+#[derive(Debug, Resource)]
 pub struct Mainboard {
-  config: MainboardConfig,
-  internal_tx: mpsc::Sender<Internal>,
-  internal_rx: mpsc::Receiver<Internal>,
-  io_tx: Option<mpsc::Sender<String>>,
-  exp_tx: Option<mpsc::Sender<String>>,
-  enable_watchdog: bool,
-}
-
-impl Mainboard {
-  pub fn new(config: MainboardConfig) -> Self {
-    let (tx, rx) = mpsc::channel::<Internal>(32);
-    Mainboard {
-      config,
-      io_tx: None,
-      exp_tx: None,
-      enable_watchdog: false,
-      internal_tx: tx,
-      internal_rx: rx,
-    }
-  }
-
-  pub fn enable_watchdog(&self) {
-    let _ = self.internal_tx.try_send(Internal::Watchdog(true));
-  }
-
-  pub fn disable_watchdog(&self) {
-    let _ = self.internal_tx.try_send(Internal::Watchdog(false));
-  }
-
-  pub fn send_io(&self, cmd: String) {
-    if let Some(tx) = &self.io_tx {
-      let _ = tx.try_send(cmd);
-    }
-  }
-
-  pub fn send_exp(&self, cmd: String) {
-    if let Some(tx) = &self.exp_tx {
-      let _ = tx.try_send(cmd);
-    }
-  }
-
-  // how to let subscriptions (e.g. switch events)
-
-  async fn initialize_io_port(&mut self, io_port: &mut SerialInterface) {
-    // wait for mainboard ID response (boot cycle complete)
-    io_port
-      .poll_for_response(
-        &id::request(),
-        Duration::from_millis(250),
-        |msg| match msg {
-          FastResponse::IdResponse {
-            processor,
-            product_number,
-            firmware_version,
-          } => {
-            log::info!(
-              "🥾 Connected to mainboard {} {} with firmware: {}",
-              processor,
-              product_number,
-              firmware_version
-            );
-            true
-          }
-          _ => false,
-        },
-      )
-      .await;
-
-    // configure hardware
-    let ch = configure_hardware::request(
-      self.config.platform.clone() as u16,
-      self.config.switch_reporting.clone(),
-    );
-    log::info!(
-      "🥾 Configuring mainboard hardware as platform {:?}",
-      self.config.platform,
-    );
-    io_port.send(ch.as_bytes()).await;
-
-    // verify watchdog is ready
-    io_port
-      .poll_for_response(
-        watchdog::set(Some(1250)).as_bytes(),
-        Duration::from_millis(250),
-        |msg| !matches!(msg, FastResponse::Failed(_)),
-      )
-      .await;
-    log::info!("🕙 Watchdog timer started");
-  }
-
-  pub async fn run(&mut self) {
-    // open IO port
-    let mut io_port = SerialInterface::new(self.config.io_net_port_path)
-      .await
-      .expect("Failed to open IO NET port");
-
-    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
-    self.initialize_io_port(&mut io_port).await;
-
-    // open EXP port
-    let mut exp_port = SerialInterface::new(self.config.exp_port_path)
-      .await
-      .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", self.config.exp_port_path);
-
-    let (io_tx, mut io_rx) = mpsc::channel::<String>(32);
-    self.io_tx = Some(io_tx);
-
-    let (exp_tx, mut exp_rx) = mpsc::channel::<String>(32);
-    self.exp_tx = Some(exp_tx);
-
-    // start system loop
-    loop {
-      tokio::select! {
-          Some(msg) = self.internal_rx.recv() => {
-            match msg {
-              Internal::Watchdog(enable) => {
-                self.enable_watchdog = enable;
-                log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
-              }
-            }
-          }
-
-          // watchdog
-          _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
-            log::trace!("🖥️ -> 👾 : Watchdog tick");
-            io_port.send(watchdog::set(Some(1250)).as_bytes()).await;
-          }
-
-          // read incoming messages
-          result = io_port.read() => {
-            if let Some(Ok(msg)) = result {
-              match msg {
-                FastResponse::Processed(cmd) => {
-                  log::trace!("👾 -> 🖥️ : Processed {} ", cmd);
-                }
-                FastResponse::Failed(cmd) => {
-                  log::warn!("👾 -> 🖥️ : ⚠️ Failed {}", cmd);
-                }
-                FastResponse::Invalid(cmd) => {
-                  log::warn!("👾 -> 🖥️ : ⚠️ Invalid {}", cmd);
-                }
-                _ => {
-                  log::debug!("👾 -> 🖥️: {:?}", msg);
-                }
-              }
-            }
-          }
-
-          // TODO: run game logic
-
-          // write outgoing messages
-          Some(cmd) = io_rx.recv() => {
-            io_port.send(cmd.as_bytes()).await;
-            log::debug!("🖥️ -> 👾 : {}", cmd);
-          }
-
-          Some(cmd) = exp_rx.recv() => {
-            exp_port.send(cmd.as_bytes()).await;
-            log::debug!("🖥️ -> 👾 : {}", cmd);
-          }
-      }
-    }
-  }
-}
-
-pub struct MainboardConfig {
-  pub io_net_port_path: &'static str,
-  pub exp_port_path: &'static str,
-  pub platform: FastPlatform,
-  pub switch_reporting: Option<SwitchReporting>,
-}
-
-impl Default for MainboardConfig {
-  fn default() -> Self {
-    MainboardConfig {
-      io_net_port_path: "",
-      exp_port_path: "",
-      platform: FastPlatform::Neuron,
-      switch_reporting: Some(SwitchReporting::Verbose),
-    }
-  }
+  command_tx: mpsc::Sender<MainboardCommand>,
+  event_rx: mpsc::Receiver<MainboardIncoming>,
+  watchdog_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum FastPlatform {
-  Neuron = 2000,
-  RetroSystem11 = 11,
-  RetroWPC89 = 89,
-  RetroWPC95 = 95,
+pub enum FastChannel {
+  Io,
+  Expansion,
 }
 
-enum Internal {
-  Watchdog(bool),
+impl Mainboard {
+  pub fn new(
+    command_tx: mpsc::Sender<MainboardCommand>,
+    event_rx: mpsc::Receiver<MainboardIncoming>,
+  ) -> Self {
+    Mainboard {
+      command_tx,
+      event_rx,
+      watchdog_enabled: false,
+    }
+  }
+
+  pub fn enable_watchdog(&mut self) {
+    if !self.watchdog_enabled {
+      self.watchdog_enabled = true;
+      let _ = self.command_tx.try_send(MainboardCommand::Watchdog(true));
+    }
+  }
+
+  pub fn disable_watchdog(&mut self) {
+    if self.watchdog_enabled {
+      self.watchdog_enabled = false;
+      let _ = self.command_tx.try_send(MainboardCommand::Watchdog(false));
+    }
+  }
+
+  pub fn receive(&mut self) -> Option<MainboardIncoming> {
+    match self.event_rx.try_recv() {
+      Ok(event) => Some(event),
+      Err(_) => None,
+    }
+  }
 }
