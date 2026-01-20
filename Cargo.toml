@@ -10,10 +10,24 @@ mainboard = ["protocol"]
 
 [dependencies]
 log = "0.4.29"
+
+#[cfg(feature = "mainboard")]
 futures-util = "0.3"
+#[cfg(feature = "mainboard")]
 tokio = { version = "1", features = ["full"] }
+#[cfg(feature = "mainboard")]
 tokio-serial = "5.4.4"
+#[cfg(feature = "mainboard")]
 tokio-util = { version = "0.7.18", features = ["codec"] }
+
+#[cfg(feature = "mainboard")]
+bevy_app = "0.18"
+#[cfg(feature = "mainboard")]
+bevy_ecs = "0.18"
+#[cfg(feature = "mainboard")]
+bevy_reflect = "0.18"
+#[cfg(feature = "mainboard")]
+bevy_state = "0.18"
 
 [dev-dependencies]
 env_logger = "0.11.8"

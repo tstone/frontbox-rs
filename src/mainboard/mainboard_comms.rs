@@ -6,34 +6,23 @@ use crate::protocol::{FastResponse, id, watchdog};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-pub struct Mainboard {
+pub struct MainboardComms {
   config: MainboardConfig,
-  internal_tx: mpsc::Sender<Internal>,
-  internal_rx: mpsc::Receiver<Internal>,
+  bridge_rx: mpsc::Receiver<MainboardCommand>,
   io_tx: Option<mpsc::Sender<String>>,
   exp_tx: Option<mpsc::Sender<String>>,
   enable_watchdog: bool,
 }
 
-impl Mainboard {
-  pub fn new(config: MainboardConfig) -> Self {
-    let (tx, rx) = mpsc::channel::<Internal>(32);
-    Mainboard {
+impl MainboardComms {
+  pub fn new(config: MainboardConfig, bridge_rx: mpsc::Receiver<MainboardCommand>) -> Self {
+    MainboardComms {
       config,
       io_tx: None,
       exp_tx: None,
       enable_watchdog: false,
-      internal_tx: tx,
-      internal_rx: rx,
+      bridge_rx,
     }
-  }
-
-  pub fn enable_watchdog(&self) {
-    let _ = self.internal_tx.try_send(Internal::Watchdog(true));
-  }
-
-  pub fn disable_watchdog(&self) {
-    let _ = self.internal_tx.try_send(Internal::Watchdog(false));
   }
 
   pub fn send_io(&self, cmd: String) {
@@ -89,7 +78,7 @@ impl Mainboard {
     // verify watchdog is ready
     io_port
       .poll_for_response(
-        watchdog::set(Some(1250)).as_bytes(),
+        watchdog::set(Duration::from_millis(1250)).as_bytes(),
         Duration::from_millis(250),
         |msg| !matches!(msg, FastResponse::Failed(_)),
       )
@@ -121,9 +110,9 @@ impl Mainboard {
     // start system loop
     loop {
       tokio::select! {
-          Some(msg) = self.internal_rx.recv() => {
+          Some(msg) = self.bridge_rx.recv() => {
             match msg {
-              Internal::Watchdog(enable) => {
+              MainboardCommand::Watchdog(enable) => {
                 self.enable_watchdog = enable;
                 log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
               }
@@ -133,7 +122,7 @@ impl Mainboard {
           // watchdog
           _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
             log::trace!("🖥️ -> 👾 : Watchdog tick");
-            io_port.send(watchdog::set(Some(1250)).as_bytes()).await;
+            io_port.send(watchdog::set(Duration::from_millis(1250)).as_bytes()).await;
           }
 
           // read incoming messages
@@ -155,8 +144,6 @@ impl Mainboard {
               }
             }
           }
-
-          // TODO: run game logic
 
           // write outgoing messages
           Some(cmd) = io_rx.recv() => {
@@ -199,6 +186,6 @@ pub enum FastPlatform {
   RetroWPC95 = 95,
 }
 
-enum Internal {
+pub enum MainboardCommand {
   Watchdog(bool),
 }
