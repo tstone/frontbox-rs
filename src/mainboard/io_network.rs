@@ -7,12 +7,12 @@ use bevy_ecs::prelude::*;
 pub struct IoBoardSpec {
   pub switch_count: u32,
   pub driver_count: u32,
-  pub switch_map: HashMap<u16, String>,
-  pub driver_map: HashMap<u16, String>,
+  pub switch_map: HashMap<u16, &'static str>,
+  pub driver_map: HashMap<u16, &'static str>,
 }
 
 impl IoBoardSpec {
-  pub fn with_switch(mut self, idx: u16, name: &str) -> Self {
+  pub fn with_switch(mut self, idx: u16, key: &'static str) -> Self {
     if idx >= self.switch_count as u16 {
       panic!(
         "Switch index {} out of bounds for board with {} switches",
@@ -20,11 +20,11 @@ impl IoBoardSpec {
       );
     }
 
-    self.switch_map.insert(idx, name.to_string());
+    self.switch_map.insert(idx, key);
     self
   }
 
-  pub fn with_driver(mut self, idx: u16, name: &str) -> Self {
+  pub fn with_driver_pin(mut self, idx: u16, key: &'static str) -> Self {
     if idx >= self.driver_count as u16 {
       panic!(
         "Driver index {} out of bounds for board with {} drivers",
@@ -32,7 +32,7 @@ impl IoBoardSpec {
       );
     }
 
-    self.driver_map.insert(idx, name.to_string());
+    self.driver_map.insert(idx, key);
     self
   }
 }
@@ -44,7 +44,8 @@ impl FastIoBoards {
     IoBoardSpec {
       switch_count,
       driver_count,
-      ..Default::default()
+      switch_map: HashMap::new(),
+      driver_map: HashMap::new(),
     }
   }
 
@@ -52,7 +53,8 @@ impl FastIoBoards {
     IoBoardSpec {
       switch_count: 32,
       driver_count: 8,
-      ..Default::default()
+      switch_map: HashMap::new(),
+      driver_map: HashMap::new(),
     }
   }
 
@@ -60,7 +62,8 @@ impl FastIoBoards {
     IoBoardSpec {
       switch_count: 16,
       driver_count: 16,
-      ..Default::default()
+      switch_map: HashMap::new(),
+      driver_map: HashMap::new(),
     }
   }
 
@@ -68,7 +71,8 @@ impl FastIoBoards {
     IoBoardSpec {
       switch_count: 8,
       driver_count: 4,
-      ..Default::default()
+      switch_map: HashMap::new(),
+      driver_map: HashMap::new(),
     }
   }
 
@@ -76,7 +80,8 @@ impl FastIoBoards {
     IoBoardSpec {
       switch_count: 24,
       driver_count: 8,
-      ..Default::default()
+      switch_map: HashMap::new(),
+      driver_map: HashMap::new(),
     }
   }
 }
@@ -88,17 +93,17 @@ pub struct IoBoard {
   pub driver_offset: u32,
   pub switch_count: u32,
   pub driver_count: u32,
-  pub switch_map: HashMap<u16, String>,
-  pub driver_map: HashMap<u16, String>,
+  pub switch_map: HashMap<u16, &'static str>,
+  pub driver_map: HashMap<u16, &'static str>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Resource)]
 pub struct IoNetwork {
-  pub boards: Vec<(String, IoBoard)>,
+  pub boards: Vec<IoBoard>,
 }
 
 pub struct IoNetworkSpec {
-  specs: Vec<(String, IoBoardSpec)>,
+  specs: Vec<IoBoardSpec>,
 }
 
 impl IoNetworkSpec {
@@ -106,8 +111,8 @@ impl IoNetworkSpec {
     Self { specs: Vec::new() }
   }
 
-  pub fn add_board(&mut self, name: &str, spec: IoBoardSpec) {
-    self.specs.push((name.to_string(), spec));
+  pub fn add_board(&mut self, spec: IoBoardSpec) {
+    self.specs.push(spec);
   }
 
   pub fn build(self) -> IoNetwork {
@@ -115,19 +120,16 @@ impl IoNetworkSpec {
     let mut switch_offset = 0;
     let mut driver_offset = 0;
 
-    for (i, (name, spec)) in self.specs.into_iter().enumerate() {
-      boards.push((
-        name.clone(),
-        IoBoard {
-          index: i as u8,
-          switch_count: spec.switch_count,
-          driver_count: spec.driver_count,
-          switch_offset,
-          driver_offset,
-          switch_map: spec.switch_map,
-          driver_map: spec.driver_map,
-        },
-      ));
+    for (i, spec) in self.specs.into_iter().enumerate() {
+      boards.push(IoBoard {
+        index: i as u8,
+        switch_count: spec.switch_count,
+        driver_count: spec.driver_count,
+        switch_offset,
+        driver_offset,
+        switch_map: spec.switch_map,
+        driver_map: spec.driver_map,
+      });
 
       switch_offset += spec.switch_count;
       driver_offset += spec.driver_count;
@@ -135,29 +137,4 @@ impl IoNetworkSpec {
 
     IoNetwork { boards }
   }
-}
-
-#[macro_export]
-macro_rules! define_io_network {
-    ( $( $board_name:ident : $board_type:expr => {
-        $( switches { $( $s_idx:literal : $s_name:ident ),* $(,)? } )?
-        $( drivers { $( $d_idx:literal : $d_name:ident ),* $(,)? } )?
-    } ),* ) => {
-        {
-            let mut network_spec = IoNetworkSpec::new();
-            $(
-                #[allow(unused_mut)]
-                // $board_type is a Token Tree, so IoBoardSpec::cabinet() works perfectly here
-                let mut spec = $board_type;
-                $( $(
-                    spec = spec.with_switch($s_idx, stringify!($s_name));
-                )* )?
-                $( $(
-                    spec = spec.with_driver($d_idx, stringify!($d_name));
-                )* )?
-                network_spec.add_board(stringify!($board_name), spec);
-            )*
-            network_spec.build()
-        }
-    };
 }

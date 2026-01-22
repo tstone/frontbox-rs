@@ -1,6 +1,6 @@
 # Frontbox
 
-An asynchronous, Rust native framework for interacting with Fast pinball hardware.
+A Rust native framework for interacting with Fast pinball hardware, built with the power of Bevy ECS.
 
 > [!WARNING]
 > Work in progress
@@ -9,7 +9,7 @@ An asynchronous, Rust native framework for interacting with Fast pinball hardwar
 
 #### 1. Define IO Network
 
-Boards are listed in order connected. For example, if the hardware is layed out as `Neuron => Cabinet IO => Io 3208 => Neuron` then the IO network would be defined as follows. Defining pins over what the board allows will panic on startup.
+Boards are listed in order connected. For example, if the hardware is layed out as `Neuron => Cabinet IO => Io 3208 => Neuron` then the IO network would be defined as follows. This section is filled out during the wiring stage and is independent from defining the hardware. Board routing and pin labels can change independent of device defintion (e.g. when iterating through whitewoods).
 
 ```rust
 let io_network = define_io_network! {

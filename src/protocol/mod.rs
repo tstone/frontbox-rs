@@ -1,6 +1,7 @@
 pub mod configure_hardware;
 mod error;
 pub mod id;
+pub mod switch_state;
 pub mod watchdog;
 
 use std::time::Duration;
@@ -18,6 +19,13 @@ pub enum FastResponse {
     processor: String,
     product_number: String,
     firmware_version: String,
+  },
+
+  SwitchOpened {
+    switch_id: usize,
+  },
+  SwitchClosed {
+    switch_id: usize,
   },
 
   WatchdogDisabled,
@@ -41,6 +49,10 @@ pub fn parse(line: String) -> Option<FastResponse> {
     id::response(suffix)
   } else if prefix == "WD:" {
     watchdog::response(suffix)
+  } else if prefix == "-L:" {
+    switch_state::closed_response(suffix)
+  } else if prefix == "/L:" {
+    switch_state::open_response(suffix)
   } else {
     Ok(FastResponse::Unrecognized(line.clone()))
   };

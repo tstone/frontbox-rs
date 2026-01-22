@@ -5,15 +5,15 @@ use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
 use crate::protocol::{FastResponse, id, watchdog};
 use bevy_ecs::event::Event;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio::time::sleep;
 
-pub struct MainboardComms {
-  config: MainboardConfig,
+/// Handles serial
+pub struct MainboardIO {
   commands_rx: mpsc::Receiver<MainboardCommand>,
-  events_tx: mpsc::Sender<MainboardIncoming>,
-  io_tx: Option<mpsc::Sender<String>>,
-  exp_tx: Option<mpsc::Sender<String>>,
+  events_tx: broadcast::Sender<MainboardIncoming>,
+  io_port: SerialInterface,
+  exp_port: SerialInterface,
   enable_watchdog: bool,
 }
 
@@ -23,35 +23,25 @@ pub struct MainboardIncoming {
   pub channel: FastChannel,
 }
 
-impl MainboardComms {
-  pub fn new(
-    config: MainboardConfig,
+impl MainboardIO {
+  pub async fn boot(
+    config: BootConfig,
     commands_rx: mpsc::Receiver<MainboardCommand>,
-    events_tx: mpsc::Sender<MainboardIncoming>,
+    events_tx: broadcast::Sender<MainboardIncoming>,
   ) -> Self {
-    MainboardComms {
-      config,
-      io_tx: None,
-      exp_tx: None,
-      enable_watchdog: false,
-      commands_rx,
-      events_tx,
-    }
-  }
+    // open IO port
+    let mut io_port = SerialInterface::new(config.io_net_port_path)
+      .await
+      .expect("Failed to open IO NET port");
 
-  pub fn send_io(&self, cmd: String) {
-    if let Some(tx) = &self.io_tx {
-      let _ = tx.try_send(cmd);
-    }
-  }
+    log::info!("🥾 Opened IO NET port at {}", config.io_net_port_path);
 
-  pub fn send_exp(&self, cmd: String) {
-    if let Some(tx) = &self.exp_tx {
-      let _ = tx.try_send(cmd);
-    }
-  }
+    // open EXP port
+    let exp_port = SerialInterface::new(config.exp_port_path)
+      .await
+      .expect("Failed to open EXP port");
+    log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
-  async fn initialize_io_port(&mut self, io_port: &mut SerialInterface) {
     // wait for mainboard ID response (boot cycle complete)
     io_port
       .poll_for_response(
@@ -78,12 +68,12 @@ impl MainboardComms {
 
     // configure hardware
     let ch = configure_hardware::request(
-      self.config.platform.clone() as u16,
-      self.config.switch_reporting.clone(),
+      config.platform.clone() as u16,
+      config.switch_reporting.clone(),
     );
     log::info!(
       "🥾 Configuring mainboard hardware as platform {:?}",
-      self.config.platform,
+      config.platform,
     );
     io_port.send(ch.as_bytes()).await;
 
@@ -96,30 +86,17 @@ impl MainboardComms {
       )
       .await;
     log::info!("🕙 Watchdog timer started");
+
+    MainboardIO {
+      enable_watchdog: false,
+      commands_rx,
+      events_tx,
+      io_port,
+      exp_port,
+    }
   }
 
   pub async fn run(&mut self) {
-    // open IO port
-    let mut io_port = SerialInterface::new(self.config.io_net_port_path)
-      .await
-      .expect("Failed to open IO NET port");
-
-    log::info!("🥾 Opened IO NET port at {}", self.config.io_net_port_path);
-    self.initialize_io_port(&mut io_port).await;
-
-    // open EXP port
-    let mut exp_port = SerialInterface::new(self.config.exp_port_path)
-      .await
-      .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", self.config.exp_port_path);
-
-    let (io_tx, mut io_rx) = mpsc::channel::<String>(32);
-    self.io_tx = Some(io_tx);
-
-    let (exp_tx, mut exp_rx) = mpsc::channel::<String>(32);
-    self.exp_tx = Some(exp_tx);
-
-    // start system loop
     loop {
       tokio::select! {
           Some(msg) = self.commands_rx.recv() => {
@@ -129,10 +106,12 @@ impl MainboardComms {
                 log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
               },
               MainboardCommand::SendIo(cmd) => {
-                self.send_io(cmd);
+                self.io_port.send(cmd.as_bytes()).await;
+                log::debug!("🖥️ -> 👾 : {}", cmd);
               },
               MainboardCommand::SendExp(cmd) => {
-                self.send_exp(cmd);
+                self.exp_port.send(cmd.as_bytes()).await;
+                log::debug!("🖥️ -> 👾 : {}", cmd);
               }
             }
           }
@@ -140,11 +119,11 @@ impl MainboardComms {
           // watchdog
           _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
             log::trace!("🖥️ -> 👾 : Watchdog tick");
-            io_port.send(watchdog::set(Duration::from_millis(1250)).as_bytes()).await;
+            self.io_port.send(watchdog::set(Duration::from_millis(1250)).as_bytes()).await;
           }
 
           // read incoming messages
-          result = io_port.read() => {
+          result = self.io_port.read() => {
             if let Some(Ok(msg)) = result {
               match msg.clone() {
                 FastResponse::Processed(cmd) => {
@@ -160,19 +139,8 @@ impl MainboardComms {
                   log::debug!("👾 -> 🖥️: {:?}", msg);
                 }
               }
-              self.events_tx.send(MainboardIncoming { data: msg, channel: FastChannel::Io }).await.unwrap();
+              self.events_tx.send(MainboardIncoming { data: msg, channel: FastChannel::Io }).unwrap();
             }
-          }
-
-          // write outgoing messages
-          Some(cmd) = io_rx.recv() => {
-            io_port.send(cmd.as_bytes()).await;
-            log::debug!("🖥️ -> 👾 : {}", cmd);
-          }
-
-          Some(cmd) = exp_rx.recv() => {
-            exp_port.send(cmd.as_bytes()).await;
-            log::debug!("🖥️ -> 👾 : {}", cmd);
           }
       }
     }
@@ -180,16 +148,16 @@ impl MainboardComms {
 }
 
 #[derive(Debug, Clone)]
-pub struct MainboardConfig {
+pub struct BootConfig {
   pub io_net_port_path: &'static str,
   pub exp_port_path: &'static str,
   pub platform: FastPlatform,
   pub switch_reporting: Option<SwitchReporting>,
 }
 
-impl Default for MainboardConfig {
+impl Default for BootConfig {
   fn default() -> Self {
-    MainboardConfig {
+    BootConfig {
       io_net_port_path: "",
       exp_port_path: "",
       platform: FastPlatform::Neuron,

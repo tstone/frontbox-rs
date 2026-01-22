@@ -1,47 +1,58 @@
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
-use crate::mainboard_comms::{
-  MainboardCommand, MainboardComms, MainboardConfig, MainboardIncoming,
-};
+use crate::mainboard_io::{MainboardCommand, MainboardIncoming};
 use crate::prelude::*;
+use crate::protocol::FastResponse;
 
 pub struct Frontbox {
-  pub mainboard_config: MainboardConfig,
+  pub mainboard: Mainboard,
   pub io_network: IoNetwork,
 }
 
 impl Plugin for Frontbox {
   fn build(&self, app: &mut App) {
-    let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(64);
-    let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(64);
-    let mut mainboard = MainboardComms::new(self.mainboard_config.clone(), command_rx, event_tx);
+    let link = MainboardLink {
+      command_tx: self.mainboard.tx(),
+      event_rx: self.mainboard.subscribe(),
+    };
 
-    // TODO: separate boot from run
-
-    // start serial communication in separate thread
-    std::thread::spawn(move || {
-      let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-      runtime.block_on(async move {
-        mainboard.run().await;
-      });
-    });
-
-    // TODO: spawn entities for io network boards + child pins
-
-    app
-      .add_systems(Update, bridge_mainboard_events)
-      .insert_resource(Mainboard::new(command_tx, event_rx));
+    app.add_systems(Update, mainboard_to_switch_events);
+    app.insert_resource(link);
   }
 }
 
-fn bridge_mainboard_events(mut mainboard: ResMut<Mainboard>, mut commands: Commands) {
-  while let Some(event) = mainboard.receive() {
-    commands.trigger(event);
+#[derive(Debug, Resource)]
+pub struct MainboardLink {
+  command_tx: mpsc::Sender<MainboardCommand>,
+  event_rx: broadcast::Receiver<MainboardIncoming>,
+}
+
+impl MainboardLink {
+  fn send(&mut self, command: MainboardCommand) {
+    self.command_tx.try_send(command).unwrap();
+  }
+
+  pub fn enable_watchdog(&mut self) {
+    self.send(MainboardCommand::Watchdog(true));
+  }
+}
+
+fn mainboard_to_switch_events(
+  mut mainboard: ResMut<MainboardLink>,
+  mut commands: Commands,
+  network: Res<IoNetwork>,
+) {
+  while let Ok(incoming) = mainboard.event_rx.try_recv() {
+    match incoming.data {
+      FastResponse::SwitchOpened { switch_id } => {
+        // TODO
+        // if let Some(entity) = network.get_switch_entity(switch_id) {
+        //   commands.trigger_targets(SwitchChanged { state }, entity);
+        // }
+      }
+      _ => {}
+    }
   }
 }
