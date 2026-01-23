@@ -139,7 +139,13 @@ impl MainboardIO {
                   log::debug!("👾 -> 🖥️: {:?}", msg);
                 }
               }
-              self.events_tx.send(MainboardIncoming { data: msg, channel: FastChannel::Io }).unwrap();
+
+              match self.events_tx.send(MainboardIncoming { data: msg, channel: FastChannel::Io }) {
+                Ok(_) => {},
+                Err(e) => {
+                  log::error!("Failed to send mainboard event: {}", e);
+                }
+              }
             }
           }
       }

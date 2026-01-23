@@ -8,7 +8,7 @@ pub fn get() -> String {
 
 pub fn set(duration: Duration) -> String {
   // Convert decimal to hex string for milliseconds
-  format!("WD:{:X}\r", duration.as_millis() / 1000)
+  format!("WD:{:X}\r", duration.as_millis())
 }
 
 pub fn end() -> String {

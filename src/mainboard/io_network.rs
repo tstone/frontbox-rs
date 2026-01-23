@@ -87,7 +87,7 @@ impl FastIoBoards {
 }
 
 #[derive(Component, Debug, Clone)]
-pub struct IoBoard {
+pub struct IoBoardDefinition {
   pub index: u8,
   pub switch_offset: u32,
   pub driver_offset: u32,
@@ -97,9 +97,10 @@ pub struct IoBoard {
   pub driver_map: HashMap<u16, &'static str>,
 }
 
-#[derive(Debug, Clone, Resource)]
-pub struct IoNetwork {
-  pub boards: Vec<IoBoard>,
+#[derive(Debug, Clone)]
+pub struct IoNetworkResources {
+  pub switches: Vec<Switch>,
+  pub driver_pins: Vec<DriverPin>,
 }
 
 pub struct IoNetworkSpec {
@@ -115,26 +116,50 @@ impl IoNetworkSpec {
     self.specs.push(spec);
   }
 
-  pub fn build(self) -> IoNetwork {
-    let mut boards = Vec::new();
+  pub fn build(self) -> IoNetworkResources {
+    let mut switches = Vec::new();
+    let mut driver_pins = Vec::new();
     let mut switch_offset = 0;
     let mut driver_offset = 0;
 
     for (i, spec) in self.specs.into_iter().enumerate() {
-      boards.push(IoBoard {
-        index: i as u8,
-        switch_count: spec.switch_count,
-        driver_count: spec.driver_count,
-        switch_offset,
-        driver_offset,
-        switch_map: spec.switch_map,
-        driver_map: spec.driver_map,
-      });
+      for (idx, name) in spec.switch_map.iter() {
+        switches.push(Switch {
+          id: switch_offset as usize + *idx as usize,
+          name: *name,
+          parent_index: i as u8,
+        });
+      }
+
+      for (idx, name) in spec.driver_map.iter() {
+        driver_pins.push(DriverPin {
+          id: driver_offset as usize + *idx as usize,
+          name: *name,
+          parent_index: i as u8,
+        });
+      }
 
       switch_offset += spec.switch_count;
       driver_offset += spec.driver_count;
     }
 
-    IoNetwork { boards }
+    IoNetworkResources {
+      switches,
+      driver_pins,
+    }
   }
+}
+
+#[derive(Debug, Clone, Component)]
+pub struct Switch {
+  pub id: usize,
+  pub name: &'static str,
+  pub parent_index: u8,
+}
+
+#[derive(Debug, Clone, Component)]
+pub struct DriverPin {
+  pub id: usize,
+  pub name: &'static str,
+  pub parent_index: u8,
 }
