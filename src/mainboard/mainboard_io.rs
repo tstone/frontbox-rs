@@ -69,7 +69,7 @@ impl MainboardIO {
     // configure hardware
     let ch = configure_hardware::request(
       config.platform.clone() as u16,
-      config.switch_reporting.clone(),
+      Some(SwitchReporting::Verbose),
     );
     log::info!(
       "🥾 Configuring mainboard hardware as platform {:?}",
@@ -152,7 +152,6 @@ pub struct BootConfig {
   pub io_net_port_path: &'static str,
   pub exp_port_path: &'static str,
   pub platform: FastPlatform,
-  pub switch_reporting: Option<SwitchReporting>,
 }
 
 impl Default for BootConfig {
@@ -161,7 +160,6 @@ impl Default for BootConfig {
       io_net_port_path: "",
       exp_port_path: "",
       platform: FastPlatform::Neuron,
-      switch_reporting: Some(SwitchReporting::Verbose),
     }
   }
 }
