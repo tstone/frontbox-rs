@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::Switch;
-use crate::hardware::power::{HighPower, Power};
+use crate::hardware::power::Power;
 
 pub enum DriverConfig {
   Disabled,
@@ -45,8 +45,8 @@ pub enum DriverConfig {
     button_switch: Option<Switch>,
     invert_button_switch: Option<bool>,
     eos_switch: Switch,
-    initial_pwm_power: HighPower,
-    secondary_pwm_power: HighPower,
+    initial_pwm_power: Power,
+    secondary_pwm_power: Power,
     max_eos_time: Duration,
     next_flip_refresh: Duration,
   },
@@ -54,8 +54,8 @@ pub enum DriverConfig {
     button_switch: Option<Switch>,
     invert_button_switch: Option<bool>,
     driver_on_time: Duration,
-    initial_pwm_power: HighPower,
-    secondary_pwm_power: HighPower,
+    initial_pwm_power: Power,
+    secondary_pwm_power: Power,
   },
 }
 
@@ -349,8 +349,8 @@ pub struct FlipperMainDirectBuilder {
   button_switch: Option<Switch>,
   invert_button_switch: Option<bool>,
   eos_switch: Option<Switch>,
-  initial_pwm_power: Option<HighPower>,
-  secondary_pwm_power: Option<HighPower>,
+  initial_pwm_power: Option<Power>,
+  secondary_pwm_power: Option<Power>,
   max_eos_time: Option<Duration>,
   next_flip_refresh: Option<Duration>,
 }
@@ -371,12 +371,12 @@ impl FlipperMainDirectBuilder {
     self
   }
 
-  pub fn initial_pwm_power(mut self, power: HighPower) -> Self {
+  pub fn initial_pwm_power(mut self, power: Power) -> Self {
     self.initial_pwm_power = Some(power);
     self
   }
 
-  pub fn secondary_pwm_power(mut self, power: HighPower) -> Self {
+  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
     self.secondary_pwm_power = Some(power);
     self
   }
@@ -398,8 +398,8 @@ impl FlipperMainDirectBuilder {
       eos_switch: self
         .eos_switch
         .expect("eos_switch is required for FlipperMainDirect"),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(HighPower::full()),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(HighPower::off()),
+      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
+      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
       max_eos_time: self.max_eos_time.unwrap_or(Duration::from_millis(100)),
       next_flip_refresh: self.next_flip_refresh.unwrap_or(Duration::from_millis(100)),
     }
@@ -412,8 +412,8 @@ pub struct FlipperHoldDirectBuilder {
   button_switch: Option<Switch>,
   invert_button_switch: Option<bool>,
   driver_on_time: Option<Duration>,
-  initial_pwm_power: Option<HighPower>,
-  secondary_pwm_power: Option<HighPower>,
+  initial_pwm_power: Option<Power>,
+  secondary_pwm_power: Option<Power>,
 }
 
 impl FlipperHoldDirectBuilder {
@@ -432,12 +432,12 @@ impl FlipperHoldDirectBuilder {
     self
   }
 
-  pub fn initial_pwm_power(mut self, power: HighPower) -> Self {
+  pub fn initial_pwm_power(mut self, power: Power) -> Self {
     self.initial_pwm_power = Some(power);
     self
   }
 
-  pub fn secondary_pwm_power(mut self, power: HighPower) -> Self {
+  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
     self.secondary_pwm_power = Some(power);
     self
   }
@@ -447,8 +447,8 @@ impl FlipperHoldDirectBuilder {
       button_switch: self.button_switch,
       invert_button_switch: self.invert_button_switch,
       driver_on_time: self.driver_on_time.unwrap_or(Duration::from_millis(10)),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(HighPower::full()),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(HighPower::off()),
+      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
+      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
     }
   }
 }
