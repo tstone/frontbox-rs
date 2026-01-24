@@ -2,7 +2,6 @@ use bevy_app::{ScheduleRunnerPlugin, prelude::*};
 use bevy_ecs::prelude::*;
 use frontbox::mainboard_io::MainboardIncoming;
 use frontbox::prelude::*;
-use frontbox::protocol::configure_hardware::SwitchReporting;
 use std::time::Duration;
 
 pub mod Switches {
@@ -59,9 +58,23 @@ async fn main() {
     .run();
 }
 
-fn startup(mut mainboard: ResMut<MainboardLink>) {
+fn startup(
+  mut mainboard: ResMut<MainboardLink>,
+  catalog: Res<SwitchCatalog>,
+  mut commands: Commands,
+) {
   log::info!("😀 Neuron init example started");
   mainboard.enable_watchdog();
+
+  let switch = catalog.by_name.get(Switches::LEFT_FLIPPER_BUTTON).unwrap();
+  commands
+    .entity(*switch)
+    .observe(|trigger: On<SwitchStateChanged>| {
+      log::info!(
+        "🔘 Left flipper button switch changed state: {:?}",
+        trigger.state
+      );
+    });
 }
 
 // example of listening to raw events from the Neuron

@@ -1,4 +1,6 @@
+pub mod configure_driver;
 pub mod configure_hardware;
+pub mod driver_trigger;
 mod error;
 pub mod id;
 pub mod switch_state;

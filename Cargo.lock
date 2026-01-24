@@ -616,6 +616,7 @@ dependencies = [
  "bevy_app",
  "bevy_ecs",
  "bevy_state",
+ "bitflags 2.10.0",
  "env_logger",
  "futures-util",
  "log",

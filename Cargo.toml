@@ -26,6 +26,7 @@ bevy_app = "0.18"
 bevy_ecs = { version = "0.18", features = ["bevy_reflect"] }
 #[cfg(feature = "mainboard")]
 bevy_state = "0.18"
+bitflags = "2.10.0"
 
 # bevy_time = "0.18"
 

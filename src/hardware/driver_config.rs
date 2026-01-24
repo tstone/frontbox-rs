@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use crate::hardware::boards::Pin;
+use crate::Switch;
 use crate::hardware::power::{HighPower, Power};
 
 pub enum DriverConfig {
   Disabled,
   Pulse {
-    switch: Option<Pin>,
+    switch: Option<Switch>,
     invert_switch: Option<bool>,
     initial_pwm_length: Duration,
     initial_pwm_power: Power,
@@ -15,7 +15,7 @@ pub enum DriverConfig {
     rest: Duration,
   },
   PulseHold {
-    switch: Option<Pin>,
+    switch: Option<Switch>,
     invert_switch: Option<bool>,
     initial_pwm_length: Duration,
     initial_pwm_power: Power,
@@ -23,9 +23,9 @@ pub enum DriverConfig {
     rest: Duration,
   },
   PulseHoldCancel {
-    switch: Option<Pin>,
+    switch: Option<Switch>,
     invert_switch: Option<bool>,
-    off_switch: Pin,
+    off_switch: Switch,
     invert_office_switch: bool,
     initial_pwm_length: Duration,
     secondary_pwm_power: Power,
@@ -33,7 +33,7 @@ pub enum DriverConfig {
     rest: Duration,
   },
   LongPulse {
-    switch: Option<Pin>,
+    switch: Option<Switch>,
     invert_switch: Option<bool>,
     initial_pwm_length: Duration,
     initial_pwm_power: Power,
@@ -42,16 +42,16 @@ pub enum DriverConfig {
     rest: Duration,
   },
   FlipperMainDirect {
-    button_switch: Option<Pin>,
+    button_switch: Option<Switch>,
     invert_button_switch: Option<bool>,
-    eos_switch: Pin,
+    eos_switch: Switch,
     initial_pwm_power: HighPower,
     secondary_pwm_power: HighPower,
     max_eos_time: Duration,
     next_flip_refresh: Duration,
   },
   FlipperHoldDirect {
-    button_switch: Option<Pin>,
+    button_switch: Option<Switch>,
     invert_button_switch: Option<bool>,
     driver_on_time: Duration,
     initial_pwm_power: HighPower,
@@ -94,7 +94,7 @@ impl DriverConfig {
 // Builder for Pulse variant
 #[derive(Default)]
 pub struct PulseBuilder {
-  switch: Option<Pin>,
+  switch: Option<Switch>,
   invert_switch: Option<bool>,
   initial_pwm_length: Option<Duration>,
   initial_pwm_power: Option<Power>,
@@ -104,7 +104,7 @@ pub struct PulseBuilder {
 }
 
 impl PulseBuilder {
-  pub fn switch(mut self, switch: Pin) -> Self {
+  pub fn switch(mut self, switch: Switch) -> Self {
     self.switch = Some(switch);
     self
   }
@@ -157,7 +157,7 @@ impl PulseBuilder {
 // Builder for PulseHold variant
 #[derive(Default)]
 pub struct PulseHoldBuilder {
-  switch: Option<Pin>,
+  switch: Option<Switch>,
   invert_switch: Option<bool>,
   initial_pwm_length: Option<Duration>,
   initial_pwm_power: Option<Power>,
@@ -166,7 +166,7 @@ pub struct PulseHoldBuilder {
 }
 
 impl PulseHoldBuilder {
-  pub fn switch(mut self, switch: Pin) -> Self {
+  pub fn switch(mut self, switch: Switch) -> Self {
     self.switch = Some(switch);
     self
   }
@@ -211,9 +211,9 @@ impl PulseHoldBuilder {
 // Builder for PulseHoldCancel variant
 #[derive(Default)]
 pub struct PulseHoldCancelBuilder {
-  switch: Option<Pin>,
+  switch: Option<Switch>,
   invert_switch: Option<bool>,
-  off_switch: Option<Pin>,
+  off_switch: Option<Switch>,
   invert_office_switch: Option<bool>,
   initial_pwm_length: Option<Duration>,
   secondary_pwm_power: Option<Power>,
@@ -222,7 +222,7 @@ pub struct PulseHoldCancelBuilder {
 }
 
 impl PulseHoldCancelBuilder {
-  pub fn switch(mut self, switch: Pin) -> Self {
+  pub fn switch(mut self, switch: Switch) -> Self {
     self.switch = Some(switch);
     self
   }
@@ -232,7 +232,7 @@ impl PulseHoldCancelBuilder {
     self
   }
 
-  pub fn off_switch(mut self, switch: Pin) -> Self {
+  pub fn off_switch(mut self, switch: Switch) -> Self {
     self.off_switch = Some(switch);
     self
   }
@@ -283,7 +283,7 @@ impl PulseHoldCancelBuilder {
 // Builder for LongPulse variant
 #[derive(Default)]
 pub struct LongPulseBuilder {
-  switch: Option<Pin>,
+  switch: Option<Switch>,
   invert_switch: Option<bool>,
   initial_pwm_length: Option<Duration>,
   initial_pwm_power: Option<Power>,
@@ -293,7 +293,7 @@ pub struct LongPulseBuilder {
 }
 
 impl LongPulseBuilder {
-  pub fn switch(mut self, switch: Pin) -> Self {
+  pub fn switch(mut self, switch: Switch) -> Self {
     self.switch = Some(switch);
     self
   }
@@ -346,9 +346,9 @@ impl LongPulseBuilder {
 // Builder for FlipperMainDirect variant
 #[derive(Default)]
 pub struct FlipperMainDirectBuilder {
-  button_switch: Option<Pin>,
+  button_switch: Option<Switch>,
   invert_button_switch: Option<bool>,
-  eos_switch: Option<Pin>,
+  eos_switch: Option<Switch>,
   initial_pwm_power: Option<HighPower>,
   secondary_pwm_power: Option<HighPower>,
   max_eos_time: Option<Duration>,
@@ -356,7 +356,7 @@ pub struct FlipperMainDirectBuilder {
 }
 
 impl FlipperMainDirectBuilder {
-  pub fn button_switch(mut self, switch: Pin) -> Self {
+  pub fn button_switch(mut self, switch: Switch) -> Self {
     self.button_switch = Some(switch);
     self
   }
@@ -366,7 +366,7 @@ impl FlipperMainDirectBuilder {
     self
   }
 
-  pub fn eos_switch(mut self, switch: Pin) -> Self {
+  pub fn eos_switch(mut self, switch: Switch) -> Self {
     self.eos_switch = Some(switch);
     self
   }
@@ -409,7 +409,7 @@ impl FlipperMainDirectBuilder {
 // Builder for FlipperHoldDirect variant
 #[derive(Default)]
 pub struct FlipperHoldDirectBuilder {
-  button_switch: Option<Pin>,
+  button_switch: Option<Switch>,
   invert_button_switch: Option<bool>,
   driver_on_time: Option<Duration>,
   initial_pwm_power: Option<HighPower>,
@@ -417,7 +417,7 @@ pub struct FlipperHoldDirectBuilder {
 }
 
 impl FlipperHoldDirectBuilder {
-  pub fn button_switch(mut self, switch: Pin) -> Self {
+  pub fn button_switch(mut self, switch: Switch) -> Self {
     self.button_switch = Some(switch);
     self
   }
