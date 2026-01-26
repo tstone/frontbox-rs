@@ -1,7 +1,6 @@
 mod fast_codec;
 mod io_network;
-mod mainboard;
-pub mod mainboard_io;
+pub mod mainboard;
 mod serial_interface;
 
 pub use fast_codec::*;

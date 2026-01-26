@@ -38,7 +38,7 @@ pub fn request(driver: DriverPin, config: DriverConfig) -> String {
 mod tests {
   use std::time::Duration;
 
-  use crate::Switch;
+  use crate::SwitchSpec;
   use crate::hardware::power::Power;
 
   use super::*;
@@ -51,7 +51,7 @@ mod tests {
       parent_index: 0,
     };
     let config = DriverConfig::Pulse {
-      switch: Some(Switch {
+      switch: Some(SwitchSpec {
         id: 5,
         name: "Test Switch",
         parent_index: 0,

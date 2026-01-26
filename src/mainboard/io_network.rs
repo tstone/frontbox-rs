@@ -98,8 +98,8 @@ pub struct IoBoardDefinition {
 }
 
 #[derive(Debug, Clone)]
-pub struct IoNetworkResources {
-  pub switches: Vec<Switch>,
+pub struct IoNetwork {
+  pub switches: Vec<SwitchSpec>,
   pub driver_pins: Vec<DriverPin>,
 }
 
@@ -116,7 +116,7 @@ impl IoNetworkSpec {
     self.specs.push(spec);
   }
 
-  pub fn build(self) -> IoNetworkResources {
+  pub fn build(self) -> IoNetwork {
     let mut switches = Vec::new();
     let mut driver_pins = Vec::new();
     let mut switch_offset = 0;
@@ -124,7 +124,7 @@ impl IoNetworkSpec {
 
     for (i, spec) in self.specs.into_iter().enumerate() {
       for (idx, name) in spec.switch_map.iter() {
-        switches.push(Switch {
+        switches.push(SwitchSpec {
           id: switch_offset as usize + *idx as usize,
           name: *name,
           parent_index: i as u8,
@@ -143,7 +143,7 @@ impl IoNetworkSpec {
       driver_offset += spec.driver_count;
     }
 
-    IoNetworkResources {
+    IoNetwork {
       switches,
       driver_pins,
     }
@@ -151,7 +151,7 @@ impl IoNetworkSpec {
 }
 
 #[derive(Debug, Clone, Component)]
-pub struct Switch {
+pub struct SwitchSpec {
   pub id: usize,
   pub name: &'static str,
   pub parent_index: u8,

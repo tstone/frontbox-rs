@@ -1,6 +1,9 @@
-mod frontbox;
+mod modes;
+mod game;
 mod hardware;
+mod machine;
 mod mainboard;
+mod modes_old;
 
 // --- protocol ----
 
@@ -14,9 +17,7 @@ pub use crate::mainboard::*;
 
 pub mod prelude {
   #[cfg(feature = "mainboard")]
-  pub use crate::frontbox::*;
-  #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::mainboard_io::*;
+  pub use crate::mainboard::mainboard::*;
   #[cfg(feature = "mainboard")]
   pub use crate::mainboard::*;
 }

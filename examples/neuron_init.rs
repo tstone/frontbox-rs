@@ -1,6 +1,6 @@
 use bevy_app::{ScheduleRunnerPlugin, prelude::*};
 use bevy_ecs::prelude::*;
-use frontbox::mainboard_io::MainboardIncoming;
+use frontbox::mainboard::MainboardIncoming;
 use frontbox::prelude::*;
 use std::time::Duration;
 
@@ -65,16 +65,6 @@ fn startup(
 ) {
   log::info!("😀 Neuron init example started");
   mainboard.enable_watchdog();
-
-  let switch = catalog.by_name.get(Switches::LEFT_FLIPPER_BUTTON).unwrap();
-  commands
-    .entity(*switch)
-    .observe(|trigger: On<SwitchStateChanged>| {
-      log::info!(
-        "🔘 Left flipper button switch changed state: {:?}",
-        trigger.state
-      );
-    });
 }
 
 // example of listening to raw events from the Neuron

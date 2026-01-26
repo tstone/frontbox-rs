@@ -1,9 +1,12 @@
-use crate::protocol::{FastResponse, FastResponseError};
+use crate::protocol::{FastResponse, FastResponseError, SwitchState};
 
 pub fn open_response(data: &str) -> Result<FastResponse, FastResponseError> {
   // convert hex string into decimal ID
   match usize::from_str_radix(data, 16) {
-    Ok(id) => Ok(FastResponse::SwitchOpened { switch_id: id }),
+    Ok(id) => Ok(FastResponse::Switch {
+      switch_id: id,
+      state: SwitchState::Open,
+    }),
     Err(_) => Err(FastResponseError::InvalidFormat),
   }
 }
@@ -11,7 +14,10 @@ pub fn open_response(data: &str) -> Result<FastResponse, FastResponseError> {
 pub fn closed_response(data: &str) -> Result<FastResponse, FastResponseError> {
   // convert hex string into decimal ID
   match usize::from_str_radix(data, 16) {
-    Ok(id) => Ok(FastResponse::SwitchClosed { switch_id: id }),
+    Ok(id) => Ok(FastResponse::Switch {
+      switch_id: id,
+      state: SwitchState::Closed,
+    }),
     Err(_) => Err(FastResponseError::InvalidFormat),
   }
 }
@@ -23,12 +29,24 @@ mod tests {
   #[test]
   fn test_open_response() {
     let result = open_response("1A");
-    assert_eq!(result, Ok(FastResponse::SwitchOpened { switch_id: 26 }));
+    assert_eq!(
+      result,
+      Ok(FastResponse::Switch {
+        switch_id: 26,
+        state: SwitchState::Open
+      })
+    );
   }
 
   #[test]
   fn test_closed_response() {
     let result = closed_response("FF");
-    assert_eq!(result, Ok(FastResponse::SwitchClosed { switch_id: 255 }));
+    assert_eq!(
+      result,
+      Ok(FastResponse::Switch {
+        switch_id: 255,
+        state: SwitchState::Closed
+      })
+    );
   }
 }

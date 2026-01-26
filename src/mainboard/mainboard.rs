@@ -1,56 +1,180 @@
-use crate::mainboard_io::{MainboardCommand, MainboardIncoming};
-use crate::prelude::{BootConfig, MainboardIO};
-use tokio::sync::broadcast;
-use tokio::sync::mpsc;
+use std::time::Duration;
 
-#[derive(Debug, Clone)]
+use crate::game::FastChannel;
+use crate::mainboard::serial_interface::SerialInterface;
+use crate::protocol::configure_hardware::{self, SwitchReporting};
+use crate::protocol::{FastResponse, id, watchdog};
+use tokio::sync::mpsc;
+use tokio::time::sleep;
+
+/// Handles serial
 pub struct Mainboard {
-  command_tx: mpsc::Sender<MainboardCommand>,
-  event_tx: broadcast::Sender<MainboardIncoming>,
+  commands_incoming: mpsc::Receiver<MainboardCommand>,
+  events_outgoing: mpsc::Sender<MainboardIncoming>,
+  io_port: SerialInterface,
+  exp_port: SerialInterface,
+  enable_watchdog: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum FastChannel {
-  Io,
-  Expansion,
+pub struct MainboardIncoming {
+  pub data: FastResponse,
+  pub channel: FastChannel,
 }
 
 impl Mainboard {
-  pub async fn boot(config: BootConfig) -> Self {
-    let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(128);
-    let (event_tx, _) = broadcast::channel::<MainboardIncoming>(128);
+  pub async fn boot(
+    config: BootConfig,
+    commands_incoming: mpsc::Receiver<MainboardCommand>,
+    events_outgoing: mpsc::Sender<MainboardIncoming>,
+  ) -> Self {
+    // open IO port
+    let mut io_port = SerialInterface::new(config.io_net_port_path)
+      .await
+      .expect("Failed to open IO NET port");
 
-    // TODO: should event_rx be replaced by Tokio broadcast event bus?
+    log::info!("🥾 Opened IO NET port at {}", config.io_net_port_path);
 
-    let mut mainboard = MainboardIO::boot(config, command_rx, event_tx.clone()).await;
+    // open EXP port
+    let exp_port = SerialInterface::new(config.exp_port_path)
+      .await
+      .expect("Failed to open EXP port");
+    log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
-    // start serial communication in separate thread
-    std::thread::spawn(move || {
-      let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    // wait for mainboard ID response (boot cycle complete)
+    io_port
+      .poll_for_response(
+        &id::request(),
+        Duration::from_millis(250),
+        |msg| match msg {
+          FastResponse::IdResponse {
+            processor,
+            product_number,
+            firmware_version,
+          } => {
+            log::info!(
+              "🥾 Connected to mainboard {} {} with firmware: {}",
+              processor,
+              product_number,
+              firmware_version
+            );
+            true
+          }
+          _ => false,
+        },
+      )
+      .await;
 
-      runtime.block_on(async move {
-        mainboard.run().await;
-      });
-    });
+    // configure hardware
+    let ch = configure_hardware::request(
+      config.platform.clone() as u16,
+      Some(SwitchReporting::Verbose),
+    );
+    log::info!(
+      "🥾 Configuring mainboard hardware as platform {:?}",
+      config.platform,
+    );
+    io_port.send(ch.as_bytes()).await;
+
+    // verify watchdog is ready
+    io_port
+      .poll_for_response(
+        watchdog::set(Duration::from_millis(1250)).as_bytes(),
+        Duration::from_millis(250),
+        |msg| !matches!(msg, FastResponse::Failed(_)),
+      )
+      .await;
+    log::info!("🕙 Watchdog timer started");
 
     Mainboard {
-      command_tx,
-      event_tx,
+      enable_watchdog: false,
+      commands_incoming,
+      events_outgoing,
+      io_port,
+      exp_port,
     }
   }
 
-  pub fn send(&mut self, command: MainboardCommand) {
-    self.command_tx.try_send(command).unwrap();
-  }
+  pub async fn run(&mut self) {
+    loop {
+      tokio::select! {
+          Some(msg) = self.commands_incoming.recv() => {
+            match msg {
+              MainboardCommand::Watchdog(enable) => {
+                self.enable_watchdog = enable;
+                log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
+              },
+              MainboardCommand::SendIo(cmd) => {
+                self.io_port.send(cmd.as_bytes()).await;
+                log::debug!("🖥️ -> 👾 : {}", cmd);
+              },
+              MainboardCommand::SendExp(cmd) => {
+                self.exp_port.send(cmd.as_bytes()).await;
+                log::debug!("🖥️ -> 👾 : {}", cmd);
+              }
+            }
+          }
 
-  pub fn subscribe(&self) -> broadcast::Receiver<MainboardIncoming> {
-    self.event_tx.subscribe()
-  }
+          // watchdog
+          _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
+            log::trace!("🖥️ -> 👾 : Watchdog tick");
+            self.io_port.send(watchdog::set(Duration::from_millis(1250)).as_bytes()).await;
+          }
 
-  pub fn tx(&self) -> mpsc::Sender<MainboardCommand> {
-    self.command_tx.clone()
+          // route incoming messages
+          result = self.io_port.read() => {
+            if let Some(Ok(msg)) = result {
+              match msg.clone() {
+                FastResponse::Processed(cmd) => {
+                  log::trace!("👾 -> 🖥️ : Processed {} ", cmd);
+                }
+                FastResponse::Failed(cmd) => {
+                  log::warn!("👾 -> 🖥️ : ⚠️ Failed {}", cmd);
+                }
+                FastResponse::Invalid(cmd) => {
+                  log::warn!("👾 -> 🖥️ : ⚠️ Invalid {}", cmd);
+                }
+                _ => {
+                  log::debug!("👾 -> 🖥️: {:?}", msg);
+                }
+              }
+
+              let event = MainboardIncoming {
+                data: msg,
+                channel: FastChannel::Io,
+              };
+              match self.events_outgoing.try_send(event) {
+                Ok(_) => {}
+                Err(e) => {
+                  log::error!("Failed to send mainboard event: {}", e);
+                }
+              }
+            }
+          }
+      }
+    }
   }
+}
+
+#[derive(Debug, Clone)]
+pub struct BootConfig {
+  pub io_net_port_path: &'static str,
+  pub exp_port_path: &'static str,
+  pub platform: FastPlatform,
+  pub watchdog_interval: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub enum FastPlatform {
+  Neuron = 2000,
+  RetroSystem11 = 11,
+  RetroWPC89 = 89,
+  RetroWPC95 = 95,
+}
+
+#[derive(Debug, Clone)]
+pub enum MainboardCommand {
+  Watchdog(bool),
+  SendIo(String),
+  SendExp(String),
 }

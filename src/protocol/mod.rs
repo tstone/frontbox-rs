@@ -23,16 +23,20 @@ pub enum FastResponse {
     firmware_version: String,
   },
 
-  SwitchOpened {
+  Switch {
     switch_id: usize,
-  },
-  SwitchClosed {
-    switch_id: usize,
+    state: SwitchState,
   },
 
   WatchdogDisabled,
   WatchdogExpired,
   WatchdogRemaining(Duration),
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum SwitchState {
+  Open,
+  Closed,
 }
 
 pub fn parse(line: String) -> Option<FastResponse> {
