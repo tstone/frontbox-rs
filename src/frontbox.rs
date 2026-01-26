@@ -4,9 +4,10 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use tokio::sync::{broadcast, mpsc};
 
+use crate::hardware::driver_config::DriverConfig;
 use crate::mainboard_io::{MainboardCommand, MainboardIncoming};
 use crate::prelude::*;
-use crate::protocol::FastResponse;
+use crate::protocol::{FastResponse, configure_driver, watchdog};
 
 pub struct Frontbox {
   pub mainboard: Mainboard,
@@ -92,6 +93,16 @@ impl MainboardLink {
 
   pub fn enable_watchdog(&mut self) {
     self.send(MainboardCommand::Watchdog(true));
+  }
+
+  pub fn disable_watchdog(&mut self) {
+    self.send(MainboardCommand::SendIo(watchdog::end()));
+    self.send(MainboardCommand::Watchdog(false));
+  }
+
+  pub fn configure_driver(&mut self, driver: DriverPin, config: DriverConfig) {
+    let cmd = configure_driver::request(driver, config);
+    self.send(MainboardCommand::SendIo(cmd));
   }
 }
 

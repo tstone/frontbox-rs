@@ -1,6 +1,5 @@
 use crate::mainboard_io::{MainboardCommand, MainboardIncoming};
 use crate::prelude::{BootConfig, MainboardIO};
-use bevy_ecs::resource::Resource;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 

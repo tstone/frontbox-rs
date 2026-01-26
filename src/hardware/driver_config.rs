@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::Switch;
 use crate::hardware::power::Power;
 
+#[derive(Debug, Clone)]
 pub enum DriverConfig {
   Disabled,
   Pulse {
@@ -60,32 +61,26 @@ pub enum DriverConfig {
 }
 
 impl DriverConfig {
-  /// Create a builder for a Pulse driver config
   pub fn pulse() -> PulseBuilder {
     PulseBuilder::default()
   }
 
-  /// Create a builder for a PulseHold driver config
   pub fn pulse_hold() -> PulseHoldBuilder {
     PulseHoldBuilder::default()
   }
 
-  /// Create a builder for a PulseHoldCancel driver config
   pub fn pulse_hold_cancel() -> PulseHoldCancelBuilder {
     PulseHoldCancelBuilder::default()
   }
 
-  /// Create a builder for a LongPulse driver config
   pub fn long_pulse() -> LongPulseBuilder {
     LongPulseBuilder::default()
   }
 
-  /// Create a builder for a FlipperMainDirect driver config
   pub fn flipper_main_direct() -> FlipperMainDirectBuilder {
     FlipperMainDirectBuilder::default()
   }
 
-  /// Create a builder for a FlipperHoldDirect driver config
   pub fn flipper_hold_direct() -> FlipperHoldDirectBuilder {
     FlipperHoldDirectBuilder::default()
   }

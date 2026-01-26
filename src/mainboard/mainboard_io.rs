@@ -1,9 +1,10 @@
 use std::time::Duration;
 
-use crate::FastChannel;
+use crate::hardware::driver_config::DriverConfig;
 use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
 use crate::protocol::{FastResponse, id, watchdog};
+use crate::{DriverPin, FastChannel};
 use bevy_ecs::event::Event;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::sleep;
