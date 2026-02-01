@@ -20,12 +20,6 @@ tokio-serial = "5.4.4"
 #[cfg(feature = "machine")]
 tokio-util = { version = "0.7.18", features = ["codec"] }
 
-#[cfg(feature = "machine")]
-bevy_app = "0.18"
-#[cfg(feature = "machine")]
-bevy_ecs = { version = "0.18", features = ["bevy_reflect"] }
-#[cfg(feature = "machine")]
-bevy_state = "0.18"
 bitflags = "2.10.0"
 anymap2 = "0.13.0"
 

@@ -1,8 +1,6 @@
 use core::panic;
 use std::collections::HashMap;
 
-use bevy_ecs::prelude::*;
-
 #[derive(Debug, Clone, Default)]
 pub struct IoBoardSpec {
   pub switch_count: u32,
@@ -86,7 +84,7 @@ impl FastIoBoards {
   }
 }
 
-#[derive(Component, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct IoBoardDefinition {
   pub index: u8,
   pub switch_offset: u32,
@@ -150,14 +148,14 @@ impl IoNetworkSpec {
   }
 }
 
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone)]
 pub struct SwitchSpec {
   pub id: usize,
   pub name: &'static str,
   pub parent_index: u8,
 }
 
-#[derive(Debug, Clone, Component)]
+#[derive(Debug, Clone)]
 pub struct DriverPin {
   pub id: usize,
   pub name: &'static str,
