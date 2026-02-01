@@ -23,6 +23,7 @@ tokio-util = { version = "0.7.18", features = ["codec"] }
 bitflags = "2.10.0"
 anymap2 = "0.13.0"
 crossterm = { version = "0.29", features = ["event-stream"] }
+dyn-clone = "1.0.20"
 
 # bevy_time = "0.18"
 

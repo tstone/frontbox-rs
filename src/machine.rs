@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::mainboard::{MainboardCommand, MainboardIncoming};
+use crate::modes::game_context::GameCommand;
 use crate::modes::machine_context::MachineCommand;
 use crate::modes::prelude::*;
 use crate::protocol::{FastResponse, SwitchState};
@@ -15,6 +16,7 @@ use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
 pub type MachineFrame = Vec<Box<dyn MachineMode>>;
+pub type GameFrame = Vec<Box<dyn GameMode>>;
 
 #[derive(Debug)]
 pub struct Machine {
@@ -23,8 +25,11 @@ pub struct Machine {
   switches: HashMap<usize, Switch>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   machine_stack: Vec<MachineFrame>,
+  init_game_stack: Vec<GameFrame>,
+  current_game_stack: Vec<Vec<GameFrame>>,
   machine_store: Store,
   player_stores: Vec<Store>,
+  player_points: Vec<u32>,
   game: GameState,
 }
 
@@ -71,11 +76,19 @@ impl Machine {
       player_stores: Vec::new(),
       machine_store: Store::new(),
       game: GameState::default(),
+      init_game_stack: Vec::new(),
+      current_game_stack: Vec::new(),
+      player_points: Vec::new(),
     }
   }
 
   pub fn add_machine_frame(&mut self, frame: MachineFrame) -> &mut Self {
     self.machine_stack.push(frame);
+    self
+  }
+
+  pub fn add_game_frame(&mut self, frame: GameFrame) -> &mut Self {
+    self.init_game_stack.push(frame);
     self
   }
 
@@ -150,11 +163,13 @@ impl Machine {
 
   fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
     if let Some(switch) = self.switches.get(&switch_id) {
-      let mut commands = Vec::new();
-
+      let mut machine_commands = Vec::new();
+      let mut game_commands = Vec::new();
       let activated = matches!(state, SwitchState::Closed);
-      let current_frame = self.machine_stack.last_mut().unwrap();
-      for mode in current_frame {
+
+      // Machine stack
+      let current_machine_frame = self.machine_stack.last_mut().unwrap();
+      for mode in current_machine_frame {
         if mode.is_listening() {
           let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
           if activated {
@@ -162,12 +177,34 @@ impl Machine {
           } else {
             mode.event_switch_opened(switch, &mut ctx);
           }
-          commands.extend(ctx.take_commands());
+          machine_commands.extend(ctx.take_commands());
         }
       }
 
-      if commands.len() > 0 {
-        self.process_commands(commands);
+      // Game stack
+      if self.game.is_started() {
+        let current_player = self.game.current_player().unwrap();
+        let player_store = &mut self.player_stores[current_player as usize];
+        let player_game_stack = &mut self.current_game_stack[current_player as usize];
+        let current_game_frame = player_game_stack.last_mut().unwrap();
+        for mode in current_game_frame {
+          if mode.is_listening() {
+            let mut ctx = GameContext::new(&self.game, &mut self.machine_store, player_store);
+            if activated {
+              mode.event_switch_closed(switch, &mut ctx);
+            } else {
+              mode.event_switch_opened(switch, &mut ctx);
+            }
+            game_commands.extend(ctx.take_commands());
+          }
+        }
+      }
+
+      if machine_commands.len() > 0 {
+        self.process_machine_commands(machine_commands);
+      }
+      if game_commands.len() > 0 {
+        self.process_game_commands(game_commands);
       }
     } else {
       log::warn!(
@@ -179,7 +216,7 @@ impl Machine {
     }
   }
 
-  fn process_commands(&mut self, commands: Vec<MachineCommand>) {
+  fn process_machine_commands(&mut self, commands: Vec<MachineCommand>) {
     let old_game_state = self.game.clone();
     let mut game_state_changed = false;
 
@@ -187,21 +224,12 @@ impl Machine {
       match command {
         MachineCommand::StartGame => {
           log::info!("Starting new game");
-          self.player_stores.clear();
-          self.player_stores.push(Store::new());
-          self.game = GameState {
-            started: true,
-            player_count: 1,
-            current_player: Some(0),
-            current_ball: Some(0),
-          };
-          self.enable_watchdog();
+          self.start_game();
           game_state_changed = true;
         }
         MachineCommand::AddPlayer => {
           log::info!("Adding player to game");
-          self.player_stores.push(Store::new());
-          self.game.player_count += 1;
+          self.add_player();
           game_state_changed = true;
         }
         MachineCommand::ActivateHighVoltage => {
@@ -222,6 +250,59 @@ impl Machine {
     // if game state changed, process mode events
   }
 
+  fn process_game_commands(&mut self, commands: Vec<GameCommand>) {
+    for command in commands {
+      match command {
+        GameCommand::AddPoints(points) => {
+          let current_player = self.game.current_player().unwrap();
+          self.player_points[current_player as usize] += points;
+          log::debug!(
+            "Added {} points to player {}. Total points: {}",
+            points,
+            current_player + 1,
+            self.player_points[current_player as usize]
+          );
+        }
+        GameCommand::TriggerDriver => {
+          log::info!("Triggering driver (TODO)");
+        }
+        _ => todo!(),
+      }
+    }
+  }
+
+  fn start_game(&mut self) {
+    log::info!("Starting new game");
+    self.player_points.clear();
+    self.player_points.push(0);
+
+    self.player_stores.clear();
+    self.player_stores.push(Store::new());
+
+    self.current_game_stack.clear();
+    self
+      .current_game_stack
+      .push(self.clone_game_stack(&self.init_game_stack));
+
+    self.game = GameState {
+      started: true,
+      player_count: 1,
+      current_player: Some(0),
+      current_ball: Some(0),
+    };
+    self.enable_watchdog();
+  }
+
+  fn add_player(&mut self) {
+    log::info!("Adding player to game");
+    self.player_stores.push(Store::new());
+    self.player_points.push(0);
+    self
+      .current_game_stack
+      .push(self.clone_game_stack(&self.init_game_stack));
+    self.game.player_count += 1;
+  }
+
   fn enable_watchdog(&mut self) {
     log::info!("Enabling watchdog");
     let _ = self.command_tx.try_send(MainboardCommand::Watchdog(true));
@@ -230,6 +311,20 @@ impl Machine {
   fn disable_watchdog(&mut self) {
     log::info!("Disabling watchdog");
     let _ = self.command_tx.try_send(MainboardCommand::Watchdog(false));
+  }
+
+  /// Deep clones a game stack by cloning each frame and each mode within the frame
+  /// This ensures that each player has their own independent instances of each game mode
+  fn clone_game_stack(&self, stack: &[GameFrame]) -> Vec<GameFrame> {
+    stack
+      .iter()
+      .map(|frame| {
+        frame
+          .iter()
+          .map(|mode| dyn_clone::clone_box(&**mode))
+          .collect()
+      })
+      .collect()
   }
 }
 
