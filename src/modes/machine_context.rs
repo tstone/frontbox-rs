@@ -1,3 +1,4 @@
+use crate::hardware::driver_config::DriverConfig;
 use crate::modes::game_state::GameState;
 use crate::store::Store;
 
@@ -49,6 +50,24 @@ impl<'a> MachineContext<'a> {
     self.commands.push(MachineCommand::DeactivateHighVoltage);
   }
 
+  pub fn configure_driver(&mut self, driver: &'static str, config: DriverConfig) {
+    self
+      .commands
+      .push(MachineCommand::ConfigureDriver(driver, config));
+  }
+
+  pub fn activate_driver(&mut self, driver: &'static str) {
+    self.commands.push(MachineCommand::ActivateDriver(driver));
+  }
+
+  pub fn deactivate_driver(&mut self, driver: &'static str) {
+    self.commands.push(MachineCommand::DeactivateDriver(driver));
+  }
+
+  pub fn trigger_driver(&mut self, driver: &'static str) {
+    self.commands.push(MachineCommand::TriggerDriver(driver));
+  }
+
   pub(crate) fn take_commands(&mut self) -> Vec<MachineCommand> {
     std::mem::take(&mut self.commands)
   }
@@ -60,4 +79,8 @@ pub enum MachineCommand {
   AddPlayer,
   ActivateHighVoltage,
   DeactivateHighVoltage,
+  ConfigureDriver(&'static str, DriverConfig),
+  ActivateDriver(&'static str),
+  DeactivateDriver(&'static str),
+  TriggerDriver(&'static str),
 }

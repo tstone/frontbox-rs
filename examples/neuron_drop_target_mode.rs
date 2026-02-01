@@ -10,6 +10,7 @@ pub mod switches {
 
 pub mod drivers {
   pub const START_BUTTON_LAMP: &str = "start_button_lamp";
+  pub const LOWER_DROP_TARGET_COIL: &str = "lower_drop_target_coil";
 }
 
 #[tokio::main]
@@ -97,7 +98,7 @@ impl GameMode for DropTargetDownUp {
 
     if self.target1_down && self.target2_down && self.target3_down {
       ctx.add_points(1000);
-      ctx.trigger_driver(); // TODO: pin
+      ctx.trigger_driver(drivers::LOWER_DROP_TARGET_COIL);
     }
   }
 

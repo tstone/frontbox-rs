@@ -4,7 +4,7 @@ use crate::protocol::driver_trigger::DriverTriggerBuilder;
 
 /// Configure a driver in Fast IO boards (DL)
 /// https://fastpinball.com/fast-serial-protocol/net/dl/
-pub fn request(driver: DriverPin, config: DriverConfig) -> String {
+pub fn request(driver: &DriverPin, config: DriverConfig) -> String {
   match config {
     DriverConfig::Disabled => format!("DL:{:X},,,0\r", driver.id),
     DriverConfig::Pulse {
@@ -63,7 +63,7 @@ mod tests {
       secondary_pwm_power: Power::percent(50),
       rest: Duration::from_millis(500),
     };
-    let request_str = request(driver, config);
+    let request_str = request(&driver, config);
     assert_eq!(request_str, "DL:A,19,5,10,64,FF,32,7F,1F4\r");
   }
 }

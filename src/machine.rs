@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use crate::hardware::driver_config::DriverConfig;
 use crate::mainboard::{MainboardCommand, MainboardIncoming};
 use crate::modes::game_context::GameCommand;
 use crate::modes::machine_context::MachineCommand;
 use crate::modes::prelude::*;
-use crate::protocol::{FastResponse, SwitchState};
+use crate::protocol::{self, FastResponse, SwitchState};
 use crate::store::Store;
-use crate::{IoNetwork, Mainboard, prelude::*};
+use crate::{DriverPin, IoNetwork, Mainboard, prelude::*};
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -23,6 +24,7 @@ pub struct Machine {
   command_tx: mpsc::Sender<MainboardCommand>,
   event_rx: mpsc::Receiver<MainboardIncoming>,
   switches: HashMap<usize, Switch>,
+  driver_lookup: HashMap<&'static str, DriverPin>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   machine_stack: Vec<MachineFrame>,
   init_game_stack: Vec<GameFrame>,
@@ -67,10 +69,16 @@ impl Machine {
       );
     }
 
+    let mut drivers = HashMap::new();
+    for driver in io_network.driver_pins {
+      drivers.insert(driver.name, driver);
+    }
+
     Self {
       command_tx,
       event_rx,
       switches,
+      driver_lookup: drivers,
       keyboard_switch_map: HashMap::new(),
       machine_stack: Vec::new(),
       player_stores: Vec::new(),
@@ -195,7 +203,8 @@ impl Machine {
             } else {
               mode.event_switch_opened(switch, &mut ctx);
             }
-            game_commands.extend(ctx.take_commands());
+            machine_commands.extend(ctx.take_machine_commands());
+            game_commands.extend(ctx.take_game_commands());
           }
         }
       }
@@ -223,12 +232,10 @@ impl Machine {
     for command in commands {
       match command {
         MachineCommand::StartGame => {
-          log::info!("Starting new game");
           self.start_game();
           game_state_changed = true;
         }
         MachineCommand::AddPlayer => {
-          log::info!("Adding player to game");
           self.add_player();
           game_state_changed = true;
         }
@@ -237,6 +244,18 @@ impl Machine {
         }
         MachineCommand::DeactivateHighVoltage => {
           self.disable_watchdog();
+        }
+        MachineCommand::ActivateDriver(driver) => {
+          todo!();
+        }
+        MachineCommand::DeactivateDriver(driver) => {
+          todo!();
+        }
+        MachineCommand::ConfigureDriver(driver, config) => {
+          self.configure_driver(driver, config);
+        }
+        MachineCommand::TriggerDriver(driver) => {
+          todo!();
         }
       }
     }
@@ -263,10 +282,6 @@ impl Machine {
             self.player_points[current_player as usize]
           );
         }
-        GameCommand::TriggerDriver => {
-          log::info!("Triggering driver (TODO)");
-        }
-        _ => todo!(),
       }
     }
   }
@@ -311,6 +326,20 @@ impl Machine {
   fn disable_watchdog(&mut self) {
     log::info!("Disabling watchdog");
     let _ = self.command_tx.try_send(MainboardCommand::Watchdog(false));
+  }
+
+  fn configure_driver(&mut self, driver: &'static str, config: DriverConfig) {
+    match self.driver_lookup.get(driver) {
+      Some(driver) => {
+        log::info!("Configuring driver {}", driver.name);
+        let cmd = protocol::configure_driver::request(driver, config);
+        let _ = self.command_tx.try_send(MainboardCommand::SendIo(cmd));
+      }
+      None => {
+        log::error!("Attempted to configure unknown driver: {}", driver);
+        return;
+      }
+    }
   }
 
   /// Deep clones a game stack by cloning each frame and each mode within the frame

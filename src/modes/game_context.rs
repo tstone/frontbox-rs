@@ -1,11 +1,13 @@
+use crate::hardware::driver_config::DriverConfig;
 use crate::modes::game_state::GameState;
+use crate::modes::machine_context::MachineCommand;
 use crate::store::Store;
 
-// TODO: rename to PlayerContext?
 #[derive(Debug)]
 pub struct GameContext<'a> {
   game: &'a GameState,
-  commands: Vec<GameCommand>,
+  machine_commands: Vec<MachineCommand>,
+  game_commands: Vec<GameCommand>,
   machine_store: &'a mut Store,
   player_store: &'a mut Store,
 }
@@ -18,7 +20,8 @@ impl<'a> GameContext<'a> {
   ) -> Self {
     Self {
       game,
-      commands: Vec::new(),
+      machine_commands: Vec::new(),
+      game_commands: Vec::new(),
       machine_store,
       player_store,
     }
@@ -52,39 +55,44 @@ impl<'a> GameContext<'a> {
     self.player_store.insert_state::<T>(value);
   }
 
-  pub fn configure_driver(&mut self) {
-    self.commands.push(GameCommand::ConfigureDriver);
+  pub fn configure_driver(&mut self, driver: &'static str, config: DriverConfig) {
+    self
+      .machine_commands
+      .push(MachineCommand::ConfigureDriver(driver, config));
   }
 
-  pub fn activate_driver(&mut self) {
-    self.commands.push(GameCommand::ActivateDriver);
+  pub fn activate_driver(&mut self, driver: &'static str) {
+    self
+      .machine_commands
+      .push(MachineCommand::ActivateDriver(driver));
   }
 
-  pub fn deactivate_driver(&mut self) {
-    self.commands.push(GameCommand::DeactivateDriver);
+  pub fn deactivate_driver(&mut self, driver: &'static str) {
+    self
+      .machine_commands
+      .push(MachineCommand::DeactivateDriver(driver));
   }
 
-  pub fn trigger_driver(&mut self) {
-    self.commands.push(GameCommand::TriggerDriver);
+  pub fn trigger_driver(&mut self, driver: &'static str) {
+    self
+      .machine_commands
+      .push(MachineCommand::TriggerDriver(driver));
   }
 
   pub fn add_points(&mut self, points: u32) {
-    self.commands.push(GameCommand::AddPoints(points));
+    self.game_commands.push(GameCommand::AddPoints(points));
   }
 
-  // take_machine_commands
-  // take_game_commands (take_player_commands?)
-  pub(crate) fn take_commands(&mut self) -> Vec<GameCommand> {
-    std::mem::take(&mut self.commands)
+  pub(crate) fn take_machine_commands(&mut self) -> Vec<MachineCommand> {
+    std::mem::take(&mut self.machine_commands)
+  }
+
+  pub(crate) fn take_game_commands(&mut self) -> Vec<GameCommand> {
+    std::mem::take(&mut self.game_commands)
   }
 }
 
-// TODO: the driver commands belong on MachineCommand
 #[derive(Debug, Clone)]
 pub enum GameCommand {
-  ConfigureDriver,
-  ActivateDriver,
-  DeactivateDriver,
-  TriggerDriver,
   AddPoints(u32),
 }
