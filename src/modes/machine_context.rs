@@ -1,25 +1,36 @@
 use crate::hardware::driver_config::DriverConfig;
 use crate::modes::game_state::GameState;
 use crate::store::Store;
+use crate::switch_context::SwitchContext;
 
 #[derive(Debug)]
 pub struct MachineContext<'a> {
   game: &'a GameState,
   commands: Vec<MachineCommand>,
   store: &'a mut Store,
+  switches: &'a SwitchContext,
 }
 
 impl<'a> MachineContext<'a> {
-  pub fn new(game: &'a GameState, store: &'a mut Store) -> Self {
+  pub fn new(game: &'a GameState, store: &'a mut Store, switches: &'a SwitchContext) -> Self {
     Self {
       game,
       commands: Vec::new(),
       store,
+      switches,
     }
   }
 
   pub fn game(&self) -> &GameState {
     self.game
+  }
+
+  pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
+    self.switches.is_closed_by_name(switch_name)
+  }
+
+  pub fn is_switch_open(&self, switch_name: &'static str) -> Option<bool> {
+    self.switches.is_open_by_name(switch_name)
   }
 
   pub fn store_get<T: Default + 'static>(&mut self) -> &T {

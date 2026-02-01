@@ -8,6 +8,7 @@ use crate::modes::machine_context::MachineCommand;
 use crate::modes::prelude::*;
 use crate::protocol::{self, FastResponse, SwitchState};
 use crate::store::Store;
+use crate::switch_context::SwitchContext;
 use crate::{DriverPin, IoNetwork, Mainboard, prelude::*};
 use crossterm::{
   event::{Event, EventStream, KeyCode},
@@ -23,7 +24,7 @@ pub type GameFrame = Vec<Box<dyn GameMode>>;
 pub struct Machine {
   command_tx: mpsc::Sender<MainboardCommand>,
   event_rx: mpsc::Receiver<MainboardIncoming>,
-  switches: HashMap<usize, Switch>,
+  switches: SwitchContext,
   driver_lookup: HashMap<&'static str, DriverPin>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   machine_stack: Vec<MachineFrame>,
@@ -56,18 +57,7 @@ impl Machine {
 
     // TODO: define LEDs
     // TODO: read state of all switches from mainboard and setup starting state
-
-    let mut switches = HashMap::new();
-    for switch in io_network.switches {
-      // TODO: send switch configuration (debounce, invert, etc.)
-      switches.insert(
-        switch.id,
-        Switch {
-          id: switch.id,
-          name: switch.name,
-        },
-      );
-    }
+    let switches = SwitchContext::new(io_network.switches);
 
     let mut drivers = HashMap::new();
     for driver in io_network.driver_pins {
@@ -101,13 +91,8 @@ impl Machine {
   }
 
   pub fn add_keyboard_mapping(&mut self, key: KeyCode, switch_name: &'static str) -> &mut Self {
-    let id = self
-      .switches
-      .values()
-      .find(|s| s.name == switch_name)
-      .map(|s| s.id)
-      .unwrap();
-    self.keyboard_switch_map.insert(key, id);
+    let switch = self.switches.switch_by_name(switch_name).unwrap();
+    self.keyboard_switch_map.insert(key, switch.id);
     self
   }
 
@@ -170,7 +155,9 @@ impl Machine {
   }
 
   fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    if let Some(switch) = self.switches.get(&switch_id) {
+    if let Some(switch) = self.switches.switch_by_id(&switch_id).cloned() {
+      self.switches.update_switch_state(switch_id, state);
+
       let mut machine_commands = Vec::new();
       let mut game_commands = Vec::new();
       let activated = matches!(state, SwitchState::Closed);
@@ -179,11 +166,11 @@ impl Machine {
       let current_machine_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_machine_frame {
         if mode.is_listening() {
-          let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
+          let mut ctx = MachineContext::new(&self.game, &mut self.machine_store, &self.switches);
           if activated {
-            mode.event_switch_closed(switch, &mut ctx);
+            mode.event_switch_closed(&switch, &mut ctx);
           } else {
-            mode.event_switch_opened(switch, &mut ctx);
+            mode.event_switch_opened(&switch, &mut ctx);
           }
           machine_commands.extend(ctx.take_commands());
         }
@@ -197,11 +184,16 @@ impl Machine {
         let current_game_frame = player_game_stack.last_mut().unwrap();
         for mode in current_game_frame {
           if mode.is_listening() {
-            let mut ctx = GameContext::new(&self.game, &mut self.machine_store, player_store);
+            let mut ctx = GameContext::new(
+              &self.game,
+              &mut self.machine_store,
+              player_store,
+              &self.switches,
+            );
             if activated {
-              mode.event_switch_closed(switch, &mut ctx);
+              mode.event_switch_closed(&switch, &mut ctx);
             } else {
-              mode.event_switch_opened(switch, &mut ctx);
+              mode.event_switch_opened(&switch, &mut ctx);
             }
             machine_commands.extend(ctx.take_machine_commands());
             game_commands.extend(ctx.take_game_commands());
@@ -263,7 +255,16 @@ impl Machine {
     if game_state_changed {
       let current_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_frame {
-        mode.on_game_state_changed(&old_game_state, &self.game);
+        mode.on_game_state_changed(&old_game_state, &self.game, &self.switches);
+      }
+
+      if self.game.is_started() {
+        let current_player = self.game.current_player().unwrap();
+        let player_game_stack = &mut self.current_game_stack[current_player as usize];
+        let current_game_frame = player_game_stack.last_mut().unwrap();
+        for mode in current_game_frame {
+          mode.on_game_state_changed(&old_game_state, &self.game, &self.switches);
+        }
       }
     }
     // if game state changed, process mode events
@@ -305,6 +306,7 @@ impl Machine {
       current_player: Some(0),
       current_ball: Some(0),
     };
+
     self.enable_watchdog();
   }
 

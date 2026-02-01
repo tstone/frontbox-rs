@@ -52,7 +52,11 @@ async fn main() {
     (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
     (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
   ])
-  .add_game_frame(vec![DropTargetDownUp::new()])
+  .add_game_frame(vec![DropTargetDownUp::new([
+    switches::LOWER_DROP_TARGET1,
+    switches::LOWER_DROP_TARGET2,
+    switches::LOWER_DROP_TARGET3,
+  ])])
   .run()
   .await;
 }
@@ -60,60 +64,30 @@ async fn main() {
 /// Example game mode mode where all three drop targets must be down then the targets are reset
 #[derive(Debug, Clone)]
 struct DropTargetDownUp {
-  target1_down: bool,
-  target2_down: bool,
-  target3_down: bool,
+  target_switches: [&'static str; 3],
 }
 
 impl DropTargetDownUp {
-  pub fn new() -> Box<Self> {
-    Box::new(Self {
-      target1_down: false,
-      target2_down: false,
-      target3_down: false,
-    })
+  pub fn new(target_switches: [&'static str; 3]) -> Box<Self> {
+    Box::new(Self { target_switches })
   }
 }
 
 impl GameMode for DropTargetDownUp {
-  // Configure+activate driver
-  // TODO: fn on_game_start(&mut self, ctx: &mut GameContext) { ... }
-
   fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut GameContext) {
-    match switch.name {
-      switches::LOWER_DROP_TARGET1 => {
-        self.target1_down = true;
-        ctx.add_points(100);
-      }
-      switches::LOWER_DROP_TARGET2 => {
-        self.target2_down = true;
-        ctx.add_points(100);
-      }
-      switches::LOWER_DROP_TARGET3 => {
-        self.target3_down = true;
-        ctx.add_points(100);
-      }
-      _ => {}
-    }
+    if self.target_switches.contains(&switch.name) {
+      // each target down gets points
+      ctx.add_points(100);
 
-    if self.target1_down && self.target2_down && self.target3_down {
-      ctx.add_points(1000);
-      ctx.trigger_driver(drivers::LOWER_DROP_TARGET_COIL);
-    }
-  }
+      let all_down = self
+        .target_switches
+        .iter()
+        .all(|&target| ctx.is_switch_closed(target).unwrap_or(false));
 
-  fn event_switch_opened(&mut self, switch: &Switch, _ctx: &mut GameContext) {
-    match switch.name {
-      switches::LOWER_DROP_TARGET1 => {
-        self.target1_down = false;
+      if all_down {
+        ctx.add_points(1000);
+        ctx.trigger_driver(drivers::LOWER_DROP_TARGET_COIL);
       }
-      switches::LOWER_DROP_TARGET2 => {
-        self.target2_down = false;
-      }
-      switches::LOWER_DROP_TARGET3 => {
-        self.target3_down = false;
-      }
-      _ => {}
     }
   }
 }

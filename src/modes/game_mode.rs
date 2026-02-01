@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use crate::machine::Switch;
 use crate::modes::game_context::GameContext;
 use crate::modes::game_state::GameState;
+use crate::switch_context::SwitchContext;
 
 #[allow(unused)]
 pub trait GameMode: Debug + DynClone {
@@ -18,5 +19,5 @@ pub trait GameMode: Debug + DynClone {
   fn event_switch_opened(&mut self, switch: &Switch, ctx: &mut GameContext) {}
 
   /// Called when the game state changes. Affected by is_active.
-  fn on_game_state_changed(&mut self, old: &GameState, new: &GameState) {}
+  fn on_game_state_changed(&mut self, old: &GameState, new: &GameState, ctx: &SwitchContext) {}
 }

@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use crate::machine::Switch;
 use crate::modes::game_state::GameState;
 use crate::modes::machine_context::MachineContext;
+use crate::switch_context::SwitchContext;
 
 #[allow(unused)]
 pub trait MachineMode: Debug {
@@ -17,5 +18,5 @@ pub trait MachineMode: Debug {
   fn event_switch_opened(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
 
   /// Called when the game state changes. Affected by is_active.
-  fn on_game_state_changed(&mut self, old: &GameState, new: &GameState) {}
+  fn on_game_state_changed(&mut self, old: &GameState, new: &GameState, switches: &SwitchContext) {}
 }

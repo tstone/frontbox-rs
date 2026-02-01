@@ -3,6 +3,7 @@ mod machine;
 mod mainboard;
 mod modes;
 mod store;
+mod switch_context;
 
 // --- protocol ----
 

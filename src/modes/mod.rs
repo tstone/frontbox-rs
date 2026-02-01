@@ -15,4 +15,5 @@ pub mod prelude {
 
   // re-exports
   pub use crate::machine::Switch;
+  pub use crate::switch_context::SwitchContext;
 }

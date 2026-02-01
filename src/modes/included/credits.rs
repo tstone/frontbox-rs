@@ -33,7 +33,12 @@ impl MachineMode for Credits {
     self.active
   }
 
-  fn on_game_state_changed(&mut self, _old: &GameState, new: &GameState) {
+  fn on_game_state_changed(
+    &mut self,
+    _old: &GameState,
+    new: &GameState,
+    _switches: &SwitchContext,
+  ) {
     self.active =
       !new.is_started() || (new.current_player() == Some(0) && new.current_ball() == Some(0))
   }

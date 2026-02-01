@@ -2,6 +2,7 @@ use crate::hardware::driver_config::DriverConfig;
 use crate::modes::game_state::GameState;
 use crate::modes::machine_context::MachineCommand;
 use crate::store::Store;
+use crate::switch_context::SwitchContext;
 
 #[derive(Debug)]
 pub struct GameContext<'a> {
@@ -10,6 +11,7 @@ pub struct GameContext<'a> {
   game_commands: Vec<GameCommand>,
   machine_store: &'a mut Store,
   player_store: &'a mut Store,
+  switches: &'a SwitchContext,
 }
 
 impl<'a> GameContext<'a> {
@@ -17,6 +19,7 @@ impl<'a> GameContext<'a> {
     game: &'a GameState,
     machine_store: &'a mut Store,
     player_store: &'a mut Store,
+    switches: &'a SwitchContext,
   ) -> Self {
     Self {
       game,
@@ -24,11 +27,20 @@ impl<'a> GameContext<'a> {
       game_commands: Vec::new(),
       machine_store,
       player_store,
+      switches,
     }
   }
 
   pub fn game(&self) -> &GameState {
     self.game
+  }
+
+  pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
+    self.switches.is_closed_by_name(switch_name)
+  }
+
+  pub fn is_switch_open(&self, switch_name: &'static str) -> Option<bool> {
+    self.switches.is_open_by_name(switch_name)
   }
 
   pub fn machine_store_get<T: Default + 'static>(&mut self) -> &T {
