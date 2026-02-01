@@ -25,4 +25,5 @@ pub mod prelude {
   pub use crate::mainboard::FastPlatform;
   pub use crate::mainboard::IoNetworkSpec;
   pub use crate::modes::prelude::*;
+  pub use crossterm::event::KeyCode;
 }

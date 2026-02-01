@@ -1,8 +1,7 @@
 use frontbox::prelude::*;
-use std::default;
-use std::time::Duration;
+use std::io::Write;
 
-pub mod Switches {
+pub mod switches {
   pub const START_BUTTON: &str = "start_button";
   pub const LEFT_FLIPPER_BUTTON: &str = "left_flipper_button";
   pub const RIGHT_FLIPPER_BUTTON: &str = "right_flipper_button";
@@ -10,7 +9,7 @@ pub mod Switches {
   pub const LEFT_INLANE: &str = "left_inlane";
 }
 
-pub mod Drivers {
+pub mod drivers {
   pub const START_BUTTON_LAMP: &str = "start_button_lamp";
   pub const LEFT_FLIPPER_MAIN_COIL: &str = "left_flipper_main_coil";
   pub const LEFT_FLIPPER_HOLD_COIL: &str = "left_flipper_hold_coil";
@@ -20,20 +19,23 @@ pub mod Drivers {
 
 #[tokio::main]
 async fn main() {
-  env_logger::init();
+  env_logger::Builder::from_default_env()
+    .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
+    .init();
 
   let mut io_network = IoNetworkSpec::new();
 
   io_network.add_board(
     FastIoBoards::cabinet()
-      .with_switch(0, Switches::START_BUTTON)
-      .with_driver_pin(0, Drivers::START_BUTTON_LAMP),
+      .with_switch(0, switches::START_BUTTON)
+      // .with_switch_config(0, SwitchConfig { debounce_ms: 50, invert: false })
+      .with_driver_pin(0, drivers::START_BUTTON_LAMP),
   );
 
   io_network.add_board(
     FastIoBoards::io_3208()
-      .with_driver_pin(0, Drivers::LEFT_FLIPPER_MAIN_COIL)
-      .with_driver_pin(1, Drivers::LEFT_FLIPPER_HOLD_COIL),
+      .with_driver_pin(0, drivers::LEFT_FLIPPER_MAIN_COIL)
+      .with_driver_pin(1, drivers::LEFT_FLIPPER_HOLD_COIL),
   );
 
   // boot mainboard
@@ -49,7 +51,8 @@ async fn main() {
   .await;
 
   machine
-    .add_machine_frame(vec![Freeplay::new(Switches::START_BUTTON, 4)])
+    .add_keyboard_mapping(KeyCode::Home, switches::START_BUTTON)
+    .add_machine_frame(vec![Freeplay::new(switches::START_BUTTON, 4)])
     .run()
     .await;
 }

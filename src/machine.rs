@@ -7,6 +7,11 @@ use crate::modes::prelude::*;
 use crate::protocol::{FastResponse, SwitchState};
 use crate::store::Store;
 use crate::{IoNetwork, Mainboard, prelude::*};
+use crossterm::{
+  event::{Event, EventStream, KeyCode},
+  terminal::{disable_raw_mode, enable_raw_mode},
+};
+use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
 pub type MachineFrame = Vec<Box<dyn MachineMode>>;
@@ -16,6 +21,7 @@ pub struct Machine {
   command_tx: mpsc::Sender<MainboardCommand>,
   event_rx: mpsc::Receiver<MainboardIncoming>,
   switches: HashMap<usize, Switch>,
+  keyboard_switch_map: HashMap<KeyCode, usize>,
   machine_stack: Vec<MachineFrame>,
   machine_store: Store,
   player_stores: Vec<Store>,
@@ -60,6 +66,7 @@ impl Machine {
       command_tx,
       event_rx,
       switches,
+      keyboard_switch_map: HashMap::new(),
       machine_stack: Vec::new(),
       player_stores: Vec::new(),
       machine_store: Store::new(),
@@ -72,16 +79,72 @@ impl Machine {
     self
   }
 
+  pub fn add_keyboard_mapping(&mut self, key: KeyCode, switch_name: &'static str) -> &mut Self {
+    let id = self
+      .switches
+      .values()
+      .find(|s| s.name == switch_name)
+      .map(|s| s.id)
+      .unwrap();
+    self.keyboard_switch_map.insert(key, id);
+    self
+  }
+
+  pub fn add_keyboard_mappings(&mut self, mappings: Vec<(KeyCode, &'static str)>) -> &mut Self {
+    for (key, switch_name) in mappings {
+      self.add_keyboard_mapping(key, switch_name);
+    }
+    self
+  }
+
   pub async fn run(&mut self) {
+    if self.keyboard_switch_map.len() > 0 {
+      match enable_raw_mode() {
+        Ok(_) => {}
+        Err(e) => {
+          log::error!("Failed to enable raw mode for keyboard input: {}", e);
+        }
+      }
+    }
+
+    let mut key_reader = EventStream::new();
+
     loop {
-      if let Some(event) = self.event_rx.recv().await {
-        match event.data {
-          FastResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
-          _ => {
-            // handle other events
+      tokio::select! {
+        Some(event) = self.event_rx.recv() => {
+          match event.data {
+            FastResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
+            _ => {
+              // handle other events
+            }
+          }
+        }
+
+        Some(Ok(event)) = key_reader.next(), if self.keyboard_switch_map.len() > 0 => {
+          match event {
+            Event::Key(key) => {
+              if key.code == KeyCode::Esc || (key.code == KeyCode::Char('c') && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) {
+                break;
+              }
+
+              if let Some(&switch_id) = self.keyboard_switch_map.get(&key.code) {
+                let state = if key.kind == crossterm::event::KeyEventKind::Release {
+                  SwitchState::Open
+                } else {
+                  SwitchState::Closed
+                };
+                log::debug!("Keyboard event: {:?}, triggering switch ID {} to {:?}", key, switch_id, state);
+                self.run_switch_event(switch_id, state);
+              }
+            }
+            _ => {}
           }
         }
       }
+    }
+
+    if self.keyboard_switch_map.len() > 0 {
+      let _ = disable_raw_mode();
     }
   }
 
