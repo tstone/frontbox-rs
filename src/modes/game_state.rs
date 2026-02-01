@@ -1,9 +1,9 @@
 #[derive(Debug, Clone)]
 pub struct GameState {
-  started: bool,
-  player_count: u8,
-  current_player: Option<u8>,
-  current_ball: Option<u8>,
+  pub(crate) started: bool,
+  pub(crate) player_count: u8,
+  pub(crate) current_player: Option<u8>,
+  pub(crate) current_ball: Option<u8>,
 }
 
 impl GameState {

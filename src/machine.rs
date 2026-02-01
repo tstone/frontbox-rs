@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::mainboard::{MainboardCommand, MainboardIncoming};
+use crate::modes::machine_context::MachineCommand;
 use crate::modes::prelude::*;
 use crate::protocol::{FastResponse, SwitchState};
 use crate::store::Store;
@@ -86,6 +87,8 @@ impl Machine {
 
   fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
     if let Some(switch) = self.switches.get(&switch_id) {
+      let mut commands = Vec::new();
+
       let activated = matches!(state, SwitchState::Closed);
       let current_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_frame {
@@ -95,11 +98,49 @@ impl Machine {
         } else {
           mode.on_switch_deactivated(switch, &mut ctx);
         }
+        commands.extend(ctx.take_commands());
       }
+
+      self.process_commands(commands);
     } else {
       log::warn!("Received event for unknown switch ID {}", switch_id);
       return;
     }
+  }
+
+  fn process_commands(&mut self, commands: Vec<MachineCommand>) {
+    let mut game_state_changed = false;
+
+    for command in commands {
+      match command {
+        MachineCommand::StartGame => {
+          log::info!("Starting new game");
+          self.player_stores.clear();
+          self.player_stores.push(Store::new());
+          self.game = GameState {
+            started: true,
+            player_count: 1,
+            current_player: Some(0),
+            current_ball: Some(0),
+          };
+          game_state_changed = true;
+        }
+        MachineCommand::AddPlayer => {
+          log::info!("Adding player to game");
+          self.player_stores.push(Store::new());
+          self.game.player_count += 1;
+          game_state_changed = true;
+        }
+      }
+    }
+
+    if game_state_changed {
+      let current_frame = self.machine_stack.last_mut().unwrap();
+      for mode in current_frame {
+        mode.on_game_state_changed(&mut self.game);
+      }
+    }
+    // if game state changed, process mode events
   }
 }
 
