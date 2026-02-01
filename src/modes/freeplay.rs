@@ -23,9 +23,9 @@ impl MachineMode for Freeplay {
     self.active
   }
 
-  fn on_game_state_changed(&mut self, ctx: &mut GameState) {
+  fn on_game_state_changed(&mut self, _old: &GameState, new: &GameState) {
     self.active =
-      !ctx.is_started() || (ctx.current_player() == Some(0) && ctx.current_ball() == Some(0))
+      !new.is_started() || (new.current_player() == Some(0) && new.current_ball() == Some(0))
   }
 
   fn on_switch_activated(&mut self, switch: &Switch, ctx: &mut MachineContext) {

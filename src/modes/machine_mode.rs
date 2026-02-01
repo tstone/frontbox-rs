@@ -12,5 +12,5 @@ pub trait MachineMode: Debug {
 
   fn on_switch_activated(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
   fn on_switch_deactivated(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
-  fn on_game_state_changed(&mut self, ctx: &mut GameState) {}
+  fn on_game_state_changed(&mut self, old: &GameState, new: &GameState) {}
 }

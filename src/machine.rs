@@ -166,7 +166,9 @@ impl Machine {
         }
       }
 
-      self.process_commands(commands);
+      if commands.len() > 0 {
+        self.process_commands(commands);
+      }
     } else {
       log::warn!(
         "Received event for unknown switch ID {} : {:?}",
@@ -178,6 +180,7 @@ impl Machine {
   }
 
   fn process_commands(&mut self, commands: Vec<MachineCommand>) {
+    let old_game_state = self.game.clone();
     let mut game_state_changed = false;
 
     for command in commands {
@@ -213,7 +216,7 @@ impl Machine {
     if game_state_changed {
       let current_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_frame {
-        mode.on_game_state_changed(&mut self.game);
+        mode.on_game_state_changed(&old_game_state, &self.game);
       }
     }
     // if game state changed, process mode events
