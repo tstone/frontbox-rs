@@ -3,6 +3,7 @@ pub mod configure_hardware;
 pub mod driver_trigger;
 mod error;
 pub mod id;
+pub mod report_switches;
 pub mod switch_state;
 pub mod watchdog;
 
@@ -26,6 +27,9 @@ pub enum FastResponse {
   Switch {
     switch_id: usize,
     state: SwitchState,
+  },
+  SwitchReport {
+    switches: Vec<SwitchState>,
   },
 
   WatchdogDisabled,

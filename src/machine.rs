@@ -104,6 +104,9 @@ impl Machine {
   }
 
   pub async fn run(&mut self) {
+    // TODO: it would be preferrable this was sent and verified received during boot
+    self.report_switches();
+
     if self.keyboard_switch_map.len() > 0 {
       match enable_raw_mode() {
         Ok(_) => {}
@@ -120,6 +123,9 @@ impl Machine {
         Some(event) = self.event_rx.recv() => {
           match event.data {
             FastResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
+            FastResponse::SwitchReport { switches } => {
+              self.switches.update_switch_states(switches);
+            }
             _ => {
               // handle other events
             }
@@ -283,6 +289,18 @@ impl Machine {
             self.player_points[current_player as usize]
           );
         }
+        GameCommand::IncrementPlayer => {
+          self.report_switches(); // re-sync switch states before changing player
+
+          log::debug!("Incrementing player");
+          let next_player = match self.game.current_player() {
+            Some(current) => (current + 1) % self.game.player_count,
+            None => 0,
+          };
+          self.game.current_player = Some(next_player);
+
+          // TODO: !!! on_game_state_changed for modes !!!
+        }
       }
     }
   }
@@ -340,6 +358,16 @@ impl Machine {
       None => {
         log::error!("Attempted to configure unknown driver: {}", driver);
         return;
+      }
+    }
+  }
+
+  fn report_switches(&mut self) {
+    let cmd = protocol::report_switches::request();
+    match self.command_tx.try_send(MainboardCommand::SendIo(cmd)) {
+      Ok(_) => {}
+      Err(e) => {
+        log::error!("Failed to send report switches command: {}", e);
       }
     }
   }

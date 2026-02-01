@@ -77,6 +77,15 @@ impl SwitchContext {
     let is_closed = matches!(state, SwitchState::Closed);
     self.is_closed.insert(switch_id, is_closed);
   }
+
+  pub(crate) fn update_switch_states(&mut self, states: Vec<SwitchState>) {
+    for (index, state) in states.into_iter().enumerate() {
+      let switch_id = index + 1; // Switch IDs are 1-based
+      // https://fastpinball.com/fast-serial-protocol/net/sa/
+      // TODO: this does not account for switch config inversion !!!
+      self.update_switch_state(switch_id, state);
+    }
+  }
 }
 
 pub struct StatefulSwitch {

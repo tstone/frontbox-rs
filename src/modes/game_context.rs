@@ -107,4 +107,5 @@ impl<'a> GameContext<'a> {
 #[derive(Debug, Clone)]
 pub enum GameCommand {
   AddPoints(u32),
+  IncrementPlayer,
 }
