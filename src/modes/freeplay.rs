@@ -19,7 +19,7 @@ impl Freeplay {
 }
 
 impl MachineMode for Freeplay {
-  fn is_active(&self) -> bool {
+  fn is_listening(&self) -> bool {
     self.active
   }
 
@@ -28,7 +28,7 @@ impl MachineMode for Freeplay {
       !new.is_started() || (new.current_player() == Some(0) && new.current_ball() == Some(0))
   }
 
-  fn on_switch_activated(&mut self, switch: &Switch, ctx: &mut MachineContext) {
+  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {
     if switch.name == self.start_switch_name {
       if !ctx.game().is_started() {
         ctx.start_game();

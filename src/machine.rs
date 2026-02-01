@@ -155,12 +155,12 @@ impl Machine {
       let activated = matches!(state, SwitchState::Closed);
       let current_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_frame {
-        if mode.is_active() {
+        if mode.is_listening() {
           let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
           if activated {
-            mode.on_switch_activated(switch, &mut ctx);
+            mode.event_switch_closed(switch, &mut ctx);
           } else {
-            mode.on_switch_deactivated(switch, &mut ctx);
+            mode.event_switch_opened(switch, &mut ctx);
           }
           commands.extend(ctx.take_commands());
         }

@@ -24,6 +24,20 @@ impl GameState {
   }
 }
 
+impl GameState {
+  pub fn just_started(old: &GameState, new: &GameState) -> bool {
+    !old.is_started() && new.is_started()
+  }
+
+  pub fn just_ended(old: &GameState, new: &GameState) -> bool {
+    old.is_started() && !new.is_started()
+  }
+
+  pub fn changed_player(old: &GameState, new: &GameState) -> bool {
+    old.current_player() != new.current_player() && new.current_player().is_some()
+  }
+}
+
 impl Default for GameState {
   fn default() -> Self {
     Self {

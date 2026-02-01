@@ -6,11 +6,16 @@ use crate::modes::machine_context::MachineContext;
 
 #[allow(unused)]
 pub trait MachineMode: Debug {
-  fn is_active(&self) -> bool {
+  /// Used by the machine to determine if this mode should receive events
+  fn is_listening(&self) -> bool {
     true
   }
 
-  fn on_switch_activated(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
-  fn on_switch_deactivated(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
+  /// Called when a switch becomes closed (depressed). Affected by is_listening, is_active.
+  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
+  /// Called when a switch becomes open (released). Affected by is_listening, is_active.
+  fn event_switch_opened(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
+
+  /// Called when the game state changes. Affected by is_active.
   fn on_game_state_changed(&mut self, old: &GameState, new: &GameState) {}
 }
