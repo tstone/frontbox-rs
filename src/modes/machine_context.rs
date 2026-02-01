@@ -1,5 +1,5 @@
-use crate::store::Store;
 use crate::modes::game_state::GameState;
+use crate::store::Store;
 
 #[derive(Debug)]
 pub struct MachineContext<'a> {
@@ -41,6 +41,14 @@ impl<'a> MachineContext<'a> {
     self.commands.push(MachineCommand::AddPlayer);
   }
 
+  pub fn activate_high_voltage(&mut self) {
+    self.commands.push(MachineCommand::ActivateHighVoltage);
+  }
+
+  pub fn deactivate_high_voltage(&mut self) {
+    self.commands.push(MachineCommand::DeactivateHighVoltage);
+  }
+
   pub(crate) fn take_commands(&mut self) -> Vec<MachineCommand> {
     std::mem::take(&mut self.commands)
   }
@@ -50,4 +58,6 @@ impl<'a> MachineContext<'a> {
 pub enum MachineCommand {
   StartGame,
   AddPlayer,
+  ActivateHighVoltage,
+  DeactivateHighVoltage,
 }

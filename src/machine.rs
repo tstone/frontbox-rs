@@ -92,18 +92,24 @@ impl Machine {
       let activated = matches!(state, SwitchState::Closed);
       let current_frame = self.machine_stack.last_mut().unwrap();
       for mode in current_frame {
-        let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
-        if activated {
-          mode.on_switch_activated(switch, &mut ctx);
-        } else {
-          mode.on_switch_deactivated(switch, &mut ctx);
+        if mode.is_active() {
+          let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
+          if activated {
+            mode.on_switch_activated(switch, &mut ctx);
+          } else {
+            mode.on_switch_deactivated(switch, &mut ctx);
+          }
+          commands.extend(ctx.take_commands());
         }
-        commands.extend(ctx.take_commands());
       }
 
       self.process_commands(commands);
     } else {
-      log::warn!("Received event for unknown switch ID {}", switch_id);
+      log::warn!(
+        "Received event for unknown switch ID {} : {:?}",
+        switch_id,
+        state
+      );
       return;
     }
   }
@@ -123,6 +129,7 @@ impl Machine {
             current_player: Some(0),
             current_ball: Some(0),
           };
+          self.enable_watchdog();
           game_state_changed = true;
         }
         MachineCommand::AddPlayer => {
@@ -130,6 +137,12 @@ impl Machine {
           self.player_stores.push(Store::new());
           self.game.player_count += 1;
           game_state_changed = true;
+        }
+        MachineCommand::ActivateHighVoltage => {
+          self.enable_watchdog();
+        }
+        MachineCommand::DeactivateHighVoltage => {
+          self.disable_watchdog();
         }
       }
     }
@@ -141,6 +154,16 @@ impl Machine {
       }
     }
     // if game state changed, process mode events
+  }
+
+  fn enable_watchdog(&mut self) {
+    log::info!("Enabling watchdog");
+    let _ = self.command_tx.try_send(MainboardCommand::Watchdog(true));
+  }
+
+  fn disable_watchdog(&mut self) {
+    log::info!("Disabling watchdog");
+    let _ = self.command_tx.try_send(MainboardCommand::Watchdog(false));
   }
 }
 
