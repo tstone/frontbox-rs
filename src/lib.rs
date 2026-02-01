@@ -1,23 +1,28 @@
-mod modes;
-mod game;
 mod hardware;
 mod machine;
 mod mainboard;
-mod modes_old;
+mod modes;
+mod store;
 
 // --- protocol ----
 
 #[cfg(feature = "protocol")]
 pub mod protocol;
 
-// --- mainboard ---
+// --- machine ---
 
-#[cfg(feature = "mainboard")]
+#[cfg(feature = "machine")]
+pub use crate::machine::*;
+
+#[cfg(feature = "machine")]
 pub use crate::mainboard::*;
 
+#[cfg(feature = "machine")]
 pub mod prelude {
-  #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::mainboard::*;
-  #[cfg(feature = "mainboard")]
-  pub use crate::mainboard::*;
+  pub use crate::machine::*;
+  pub use crate::mainboard::BootConfig;
+  pub use crate::mainboard::FastIoBoards;
+  pub use crate::mainboard::FastPlatform;
+  pub use crate::mainboard::IoNetworkSpec;
+  pub use crate::modes::prelude::*;
 }

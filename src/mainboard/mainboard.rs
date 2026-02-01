@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::game::FastChannel;
 use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
 use crate::protocol::{FastResponse, id, watchdog};
@@ -20,6 +19,12 @@ pub struct Mainboard {
 pub struct MainboardIncoming {
   pub data: FastResponse,
   pub channel: FastChannel,
+}
+
+#[derive(Debug, Clone)]
+pub enum FastChannel {
+  Io,
+  Expansion,
 }
 
 impl Mainboard {
@@ -162,6 +167,17 @@ pub struct BootConfig {
   pub exp_port_path: &'static str,
   pub platform: FastPlatform,
   pub watchdog_interval: Duration,
+}
+
+impl Default for BootConfig {
+  fn default() -> Self {
+    Self {
+      io_net_port_path: "/dev/ttyACM0",
+      exp_port_path: "/dev/ttyACM1",
+      platform: FastPlatform::Neuron,
+      watchdog_interval: Duration::from_millis(1250),
+    }
+  }
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,5 @@
-use bevy_app::{ScheduleRunnerPlugin, prelude::*};
-use bevy_ecs::prelude::*;
-use frontbox::mainboard::MainboardIncoming;
 use frontbox::prelude::*;
+use std::default;
 use std::time::Duration;
 
 pub mod Switches {
@@ -24,14 +22,6 @@ pub mod Drivers {
 async fn main() {
   env_logger::init();
 
-  // boot mainboard
-  let mainboard = Mainboard::boot(BootConfig {
-    platform: FastPlatform::Neuron,
-    io_net_port_path: "/dev/ttyACM0",
-    exp_port_path: "/dev/ttyACM1",
-  })
-  .await;
-
   let mut io_network = IoNetworkSpec::new();
 
   io_network.add_board(
@@ -46,28 +36,20 @@ async fn main() {
       .with_driver_pin(1, Drivers::LEFT_FLIPPER_HOLD_COIL),
   );
 
-  // run engine
-  App::new()
-    .add_plugins(ScheduleRunnerPlugin::run_loop(Duration::from_millis(1)))
-    .add_plugins(Frontbox {
-      mainboard,
-      io_network: io_network.build(),
-    })
-    .add_systems(Startup, startup)
-    .add_observer(on_mainboard_event)
-    .run();
-}
+  // boot mainboard
+  let mut machine = Machine::boot(
+    BootConfig {
+      platform: FastPlatform::Neuron,
+      io_net_port_path: "/dev/ttyACM0",
+      exp_port_path: "/dev/ttyACM1",
+      ..Default::default()
+    },
+    io_network.build(),
+  )
+  .await;
 
-fn startup(
-  mut mainboard: ResMut<MainboardLink>,
-  catalog: Res<SwitchCatalog>,
-  mut commands: Commands,
-) {
-  log::info!("😀 Neuron init example started");
-  mainboard.enable_watchdog();
-}
-
-// example of listening to raw events from the Neuron
-fn on_mainboard_event(event: On<MainboardIncoming>) {
-  log::info!("📧 Received mainboard event: {:?}", event);
+  machine
+    .add_machine_frame(vec![Freeplay::new(Switches::START_BUTTON, 4)])
+    .run()
+    .await;
 }

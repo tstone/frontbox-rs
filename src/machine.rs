@@ -1,30 +1,28 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::modes::mode::{AttractMachineRef, AttractNextState, Mode};
 use crate::mainboard::{MainboardCommand, MainboardIncoming};
-use crate::prelude::*;
-use crate::protocol::FastResponse;
+use crate::modes::prelude::*;
+use crate::protocol::{FastResponse, SwitchState};
+use crate::store::Store;
+use crate::{IoNetwork, Mainboard, prelude::*};
 use tokio::sync::mpsc;
+
+pub type MachineFrame = Vec<Box<dyn MachineMode>>;
 
 #[derive(Debug)]
 pub struct Machine {
   command_tx: mpsc::Sender<MainboardCommand>,
   event_rx: mpsc::Receiver<MainboardIncoming>,
   switches: HashMap<usize, Switch>,
-  state: MachineState,
-  credits: u8,
-  attract_modes: Vec<Box<dyn Mode + Send>>,
-}
-
-#[derive(Debug, Clone)]
-pub enum FastChannel {
-  Io,
-  Expansion,
+  machine_stack: Vec<MachineFrame>,
+  machine_store: Store,
+  player_stores: Vec<Store>,
+  game: GameState,
 }
 
 impl Machine {
-  pub async fn boot(config: BootConfig) -> Self {
+  pub async fn boot(config: BootConfig, io_network: IoNetwork) -> Self {
     let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(128);
     let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(128);
 
@@ -43,79 +41,66 @@ impl Machine {
     });
 
     // TODO: define LEDs
-    // TODO: send switch configuration (debounce, invert, etc.)
     // TODO: read state of all switches from mainboard and setup starting state
+
+    let mut switches = HashMap::new();
+    for switch in io_network.switches {
+      // TODO: send switch configuration (debounce, invert, etc.)
+      switches.insert(
+        switch.id,
+        Switch {
+          id: switch.id,
+          name: switch.name,
+        },
+      );
+    }
 
     Self {
       command_tx,
       event_rx,
-      switches: HashMap::new(),
-      state: MachineState::Attract,
-      credits: 0,
-      attract_modes: Vec::new(),
+      switches,
+      machine_stack: Vec::new(),
+      player_stores: Vec::new(),
+      machine_store: Store::new(),
+      game: GameState::default(),
     }
   }
 
-  pub fn with_attract_mode<T: Mode + Send + 'static>(&mut self, mode: T) {
-    self.attract_modes.push(Box::new(mode));
-  }
-
-  pub fn with_attract_modes<T: Mode + Send + 'static>(&mut self, modes: Vec<T>) {
-    for mode in modes {
-      self.attract_modes.push(Box::new(mode));
-    }
+  pub fn add_machine_frame(&mut self, frame: MachineFrame) -> &mut Self {
+    self.machine_stack.push(frame);
+    self
   }
 
   pub async fn run(&mut self) {
     loop {
-      match self.state {
-        MachineState::Attract => self.receive_attract().await,
-        MachineState::InGame => self.receive_game().await,
-        MachineState::Config => { /* TODO */ }
-      }
-    }
-  }
-
-  async fn receive_attract(&mut self) {
-    if let Some(event) = self.event_rx.recv().await {
-      match event.data {
-        FastResponse::Switch { switch_id, state } => {
-          if let Some(switch) = self.switches.get(&switch_id) {
-            for mode in self.attract_modes.iter_mut() {
-              let next_state = mode.on_switch(switch, &state, &mut AttractMachineRef {});
-              match next_state {
-                AttractNextState::EnterGame => {
-                  self.state = MachineState::InGame;
-                  log::info!("Entering game state from attract mode");
-                  break;
-                }
-                AttractNextState::EnterConfig => {
-                  self.state = MachineState::Config;
-                  log::info!("Entering config state from attract mode");
-                  break;
-                }
-                AttractNextState::None => { /* stay in attract mode */ }
-              }
-            }
+      if let Some(event) = self.event_rx.recv().await {
+        match event.data {
+          FastResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
+          _ => {
+            // handle other events
           }
         }
-        _ => { /* handle other events if necessary */ }
       }
     }
   }
 
-  async fn receive_game(&mut self) {
-    if let Some(event) = self.event_rx.recv().await {
-      // TODO
+  fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
+    if let Some(switch) = self.switches.get(&switch_id) {
+      let activated = matches!(state, SwitchState::Closed);
+      let current_frame = self.machine_stack.last_mut().unwrap();
+      for mode in current_frame {
+        let mut ctx = MachineContext::new(&self.game, &mut self.machine_store);
+        if activated {
+          mode.on_switch_activated(switch, &mut ctx);
+        } else {
+          mode.on_switch_deactivated(switch, &mut ctx);
+        }
+      }
+    } else {
+      log::warn!("Received event for unknown switch ID {}", switch_id);
+      return;
     }
   }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MachineState {
-  Attract,
-  Config,
-  InGame,
 }
 
 #[derive(Debug, Clone)]
