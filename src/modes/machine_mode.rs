@@ -12,11 +12,11 @@ pub trait MachineMode: Debug {
     true
   }
 
-  /// Called when a switch becomes closed (depressed). Affected by is_listening, is_active.
+  /// Called when a switch becomes closed (depressed). Affected by is_listening
   fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
-  /// Called when a switch becomes open (released). Affected by is_listening, is_active.
+  /// Called when a switch becomes open (released). Affected by is_listening
   fn event_switch_opened(&mut self, switch: &Switch, ctx: &mut MachineContext) {}
 
-  /// Called when the game state changes. Affected by is_active.
+  /// Called when the game state changes. Not affected by is_listening
   fn on_game_state_changed(&mut self, old: &GameState, new: &GameState, switches: &SwitchContext) {}
 }

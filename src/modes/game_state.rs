@@ -11,6 +11,10 @@ impl GameState {
     self.started
   }
 
+  pub fn not_running(&self) -> bool {
+    !self.started
+  }
+
   pub fn current_player(&self) -> Option<u8> {
     self.current_player
   }

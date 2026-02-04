@@ -79,6 +79,14 @@ impl<'a> MachineContext<'a> {
     self.commands.push(MachineCommand::TriggerDriver(driver));
   }
 
+  pub fn add_points(&mut self, points: u32) {
+    self.commands.push(MachineCommand::AddPoints(points));
+  }
+
+  pub fn next_player(&mut self) {
+    self.commands.push(MachineCommand::NextPlayer);
+  }
+
   pub(crate) fn take_commands(&mut self) -> Vec<MachineCommand> {
     std::mem::take(&mut self.commands)
   }
@@ -94,4 +102,9 @@ pub enum MachineCommand {
   ActivateDriver(&'static str),
   DeactivateDriver(&'static str),
   TriggerDriver(&'static str),
+
+  // In-game commands
+  AddPoints(u32),
+  NextPlayer,
+  // ExtraBall,
 }

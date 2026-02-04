@@ -3,7 +3,6 @@ use std::fmt::Debug;
 
 use crate::hardware::driver_config::DriverConfig;
 use crate::mainboard::{MainboardCommand, MainboardIncoming};
-use crate::modes::game_context::GameCommand;
 use crate::modes::machine_context::MachineCommand;
 use crate::modes::prelude::*;
 use crate::protocol::{self, FastResponse, SwitchState};
@@ -163,8 +162,7 @@ impl Machine {
     if let Some(switch) = self.switches.switch_by_id(&switch_id).cloned() {
       self.switches.update_switch_state(switch_id, state);
 
-      let mut machine_commands = Vec::new();
-      let mut game_commands = Vec::new();
+      let mut commands = Vec::new();
       let activated = matches!(state, SwitchState::Closed);
 
       // Machine stack
@@ -177,40 +175,31 @@ impl Machine {
           } else {
             mode.event_switch_opened(&switch, &mut ctx);
           }
-          machine_commands.extend(ctx.take_commands());
+          commands.extend(ctx.take_commands());
         }
       }
 
       // Game stack
       if self.game.is_started() {
         let current_player = self.game.current_player().unwrap();
-        let player_store = &mut self.player_stores[current_player as usize];
+        // let player_store = &mut self.player_stores[current_player as usize];
         let player_game_stack = &mut self.current_game_stack[current_player as usize];
         let current_game_scene = player_game_stack.last_mut().unwrap();
         for mode in current_game_scene {
           if mode.is_listening() {
-            let mut ctx = GameContext::new(
-              &self.game,
-              &mut self.machine_store,
-              player_store,
-              &self.switches,
-            );
+            let mut ctx = MachineContext::new(&self.game, &mut self.machine_store, &self.switches);
             if activated {
               mode.event_switch_closed(&switch, &mut ctx);
             } else {
               mode.event_switch_opened(&switch, &mut ctx);
             }
-            machine_commands.extend(ctx.take_machine_commands());
-            game_commands.extend(ctx.take_game_commands());
+            commands.extend(ctx.take_commands());
           }
         }
       }
 
-      if machine_commands.len() > 0 {
-        self.process_machine_commands(machine_commands);
-      }
-      if game_commands.len() > 0 {
-        self.process_game_commands(game_commands);
+      if commands.len() > 0 {
+        self.process_machine_commands(commands);
       }
     } else {
       log::warn!(
@@ -254,6 +243,30 @@ impl Machine {
         MachineCommand::TriggerDriver(driver) => {
           todo!();
         }
+        MachineCommand::AddPoints(points) => {
+          if let Some(current_player) = self.game.current_player() {
+            self.player_points[current_player as usize] += points;
+            log::debug!(
+              "Added {} points to player {}. Total points: {}",
+              points,
+              current_player + 1,
+              self.player_points[current_player as usize]
+            );
+          }
+        }
+        MachineCommand::NextPlayer => {
+          if self.game.is_started() {
+            self.report_switches(); // re-sync switch states before changing player
+
+            log::debug!("Moving to next player");
+            let mut next_player = self.game.current_player().unwrap() + 1;
+            if next_player >= self.game.player_count {
+              next_player = 0;
+            }
+            self.game.current_player = Some(next_player);
+            game_state_changed = true;
+          }
+        }
       }
     }
 
@@ -273,35 +286,6 @@ impl Machine {
       }
     }
     // if game state changed, process mode events
-  }
-
-  fn process_game_commands(&mut self, commands: Vec<GameCommand>) {
-    for command in commands {
-      match command {
-        GameCommand::AddPoints(points) => {
-          let current_player = self.game.current_player().unwrap();
-          self.player_points[current_player as usize] += points;
-          log::debug!(
-            "Added {} points to player {}. Total points: {}",
-            points,
-            current_player + 1,
-            self.player_points[current_player as usize]
-          );
-        }
-        GameCommand::IncrementPlayer => {
-          self.report_switches(); // re-sync switch states before changing player
-
-          log::debug!("Incrementing player");
-          let next_player = match self.game.current_player() {
-            Some(current) => (current + 1) % self.game.player_count,
-            None => 0,
-          };
-          self.game.current_player = Some(next_player);
-
-          // TODO: !!! on_game_state_changed for modes !!!
-        }
-      }
-    }
   }
 
   fn start_game(&mut self) {
