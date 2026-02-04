@@ -54,13 +54,13 @@ async fn main() {
   )
   .await
   .add_keyboard_mapping(KeyCode::Home, switches::START_BUTTON)
-  .add_machine_frame(vec![Freeplay::new(switches::START_BUTTON, 4)])
+  .add_machine_scene(vec![Freeplay::new(switches::START_BUTTON, 4)])
   .add_keyboard_mappings(vec![
     (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
     (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
     (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
   ])
-  .add_game_frame(vec![DropTargetDownUp::new([
+  .add_game_scene(vec![DropTargetDownUp::new([
     switches::LOWER_DROP_TARGET1,
     switches::LOWER_DROP_TARGET2,
     switches::LOWER_DROP_TARGET3,

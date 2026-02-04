@@ -17,8 +17,8 @@ use crossterm::{
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
-pub type MachineFrame = Vec<Box<dyn MachineMode>>;
-pub type GameFrame = Vec<Box<dyn GameMode>>;
+pub type MachineScene = Vec<Box<dyn MachineMode>>;
+pub type GameScene = Vec<Box<dyn GameMode>>;
 
 #[derive(Debug)]
 pub struct Machine {
@@ -27,9 +27,9 @@ pub struct Machine {
   switches: SwitchContext,
   driver_lookup: HashMap<&'static str, DriverPin>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
-  machine_stack: Vec<MachineFrame>,
-  init_game_stack: Vec<GameFrame>,
-  current_game_stack: Vec<Vec<GameFrame>>,
+  machine_stack: Vec<MachineScene>,
+  init_game_stack: Vec<GameScene>,
+  current_game_stack: Vec<Vec<GameScene>>,
   machine_store: Store,
   player_stores: Vec<Store>,
   player_points: Vec<u32>,
@@ -82,13 +82,13 @@ impl Machine {
     }
   }
 
-  pub fn add_machine_frame(&mut self, frame: MachineFrame) -> &mut Self {
-    self.machine_stack.push(frame);
+  pub fn add_machine_scene(&mut self, scene: MachineScene) -> &mut Self {
+    self.machine_stack.push(scene);
     self
   }
 
-  pub fn add_game_frame(&mut self, frame: GameFrame) -> &mut Self {
-    self.init_game_stack.push(frame);
+  pub fn add_game_scene(&mut self, scene: GameScene) -> &mut Self {
+    self.init_game_stack.push(scene);
     self
   }
 
@@ -168,8 +168,8 @@ impl Machine {
       let activated = matches!(state, SwitchState::Closed);
 
       // Machine stack
-      let current_machine_frame = self.machine_stack.last_mut().unwrap();
-      for mode in current_machine_frame {
+      let current_machine_scene = self.machine_stack.last_mut().unwrap();
+      for mode in current_machine_scene {
         if mode.is_listening() {
           let mut ctx = MachineContext::new(&self.game, &mut self.machine_store, &self.switches);
           if activated {
@@ -186,8 +186,8 @@ impl Machine {
         let current_player = self.game.current_player().unwrap();
         let player_store = &mut self.player_stores[current_player as usize];
         let player_game_stack = &mut self.current_game_stack[current_player as usize];
-        let current_game_frame = player_game_stack.last_mut().unwrap();
-        for mode in current_game_frame {
+        let current_game_scene = player_game_stack.last_mut().unwrap();
+        for mode in current_game_scene {
           if mode.is_listening() {
             let mut ctx = GameContext::new(
               &self.game,
@@ -258,16 +258,16 @@ impl Machine {
     }
 
     if game_state_changed {
-      let current_frame = self.machine_stack.last_mut().unwrap();
-      for mode in current_frame {
+      let current_scene = self.machine_stack.last_mut().unwrap();
+      for mode in current_scene {
         mode.on_game_state_changed(&old_game_state, &self.game, &self.switches);
       }
 
       if self.game.is_started() {
         let current_player = self.game.current_player().unwrap();
         let player_game_stack = &mut self.current_game_stack[current_player as usize];
-        let current_game_frame = player_game_stack.last_mut().unwrap();
-        for mode in current_game_frame {
+        let current_game_scene = player_game_stack.last_mut().unwrap();
+        for mode in current_game_scene {
           mode.on_game_state_changed(&old_game_state, &self.game, &self.switches);
         }
       }
@@ -371,13 +371,13 @@ impl Machine {
     }
   }
 
-  /// Deep clones a game stack by cloning each frame and each mode within the frame
+  /// Deep clones a game stack by cloning each scene and each mode within the scene
   /// This ensures that each player has their own independent instances of each game mode
-  fn clone_game_stack(&self, stack: &[GameFrame]) -> Vec<GameFrame> {
+  fn clone_game_stack(&self, stack: &[GameScene]) -> Vec<GameScene> {
     stack
       .iter()
-      .map(|frame| {
-        frame
+      .map(|scene| {
+        scene
           .iter()
           .map(|mode| dyn_clone::clone_box(&**mode))
           .collect()
