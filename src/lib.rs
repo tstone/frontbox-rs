@@ -25,6 +25,7 @@ pub mod prelude {
   pub use crate::mainboard::FastIoBoards;
   pub use crate::mainboard::FastPlatform;
   pub use crate::mainboard::IoNetworkSpec;
+  pub use crate::mainboard::SwitchConfig;
   pub use crate::modes::prelude::*;
   pub use crossterm::event::KeyCode;
 }

@@ -9,7 +9,7 @@ use crate::modes::prelude::*;
 use crate::protocol::{self, FastResponse, SwitchState};
 use crate::store::Store;
 use crate::switch_context::SwitchContext;
-use crate::{DriverPin, IoNetwork, Mainboard, prelude::*};
+use crate::{BootResult, DriverPin, IoNetwork, Mainboard, prelude::*};
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -41,7 +41,10 @@ impl Machine {
     let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(128);
     let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(128);
 
-    let mut mainboard = Mainboard::boot(config, command_rx, event_tx.clone()).await;
+    let BootResult {
+      mut mainboard,
+      initial_switch_state,
+    } = Mainboard::boot(config, command_rx, event_tx.clone()).await;
 
     // start serial communication in separate thread
     std::thread::spawn(move || {
@@ -56,8 +59,7 @@ impl Machine {
     });
 
     // TODO: define LEDs
-    // TODO: read state of all switches from mainboard and setup starting state
-    let switches = SwitchContext::new(io_network.switches);
+    let switches = SwitchContext::new(io_network.switches, initial_switch_state);
 
     let mut drivers = HashMap::new();
     for driver in io_network.driver_pins {
@@ -104,9 +106,6 @@ impl Machine {
   }
 
   pub async fn run(&mut self) {
-    // TODO: it would be preferrable this was sent and verified received during boot
-    self.report_switches();
-
     if self.keyboard_switch_map.len() > 0 {
       match enable_raw_mode() {
         Ok(_) => {}

@@ -55,6 +55,7 @@ mod tests {
         id: 5,
         name: "Test Switch",
         parent_index: 0,
+        config: None,
       }),
       invert_switch: Some(true),
       initial_pwm_length: Duration::from_millis(100),

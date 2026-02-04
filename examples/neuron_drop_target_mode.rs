@@ -1,5 +1,6 @@
 use frontbox::prelude::*;
 use std::io::Write;
+use std::time::Duration;
 
 pub mod switches {
   pub const START_BUTTON: &str = "start_button";
@@ -24,7 +25,14 @@ async fn main() {
   io_network.add_board(
     FastIoBoards::cabinet()
       .with_switch(0, switches::START_BUTTON)
-      // TODO: .with_switch_config(0, SwitchConfig { debounce_ms: 50, invert: false })
+      .with_switch_config(
+        switches::START_BUTTON,
+        SwitchConfig {
+          inverted: false,
+          debounce_close: Some(Duration::from_millis(20)),
+          ..Default::default()
+        },
+      )
       .with_driver_pin(0, drivers::START_BUTTON_LAMP),
   );
 

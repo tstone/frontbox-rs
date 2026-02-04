@@ -1,20 +1,22 @@
 use std::collections::HashMap;
 
 use crate::protocol::SwitchState;
-use crate::{Switch, SwitchSpec};
+use crate::{Switch, SwitchConfig, SwitchSpec};
 
 #[derive(Debug)]
 pub struct SwitchContext {
   by_id: HashMap<usize, Switch>,
   by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
+  configs: HashMap<usize, SwitchConfig>,
 }
 
 impl SwitchContext {
-  pub fn new(switch_specs: Vec<SwitchSpec>) -> Self {
+  pub fn new(switch_specs: Vec<SwitchSpec>, initial_state: Vec<SwitchState>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
+    let mut configs = HashMap::new();
 
     for spec in switch_specs {
       by_id.insert(
@@ -33,14 +35,24 @@ impl SwitchContext {
         },
       );
 
-      is_closed.insert(spec.id, false); // TODO: read actual state
+      if let Some(config) = spec.config {
+        configs.insert(spec.id, config);
+      }
+
+      // Actual state is populated below from initial report
+      is_closed.insert(spec.id, false);
     }
 
-    Self {
+    let mut context = Self {
       by_id,
       by_name,
       is_closed,
-    }
+      configs,
+    };
+
+    // set initial states
+    context.update_switch_states(initial_state);
+    context
   }
 
   pub fn is_open(&self, switch_id: usize) -> Option<bool> {
@@ -79,11 +91,24 @@ impl SwitchContext {
   }
 
   pub(crate) fn update_switch_states(&mut self, states: Vec<SwitchState>) {
-    for (index, state) in states.into_iter().enumerate() {
-      let switch_id = index + 1; // Switch IDs are 1-based
+    for (switch_id, state) in states.into_iter().enumerate() {
+      // Switch report does not account for switch config inversion
       // https://fastpinball.com/fast-serial-protocol/net/sa/
-      // TODO: this does not account for switch config inversion !!!
-      self.update_switch_state(switch_id, state);
+      let mut invert = false;
+      if let Some(config) = self.configs.get(&switch_id) {
+        invert = config.inverted;
+      }
+
+      let adjusted_state = if invert {
+        match state {
+          SwitchState::Open => SwitchState::Closed,
+          SwitchState::Closed => SwitchState::Open,
+        }
+      } else {
+        state
+      };
+
+      self.update_switch_state(switch_id, adjusted_state);
     }
   }
 }

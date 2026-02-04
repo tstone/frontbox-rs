@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::mainboard::serial_interface::SerialInterface;
 use crate::protocol::configure_hardware::{self, SwitchReporting};
-use crate::protocol::{FastResponse, id, watchdog};
+use crate::protocol::{FastResponse, SwitchState, id, report_switches, watchdog};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
@@ -32,7 +32,7 @@ impl Mainboard {
     config: BootConfig,
     commands_incoming: mpsc::Receiver<MainboardCommand>,
     events_outgoing: mpsc::Sender<MainboardIncoming>,
-  ) -> Self {
+  ) -> BootResult {
     // open IO port
     let mut io_port = SerialInterface::new(config.io_net_port_path)
       .await
@@ -63,14 +63,14 @@ impl Mainboard {
               product_number,
               firmware_version
             );
-            true
+            Some(true)
           }
-          _ => false,
+          _ => None,
         },
       )
       .await;
 
-    // configure hardware
+    // configure hardware (instruct mainboard which 'platform' it is)
     let ch = configure_hardware::request(
       config.platform.clone() as u16,
       Some(SwitchReporting::Verbose),
@@ -81,22 +81,41 @@ impl Mainboard {
     );
     io_port.send(ch.as_bytes()).await;
 
+    // get initial switch states
+    let switches = io_port
+      .poll_for_response(
+        &report_switches::request().as_bytes(),
+        Duration::from_millis(1000),
+        |msg| match msg {
+          FastResponse::SwitchReport { switches } => Some(switches),
+          _ => None,
+        },
+      )
+      .await
+      .expect("Failed to get initial switch states from mainboard");
+
     // verify watchdog is ready
     io_port
       .poll_for_response(
         watchdog::set(Duration::from_millis(1250)).as_bytes(),
         Duration::from_millis(250),
-        |msg| !matches!(msg, FastResponse::Failed(_)),
+        |msg| match msg {
+          FastResponse::Failed(_) => None,
+          _ => Some(true),
+        },
       )
       .await;
     log::info!("🕙 Watchdog timer started");
 
-    Mainboard {
-      enable_watchdog: false,
-      commands_incoming,
-      events_outgoing,
-      io_port,
-      exp_port,
+    BootResult {
+      mainboard: Mainboard {
+        enable_watchdog: false,
+        commands_incoming,
+        events_outgoing,
+        io_port,
+        exp_port,
+      },
+      initial_switch_state: switches,
     }
   }
 
@@ -159,6 +178,11 @@ impl Mainboard {
       }
     }
   }
+}
+
+pub struct BootResult {
+  pub mainboard: Mainboard,
+  pub initial_switch_state: Vec<SwitchState>,
 }
 
 #[derive(Debug, Clone)]

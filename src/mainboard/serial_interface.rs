@@ -51,27 +51,35 @@ impl SerialInterface {
     }
   }
 
-  pub async fn poll_for_response(
+  pub async fn poll_for_response<T>(
     &mut self,
     cmd: &[u8],
     timeout_duration: Duration,
-    predicate: fn(FastResponse) -> bool,
-  ) {
+    predicate: fn(FastResponse) -> Option<T>,
+  ) -> Option<T> {
     loop {
+      log::trace!("Sending boot command: {}", String::from_utf8_lossy(cmd));
       self.send(cmd).await;
 
       let timeout = time::timeout(timeout_duration, self.reader.next());
       match timeout.await {
         Ok(Some(Ok(msg))) => {
-          if predicate(msg.clone()) {
-            break;
+          if let Some(result) = predicate(msg.clone()) {
+            return Some(result);
           }
         }
         Ok(Some(Err(e))) => {
           log::error!("Error waiting for response: {:?}", e);
+          break;
         }
-        _ => (),
+        _ => {
+          break;
+        }
       }
+
+      time::sleep(timeout_duration).await;
     }
+
+    None
   }
 }
