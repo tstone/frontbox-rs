@@ -2,8 +2,7 @@ mod hardware;
 mod machine;
 mod mainboard;
 mod modes;
-mod store;
-mod switch_context;
+mod plugins;
 
 // --- protocol ----
 
@@ -20,7 +19,9 @@ pub use crate::mainboard::*;
 
 #[cfg(feature = "machine")]
 pub mod prelude {
-  pub use crate::machine::*;
+  pub use crate::machine::command::*;
+  pub use crate::machine::machine::*;
+  pub use crate::machine::plugin::*;
   pub use crate::mainboard::BootConfig;
   pub use crate::mainboard::FastIoBoards;
   pub use crate::mainboard::FastPlatform;

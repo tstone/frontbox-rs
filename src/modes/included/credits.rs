@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub struct Credits {
   active: bool,
   start_switch_name: &'static str,
@@ -28,22 +28,27 @@ impl Credits {
   }
 }
 
-impl MachineMode for Credits {
+impl System for Credits {
   fn is_listening(&self) -> bool {
     self.active
   }
 
-  fn on_game_state_changed(
-    &mut self,
-    _old: &GameState,
-    new: &GameState,
-    _switches: &SwitchContext,
-  ) {
-    self.active =
-      !new.is_started() || (new.current_player() == Some(0) && new.current_ball() == Some(0))
+  fn on_game_end(&mut self, ctx: &mut Context, game: &mut GameState) {
+    self.active = true;
   }
 
-  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {
+  fn on_ball_end(&mut self, ctx: &mut Context, game: &mut GameState) {
+    if game.current_player() > 0 || game.current_ball() > 0 {
+      self.active = false;
+    }
+  }
+
+  fn event_switch_closed(
+    &mut self,
+    switch: &Switch,
+    ctx: &mut Context,
+    game: Option<&mut GameState>,
+  ) {
     if self.coin_switch_names.contains(&switch.name) && self.current_coins < u8::MAX {
       self.current_coins += 1;
       log::debug!(
@@ -52,11 +57,10 @@ impl MachineMode for Credits {
         self.coins_per_credit
       );
     } else if switch.name == self.start_switch_name && self.current_coins >= self.coins_per_credit {
-      let game = ctx.game();
-      if !game.is_started() {
+      if !ctx.is_game_started() {
         self.current_coins -= self.coins_per_credit;
-        ctx.start_game();
-      } else if game.is_started() && game.player_count() < self.max_players {
+        ctx.command(StartGame(1));
+      } else if ctx.is_game_started() && game.player_count() < self.max_players {
         self.current_coins -= self.coins_per_credit;
         ctx.add_player();
       }

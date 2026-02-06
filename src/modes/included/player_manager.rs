@@ -15,8 +15,8 @@ impl PlayerManager {
   }
 }
 
-impl MachineMode for PlayerManager {
-  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {
+impl System for PlayerManager {
+  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     let game = ctx.game();
     if game.not_running() {
       return;

@@ -82,7 +82,7 @@ impl DropTargetDownUp {
 }
 
 impl GameMode for DropTargetDownUp {
-  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut MachineContext) {
+  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
       ctx.add_points(100);

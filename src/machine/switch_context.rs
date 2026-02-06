@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
+use crate::SwitchSpec;
+use crate::prelude::*;
 use crate::protocol::SwitchState;
-use crate::{Switch, SwitchConfig, SwitchSpec};
 
 #[derive(Debug)]
 pub struct SwitchContext {
