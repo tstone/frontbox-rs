@@ -22,6 +22,7 @@ pub mod prelude {
   pub use crate::machine::command::*;
   pub use crate::machine::machine::*;
   pub use crate::machine::plugin::*;
+  pub use crate::machine_builder::*;
   pub use crate::mainboard::BootConfig;
   pub use crate::mainboard::FastIoBoards;
   pub use crate::mainboard::FastPlatform;

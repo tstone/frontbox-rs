@@ -1,5 +1,5 @@
 use crate::hardware::driver_config::DriverConfig;
-use crate::machine_mode::MachineMode;
+use crate::machine::*;
 use crate::prelude::*;
 use crate::store::Store;
 
@@ -47,6 +47,11 @@ impl<'a> Context<'a> {
   pub fn command(&mut self, command: impl Command + 'static) {
     self.commands.push(Box::new(command));
   }
+
+  // TODO: broadcast event bus
+  // pub fn emit() {
+
+  // }
 
   pub fn get<T: Default + 'static>(&mut self) -> &T {
     self.store.get_state::<T>()

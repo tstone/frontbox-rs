@@ -1,5 +1,5 @@
-use crate::prelude::Machine;
+use crate::prelude::*;
 
 pub trait Plugin {
-  fn register(&self, machine: &mut Machine);
+  fn register(&self, machine: &mut MachineBuilder);
 }

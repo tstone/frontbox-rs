@@ -2,46 +2,14 @@ pub mod configure_driver;
 pub mod configure_hardware;
 pub mod driver_trigger;
 mod error;
+mod fast_response;
 pub mod id;
 pub mod report_switches;
 pub mod switch_state;
 pub mod watchdog;
 
-use std::time::Duration;
-
 pub use error::FastResponseError;
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
-pub enum FastResponse {
-  Unrecognized(String),
-  Failed(String),
-  Invalid(String),
-  Processed(String),
-
-  IdResponse {
-    processor: String,
-    product_number: String,
-    firmware_version: String,
-  },
-
-  Switch {
-    switch_id: usize,
-    state: SwitchState,
-  },
-  SwitchReport {
-    switches: Vec<SwitchState>,
-  },
-
-  WatchdogDisabled,
-  WatchdogExpired,
-  WatchdogRemaining(Duration),
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum SwitchState {
-  Open,
-  Closed,
-}
+pub use fast_response::*;
 
 pub fn parse(line: String) -> Option<FastResponse> {
   let (prefix, mut suffix) = line.split_at(3);

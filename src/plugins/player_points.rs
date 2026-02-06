@@ -1,10 +1,11 @@
 use crate::prelude::*;
 
+/// A plugin that tracks player points
 pub struct PlayerPointsPlugin;
 
 impl Plugin for PlayerPointsPlugin {
-  fn register(&self, machine: &mut Machine) {
-    machine.add_machine_scene(PlayerPointsSystem);
+  fn register(&self, machine: &mut MachineBuilder) {
+    machine.add_root_system(PlayerPointsSystem, SystemScope::Machine);
   }
 }
 
@@ -18,14 +19,8 @@ impl System for PlayerPointsSystem {
 
   fn on_ball_end(&mut self, _ctx: &mut Context, game: &mut GameState) {
     let points = game.get_mut::<PlayerPoints>();
-    // machine.display_wait(EndOfBallDisplay {
-    //   total_points: points.total + points.current_ball + points.bonus,
-    //   ball_points: points.current_ball,
-    //   bonus_points: points.bonus,
-    // });
-
-    points.total += points.current_ball + points.bonus;
-    points.current_ball = 0;
+    points.total += points.current_ball_points + points.bonus;
+    points.current_ball_points = 0;
     points.bonus = 0;
   }
 }
@@ -33,7 +28,7 @@ impl System for PlayerPointsSystem {
 #[derive(Default)]
 pub struct PlayerPoints {
   total: u32,
-  current_ball: u32,
+  current_ball_points: u32,
   bonus: u32,
 }
 
@@ -43,7 +38,7 @@ impl Command for AddPoints {
   fn execute(&self, machine: &mut Machine) {
     if let Some(game) = machine.game() {
       let points = game.get_mut::<PlayerPoints>();
-      points.current_ball += self.0;
+      points.current_ball_points += self.0;
     }
   }
 }
@@ -55,7 +50,7 @@ impl Command for AddBonus {
     if let Some(game) = machine.game() {
       let points = game.get_mut::<PlayerPoints>();
       points.bonus += self.0;
-      // TODO: commands are automatically emitted as events?
+      // TODO: are commands automatically emitted as events?
     }
   }
 }

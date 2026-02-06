@@ -33,7 +33,7 @@ impl System for Credits {
     self.active
   }
 
-  fn on_game_end(&mut self, ctx: &mut Context, game: &mut GameState) {
+  fn on_game_end(&mut self, _ctx: &mut Context, _game: &mut GameState) {
     self.active = true;
   }
 

@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::hardware::driver_config::DriverConfig;
-use crate::machine_mode::MachineMode;
-use crate::mainboard::{MainboardCommand, MainboardIncoming};
+use crate::machine::*;
+use crate::mainboard::*;
 use crate::modes::prelude::*;
 use crate::prelude::*;
-use crate::protocol::{self, FastResponse, SwitchState};
+use crate::protocol::*;
 use crate::store::Store;
 use crate::switch_context::SwitchContext;
-use crate::{BootResult, DriverPin, IoNetwork, Mainboard, prelude::*};
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -20,95 +19,20 @@ use tokio::sync::mpsc;
 pub type Scene = Vec<Box<dyn System>>;
 
 pub struct Machine {
-  command_tx: mpsc::Sender<MainboardCommand>,
-  event_rx: mpsc::Receiver<MainboardIncoming>,
-  switches: SwitchContext,
-  driver_lookup: HashMap<&'static str, DriverPin>,
-  keyboard_switch_map: HashMap<KeyCode, usize>,
-  machine_stack: Vec<Scene>,
-  init_game_stack: Vec<Scene>,
-  current_game_stack: Vec<Vec<Scene>>,
-  store: Store,
-  game_state: Option<GameState>,
-  mode: MachineMode,
+  pub(crate) command_tx: mpsc::Sender<MainboardCommand>,
+  pub(crate) event_rx: mpsc::Receiver<MainboardIncoming>,
+  pub(crate) switches: SwitchContext,
+  pub(crate) driver_lookup: HashMap<&'static str, DriverPin>,
+  pub(crate) keyboard_switch_map: HashMap<KeyCode, usize>,
+  pub(crate) machine_stack: Vec<Scene>,
+  pub(crate) init_game_stack: Vec<Scene>,
+  pub(crate) current_game_stack: Vec<Vec<Scene>>,
+  pub(crate) store: Store,
+  pub(crate) game_state: Option<GameState>,
+  pub(crate) mode: MachineMode,
 }
 
 impl Machine {
-  // TODO: separate out the boot process into a `MachineBuilder` or some such that also has the `with` and `add` methods
-  pub async fn boot(config: BootConfig, io_network: IoNetwork) -> Self {
-    let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(128);
-    let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(128);
-
-    let BootResult {
-      mut mainboard,
-      initial_switch_state,
-    } = Mainboard::boot(config, command_rx, event_tx.clone()).await;
-
-    // start serial communication in separate thread
-    std::thread::spawn(move || {
-      let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-      runtime.block_on(async move {
-        mainboard.run().await;
-      });
-    });
-
-    // TODO: define LEDs
-    let switches = SwitchContext::new(io_network.switches, initial_switch_state);
-
-    let mut drivers = HashMap::new();
-    for driver in io_network.driver_pins {
-      drivers.insert(driver.name, driver);
-    }
-
-    Self {
-      command_tx,
-      event_rx,
-      switches,
-      driver_lookup: drivers,
-      keyboard_switch_map: HashMap::new(),
-      machine_stack: Vec::new(),
-      store: Store::new(),
-      game_state: None,
-      init_game_stack: Vec::new(),
-      current_game_stack: Vec::new(),
-      mode: MachineMode::Attract,
-    }
-  }
-
-  pub fn add_machine_scene(&mut self, scene: Scene) -> &mut Self {
-    self.machine_stack.push(scene);
-    self
-  }
-
-  pub fn add_game_scene(&mut self, scene: Scene) -> &mut Self {
-    self.init_game_stack.push(scene);
-    self
-  }
-
-  pub fn add_keyboard_mapping(&mut self, key: KeyCode, switch_name: &'static str) -> &mut Self {
-    let switch = self.switches.switch_by_name(switch_name).unwrap();
-    self.keyboard_switch_map.insert(key, switch.id);
-    self
-  }
-
-  pub fn add_keyboard_mappings(&mut self, mappings: Vec<(KeyCode, &'static str)>) -> &mut Self {
-    for (key, switch_name) in mappings {
-      self.add_keyboard_mapping(key, switch_name);
-    }
-    self
-  }
-
-  pub fn with_plugin(mut self, plugin: Box<dyn Plugin>) -> Self {
-    plugin.register(&mut self);
-    self
-  }
-
-  // ---
-
   pub fn is_game_started(&self) -> bool {
     self.mode == MachineMode::Game
   }
@@ -209,7 +133,8 @@ impl Machine {
     }
   }
 
-  /// Process incoming switch events from the mainboard
+  // ---
+
   fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
     if let Some(switch) = self.switches.switch_by_id(&switch_id).cloned() {
       self.switches.update_switch_state(switch_id, state);
@@ -423,7 +348,7 @@ impl Machine {
     match self.driver_lookup.get(driver) {
       Some(driver) => {
         log::info!("Configuring driver {}", driver.name);
-        let cmd = protocol::configure_driver::request(driver, config);
+        let cmd = configure_driver::request(driver, config);
         let _ = self.command_tx.try_send(MainboardCommand::SendIo(cmd));
       }
       None => {
@@ -434,7 +359,7 @@ impl Machine {
   }
 
   fn report_switches(&mut self) {
-    let cmd = protocol::report_switches::request();
+    let cmd = report_switches::request();
     match self.command_tx.try_send(MainboardCommand::SendIo(cmd)) {
       Ok(_) => {}
       Err(e) => {
