@@ -2,6 +2,7 @@ use dyn_clone::DynClone;
 
 use crate::prelude::*;
 
+/// A System responds to incoming events and enqueues commands
 #[allow(unused)]
 pub trait System: DynClone + Send + Sync {
   /// Used by the machine to determine if this mode should receive events

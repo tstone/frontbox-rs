@@ -1,14 +1,5 @@
 use crate::prelude::*;
 
-/// A plugin that tracks player points
-pub struct PlayerPointsPlugin;
-
-impl Plugin for PlayerPointsPlugin {
-  fn register(&self, machine: &mut MachineBuilder) {
-    machine.add_root_system(PlayerPointsSystem, SystemScope::Machine);
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct PlayerPointsSystem;
 

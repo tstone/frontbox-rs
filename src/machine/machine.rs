@@ -1,14 +1,13 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::hardware::driver_config::DriverConfig;
-use crate::machine::*;
 use crate::mainboard::*;
-use crate::modes::prelude::*;
 use crate::prelude::*;
 use crate::protocol::*;
+use crate::runtimes::*;
 use crate::store::Store;
-use crate::switch_context::SwitchContext;
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -24,29 +23,14 @@ pub struct Machine {
   pub(crate) switches: SwitchContext,
   pub(crate) driver_lookup: HashMap<&'static str, DriverPin>,
   pub(crate) keyboard_switch_map: HashMap<KeyCode, usize>,
-  pub(crate) machine_stack: Vec<Scene>,
-  pub(crate) init_game_stack: Vec<Scene>,
-  pub(crate) current_game_stack: Vec<Vec<Scene>>,
   pub(crate) store: Store,
   pub(crate) game_state: Option<GameState>,
-  pub(crate) mode: MachineMode,
+  pub(crate) runtime: Box<dyn Runtime>,
 }
 
 impl Machine {
-  pub fn is_game_started(&self) -> bool {
-    self.mode == MachineMode::Game
-  }
-
-  pub fn in_attract_mode(&self) -> bool {
-    self.mode == MachineMode::Attract
-  }
-
-  pub fn in_admin_mode(&self) -> bool {
-    self.mode == MachineMode::Admin
-  }
-
-  pub fn mode(&self) -> &MachineMode {
-    &self.mode
+  pub fn runtime_type(&self) -> MachineModeType {
+    Any::type_id(&*self.runtime)
   }
 
   pub fn game(&mut self) -> Option<&mut GameState> {
@@ -195,27 +179,13 @@ impl Machine {
     F: FnMut(&mut Box<dyn System>, &mut Context, Option<&mut GameState>),
   {
     let mut commands = Vec::new();
+    let mode_type = self.runtime_type();
 
-    // Machine stack -- runs always for the whole machine
-    let current_machine_scene = self.machine_stack.last_mut().unwrap();
-    for mode in current_machine_scene {
-      if mode.is_listening() {
-        let mut ctx = Context::new(&self.mode, &mut self.store, &self.switches);
-        handler(mode, &mut ctx, self.game_state.as_mut());
+    for system in self.runtime.current_scene() {
+      if system.is_listening() {
+        let mut ctx = Context::new(mode_type, &mut self.store, &self.switches);
+        handler(system, &mut ctx, self.game_state.as_mut());
         commands.extend(ctx.take_commands());
-      }
-    }
-
-    // Game stack -- runs only if a game is active, and then per-player
-    if let Some(game_state) = &self.game_state {
-      let player_game_stack = &mut self.current_game_stack[game_state.current_player as usize];
-      let current_game_scene = player_game_stack.last_mut().unwrap();
-      for mode in current_game_scene {
-        if mode.is_listening() {
-          let mut ctx = Context::new(&self.mode, &mut self.store, &self.switches);
-          handler(mode, &mut ctx, self.game_state.as_mut());
-          commands.extend(ctx.take_commands());
-        }
       }
     }
 
@@ -291,30 +261,8 @@ impl Machine {
   //     }
   //   }
 
-  //   if game_state_changed {
-  //     let current_scene = self.machine_stack.last_mut().unwrap();
-  //     for mode in current_scene {
-  //       mode.on_game_state_changed(&old_game_state, &self.game_state, &self.switches);
-  //     }
-
-  //     if self.game_state.is_started() {
-  //       let current_player = self.game_state.current_player().unwrap();
-  //       let player_game_stack = &mut self.current_game_stack[current_player as usize];
-  //       let current_game_scene = player_game_stack.last_mut().unwrap();
-  //       for mode in current_game_scene {
-  //         mode.on_game_state_changed(&old_game_state, &self.game_state, &self.switches);
-  //       }
-  //     }
-  //   }
-  //   // if game state changed, process mode events
-  // }
-
   pub fn start_game(&mut self, team_count: u8) {
     log::info!("Starting new game");
-    self.current_game_stack.clear();
-    self
-      .current_game_stack
-      .push(self.clone_game_stack(&self.init_game_stack));
 
     let mut player_team_map: HashMap<u8, u8> = HashMap::new();
     player_team_map.insert(0, 0);
@@ -325,13 +273,16 @@ impl Machine {
 
   pub fn add_player(&mut self, team: Option<u8>) {
     log::info!("Adding player to game");
-    self
-      .current_game_stack
-      .push(self.clone_game_stack(&self.init_game_stack));
-
     if let Some(game_state) = &mut self.game_state {
       game_state.add_player(team);
+      self.runtime.on_add_player(game_state.player_count - 1);
     }
+  }
+
+  pub fn transition_to_runtime(&mut self, runtime: Box<dyn Runtime>) {
+    log::info!("Transitioning to new machine runtime");
+    let mut old_runtime = std::mem::replace(&mut self.runtime, runtime);
+    old_runtime.on_runtime_exit(self);
   }
 
   pub fn enable_high_voltage(&mut self) {
@@ -366,20 +317,6 @@ impl Machine {
         log::error!("Failed to send report switches command: {}", e);
       }
     }
-  }
-
-  /// Deep clones a game stack by cloning each scene and each mode within the scene
-  /// This ensures that each player has their own independent instances of each game mode
-  fn clone_game_stack(&self, stack: &[Scene]) -> Vec<Scene> {
-    stack
-      .iter()
-      .map(|scene| {
-        scene
-          .iter()
-          .map(|mode| dyn_clone::clone_box(&**mode))
-          .collect()
-      })
-      .collect()
   }
 }
 

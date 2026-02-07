@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
-use crate::machine::*;
+use crate::machine::switch_context::SwitchContext;
 use crate::mainboard::*;
 use crate::prelude::*;
+use crate::runtimes::Runtime;
 use crate::store::Store;
 
 pub struct MachineBuilder {
@@ -13,8 +14,6 @@ pub struct MachineBuilder {
   switches: SwitchContext,
   driver_lookup: HashMap<&'static str, DriverPin>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
-  root_machine_scene: Scene,
-  root_game_scene: Scene,
 }
 
 impl MachineBuilder {
@@ -53,8 +52,6 @@ impl MachineBuilder {
       switches,
       driver_lookup: drivers,
       keyboard_switch_map: HashMap::new(),
-      root_machine_scene: Vec::new(),
-      root_game_scene: Vec::new(),
     }
   }
 
@@ -76,39 +73,16 @@ impl MachineBuilder {
     self
   }
 
-  pub fn add_root_system(
-    &mut self,
-    system: impl System + 'static,
-    scope: SystemScope,
-  ) -> &mut Self {
-    match scope {
-      SystemScope::Machine => self.root_machine_scene.push(Box::new(system)),
-      SystemScope::Game => self.root_game_scene.push(Box::new(system)),
-    }
-    self
-  }
-
-  pub fn build(self) -> Machine {
+  pub fn build(self, initial_mode: Box<dyn Runtime>) -> Machine {
     Machine {
       command_tx: self.command_tx.clone(),
       event_rx: self.event_rx,
       switches: self.switches,
       driver_lookup: self.driver_lookup,
       keyboard_switch_map: self.keyboard_switch_map,
-      machine_stack: vec![self.root_machine_scene],
-      init_game_stack: vec![self.root_game_scene],
-      current_game_stack: Vec::new(),
       store: Store::new(),
       game_state: None,
-      mode: MachineMode::Attract,
+      runtime: initial_mode,
     }
   }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum SystemScope {
-  /// A system that runs at the scope of the machine, active regardless of game state
-  Machine,
-  /// A system that runs within a game, unique to a player or team
-  Game,
 }

@@ -1,17 +1,18 @@
+use std::any::TypeId;
+
 use crate::hardware::driver_config::DriverConfig;
-use crate::machine::*;
 use crate::prelude::*;
 use crate::store::Store;
 
 pub struct Context<'a> {
-  mode: &'a MachineMode,
+  mode: MachineModeType,
   commands: Vec<Box<dyn Command + 'static>>,
   store: &'a mut Store,
   switches: &'a SwitchContext,
 }
 
 impl<'a> Context<'a> {
-  pub fn new(mode: &'a MachineMode, store: &'a mut Store, switches: &'a SwitchContext) -> Self {
+  pub fn new(mode: MachineModeType, store: &'a mut Store, switches: &'a SwitchContext) -> Self {
     Self {
       mode,
       commands: Vec::new(),
@@ -20,19 +21,7 @@ impl<'a> Context<'a> {
     }
   }
 
-  pub fn is_game_started(&self) -> bool {
-    self.mode == MachineMode::Game
-  }
-
-  pub fn in_attract_mode(&self) -> bool {
-    self.mode == MachineMode::Attract
-  }
-
-  pub fn in_admin_mode(&self) -> bool {
-    self.mode == MachineMode::Admin
-  }
-
-  pub fn mode(&self) -> &MachineMode {
+  pub fn mode(&self) -> &MachineModeType {
     &self.mode
   }
 
