@@ -1,28 +1,41 @@
-use std::any::TypeId;
-
 use crate::hardware::driver_config::DriverConfig;
 use crate::prelude::*;
 use crate::store::Store;
 
 pub struct Context<'a> {
-  mode: MachineModeType,
+  mode: RuntimeType,
   commands: Vec<Box<dyn Command + 'static>>,
   store: &'a mut Store,
   switches: &'a SwitchContext,
+  current_player: Option<u8>,
 }
 
 impl<'a> Context<'a> {
-  pub fn new(mode: MachineModeType, store: &'a mut Store, switches: &'a SwitchContext) -> Self {
+  pub fn new(
+    mode: RuntimeType,
+    current_player: Option<u8>,
+    store: &'a mut Store,
+    switches: &'a SwitchContext,
+  ) -> Self {
     Self {
       mode,
       commands: Vec::new(),
       store,
       switches,
+      current_player,
     }
   }
 
-  pub fn mode(&self) -> &MachineModeType {
+  pub fn runtime_type(&self) -> &RuntimeType {
     &self.mode
+  }
+
+  pub fn current_player(&self) -> Option<u8> {
+    self.current_player
+  }
+
+  pub fn is_game_started(&self) -> bool {
+    self.current_player.is_some()
   }
 
   pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
@@ -43,19 +56,19 @@ impl<'a> Context<'a> {
   // }
 
   pub fn get<T: Default + 'static>(&mut self) -> &T {
-    self.store.get_state::<T>()
+    self.store.get::<T>()
   }
 
   pub fn get_mut<T: Default + 'static>(&mut self) -> &mut T {
-    self.store.get_state_mut::<T>()
+    self.store.get_mut::<T>()
   }
 
   pub fn insert<T: Default + 'static>(&mut self, value: T) {
-    self.store.insert_state::<T>(value);
+    self.store.insert::<T>(value);
   }
 
   pub fn remove<T: Default + 'static>(&mut self) {
-    self.store.remove_state::<T>();
+    self.store.remove::<T>();
   }
 
   pub(crate) fn take_commands(&mut self) -> Vec<Box<dyn Command>> {

@@ -7,7 +7,6 @@ use crate::mainboard::*;
 use crate::prelude::*;
 use crate::protocol::*;
 use crate::runtimes::*;
-use crate::store::Store;
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -23,18 +22,20 @@ pub struct Machine {
   pub(crate) switches: SwitchContext,
   pub(crate) driver_lookup: HashMap<&'static str, DriverPin>,
   pub(crate) keyboard_switch_map: HashMap<KeyCode, usize>,
-  pub(crate) store: Store,
-  pub(crate) game_state: Option<GameState>,
-  pub(crate) runtime: Box<dyn Runtime>,
+  pub(crate) runtime_stack: Vec<Box<dyn Runtime>>,
+  pub(crate) active_player: i8,
+  pub(crate) active_player_count: i8,
 }
 
 impl Machine {
-  pub fn runtime_type(&self) -> MachineModeType {
-    Any::type_id(&*self.runtime)
+  pub fn runtime_type(&self) -> RuntimeType {
+    Any::type_id(&*self.runtime_stack.last().unwrap())
   }
 
-  pub fn game(&mut self) -> Option<&mut GameState> {
-    self.game_state.as_mut()
+  pub fn active_store(&mut self) -> &mut Store {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (_scene, store) = runtime.get_current();
+    store
   }
 
   pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
@@ -45,25 +46,23 @@ impl Machine {
     self.switches.is_open_by_name(switch_name)
   }
 
-  pub fn get<T: Default + 'static>(&mut self) -> &T {
-    self.store.get_state::<T>()
+  pub fn is_game_started(&self) -> bool {
+    self.active_player >= 0
   }
 
-  pub fn get_mut<T: Default + 'static>(&mut self) -> &mut T {
-    self.store.get_state_mut::<T>()
-  }
-
-  pub fn insert<T: Default + 'static>(&mut self, value: T) {
-    self.store.insert_state::<T>(value);
-  }
-
-  pub fn remove<T: Default + 'static>(&mut self) {
-    self.store.remove_state::<T>();
+  pub fn active_player(&self) -> Option<u8> {
+    if self.active_player >= 0 {
+      Some(self.active_player as u8)
+    } else {
+      None
+    }
   }
 
   // ---
 
-  pub async fn run(&mut self) {
+  pub async fn run(&mut self, runtime: Box<dyn Runtime>) {
+    self.push_runtime(runtime);
+
     if self.keyboard_switch_map.len() > 0 {
       match enable_raw_mode() {
         Ok(_) => {}
@@ -124,11 +123,11 @@ impl Machine {
       self.switches.update_switch_state(switch_id, state);
       let activated = matches!(state, SwitchState::Closed);
 
-      self.dispatch_to_modes(|mode, ctx, game| {
+      self.dispatch_to_modes(|mode, ctx| {
         if activated {
-          mode.event_switch_closed(&switch, ctx, game);
+          mode.on_switch_closed(&switch, ctx);
         } else {
-          mode.event_switch_opened(&switch, ctx, game);
+          mode.on_switch_opened(&switch, ctx);
         }
       });
     } else {
@@ -142,53 +141,46 @@ impl Machine {
   }
 
   fn run_on_game_start(&mut self) {
-    self.dispatch_to_modes(|mode, ctx, game| {
-      if let Some(game) = game {
-        mode.on_game_start(ctx, game);
-      }
+    self.dispatch_to_modes(|mode, ctx| {
+      mode.on_game_start(ctx);
     });
   }
 
   fn run_on_game_end(&mut self) {
-    self.dispatch_to_modes(|mode, ctx, game| {
-      if let Some(game) = game {
-        mode.on_game_end(ctx, game);
-      }
+    self.dispatch_to_modes(|mode, ctx| {
+      mode.on_game_end(ctx);
     });
   }
 
   fn run_on_ball_start(&mut self) {
-    self.dispatch_to_modes(|mode, ctx, game| {
-      if let Some(game) = game {
-        mode.on_ball_start(ctx, game);
-      }
+    self.dispatch_to_modes(|mode, ctx| {
+      mode.on_ball_start(ctx);
     });
   }
 
   fn run_on_ball_end(&mut self) {
-    self.dispatch_to_modes(|mode, ctx, game| {
-      if let Some(game) = game {
-        mode.on_ball_end(ctx, game);
-      }
+    self.dispatch_to_modes(|mode, ctx| {
+      mode.on_ball_end(ctx);
     });
   }
 
   /// Run each system within the scene, capturing then running commands emitted during processing
   fn dispatch_to_modes<F>(&mut self, mut handler: F)
   where
-    F: FnMut(&mut Box<dyn System>, &mut Context, Option<&mut GameState>),
+    F: FnMut(&mut Box<dyn System>, &mut Context),
   {
-    let mut commands = Vec::new();
-    let mode_type = self.runtime_type();
+    let runtime_type = self.runtime_type();
+    let current_player = self.active_player();
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (scene, store) = runtime.get_current();
+    let mut ctx = Context::new(runtime_type, current_player, store, &self.switches);
 
-    for system in self.runtime.current_scene() {
-      if system.is_listening() {
-        let mut ctx = Context::new(mode_type, &mut self.store, &self.switches);
-        handler(system, &mut ctx, self.game_state.as_mut());
-        commands.extend(ctx.take_commands());
-      }
+    for system in scene.iter_mut() {
+      handler(system, &mut ctx);
     }
 
+    let mut commands = Vec::new();
+    commands.extend(ctx.take_commands());
     if !commands.is_empty() {
       self.process_commands(commands);
     }
@@ -261,30 +253,75 @@ impl Machine {
   //     }
   //   }
 
-  pub fn start_game(&mut self, team_count: u8) {
+  pub(crate) fn start_game(&mut self) {
     log::info!("Starting new game");
-
-    let mut player_team_map: HashMap<u8, u8> = HashMap::new();
-    player_team_map.insert(0, 0);
-
-    self.game_state = Some(GameState::new(1, team_count, player_team_map));
+    self.active_player = 0;
+    self.run_on_game_start();
     self.enable_high_voltage();
   }
 
-  pub fn add_player(&mut self, team: Option<u8>) {
+  pub fn add_player(&mut self) {
     log::info!("Adding player to game");
-    if let Some(game_state) = &mut self.game_state {
-      game_state.add_player(team);
-      self.runtime.on_add_player(game_state.player_count - 1);
+    self.active_player_count += 1;
+  }
+
+  pub fn advance_player(&mut self) {
+    log::info!("Advancing to next player");
+
+    if self.is_game_started() {
+      self.run_on_ball_end();
+      self.active_player += 1;
+      if self.active_player >= self.active_player_count {
+        self.active_player = 0;
+      }
+      self.run_on_ball_start();
     }
   }
 
-  pub fn transition_to_runtime(&mut self, runtime: Box<dyn Runtime>) {
+  /// Transition to a new runtime
+  pub fn push_runtime(&mut self, new_runtime: Box<dyn Runtime>) {
     log::info!("Transitioning to new machine runtime");
-    let mut old_runtime = std::mem::replace(&mut self.runtime, runtime);
-    old_runtime.on_runtime_exit(self);
+    let runtime = self.runtime_stack.last_mut();
+    if let Some(runtime) = runtime {
+      let mut ctx = RuntimeContext::new();
+      runtime.on_runtime_exit(&mut ctx);
+      self.execute_runtime_commands(ctx.commands());
+    }
+
+    let mut ctx = RuntimeContext::new();
+    new_runtime.on_runtime_enter(&mut ctx);
+    self.execute_runtime_commands(ctx.commands());
+
+    self.runtime_stack.push(new_runtime);
   }
 
+  pub fn pop_runtime(&mut self) {
+    if self.runtime_stack.len() <= 1 {
+      log::warn!("Attempted to pop runtime, but only one runtime exists");
+      return;
+    }
+
+    log::info!("Popping current machine runtime");
+    let mut ctx = RuntimeContext::new();
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    runtime.on_runtime_exit(&mut ctx);
+    self.execute_runtime_commands(ctx.commands());
+
+    self.runtime_stack.pop();
+
+    let mut ctx = RuntimeContext::new();
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    runtime.on_runtime_enter(&mut ctx);
+    self.execute_runtime_commands(ctx.commands());
+  }
+
+  fn execute_runtime_commands(&mut self, commands: Vec<RuntimeCommand>) {
+    for command in commands {
+      match command {
+        RuntimeCommand::StartGame => self.start_game(),
+      }
+    }
+  }
   pub fn enable_high_voltage(&mut self) {
     log::info!("Enabling high voltage");
     let _ = self.command_tx.try_send(MainboardCommand::Watchdog(true));

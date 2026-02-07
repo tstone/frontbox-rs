@@ -1,4 +1,6 @@
+use frontbox::plugins::*;
 use frontbox::prelude::*;
+use frontbox::runtimes::PlayerRuntime;
 use std::io::Write;
 use std::time::Duration;
 
@@ -43,7 +45,7 @@ async fn main() {
       .with_switch(2, switches::LOWER_DROP_TARGET3),
   );
 
-  Machine::boot(
+  MachineBuilder::boot(
     BootConfig {
       platform: FastPlatform::Neuron,
       io_net_port_path: "/dev/ttyACM0",
@@ -54,18 +56,17 @@ async fn main() {
   )
   .await
   .add_keyboard_mapping(KeyCode::Home, switches::START_BUTTON)
-  .add_machine_scene(vec![Freeplay::new(switches::START_BUTTON, 4)])
   .add_keyboard_mappings(vec![
     (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
     (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
     (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
   ])
-  .add_game_scene(vec![DropTargetDownUp::new([
+  .build()
+  .run(PlayerRuntime::new(vec![DropTargetDownUp::new([
     switches::LOWER_DROP_TARGET1,
     switches::LOWER_DROP_TARGET2,
     switches::LOWER_DROP_TARGET3,
-  ])])
-  .run()
+  ])]))
   .await;
 }
 
@@ -81,11 +82,11 @@ impl DropTargetDownUp {
   }
 }
 
-impl GameMode for DropTargetDownUp {
-  fn event_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
+impl System for DropTargetDownUp {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
-      ctx.add_points(100);
+      ctx.command(AddPoints(100));
 
       let all_down = self
         .target_switches
@@ -93,7 +94,7 @@ impl GameMode for DropTargetDownUp {
         .all(|&target| ctx.is_switch_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.add_points(1000);
+        ctx.command(AddPoints(1000));
         ctx.trigger_driver(drivers::LOWER_DROP_TARGET_COIL);
       }
     }

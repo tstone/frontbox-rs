@@ -1,4 +1,5 @@
 use frontbox::prelude::*;
+use frontbox::runtimes::AttractMode;
 use std::io::Write;
 
 #[tokio::main]
@@ -7,7 +8,7 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  Machine::boot(
+  MachineBuilder::boot(
     BootConfig {
       platform: FastPlatform::Neuron,
       io_net_port_path: "/dev/ttyACM0",
@@ -17,6 +18,7 @@ async fn main() {
     IoNetworkSpec::new().build(),
   )
   .await
-  .run()
+  .build()
+  .run(AttractMode::new(vec![]))
   .await;
 }

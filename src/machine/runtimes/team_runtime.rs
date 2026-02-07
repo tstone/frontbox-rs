@@ -4,6 +4,8 @@ use crate::runtimes::Runtime;
 pub struct TeamRuntime {
   /// Active stack, one per team
   team_stacks: Vec<Vec<Scene>>,
+  // Store for each team
+  team_stores: Vec<Store>,
   /// Index of the current player
   index: u8,
   player_team_map: Vec<u8>,
@@ -12,6 +14,7 @@ pub struct TeamRuntime {
 impl TeamRuntime {
   pub fn new(initial_scene: Scene, player_team_map: Vec<u8>) -> Box<Self> {
     let mut team_stacks = Vec::new();
+    let mut team_stores = Vec::new();
     let team_count = player_team_map.iter().max().unwrap_or(&0) + 1;
 
     // Create a stack for each team
@@ -21,10 +24,12 @@ impl TeamRuntime {
         .map(|system| dyn_clone::clone_box(&**system))
         .collect();
       team_stacks.push(vec![copy]);
+      team_stores.push(Store::new());
     }
 
     Box::new(Self {
       team_stacks,
+      team_stores,
       index: 0,
       player_team_map,
     })
@@ -32,14 +37,26 @@ impl TeamRuntime {
 }
 
 impl Runtime for TeamRuntime {
-  fn current_scene(&mut self) -> &mut Scene {
-    self
+  fn get_current(&mut self) -> (&mut Scene, &mut Store) {
+    let scene = self
       .team_stacks
       // get for current team
       .get_mut(self.player_team_map[self.index as usize] as usize)
       // get top of stack
       .and_then(|stack| stack.last_mut())
-      .unwrap()
+      .unwrap();
+
+    let store = self
+      .team_stores
+      // get for current team
+      .get_mut(self.player_team_map[self.index as usize] as usize)
+      .unwrap();
+
+    (scene, store)
+  }
+
+  fn on_runtime_enter(&self, ctx: &mut super::RuntimeContext) {
+    ctx.start_game();
   }
 
   fn on_add_player(&mut self, _new_player: u8) {

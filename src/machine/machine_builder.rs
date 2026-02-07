@@ -5,8 +5,6 @@ use tokio::sync::mpsc;
 use crate::machine::switch_context::SwitchContext;
 use crate::mainboard::*;
 use crate::prelude::*;
-use crate::runtimes::Runtime;
-use crate::store::Store;
 
 pub struct MachineBuilder {
   command_tx: mpsc::Sender<MainboardCommand>,
@@ -73,16 +71,16 @@ impl MachineBuilder {
     self
   }
 
-  pub fn build(self, initial_mode: Box<dyn Runtime>) -> Machine {
+  pub fn build(self) -> Machine {
     Machine {
       command_tx: self.command_tx.clone(),
       event_rx: self.event_rx,
       switches: self.switches,
       driver_lookup: self.driver_lookup,
       keyboard_switch_map: self.keyboard_switch_map,
-      store: Store::new(),
-      game_state: None,
-      runtime: initial_mode,
+      runtime_stack: Vec::new(),
+      active_player: -1,
+      active_player_count: 0,
     }
   }
 }

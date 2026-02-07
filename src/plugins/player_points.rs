@@ -4,12 +4,12 @@ use crate::prelude::*;
 pub struct PlayerPointsSystem;
 
 impl System for PlayerPointsSystem {
-  fn on_game_start(&mut self, _ctx: &mut Context, game: &mut GameState) {
-    game.insert::<PlayerPoints>(PlayerPoints::default());
+  fn on_game_start(&mut self, ctx: &mut Context) {
+    ctx.insert::<PlayerPoints>(PlayerPoints::default());
   }
 
-  fn on_ball_end(&mut self, _ctx: &mut Context, game: &mut GameState) {
-    let points = game.get_mut::<PlayerPoints>();
+  fn on_ball_end(&mut self, ctx: &mut Context) {
+    let points = ctx.get_mut::<PlayerPoints>();
     points.total += points.current_ball_points + points.bonus;
     points.current_ball_points = 0;
     points.bonus = 0;
@@ -23,23 +23,23 @@ pub struct PlayerPoints {
   bonus: u32,
 }
 
-pub struct AddPoints(u32);
+pub struct AddPoints(pub u32);
 
 impl Command for AddPoints {
   fn execute(&self, machine: &mut Machine) {
-    if let Some(game) = machine.game() {
-      let points = game.get_mut::<PlayerPoints>();
+    if machine.is_game_started() {
+      let points = machine.active_store().get_mut::<PlayerPoints>();
       points.current_ball_points += self.0;
     }
   }
 }
 
-pub struct AddBonus(u32);
+pub struct AddBonus(pub u32);
 
 impl Command for AddBonus {
   fn execute(&self, machine: &mut Machine) {
-    if let Some(game) = machine.game() {
-      let points = game.get_mut::<PlayerPoints>();
+    if machine.is_game_started() {
+      let points = machine.active_store().get_mut::<PlayerPoints>();
       points.bonus += self.0;
       // TODO: are commands automatically emitted as events?
     }

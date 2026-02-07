@@ -16,7 +16,7 @@ impl Store {
     self.internal.clear();
   }
 
-  pub fn get_state<T: Default + 'static>(&mut self) -> &T {
+  pub fn get<T: Default + 'static>(&mut self) -> &T {
     if self.internal.get::<T>().is_some() {
       return self.internal.get::<T>().unwrap();
     } else {
@@ -25,7 +25,7 @@ impl Store {
     }
   }
 
-  pub fn get_state_mut<T: Default + 'static>(&mut self) -> &mut T {
+  pub fn get_mut<T: Default + 'static>(&mut self) -> &mut T {
     if self.internal.get::<T>().is_some() {
       return self.internal.get_mut::<T>().unwrap();
     } else {
@@ -34,11 +34,11 @@ impl Store {
     }
   }
 
-  pub fn insert_state<T: Default + 'static>(&mut self, value: T) {
+  pub fn insert<T: Default + 'static>(&mut self, value: T) {
     self.internal.insert::<T>(value);
   }
 
-  pub fn remove_state<T: Default + 'static>(&mut self) {
+  pub fn remove<T: Default + 'static>(&mut self) {
     self.internal.remove::<T>();
   }
 }
