@@ -1,6 +1,5 @@
 mod player_points;
+mod scene_manipulation;
 
-pub use player_points::AddBonus;
-pub use player_points::AddPoints;
-pub use player_points::PlayerPoints;
-pub use player_points::PlayerPointsSystem;
+pub use player_points::*;
+pub use scene_manipulation::*;
