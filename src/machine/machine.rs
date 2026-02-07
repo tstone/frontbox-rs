@@ -173,24 +173,26 @@ impl Machine {
     let current_player = self.active_player();
     let runtime = self.runtime_stack.last_mut().unwrap();
     let (scene, store) = runtime.get_current();
-    let mut ctx = Context::new(runtime_type, current_player, store, &self.switches);
-
-    for system in scene.iter_mut() {
-      handler(system, &mut ctx);
-    }
-
     let mut commands = Vec::new();
-    commands.extend(ctx.take_commands());
-    if !commands.is_empty() {
-      self.process_commands(commands);
+
+    // Run systems
+    for (system_index, system) in scene.iter_mut().enumerate() {
+      let mut ctx = Context::new(runtime_type, current_player, store, &self.switches);
+      handler(system, &mut ctx);
+      let cmds = ctx
+        .take_commands()
+        .into_iter()
+        .map(|cmd| (cmd, system_index));
+      commands.extend(cmds);
     }
-  }
 
-  fn process_commands(&mut self, commands: Vec<Box<dyn Command + 'static>>) {
-    // TODO: handle uniqueness
+    // Run commands from systems
+    if !commands.is_empty() {
+      // TODO: handle uniqueness
 
-    for command in commands {
-      command.execute(self);
+      for (command, system_index) in commands {
+        command.execute(system_index, self);
+      }
     }
   }
 
@@ -295,12 +297,8 @@ impl Machine {
     self.runtime_stack.push(new_runtime);
   }
 
+  /// Transition out of current runtime back to previous
   pub fn pop_runtime(&mut self) {
-    if self.runtime_stack.len() <= 1 {
-      log::warn!("Attempted to pop runtime, but only one runtime exists");
-      return;
-    }
-
     log::info!("Popping current machine runtime");
     let mut ctx = RuntimeContext::new();
     let runtime = self.runtime_stack.last_mut().unwrap();
@@ -309,10 +307,56 @@ impl Machine {
 
     self.runtime_stack.pop();
 
-    let mut ctx = RuntimeContext::new();
+    if self.runtime_stack.len() > 0 {
+      let mut ctx = RuntimeContext::new();
+      let runtime = self.runtime_stack.last_mut().unwrap();
+      runtime.on_runtime_enter(&mut ctx);
+      self.execute_runtime_commands(ctx.commands());
+    } else {
+      log::warn!("No active runtime");
+    }
+  }
+
+  pub fn push_scene(&mut self, scene: Scene) {
     let runtime = self.runtime_stack.last_mut().unwrap();
-    runtime.on_runtime_enter(&mut ctx);
-    self.execute_runtime_commands(ctx.commands());
+    runtime.push_scene(scene);
+  }
+
+  pub fn pop_scene(&mut self) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    runtime.pop_scene();
+  }
+
+  pub fn add_system(&mut self, system: Box<dyn System>) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (scene, _store) = runtime.get_current();
+    scene.push(system);
+  }
+
+  pub fn replace_system(&mut self, system_index: usize, new_system: Box<dyn System>) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (scene, _store) = runtime.get_current();
+    if system_index < scene.len() {
+      scene[system_index] = new_system;
+    } else {
+      log::error!(
+        "Attempted to replace system with invalid index: {}",
+        system_index
+      );
+    }
+  }
+
+  pub fn terminate_system(&mut self, system_index: usize) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (scene, _store) = runtime.get_current();
+    if system_index < scene.len() {
+      scene.remove(system_index);
+    } else {
+      log::error!(
+        "Attempted to terminate system with invalid index: {}",
+        system_index
+      );
+    }
   }
 
   fn execute_runtime_commands(&mut self, commands: Vec<RuntimeCommand>) {

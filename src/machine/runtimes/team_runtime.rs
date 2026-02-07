@@ -40,19 +40,32 @@ impl Runtime for TeamRuntime {
   fn get_current(&mut self) -> (&mut Scene, &mut Store) {
     let scene = self
       .team_stacks
-      // get for current team
       .get_mut(self.player_team_map[self.index as usize] as usize)
-      // get top of stack
       .and_then(|stack| stack.last_mut())
       .unwrap();
 
     let store = self
       .team_stores
-      // get for current team
       .get_mut(self.player_team_map[self.index as usize] as usize)
       .unwrap();
 
     (scene, store)
+  }
+
+  fn push_scene(&mut self, scene: Scene) {
+    self
+      .team_stacks
+      .get_mut(self.player_team_map[self.index as usize] as usize)
+      .unwrap()
+      .push(scene);
+  }
+
+  fn pop_scene(&mut self) {
+    self
+      .team_stacks
+      .get_mut(self.player_team_map[self.index as usize] as usize)
+      .unwrap()
+      .pop();
   }
 
   fn on_runtime_enter(&self, ctx: &mut super::RuntimeContext) {

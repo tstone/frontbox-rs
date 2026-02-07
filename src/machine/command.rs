@@ -7,7 +7,8 @@ pub trait Command: Any + Send + Sync {
     CommandUniqueness::NonExclusive
   }
 
-  fn execute(&self, machine: &mut Machine);
+  /// Execute the command, potentially modifying the machine state. The system_id is provided to allow commands to modify the system that created them, if desired.
+  fn execute(&self, system_id: usize, machine: &mut Machine);
 }
 
 pub enum CommandUniqueness {

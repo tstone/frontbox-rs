@@ -26,7 +26,7 @@ pub struct PlayerPoints {
 pub struct AddPoints(pub u32);
 
 impl Command for AddPoints {
-  fn execute(&self, machine: &mut Machine) {
+  fn execute(&self, _system_id: usize, machine: &mut Machine) {
     if machine.is_game_started() {
       let points = machine.active_store().get_mut::<PlayerPoints>();
       points.current_ball_points += self.0;
@@ -37,7 +37,7 @@ impl Command for AddPoints {
 pub struct AddBonus(pub u32);
 
 impl Command for AddBonus {
-  fn execute(&self, machine: &mut Machine) {
+  fn execute(&self, _system_id: usize, machine: &mut Machine) {
     if machine.is_game_started() {
       let points = machine.active_store().get_mut::<PlayerPoints>();
       points.bonus += self.0;

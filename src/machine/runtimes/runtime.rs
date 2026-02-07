@@ -3,9 +3,9 @@ use crate::prelude::*;
 /// A runtime manages which stack of scenes is currently active, acting as a switchboard operator
 #[allow(unused)]
 pub trait Runtime {
-  // fn current_scene(&mut self) -> &mut Scene;
-  // fn current_store(&mut self) -> &mut Store;
   fn get_current(&mut self) -> (&mut Scene, &mut Store);
+  fn push_scene(&mut self, scene: Scene);
+  fn pop_scene(&mut self);
 
   fn on_runtime_enter(&self, ctx: &mut RuntimeContext) {}
   fn on_add_player(&mut self, player_index: u8) {}
