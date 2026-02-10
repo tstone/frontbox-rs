@@ -86,11 +86,24 @@ impl SwitchContext {
     self.by_name.get(switch_name)
   }
 
+  /// Used internally to define an additional virtual (non-hardware backed) switch
+  pub(crate) fn add_virtual_switch(&mut self, switch_name: &'static str, id: usize) {
+    let switch = Switch {
+      id,
+      name: switch_name,
+    };
+    self.by_id.insert(id, switch.clone());
+    self.by_name.insert(switch_name, switch);
+    self.is_closed.insert(id, false);
+  }
+
+  /// Used internally to update switch state via switch events
   pub(crate) fn update_switch_state(&mut self, switch_id: usize, state: SwitchState) {
     let is_closed = matches!(state, SwitchState::Closed);
     self.is_closed.insert(switch_id, is_closed);
   }
 
+  /// Used internally to update all switch states based on a switch report
   pub(crate) fn update_switch_states(&mut self, states: Vec<SwitchState>) {
     for (switch_id, state) in states.into_iter().enumerate() {
       // Switch report does not account for switch config inversion

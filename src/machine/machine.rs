@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use crate::hardware::driver_config::DriverConfig;
 use crate::mainboard::*;
 use crate::prelude::*;
-use crate::protocol::*;
+use crate::protocol::{self, *};
 use crate::runtimes::*;
 use crossterm::{
   event::{Event, EventStream, KeyCode},
@@ -20,7 +20,7 @@ pub struct Machine {
   pub(crate) command_tx: mpsc::Sender<MainboardCommand>,
   pub(crate) event_rx: mpsc::Receiver<MainboardIncoming>,
   pub(crate) switches: SwitchContext,
-  pub(crate) driver_lookup: HashMap<&'static str, DriverPin>,
+  pub(crate) driver_lookup: HashMap<&'static str, Driver>,
   pub(crate) keyboard_switch_map: HashMap<KeyCode, usize>,
   pub(crate) runtime_stack: Vec<Box<dyn Runtime>>,
   pub(crate) active_player: i8,
@@ -282,24 +282,30 @@ impl Machine {
 
   /// Transition to a new runtime
   pub fn push_runtime(&mut self, new_runtime: Box<dyn Runtime>) {
-    log::info!("Transitioning to new machine runtime");
+    log::info!("Pushing into new runtime");
     let runtime = self.runtime_stack.last_mut();
     if let Some(runtime) = runtime {
       let mut ctx = RuntimeContext::new();
+      log::trace!("on_runtime_exit for current runtime");
       runtime.on_runtime_exit(&mut ctx);
       self.execute_runtime_commands(ctx.commands());
     }
 
-    let mut ctx = RuntimeContext::new();
-    new_runtime.on_runtime_enter(&mut ctx);
-    self.execute_runtime_commands(ctx.commands());
-
     self.runtime_stack.push(new_runtime);
+
+    let mut ctx = RuntimeContext::new();
+    log::trace!("on_runtime_enter for new runtime");
+    self
+      .runtime_stack
+      .last_mut()
+      .unwrap()
+      .on_runtime_enter(&mut ctx);
+    self.execute_runtime_commands(ctx.commands());
   }
 
   /// Transition out of current runtime back to previous
   pub fn pop_runtime(&mut self) {
-    log::info!("Popping current machine runtime");
+    log::info!("Popping current runtime");
     let mut ctx = RuntimeContext::new();
     let runtime = self.runtime_stack.last_mut().unwrap();
     runtime.on_runtime_exit(&mut ctx);
@@ -366,6 +372,7 @@ impl Machine {
       }
     }
   }
+
   pub fn enable_high_voltage(&mut self) {
     log::info!("Enabling high voltage");
     let _ = self.command_tx.try_send(MainboardCommand::Watchdog(true));
@@ -380,7 +387,7 @@ impl Machine {
     match self.driver_lookup.get(driver) {
       Some(driver) => {
         log::info!("Configuring driver {}", driver.name);
-        let cmd = configure_driver::request(driver, config);
+        let cmd = configure_driver::request(&driver.id, &config);
         let _ = self.command_tx.try_send(MainboardCommand::SendIo(cmd));
       }
       None => {
@@ -399,10 +406,31 @@ impl Machine {
       }
     }
   }
+
+  pub fn trigger_driver(&mut self, driver: &'static str) {
+    match self.driver_lookup.get(driver) {
+      Some(driver) => {
+        log::info!("Triggering driver {}", driver.name);
+        // TODO
+        // let cmd = protocol::driver_trigger::DriverTrigger(driver);
+        // let _ = self.command_tx.try_send(MainboardCommand::SendIo(cmd));
+      }
+      None => {
+        log::error!("Attempted to trigger unknown driver: {}", driver);
+        return;
+      }
+    }
+  }
 }
 
 #[derive(Debug, Clone)]
 pub struct Switch {
   pub id: usize,
   pub name: &'static str,
+}
+
+impl Switch {
+  pub fn is_virtual(&self) -> bool {
+    self.id > u16::MAX as usize
+  }
 }

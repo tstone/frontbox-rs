@@ -1,6 +1,7 @@
 pub mod configure_driver;
 pub mod configure_hardware;
-pub mod driver_trigger;
+pub mod configure_switch;
+mod driver_trigger;
 mod error;
 mod fast_response;
 pub mod id;
@@ -31,6 +32,8 @@ pub fn parse(line: String) -> Option<FastResponse> {
     switch_state::closed_response(suffix)
   } else if prefix == "/L:" {
     switch_state::open_response(suffix)
+  } else if prefix == "SA:" {
+    report_switches::response(suffix)
   } else {
     Ok(FastResponse::Unrecognized(line.clone()))
   };

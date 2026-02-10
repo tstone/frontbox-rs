@@ -2,10 +2,11 @@ use frontbox::plugins::*;
 use frontbox::prelude::*;
 use frontbox::runtimes::PlayerRuntime;
 use std::io::Write;
-use std::time::Duration;
 
 pub mod switches {
   pub const START_BUTTON: &str = "start_button";
+  pub const LEFT_FLIPPER_BUTTON: &str = "left_flipper_button";
+  pub const RIGHT_FLIPPER_BUTTON: &str = "right_flipper_button";
   pub const LOWER_DROP_TARGET1: &str = "lower_drop_target1";
   pub const LOWER_DROP_TARGET2: &str = "lower_drop_target2";
   pub const LOWER_DROP_TARGET3: &str = "lower_drop_target3";
@@ -24,25 +25,35 @@ async fn main() {
 
   let mut io_network = IoNetworkSpec::new();
 
+  io_network.add_board(FastIoBoards::io_3208());
+
   io_network.add_board(
-    FastIoBoards::cabinet()
-      .with_switch(0, switches::START_BUTTON)
+    FastIoBoards::io_1616()
+      .with_switch(5, switches::LOWER_DROP_TARGET1)
       .with_switch_config(
-        switches::START_BUTTON,
+        switches::LOWER_DROP_TARGET1,
         SwitchConfig {
-          inverted: false,
-          debounce_close: Some(Duration::from_millis(20)),
+          inverted: true,
           ..Default::default()
         },
       )
-      .with_driver_pin(0, drivers::START_BUTTON_LAMP),
-  );
-
-  io_network.add_board(
-    FastIoBoards::io_3208()
-      .with_switch(0, switches::LOWER_DROP_TARGET1)
-      .with_switch(1, switches::LOWER_DROP_TARGET2)
-      .with_switch(2, switches::LOWER_DROP_TARGET3),
+      .with_switch(6, switches::LOWER_DROP_TARGET2)
+      .with_switch_config(
+        switches::LOWER_DROP_TARGET2,
+        SwitchConfig {
+          inverted: true,
+          ..Default::default()
+        },
+      )
+      .with_switch(7, switches::LOWER_DROP_TARGET3)
+      .with_switch_config(
+        switches::LOWER_DROP_TARGET3,
+        SwitchConfig {
+          inverted: true,
+          ..Default::default()
+        },
+      )
+      .with_driver(0, drivers::LOWER_DROP_TARGET_COIL),
   );
 
   MachineBuilder::boot(
@@ -55,12 +66,12 @@ async fn main() {
     io_network.build(),
   )
   .await
-  .add_keyboard_mapping(KeyCode::Home, switches::START_BUTTON)
   .add_keyboard_mappings(vec![
     (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
     (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
     (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
   ])
+  .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
   .build()
   .run(PlayerRuntime::new(vec![DropTargetDownUp::new([
     switches::LOWER_DROP_TARGET1,
@@ -83,6 +94,10 @@ impl DropTargetDownUp {
 }
 
 impl System for DropTargetDownUp {
+  fn on_game_start(&mut self, ctx: &mut Context) {
+    ctx.command(TriggerDriver(drivers::LOWER_DROP_TARGET_COIL));
+  }
+
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
@@ -95,7 +110,7 @@ impl System for DropTargetDownUp {
 
       if all_down {
         ctx.command(AddPoints(1000));
-        ctx.trigger_driver(drivers::LOWER_DROP_TARGET_COIL);
+        ctx.command(TriggerDriver(drivers::LOWER_DROP_TARGET_COIL));
       }
     }
   }

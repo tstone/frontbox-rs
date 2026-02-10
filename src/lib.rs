@@ -30,6 +30,8 @@ pub mod prelude {
   pub use crate::store::Store;
 
   pub use crossterm::event::KeyCode;
+  pub use crossterm::event::MediaKeyCode;
+  pub use crossterm::event::ModifierKeyCode;
 
   pub type RuntimeType = std::any::TypeId;
 }

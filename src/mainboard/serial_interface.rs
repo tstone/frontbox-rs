@@ -66,6 +66,8 @@ impl SerialInterface {
         Ok(Some(Ok(msg))) => {
           if let Some(result) = predicate(msg.clone()) {
             return Some(result);
+          } else if let FastResponse::Unrecognized(_) = msg {
+            log::warn!("⚠️ Received unexpected processed response: {:?}", msg);
           }
         }
         Ok(Some(Err(e))) => {
