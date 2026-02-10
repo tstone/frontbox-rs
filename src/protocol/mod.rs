@@ -3,46 +3,40 @@ pub mod configure_hardware;
 pub mod configure_switch;
 mod driver_trigger;
 mod error;
-mod fast_response;
+pub mod fast_command;
+mod event_response;
 pub mod id;
+pub mod raw_response;
 pub mod report_switches;
 pub mod switch_state;
 pub mod watchdog;
 
 pub use error::FastResponseError;
-pub use fast_response::*;
+pub use event_response::*;
 
-pub fn parse(line: String) -> Option<FastResponse> {
-  let (prefix, mut suffix) = line.split_at(3);
-  suffix = suffix.trim_end();
+use crate::protocol::prelude::RawResponse;
 
-  if suffix == "F" {
-    return Some(FastResponse::Failed(prefix[..2].to_string()));
-  } else if suffix == "X" {
-    return Some(FastResponse::Invalid(prefix[..2].to_string()));
-  } else if suffix == "P" {
-    return Some(FastResponse::Processed(prefix[..2].to_string()));
-  }
+pub mod prelude {
+  pub use crate::protocol::FastResponseError;
+  pub use crate::protocol::configure_driver::*;
+  pub use crate::protocol::configure_hardware::*;
+  pub use crate::protocol::configure_switch::*;
+  pub use crate::protocol::driver_trigger::*;
+  pub use crate::protocol::fast_command::FastCommand;
+  pub use crate::protocol::id::*;
+  pub use crate::protocol::raw_response::RawResponse;
+  pub use crate::protocol::report_switches::*;
+  pub use crate::protocol::switch_state::*;
+  pub use crate::protocol::watchdog::*;
+}
 
-  let msg = if prefix == "ID:" {
-    id::response(suffix)
-  } else if prefix == "WD:" {
-    watchdog::response(suffix)
-  } else if prefix == "-L:" {
-    switch_state::closed_response(suffix)
-  } else if prefix == "/L:" {
-    switch_state::open_response(suffix)
-  } else if prefix == "SA:" {
-    report_switches::response(suffix)
+pub fn parse_event(raw: RawResponse) -> Result<EventResponse, FastResponseError> {
+  if raw.prefix == "-L:" {
+    switch_state::closed_response(&raw.payload)
+  } else if raw.prefix == "/L:" {
+    switch_state::open_response(&raw.payload)
   } else {
-    Ok(FastResponse::Unrecognized(line.clone()))
-  };
-
-  match msg {
-    Ok(response) => Some(response),
-    Err(e) => {
-      log::error!("Error parsing response '{}': {:?}", line, e);
-      None
-    }
+    log::warn!("Unknown event type '{}'", raw.prefix);
+    Err(FastResponseError::UnknownPrefix(raw.prefix))
   }
 }

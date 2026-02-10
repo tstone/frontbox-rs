@@ -1,31 +1,57 @@
-use crate::protocol::{FastResponse, FastResponseError, SwitchState};
+use crate::protocol::{SwitchState, prelude::*};
 
-pub fn request() -> String {
-  "SA:\r".to_string()
+pub struct ReportSwitchesCommand;
+
+impl ReportSwitchesCommand {
+  pub fn new() -> Self {
+    ReportSwitchesCommand
+  }
 }
 
-pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
-  let parts: Vec<&str> = data.split(',').collect();
-  let raw = parts[1];
-  let mut states = Vec::new();
+impl FastCommand for ReportSwitchesCommand {
+  type Response = SwitchReportResponse;
 
-  // state information comes in as an ASCII string which when converted to binary gives the complete state
-  // e.g. SA:OE,01F46AC100000000000000000000
-
-  for char in raw.chars() {
-    let value = char.to_digit(16).ok_or(FastResponseError::InvalidFormat)?;
-    for bit in 0..4 {
-      // TODO: verify MSB/LSB
-      let state = if (value & (1 << (3 - bit))) != 0 {
-        SwitchState::Closed
-      } else {
-        SwitchState::Open
-      };
-      states.push(state);
-    }
+  fn prefix() -> &'static str {
+    "sa"
   }
 
-  Ok(FastResponse::SwitchReport { switches: states })
+  fn to_string(&self) -> String {
+    "SA:\r".to_string()
+  }
+
+  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
+    if raw.payload.to_lowercase() == "f" {
+      return Ok(SwitchReportResponse::Failed);
+    }
+
+    let parts: Vec<&str> = raw.payload.split(',').collect();
+    let raw = parts[1];
+    let mut states = Vec::new();
+
+    // state information comes in as an ASCII string which when converted to binary gives the complete state
+    // e.g. SA:OE,01F46AC100000000000000000000
+
+    for char in raw.chars() {
+      let value = char.to_digit(16).ok_or(FastResponseError::InvalidFormat)?;
+      for bit in 0..4 {
+        // TODO: verify MSB/LSB
+        let state = if (value & (1 << (3 - bit))) != 0 {
+          SwitchState::Closed
+        } else {
+          SwitchState::Open
+        };
+        states.push(state);
+      }
+    }
+
+    Ok(SwitchReportResponse::SwitchReport { switches: states })
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SwitchReportResponse {
+  SwitchReport { switches: Vec<SwitchState> },
+  Failed,
 }
 
 #[cfg(test)]
@@ -34,7 +60,10 @@ mod tests {
 
   #[test]
   fn test_response() {
-    let result = response("OE,01F");
+    let result = ReportSwitchesCommand.parse(RawResponse {
+      payload: "OE,01F".to_string(),
+      ..Default::default()
+    });
 
     let expected_switches = vec![
       SwitchState::Open,   // 0
@@ -53,7 +82,7 @@ mod tests {
 
     assert_eq!(
       result,
-      Ok(FastResponse::SwitchReport {
+      Ok(SwitchReportResponse::SwitchReport {
         switches: expected_switches
       })
     );

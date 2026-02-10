@@ -3,4 +3,5 @@ pub enum FastResponseError {
   InvalidFormat,
   UnknownResponse,
   UnknownPrefix(String),
+  Timeout,
 }

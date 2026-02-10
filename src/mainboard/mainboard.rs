@@ -1,8 +1,13 @@
 use std::time::Duration;
 
 use crate::mainboard::serial_interface::SerialInterface;
-use crate::protocol::configure_hardware::{self, SwitchReporting};
-use crate::protocol::{FastResponse, SwitchState, id, report_switches, watchdog};
+use crate::protocol::configure_hardware::SwitchReporting;
+use crate::protocol::id::{IdCommand, IdResponse};
+use crate::protocol::prelude::{
+  ConfigureHardwareCommand, ReportSwitchesCommand, SwitchReportResponse, WatchdogCommand,
+  WatchdogResponse,
+};
+use crate::protocol::{EventResponse, SwitchState};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
@@ -17,7 +22,7 @@ pub struct Mainboard {
 
 #[derive(Debug, Clone)]
 pub struct MainboardIncoming {
-  pub data: FastResponse,
+  pub event: EventResponse,
   pub channel: FastChannel,
 }
 
@@ -47,27 +52,26 @@ impl Mainboard {
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
     // wait for mainboard ID response (boot cycle complete)
-    loop {
-      let resp = io_port
-        .request(id::request(), Duration::from_millis(2000))
-        .await;
-      match resp {
-        Some(FastResponse::IdResponse {
+    let _ = io_port
+      .request_until_match(IdCommand::new(), Duration::from_millis(2000), |response| {
+        if let IdResponse::Report {
           processor,
           product_number,
           firmware_version,
-        }) => {
+        } = response
+        {
           log::info!(
             "🥾 Connected to mainboard {} {} with firmware: {}",
             processor,
             product_number,
             firmware_version
           );
-          break;
+          Some(true)
+        } else {
+          None
         }
-        _ => {}
-      };
-    }
+      })
+      .await;
 
     // configure hardware (instruct mainboard which 'platform' it is)
     log::info!(
@@ -76,7 +80,7 @@ impl Mainboard {
     );
     let _ = io_port
       .request(
-        &configure_hardware::request(
+        &ConfigureHardwareCommand::new(
           config.platform.clone() as u16,
           Some(SwitchReporting::Verbose),
         ),
@@ -84,27 +88,34 @@ impl Mainboard {
       )
       .await;
 
+    // get initial switch state
     let switches = io_port
-      .request(&report_switches::request(), Duration::from_millis(2000))
-      .await
-      .expect("Failed to get initial switch states from mainboard");
+      .request_until_match(
+        ReportSwitchesCommand::new(),
+        Duration::from_millis(2000),
+        |resp| {
+          if let SwitchReportResponse::SwitchReport { switches } = resp {
+            log::info!("🥾 Initial switch states: {:?}", switches);
+            Some(switches)
+          } else {
+            None
+          }
+        },
+      )
+      .await;
 
     // verify watchdog is ready
-    loop {
-      let resp = io_port
-        .request(
-          &watchdog::set(Duration::from_millis(1250)),
-          Duration::from_millis(2000),
-        )
-        .await;
-      match resp {
-        Some(FastResponse::Processed { .. }) => {
+    let _ = io_port.request_until_match(
+      WatchdogCommand::new(Some(Duration::from_millis(1250))),
+      Duration::from_millis(2000),
+      |resp| match resp {
+        WatchdogResponse::Processed => {
           log::info!("🕙 Watchdog timer started");
-          break;
+          Some(true)
         }
-        _ => {}
-      };
-    }
+        _ => None,
+      },
+    );
 
     BootResult {
       mainboard: Mainboard {
@@ -138,29 +149,14 @@ impl Mainboard {
           // watchdog
           _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
             log::trace!("🖥️ -> 👾 : Watchdog tick");
-            self.io_port.dispatch(&watchdog::set(Duration::from_millis(1250))).await;
+            self.io_port.dispatch(&WatchdogCommand::new(Some(Duration::from_millis(1250)))).await;
           }
 
           // route incoming messages
-          result = self.io_port.read() => {
-            if let Some(Ok(msg)) = result {
-              match msg.clone() {
-                FastResponse::Processed(cmd) => {
-                  log::trace!("👾 -> 🖥️ : Processed {} ", cmd);
-                }
-                FastResponse::Failed(cmd) => {
-                  log::warn!("👾 -> 🖥️ : ⚠️ Failed {}", cmd);
-                }
-                FastResponse::Invalid(cmd) => {
-                  log::warn!("👾 -> 🖥️ : ⚠️ Invalid {}", cmd);
-                }
-                _ => {
-                  log::debug!("👾 -> 🖥️: {:?}", msg);
-                }
-              }
-
+          result = self.io_port.read_event() => {
+            if let Some(event) = result {
               let event = MainboardIncoming {
-                data: msg,
+                event,
                 channel: FastChannel::Io,
               };
               match self.events_outgoing.try_send(event) {

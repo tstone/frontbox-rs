@@ -77,7 +77,7 @@ impl Machine {
     loop {
       tokio::select! {
         Some(event) = self.event_rx.recv() => {
-          match event.data {
+          match event.event {
             FastResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
             FastResponse::SwitchReport { switches } => {
               self.switches.update_switch_states(switches);
