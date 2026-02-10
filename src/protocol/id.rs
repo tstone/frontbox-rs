@@ -1,7 +1,7 @@
 use crate::protocol::{FastResponse, FastResponseError};
 
-const ID_REQUEST: &[u8] = b"ID:\r";
-pub fn request() -> &'static [u8] {
+const ID_REQUEST: &str = "ID:\r";
+pub fn request() -> &'static str {
   ID_REQUEST
 }
 

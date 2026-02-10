@@ -47,65 +47,64 @@ impl Mainboard {
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
     // wait for mainboard ID response (boot cycle complete)
-    io_port
-      .poll_for_response(
-        &id::request(),
-        Duration::from_millis(250),
-        |msg| match msg {
-          FastResponse::IdResponse {
+    loop {
+      let resp = io_port
+        .request(id::request(), Duration::from_millis(2000))
+        .await;
+      match resp {
+        Some(FastResponse::IdResponse {
+          processor,
+          product_number,
+          firmware_version,
+        }) => {
+          log::info!(
+            "🥾 Connected to mainboard {} {} with firmware: {}",
             processor,
             product_number,
-            firmware_version,
-          } => {
-            log::info!(
-              "🥾 Connected to mainboard {} {} with firmware: {}",
-              processor,
-              product_number,
-              firmware_version
-            );
-            Some(true)
-          }
-          _ => None,
-        },
-      )
-      .await;
+            firmware_version
+          );
+          break;
+        }
+        _ => {}
+      };
+    }
 
     // configure hardware (instruct mainboard which 'platform' it is)
-    let ch = configure_hardware::request(
-      config.platform.clone() as u16,
-      Some(SwitchReporting::Verbose),
-    );
     log::info!(
       "🥾 Configuring mainboard hardware as platform {:?}",
       config.platform,
     );
-    io_port.send(ch.as_bytes()).await;
-
-    // get initial switch states
-    let switches = io_port
-      .poll_for_response(
-        &report_switches::request().as_bytes(),
-        Duration::from_millis(1000),
-        |msg| match msg {
-          FastResponse::SwitchReport { switches } => Some(switches),
-          _ => None,
-        },
+    let _ = io_port
+      .request(
+        &configure_hardware::request(
+          config.platform.clone() as u16,
+          Some(SwitchReporting::Verbose),
+        ),
+        Duration::from_millis(2000),
       )
+      .await;
+
+    let switches = io_port
+      .request(&report_switches::request(), Duration::from_millis(2000))
       .await
       .expect("Failed to get initial switch states from mainboard");
 
     // verify watchdog is ready
-    io_port
-      .poll_for_response(
-        watchdog::set(Duration::from_millis(1250)).as_bytes(),
-        Duration::from_millis(250),
-        |msg| match msg {
-          FastResponse::Failed(_) => None,
-          _ => Some(true),
-        },
-      )
-      .await;
-    log::info!("🕙 Watchdog timer started");
+    loop {
+      let resp = io_port
+        .request(
+          &watchdog::set(Duration::from_millis(1250)),
+          Duration::from_millis(2000),
+        )
+        .await;
+      match resp {
+        Some(FastResponse::Processed { .. }) => {
+          log::info!("🕙 Watchdog timer started");
+          break;
+        }
+        _ => {}
+      };
+    }
 
     BootResult {
       mainboard: Mainboard {
@@ -126,15 +125,12 @@ impl Mainboard {
             match msg {
               MainboardCommand::Watchdog(enable) => {
                 self.enable_watchdog = enable;
-                log::info!("🖥️ Watchdog {}", if enable { "enabled" } else { "disabled" });
               },
               MainboardCommand::SendIo(cmd) => {
-                self.io_port.send(cmd.as_bytes()).await;
-                log::debug!("🖥️ -> 👾 : {}", cmd);
+                self.io_port.dispatch(&cmd).await;
               },
               MainboardCommand::SendExp(cmd) => {
-                self.exp_port.send(cmd.as_bytes()).await;
-                log::debug!("🖥️ -> 👾 : {}", cmd);
+                self.exp_port.dispatch(&cmd).await;
               }
             }
           }
@@ -142,7 +138,7 @@ impl Mainboard {
           // watchdog
           _ = sleep(Duration::from_secs(1)), if self.enable_watchdog => {
             log::trace!("🖥️ -> 👾 : Watchdog tick");
-            self.io_port.send(watchdog::set(Duration::from_millis(1250)).as_bytes()).await;
+            self.io_port.dispatch(&watchdog::set(Duration::from_millis(1250))).await;
           }
 
           // route incoming messages

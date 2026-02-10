@@ -25,6 +25,11 @@ impl Decoder for FastCodec {
 
       // Parse to FastResponse
       let s = String::from_utf8_lossy(&data).to_string();
+      if s.starts_with("WD:") {
+        log::trace!("👾 -> 🖥️ : {}", s);
+      } else {
+        log::debug!("👾 -> 🖥️ : {}", s);
+      }
       return Ok(protocol::parse(s));
     }
     // Not enough data for a full line yet
