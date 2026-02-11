@@ -42,21 +42,39 @@ impl SerialInterface {
   }
 
   pub async fn read_event(&mut self) -> Option<EventResponse> {
-    todo!();
+    match self.read().await {
+      Some(Ok(raw)) => EventResponse::parse(raw).ok(),
+      _ => None,
+    }
   }
 
   async fn read(&mut self) -> Option<tokio_serial::Result<RawResponse>> {
-    // first drain any queued events
-    // this can happen when we read a message that isn't a response to a command, but is instead an event (like a switch change)
-    if let Some(event) = self.event_queue.pop_front() {
-      return Some(Ok(event));
+    let resp = {
+      // first drain any queued events
+      // this can happen when we read a message that isn't a response to a command, but is instead an event (like a switch change)
+      if let Some(event) = self.event_queue.pop_front() {
+        return Some(Ok(event));
+      }
+
+      // otherwise read from the serial port
+      self.reader.next().await.map(|result| {
+        result.map_err(|e| {
+          tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string())
+        })
+      })
+    };
+
+    match &resp {
+      Some(Ok(raw)) if raw.prefix == "WD" => {
+        log::trace!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+      }
+      Some(Ok(raw)) => {
+        log::debug!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+      }
+      _ => {}
     }
 
-    // otherwise read from the serial port
-    self.reader.next().await.map(|result| {
-      result
-        .map_err(|e| tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string()))
-    })
+    resp
   }
 
   // Send off a command without concern for a response
@@ -91,7 +109,7 @@ impl SerialInterface {
       loop {
         match self.read().await {
           Some(Ok(response)) => {
-            if response.prefix == C::prefix() {
+            if response.prefix.to_lowercase() == C::prefix() {
               return cmd.parse(response);
             } else {
               // If the response doesn't match the prefix, it's likely an event that should be queued for reading by a different process
@@ -130,29 +148,5 @@ impl SerialInterface {
       // sleep if a match wasn't found
       tokio::time::sleep(timeout).await;
     }
-  }
-
-  // Given a command e.g. `SL@49:10,9F` return the prefix e.g. `SL`
-  fn extract_prefix(cmd: &str) -> String {
-    cmd.chars().take_while(|&c| c != '@' && c != ':').collect()
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_prefix_io() {
-    let cmd = "SL:10,9F";
-    let prefix = SerialInterface::extract_prefix(cmd);
-    assert_eq!(prefix, "SL");
-  }
-
-  #[test]
-  fn test_prefix_exp() {
-    let cmd = "SL@49:10,9F";
-    let prefix = SerialInterface::extract_prefix(cmd);
-    assert_eq!(prefix, "SL");
   }
 }

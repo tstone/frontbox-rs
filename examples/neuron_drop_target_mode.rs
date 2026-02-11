@@ -1,5 +1,7 @@
 use frontbox::plugins::*;
 use frontbox::prelude::*;
+use frontbox::protocol::prelude::DriverConfig;
+use frontbox::protocol::prelude::PulseBuilder;
 use frontbox::runtimes::PlayerRuntime;
 use std::io::Write;
 
@@ -53,7 +55,11 @@ async fn main() {
           ..Default::default()
         },
       )
-      .with_driver(0, drivers::LOWER_DROP_TARGET_COIL),
+      .with_driver(0, drivers::LOWER_DROP_TARGET_COIL)
+      .with_driver_config(
+        drivers::LOWER_DROP_TARGET_COIL,
+        DriverConfig::pulse().build(),
+      ),
   );
 
   MachineBuilder::boot(
@@ -95,13 +101,16 @@ impl DropTargetDownUp {
 
 impl System for DropTargetDownUp {
   fn on_game_start(&mut self, ctx: &mut Context) {
-    ctx.command(TriggerDriver(drivers::LOWER_DROP_TARGET_COIL));
+    ctx.trigger_driver(
+      drivers::LOWER_DROP_TARGET_COIL,
+      DriverTriggerControlMode::Manual,
+    );
   }
 
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
-      ctx.command(AddPoints(100));
+      // ctx.command(AddPoints(100));
 
       let all_down = self
         .target_switches
@@ -109,8 +118,11 @@ impl System for DropTargetDownUp {
         .all(|&target| ctx.is_switch_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.command(AddPoints(1000));
-        ctx.command(TriggerDriver(drivers::LOWER_DROP_TARGET_COIL));
+        // ctx.command(AddPoints(1000));
+        ctx.trigger_driver(
+          drivers::LOWER_DROP_TARGET_COIL,
+          DriverTriggerControlMode::Manual,
+        );
       }
     }
   }

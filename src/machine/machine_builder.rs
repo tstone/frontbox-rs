@@ -1,15 +1,16 @@
 use std::collections::HashMap;
-
-use tokio::sync::mpsc;
+use std::time::Duration;
 
 use crate::machine::switch_context::SwitchContext;
 use crate::mainboard::*;
 use crate::prelude::*;
-use crate::protocol;
+use crate::protocol::SwitchState;
+use crate::protocol::prelude::*;
+use crate::serial_interface::SerialInterface;
 
 pub struct MachineBuilder {
-  command_tx: mpsc::Sender<MainboardCommand>,
-  event_rx: mpsc::Receiver<MainboardIncoming>,
+  io_port: SerialInterface,
+  exp_port: SerialInterface,
   switches: SwitchContext,
   driver_lookup: HashMap<&'static str, Driver>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
@@ -18,77 +19,150 @@ pub struct MachineBuilder {
 
 impl MachineBuilder {
   pub async fn boot(config: BootConfig, io_network: IoNetwork) -> Self {
-    let (command_tx, command_rx) = mpsc::channel::<MainboardCommand>(128);
-    let (event_tx, event_rx) = mpsc::channel::<MainboardIncoming>(128);
+    let mut io_port = SerialInterface::new(config.io_net_port_path)
+      .await
+      .expect("Failed to open IO NET port");
+    log::info!("🥾 Opened IO NET port at {}", config.io_net_port_path);
 
-    let BootResult {
-      mut mainboard,
-      initial_switch_state,
-    } = Mainboard::boot(config, command_rx, event_tx.clone()).await;
-
-    // start serial communication in separate thread
-    std::thread::spawn(move || {
-      let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-      runtime.block_on(async move {
-        mainboard.run().await;
-      });
-    });
-
-    // Configure switch reporting/bounce settings
-    for switch in &io_network.switches {
-      if let Some(config) = &switch.config {
-        let reporting = if config.inverted {
-          protocol::configure_switch::SwitchReportingMode::ReportInverted
-        } else {
-          protocol::configure_switch::SwitchReportingMode::ReportNormal
-        };
-        log::info!("Configuring switch {} with {:?}", switch.name, config);
-        let cmd = protocol::configure_switch::request(
-          switch.id,
-          reporting,
-          config.debounce_close,
-          config.debounce_open,
-        );
-        command_tx
-          .send(MainboardCommand::SendIo(cmd))
-          .await
-          .unwrap();
-      }
-    }
+    MachineBuilder::boot_mainboard(&mut io_port).await;
+    MachineBuilder::configure_hardware(&mut io_port, config.platform).await;
+    MachineBuilder::verify_watchdog(&mut io_port).await;
+    MachineBuilder::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
+    let initial_switch_state = MachineBuilder::get_initial_switch_states(&mut io_port).await;
     let switches = SwitchContext::new(io_network.switches, initial_switch_state);
 
     // Configure drivers
-    for driver in &io_network.drivers {
-      if let Some(config) = &driver.config {
-        log::info!("Configuring driver {} with {:?}", driver.name, config);
-        let cmd = protocol::configure_driver::request(&driver.id, config);
-        command_tx
-          .send(MainboardCommand::SendIo(cmd))
-          .await
-          .unwrap();
-      }
-    }
-
-    // TODO: define LEDs
-
+    MachineBuilder::configure_drivers(&mut io_port, &io_network.drivers).await;
     let mut drivers = HashMap::new();
     for driver in io_network.drivers {
       drivers.insert(driver.name, driver);
     }
 
+    // open EXP port
+    let exp_port = SerialInterface::new(config.exp_port_path)
+      .await
+      .expect("Failed to open EXP port");
+    log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
+
+    // TODO: define LEDs
+
     Self {
-      command_tx,
-      event_rx,
+      io_port,
+      exp_port,
       switches,
       driver_lookup: drivers,
       keyboard_switch_map: HashMap::new(),
       virtual_switch_count: 0,
+    }
+  }
+
+  /// wait for the mainboard to be ready to respond
+  async fn boot_mainboard(io_port: &mut SerialInterface) {
+    let _ = io_port
+      .request_until_match(IdCommand::new(), Duration::from_millis(2000), |response| {
+        if let IdResponse::Report {
+          processor,
+          product_number,
+          firmware_version,
+        } = response
+        {
+          log::info!(
+            "🥾 Connected to mainboard {} {} with firmware: {}",
+            processor,
+            product_number,
+            firmware_version
+          );
+          Some(true)
+        } else {
+          None
+        }
+      })
+      .await;
+  }
+
+  async fn configure_hardware(io_port: &mut SerialInterface, platform: FastPlatform) {
+    log::info!(
+      "🥾 Configuring mainboard hardware as platform {:?}",
+      platform
+    );
+    let _ = io_port
+      .request(
+        &ConfigureHardwareCommand::new(platform as u16, Some(SwitchReporting::Verbose)),
+        Duration::from_millis(2000),
+      )
+      .await;
+  }
+
+  /// Read the hardware state of all switches at startup to initialize the switch context
+  async fn get_initial_switch_states(io_port: &mut SerialInterface) -> Vec<SwitchState> {
+    io_port
+      .request_until_match(
+        ReportSwitchesCommand::new(),
+        Duration::from_millis(2000),
+        |resp| {
+          if let SwitchReportResponse::SwitchReport { switches } = resp {
+            log::info!("🥾 Initial switch states: {:?}", switches);
+            Some(switches)
+          } else {
+            None
+          }
+        },
+      )
+      .await
+  }
+
+  /// Verify the watchdog is responsive. Sometimes the first few commands will fail.
+  async fn verify_watchdog(io_port: &mut SerialInterface) {
+    let _ = io_port.request_until_match(
+      WatchdogCommand::new(Some(Duration::from_millis(1250))),
+      Duration::from_millis(2000),
+      |resp| match resp {
+        WatchdogResponse::Processed => {
+          log::info!("🥾 Watchdog is ready");
+          Some(true)
+        }
+        _ => None,
+      },
+    );
+  }
+
+  async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchSpec>) {
+    for switch in switches {
+      if let Some(config) = &switch.config {
+        let reporting = if config.inverted {
+          SwitchReportingMode::ReportInverted
+        } else {
+          SwitchReportingMode::ReportNormal
+        };
+        log::info!("Configuring switch {} with {:?}", switch.name, config);
+        let _ = io_port
+          .request(
+            &ConfigureSwitchCommand::new(
+              switch.id,
+              reporting,
+              config.debounce_close,
+              config.debounce_open,
+            ),
+            Duration::from_millis(2000),
+          )
+          .await;
+      }
+    }
+  }
+
+  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<Driver>) {
+    for driver in drivers {
+      if let Some(config) = &driver.config {
+        log::info!("Configuring driver {} with {:?}", driver.name, config);
+        let _ = io_port
+          .request(
+            &ConfigureDriverCommand::new(&driver.id, config),
+            Duration::from_millis(2000),
+          )
+          .await;
+      }
     }
   }
 
@@ -140,15 +214,12 @@ impl MachineBuilder {
   }
 
   pub fn build(self) -> Machine {
-    Machine {
-      command_tx: self.command_tx.clone(),
-      event_rx: self.event_rx,
-      switches: self.switches,
-      driver_lookup: self.driver_lookup,
-      keyboard_switch_map: self.keyboard_switch_map,
-      runtime_stack: Vec::new(),
-      active_player: -1,
-      active_player_count: 0,
-    }
+    Machine::new(
+      self.io_port,
+      self.exp_port,
+      self.switches,
+      self.driver_lookup,
+      self.keyboard_switch_map,
+    )
   }
 }

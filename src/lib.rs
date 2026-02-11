@@ -1,4 +1,3 @@
-mod hardware;
 mod machine;
 mod mainboard;
 pub mod plugins;
@@ -15,8 +14,7 @@ pub use crate::machine::store;
 pub use crate::mainboard::*;
 
 pub mod prelude {
-  pub use crate::machine::command::*;
-  pub use crate::machine::context::*;
+  pub use crate::machine::context::Context;
   pub use crate::machine::machine::*;
   pub use crate::machine::machine_builder::*;
   pub use crate::machine::plugin::*;
@@ -27,6 +25,8 @@ pub mod prelude {
   pub use crate::mainboard::FastPlatform;
   pub use crate::mainboard::IoNetworkSpec;
   pub use crate::mainboard::SwitchConfig;
+  pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode};
+  pub use crate::runtimes::*;
   pub use crate::store::Store;
 
   pub use crossterm::event::KeyCode;

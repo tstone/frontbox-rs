@@ -19,7 +19,11 @@ impl SimpleRuntime {
 }
 
 impl Runtime for SimpleRuntime {
-  fn get_current(&mut self) -> (&mut Scene, &mut Store) {
+  fn get_current(&self) -> (&Scene, &Store) {
+    (self.stack.last().unwrap(), &self.store)
+  }
+
+  fn get_current_mut(&mut self) -> (&mut Scene, &mut Store) {
     (self.stack.last_mut().unwrap(), &mut self.store)
   }
 

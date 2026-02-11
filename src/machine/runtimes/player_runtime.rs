@@ -35,7 +35,19 @@ impl PlayerRuntime {
 }
 
 impl Runtime for PlayerRuntime {
-  fn get_current(&mut self) -> (&mut Scene, &mut Store) {
+  fn get_current(&self) -> (&Scene, &Store) {
+    let scene = self
+      .player_stacks
+      .get(self.index as usize)
+      .and_then(|stack| stack.last())
+      .unwrap();
+
+    let store = self.player_stores.get(self.index as usize).unwrap();
+
+    (scene, store)
+  }
+
+  fn get_current_mut(&mut self) -> (&mut Scene, &mut Store) {
     let scene = self
       .player_stacks
       .get_mut(self.index as usize)
@@ -63,7 +75,7 @@ impl Runtime for PlayerRuntime {
       .pop();
   }
 
-  fn on_runtime_enter(&self, ctx: &mut super::RuntimeContext) {
+  fn on_runtime_enter(&self, ctx: &mut Context) {
     ctx.start_game();
   }
 

@@ -25,7 +25,5 @@ anymap2 = "0.13.0"
 crossterm = { version = "0.29", features = ["event-stream"] }
 dyn-clone = "1.0.20"
 
-# bevy_time = "0.18"
-
 [dev-dependencies]
 env_logger = "0.11.8"

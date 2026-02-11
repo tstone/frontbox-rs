@@ -1,4 +1,3 @@
-pub mod command;
 pub mod context;
 pub mod machine;
 pub mod machine_builder;

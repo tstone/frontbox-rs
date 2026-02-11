@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::hardware::driver_config::DriverConfig;
+use crate::protocol::prelude::DriverConfig;
 
 #[derive(Debug, Clone, Default)]
 pub struct IoBoardSpec {
