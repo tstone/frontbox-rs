@@ -81,12 +81,17 @@ impl MachineConfig {
   }
 }
 
+pub mod default_config {
+  pub const WATCHDOG_TICK: &str = "watchdog.tick_ms";
+  pub const SYSTEM_TIMER_TICK: &str = "system.timer_tick_ms";
+}
+
 impl Default for MachineConfig {
   fn default() -> Self {
     let mut config = Self::new();
 
     config.add_item(
-      "watchdog.tick_ms",
+      default_config::WATCHDOG_TICK,
       ConfigItem::Integer {
         current: 1000,
         min: 100,
@@ -98,7 +103,7 @@ impl Default for MachineConfig {
     );
 
     config.add_item(
-      "system.timer_tick_ms",
+      default_config::SYSTEM_TIMER_TICK,
       ConfigItem::Integer {
         current: 50,
         min: 1,

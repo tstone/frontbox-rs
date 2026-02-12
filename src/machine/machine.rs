@@ -51,7 +51,7 @@ impl Machine {
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
     let watchdog_interval = config
-      .get_value_as_u64("watchdog_tick_interval_ms")
+      .get_value_as_u64(default_config::WATCHDOG_TICK)
       .unwrap_or(1000);
 
     Self {
@@ -85,10 +85,12 @@ impl Machine {
 
     let system_tick_value = self
       .config
-      .get_value_as_u64("system_tick_interval_ms")
+      .get_value_as_u64(default_config::SYSTEM_TIMER_TICK)
       .unwrap();
     let system_timer_interval = Duration::from_millis(system_tick_value as u64);
     let mut timer_interval = tokio::time::interval(system_timer_interval);
+
+    log::info!("⟳ Machine run loop started.");
 
     loop {
       if let Some(config_key) = self.config.read_changes() {
@@ -148,9 +150,14 @@ impl Machine {
       }
     }
 
+    log::warn!("Machine run loop exited. 😴 Shutting down.");
+
     if self.keyboard_switch_map.len() > 0 {
       let _ = disable_raw_mode();
     }
+
+    self.watchdog.disable();
+    self.disable_high_voltage().await;
   }
 
   async fn run_machine_command(&mut self, command: MachineCommand) {

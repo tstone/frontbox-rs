@@ -18,7 +18,7 @@ pub mod prelude {
   pub use crate::machine::context::Context;
   pub use crate::machine::machine::*;
   pub use crate::machine::machine_builder::*;
-  pub use crate::machine::machine_config::MachineConfig;
+  pub use crate::machine::machine_config::{MachineConfig, default_config};
   pub use crate::machine::plugin::*;
   pub use crate::machine::switch_context::SwitchContext;
   pub use crate::machine::system::*;
