@@ -1,6 +1,6 @@
 # Frontbox
 
-A Rust native framework for interacting with Fast pinball hardware, built with the power of Bevy ECS.
+A Rust native scenework for interacting with Fast pinball hardware, built with the power of Bevy ECS.
 
 > [!WARNING]
 > Work in progress

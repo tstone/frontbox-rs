@@ -29,7 +29,7 @@ impl DriverTriggerBuilder {
     self
   }
 
-  pub fn invert_switch1(mut self, invert: Option<bool>) -> Self {
+  pub fn invert_switch1(mut self, invert: &Option<bool>) -> Self {
     if let Some(true) = invert {
       self.flags.insert(DriverTrigger::INVERT_SWITCH1);
     } else {

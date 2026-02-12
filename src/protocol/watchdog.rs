@@ -1,33 +1,65 @@
 use std::time::Duration;
 
-use crate::protocol::{FastResponse, FastResponseError};
+use crate::protocol::prelude::*;
 
-pub fn get() -> String {
-  "WD:\r".to_string()
+pub struct WatchdogCommand {
+  duration: Option<Duration>,
 }
 
-pub fn set(duration: Duration) -> String {
-  // Convert decimal to hex string for milliseconds
-  format!("WD:{:X}\r", duration.as_millis())
+impl WatchdogCommand {
+  /// Set the watchdog timer to a specific duration. The watchdog will expire if not reset within this time.
+  /// If set to 0, current watchdog timer will be ended. If not set (None) current watchdog remaining will be fetched
+  pub fn new(duration: Option<Duration>) -> Self {
+    Self { duration }
+  }
 }
 
-pub fn end() -> String {
-  "WD:0\r".to_string()
+impl FastCommand for WatchdogCommand {
+  type Response = WatchdogResponse;
+
+  fn prefix() -> &'static str {
+    "wd"
+  }
+
+  fn to_string(&self) -> String {
+    match self.duration {
+      // Convert decimal to hex string for milliseconds
+      Some(dur) => format!("WD:{:X}\r", dur.as_millis()),
+      None => "WD:\r".to_string(),
+    }
+  }
+
+  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
+    response(&raw.payload)
+  }
 }
 
-pub fn response(data: &str) -> Result<FastResponse, FastResponseError> {
-  if data == "00000000" {
-    Ok(FastResponse::WatchdogDisabled)
+pub fn response(data: &str) -> Result<WatchdogResponse, FastResponseError> {
+  if data.to_lowercase() == "p" {
+    return Ok(WatchdogResponse::Processed);
+  } else if data.to_lowercase() == "f" {
+    return Ok(WatchdogResponse::Failed);
+  } else if data == "00000000" {
+    Ok(WatchdogResponse::WatchdogDisabled)
   } else if data == "FFFFFFFF" {
-    Ok(FastResponse::WatchdogExpired)
+    Ok(WatchdogResponse::WatchdogExpired)
   } else {
     match data.parse::<u64>() {
-      Ok(remaining) => Ok(FastResponse::WatchdogRemaining(Duration::from_millis(
+      Ok(remaining) => Ok(WatchdogResponse::WatchdogRemaining(Duration::from_millis(
         remaining,
       ))),
       Err(_) => Err(FastResponseError::InvalidFormat),
     }
   }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub enum WatchdogResponse {
+  WatchdogDisabled,
+  WatchdogExpired,
+  WatchdogRemaining(Duration),
+  Processed,
+  Failed,
 }
 
 #[cfg(test)]
@@ -36,7 +68,7 @@ mod tests {
 
   #[test]
   fn test_set_with_time() {
-    let result = set(Duration::from_millis(1500));
+    let result = WatchdogCommand::new(Some(Duration::from_millis(1500))).to_string();
     assert_eq!(result, "WD:5DC\r");
   }
 
@@ -44,13 +76,13 @@ mod tests {
   fn test_response_disabled() {
     let result = response("00000000");
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), FastResponse::WatchdogDisabled);
+    assert_eq!(result.unwrap(), WatchdogResponse::WatchdogDisabled);
   }
 
   #[test]
   fn test_response_expired() {
     let result = response("FFFFFFFF");
     assert!(result.is_ok());
-    assert_eq!(result.unwrap(), FastResponse::WatchdogExpired);
+    assert_eq!(result.unwrap(), WatchdogResponse::WatchdogExpired);
   }
 }

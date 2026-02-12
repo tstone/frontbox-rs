@@ -4,31 +4,26 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["mainboard"]
+default = ["machine"]
 protocol = []
-mainboard = ["protocol"]
+machine = ["protocol"]
 
 [dependencies]
 log = "0.4.29"
 
-#[cfg(feature = "mainboard")]
+#[cfg(feature = "machine")]
 futures-util = "0.3"
-#[cfg(feature = "mainboard")]
+#[cfg(feature = "machine")]
 tokio = { version = "1", features = ["full"] }
-#[cfg(feature = "mainboard")]
+#[cfg(feature = "machine")]
 tokio-serial = "5.4.4"
-#[cfg(feature = "mainboard")]
+#[cfg(feature = "machine")]
 tokio-util = { version = "0.7.18", features = ["codec"] }
 
-#[cfg(feature = "mainboard")]
-bevy_app = "0.18"
-#[cfg(feature = "mainboard")]
-bevy_ecs = { version = "0.18", features = ["bevy_reflect"] }
-#[cfg(feature = "mainboard")]
-bevy_state = "0.18"
 bitflags = "2.10.0"
-
-# bevy_time = "0.18"
+anymap2 = "0.13.0"
+crossterm = { version = "0.29", features = ["event-stream"] }
+dyn-clone = "1.0.20"
 
 [dev-dependencies]
 env_logger = "0.11.8"

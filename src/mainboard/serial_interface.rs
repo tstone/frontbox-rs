@@ -1,18 +1,23 @@
+use std::collections::VecDeque;
+use std::time::Duration;
+
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio::time::{self, Duration};
-use tokio_serial::*;
+use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 use tokio_util::codec::FramedRead;
 
-use crate::FastCodec;
-use crate::protocol::FastResponse;
+use crate::FastRawCodec;
+use crate::protocol::fast_command::FastCommand;
+use crate::protocol::raw_response::RawResponse;
+use crate::protocol::{EventResponse, FastResponseError};
 
 const BAUD_RATE: u32 = 921_600;
 
 pub struct SerialInterface {
   port_name: String,
-  reader: FramedRead<ReadHalf<SerialStream>, FastCodec>,
+  reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
   writer: WriteHalf<SerialStream>,
+  event_queue: VecDeque<RawResponse>,
 }
 
 impl SerialInterface {
@@ -26,24 +31,61 @@ impl SerialInterface {
 
     let port = SerialStream::open(&port)?;
     let (reader, writer) = tokio::io::split(port);
-    let framed_reader = FramedRead::new(reader, FastCodec::new());
+    let framed_reader = FramedRead::new(reader, FastRawCodec::new());
 
     Ok(SerialInterface {
       port_name: port_path.to_string(),
       reader: framed_reader,
       writer,
+      event_queue: VecDeque::new(),
     })
   }
 
-  pub async fn read(&mut self) -> Option<tokio_serial::Result<FastResponse>> {
-    self.reader.next().await.map(|result| {
-      result
-        .map_err(|e| tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string()))
-    })
+  pub async fn read_event(&mut self) -> Option<EventResponse> {
+    match self.read().await {
+      Some(Ok(raw)) => EventResponse::parse(raw).ok(),
+      _ => None,
+    }
   }
 
-  pub async fn send(&mut self, cmd: &[u8]) {
-    match self.writer.write_all(cmd).await {
+  async fn read(&mut self) -> Option<tokio_serial::Result<RawResponse>> {
+    let resp = {
+      // first drain any queued events
+      // this can happen when we read a message that isn't a response to a command, but is instead an event (like a switch change)
+      if let Some(event) = self.event_queue.pop_front() {
+        return Some(Ok(event));
+      }
+
+      // otherwise read from the serial port
+      self.reader.next().await.map(|result| {
+        result.map_err(|e| {
+          tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string())
+        })
+      })
+    };
+
+    match &resp {
+      Some(Ok(raw)) if raw.prefix == "WD" => {
+        log::trace!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+      }
+      Some(Ok(raw)) => {
+        log::debug!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+      }
+      _ => {}
+    }
+
+    resp
+  }
+
+  // Send off a command without concern for a response
+  async fn send(&mut self, cmd: &str) {
+    if cmd.starts_with("WD:") {
+      log::trace!("🖥️ -> 👾 : {}", cmd);
+    } else {
+      log::debug!("🖥️ -> 👾 : {}", cmd);
+    }
+
+    match self.writer.write_all(cmd.as_bytes()).await {
       Ok(_) => (),
       Err(e) => {
         log::error!("Failed to send on {}: {:?}", self.port_name, e);
@@ -51,27 +93,60 @@ impl SerialInterface {
     }
   }
 
-  pub async fn poll_for_response(
-    &mut self,
-    cmd: &[u8],
-    timeout_duration: Duration,
-    predicate: fn(FastResponse) -> bool,
-  ) {
-    loop {
-      self.send(cmd).await;
+  pub async fn dispatch<C: FastCommand>(&mut self, cmd: &C) {
+    self.send(&cmd.to_string()).await
+  }
 
-      let timeout = time::timeout(timeout_duration, self.reader.next());
-      match timeout.await {
-        Ok(Some(Ok(msg))) => {
-          if predicate(msg.clone()) {
-            break;
+  /// Send a command and wait for a response to that command
+  pub async fn request<C: FastCommand>(
+    &mut self,
+    cmd: &C,
+    timeout: Duration,
+  ) -> Result<C::Response, FastResponseError> {
+    self.dispatch(cmd).await;
+
+    tokio::time::timeout(timeout, async {
+      loop {
+        match self.read().await {
+          Some(Ok(response)) => {
+            if response.prefix.to_lowercase() == C::prefix() {
+              return cmd.parse(response);
+            } else {
+              // If the response doesn't match the prefix, it's likely an event that should be queued for reading by a different process
+              self.event_queue.push_back(response);
+            }
+          }
+          Some(Err(e)) => {
+            log::error!("Error reading response: {:?}", e);
+            return Err(FastResponseError::UnknownResponse); // ???
+          }
+          None => {
+            log::error!("Serial stream ended unexpectedly");
+            return Err(FastResponseError::UnknownResponse);
           }
         }
-        Ok(Some(Err(e))) => {
-          log::error!("Error waiting for response: {:?}", e);
-        }
-        _ => (),
       }
+    })
+    .await
+    .unwrap_or_else(|_| Err(FastResponseError::Timeout))
+  }
+
+  /// Keep sending the command until a response comes in
+  pub async fn request_until_match<C: FastCommand, R>(
+    &mut self,
+    cmd: C,
+    timeout: Duration,
+    f: fn(C::Response) -> Option<R>,
+  ) -> R {
+    loop {
+      if let Ok(response) = self.request(&cmd, timeout).await {
+        if let Some(result) = f(response) {
+          return result;
+        }
+      }
+
+      // sleep if a match wasn't found
+      tokio::time::sleep(timeout).await;
     }
   }
 }

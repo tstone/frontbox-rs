@@ -1,14 +1,17 @@
 use core::panic;
 use std::collections::HashMap;
+use std::time::Duration;
 
-use bevy_ecs::prelude::*;
+use crate::protocol::prelude::DriverConfig;
 
 #[derive(Debug, Clone, Default)]
 pub struct IoBoardSpec {
-  pub switch_count: u32,
-  pub driver_count: u32,
-  pub switch_map: HashMap<u16, &'static str>,
-  pub driver_map: HashMap<u16, &'static str>,
+  pub(crate) switch_count: u32,
+  pub(crate) driver_count: u32,
+  pub(crate) switch_map: HashMap<u16, &'static str>,
+  pub(crate) driver_map: HashMap<u16, &'static str>,
+  pub(crate) switch_configs: HashMap<&'static str, SwitchConfig>,
+  pub(crate) driver_configs: HashMap<&'static str, DriverConfig>,
 }
 
 impl IoBoardSpec {
@@ -24,7 +27,12 @@ impl IoBoardSpec {
     self
   }
 
-  pub fn with_driver_pin(mut self, idx: u16, key: &'static str) -> Self {
+  pub fn with_switch_config(mut self, key: &'static str, config: SwitchConfig) -> Self {
+    self.switch_configs.insert(key, config);
+    self
+  }
+
+  pub fn with_driver(mut self, idx: u16, key: &'static str) -> Self {
     if idx >= self.driver_count as u16 {
       panic!(
         "Driver index {} out of bounds for board with {} drivers",
@@ -33,6 +41,11 @@ impl IoBoardSpec {
     }
 
     self.driver_map.insert(idx, key);
+    self
+  }
+
+  pub fn with_driver_config(mut self, key: &'static str, config: DriverConfig) -> Self {
+    self.driver_configs.insert(key, config);
     self
   }
 }
@@ -46,6 +59,8 @@ impl FastIoBoards {
       driver_count,
       switch_map: HashMap::new(),
       driver_map: HashMap::new(),
+      switch_configs: HashMap::new(),
+      driver_configs: HashMap::new(),
     }
   }
 
@@ -55,6 +70,8 @@ impl FastIoBoards {
       driver_count: 8,
       switch_map: HashMap::new(),
       driver_map: HashMap::new(),
+      switch_configs: HashMap::new(),
+      driver_configs: HashMap::new(),
     }
   }
 
@@ -64,6 +81,8 @@ impl FastIoBoards {
       driver_count: 16,
       switch_map: HashMap::new(),
       driver_map: HashMap::new(),
+      switch_configs: HashMap::new(),
+      driver_configs: HashMap::new(),
     }
   }
 
@@ -73,6 +92,8 @@ impl FastIoBoards {
       driver_count: 4,
       switch_map: HashMap::new(),
       driver_map: HashMap::new(),
+      switch_configs: HashMap::new(),
+      driver_configs: HashMap::new(),
     }
   }
 
@@ -82,11 +103,13 @@ impl FastIoBoards {
       driver_count: 8,
       switch_map: HashMap::new(),
       driver_map: HashMap::new(),
+      switch_configs: HashMap::new(),
+      driver_configs: HashMap::new(),
     }
   }
 }
 
-#[derive(Component, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct IoBoardDefinition {
   pub index: u8,
   pub switch_offset: u32,
@@ -95,12 +118,14 @@ pub struct IoBoardDefinition {
   pub driver_count: u32,
   pub switch_map: HashMap<u16, &'static str>,
   pub driver_map: HashMap<u16, &'static str>,
+  pub switch_configs: HashMap<&'static str, (bool, Option<Duration>, Option<Duration>)>,
+  pub driver_configs: HashMap<&'static str, DriverConfig>,
 }
 
 #[derive(Debug, Clone)]
-pub struct IoNetworkResources {
-  pub switches: Vec<Switch>,
-  pub driver_pins: Vec<DriverPin>,
+pub struct IoNetwork {
+  pub switches: Vec<SwitchSpec>,
+  pub drivers: Vec<Driver>,
 }
 
 pub struct IoNetworkSpec {
@@ -116,7 +141,7 @@ impl IoNetworkSpec {
     self.specs.push(spec);
   }
 
-  pub fn build(self) -> IoNetworkResources {
+  pub fn build(self) -> IoNetwork {
     let mut switches = Vec::new();
     let mut driver_pins = Vec::new();
     let mut switch_offset = 0;
@@ -124,18 +149,22 @@ impl IoNetworkSpec {
 
     for (i, spec) in self.specs.into_iter().enumerate() {
       for (idx, name) in spec.switch_map.iter() {
-        switches.push(Switch {
+        let config = spec.switch_configs.get(name);
+
+        switches.push(SwitchSpec {
           id: switch_offset as usize + *idx as usize,
           name: *name,
           parent_index: i as u8,
+          config: config.cloned(),
         });
       }
 
       for (idx, name) in spec.driver_map.iter() {
-        driver_pins.push(DriverPin {
+        driver_pins.push(Driver {
           id: driver_offset as usize + *idx as usize,
           name: *name,
           parent_index: i as u8,
+          config: spec.driver_configs.get(name).cloned(),
         });
       }
 
@@ -143,23 +172,42 @@ impl IoNetworkSpec {
       driver_offset += spec.driver_count;
     }
 
-    IoNetworkResources {
+    IoNetwork {
       switches,
-      driver_pins,
+      drivers: driver_pins,
     }
   }
 }
 
-#[derive(Debug, Clone, Component)]
-pub struct Switch {
+#[derive(Debug, Clone)]
+pub struct SwitchSpec {
   pub id: usize,
   pub name: &'static str,
   pub parent_index: u8,
+  pub config: Option<SwitchConfig>,
 }
 
-#[derive(Debug, Clone, Component)]
-pub struct DriverPin {
+#[derive(Debug, Clone)]
+pub struct SwitchConfig {
+  pub inverted: bool,
+  pub debounce_close: Option<Duration>,
+  pub debounce_open: Option<Duration>,
+}
+
+impl Default for SwitchConfig {
+  fn default() -> Self {
+    Self {
+      inverted: false,
+      debounce_close: None,
+      debounce_open: None,
+    }
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct Driver {
   pub id: usize,
   pub name: &'static str,
   pub parent_index: u8,
+  pub config: Option<DriverConfig>,
 }
