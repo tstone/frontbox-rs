@@ -9,12 +9,12 @@ pub struct Watchdog {
 }
 
 impl Watchdog {
-  pub fn new() -> Self {
+  pub fn new(tick_duration: Duration) -> Self {
     let (enablement_sender, mut enablement_receiver) = mpsc::unbounded_channel();
     let (watchdog_sender, watchdog_receiver) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
-      let mut interval = tokio::time::interval(Duration::from_secs(1));
+      let mut interval = tokio::time::interval(tick_duration);
       let mut enabled = false;
 
       loop {

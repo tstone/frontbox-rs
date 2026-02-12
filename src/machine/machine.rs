@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use crate::machine::context::MachineCommand;
+use crate::machine::machine_config::MachineConfig;
 use crate::machine::system_timer::TimerMode;
 use crate::machine::watchdog::Watchdog;
 use crate::mainboard::*;
@@ -29,6 +30,7 @@ pub struct Machine {
   keyboard_switch_map: HashMap<KeyCode, usize>,
   driver_lookup: HashMap<&'static str, Driver>,
   watchdog: Watchdog,
+  config: MachineConfig,
 
   runtime_stack: Vec<Box<dyn Runtime>>,
   switches: SwitchContext,
@@ -45,8 +47,13 @@ impl Machine {
     switches: SwitchContext,
     driver_lookup: HashMap<&'static str, Driver>,
     keyboard_switch_map: HashMap<KeyCode, usize>,
+    config: MachineConfig,
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
+    let watchdog_interval = config
+      .get_value_as_u64("watchdog_tick_interval_ms")
+      .unwrap_or(1000);
+
     Self {
       io_port,
       exp_port,
@@ -57,7 +64,8 @@ impl Machine {
       game_state: None,
       command_sender,
       command_receiver,
-      watchdog: Watchdog::new(),
+      watchdog: Watchdog::new(Duration::from_millis(watchdog_interval)),
+      config,
     }
   }
 
@@ -75,10 +83,20 @@ impl Machine {
 
     let mut key_reader = EventStream::new();
 
-    let system_timer_interval = Duration::from_millis(100);
+    let system_tick_value = self
+      .config
+      .get_value_as_u64("system_tick_interval_ms")
+      .unwrap();
+    let system_timer_interval = Duration::from_millis(system_tick_value as u64);
     let mut timer_interval = tokio::time::interval(system_timer_interval);
 
     loop {
+      if let Some(config_key) = self.config.read_changes() {
+        self.dispatch_to_current_systems(|system, ctx| {
+          system.on_config_change(config_key, ctx);
+        });
+      }
+
       tokio::select! {
         // ensures branches are checked in order. Timer interval gets priority
         biased;
@@ -167,6 +185,9 @@ impl Machine {
       MachineCommand::ClearTimer(system_id, timer_name) => {
         self.clear_system_timer(system_id, timer_name);
       }
+      MachineCommand::SetConfigValue(key, value) => {
+        self.config.set_value(key, value);
+      }
     }
   }
 
@@ -232,6 +253,7 @@ impl Machine {
         Some(store),
         &self.switches,
         &self.game_state,
+        &self.config,
         Some(system_index),
       );
       handler(system, &mut ctx);
@@ -292,6 +314,7 @@ impl Machine {
       None,
       &self.switches,
       &self.game_state,
+      &self.config,
       None,
     );
 
@@ -319,6 +342,7 @@ impl Machine {
       None,
       &self.switches,
       &self.game_state,
+      &self.config,
       None,
     );
 
@@ -347,6 +371,7 @@ impl Machine {
         Some(store),
         &self.switches,
         &self.game_state,
+        &self.config,
         Some(system_index),
       );
       system.on_system_enter(&mut ctx);
@@ -365,6 +390,7 @@ impl Machine {
         Some(store),
         &self.switches,
         &self.game_state,
+        &self.config,
         Some(system_index),
       );
       system.on_system_exit(&mut ctx);

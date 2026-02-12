@@ -1,3 +1,4 @@
-- Make watchdog tick and system timer tick configurable
+- Properly shut down on process exit
+- Player points plugin
 - Define LEDs
 - Set LED state from System

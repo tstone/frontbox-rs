@@ -1,6 +1,8 @@
+pub mod config_value;
 pub mod context;
 pub mod machine;
 pub mod machine_builder;
+pub mod machine_config;
 pub mod plugin;
 pub mod runtimes;
 pub mod store;

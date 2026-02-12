@@ -1,14 +1,14 @@
 use std::time::Duration;
-
-use crate::machine::system_timer::TimerMode;
-use crate::prelude::*;
 use tokio::sync::mpsc;
+
+use crate::prelude::*;
 
 pub struct Context<'a> {
   sender: mpsc::UnboundedSender<MachineCommand>,
-  store: Option<&'a Store>,
+  store: StoreContext<'a>,
   switches: &'a SwitchContext,
   game_state: &'a Option<GameState>,
+  config: ConfigContext<'a>,
   current_system_index: Option<usize>,
 }
 
@@ -18,15 +18,26 @@ impl<'a> Context<'a> {
     store: Option<&'a Store>,
     switches: &'a SwitchContext,
     game_state: &'a Option<GameState>,
+    config: &'a MachineConfig,
     current_system_index: Option<usize>,
   ) -> Self {
     Self {
+      store: StoreContext::new(sender.clone(), store),
+      config: ConfigContext::new(sender.clone(), config),
       sender,
-      store,
       switches,
       game_state,
       current_system_index,
     }
+  }
+
+  pub fn config(&self) -> &ConfigContext {
+    &self.config
+  }
+
+  /// Runtime-specific storage of arbitrary data
+  pub fn store(&self) -> &StoreContext {
+    &self.store
   }
 
   pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
@@ -47,19 +58,6 @@ impl<'a> Context<'a> {
     } else {
       None
     }
-  }
-
-  pub fn get<T: Default + 'static>(&self) -> Option<&T> {
-    self.store.and_then(|store| store.get::<T>())
-  }
-
-  pub fn with_store<T: Default>(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
-    if self.store.is_none() {
-      log::warn!("No store is available in the current context");
-      return;
-    }
-
-    let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
   }
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
@@ -167,6 +165,57 @@ impl<'a> Context<'a> {
   }
 }
 
+pub struct StoreContext<'a> {
+  sender: mpsc::UnboundedSender<MachineCommand>,
+  store: Option<&'a Store>,
+}
+
+impl<'a> StoreContext<'a> {
+  pub fn new(sender: mpsc::UnboundedSender<MachineCommand>, store: Option<&'a Store>) -> Self {
+    Self { sender, store }
+  }
+
+  pub fn is_present<T: Default + 'static>(&self) -> bool {
+    self.store.is_some()
+  }
+
+  pub fn exists<T: Default + 'static>(&self) -> bool {
+    self.store.and_then(|store| store.get::<T>()).is_some()
+  }
+
+  pub fn get<T: Default + 'static>(&self) -> Option<&T> {
+    self.store.and_then(|store| store.get::<T>())
+  }
+
+  pub fn with<T: Default>(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
+    if self.store.is_none() {
+      log::warn!("No store is available in the current context");
+      return;
+    }
+
+    let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
+  }
+}
+
+pub struct ConfigContext<'a> {
+  sender: mpsc::UnboundedSender<MachineCommand>,
+  config: &'a MachineConfig,
+}
+
+impl<'a> ConfigContext<'a> {
+  pub fn new(sender: mpsc::UnboundedSender<MachineCommand>, config: &'a MachineConfig) -> Self {
+    Self { sender, config }
+  }
+
+  pub fn get(&self, key: &'static str) -> Option<ConfigValue> {
+    self.config.get_value(key)
+  }
+
+  pub fn set(&mut self, key: &'static str, value: ConfigValue) {
+    let _ = self.sender.send(MachineCommand::SetConfigValue(key, value));
+  }
+}
+
 pub enum MachineCommand {
   // game management
   StartGame,
@@ -192,6 +241,7 @@ pub enum MachineCommand {
 
   // other
   StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
+  SetConfigValue(&'static str, ConfigValue),
 }
 
 impl std::fmt::Debug for MachineCommand {
@@ -221,6 +271,7 @@ impl std::fmt::Debug for MachineCommand {
         )
       }
       Self::ClearTimer(id, timer_name) => write!(f, "ClearTimer({}, {:?})", id, timer_name),
+      Self::SetConfigValue(key, value) => write!(f, "SetConfigValue({}, {:?})", key, value),
     }
   }
 }

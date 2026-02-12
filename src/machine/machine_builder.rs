@@ -15,6 +15,7 @@ pub struct MachineBuilder {
   driver_lookup: HashMap<&'static str, Driver>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   virtual_switch_count: u8,
+  config: MachineConfig,
 }
 
 impl MachineBuilder {
@@ -55,6 +56,7 @@ impl MachineBuilder {
       driver_lookup: drivers,
       keyboard_switch_map: HashMap::new(),
       virtual_switch_count: 0,
+      config: MachineConfig::default(),
     }
   }
 
@@ -219,6 +221,16 @@ impl MachineBuilder {
     self
   }
 
+  pub fn add_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
+    self.config.add_item(key, item);
+    self
+  }
+
+  pub fn set_config_value(mut self, key: &'static str, value: ConfigValue) -> Self {
+    self.config.set_value(key, value);
+    self
+  }
+
   pub fn add_plugin(mut self, plugin: Box<dyn Plugin>) -> Self {
     plugin.register(&mut self);
     self
@@ -231,6 +243,7 @@ impl MachineBuilder {
       self.switches,
       self.driver_lookup,
       self.keyboard_switch_map,
+      self.config,
     )
   }
 }

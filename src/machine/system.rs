@@ -10,13 +10,12 @@ use crate::prelude::*;
 /// A System responds to incoming events and enqueues commands
 #[allow(unused)]
 pub trait System: DynClone + Send + Sync {
-  /// Called when a switch becomes closed (depressed)
+  /// Runs when a switch becomes closed (depressed)
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {}
-  /// Called when a switch becomes open (released)
+  /// Runs when a switch becomes open (released)
   fn on_switch_opened(&mut self, switch: &Switch, ctx: &mut Context) {}
-  /// Called when a timer completes
+  /// Runs when a timer completes
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
-
   /// Runs whenever the system enters the scene, including at the start of a game
   fn on_system_enter(&mut self, ctx: &mut Context) {}
   /// Runs whenever the system exits the scene, including at the end of a game
@@ -24,6 +23,8 @@ pub trait System: DynClone + Send + Sync {
 
   fn on_ball_start(&mut self, ctx: &mut Context) {}
   fn on_ball_end(&mut self, ctx: &mut Context) {}
+
+  fn on_config_change(&mut self, config_key: &'static str, ctx: &mut Context) {}
 }
 
 pub struct SystemContainer {
