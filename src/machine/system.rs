@@ -14,12 +14,16 @@ pub trait System: DynClone + Send + Sync {
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {}
   /// Called when a switch becomes open (released)
   fn on_switch_opened(&mut self, switch: &Switch, ctx: &mut Context) {}
+  /// Called when a timer completes
+  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
 
-  fn on_game_start(&mut self, ctx: &mut Context) {}
-  fn on_game_end(&mut self, ctx: &mut Context) {}
+  /// Runs whenever the system enters the scene, including at the start of a game
+  fn on_system_enter(&mut self, ctx: &mut Context) {}
+  /// Runs whenever the system exits the scene, including at the end of a game
+  fn on_system_exit(&mut self, ctx: &mut Context) {}
+
   fn on_ball_start(&mut self, ctx: &mut Context) {}
   fn on_ball_end(&mut self, ctx: &mut Context) {}
-  fn on_timer_complete(&mut self, timer_name: &'static str, ctx: &mut Context) {}
 }
 
 pub struct SystemContainer {
@@ -40,7 +44,7 @@ impl SystemContainer {
     for (timer_name, timer) in &mut self.timers {
       if timer.tick(delta) {
         // Timer has completed, trigger a switch event with the timer's name
-        self.inner.on_timer_complete(timer_name, ctx);
+        self.inner.on_timer(timer_name, ctx);
         if let TimerMode::OneShot = timer.mode() {
           timers_to_remove.push(*timer_name);
         }

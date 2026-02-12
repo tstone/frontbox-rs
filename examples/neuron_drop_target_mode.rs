@@ -104,7 +104,7 @@ impl DropTargetDownUp {
 }
 
 impl System for DropTargetDownUp {
-  fn on_game_start(&mut self, ctx: &mut Context) {
+  fn on_system_enter(&mut self, ctx: &mut Context) {
     // ctx.trigger_driver(
     //   drivers::LOWER_DROP_TARGET_COIL,
     //   DriverTriggerControlMode::Manual,

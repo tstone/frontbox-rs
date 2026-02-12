@@ -85,7 +85,7 @@ impl Machine {
 
         // system timers
         _ = timer_interval.tick() => {
-          self.dispatch_to_systems(|system, ctx| {
+          self.dispatch_to_current_systems(|system, ctx| {
             system.on_tick(&system_timer_interval, ctx);
           });
         }
@@ -177,7 +177,7 @@ impl Machine {
       self.switches.update_switch_state(switch_id, state);
       let activated = matches!(state, SwitchState::Closed);
 
-      self.dispatch_to_systems(|system, ctx| {
+      self.dispatch_to_current_systems(|system, ctx| {
         if activated {
           system.on_switch_closed(&switch, ctx);
         } else {
@@ -194,32 +194,32 @@ impl Machine {
     }
   }
 
-  fn run_on_game_start(&mut self) {
-    self.dispatch_to_systems(|system, ctx| {
-      system.on_game_start(ctx);
+  fn run_on_system_enter(&mut self) {
+    self.dispatch_to_current_systems(|system, ctx| {
+      system.on_system_enter(ctx);
     });
   }
 
-  fn run_on_game_end(&mut self) {
-    self.dispatch_to_systems(|system, ctx| {
-      system.on_game_end(ctx);
+  fn run_on_system_exit(&mut self) {
+    self.dispatch_to_current_systems(|system, ctx| {
+      system.on_system_exit(ctx);
     });
   }
 
   fn run_on_ball_start(&mut self) {
-    self.dispatch_to_systems(|system, ctx| {
+    self.dispatch_to_current_systems(|system, ctx| {
       system.on_ball_start(ctx);
     });
   }
 
   fn run_on_ball_end(&mut self) {
-    self.dispatch_to_systems(|system, ctx| {
+    self.dispatch_to_current_systems(|system, ctx| {
       system.on_ball_end(ctx);
     });
   }
 
   /// Run each system within the scene, capturing then running commands emitted during processing
-  fn dispatch_to_systems<F>(&mut self, mut handler: F)
+  fn dispatch_to_current_systems<F>(&mut self, mut handler: F)
   where
     F: FnMut(&mut SystemContainer, &mut Context),
   {
@@ -246,12 +246,12 @@ impl Machine {
     });
     self.enable_high_voltage().await;
     self.report_switches().await; // sync initial switch states
-    self.run_on_game_start();
+    self.run_on_system_enter();
   }
 
   async fn end_game(&mut self) {
     log::info!("Ending game");
-    self.run_on_game_end();
+    self.run_on_system_exit();
     self.disable_high_voltage().await;
     self.game_state = None;
   }
@@ -337,13 +337,39 @@ impl Machine {
     }
   }
 
-  pub fn push_scene(&mut self, scene: Scene) {
+  pub fn push_scene(&mut self, mut scene: Scene) {
     let runtime = self.runtime_stack.last_mut().unwrap();
+    let store = runtime.get_current_store();
+
+    for (system_index, system) in (&mut scene).iter_mut().enumerate() {
+      let mut ctx = Context::new(
+        self.command_sender.clone(),
+        Some(store),
+        &self.switches,
+        &self.game_state,
+        Some(system_index),
+      );
+      system.on_system_enter(&mut ctx);
+    }
+
     runtime.push_scene(scene);
   }
 
   pub fn pop_scene(&mut self) {
     let runtime = self.runtime_stack.last_mut().unwrap();
+    let (mut outgoing_scene, store) = runtime.get_current_mut();
+
+    for (system_index, system) in (&mut outgoing_scene).iter_mut().enumerate() {
+      let mut ctx = Context::new(
+        self.command_sender.clone(),
+        Some(store),
+        &self.switches,
+        &self.game_state,
+        Some(system_index),
+      );
+      system.on_system_exit(&mut ctx);
+    }
+
     runtime.pop_scene();
   }
 
