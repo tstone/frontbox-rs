@@ -7,3 +7,4 @@ pub mod store;
 pub mod switch_context;
 pub mod system;
 pub mod system_timer;
+pub mod watchdog;

@@ -28,15 +28,6 @@ impl SystemTimer {
   pub fn mode(&self) -> &TimerMode {
     &self.mode
   }
-
-  pub fn reset(&mut self) {
-    self.accumulated = Duration::from_secs(0);
-  }
-
-  pub fn reset_with_target(&mut self, target: Duration) {
-    self.target = target;
-    self.accumulated = Duration::from_secs(0);
-  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

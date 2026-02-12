@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crate::machine::context::MachineCommand;
 use crate::machine::system_timer::TimerMode;
+use crate::machine::watchdog::Watchdog;
 use crate::mainboard::*;
 use crate::prelude::*;
 use crate::protocol::prelude::*;
@@ -25,9 +26,9 @@ pub struct Machine {
   io_port: SerialInterface,
   #[allow(unused)]
   exp_port: SerialInterface,
-  enable_watchdog: bool,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   driver_lookup: HashMap<&'static str, Driver>,
+  watchdog: Watchdog,
 
   runtime_stack: Vec<Box<dyn Runtime>>,
   switches: SwitchContext,
@@ -54,9 +55,9 @@ impl Machine {
       keyboard_switch_map,
       runtime_stack: Vec::new(),
       game_state: None,
-      enable_watchdog: false,
       command_sender,
       command_receiver,
+      watchdog: Watchdog::new(),
     }
   }
 
@@ -89,9 +90,7 @@ impl Machine {
           });
         }
 
-        // watchdog
-        _ = tokio::time::sleep(Duration::from_secs(1)), if self.enable_watchdog => {
-          log::trace!("🖥️ -> 👾 : Watchdog tick");
+        Some(_) = self.watchdog.read_tick() => {
           let _ = self.io_port.request(&WatchdogCommand::new(Some(Duration::from_millis(1250))), Duration::from_secs(2)).await;
         }
 
@@ -383,7 +382,7 @@ impl Machine {
 
   async fn enable_high_voltage(&mut self) {
     log::info!("Enabling high voltage");
-    self.enable_watchdog = true;
+    self.watchdog.enable();
     let _ = self
       .io_port
       .request(
@@ -398,7 +397,7 @@ impl Machine {
 
   async fn disable_high_voltage(&mut self) {
     log::info!("Disabling high voltage");
-    self.enable_watchdog = false;
+    self.watchdog.disable();
 
     // Clear any remaining watchdog time out
     let _ = self

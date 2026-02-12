@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
-use std::time::{self, Duration};
+use std::time::Duration;
 
 use dyn_clone::DynClone;
 

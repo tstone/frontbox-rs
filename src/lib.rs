@@ -25,7 +25,7 @@ pub mod prelude {
   pub use crate::mainboard::FastPlatform;
   pub use crate::mainboard::IoNetworkSpec;
   pub use crate::mainboard::SwitchConfig;
-  pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode};
+  pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode, Power};
   pub use crate::runtimes::*;
   pub use crate::store::Store;
 

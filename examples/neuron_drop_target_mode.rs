@@ -1,5 +1,4 @@
 use frontbox::prelude::*;
-use frontbox::protocol::prelude::{DriverConfig, Power};
 use frontbox::runtimes::PlayerRuntime;
 use std::io::Write;
 use std::time::Duration;
@@ -106,10 +105,10 @@ impl DropTargetDownUp {
 
 impl System for DropTargetDownUp {
   fn on_game_start(&mut self, ctx: &mut Context) {
-    ctx.trigger_driver(
-      drivers::LOWER_DROP_TARGET_COIL,
-      DriverTriggerControlMode::Manual,
-    );
+    // ctx.trigger_driver(
+    //   drivers::LOWER_DROP_TARGET_COIL,
+    //   DriverTriggerControlMode::Manual,
+    // );
   }
 
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
@@ -124,11 +123,11 @@ impl System for DropTargetDownUp {
 
       if all_down {
         // ctx.command(AddPoints(1000));
-        ctx.trigger_delayed_driver(
-          drivers::LOWER_DROP_TARGET_COIL,
-          DriverTriggerControlMode::Manual,
-          Duration::from_millis(500),
-        );
+        // ctx.trigger_delayed_driver(
+        //   drivers::LOWER_DROP_TARGET_COIL,
+        //   DriverTriggerControlMode::Manual,
+        //   Duration::from_millis(500),
+        // );
         ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }

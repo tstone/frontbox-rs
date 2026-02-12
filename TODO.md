@@ -1,4 +1,3 @@
-- Separate watchdog tick into it's own task to prevent it from being stopped by the timer tick
 - Make watchdog tick and system timer tick configurable
 - Define LEDs
 - Set LED state from System
