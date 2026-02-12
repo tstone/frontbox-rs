@@ -1,12 +1,9 @@
-use std::cell::{RefCell, RefMut};
-use std::rc::Rc;
-
 use crate::prelude::*;
 use tokio::sync::mpsc;
 
 pub struct Context<'a> {
   sender: mpsc::UnboundedSender<MachineCommand>,
-  runtime_stack: Rc<RefCell<Vec<Box<dyn Runtime>>>>,
+  store: Option<&'a Store>,
   switches: &'a SwitchContext,
   game_state: &'a Option<GameState>,
   current_system_index: Option<usize>,
@@ -15,14 +12,14 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
   pub fn new(
     sender: mpsc::UnboundedSender<MachineCommand>,
-    runtime_stack: Rc<RefCell<Vec<Box<dyn Runtime>>>>,
+    store: Option<&'a Store>,
     switches: &'a SwitchContext,
     game_state: &'a Option<GameState>,
     current_system_index: Option<usize>,
   ) -> Self {
     Self {
       sender,
-      runtime_stack,
+      store,
       switches,
       game_state,
       current_system_index,
@@ -49,23 +46,17 @@ impl<'a> Context<'a> {
     }
   }
 
-  fn active_store_mut(&self) -> RefMut<Store> {
-    RefMut::map(self.runtime_stack.borrow_mut(), |stack| {
-      let runtime = stack.last_mut().unwrap();
-      runtime.get_current_store_mut()
-    })
+  pub fn get<T: Default + 'static>(&self) -> Option<&T> {
+    self.store.and_then(|store| store.get::<T>())
   }
 
-  pub fn get<T: Default + 'static>(&mut self) -> RefMut<T> {
-    RefMut::map(self.active_store_mut(), |store| store.get_mut::<T>())
-  }
+  pub fn with_store<T: Default>(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
+    if self.store.is_none() {
+      log::warn!("No store is available in the current context");
+      return;
+    }
 
-  pub fn insert<T: Default + 'static>(&mut self, value: T) {
-    self.active_store_mut().insert::<T>(value);
-  }
-
-  pub fn remove<T: Default + 'static>(&mut self) {
-    self.active_store_mut().remove::<T>();
+    let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
   }
 
   pub fn start_game(&mut self) {
@@ -109,13 +100,21 @@ impl<'a> Context<'a> {
   }
 
   pub fn replace_system(&mut self, system: impl System + 'static) {
-    let _ = self
-      .sender
-      .send(MachineCommand::ReplaceSystem(Box::new(system)));
+    if let Some(system_id) = self.current_system_index {
+      let _ = self
+        .sender
+        .send(MachineCommand::ReplaceSystem(system_id, Box::new(system)));
+    } else {
+      log::warn!("No current system index available for replacement");
+    }
   }
 
-  pub fn terminate_system(&mut self, system_id: usize) {
-    let _ = self.sender.send(MachineCommand::TerminateSystem(system_id));
+  pub fn terminate_system(&mut self) {
+    if let Some(system_id) = self.current_system_index {
+      let _ = self.sender.send(MachineCommand::TerminateSystem(system_id));
+    } else {
+      log::warn!("No current system index available for termination");
+    }
   }
 
   pub fn configure_driver(&mut self, driver_name: &'static str, config: DriverConfig) {
@@ -131,7 +130,7 @@ impl<'a> Context<'a> {
   }
 }
 
-pub(crate) enum MachineCommand {
+pub enum MachineCommand {
   // game management
   StartGame,
   EndGame,
@@ -144,12 +143,15 @@ pub(crate) enum MachineCommand {
   PushScene(Scene),
   PopScene,
   AddSystem(Box<dyn System>),
-  ReplaceSystem(Box<dyn System>),
+  ReplaceSystem(usize, Box<dyn System>),
   TerminateSystem(usize),
 
   // hardware control
   ConfigureDriver(&'static str, DriverConfig),
   TriggerDriver(&'static str, DriverTriggerControlMode),
+
+  // store
+  StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
 }
 
 impl std::fmt::Debug for MachineCommand {
@@ -164,10 +166,11 @@ impl std::fmt::Debug for MachineCommand {
       Self::PushScene(_) => write!(f, "PushScene(..)"),
       Self::PopScene => write!(f, "PopScene"),
       Self::AddSystem(_) => write!(f, "AddSystem(..)"),
-      Self::ReplaceSystem(_) => write!(f, "ReplaceSystem(..)"),
+      Self::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({}, ..)", id),
       Self::TerminateSystem(id) => write!(f, "TerminateSystem({})", id),
       Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
       Self::TriggerDriver(name, mode) => write!(f, "TriggerDriver({:?}, {:?})", name, mode),
+      Self::StoreWrite(_) => write!(f, "StoreWrite(..)"),
     }
   }
 }

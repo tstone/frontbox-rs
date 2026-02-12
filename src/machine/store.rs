@@ -16,13 +16,8 @@ impl Store {
     self.internal.clear();
   }
 
-  pub fn get<T: Default + 'static>(&mut self) -> &T {
-    if self.internal.get::<T>().is_some() {
-      return self.internal.get::<T>().unwrap();
-    } else {
-      self.internal.insert::<T>(T::default());
-      return self.internal.get::<T>().unwrap();
-    }
+  pub fn get<T: Default + 'static>(&self) -> Option<&T> {
+    return self.internal.get::<T>();
   }
 
   pub fn get_mut<T: Default + 'static>(&mut self) -> &mut T {

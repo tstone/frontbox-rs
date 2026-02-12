@@ -126,9 +126,3 @@ impl SwitchContext {
     }
   }
 }
-
-pub struct StatefulSwitch {
-  pub id: usize,
-  pub name: &'static str,
-  pub state: SwitchState,
-}

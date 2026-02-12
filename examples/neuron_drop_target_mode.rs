@@ -1,9 +1,8 @@
-use frontbox::plugins::*;
 use frontbox::prelude::*;
-use frontbox::protocol::prelude::DriverConfig;
-use frontbox::protocol::prelude::PulseBuilder;
+use frontbox::protocol::prelude::{DriverConfig, Power};
 use frontbox::runtimes::PlayerRuntime;
 use std::io::Write;
+use std::time::Duration;
 
 pub mod switches {
   pub const START_BUTTON: &str = "start_button";
@@ -36,6 +35,7 @@ async fn main() {
         switches::LOWER_DROP_TARGET1,
         SwitchConfig {
           inverted: true,
+          debounce_open: Some(Duration::from_millis(10)),
           ..Default::default()
         },
       )
@@ -44,6 +44,7 @@ async fn main() {
         switches::LOWER_DROP_TARGET2,
         SwitchConfig {
           inverted: true,
+          debounce_open: Some(Duration::from_millis(10)),
           ..Default::default()
         },
       )
@@ -52,13 +53,17 @@ async fn main() {
         switches::LOWER_DROP_TARGET3,
         SwitchConfig {
           inverted: true,
+          debounce_open: Some(Duration::from_millis(10)),
           ..Default::default()
         },
       )
-      .with_driver(0, drivers::LOWER_DROP_TARGET_COIL)
+      .with_driver(3, drivers::LOWER_DROP_TARGET_COIL)
       .with_driver_config(
         drivers::LOWER_DROP_TARGET_COIL,
-        DriverConfig::pulse().build(),
+        DriverConfig::pulse()
+          .initial_pwm_length(Duration::from_millis(140))
+          .initial_pwm_power(Power::percent(50))
+          .build(),
       ),
   );
 

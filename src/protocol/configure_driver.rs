@@ -33,14 +33,14 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         secondary_pwm_power,
         rest,
       } => format!(
-        "DL:{:X},{:X},{},10,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},10,{:X},{:X},{:X},{:X},{:X}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .enabled(true)
-          .one_shot(true)
           .invert_switch1(invert_switch)
+          .disable_switch(true)
           .bits(),
-        switch.map_or("".to_string(), |s| format!("{:X}", s)),
+        switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
         initial_pwm_power,
         secondary_pwm_length.as_millis(),

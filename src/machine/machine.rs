@@ -1,7 +1,5 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::rc::Rc;
 use std::time::Duration;
 
 use crate::machine::context::MachineCommand;
@@ -17,8 +15,6 @@ use crossterm::{
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
-pub type Scene = Vec<Box<dyn System>>;
-
 pub struct GameState {
   pub active_player: u8,
   pub player_count: u8,
@@ -26,12 +22,13 @@ pub struct GameState {
 
 pub struct Machine {
   io_port: SerialInterface,
+  #[allow(unused)]
   exp_port: SerialInterface,
   enable_watchdog: bool,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   driver_lookup: HashMap<&'static str, Driver>,
 
-  runtime_stack: Rc<RefCell<Vec<Box<dyn Runtime>>>>,
+  runtime_stack: Vec<Box<dyn Runtime>>,
   switches: SwitchContext,
   game_state: Option<GameState>,
 
@@ -54,7 +51,7 @@ impl Machine {
       switches: switches,
       driver_lookup,
       keyboard_switch_map,
-      runtime_stack: Rc::new(RefCell::new(Vec::new())),
+      runtime_stack: Vec::new(),
       game_state: None,
       enable_watchdog: false,
       command_sender,
@@ -129,7 +126,7 @@ impl Machine {
     log::trace!("Executing machine command: {:?}", command);
     match command {
       MachineCommand::StartGame => self.start_game().await,
-      MachineCommand::EndGame => self.run_on_game_end(),
+      MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player(),
       MachineCommand::PushRuntime(runtime) => self.push_runtime(runtime),
@@ -137,9 +134,8 @@ impl Machine {
       MachineCommand::PushScene(scene) => self.push_scene(scene),
       MachineCommand::PopScene => self.pop_scene(),
       MachineCommand::AddSystem(system) => self.add_system(system),
-      MachineCommand::ReplaceSystem(_system) => {
-        // TODO: need to track which system to replace
-        log::warn!("ReplaceSystem not fully implemented yet");
+      MachineCommand::ReplaceSystem(system_id, system) => {
+        self.replace_system(system_id, system);
       }
       MachineCommand::TerminateSystem(system_index) => self.terminate_system(system_index),
       MachineCommand::ConfigureDriver(driver_name, config) => {
@@ -147,6 +143,10 @@ impl Machine {
       }
       MachineCommand::TriggerDriver(driver_name, mode) => {
         self.trigger_driver(driver_name, mode).await
+      }
+      MachineCommand::StoreWrite(f) => {
+        let mut store = Store::new();
+        f(&mut store);
       }
     }
   }
@@ -204,14 +204,13 @@ impl Machine {
   where
     F: FnMut(&mut Box<dyn System>, &mut Context),
   {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let (scene, store) = runtime.get_current_mut();
 
     for (system_index, system) in scene.iter_mut().enumerate() {
       let mut ctx = Context::new(
         self.command_sender.clone(),
-        self.runtime_stack.clone(),
+        Some(store),
         &self.switches,
         &self.game_state,
         Some(system_index),
@@ -229,6 +228,13 @@ impl Machine {
     self.enable_high_voltage().await;
     self.report_switches().await; // sync initial switch states
     self.run_on_game_start();
+  }
+
+  async fn end_game(&mut self) {
+    log::info!("Ending game");
+    self.run_on_game_end();
+    self.disable_high_voltage().await;
+    self.game_state = None;
   }
 
   fn add_player(&mut self) {
@@ -261,27 +267,26 @@ impl Machine {
   /// Transition to a new runtime
   pub fn push_runtime(&mut self, new_runtime: Box<dyn Runtime>) {
     log::info!("Pushing into new runtime");
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut();
+
     let mut ctx = Context::new(
       self.command_sender.clone(),
-      self.runtime_stack.clone(),
+      None,
       &self.switches,
       &self.game_state,
       None,
     );
 
+    let runtime = self.runtime_stack.last_mut();
     if let Some(runtime) = runtime {
       log::trace!("on_runtime_exit for current runtime");
       runtime.on_runtime_exit(&mut ctx);
     }
 
-    self.runtime_stack.borrow_mut().push(new_runtime);
+    self.runtime_stack.push(new_runtime);
 
     log::trace!("on_runtime_enter for new runtime");
     self
       .runtime_stack
-      .borrow_mut()
       .last_mut()
       .unwrap()
       .on_runtime_enter(&mut ctx);
@@ -292,20 +297,21 @@ impl Machine {
     log::info!("Popping current runtime");
     let mut ctx = Context::new(
       self.command_sender.clone(),
-      self.runtime_stack.clone(),
+      None,
       &self.switches,
       &self.game_state,
       None,
     );
-    let mut stack = self.runtime_stack.borrow_mut();
-    if let Some(runtime) = stack.last_mut() {
+
+    let runtime = self.runtime_stack.last_mut();
+    if let Some(runtime) = runtime {
       runtime.on_runtime_exit(&mut ctx);
     }
 
-    stack.pop();
+    self.runtime_stack.pop();
 
-    if stack.len() > 0 {
-      let runtime = stack.last_mut().unwrap();
+    if self.runtime_stack.len() > 0 {
+      let runtime = self.runtime_stack.last_mut().unwrap();
       runtime.on_runtime_enter(&mut ctx);
     } else {
       log::warn!("No active runtime");
@@ -313,26 +319,22 @@ impl Machine {
   }
 
   pub fn push_scene(&mut self, scene: Scene) {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
+    let runtime = self.runtime_stack.last_mut().unwrap();
     runtime.push_scene(scene);
   }
 
   pub fn pop_scene(&mut self) {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
+    let runtime = self.runtime_stack.last_mut().unwrap();
     runtime.pop_scene();
   }
 
   pub fn add_system(&mut self, system: Box<dyn System>) {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
+    let runtime = self.runtime_stack.last_mut().unwrap();
     runtime.get_current_scene_mut().push(system);
   }
 
   pub fn replace_system(&mut self, system_index: usize, new_system: Box<dyn System>) {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
+    let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
     if system_index < scene.len() {
       scene[system_index] = new_system;
@@ -345,8 +347,7 @@ impl Machine {
   }
 
   pub fn terminate_system(&mut self, system_index: usize) {
-    let mut stack = self.runtime_stack.borrow_mut();
-    let runtime = stack.last_mut().unwrap();
+    let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
     if system_index < scene.len() {
       scene.remove(system_index);
@@ -368,6 +369,9 @@ impl Machine {
         Duration::from_secs(2),
       )
       .await;
+
+    // give some time for the hardware to power up before we start sending commands
+    tokio::time::sleep(Duration::from_millis(300)).await;
   }
 
   async fn disable_high_voltage(&mut self) {
@@ -388,13 +392,24 @@ impl Machine {
     match self.driver_lookup.get(driver) {
       Some(driver) => {
         log::info!("Configuring driver {}", driver.name);
-        let _ = self
+        match self
           .io_port
           .request(
             &ConfigureDriverCommand::new(&driver.id, &config),
             Duration::from_secs(2),
           )
-          .await;
+          .await
+        {
+          Ok(ProcessedResponse::Processed) => {
+            log::debug!("Driver {} configured successfully", driver.name);
+          }
+          Ok(ProcessedResponse::Failed) => {
+            log::error!("Driver {} configuration failed", driver.name);
+          }
+          Err(e) => {
+            log::error!("Error configuring driver {}: {}", driver.name, e);
+          }
+        }
       }
       None => {
         log::error!("Attempted to configure unknown driver: {}", driver);

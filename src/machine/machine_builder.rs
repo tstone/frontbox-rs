@@ -61,7 +61,7 @@ impl MachineBuilder {
   /// wait for the mainboard to be ready to respond
   async fn boot_mainboard(io_port: &mut SerialInterface) {
     let _ = io_port
-      .request_until_match(IdCommand::new(), Duration::from_millis(2000), |response| {
+      .request_until_match(IdCommand::new(), Duration::from_millis(500), |response| {
         if let IdResponse::Report {
           processor,
           product_number,
@@ -156,12 +156,23 @@ impl MachineBuilder {
     for driver in drivers {
       if let Some(config) = &driver.config {
         log::info!("Configuring driver {} with {:?}", driver.name, config);
-        let _ = io_port
+        match io_port
           .request(
             &ConfigureDriverCommand::new(&driver.id, config),
             Duration::from_millis(2000),
           )
-          .await;
+          .await
+        {
+          Ok(ProcessedResponse::Processed) => {
+            log::debug!("Driver {} configured successfully", driver.name);
+          }
+          Ok(ProcessedResponse::Failed) => {
+            panic!("Driver {} configuration failed", driver.name);
+          }
+          Err(e) => {
+            panic!("Error configuring driver {}: {}", driver.name, e);
+          }
+        }
       }
     }
   }
