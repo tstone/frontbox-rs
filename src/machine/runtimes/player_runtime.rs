@@ -14,16 +14,21 @@ pub struct PlayerRuntime {
 }
 
 impl PlayerRuntime {
-  pub fn new(initial_scene: Scene) -> Box<Self> {
+  pub fn new(initial_scene: Vec<Box<dyn System>>) -> Box<Self> {
     let mut player_stacks = Vec::new();
-    let copy: Vec<Box<dyn System>> = initial_scene
+    let copy: Vec<SystemContainer> = initial_scene
       .iter()
-      .map(|system| dyn_clone::clone_box(&**system))
+      .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
       .collect();
     player_stacks.push(vec![copy]);
 
     let mut player_stores = Vec::new();
     player_stores.push(Store::new());
+
+    let initial_scene = initial_scene
+      .into_iter()
+      .map(|system| SystemContainer::new(system))
+      .collect();
 
     Box::new(Self {
       initial_scene,
@@ -80,10 +85,10 @@ impl Runtime for PlayerRuntime {
   }
 
   fn on_add_player(&mut self, _new_player: u8) {
-    let copy: Vec<Box<dyn System>> = self
+    let copy: Vec<SystemContainer> = self
       .initial_scene
       .iter()
-      .map(|system| dyn_clone::clone_box(&**system))
+      .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
       .collect();
     self.player_stacks.push(vec![copy]);
     self.player_stores.push(Store::new());

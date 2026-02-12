@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use crate::machine::context::MachineCommand;
+use crate::machine::system_timer::TimerMode;
 use crate::mainboard::*;
 use crate::prelude::*;
 use crate::protocol::prelude::*;
@@ -73,8 +74,21 @@ impl Machine {
 
     let mut key_reader = EventStream::new();
 
+    let system_timer_interval = Duration::from_millis(100);
+    let mut timer_interval = tokio::time::interval(system_timer_interval);
+
     loop {
       tokio::select! {
+        // ensures branches are checked in order. Timer interval gets priority
+        biased;
+
+        // system timers
+        _ = timer_interval.tick() => {
+          self.dispatch_to_systems(|system, ctx| {
+            system.on_tick(&system_timer_interval, ctx);
+          });
+        }
+
         // watchdog
         _ = tokio::time::sleep(Duration::from_secs(1)), if self.enable_watchdog => {
           log::trace!("🖥️ -> 👾 : Watchdog tick");
@@ -141,12 +155,18 @@ impl Machine {
       MachineCommand::ConfigureDriver(driver_name, config) => {
         self.configure_driver(driver_name, config).await
       }
-      MachineCommand::TriggerDriver(driver_name, mode) => {
-        self.trigger_driver(driver_name, mode).await
+      MachineCommand::TriggerDriver(driver_name, mode, delay) => {
+        self.trigger_driver(driver_name, mode, delay).await
       }
       MachineCommand::StoreWrite(f) => {
         let mut store = Store::new();
         f(&mut store);
+      }
+      MachineCommand::SetTimer(system_id, timer_name, duration, mode) => {
+        self.set_system_timer(system_id, timer_name, duration, mode);
+      }
+      MachineCommand::ClearTimer(system_id, timer_name) => {
+        self.clear_system_timer(system_id, timer_name);
       }
     }
   }
@@ -202,7 +222,7 @@ impl Machine {
   /// Run each system within the scene, capturing then running commands emitted during processing
   fn dispatch_to_systems<F>(&mut self, mut handler: F)
   where
-    F: FnMut(&mut Box<dyn System>, &mut Context),
+    F: FnMut(&mut SystemContainer, &mut Context),
   {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let (scene, store) = runtime.get_current_mut();
@@ -330,14 +350,16 @@ impl Machine {
 
   pub fn add_system(&mut self, system: Box<dyn System>) {
     let runtime = self.runtime_stack.last_mut().unwrap();
-    runtime.get_current_scene_mut().push(system);
+    runtime
+      .get_current_scene_mut()
+      .push(SystemContainer::new(system));
   }
 
   pub fn replace_system(&mut self, system_index: usize, new_system: Box<dyn System>) {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
     if system_index < scene.len() {
-      scene[system_index] = new_system;
+      scene[system_index] = SystemContainer::new(new_system);
     } else {
       log::error!(
         "Attempted to replace system with invalid index: {}",
@@ -433,9 +455,18 @@ impl Machine {
     }
   }
 
-  async fn trigger_driver(&mut self, driver: &'static str, mode: DriverTriggerControlMode) {
+  async fn trigger_driver(
+    &mut self,
+    driver: &'static str,
+    mode: DriverTriggerControlMode,
+    delay: Option<Duration>,
+  ) {
     match self.driver_lookup.get(driver) {
       Some(driver) => {
+        if let Some(delay) = delay {
+          tokio::time::sleep(delay).await;
+        }
+
         log::info!("Triggering driver {}", driver.name);
         let switch = driver.config.as_ref().and_then(|cfg| cfg.switch_id());
         self
@@ -447,6 +478,38 @@ impl Machine {
         log::error!("Attempted to trigger unknown driver: {}", driver);
         return;
       }
+    }
+  }
+
+  fn set_system_timer(
+    &mut self,
+    system_id: usize,
+    timer_name: &'static str,
+    duration: Duration,
+    mode: TimerMode,
+  ) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let scene = runtime.get_current_scene_mut();
+    if let Some(system) = scene.get_mut(system_id) {
+      system.set_timer(timer_name, duration, mode);
+    } else {
+      log::error!(
+        "Attempted to set timer for invalid system index: {}",
+        system_id
+      );
+    }
+  }
+
+  fn clear_system_timer(&mut self, system_id: usize, timer_name: &'static str) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let scene = runtime.get_current_scene_mut();
+    if let Some(system) = scene.get_mut(system_id) {
+      system.clear_timer(timer_name);
+    } else {
+      log::error!(
+        "Attempted to clear timer for invalid system index: {}",
+        system_id
+      );
     }
   }
 }

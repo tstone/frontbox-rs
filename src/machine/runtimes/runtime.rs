@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-pub type Scene = Vec<Box<dyn System>>;
+pub type Scene = Vec<SystemContainer>;
 
 /// A runtime manages which stack of scenes is currently active, acting as a switchboard operator
 #[allow(unused)]

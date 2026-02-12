@@ -124,10 +124,12 @@ impl System for DropTargetDownUp {
 
       if all_down {
         // ctx.command(AddPoints(1000));
-        ctx.trigger_driver(
+        ctx.trigger_delayed_driver(
           drivers::LOWER_DROP_TARGET_COIL,
           DriverTriggerControlMode::Manual,
+          Duration::from_millis(500),
         );
+        ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }
   }

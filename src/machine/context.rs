@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use crate::machine::system_timer::TimerMode;
 use crate::prelude::*;
 use tokio::sync::mpsc;
 
@@ -57,6 +60,26 @@ impl<'a> Context<'a> {
     }
 
     let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
+  }
+
+  pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
+    if let Some(system_id) = self.current_system_index {
+      let _ = self.sender.send(MachineCommand::SetTimer(
+        system_id, timer_name, duration, mode,
+      ));
+    } else {
+      log::warn!("No current system to set timer for");
+    }
+  }
+
+  pub fn clear_timer(&mut self, timer_name: &'static str) {
+    if let Some(system_id) = self.current_system_index {
+      let _ = self
+        .sender
+        .send(MachineCommand::ClearTimer(system_id, timer_name));
+    } else {
+      log::warn!("No current system to clear timer for");
+    }
   }
 
   pub fn start_game(&mut self) {
@@ -126,7 +149,21 @@ impl<'a> Context<'a> {
   pub fn trigger_driver(&mut self, driver_name: &'static str, mode: DriverTriggerControlMode) {
     let _ = self
       .sender
-      .send(MachineCommand::TriggerDriver(driver_name, mode));
+      .send(MachineCommand::TriggerDriver(driver_name, mode, None));
+  }
+
+  /// Triggers a driver after the given delay time has elapsed
+  pub fn trigger_delayed_driver(
+    &mut self,
+    driver_name: &'static str,
+    mode: DriverTriggerControlMode,
+    delay: Duration,
+  ) {
+    let _ = self.sender.send(MachineCommand::TriggerDriver(
+      driver_name,
+      mode,
+      Some(delay),
+    ));
   }
 }
 
@@ -148,9 +185,12 @@ pub enum MachineCommand {
 
   // hardware control
   ConfigureDriver(&'static str, DriverConfig),
-  TriggerDriver(&'static str, DriverTriggerControlMode),
+  TriggerDriver(&'static str, DriverTriggerControlMode, Option<Duration>),
 
-  // store
+  ClearTimer(usize, &'static str),
+  SetTimer(usize, &'static str, Duration, TimerMode),
+
+  // other
   StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
 }
 
@@ -169,8 +209,18 @@ impl std::fmt::Debug for MachineCommand {
       Self::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({}, ..)", id),
       Self::TerminateSystem(id) => write!(f, "TerminateSystem({})", id),
       Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
-      Self::TriggerDriver(name, mode) => write!(f, "TriggerDriver({:?}, {:?})", name, mode),
+      Self::TriggerDriver(name, mode, delay) => {
+        write!(f, "TriggerDriver({:?}, {:?}, {:?})", name, mode, delay)
+      }
       Self::StoreWrite(_) => write!(f, "StoreWrite(..)"),
+      Self::SetTimer(id, name, duration, mode) => {
+        write!(
+          f,
+          "SetTimer({}, {:?}, {:?}, {:?})",
+          id, name, duration, mode
+        )
+      }
+      Self::ClearTimer(id, timer_name) => write!(f, "ClearTimer({}, {:?})", id, timer_name),
     }
   }
 }

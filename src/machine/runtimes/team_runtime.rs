@@ -12,16 +12,16 @@ pub struct TeamRuntime {
 }
 
 impl TeamRuntime {
-  pub fn new(initial_scene: Scene, player_team_map: Vec<u8>) -> Box<Self> {
+  pub fn new(initial_scene: Vec<Box<dyn System>>, player_team_map: Vec<u8>) -> Box<Self> {
     let mut team_stacks = Vec::new();
     let mut team_stores = Vec::new();
     let team_count = player_team_map.iter().max().unwrap_or(&0) + 1;
 
     // Create a stack for each team
     for _ in 0..team_count {
-      let copy: Vec<Box<dyn System>> = initial_scene
+      let copy: Vec<SystemContainer> = initial_scene
         .iter()
-        .map(|system| dyn_clone::clone_box(&**system))
+        .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
         .collect();
       team_stacks.push(vec![copy]);
       team_stores.push(Store::new());
