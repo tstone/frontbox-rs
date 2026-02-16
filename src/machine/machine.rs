@@ -100,11 +100,7 @@ impl Machine {
       }
 
       tokio::select! {
-        // ensures branches are checked in order. Timer interval gets priority
-        biased;
-
         // system timers
-        // TODO: fix all this mess
         _ = timer_interval.tick() => {
           self.dispatch_to_current_systems(|system, ctx| {
             system.on_tick(&system_timer_interval, ctx);

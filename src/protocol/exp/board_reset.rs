@@ -29,3 +29,14 @@ impl FastCommand for BoardResetCommand {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_request() {
+    let command = BoardResetCommand::new(0x1A);
+    assert_eq!(command.to_string(), "BR@1A:\r");
+  }
+}
