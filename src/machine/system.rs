@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use dyn_clone::DynClone;
 
+use crate::led::LedDeclaration;
 use crate::machine::system_timer::{SystemTimer, TimerMode};
 use crate::prelude::*;
 
@@ -25,6 +26,10 @@ pub trait System: DynClone + Send + Sync {
   fn on_ball_end(&mut self, ctx: &mut Context) {}
 
   fn on_config_change(&mut self, config_key: &'static str, ctx: &mut Context) {}
+
+  fn leds(&self) -> Vec<LedDeclaration> {
+    vec![]
+  }
 }
 
 pub struct SystemContainer {

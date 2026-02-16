@@ -1,10 +1,9 @@
-mod fast_codec;
+mod expansion_board;
 mod io_network;
-pub mod serial_interface;
 
 use std::time::Duration;
 
-pub use fast_codec::*;
+pub use expansion_board::*;
 pub use io_network::*;
 
 #[derive(Debug, Clone)]

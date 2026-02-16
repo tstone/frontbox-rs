@@ -12,7 +12,7 @@ machine = ["protocol"]
 log = "0.4.29"
 
 #[cfg(feature = "machine")]
-futures-util = "0.3"
+futures-util = "0.3.32"
 #[cfg(feature = "machine")]
 tokio = { version = "1", features = ["full"] }
 #[cfg(feature = "machine")]
@@ -20,10 +20,11 @@ tokio-serial = "5.4.4"
 #[cfg(feature = "machine")]
 tokio-util = { version = "0.7.18", features = ["codec"] }
 
-bitflags = "2.10.0"
+bitflags = "2.11.0"
 anymap2 = "0.13.0"
 crossterm = { version = "0.29", features = ["event-stream"] }
 dyn-clone = "1.0.20"
+palette = "0.7.6"
 
 [dev-dependencies]
-env_logger = "0.11.8"
+env_logger = "0.11.9"

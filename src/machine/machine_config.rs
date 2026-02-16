@@ -105,12 +105,12 @@ impl Default for MachineConfig {
     config.add_item(
       default_config::SYSTEM_TIMER_TICK,
       ConfigItem::Integer {
-        current: 50,
+        current: 41,
         min: 1,
         max: 5000,
-        default: 50,
+        default: 41, // 25 FPS
         name: "System Timer Tick (ms)",
-        description: "Resolution of the system timers. Lower values allow for more precise timers but may increase CPU usage.",
+        description: "Resolution of the system timers. Lower values allow for more precise timers but may increase CPU usage. Default 25 FPS",
       },
     );
 

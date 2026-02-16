@@ -1,4 +1,3 @@
-use crate::protocol::fast_command::ProcessedResponse;
 use crate::protocol::prelude::*;
 
 pub struct ConfigureHardwareCommand {
@@ -34,13 +33,7 @@ impl FastCommand for ConfigureHardwareCommand {
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    if raw.payload.to_lowercase() == "p" {
-      Ok(ProcessedResponse::Processed)
-    } else if raw.payload.to_lowercase() == "f" {
-      Ok(ProcessedResponse::Failed)
-    } else {
-      Err(FastResponseError::InvalidFormat)
-    }
+    ProcessedResponse::parse(raw)
   }
 }
 

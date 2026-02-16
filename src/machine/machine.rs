@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
+use crate::hardware_definition::*;
 use crate::machine::context::MachineCommand;
 use crate::machine::machine_config::MachineConfig;
+use crate::machine::serial_interface::*;
 use crate::machine::system_timer::TimerMode;
 use crate::machine::watchdog::Watchdog;
-use crate::mainboard::*;
 use crate::prelude::*;
 use crate::protocol::prelude::*;
 use crate::protocol::*;
-use crate::serial_interface::SerialInterface;
 use crossterm::{
   event::{Event, EventStream, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
@@ -104,6 +104,7 @@ impl Machine {
         biased;
 
         // system timers
+        // TODO: fix all this mess
         _ = timer_interval.tick() => {
           self.dispatch_to_current_systems(|system, ctx| {
             system.on_tick(&system_timer_interval, ctx);

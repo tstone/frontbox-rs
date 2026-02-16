@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use crate::hardware_definition::*;
+use crate::machine::serial_interface::SerialInterface;
 use crate::machine::switch_context::SwitchContext;
-use crate::mainboard::*;
 use crate::prelude::*;
 use crate::protocol::SwitchState;
 use crate::protocol::prelude::*;
-use crate::serial_interface::SerialInterface;
 
 pub struct MachineBuilder {
   io_port: SerialInterface,
@@ -19,7 +19,11 @@ pub struct MachineBuilder {
 }
 
 impl MachineBuilder {
-  pub async fn boot(config: BootConfig, io_network: IoNetwork) -> Self {
+  pub async fn boot(
+    config: BootConfig,
+    io_network: IoNetwork,
+    expansion_boards: Vec<ExpansionBoardSpec>,
+  ) -> Self {
     let mut io_port = SerialInterface::new(config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
@@ -42,12 +46,13 @@ impl MachineBuilder {
     }
 
     // open EXP port
-    let exp_port = SerialInterface::new(config.exp_port_path)
+    let mut exp_port = SerialInterface::new(config.exp_port_path)
       .await
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
-    // TODO: define LEDs
+    MachineBuilder::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
+    MachineBuilder::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     Self {
       io_port,
@@ -92,7 +97,7 @@ impl MachineBuilder {
     let _ = io_port
       .request(
         &ConfigureHardwareCommand::new(platform as u16, Some(SwitchReporting::Verbose)),
-        Duration::from_millis(2000),
+        Duration::from_millis(500),
       )
       .await;
   }
@@ -105,7 +110,7 @@ impl MachineBuilder {
         Duration::from_millis(2000),
         |resp| {
           if let SwitchReportResponse::SwitchReport { switches } = resp {
-            log::info!("🥾 Initial switch states: {:?}", switches);
+            log::debug!("🥾 Initial switch states: {:?}", switches);
             Some(switches)
           } else {
             None
@@ -147,7 +152,7 @@ impl MachineBuilder {
               config.debounce_close,
               config.debounce_open,
             ),
-            Duration::from_millis(2000),
+            Duration::from_millis(500),
           )
           .await;
       }
@@ -161,7 +166,7 @@ impl MachineBuilder {
         match io_port
           .request(
             &ConfigureDriverCommand::new(&driver.id, config),
-            Duration::from_millis(2000),
+            Duration::from_millis(500),
           )
           .await
         {
@@ -175,6 +180,56 @@ impl MachineBuilder {
             panic!("Error configuring driver {}: {}", driver.name, e);
           }
         }
+      }
+    }
+  }
+
+  async fn reset_expansion_boards(
+    exp_port: &mut SerialInterface,
+    expansion_boards: &Vec<ExpansionBoardSpec>,
+  ) {
+    for board in expansion_boards {
+      if board.breakout.is_none() {
+        log::info!("Resetting expansion board at address {:X}", board.address);
+        match exp_port
+          .request(
+            &BoardResetCommand::new(board.address),
+            Duration::from_millis(2000),
+          )
+          .await
+        {
+          Ok(ProcessedResponse::Processed) => {
+            log::debug!("Expansion board {:X} reset successfully", board.address);
+          }
+          Ok(ProcessedResponse::Failed) => {
+            panic!(
+              "Expansion board {:X} reset failed. Is this configured correctly?",
+              board.address
+            );
+          }
+          Err(e) => {
+            panic!("Error resetting expansion board {:X}: {}", board.address, e);
+          }
+        }
+      }
+    }
+  }
+
+  async fn configure_led_ports(
+    exp_port: &mut SerialInterface,
+    expansion_boards: &Vec<ExpansionBoardSpec>,
+  ) {
+    for board in expansion_boards {
+      for led_port in &board.led_ports {
+        let cmd = ConfigureLedPortCommand::new(
+          board.address,
+          board.breakout,
+          led_port.port,
+          led_port.led_type.clone(),
+          led_port.start,
+          led_port.leds.len() as u8,
+        );
+        let _ = exp_port.request(&cmd, Duration::from_millis(250)).await;
       }
     }
   }

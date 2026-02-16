@@ -1,10 +1,25 @@
+use crate::protocol::common::expansion_addr;
 use crate::protocol::prelude::*;
 
-pub struct IdCommand;
+pub struct IdCommand {
+  address: Option<FastAddress>,
+}
 
 impl IdCommand {
   pub fn new() -> Self {
-    IdCommand
+    IdCommand { address: None }
+  }
+
+  pub fn io(id: u8) -> Self {
+    IdCommand {
+      address: Some(FastAddress::Io(id)),
+    }
+  }
+
+  pub fn exp(board: u8, breakout: Option<u8>) -> Self {
+    IdCommand {
+      address: Some(FastAddress::Exp(board, breakout)),
+    }
   }
 }
 
@@ -16,7 +31,13 @@ impl FastCommand for IdCommand {
   }
 
   fn to_string(&self) -> String {
-    "ID:\r".to_string()
+    match self.address {
+      Some(FastAddress::Io(id)) => format!("ID@{}:\r", id),
+      Some(FastAddress::Exp(board, breakout)) => {
+        format!("ID@{}:\r", expansion_addr(board, breakout))
+      }
+      None => "ID:\r".to_string(),
+    }
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

@@ -16,6 +16,7 @@ async fn main() {
       ..Default::default()
     },
     IoNetworkSpec::new().build(),
+    vec![],
   )
   .await
   .build()

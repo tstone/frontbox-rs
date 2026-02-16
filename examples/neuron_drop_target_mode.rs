@@ -66,32 +66,24 @@ async fn main() {
       ),
   );
 
-  MachineBuilder::boot(
-    BootConfig {
-      platform: FastPlatform::Neuron,
-      io_net_port_path: "/dev/ttyACM0",
-      exp_port_path: "/dev/ttyACM1",
-      ..Default::default()
-    },
-    io_network.build(),
-  )
-  .await
-  .add_keyboard_mappings(vec![
-    (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
-    (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
-    (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
-  ])
-  .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
-  .build()
-  .run(PlayerRuntime::new(vec![DropTargetDownUp::new([
-    switches::LOWER_DROP_TARGET1,
-    switches::LOWER_DROP_TARGET2,
-    switches::LOWER_DROP_TARGET3,
-  ])]))
-  .await;
+  MachineBuilder::boot(BootConfig::default(), io_network.build(), vec![])
+    .await
+    .add_keyboard_mappings(vec![
+      (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
+      (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
+      (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
+    ])
+    .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
+    .build()
+    .run(PlayerRuntime::new(vec![DropTargetDownUp::new([
+      switches::LOWER_DROP_TARGET1,
+      switches::LOWER_DROP_TARGET2,
+      switches::LOWER_DROP_TARGET3,
+    ])]))
+    .await;
 }
 
-/// Example game mode mode where all three drop targets must be down then the targets are reset
+/// Example game mode where all three drop targets must be down then the targets are reset
 #[derive(Debug, Clone)]
 struct DropTargetDownUp {
   target_switches: [&'static str; 3],
@@ -105,10 +97,10 @@ impl DropTargetDownUp {
 
 impl System for DropTargetDownUp {
   fn on_system_enter(&mut self, ctx: &mut Context) {
-    // ctx.trigger_driver(
-    //   drivers::LOWER_DROP_TARGET_COIL,
-    //   DriverTriggerControlMode::Manual,
-    // );
+    ctx.trigger_driver(
+      drivers::LOWER_DROP_TARGET_COIL,
+      DriverTriggerControlMode::Manual,
+    );
   }
 
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
@@ -123,11 +115,11 @@ impl System for DropTargetDownUp {
 
       if all_down {
         // ctx.command(AddPoints(1000));
-        // ctx.trigger_delayed_driver(
-        //   drivers::LOWER_DROP_TARGET_COIL,
-        //   DriverTriggerControlMode::Manual,
-        //   Duration::from_millis(500),
-        // );
+        ctx.trigger_delayed_driver(
+          drivers::LOWER_DROP_TARGET_COIL,
+          DriverTriggerControlMode::Manual,
+          Duration::from_millis(250),
+        );
         ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }

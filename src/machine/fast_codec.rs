@@ -18,6 +18,13 @@ impl Decoder for FastRawCodec {
   type Error = std::io::Error;
 
   fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+    if src.len() > 1024 {
+      log::warn!(
+        "Codec buffer has {} bytes without \\r terminator!",
+        src.len()
+      );
+    }
+
     // Find the index of the \r byte
     if let Some(i) = src.iter().position(|&b| b == b'\r') {
       // Remove the data up to the \r from the buffer

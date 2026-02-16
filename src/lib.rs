@@ -1,5 +1,6 @@
+mod hardware_definition;
+mod led;
 mod machine;
-mod mainboard;
 pub mod plugins;
 
 // --- protocol ----
@@ -9,11 +10,12 @@ pub mod protocol;
 
 // --- machine ---
 
+pub use crate::hardware_definition::*;
 pub use crate::machine::runtimes;
 pub use crate::machine::store;
-pub use crate::mainboard::*;
 
 pub mod prelude {
+  pub use crate::hardware_definition::*;
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};
   pub use crate::machine::context::Context;
   pub use crate::machine::machine::*;
@@ -23,12 +25,7 @@ pub mod prelude {
   pub use crate::machine::switch_context::SwitchContext;
   pub use crate::machine::system::*;
   pub use crate::machine::system_timer::TimerMode;
-  pub use crate::mainboard::BootConfig;
-  pub use crate::mainboard::FastIoBoards;
-  pub use crate::mainboard::FastPlatform;
-  pub use crate::mainboard::IoNetworkSpec;
-  pub use crate::mainboard::SwitchConfig;
-  pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode, Power};
+  pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode, LedType, Power};
   pub use crate::runtimes::*;
   pub use crate::store::Store;
 

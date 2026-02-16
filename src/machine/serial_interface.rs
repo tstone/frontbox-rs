@@ -3,10 +3,12 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
+use tokio_serial::{
+  DataBits, FlowControl, Parity, SerialPort, SerialPortBuilderExt, SerialStream, StopBits,
+};
 use tokio_util::codec::FramedRead;
 
-use crate::FastRawCodec;
+use crate::machine::fast_codec::FastRawCodec;
 use crate::protocol::fast_command::FastCommand;
 use crate::protocol::raw_response::RawResponse;
 use crate::protocol::{EventResponse, FastResponseError};
@@ -22,7 +24,6 @@ pub struct SerialInterface {
 
 impl SerialInterface {
   pub async fn new(port_path: &str) -> tokio_serial::Result<Self> {
-    // let port = Mainboard::open_port(port_path)?;
     let port = tokio_serial::new(port_path, BAUD_RATE)
       .data_bits(DataBits::Eight)
       .parity(Parity::None)
@@ -30,8 +31,25 @@ impl SerialInterface {
       .flow_control(FlowControl::None);
 
     let port = SerialStream::open(&port)?;
-    let (reader, writer) = tokio::io::split(port);
-    let framed_reader = FramedRead::new(reader, FastRawCodec::new());
+
+    let (reader, mut writer) = tokio::io::split(port);
+
+    // before this port starts reading, send a bunch of carriage returns to clear out any junk in the buffer.
+    // https://fastpinball.com/programming/framework/exp/#clear-out-the-serial-buffer
+    writer.write_all("\r\r\r\r".as_bytes()).await?;
+
+    let mut framed_reader = FramedRead::new(reader, FastRawCodec::new());
+
+    // poll reader until there is no unexpected messages
+    // this also clears out anything that was from a prior run
+    log::trace!("Draining serial buffer on {} before continuing", port_path);
+    let drain_timeout = Duration::from_millis(300); // Adjust as needed
+    loop {
+      match tokio::time::timeout(drain_timeout, framed_reader.next()).await {
+        Ok(Some(Ok(_))) => continue,
+        _ => break,
+      }
+    }
 
     Ok(SerialInterface {
       port_name: port_path.to_string(),

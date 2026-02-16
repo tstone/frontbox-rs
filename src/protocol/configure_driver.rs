@@ -80,6 +80,6 @@ mod tests {
       rest: Duration::from_millis(500),
     };
     let request_str = ConfigureDriverCommand::new(&10, &config).to_string();
-    assert_eq!(request_str, "DL:A,19,5,10,64,FF,32,7F,1F4\r");
+    assert_eq!(request_str, "DL:A,91,5,10,64,FF,32,7F,1F4\r");
   }
 }

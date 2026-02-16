@@ -8,8 +8,3 @@ pub trait FastCommand {
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProcessedResponse {
-  Processed,
-  Failed,
-}
