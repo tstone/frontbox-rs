@@ -1,11 +1,10 @@
 use std::time::Duration;
 
-use palette::Srgb;
-
 use crate::led::animation::Animation;
+use crate::prelude::Color;
 
 pub enum LedState {
-  On(Srgb),
+  On(Color),
   Off,
 }
 
@@ -14,7 +13,7 @@ impl LedState {
     LedState::Off
   }
 
-  pub fn on(color: Srgb) -> Self {
+  pub fn on(color: Color) -> Self {
     LedState::On(color)
   }
 }
@@ -50,7 +49,7 @@ impl<'a> LedDeclarationBuilder<'a> {
     self
   }
 
-  pub fn on(mut self, name: &'static str, color: Srgb) -> Self {
+  pub fn on(mut self, name: &'static str, color: Color) -> Self {
     self
       .declarations
       .push(LedDeclaration::new(name, LedState::On(color)));
@@ -60,10 +59,21 @@ impl<'a> LedDeclarationBuilder<'a> {
   pub fn next_frame(
     self,
     name: &'static str,
-    animation: &mut Box<dyn Animation<Srgb> + 'static>,
+    animation: &mut Box<dyn Animation<Color> + 'static>,
   ) -> Self {
     animation.tick(*self.delta_time);
     self.on(name, animation.sample())
+  }
+
+  pub fn next_frames(
+    mut self,
+    animation: &mut Box<dyn Animation<Vec<(&'static str, Color)>> + 'static>,
+  ) -> Self {
+    animation.tick(*self.delta_time);
+    for (name, color) in animation.sample() {
+      self = self.on(name, color);
+    }
+    self
   }
 
   pub fn collect(self) -> Vec<LedDeclaration> {

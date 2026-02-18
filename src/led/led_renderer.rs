@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use palette::Srgb;
-
 use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
 use crate::protocol::prelude::SetLedCommand;
@@ -67,15 +65,19 @@ impl LedRenderer {
     led_declarations: Vec<LedDeclaration>,
   ) -> HashSet<&'static str> {
     let mut updated_led_names = HashSet::new();
-    let mut leds_to_set: HashMap<LedAddress, Vec<(u16, Srgb)>> = HashMap::new();
-    let black = Srgb::new(0.0, 0.0, 0.0);
+    let mut leds_to_set: HashMap<LedAddress, Vec<(u16, Color)>> = HashMap::new();
+    let off_color = Color::black();
 
     for decl in led_declarations {
       if let Some(led) = self.led_map.get(decl.name) {
         let color = match decl.state {
           LedState::On(c) => c,
-          LedState::Off => black,
+          LedState::Off => off_color.clone(),
         };
+
+        if color != off_color {
+          updated_led_names.insert(decl.name);
+        }
 
         match leds_to_set.get_mut(&led.address) {
           Some(list) => {
@@ -84,10 +86,6 @@ impl LedRenderer {
           None => {
             leds_to_set.insert(led.address.clone(), vec![(led.index, color)]);
           }
-        }
-
-        if color != black {
-          updated_led_names.insert(decl.name);
         }
       }
     }

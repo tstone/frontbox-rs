@@ -1,6 +1,5 @@
 use frontbox::prelude::*;
 use frontbox::runtimes::AttractMode;
-use palette::Srgb;
 use std::io::Write;
 
 pub mod leds {
@@ -35,8 +34,8 @@ async fn main() {
 
 #[derive(Clone)]
 struct LedExample {
-  flash: Box<dyn Animation<Srgb>>,
-  seq: Box<dyn Animation<Srgb>>,
+  flash: Box<dyn Animation<Color>>,
+  seq: Box<dyn Animation<Color>>,
 }
 
 impl LedExample {
@@ -46,11 +45,36 @@ impl LedExample {
       flash: InterpolationAnimation::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
-        Srgb::new(0.0, 0.0, 0.0),
-        Srgb::new(1.0, 0.0, 1.0),
+        Color::black(),
+        Color::purple(),
         AnimationCycle::Forever,
       ),
-      seq: SequenceAnimation::new(vec![], AnimationCycle::Forever),
+      seq: SequenceAnimation::new(
+        vec![
+          InterpolationAnimation::new(
+            Duration::from_millis(1000),
+            Curve::ExponentialInOut,
+            Color::red(),
+            Color::orange(),
+            AnimationCycle::Once,
+          ),
+          InterpolationAnimation::new(
+            Duration::from_millis(1000),
+            Curve::ExponentialInOut,
+            Color::orange(),
+            Color::yellow(),
+            AnimationCycle::Once,
+          ),
+          InterpolationAnimation::new(
+            Duration::from_millis(1000),
+            Curve::ExponentialInOut,
+            Color::yellow(),
+            Color::blue(),
+            AnimationCycle::Once,
+          ),
+        ],
+        AnimationCycle::Forever,
+      ),
     })
   }
 }
@@ -58,8 +82,9 @@ impl LedExample {
 impl System for LedExample {
   fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
     LedDeclarationBuilder::new(delta_time)
-      .on(leds::DEMO1, Srgb::new(0.0, 1.0, 0.0))
+      .on(leds::DEMO1, Color::green())
       .next_frame(leds::DEMO2, &mut self.flash)
+      .next_frame(leds::DEMO3, &mut self.seq)
       .collect()
   }
 }

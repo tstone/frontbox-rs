@@ -1,5 +1,3 @@
-use palette::Srgb;
-
 use crate::protocol::FastResponseError;
 use crate::protocol::prelude::RawResponse;
 
@@ -13,15 +11,6 @@ pub fn expansion_addr(expansion_board: u8, breakout: Option<u8>) -> String {
     } else {
       "".to_string()
     }
-  )
-}
-
-pub fn srgb_to_hex(color: &Srgb) -> String {
-  format!(
-    "{:02X}{:02X}{:02X}",
-    (color.red * 255.0) as u8,
-    (color.green * 255.0) as u8,
-    (color.blue * 255.0) as u8
   )
 }
 
@@ -40,17 +29,5 @@ impl ProcessedResponse {
     } else {
       Err(FastResponseError::InvalidFormat)
     }
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_srgb_to_hex() {
-    let color = Srgb::new(1.0, 0.0, 0.0);
-    let result = srgb_to_hex(&color);
-    assert_eq!(result, "FF0000");
   }
 }

@@ -21,8 +21,10 @@ impl<T> SequenceAnimation<T> {
     })
   }
 
-  fn at_cycle_end(&self) -> bool {
-    self.current_anim_index >= self.sequence.len()
+  fn reset_anims(&mut self) {
+    for anim in &mut self.sequence {
+      anim.reset();
+    }
   }
 }
 
@@ -31,22 +33,27 @@ where
   T: Clone,
 {
   fn tick(&mut self, delta_time: Duration) -> Duration {
-    if self.current_anim_index >= self.sequence.len() {
-      return delta_time;
-    }
-
     let remainder = self.sequence[self.current_anim_index].tick(delta_time);
+    log::trace!(
+      "SequenceAnimation tick: anim_index={}, cycle_count={}, remainder={:?}",
+      self.current_anim_index,
+      self.cycle_count,
+      remainder
+    );
+
     if self.sequence[self.current_anim_index].is_complete() {
       self.current_anim_index += 1;
 
-      if self.at_cycle_end() {
-        self.cycle_count += 1;
+      if self.current_anim_index >= self.sequence.len() {
+        if self.cycle != AnimationCycle::Forever && self.cycle_count < u32::MAX {
+          self.cycle_count += 1;
+        }
+        self.current_anim_index = 0;
+        self.reset_anims();
       }
 
-      if !self.is_complete() {
-        // roll over extra time to next animation, if any
-        return self.tick(remainder);
-      }
+      // roll over extra time to next animation, if any
+      return self.tick(remainder);
     }
 
     Duration::ZERO
@@ -58,8 +65,15 @@ where
 
   fn is_complete(&self) -> bool {
     match self.cycle {
-      AnimationCycle::Times(n) => self.cycle_count >= n && self.at_cycle_end(),
+      AnimationCycle::Once => self.cycle_count >= 1,
+      AnimationCycle::Times(n) => self.cycle_count >= n,
       AnimationCycle::Forever => false,
     }
+  }
+
+  fn reset(&mut self) {
+    self.current_anim_index = 0;
+    self.cycle_count = 0;
+    self.reset_anims();
   }
 }

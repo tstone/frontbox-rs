@@ -1,8 +1,5 @@
 use std::time::Duration;
 
-use palette::Mix;
-use palette::Srgb;
-
 use crate::led::animation::{Animation, AnimationCycle};
 use crate::led::curve::Curve;
 
@@ -52,7 +49,7 @@ where
   fn tick(&mut self, delta_time: Duration) -> Duration {
     self.elapsed += delta_time;
     if self.elapsed >= self.duration {
-      if self.cycle_count < u32::MAX {
+      if self.cycle != AnimationCycle::Forever && self.cycle_count < u32::MAX {
         self.cycle_count += 1;
       }
 
@@ -73,19 +70,19 @@ where
 
   fn is_complete(&self) -> bool {
     match self.cycle {
+      AnimationCycle::Once => self.cycle_count > 0,
       AnimationCycle::Times(n) => self.cycle_count >= n,
       AnimationCycle::Forever => false,
     }
+  }
+
+  fn reset(&mut self) {
+    self.elapsed = Duration::ZERO;
+    self.cycle_count = 0;
   }
 }
 
 /// Linear interpolation between two values of type T
 pub trait Lerp {
   fn interpolate(&self, other: &Self, t: f32) -> Self;
-}
-
-impl Lerp for Srgb {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    self.mix(*other, t)
-  }
 }
