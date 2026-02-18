@@ -3,5 +3,7 @@
   - alternate
   - mix
   - first wins
+- Make LED resolver something that can be changed dynamically at any time
 - Test going from attract mode to in game. Check if push_runtime works with +send+'static
 - Player points plugin
+- Maybe color should be it's own top-level feature (or separate crate?)

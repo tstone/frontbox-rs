@@ -19,14 +19,19 @@ impl SystemTimer {
     }
   }
 
-  pub fn tick(&mut self, delta: &Duration) -> bool {
-    self.accumulated += *delta;
+  pub fn tick(&mut self, delta: Duration) -> bool {
+    self.accumulated += delta;
+    log::trace!(
+      "Timer tick: accumulated={:?}, target={:?}, mode={:?}",
+      self.accumulated,
+      self.target,
+      self.mode
+    );
     if self.accumulated >= self.target {
       self.accumulated = self.accumulated - self.target;
-      true
-    } else {
-      false
+      return true;
     }
+    false
   }
 
   pub fn mode(&self) -> &TimerMode {

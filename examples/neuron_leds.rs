@@ -1,6 +1,11 @@
 use frontbox::prelude::*;
 use frontbox::runtimes::AttractMode;
+use std::collections::HashMap;
 use std::io::Write;
+
+/**
+ * This example demonstrates how to use the animation system to various LED effects
+ */
 
 pub mod leds {
   pub const DEMO1: &str = "demo1";
@@ -76,7 +81,7 @@ impl LedExample {
 }
 
 impl System for LedExample {
-  fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
+  fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
     LedDeclarationBuilder::new(delta_time)
       .on(leds::DEMO1, Color::deep_sky_blue())
       .on(leds::DEMO2, Color::dark_blue())

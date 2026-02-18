@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::led::animation::Animation;
 use crate::prelude::Color;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum LedState {
   On(Color),
   Off,
@@ -18,41 +20,30 @@ impl LedState {
   }
 }
 
-pub struct LedDeclaration {
-  pub name: &'static str,
-  pub state: LedState,
+pub struct LedDeclarationBuilder {
+  delta_time: Duration,
+  declarations: HashMap<&'static str, LedState>,
 }
 
-impl LedDeclaration {
-  pub fn new(name: &'static str, state: LedState) -> Self {
-    Self { name, state }
-  }
-}
-
-pub struct LedDeclarationBuilder<'a> {
-  delta_time: &'a Duration,
-  declarations: Vec<LedDeclaration>,
-}
-
-impl<'a> LedDeclarationBuilder<'a> {
-  pub fn new(delta_time: &'a Duration) -> Self {
+impl LedDeclarationBuilder {
+  pub fn new(delta_time: Duration) -> Self {
     Self {
       delta_time,
-      declarations: Vec::new(),
+      declarations: HashMap::new(),
     }
   }
 
+  pub fn empty() -> HashMap<&'static str, LedState> {
+    HashMap::new()
+  }
+
   pub fn off(mut self, name: &'static str) -> Self {
-    self
-      .declarations
-      .push(LedDeclaration::new(name, LedState::Off));
+    self.declarations.insert(name, LedState::Off);
     self
   }
 
   pub fn on(mut self, name: &'static str, color: Color) -> Self {
-    self
-      .declarations
-      .push(LedDeclaration::new(name, LedState::On(color)));
+    self.declarations.insert(name, LedState::On(color));
     self
   }
 
@@ -61,7 +52,7 @@ impl<'a> LedDeclarationBuilder<'a> {
     name: &'static str,
     animation: &mut Box<dyn Animation<Color> + 'static>,
   ) -> Self {
-    animation.tick(*self.delta_time);
+    animation.tick(self.delta_time);
     self.on(name, animation.sample())
   }
 
@@ -69,14 +60,14 @@ impl<'a> LedDeclarationBuilder<'a> {
     mut self,
     animation: &mut Box<dyn Animation<Vec<(&'static str, Color)>> + 'static>,
   ) -> Self {
-    animation.tick(*self.delta_time);
+    animation.tick(self.delta_time);
     for (name, color) in animation.sample() {
       self = self.on(name, color);
     }
     self
   }
 
-  pub fn collect(self) -> Vec<LedDeclaration> {
+  pub fn collect(self) -> HashMap<&'static str, LedState> {
     self.declarations
   }
 }

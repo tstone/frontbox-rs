@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use dyn_clone::DynClone;
 
-use crate::led::LedDeclaration;
 use crate::machine::system_timer::{SystemTimer, TimerMode};
 use crate::prelude::*;
 
@@ -28,8 +27,8 @@ pub trait System: DynClone + Send + Sync {
 
   fn on_config_change(&mut self, config_key: &'static str, ctx: &mut Context) {}
 
-  fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
-    vec![]
+  fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
+    HashMap::new()
   }
 }
 
@@ -51,11 +50,17 @@ impl SystemContainer {
     }
   }
 
-  pub fn on_tick(&mut self, delta: &Duration, ctx: &mut Context) {
+  pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut timers_to_remove = vec![];
+    log::trace!(
+      "SystemContainer tick: delta={:?}, timer count={}",
+      delta,
+      self.timers.len()
+    );
     for (timer_name, timer) in &mut self.timers {
       if timer.tick(delta) {
         // Timer has completed, trigger a switch event with the timer's name
+        log::trace!("Timer '{}' completed, triggering event", timer_name);
         self.inner.on_timer(timer_name, ctx);
         if let TimerMode::OneShot = timer.mode() {
           timers_to_remove.push(*timer_name);
@@ -69,12 +74,19 @@ impl SystemContainer {
   }
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
+    log::debug!(
+      "Setting timer '{}' for {:?} with mode {:?}",
+      timer_name,
+      duration,
+      mode
+    );
     self
       .timers
       .insert(timer_name, SystemTimer::new(duration, mode));
   }
 
   pub fn clear_timer(&mut self, timer_name: &'static str) {
+    log::debug!("Clearing timer '{}'", timer_name);
     self.timers.remove(timer_name);
   }
 }

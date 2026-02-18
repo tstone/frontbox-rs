@@ -110,6 +110,11 @@ impl Machine {
       let _ = tx.send(MachineCommand::Shutdown);
     });
 
+    // initial startup for root scene
+    self.dispatch_to_current_systems(|system, ctx| {
+      system.on_system_enter(ctx);
+    });
+
     log::info!("⟳ Machine run loop started.");
 
     loop {
@@ -188,8 +193,9 @@ impl Machine {
         self.config.set_value(key, value);
       }
       MachineCommand::SystemTick => {
+        let tick_duration = self.system_tick;
         self.dispatch_to_current_systems(|system, ctx| {
-          system.on_tick(&Duration::from_millis(0), ctx);
+          system.on_tick(tick_duration, ctx);
         });
         self.render_leds().await;
       }
@@ -265,6 +271,11 @@ impl Machine {
   {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let (scene, store) = runtime.get_current_mut();
+
+    log::debug!(
+      "Dispatching to systems in scene, system count: {}",
+      scene.len(),
+    );
 
     for system in scene {
       let mut ctx = Context::new(
@@ -628,9 +639,9 @@ impl Machine {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
 
-    let mut declarations = Vec::new();
+    let mut declarations = HashMap::new();
     for system in scene {
-      declarations.extend(system.leds(&self.system_tick));
+      declarations.insert(system.id, system.leds(self.system_tick));
     }
 
     self

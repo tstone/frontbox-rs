@@ -9,6 +9,7 @@ const LED_SET_BATCH_SIZE: usize = 24;
 pub struct LedRenderer {
   led_map: HashMap<&'static str, AddressableLed>,
   set_leds: HashSet<&'static str>,
+  resolver: Box<dyn LedResolver>,
 }
 
 impl LedRenderer {
@@ -35,48 +36,81 @@ impl LedRenderer {
     Self {
       led_map,
       set_leds: HashSet::new(),
+      resolver: Box::new(BezierMixResolver::new()),
     }
   }
 
   pub async fn render(
     &mut self,
     exp_port: &mut SerialInterface,
-    led_declarations: Vec<LedDeclaration>,
+    led_declarations: HashMap<u64, HashMap<&'static str, LedState>>,
   ) {
-    // apply incomming colors
-    let updated_led_names = self.set_bulk(exp_port, led_declarations).await;
+    let black = Color::black();
+
+    // group declarations by LED name, finding conflicts
+    let mut conflicts: HashMap<&'static str, Vec<(u64, LedState)>> = HashMap::new();
+    let mut led_temp_updates: HashMap<&'static str, (u64, LedState)> = HashMap::new();
+
+    for (system_id, states) in led_declarations {
+      for (led_name, state) in states {
+        if let Some(conflict_list) = conflicts.get_mut(led_name) {
+          conflict_list.push((system_id, state));
+        } else if led_temp_updates.contains_key(led_name) {
+          let current = led_temp_updates.remove(led_name).unwrap();
+          conflicts.insert(led_name, vec![current, (system_id, state)]);
+        } else {
+          led_temp_updates.insert(led_name, (system_id, state));
+        }
+      }
+    }
+
+    // resolve conflicts
+    for (led_name, conflict_list) in conflicts {
+      let resolved = self.resolver.resolve(conflict_list);
+      led_temp_updates.insert(led_name, (0, resolved));
+    }
+
+    // flatten to just name/state
+    let mut leds_set_this_frame = HashSet::new();
+    let mut led_updates: HashMap<&'static str, LedState> = HashMap::new();
+    for (led_name, (_, state)) in led_temp_updates {
+      match &state {
+        LedState::On(c) if c != &black => {
+          leds_set_this_frame.insert(led_name);
+        }
+        _ => {}
+      }
+
+      led_updates.insert(led_name, state);
+    }
 
     // clear out previously set LEDS that are not on this frame
-    let declarations = self
-      .set_leds
-      .iter()
-      // don't reset LEDs updated in this frame
-      .filter(|name| !updated_led_names.contains(**name))
-      .map(|n| LedDeclaration::new(n, LedState::Off))
-      .collect::<Vec<_>>();
-    self.set_bulk(exp_port, declarations).await;
+    for name in self.set_leds.difference(&leds_set_this_frame) {
+      led_updates.insert(name, LedState::Off);
+    }
 
-    self.set_leds = updated_led_names;
+    self.set_bulk(exp_port, led_updates).await;
+    self.set_leds = leds_set_this_frame;
   }
 
   async fn set_bulk(
     &mut self,
     exp_port: &mut SerialInterface,
-    led_declarations: Vec<LedDeclaration>,
+    led_declarations: HashMap<&'static str, LedState>,
   ) -> HashSet<&'static str> {
     let mut updated_led_names = HashSet::new();
     let mut leds_to_set: HashMap<LedAddress, Vec<(u16, Color)>> = HashMap::new();
     let off_color = Color::black();
 
-    for decl in led_declarations {
-      if let Some(led) = self.led_map.get(decl.name) {
-        let color = match decl.state {
+    for (led_name, state) in led_declarations {
+      if let Some(led) = self.led_map.get(led_name) {
+        let color = match state {
           LedState::On(c) => c,
           LedState::Off => off_color.clone(),
         };
 
         if color != off_color {
-          updated_led_names.insert(decl.name);
+          updated_led_names.insert(led_name);
         }
 
         match leds_to_set.get_mut(&led.address) {
@@ -87,6 +121,8 @@ impl LedRenderer {
             leds_to_set.insert(led.address.clone(), vec![(led.index, color)]);
           }
         }
+      } else {
+        log::warn!("Received LED declaration for unknown LED '{}'", led_name);
       }
     }
 
