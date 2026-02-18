@@ -266,14 +266,14 @@ impl Machine {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let (scene, store) = runtime.get_current_mut();
 
-    for (system_index, system) in scene.iter_mut().enumerate() {
+    for system in scene {
       let mut ctx = Context::new(
         self.command_sender.clone(),
         Some(store),
         &self.switches,
         &self.game_state,
         &self.config,
-        Some(system_index),
+        Some(system.id),
       );
       handler(system, &mut ctx);
     }
@@ -384,14 +384,14 @@ impl Machine {
     let runtime = self.runtime_stack.last_mut().unwrap();
     let store = runtime.get_current_store();
 
-    for (system_index, system) in (&mut scene).iter_mut().enumerate() {
+    for system in &mut scene {
       let mut ctx = Context::new(
         self.command_sender.clone(),
         Some(store),
         &self.switches,
         &self.game_state,
         &self.config,
-        Some(system_index),
+        Some(system.id),
       );
       system.on_system_enter(&mut ctx);
     }
@@ -401,16 +401,16 @@ impl Machine {
 
   pub fn pop_scene(&mut self) {
     let runtime = self.runtime_stack.last_mut().unwrap();
-    let (mut outgoing_scene, store) = runtime.get_current_mut();
+    let (outgoing_scene, store) = runtime.get_current_mut();
 
-    for (system_index, system) in (&mut outgoing_scene).iter_mut().enumerate() {
+    for system in outgoing_scene {
       let mut ctx = Context::new(
         self.command_sender.clone(),
         Some(store),
         &self.switches,
         &self.game_state,
         &self.config,
-        Some(system_index),
+        Some(system.id),
       );
       system.on_system_exit(&mut ctx);
     }
@@ -425,28 +425,46 @@ impl Machine {
       .push(SystemContainer::new(system));
   }
 
-  pub fn replace_system(&mut self, system_index: usize, new_system: Box<dyn System>) {
+  /// Searches the current scene for the system, by ID
+  fn find_system_index(&self, system_id: u64) -> Option<usize> {
+    let runtime = self.runtime_stack.last().unwrap();
+    let scene = runtime.get_current_scene();
+
+    for (index, system) in scene.iter().enumerate() {
+      if system.id == system_id {
+        return Some(index);
+      }
+    }
+
+    None
+  }
+
+  pub fn replace_system(&mut self, system_id: u64, new_system: Box<dyn System>) {
+    let index = self.find_system_index(system_id);
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
-    if system_index < scene.len() {
-      scene[system_index] = SystemContainer::new(new_system);
+
+    if let Some(index) = index {
+      scene[index] = SystemContainer::new(new_system);
     } else {
       log::error!(
         "Attempted to replace system with invalid index: {}",
-        system_index
+        system_id
       );
     }
   }
 
-  pub fn terminate_system(&mut self, system_index: usize) {
+  pub fn terminate_system(&mut self, system_id: u64) {
+    let index = self.find_system_index(system_id);
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
-    if system_index < scene.len() {
-      scene.remove(system_index);
+
+    if let Some(index) = index {
+      scene.remove(index);
     } else {
       log::error!(
         "Attempted to terminate system with invalid index: {}",
-        system_index
+        system_id
       );
     }
   }
@@ -550,14 +568,16 @@ impl Machine {
 
   fn set_system_timer(
     &mut self,
-    system_id: usize,
+    system_id: u64,
     timer_name: &'static str,
     duration: Duration,
     mode: TimerMode,
   ) {
+    let index = self.find_system_index(system_id);
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
-    if let Some(system) = scene.get_mut(system_id) {
+
+    if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.set_timer(timer_name, duration, mode);
     } else {
       log::error!(
@@ -567,10 +587,12 @@ impl Machine {
     }
   }
 
-  fn clear_system_timer(&mut self, system_id: usize, timer_name: &'static str) {
+  fn clear_system_timer(&mut self, system_id: u64, timer_name: &'static str) {
+    let index = self.find_system_index(system_id);
     let runtime = self.runtime_stack.last_mut().unwrap();
     let scene = runtime.get_current_scene_mut();
-    if let Some(system) = scene.get_mut(system_id) {
+
+    if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.clear_timer(timer_name);
     } else {
       log::error!(

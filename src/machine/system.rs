@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use dyn_clone::DynClone;
@@ -33,8 +34,10 @@ pub trait System: DynClone + Send + Sync {
 }
 
 dyn_clone::clone_trait_object!(System);
+static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct SystemContainer {
+  pub(crate) id: u64,
   pub(crate) inner: Box<dyn System>,
   timers: HashMap<&'static str, SystemTimer>,
 }
@@ -42,6 +45,7 @@ pub struct SystemContainer {
 impl SystemContainer {
   pub fn new(system: Box<dyn System>) -> Self {
     Self {
+      id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
       inner: system,
       timers: HashMap::new(),
     }

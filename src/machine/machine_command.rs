@@ -16,8 +16,8 @@ pub enum MachineCommand {
   PushScene(Scene),
   PopScene,
   AddSystem(Box<dyn System>),
-  ReplaceSystem(usize, Box<dyn System>),
-  TerminateSystem(usize),
+  ReplaceSystem(u64, Box<dyn System>),
+  TerminateSystem(u64),
 
   // hardware
   ConfigureDriver(&'static str, DriverConfig),
@@ -26,8 +26,8 @@ pub enum MachineCommand {
   Key(Event),
 
   // timers
-  ClearTimer(usize, &'static str),
-  SetTimer(usize, &'static str, Duration, TimerMode),
+  ClearTimer(u64, &'static str),
+  SetTimer(u64, &'static str, Duration, TimerMode),
   SystemTick,
   WatchdogTick,
 

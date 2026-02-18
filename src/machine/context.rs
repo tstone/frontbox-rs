@@ -10,7 +10,7 @@ pub struct Context<'a> {
   switches: &'a SwitchContext,
   game_state: &'a Option<GameState>,
   config: ConfigContext<'a>,
-  current_system_index: Option<usize>,
+  current_system_index: Option<u64>,
 }
 
 impl<'a> Context<'a> {
@@ -20,7 +20,7 @@ impl<'a> Context<'a> {
     switches: &'a SwitchContext,
     game_state: &'a Option<GameState>,
     config: &'a MachineConfig,
-    current_system_index: Option<usize>,
+    current_system_index: Option<u64>,
   ) -> Self {
     Self {
       store: StoreContext::new(sender.clone(), store),

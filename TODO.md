@@ -1,3 +1,3 @@
-- Merge multiple (conflicting) LED states
+- Merge multiple (conflicting) LED states (needs system ID)
 - Test going from attract mode to in game. Check if push_runtime works with +send+'static
 - Player points plugin
