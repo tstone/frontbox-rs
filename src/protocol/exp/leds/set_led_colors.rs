@@ -7,11 +7,11 @@ pub struct SetLedCommand {
   expansion_board: u8,
   breakout: Option<u8>,
   // None: Off, Some(color): On with the given color
-  states: Vec<(u8, Srgb)>,
+  states: Vec<(u16, Srgb)>,
 }
 
 impl SetLedCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u8, Srgb)>) -> Self {
+  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u16, Srgb)>) -> Self {
     Self {
       expansion_board,
       breakout,

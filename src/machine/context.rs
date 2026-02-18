@@ -1,6 +1,7 @@
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+use crate::machine::machine_command::MachineCommand;
 use crate::prelude::*;
 
 pub struct Context<'a> {
@@ -31,12 +32,12 @@ impl<'a> Context<'a> {
     }
   }
 
-  pub fn config(&self) -> &ConfigContext {
+  pub fn config(&self) -> &ConfigContext<'_> {
     &self.config
   }
 
   /// Runtime-specific storage of arbitrary data
-  pub fn store(&self) -> &StoreContext {
+  pub fn store(&self) -> &StoreContext<'_> {
     &self.store
   }
 
@@ -96,10 +97,10 @@ impl<'a> Context<'a> {
     let _ = self.sender.send(MachineCommand::AdvancePlayer);
   }
 
-  pub fn push_runtime(&mut self, runtime: impl Runtime + 'static) {
-    let _ = self
-      .sender
-      .send(MachineCommand::PushRuntime(Box::new(runtime)));
+  pub fn push_runtime(&mut self, runtime: impl Runtime + Send + 'static) {
+    let _ = self.sender.send(MachineCommand::PushRuntime(Box::new(|| {
+      Box::new(runtime) as Box<dyn Runtime>
+    })));
   }
 
   pub fn pop_runtime(&mut self) {
@@ -213,65 +214,5 @@ impl<'a> ConfigContext<'a> {
 
   pub fn set(&mut self, key: &'static str, value: ConfigValue) {
     let _ = self.sender.send(MachineCommand::SetConfigValue(key, value));
-  }
-}
-
-pub enum MachineCommand {
-  // game management
-  StartGame,
-  EndGame,
-  AddPlayer,
-  AdvancePlayer,
-
-  // stack management
-  PushRuntime(Box<dyn Runtime>),
-  PopRuntime,
-  PushScene(Scene),
-  PopScene,
-  AddSystem(Box<dyn System>),
-  ReplaceSystem(usize, Box<dyn System>),
-  TerminateSystem(usize),
-
-  // hardware control
-  ConfigureDriver(&'static str, DriverConfig),
-  TriggerDriver(&'static str, DriverTriggerControlMode, Option<Duration>),
-
-  ClearTimer(usize, &'static str),
-  SetTimer(usize, &'static str, Duration, TimerMode),
-
-  // other
-  StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
-  SetConfigValue(&'static str, ConfigValue),
-}
-
-impl std::fmt::Debug for MachineCommand {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match self {
-      Self::StartGame => write!(f, "StartGame"),
-      Self::EndGame => write!(f, "EndGame"),
-      Self::AddPlayer => write!(f, "AddPlayer"),
-      Self::AdvancePlayer => write!(f, "AdvancePlayer"),
-      Self::PushRuntime(_) => write!(f, "PushRuntime(..)"),
-      Self::PopRuntime => write!(f, "PopRuntime"),
-      Self::PushScene(_) => write!(f, "PushScene(..)"),
-      Self::PopScene => write!(f, "PopScene"),
-      Self::AddSystem(_) => write!(f, "AddSystem(..)"),
-      Self::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({}, ..)", id),
-      Self::TerminateSystem(id) => write!(f, "TerminateSystem({})", id),
-      Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
-      Self::TriggerDriver(name, mode, delay) => {
-        write!(f, "TriggerDriver({:?}, {:?}, {:?})", name, mode, delay)
-      }
-      Self::StoreWrite(_) => write!(f, "StoreWrite(..)"),
-      Self::SetTimer(id, name, duration, mode) => {
-        write!(
-          f,
-          "SetTimer({}, {:?}, {:?}, {:?})",
-          id, name, duration, mode
-        )
-      }
-      Self::ClearTimer(id, timer_name) => write!(f, "ClearTimer({}, {:?})", id, timer_name),
-      Self::SetConfigValue(key, value) => write!(f, "SetConfigValue({}, {:?})", key, value),
-    }
   }
 }

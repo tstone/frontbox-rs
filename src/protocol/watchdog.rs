@@ -9,8 +9,20 @@ pub struct WatchdogCommand {
 impl WatchdogCommand {
   /// Set the watchdog timer to a specific duration. The watchdog will expire if not reset within this time.
   /// If set to 0, current watchdog timer will be ended. If not set (None) current watchdog remaining will be fetched
-  pub fn new(duration: Option<Duration>) -> Self {
-    Self { duration }
+  pub fn set(duration: Duration) -> Self {
+    Self {
+      duration: Some(duration),
+    }
+  }
+
+  pub fn disable() -> Self {
+    Self {
+      duration: Some(Duration::ZERO),
+    }
+  }
+
+  pub fn remaining() -> Self {
+    Self { duration: None }
   }
 }
 
@@ -68,7 +80,7 @@ mod tests {
 
   #[test]
   fn test_set_with_time() {
-    let result = WatchdogCommand::new(Some(Duration::from_millis(1500))).to_string();
+    let result = WatchdogCommand::set(Duration::from_millis(1500)).to_string();
     assert_eq!(result, "WD:5DC\r");
   }
 

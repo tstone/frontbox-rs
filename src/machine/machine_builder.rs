@@ -16,6 +16,7 @@ pub struct MachineBuilder {
   keyboard_switch_map: HashMap<KeyCode, usize>,
   virtual_switch_count: u8,
   config: MachineConfig,
+  expansion_boards: Vec<ExpansionBoardSpec>,
 }
 
 impl MachineBuilder {
@@ -62,6 +63,7 @@ impl MachineBuilder {
       keyboard_switch_map: HashMap::new(),
       virtual_switch_count: 0,
       config: MachineConfig::default(),
+      expansion_boards,
     }
   }
 
@@ -123,8 +125,8 @@ impl MachineBuilder {
   /// Verify the watchdog is responsive. Sometimes the first few commands will fail.
   async fn verify_watchdog(io_port: &mut SerialInterface) {
     let _ = io_port.request_until_match(
-      WatchdogCommand::new(Some(Duration::from_millis(1250))),
-      Duration::from_millis(2000),
+      WatchdogCommand::set(Duration::from_millis(1250)),
+      Duration::from_secs(1),
       |resp| match resp {
         WatchdogResponse::Processed => {
           log::info!("🥾 Watchdog is ready");
@@ -184,7 +186,7 @@ impl MachineBuilder {
     }
   }
 
-  async fn reset_expansion_boards(
+  pub async fn reset_expansion_boards(
     exp_port: &mut SerialInterface,
     expansion_boards: &Vec<ExpansionBoardSpec>,
   ) {
@@ -229,6 +231,7 @@ impl MachineBuilder {
           led_port.start,
           led_port.leds.len() as u8,
         );
+        // configure port/block
         let _ = exp_port.request(&cmd, Duration::from_millis(250)).await;
       }
     }
@@ -299,6 +302,7 @@ impl MachineBuilder {
       self.driver_lookup,
       self.keyboard_switch_map,
       self.config,
+      self.expansion_boards,
     )
   }
 }

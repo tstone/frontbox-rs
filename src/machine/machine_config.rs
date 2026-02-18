@@ -84,6 +84,7 @@ impl MachineConfig {
 pub mod default_config {
   pub const WATCHDOG_TICK: &str = "watchdog.tick_ms";
   pub const SYSTEM_TIMER_TICK: &str = "system.timer_tick_ms";
+  pub const LED_RENDERER_TICK: &str = "led.renderer_tick_ms";
 }
 
 impl Default for MachineConfig {
@@ -110,7 +111,7 @@ impl Default for MachineConfig {
         max: 5000,
         default: 41, // 25 FPS
         name: "System Timer Tick (ms)",
-        description: "Resolution of the system timers. Lower values allow for more precise timers but may increase CPU usage. Default 25 FPS",
+        description: "Resolution of the system timers and frame rate of LED rendering. Lower values allow for more precise timers and smoother animation but may increase CPU usage. Default 25 FPS",
       },
     );
 

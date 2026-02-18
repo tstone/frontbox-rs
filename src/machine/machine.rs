@@ -2,20 +2,19 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::hardware_definition::*;
-use crate::machine::context::MachineCommand;
+use crate::machine::key_reader::monitor_keys;
 use crate::machine::machine_config::MachineConfig;
 use crate::machine::serial_interface::*;
-use crate::machine::system_timer::TimerMode;
+use crate::machine::system_timer::{TimerMode, run_system_timers};
 use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
 use crate::protocol::prelude::*;
 use crate::protocol::*;
+use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
 use crossterm::{
-  event::{Event, EventStream, KeyCode},
+  event::{Event, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
 };
-use futures_util::StreamExt;
 use tokio::sync::mpsc;
 
 pub struct GameState {
@@ -31,6 +30,9 @@ pub struct Machine {
   driver_lookup: HashMap<&'static str, Driver>,
   watchdog: Watchdog,
   config: MachineConfig,
+  expansion_boards: Vec<ExpansionBoardSpec>,
+  system_tick: Duration,
+  led_renderer: LedRenderer,
 
   runtime_stack: Vec<Box<dyn Runtime>>,
   switches: SwitchContext,
@@ -48,11 +50,18 @@ impl Machine {
     driver_lookup: HashMap<&'static str, Driver>,
     keyboard_switch_map: HashMap<KeyCode, usize>,
     config: MachineConfig,
+    expansion_boards: Vec<ExpansionBoardSpec>,
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
     let watchdog_interval = config
       .get_value_as_u64(default_config::WATCHDOG_TICK)
       .unwrap_or(1000);
+
+    let system_tick = Duration::from_millis(
+      config
+        .get_value_as_u64(default_config::SYSTEM_TIMER_TICK)
+        .unwrap(),
+    );
 
     Self {
       io_port,
@@ -62,16 +71,23 @@ impl Machine {
       keyboard_switch_map,
       runtime_stack: Vec::new(),
       game_state: None,
+      watchdog: Watchdog::new(
+        Duration::from_millis(watchdog_interval),
+        command_sender.clone(),
+      ),
       command_sender,
       command_receiver,
-      watchdog: Watchdog::new(Duration::from_millis(watchdog_interval)),
       config,
+      led_renderer: LedRenderer::new(&expansion_boards),
+      expansion_boards,
+      system_tick,
     }
   }
 
   pub async fn run(&mut self, runtime: Box<dyn Runtime>) {
     self.push_runtime(runtime);
 
+    // initialize keyboard monitoring if there are any keyboard-mapped switches
     if self.keyboard_switch_map.len() > 0 {
       match enable_raw_mode() {
         Ok(_) => {}
@@ -79,92 +95,71 @@ impl Machine {
           log::error!("Failed to enable raw mode for keyboard input: {}", e);
         }
       }
+      monitor_keys(self.command_sender.clone());
     }
 
-    let mut key_reader = EventStream::new();
+    // system tick manages the timers within systems
+    run_system_timers(self.system_tick.clone(), self.command_sender.clone());
 
-    let system_tick_value = self
-      .config
-      .get_value_as_u64(default_config::SYSTEM_TIMER_TICK)
-      .unwrap();
-    let system_timer_interval = Duration::from_millis(system_tick_value as u64);
-    let mut timer_interval = tokio::time::interval(system_timer_interval);
+    // listen for ctrl-c to trigger shutdown
+    let tx = self.command_sender.clone();
+    tokio::spawn(async move {
+      tokio::signal::ctrl_c()
+        .await
+        .expect("failed to listen for ctrl-c");
+      let _ = tx.send(MachineCommand::Shutdown);
+    });
 
     log::info!("⟳ Machine run loop started.");
 
     loop {
-      if let Some(config_key) = self.config.read_changes() {
-        self.dispatch_to_current_systems(|system, ctx| {
-          system.on_config_change(config_key, ctx);
-        });
-      }
-
       tokio::select! {
-        // system timers
-        _ = timer_interval.tick() => {
-          self.dispatch_to_current_systems(|system, ctx| {
-            system.on_tick(&system_timer_interval, ctx);
-          });
+        Some(event) = self.io_port.read_event() => {
+          // Add incoming hardware events to the command queue
+          // this ensures they are processed in order with any commands emitted by systems in response to those events
+          self.command_sender.send(MachineCommand::HardwareEvent(event)).ok();
         }
 
-        Some(_) = self.watchdog.read_tick() => {
-          let _ = self.io_port.request(&WatchdogCommand::new(Some(Duration::from_millis(1250))), Duration::from_secs(2)).await;
-        }
-
-        // run async machine commands emitted by systems/runtimes
         Some(command) = self.command_receiver.recv() => {
+          if matches!(command, MachineCommand::SystemTick)
+            || matches!(command, MachineCommand::WatchdogTick)
+          {
+            log::trace!("Executing machine command: {:?}", command);
+          } else {
+            log::debug!("Executing machine command: {:?}", command);
+          }
+
+          if matches!(command, MachineCommand::Shutdown) {
+            log::info!("Shutdown command received, exiting machine run loop.");
+            break;
+          }
+
           self.run_machine_command(command).await;
         }
-
-        // hardware events
-        Some(event) = self.io_port.read_event() => {
-          match event {
-            EventResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
-          }
-        }
-
-        // keyboard events for emulated switches
-        Some(Ok(event)) = key_reader.next(), if self.keyboard_switch_map.len() > 0 => {
-          match event {
-            Event::Key(key) => {
-              if key.code == KeyCode::Esc || (key.code == KeyCode::Char('c') && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)) {
-                break;
-              }
-
-              if let Some(&switch_id) = self.keyboard_switch_map.get(&key.code) {
-                let state = if key.kind == crossterm::event::KeyEventKind::Release {
-                  SwitchState::Open
-                } else {
-                  SwitchState::Closed
-                };
-                log::debug!("Keyboard event: {:?}, triggering switch ID {} to {:?}", key, switch_id, state);
-                self.run_switch_event(switch_id, state);
-              }
-            }
-            _ => {}
-          }
-        }
       }
     }
 
-    log::warn!("Machine run loop exited. 😴 Shutting down.");
-
     if self.keyboard_switch_map.len() > 0 {
-      let _ = disable_raw_mode();
+      disable_raw_mode().ok();
     }
 
-    self.watchdog.disable();
-    self.disable_high_voltage().await;
+    self
+      .io_port
+      .request(&WatchdogCommand::disable(), Duration::from_secs(2))
+      .await
+      .ok();
+
+    // Reset expansion boards (LEDs servos, etc.) to an off/default state
+    MachineBuilder::reset_expansion_boards(&mut self.exp_port, &self.expansion_boards).await;
   }
 
   async fn run_machine_command(&mut self, command: MachineCommand) {
-    log::trace!("Executing machine command: {:?}", command);
     match command {
       MachineCommand::StartGame => self.start_game().await,
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player(),
-      MachineCommand::PushRuntime(runtime) => self.push_runtime(runtime),
+      MachineCommand::PushRuntime(runtime_gen) => self.push_runtime(runtime_gen()),
       MachineCommand::PopRuntime => self.pop_runtime(),
       MachineCommand::PushScene(scene) => self.push_scene(scene),
       MachineCommand::PopScene => self.pop_scene(),
@@ -192,6 +187,26 @@ impl Machine {
       MachineCommand::SetConfigValue(key, value) => {
         self.config.set_value(key, value);
       }
+      MachineCommand::SystemTick => {
+        self.dispatch_to_current_systems(|system, ctx| {
+          system.on_tick(&Duration::from_millis(0), ctx);
+        });
+        self.render_leds().await;
+      }
+      MachineCommand::HardwareEvent(event) => match event {
+        EventResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
+      },
+      MachineCommand::Key(event) => self.on_key_press(event),
+      MachineCommand::WatchdogTick => {
+        let _ = self
+          .io_port
+          .request(
+            &WatchdogCommand::set(Duration::from_millis(1250)),
+            Duration::from_secs(1),
+          )
+          .await;
+      }
+      MachineCommand::Shutdown => {}
     }
   }
 
@@ -442,8 +457,8 @@ impl Machine {
     let _ = self
       .io_port
       .request(
-        &WatchdogCommand::new(Some(Duration::from_millis(1250))),
-        Duration::from_secs(2),
+        &WatchdogCommand::set(Duration::from_millis(1250)),
+        Duration::from_secs(1),
       )
       .await;
 
@@ -458,10 +473,7 @@ impl Machine {
     // Clear any remaining watchdog time out
     let _ = self
       .io_port
-      .request(
-        &WatchdogCommand::new(Some(Duration::from_millis(0))),
-        Duration::from_secs(2),
-      )
+      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
       .await;
   }
 
@@ -566,6 +578,43 @@ impl Machine {
         system_id
       );
     }
+  }
+
+  fn on_key_press(&mut self, event: Event) {
+    match event {
+      Event::Key(key) => {
+        if let Some(&switch_id) = self.keyboard_switch_map.get(&key.code) {
+          let state = if key.kind == crossterm::event::KeyEventKind::Release {
+            SwitchState::Open
+          } else {
+            SwitchState::Closed
+          };
+          log::debug!(
+            "Keyboard event: {:?}, triggering switch ID {} to {:?}",
+            key,
+            switch_id,
+            state
+          );
+          self.run_switch_event(switch_id, state);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  async fn render_leds(&mut self) {
+    let runtime = self.runtime_stack.last_mut().unwrap();
+    let scene = runtime.get_current_scene();
+
+    let mut declarations = Vec::new();
+    for system in scene {
+      declarations.extend(system.leds(&self.system_tick));
+    }
+
+    self
+      .led_renderer
+      .render(&mut self.exp_port, declarations)
+      .await;
   }
 }
 

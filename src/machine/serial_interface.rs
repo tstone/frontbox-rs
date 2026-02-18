@@ -3,9 +3,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
-use tokio_serial::{
-  DataBits, FlowControl, Parity, SerialPort, SerialPortBuilderExt, SerialStream, StopBits,
-};
+use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 use tokio_util::codec::FramedRead;
 
 use crate::machine::fast_codec::FastRawCodec;

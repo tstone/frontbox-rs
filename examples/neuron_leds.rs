@@ -1,11 +1,12 @@
 use frontbox::prelude::*;
 use frontbox::runtimes::AttractMode;
+use palette::Srgb;
 use std::io::Write;
 
 pub mod leds {
-  pub const LEFT_LANE: &str = "left_lane";
-  pub const CENTER_LANE: &str = "center_lane";
-  pub const RIGHT_LANE: &str = "right_lane";
+  pub const DEMO1: &str = "demo1";
+  pub const DEMO2: &str = "demo2";
+  pub const DEMO3: &str = "demo3";
 }
 
 #[tokio::main]
@@ -18,7 +19,7 @@ async fn main() {
     port: 0,
     start: 0,
     led_type: LedType::WS2812,
-    leds: vec![leds::LEFT_LANE, leds::CENTER_LANE, leds::RIGHT_LANE],
+    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3],
   })];
 
   MachineBuilder::boot(
@@ -28,6 +29,25 @@ async fn main() {
   )
   .await
   .build()
-  .run(AttractMode::new(vec![]))
+  .run(AttractMode::new(vec![LedExample::new()]))
   .await;
+}
+
+#[derive(Clone)]
+struct LedExample;
+
+impl LedExample {
+  fn new() -> Box<Self> {
+    Box::new(Self {})
+  }
+}
+
+impl System for LedExample {
+  fn leds(&self, delta_time: &Duration) -> Vec<LedDeclaration> {
+    LedDeclarationBuilder::new(delta_time)
+      .on(leds::DEMO1, Srgb::new(1.0, 0.0, 0.0))
+      .on(leds::DEMO2, Srgb::new(0.0, 1.0, 0.0))
+      .on(leds::DEMO3, Srgb::new(0.0, 0.0, 1.0))
+      .collect()
+  }
 }

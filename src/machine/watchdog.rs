@@ -2,16 +2,16 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
+use crate::machine::machine_command::MachineCommand;
+
 pub struct Watchdog {
   machine_to_watchdog_sender: mpsc::UnboundedSender<MachineToWatchdog>,
-  watchdog_to_machine_receiver: mpsc::UnboundedReceiver<WatchdogToMachine>,
   enabled: bool,
 }
 
 impl Watchdog {
-  pub fn new(tick_duration: Duration) -> Self {
+  pub fn new(tick_duration: Duration, sender: mpsc::UnboundedSender<MachineCommand>) -> Self {
     let (enablement_sender, mut enablement_receiver) = mpsc::unbounded_channel();
-    let (watchdog_sender, watchdog_receiver) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
       let mut interval = tokio::time::interval(tick_duration);
@@ -27,24 +27,15 @@ impl Watchdog {
         }
 
         if enabled {
-          watchdog_sender.send(WatchdogToMachine::Tick).ok();
+          sender.send(MachineCommand::WatchdogTick).ok();
         }
       }
     });
 
     Self {
       machine_to_watchdog_sender: enablement_sender,
-      watchdog_to_machine_receiver: watchdog_receiver,
       enabled: false,
     }
-  }
-
-  pub async fn read_tick(&mut self) -> Option<bool> {
-    self
-      .watchdog_to_machine_receiver
-      .try_recv()
-      .ok()
-      .map(|_| true)
   }
 
   pub fn enable(&mut self) {
@@ -62,10 +53,6 @@ impl Watchdog {
       .ok();
     self.enabled = false;
   }
-}
-
-pub enum WatchdogToMachine {
-  Tick,
 }
 
 pub enum MachineToWatchdog {

@@ -10,7 +10,12 @@ pub struct SimpleRuntime {
 }
 
 impl SimpleRuntime {
-  pub fn new(initial_scene: Scene) -> Box<Self> {
+  pub fn new(initial_scene: Vec<Box<dyn System>>) -> Box<Self> {
+    let initial_scene = initial_scene
+      .into_iter()
+      .map(|system| SystemContainer::new(system))
+      .collect();
+
     Box::new(Self {
       stack: vec![initial_scene],
       store: Store::new(),

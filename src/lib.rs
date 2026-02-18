@@ -16,10 +16,12 @@ pub use crate::machine::store;
 
 pub mod prelude {
   pub use crate::hardware_definition::*;
+  pub use crate::led::*;
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};
   pub use crate::machine::context::Context;
   pub use crate::machine::machine::*;
   pub use crate::machine::machine_builder::*;
+  pub use crate::machine::machine_command::MachineCommand;
   pub use crate::machine::machine_config::{MachineConfig, default_config};
   pub use crate::machine::plugin::*;
   pub use crate::machine::switch_context::SwitchContext;
@@ -32,6 +34,7 @@ pub mod prelude {
   pub use crossterm::event::KeyCode;
   pub use crossterm::event::MediaKeyCode;
   pub use crossterm::event::ModifierKeyCode;
+  pub use std::time::Duration;
 
   pub type RuntimeType = std::any::TypeId;
 }

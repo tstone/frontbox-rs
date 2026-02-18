@@ -27,7 +27,7 @@ pub trait System: DynClone + Send + Sync {
 
   fn on_config_change(&mut self, config_key: &'static str, ctx: &mut Context) {}
 
-  fn leds(&self) -> Vec<LedDeclaration> {
+  fn leds(&self, delta_time: &Duration) -> Vec<LedDeclaration> {
     vec![]
   }
 }

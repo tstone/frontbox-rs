@@ -1,3 +1,3 @@
+- Animate LED state from System
+- Test going from attract mode to in game. Check if push_runtime works with +send+'static
 - Player points plugin
-- Define LEDs
-- Set LED state from System
