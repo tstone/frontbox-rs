@@ -9,22 +9,22 @@ pub struct InterpolationAnimation<T> {
   duration: Duration,
   elapsed: Duration,
   curve: Curve,
-  from: T,
-  to: T,
+  stops: Vec<T>,
   cycle: AnimationCycle,
   cycle_count: u32,
+  current_stop_index: usize,
 }
 
 impl<T> InterpolationAnimation<T> {
-  pub fn new(duration: Duration, curve: Curve, from: T, to: T, cycle: AnimationCycle) -> Box<Self> {
+  pub fn new(duration: Duration, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
       duration,
       elapsed: Duration::ZERO,
       curve,
-      from,
-      to,
+      stops,
       cycle,
       cycle_count: 0,
+      current_stop_index: 0,
     })
   }
 
@@ -35,10 +35,13 @@ impl<T> InterpolationAnimation<T> {
     Self::new(
       Duration::from_millis((1000.0 / hz) as u64),
       Curve::ExponentialInOut,
-      T::default(),
-      color,
+      vec![T::default(), color],
       cycle,
     )
+  }
+
+  fn next_index(&self) -> usize {
+    (self.current_stop_index + 1) % self.stops.len()
   }
 }
 
@@ -55,6 +58,7 @@ where
 
       if !self.is_complete() {
         self.elapsed = self.elapsed - self.duration;
+        self.current_stop_index = self.next_index();
         return self.elapsed;
       }
     }
@@ -65,7 +69,9 @@ where
   fn sample(&self) -> T {
     let phase = (self.elapsed.as_secs_f32() / self.duration.as_secs_f32()).min(1.0);
     let curve_value = self.curve.sample(phase);
-    self.from.interpolate(&self.to, curve_value)
+    let from = &self.stops[self.current_stop_index];
+    let to = &self.stops[self.next_index()];
+    from.interpolate(to, curve_value)
   }
 
   fn is_complete(&self) -> bool {
@@ -79,6 +85,7 @@ where
   fn reset(&mut self) {
     self.elapsed = Duration::ZERO;
     self.cycle_count = 0;
+    self.current_stop_index = 0;
   }
 }
 

@@ -32,7 +32,6 @@ impl Curve {
       Self::Steps(steps) => sample_steps(*steps, phase), // should steps be a quantization of an existing Curve?
       Self::Reverse(other) => 1.0 - other.sample(phase),
       Self::Remap(a, b) => a.sample(phase) * b.sample(phase),
-      // Self::Multiply(m, curve) =>
     }
   }
 

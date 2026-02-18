@@ -6,6 +6,7 @@ pub mod leds {
   pub const DEMO1: &str = "demo1";
   pub const DEMO2: &str = "demo2";
   pub const DEMO3: &str = "demo3";
+  pub const DEMO4: &str = "demo4";
 }
 
 #[tokio::main]
@@ -18,7 +19,7 @@ async fn main() {
     port: 0,
     start: 0,
     led_type: LedType::WS2812,
-    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3],
+    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
   })];
 
   MachineBuilder::boot(
@@ -41,35 +42,30 @@ struct LedExample {
 impl LedExample {
   fn new() -> Box<Self> {
     Box::new(Self {
-      // on/off flash animation that flashes magenta-ish
       flash: InterpolationAnimation::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
-        Color::black(),
-        Color::purple(),
+        vec![Color::black(), Color::purple()],
         AnimationCycle::Forever,
       ),
       seq: SequenceAnimation::new(
         vec![
           InterpolationAnimation::new(
-            Duration::from_millis(1000),
-            Curve::ExponentialInOut,
-            Color::red(),
-            Color::orange(),
+            Duration::from_millis(1500),
+            Curve::QuadraticInOut,
+            vec![Color::black(), Color::red()],
             AnimationCycle::Once,
           ),
           InterpolationAnimation::new(
-            Duration::from_millis(1000),
-            Curve::ExponentialInOut,
-            Color::orange(),
-            Color::yellow(),
+            Duration::from_millis(200),
+            Curve::Sinusoid,
+            vec![Color::red(), Color::yellow()],
             AnimationCycle::Once,
           ),
           InterpolationAnimation::new(
-            Duration::from_millis(1000),
-            Curve::ExponentialInOut,
-            Color::yellow(),
-            Color::blue(),
+            Duration::from_millis(400),
+            Curve::Linear,
+            vec![Color::yellow(), Color::black()],
             AnimationCycle::Once,
           ),
         ],
@@ -82,9 +78,10 @@ impl LedExample {
 impl System for LedExample {
   fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
     LedDeclarationBuilder::new(delta_time)
-      .on(leds::DEMO1, Color::green())
-      .next_frame(leds::DEMO2, &mut self.flash)
-      .next_frame(leds::DEMO3, &mut self.seq)
+      .on(leds::DEMO1, Color::deep_sky_blue())
+      .on(leds::DEMO2, Color::dark_blue())
+      .next_frame(leds::DEMO3, &mut self.flash)
+      .next_frame(leds::DEMO4, &mut self.seq)
       .collect()
   }
 }

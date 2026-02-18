@@ -512,3 +512,9 @@ impl Lerp for Color {
     self.mix(other, t)
   }
 }
+
+impl Default for Color {
+  fn default() -> Self {
+    Self::black()
+  }
+}

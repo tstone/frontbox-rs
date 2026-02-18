@@ -5,5 +5,3 @@
   - first wins
 - Test going from attract mode to in game. Check if push_runtime works with +send+'static
 - Player points plugin
-- Replace palette with RGBW that can also send white channel
-Color::rgb, Color::rgbw
