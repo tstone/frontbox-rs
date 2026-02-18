@@ -45,12 +45,6 @@ impl LedRenderer {
     exp_port: &mut SerialInterface,
     led_declarations: Vec<LedDeclaration>,
   ) {
-    log::trace!(
-      "Rendering {} LEDs: {:?}",
-      led_declarations.len(),
-      led_declarations.iter().map(|d| d.name).collect::<Vec<_>>()
-    );
-
     // apply incomming colors
     let updated_led_names = self.set_bulk(exp_port, led_declarations).await;
 

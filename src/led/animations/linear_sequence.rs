@@ -2,6 +2,8 @@ use std::time::Duration;
 
 use crate::led::animation::{Animation, AnimationCycle};
 
+/// Plays a sequence of animations in order
+#[derive(Clone)]
 pub struct LinearSequenceAnimation<T> {
   sequence: Vec<Box<dyn Animation<T>>>,
   current_index: usize,
@@ -24,7 +26,10 @@ impl<T> LinearSequenceAnimation<T> {
   }
 }
 
-impl<T> Animation<T> for LinearSequenceAnimation<T> {
+impl<T> Animation<T> for LinearSequenceAnimation<T>
+where
+  T: Clone,
+{
   fn tick(&mut self, delta_time: Duration) -> Duration {
     if self.current_index >= self.sequence.len() {
       return delta_time;

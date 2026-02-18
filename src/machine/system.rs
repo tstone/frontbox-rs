@@ -27,10 +27,12 @@ pub trait System: DynClone + Send + Sync {
 
   fn on_config_change(&mut self, config_key: &'static str, ctx: &mut Context) {}
 
-  fn leds(&self, delta_time: &Duration) -> Vec<LedDeclaration> {
+  fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
     vec![]
   }
 }
+
+dyn_clone::clone_trait_object!(System);
 
 pub struct SystemContainer {
   pub(crate) inner: Box<dyn System>,

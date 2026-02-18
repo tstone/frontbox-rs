@@ -6,8 +6,9 @@ use palette::Srgb;
 use crate::led::animation::{Animation, AnimationCycle};
 use crate::led::curve::Curve;
 
-/// Animation implementation that Lerps between two values of type T over a specified duration using a given curve
-pub struct Interpolation<T> {
+/// Animation implementation that interpolates (lerps) between two values of type T over a specified duration using a given curve
+#[derive(Clone)]
+pub struct InterpolationAnimation<T> {
   duration: Duration,
   elapsed: Duration,
   curve: Curve,
@@ -17,19 +18,51 @@ pub struct Interpolation<T> {
   cycle_count: u32,
 }
 
-impl<T> Animation<T> for Interpolation<T>
+impl<T> InterpolationAnimation<T> {
+  pub fn new(duration: Duration, curve: Curve, from: T, to: T, cycle: AnimationCycle) -> Self {
+    Self {
+      duration,
+      elapsed: Duration::ZERO,
+      curve,
+      from,
+      to,
+      cycle,
+      cycle_count: 0,
+    }
+  }
+
+  pub fn flash(hz: f32, color: T, cycle: AnimationCycle) -> Self
+  where
+    T: Default,
+  {
+    Self::new(
+      Duration::from_millis((1000.0 / hz) as u64),
+      Curve::ExponentialInOut,
+      T::default(),
+      color,
+      cycle,
+    )
+  }
+}
+
+impl<T> Animation<T> for InterpolationAnimation<T>
 where
-  T: Lerp,
+  T: Lerp + Clone,
 {
   fn tick(&mut self, delta_time: Duration) -> Duration {
     self.elapsed += delta_time;
     if self.elapsed >= self.duration {
-      let remainder = self.elapsed - self.duration;
-      self.elapsed = self.duration;
-      remainder
-    } else {
-      Duration::ZERO
+      if self.cycle_count < u32::MAX {
+        self.cycle_count += 1;
+      }
+
+      if !self.is_complete() {
+        self.elapsed = self.elapsed - self.duration;
+        return self.elapsed;
+      }
     }
+
+    Duration::ZERO
   }
 
   fn sample(&self) -> T {
@@ -40,7 +73,7 @@ where
 
   fn is_complete(&self) -> bool {
     match self.cycle {
-      AnimationCycle::Times(n) => self.cycle_count >= n && self.elapsed >= self.duration,
+      AnimationCycle::Times(n) => self.cycle_count >= n,
       AnimationCycle::Forever => false,
     }
   }

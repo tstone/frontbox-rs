@@ -34,20 +34,30 @@ async fn main() {
 }
 
 #[derive(Clone)]
-struct LedExample;
+struct LedExample {
+  anim: InterpolationAnimation<Srgb>,
+}
 
 impl LedExample {
   fn new() -> Box<Self> {
-    Box::new(Self {})
+    Box::new(Self {
+      // on/off flash animation that flashes magenta-ish
+      anim: InterpolationAnimation::new(
+        Duration::from_millis(450),
+        Curve::ExponentialInOut,
+        Srgb::new(0.0, 0.0, 0.0),
+        Srgb::new(1.0, 0.0, 1.0),
+        AnimationCycle::Forever,
+      ),
+    })
   }
 }
 
 impl System for LedExample {
-  fn leds(&self, delta_time: &Duration) -> Vec<LedDeclaration> {
+  fn leds(&mut self, delta_time: &Duration) -> Vec<LedDeclaration> {
     LedDeclarationBuilder::new(delta_time)
-      .on(leds::DEMO1, Srgb::new(1.0, 0.0, 0.0))
-      .on(leds::DEMO2, Srgb::new(0.0, 1.0, 0.0))
-      .on(leds::DEMO3, Srgb::new(0.0, 0.0, 1.0))
+      .on(leds::DEMO1, Srgb::new(0.0, 1.0, 0.0))
+      .next_frame(leds::DEMO3, &mut self.anim)
       .collect()
   }
 }

@@ -604,7 +604,7 @@ impl Machine {
 
   async fn render_leds(&mut self) {
     let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene();
+    let scene = runtime.get_current_scene_mut();
 
     let mut declarations = Vec::new();
     for system in scene {
