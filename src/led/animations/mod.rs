@@ -1,5 +1,5 @@
-mod interpolation;
-mod linear_sequence;
+mod interpolation_animation;
+mod sequence_animation;
 
-pub use interpolation::*;
-pub use linear_sequence::*;
+pub use interpolation_animation::*;
+pub use sequence_animation::*;

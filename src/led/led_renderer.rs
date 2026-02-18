@@ -6,7 +6,7 @@ use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
 use crate::protocol::prelude::SetLedCommand;
 
-const LED_SET_BATCH_SIZE: usize = 12;
+const LED_SET_BATCH_SIZE: usize = 24;
 
 pub struct LedRenderer {
   led_map: HashMap<&'static str, AddressableLed>,

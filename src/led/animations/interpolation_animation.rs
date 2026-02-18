@@ -19,8 +19,8 @@ pub struct InterpolationAnimation<T> {
 }
 
 impl<T> InterpolationAnimation<T> {
-  pub fn new(duration: Duration, curve: Curve, from: T, to: T, cycle: AnimationCycle) -> Self {
-    Self {
+  pub fn new(duration: Duration, curve: Curve, from: T, to: T, cycle: AnimationCycle) -> Box<Self> {
+    Box::new(Self {
       duration,
       elapsed: Duration::ZERO,
       curve,
@@ -28,10 +28,10 @@ impl<T> InterpolationAnimation<T> {
       to,
       cycle,
       cycle_count: 0,
-    }
+    })
   }
 
-  pub fn flash(hz: f32, color: T, cycle: AnimationCycle) -> Self
+  pub fn flash(hz: f32, color: T, cycle: AnimationCycle) -> Box<Self>
   where
     T: Default,
   {
@@ -47,7 +47,7 @@ impl<T> InterpolationAnimation<T> {
 
 impl<T> Animation<T> for InterpolationAnimation<T>
 where
-  T: Lerp + Clone,
+  T: Lerp + Clone + Send + Sync,
 {
   fn tick(&mut self, delta_time: Duration) -> Duration {
     self.elapsed += delta_time;

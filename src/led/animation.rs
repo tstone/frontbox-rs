@@ -1,7 +1,7 @@
 use dyn_clone::DynClone;
 use std::time::Duration;
 
-pub trait Animation<T>: DynClone {
+pub trait Animation<T>: DynClone + Send + Sync {
   /// Returns the remainder, if any
   fn tick(&mut self, delta_time: Duration) -> Duration;
   fn sample(&self) -> T;

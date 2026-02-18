@@ -60,7 +60,7 @@ impl<'a> LedDeclarationBuilder<'a> {
   pub fn next_frame(
     self,
     name: &'static str,
-    animation: &mut (impl Animation<Srgb> + 'static),
+    animation: &mut Box<dyn Animation<Srgb> + 'static>,
   ) -> Self {
     animation.tick(*self.delta_time);
     self.on(name, animation.sample())
