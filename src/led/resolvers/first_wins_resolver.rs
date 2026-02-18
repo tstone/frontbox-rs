@@ -10,7 +10,7 @@ impl FirstWinsResolver {
 }
 
 impl LedResolver for FirstWinsResolver {
-  fn resolve(&mut self, states: Vec<(u64, LedState)>) -> LedState {
+  fn resolve(&mut self, _: &'static str, states: Vec<(u64, LedState)>) -> LedState {
     if states.len() > 0 {
       states[0].1.clone()
     } else {

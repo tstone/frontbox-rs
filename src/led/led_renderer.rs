@@ -36,8 +36,18 @@ impl LedRenderer {
     Self {
       led_map,
       set_leds: HashSet::new(),
-      resolver: Box::new(BezierMixResolver::new()),
+      // resolver: Box::new(BezierMixResolver::new()),
+      resolver: Box::new(AlternateResolver::new()),
     }
+  }
+
+  pub fn reset(&mut self) {
+    self.set_leds.clear();
+    self.resolver.reset();
+  }
+
+  pub fn tick(&mut self, delta: Duration) {
+    self.resolver.tick(delta);
   }
 
   pub async fn render(
@@ -66,7 +76,7 @@ impl LedRenderer {
 
     // resolve conflicts
     for (led_name, conflict_list) in conflicts {
-      let resolved = self.resolver.resolve(conflict_list);
+      let resolved = self.resolver.resolve(led_name, conflict_list);
       led_temp_updates.insert(led_name, (0, resolved));
     }
 

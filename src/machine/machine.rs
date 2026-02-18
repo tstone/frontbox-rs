@@ -362,6 +362,8 @@ impl Machine {
       .last_mut()
       .unwrap()
       .on_runtime_enter(&mut ctx);
+
+    self.led_renderer.reset();
   }
 
   /// Transition out of current runtime back to previous
@@ -389,6 +391,8 @@ impl Machine {
     } else {
       log::warn!("No active runtime");
     }
+
+    self.led_renderer.reset();
   }
 
   pub fn push_scene(&mut self, mut scene: Scene) {
@@ -408,6 +412,7 @@ impl Machine {
     }
 
     runtime.push_scene(scene);
+    self.led_renderer.reset();
   }
 
   pub fn pop_scene(&mut self) {
@@ -427,6 +432,7 @@ impl Machine {
     }
 
     runtime.pop_scene();
+    self.led_renderer.reset();
   }
 
   pub fn add_system(&mut self, system: Box<dyn System>) {
@@ -644,6 +650,7 @@ impl Machine {
       declarations.insert(system.id, system.leds(self.system_tick));
     }
 
+    self.led_renderer.tick(self.system_tick);
     self
       .led_renderer
       .render(&mut self.exp_port, declarations)

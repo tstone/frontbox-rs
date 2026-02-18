@@ -29,7 +29,7 @@ impl BezierMixResolver {
 }
 
 impl LedResolver for BezierMixResolver {
-  fn resolve(&mut self, states: Vec<(u64, LedState)>) -> LedState {
+  fn resolve(&mut self, _: &'static str, states: Vec<(u64, LedState)>) -> LedState {
     if states.len() == 0 {
       return LedState::Off;
     } else if states.len() == 1 {
@@ -39,6 +39,7 @@ impl LedResolver for BezierMixResolver {
     } else {
       // if more than 2 colors, mix them in pairs recursively until we have one final color
       self.resolve(
+        "",
         states
           .windows(2)
           .map(|chunk| (0, Self::mix_pair(chunk[0].clone(), chunk[1].clone())))

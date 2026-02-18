@@ -89,7 +89,7 @@ impl System for System2 {
   fn on_system_enter(&mut self, ctx: &mut Context) {
     ctx.set_timer(
       "example_timer",
-      std::time::Duration::from_millis(1500),
+      std::time::Duration::from_secs(2),
       TimerMode::Repeating,
     );
   }
