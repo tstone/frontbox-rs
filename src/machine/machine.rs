@@ -87,6 +87,12 @@ impl Machine {
   pub async fn run(&mut self, runtime: Box<dyn Runtime>) {
     self.push_runtime(runtime);
 
+    // TODO: this seems like a bug. Why does push_runtime not trigger on_system_enter for the initial runtime? Should it?
+    // initial startup for root scene
+    self.dispatch_to_current_systems(|system, ctx| {
+      system.on_system_enter(ctx);
+    });
+
     // initialize keyboard monitoring if there are any keyboard-mapped switches
     if self.keyboard_switch_map.len() > 0 {
       match enable_raw_mode() {
@@ -108,11 +114,6 @@ impl Machine {
         .await
         .expect("failed to listen for ctrl-c");
       let _ = tx.send(MachineCommand::Shutdown);
-    });
-
-    // initial startup for root scene
-    self.dispatch_to_current_systems(|system, ctx| {
-      system.on_system_enter(ctx);
     });
 
     log::info!("⟳ Machine run loop started.");

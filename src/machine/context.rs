@@ -188,7 +188,7 @@ impl<'a> StoreContext<'a> {
     self.store.and_then(|store| store.get::<T>())
   }
 
-  pub fn with<T: Default>(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
+  pub fn with(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
     if self.store.is_none() {
       log::warn!("No store is available in the current context");
       return;

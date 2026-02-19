@@ -1,5 +1,6 @@
+use frontbox::plugins::game_points::*;
 use frontbox::prelude::*;
-use frontbox::runtimes::PlayerRuntime;
+
 use std::io::Write;
 use std::time::Duration;
 
@@ -106,7 +107,7 @@ impl System for DropTargetDownUp {
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
-      // ctx.command(AddPoints(100));
+      ctx.add_points(100);
 
       let all_down = self
         .target_switches
@@ -115,6 +116,9 @@ impl System for DropTargetDownUp {
 
       if all_down {
         // ctx.command(AddPoints(1000));
+        ctx.add_points(1000);
+        ctx.add_bonus(1000);
+
         ctx.trigger_delayed_driver(
           drivers::LOWER_DROP_TARGET_COIL,
           DriverTriggerControlMode::Manual,

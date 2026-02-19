@@ -1,3 +1,1 @@
-mod player_points;
-
-pub use player_points::*;
+pub mod game_points;
