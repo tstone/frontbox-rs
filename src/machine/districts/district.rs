@@ -8,9 +8,6 @@ pub trait District {
   fn get_current(&self) -> (&Scene, &Store);
   fn get_current_mut(&mut self) -> (&mut Scene, &mut Store);
 
-  fn push_scene(&mut self, scene: Scene);
-  fn pop_scene(&mut self);
-
   fn on_district_enter(&self, ctx: &mut Context) {}
   fn on_add_player(&mut self, player_index: u8) {}
   fn on_change_player(&mut self, player_index: u8) {}

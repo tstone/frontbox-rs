@@ -167,8 +167,6 @@ impl Machine {
       MachineCommand::AdvancePlayer => self.advance_player(),
       MachineCommand::PushRuntime(district_gen) => self.push_district(district_gen()),
       MachineCommand::PopRuntime => self.pop_district(),
-      MachineCommand::PushScene(scene) => self.push_scene(scene),
-      MachineCommand::PopScene => self.pop_scene(),
       MachineCommand::AddSystem(system) => self.add_system(system),
       MachineCommand::ReplaceSystem(system_id, system) => {
         self.replace_system(system_id, system);
@@ -393,46 +391,6 @@ impl Machine {
       log::warn!("No active district");
     }
 
-    self.led_renderer.reset();
-  }
-
-  pub fn push_scene(&mut self, mut scene: Scene) {
-    let district = self.district_stack.last_mut().unwrap();
-    let store = district.get_current_store();
-
-    for system in &mut scene {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        Some(store),
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        Some(system.id),
-      );
-      system.on_system_enter(&mut ctx);
-    }
-
-    district.push_scene(scene);
-    self.led_renderer.reset();
-  }
-
-  pub fn pop_scene(&mut self) {
-    let district = self.district_stack.last_mut().unwrap();
-    let (outgoing_scene, store) = district.get_current_mut();
-
-    for system in outgoing_scene {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        Some(store),
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        Some(system.id),
-      );
-      system.on_system_exit(&mut ctx);
-    }
-
-    district.pop_scene();
     self.led_renderer.reset();
   }
 

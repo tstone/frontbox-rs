@@ -13,8 +13,6 @@ pub enum MachineCommand {
   // stack management
   PushRuntime(Box<dyn FnOnce() -> Box<dyn District> + Send>),
   PopRuntime,
-  PushScene(Scene),
-  PopScene,
   AddSystem(Box<dyn System>),
   ReplaceSystem(u64, Box<dyn System>),
   TerminateSystem(u64),
@@ -46,8 +44,6 @@ impl std::fmt::Debug for MachineCommand {
       Self::AdvancePlayer => write!(f, "AdvancePlayer"),
       Self::PushRuntime(_) => write!(f, "PushRuntime(..)"),
       Self::PopRuntime => write!(f, "PopRuntime"),
-      Self::PushScene(_) => write!(f, "PushScene(..)"),
-      Self::PopScene => write!(f, "PopScene"),
       Self::AddSystem(_) => write!(f, "AddSystem(..)"),
       Self::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({}, ..)", id),
       Self::TerminateSystem(id) => write!(f, "TerminateSystem({})", id),

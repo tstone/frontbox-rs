@@ -107,14 +107,6 @@ impl<'a> Context<'a> {
     let _ = self.sender.send(MachineCommand::PopRuntime);
   }
 
-  pub fn push_scene(&mut self, scene: Scene) {
-    let _ = self.sender.send(MachineCommand::PushScene(scene));
-  }
-
-  pub fn pop_scene(&mut self) {
-    let _ = self.sender.send(MachineCommand::PopScene);
-  }
-
   pub fn add_system(&mut self, system: impl System + 'static) {
     let _ = self
       .sender
