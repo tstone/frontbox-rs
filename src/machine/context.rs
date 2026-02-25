@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -6,26 +7,36 @@ use crate::prelude::*;
 
 pub struct Context<'a> {
   sender: mpsc::UnboundedSender<MachineCommand>,
-  store: StoreContext<'a>,
+  stores: HashMap<&'static str, StoreContext<'a>>,
   switches: &'a SwitchContext,
   game_state: &'a Option<GameState>,
   config: ConfigContext<'a>,
-  current_system_index: Option<u64>,
-  current_district_key: &'static str,
+  pub(crate) current_system_index: Option<u64>,
+  pub(crate) current_district_key: &'static str,
 }
 
 impl<'a> Context<'a> {
   pub fn new(
     sender: mpsc::UnboundedSender<MachineCommand>,
-    store: Option<&'a Store>,
+    store: &'a HashMap<&'static str, Box<dyn StorageDistrict>>,
     switches: &'a SwitchContext,
     game_state: &'a Option<GameState>,
     config: &'a MachineConfig,
     current_system_index: Option<u64>,
     current_district_key: &'static str,
   ) -> Self {
+    let stores = store
+      .iter()
+      .map(|(key, district)| {
+        (
+          *key,
+          StoreContext::new(sender.clone(), district.get_current()),
+        )
+      })
+      .collect();
+
     Self {
-      store: StoreContext::new(sender.clone(), store),
+      stores,
       config: ConfigContext::new(sender.clone(), config),
       sender,
       switches,
@@ -39,9 +50,14 @@ impl<'a> Context<'a> {
     &self.config
   }
 
-  /// Runtime-specific storage of arbitrary data
+  /// Gets the store for a district by key
+  pub fn keyed_store(&self, key: &'static str) -> Option<&StoreContext<'_>> {
+    self.stores.get(key)
+  }
+
+  /// Gets the store for the current district
   pub fn store(&self) -> &StoreContext<'_> {
-    &self.store
+    self.stores.get(self.current_district_key).unwrap()
   }
 
   pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
@@ -176,32 +192,23 @@ impl<'a> Context<'a> {
 
 pub struct StoreContext<'a> {
   sender: mpsc::UnboundedSender<MachineCommand>,
-  store: Option<&'a Store>,
+  store: &'a Store,
 }
 
 impl<'a> StoreContext<'a> {
-  pub fn new(sender: mpsc::UnboundedSender<MachineCommand>, store: Option<&'a Store>) -> Self {
+  pub fn new(sender: mpsc::UnboundedSender<MachineCommand>, store: &'a Store) -> Self {
     Self { sender, store }
   }
 
-  pub fn is_present<T: Default + 'static>(&self) -> bool {
-    self.store.is_some()
-  }
-
   pub fn exists<T: Default + 'static>(&self) -> bool {
-    self.store.and_then(|store| store.get::<T>()).is_some()
+    self.store.get::<T>().is_some()
   }
 
   pub fn get<T: Default + 'static>(&self) -> Option<&T> {
-    self.store.and_then(|store| store.get::<T>())
+    self.store.get::<T>()
   }
 
   pub fn with(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
-    if self.store.is_none() {
-      log::warn!("No store is available in the current context");
-      return;
-    }
-
     let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
   }
 }

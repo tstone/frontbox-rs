@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use crate::machine::key_reader::monitor_keys;
 use crate::machine::machine_config::MachineConfig;
-use crate::machine::serial_interface::*;
 use crate::machine::system_timer::{TimerMode, run_system_timers};
 use crate::machine::watchdog::Watchdog;
+use crate::machine::{serial_interface::*, system};
 use crate::prelude::*;
 use crate::protocol::prelude::*;
 use crate::protocol::*;
@@ -34,7 +34,8 @@ pub struct Machine {
   system_tick: Duration,
   led_renderer: LedRenderer,
 
-  districts: HashMap<&'static str, Box<dyn District>>,
+  system_districts: HashMap<&'static str, Box<dyn SystemDistrict>>,
+  storage_districts: HashMap<&'static str, Box<dyn StorageDistrict>>,
   switches: SwitchContext,
   game_state: Option<GameState>,
 
@@ -64,13 +65,22 @@ impl Machine {
         .unwrap(),
     );
 
+    let mut system_districts: HashMap<&'static str, Box<dyn SystemDistrict>> = HashMap::new();
+    let mut storage_districts: HashMap<&'static str, Box<dyn StorageDistrict>> = HashMap::new();
+    for (key, district) in districts.into_iter() {
+      let (system_district, storage_district) = district.split();
+      system_districts.insert(key, system_district);
+      storage_districts.insert(key, storage_district);
+    }
+
     Self {
       io_port,
       exp_port,
       switches: switches,
       driver_lookup,
       keyboard_switch_map,
-      districts,
+      system_districts,
+      storage_districts,
       game_state: None,
       watchdog: Watchdog::new(
         Duration::from_millis(watchdog_interval),
@@ -87,7 +97,7 @@ impl Machine {
 
   pub async fn run(&mut self) {
     // trigger on_district_enter for all initial districts
-    let district_keys = self.districts.keys().cloned().collect::<Vec<_>>();
+    let district_keys = self.system_districts.keys().cloned().collect::<Vec<_>>();
     for key in district_keys {
       self.run_on_district_enter(key);
     }
@@ -272,8 +282,8 @@ impl Machine {
     F: FnMut(&mut SystemContainer, &mut Context),
   {
     // all districts are run in order, but only the current scene within each district is run
-    for (key, district) in self.districts.iter_mut() {
-      let (scene, store) = district.get_current_mut();
+    for (key, district) in self.system_districts.iter_mut() {
+      let scene = district.get_current_mut();
 
       log::debug!(
         "Dispatching to systems in scene, system count: {}",
@@ -283,7 +293,7 @@ impl Machine {
       for system in scene {
         let mut ctx = Context::new(
           self.command_sender.clone(),
-          Some(store),
+          &self.storage_districts,
           &self.switches,
           &self.game_state,
           &self.config,
@@ -296,6 +306,10 @@ impl Machine {
   }
 
   pub(crate) async fn start_game(&mut self) {
+    if self.game_state.is_some() {
+      return;
+    }
+
     log::info!("Starting new game");
     self.game_state = Some(GameState {
       active_player: 0,
@@ -343,37 +357,31 @@ impl Machine {
   /// Transition to a new district
   pub fn insert_district(&mut self, key: &'static str, new_district: Box<dyn District>) {
     log::info!("Pushing into new district");
-    self.districts.insert(key, new_district);
+    let (system_district, storage_district) = new_district.split();
+
+    self.system_districts.insert(key, system_district);
+    self.storage_districts.insert(key, storage_district);
     self.run_on_district_enter(key);
   }
 
   fn run_on_district_enter(&mut self, key: &'static str) {
-    if let Some(district) = self.districts.get_mut(key) {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        None,
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        None,
-        key,
-      );
+    let mut ctx = Context::new(
+      self.command_sender.clone(),
+      &self.storage_districts,
+      &self.switches,
+      &self.game_state,
+      &self.config,
+      None,
+      key,
+    );
+
+    if let Some(district) = self.system_districts.get_mut(key) {
       district.on_district_enter(&mut ctx);
 
-      for system in district.get_current_scene_mut() {
-        let mut ctx = Context::new(
-          self.command_sender.clone(),
-          None,
-          &self.switches,
-          &self.game_state,
-          &self.config,
-          Some(system.id),
-          key,
-        );
+      for system in district.get_current_mut() {
+        ctx.current_system_index = Some(system.id);
         system.on_system_enter(&mut ctx);
       }
-    } else {
-      log::error!("Attempted to enter unknown district: {}", key);
     }
   }
 
@@ -382,7 +390,7 @@ impl Machine {
     log::info!("Popping current district");
     let mut ctx = Context::new(
       self.command_sender.clone(),
-      None,
+      &self.storage_districts,
       &self.switches,
       &self.game_state,
       &self.config,
@@ -390,7 +398,7 @@ impl Machine {
       key,
     );
 
-    let district = self.districts.get_mut(key);
+    let district = self.system_districts.get_mut(key);
     if let Some(district) = district {
       district.on_district_exit(&mut ctx);
     }
@@ -399,10 +407,10 @@ impl Machine {
   }
 
   pub fn add_system(&mut self, district: &'static str, system: Box<dyn System>) {
-    match self.districts.get_mut(district) {
+    match self.system_districts.get_mut(district) {
       Some(district) => {
         district
-          .get_current_scene_mut()
+          .get_current_mut()
           .push(SystemContainer::new(system));
       }
       None => {
@@ -413,9 +421,9 @@ impl Machine {
 
   /// Searches the given district for the system, by ID
   fn find_system_index(&self, key: &'static str, system_id: u64) -> Option<usize> {
-    match self.districts.get(key) {
+    match self.system_districts.get(key) {
       Some(district) => {
-        let scene = district.get_current_scene();
+        let scene = district.get_current();
 
         for (index, system) in scene.iter().enumerate() {
           if system.id == system_id {
@@ -439,8 +447,8 @@ impl Machine {
   ) {
     match self.find_system_index(district, system_id) {
       Some(index) => {
-        let district = self.districts.get_mut(district).unwrap();
-        let scene = district.get_current_scene_mut();
+        let district = self.system_districts.get_mut(district).unwrap();
+        let scene = district.get_current_mut();
         scene[index] = SystemContainer::new(new_system);
       }
       None => log::error!("Attempted to replace unknown system ID: {}", system_id),
@@ -450,8 +458,8 @@ impl Machine {
   pub fn terminate_system(&mut self, district: &'static str, system_id: u64) {
     match self.find_system_index(district, system_id) {
       Some(index) => {
-        let district = self.districts.get_mut(district).unwrap();
-        let scene = district.get_current_scene_mut();
+        let district = self.system_districts.get_mut(district).unwrap();
+        let scene = district.get_current_mut();
         scene.remove(index);
       }
       None => log::error!("Attempted to terminate unknown system ID: {}", system_id),
@@ -564,8 +572,8 @@ impl Machine {
     mode: TimerMode,
   ) {
     let index = self.find_system_index(district, system_id);
-    let district = self.districts.get_mut(district).unwrap();
-    let scene = district.get_current_scene_mut();
+    let district = self.system_districts.get_mut(district).unwrap();
+    let scene = district.get_current_mut();
 
     if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.set_timer(timer_name, duration, mode);
@@ -584,8 +592,8 @@ impl Machine {
     timer_name: &'static str,
   ) {
     let index = self.find_system_index(district, system_id);
-    let district = self.districts.get_mut(district).unwrap();
-    let scene = district.get_current_scene_mut();
+    let district = self.system_districts.get_mut(district).unwrap();
+    let scene = district.get_current_mut();
 
     if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.clear_timer(timer_name);
@@ -620,8 +628,8 @@ impl Machine {
   }
 
   async fn render_leds(&mut self) {
-    for district in self.districts.values_mut() {
-      let scene = district.get_current_scene_mut();
+    for district in self.system_districts.values_mut() {
+      let scene = district.get_current_mut();
 
       let mut declarations = HashMap::new();
       for system in scene {

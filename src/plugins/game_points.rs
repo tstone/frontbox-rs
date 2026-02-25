@@ -15,6 +15,7 @@ use crate::prelude::*;
  * scoring information, in addition to just points/bonus.
  */
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct GamePoints {
   total_points: u32,
   total_bonus: u32,
@@ -26,6 +27,7 @@ pub struct GamePoints {
 pub trait GamePointsExt {
   fn add_points(&mut self, points: u32);
   fn add_bonus(&mut self, bonus: u32);
+  fn merge_ball_points(&mut self);
 }
 
 impl GamePointsExt for Context<'_> {
@@ -40,6 +42,17 @@ impl GamePointsExt for Context<'_> {
     self.store().with(move |store| {
       let game_points = store.get_mut::<GamePoints>();
       game_points.current_ball_bonus += bonus;
+    });
+  }
+
+  /// Merge points/bonus for current ball into total points/bonus
+  fn merge_ball_points(&mut self) {
+    self.store().with(move |store| {
+      let game_points = store.get_mut::<GamePoints>();
+      game_points.total_points += game_points.current_ball_points;
+      game_points.total_bonus += game_points.current_ball_bonus;
+      game_points.current_ball_points = 0;
+      game_points.current_ball_bonus = 0;
     });
   }
 }

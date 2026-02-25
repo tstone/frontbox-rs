@@ -76,7 +76,7 @@ async fn main() {
     ])
     .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
     .insert_district(
-      "game",
+      "player",
       PlayerDistrict::new(vec![DropTargetDownUp::new([
         switches::LOWER_DROP_TARGET1,
         switches::LOWER_DROP_TARGET2,
