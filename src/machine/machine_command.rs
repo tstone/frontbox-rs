@@ -22,6 +22,7 @@ pub enum MachineCommand {
   TriggerDriver(&'static str, DriverTriggerControlMode, Option<Duration>),
   HardwareEvent(EventResponse),
   Key(Event),
+  ResetExpansionNetwork,
 
   // timers
   ClearTimer(&'static str, u64, &'static str),
@@ -74,6 +75,7 @@ impl std::fmt::Debug for MachineCommand {
       Self::HardwareEvent(event) => write!(f, "HardwareEvent({:?})", event),
       Self::Key(key_event) => write!(f, "Key({:?})", key_event),
       Self::Shutdown => write!(f, "Shutdown"),
+      Self::ResetExpansionNetwork => write!(f, "ResetExpansionNetwork"),
     }
   }
 }

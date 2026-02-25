@@ -165,7 +165,7 @@ impl Machine {
       .ok();
 
     // Reset expansion boards (LEDs servos, etc.) to an off/default state
-    MachineBuilder::reset_expansion_boards(&mut self.exp_port, &self.expansion_boards).await;
+    self.reset_expansion_network().await;
   }
 
   async fn run_machine_command(&mut self, command: MachineCommand) {
@@ -223,6 +223,9 @@ impl Machine {
             Duration::from_secs(1),
           )
           .await;
+      }
+      MachineCommand::ResetExpansionNetwork => {
+        self.reset_expansion_network().await;
       }
       MachineCommand::Shutdown => {}
     }
@@ -625,6 +628,11 @@ impl Machine {
       }
       _ => {}
     }
+  }
+
+  async fn reset_expansion_network(&mut self) {
+    self.led_renderer.reset();
+    MachineBuilder::reset_expansion_boards(&mut self.exp_port, &self.expansion_boards).await;
   }
 
   async fn render_leds(&mut self) {
