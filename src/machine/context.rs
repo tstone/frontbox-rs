@@ -97,9 +97,9 @@ impl<'a> Context<'a> {
     let _ = self.sender.send(MachineCommand::AdvancePlayer);
   }
 
-  pub fn push_runtime(&mut self, runtime: impl Runtime + Send + 'static) {
+  pub fn push_runtime(&mut self, runtime: impl District + Send + 'static) {
     let _ = self.sender.send(MachineCommand::PushRuntime(Box::new(|| {
-      Box::new(runtime) as Box<dyn Runtime>
+      Box::new(runtime) as Box<dyn District>
     })));
   }
 

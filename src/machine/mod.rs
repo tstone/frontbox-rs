@@ -7,7 +7,7 @@ pub mod machine_builder;
 pub mod machine_command;
 pub mod machine_config;
 pub mod plugin;
-pub mod runtimes;
+pub mod districts;
 pub mod serial_interface;
 pub mod store;
 pub mod switch_context;

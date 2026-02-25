@@ -34,7 +34,7 @@ pub struct Machine {
   system_tick: Duration,
   led_renderer: LedRenderer,
 
-  runtime_stack: Vec<Box<dyn Runtime>>,
+  district_stack: Vec<Box<dyn District>>,
   switches: SwitchContext,
   game_state: Option<GameState>,
 
@@ -69,7 +69,7 @@ impl Machine {
       switches: switches,
       driver_lookup,
       keyboard_switch_map,
-      runtime_stack: Vec::new(),
+      district_stack: Vec::new(),
       game_state: None,
       watchdog: Watchdog::new(
         Duration::from_millis(watchdog_interval),
@@ -84,10 +84,10 @@ impl Machine {
     }
   }
 
-  pub async fn run(&mut self, runtime: Box<dyn Runtime>) {
-    self.push_runtime(runtime);
+  pub async fn run(&mut self, district: Box<dyn District>) {
+    self.push_district(district);
 
-    // TODO: this seems like a bug. Why does push_runtime not trigger on_system_enter for the initial runtime? Should it?
+    // TODO: this seems like a bug. Why does push_district not trigger on_system_enter for the initial district? Should it?
     // initial startup for root scene
     self.dispatch_to_current_systems(|system, ctx| {
       system.on_system_enter(ctx);
@@ -165,8 +165,8 @@ impl Machine {
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player(),
-      MachineCommand::PushRuntime(runtime_gen) => self.push_runtime(runtime_gen()),
-      MachineCommand::PopRuntime => self.pop_runtime(),
+      MachineCommand::PushRuntime(district_gen) => self.push_district(district_gen()),
+      MachineCommand::PopRuntime => self.pop_district(),
       MachineCommand::PushScene(scene) => self.push_scene(scene),
       MachineCommand::PopScene => self.pop_scene(),
       MachineCommand::AddSystem(system) => self.add_system(system),
@@ -270,8 +270,8 @@ impl Machine {
   where
     F: FnMut(&mut SystemContainer, &mut Context),
   {
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let (scene, store) = runtime.get_current_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let (scene, store) = district.get_current_mut();
 
     log::debug!(
       "Dispatching to systems in scene, system count: {}",
@@ -336,9 +336,9 @@ impl Machine {
     self.run_on_ball_start();
   }
 
-  /// Transition to a new runtime
-  pub fn push_runtime(&mut self, new_runtime: Box<dyn Runtime>) {
-    log::info!("Pushing into new runtime");
+  /// Transition to a new district
+  pub fn push_district(&mut self, new_district: Box<dyn District>) {
+    log::info!("Pushing into new district");
 
     let mut ctx = Context::new(
       self.command_sender.clone(),
@@ -349,27 +349,27 @@ impl Machine {
       None,
     );
 
-    let runtime = self.runtime_stack.last_mut();
-    if let Some(runtime) = runtime {
-      log::trace!("on_runtime_exit for current runtime");
-      runtime.on_runtime_exit(&mut ctx);
+    let district = self.district_stack.last_mut();
+    if let Some(district) = district {
+      log::trace!("on_district_exit for current district");
+      district.on_district_exit(&mut ctx);
     }
 
-    self.runtime_stack.push(new_runtime);
+    self.district_stack.push(new_district);
 
-    log::trace!("on_runtime_enter for new runtime");
+    log::trace!("on_district_enter for new district");
     self
-      .runtime_stack
+      .district_stack
       .last_mut()
       .unwrap()
-      .on_runtime_enter(&mut ctx);
+      .on_district_enter(&mut ctx);
 
     self.led_renderer.reset();
   }
 
-  /// Transition out of current runtime back to previous
-  pub fn pop_runtime(&mut self) {
-    log::info!("Popping current runtime");
+  /// Transition out of current district back to previous
+  pub fn pop_district(&mut self) {
+    log::info!("Popping current district");
     let mut ctx = Context::new(
       self.command_sender.clone(),
       None,
@@ -379,26 +379,26 @@ impl Machine {
       None,
     );
 
-    let runtime = self.runtime_stack.last_mut();
-    if let Some(runtime) = runtime {
-      runtime.on_runtime_exit(&mut ctx);
+    let district = self.district_stack.last_mut();
+    if let Some(district) = district {
+      district.on_district_exit(&mut ctx);
     }
 
-    self.runtime_stack.pop();
+    self.district_stack.pop();
 
-    if self.runtime_stack.len() > 0 {
-      let runtime = self.runtime_stack.last_mut().unwrap();
-      runtime.on_runtime_enter(&mut ctx);
+    if self.district_stack.len() > 0 {
+      let district = self.district_stack.last_mut().unwrap();
+      district.on_district_enter(&mut ctx);
     } else {
-      log::warn!("No active runtime");
+      log::warn!("No active district");
     }
 
     self.led_renderer.reset();
   }
 
   pub fn push_scene(&mut self, mut scene: Scene) {
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let store = runtime.get_current_store();
+    let district = self.district_stack.last_mut().unwrap();
+    let store = district.get_current_store();
 
     for system in &mut scene {
       let mut ctx = Context::new(
@@ -412,13 +412,13 @@ impl Machine {
       system.on_system_enter(&mut ctx);
     }
 
-    runtime.push_scene(scene);
+    district.push_scene(scene);
     self.led_renderer.reset();
   }
 
   pub fn pop_scene(&mut self) {
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let (outgoing_scene, store) = runtime.get_current_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let (outgoing_scene, store) = district.get_current_mut();
 
     for system in outgoing_scene {
       let mut ctx = Context::new(
@@ -432,21 +432,21 @@ impl Machine {
       system.on_system_exit(&mut ctx);
     }
 
-    runtime.pop_scene();
+    district.pop_scene();
     self.led_renderer.reset();
   }
 
   pub fn add_system(&mut self, system: Box<dyn System>) {
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    runtime
+    let district = self.district_stack.last_mut().unwrap();
+    district
       .get_current_scene_mut()
       .push(SystemContainer::new(system));
   }
 
   /// Searches the current scene for the system, by ID
   fn find_system_index(&self, system_id: u64) -> Option<usize> {
-    let runtime = self.runtime_stack.last().unwrap();
-    let scene = runtime.get_current_scene();
+    let district = self.district_stack.last().unwrap();
+    let scene = district.get_current_scene();
 
     for (index, system) in scene.iter().enumerate() {
       if system.id == system_id {
@@ -459,8 +459,8 @@ impl Machine {
 
   pub fn replace_system(&mut self, system_id: u64, new_system: Box<dyn System>) {
     let index = self.find_system_index(system_id);
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let scene = district.get_current_scene_mut();
 
     if let Some(index) = index {
       scene[index] = SystemContainer::new(new_system);
@@ -474,8 +474,8 @@ impl Machine {
 
   pub fn terminate_system(&mut self, system_id: u64) {
     let index = self.find_system_index(system_id);
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let scene = district.get_current_scene_mut();
 
     if let Some(index) = index {
       scene.remove(index);
@@ -592,8 +592,8 @@ impl Machine {
     mode: TimerMode,
   ) {
     let index = self.find_system_index(system_id);
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let scene = district.get_current_scene_mut();
 
     if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.set_timer(timer_name, duration, mode);
@@ -607,8 +607,8 @@ impl Machine {
 
   fn clear_system_timer(&mut self, system_id: u64, timer_name: &'static str) {
     let index = self.find_system_index(system_id);
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let scene = district.get_current_scene_mut();
 
     if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
       system.clear_timer(timer_name);
@@ -643,8 +643,8 @@ impl Machine {
   }
 
   async fn render_leds(&mut self) {
-    let runtime = self.runtime_stack.last_mut().unwrap();
-    let scene = runtime.get_current_scene_mut();
+    let district = self.district_stack.last_mut().unwrap();
+    let scene = district.get_current_scene_mut();
 
     let mut declarations = HashMap::new();
     for system in scene {

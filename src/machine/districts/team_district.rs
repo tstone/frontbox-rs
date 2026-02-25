@@ -1,7 +1,7 @@
 use crate::prelude::*;
-use crate::runtimes::Runtime;
+use crate::districts::District;
 
-pub struct TeamRuntime {
+pub struct TeamDistrict {
   /// Active stack, one per team
   team_stacks: Vec<Vec<Scene>>,
   // Store for each team
@@ -11,7 +11,7 @@ pub struct TeamRuntime {
   player_team_map: Vec<u8>,
 }
 
-impl TeamRuntime {
+impl TeamDistrict {
   pub fn new(initial_scene: Vec<Box<dyn System>>, player_team_map: Vec<u8>) -> Box<Self> {
     let mut team_stacks = Vec::new();
     let mut team_stores = Vec::new();
@@ -36,7 +36,7 @@ impl TeamRuntime {
   }
 }
 
-impl Runtime for TeamRuntime {
+impl District for TeamDistrict {
   fn get_current(&self) -> (&Scene, &Store) {
     let scene = self
       .team_stacks
@@ -83,7 +83,7 @@ impl Runtime for TeamRuntime {
       .pop();
   }
 
-  fn on_runtime_enter(&self, ctx: &mut Context) {
+  fn on_district_enter(&self, ctx: &mut Context) {
     ctx.start_game();
   }
 

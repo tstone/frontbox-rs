@@ -1,15 +1,15 @@
 use crate::prelude::*;
-use crate::runtimes::Runtime;
+use crate::districts::District;
 
-pub type AttractMode = SimpleRuntime;
+pub type AttractMode = SimpledDistrict;
 
-/// Manages a single stack of scenes with no additional behavior or stack switching
-pub struct SimpleRuntime {
+/// Manages a single set of scenes
+pub struct SimpledDistrict {
   stack: Vec<Scene>,
   store: Store,
 }
 
-impl SimpleRuntime {
+impl SimpledDistrict {
   pub fn new(initial_scene: Vec<Box<dyn System>>) -> Box<Self> {
     let initial_scene = initial_scene
       .into_iter()
@@ -23,7 +23,7 @@ impl SimpleRuntime {
   }
 }
 
-impl Runtime for SimpleRuntime {
+impl District for SimpledDistrict {
   fn get_current(&self) -> (&Scene, &Store) {
     (self.stack.last().unwrap(), &self.store)
   }

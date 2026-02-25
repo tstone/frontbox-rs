@@ -11,7 +11,7 @@ pub mod protocol;
 // --- machine ---
 
 pub use crate::hardware_definition::*;
-pub use crate::machine::runtimes;
+pub use crate::machine::districts;
 pub use crate::machine::store;
 
 pub mod prelude {
@@ -28,7 +28,7 @@ pub mod prelude {
   pub use crate::machine::system::*;
   pub use crate::machine::system_timer::TimerMode;
   pub use crate::protocol::prelude::{DriverConfig, DriverTriggerControlMode, LedType, Power};
-  pub use crate::runtimes::*;
+  pub use crate::districts::*;
   pub use crate::store::Store;
 
   pub use crossterm::event::KeyCode;

@@ -1,8 +1,8 @@
 use crate::prelude::*;
-use crate::runtimes::Runtime;
+use crate::districts::District;
 
-/// A machine runtime that supports multiple players, each with their own stack of scenes.
-pub struct PlayerRuntime {
+/// A machine district that supports multiple players, each with their own set of scenes.
+pub struct PlayerDistrict {
   // The initial scene to use as the basis for each player/team
   initial_scene: Scene,
   /// Active stack, one per player
@@ -13,7 +13,7 @@ pub struct PlayerRuntime {
   index: u8,
 }
 
-impl PlayerRuntime {
+impl PlayerDistrict {
   pub fn new(initial_scene: Vec<Box<dyn System>>) -> Box<Self> {
     let mut player_stacks = Vec::new();
     let copy: Vec<SystemContainer> = initial_scene
@@ -39,7 +39,7 @@ impl PlayerRuntime {
   }
 }
 
-impl Runtime for PlayerRuntime {
+impl District for PlayerDistrict {
   fn get_current(&self) -> (&Scene, &Store) {
     let scene = self
       .player_stacks
@@ -80,7 +80,7 @@ impl Runtime for PlayerRuntime {
       .pop();
   }
 
-  fn on_runtime_enter(&self, ctx: &mut Context) {
+  fn on_district_enter(&self, ctx: &mut Context) {
     ctx.start_game();
   }
 

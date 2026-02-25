@@ -11,7 +11,7 @@ pub enum MachineCommand {
   AdvancePlayer,
 
   // stack management
-  PushRuntime(Box<dyn FnOnce() -> Box<dyn Runtime> + Send>),
+  PushRuntime(Box<dyn FnOnce() -> Box<dyn District> + Send>),
   PopRuntime,
   PushScene(Scene),
   PopScene,

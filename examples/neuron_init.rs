@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::runtimes::AttractMode;
+use frontbox::districts::AttractMode;
 use std::io::Write;
 
 #[tokio::main]
