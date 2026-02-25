@@ -85,18 +85,13 @@ impl LedRenderer {
     // => skip sending new colors for LEDs that were already set to the same color last frame
     // => find LEDs to turn off that were not set on this frame
     let mut led_updates: HashMap<&'static str, LedState> = HashMap::new();
-
     for (led_name, prev_state) in self.set_leds.iter() {
       match (prev_state, led_temp_updates.get(led_name)) {
         (LedState::On(c), Some((_, LedState::On(new_c)))) if c == new_c => {
           // LED state hasn't changed, skip update
         }
-        (LedState::Off, Some((_, LedState::Off))) => {
+        (LedState::Off, Some((_, LedState::Off))) | (LedState::Off, None) => {
           // LED state hasn't changed, skip update
-        }
-        (_, Some((_, new_state))) => {
-          // LED state has changed, update it
-          led_updates.insert(led_name, new_state.clone());
         }
         _ => {
           // LED state has changed or wasn't set before, update it
@@ -107,6 +102,10 @@ impl LedRenderer {
           }
         }
       }
+    }
+
+    if led_updates.is_empty() {
+      return;
     }
 
     // update set LEDs for next frame
