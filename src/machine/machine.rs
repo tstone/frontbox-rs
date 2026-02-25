@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use crate::machine::key_reader::monitor_keys;
 use crate::machine::machine_config::MachineConfig;
+use crate::machine::serial_interface::*;
 use crate::machine::system_timer::{TimerMode, run_system_timers};
 use crate::machine::watchdog::Watchdog;
-use crate::machine::{serial_interface::*, system};
 use crate::prelude::*;
 use crate::protocol::prelude::*;
 use crate::protocol::*;
@@ -173,7 +173,7 @@ impl Machine {
       MachineCommand::StartGame => self.start_game().await,
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
-      MachineCommand::AdvancePlayer => self.advance_player(),
+      MachineCommand::AdvancePlayer => self.advance_player().await,
       MachineCommand::InsertDistrict(key, district_gen) => {
         self.insert_district(key, district_gen())
       }
@@ -339,7 +339,7 @@ impl Machine {
     }
   }
 
-  fn advance_player(&mut self) {
+  async fn advance_player(&mut self) {
     log::info!("Advancing to next player");
 
     if self.game_state.is_none() {
@@ -348,12 +348,17 @@ impl Machine {
     }
 
     self.run_on_ball_end();
+
     if let Some(game_state) = &mut self.game_state {
       game_state.active_player += 1;
       if game_state.active_player >= game_state.player_count {
         game_state.active_player = 0;
       }
     }
+
+    self.reset_expansion_network().await;
+    self.report_switches().await;
+
     self.run_on_ball_start();
   }
 
@@ -632,6 +637,7 @@ impl Machine {
 
   async fn reset_expansion_network(&mut self) {
     self.led_renderer.reset();
+    // TODO: move this to a better common location
     MachineBuilder::reset_expansion_boards(&mut self.exp_port, &self.expansion_boards).await;
   }
 

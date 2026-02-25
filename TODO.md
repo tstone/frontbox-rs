@@ -10,7 +10,7 @@ Display
 - Some kind of internal event bus that also projects to websockets? How to know what events get published out WS
 
 LEDs
-- Make LED resolver something that can be changed dynamically at any time
+- Make LED resolver something that can be changed dynamically at any time (or at least configured)
   - should LED resolver be per LED?
 - Maybe color should be it's own top-level feature (or separate crate?)
 - Modulators + lenses -- Allow any property to be modulated
