@@ -42,6 +42,7 @@ impl LedRenderer {
   }
 
   pub fn reset(&mut self) {
+    // TODO: LED renderer needs to remember current state and not require a reset
     self.set_leds.clear();
     self.resolver.reset();
   }

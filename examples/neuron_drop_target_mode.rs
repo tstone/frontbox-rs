@@ -75,12 +75,16 @@ async fn main() {
       (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
     ])
     .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
+    .insert_district(
+      "game",
+      PlayerDistrict::new(vec![DropTargetDownUp::new([
+        switches::LOWER_DROP_TARGET1,
+        switches::LOWER_DROP_TARGET2,
+        switches::LOWER_DROP_TARGET3,
+      ])]),
+    )
     .build()
-    .run(PlayerDistrict::new(vec![DropTargetDownUp::new([
-      switches::LOWER_DROP_TARGET1,
-      switches::LOWER_DROP_TARGET2,
-      switches::LOWER_DROP_TARGET3,
-    ])]))
+    .run()
     .await;
 }
 

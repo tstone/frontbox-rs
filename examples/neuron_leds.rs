@@ -1,5 +1,5 @@
-use frontbox::prelude::*;
 use frontbox::districts::AttractMode;
+use frontbox::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -33,8 +33,9 @@ async fn main() {
     expansion_boards,
   )
   .await
+  .insert_district("led_example", AttractMode::new(vec![LedExample::new()]))
   .build()
-  .run(AttractMode::new(vec![LedExample::new()]))
+  .run()
   .await;
 }
 

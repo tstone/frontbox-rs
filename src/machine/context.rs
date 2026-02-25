@@ -11,6 +11,7 @@ pub struct Context<'a> {
   game_state: &'a Option<GameState>,
   config: ConfigContext<'a>,
   current_system_index: Option<u64>,
+  current_district_key: &'static str,
 }
 
 impl<'a> Context<'a> {
@@ -21,6 +22,7 @@ impl<'a> Context<'a> {
     game_state: &'a Option<GameState>,
     config: &'a MachineConfig,
     current_system_index: Option<u64>,
+    current_district_key: &'static str,
   ) -> Self {
     Self {
       store: StoreContext::new(sender.clone(), store),
@@ -29,6 +31,7 @@ impl<'a> Context<'a> {
       switches,
       game_state,
       current_system_index,
+      current_district_key,
     }
   }
 
@@ -64,7 +67,11 @@ impl<'a> Context<'a> {
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
     if let Some(system_id) = self.current_system_index {
       let _ = self.sender.send(MachineCommand::SetTimer(
-        system_id, timer_name, duration, mode,
+        self.current_district_key,
+        system_id,
+        timer_name,
+        duration,
+        mode,
       ));
     } else {
       log::warn!("No current system to set timer for");
@@ -73,9 +80,11 @@ impl<'a> Context<'a> {
 
   pub fn clear_timer(&mut self, timer_name: &'static str) {
     if let Some(system_id) = self.current_system_index {
-      let _ = self
-        .sender
-        .send(MachineCommand::ClearTimer(system_id, timer_name));
+      let _ = self.sender.send(MachineCommand::ClearTimer(
+        self.current_district_key,
+        system_id,
+        timer_name,
+      ));
     } else {
       log::warn!("No current system to clear timer for");
     }
@@ -97,27 +106,31 @@ impl<'a> Context<'a> {
     let _ = self.sender.send(MachineCommand::AdvancePlayer);
   }
 
-  pub fn push_runtime(&mut self, runtime: impl District + Send + 'static) {
-    let _ = self.sender.send(MachineCommand::PushRuntime(Box::new(|| {
-      Box::new(runtime) as Box<dyn District>
-    })));
+  pub fn insert_runtime(&mut self, key: &'static str, runtime: impl District + Send + 'static) {
+    let _ = self.sender.send(MachineCommand::InsertDistrict(
+      key,
+      Box::new(|| Box::new(runtime) as Box<dyn District>),
+    ));
   }
 
-  pub fn pop_runtime(&mut self) {
-    let _ = self.sender.send(MachineCommand::PopRuntime);
+  pub fn remove_runtime(&mut self, key: &'static str) {
+    let _ = self.sender.send(MachineCommand::RemoveDistrict(key));
   }
 
   pub fn add_system(&mut self, system: impl System + 'static) {
-    let _ = self
-      .sender
-      .send(MachineCommand::AddSystem(Box::new(system)));
+    let _ = self.sender.send(MachineCommand::AddSystem(
+      self.current_district_key,
+      Box::new(system),
+    ));
   }
 
   pub fn replace_system(&mut self, system: impl System + 'static) {
     if let Some(system_id) = self.current_system_index {
-      let _ = self
-        .sender
-        .send(MachineCommand::ReplaceSystem(system_id, Box::new(system)));
+      let _ = self.sender.send(MachineCommand::ReplaceSystem(
+        self.current_district_key,
+        system_id,
+        Box::new(system),
+      ));
     } else {
       log::warn!("No current system index available for replacement");
     }
@@ -125,7 +138,10 @@ impl<'a> Context<'a> {
 
   pub fn terminate_system(&mut self) {
     if let Some(system_id) = self.current_system_index {
-      let _ = self.sender.send(MachineCommand::TerminateSystem(system_id));
+      let _ = self.sender.send(MachineCommand::TerminateSystem(
+        self.current_district_key,
+        system_id,
+      ));
     } else {
       log::warn!("No current system index available for termination");
     }

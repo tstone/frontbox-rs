@@ -1,5 +1,4 @@
 use frontbox::prelude::*;
-use frontbox::districts::AttractMode;
 use std::io::Write;
 
 #[tokio::main]
@@ -20,6 +19,7 @@ async fn main() {
   )
   .await
   .build()
-  .run(AttractMode::new(vec![]))
+  // TODO
+  .run()
   .await;
 }

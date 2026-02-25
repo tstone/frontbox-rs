@@ -10,12 +10,12 @@ pub enum MachineCommand {
   AddPlayer,
   AdvancePlayer,
 
-  // stack management
-  PushRuntime(Box<dyn FnOnce() -> Box<dyn District> + Send>),
-  PopRuntime,
-  AddSystem(Box<dyn System>),
-  ReplaceSystem(u64, Box<dyn System>),
-  TerminateSystem(u64),
+  // system management
+  InsertDistrict(&'static str, Box<dyn FnOnce() -> Box<dyn District> + Send>),
+  RemoveDistrict(&'static str),
+  AddSystem(&'static str, Box<dyn System>),
+  ReplaceSystem(&'static str, u64, Box<dyn System>),
+  TerminateSystem(&'static str, u64),
 
   // hardware
   ConfigureDriver(&'static str, DriverConfig),
@@ -24,8 +24,8 @@ pub enum MachineCommand {
   Key(Event),
 
   // timers
-  ClearTimer(u64, &'static str),
-  SetTimer(u64, &'static str, Duration, TimerMode),
+  ClearTimer(&'static str, u64, &'static str),
+  SetTimer(&'static str, u64, &'static str, Duration, TimerMode),
   SystemTick,
   WatchdogTick,
 
@@ -42,24 +42,32 @@ impl std::fmt::Debug for MachineCommand {
       Self::EndGame => write!(f, "EndGame"),
       Self::AddPlayer => write!(f, "AddPlayer"),
       Self::AdvancePlayer => write!(f, "AdvancePlayer"),
-      Self::PushRuntime(_) => write!(f, "PushRuntime(..)"),
-      Self::PopRuntime => write!(f, "PopRuntime"),
-      Self::AddSystem(_) => write!(f, "AddSystem(..)"),
-      Self::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({}, ..)", id),
-      Self::TerminateSystem(id) => write!(f, "TerminateSystem({})", id),
+      Self::InsertDistrict(key, _) => write!(f, "InsertDistrict({})", key),
+      Self::RemoveDistrict(key) => write!(f, "RemoveDistrict({})", key),
+      Self::AddSystem(key, _) => write!(f, "AddSystem({})", key),
+      Self::ReplaceSystem(district_key, system_id, _) => {
+        write!(f, "ReplaceSystem({}, {}, ..)", district_key, system_id)
+      }
+      Self::TerminateSystem(district_key, system_id) => {
+        write!(f, "TerminateSystem({}, {})", district_key, system_id)
+      }
       Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
       Self::TriggerDriver(name, mode, delay) => {
         write!(f, "TriggerDriver({:?}, {:?}, {:?})", name, mode, delay)
       }
       Self::StoreWrite(_) => write!(f, "StoreWrite(..)"),
-      Self::SetTimer(id, name, duration, mode) => {
+      Self::SetTimer(district_key, system_id, timer_name, duration, mode) => {
         write!(
           f,
-          "SetTimer({}, {:?}, {:?}, {:?})",
-          id, name, duration, mode
+          "SetTimer({}, {}, {:?}, {:?}, {:?})",
+          district_key, system_id, timer_name, duration, mode
         )
       }
-      Self::ClearTimer(id, timer_name) => write!(f, "ClearTimer({}, {:?})", id, timer_name),
+      Self::ClearTimer(district_key, system_id, timer_name) => write!(
+        f,
+        "ClearTimer({}, {}, {:?})",
+        district_key, system_id, timer_name
+      ),
       Self::SetConfigValue(key, value) => write!(f, "SetConfigValue({}, {:?})", key, value),
       Self::SystemTick => write!(f, "SystemTick"),
       Self::WatchdogTick => write!(f, "WatchdogTick"),
