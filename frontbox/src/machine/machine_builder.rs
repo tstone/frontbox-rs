@@ -5,8 +5,7 @@ use crate::hardware_definition::*;
 use crate::machine::serial_interface::SerialInterface;
 use crate::machine::switch_context::SwitchContext;
 use crate::prelude::*;
-use crate::protocol::SwitchState;
-use crate::protocol::prelude::*;
+use fast_protocol::*;
 
 pub struct MachineBuilder {
   io_port: SerialInterface,

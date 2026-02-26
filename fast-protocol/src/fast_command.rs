@@ -1,5 +1,5 @@
-use crate::protocol::FastResponseError;
-use crate::protocol::raw_response::RawResponse;
+use crate::FastResponseError;
+use crate::raw_response::RawResponse;
 
 pub trait FastCommand {
   type Response;
@@ -7,4 +7,3 @@ pub trait FastCommand {
   fn to_string(&self) -> String;
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError>;
 }
-

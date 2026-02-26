@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::protocol::prelude::*;
+use crate::*;
 
 pub struct WatchdogCommand {
   duration: Option<Duration>,

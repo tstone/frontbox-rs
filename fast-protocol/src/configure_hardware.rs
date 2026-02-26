@@ -1,4 +1,4 @@
-use crate::protocol::prelude::*;
+use crate::*;
 
 pub struct ConfigureHardwareCommand {
   pub platform_id: u16,

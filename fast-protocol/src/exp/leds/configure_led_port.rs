@@ -1,5 +1,5 @@
-use crate::protocol::common::expansion_addr;
-use crate::protocol::prelude::*;
+use crate::common::expansion_addr;
+use crate::*;
 
 pub struct ConfigureLedPortCommand {
   expansion_board: u8,

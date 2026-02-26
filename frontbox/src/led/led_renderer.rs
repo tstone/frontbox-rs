@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
-use crate::protocol::prelude::SetLedCommand;
+use fast_protocol::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 

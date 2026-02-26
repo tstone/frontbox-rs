@@ -1,3 +1,4 @@
+use fast_protocol::Color;
 use std::time::Duration;
 
 use crate::led::animation::{Animation, AnimationCycle};
@@ -92,4 +93,10 @@ where
 /// Linear interpolation between two values of type T
 pub trait Lerp {
   fn interpolate(&self, other: &Self, t: f32) -> Self;
+}
+
+impl Lerp for Color {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    self.mix(other, t)
+  }
 }

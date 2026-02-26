@@ -7,9 +7,9 @@ use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 use tokio_util::codec::FramedRead;
 
 use crate::machine::fast_codec::FastRawCodec;
-use crate::protocol::fast_command::FastCommand;
-use crate::protocol::raw_response::RawResponse;
-use crate::protocol::{EventResponse, FastResponseError};
+use fast_protocol::fast_command::FastCommand;
+use fast_protocol::raw_response::RawResponse;
+use fast_protocol::{EventResponse, FastResponseError};
 
 const BAUD_RATE: u32 = 921_600;
 

@@ -9,6 +9,7 @@ protocol = []
 machine = ["protocol"]
 
 [dependencies]
+fast-protocol = { path = "../fast-protocol" }
 log = "0.4.29"
 
 #[cfg(feature = "machine")]

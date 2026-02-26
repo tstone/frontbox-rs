@@ -1,5 +1,5 @@
-use crate::protocol::prelude::driver_trigger::*;
-use crate::protocol::prelude::*;
+use crate::driver_trigger::*;
+use crate::*;
 
 /// Configure a driver in Fast IO boards (DL)
 pub struct ConfigureDriverCommand<'a> {

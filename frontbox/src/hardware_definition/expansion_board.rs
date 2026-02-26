@@ -1,4 +1,4 @@
-use crate::protocol::prelude::*;
+use fast_protocol::*;
 
 /// https://fastpinball.com/programming/exp/#expansion-board-addresses
 #[derive(Debug, Clone)]

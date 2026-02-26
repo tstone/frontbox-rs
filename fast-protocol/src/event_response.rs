@@ -1,4 +1,4 @@
-use crate::protocol::{prelude::*, switch_state};
+use crate::{switch_state, *};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum EventResponse {

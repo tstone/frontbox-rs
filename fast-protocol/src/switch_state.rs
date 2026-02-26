@@ -1,4 +1,4 @@
-use crate::protocol::{EventResponse, FastResponseError, SwitchState};
+use crate::{EventResponse, FastResponseError, SwitchState};
 
 pub fn open_response(data: &str) -> Result<EventResponse, FastResponseError> {
   // convert hex string into decimal ID

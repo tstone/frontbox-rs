@@ -1,5 +1,5 @@
-use crate::protocol::common::ProcessedResponse;
-use crate::protocol::prelude::*;
+use crate::common::ProcessedResponse;
+use crate::*;
 
 pub struct TriggerDriverCommand {
   driver_id: usize,

@@ -1,6 +1,5 @@
-use crate::prelude::Color;
-use crate::protocol::common::expansion_addr;
-use crate::protocol::prelude::*;
+use crate::common::expansion_addr;
+use crate::*;
 
 pub struct SetLedCommand {
   expansion_board: u8,

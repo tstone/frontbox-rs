@@ -1,5 +1,5 @@
-use crate::protocol::FastResponseError;
-use crate::protocol::prelude::RawResponse;
+use crate::FastResponseError;
+use crate::RawResponse;
 
 /// Format expansion address with or without breakout nibble
 pub fn expansion_addr(expansion_board: u8, breakout: Option<u8>) -> String {

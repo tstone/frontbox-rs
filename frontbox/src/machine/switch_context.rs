@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::SwitchSpec;
 use crate::prelude::*;
-use crate::protocol::SwitchState;
+use fast_protocol::SwitchState;
 
 #[derive(Debug)]
 pub struct SwitchContext {

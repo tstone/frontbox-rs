@@ -1,5 +1,3 @@
-use crate::prelude::Lerp;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Color {
   pub r: f32,
@@ -504,12 +502,6 @@ impl Color {
   }
   pub fn rebecca_purple() -> Self {
     Self::rgb(102.0 / 255.0, 51.0 / 255.0, 153.0 / 255.0)
-  }
-}
-
-impl Lerp for Color {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    self.mix(other, t)
   }
 }
 

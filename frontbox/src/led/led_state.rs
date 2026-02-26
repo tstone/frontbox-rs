@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::led::animation::Animation;
-use crate::prelude::Color;
+use fast_protocol::Color;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LedState {

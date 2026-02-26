@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use fast_protocol::Color;
 
 /// Resolves LED conflicts by mixing all states in the list
 pub struct BezierMixResolver;

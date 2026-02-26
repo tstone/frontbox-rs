@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::protocol::prelude::Power;
+use crate::Power;
 
 #[derive(Debug, Clone)]
 pub enum DriverConfig {

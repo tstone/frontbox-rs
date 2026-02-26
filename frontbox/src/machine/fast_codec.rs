@@ -1,7 +1,7 @@
 use tokio_util::bytes::{Buf, BytesMut};
 use tokio_util::codec::Decoder;
 
-use crate::protocol::raw_response::RawResponse;
+use fast_protocol::raw_response::RawResponse;
 
 pub struct FastRawCodec;
 

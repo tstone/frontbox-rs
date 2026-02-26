@@ -1,4 +1,4 @@
-use crate::protocol::prelude::*;
+use crate::*;
 use std::time::Duration;
 
 pub struct ConfigureSwitchCommand {

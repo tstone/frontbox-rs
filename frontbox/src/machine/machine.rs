@@ -8,13 +8,12 @@ use crate::machine::serial_interface::*;
 use crate::machine::system_timer::{TimerMode, run_system_timers};
 use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
-use crate::protocol::prelude::*;
-use crate::protocol::*;
 use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
 use crossterm::{
   event::{Event, KeyCode},
   terminal::{disable_raw_mode, enable_raw_mode},
 };
+use fast_protocol::*;
 use tokio::sync::mpsc;
 
 pub struct GameState {

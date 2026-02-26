@@ -1,7 +1,7 @@
 use crossterm::event::Event;
 
 use crate::prelude::*;
-use crate::protocol::EventResponse;
+use fast_protocol::EventResponse;
 
 pub enum MachineCommand {
   // game management

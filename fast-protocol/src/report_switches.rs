@@ -1,4 +1,4 @@
-use crate::protocol::{SwitchState, prelude::*};
+use crate::*;
 
 pub struct ReportSwitchesCommand;
 

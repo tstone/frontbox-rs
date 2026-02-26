@@ -1,4 +1,4 @@
-use crate::protocol::prelude::*;
+use crate::*;
 
 pub struct BoardResetCommand {
   address: u8,
