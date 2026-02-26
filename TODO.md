@@ -1,5 +1,6 @@
 System
 - Test going from attract mode to in game. Check if push_runtime works with +send+'static
+- Timer tick seems to be broken and running constantly. Example drop targets. Needs some unit tests
 - Custom events?
 
 Hardware
@@ -13,5 +14,4 @@ Display
 LEDs
 - Make LED resolver something that can be changed dynamically at any time (or at least configured)
   - should LED resolver be per LED?
-- Maybe color should be it's own top-level feature (or separate crate?)
 - Modulators + lenses -- Allow any property to be modulated

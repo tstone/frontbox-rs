@@ -14,7 +14,7 @@ use crate::prelude::*;
  * In reality most games will probably want to make their own version of this that keeps track of game-specific
  * scoring information, in addition to just points/bonus.
  */
-#[derive(Default)]
+#[derive(Default, Serialize, Storable)]
 #[allow(dead_code)]
 pub struct GamePoints {
   total_points: u32,

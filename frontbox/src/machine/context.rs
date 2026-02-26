@@ -200,11 +200,11 @@ impl<'a> StoreContext<'a> {
     Self { sender, store }
   }
 
-  pub fn exists<T: Default + 'static>(&self) -> bool {
+  pub fn exists<T: StorableType>(&self) -> bool {
     self.store.get::<T>().is_some()
   }
 
-  pub fn get<T: Default + 'static>(&self) -> Option<&T> {
+  pub fn get<T: StorableType>(&self) -> Option<&T> {
     self.store.get::<T>()
   }
 
