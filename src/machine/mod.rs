@@ -1,5 +1,6 @@
 pub mod config_value;
 pub mod context;
+pub mod districts;
 mod fast_codec;
 pub mod key_reader;
 pub mod machine;
@@ -7,7 +8,6 @@ pub mod machine_builder;
 pub mod machine_command;
 pub mod machine_config;
 pub mod plugin;
-pub mod districts;
 pub mod serial_interface;
 pub mod store;
 pub mod switch_context;
