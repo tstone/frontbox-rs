@@ -7,10 +7,15 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 
 ### Preview (Subject to Change)
 
-**Frontbox** is built around the unit of a `System`. Systems receive events and enqueue commands. Systems are built on Rust structs, and can thus maintain their own state. For example, here's a simple system that does the following:
+**Frontbox** is built around the unit of a `System`. Systems receive events and enqueue commands. Systems are built on Rust structs, and can thus maintain their own state. 
 
-- Requires the player to hit the same target 3 times (LED lit yellow, orange, red)
-- Once this is achieved a timer starts to hit the target a 4th time for bonus (LED red flashing)
+#### Example System
+This system implements a basic pinball "mode". A target is illuminated and must be struck 3 times. Each hit grants 1000 points. After 3 hits, the target will begin flashing. The player has 20 seconds to hit it again for 10,000 points (hurry up shot). After 20 seconds or being hit a 4th time the mode resets.
+
+- `SwitchClosed` event monitors the target's switch
+- `ctx.set_timer` and `TimerComplete` event monitors the hurry up timer
+- `self.hurry_up_active` and `self.hits` manage state
+- `fn leds` sets the LED state for the framework to apply (declarative)
 
 ```rust
 const HURRY_UP_TIMER: &'static str = "hurry_up";
@@ -50,11 +55,18 @@ impl TargetHitter {
   }
 
   fn on_target_hit(&mut self, ctx: &Context) {
-    self.hits = self.hits.saturating_add(1);      
-
-    if self.hits == 3 {
-      self.hurry_up_active = true;
-      ctx.set_timer(HURRY_UP_TIMER, Duration::from_secs(1), TimerMode::Once);
+    if self.hurry_up_active {
+      ctx.add_points(10000);
+      ctx.add_bonus(1000);
+      self.reset();
+    } else {
+      self.hits = self.hits.saturating_add(1);
+      self.add_points(1000);
+    
+      if self.hits == 3 {
+        self.hurry_up_active = true;
+        ctx.set_timer(HURRY_UP_TIMER, Duration::from_secs(20), TimerMode::Once);
+      }
     }
   }
 
