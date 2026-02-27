@@ -112,4 +112,4 @@ impl System for TargetHitter {
 }
 ```
 
-See [examples](/tstone/frontbox-rs/tree/main/frontbox/examples) for more.
+See [examples](frontbox/examples) for more.
