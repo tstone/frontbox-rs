@@ -21,7 +21,7 @@ struct TargetHitter {
   hits: u8,
   // animation for bonus hit
   flash_anim: Box<dyn Animation<Color>>,
-  hurry_up_acative: bool,
+  hurry_up_active: bool,
   // ids for target switch and LED indicator
   target_switch_id: &'static str,
   indicator_id: &'static str,
@@ -32,9 +32,8 @@ impl TargetHitter {
     Box::new(Self {
       target_switch_id,
       indicator_id,
-      required_hits,
       hits: 0,
-      hurry_up_acative: false,
+      hurry_up_active: false,
       flash_anim: InterpolationAnimation::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
