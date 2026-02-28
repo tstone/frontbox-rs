@@ -49,21 +49,25 @@ impl System1 {
   fn new() -> Box<Self> {
     Box::new(Self { on: false })
   }
-}
-
-impl System for System1 {
-  fn on_system_enter(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
-      "example_timer",
-      std::time::Duration::from_secs(1),
-      TimerMode::Repeating,
-    );
-  }
 
   fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
+  }
+}
+
+impl System for System1 {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.set_timer(
+      "example_timer",
+      std::time::Duration::from_secs(1),
+      TimerMode::Repeating,
+    );
+
+    ctx.subscribe::<TimerComplete>(|event, ctx| {
+      self.on_timer(&event.timer_name, ctx);
+    });
   }
 
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
@@ -86,21 +90,25 @@ impl System2 {
   fn new() -> Box<Self> {
     Box::new(Self { on: false })
   }
-}
-
-impl System for System2 {
-  fn on_system_enter(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
-      "example_timer",
-      std::time::Duration::from_secs(2),
-      TimerMode::Repeating,
-    );
-  }
 
   fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
+  }
+}
+
+impl System for System2 {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.set_timer(
+      "example_timer",
+      std::time::Duration::from_secs(2),
+      TimerMode::Repeating,
+    );
+
+    ctx.subscribe::<TimerComplete>(|event, ctx| {
+      self.on_timer(&event.timer_name, ctx);
+    });
   }
 
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {

@@ -1,5 +1,6 @@
 use crate::districts::District;
 use crate::prelude::*;
+use crate::systems::SystemContainer;
 
 pub struct TeamDistrictSystem {
   /// Active scene, one per team
@@ -85,7 +86,7 @@ impl TeamDistrict {
     for _ in 0..team_count {
       let copy: Scene = initial_scene
         .iter()
-        .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
+        .map(|system| SystemContainer::new(next_listener_id(), dyn_clone::clone_box(&**system)))
         .collect();
       team_scenes.push(copy);
       team_stores.push(Store::new());

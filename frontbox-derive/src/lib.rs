@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{DeriveInput, parse_macro_input};
+use syn::{parse_macro_input, DeriveInput};
 
 /// Derive macro for Storable trait
 ///
@@ -49,4 +49,20 @@ fn to_camel_case(s: &str) -> String {
       }
     })
     .collect()
+}
+
+#[proc_macro_derive(FrontboxEvent)]
+pub fn derive_frontbox_event(input: TokenStream) -> TokenStream {
+  let input = parse_macro_input!(input as DeriveInput);
+  let name = &input.ident;
+
+  let expanded = quote! {
+      impl FrontboxEvent for #name {
+          fn as_any(&self) -> &dyn Any {
+              self
+          }
+      }
+  };
+
+  TokenStream::from(expanded)
 }

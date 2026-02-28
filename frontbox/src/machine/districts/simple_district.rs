@@ -1,5 +1,6 @@
 use crate::districts::District;
 use crate::prelude::*;
+use crate::systems::SystemContainer;
 
 pub(crate) struct SimpleSystemDistrict {
   pub(crate) scene: Scene,
@@ -39,7 +40,7 @@ impl SimpledDistrict {
   pub fn new(initial_scene: Vec<Box<dyn System>>) -> Box<Self> {
     let initial_scene = initial_scene
       .into_iter()
-      .map(|system| SystemContainer::new(system))
+      .map(|system| SystemContainer::new(next_listener_id(), system))
       .collect();
 
     Box::new(Self {

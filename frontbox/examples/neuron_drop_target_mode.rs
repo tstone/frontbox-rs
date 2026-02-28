@@ -98,15 +98,6 @@ impl DropTargetDownUp {
   pub fn new(target_switches: [&'static str; 3]) -> Box<Self> {
     Box::new(Self { target_switches })
   }
-}
-
-impl System for DropTargetDownUp {
-  fn on_system_enter(&mut self, ctx: &mut Context) {
-    ctx.trigger_driver(
-      drivers::LOWER_DROP_TARGET_COIL,
-      DriverTriggerControlMode::Manual,
-    );
-  }
 
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
@@ -131,5 +122,18 @@ impl System for DropTargetDownUp {
         ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }
+  }
+}
+
+impl System for DropTargetDownUp {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.subscribe::<SwitchClosed>(|event, ctx| {
+      self.on_switch_closed(&event.switch, ctx);
+    });
+
+    ctx.trigger_driver(
+      drivers::LOWER_DROP_TARGET_COIL,
+      DriverTriggerControlMode::Manual,
+    );
   }
 }

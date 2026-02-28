@@ -1,5 +1,6 @@
 use crate::districts::District;
 use crate::prelude::*;
+use crate::systems::SystemContainer;
 
 pub struct PlayerDistrictSystem {
   // The initial scene to use as the basis for each player/team
@@ -33,7 +34,7 @@ impl SystemDistrict for PlayerDistrictSystem {
     let copy: Scene = self
       .initial_scene
       .iter()
-      .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
+      .map(|system| SystemContainer::new(next_listener_id(), dyn_clone::clone_box(&**system)))
       .collect();
     self.player_scenes.push(copy);
   }
@@ -85,7 +86,7 @@ impl PlayerDistrict {
     let mut player_scenes = Vec::new();
     let copy: Scene = initial_scene
       .iter()
-      .map(|system| SystemContainer::new(dyn_clone::clone_box(&**system)))
+      .map(|system| SystemContainer::new(next_listener_id(), dyn_clone::clone_box(&**system)))
       .collect();
     player_scenes.push(copy);
 
@@ -94,7 +95,7 @@ impl PlayerDistrict {
 
     let initial_scene = initial_scene
       .into_iter()
-      .map(|system| SystemContainer::new(system))
+      .map(|system| SystemContainer::new(next_listener_id(), system))
       .collect();
 
     Box::new(Self {

@@ -1,6 +1,11 @@
+use std::any::TypeId;
+use std::collections::HashSet;
+
 use crossterm::event::Event;
 
+use crate::machine::event::FrontboxEvent;
 use crate::prelude::*;
+use crate::systems::*;
 use fast_protocol::EventResponse;
 
 pub enum MachineCommand {
@@ -30,6 +35,17 @@ pub enum MachineCommand {
   SystemTick,
   WatchdogTick,
 
+  // events
+  SubscribeEvent(
+    TypeId,
+    &'static str,
+    u64,
+    Box<dyn Fn(&dyn FrontboxEvent, &mut Context) + Send>,
+  ),
+  UnsubscribeEvent(TypeId, u64),
+  EmitEvent(Box<dyn FrontboxEvent>),
+  TargetEvent(HashSet<u64>, Box<dyn FrontboxEvent>),
+
   // other
   StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
   SetConfigValue(&'static str, ConfigValue),
@@ -39,6 +55,12 @@ pub enum MachineCommand {
 impl std::fmt::Debug for MachineCommand {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
+      Self::EmitEvent(event) => write!(f, "EmitEvent({:?})", event),
+      Self::TargetEvent(targets, event) => write!(f, "TargetEvent({:?}, {:?})", targets, event),
+      Self::SubscribeEvent(type_id, district, id, _) => {
+        write!(f, "SubscribeEvent({:?}, {}, {}, ..)", type_id, district, id)
+      }
+      Self::UnsubscribeEvent(type_id, id) => write!(f, "UnsubscribeEvent({:?}, {})", type_id, id),
       Self::StartGame => write!(f, "StartGame"),
       Self::EndGame => write!(f, "EndGame"),
       Self::AddPlayer => write!(f, "AddPlayer"),
