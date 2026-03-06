@@ -1,6 +1,5 @@
 pub mod config_value;
 pub mod context;
-pub mod dispatcher;
 pub mod districts;
 pub mod event;
 mod fast_codec;

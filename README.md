@@ -78,18 +78,20 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_startup(&mut self, ctx: &Context) {
-    ctx.subscribe::<SwitchClosed>(|event, ctx| {
-      if event.switch.id == self.target_switch_id {
-        self.on_target_hit(ctx);
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+    handle_event!(event, {
+      SwitchClosed => |e| {  
+        if event.switch.id == self.target_switch_id {
+          self.on_target_hit(ctx);
+        }
       }
-    });
+    })
+  }
 
-    ctx.subscribe::<TimerComplete>(|event, _ctx| {
-      if event.name == HURRY_UP_TIMER {
-        self.on_hurry_up_done();
-      }
-    });
+  fn on_timer(&mut self, name: &'static str, ctx: &mut Context) {
+    if event.name == HURRY_UP_TIMER {
+      self.on_hurry_up_done();
+    }
   }
 
   fn leds(&mut self, delta_time: Duration) -> LedStates {

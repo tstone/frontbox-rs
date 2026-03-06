@@ -1,5 +1,5 @@
 use frontbox::plugins::game_points::*;
-use frontbox::prelude::*;
+use frontbox::{handle_event, prelude::*};
 
 use std::io::Write;
 use std::time::Duration;
@@ -127,13 +127,15 @@ impl DropTargetDownUp {
 
 impl System for DropTargetDownUp {
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.subscribe::<SwitchClosed>(|event, ctx| {
-      self.on_switch_closed(&event.switch, ctx);
-    });
-
     ctx.trigger_driver(
       drivers::LOWER_DROP_TARGET_COIL,
       DriverTriggerControlMode::Manual,
     );
+  }
+
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+    handle_event!(event, {
+      SwitchClosed => |e| { self.on_switch_closed(&e.switch, ctx); }
+    });
   }
 }

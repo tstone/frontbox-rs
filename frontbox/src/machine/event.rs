@@ -48,19 +48,6 @@ impl SwitchOpened {
   }
 }
 
-/// Runs when a timer finishes
-#[derive(Debug)]
-#[allow(unused)]
-pub struct TimerComplete {
-  pub name: &'static str,
-}
-
-impl TimerComplete {
-  pub fn new(name: &'static str) -> Box<TimerComplete> {
-    Box::new(Self { name })
-  }
-}
-
 /// Runs when a game starts
 #[derive(Debug)]
 pub struct GameStarted;

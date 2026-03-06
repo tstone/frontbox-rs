@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
@@ -29,12 +29,8 @@ impl SystemContainer {
     );
     for (timer_name, timer) in &mut self.timers {
       if timer.tick(delta) {
-        // Timer has completed, trigger a switch event with the timer's name
         log::trace!("Timer '{}' completed, triggering event", timer_name);
-        let mut targets = HashSet::new();
-        targets.insert(self.id);
-        ctx.target(targets, TimerComplete::new(*timer_name));
-
+        self.inner.on_timer(timer_name, ctx);
         if let TimerMode::OneShot = timer.mode() {
           timers_to_remove.push(*timer_name);
         }

@@ -13,6 +13,9 @@ pub trait System: DynClone + Send + Sync {
 
   fn on_startup(&mut self, ctx: &mut Context) {}
   fn on_shutdown(&mut self, ctx: &mut Context) {}
+  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
+
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {}
 
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
     HashMap::new()

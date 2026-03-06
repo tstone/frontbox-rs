@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::machine::dispatcher::Dispatcher;
 use crate::machine::event::FrontboxEvent;
 use crate::machine::event::next_listener_id;
 use crate::machine::event::*;
@@ -36,7 +35,6 @@ pub struct Machine {
   system_tick: Duration,
   led_renderer: LedRenderer,
 
-  dispatcher: Dispatcher,
   system_districts: HashMap<&'static str, (u64, Box<dyn SystemDistrict>)>,
   storage_districts: HashMap<&'static str, Box<dyn StorageDistrict>>,
   switches: SwitchContext,
@@ -96,7 +94,6 @@ impl Machine {
       led_renderer: LedRenderer::new(&expansion_boards),
       expansion_boards,
       system_tick,
-      dispatcher: Dispatcher::new(),
     }
   }
 
@@ -233,46 +230,16 @@ impl Machine {
         self.reset_expansion_network().await;
       }
       MachineCommand::Shutdown => {}
-      MachineCommand::EmitEvent(e) => self.emit(e, None),
-      MachineCommand::TargetEvent(targets, e) => {
-        self.emit(e, Some(targets));
-      }
-      MachineCommand::SubscribeEvent(type_id, district, listener_id, callback) => {
-        self
-          .dispatcher
-          .subscribe(type_id, listener_id, district, callback);
-      }
-      MachineCommand::UnsubscribeEvent(type_id, listener_id) => {
-        self.dispatcher.unsubscribe(type_id, listener_id);
-      }
+      MachineCommand::EmitEvent(e) => self.emit(e),
     }
   }
 
   // ---
 
-  fn emit(&mut self, event: Box<dyn FrontboxEvent>, system_targets: Option<HashSet<u64>>) {
-    // only emit to active systems
-    let mut active_system_ids: HashSet<u64> = self
-      .system_districts
-      .values()
-      .flat_map(|(_, district)| district.get_current())
-      .map(|system| system.id)
-      .collect::<HashSet<u64>>();
-
-    // filter by targets, if provided
-    if let Some(system_targets) = system_targets {
-      active_system_ids.retain(|id| system_targets.contains(id));
-    }
-
-    self.dispatcher.emit(
-      active_system_ids,
-      event.as_ref(),
-      self.command_sender.clone(),
-      &self.storage_districts,
-      &self.switches,
-      &self.game_state,
-      &self.config,
-    );
+  fn emit(&mut self, event: Box<dyn FrontboxEvent>) {
+    self.dispatch_to_current_systems(|system, ctx| {
+      system.on_event(event.as_ref(), ctx);
+    });
   }
 
   fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
@@ -280,9 +247,9 @@ impl Machine {
       self.switches.update_switch_state(switch_id, state);
 
       if matches!(state, SwitchState::Closed) {
-        self.emit(SwitchClosed::new(switch), None);
+        self.emit(SwitchClosed::new(switch));
       } else {
-        self.emit(SwitchOpened::new(switch), None);
+        self.emit(SwitchOpened::new(switch));
       }
     } else {
       log::warn!(
@@ -335,12 +302,12 @@ impl Machine {
     });
     self.enable_high_voltage().await;
     self.report_switches().await; // sync initial switch states
-    self.emit(GameStarted::new(), None);
+    self.emit(GameStarted::new());
   }
 
   async fn end_game(&mut self) {
     log::info!("Ending game");
-    self.emit(GameEnded::new(), None);
+    self.emit(GameEnded::new());
     self.disable_high_voltage().await;
     self.game_state = None;
   }
@@ -350,7 +317,7 @@ impl Machine {
     if let Some(game_state) = &mut self.game_state {
       game_state.player_count += 1;
       let player_count = game_state.player_count;
-      self.emit(PlayerAdded::new(player_count), None);
+      self.emit(PlayerAdded::new(player_count));
     } else {
       log::warn!("Attempted to add player but no game in progress");
     }
@@ -430,8 +397,6 @@ impl Machine {
         ctx.listener_id = system.id;
         system.on_shutdown(&mut ctx);
       }
-
-      self.dispatcher.remove_district_listeners(key);
     }
 
     self.led_renderer.reset();

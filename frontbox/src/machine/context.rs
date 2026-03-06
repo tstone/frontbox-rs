@@ -1,5 +1,4 @@
-use std::any::TypeId;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -54,6 +53,7 @@ impl<'a> Context<'a> {
     &self.config
   }
 
+  // TODO: maybe I shouldn't allow this? Should Systems really be able to mutate across district state?
   /// Gets the store for a district by key
   pub fn keyed_store(&self, key: &'static str) -> Option<&StoreContext<'_>> {
     self.stores.get(key)
@@ -177,39 +177,9 @@ impl<'a> Context<'a> {
     ));
   }
 
-  pub fn subscribe<T: FrontboxEvent>(
-    &mut self,
-    callback: impl Fn(&T, &mut Context) + Send + 'static,
-  ) {
-    let _ = self.sender.send(MachineCommand::SubscribeEvent(
-      TypeId::of::<T>(),
-      self.current_district_key,
-      self.listener_id,
-      Box::new(move |event, ctx| {
-        if let Some(typed_event) = event.as_any().downcast_ref::<T>() {
-          callback(typed_event, ctx);
-        }
-      }),
-    ));
-  }
-
-  pub fn unsubscribe<T: FrontboxEvent>(&mut self) {
-    let _ = self.sender.send(MachineCommand::UnsubscribeEvent(
-      TypeId::of::<T>(),
-      self.listener_id,
-    ));
-  }
-
   /// Broadcast an event to all listeners
   pub fn emit(&mut self, event: Box<dyn FrontboxEvent>) {
     let _ = self.sender.send(MachineCommand::EmitEvent(event));
-  }
-
-  /// Send an event to specific listener(s) by ID
-  pub(crate) fn target(&mut self, targets: HashSet<u64>, event: Box<dyn FrontboxEvent>) {
-    let _ = self
-      .sender
-      .send(MachineCommand::TargetEvent(targets, event));
   }
 }
 

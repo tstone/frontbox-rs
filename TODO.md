@@ -18,3 +18,4 @@ LEDs
 - Make LED resolver something that can be changed dynamically at any time (or at least configured)
   - should LED resolver be per LED?
 - Modulators + lenses -- Allow any property to be modulated
+- Support Z-index

@@ -1,5 +1,7 @@
 mod hardware_definition;
 mod led;
+#[macro_use]
+mod macros;
 mod machine;
 pub mod plugins;
 mod systems;
