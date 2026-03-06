@@ -7,7 +7,13 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 
 ### Preview (Subject to Change)
 
-**Frontbox** is built around the unit of a `System`. Systems receive events and enqueue commands. Systems are built on Rust structs, and can thus maintain their own state. 
+**Frontbox** is built around the unit of a `System`. Systems...
+- receive events 
+- enqueue async commands
+- emits events
+- declare LED state
+
+Systems are built on Rust structs, and can thus maintain their own state. 
 
 - Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
 
@@ -60,7 +66,7 @@ impl TargetHitter {
     if self.hurry_up_active {
       ctx.add_points(10000);
       ctx.add_bonus(1000);
-      self.reset();
+      self.on_hurry_up_done();
     } else {
       self.hits = self.hits.saturating_add(1);
       self.add_points(1000);

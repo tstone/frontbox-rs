@@ -1,6 +1,5 @@
 System
 - Test going from attract mode to in game. Check if push_runtime works with +send+'static
-- Custom events?
 
 Hardware
 - Dual wound flipper config
