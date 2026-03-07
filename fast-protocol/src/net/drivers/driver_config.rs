@@ -14,6 +14,15 @@ pub enum DriverConfig {
     secondary_pwm_power: Power,
     rest: Duration,
   },
+  PulseKick {
+    switch: Option<usize>,
+    invert_switch: Option<bool>,
+    initial_pwm_length: Duration,
+    initial_pwm_power: Power,
+    secondary_pwm_length: Duration,
+    secondary_pwm_power: Power,
+    kick_length: Duration,
+  },
   PulseHold {
     switch: Option<usize>,
     invert_switch: Option<bool>,
@@ -26,7 +35,7 @@ pub enum DriverConfig {
     switch: Option<usize>,
     invert_switch: Option<bool>,
     off_switch: usize,
-    invert_office_switch: bool,
+    invert_off_switch: bool,
     initial_pwm_length: Duration,
     secondary_pwm_power: Power,
     secondary_pwm_length: Duration,
@@ -42,7 +51,7 @@ pub enum DriverConfig {
     rest: Duration,
   },
   FlipperMainDirect {
-    button_switch: Option<usize>,
+    button_switch: usize,
     invert_button_switch: Option<bool>,
     eos_switch: usize,
     initial_pwm_power: Power,
@@ -51,7 +60,7 @@ pub enum DriverConfig {
     next_flip_refresh: Duration,
   },
   FlipperHoldDirect {
-    button_switch: Option<usize>,
+    button_switch: usize,
     invert_button_switch: Option<bool>,
     driver_on_time: Duration,
     initial_pwm_power: Power,
@@ -64,11 +73,12 @@ impl DriverConfig {
     match self {
       DriverConfig::Disabled => None,
       DriverConfig::Pulse { switch, .. } => *switch,
+      DriverConfig::PulseKick { switch, .. } => *switch,
       DriverConfig::PulseHold { switch, .. } => *switch,
       DriverConfig::PulseHoldCancel { switch, .. } => *switch,
       DriverConfig::LongPulse { switch, .. } => *switch,
       DriverConfig::FlipperMainDirect { eos_switch, .. } => Some(*eos_switch),
-      DriverConfig::FlipperHoldDirect { button_switch, .. } => *button_switch,
+      DriverConfig::FlipperHoldDirect { button_switch, .. } => Some(*button_switch),
     }
   }
 }
@@ -109,6 +119,45 @@ impl From<PulseMode> for DriverConfig {
       secondary_pwm_length: c.secondary_pwm_length,
       secondary_pwm_power: c.secondary_pwm_power,
       rest: c.rest,
+    }
+  }
+}
+
+/// PulseKickMode -- https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/
+pub struct PulseKickMode {
+  pub switch: Option<usize>,
+  pub invert_switch: Option<bool>,
+  pub initial_pwm_length: Duration,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_length: Duration,
+  pub secondary_pwm_power: Power,
+  pub kick_length: Duration,
+}
+
+impl Default for PulseKickMode {
+  fn default() -> Self {
+    Self {
+      switch: None,
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_length: Duration::ZERO,
+      secondary_pwm_power: Power::percent(0),
+      kick_length: Duration::from_millis(500),
+    }
+  }
+}
+
+impl From<PulseKickMode> for DriverConfig {
+  fn from(c: PulseKickMode) -> Self {
+    DriverConfig::PulseKick {
+      switch: c.switch,
+      invert_switch: c.invert_switch,
+      initial_pwm_length: c.initial_pwm_length,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_length: c.secondary_pwm_length,
+      secondary_pwm_power: c.secondary_pwm_power,
+      kick_length: c.kick_length,
     }
   }
 }
@@ -156,7 +205,7 @@ pub struct PulseHoldCancelMode {
   pub switch: Option<usize>,
   pub invert_switch: Option<bool>,
   pub off_switch: usize,
-  pub invert_off_switch: bool, // note: fixed typo from original "invert_office_switch"
+  pub invert_off_switch: bool,
   pub initial_pwm_length: Duration,
   pub secondary_pwm_power: Power,
   pub secondary_pwm_length: Duration,
@@ -184,7 +233,7 @@ impl From<PulseHoldCancelMode> for DriverConfig {
       switch: c.switch,
       invert_switch: c.invert_switch,
       off_switch: c.off_switch,
-      invert_office_switch: c.invert_off_switch,
+      invert_off_switch: c.invert_off_switch,
       initial_pwm_length: c.initial_pwm_length,
       secondary_pwm_power: c.secondary_pwm_power,
       secondary_pwm_length: c.secondary_pwm_length,
@@ -235,7 +284,7 @@ impl From<LongPulseMode> for DriverConfig {
 
 #[derive(Debug, Clone)]
 pub struct FlipperMainDirectMode {
-  pub button_switch: Option<usize>,
+  pub button_switch: usize,
   pub invert_button_switch: Option<bool>,
   pub eos_switch: usize,
   pub initial_pwm_power: Power,
@@ -247,13 +296,13 @@ pub struct FlipperMainDirectMode {
 impl Default for FlipperMainDirectMode {
   fn default() -> Self {
     Self {
-      button_switch: None,
+      button_switch: 0,
       invert_button_switch: None,
       eos_switch: 0,
-      initial_pwm_power: Power::percent(100),
-      secondary_pwm_power: Power::percent(10),
-      max_eos_time: Duration::from_millis(500),
-      next_flip_refresh: Duration::from_millis(100),
+      initial_pwm_power: Power::percent(45),
+      secondary_pwm_power: Power::full(),
+      max_eos_time: Duration::from_millis(60),
+      next_flip_refresh: Duration::from_millis(8),
     }
   }
 }
@@ -274,7 +323,7 @@ impl From<FlipperMainDirectMode> for DriverConfig {
 
 #[derive(Debug, Clone)]
 pub struct FlipperHoldDirectMode {
-  pub button_switch: Option<usize>,
+  pub button_switch: usize,
   pub invert_button_switch: Option<bool>,
   pub driver_on_time: Duration,
   pub initial_pwm_power: Power,
@@ -284,11 +333,11 @@ pub struct FlipperHoldDirectMode {
 impl Default for FlipperHoldDirectMode {
   fn default() -> Self {
     Self {
-      button_switch: None,
+      button_switch: 0,
       invert_button_switch: None,
-      driver_on_time: Duration::from_millis(30),
-      initial_pwm_power: Power::percent(100),
-      secondary_pwm_power: Power::percent(10),
+      driver_on_time: Duration::from_millis(48),
+      initial_pwm_power: Power::full(),
+      secondary_pwm_power: Power::full(),
     }
   }
 }
