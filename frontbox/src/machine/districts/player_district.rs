@@ -26,10 +26,6 @@ impl SystemDistrict for PlayerDistrictSystem {
       .expect("Player index out of bounds")
   }
 
-  fn on_district_enter(&self, ctx: &mut Context) {
-    ctx.start_game();
-  }
-
   fn on_add_player(&mut self, _new_player: u8) {
     let copy: Scene = self
       .initial_scene

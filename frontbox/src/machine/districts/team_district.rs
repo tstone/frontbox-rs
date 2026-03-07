@@ -25,10 +25,6 @@ impl SystemDistrict for TeamDistrictSystem {
       .expect("Team index out of bounds")
   }
 
-  fn on_district_enter(&self, ctx: &mut Context) {
-    ctx.start_game();
-  }
-
   fn on_add_player(&mut self, _new_player: u8) {
     // Nothing happens because each team scene was already created at initialization.
   }
