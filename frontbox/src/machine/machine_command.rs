@@ -13,8 +13,8 @@ pub enum MachineCommand {
   AdvancePlayer,
 
   // system management
-  InsertDistrict(&'static str, Box<dyn FnOnce() -> Box<dyn District> + Send>),
-  RemoveDistrict(&'static str),
+  SpawnDistrict(&'static str, Box<dyn FnOnce() -> Box<dyn District> + Send>),
+  DespawnDistrict(&'static str),
   AddSystem(&'static str, Box<dyn System>),
   ReplaceSystem(&'static str, u64, Box<dyn System>),
   TerminateSystem(&'static str, u64),
@@ -49,8 +49,8 @@ impl std::fmt::Debug for MachineCommand {
       Self::EndGame => write!(f, "EndGame"),
       Self::AddPlayer => write!(f, "AddPlayer"),
       Self::AdvancePlayer => write!(f, "AdvancePlayer"),
-      Self::InsertDistrict(key, _) => write!(f, "InsertDistrict({})", key),
-      Self::RemoveDistrict(key) => write!(f, "RemoveDistrict({})", key),
+      Self::SpawnDistrict(key, _) => write!(f, "SpawnDistrict({})", key),
+      Self::DespawnDistrict(key) => write!(f, "DespawnDistrict({})", key),
       Self::AddSystem(key, _) => write!(f, "AddSystem({})", key),
       Self::ReplaceSystem(district_key, system_id, _) => {
         write!(f, "ReplaceSystem({}, {}, ..)", district_key, system_id)

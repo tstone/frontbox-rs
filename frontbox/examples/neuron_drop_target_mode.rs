@@ -5,9 +5,6 @@ use std::io::Write;
 use std::time::Duration;
 
 pub mod switches {
-  pub const START_BUTTON: &str = "start_button";
-  pub const LEFT_FLIPPER_BUTTON: &str = "left_flipper_button";
-  pub const RIGHT_FLIPPER_BUTTON: &str = "right_flipper_button";
   pub const LOWER_DROP_TARGET1: &str = "lower_drop_target1";
   pub const LOWER_DROP_TARGET2: &str = "lower_drop_target2";
   pub const LOWER_DROP_TARGET3: &str = "lower_drop_target3";
@@ -75,7 +72,6 @@ async fn main() {
       (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
       (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
     ])
-    .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
     .insert_district(
       "player",
       PlayerDistrict::new(vec![DropTargetDownUp::new([

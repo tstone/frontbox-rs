@@ -12,6 +12,7 @@ pub use crate::machine::store;
 
 pub mod prelude {
   pub use crate::districts::*;
+  pub use crate::handle_event;
   pub use crate::hardware_definition::*;
   pub use crate::led::*;
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};
@@ -24,7 +25,7 @@ pub mod prelude {
   pub use crate::machine::plugin::*;
   pub use crate::machine::switch_context::SwitchContext;
   pub use crate::store::*;
-  pub use crate::systems::{System, SystemTimer, TimerMode};
+  pub use crate::systems::{System, SystemOnEvent, SystemTimer, TimerMode};
 
   // re-exports
   pub use crossterm::event::KeyCode;

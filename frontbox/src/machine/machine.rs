@@ -176,10 +176,8 @@ impl Machine {
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player().await,
-      MachineCommand::InsertDistrict(key, district_gen) => {
-        self.insert_district(key, district_gen())
-      }
-      MachineCommand::RemoveDistrict(key) => self.remove_district(key),
+      MachineCommand::SpawnDistrict(key, district_gen) => self.insert_district(key, district_gen()),
+      MachineCommand::DespawnDistrict(key) => self.remove_district(key),
       MachineCommand::AddSystem(key, system) => self.add_system(key, system),
       MachineCommand::ReplaceSystem(district, system_id, system) => {
         self.replace_system(district, system_id, system);

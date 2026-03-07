@@ -1,8 +1,5 @@
-System
-- Test going from attract mode to in game. Check if push_runtime works with +send+'static
-
 Hardware
-- Dual wound flipper config
+- Add driver configure and trigger support for "hold" modes 
 
 Display
 - Draft of websocket system

@@ -118,18 +118,18 @@ impl<'a> Context<'a> {
     let _ = self.sender.send(MachineCommand::AdvancePlayer);
   }
 
-  pub fn insert_runtime(&mut self, key: &'static str, runtime: impl District + Send + 'static) {
-    let _ = self.sender.send(MachineCommand::InsertDistrict(
+  pub fn spawn_district(&mut self, key: &'static str, district: Box<dyn District + Send>) {
+    let _ = self.sender.send(MachineCommand::SpawnDistrict(
       key,
-      Box::new(|| Box::new(runtime) as Box<dyn District>),
+      Box::new(move || district),
     ));
   }
 
-  pub fn remove_runtime(&mut self, key: &'static str) {
-    let _ = self.sender.send(MachineCommand::RemoveDistrict(key));
+  pub fn despawn_district(&mut self, key: &'static str) {
+    let _ = self.sender.send(MachineCommand::DespawnDistrict(key));
   }
 
-  pub fn add_system(&mut self, system: impl System + 'static) {
+  pub fn spawn_system(&mut self, system: impl System + 'static) {
     let _ = self.sender.send(MachineCommand::AddSystem(
       self.current_district_key,
       Box::new(system),
@@ -144,7 +144,7 @@ impl<'a> Context<'a> {
     ));
   }
 
-  pub fn terminate_system(&mut self) {
+  pub fn despawn_system(&mut self) {
     let _ = self.sender.send(MachineCommand::TerminateSystem(
       self.current_district_key,
       self.listener_id,

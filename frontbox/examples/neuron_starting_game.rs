@@ -1,5 +1,10 @@
+use frontbox::plugins::free_play::FreePlay;
 use frontbox::prelude::*;
 use std::io::Write;
+
+pub mod switches {
+  pub const START_BUTTON: &str = "start_button";
+}
 
 #[tokio::main]
 async fn main() {
@@ -18,6 +23,19 @@ async fn main() {
     vec![],
   )
   .await
+  .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
+  .insert_district(
+    "root",
+    SimpledDistrict::new(vec![
+      FreePlay::new(switches::START_BUTTON),
+      // This system listens for game start and spawns up a new player district. In a real machine the game type
+      // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
+      // from game type to what is actually running.
+      SystemOnEvent::<GameStarted>::new(|ctx| {
+        ctx.spawn_district("players", PlayerDistrict::new(vec![]));
+      }),
+    ]),
+  )
   .build()
   // TODO
   .run()
