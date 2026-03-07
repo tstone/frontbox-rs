@@ -1,4 +1,5 @@
-use crate::driver_trigger::*;
+use crate::net::drivers::driver_trigger_builder::DriverTriggerBuilder;
+use crate::net::prelude::*;
 use crate::*;
 
 /// Configure a driver in Fast IO boards (DL)
@@ -64,9 +65,9 @@ impl FastCommand for ConfigureDriverCommand<'_> {
 
 #[cfg(test)]
 mod tests {
-  use std::time::Duration;
-
   use super::*;
+  use crate::Power;
+  use std::time::Duration;
 
   #[test]
   fn test_pulse_driver() {

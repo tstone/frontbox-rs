@@ -1,5 +1,8 @@
-use crate::common::expansion_addr;
-use crate::*;
+use super::LedType;
+use crate::common::{ProcessedResponse, expansion_addr};
+use crate::error::FastResponseError;
+use crate::fast_command::FastCommand;
+use crate::raw_response::RawResponse;
 
 pub struct ConfigureLedPortCommand {
   expansion_board: u8,
@@ -52,13 +55,6 @@ impl FastCommand for ConfigureLedPortCommand {
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
     ProcessedResponse::parse(raw)
   }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LedType {
-  WS2812 = 0,
-  SK6812 = 1,
-  APA102 = 2,
 }
 
 #[cfg(test)]

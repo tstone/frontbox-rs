@@ -1,33 +1,20 @@
-mod address;
 mod common;
-mod configure_driver;
-mod configure_hardware;
-mod configure_switch;
-mod driver;
 mod error;
 mod event_response;
-mod exp;
-pub mod fast_command;
-mod id;
-pub mod raw_response;
-mod report_switches;
-mod switch_state;
-mod trigger_driver;
-mod watchdog;
+pub mod exp;
+mod fast_command;
+pub mod net;
+mod raw_response;
 
-pub use crate::address::*;
 pub use crate::common::ProcessedResponse;
-pub use crate::configure_driver::*;
-pub use crate::configure_hardware::*;
-pub use crate::configure_switch::*;
-pub use crate::driver::*;
-pub use crate::exp::*;
+pub use crate::exp::prelude::*;
 pub use crate::fast_command::*;
-pub use crate::id::*;
+pub use crate::net::prelude::*;
 pub use crate::raw_response::RawResponse;
-pub use crate::report_switches::*;
-pub use crate::switch_state::*;
-pub use crate::trigger_driver::*;
-pub use crate::watchdog::*;
 pub use error::FastResponseError;
 pub use event_response::*;
+
+pub enum FastAddress {
+  Io(u8),
+  Exp(u8, Option<u8>), // board, breakout
+}

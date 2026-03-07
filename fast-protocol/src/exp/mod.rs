@@ -3,7 +3,9 @@ mod color;
 mod identify_hardware;
 mod leds;
 
-pub use board_reset::*;
-pub use color::*;
-pub use identify_hardware::*;
-pub use leds::*;
+pub mod prelude {
+  pub use crate::exp::board_reset::*;
+  pub use crate::exp::color::*;
+  pub use crate::exp::identify_hardware::*;
+  pub use crate::exp::leds::*;
+}
