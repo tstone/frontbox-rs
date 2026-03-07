@@ -30,7 +30,8 @@ pub mod prelude {
   pub use crossterm::event::KeyCode;
   pub use crossterm::event::MediaKeyCode;
   pub use crossterm::event::ModifierKeyCode;
-  pub use fast_protocol::{Color, DriverConfig, DriverTriggerControlMode, LedType, Power};
+  pub use fast_protocol::driver_config::*;
+  pub use fast_protocol::{Color, DriverTriggerControlMode, LedType, Power};
   pub use frontbox_derive::*;
   pub use serde::Serialize;
   pub use std::time::Duration;

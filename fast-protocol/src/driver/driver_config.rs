@@ -71,403 +71,236 @@ impl DriverConfig {
       DriverConfig::FlipperHoldDirect { button_switch, .. } => *button_switch,
     }
   }
-
-  pub fn pulse() -> PulseBuilder {
-    PulseBuilder::default()
-  }
-
-  pub fn pulse_hold() -> PulseHoldBuilder {
-    PulseHoldBuilder::default()
-  }
-
-  pub fn pulse_hold_cancel() -> PulseHoldCancelBuilder {
-    PulseHoldCancelBuilder::default()
-  }
-
-  pub fn long_pulse() -> LongPulseBuilder {
-    LongPulseBuilder::default()
-  }
-
-  pub fn flipper_main_direct() -> FlipperMainDirectBuilder {
-    FlipperMainDirectBuilder::default()
-  }
-
-  pub fn flipper_hold_direct() -> FlipperHoldDirectBuilder {
-    FlipperHoldDirectBuilder::default()
-  }
 }
 
-// Builder for Pulse variant
-pub struct PulseBuilder {
-  switch: Option<usize>,
-  invert_switch: Option<bool>,
-  initial_pwm_length: Option<Duration>,
-  initial_pwm_power: Option<Power>,
-  secondary_pwm_length: Option<Duration>,
-  secondary_pwm_power: Option<Power>,
-  rest: Option<Duration>,
+/// PulseMode -- https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/
+#[derive(Debug, Clone)]
+pub struct PulseMode {
+  pub switch: Option<usize>,
+  pub invert_switch: Option<bool>,
+  pub initial_pwm_length: Duration,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_length: Duration,
+  pub secondary_pwm_power: Power,
+  pub rest: Duration,
 }
 
-impl Default for PulseBuilder {
+impl Default for PulseMode {
   fn default() -> Self {
     Self {
       switch: None,
       invert_switch: None,
-      initial_pwm_length: Some(Duration::from_millis(20)),
-      initial_pwm_power: Some(Power::full()),
-      secondary_pwm_length: None,
-      secondary_pwm_power: None,
-      rest: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_length: Duration::ZERO,
+      secondary_pwm_power: Power::percent(0),
+      rest: Duration::from_millis(500),
     }
   }
 }
 
-impl PulseBuilder {
-  pub fn switch(mut self, switch: usize) -> Self {
-    self.switch = Some(switch);
-    self
-  }
-
-  pub fn invert_switch(mut self, invert: bool) -> Self {
-    self.invert_switch = Some(invert);
-    self
-  }
-
-  pub fn initial_pwm_length(mut self, length: Duration) -> Self {
-    self.initial_pwm_length = Some(length);
-    self
-  }
-
-  pub fn initial_pwm_power(mut self, power: Power) -> Self {
-    self.initial_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_length(mut self, length: Duration) -> Self {
-    self.secondary_pwm_length = Some(length);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn rest(mut self, rest: Duration) -> Self {
-    self.rest = Some(rest);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<PulseMode> for DriverConfig {
+  fn from(c: PulseMode) -> Self {
     DriverConfig::Pulse {
-      switch: self.switch,
-      invert_switch: self.invert_switch,
-      initial_pwm_length: self.initial_pwm_length.unwrap_or(Duration::from_millis(10)),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
-      secondary_pwm_length: self
-        .secondary_pwm_length
-        .unwrap_or(Duration::from_millis(0)),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
-      rest: self.rest.unwrap_or(Duration::from_millis(0)),
+      switch: c.switch,
+      invert_switch: c.invert_switch,
+      initial_pwm_length: c.initial_pwm_length,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_length: c.secondary_pwm_length,
+      secondary_pwm_power: c.secondary_pwm_power,
+      rest: c.rest,
     }
   }
 }
 
-// Builder for PulseHold variant
-#[derive(Default)]
-pub struct PulseHoldBuilder {
-  switch: Option<usize>,
-  invert_switch: Option<bool>,
-  initial_pwm_length: Option<Duration>,
-  initial_pwm_power: Option<Power>,
-  secondary_pwm_power: Option<Power>,
-  rest: Option<Duration>,
+/// PulseHoldMode -- https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/
+#[derive(Debug, Clone)]
+pub struct PulseHoldMode {
+  pub switch: Option<usize>,
+  pub invert_switch: Option<bool>,
+  pub initial_pwm_length: Duration,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_power: Power,
+  pub rest: Duration,
 }
 
-impl PulseHoldBuilder {
-  pub fn switch(mut self, switch: usize) -> Self {
-    self.switch = Some(switch);
-    self
+impl Default for PulseHoldMode {
+  fn default() -> Self {
+    Self {
+      switch: None,
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_power: Power::percent(10),
+      rest: Duration::from_millis(500),
+    }
   }
+}
 
-  pub fn invert_switch(mut self, invert: bool) -> Self {
-    self.invert_switch = Some(invert);
-    self
-  }
-
-  pub fn initial_pwm_length(mut self, length: Duration) -> Self {
-    self.initial_pwm_length = Some(length);
-    self
-  }
-
-  pub fn initial_pwm_power(mut self, power: Power) -> Self {
-    self.initial_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn rest(mut self, rest: Duration) -> Self {
-    self.rest = Some(rest);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<PulseHoldMode> for DriverConfig {
+  fn from(c: PulseHoldMode) -> Self {
     DriverConfig::PulseHold {
-      switch: self.switch,
-      invert_switch: self.invert_switch,
-      initial_pwm_length: self.initial_pwm_length.unwrap_or(Duration::from_millis(10)),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
-      rest: self.rest.unwrap_or(Duration::from_millis(0)),
+      switch: c.switch,
+      invert_switch: c.invert_switch,
+      initial_pwm_length: c.initial_pwm_length,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_power: c.secondary_pwm_power,
+      rest: c.rest,
     }
   }
 }
 
-// Builder for PulseHoldCancel variant
-#[derive(Default)]
-pub struct PulseHoldCancelBuilder {
-  switch: Option<usize>,
-  invert_switch: Option<bool>,
-  off_switch: Option<usize>,
-  invert_office_switch: Option<bool>,
-  initial_pwm_length: Option<Duration>,
-  secondary_pwm_power: Option<Power>,
-  secondary_pwm_length: Option<Duration>,
-  rest: Option<Duration>,
+/// PulseHoldCancelMode -- https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/
+#[derive(Debug, Clone)]
+pub struct PulseHoldCancelMode {
+  pub switch: Option<usize>,
+  pub invert_switch: Option<bool>,
+  pub off_switch: usize,
+  pub invert_off_switch: bool, // note: fixed typo from original "invert_office_switch"
+  pub initial_pwm_length: Duration,
+  pub secondary_pwm_power: Power,
+  pub secondary_pwm_length: Duration,
+  pub rest: Duration,
 }
 
-impl PulseHoldCancelBuilder {
-  pub fn switch(mut self, switch: usize) -> Self {
-    self.switch = Some(switch);
-    self
+impl Default for PulseHoldCancelMode {
+  fn default() -> Self {
+    Self {
+      switch: None,
+      invert_switch: None,
+      off_switch: 0,
+      invert_off_switch: false,
+      initial_pwm_length: Duration::from_millis(30),
+      secondary_pwm_power: Power::percent(10),
+      secondary_pwm_length: Duration::from_millis(500),
+      rest: Duration::from_millis(500),
+    }
   }
+}
 
-  pub fn invert_switch(mut self, invert: bool) -> Self {
-    self.invert_switch = Some(invert);
-    self
-  }
-
-  pub fn off_switch(mut self, switch: usize) -> Self {
-    self.off_switch = Some(switch);
-    self
-  }
-
-  pub fn invert_office_switch(mut self, invert: bool) -> Self {
-    self.invert_office_switch = Some(invert);
-    self
-  }
-
-  pub fn initial_pwm_length(mut self, length: Duration) -> Self {
-    self.initial_pwm_length = Some(length);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_length(mut self, length: Duration) -> Self {
-    self.secondary_pwm_length = Some(length);
-    self
-  }
-
-  pub fn rest(mut self, rest: Duration) -> Self {
-    self.rest = Some(rest);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<PulseHoldCancelMode> for DriverConfig {
+  fn from(c: PulseHoldCancelMode) -> Self {
     DriverConfig::PulseHoldCancel {
-      switch: self.switch,
-      invert_switch: self.invert_switch,
-      off_switch: self
-        .off_switch
-        .expect("off_switch is required for PulseHoldCancel"),
-      invert_office_switch: self.invert_office_switch.unwrap_or(false),
-      initial_pwm_length: self.initial_pwm_length.unwrap_or(Duration::from_millis(10)),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
-      secondary_pwm_length: self
-        .secondary_pwm_length
-        .unwrap_or(Duration::from_millis(0)),
-      rest: self.rest.unwrap_or(Duration::from_millis(0)),
+      switch: c.switch,
+      invert_switch: c.invert_switch,
+      off_switch: c.off_switch,
+      invert_office_switch: c.invert_off_switch,
+      initial_pwm_length: c.initial_pwm_length,
+      secondary_pwm_power: c.secondary_pwm_power,
+      secondary_pwm_length: c.secondary_pwm_length,
+      rest: c.rest,
     }
   }
 }
 
-// Builder for LongPulse variant
-#[derive(Default)]
-pub struct LongPulseBuilder {
-  switch: Option<usize>,
-  invert_switch: Option<bool>,
-  initial_pwm_length: Option<Duration>,
-  initial_pwm_power: Option<Power>,
-  secondary_pwm_length: Option<Duration>,
-  secondary_pwm_power: Option<Power>,
-  rest: Option<Duration>,
+/// LongPulseMode -- https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/
+#[derive(Debug, Clone)]
+pub struct LongPulseMode {
+  pub switch: Option<usize>,
+  pub invert_switch: Option<bool>,
+  pub initial_pwm_length: Duration,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_length: Duration,
+  pub secondary_pwm_power: Power,
+  pub rest: Duration,
 }
 
-impl LongPulseBuilder {
-  pub fn switch(mut self, switch: usize) -> Self {
-    self.switch = Some(switch);
-    self
+impl Default for LongPulseMode {
+  fn default() -> Self {
+    Self {
+      switch: None,
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(200),
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_length: Duration::from_millis(1000),
+      secondary_pwm_power: Power::percent(25),
+      rest: Duration::from_millis(1000),
+    }
   }
+}
 
-  pub fn invert_switch(mut self, invert: bool) -> Self {
-    self.invert_switch = Some(invert);
-    self
-  }
-
-  pub fn initial_pwm_length(mut self, length: Duration) -> Self {
-    self.initial_pwm_length = Some(length);
-    self
-  }
-
-  pub fn initial_pwm_power(mut self, power: Power) -> Self {
-    self.initial_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_length(mut self, length: Duration) -> Self {
-    self.secondary_pwm_length = Some(length);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn rest(mut self, rest: Duration) -> Self {
-    self.rest = Some(rest);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<LongPulseMode> for DriverConfig {
+  fn from(c: LongPulseMode) -> Self {
     DriverConfig::LongPulse {
-      switch: self.switch,
-      invert_switch: self.invert_switch,
-      initial_pwm_length: self.initial_pwm_length.unwrap_or(Duration::from_millis(10)),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
-      secondary_pwm_length: self
-        .secondary_pwm_length
-        .unwrap_or(Duration::from_millis(0)),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
-      rest: self.rest.unwrap_or(Duration::from_millis(0)),
+      switch: c.switch,
+      invert_switch: c.invert_switch,
+      initial_pwm_length: c.initial_pwm_length,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_length: c.secondary_pwm_length,
+      secondary_pwm_power: c.secondary_pwm_power,
+      rest: c.rest,
     }
   }
 }
 
-// Builder for FlipperMainDirect variant
-#[derive(Default)]
-pub struct FlipperMainDirectBuilder {
-  button_switch: Option<usize>,
-  invert_button_switch: Option<bool>,
-  eos_switch: Option<usize>,
-  initial_pwm_power: Option<Power>,
-  secondary_pwm_power: Option<Power>,
-  max_eos_time: Option<Duration>,
-  next_flip_refresh: Option<Duration>,
+#[derive(Debug, Clone)]
+pub struct FlipperMainDirectMode {
+  pub button_switch: Option<usize>,
+  pub invert_button_switch: Option<bool>,
+  pub eos_switch: usize,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_power: Power,
+  pub max_eos_time: Duration,
+  pub next_flip_refresh: Duration,
 }
 
-impl FlipperMainDirectBuilder {
-  pub fn button_switch(mut self, switch: usize) -> Self {
-    self.button_switch = Some(switch);
-    self
+impl Default for FlipperMainDirectMode {
+  fn default() -> Self {
+    Self {
+      button_switch: None,
+      invert_button_switch: None,
+      eos_switch: 0,
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_power: Power::percent(10),
+      max_eos_time: Duration::from_millis(500),
+      next_flip_refresh: Duration::from_millis(100),
+    }
   }
+}
 
-  pub fn invert_button_switch(mut self, invert: bool) -> Self {
-    self.invert_button_switch = Some(invert);
-    self
-  }
-
-  pub fn eos_switch(mut self, switch: usize) -> Self {
-    self.eos_switch = Some(switch);
-    self
-  }
-
-  pub fn initial_pwm_power(mut self, power: Power) -> Self {
-    self.initial_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn max_eos_time(mut self, time: Duration) -> Self {
-    self.max_eos_time = Some(time);
-    self
-  }
-
-  pub fn next_flip_refresh(mut self, time: Duration) -> Self {
-    self.next_flip_refresh = Some(time);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<FlipperMainDirectMode> for DriverConfig {
+  fn from(c: FlipperMainDirectMode) -> Self {
     DriverConfig::FlipperMainDirect {
-      button_switch: self.button_switch,
-      invert_button_switch: self.invert_button_switch,
-      eos_switch: self
-        .eos_switch
-        .expect("eos_switch is required for FlipperMainDirect"),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
-      max_eos_time: self.max_eos_time.unwrap_or(Duration::from_millis(100)),
-      next_flip_refresh: self.next_flip_refresh.unwrap_or(Duration::from_millis(100)),
+      button_switch: c.button_switch,
+      invert_button_switch: c.invert_button_switch,
+      eos_switch: c.eos_switch,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_power: c.secondary_pwm_power,
+      max_eos_time: c.max_eos_time,
+      next_flip_refresh: c.next_flip_refresh,
     }
   }
 }
 
-// Builder for FlipperHoldDirect variant
-#[derive(Default)]
-pub struct FlipperHoldDirectBuilder {
-  button_switch: Option<usize>,
-  invert_button_switch: Option<bool>,
-  driver_on_time: Option<Duration>,
-  initial_pwm_power: Option<Power>,
-  secondary_pwm_power: Option<Power>,
+#[derive(Debug, Clone)]
+pub struct FlipperHoldDirectMode {
+  pub button_switch: Option<usize>,
+  pub invert_button_switch: Option<bool>,
+  pub driver_on_time: Duration,
+  pub initial_pwm_power: Power,
+  pub secondary_pwm_power: Power,
 }
 
-impl FlipperHoldDirectBuilder {
-  pub fn button_switch(mut self, switch: usize) -> Self {
-    self.button_switch = Some(switch);
-    self
+impl Default for FlipperHoldDirectMode {
+  fn default() -> Self {
+    Self {
+      button_switch: None,
+      invert_button_switch: None,
+      driver_on_time: Duration::from_millis(30),
+      initial_pwm_power: Power::percent(100),
+      secondary_pwm_power: Power::percent(10),
+    }
   }
+}
 
-  pub fn invert_button_switch(mut self, invert: bool) -> Self {
-    self.invert_button_switch = Some(invert);
-    self
-  }
-
-  pub fn driver_on_time(mut self, time: Duration) -> Self {
-    self.driver_on_time = Some(time);
-    self
-  }
-
-  pub fn initial_pwm_power(mut self, power: Power) -> Self {
-    self.initial_pwm_power = Some(power);
-    self
-  }
-
-  pub fn secondary_pwm_power(mut self, power: Power) -> Self {
-    self.secondary_pwm_power = Some(power);
-    self
-  }
-
-  pub fn build(self) -> DriverConfig {
+impl From<FlipperHoldDirectMode> for DriverConfig {
+  fn from(c: FlipperHoldDirectMode) -> Self {
     DriverConfig::FlipperHoldDirect {
-      button_switch: self.button_switch,
-      invert_button_switch: self.invert_button_switch,
-      driver_on_time: self.driver_on_time.unwrap_or(Duration::from_millis(10)),
-      initial_pwm_power: self.initial_pwm_power.unwrap_or(Power::full()),
-      secondary_pwm_power: self.secondary_pwm_power.unwrap_or(Power::off()),
+      button_switch: c.button_switch,
+      invert_button_switch: c.invert_button_switch,
+      driver_on_time: c.driver_on_time,
+      initial_pwm_power: c.initial_pwm_power,
+      secondary_pwm_power: c.secondary_pwm_power,
     }
   }
 }

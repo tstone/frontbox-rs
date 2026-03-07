@@ -30,8 +30,8 @@ async fn main() {
 
   io_network.add_board(
     FastIoBoards::io_1616()
-      .with_switch(5, switches::LOWER_DROP_TARGET1)
-      .with_switch_config(
+      .with_switch_cfg(
+        5,
         switches::LOWER_DROP_TARGET1,
         SwitchConfig {
           inverted: true,
@@ -39,8 +39,8 @@ async fn main() {
           ..Default::default()
         },
       )
-      .with_switch(6, switches::LOWER_DROP_TARGET2)
-      .with_switch_config(
+      .with_switch_cfg(
+        6,
         switches::LOWER_DROP_TARGET2,
         SwitchConfig {
           inverted: true,
@@ -48,8 +48,8 @@ async fn main() {
           ..Default::default()
         },
       )
-      .with_switch(7, switches::LOWER_DROP_TARGET3)
-      .with_switch_config(
+      .with_switch_cfg(
+        7,
         switches::LOWER_DROP_TARGET3,
         SwitchConfig {
           inverted: true,
@@ -57,13 +57,14 @@ async fn main() {
           ..Default::default()
         },
       )
-      .with_driver(3, drivers::LOWER_DROP_TARGET_COIL)
-      .with_driver_config(
+      .with_driver_cfg(
+        3,
         drivers::LOWER_DROP_TARGET_COIL,
-        DriverConfig::pulse()
-          .initial_pwm_length(Duration::from_millis(140))
-          .initial_pwm_power(Power::percent(50))
-          .build(),
+        PulseMode {
+          initial_pwm_length: Duration::from_millis(250),
+          initial_pwm_power: Power::percent(100),
+          ..Default::default()
+        },
       ),
   );
 

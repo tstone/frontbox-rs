@@ -27,12 +27,18 @@ impl IoBoardSpec {
     self
   }
 
-  pub fn with_switch_config(mut self, key: &'static str, config: SwitchConfig) -> Self {
+  pub fn with_switch_cfg(mut self, idx: u16, key: &'static str, config: SwitchConfig) -> Self {
+    self = self.with_switch(idx, key);
     self.switch_configs.insert(key, config);
     self
   }
 
-  pub fn with_driver(mut self, idx: u16, key: &'static str) -> Self {
+  pub fn with_driver_cfg<T: Into<DriverConfig>>(
+    mut self,
+    idx: u16,
+    key: &'static str,
+    config: T,
+  ) -> Self {
     if idx >= self.driver_count as u16 {
       panic!(
         "Driver index {} out of bounds for board with {} drivers",
@@ -41,11 +47,7 @@ impl IoBoardSpec {
     }
 
     self.driver_map.insert(idx, key);
-    self
-  }
-
-  pub fn with_driver_config(mut self, key: &'static str, config: DriverConfig) -> Self {
-    self.driver_configs.insert(key, config);
+    self.driver_configs.insert(key, config.into());
     self
   }
 }
