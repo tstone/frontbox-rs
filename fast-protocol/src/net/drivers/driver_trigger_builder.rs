@@ -56,6 +56,15 @@ impl DriverTriggerBuilder {
     self
   }
 
+  pub fn manual(mut self, manual: bool) -> Self {
+    if manual {
+      self.flags.insert(DriverTrigger::MANUAL);
+    } else {
+      self.flags.remove(DriverTrigger::MANUAL);
+    }
+    self
+  }
+
   pub fn bits(self) -> u8 {
     self.flags.bits()
   }

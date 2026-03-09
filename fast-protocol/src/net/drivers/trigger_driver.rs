@@ -29,18 +29,11 @@ impl FastCommand for TriggerDriverCommand {
   }
 
   fn to_string(&self) -> String {
-    let trigger = match self.control_mode {
-      DriverTriggerControlMode::Automatic => "0",
-      DriverTriggerControlMode::Manual => "1",
-      DriverTriggerControlMode::On => "C1",
-      DriverTriggerControlMode::Off => "81",
-    };
-
     // https://fastpinball.com/fast-serial-protocol/net/tl/
     format!(
       "TL:{:X},{},{}\r",
       self.driver_id,
-      trigger,
+      self.control_mode as u8,
       self.switch.map_or("".to_string(), |s| format!("{:X}", s))
     )
   }
@@ -57,7 +50,7 @@ pub enum DriverTriggerControlMode {
   // "Tap" (activate) the driver
   Manual = 1,
   // For "hold" modes turn the driver on
-  On = 2,
+  On = 3,
   // For "hold" modes turn the driver off
-  Off = 3,
+  Off = 2,
 }

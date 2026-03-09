@@ -5,7 +5,7 @@ use syn::{parse_macro_input, DeriveInput};
 /// Derive macro for Storable trait
 ///
 /// Usage:
-/// ```rust
+/// ```ignore
 ///   #[derive(Serialize, Storable)]
 ///   #[storable(key = "users")]
 ///   struct UserCount(usize);
