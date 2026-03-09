@@ -181,7 +181,7 @@ impl Default for PulseHoldMode {
       initial_pwm_length: Duration::from_millis(30),
       initial_pwm_power: Power::percent(100),
       secondary_pwm_power: Power::percent(10),
-      rest: Duration::from_millis(500),
+      rest: Duration::ZERO,
     }
   }
 }

@@ -1,5 +1,5 @@
 use frontbox::plugins::game_points::*;
-use frontbox::{handle_event, prelude::*};
+use frontbox::prelude::*;
 
 use std::io::Write;
 use std::time::Duration;

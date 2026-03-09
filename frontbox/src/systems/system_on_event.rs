@@ -19,9 +19,11 @@ impl<E: FrontboxEvent> Clone for SystemOnEvent<E> {
 
 impl<E: FrontboxEvent> SystemOnEvent<E> {
   /// This creates a system which receives a single event, E, and runs the given closure.
+  ///
+  /// Example:
   /// ```
   /// SystemOnEvent::<GameStarted>::new(|ctx| {
-  ///   ctx.spawn_district("players", PlayerDistrict::new(vec![]));
+  ///   ctx.spawn_district("players", PlayerDistrict::new(vec![ /* ... */ ]));
   /// }),
   /// ```
   pub fn new(f: impl FnMut(&mut Context) + Send + 'static) -> Box<Self> {

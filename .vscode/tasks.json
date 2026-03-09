@@ -1,0 +1,10 @@
+{
+    "tasks": [
+        {
+            "label": "Shutdown SBC",
+            "type": "shell",
+            "command": "sudo shutdown now",
+            "problemMatcher": []
+        }
+    ]
+}

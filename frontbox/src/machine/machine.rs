@@ -268,11 +268,6 @@ impl Machine {
     for (key, (_, district)) in self.system_districts.iter_mut() {
       let scene = district.get_current_mut();
 
-      log::debug!(
-        "Dispatching to systems in scene, system count: {}",
-        scene.len(),
-      );
-
       for system in scene {
         let mut ctx = Context::new(
           self.command_sender.clone(),
