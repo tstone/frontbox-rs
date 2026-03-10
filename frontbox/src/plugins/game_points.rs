@@ -19,6 +19,7 @@ use crate::prelude::*;
 pub struct GamePoints {
   total_points: u32,
   total_bonus: u32,
+  points_multiplier: f32,
   current_ball_points: u32,
   current_ball_bonus: u32,
 }
@@ -28,13 +29,15 @@ pub trait GamePointsExt {
   fn add_points(&mut self, points: u32);
   fn add_bonus(&mut self, bonus: u32);
   fn merge_ball_points(&mut self);
+  fn set_points_multiplier(&mut self, multiplier: f32);
 }
 
 impl GamePointsExt for Commands {
   fn add_points(&mut self, points: u32) {
     self.store.write(move |store| {
       let game_points = store.get_mut::<GamePoints>();
-      game_points.current_ball_points += points;
+      let multiplied_points = (points as f32 * game_points.points_multiplier) as u32;
+      game_points.current_ball_points += multiplied_points;
     });
   }
 
@@ -53,6 +56,13 @@ impl GamePointsExt for Commands {
       game_points.total_bonus += game_points.current_ball_bonus;
       game_points.current_ball_points = 0;
       game_points.current_ball_bonus = 0;
+    });
+  }
+
+  fn set_points_multiplier(&mut self, multiplier: f32) {
+    self.store.write(move |store| {
+      let game_points = store.get_mut::<GamePoints>();
+      game_points.points_multiplier = multiplier;
     });
   }
 }

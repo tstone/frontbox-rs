@@ -19,7 +19,7 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 
 Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
 
-#### Features
+### Features
 
 - Implementation of modern FAST protocol
 - Extensible events system
@@ -27,7 +27,7 @@ Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
 - Player and Co-op/team support
 - LED animation framework
 
-#### Example System
+### Example System
 
 This system implements a basic pinball "mode". A target is illuminated and must be struck 3 times. Each hit grants 1000 points. After 3 hits, the target will begin flashing. The player has 20 seconds to hit it again for 10,000 points (hurry up shot). After 20 seconds or being hit a 4th time the mode resets.
 
