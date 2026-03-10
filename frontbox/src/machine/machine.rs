@@ -271,18 +271,21 @@ impl Machine {
   where
     F: FnMut(&mut SystemContainer, &mut Context),
   {
+    let ctx = Context::new(
+      self.command_sender.clone(),
+      self.system_sender.clone(),
+      StoreContext::new(self.store_sender.clone(), &mut self.global_store),
+      &self.switches,
+      &self.game_state,
+      &self.config,
+      0,
+    );
+
     // all districts are run in order, but only the current scene within each district is run
     for system in self.global_systems.iter_mut() {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        self.system_sender.clone(),
-        StoreContext::new(self.store_sender.clone(), &mut self.global_store),
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        system.id,
-      );
-      handler(system, &mut ctx);
+      if system.is_active() {
+        handler(system, &mut ctx.clone_for_system(system.id));
+      }
     }
   }
 

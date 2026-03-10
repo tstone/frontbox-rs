@@ -71,11 +71,13 @@ impl PlayerSuperSystem {
       let current_store = self.player_stores.get(self.index as usize).unwrap();
 
       for system in scene {
-        // build a new context with the current player's store
-        let store_context = StoreContext::new(self.store_sender.clone(), current_store);
-        let mut player_ctx =
-          ctx.clone_for_manager(system.id, self.system_sender.clone(), store_context);
-        f(&mut system.inner, &mut player_ctx);
+        if system.is_active() {
+          // build a new context with the current player's store
+          let store_context = StoreContext::new(self.store_sender.clone(), current_store);
+          let mut player_ctx =
+            ctx.clone_for_manager(system.id, self.system_sender.clone(), store_context);
+          f(&mut system.inner, &mut player_ctx);
+        }
       }
 
       // process system commands

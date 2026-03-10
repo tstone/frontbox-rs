@@ -14,6 +14,10 @@ pub trait System: Send + Sync {
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
   fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {}
 
+  fn is_active(&self) -> bool {
+    true
+  }
+
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
     HashMap::new()
   }
@@ -27,6 +31,10 @@ pub trait CloneableSystem: DynClone + Send + Sync {
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
   fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {}
+
+  fn is_active(&self) -> bool {
+    true
+  }
 
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
     HashMap::new()
@@ -56,6 +64,10 @@ impl System for Box<dyn CloneableSystem> {
 
   fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
     self.as_mut().on_event(event, ctx);
+  }
+
+  fn is_active(&self) -> bool {
+    self.as_ref().is_active()
   }
 
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
