@@ -5,7 +5,7 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 > [!WARNING]
 > Pre-alpha work in progress
 
-### Preview (Subject to Change)
+### Overview
 
 **Frontbox** is built around the unit of a `System`. Systems...
 
@@ -18,6 +18,14 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 - ...can also be parents to other systems
 
 Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
+
+#### Features
+
+- Implementation of modern FAST protocol
+- Extensible events system
+- Flexible, hierarchical isolation of concerns (`System`)
+- Player and Co-op/team support
+- LED animation framework
 
 #### Example System
 
