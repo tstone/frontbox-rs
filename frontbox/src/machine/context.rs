@@ -197,7 +197,7 @@ impl<'a> StoreContext<'a> {
   }
 
   pub fn with(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
-    let _ = self.sender.send(StoreCommand::StoreWrite(Box::new(f)));
+    let _ = self.sender.send(StoreCommand::Write(Box::new(f)));
   }
 
   pub fn clone(&self) -> Self {

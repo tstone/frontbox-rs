@@ -163,6 +163,14 @@ impl Machine {
           SystemCommandProcessor::process(command, &mut self.global_systems, &mut ctx);
         }
 
+        Some(command) = self.store_receiver.recv() => {
+          match command {
+            StoreCommand::Write(f) => {
+              f(&mut self.global_store);
+            }
+          }
+        }
+
         Some(command) = self.command_receiver.recv() => {
           if matches!(command, MachineCommand::SystemTick)
             || matches!(command, MachineCommand::WatchdogTick)

@@ -90,7 +90,7 @@ impl PlayerSuperSystem {
       let current_store = self.player_stores.get_mut(self.index as usize).unwrap();
       while let Ok(cmd) = self.store_receiver.try_recv() {
         match cmd {
-          StoreCommand::StoreWrite(f) => {
+          StoreCommand::Write(f) => {
             f(current_store);
           }
         }

@@ -1,5 +1,5 @@
 use crate::prelude::Store;
 
 pub enum StoreCommand {
-  StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
+  Write(Box<dyn FnOnce(&mut Store) + Send>),
 }
