@@ -72,16 +72,12 @@ async fn main() {
       (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
       (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
     ])
-    .insert_district(
-      "player",
-      PlayerDistrict::new(vec![DropTargetDownUp::new([
-        switches::LOWER_DROP_TARGET1,
-        switches::LOWER_DROP_TARGET2,
-        switches::LOWER_DROP_TARGET3,
-      ])]),
-    )
     .build()
-    .run()
+    .run(vec![DropTargetDownUp::new([
+      switches::LOWER_DROP_TARGET1,
+      switches::LOWER_DROP_TARGET2,
+      switches::LOWER_DROP_TARGET3,
+    ])])
     .await;
 }
 
@@ -122,7 +118,7 @@ impl DropTargetDownUp {
   }
 }
 
-impl System for DropTargetDownUp {
+impl CloneableSystem for DropTargetDownUp {
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.trigger_driver(
       drivers::LOWER_DROP_TARGET_COIL,

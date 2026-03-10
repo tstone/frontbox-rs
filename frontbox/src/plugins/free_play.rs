@@ -11,7 +11,7 @@ impl FreePlay {
   }
 }
 
-impl System for FreePlay {
+impl CloneableSystem for FreePlay {
   fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
     handle_event!(event, {
       SwitchClosed => |e| {

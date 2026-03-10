@@ -19,6 +19,6 @@ async fn main() {
   )
   .await
   .build()
-  .run()
+  .run(vec![])
   .await;
 }

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -8,44 +7,63 @@ use crate::systems::*;
 
 /// Context bridges Systems and Districts to the Machine
 pub struct Context<'a> {
-  sender: mpsc::UnboundedSender<MachineCommand>,
-  stores: HashMap<&'static str, StoreContext<'a>>,
+  machine: mpsc::UnboundedSender<MachineCommand>,
   switches: &'a SwitchContext,
   game_state: &'a Option<GameState>,
   config: ConfigContext<'a>,
-  pub(crate) listener_id: u64,
-  pub(crate) current_district_key: &'static str,
+  system_manager: mpsc::UnboundedSender<SystemCommand>,
+  store: StoreContext<'a>,
+  listener_id: u64,
 }
 
-// TODO: make an immutable context, no setting timers or adding listeners
 impl<'a> Context<'a> {
   pub fn new(
-    sender: mpsc::UnboundedSender<MachineCommand>,
-    store: &'a HashMap<&'static str, Box<dyn StorageDistrict>>,
+    machine: mpsc::UnboundedSender<MachineCommand>,
+    system_manager: mpsc::UnboundedSender<SystemCommand>,
+    store: StoreContext<'a>,
     switches: &'a SwitchContext,
     game_state: &'a Option<GameState>,
     config: &'a MachineConfig,
     listener_id: u64,
-    current_district_key: &'static str,
   ) -> Self {
-    let stores = store
-      .iter()
-      .map(|(key, district)| {
-        (
-          *key,
-          StoreContext::new(sender.clone(), district.get_current()),
-        )
-      })
-      .collect();
-
     Self {
-      stores,
-      config: ConfigContext::new(sender.clone(), config),
-      sender,
+      store,
+      config: ConfigContext::new(machine.clone(), config),
+      machine,
+      system_manager,
       switches,
       game_state,
       listener_id,
-      current_district_key,
+    }
+  }
+
+  pub fn clone_for_system(&self, listener_id: u64) -> Self {
+    Self {
+      store: self.store.clone(),
+      config: self.config.clone(),
+      machine: self.machine.clone(),
+      system_manager: self.system_manager.clone(),
+      switches: self.switches,
+      game_state: self.game_state,
+      listener_id,
+    }
+  }
+
+  /// Creates a new Context for a system manager
+  pub fn clone_for_manager(
+    &self,
+    listener_id: u64,
+    system_manager: mpsc::UnboundedSender<SystemCommand>,
+    store: StoreContext<'a>,
+  ) -> Self {
+    Self {
+      store,
+      config: self.config.clone(),
+      machine: self.machine.clone(),
+      system_manager,
+      switches: self.switches,
+      game_state: self.game_state,
+      listener_id,
     }
   }
 
@@ -53,15 +71,9 @@ impl<'a> Context<'a> {
     &self.config
   }
 
-  // TODO: maybe I shouldn't allow this? Should Systems really be able to mutate across district state?
-  /// Gets the store for a district by key
-  pub fn keyed_store(&self, key: &'static str) -> Option<&StoreContext<'_>> {
-    self.stores.get(key)
-  }
-
   /// Gets the store for the current district
   pub fn store(&self) -> &StoreContext<'_> {
-    self.stores.get(self.current_district_key).unwrap()
+    &self.store
   }
 
   pub fn is_switch_closed(&self, switch_name: &'static str) -> Option<bool> {
@@ -85,8 +97,7 @@ impl<'a> Context<'a> {
   }
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
-    let _ = self.sender.send(MachineCommand::SetTimer(
-      self.current_district_key,
+    let _ = self.system_manager.send(SystemCommand::SetTimer(
       self.listener_id,
       timer_name,
       duration,
@@ -95,71 +106,55 @@ impl<'a> Context<'a> {
   }
 
   pub fn clear_timer(&mut self, timer_name: &'static str) {
-    let _ = self.sender.send(MachineCommand::ClearTimer(
-      self.current_district_key,
-      self.listener_id,
-      timer_name,
-    ));
+    let _ = self
+      .system_manager
+      .send(SystemCommand::ClearTimer(self.listener_id, timer_name));
   }
 
   pub fn start_game(&mut self) {
-    let _ = self.sender.send(MachineCommand::StartGame);
+    let _ = self.machine.send(MachineCommand::StartGame);
   }
 
   pub fn end_game(&mut self) {
-    let _ = self.sender.send(MachineCommand::EndGame);
+    let _ = self.machine.send(MachineCommand::EndGame);
   }
 
   pub fn add_player(&mut self) {
-    let _ = self.sender.send(MachineCommand::AddPlayer);
+    let _ = self.machine.send(MachineCommand::AddPlayer);
   }
 
   pub fn advance_player(&mut self) {
-    let _ = self.sender.send(MachineCommand::AdvancePlayer);
-  }
-
-  pub fn spawn_district(&mut self, key: &'static str, district: Box<dyn District + Send>) {
-    let _ = self.sender.send(MachineCommand::SpawnDistrict(
-      key,
-      Box::new(move || district),
-    ));
-  }
-
-  pub fn despawn_district(&mut self, key: &'static str) {
-    let _ = self.sender.send(MachineCommand::DespawnDistrict(key));
+    let _ = self.machine.send(MachineCommand::AdvancePlayer);
   }
 
   pub fn spawn_system(&mut self, system: impl System + 'static) {
-    let _ = self.sender.send(MachineCommand::AddSystem(
-      self.current_district_key,
-      Box::new(system),
-    ));
+    let _ = self
+      .system_manager
+      .send(SystemCommand::SpawnSystem(Box::new(system)));
   }
 
   pub fn replace_system(&mut self, system: impl System + 'static) {
-    let _ = self.sender.send(MachineCommand::ReplaceSystem(
-      self.current_district_key,
+    let _ = self.system_manager.send(SystemCommand::ReplaceSystem(
       self.listener_id,
       Box::new(system),
     ));
   }
 
   pub fn despawn_system(&mut self) {
-    let _ = self.sender.send(MachineCommand::TerminateSystem(
-      self.current_district_key,
-      self.listener_id,
-    ));
+    let _ = self
+      .system_manager
+      .send(SystemCommand::DespawnSystem(self.listener_id));
   }
 
   pub fn configure_driver(&mut self, driver_name: &'static str, config: DriverConfig) {
     let _ = self
-      .sender
+      .machine
       .send(MachineCommand::ConfigureDriver(driver_name, config));
   }
 
   pub fn trigger_driver(&mut self, driver_name: &'static str, mode: DriverTriggerControlMode) {
     let _ = self
-      .sender
+      .machine
       .send(MachineCommand::TriggerDriver(driver_name, mode, None));
   }
 
@@ -170,7 +165,7 @@ impl<'a> Context<'a> {
     mode: DriverTriggerControlMode,
     delay: Duration,
   ) {
-    let _ = self.sender.send(MachineCommand::TriggerDriver(
+    let _ = self.machine.send(MachineCommand::TriggerDriver(
       driver_name,
       mode,
       Some(delay),
@@ -179,17 +174,17 @@ impl<'a> Context<'a> {
 
   /// Broadcast an event to all listeners
   pub fn emit(&mut self, event: Box<dyn FrontboxEvent>) {
-    let _ = self.sender.send(MachineCommand::EmitEvent(event));
+    let _ = self.machine.send(MachineCommand::EmitEvent(event));
   }
 }
 
 pub struct StoreContext<'a> {
-  sender: mpsc::UnboundedSender<MachineCommand>,
+  sender: mpsc::UnboundedSender<StoreCommand>,
   store: &'a Store,
 }
 
 impl<'a> StoreContext<'a> {
-  pub fn new(sender: mpsc::UnboundedSender<MachineCommand>, store: &'a Store) -> Self {
+  pub fn new(sender: mpsc::UnboundedSender<StoreCommand>, store: &'a Store) -> Self {
     Self { sender, store }
   }
 
@@ -202,7 +197,14 @@ impl<'a> StoreContext<'a> {
   }
 
   pub fn with(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
-    let _ = self.sender.send(MachineCommand::StoreWrite(Box::new(f)));
+    let _ = self.sender.send(StoreCommand::StoreWrite(Box::new(f)));
+  }
+
+  pub fn clone(&self) -> Self {
+    Self {
+      sender: self.sender.clone(),
+      store: self.store,
+    }
   }
 }
 
@@ -222,5 +224,12 @@ impl<'a> ConfigContext<'a> {
 
   pub fn set(&mut self, key: &'static str, value: ConfigValue) {
     let _ = self.sender.send(MachineCommand::SetConfigValue(key, value));
+  }
+
+  pub fn clone(&self) -> Self {
+    Self {
+      sender: self.sender.clone(),
+      config: self.config,
+    }
   }
 }

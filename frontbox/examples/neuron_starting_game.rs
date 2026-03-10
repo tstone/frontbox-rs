@@ -1,4 +1,5 @@
 use frontbox::plugins::free_play::FreePlay;
+use frontbox::plugins::player_super_system::PlayerSuperSystem;
 use frontbox::prelude::*;
 use std::io::Write;
 
@@ -24,20 +25,15 @@ async fn main() {
   )
   .await
   .add_virtual_switch(KeyCode::Home, switches::START_BUTTON)
-  .insert_district(
-    "root",
-    SimpledDistrict::new(vec![
-      FreePlay::new(switches::START_BUTTON),
-      // This system listens for game start and spawns up a new player district. In a real machine the game type
-      // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
-      // from game type to what is actually running.
-      SystemOnEvent::<GameStarted>::new(|ctx| {
-        ctx.spawn_district("players", PlayerDistrict::new(vec![]));
-      }),
-    ]),
-  )
   .build()
-  // TODO
-  .run()
+  .run(vec![
+    FreePlay::new(switches::START_BUTTON),
+    // This system listens for game start and spawns up a new player district. In a real machine the game type
+    // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
+    // from game type to what is actually running.
+    OnEventSystem::<GameStarted>::new(|ctx| {
+      ctx.spawn_system(*PlayerSuperSystem::new(vec![]));
+    }),
+  ])
   .await;
 }

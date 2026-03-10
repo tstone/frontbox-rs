@@ -2,7 +2,6 @@ use crossterm::event::Event;
 
 use crate::machine::event::FrontboxEvent;
 use crate::prelude::*;
-use crate::systems::*;
 use fast_protocol::EventResponse;
 
 pub enum MachineCommand {
@@ -12,13 +11,6 @@ pub enum MachineCommand {
   AddPlayer,
   AdvancePlayer,
 
-  // system management
-  SpawnDistrict(&'static str, Box<dyn FnOnce() -> Box<dyn District> + Send>),
-  DespawnDistrict(&'static str),
-  AddSystem(&'static str, Box<dyn System>),
-  ReplaceSystem(&'static str, u64, Box<dyn System>),
-  TerminateSystem(&'static str, u64),
-
   // hardware
   ConfigureDriver(&'static str, DriverConfig),
   TriggerDriver(&'static str, DriverTriggerControlMode, Option<Duration>),
@@ -27,16 +19,11 @@ pub enum MachineCommand {
   ResetExpansionNetwork,
 
   // timers
-  ClearTimer(&'static str, u64, &'static str),
-  SetTimer(&'static str, u64, &'static str, Duration, TimerMode),
   SystemTick,
   WatchdogTick,
 
-  // events
-  EmitEvent(Box<dyn FrontboxEvent>),
-
   // other
-  StoreWrite(Box<dyn FnOnce(&mut Store) + Send>),
+  EmitEvent(Box<dyn FrontboxEvent>),
   SetConfigValue(&'static str, ConfigValue),
   Shutdown,
 }
@@ -49,32 +36,10 @@ impl std::fmt::Debug for MachineCommand {
       Self::EndGame => write!(f, "EndGame"),
       Self::AddPlayer => write!(f, "AddPlayer"),
       Self::AdvancePlayer => write!(f, "AdvancePlayer"),
-      Self::SpawnDistrict(key, _) => write!(f, "SpawnDistrict({})", key),
-      Self::DespawnDistrict(key) => write!(f, "DespawnDistrict({})", key),
-      Self::AddSystem(key, _) => write!(f, "AddSystem({})", key),
-      Self::ReplaceSystem(district_key, system_id, _) => {
-        write!(f, "ReplaceSystem({}, {}, ..)", district_key, system_id)
-      }
-      Self::TerminateSystem(district_key, system_id) => {
-        write!(f, "TerminateSystem({}, {})", district_key, system_id)
-      }
       Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
       Self::TriggerDriver(name, mode, delay) => {
         write!(f, "TriggerDriver({:?}, {:?}, {:?})", name, mode, delay)
       }
-      Self::StoreWrite(_) => write!(f, "StoreWrite(..)"),
-      Self::SetTimer(district_key, system_id, timer_name, duration, mode) => {
-        write!(
-          f,
-          "SetTimer({}, {}, {:?}, {:?}, {:?})",
-          district_key, system_id, timer_name, duration, mode
-        )
-      }
-      Self::ClearTimer(district_key, system_id, timer_name) => write!(
-        f,
-        "ClearTimer({}, {}, {:?})",
-        district_key, system_id, timer_name
-      ),
       Self::SetConfigValue(key, value) => write!(f, "SetConfigValue({}, {:?})", key, value),
       Self::SystemTick => write!(f, "SystemTick"),
       Self::WatchdogTick => write!(f, "WatchdogTick"),

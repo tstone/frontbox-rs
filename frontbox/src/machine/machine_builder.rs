@@ -16,7 +16,6 @@ pub struct MachineBuilder {
   virtual_switch_count: u8,
   config: MachineConfig,
   expansion_boards: Vec<ExpansionBoardSpec>,
-  districts: HashMap<&'static str, Box<dyn District>>,
 }
 
 impl MachineBuilder {
@@ -64,7 +63,6 @@ impl MachineBuilder {
       virtual_switch_count: 0,
       config: MachineConfig::default(),
       expansion_boards,
-      districts: HashMap::new(),
     }
   }
 
@@ -295,11 +293,6 @@ impl MachineBuilder {
     self
   }
 
-  pub fn insert_district(mut self, key: &'static str, district: Box<dyn District>) -> Self {
-    self.districts.insert(key, district);
-    self
-  }
-
   pub fn build(self) -> Machine {
     Machine::new(
       self.io_port,
@@ -309,7 +302,6 @@ impl MachineBuilder {
       self.keyboard_switch_map,
       self.config,
       self.expansion_boards,
-      self.districts,
     )
   }
 }

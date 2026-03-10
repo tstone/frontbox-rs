@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::machine::machine_command::MachineCommand;
 
+#[derive(Debug, Clone)]
 pub struct SystemTimer {
   target: Duration,
   accumulated: Duration,

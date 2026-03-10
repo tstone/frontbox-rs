@@ -2,15 +2,17 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
+use crate::machine::context::StoreContext;
 use crate::machine::event::FrontboxEvent;
-use crate::machine::event::next_listener_id;
 use crate::machine::event::*;
 use crate::machine::key_reader::monitor_keys;
 use crate::machine::machine_config::MachineConfig;
 use crate::machine::serial_interface::*;
 use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
-use crate::systems::{SystemContainer, TimerMode, run_system_timers};
+use crate::systems::SystemCommand;
+use crate::systems::SystemCommandProcessor;
+use crate::systems::{SystemContainer, run_system_timers};
 use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
 use crossterm::{
   event::{Event, KeyCode},
@@ -34,14 +36,18 @@ pub struct Machine {
   expansion_boards: Vec<ExpansionBoardSpec>,
   system_tick: Duration,
   led_renderer: LedRenderer,
+  global_store: Store,
+  global_systems: Vec<SystemContainer>,
 
-  system_districts: HashMap<&'static str, (u64, Box<dyn SystemDistrict>)>,
-  storage_districts: HashMap<&'static str, Box<dyn StorageDistrict>>,
   switches: SwitchContext,
   game_state: Option<GameState>,
 
   command_sender: mpsc::UnboundedSender<MachineCommand>,
   command_receiver: mpsc::UnboundedReceiver<MachineCommand>,
+  system_sender: mpsc::UnboundedSender<SystemCommand>,
+  system_receiver: mpsc::UnboundedReceiver<SystemCommand>,
+  store_sender: mpsc::UnboundedSender<StoreCommand>,
+  store_receiver: mpsc::UnboundedReceiver<StoreCommand>,
 }
 
 impl Machine {
@@ -53,9 +59,10 @@ impl Machine {
     keyboard_switch_map: HashMap<KeyCode, usize>,
     config: MachineConfig,
     expansion_boards: Vec<ExpansionBoardSpec>,
-    districts: HashMap<&'static str, Box<dyn District>>,
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
+    let (system_sender, system_receiver) = mpsc::unbounded_channel();
+    let (store_sender, store_receiver) = mpsc::unbounded_channel();
     let watchdog_interval = config
       .get_value_as_u64(default_config::WATCHDOG_TICK)
       .unwrap_or(1000);
@@ -66,23 +73,12 @@ impl Machine {
         .unwrap(),
     );
 
-    let mut system_districts: HashMap<&'static str, (u64, Box<dyn SystemDistrict>)> =
-      HashMap::new();
-    let mut storage_districts: HashMap<&'static str, Box<dyn StorageDistrict>> = HashMap::new();
-    for (key, district) in districts.into_iter() {
-      let (system_district, storage_district) = district.split();
-      system_districts.insert(key, (next_listener_id(), system_district));
-      storage_districts.insert(key, storage_district);
-    }
-
     Self {
       io_port,
       exp_port,
       switches: switches,
       driver_lookup,
       keyboard_switch_map,
-      system_districts,
-      storage_districts,
       game_state: None,
       watchdog: Watchdog::new(
         Duration::from_millis(watchdog_interval),
@@ -90,18 +86,35 @@ impl Machine {
       ),
       command_sender,
       command_receiver,
+      system_sender,
+      system_receiver,
+      store_sender,
+      store_receiver,
       config,
       led_renderer: LedRenderer::new(&expansion_boards),
       expansion_boards,
       system_tick,
+      global_store: Store::new(),
+      global_systems: Vec::new(),
     }
   }
 
-  pub async fn run(&mut self) {
-    // trigger on_district_enter for all initial districts
-    let district_keys = self.system_districts.keys().cloned().collect::<Vec<_>>();
-    for key in district_keys {
-      self.run_on_district_enter(key);
+  pub async fn run(&mut self, systems: Vec<Box<dyn System>>) {
+    // initialize systems
+    {
+      let mut ctx = Context::new(
+        self.command_sender.clone(),
+        self.system_sender.clone(),
+        StoreContext::new(self.store_sender.clone(), &self.global_store),
+        &self.switches,
+        &self.game_state,
+        &self.config,
+        0,
+      );
+
+      for system in systems.into_iter() {
+        SystemCommandProcessor::spawn_system(system, &mut self.global_systems, &mut ctx);
+      }
     }
 
     // initialize keyboard monitoring if there are any keyboard-mapped switches
@@ -135,6 +148,19 @@ impl Machine {
           // Add incoming hardware events to the command queue
           // this ensures they are processed in order with any commands emitted by systems in response to those events
           self.command_sender.send(MachineCommand::HardwareEvent(event)).ok();
+        }
+
+        Some(command) = self.system_receiver.recv() => {
+          let mut ctx = Context::new(
+            self.command_sender.clone(),
+            self.system_sender.clone(),
+            StoreContext::new(self.store_sender.clone(), &self.global_store),
+            &self.switches,
+            &self.game_state,
+            &self.config,
+            0,
+          );
+          SystemCommandProcessor::process(command, &mut self.global_systems, &mut ctx);
         }
 
         Some(command) = self.command_receiver.recv() => {
@@ -176,30 +202,11 @@ impl Machine {
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player().await,
-      MachineCommand::SpawnDistrict(key, district_gen) => self.insert_district(key, district_gen()),
-      MachineCommand::DespawnDistrict(key) => self.remove_district(key),
-      MachineCommand::AddSystem(key, system) => self.add_system(key, system),
-      MachineCommand::ReplaceSystem(district, system_id, system) => {
-        self.replace_system(district, system_id, system);
-      }
-      MachineCommand::TerminateSystem(district, system_id) => {
-        self.terminate_system(district, system_id)
-      }
       MachineCommand::ConfigureDriver(driver_name, config) => {
         self.configure_driver(driver_name, config).await
       }
       MachineCommand::TriggerDriver(driver_name, mode, delay) => {
         self.trigger_driver(driver_name, mode, delay).await
-      }
-      MachineCommand::StoreWrite(f) => {
-        let mut store = Store::new();
-        f(&mut store);
-      }
-      MachineCommand::SetTimer(district, system_id, timer_name, duration, mode) => {
-        self.set_system_timer(district, system_id, timer_name, duration, mode);
-      }
-      MachineCommand::ClearTimer(district, system_id, timer_name) => {
-        self.clear_system_timer(district, system_id, timer_name);
       }
       MachineCommand::SetConfigValue(key, value) => {
         self.config.set_value(key, value);
@@ -265,21 +272,17 @@ impl Machine {
     F: FnMut(&mut SystemContainer, &mut Context),
   {
     // all districts are run in order, but only the current scene within each district is run
-    for (key, (_, district)) in self.system_districts.iter_mut() {
-      let scene = district.get_current_mut();
-
-      for system in scene {
-        let mut ctx = Context::new(
-          self.command_sender.clone(),
-          &self.storage_districts,
-          &self.switches,
-          &self.game_state,
-          &self.config,
-          system.id,
-          key,
-        );
-        handler(system, &mut ctx);
-      }
+    for system in self.global_systems.iter_mut() {
+      let mut ctx = Context::new(
+        self.command_sender.clone(),
+        self.system_sender.clone(),
+        StoreContext::new(self.store_sender.clone(), &mut self.global_store),
+        &self.switches,
+        &self.game_state,
+        &self.config,
+        system.id,
+      );
+      handler(system, &mut ctx);
     }
   }
 
@@ -333,126 +336,6 @@ impl Machine {
 
     self.reset_expansion_network().await;
     self.report_switches().await;
-  }
-
-  /// Transition to a new district
-  pub fn insert_district(&mut self, key: &'static str, new_district: Box<dyn District>) {
-    log::info!("Pushing into new district");
-    let (system_district, storage_district) = new_district.split();
-
-    self
-      .system_districts
-      .insert(key, (next_listener_id(), system_district));
-    self.storage_districts.insert(key, storage_district);
-    self.run_on_district_enter(key);
-  }
-
-  fn run_on_district_enter(&mut self, key: &'static str) {
-    if let Some((listener_id, district)) = self.system_districts.get_mut(key) {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        &self.storage_districts,
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        *listener_id,
-        key,
-      );
-
-      district.on_district_enter(&mut ctx);
-
-      for system in district.get_current_mut() {
-        ctx.listener_id = system.id;
-        system.on_startup(&mut ctx);
-      }
-    }
-  }
-
-  /// Transition out of current district back to previous
-  pub fn remove_district(&mut self, key: &'static str) {
-    log::info!("Popping current district");
-
-    let district = self.system_districts.get_mut(key);
-    if let Some((listener_id, district)) = district {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        &self.storage_districts,
-        &self.switches,
-        &self.game_state,
-        &self.config,
-        *listener_id,
-        key,
-      );
-
-      district.on_district_exit(&mut ctx);
-
-      for system in district.get_current_mut() {
-        ctx.listener_id = system.id;
-        system.on_shutdown(&mut ctx);
-      }
-    }
-
-    self.led_renderer.reset();
-  }
-
-  pub fn add_system(&mut self, district: &'static str, system: Box<dyn System>) {
-    match self.system_districts.get_mut(district) {
-      Some((_, district)) => {
-        district
-          .get_current_mut()
-          .push(SystemContainer::new(next_listener_id(), system));
-      }
-      None => {
-        log::error!("Attempted to add system to unknown district: {}", district);
-      }
-    }
-  }
-
-  /// Searches the given district for the system, by ID
-  fn find_system_index(&self, key: &'static str, system_id: u64) -> Option<usize> {
-    match self.system_districts.get(key) {
-      Some((_, district)) => {
-        let scene = district.get_current();
-
-        for (index, system) in scene.iter().enumerate() {
-          if system.id == system_id {
-            return Some(index);
-          }
-        }
-      }
-      None => {
-        log::error!("Attempted to find system in unknown district: {}", key);
-      }
-    }
-
-    None
-  }
-
-  pub fn replace_system(
-    &mut self,
-    district: &'static str,
-    system_id: u64,
-    new_system: Box<dyn System>,
-  ) {
-    match self.find_system_index(district, system_id) {
-      Some(index) => {
-        let (_, district) = self.system_districts.get_mut(district).unwrap();
-        let scene = district.get_current_mut();
-        scene[index] = SystemContainer::new(next_listener_id(), new_system);
-      }
-      None => log::error!("Attempted to replace unknown system ID: {}", system_id),
-    }
-  }
-
-  pub fn terminate_system(&mut self, district: &'static str, system_id: u64) {
-    match self.find_system_index(district, system_id) {
-      Some(index) => {
-        let (_, district) = self.system_districts.get_mut(district).unwrap();
-        let scene = district.get_current_mut();
-        scene.remove(index);
-      }
-      None => log::error!("Attempted to terminate unknown system ID: {}", system_id),
-    }
   }
 
   async fn enable_high_voltage(&mut self) {
@@ -552,48 +435,6 @@ impl Machine {
     }
   }
 
-  fn set_system_timer(
-    &mut self,
-    district: &'static str,
-    system_id: u64,
-    timer_name: &'static str,
-    duration: Duration,
-    mode: TimerMode,
-  ) {
-    let index = self.find_system_index(district, system_id);
-    let (_, district) = self.system_districts.get_mut(district).unwrap();
-    let scene = district.get_current_mut();
-
-    if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
-      system.set_timer(timer_name, duration, mode);
-    } else {
-      log::error!(
-        "Attempted to set timer for invalid system index: {}",
-        system_id
-      );
-    }
-  }
-
-  fn clear_system_timer(
-    &mut self,
-    district: &'static str,
-    system_id: u64,
-    timer_name: &'static str,
-  ) {
-    let index = self.find_system_index(district, system_id);
-    let (_, district) = self.system_districts.get_mut(district).unwrap();
-    let scene = district.get_current_mut();
-
-    if let Some(system) = index.and_then(|index| scene.get_mut(index)) {
-      system.clear_timer(timer_name);
-    } else {
-      log::error!(
-        "Attempted to clear timer for invalid system index: {}",
-        system_id
-      );
-    }
-  }
-
   fn on_key_press(&mut self, event: Event) {
     match event {
       Event::Key(key) => {
@@ -623,20 +464,16 @@ impl Machine {
   }
 
   async fn render_leds(&mut self) {
-    for (_, district) in self.system_districts.values_mut() {
-      let scene = district.get_current_mut();
-
-      let mut declarations = HashMap::new();
-      for system in scene {
-        declarations.insert(system.id, system.leds(self.system_tick));
-      }
-
-      self.led_renderer.tick(self.system_tick);
-      self
-        .led_renderer
-        .render(&mut self.exp_port, declarations)
-        .await;
+    let mut declarations = HashMap::new();
+    for system in self.global_systems.iter_mut() {
+      declarations.insert(system.id, system.leds(self.system_tick));
     }
+
+    self.led_renderer.tick(self.system_tick);
+    self
+      .led_renderer
+      .render(&mut self.exp_port, declarations)
+      .await;
   }
 }
 

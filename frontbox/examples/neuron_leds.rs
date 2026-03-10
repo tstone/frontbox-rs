@@ -32,9 +32,8 @@ async fn main() {
     expansion_boards,
   )
   .await
-  .insert_district("led_example", SimpledDistrict::new(vec![LedExample::new()]))
   .build()
-  .run()
+  .run(vec![LedExample::new()])
   .await;
 }
 
@@ -80,7 +79,7 @@ impl LedExample {
   }
 }
 
-impl System for LedExample {
+impl CloneableSystem for LedExample {
   fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
     LedDeclarationBuilder::new(delta_time)
       .on(leds::DEMO1, Color::deep_sky_blue())

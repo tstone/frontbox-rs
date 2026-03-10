@@ -31,12 +31,8 @@ async fn main() {
     expansion_boards,
   )
   .await
-  .insert_district(
-    "led_example",
-    SimpledDistrict::new(vec![System1::new(), System2::new()]),
-  )
   .build()
-  .run()
+  .run(vec![System1::new(), System2::new()])
   .await;
 }
 
@@ -51,7 +47,7 @@ impl System1 {
   }
 }
 
-impl System for System1 {
+impl CloneableSystem for System1 {
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.set_timer(
       "example_timer",
@@ -88,7 +84,7 @@ impl System2 {
   }
 }
 
-impl System for System2 {
+impl CloneableSystem for System2 {
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.set_timer(
       "example_timer",

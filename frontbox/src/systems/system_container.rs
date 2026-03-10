@@ -20,6 +20,10 @@ impl SystemContainer {
     }
   }
 
+  pub fn new_from_system(system: Box<dyn System>) -> Self {
+    Self::new(next_listener_id(), system)
+  }
+
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut timers_to_remove = vec![];
     log::trace!(
@@ -40,6 +44,9 @@ impl SystemContainer {
     for timer_name in timers_to_remove {
       self.timers.remove(timer_name);
     }
+
+    // bubble tick to inner system after processing timers
+    self.inner.on_tick(delta, ctx);
   }
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {

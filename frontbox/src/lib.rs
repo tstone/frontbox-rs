@@ -4,14 +4,12 @@ mod led;
 mod macros;
 mod machine;
 pub mod plugins;
-mod systems;
+pub mod systems;
 
 pub use crate::hardware_definition::*;
-pub use crate::machine::districts;
 pub use crate::machine::store;
 
 pub mod prelude {
-  pub use crate::districts::*;
   pub use crate::handle_event;
   pub use crate::hardware_definition::*;
   pub use crate::led::*;
@@ -25,7 +23,7 @@ pub mod prelude {
   pub use crate::machine::plugin::*;
   pub use crate::machine::switch_context::SwitchContext;
   pub use crate::store::*;
-  pub use crate::systems::{System, SystemOnEvent, SystemTimer, TimerMode};
+  pub use crate::systems::{CloneableSystem, OnEventSystem, System, SystemTimer, TimerMode};
 
   // re-exports
   pub use crossterm::event::KeyCode;

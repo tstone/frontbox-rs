@@ -80,3 +80,18 @@ impl PlayerAdded {
     Box::new(Self { player_count })
   }
 }
+
+/// Runs when a player is added
+#[derive(Debug)]
+#[allow(unused)]
+pub struct PlayerChanged {
+  pub current_player_index: u8,
+}
+
+impl PlayerChanged {
+  pub fn new(current_player_index: u8) -> Box<PlayerChanged> {
+    Box::new(Self {
+      current_player_index,
+    })
+  }
+}
