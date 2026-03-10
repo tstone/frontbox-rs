@@ -14,6 +14,7 @@ async fn main() {
     .await;
 }
 
+#[allow(unused)]
 #[derive(Default, Serialize, Storable, PartialEq)]
 enum ExampleStateMachine {
   #[default]
