@@ -31,8 +31,8 @@ async fn main() {
     // This system listens for game start and spawns up a new player district. In a real machine the game type
     // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
     // from game type to what is actually running.
-    OnEventSystem::<GameStarted>::new(|ctx| {
-      ctx.spawn_system(*PlayerSuperSystem::new(vec![]));
+    OnEventSystem::<GameStarted>::new(|_ctx, cmds| {
+      cmds.spawn_system(*PlayerSuperSystem::new(vec![]));
     }),
   ])
   .await;

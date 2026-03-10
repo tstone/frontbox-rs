@@ -9,19 +9,24 @@ pub enum SystemCommand {
   SetTimer(u64, &'static str, Duration, TimerMode),
 }
 
-pub struct SystemCommandProcessor;
+pub struct SystemCommands;
 
-impl SystemCommandProcessor {
-  pub fn process(command: SystemCommand, systems: &mut Vec<SystemContainer>, ctx: &mut Context) {
+impl SystemCommands {
+  pub fn process(
+    command: SystemCommand,
+    systems: &mut Vec<SystemContainer>,
+    ctx: &Context,
+    cmds: &mut Commands,
+  ) {
     match command {
       SystemCommand::SpawnSystem(system) => {
-        Self::spawn_system(system, systems, ctx);
+        Self::spawn_system(system, systems, ctx, cmds);
       }
       SystemCommand::ReplaceSystem(system_id, system) => {
-        Self::replace_system(system_id, system, systems, ctx);
+        Self::replace_system(system_id, system, systems, ctx, cmds);
       }
       SystemCommand::DespawnSystem(system_id) => {
-        Self::despawn_system(system_id, systems, ctx);
+        Self::despawn_system(system_id, systems, ctx, cmds);
       }
       SystemCommand::ClearTimer(system_id, timer_name) => {
         Self::clear_timer(system_id, timer_name, systems);
@@ -35,12 +40,13 @@ impl SystemCommandProcessor {
   pub fn spawn_system(
     system: Box<dyn System>,
     systems: &mut Vec<SystemContainer>,
-    ctx: &mut Context,
+    ctx: &Context,
+    cmds: &mut Commands,
   ) {
     let mut container = SystemContainer::new_from_system(system);
     log::debug!("Spawning system with ID {}", container.id);
-    let mut system_ctx = ctx.clone_for_system(container.id);
-    container.on_startup(&mut system_ctx);
+    let mut cmds = cmds.clone_for_system(container.id);
+    container.on_startup(ctx, &mut cmds);
     systems.push(container);
   }
 
@@ -48,23 +54,29 @@ impl SystemCommandProcessor {
     system_id: u64,
     system: Box<dyn System>,
     systems: &mut Vec<SystemContainer>,
-    ctx: &mut Context,
+    ctx: &Context,
+    cmds: &mut Commands,
   ) {
     if let Some(pos) = systems.iter().position(|c| c.id == system_id) {
       log::debug!("Replacing system with ID {}", system_id);
-      let mut system_ctx = ctx.clone_for_system(system_id);
-      systems[pos].on_shutdown(&mut system_ctx);
+      let mut cmds = cmds.clone_for_system(system_id);
+      systems[pos].on_shutdown(ctx, &mut cmds);
       systems[pos] = SystemContainer::new_from_system(system);
     } else {
       log::warn!("No system found with ID {}, cannot replace", system_id);
     }
   }
 
-  pub fn despawn_system(system_id: u64, systems: &mut Vec<SystemContainer>, ctx: &mut Context) {
+  pub fn despawn_system(
+    system_id: u64,
+    systems: &mut Vec<SystemContainer>,
+    ctx: &Context,
+    cmds: &mut Commands,
+  ) {
     if let Some(pos) = systems.iter().position(|c| c.id == system_id) {
       log::debug!("Despawning system with ID {}", system_id);
-      let mut system_ctx = ctx.clone_for_system(system_id);
-      systems[pos].on_shutdown(&mut system_ctx);
+      let mut cmds = cmds.clone_for_system(system_id);
+      systems[pos].on_shutdown(ctx, &mut cmds);
       systems.remove(pos);
     } else {
       log::warn!("No system found with ID {}, cannot despawn", system_id);

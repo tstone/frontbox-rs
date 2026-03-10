@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use crate::prelude::*;
 use serde_json::Value;
 
-pub trait StorableType: Any + Storable + Default + Send + Sync + 'static {}
-impl<T: Any + Storable + Default + Send + Sync + 'static> StorableType for T {}
+pub trait StorableType: Any + Storable + Default + PartialEq + Send + Sync + 'static {}
+impl<T: Any + Storable + Default + PartialEq + Send + Sync + 'static> StorableType for T {}
 
 #[derive(Debug)]
 pub struct Store {

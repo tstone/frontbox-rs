@@ -92,10 +92,10 @@ impl DropTargetDownUp {
     Box::new(Self { target_switches })
   }
 
-  fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context, cmds: &mut Commands) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
-      ctx.add_points(100);
+      cmds.add_points(100);
 
       let all_down = self
         .target_switches
@@ -104,31 +104,31 @@ impl DropTargetDownUp {
 
       if all_down {
         // ctx.command(AddPoints(1000));
-        ctx.add_points(1000);
-        ctx.add_bonus(1000);
+        cmds.add_points(1000);
+        cmds.add_bonus(1000);
 
-        ctx.trigger_delayed_driver(
+        cmds.trigger_delayed_driver(
           drivers::LOWER_DROP_TARGET_COIL,
           DriverTriggerControlMode::Manual,
           Duration::from_millis(250),
         );
-        ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
+        cmds.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }
   }
 }
 
 impl CloneableSystem for DropTargetDownUp {
-  fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.trigger_driver(
+  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+    cmds.trigger_driver(
       drivers::LOWER_DROP_TARGET_COIL,
       DriverTriggerControlMode::Manual,
     );
   }
 
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
     handle_event!(event, {
-      SwitchClosed => |e| { self.on_switch_closed(&e.switch, ctx); }
+      SwitchClosed => |e| { self.on_switch_closed(&e.switch, ctx, cmds); }
     });
   }
 }

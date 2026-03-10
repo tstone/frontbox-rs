@@ -4,6 +4,7 @@ mod led;
 mod macros;
 mod machine;
 pub mod plugins;
+mod states;
 pub mod systems;
 
 pub use crate::hardware_definition::*;
@@ -13,6 +14,7 @@ pub mod prelude {
   pub use crate::handle_event;
   pub use crate::hardware_definition::*;
   pub use crate::led::*;
+  pub use crate::machine::commands::Commands;
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};
   pub use crate::machine::context::Context;
   pub use crate::machine::event::*;
@@ -22,6 +24,7 @@ pub mod prelude {
   pub use crate::machine::machine_config::{MachineConfig, default_config};
   pub use crate::machine::plugin::*;
   pub use crate::machine::switch_context::SwitchContext;
+  pub use crate::states::*;
   pub use crate::store::*;
   pub use crate::systems::{CloneableSystem, OnEventSystem, System, SystemTimer, TimerMode};
 

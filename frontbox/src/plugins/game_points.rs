@@ -14,7 +14,7 @@ use crate::prelude::*;
  * In reality most games will probably want to make their own version of this that keeps track of game-specific
  * scoring information, in addition to just points/bonus.
  */
-#[derive(Default, Serialize, Storable)]
+#[derive(Default, Serialize, Storable, PartialEq)]
 #[allow(dead_code)]
 pub struct GamePoints {
   total_points: u32,
@@ -30,16 +30,16 @@ pub trait GamePointsExt {
   fn merge_ball_points(&mut self);
 }
 
-impl GamePointsExt for Context<'_> {
+impl GamePointsExt for Commands {
   fn add_points(&mut self, points: u32) {
-    self.store().with(move |store| {
+    self.store.write(move |store| {
       let game_points = store.get_mut::<GamePoints>();
       game_points.current_ball_points += points;
     });
   }
 
   fn add_bonus(&mut self, bonus: u32) {
-    self.store().with(move |store| {
+    self.store.write(move |store| {
       let game_points = store.get_mut::<GamePoints>();
       game_points.current_ball_bonus += bonus;
     });
@@ -47,7 +47,7 @@ impl GamePointsExt for Context<'_> {
 
   /// Merge points/bonus for current ball into total points/bonus
   fn merge_ball_points(&mut self) {
-    self.store().with(move |store| {
+    self.store.write(move |store| {
       let game_points = store.get_mut::<GamePoints>();
       game_points.total_points += game_points.current_ball_points;
       game_points.total_bonus += game_points.current_ball_bonus;

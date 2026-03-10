@@ -12,11 +12,11 @@ impl FreePlay {
 }
 
 impl CloneableSystem for FreePlay {
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn FrontboxEvent, _ctx: &Context, cmds: &mut Commands) {
     handle_event!(event, {
       SwitchClosed => |e| {
         if e.switch.name == self.start_button_id {
-          ctx.start_game();
+          cmds.start_game();
         }
       }
     });

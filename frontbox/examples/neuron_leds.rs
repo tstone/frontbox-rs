@@ -80,7 +80,7 @@ impl LedExample {
 }
 
 impl CloneableSystem for LedExample {
-  fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
     LedDeclarationBuilder::new(delta_time)
       .on(leds::DEMO1, Color::deep_sky_blue())
       .on(leds::DEMO2, Color::dark_blue())

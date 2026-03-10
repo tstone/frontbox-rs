@@ -8,16 +8,19 @@ A Rust native framework for interacting with FAST pinball hardware, built for ef
 ### Preview (Subject to Change)
 
 **Frontbox** is built around the unit of a `System`. Systems...
-- receive events 
-- enqueue async commands
-- emits events
-- declare LED state
 
-Systems are built on Rust structs, and can thus maintain their own state. 
+- ...receive events
+- ...enqueue commands (`Commands`)
+- ...read machine state (`Context`)
+- ...emit events
+- ...declare LED state.
+- ...are built on Rust structs and can thus maintain their own state
+- ...can also be parents to other systems
 
-- Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
+Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
 
 #### Example System
+
 This system implements a basic pinball "mode". A target is illuminated and must be struck 3 times. Each hit grants 1000 points. After 3 hits, the target will begin flashing. The player has 20 seconds to hit it again for 10,000 points (hurry up shot). After 20 seconds or being hit a 4th time the mode resets.
 
 - `SwitchClosed` event monitors the target's switch
@@ -62,18 +65,18 @@ impl TargetHitter {
     self.flash_anim.reset();
   }
 
-  fn on_target_hit(&mut self, ctx: &Context) {
+  fn on_target_hit(&mut self, ctx: &Context, cmds: &mut Commands) {
     if self.hurry_up_active {
-      ctx.add_points(10000);
-      ctx.add_bonus(1000);
+      cmds.add_points(10000);
+      cmds.add_bonus(1000);
       self.on_hurry_up_done();
     } else {
       self.hits = self.hits.saturating_add(1);
       self.add_points(1000);
-    
+
       if self.hits == 3 {
         self.hurry_up_active = true;
-        ctx.set_timer(HURRY_UP_TIMER, Duration::from_secs(20), TimerMode::Once);
+        cmds.set_timer(HURRY_UP_TIMER, Duration::from_secs(20), TimerMode::Once);
       }
     }
   }
@@ -84,23 +87,23 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
     handle_event!(event, {
-      SwitchClosed => |e| {  
+      SwitchClosed => |e| {
         if event.switch.id == self.target_switch_id {
-          self.on_target_hit(ctx);
+          self.on_target_hit(ctx, cmds);
         }
       }
     })
   }
 
-  fn on_timer(&mut self, name: &'static str, ctx: &mut Context) {
+  fn on_timer(&mut self, name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
     if event.name == HURRY_UP_TIMER {
       self.on_hurry_up_done();
     }
   }
 
-  fn leds(&mut self, delta_time: Duration) -> LedStates {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> LedStates {
     // show the flashing state if hurry up is active otherwise use a static color
     if self.hurry_up_active {
       LedDeclarationBuilder::new(delta_time)

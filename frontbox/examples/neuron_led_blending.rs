@@ -48,21 +48,21 @@ impl System1 {
 }
 
 impl CloneableSystem for System1 {
-  fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
+  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {
+    cmds.set_timer(
       "example_timer",
       std::time::Duration::from_secs(1),
       TimerMode::Repeating,
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::blue())
@@ -85,21 +85,21 @@ impl System2 {
 }
 
 impl CloneableSystem for System2 {
-  fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
+  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+    cmds.set_timer(
       "example_timer",
       std::time::Duration::from_secs(2),
       TimerMode::Repeating,
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::red())

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::prelude::*;
 
 pub struct OnEventSystem<E: FrontboxEvent> {
-  pub method: Arc<Mutex<dyn FnMut(&mut Context) + Send>>,
+  pub method: Arc<Mutex<dyn FnMut(&Context, &mut Commands) + Send>>,
   _phantom: PhantomData<E>,
 }
 
@@ -22,11 +22,11 @@ impl<E: FrontboxEvent> OnEventSystem<E> {
   ///
   /// Example:
   /// ```ignore
-  /// SystemOnEvent::<GameStarted>::new(|ctx| {
-  ///   ctx.spawn_district("players", PlayerDistrict::new(vec![]));
+  /// SystemOnEvent::<GameStarted>::new(|ctx, cmds| {
+  ///   cmds.spawn_system( ... );
   /// });
   /// ```
-  pub fn new(f: impl FnMut(&mut Context) + Send + 'static) -> Box<Self> {
+  pub fn new(f: impl FnMut(&Context, &mut Commands) + Send + 'static) -> Box<Self> {
     Box::new(Self {
       method: Arc::new(Mutex::new(f)),
       _phantom: PhantomData,
@@ -35,9 +35,9 @@ impl<E: FrontboxEvent> OnEventSystem<E> {
 }
 
 impl<E: FrontboxEvent + 'static> CloneableSystem for OnEventSystem<E> {
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
     handle_event!(event, {
-        E => |_e| { (self.method.lock().unwrap())(ctx); }
+        E => |_e| { (self.method.lock().unwrap())(ctx, cmds); }
     });
   }
 }

@@ -23,6 +23,7 @@ pub enum MachineCommand {
   WatchdogTick,
 
   // other
+  StateTransition(Box<dyn FnOnce(&mut States) + Send>),
   EmitEvent(Box<dyn FrontboxEvent>),
   SetConfigValue(&'static str, ConfigValue),
   Shutdown,
@@ -47,6 +48,7 @@ impl std::fmt::Debug for MachineCommand {
       Self::Key(key_event) => write!(f, "Key({:?})", key_event),
       Self::Shutdown => write!(f, "Shutdown"),
       Self::ResetExpansionNetwork => write!(f, "ResetExpansionNetwork"),
+      Self::StateTransition(_) => write!(f, "StateTransition(...)"),
     }
   }
 }

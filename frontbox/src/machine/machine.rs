@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::machine::context::StoreContext;
 use crate::machine::event::FrontboxEvent;
 use crate::machine::event::*;
 use crate::machine::key_reader::monitor_keys;
@@ -11,7 +10,7 @@ use crate::machine::serial_interface::*;
 use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
 use crate::systems::SystemCommand;
-use crate::systems::SystemCommandProcessor;
+use crate::systems::SystemCommands;
 use crate::systems::{SystemContainer, run_system_timers};
 use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
 use crossterm::{
@@ -38,10 +37,9 @@ pub struct Machine {
   led_renderer: LedRenderer,
   global_store: Store,
   global_systems: Vec<SystemContainer>,
-
   switches: SwitchContext,
   game_state: Option<GameState>,
-
+  states: States,
   command_sender: mpsc::UnboundedSender<MachineCommand>,
   command_receiver: mpsc::UnboundedReceiver<MachineCommand>,
   system_sender: mpsc::UnboundedSender<SystemCommand>,
@@ -96,24 +94,28 @@ impl Machine {
       system_tick,
       global_store: Store::new(),
       global_systems: Vec::new(),
+      states: States::new(),
     }
   }
 
   pub async fn run(&mut self, systems: Vec<Box<dyn System>>) {
     // initialize systems
     {
-      let mut ctx = Context::new(
-        self.command_sender.clone(),
-        self.system_sender.clone(),
-        StoreContext::new(self.store_sender.clone(), &self.global_store),
-        &self.switches,
-        &self.game_state,
+      let ctx = Context::new(
         &self.config,
-        0,
+        &self.game_state,
+        &self.states,
+        &self.global_store,
+        &self.switches,
       );
-
       for system in systems.into_iter() {
-        SystemCommandProcessor::spawn_system(system, &mut self.global_systems, &mut ctx);
+        let mut cmds = Commands::new(
+          self.command_sender.clone(),
+          self.system_sender.clone(),
+          self.store_sender.clone(),
+          0,
+        );
+        SystemCommands::spawn_system(system, &mut self.global_systems, &ctx, &mut cmds);
       }
     }
 
@@ -151,16 +153,20 @@ impl Machine {
         }
 
         Some(command) = self.system_receiver.recv() => {
-          let mut ctx = Context::new(
+          let ctx =     Context::new(
+            &self.config,
+            &self.game_state,
+            &self.states,
+            &self.global_store,
+            &self.switches,
+          );
+          let mut cmds = Commands::new(
             self.command_sender.clone(),
             self.system_sender.clone(),
-            StoreContext::new(self.store_sender.clone(), &self.global_store),
-            &self.switches,
-            &self.game_state,
-            &self.config,
+            self.store_sender.clone(),
             0,
           );
-          SystemCommandProcessor::process(command, &mut self.global_systems, &mut ctx);
+          SystemCommands::process(command, &mut self.global_systems, &ctx, &mut cmds);
         }
 
         Some(command) = self.store_receiver.recv() => {
@@ -221,8 +227,8 @@ impl Machine {
       }
       MachineCommand::SystemTick => {
         let tick_duration = self.system_tick;
-        self.dispatch_to_current_systems(|system, ctx| {
-          system.on_tick(tick_duration, ctx);
+        self.dispatch_to_current_systems(|system, ctx, cmds| {
+          system.on_tick(tick_duration, ctx, cmds);
         });
         self.render_leds().await;
       }
@@ -244,14 +250,15 @@ impl Machine {
       }
       MachineCommand::Shutdown => {}
       MachineCommand::EmitEvent(e) => self.emit(e),
+      MachineCommand::StateTransition(f) => f(&mut self.states),
     }
   }
 
   // ---
 
   fn emit(&mut self, event: Box<dyn FrontboxEvent>) {
-    self.dispatch_to_current_systems(|system, ctx| {
-      system.on_event(event.as_ref(), ctx);
+    self.dispatch_to_current_systems(|system, ctx, cmds| {
+      system.on_event(event.as_ref(), ctx, cmds);
     });
   }
 
@@ -274,25 +281,28 @@ impl Machine {
     }
   }
 
-  /// Run each system within the scene, capturing then running commands emitted during processing
+  /// Run each root system
   fn dispatch_to_current_systems<F>(&mut self, mut handler: F)
   where
-    F: FnMut(&mut SystemContainer, &mut Context),
+    F: FnMut(&mut SystemContainer, &Context, &mut Commands),
   {
     let ctx = Context::new(
-      self.command_sender.clone(),
-      self.system_sender.clone(),
-      StoreContext::new(self.store_sender.clone(), &mut self.global_store),
-      &self.switches,
-      &self.game_state,
       &self.config,
-      0,
+      &self.game_state,
+      &self.states,
+      &self.global_store,
+      &self.switches,
     );
 
-    // all districts are run in order, but only the current scene within each district is run
     for system in self.global_systems.iter_mut() {
-      if system.is_active() {
-        handler(system, &mut ctx.clone_for_system(system.id));
+      let mut cmds = Commands::new(
+        self.command_sender.clone(),
+        self.system_sender.clone(),
+        self.store_sender.clone(),
+        system.id,
+      );
+      if system.is_active(&ctx) {
+        handler(system, &ctx, &mut cmds);
       }
     }
   }
@@ -475,9 +485,17 @@ impl Machine {
   }
 
   async fn render_leds(&mut self) {
+    let ctx = Context::new(
+      &self.config,
+      &self.game_state,
+      &self.states,
+      &self.global_store,
+      &self.switches,
+    );
+
     let mut declarations = HashMap::new();
     for system in self.global_systems.iter_mut() {
-      declarations.insert(system.id, system.leds(self.system_tick));
+      declarations.insert(system.id, system.leds(self.system_tick, &ctx));
     }
 
     self.led_renderer.tick(self.system_tick);

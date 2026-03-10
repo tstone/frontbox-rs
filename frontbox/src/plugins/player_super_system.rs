@@ -1,8 +1,7 @@
 use tokio::sync::mpsc;
 
-use crate::machine::context::StoreContext;
 use crate::prelude::*;
-use crate::systems::{SystemCommand, SystemCommandProcessor, SystemContainer};
+use crate::systems::{SystemCommand, SystemCommands, SystemContainer};
 
 pub struct PlayerSuperSystem {
   // The initial scene to use as the basis for each player/team
@@ -64,26 +63,24 @@ impl PlayerSuperSystem {
 
   fn iterate_current_systems(
     &mut self,
-    ctx: &mut Context,
-    mut f: impl FnMut(&mut Box<dyn System>, &mut Context),
+    ctx: &Context,
+    cmds: &Commands,
+    mut f: impl FnMut(&mut Box<dyn System>, &Context, &mut Commands),
   ) {
     if let Some(scene) = self.player_scenes.get_mut(self.index as usize) {
-      let current_store = self.player_stores.get(self.index as usize).unwrap();
+      let mut cmds = cmds.clone_for_manager(self.system_sender.clone(), self.store_sender.clone());
 
       for system in scene {
-        if system.is_active() {
-          // build a new context with the current player's store
-          let store_context = StoreContext::new(self.store_sender.clone(), current_store);
-          let mut player_ctx =
-            ctx.clone_for_manager(system.id, self.system_sender.clone(), store_context);
-          f(&mut system.inner, &mut player_ctx);
+        if system.is_active(ctx) {
+          let mut cmds = cmds.clone_for_system(system.id);
+          f(&mut system.inner, &ctx, &mut cmds);
         }
       }
 
       // process system commands
       let current_systems = self.player_scenes.get_mut(self.index as usize).unwrap();
       while let Ok(cmd) = self.system_receiver.try_recv() {
-        SystemCommandProcessor::process(cmd, current_systems, ctx);
+        SystemCommands::process(cmd, current_systems, ctx, &mut cmds);
       }
 
       // process store commands
@@ -100,44 +97,50 @@ impl PlayerSuperSystem {
 }
 
 impl System for PlayerSuperSystem {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {
     // call on_startup for all systems in the initial scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_startup(ctx);
+    self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
+      system.on_startup(ctx, cmds);
     });
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context) {
+  fn on_shutdown(&mut self, ctx: &Context, cmds: &mut Commands) {
     // call on_shutdown for all systems in the current scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_shutdown(ctx);
+    self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
+      system.on_shutdown(ctx, cmds);
     });
   }
 
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
     handle_event!(event, {
       PlayerChanged => |e| { self.index = e.current_player_index; }
       PlayerAdded => |_e| { self.add_player();}
     });
 
     // Forward event to current player scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_event(event, ctx);
+    self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
+      system.on_event(event, ctx, cmds);
     });
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_tick(delta, ctx);
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {
+    self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
+      system.on_tick(delta, ctx, cmds);
     });
   }
 
-  fn leds(&mut self, delta_time: Duration) -> std::collections::HashMap<&'static str, LedState> {
+  fn leds(
+    &mut self,
+    delta_time: Duration,
+    ctx: &Context,
+  ) -> std::collections::HashMap<&'static str, LedState> {
     let mut leds = std::collections::HashMap::new();
     if let Some(scene) = self.player_scenes.get_mut(self.index as usize) {
       for system in scene {
-        let system_leds = system.inner.leds(delta_time);
-        leds.extend(system_leds);
+        if system.is_active(ctx) {
+          let system_leds = system.inner.leds(delta_time, ctx);
+          leds.extend(system_leds);
+        }
       }
     }
     leds
