@@ -1,3 +1,8 @@
+System
+
+- Ball location state
+- Current ball index
+
 Hardware
 
 - Add driver configure and trigger support for "hold" modes

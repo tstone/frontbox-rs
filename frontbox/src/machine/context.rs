@@ -21,8 +21,21 @@ impl<'a> Context<'a> {
       config: ReadonlyConfig::new(config),
       game: game_state.as_ref().map(|gs| ReadonlyGameState::new(gs)),
       states,
-      store: ReadonlyStore::new(store),      
-      switches,      
+      store: ReadonlyStore::new(store),
+      switches,
+    }
+  }
+
+  pub fn clone_for_manager(&self, states: &'a States, store: &'a Store) -> Self {
+    Self {
+      config: ReadonlyConfig::new(self.config.config),
+      game: self
+        .game
+        .as_ref()
+        .map(|gs| ReadonlyGameState::new(gs.game_state)),
+      states,
+      store: ReadonlyStore::new(store),
+      switches: self.switches,
     }
   }
 
@@ -69,14 +82,10 @@ impl<'a> ReadonlyStore<'a> {
   pub fn get<T: StorableType>(&self) -> Option<&T> {
     self.store.get::<T>()
   }
-
-  // pub fn with(&self, f: impl FnOnce(&mut Store) + Send + 'static) {
-  //   let _ = self.sender.send(StoreCommand::Write(Box::new(f)));
-  // }
 }
 
 pub struct ReadonlyConfig<'a> {
-  config: &'a MachineConfig,
+  pub(crate) config: &'a MachineConfig,
 }
 
 impl<'a> ReadonlyConfig<'a> {

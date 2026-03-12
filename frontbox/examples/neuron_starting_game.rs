@@ -1,5 +1,5 @@
 use frontbox::plugins::free_play::FreePlay;
-use frontbox::plugins::player_super_system::PlayerSuperSystem;
+use frontbox::plugins::player_system::PlayerSystem;
 use frontbox::prelude::*;
 use std::io::Write;
 
@@ -32,7 +32,7 @@ async fn main() {
     // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
     // from game type to what is actually running.
     OnEventSystem::<GameStarted>::new(|_ctx, cmds| {
-      cmds.spawn_system(*PlayerSuperSystem::new(vec![]));
+      cmds.spawn_system(*PlayerSystem::new(vec![]));
     }),
   ])
   .await;

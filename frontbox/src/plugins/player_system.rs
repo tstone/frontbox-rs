@@ -3,22 +3,21 @@ use tokio::sync::mpsc;
 use crate::prelude::*;
 use crate::systems::{SystemCommand, SystemCommands, SystemContainer};
 
-pub struct PlayerSuperSystem {
-  // The initial scene to use as the basis for each player/team
-  pub(crate) initial_scene: Vec<Box<dyn CloneableSystem>>,
-  /// Active stack, one per player
-  pub(crate) player_scenes: Vec<Vec<SystemContainer>>,
-  // Store for each player
-  pub(crate) player_stores: Vec<Store>,
+pub struct PlayerSystem {
+  initial_scene: Vec<Box<dyn CloneableSystem>>,
+  player_scenes: Vec<Vec<SystemContainer>>,
+  // Storage for each player
+  player_stores: Vec<Store>,
+  player_states: Vec<States>,
   /// Index of the current player
-  pub(crate) index: u8,
+  index: u8,
   system_sender: mpsc::UnboundedSender<SystemCommand>,
   system_receiver: mpsc::UnboundedReceiver<SystemCommand>,
   store_sender: mpsc::UnboundedSender<StoreCommand>,
   store_receiver: mpsc::UnboundedReceiver<StoreCommand>,
 }
 
-impl PlayerSuperSystem {
+impl PlayerSystem {
   pub fn new(initial_scene: Vec<Box<dyn CloneableSystem>>) -> Box<Self> {
     let mut player_scenes = Vec::new();
     let copy: Vec<SystemContainer> = initial_scene
@@ -33,6 +32,9 @@ impl PlayerSuperSystem {
     let mut player_stores = Vec::new();
     player_stores.push(Store::new());
 
+    let mut player_states = Vec::new();
+    player_states.push(States::new());
+
     let (system_sender, system_receiver) = mpsc::unbounded_channel::<SystemCommand>();
     let (store_sender, store_receiver) = mpsc::unbounded_channel::<StoreCommand>();
 
@@ -40,6 +42,7 @@ impl PlayerSuperSystem {
       initial_scene,
       player_scenes,
       player_stores,
+      player_states,
       index: 0,
       system_sender,
       system_receiver,
@@ -68,10 +71,14 @@ impl PlayerSuperSystem {
     mut f: impl FnMut(&mut Box<dyn System>, &Context, &mut Commands),
   ) {
     if let Some(scene) = self.player_scenes.get_mut(self.index as usize) {
+      let ctx = ctx.clone_for_manager(
+        &self.player_states[self.index as usize],
+        &self.player_stores[self.index as usize],
+      );
       let mut cmds = cmds.clone_for_manager(self.system_sender.clone(), self.store_sender.clone());
 
       for system in scene {
-        if system.is_active(ctx) {
+        if system.is_active(&ctx) {
           let mut cmds = cmds.clone_for_system(system.id);
           f(&mut system.inner, &ctx, &mut cmds);
         }
@@ -80,7 +87,7 @@ impl PlayerSuperSystem {
       // process system commands
       let current_systems = self.player_scenes.get_mut(self.index as usize).unwrap();
       while let Ok(cmd) = self.system_receiver.try_recv() {
-        SystemCommands::process(cmd, current_systems, ctx, &mut cmds);
+        SystemCommands::process(cmd, current_systems, &ctx, &mut cmds);
       }
 
       // process store commands
@@ -96,7 +103,7 @@ impl PlayerSuperSystem {
   }
 }
 
-impl System for PlayerSuperSystem {
+impl System for PlayerSystem {
   fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {
     // call on_startup for all systems in the initial scene
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
