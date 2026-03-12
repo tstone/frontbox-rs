@@ -58,6 +58,7 @@ async fn main() {
         3,
         drivers::LOWER_DROP_TARGET_COIL,
         PulseMode {
+          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
           initial_pwm_length: Duration::from_millis(250),
           initial_pwm_power: Power::FULL,
           ..Default::default()

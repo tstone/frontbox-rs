@@ -34,8 +34,8 @@ pub enum DriverConfig {
   PulseHoldCancel {
     switch: Option<usize>,
     invert_switch: Option<bool>,
-    off_switch: usize,
-    invert_off_switch: bool,
+    off_switch: Option<usize>,
+    invert_off_switch: Option<bool>,
     initial_pwm_length: Duration,
     secondary_pwm_power: Power,
     secondary_pwm_length: Duration,

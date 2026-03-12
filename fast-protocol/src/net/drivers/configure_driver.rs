@@ -154,11 +154,11 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         DriverTriggerBuilder::new()
           .enabled(true)
           .invert_switch1(invert_switch)
-          .invert_switch2(*invert_off_switch)
+          .invert_switch2(invert_off_switch)
           .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
-        off_switch,
+        off_switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
         secondary_pwm_length.as_millis(),
         secondary_pwm_power,

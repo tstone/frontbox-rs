@@ -7,8 +7,9 @@ System
 
 Hardware
 
-- Improve the "activate this driver" behavior to make it clearer (ie. delcare them as off by default then activate at the correct time)
-- Add driver configure and trigger support for "hold" modes
+- Improve the "activate this driver" behavior to make it clearer when the "automatic firing" comes on
+- Should hardware be allowed to be reconfigured? Probably, but configure_driver right now requires absolute IDs, not names
+- Add driver configure supportr for 30 Delayed Pulse, 75 Pulse w/ Cancel, 78 Pulse Hold Extension
 
 Display
 
