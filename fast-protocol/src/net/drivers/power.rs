@@ -1,7 +1,7 @@
 use std::fmt::{Display, UpperHex};
 
 /// 8-bit power for original coil modes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Power {
   pub power: u8,
 }

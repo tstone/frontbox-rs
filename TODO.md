@@ -7,7 +7,6 @@ System
 
 Hardware
 
-- When specifying driver mode, e.g. PulseMode, switches should be specified as &'static str, then mapped to their corresponding ID
 - Improve the "activate this driver" behavior to make it clearer (ie. delcare them as off by default then activate at the correct time)
 - Add driver configure and trigger support for "hold" modes
 

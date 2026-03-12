@@ -1,10 +1,10 @@
 use core::panic;
 use std::collections::HashMap;
 
+use crate::DriverMode;
 use crate::hardware_definition::io::SwitchConfig;
-use fast_protocol::DriverConfig;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct IoBoardBuilder {
   pub(crate) description: &'static str,
   pub(crate) switch_count: u32,
@@ -12,7 +12,7 @@ pub struct IoBoardBuilder {
   pub(crate) switch_map: HashMap<u16, &'static str>,
   pub(crate) driver_map: HashMap<u16, &'static str>,
   pub(crate) switch_configs: HashMap<&'static str, SwitchConfig>,
-  pub(crate) driver_configs: HashMap<&'static str, DriverConfig>,
+  pub(crate) driver_configs: HashMap<&'static str, Box<dyn DriverMode>>,
 }
 
 impl IoBoardBuilder {
@@ -34,11 +34,11 @@ impl IoBoardBuilder {
     self
   }
 
-  pub fn with_driver_cfg<T: Into<DriverConfig>>(
+  pub fn with_driver_cfg(
     mut self,
     idx: u16,
     key: &'static str,
-    config: T,
+    config: impl DriverMode + 'static,
   ) -> Self {
     if idx >= self.driver_count as u16 {
       panic!(
@@ -48,7 +48,7 @@ impl IoBoardBuilder {
     }
 
     self.driver_map.insert(idx, key);
-    self.driver_configs.insert(key, config.into());
+    self.driver_configs.insert(key, Box::new(config));
     self
   }
 }
