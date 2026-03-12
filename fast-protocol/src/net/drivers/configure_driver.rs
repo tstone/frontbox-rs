@@ -213,7 +213,7 @@ mod tests {
       switch: Some(5),
       invert_switch: Some(true),
       initial_pwm_length: Duration::from_millis(100),
-      initial_pwm_power: Power::full(),
+      initial_pwm_power: Power::FULL,
       secondary_pwm_length: Duration::from_millis(50),
       secondary_pwm_power: Power::percent(50),
       rest: Duration::from_millis(500),

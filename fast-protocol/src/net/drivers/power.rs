@@ -13,13 +13,9 @@ impl Power {
     Self { power }
   }
 
-  pub fn full() -> Self {
-    Self { power: 255 }
-  }
-
-  pub fn off() -> Self {
-    Self { power: 0 }
-  }
+  pub const FULL: Power = Power { power: 255 };
+  pub const OFF: Power = Power { power: 0 };
+  pub const ZERO: Power = Power { power: 0 };
 }
 
 impl Display for Power {
