@@ -1,3 +1,9 @@
+System
+
+- Need to figure out a better way to activate the Watchdog, as it's needed for low voltage drivers (start button)
+- Trough system
+- States (BallLocation, GameStartable)
+
 Hardware
 
 - When specifying driver mode, e.g. PulseMode, switches should be specified as &'static str, then mapped to their corresponding ID
