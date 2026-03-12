@@ -32,6 +32,7 @@ pub struct Machine {
   driver_lookup: HashMap<&'static str, Driver>,
   watchdog: Watchdog,
   config: MachineConfig,
+  io_boards: Vec<IoBoard>,
   expansion_boards: Vec<ExpansionBoardSpec>,
   system_tick: Duration,
   led_renderer: LedRenderer,
@@ -56,6 +57,7 @@ impl Machine {
     driver_lookup: HashMap<&'static str, Driver>,
     keyboard_switch_map: HashMap<KeyCode, usize>,
     config: MachineConfig,
+    io_boards: Vec<IoBoard>,
     expansion_boards: Vec<ExpansionBoardSpec>,
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
@@ -90,6 +92,7 @@ impl Machine {
       store_receiver,
       config,
       led_renderer: LedRenderer::new(&expansion_boards),
+      io_boards,
       expansion_boards,
       system_tick,
       global_store: Store::new(),
@@ -272,13 +275,39 @@ impl Machine {
         self.emit(SwitchOpened::new(switch));
       }
     } else {
-      log::warn!(
-        "Received event for unknown switch ID {} : {:?}",
-        switch_id,
-        state
-      );
+      // Repor as native board/switch id since this is the easiest way to figure out current switch wiring
+      match self.get_native_switch_id(switch_id) {
+        Some((board_id, local_id)) => {
+          log::warn!(
+            "Received event for unknown switch -- board: {}, id: {} -- {:?}",
+            board_id,
+            local_id,
+            state
+          );
+          return;
+        }
+        None => {
+          log::warn!(
+            "Received event for unknown switch on unknown board {} -- {:?}",
+            switch_id,
+            state
+          );
+        }
+      }
       return;
     }
+  }
+
+  fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
+    let mut offset: usize = 0;
+    for (index, board) in self.io_boards.iter().enumerate() {
+      if switch_id < (board.switch_count as usize) + offset {
+        let native_switch_id = switch_id - offset;
+        return Some((index, native_switch_id));
+      }
+      offset += board.switch_count as usize;
+    }
+    None
   }
 
   /// Run each root system

@@ -59,7 +59,7 @@ async fn main() {
         drivers::LOWER_DROP_TARGET_COIL,
         PulseMode {
           initial_pwm_length: Duration::from_millis(250),
-          initial_pwm_power: Power::percent(100),
+          initial_pwm_power: Power::FULL,
           ..Default::default()
         },
       ),

@@ -100,11 +100,11 @@ impl Default for PulseMode {
     Self {
       switch: None,
       invert_switch: None,
-      initial_pwm_length: Duration::from_millis(30),
-      initial_pwm_power: Power::percent(100),
+      initial_pwm_length: Duration::from_millis(20),
+      initial_pwm_power: Power::FULL,
       secondary_pwm_length: Duration::ZERO,
-      secondary_pwm_power: Power::percent(0),
-      rest: Duration::from_millis(500),
+      secondary_pwm_power: Power::ZERO,
+      rest: Duration::from_millis(80),
     }
   }
 }
@@ -140,9 +140,9 @@ impl Default for PulseKickMode {
       switch: None,
       invert_switch: None,
       initial_pwm_length: Duration::from_millis(30),
-      initial_pwm_power: Power::percent(100),
+      initial_pwm_power: Power::FULL,
       secondary_pwm_length: Duration::ZERO,
-      secondary_pwm_power: Power::percent(0),
+      secondary_pwm_power: Power::ZERO,
       kick_length: Duration::from_millis(500),
     }
   }
@@ -179,8 +179,8 @@ impl Default for PulseHoldMode {
       switch: None,
       invert_switch: None,
       initial_pwm_length: Duration::from_millis(30),
-      initial_pwm_power: Power::percent(100),
-      secondary_pwm_power: Power::percent(10),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_power: Power::ZERO,
       rest: Duration::ZERO,
     }
   }
@@ -260,7 +260,7 @@ impl Default for LongPulseMode {
       switch: None,
       invert_switch: None,
       initial_pwm_length: Duration::from_millis(200),
-      initial_pwm_power: Power::percent(100),
+      initial_pwm_power: Power::FULL,
       secondary_pwm_length: Duration::from_millis(1000),
       secondary_pwm_power: Power::percent(25),
       rest: Duration::from_millis(1000),
@@ -300,7 +300,7 @@ impl Default for FlipperMainDirectMode {
       invert_button_switch: None,
       eos_switch: 0,
       initial_pwm_power: Power::percent(45),
-      secondary_pwm_power: Power::full(),
+      secondary_pwm_power: Power::FULL,
       max_eos_time: Duration::from_millis(60),
       next_flip_refresh: Duration::from_millis(8),
     }
@@ -336,8 +336,8 @@ impl Default for FlipperHoldDirectMode {
       button_switch: 0,
       invert_button_switch: None,
       driver_on_time: Duration::from_millis(48),
-      initial_pwm_power: Power::full(),
-      secondary_pwm_power: Power::full(),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_power: Power::FULL,
     }
   }
 }
