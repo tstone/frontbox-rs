@@ -16,6 +16,7 @@ pub struct MachineBuilder {
   virtual_switch_count: u8,
   config: MachineConfig,
   expansion_boards: Vec<ExpansionBoardSpec>,
+  io_boards: Vec<IoBoard>,
 }
 
 impl MachineBuilder {
@@ -63,6 +64,7 @@ impl MachineBuilder {
       virtual_switch_count: 0,
       config: MachineConfig::default(),
       expansion_boards,
+      io_boards: io_network.boards,
     }
   }
 
@@ -301,6 +303,7 @@ impl MachineBuilder {
       self.driver_lookup,
       self.keyboard_switch_map,
       self.config,
+      self.io_boards,
       self.expansion_boards,
     )
   }

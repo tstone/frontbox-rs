@@ -6,6 +6,7 @@ use fast_protocol::DriverConfig;
 
 #[derive(Debug, Clone, Default)]
 pub struct IoBoardSpec {
+  pub(crate) description: &'static str,
   pub(crate) switch_count: u32,
   pub(crate) driver_count: u32,
   pub(crate) switch_map: HashMap<u16, &'static str>,
@@ -57,6 +58,7 @@ pub struct FastIoBoards;
 impl FastIoBoards {
   pub fn custom(switch_count: u32, driver_count: u32) -> IoBoardSpec {
     IoBoardSpec {
+      description: Box::leak(format!("Custom IO Board ({} switches, {} drivers)", switch_count, driver_count).into_boxed_str()),
       switch_count,
       driver_count,
       switch_map: HashMap::new(),
@@ -68,6 +70,7 @@ impl FastIoBoards {
 
   pub fn io_3208() -> IoBoardSpec {
     IoBoardSpec {
+      description: "IO-3208",
       switch_count: 32,
       driver_count: 8,
       switch_map: HashMap::new(),
@@ -79,6 +82,7 @@ impl FastIoBoards {
 
   pub fn io_1616() -> IoBoardSpec {
     IoBoardSpec {
+      description: "IO-1616",
       switch_count: 16,
       driver_count: 16,
       switch_map: HashMap::new(),
@@ -90,6 +94,7 @@ impl FastIoBoards {
 
   pub fn io_0804() -> IoBoardSpec {
     IoBoardSpec {
+      description: "IO-0804",
       switch_count: 8,
       driver_count: 4,
       switch_map: HashMap::new(),
@@ -101,6 +106,7 @@ impl FastIoBoards {
 
   pub fn cabinet() -> IoBoardSpec {
     IoBoardSpec {
+      description: "Cabinet IO",
       switch_count: 24,
       driver_count: 8,
       switch_map: HashMap::new(),
@@ -126,8 +132,16 @@ pub struct IoBoardDefinition {
 
 #[derive(Debug, Clone)]
 pub struct IoNetwork {
+  pub boards: Vec<IoBoard>,
   pub switches: Vec<SwitchSpec>,
   pub drivers: Vec<Driver>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IoBoard {
+  pub description: &'static str,
+  pub switch_count: u32,
+  pub driver_count: u32,
 }
 
 pub struct IoNetworkSpec {
@@ -144,12 +158,19 @@ impl IoNetworkSpec {
   }
 
   pub fn build(self) -> IoNetwork {
+    let mut boards: Vec<IoBoard> = Vec::new();
     let mut switches = Vec::new();
     let mut driver_pins = Vec::new();
     let mut switch_offset = 0;
     let mut driver_offset = 0;
 
     for (i, spec) in self.specs.into_iter().enumerate() {
+      boards.push(IoBoard {
+        description: spec.description,
+        switch_count: spec.switch_count,
+        driver_count: spec.driver_count
+      });
+
       for (idx, name) in spec.switch_map.iter() {
         let config = spec.switch_configs.get(name);
 
@@ -175,6 +196,7 @@ impl IoNetworkSpec {
     }
 
     IoNetwork {
+      boards,
       switches,
       drivers: driver_pins,
     }
