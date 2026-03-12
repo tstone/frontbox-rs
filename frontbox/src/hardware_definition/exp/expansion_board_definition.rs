@@ -1,15 +1,15 @@
-use fast_protocol::*;
+use crate::hardware_definition::exp::LedPortDefinition;
 
 /// https://fastpinball.com/programming/exp/#expansion-board-addresses
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub struct ExpansionBoardSpec {
+pub struct ExpansionBoardDefinition {
   pub(crate) address: u8,
   pub(crate) breakout: Option<u8>,
-  pub(crate) led_ports: Vec<LedPortSpec>,
+  pub(crate) led_ports: Vec<LedPortDefinition>,
 }
 
-impl ExpansionBoardSpec {
+impl ExpansionBoardDefinition {
   pub fn custom(address: &'static str, breakout: Option<u8>) -> Self {
     Self {
       address: u8::from_str_radix(address, 16).unwrap(),
@@ -84,7 +84,7 @@ impl ExpansionBoardSpec {
     Self::custom(address, None)
   }
 
-  pub fn with_led_port(mut self, port: LedPortSpec) -> Self {
+  pub fn with_led_port(mut self, port: LedPortDefinition) -> Self {
     self.led_ports.push(port);
     self
   }
@@ -94,23 +94,4 @@ impl ExpansionBoardSpec {
 pub enum JumperState {
   Open,
   Closed,
-}
-
-#[derive(Debug, Clone)]
-pub struct LedPortSpec {
-  pub port: u8,
-  pub start: u8,
-  pub leds: Vec<&'static str>,
-  pub led_type: LedType,
-}
-
-impl Default for LedPortSpec {
-  fn default() -> Self {
-    Self {
-      port: 0,
-      start: 0,
-      leds: Vec::new(),
-      led_type: LedType::WS2812,
-    }
-  }
 }

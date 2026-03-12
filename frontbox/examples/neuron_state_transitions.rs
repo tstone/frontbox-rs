@@ -7,11 +7,15 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  MachineBuilder::boot(BootConfig::default(), IoNetworkSpec::new().build(), vec![])
-    .await
-    .build()
-    .run(vec![ExampleSystem::new()])
-    .await;
+  MachineBuilder::boot(
+    BootConfig::default(),
+    IoNetworkBuilder::new().build(),
+    vec![],
+  )
+  .await
+  .build()
+  .run(vec![ExampleSystem::new()])
+  .await;
 }
 
 #[allow(unused)]

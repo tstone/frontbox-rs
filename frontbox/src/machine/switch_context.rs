@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::SwitchSpec;
+use crate::SwitchDefinition;
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
@@ -13,7 +13,7 @@ pub struct SwitchContext {
 }
 
 impl SwitchContext {
-  pub fn new(switch_specs: Vec<SwitchSpec>, initial_state: Vec<SwitchState>) -> Self {
+  pub fn new(switch_specs: Vec<SwitchDefinition>, initial_state: Vec<SwitchState>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();

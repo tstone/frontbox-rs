@@ -21,7 +21,7 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let mut io_network = IoNetworkSpec::new();
+  let mut io_network = IoNetworkBuilder::new();
 
   io_network.add_board(FastIoBoards::io_3208());
 

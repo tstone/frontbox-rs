@@ -19,16 +19,19 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards = vec![ExpansionBoardSpec::neutron().with_led_port(LedPortSpec {
-    port: 0,
-    start: 0,
-    led_type: LedType::WS2812,
-    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
-  })];
+  let expansion_boards =
+    vec![
+      ExpansionBoardDefinition::neutron().with_led_port(LedPortDefinition {
+        port: 0,
+        start: 0,
+        led_type: LedType::WS2812,
+        leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
+      }),
+    ];
 
   MachineBuilder::boot(
     BootConfig::default(),
-    IoNetworkSpec::new().build(),
+    IoNetworkBuilder::new().build(),
     expansion_boards,
   )
   .await

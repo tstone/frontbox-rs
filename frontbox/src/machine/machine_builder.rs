@@ -11,19 +11,19 @@ pub struct MachineBuilder {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   switches: SwitchContext,
-  driver_lookup: HashMap<&'static str, Driver>,
+  driver_lookup: HashMap<&'static str, DriverDefinition>,
   keyboard_switch_map: HashMap<KeyCode, usize>,
   virtual_switch_count: u8,
   config: MachineConfig,
-  expansion_boards: Vec<ExpansionBoardSpec>,
-  io_boards: Vec<IoBoard>,
+  expansion_boards: Vec<ExpansionBoardDefinition>,
+  io_boards: Vec<IoBoardDefinition>,
 }
 
 impl MachineBuilder {
   pub async fn boot(
     config: BootConfig,
     io_network: IoNetwork,
-    expansion_boards: Vec<ExpansionBoardSpec>,
+    expansion_boards: Vec<ExpansionBoardDefinition>,
   ) -> Self {
     let mut io_port = SerialInterface::new(config.io_net_port_path)
       .await
@@ -138,7 +138,7 @@ impl MachineBuilder {
     );
   }
 
-  async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchSpec>) {
+  async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchDefinition>) {
     for switch in switches {
       if let Some(config) = &switch.config {
         let reporting = if config.inverted {
@@ -162,7 +162,7 @@ impl MachineBuilder {
     }
   }
 
-  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<Driver>) {
+  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<DriverDefinition>) {
     for driver in drivers {
       if let Some(config) = &driver.config {
         log::info!("Configuring driver {} with {:?}", driver.name, config);
@@ -189,7 +189,7 @@ impl MachineBuilder {
 
   pub async fn reset_expansion_boards(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoardSpec>,
+    expansion_boards: &Vec<ExpansionBoardDefinition>,
   ) {
     for board in expansion_boards {
       if board.breakout.is_none() {
@@ -220,7 +220,7 @@ impl MachineBuilder {
 
   async fn configure_led_ports(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoardSpec>,
+    expansion_boards: &Vec<ExpansionBoardDefinition>,
   ) {
     for board in expansion_boards {
       for led_port in &board.led_ports {

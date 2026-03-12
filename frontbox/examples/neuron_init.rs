@@ -14,7 +14,7 @@ async fn main() {
       exp_port_path: "/dev/ttyACM1",
       ..Default::default()
     },
-    IoNetworkSpec::new().build(),
+    IoNetworkBuilder::new().build(),
     vec![],
   )
   .await
