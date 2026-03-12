@@ -16,11 +16,13 @@ pub trait DriverMode {
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/
 #[derive(Debug, Clone)]
 pub struct PulseMode {
+  /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
   pub initial_pwm_length: Duration,
   pub initial_pwm_power: Power,
   pub secondary_pwm_length: Duration,
   pub secondary_pwm_power: Power,
+  /// Time after the driver goes off before it can be triggered again
   pub rest: Duration,
 }
 
@@ -59,11 +61,13 @@ impl DriverMode for PulseMode {
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/
 #[derive(Debug, Clone)]
 pub struct PulseKickMode {
+  /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
   pub initial_pwm_length: Duration,
   pub initial_pwm_power: Power,
   pub secondary_pwm_length: Duration,
   pub secondary_pwm_power: Power,
+  /// Time that the driver is held at full power after the initial and secondary PWM times
   pub kick_length: Duration,
 }
 
@@ -101,10 +105,12 @@ impl DriverMode for PulseKickMode {
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/
 #[derive(Debug, Clone)]
 pub struct PulseHoldMode {
+  /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
   pub initial_pwm_length: Duration,
   pub initial_pwm_power: Power,
   pub secondary_pwm_power: Power,
+  /// Time after the driver goes off before it can be triggered again
   pub rest: Duration,
 }
 
@@ -140,10 +146,12 @@ impl DriverMode for PulseHoldMode {
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/
 #[derive(Debug, Clone)]
 pub struct PulseHoldCancelMode {
+  /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,
   pub initial_pwm_length: Duration,
   pub secondary_pwm_power: Power,
   pub secondary_pwm_length: Duration,
+  /// Time after the driver goes off before it can be triggered again
   pub rest: Duration,
 }
 
@@ -181,11 +189,13 @@ impl DriverMode for PulseHoldCancelMode {
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/
 #[derive(Debug, Clone)]
 pub struct LongPulseMode {
+  /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
   pub initial_pwm_length: Duration,
   pub initial_pwm_power: Power,
   pub secondary_pwm_length: Duration,
   pub secondary_pwm_power: Power,
+  /// Time after the driver goes off before it can be triggered again
   pub rest: Duration,
 }
 
