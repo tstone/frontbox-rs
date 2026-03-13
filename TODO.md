@@ -1,7 +1,6 @@
 System
 
 - Current ball index
-- Need to figure out a better way to activate the Watchdog, as it's needed for low voltage drivers (start button)
 - Trough system
 - States (BallLocation, GameStartable)
 

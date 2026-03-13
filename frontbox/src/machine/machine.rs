@@ -105,6 +105,10 @@ impl Machine {
   }
 
   pub async fn run(&mut self, systems: Vec<Box<dyn System>>) {
+    // Note: FAST system seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
+    // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage
+    self.enable_watchdog().await;
+
     // initialize systems
     {
       let ctx = Context::new(
@@ -352,7 +356,6 @@ impl Machine {
       active_player: 0,
       player_count: 1,
     });
-    self.enable_high_voltage().await;
     self.report_switches().await; // sync initial switch states
     self.emit(GameStarted::new());
   }
@@ -360,7 +363,6 @@ impl Machine {
   async fn end_game(&mut self) {
     log::info!("Ending game");
     self.emit(GameEnded::new());
-    self.disable_high_voltage().await;
     self.game_state = None;
   }
 
@@ -394,8 +396,7 @@ impl Machine {
     self.report_switches().await;
   }
 
-  async fn enable_high_voltage(&mut self) {
-    log::info!("Enabling high voltage");
+  async fn enable_watchdog(&mut self) {
     self.watchdog.enable();
     let _ = self
       .io_port
@@ -409,8 +410,8 @@ impl Machine {
     tokio::time::sleep(Duration::from_millis(300)).await;
   }
 
-  async fn disable_high_voltage(&mut self) {
-    log::info!("Disabling high voltage");
+  #[allow(unused)]
+  async fn disable_watchdog(&mut self) {
     self.watchdog.disable();
 
     // Clear any remaining watchdog time out
