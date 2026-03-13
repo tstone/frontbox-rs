@@ -32,7 +32,7 @@ async fn main() {
     // be it players, co-op, team may be selectable. This little bit of glue code is responsible for translating
     // from game type to what is actually running.
     OnEventSystem::<GameStarted>::new(|_ctx, cmds| {
-      cmds.spawn_system(*PlayerSystem::new(vec![]));
+      cmds.system.spawn(*PlayerSystem::new(vec![]));
     }),
   ])
   .await;

@@ -1,7 +1,7 @@
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
-use crate::systems::{SystemCommand, SystemCommands, SystemContainer};
+use crate::systems::{SystemCommand, SystemCommandsProcessor, SystemContainer};
 
 pub struct PlayerSystem {
   initial_scene: Vec<Box<dyn CloneableSystem>>,
@@ -87,7 +87,7 @@ impl PlayerSystem {
       // process system commands
       let current_systems = self.player_scenes.get_mut(self.index as usize).unwrap();
       while let Ok(cmd) = self.system_receiver.try_recv() {
-        SystemCommands::process(cmd, current_systems, &ctx, &mut cmds);
+        SystemCommandsProcessor::process(cmd, current_systems, &ctx, &mut cmds);
       }
 
       // process store commands

@@ -1,4 +1,3 @@
-pub mod commands;
 pub mod config_value;
 pub mod context;
 pub mod event;

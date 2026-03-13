@@ -10,7 +10,7 @@ use crate::machine::serial_interface::*;
 use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
 use crate::systems::SystemCommand;
-use crate::systems::SystemCommands;
+use crate::systems::SystemCommandsProcessor;
 use crate::systems::{SystemContainer, run_system_timers};
 use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
 use crossterm::{
@@ -118,7 +118,7 @@ impl Machine {
           self.store_sender.clone(),
           0,
         );
-        SystemCommands::spawn_system(system, &mut self.global_systems, &ctx, &mut cmds);
+        SystemCommandsProcessor::spawn_system(system, &mut self.global_systems, &ctx, &mut cmds);
       }
     }
 
@@ -169,7 +169,7 @@ impl Machine {
             self.store_sender.clone(),
             0,
           );
-          SystemCommands::process(command, &mut self.global_systems, &ctx, &mut cmds);
+          SystemCommandsProcessor::process(command, &mut self.global_systems, &ctx, &mut cmds);
         }
 
         Some(command) = self.store_receiver.recv() => {

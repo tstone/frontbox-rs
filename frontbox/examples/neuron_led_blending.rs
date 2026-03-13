@@ -52,7 +52,7 @@ impl System1 {
 
 impl CloneableSystem for System1 {
   fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
-    cmds.set_timer(
+    cmds.timer.set(
       "example_timer",
       std::time::Duration::from_secs(1),
       TimerMode::Repeating,
@@ -89,7 +89,7 @@ impl System2 {
 
 impl CloneableSystem for System2 {
   fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
-    cmds.set_timer(
+    cmds.timer.set(
       "example_timer",
       std::time::Duration::from_secs(2),
       TimerMode::Repeating,

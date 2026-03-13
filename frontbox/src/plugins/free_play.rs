@@ -16,7 +16,7 @@ impl CloneableSystem for FreePlay {
     handle_event!(event, {
       SwitchClosed => |e| {
         if e.switch.name == self.start_button_id {
-          cmds.start_game();
+          cmds.game.start();
         }
       }
     });

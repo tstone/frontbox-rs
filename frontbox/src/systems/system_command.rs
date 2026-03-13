@@ -9,9 +9,9 @@ pub enum SystemCommand {
   SetTimer(u64, &'static str, Duration, TimerMode),
 }
 
-pub struct SystemCommands;
+pub struct SystemCommandsProcessor;
 
-impl SystemCommands {
+impl SystemCommandsProcessor {
   pub fn process(
     command: SystemCommand,
     systems: &mut Vec<SystemContainer>,

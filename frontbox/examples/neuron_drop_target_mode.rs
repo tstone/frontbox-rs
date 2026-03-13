@@ -108,12 +108,14 @@ impl DropTargetDownUp {
         cmds.add_points(1000);
         cmds.add_bonus(1000);
 
-        cmds.trigger_delayed_driver(
+        cmds.driver.trigger_delayed(
           drivers::LOWER_DROP_TARGET_COIL,
           DriverTriggerControlMode::Manual,
           Duration::from_millis(250),
         );
-        cmds.replace_system(*DropTargetDownUp::new(self.target_switches));
+        cmds
+          .system
+          .replace(*DropTargetDownUp::new(self.target_switches));
       }
     }
   }
@@ -121,10 +123,9 @@ impl DropTargetDownUp {
 
 impl CloneableSystem for DropTargetDownUp {
   fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
-    cmds.trigger_driver(
-      drivers::LOWER_DROP_TARGET_COIL,
-      DriverTriggerControlMode::Manual,
-    );
+    cmds
+      .driver
+      .activate(drivers::LOWER_DROP_TARGET_COIL, ActivationMode::Tap);
   }
 
   fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
