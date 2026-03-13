@@ -37,7 +37,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         "DL:{:X},{:X},{:X},10,{:X},{:X},{:X},{:X},{:X}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
-          .enabled(true)
           .invert_switch1(invert_switch)
           .disable_switch(true)
           .bits(),
@@ -60,7 +59,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         "DL:{:X},{:X},{:X},12,{:X},{:X},{:X},{:X},{:X}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
-          .enabled(true)
           .invert_switch1(invert_switch)
           .disable_switch(true)
           .bits(),
@@ -82,7 +80,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         "DL:{:X},{:X},{:X},18,{:X},{:X},{:X},{:X}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
-          .enabled(true)
           .manual(switch.is_none())
           .invert_switch1(invert_switch)
           .disable_switch(switch.is_none())
@@ -90,6 +87,74 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
         initial_pwm_power,
+        secondary_pwm_power,
+        rest.as_millis()
+      ),
+      DriverConfig::PulseHoldCancel {
+        switch,
+        invert_switch,
+        off_switch,
+        invert_off_switch,
+        initial_pwm_length,
+        secondary_pwm_length,
+        secondary_pwm_power,
+        rest,
+      } => format!(
+        "DL:{:X},{:X},{:X},75,{:X},{:X},{:X},{:X},{:X}\r",
+        self.driver_id,
+        DriverTriggerBuilder::new()
+          .invert_switch1(invert_switch)
+          .invert_switch2(invert_off_switch)
+          .disable_switch(true)
+          .bits(),
+        switch.unwrap_or(0),
+        off_switch.unwrap_or(0),
+        initial_pwm_length.as_millis(),
+        secondary_pwm_length.as_millis(),
+        secondary_pwm_power,
+        rest.as_millis()
+      ),
+      DriverConfig::DelayedPulse {
+        switch,
+        invert_switch,
+        delay_length,
+        initial_full_power_length,
+        secondary_pwm_power,
+        secondary_pwm_length,
+        rest,
+      } => format!(
+        "DL:{:X},{:X},{:X},30,{:X},{:X},{:X},{:X},{:X}\r",
+        self.driver_id,
+        DriverTriggerBuilder::new()
+          .invert_switch1(invert_switch)
+          .disable_switch(true)
+          .bits(),
+        switch.unwrap_or(0),
+        delay_length.as_millis() / 10, // FAST protocol delay is in 10ms increments
+        initial_full_power_length.as_millis(),
+        secondary_pwm_length.as_millis(),
+        secondary_pwm_power,
+        rest.as_millis()
+      ),
+      DriverConfig::LongPulse {
+        switch,
+        invert_switch,
+        initial_pwm_length,
+        initial_pwm_power,
+        secondary_pwm_length,
+        secondary_pwm_power,
+        rest,
+      } => format!(
+        "DL:{:X},{:X},{:X},70,{:X},{:X},{:X},{:X},{:X}\r",
+        self.driver_id,
+        DriverTriggerBuilder::new()
+          .invert_switch1(invert_switch)
+          .disable_switch(true)
+          .bits(),
+        switch.unwrap_or(0),
+        initial_pwm_length.as_millis(),
+        initial_pwm_power,
+        secondary_pwm_length.as_millis(),
         secondary_pwm_power,
         rest.as_millis()
       ),
@@ -106,7 +171,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
           "DL:{:X},{:X},{:X},5E,{:X},{:X},{:X},{:X},{:X}\r",
           self.driver_id,
           DriverTriggerBuilder::new()
-            .enabled(true)
             .invert_switch1(invert_button_switch)
             .disable_switch(false)
             .bits(),
@@ -129,7 +193,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
           "DL:{:X},{:X},{:X},5D,{:X},{:X},{:X},00,00\r",
           self.driver_id,
           DriverTriggerBuilder::new()
-            .enabled(true)
             .invert_switch1(invert_button_switch)
             .disable_switch(false)
             .bits(),
@@ -139,54 +202,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
           secondary_pwm_power,
         )
       }
-      DriverConfig::PulseHoldCancel {
-        switch,
-        invert_switch,
-        off_switch,
-        invert_off_switch,
-        initial_pwm_length,
-        secondary_pwm_length,
-        secondary_pwm_power,
-        rest,
-      } => format!(
-        "DL:{:X},{:X},{:X},75,{:X},{:X},{:X},{:X},{:X}\r",
-        self.driver_id,
-        DriverTriggerBuilder::new()
-          .enabled(true)
-          .invert_switch1(invert_switch)
-          .invert_switch2(invert_off_switch)
-          .disable_switch(true)
-          .bits(),
-        switch.unwrap_or(0),
-        off_switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
-        secondary_pwm_length.as_millis(),
-        secondary_pwm_power,
-        rest.as_millis()
-      ),
-      DriverConfig::LongPulse {
-        switch,
-        invert_switch,
-        initial_pwm_length,
-        initial_pwm_power,
-        secondary_pwm_length,
-        secondary_pwm_power,
-        rest,
-      } => format!(
-        "DL:{:X},{:X},{:X},70,{:X},{:X},{:X},{:X},{:X}\r",
-        self.driver_id,
-        DriverTriggerBuilder::new()
-          .enabled(true)
-          .invert_switch1(invert_switch)
-          .disable_switch(true)
-          .bits(),
-        switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
-        initial_pwm_power,
-        secondary_pwm_length.as_millis(),
-        secondary_pwm_power,
-        rest.as_millis()
-      ),
     }
   }
 

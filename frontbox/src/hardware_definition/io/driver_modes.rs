@@ -195,6 +195,50 @@ impl DriverMode for PulseHoldCancelMode {
   }
 }
 
+/// Mode 30 - Insert a delay between when the switch is triggered and the driver fires.
+/// Useful for things kickbacks where a bit of delay needs to be added into the automatic flow.
+/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/30/
+#[derive(Debug, Clone)]
+pub struct DelayedPulseMode {
+  /// What causes the driver to fire (be triggered)
+  pub trigger_mode: DriverTriggerMode,
+  pub delay_length: Duration,
+  pub initial_full_power_length: Duration,
+  pub secondary_pwm_length: Duration,
+  pub secondary_pwm_power: Power,
+  /// Time after the driver goes off before it can be triggered again
+  pub rest: Duration,
+}
+
+impl Default for DelayedPulseMode {
+  fn default() -> Self {
+    Self {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      delay_length: Duration::from_millis(30),
+      initial_full_power_length: Duration::from_millis(30),
+      secondary_pwm_length: Duration::ZERO,
+      secondary_pwm_power: Power::ZERO,
+      rest: Duration::from_millis(80),
+    }
+  }
+}
+
+impl DriverMode for DelayedPulseMode {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+
+    DriverConfig::DelayedPulse {
+      switch,
+      invert_switch,
+      delay_length: self.delay_length,
+      initial_full_power_length: self.initial_full_power_length,
+      secondary_pwm_length: self.secondary_pwm_length,
+      secondary_pwm_power: self.secondary_pwm_power,
+      rest: self.rest,
+    }
+  }
+}
+
 /// Mode 70 - Pulse the driver for an initial time (up to 255ms), then hold it for a secondary time (up to 25s).
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/
 #[derive(Debug, Clone)]

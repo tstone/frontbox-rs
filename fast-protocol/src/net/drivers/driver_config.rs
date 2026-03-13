@@ -41,6 +41,15 @@ pub enum DriverConfig {
     secondary_pwm_length: Duration,
     rest: Duration,
   },
+  DelayedPulse {
+    switch: Option<usize>,
+    invert_switch: Option<bool>,
+    delay_length: Duration,
+    initial_full_power_length: Duration,
+    secondary_pwm_power: Power,
+    secondary_pwm_length: Duration,
+    rest: Duration,
+  },
   LongPulse {
     switch: Option<usize>,
     invert_switch: Option<bool>,
@@ -76,8 +85,9 @@ impl DriverConfig {
       DriverConfig::PulseKick { switch, .. } => *switch,
       DriverConfig::PulseHold { switch, .. } => *switch,
       DriverConfig::PulseHoldCancel { switch, .. } => *switch,
+      DriverConfig::DelayedPulse { switch, .. } => *switch,
       DriverConfig::LongPulse { switch, .. } => *switch,
-      DriverConfig::FlipperMainDirect { eos_switch, .. } => Some(*eos_switch),
+      DriverConfig::FlipperMainDirect { button_switch, .. } => Some(*button_switch),
       DriverConfig::FlipperHoldDirect { button_switch, .. } => Some(*button_switch),
     }
   }
