@@ -1,6 +1,7 @@
 use tokio::sync::mpsc;
 
 use crate::commands::driver_commands::*;
+use crate::commands::driver_group_commands::*;
 use crate::commands::game_commands::*;
 use crate::commands::system_commands::*;
 use crate::commands::timer_commands::*;
@@ -16,6 +17,7 @@ pub struct Commands {
   system_manager: mpsc::UnboundedSender<SystemCommand>,
   listener_id: u64,
   pub driver: DriverCommands,
+  pub driver_group: DriverGroupCommands,
   pub game: GameCommands,
   pub system: SystemCommands,
   pub timer: TimerCommands,
@@ -37,6 +39,9 @@ impl Commands {
         machine: machine.clone(),
       },
       driver: DriverCommands {
+        machine: machine.clone(),
+      },
+      driver_group: DriverGroupCommands {
         machine: machine.clone(),
       },
       system: SystemCommands {

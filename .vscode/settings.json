@@ -1,0 +1,6 @@
+{
+  // for rust-analyzer performance
+  "rust-analyzer.procMacro.ignored": {
+    "frontbox-derive": ["FrontboxEvent", "Storable"]
+  }
+}

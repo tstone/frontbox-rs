@@ -1,4 +1,4 @@
-mod driver_modes;
+pub mod driver_modes;
 mod fast_io_boards;
 mod io_board_builder;
 mod io_network;

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use fast_protocol::DriverConfig;
@@ -9,6 +10,7 @@ pub struct IoNetwork {
   pub boards: Vec<IoBoardDefinition>,
   pub switches: Vec<SwitchDefinition>,
   pub drivers: Vec<DriverDefinition>,
+  pub driver_groups: HashMap<&'static str, Vec<&'static str>>,
 }
 
 /// Simplified description of an IO board

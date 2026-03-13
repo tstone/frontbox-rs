@@ -17,6 +17,7 @@ pub struct MachineBuilder {
   config: MachineConfig,
   expansion_boards: Vec<ExpansionBoardDefinition>,
   io_boards: Vec<IoBoardDefinition>,
+  driver_groups: HashMap<&'static str, Vec<&'static str>>,
 }
 
 impl MachineBuilder {
@@ -65,6 +66,7 @@ impl MachineBuilder {
       config: MachineConfig::default(),
       expansion_boards,
       io_boards: io_network.boards,
+      driver_groups: io_network.driver_groups,
     }
   }
 
@@ -305,6 +307,7 @@ impl MachineBuilder {
       self.config,
       self.io_boards,
       self.expansion_boards,
+      self.driver_groups,
     )
   }
 }

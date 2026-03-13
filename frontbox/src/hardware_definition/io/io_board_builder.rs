@@ -16,39 +16,39 @@ pub struct IoBoardBuilder {
 }
 
 impl IoBoardBuilder {
-  pub fn with_switch(mut self, idx: u16, key: &'static str) -> Self {
-    if idx >= self.switch_count as u16 {
+  pub fn with_switch(mut self, name: &'static str, pin: u16) -> Self {
+    if pin >= self.switch_count as u16 {
       panic!(
         "Switch index {} out of bounds for board with {} switches",
-        idx, self.switch_count
+        pin, self.switch_count
       );
     }
 
-    self.switch_map.insert(idx, key);
+    self.switch_map.insert(pin, name);
     self
   }
 
-  pub fn with_switch_cfg(mut self, idx: u16, key: &'static str, config: SwitchConfig) -> Self {
-    self = self.with_switch(idx, key);
-    self.switch_configs.insert(key, config);
+  pub fn with_switch_cfg(mut self, name: &'static str, pin: u16, config: SwitchConfig) -> Self {
+    self = self.with_switch(name, pin);
+    self.switch_configs.insert(name, config);
     self
   }
 
   pub fn with_driver_cfg(
     mut self,
-    idx: u16,
-    key: &'static str,
+    name: &'static str,
+    pin: u16,
     config: impl DriverMode + 'static,
   ) -> Self {
-    if idx >= self.driver_count as u16 {
+    if pin >= self.driver_count as u16 {
       panic!(
         "Driver index {} out of bounds for board with {} drivers",
-        idx, self.driver_count
+        pin, self.driver_count
       );
     }
 
-    self.driver_map.insert(idx, key);
-    self.driver_configs.insert(key, Box::new(config));
+    self.driver_map.insert(pin, name);
+    self.driver_configs.insert(name, Box::new(config));
     self
   }
 }

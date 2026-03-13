@@ -28,8 +28,8 @@ async fn main() {
   io_network.add_board(
     FastIoBoards::io_1616()
       .with_switch_cfg(
-        5,
         switches::LOWER_DROP_TARGET1,
+        5,
         SwitchConfig {
           inverted: true,
           debounce_open: Some(Duration::from_millis(10)),
@@ -37,8 +37,8 @@ async fn main() {
         },
       )
       .with_switch_cfg(
-        6,
         switches::LOWER_DROP_TARGET2,
+        6,
         SwitchConfig {
           inverted: true,
           debounce_open: Some(Duration::from_millis(10)),
@@ -46,8 +46,8 @@ async fn main() {
         },
       )
       .with_switch_cfg(
-        7,
         switches::LOWER_DROP_TARGET3,
+        7,
         SwitchConfig {
           inverted: true,
           debounce_open: Some(Duration::from_millis(10)),
@@ -55,8 +55,8 @@ async fn main() {
         },
       )
       .with_driver_cfg(
-        3,
         drivers::LOWER_DROP_TARGET_COIL,
+        3,
         PulseMode {
           trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
           initial_pwm_length: Duration::from_millis(250),

@@ -34,6 +34,7 @@ pub struct Machine {
   config: MachineConfig,
   io_boards: Vec<IoBoardDefinition>,
   expansion_boards: Vec<ExpansionBoardDefinition>,
+  driver_groups: HashMap<&'static str, Vec<&'static str>>,
   system_tick: Duration,
   led_renderer: LedRenderer,
   global_store: Store,
@@ -59,6 +60,7 @@ impl Machine {
     config: MachineConfig,
     io_boards: Vec<IoBoardDefinition>,
     expansion_boards: Vec<ExpansionBoardDefinition>,
+    driver_groups: HashMap<&'static str, Vec<&'static str>>,
   ) -> Self {
     let (command_sender, command_receiver) = mpsc::unbounded_channel();
     let (system_sender, system_receiver) = mpsc::unbounded_channel();
@@ -97,6 +99,7 @@ impl Machine {
       system_tick,
       global_store: Store::new(),
       global_systems: Vec::new(),
+      driver_groups,
       states: States::new(),
     }
   }
@@ -219,11 +222,14 @@ impl Machine {
       MachineCommand::EndGame => self.end_game().await,
       MachineCommand::AddPlayer => self.add_player(),
       MachineCommand::AdvancePlayer => self.advance_player().await,
-      MachineCommand::ConfigureDriver(driver_name, config) => {
-        self.configure_driver(driver_name, config).await
+      MachineCommand::ConfigureDriver(driver_name, mode) => {
+        self.configure_driver(driver_name, mode).await
       }
       MachineCommand::TriggerDriver(driver_name, mode, delay) => {
         self.trigger_driver(driver_name, mode, delay).await
+      }
+      MachineCommand::TriggerDriverGroup(group_name, mode, _delay) => {
+        self.trigger_driver_group(group_name, mode).await
       }
       MachineCommand::SetConfigValue(key, value) => {
         self.config.set_value(key, value);
@@ -414,9 +420,11 @@ impl Machine {
       .await;
   }
 
-  async fn configure_driver(&mut self, driver: &'static str, config: DriverConfig) {
+  async fn configure_driver(&mut self, driver: &'static str, mode: Box<dyn DriverMode>) {
     match self.driver_lookup.get(driver) {
       Some(driver) => {
+        let config = mode.to_config(&self.switches);
+
         log::info!("Configuring driver {}", driver.name);
         match self
           .io_port
@@ -472,16 +480,31 @@ impl Machine {
         }
 
         log::info!("Triggering driver {}", driver.name);
-        let switch = driver.config.as_ref().and_then(|cfg| cfg.switch_id());
         self
           .io_port
-          .dispatch(&TriggerDriverCommand::new(driver.id, mode, switch))
+          .dispatch(&TriggerDriverCommand::new(driver.id, mode, None))
           .await;
       }
       None => {
         log::error!("Attempted to trigger unknown driver: {}", driver);
         return;
       }
+    }
+  }
+
+  async fn trigger_driver_group(
+    &mut self,
+    group_name: &'static str,
+    mode: DriverTriggerControlMode,
+  ) {
+    let Some(group) = self.driver_groups.get(group_name) else {
+      log::error!("Attempted to trigger unknown driver group: {}", group_name);
+      return;
+    };
+
+    let drivers: Vec<_> = group.iter().cloned().collect();
+    for driver_name in drivers {
+      self.trigger_driver(driver_name, mode, None).await;
     }
   }
 

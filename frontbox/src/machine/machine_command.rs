@@ -12,8 +12,9 @@ pub enum MachineCommand {
   AdvancePlayer,
 
   // hardware
-  ConfigureDriver(&'static str, DriverConfig),
+  ConfigureDriver(&'static str, Box<dyn DriverMode + Send>),
   TriggerDriver(&'static str, DriverTriggerControlMode, Option<Duration>),
+  TriggerDriverGroup(&'static str, DriverTriggerControlMode, Option<Duration>),
   HardwareEvent(EventResponse),
   Key(Event),
   ResetExpansionNetwork,
@@ -37,9 +38,12 @@ impl std::fmt::Debug for MachineCommand {
       Self::EndGame => write!(f, "EndGame"),
       Self::AddPlayer => write!(f, "AddPlayer"),
       Self::AdvancePlayer => write!(f, "AdvancePlayer"),
-      Self::ConfigureDriver(name, config) => write!(f, "ConfigureDriver({:?}, {:?})", name, config),
+      Self::ConfigureDriver(name, _mode) => write!(f, "ConfigureDriver({:?}, ...)", name),
       Self::TriggerDriver(name, mode, delay) => {
         write!(f, "TriggerDriver({:?}, {:?}, {:?})", name, mode, delay)
+      }
+      Self::TriggerDriverGroup(name, mode, delay) => {
+        write!(f, "TriggerDriverGroup({:?}, {:?}, {:?})", name, mode, delay)
       }
       Self::SetConfigValue(key, value) => write!(f, "SetConfigValue({}, {:?})", key, value),
       Self::SystemTick => write!(f, "SystemTick"),

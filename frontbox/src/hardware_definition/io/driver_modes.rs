@@ -9,7 +9,7 @@ use crate::{DriverTriggerDualMode, DriverTriggerMode};
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
 pub trait DriverMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig;
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig;
 }
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
@@ -40,7 +40,7 @@ impl Default for PulseMode {
 }
 
 impl DriverMode for PulseMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::Pulse {
@@ -52,6 +52,16 @@ impl DriverMode for PulseMode {
       secondary_pwm_power: self.secondary_pwm_power,
       rest: self.rest,
     }
+  }
+}
+
+pub trait SwitchLookup {
+  fn get_switch_id(&self, name: &str) -> Option<usize>;
+}
+
+impl SwitchLookup for HashMap<&'static str, usize> {
+  fn get_switch_id(&self, name: &str) -> Option<usize> {
+    self.get(name).copied()
   }
 }
 
@@ -85,7 +95,7 @@ impl Default for PulseKickMode {
 }
 
 impl DriverMode for PulseKickMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::PulseKick {
@@ -127,7 +137,7 @@ impl Default for PulseHoldMode {
 }
 
 impl DriverMode for PulseHoldMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::PulseHold {
@@ -168,7 +178,7 @@ impl Default for PulseHoldCancelMode {
 }
 
 impl DriverMode for PulseHoldCancelMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
       get_switches_inverts(&self.trigger_mode, switch_lookup);
 
@@ -213,7 +223,7 @@ impl Default for LongPulseMode {
 }
 
 impl DriverMode for LongPulseMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::LongPulse {
@@ -255,16 +265,14 @@ impl Default for FlipperMainDirectMode {
 }
 
 impl DriverMode for FlipperMainDirectMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
       button_switch: switch_lookup
-        .get(self.button_switch)
-        .cloned()
+        .get_switch_id(self.button_switch)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
       eos_switch: switch_lookup
-        .get(self.eos_switch)
-        .cloned()
+        .get_switch_id(self.eos_switch)
         .expect("Flipper main direct mode requires a valid EOS switch"),
       initial_pwm_power: self.initial_pwm_power,
       secondary_pwm_power: self.secondary_pwm_power,
@@ -297,11 +305,10 @@ impl Default for FlipperHoldDirectMode {
 }
 
 impl DriverMode for FlipperHoldDirectMode {
-  fn to_config(&self, switch_lookup: &HashMap<&'static str, usize>) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
       button_switch: switch_lookup
-        .get(self.button_switch)
-        .cloned()
+        .get_switch_id(self.button_switch)
         .expect("Flipper hold direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
       driver_on_time: self.driver_on_time,
@@ -313,12 +320,12 @@ impl DriverMode for FlipperHoldDirectMode {
 
 fn get_switch_invert(
   trigger_mode: &DriverTriggerMode,
-  switch_lookup: &HashMap<&'static str, usize>,
+  switch_lookup: &dyn SwitchLookup,
 ) -> (Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerMode::Disabled => (None, None),
-    DriverTriggerMode::Switch(s) => (switch_lookup.get(s).cloned(), Some(false)),
-    DriverTriggerMode::InvertedSwitch(s) => (switch_lookup.get(s).cloned(), Some(true)),
+    DriverTriggerMode::Switch(s) => (switch_lookup.get_switch_id(s), Some(false)),
+    DriverTriggerMode::InvertedSwitch(s) => (switch_lookup.get_switch_id(s), Some(true)),
     DriverTriggerMode::VirtualSwitchTrue => (None, Some(false)),
     DriverTriggerMode::VirtualSwitchFalse => (None, Some(true)),
   }
@@ -326,7 +333,7 @@ fn get_switch_invert(
 
 fn get_switches_inverts(
   trigger_mode: &DriverTriggerDualMode,
-  switch_lookup: &HashMap<&'static str, usize>,
+  switch_lookup: &dyn SwitchLookup,
 ) -> (Option<usize>, Option<bool>, Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerDualMode::Disabled => (None, None, None, None),
@@ -334,58 +341,58 @@ fn get_switches_inverts(
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get(flip_switch).cloned(),
+      switch_lookup.get_switch_id(flip_switch),
       Some(false),
-      switch_lookup.get(flop_switch).cloned(),
+      switch_lookup.get_switch_id(flop_switch),
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchTrue {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get(flip_switch).cloned(),
+      switch_lookup.get_switch_id(flip_switch),
       Some(true),
-      switch_lookup.get(flop_switch).cloned(),
+      switch_lookup.get_switch_id(flop_switch),
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchTrue_FlopSwitchFalse {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get(flip_switch).cloned(),
+      switch_lookup.get_switch_id(flip_switch),
       Some(false),
-      switch_lookup.get(flop_switch).cloned(),
+      switch_lookup.get_switch_id(flop_switch),
       Some(true),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchFalse {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get(flip_switch).cloned(),
+      switch_lookup.get_switch_id(flip_switch),
       Some(true),
-      switch_lookup.get(flop_switch).cloned(),
+      switch_lookup.get_switch_id(flop_switch),
       Some(true),
     ),
     DriverTriggerDualMode::VirtualFlip_FlopSwitchTrue(virtual_flip) => (
       None,
       Some(false),
-      switch_lookup.get(virtual_flip).cloned(),
+      switch_lookup.get_switch_id(virtual_flip),
       Some(false),
     ),
     DriverTriggerDualMode::VirtualFlip_FlopSwitchFalse(virtual_flip) => (
       None,
       Some(false),
-      switch_lookup.get(virtual_flip).cloned(),
+      switch_lookup.get_switch_id(virtual_flip),
       Some(true),
     ),
     DriverTriggerDualMode::FlipSwitchTrue_VirtualFlop(virtual_flop) => (
-      switch_lookup.get(virtual_flop).cloned(),
+      switch_lookup.get_switch_id(virtual_flop),
       Some(false),
       None,
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_VirtualFlop(virtual_flop) => (
-      switch_lookup.get(virtual_flop).cloned(),
+      switch_lookup.get_switch_id(virtual_flop),
       Some(true),
       None,
       Some(false),

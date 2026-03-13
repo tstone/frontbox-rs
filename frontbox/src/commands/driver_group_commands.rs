@@ -1,86 +1,65 @@
 use std::time::Duration;
 
+use crate::commands::driver_commands::*;
 use fast_protocol::DriverTriggerControlMode;
 use tokio::sync::mpsc;
 
-use crate::DriverMode;
 use crate::prelude::MachineCommand;
 
 #[derive(Clone)]
-pub struct DriverCommands {
+pub struct DriverGroupCommands {
   pub(crate) machine: mpsc::UnboundedSender<MachineCommand>,
 }
 
-impl DriverCommands {
+impl DriverGroupCommands {
   pub fn new(machine: mpsc::UnboundedSender<MachineCommand>) -> Self {
     Self { machine }
   }
 
-  pub fn reconfigure(&mut self, driver_name: &'static str, mode: impl DriverMode + Send + 'static) {
-    let _ = self
-      .machine
-      .send(MachineCommand::ConfigureDriver(driver_name, Box::new(mode)));
-  }
-
   /// Activate (trigger) a driver with the given mode. This emits `TL` commands to the FAST hardware
-  pub fn activate(&mut self, driver_name: &'static str, mode: ActivationMode) {
+  pub fn activate(&mut self, group_name: &'static str, mode: ActivationMode) {
     let control_mode: DriverTriggerControlMode = match mode {
       ActivationMode::Automatic => DriverTriggerControlMode::Automatic,
       ActivationMode::Tap => DriverTriggerControlMode::Manual,
       ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
     };
-    let _ = self.machine.send(MachineCommand::TriggerDriver(
-      driver_name,
+    let _ = self.machine.send(MachineCommand::TriggerDriverGroup(
+      group_name,
       control_mode,
       None,
     ));
   }
 
   /// Deactivate a driver with the given mode. This emits `TL` commands to the FAST hardware
-  pub fn deactivate(&mut self, driver_name: &'static str, mode: DeactivationMode) {
+  pub fn deactivate(&mut self, group_name: &'static str, mode: DeactivationMode) {
     let control_mode: DriverTriggerControlMode = match mode {
       DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
       DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
     };
-    let _ = self.machine.send(MachineCommand::TriggerDriver(
-      driver_name,
+    let _ = self.machine.send(MachineCommand::TriggerDriverGroup(
+      group_name,
       control_mode,
       None,
     ));
   }
 
-  pub fn trigger(&mut self, driver_name: &'static str, mode: DriverTriggerControlMode) {
+  pub fn trigger(&mut self, group_name: &'static str, mode: DriverTriggerControlMode) {
     let _ = self
       .machine
-      .send(MachineCommand::TriggerDriver(driver_name, mode, None));
+      .send(MachineCommand::TriggerDriverGroup(group_name, mode, None));
   }
 
   /// Triggers a driver after the given delay time has elapsed
   pub fn trigger_delayed(
     &mut self,
-    driver_name: &'static str,
+    group_name: &'static str,
     mode: DriverTriggerControlMode,
     delay: Duration,
   ) {
-    let _ = self.machine.send(MachineCommand::TriggerDriver(
-      driver_name,
+    let _ = self.machine.send(MachineCommand::TriggerDriverGroup(
+      group_name,
       mode,
       Some(delay),
     ));
   }
-}
-
-pub enum ActivationMode {
-  /// let the machine decide when to trigger this driver based on its configured trigger
-  Automatic,
-  /// manually trigger (activate) the driver immediately
-  Tap,
-  /// set virtual switch to 'on' for hold trigger modes
-  VirtualSwitchOn,
-}
-
-pub enum DeactivationMode {
-  Disabled,
-  /// set virtual switch to 'off' for hold trigger modes
-  VirtualSwitchOff,
 }

@@ -126,3 +126,9 @@ impl SwitchContext {
     }
   }
 }
+
+impl SwitchLookup for SwitchContext {
+  fn get_switch_id(&self, name: &str) -> Option<usize> {
+    self.by_name.get(name).map(|switch| switch.id)
+  }
+}

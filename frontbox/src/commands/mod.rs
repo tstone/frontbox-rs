@@ -1,5 +1,6 @@
 mod commands;
 mod driver_commands;
+mod driver_group_commands;
 mod game_commands;
 mod system_commands;
 mod timer_commands;
