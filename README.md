@@ -82,10 +82,17 @@ struct TargetHitter {
   hits: u8,
   // animation for bonus hit
   flash_anim: Box<dyn Animation<Color>>,
-  hurry_up_active: bool,
+  state: TargetHitterState,
   // ids for target switch and LED indicator
   target_switch_id: &'static str,
   indicator_id: &'static str,
+}
+
+enum TargetHitterState {
+  // waiting to get to the desired number of hits
+  Building,
+  // bonus hurry-up mode for extra points
+  HurryUp
 }
 
 impl TargetHitter {
@@ -94,7 +101,7 @@ impl TargetHitter {
       target_switch_id,
       indicator_id,
       hits: 0,
-      hurry_up_active: false,
+      state: TargetHitterState::Building,
       flash_anim: InterpolationAnimation::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
@@ -110,18 +117,21 @@ impl TargetHitter {
     self.flash_anim.reset();
   }
 
-  fn on_target_hit(&mut self, ctx: &Context, cmds: &mut Commands) {
-    if self.hurry_up_active {
-      cmds.add_points(10000);
-      cmds.add_bonus(1000);
-      self.on_hurry_up_done();
-    } else {
-      self.hits = self.hits.saturating_add(1);
-      self.add_points(1000);
+  // Here's what happens when the target is it -- if the mode is in "hurry up"
+  fn on_target_hit(&mut self, ctx: &Context) {
+    match self.state {
+      TargetHitterState::HurryUp => {
+        ctx.command(AddPoints(25_000));
+        self.on_hurry_up_done();
+      }
+      TargetHitterState::Building => {
+        self.hits = self.hits.saturating_add(1);
+        ctx.command(AddPoints(1000));
 
-      if self.hits == 3 {
-        self.hurry_up_active = true;
-        cmds.set_timer(HURRY_UP_TIMER, Duration::from_secs(20), TimerMode::Once);
+        if self.hits == 3 {
+          self.hurry_up_active = true;
+          cmds.set_timer(HURRY_UP_TIMER, Duration::from_secs(20), TimerMode::Once);
+        }
       }
     }
   }
@@ -132,17 +142,15 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
-    handle_event!(event, {
-      SwitchClosed => |e| {
-        if event.switch.id == self.target_switch_id {
-          self.on_target_hit(ctx, cmds);
-        }
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+    if let Some(event) = event.downcast::<SwitchClosed>() {
+      if event.switch.id == self.target_switch_id {
+        self.on_target_hit(ctx);
       }
-    })
+    }
   }
 
-  fn on_timer(&mut self, name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
+  fn on_timer(&mut self, name: &'static str, _ctx: &mut Context) {
     if event.name == HURRY_UP_TIMER {
       self.on_hurry_up_done();
     }
@@ -150,19 +158,22 @@ impl System for TargetHitter {
 
   fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> LedStates {
     // show the flashing state if hurry up is active otherwise use a static color
-    if self.hurry_up_active {
-      LedDeclarationBuilder::new(delta_time)
-        .next_frame(self.flash_anim)
-        .collect()
-    } else {
-      let color = match self.hits {
-        0 => Color::yellow(),
-        1 => Color::orange(),
-        2 => Color::red(),
+    match self.state {
+      TargetHitterState::HurryUp => {
+        LedDeclarationBuilder::new(delta_time)
+          .next_frame(self.flash_anim)
+          .collect()
       }
-      LedDeclarationBuilder::new(delta_time)
-        .on(self.indicator_id, color)
-        .collect()
+      TargetHitterState::Building => {
+        let color = match self.hits {
+          0 => Color::yellow(),
+          1 => Color::orange(),
+          2 => Color::red(),
+        }
+        LedDeclarationBuilder::new(delta_time)
+          .on(self.indicator_id, color)
+          .collect()
+      }
     }
   }
 }
