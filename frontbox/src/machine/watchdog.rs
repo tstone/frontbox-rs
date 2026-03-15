@@ -2,6 +2,7 @@ use crate::prelude::*;
 
 const WATCHDOG_TIMER_NAME: &'static str = "watchdog";
 
+/// A system which continually pings the FAST hardware to keep 48v active. This is required to use drivers.
 pub struct Watchdog;
 
 impl Watchdog {
