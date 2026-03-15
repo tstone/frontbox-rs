@@ -99,21 +99,21 @@ impl PlayerSystem {
 }
 
 impl System for PlayerSystem {
-  fn on_startup(&mut self, ctx: &Context_OLD, cmds: &mut Commands) {
+  fn on_startup(&mut self, ctx: &mut Context) {
     // call on_startup for all systems in the initial scene
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_startup(ctx, cmds);
     });
   }
 
-  fn on_shutdown(&mut self, ctx: &Context_OLD, cmds: &mut Commands) {
+  fn on_shutdown(&mut self, ctx: &mut Context) {
     // call on_shutdown for all systems in the current scene
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_shutdown(ctx, cmds);
     });
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context_OLD, cmds: &mut Commands) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
     handle_event!(event, {
       PlayerChanged => |e| { self.index = e.current_player_index; }
       PlayerAdded => |_e| { self.add_player();}
@@ -125,7 +125,7 @@ impl System for PlayerSystem {
     });
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context_OLD, cmds: &mut Commands) {
+  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_tick(delta, ctx, cmds);
     });

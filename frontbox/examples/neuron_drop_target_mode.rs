@@ -1,4 +1,3 @@
-use frontbox::plugins::game_points::*;
 use frontbox::prelude::*;
 
 use std::io::Write;
@@ -68,12 +67,6 @@ async fn main() {
 
   App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
-    .add_keyboard_mappings(vec![
-      (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
-      (KeyCode::Char('2'), switches::LOWER_DROP_TARGET2),
-      (KeyCode::Char('3'), switches::LOWER_DROP_TARGET3),
-    ])
-    .build()
     .run(vec![DropTargetDownUp::new([
       switches::LOWER_DROP_TARGET1,
       switches::LOWER_DROP_TARGET2,
@@ -93,44 +86,42 @@ impl DropTargetDownUp {
     Box::new(Self { target_switches })
   }
 
-  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context_OLD, cmds: &mut Commands) {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
     if self.target_switches.contains(&switch.name) {
-      // each target down gets points
-      cmds.add_points(100);
+      let switch_lookup = ctx.expect::<SwitchLookup>();
 
       let all_down = self
         .target_switches
         .iter()
-        .all(|&target| ctx.is_switch_closed(target).unwrap_or(false));
+        .all(|&target| switch_lookup.is_closed(target).unwrap_or(false));
 
       if all_down {
-        // ctx.command(AddPoints(1000));
-        cmds.add_points(1000);
-        cmds.add_bonus(1000);
-
-        cmds.driver.trigger_delayed(
-          drivers::LOWER_DROP_TARGET_COIL,
-          DriverTriggerControlMode::Manual,
+        ctx.command(ActivateDriverDelayed::new(
+          drivers::START_BUTTON_LAMP,
+          ActivationMode::Tap,
           Duration::from_millis(250),
-        );
-        cmds
-          .system
-          .replace(*DropTargetDownUp::new(self.target_switches));
+        ));
+
+        // start mode over
+        ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }
   }
 }
 
 impl ChildSystem for DropTargetDownUp {
-  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
-    cmds
-      .driver
-      .activate(drivers::LOWER_DROP_TARGET_COIL, ActivationMode::Tap);
+  fn on_startup(&mut self, ctx: &mut Context) {
+    // bring up all targets on startup
+    ctx.command(ActivateDriverDelayed::new(
+      drivers::LOWER_DROP_TARGET_COIL,
+      ActivationMode::Tap,
+      Duration::from_millis(250),
+    ));
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context_OLD, cmds: &mut Commands) {
-    handle_event!(event, {
-      SwitchClosed => |e| { self.on_switch_closed(&e.switch, ctx, cmds); }
-    });
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+    if let Some(event) = event.downcast::<SwitchClosed>() {
+      self.on_switch_closed(&event.switch, ctx);
+    }
   }
 }

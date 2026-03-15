@@ -11,14 +11,14 @@ impl FreePlay {
   }
 }
 
-impl ChildSystem for FreePlay {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    handle_event!(event, {
-      SwitchClosed => |e| {
-        if e.switch.name == self.start_button_id {
-          
-        }
+impl System for FreePlay {
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+    if let Some(e) = event.downcast::<SwitchClosed>() {
+      if e.switch.name == self.start_button_id {
+        ctx.emit(StartButtonPressed);
       }
-    });
+    }
   }
 }
+
+pub struct StartButtonPressed;

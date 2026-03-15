@@ -1,8 +1,15 @@
+use std::time::Duration;
+
 use crate::DriverMode;
 
 pub struct WatchdogPing;
 pub struct ClearWatchdog;
+
+/// Reset all expansion boards. This will clear out LEDs, reset servos, etc.
 pub struct ResetExpansionNetwork;
+
+/// This performs a "report switches" action against FAST hardware and updates SwitchLookup
+pub struct RefreshSwitchState;
 
 pub struct ConfigureDriver {
   pub driver: &'static str,
@@ -29,6 +36,22 @@ impl ActivateDriver {
   }
 }
 
+pub struct ActivateDriverDelayed {
+  pub driver: &'static str,
+  pub mode: ActivationMode,
+  pub delay: Duration,
+}
+
+impl ActivateDriverDelayed {
+  pub fn new(driver: &'static str, mode: ActivationMode, delay: Duration) -> Self {
+    Self {
+      driver,
+      mode,
+      delay,
+    }
+  }
+}
+
 pub struct DeactivateDriver {
   pub driver: &'static str,
   pub mode: DeactivationMode,
@@ -37,6 +60,22 @@ pub struct DeactivateDriver {
 impl DeactivateDriver {
   pub fn new(driver: &'static str, mode: DeactivationMode) -> Self {
     Self { driver, mode }
+  }
+}
+
+pub struct DeactivateDriverDelayed {
+  pub driver: &'static str,
+  pub mode: DeactivationMode,
+  pub delay: Duration,
+}
+
+impl DeactivateDriverDelayed {
+  pub fn new(driver: &'static str, mode: DeactivationMode, delay: Duration) -> Self {
+    Self {
+      driver,
+      mode,
+      delay,
+    }
   }
 }
 
