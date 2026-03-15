@@ -17,6 +17,7 @@ pub async fn run(
   let mut systems: Vec<SystemContainer> = vec![];
   let (app_sender, mut app_receiver) = mpsc::unbounded_channel::<AppMessage>();
   let (system_sender, mut system_receiver) = mpsc::unbounded_channel::<SystemMessage>();
+  machine.set_app_sender(app_sender.clone());
 
   // initialize systems
   for system in initial_systems {
@@ -77,6 +78,10 @@ pub async fn run(
           AppMessage::Shutdown => {
             log::info!("⏹️ Shutdown command received, shutting down...");
             break;
+          }
+          AppMessage::SwitchStates(switch_states) => {
+            let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
+            switch_lookup.update_switch_states(switch_states);
           }
         }
       }

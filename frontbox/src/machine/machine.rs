@@ -7,7 +7,6 @@ use crate::machine::serial_interface::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use fast_protocol::*;
-use serde::de;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Default, Serialize, Storable)]
@@ -20,6 +19,7 @@ pub struct Machine {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   led_renderer: LedRenderer,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
@@ -32,13 +32,12 @@ impl Machine {
     led_renderer: LedRenderer,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
+    let (app_sender, _) = mpsc::unbounded_channel::<AppMessage>(); // temporary
 
     Self {
       io_port,
       exp_port,
-      // TODO:
-      // watchdog: Watchdog::new(watchdog_tick, system_sender.clone()),
-      // watchdog_tick,
+      app_sender, // this will overwritten set by App at startup
       machine_sender,
       machine_receiver,
       led_renderer,
@@ -48,6 +47,10 @@ impl Machine {
 
   pub async fn read_io(&mut self) -> Option<EventResponse> {
     self.io_port.read_event().await
+  }
+
+  pub fn set_app_sender(&mut self, sender: mpsc::UnboundedSender<AppMessage>) {
+    self.app_sender = sender;
   }
 
   pub async fn listen(&mut self) {
@@ -82,6 +85,9 @@ impl Machine {
               for driver_id in driver_ids {
                 self.deactivate_driver(driver_id, mode.clone(), None).await;
               }
+            }
+            MachineMessage::ReportSwitches => {
+              self.report_switches().await;
             }
           }
         }
@@ -163,7 +169,7 @@ impl Machine {
       .await;
   }
 
-  /// Primarily used for reporting of unkown switches as native board/switch ids, but can also be used for virtual switches
+  /// Primarily used for reporting of unkown switches as native board/switch ids
   fn get_native_switch_id(switch_id: usize, ctx: &Context) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
     let io_boards = ctx.get::<IoBoards>().unwrap();
@@ -253,15 +259,17 @@ impl Machine {
     }
   }
 
-  async fn report_switches(&mut self, store: &mut Store) {
+  async fn report_switches(&mut self) {
     match self
       .io_port
       .request(&ReportSwitchesCommand::new(), Duration::from_secs(2))
       .await
     {
       Ok(SwitchReportResponse::SwitchReport { switches }) => {
-        let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
-        switch_lookup.update_switch_states(switches);
+        self
+          .app_sender
+          .send(AppMessage::SwitchStates(switches))
+          .ok();
       }
       _ => {
         log::error!("Failed to report switches");
@@ -325,12 +333,12 @@ impl Machine {
   }
 }
 
-/// A bridge between Machine and systems
-struct MachineSystem {
+/// Exposes machine-level commands to systems. If you don't have this, you can't control any hardware
+struct MachineBridge {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
 
-impl System for MachineSystem {
+impl System for MachineBridge {
   fn on_startup(&mut self, ctx: &mut Context) {
     let sender = self.machine_sender.clone();
     ctx.register_command::<WatchdogPing>(move |_, _ctx| {
@@ -455,6 +463,11 @@ impl System for MachineSystem {
           .ok();
       }
     });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<RefreshSwitchState>(move |_, _ctx| {
+      sender.send(MachineMessage::ReportSwitches).ok();
+    });
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {
@@ -469,6 +482,7 @@ impl System for MachineSystem {
 enum MachineMessage {
   WatchdogPing,
   ClearWatchdog,
+  ReportSwitches,
   ResetExpansionNetwork(ExpansionBoards),
   ConfigureDriver(usize, DriverConfig),
   ActivateDriver(usize, ActivationMode, Option<Duration>),

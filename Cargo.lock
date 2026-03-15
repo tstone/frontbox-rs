@@ -189,6 +189,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontbox-turn-based"
+version = "0.1.0"
+dependencies = [
+ "frontbox",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -44,4 +44,5 @@ impl<T: Any + Send + Sync> Command for T {
   }
 }
 
+#[allow(type_alias_bounds)]
 pub type CommandRunner<C: Command> = dyn Fn(&C, &mut Context) + Send + Sync;

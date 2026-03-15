@@ -1,7 +1,6 @@
 use std::any::{Any, TypeId};
 use std::ops::{Deref, DerefMut};
 
-use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
@@ -122,10 +121,6 @@ impl<'a> Context<'a> {
       app_sender: self.app_sender.clone(),
       system_sender,
     }
-  }
-
-  pub(crate) fn to_json(&self) -> Value {
-    self.store.to_json()
   }
 }
 
