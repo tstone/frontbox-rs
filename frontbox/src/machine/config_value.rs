@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub enum ConfigItem {
   String {
     current: String,
@@ -23,7 +25,7 @@ pub enum ConfigItem {
   },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ConfigValue {
   String(String),
   Integer(i32),

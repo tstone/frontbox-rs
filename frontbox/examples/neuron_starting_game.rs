@@ -13,7 +13,7 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  MachineBuilder::boot(
+  App::boot(
     BootConfig {
       platform: FastPlatform::Neuron,
       io_net_port_path: "/dev/ttyACM0",

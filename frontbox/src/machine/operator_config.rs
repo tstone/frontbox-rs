@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
-use crate::machine::config_value::{ConfigItem, ConfigValue};
+use frontbox_derive::Storable;
+use serde::Serialize;
 
-pub struct MachineConfig {
+use crate::machine::config_value::{ConfigItem, ConfigValue};
+use crate::prelude::*;
+
+#[derive(Serialize, Storable)]
+pub struct OperatorConfig {
   internal: HashMap<&'static str, ConfigItem>,
   change_queue: Vec<&'static str>,
 }
 
-impl MachineConfig {
+impl OperatorConfig {
   pub fn new() -> Self {
     Self {
       internal: HashMap::new(),
@@ -87,34 +92,32 @@ pub mod default_config {
   pub const LED_RENDERER_TICK: &str = "led.renderer_tick_ms";
 }
 
-impl Default for MachineConfig {
+impl Default for OperatorConfig {
   fn default() -> Self {
-    let mut config = Self::new();
-
-    config.add_item(
-      default_config::WATCHDOG_TICK,
-      ConfigItem::Integer {
-        current: 1000,
-        min: 100,
-        max: 5000,
-        default: 1000,
-        name: "Watchdog Tick (ms)",
-        description: "The interval in milliseconds between each watchdog timer tick.",
-      },
-    );
-
-    config.add_item(
-      default_config::SYSTEM_TIMER_TICK,
-      ConfigItem::Integer {
-        current: 41,
-        min: 1,
-        max: 5000,
-        default: 41, // 25 FPS
-        name: "System Timer Tick (ms)",
-        description: "Resolution of the system timers and frame rate of LED rendering. Lower values allow for more precise timers and smoother animation but may increase CPU usage. Default 25 FPS",
-      },
-    );
-
-    config
+    Self::new()
   }
 }
+
+// config.add_item(
+//   default_config::WATCHDOG_TICK,
+//   ConfigItem::Integer {
+//     current: 1000,
+//     min: 100,
+//     max: 5000,
+//     default: 1000,
+//     name: "Watchdog Tick (ms)",
+//     description: "The interval in milliseconds between each watchdog timer tick.",
+//   },
+// );
+
+// config.add_item(
+//   default_config::SYSTEM_TIMER_TICK,
+//   ConfigItem::Integer {
+//     current: 41,
+//     min: 1,
+//     max: 5000,
+//     default: 41, // 25 FPS
+//     name: "System Timer Tick (ms)",
+//     description: "Resolution of the system timers and frame rate of LED rendering. Lower values allow for more precise timers and smoother animation but may increase CPU usage. Default 25 FPS",
+//   },
+// );

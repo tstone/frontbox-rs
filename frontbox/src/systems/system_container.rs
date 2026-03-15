@@ -24,7 +24,7 @@ impl SystemContainer {
     Self::new(next_listener_id(), system)
   }
 
-  pub fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {
+  pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut timers_to_remove = vec![];
     log::trace!(
       "SystemContainer tick: delta={:?}, timer count={}",
@@ -34,7 +34,7 @@ impl SystemContainer {
     for (timer_name, timer) in &mut self.timers {
       if timer.tick(delta) {
         log::trace!("Timer '{}' completed, triggering event", timer_name);
-        self.inner.on_timer(timer_name, ctx, cmds);
+        self.inner.on_timer(timer_name, ctx);
         if let TimerMode::OneShot = timer.mode() {
           timers_to_remove.push(*timer_name);
         }
@@ -46,7 +46,7 @@ impl SystemContainer {
     }
 
     // bubble tick to inner system after processing timers
-    self.inner.on_tick(delta, ctx, cmds);
+    self.inner.on_tick(delta, ctx);
   }
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {

@@ -1,31 +1,69 @@
 # Frontbox
 
-A Rust native framework for interacting with FAST pinball hardware, built for efficiency and modularity.
+Frontbox is a Rust native, "ECS light" framework for running pinball machines, built on FAST pinball hardware.
 
 > [!WARNING]
 > Pre-alpha work in progress
 
 ### Overview
 
-**Frontbox** is built around the unit of a `System`. Systems...
+**Frontbox** is built around the unit of a `System`. Systems receive events, enqueue commands, manage their own state, and mutably interact with the ECS "world" (called `Context` in Frontbox).
 
-- ...receive events
-- ...enqueue commands (`Commands`)
-- ...read machine state (`Context`)
-- ...emit events
-- ...declare LED state.
-- ...are built on Rust structs and can thus maintain their own state
-- ...can also be parents to other systems
-
-Live demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
-
-### Features
+#### Features
 
 - Implementation of modern FAST protocol
 - Extensible events system
 - Flexible, hierarchical isolation of concerns (`System`)
 - Player and Co-op/team support
 - LED animation framework
+
+Demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
+
+#### Vs ECS
+
+- Whereas many ECS frameworks eliminate or minimize systems, Frontbox is built around systems as a first class citizen.
+- Whereas many ECS frameworks make systems stateless, Frontbox systems are built on Rust structs making them stateful (more like an Actor than a function).
+- Whereas ECS tends to emphasize components for data, Frontbox only allows singleton data to be stored ("Resources").
+- Whereas ECS tends to run systems on a rendering tick, Frontbox runs systems on events.
+
+### Architecture
+
+#### Data
+
+```rust
+// all configured hardware is stored in the world (Context)
+let some_switch = ctx.get::<SwitchLookup>().unwrap().get(switches::START_BUTTON);
+
+```
+
+#### System
+
+```rust
+struct Example;
+
+impl System for Example {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    // ...
+  }
+
+  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &mut Context) {
+    // ...
+  }
+}
+```
+
+#### Tools
+
+- `System` contain private state and allow binding of events to behavior
+- `Event`s allow Systems to broadcast state change and data to each other
+- `Commands` allow Systems to define addressed, exactly once handling of events
+- `Context` (ECS world) allows System to share global, mutable state if necessary
+
+#### Events vs Context
+
+- Prefer Events and private state
+- Use Context when display functions need to access state
+- Use Context when other systems need "reference" data
 
 ### Example System
 
@@ -39,7 +77,6 @@ This system implements a basic pinball "mode". A target is illuminated and must 
 ```rust
 const HURRY_UP_TIMER: &'static str = "hurry_up";
 
-#[derive(Debug, Clone)]
 struct TargetHitter {
   // current times this target has been hit
   hits: u8,

@@ -1,8 +1,14 @@
 System
 
-- Current ball index
+- System to automatically register drivers and unregister them on shutdown
+- Make a nice way to easily add systems like watchdog and driver config applier (that moves out of App builder)
+- Fix game points plugin -- how is player-specific state handled
+- Figure out commands -- registered from plugins?
+- Move app, store to top-level modules
+- handle_event! doesn't seem to allow multiple
 - Trough system
-- States (BallLocation, GameStartable)
+- Current ball index
+- States (BallLocation, GameStartable) -- these now become enums in Store/World
 
 Hardware
 
@@ -25,6 +31,7 @@ Displays
 
 LEDs
 
+- LED renderer should use Context to store LED state
 - Allow LEDs to be specified as a group, one name to talk to them all (e.g. for GI) maybe some kind of Into<LedGroup>
 - Allow declarations to happen on groups as well
 - Single color flasher support

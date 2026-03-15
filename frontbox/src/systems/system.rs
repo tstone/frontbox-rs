@@ -7,12 +7,12 @@ use crate::prelude::*;
 
 /// A System responds to incoming events and enqueues commands
 #[allow(unused)]
-pub trait System: Send + Sync {
-  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {}
-  fn on_shutdown(&mut self, ctx: &Context, cmds: &mut Commands) {}
-  fn on_timer(&mut self, timer_name: &'static str, ctx: &Context, cmds: &mut Commands) {}
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {}
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {}
+pub trait System {
+  fn on_startup(&mut self, ctx: &mut Context) {}
+  fn on_shutdown(&mut self, ctx: &mut Context) {}
+  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
+  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {}
 
   fn is_active(&self, ctx: &Context) -> bool {
     true
@@ -23,14 +23,14 @@ pub trait System: Send + Sync {
   }
 }
 
-/// A CloneableSystem defines the behavior of a system that can be cloned and managed
+/// A ChildSystem defines the behavior of a system that can be cloned and managed
 #[allow(unused)]
-pub trait CloneableSystem: DynClone + Send + Sync {
-  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {}
-  fn on_shutdown(&mut self, ctx: &Context, cmds: &mut Commands) {}
-  fn on_timer(&mut self, timer_name: &'static str, ctx: &Context, cmds: &mut Commands) {}
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {}
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {}
+pub trait ChildSystem: DynClone + Send + Sync {
+  fn on_startup(&mut self, ctx: &mut Context) {}
+  fn on_shutdown(&mut self, ctx: &mut Context) {}
+  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
+  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {}
 
   fn is_active(&self, ctx: &Context) -> bool {
     true
@@ -41,29 +41,29 @@ pub trait CloneableSystem: DynClone + Send + Sync {
   }
 }
 
-dyn_clone::clone_trait_object!(CloneableSystem);
+dyn_clone::clone_trait_object!(ChildSystem);
 
-impl<T: CloneableSystem> System for T {}
+impl<T: ChildSystem> System for T {}
 
-impl System for Box<dyn CloneableSystem> {
-  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {
-    self.as_mut().on_startup(ctx, cmds);
+impl System for Box<dyn ChildSystem> {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    self.as_mut().on_startup(ctx);
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, cmds: &mut Commands) {
-    self.as_mut().on_shutdown(ctx, cmds);
+  fn on_shutdown(&mut self, ctx: &mut Context) {
+    self.as_mut().on_shutdown(ctx);
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, ctx: &Context, cmds: &mut Commands) {
-    self.as_mut().on_timer(timer_name, ctx, cmds);
+  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {
+    self.as_mut().on_timer(timer_name, ctx);
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {
-    self.as_mut().on_tick(delta, ctx, cmds);
+  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
+    self.as_mut().on_tick(delta, ctx);
   }
 
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
-    self.as_mut().on_event(event, ctx, cmds);
+  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+    self.as_mut().on_event(event, ctx);
   }
 
   fn is_active(&self, ctx: &Context) -> bool {

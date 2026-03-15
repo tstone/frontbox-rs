@@ -13,7 +13,7 @@ pub struct LedRenderer {
 }
 
 impl LedRenderer {
-  pub fn new(expansion_boards: &Vec<ExpansionBoardDefinition>) -> Self {
+  pub fn new(expansion_boards: &HashSet<ExpansionBoard>) -> Self {
     let mut led_map = HashMap::new();
     let mut set_leds = HashMap::new();
 

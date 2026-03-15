@@ -66,7 +66,7 @@ async fn main() {
       ),
   );
 
-  MachineBuilder::boot(BootConfig::default(), io_network.build(), vec![])
+  App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
     .add_keyboard_mappings(vec![
       (KeyCode::Char('1'), switches::LOWER_DROP_TARGET1),
@@ -93,7 +93,7 @@ impl DropTargetDownUp {
     Box::new(Self { target_switches })
   }
 
-  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context, cmds: &mut Commands) {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context_OLD, cmds: &mut Commands) {
     if self.target_switches.contains(&switch.name) {
       // each target down gets points
       cmds.add_points(100);
@@ -121,14 +121,14 @@ impl DropTargetDownUp {
   }
 }
 
-impl CloneableSystem for DropTargetDownUp {
-  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+impl ChildSystem for DropTargetDownUp {
+  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
     cmds
       .driver
       .activate(drivers::LOWER_DROP_TARGET_COIL, ActivationMode::Tap);
   }
 
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context_OLD, cmds: &mut Commands) {
     handle_event!(event, {
       SwitchClosed => |e| { self.on_switch_closed(&e.switch, ctx, cmds); }
     });

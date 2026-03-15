@@ -1,18 +1,19 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 
 use crate::SwitchDefinition;
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
-#[derive(Debug)]
-pub struct SwitchContext {
+#[derive(Debug, Serialize, Storable)]
+pub struct SwitchLookup {
   by_id: HashMap<usize, Switch>,
   by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
 }
 
-impl SwitchContext {
+impl SwitchLookup {
   pub fn new(switch_specs: Vec<SwitchDefinition>, initial_state: Vec<SwitchState>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
@@ -25,6 +26,7 @@ impl SwitchContext {
         Switch {
           id: spec.id,
           name: spec.name,
+          native: spec.native.clone(),
         },
       );
 
@@ -33,9 +35,11 @@ impl SwitchContext {
         Switch {
           id: spec.id,
           name: spec.name,
+          native: spec.native.clone(),
         },
       );
 
+      // TODO: combine switch config with Switch
       if let Some(config) = spec.config {
         configs.insert(spec.id, config);
       }
@@ -56,34 +60,42 @@ impl SwitchContext {
     context
   }
 
-  pub fn is_open(&self, switch_id: usize) -> Option<bool> {
+  pub fn is_open_by_id(&self, switch_id: usize) -> Option<bool> {
     self.is_closed.get(&switch_id).map(|closed| !closed)
   }
 
-  pub fn is_closed(&self, switch_id: usize) -> Option<bool> {
+  pub fn is_closed_by_id(&self, switch_id: usize) -> Option<bool> {
     self.is_closed.get(&switch_id).copied()
   }
 
-  pub fn is_closed_by_name(&self, switch_name: &'static str) -> Option<bool> {
+  pub fn is_closed(&self, switch_name: &'static str) -> Option<bool> {
     self
       .by_name
       .get(switch_name)
-      .and_then(|switch| self.is_closed(switch.id))
+      .and_then(|switch| self.is_closed_by_id(switch.id))
   }
 
-  pub fn is_open_by_name(&self, switch_name: &'static str) -> Option<bool> {
+  pub fn is_open(&self, switch_name: &'static str) -> Option<bool> {
     self
       .by_name
       .get(switch_name)
-      .and_then(|switch| self.is_open(switch.id))
+      .and_then(|switch| self.is_open_by_id(switch.id))
   }
 
   pub fn switch_by_id(&self, switch_id: &usize) -> Option<&Switch> {
-    self.by_id.get(&switch_id)
+    self.by_id.get(switch_id)
+  }
+
+  pub fn switch_by_id_mut(&mut self, switch_id: &usize) -> Option<&mut Switch> {
+    self.by_id.get_mut(switch_id)
   }
 
   pub fn switch_by_name(&self, switch_name: &'static str) -> Option<&Switch> {
     self.by_name.get(switch_name)
+  }
+
+  pub fn switch_by_name_mut(&mut self, switch_name: &'static str) -> Option<&mut Switch> {
+    self.by_name.get_mut(switch_name)
   }
 
   /// Used internally to define an additional virtual (non-hardware backed) switch
@@ -91,6 +103,10 @@ impl SwitchContext {
     let switch = Switch {
       id,
       name: switch_name,
+      native: NativeIdentity {
+        board_idx: 0,
+        pin: 0,
+      }, // Virtual switch, no actual hardware
     };
     self.by_id.insert(id, switch.clone());
     self.by_name.insert(switch_name, switch);
@@ -127,8 +143,34 @@ impl SwitchContext {
   }
 }
 
-impl SwitchLookup for SwitchContext {
+impl SwitchNameToId for SwitchLookup {
   fn get_switch_id(&self, name: &str) -> Option<usize> {
     self.by_name.get(name).map(|switch| switch.id)
+  }
+}
+
+impl Deref for SwitchLookup {
+  type Target = HashMap<&'static str, Switch>;
+  fn deref(&self) -> &Self::Target {
+    &self.by_name
+  }
+}
+
+impl DerefMut for SwitchLookup {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.by_name
+  }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Switch {
+  pub id: usize,
+  pub native: NativeIdentity,
+  pub name: &'static str,
+}
+
+impl Switch {
+  pub fn is_virtual(&self) -> bool {
+    self.id > u16::MAX as usize
   }
 }

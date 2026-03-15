@@ -1,4 +1,5 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
@@ -10,17 +11,31 @@ use syn::{parse_macro_input, DeriveInput};
 ///   #[storable(key = "users")]
 ///   struct UserCount(usize);
 /// ```
-#[proc_macro_derive(Storable)]
+#[proc_macro_derive(Storable, attributes(storable))]
 pub fn derive_storable(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   let name = &input.ident;
 
-  // Check for #[storable(key = "custom_key")]
   let key = input
     .attrs
     .iter()
     .find(|attr| attr.path().is_ident("storable"))
-    .and_then(|attr| attr.parse_args::<syn::LitStr>().ok().map(|lit| lit.value()))
+    .and_then(|attr| {
+      let mut key = None;
+      attr
+        .parse_nested_meta(|meta| {
+          if meta.path.is_ident("key") {
+            let value = meta.value()?;
+            let s: syn::LitStr = value.parse()?;
+            key = Some(s.value());
+            Ok(())
+          } else {
+            Err(meta.error("unsupported attribute"))
+          }
+        })
+        .ok()?;
+      key
+    })
     .unwrap_or_else(|| to_camel_case(&name.to_string()));
 
   let expanded = quote! {

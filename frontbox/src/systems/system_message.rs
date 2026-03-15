@@ -1,7 +1,9 @@
+use tokio::sync::mpsc;
+
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 
-pub enum SystemCommand {
+pub enum SystemMessage {
   SpawnSystem(Box<dyn System>),
   ReplaceSystem(u64, Box<dyn System>),
   DespawnSystem(u64),
@@ -13,25 +15,26 @@ pub struct SystemCommandsProcessor;
 
 impl SystemCommandsProcessor {
   pub fn process(
-    command: SystemCommand,
+    command: SystemMessage,
     systems: &mut Vec<SystemContainer>,
-    ctx: &Context,
-    cmds: &mut Commands,
+    store: &mut Store,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
+    system_sender: mpsc::UnboundedSender<SystemMessage>,
   ) {
     match command {
-      SystemCommand::SpawnSystem(system) => {
-        Self::spawn_system(system, systems, ctx, cmds);
+      SystemMessage::SpawnSystem(system) => {
+        Self::spawn_system(system, systems, store, app_sender, system_sender);
       }
-      SystemCommand::ReplaceSystem(system_id, system) => {
-        Self::replace_system(system_id, system, systems, ctx, cmds);
+      SystemMessage::ReplaceSystem(system_id, system) => {
+        Self::replace_system(system_id, system, systems, store, app_sender, system_sender);
       }
-      SystemCommand::DespawnSystem(system_id) => {
-        Self::despawn_system(system_id, systems, ctx, cmds);
+      SystemMessage::DespawnSystem(system_id) => {
+        Self::despawn_system(system_id, systems, store, app_sender, system_sender);
       }
-      SystemCommand::ClearTimer(system_id, timer_name) => {
+      SystemMessage::ClearTimer(system_id, timer_name) => {
         Self::clear_timer(system_id, timer_name, systems);
       }
-      SystemCommand::SetTimer(system_id, timer_name, duration, mode) => {
+      SystemMessage::SetTimer(system_id, timer_name, duration, mode) => {
         Self::set_timer(system_id, timer_name, duration, mode, systems);
       }
     }
@@ -40,13 +43,14 @@ impl SystemCommandsProcessor {
   pub fn spawn_system(
     system: Box<dyn System>,
     systems: &mut Vec<SystemContainer>,
-    ctx: &Context,
-    cmds: &mut Commands,
+    store: &mut Store,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
+    system_sender: mpsc::UnboundedSender<SystemMessage>,
   ) {
     let mut container = SystemContainer::new_from_system(system);
     log::debug!("Spawning system with ID {}", container.id);
-    let mut cmds = cmds.clone_for_system(container.id);
-    container.on_startup(ctx, &mut cmds);
+    let mut ctx = Context::new(store, container.id, app_sender, system_sender);
+    container.on_startup(&mut ctx);
     systems.push(container);
   }
 
@@ -54,13 +58,14 @@ impl SystemCommandsProcessor {
     system_id: u64,
     system: Box<dyn System>,
     systems: &mut Vec<SystemContainer>,
-    ctx: &Context,
-    cmds: &mut Commands,
+    store: &mut Store,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
+    system_sender: mpsc::UnboundedSender<SystemMessage>,
   ) {
     if let Some(pos) = systems.iter().position(|c| c.id == system_id) {
       log::debug!("Replacing system with ID {}", system_id);
-      let mut cmds = cmds.clone_for_system(system_id);
-      systems[pos].on_shutdown(ctx, &mut cmds);
+      let mut ctx = Context::new(store, system_id, app_sender, system_sender);
+      systems[pos].on_shutdown(&mut ctx);
       systems[pos] = SystemContainer::new_from_system(system);
     } else {
       log::warn!("No system found with ID {}, cannot replace", system_id);
@@ -70,13 +75,14 @@ impl SystemCommandsProcessor {
   pub fn despawn_system(
     system_id: u64,
     systems: &mut Vec<SystemContainer>,
-    ctx: &Context,
-    cmds: &mut Commands,
+    store: &mut Store,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
+    system_sender: mpsc::UnboundedSender<SystemMessage>,
   ) {
     if let Some(pos) = systems.iter().position(|c| c.id == system_id) {
       log::debug!("Despawning system with ID {}", system_id);
-      let mut cmds = cmds.clone_for_system(system_id);
-      systems[pos].on_shutdown(ctx, &mut cmds);
+      let mut ctx = Context::new(store, system_id, app_sender, system_sender);
+      systems[pos].on_shutdown(&mut ctx);
       systems.remove(pos);
     } else {
       log::warn!("No system found with ID {}, cannot despawn", system_id);
