@@ -8,7 +8,7 @@ use crate::{DriverTriggerDualMode, DriverTriggerMode};
 /// DriverMode is a wrapper around DriverConfig that allows these features:
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
-pub trait DriverMode {
+pub trait DriverMode: Send + Sync {
   fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig;
 }
 

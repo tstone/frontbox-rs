@@ -18,6 +18,7 @@ pub mod prelude {
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};
   pub use crate::machine::event::*;
   pub use crate::machine::machine::*;
+  pub use crate::machine::machine_commands::*;
   pub use crate::machine::operator_config::{OperatorConfig, default_config};
   pub use crate::machine::plugin::*;
   pub use crate::store::*;

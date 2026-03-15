@@ -63,29 +63,29 @@ impl Machine {
             MachineMessage::ResetExpansionNetwork(expansion_boards) => {
               self.reset_expansion_network(expansion_boards);
             }
+            MachineMessage::ConfigureDriver(driver_id, config) => {
+              self.configure_driver(driver_id, config).await;
+            }
+            MachineMessage::ActivateDriver(driver_id, mode) => {
+              self.activate_driver(driver_id, mode).await;
+            }
+            MachineMessage::DeactivateDriver(driver_id, mode) => {
+              self.deactivate_driver(driver_id, mode).await;
+            }
+            MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
+              for driver_id in driver_ids {
+                self.activate_driver(driver_id, mode.clone()).await;
+              }
+            }
+            MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
+              for driver_id in driver_ids {
+                self.deactivate_driver(driver_id, mode.clone()).await;
+              }
+            }
           }
         }
       }
     }
-  }
-
-  // ---
-
-  pub async fn send_watchdog_ping(&mut self) {
-    let _ = self
-      .io_port
-      .request(
-        &WatchdogCommand::set(self.watchdog_interval),
-        Duration::from_secs(1),
-      )
-      .await;
-  }
-
-  pub async fn clear_watchdog(&mut self) {
-    let _ = self
-      .io_port
-      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
-      .await;
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState, ctx: &mut Context) {
@@ -122,6 +122,44 @@ impl Machine {
       }
       return;
     }
+  }
+
+  pub async fn render_leds(
+    &mut self,
+    systems: &mut Vec<SystemContainer>,
+    tick_interval: Duration,
+    ctx_template: &mut Context<'_>,
+  ) {
+    let mut declarations = HashMap::new();
+    for system in systems.iter_mut() {
+      let ctx = ctx_template.clone_for_system(system.id);
+      declarations.insert(system.id, system.leds(tick_interval, &ctx));
+    }
+
+    self.led_renderer.tick(tick_interval);
+    self
+      .led_renderer
+      .render(&mut self.exp_port, declarations)
+      .await;
+  }
+
+  // ---
+
+  pub async fn send_watchdog_ping(&mut self) {
+    let _ = self
+      .io_port
+      .request(
+        &WatchdogCommand::set(self.watchdog_interval),
+        Duration::from_secs(1),
+      )
+      .await;
+  }
+
+  pub async fn clear_watchdog(&mut self) {
+    let _ = self
+      .io_port
+      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
+      .await;
   }
 
   /// Primarily used for reporting of unkown switches as native board/switch ids, but can also be used for virtual switches
@@ -192,41 +230,24 @@ impl Machine {
   //   self.report_switches().await;
   // }
 
-  async fn configure_driver(
-    &mut self,
-    driver: &'static str,
-    mode: Box<dyn DriverMode>,
-    store: &Store,
-  ) {
-    let driver_lookup = store.get::<DriverLookup>().unwrap();
-    match driver_lookup.get(driver) {
-      Some(driver) => {
-        let switch_lookup = store.get::<SwitchLookup>().unwrap();
-        let config = mode.to_config(switch_lookup);
-
-        log::info!("Configuring driver {}", driver.name);
-        match self
-          .io_port
-          .request(
-            &ConfigureDriverCommand::new(&driver.id, &config),
-            Duration::from_secs(2),
-          )
-          .await
-        {
-          Ok(ProcessedResponse::Processed) => {
-            log::debug!("Driver {} configured successfully", driver.name);
-          }
-          Ok(ProcessedResponse::Failed) => {
-            log::error!("Driver {} configuration failed", driver.name);
-          }
-          Err(e) => {
-            log::error!("Error configuring driver {}: {}", driver.name, e);
-          }
-        }
+  async fn configure_driver(&mut self, driver: usize, config: DriverConfig) {
+    log::info!("Configuring driver {}", driver);
+    match self
+      .io_port
+      .request(
+        &ConfigureDriverCommand::new(&driver, &config),
+        Duration::from_secs(2),
+      )
+      .await
+    {
+      Ok(ProcessedResponse::Processed) => {
+        log::debug!("Driver {} configured successfully", driver);
       }
-      None => {
-        log::error!("Attempted to configure unknown driver: {}", driver);
-        return;
+      Ok(ProcessedResponse::Failed) => {
+        log::error!("Driver {} configuration failed", driver);
+      }
+      Err(e) => {
+        log::error!("Error configuring driver {}: {}", driver, e);
       }
     }
   }
@@ -247,51 +268,40 @@ impl Machine {
     }
   }
 
-  async fn trigger_driver(
-    &mut self,
-    driver: &'static str,
-    mode: DriverTriggerControlMode,
-    delay: Option<Duration>,
-    store: &Store,
-  ) {
-    let driver_lookup = store.get::<DriverLookup>().unwrap();
-    match driver_lookup.get(driver) {
-      Some(driver) => {
-        if let Some(delay) = delay {
-          tokio::time::sleep(delay).await;
-        }
-
-        log::info!("Triggering driver {}", driver.name);
-        self
-          .io_port
-          .dispatch(&TriggerDriverCommand::new(driver.id, mode, None))
-          .await;
-      }
-      None => {
-        log::error!("Attempted to trigger unknown driver: {}", driver);
-        return;
-      }
-    }
+  pub async fn activate_driver(&mut self, driver: usize, mode: ActivationMode) {
+    log::info!("Activating driver {} with mode {:?}", driver, mode);
+    let control_mode: DriverTriggerControlMode = match mode {
+      ActivationMode::Automatic => DriverTriggerControlMode::Automatic,
+      ActivationMode::Tap => DriverTriggerControlMode::Manual,
+      ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
+    };
+    self.trigger_driver(driver, control_mode, None).await;
   }
 
-  async fn trigger_driver_group(
-    &mut self,
-    group_name: &'static str,
-    mode: DriverTriggerControlMode,
-    store: &Store,
-  ) {
-    let Some(group) = store
-      .get::<DriverGroups>()
-      .and_then(|groups| groups.get(group_name))
-    else {
-      log::error!("Attempted to trigger unknown driver group: {}", group_name);
-      return;
+  pub async fn deactivate_driver(&mut self, driver: usize, mode: DeactivationMode) {
+    log::info!("Deactivating driver {} with mode {:?}", driver, mode);
+    let control_mode: DriverTriggerControlMode = match mode {
+      DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
+      DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
     };
+    self.trigger_driver(driver, control_mode, None).await;
+  }
 
-    let drivers: Vec<_> = group.iter().cloned().collect();
-    for driver_name in drivers {
-      self.trigger_driver(driver_name, mode, None, store).await;
+  async fn trigger_driver(
+    &mut self,
+    driver: usize,
+    mode: DriverTriggerControlMode,
+    delay: Option<Duration>,
+  ) {
+    if let Some(delay) = delay {
+      tokio::time::sleep(delay).await;
     }
+
+    log::info!("Triggering driver {}", driver);
+    self
+      .io_port
+      .dispatch(&TriggerDriverCommand::new(driver, mode, None))
+      .await;
   }
 
   pub async fn reset_expansion_network(&mut self, expansion_boards: ExpansionBoards) {
@@ -301,25 +311,6 @@ impl Machine {
       // TODO: move this to a better common location
       App::reset_expansion_board(&mut self.exp_port, board).await;
     }
-  }
-
-  pub async fn render_leds(
-    &mut self,
-    systems: &mut Vec<SystemContainer>,
-    tick_interval: Duration,
-    ctx_template: &mut Context<'_>,
-  ) {
-    let mut declarations = HashMap::new();
-    for system in systems.iter_mut() {
-      let ctx = ctx_template.clone_for_system(system.id);
-      declarations.insert(system.id, system.leds(tick_interval, &ctx));
-    }
-
-    self.led_renderer.tick(tick_interval);
-    self
-      .led_renderer
-      .render(&mut self.exp_port, declarations)
-      .await;
   }
 }
 
@@ -345,6 +336,69 @@ impl System for MachineSystem {
       let boards = ctx.cloned::<ExpansionBoards>().unwrap();
       sender.send(MachineMessage::ResetExpansionNetwork(boards));
     });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ConfigureDriver>(move |cmd, ctx| {
+      let driver_lookup = ctx.expect::<DriverLookup>();
+      if let Some(driver) = driver_lookup.get(cmd.driver) {
+        let switch_lookup = ctx.expect::<SwitchLookup>();
+        let config = cmd.mode.to_config(switch_lookup);
+        sender.send(MachineMessage::ConfigureDriver(driver.id, config));
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ActivateDriver>(move |cmd, ctx| {
+      let driver_lookup = ctx.expect::<DriverLookup>();
+      if let Some(driver) = driver_lookup.get(cmd.driver) {
+        sender.send(MachineMessage::ActivateDriver(driver.id, cmd.mode.clone()));
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<DeactivateDriver>(move |cmd, ctx| {
+      let driver_lookup = ctx.expect::<DriverLookup>();
+      if let Some(driver) = driver_lookup.get(cmd.driver) {
+        sender.send(MachineMessage::DeactivateDriver(
+          driver.id,
+          cmd.mode.clone(),
+        ));
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ActivateDriverGroup>(move |cmd, ctx| {
+      let lookup = ctx.expect::<DriverLookup>();
+      let groups = ctx.expect::<DriverGroups>();
+      if let Some(group) = groups.get(cmd.group) {
+        let driver_ids: Vec<usize> = group
+          .iter()
+          .filter_map(|name| lookup.get(name))
+          .map(|driver| driver.id)
+          .collect();
+        sender.send(MachineMessage::ActivateDriverGroup(
+          driver_ids,
+          cmd.mode.clone(),
+        ));
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<DeactivateDriverGroup>(move |cmd, ctx| {
+      let lookup = ctx.expect::<DriverLookup>();
+      let groups = ctx.expect::<DriverGroups>();
+      if let Some(group) = groups.get(cmd.group) {
+        let driver_ids: Vec<usize> = group
+          .iter()
+          .filter_map(|name| lookup.get(name))
+          .map(|driver| driver.id)
+          .collect();
+        sender.send(MachineMessage::DeactivateDriverGroup(
+          driver_ids,
+          cmd.mode.clone(),
+        ));
+      }
+    });
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {
@@ -359,12 +413,12 @@ enum MachineMessage {
   WatchdogPing,
   ClearWatchdog,
   ResetExpansionNetwork(ExpansionBoards),
+  ConfigureDriver(usize, DriverConfig),
+  ActivateDriver(usize, ActivationMode),
+  DeactivateDriver(usize, DeactivationMode),
+  ActivateDriverGroup(Vec<usize>, ActivationMode),
+  DeactivateDriverGroup(Vec<usize>, DeactivationMode),
 }
-
-// -- Commands --
-pub struct WatchdogPing;
-pub struct ClearWatchdog;
-pub struct ResetExpansionNetwork;
 
 // -- Events --
 

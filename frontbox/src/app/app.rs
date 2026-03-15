@@ -16,7 +16,6 @@ pub struct App {
   command_registry: CommandRegistry,
 }
 
-// TODO: move app and runloop to a separate module
 impl App {
   pub async fn boot(
     config: BootConfig,

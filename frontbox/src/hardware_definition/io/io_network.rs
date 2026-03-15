@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::prelude::*;
-use fast_protocol::DriverConfig;
 use serde::Serialize;
 
 /** This module containes the "final" form that is shared with the rest of the code */

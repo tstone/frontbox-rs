@@ -1,8 +1,5 @@
 use std::any::Any;
-use std::fmt::Debug;
 use std::sync::atomic::AtomicU64;
-
-use crate::prelude::*;
 
 static LISTENER_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -22,7 +19,7 @@ impl<T: Any + Send + Sync> Event for T {
 
 pub trait EventExt {
   fn is<T: Any>(&self) -> bool;
-  fn downcast_ref<T: Any>(&self) -> Option<&T>;
+  fn downcast<T: Any>(&self) -> Option<&T>;
 }
 
 impl EventExt for dyn Event {
@@ -30,7 +27,7 @@ impl EventExt for dyn Event {
     self.as_any().is::<T>()
   }
 
-  fn downcast_ref<T: Any>(&self) -> Option<&T> {
+  fn downcast<T: Any>(&self) -> Option<&T> {
     self.as_any().downcast_ref::<T>()
   }
 }
