@@ -1,3 +1,7 @@
-mod turn_based_game;
+mod player;
+mod turn_based_events;
+mod turn_based_game_commands;
 
-pub use turn_based_game::TurnBasedGame;
+pub use player::*;
+pub use turn_based_events::*;
+pub use turn_based_game_commands::*;

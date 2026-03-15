@@ -5,3 +5,7 @@ edition = "2024"
 
 [dependencies]
 frontbox = { path = "../frontbox" }
+tokio = { version = "1", features = ["full"] }
+dyn-clone = "1.0.20"
+serde_json = "1.0.149"
+serde = { version = "1.0.228", features = ["derive"] }
