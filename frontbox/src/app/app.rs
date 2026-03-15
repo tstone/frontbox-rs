@@ -14,6 +14,7 @@ pub struct App {
   operator_config: OperatorConfig,
   app_config: AppConfig,
   command_registry: CommandRegistry,
+  systems: Vec<Box<dyn System>>,
 }
 
 impl App {
@@ -64,6 +65,7 @@ impl App {
       operator_config: OperatorConfig::new(),
       app_config: AppConfig::default(),
       command_registry: CommandRegistry::new(),
+      systems: Vec::new(),
     }
   }
 
@@ -279,12 +281,18 @@ impl App {
     self
   }
 
+  pub fn add_systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
+    self.systems.extend(systems);
+    self
+  }
+
   pub fn add_plugin(mut self, plugin: impl Plugin + 'static) -> Self {
     plugin.register(&mut self);
     self
   }
 
-  pub async fn run(mut self, initial_systems: Vec<Box<dyn System>>) {
+  pub async fn run(mut self, systems: Vec<Box<dyn System>>) {
+    self.systems.extend(systems);
     self.store.insert(self.operator_config);
     self.store.insert(self.app_config.clone());
 
@@ -298,7 +306,7 @@ impl App {
       self.store,
       self.command_registry,
       self.app_config,
-      initial_systems,
+      self.systems,
     )
     .await;
   }

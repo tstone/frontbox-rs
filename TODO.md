@@ -1,14 +1,12 @@
 System
 
-- SystemBundles
-- System to automatically register drivers and unregister them on shutdown
-- Make a nice way to easily add systems like watchdog and driver config applier (that moves out of App builder)
-- Fix game points plugin -- how is player-specific state handled
-- Figure out commands -- registered from plugins?
 - Move app, store to top-level modules
-- handle_event! doesn't seem to allow multiple
-- Trough system
 - Current ball index
+
+Turn Based
+
+- Fix game points plugin -- how is player-specific state handled
+- Trough system
 - States (BallLocation, GameStartable) -- these now become enums in Store/World
 
 Hardware
@@ -23,9 +21,8 @@ DX
 
 - Some kind of console runner that shows switch states and has a terminal/console (this needs to skip the command listening part... somehow)
 
-Displays
+Displays (as a System)
 
-- Trait or re-use System?
 - FAST LED canvas
 - Pin2DMD support
 - NeoSeg support
@@ -43,4 +40,4 @@ LEDs
 
 Websocket support
 
-- Design it
+- Design it -- as a system
