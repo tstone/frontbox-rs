@@ -8,10 +8,10 @@ use crate::systems::SystemMessage;
 
 #[derive(Debug)]
 pub struct Context<'a> {
-  store: &'a mut Store,
-  system_id: u64,
-  app_sender: mpsc::UnboundedSender<AppMessage>,
-  system_sender: mpsc::UnboundedSender<SystemMessage>,
+  pub(crate) store: &'a mut Store,
+  pub(crate) system_id: u64,
+  pub(crate) app_sender: mpsc::UnboundedSender<AppMessage>,
+  pub(crate) system_sender: mpsc::UnboundedSender<SystemMessage>,
 }
 
 impl<'a> Context<'a> {

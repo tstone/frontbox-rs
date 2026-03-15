@@ -1,11 +1,5 @@
 use std::any::Any;
-use std::sync::atomic::AtomicU64;
 
-static LISTENER_ID: AtomicU64 = AtomicU64::new(0);
-
-pub(crate) fn next_listener_id() -> u64 {
-  LISTENER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
 
 pub trait Event: Any + Send + Sync {
   fn as_any(&self) -> &dyn Any;

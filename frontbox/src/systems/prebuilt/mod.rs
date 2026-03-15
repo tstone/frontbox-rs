@@ -1,8 +1,8 @@
-mod free_play;
+mod credits;
 mod trough;
 mod watchdog;
 
-pub use free_play::*;
+pub use credits::*;
 pub use trough::*;
 pub use watchdog::*;
 

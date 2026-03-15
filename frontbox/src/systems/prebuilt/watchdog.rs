@@ -54,6 +54,7 @@ impl System for Watchdog {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+    // TODO: move to on_shutdown, run shutdown logic for all systems in run_loop
     if event.is::<Shutdown>() {
       Watchdog::disable(ctx);
     }

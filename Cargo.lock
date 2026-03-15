@@ -192,7 +192,11 @@ dependencies = [
 name = "frontbox-turn-based"
 version = "0.1.0"
 dependencies = [
+ "dyn-clone",
  "frontbox",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

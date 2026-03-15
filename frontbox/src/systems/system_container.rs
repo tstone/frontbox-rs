@@ -2,11 +2,10 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-use crate::prelude::*;
 use crate::systems::*;
 
 pub struct SystemContainer {
-  pub(crate) id: u64,
+  pub id: u64,
   pub(crate) inner: Box<dyn System>,
   timers: HashMap<&'static str, SystemTimer>,
 }
@@ -21,7 +20,7 @@ impl SystemContainer {
   }
 
   pub fn new_from_system(system: Box<dyn System>) -> Self {
-    Self::new(next_listener_id(), system)
+    Self::new(SystemCommandsProcessor::next_id(), system)
   }
 
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
