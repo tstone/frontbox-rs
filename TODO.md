@@ -1,12 +1,11 @@
 System
 
-- Move app, store to top-level modules
-- Current ball index
+- Trough system
 
 Turn Based
 
 - Fix game points plugin -- how is player-specific state handled
-- Trough system
+- Current ball index
 - States (BallLocation, GameStartable) -- these now become enums in Store/World
 
 Hardware

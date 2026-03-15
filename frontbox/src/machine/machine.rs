@@ -49,11 +49,11 @@ impl Machine {
     self.io_port.read_event().await
   }
 
-  pub fn machine_sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
+  pub(crate) fn machine_sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
     self.machine_sender.clone()
   }
 
-  pub fn set_app_sender(&mut self, sender: mpsc::UnboundedSender<AppMessage>) {
+  pub(crate) fn set_app_sender(&mut self, sender: mpsc::UnboundedSender<AppMessage>) {
     self.app_sender = sender;
   }
 
@@ -338,12 +338,12 @@ impl Machine {
 }
 
 /// Exposes machine-level commands to systems. If you don't have this, you can't control any hardware
-pub struct MachineBridge {
+pub(crate) struct MachineBridge {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
 
 impl MachineBridge {
-  pub fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Box<Self> {
+  pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Box<Self> {
     Box::new(Self { machine_sender })
   }
 }

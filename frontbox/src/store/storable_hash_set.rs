@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::prelude::Storable;
+use crate::store::Storable;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct StorableHashSet<T: Serialize + Hash + Send + Sync + Clone + 'static> {

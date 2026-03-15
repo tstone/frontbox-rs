@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-use crate::prelude::*;
+use crate::store::{Storable, StorableType};
 use serde_json::Value;
 
 // TODO: rename World

@@ -1,5 +1,5 @@
-use crate::plugins::trough::{BallEnteredTrough, BallExitedTrough};
 pub use crate::prelude::*;
+use crate::systems::prebuilt::trough::{BallEnteredTrough, BallExitedTrough};
 
 pub struct TroughSystem {
   pub switches: Vec<&'static str>,

@@ -286,11 +286,6 @@ impl App {
     self
   }
 
-  pub fn add_plugin(mut self, plugin: impl Plugin + 'static) -> Self {
-    plugin.register(&mut self);
-    self
-  }
-
   pub async fn run(mut self, systems: Vec<Box<dyn System>>) {
     self.systems.extend(systems);
     self.store.insert(self.operator_config);
