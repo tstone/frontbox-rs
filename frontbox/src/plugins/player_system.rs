@@ -1,29 +1,28 @@
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
-use crate::systems::{SystemCommand, SystemCommandsProcessor, SystemContainer};
+use crate::systems::{SystemCommandsProcessor, SystemContainer, SystemMessage};
 
 pub struct PlayerSystem {
-  initial_scene: Vec<Box<dyn CloneableSystem>>,
+  initial_scene: Vec<Box<dyn ChildSystem>>,
   player_scenes: Vec<Vec<SystemContainer>>,
   // Storage for each player
   player_stores: Vec<Store>,
-  player_states: Vec<States>,
   /// Index of the current player
   index: u8,
-  system_sender: mpsc::UnboundedSender<SystemCommand>,
-  system_receiver: mpsc::UnboundedReceiver<SystemCommand>,
+  system_sender: mpsc::UnboundedSender<SystemMessage>,
+  system_receiver: mpsc::UnboundedReceiver<SystemMessage>,
   store_sender: mpsc::UnboundedSender<StoreCommand>,
   store_receiver: mpsc::UnboundedReceiver<StoreCommand>,
 }
 
 impl PlayerSystem {
-  pub fn new(initial_scene: Vec<Box<dyn CloneableSystem>>) -> Box<Self> {
+  pub fn new(initial_scene: Vec<Box<dyn ChildSystem>>) -> Box<Self> {
     let mut player_scenes = Vec::new();
     let copy: Vec<SystemContainer> = initial_scene
       .iter()
       .map(|system| {
-        let cloned: Box<dyn CloneableSystem> = dyn_clone::clone_box(&**system);
+        let cloned: Box<dyn ChildSystem> = dyn_clone::clone_box(&**system);
         SystemContainer::new(next_listener_id(), Box::new(cloned))
       })
       .collect();
@@ -32,17 +31,13 @@ impl PlayerSystem {
     let mut player_stores = Vec::new();
     player_stores.push(Store::new());
 
-    let mut player_states = Vec::new();
-    player_states.push(States::new());
-
-    let (system_sender, system_receiver) = mpsc::unbounded_channel::<SystemCommand>();
+    let (system_sender, system_receiver) = mpsc::unbounded_channel::<SystemMessage>();
     let (store_sender, store_receiver) = mpsc::unbounded_channel::<StoreCommand>();
 
     Box::new(Self {
       initial_scene,
       player_scenes,
       player_stores,
-      player_states,
       index: 0,
       system_sender,
       system_receiver,
@@ -56,7 +51,7 @@ impl PlayerSystem {
       .initial_scene
       .iter()
       .map(|system| {
-        let cloned: Box<dyn CloneableSystem> = dyn_clone::clone_box(&**system);
+        let cloned: Box<dyn ChildSystem> = dyn_clone::clone_box(&**system);
         SystemContainer::new(next_listener_id(), Box::new(cloned))
       })
       .collect();
@@ -66,9 +61,9 @@ impl PlayerSystem {
 
   fn iterate_current_systems(
     &mut self,
-    ctx: &Context,
+    ctx: &Context_OLD,
     cmds: &Commands,
-    mut f: impl FnMut(&mut Box<dyn System>, &Context, &mut Commands),
+    mut f: impl FnMut(&mut Box<dyn System>, &Context_OLD, &mut Commands),
   ) {
     if let Some(scene) = self.player_scenes.get_mut(self.index as usize) {
       let ctx = ctx.clone_for_manager(
@@ -104,21 +99,21 @@ impl PlayerSystem {
 }
 
 impl System for PlayerSystem {
-  fn on_startup(&mut self, ctx: &Context, cmds: &mut Commands) {
+  fn on_startup(&mut self, ctx: &Context_OLD, cmds: &mut Commands) {
     // call on_startup for all systems in the initial scene
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_startup(ctx, cmds);
     });
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, cmds: &mut Commands) {
+  fn on_shutdown(&mut self, ctx: &Context_OLD, cmds: &mut Commands) {
     // call on_shutdown for all systems in the current scene
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_shutdown(ctx, cmds);
     });
   }
 
-  fn on_event(&mut self, event: &dyn FrontboxEvent, ctx: &Context, cmds: &mut Commands) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context_OLD, cmds: &mut Commands) {
     handle_event!(event, {
       PlayerChanged => |e| { self.index = e.current_player_index; }
       PlayerAdded => |_e| { self.add_player();}
@@ -130,7 +125,7 @@ impl System for PlayerSystem {
     });
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, cmds: &mut Commands) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context_OLD, cmds: &mut Commands) {
     self.iterate_current_systems(ctx, cmds, |system, ctx, cmds| {
       system.on_tick(delta, ctx, cmds);
     });
@@ -139,7 +134,7 @@ impl System for PlayerSystem {
   fn leds(
     &mut self,
     delta_time: Duration,
-    ctx: &Context,
+    ctx: &Context_OLD,
   ) -> std::collections::HashMap<&'static str, LedState> {
     let mut leds = std::collections::HashMap::new();
     if let Some(scene) = self.player_scenes.get_mut(self.index as usize) {

@@ -9,7 +9,7 @@ use crate::{DriverTriggerDualMode, DriverTriggerMode};
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
 pub trait DriverMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig;
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig;
 }
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
@@ -40,7 +40,7 @@ impl Default for PulseMode {
 }
 
 impl DriverMode for PulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::Pulse {
@@ -55,11 +55,11 @@ impl DriverMode for PulseMode {
   }
 }
 
-pub trait SwitchLookup {
+pub trait SwitchNameToId {
   fn get_switch_id(&self, name: &str) -> Option<usize>;
 }
 
-impl SwitchLookup for HashMap<&'static str, usize> {
+impl SwitchNameToId for HashMap<&'static str, usize> {
   fn get_switch_id(&self, name: &str) -> Option<usize> {
     self.get(name).copied()
   }
@@ -95,7 +95,7 @@ impl Default for PulseKickMode {
 }
 
 impl DriverMode for PulseKickMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::PulseKick {
@@ -137,7 +137,7 @@ impl Default for PulseHoldMode {
 }
 
 impl DriverMode for PulseHoldMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::PulseHold {
@@ -178,7 +178,7 @@ impl Default for PulseHoldCancelMode {
 }
 
 impl DriverMode for PulseHoldCancelMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
       get_switches_inverts(&self.trigger_mode, switch_lookup);
 
@@ -224,7 +224,7 @@ impl Default for DelayedPulseMode {
 }
 
 impl DriverMode for DelayedPulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::DelayedPulse {
@@ -267,7 +267,7 @@ impl Default for LongPulseMode {
 }
 
 impl DriverMode for LongPulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
 
     DriverConfig::LongPulse {
@@ -309,7 +309,7 @@ impl Default for FlipperMainDirectMode {
 }
 
 impl DriverMode for FlipperMainDirectMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
       button_switch: switch_lookup
         .get_switch_id(self.button_switch)
@@ -349,7 +349,7 @@ impl Default for FlipperHoldDirectMode {
 }
 
 impl DriverMode for FlipperHoldDirectMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchLookup) -> DriverConfig {
+  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
       button_switch: switch_lookup
         .get_switch_id(self.button_switch)
@@ -364,7 +364,7 @@ impl DriverMode for FlipperHoldDirectMode {
 
 fn get_switch_invert(
   trigger_mode: &DriverTriggerMode,
-  switch_lookup: &dyn SwitchLookup,
+  switch_lookup: &dyn SwitchNameToId,
 ) -> (Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerMode::Disabled => (None, None),
@@ -377,7 +377,7 @@ fn get_switch_invert(
 
 fn get_switches_inverts(
   trigger_mode: &DriverTriggerDualMode,
-  switch_lookup: &dyn SwitchLookup,
+  switch_lookup: &dyn SwitchNameToId,
 ) -> (Option<usize>, Option<bool>, Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerDualMode::Disabled => (None, None, None, None),

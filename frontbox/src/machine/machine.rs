@@ -2,24 +2,14 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::machine::event::FrontboxEvent;
-use crate::machine::event::*;
-use crate::machine::key_reader::monitor_keys;
-use crate::machine::machine_config::MachineConfig;
+use crate::hardware_definition::*;
 use crate::machine::serial_interface::*;
-use crate::machine::watchdog::Watchdog;
 use crate::prelude::*;
-use crate::systems::SystemCommand;
-use crate::systems::SystemCommandsProcessor;
-use crate::systems::{SystemContainer, run_system_timers};
-use crate::{hardware_definition::*, machine::machine_command::MachineCommand};
-use crossterm::{
-  event::{Event, KeyCode},
-  terminal::{disable_raw_mode, enable_raw_mode},
-};
+use crate::systems::SystemContainer;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
+#[derive(Debug, Default, Serialize, Storable)]
 pub struct GameState {
   pub active_player: u8,
   pub player_count: u8,
@@ -28,265 +18,91 @@ pub struct GameState {
 pub struct Machine {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  keyboard_switch_map: HashMap<KeyCode, usize>,
-  driver_lookup: HashMap<&'static str, DriverDefinition>,
-  watchdog: Watchdog,
-  config: MachineConfig,
-  io_boards: Vec<IoBoardDefinition>,
-  expansion_boards: Vec<ExpansionBoardDefinition>,
-  driver_groups: HashMap<&'static str, Vec<&'static str>>,
-  system_tick: Duration,
   led_renderer: LedRenderer,
-  global_store: Store,
-  global_systems: Vec<SystemContainer>,
-  switches: SwitchContext,
-  game_state: Option<GameState>,
-  states: States,
-  command_sender: mpsc::UnboundedSender<MachineCommand>,
-  command_receiver: mpsc::UnboundedReceiver<MachineCommand>,
-  system_sender: mpsc::UnboundedSender<SystemCommand>,
-  system_receiver: mpsc::UnboundedReceiver<SystemCommand>,
-  store_sender: mpsc::UnboundedSender<StoreCommand>,
-  store_receiver: mpsc::UnboundedReceiver<StoreCommand>,
+  machine_sender: mpsc::UnboundedSender<MachineMessage>,
+  machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
+  watchdog_interval: Duration,
 }
 
 impl Machine {
   pub(crate) fn new(
     io_port: SerialInterface,
     exp_port: SerialInterface,
-    switches: SwitchContext,
-    driver_lookup: HashMap<&'static str, DriverDefinition>,
-    keyboard_switch_map: HashMap<KeyCode, usize>,
-    config: MachineConfig,
-    io_boards: Vec<IoBoardDefinition>,
-    expansion_boards: Vec<ExpansionBoardDefinition>,
-    driver_groups: HashMap<&'static str, Vec<&'static str>>,
+    led_renderer: LedRenderer,
   ) -> Self {
-    let (command_sender, command_receiver) = mpsc::unbounded_channel();
-    let (system_sender, system_receiver) = mpsc::unbounded_channel();
-    let (store_sender, store_receiver) = mpsc::unbounded_channel();
-    let watchdog_interval = config
-      .get_value_as_u64(default_config::WATCHDOG_TICK)
-      .unwrap_or(1000);
-
-    let system_tick = Duration::from_millis(
-      config
-        .get_value_as_u64(default_config::SYSTEM_TIMER_TICK)
-        .unwrap(),
-    );
+    let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
     Self {
       io_port,
       exp_port,
-      switches: switches,
-      driver_lookup,
-      keyboard_switch_map,
-      game_state: None,
-      watchdog: Watchdog::new(
-        Duration::from_millis(watchdog_interval),
-        command_sender.clone(),
-      ),
-      command_sender,
-      command_receiver,
-      system_sender,
-      system_receiver,
-      store_sender,
-      store_receiver,
-      config,
-      led_renderer: LedRenderer::new(&expansion_boards),
-      io_boards,
-      expansion_boards,
-      system_tick,
-      global_store: Store::new(),
-      global_systems: Vec::new(),
-      driver_groups,
-      states: States::new(),
+      // TODO:
+      // watchdog: Watchdog::new(watchdog_tick, system_sender.clone()),
+      // watchdog_tick,
+      machine_sender,
+      machine_receiver,
+      led_renderer,
+      watchdog_interval: Duration::from_millis(1250),
     }
   }
 
-  pub async fn run(&mut self, systems: Vec<Box<dyn System>>) {
-    // Note: FAST system seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
-    // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage
-    self.enable_watchdog().await;
+  pub async fn read_io(&mut self) -> Option<EventResponse> {
+    self.io_port.read_event().await
+  }
 
-    // initialize systems
-    {
-      let ctx = Context::new(
-        &self.config,
-        &self.game_state,
-        &self.states,
-        &self.global_store,
-        &self.switches,
-      );
-      for system in systems.into_iter() {
-        let mut cmds = Commands::new(
-          self.command_sender.clone(),
-          self.system_sender.clone(),
-          self.store_sender.clone(),
-          0,
-        );
-        SystemCommandsProcessor::spawn_system(system, &mut self.global_systems, &ctx, &mut cmds);
-      }
-    }
-
-    // initialize keyboard monitoring if there are any keyboard-mapped switches
-    if self.keyboard_switch_map.len() > 0 {
-      match enable_raw_mode() {
-        Ok(_) => {}
-        Err(e) => {
-          log::error!("Failed to enable raw mode for keyboard input: {}", e);
-        }
-      }
-      monitor_keys(self.command_sender.clone());
-    }
-
-    // system tick manages the timers within systems
-    run_system_timers(self.system_tick.clone(), self.command_sender.clone());
-
-    // listen for ctrl-c to trigger shutdown
-    let tx = self.command_sender.clone();
-    tokio::spawn(async move {
-      tokio::signal::ctrl_c()
-        .await
-        .expect("failed to listen for ctrl-c");
-      let _ = tx.send(MachineCommand::Shutdown);
-    });
-
-    log::info!("⟳ Machine run loop started.");
-
+  pub async fn listen(&mut self) {
     loop {
       tokio::select! {
-        Some(event) = self.io_port.read_event() => {
-          // Add incoming hardware events to the command queue
-          // this ensures they are processed in order with any commands emitted by systems in response to those events
-          self.command_sender.send(MachineCommand::HardwareEvent(event)).ok();
-        }
-
-        Some(command) = self.system_receiver.recv() => {
-          let ctx =     Context::new(
-            &self.config,
-            &self.game_state,
-            &self.states,
-            &self.global_store,
-            &self.switches,
-          );
-          let mut cmds = Commands::new(
-            self.command_sender.clone(),
-            self.system_sender.clone(),
-            self.store_sender.clone(),
-            0,
-          );
-          SystemCommandsProcessor::process(command, &mut self.global_systems, &ctx, &mut cmds);
-        }
-
-        Some(command) = self.store_receiver.recv() => {
-          match command {
-            StoreCommand::Write(f) => {
-              f(&mut self.global_store);
+        Some(cmd) = self.machine_receiver.recv() => {
+          match cmd {
+            MachineMessage::WatchdogPing => {
+              self.send_watchdog_ping().await;
+            }
+            MachineMessage::ClearWatchdog => {
+              self.clear_watchdog().await;
+            }
+            MachineMessage::ResetExpansionNetwork(expansion_boards) => {
+              self.reset_expansion_network(expansion_boards);
             }
           }
         }
-
-        Some(command) = self.command_receiver.recv() => {
-          if matches!(command, MachineCommand::SystemTick)
-            || matches!(command, MachineCommand::WatchdogTick)
-          {
-            log::trace!("Executing machine command: {:?}", command);
-          } else {
-            log::debug!("Executing machine command: {:?}", command);
-          }
-
-          if matches!(command, MachineCommand::Shutdown) {
-            log::info!("Shutdown command received, exiting machine run loop.");
-            break;
-          }
-
-          self.run_machine_command(command).await;
-        }
       }
-    }
-
-    if self.keyboard_switch_map.len() > 0 {
-      disable_raw_mode().ok();
-    }
-
-    self
-      .io_port
-      .request(&WatchdogCommand::disable(), Duration::from_secs(2))
-      .await
-      .ok();
-
-    // Reset expansion boards (LEDs servos, etc.) to an off/default state
-    self.reset_expansion_network().await;
-  }
-
-  async fn run_machine_command(&mut self, command: MachineCommand) {
-    match command {
-      MachineCommand::StartGame => self.start_game().await,
-      MachineCommand::EndGame => self.end_game().await,
-      MachineCommand::AddPlayer => self.add_player(),
-      MachineCommand::AdvancePlayer => self.advance_player().await,
-      MachineCommand::ConfigureDriver(driver_name, mode) => {
-        self.configure_driver(driver_name, mode).await
-      }
-      MachineCommand::TriggerDriver(driver_name, mode, delay) => {
-        self.trigger_driver(driver_name, mode, delay).await
-      }
-      MachineCommand::TriggerDriverGroup(group_name, mode, _delay) => {
-        self.trigger_driver_group(group_name, mode).await
-      }
-      MachineCommand::SetConfigValue(key, value) => {
-        self.config.set_value(key, value);
-      }
-      MachineCommand::SystemTick => {
-        let tick_duration = self.system_tick;
-        self.dispatch_to_current_systems(|system, ctx, cmds| {
-          system.on_tick(tick_duration, ctx, cmds);
-        });
-        self.render_leds().await;
-      }
-      MachineCommand::HardwareEvent(event) => match event {
-        EventResponse::Switch { switch_id, state } => self.run_switch_event(switch_id, state),
-      },
-      MachineCommand::Key(event) => self.on_key_press(event),
-      MachineCommand::WatchdogTick => {
-        let _ = self
-          .io_port
-          .request(
-            &WatchdogCommand::set(Duration::from_millis(1250)),
-            Duration::from_secs(1),
-          )
-          .await;
-      }
-      MachineCommand::ResetExpansionNetwork => {
-        self.reset_expansion_network().await;
-      }
-      MachineCommand::Shutdown => {}
-      MachineCommand::EmitEvent(e) => self.emit(e),
-      MachineCommand::StateTransition(f) => f(&mut self.states),
     }
   }
 
   // ---
 
-  fn emit(&mut self, event: Box<dyn FrontboxEvent>) {
-    self.dispatch_to_current_systems(|system, ctx, cmds| {
-      system.on_event(event.as_ref(), ctx, cmds);
-    });
+  pub async fn send_watchdog_ping(&mut self) {
+    let _ = self
+      .io_port
+      .request(
+        &WatchdogCommand::set(self.watchdog_interval),
+        Duration::from_secs(1),
+      )
+      .await;
   }
 
-  fn run_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    if let Some(switch) = self.switches.switch_by_id(&switch_id).cloned() {
-      self.switches.update_switch_state(switch_id, state);
+  pub async fn clear_watchdog(&mut self) {
+    let _ = self
+      .io_port
+      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
+      .await;
+  }
+
+  pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState, ctx: &mut Context) {
+    let switch_lookup = ctx.get_mut::<SwitchLookup>().unwrap();
+    let switch = switch_lookup.switch_by_id(&switch_id).cloned();
+
+    if let Some(switch) = switch {
+      switch_lookup.update_switch_state(switch_id, state);
 
       if matches!(state, SwitchState::Closed) {
-        self.emit(SwitchClosed::new(switch));
+        ctx.emit(SwitchClosed::new(switch));
       } else {
-        self.emit(SwitchOpened::new(switch));
+        ctx.emit(SwitchOpened::new(switch));
       }
     } else {
-      // Repor as native board/switch id since this is the easiest way to figure out current switch wiring
-      match self.get_native_switch_id(switch_id) {
+      // Report as native board/switch id since this is the easiest way to figure out current switch wiring
+      match Self::get_native_switch_id(switch_id, ctx) {
         Some((board_id, local_id)) => {
           log::warn!(
             "Received event for unknown switch -- board: {}, id: {} -- {:?}",
@@ -308,9 +124,11 @@ impl Machine {
     }
   }
 
-  fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
+  /// Primarily used for reporting of unkown switches as native board/switch ids, but can also be used for virtual switches
+  fn get_native_switch_id(switch_id: usize, ctx: &Context) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
-    for (index, board) in self.io_boards.iter().enumerate() {
+    let io_boards = ctx.get::<IoBoards>().unwrap();
+    for (index, board) in io_boards.iter().enumerate() {
       if switch_id < (board.switch_count as usize) + offset {
         let native_switch_id = switch_id - offset;
         return Some((index, native_switch_id));
@@ -320,111 +138,71 @@ impl Machine {
     None
   }
 
-  /// Run each root system
-  fn dispatch_to_current_systems<F>(&mut self, mut handler: F)
-  where
-    F: FnMut(&mut SystemContainer, &Context, &mut Commands),
-  {
-    let ctx = Context::new(
-      &self.config,
-      &self.game_state,
-      &self.states,
-      &self.global_store,
-      &self.switches,
-    );
+  // TODO: these game/player commands don't need to be on machine itself
 
-    for system in self.global_systems.iter_mut() {
-      let mut cmds = Commands::new(
-        self.command_sender.clone(),
-        self.system_sender.clone(),
-        self.store_sender.clone(),
-        system.id,
-      );
-      if system.is_active(&ctx) {
-        handler(system, &ctx, &mut cmds);
-      }
-    }
-  }
+  // pub(crate) async fn start_game(&mut self, store: &mut Store) {
+  //   if self.game_state.is_some() {
+  //     return;
+  //   }
 
-  pub(crate) async fn start_game(&mut self) {
-    if self.game_state.is_some() {
-      return;
-    }
+  //   log::info!("Starting new game");
+  //   self.game_state = Some(GameState {
+  //     active_player: 0,
+  //     player_count: 1,
+  //   });
+  //   self.report_switches().await; // sync initial switch states
+  //   self.emit(GameStarted::new(), store);
+  // }
 
-    log::info!("Starting new game");
-    self.game_state = Some(GameState {
-      active_player: 0,
-      player_count: 1,
-    });
-    self.report_switches().await; // sync initial switch states
-    self.emit(GameStarted::new());
-  }
+  // async fn end_game(&mut self, store: &mut Store) {
+  //   log::info!("Ending game");
+  //   self.emit(GameEnded::new(), store);
+  //   self.game_state = None;
+  // }
 
-  async fn end_game(&mut self) {
-    log::info!("Ending game");
-    self.emit(GameEnded::new());
-    self.game_state = None;
-  }
+  // fn add_player(&mut self, store: &mut Store) {
+  //   log::info!("Adding player to game");
+  //   if let Some(game_state) = &mut self.game_state {
+  //     game_state.player_count += 1;
+  //     let player_count = game_state.player_count;
+  //     self.emit(PlayerAdded::new(player_count), store);
+  //   } else {
+  //     log::warn!("Attempted to add player but no game in progress");
+  //   }
+  // }
 
-  fn add_player(&mut self) {
-    log::info!("Adding player to game");
-    if let Some(game_state) = &mut self.game_state {
-      game_state.player_count += 1;
-      let player_count = game_state.player_count;
-      self.emit(PlayerAdded::new(player_count));
-    } else {
-      log::warn!("Attempted to add player but no game in progress");
-    }
-  }
+  // async fn advance_player(&mut self, store: &mut Store) {
+  //   log::info!("Advancing to next player");
 
-  async fn advance_player(&mut self) {
-    log::info!("Advancing to next player");
+  //   let game_state = store.get_mut::<GameState>();
 
-    if self.game_state.is_none() {
-      log::warn!("Attempted to advance player but no game in progress");
-      return;
-    }
+  //   if game_state.is_none() {
+  //     log::warn!("Attempted to advance player but no game in progress");
+  //     return;
+  //   }
 
-    if let Some(game_state) = &mut self.game_state {
-      game_state.active_player += 1;
-      if game_state.active_player >= game_state.player_count {
-        game_state.active_player = 0;
-      }
-    }
+  //   if let Some(game_state) = game_state {
+  //     game_state.active_player += 1;
+  //     if game_state.active_player >= game_state.player_count {
+  //       game_state.active_player = 0;
+  //     }
+  //   }
 
-    self.reset_expansion_network().await;
-    self.report_switches().await;
-  }
+  //   self.reset_expansion_network().await;
+  //   self.report_switches().await;
+  // }
 
-  async fn enable_watchdog(&mut self) {
-    self.watchdog.enable();
-    let _ = self
-      .io_port
-      .request(
-        &WatchdogCommand::set(Duration::from_millis(1250)),
-        Duration::from_secs(1),
-      )
-      .await;
-
-    // give some time for the hardware to power up before we start sending commands
-    tokio::time::sleep(Duration::from_millis(300)).await;
-  }
-
-  #[allow(unused)]
-  async fn disable_watchdog(&mut self) {
-    self.watchdog.disable();
-
-    // Clear any remaining watchdog time out
-    let _ = self
-      .io_port
-      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
-      .await;
-  }
-
-  async fn configure_driver(&mut self, driver: &'static str, mode: Box<dyn DriverMode>) {
-    match self.driver_lookup.get(driver) {
+  async fn configure_driver(
+    &mut self,
+    driver: &'static str,
+    mode: Box<dyn DriverMode>,
+    store: &Store,
+  ) {
+    let driver_lookup = store.get::<DriverLookup>().unwrap();
+    match driver_lookup.get(driver) {
       Some(driver) => {
-        let config = mode.to_config(&self.switches);
+        let switch_lookup = store.get::<SwitchLookup>().unwrap();
+        let config = mode.to_config(switch_lookup);
 
         log::info!("Configuring driver {}", driver.name);
         match self
@@ -453,14 +231,15 @@ impl Machine {
     }
   }
 
-  async fn report_switches(&mut self) {
+  async fn report_switches(&mut self, store: &mut Store) {
     match self
       .io_port
       .request(&ReportSwitchesCommand::new(), Duration::from_secs(2))
       .await
     {
       Ok(SwitchReportResponse::SwitchReport { switches }) => {
-        self.switches.update_switch_states(switches);
+        let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
+        switch_lookup.update_switch_states(switches);
       }
       _ => {
         log::error!("Failed to report switches");
@@ -473,8 +252,10 @@ impl Machine {
     driver: &'static str,
     mode: DriverTriggerControlMode,
     delay: Option<Duration>,
+    store: &Store,
   ) {
-    match self.driver_lookup.get(driver) {
+    let driver_lookup = store.get::<DriverLookup>().unwrap();
+    match driver_lookup.get(driver) {
       Some(driver) => {
         if let Some(delay) = delay {
           tokio::time::sleep(delay).await;
@@ -497,61 +278,44 @@ impl Machine {
     &mut self,
     group_name: &'static str,
     mode: DriverTriggerControlMode,
+    store: &Store,
   ) {
-    let Some(group) = self.driver_groups.get(group_name) else {
+    let Some(group) = store
+      .get::<DriverGroups>()
+      .and_then(|groups| groups.get(group_name))
+    else {
       log::error!("Attempted to trigger unknown driver group: {}", group_name);
       return;
     };
 
     let drivers: Vec<_> = group.iter().cloned().collect();
     for driver_name in drivers {
-      self.trigger_driver(driver_name, mode, None).await;
+      self.trigger_driver(driver_name, mode, None, store).await;
     }
   }
 
-  fn on_key_press(&mut self, event: Event) {
-    match event {
-      Event::Key(key) => {
-        if let Some(&switch_id) = self.keyboard_switch_map.get(&key.code) {
-          let state = if key.kind == crossterm::event::KeyEventKind::Release {
-            SwitchState::Open
-          } else {
-            SwitchState::Closed
-          };
-          log::debug!(
-            "Keyboard event: {:?}, triggering switch ID {} to {:?}",
-            key,
-            switch_id,
-            state
-          );
-          self.run_switch_event(switch_id, state);
-        }
-      }
-      _ => {}
-    }
-  }
-
-  async fn reset_expansion_network(&mut self) {
+  pub async fn reset_expansion_network(&mut self, expansion_boards: ExpansionBoards) {
     self.led_renderer.reset();
-    // TODO: move this to a better common location
-    MachineBuilder::reset_expansion_boards(&mut self.exp_port, &self.expansion_boards).await;
+
+    for board in expansion_boards.iter() {
+      // TODO: move this to a better common location
+      App::reset_expansion_board(&mut self.exp_port, board).await;
+    }
   }
 
-  async fn render_leds(&mut self) {
-    let ctx = Context::new(
-      &self.config,
-      &self.game_state,
-      &self.states,
-      &self.global_store,
-      &self.switches,
-    );
-
+  pub async fn render_leds(
+    &mut self,
+    systems: &mut Vec<SystemContainer>,
+    tick_interval: Duration,
+    ctx_template: &mut Context<'_>,
+  ) {
     let mut declarations = HashMap::new();
-    for system in self.global_systems.iter_mut() {
-      declarations.insert(system.id, system.leds(self.system_tick, &ctx));
+    for system in systems.iter_mut() {
+      let ctx = ctx_template.clone_for_system(system.id);
+      declarations.insert(system.id, system.leds(tick_interval, &ctx));
     }
 
-    self.led_renderer.tick(self.system_tick);
+    self.led_renderer.tick(tick_interval);
     self
       .led_renderer
       .render(&mut self.exp_port, declarations)
@@ -559,14 +323,73 @@ impl Machine {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct Switch {
-  pub id: usize,
-  pub name: &'static str,
+/// A bridge between Machine and systems
+struct MachineSystem {
+  machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
 
-impl Switch {
-  pub fn is_virtual(&self) -> bool {
-    self.id > u16::MAX as usize
+impl System for MachineSystem {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<WatchdogPing>(move |_, _ctx| {
+      sender.send(MachineMessage::WatchdogPing);
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ClearWatchdog>(move |_, _ctx| {
+      sender.send(MachineMessage::ClearWatchdog);
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ResetExpansionNetwork>(move |_, ctx| {
+      let boards = ctx.cloned::<ExpansionBoards>().unwrap();
+      sender.send(MachineMessage::ResetExpansionNetwork(boards));
+    });
+  }
+
+  fn on_shutdown(&mut self, ctx: &mut Context) {
+    let boards = ctx.expect::<ExpansionBoards>().clone();
+    self
+      .machine_sender
+      .send(MachineMessage::ResetExpansionNetwork(boards));
+  }
+}
+
+enum MachineMessage {
+  WatchdogPing,
+  ClearWatchdog,
+  ResetExpansionNetwork(ExpansionBoards),
+}
+
+// -- Commands --
+pub struct WatchdogPing;
+pub struct ClearWatchdog;
+pub struct ResetExpansionNetwork;
+
+// -- Events --
+
+/// Runs when a switch becomes closed (depressed)
+#[derive(Debug)]
+#[allow(unused)]
+pub struct SwitchClosed {
+  pub switch: Switch,
+}
+
+impl SwitchClosed {
+  pub fn new(switch: Switch) -> Box<SwitchClosed> {
+    Box::new(Self { switch })
+  }
+}
+
+/// Runs when a switch becomes open (released)
+#[derive(Debug)]
+#[allow(unused)]
+pub struct SwitchOpened {
+  pub switch: Switch,
+}
+
+impl SwitchOpened {
+  pub fn new(switch: Switch) -> Box<SwitchOpened> {
+    Box::new(Self { switch })
   }
 }

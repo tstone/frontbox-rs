@@ -4,14 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-fast-protocol = { path = "../fast-protocol" }
+fast-protocol = { path = "../fast-protocol", features = ["serde"] }
 frontbox-derive = { path = "../frontbox-derive" }
 log = "0.4.29"
 futures-util = "0.3.32"
 tokio = { version = "1", features = ["full"] }
 tokio-serial = "5.4.4"
 tokio-util = { version = "0.7.18", features = ["codec"] }
-crossterm = { version = "0.29", features = ["event-stream"] }
 dyn-clone = "1.0.20"
 serde_json = "1.0.149"
 serde = { version = "1.0.228", features = ["derive"] }

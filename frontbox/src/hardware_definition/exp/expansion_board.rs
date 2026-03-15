@@ -1,15 +1,19 @@
-use crate::hardware_definition::exp::LedPortDefinition;
+use serde::Serialize;
 
-/// https://fastpinball.com/programming/exp/#expansion-board-addresses
-#[derive(Debug, Clone)]
+use crate::hardware_definition::exp::LedPort;
+use crate::prelude::{Storable, StorableHashSet};
+
+#[derive(Debug, Clone, Serialize, Storable, Hash, PartialEq, Eq)]
 #[allow(dead_code)]
-pub struct ExpansionBoardDefinition {
-  pub(crate) address: u8,
-  pub(crate) breakout: Option<u8>,
-  pub(crate) led_ports: Vec<LedPortDefinition>,
+pub struct ExpansionBoard {
+  pub address: u8,
+  pub breakout: Option<u8>,
+  pub led_ports: Vec<LedPort>,
 }
 
-impl ExpansionBoardDefinition {
+pub type ExpansionBoards = StorableHashSet<ExpansionBoard>;
+
+impl ExpansionBoard {
   pub fn custom(address: &'static str, breakout: Option<u8>) -> Self {
     Self {
       address: u8::from_str_radix(address, 16).unwrap(),
@@ -84,7 +88,7 @@ impl ExpansionBoardDefinition {
     Self::custom(address, None)
   }
 
-  pub fn with_led_port(mut self, port: LedPortDefinition) -> Self {
+  pub fn with_led_port(mut self, port: LedPort) -> Self {
     self.led_ports.push(port);
     self
   }

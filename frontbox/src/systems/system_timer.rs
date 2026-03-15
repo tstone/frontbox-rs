@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::machine::machine_command::MachineCommand;
+use crate::prelude::AppMessage;
 
 #[derive(Debug, Clone)]
 pub struct SystemTimer {
@@ -46,13 +46,13 @@ pub enum TimerMode {
   Repeating,
 }
 
-pub fn run_system_timers(tick: Duration, sender: mpsc::UnboundedSender<MachineCommand>) {
+pub fn run_system_timers(tick: Duration, sender: mpsc::UnboundedSender<AppMessage>) {
   let mut timer_interval = tokio::time::interval(tick);
 
   tokio::spawn(async move {
     loop {
       timer_interval.tick().await;
-      sender.send(MachineCommand::SystemTick).ok();
+      sender.send(AppMessage::SystemTick).ok();
     }
   });
 }

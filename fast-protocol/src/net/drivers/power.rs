@@ -2,6 +2,7 @@ use std::fmt::{Display, UpperHex};
 
 /// 8-bit power for original coil modes
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Power {
   pub power: u8,
 }

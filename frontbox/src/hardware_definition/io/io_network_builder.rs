@@ -24,7 +24,7 @@ impl IoNetworkBuilder {
   }
 
   pub fn build(self) -> IoNetwork {
-    let mut boards: Vec<IoBoardDefinition> = Vec::new();
+    let mut boards: Vec<IoBoard> = Vec::new();
     let mut switches = Vec::new();
     let mut drivers = Vec::new();
     let mut switch_lookup: HashMap<&'static str, usize> = HashMap::new();
@@ -33,7 +33,7 @@ impl IoNetworkBuilder {
 
     // first process all switches, as those will need to be referenced by drivers
     for (i, spec) in self.boards.iter().enumerate() {
-      boards.push(IoBoardDefinition {
+      boards.push(IoBoard {
         description: spec.description,
         switch_count: spec.switch_count,
         driver_count: spec.driver_count,
@@ -45,7 +45,10 @@ impl IoNetworkBuilder {
         switches.push(SwitchDefinition {
           id: switch_offset as usize + *idx as usize,
           name: *name,
-          parent_index: i as u8,
+          native: NativeIdentity {
+            board_idx: i,
+            pin: *idx as usize,
+          },
           config: config.cloned(),
         });
 
@@ -57,10 +60,13 @@ impl IoNetworkBuilder {
 
     for (i, spec) in self.boards.into_iter().enumerate() {
       for (idx, name) in spec.driver_map.iter() {
-        drivers.push(DriverDefinition {
+        drivers.push(Driver {
           id: driver_offset as usize + *idx as usize,
           name: *name,
-          parent_index: i as u8,
+          native: NativeIdentity {
+            board_idx: i,
+            pin: *idx as usize,
+          },
           config: spec
             .driver_configs
             .get(name)

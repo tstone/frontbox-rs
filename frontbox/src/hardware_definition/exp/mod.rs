@@ -1,5 +1,5 @@
-mod expansion_board_definition;
-mod led_port_definition;
+mod expansion_board;
+mod led_port;
 
-pub use expansion_board_definition::*;
-pub use led_port_definition::*;
+pub use expansion_board::*;
+pub use led_port::*;

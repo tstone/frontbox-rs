@@ -19,17 +19,14 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards =
-    vec![
-      ExpansionBoardDefinition::neutron().with_led_port(LedPortDefinition {
-        port: 0,
-        start: 0,
-        led_type: LedType::WS2812,
-        leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
-      }),
-    ];
+  let expansion_boards = vec![ExpansionBoard::neutron().with_led_port(LedPort {
+    port: 0,
+    start: 0,
+    led_type: LedType::WS2812,
+    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
+  })];
 
-  MachineBuilder::boot(
+  App::boot(
     BootConfig::default(),
     IoNetworkBuilder::new().build(),
     expansion_boards,
@@ -82,8 +79,8 @@ impl LedExample {
   }
 }
 
-impl CloneableSystem for LedExample {
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+impl ChildSystem for LedExample {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context_OLD) -> HashMap<&'static str, LedState> {
     LedDeclarationBuilder::new(delta_time)
       .on(leds::DEMO1, Color::deep_sky_blue())
       .on(leds::DEMO2, Color::dark_blue())

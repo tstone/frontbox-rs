@@ -1,51 +1,43 @@
-use std::collections::HashMap;
+use std::any::{Any, TypeId};
 use std::time::Duration;
 
+use crate::app::run_loop;
 use crate::hardware_definition::*;
 use crate::machine::serial_interface::SerialInterface;
-use crate::machine::switch_context::SwitchContext;
 use crate::prelude::*;
 use fast_protocol::*;
 
-pub struct MachineBuilder {
+pub struct App {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  switches: SwitchContext,
-  driver_lookup: HashMap<&'static str, DriverDefinition>,
-  keyboard_switch_map: HashMap<KeyCode, usize>,
-  virtual_switch_count: u8,
-  config: MachineConfig,
-  expansion_boards: Vec<ExpansionBoardDefinition>,
-  io_boards: Vec<IoBoardDefinition>,
-  driver_groups: HashMap<&'static str, Vec<&'static str>>,
+  store: Store,
+  operator_config: OperatorConfig,
+  app_config: AppConfig,
+  command_registry: CommandRegistry,
 }
 
-impl MachineBuilder {
+// TODO: move app and runloop to a separate module
+impl App {
   pub async fn boot(
     config: BootConfig,
     io_network: IoNetwork,
-    expansion_boards: Vec<ExpansionBoardDefinition>,
+    expansion_boards: Vec<ExpansionBoard>,
   ) -> Self {
     let mut io_port = SerialInterface::new(config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
     log::info!("🥾 Opened IO NET port at {}", config.io_net_port_path);
 
-    MachineBuilder::boot_mainboard(&mut io_port).await;
-    MachineBuilder::configure_hardware(&mut io_port, config.platform).await;
-    MachineBuilder::verify_watchdog(&mut io_port).await;
-    MachineBuilder::configure_switches(&mut io_port, &io_network.switches).await;
+    App::boot_mainboard(&mut io_port).await;
+    App::configure_hardware(&mut io_port, config.platform).await;
+    App::verify_watchdog(&mut io_port).await;
+    App::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
-    let initial_switch_state = MachineBuilder::get_initial_switch_states(&mut io_port).await;
-    let switches = SwitchContext::new(io_network.switches, initial_switch_state);
+    let initial_switch_state = App::get_initial_switch_states(&mut io_port).await;
 
     // Configure drivers
-    MachineBuilder::configure_drivers(&mut io_port, &io_network.drivers).await;
-    let mut drivers = HashMap::new();
-    for driver in io_network.drivers {
-      drivers.insert(driver.name, driver);
-    }
+    App::configure_drivers(&mut io_port, &io_network.drivers).await;
 
     // open EXP port
     let mut exp_port = SerialInterface::new(config.exp_port_path)
@@ -53,20 +45,26 @@ impl MachineBuilder {
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
-    MachineBuilder::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
-    MachineBuilder::configure_led_ports(&mut exp_port, &expansion_boards).await;
+    App::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
+    App::configure_led_ports(&mut exp_port, &expansion_boards).await;
+
+    // Insert hardware definitions into store for systems to reference
+    let mut store = Store::new();
+    store.insert(SwitchLookup::new(io_network.switches, initial_switch_state));
+    store.insert(DriverLookup::new(io_network.drivers));
+    store.insert(StorableHashSet::from_vec(io_network.boards, "io_boards"));
+    store.insert(StorableHashSet::from_vec(
+      expansion_boards,
+      "expansion_boards",
+    ));
 
     Self {
       io_port,
       exp_port,
-      switches,
-      driver_lookup: drivers,
-      keyboard_switch_map: HashMap::new(),
-      virtual_switch_count: 0,
-      config: MachineConfig::default(),
-      expansion_boards,
-      io_boards: io_network.boards,
-      driver_groups: io_network.driver_groups,
+      store,
+      operator_config: OperatorConfig::new(),
+      app_config: AppConfig::default(),
+      command_registry: CommandRegistry::new(),
     }
   }
 
@@ -164,7 +162,7 @@ impl MachineBuilder {
     }
   }
 
-  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<DriverDefinition>) {
+  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<Driver>) {
     for driver in drivers {
       if let Some(config) = &driver.config {
         log::info!("Configuring driver {} with {:?}", driver.name, config);
@@ -189,32 +187,39 @@ impl MachineBuilder {
     }
   }
 
-  pub async fn reset_expansion_boards(
+  async fn reset_expansion_boards(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoardDefinition>,
+    expansion_boards: &Vec<ExpansionBoard>,
   ) {
     for board in expansion_boards {
-      if board.breakout.is_none() {
-        log::info!("Resetting expansion board at address {:X}", board.address);
-        match exp_port
-          .request(
-            &BoardResetCommand::new(board.address),
-            Duration::from_millis(2000),
-          )
-          .await
-        {
-          Ok(ProcessedResponse::Processed) => {
-            log::debug!("Expansion board {:X} reset successfully", board.address);
-          }
-          Ok(ProcessedResponse::Failed) => {
-            panic!(
-              "Expansion board {:X} reset failed. Is this configured correctly?",
-              board.address
-            );
-          }
-          Err(e) => {
-            panic!("Error resetting expansion board {:X}: {}", board.address, e);
-          }
+      App::reset_expansion_board(exp_port, board).await;
+    }
+  }
+
+  pub(crate) async fn reset_expansion_board(
+    exp_port: &mut SerialInterface,
+    board: &ExpansionBoard,
+  ) {
+    if board.breakout.is_none() {
+      log::info!("Resetting expansion board at address {:X}", board.address);
+      match exp_port
+        .request(
+          &BoardResetCommand::new(board.address),
+          Duration::from_millis(2000),
+        )
+        .await
+      {
+        Ok(ProcessedResponse::Processed) => {
+          log::debug!("Expansion board {:X} reset successfully", board.address);
+        }
+        Ok(ProcessedResponse::Failed) => {
+          panic!(
+            "Expansion board {:X} reset failed. Is this configured correctly?",
+            board.address
+          );
+        }
+        Err(e) => {
+          panic!("Error resetting expansion board {:X}: {}", board.address, e);
         }
       }
     }
@@ -222,7 +227,7 @@ impl MachineBuilder {
 
   async fn configure_led_ports(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoardDefinition>,
+    expansion_boards: &Vec<ExpansionBoard>,
   ) {
     for board in expansion_boards {
       for led_port in &board.led_ports {
@@ -240,74 +245,77 @@ impl MachineBuilder {
     }
   }
 
-  /// Map a keyboard key to a switch for emulated switch triggering
-  pub fn add_keyboard_mapping(mut self, key: KeyCode, switch_name: &'static str) -> Self {
-    let switch = self.switches.switch_by_name(switch_name).expect(&format!(
-      "Keyboard mapped switch '{}' not found.",
-      switch_name
-    ));
-    self.keyboard_switch_map.insert(key, switch.id);
-    self
-  }
-
-  pub fn add_keyboard_mappings(mut self, mappings: Vec<(KeyCode, &'static str)>) -> Self {
-    for (key, switch_name) in mappings {
-      self = self.add_keyboard_mapping(key, switch_name);
-    }
-    self
-  }
-
-  /// Add a virtual switch that can be triggered by a keyboard key which is not backed by a hardware switch.
-  /// Used primarily for testing or to emulate future hardware before it's physically installed.
-  pub fn add_virtual_switch(mut self, key: KeyCode, switch_name: &'static str) -> Self {
-    if self.virtual_switch_count == u8::MAX {
-      panic!("Maximum number of virtual switches added");
-    }
-
-    // Virtual IDs count backwards from the max ID size to avoid colliding with hardware switch IDs which start at 0 and increment upwards
-    let virtual_id = usize::MAX - self.virtual_switch_count as usize;
-    self.switches.add_virtual_switch(switch_name, virtual_id);
-    self.keyboard_switch_map.insert(key, virtual_id);
-
-    self.virtual_switch_count += 1;
-    self
-  }
-
-  /// Add a virtual switches that can be triggered by a keyboard key which is not backed by a hardware switch.
-  /// Used primarily for testing or to emulate future hardware before it's physically installed.
-  pub fn add_virtual_switches(mut self, mappings: Vec<(KeyCode, &'static str)>) -> Self {
-    for (key, switch_name) in mappings {
-      self = self.add_virtual_switch(key, switch_name);
-    }
-    self
+  pub fn register_command<C: Command + 'static>(
+    &mut self,
+    runner: impl Fn(&C, &mut Context) + Send + Sync + 'static,
+  ) {
+    let type_id = TypeId::of::<C>();
+    self.command_registry.register(
+      type_id,
+      Box::new(move |cmd: &dyn Any, ctx: &mut Context| {
+        if let Some(cmd) = cmd.downcast_ref::<C>() {
+          runner(cmd, ctx);
+        }
+      }),
+    );
   }
 
   pub fn add_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
-    self.config.add_item(key, item);
+    self.operator_config.add_item(key, item);
     self
   }
 
   pub fn set_config_value(mut self, key: &'static str, value: ConfigValue) -> Self {
-    self.config.set_value(key, value);
+    self.operator_config.set_value(key, value);
     self
   }
 
-  pub fn add_plugin(mut self, plugin: Box<dyn Plugin>) -> Self {
+  pub fn set_system_tick(mut self, interval: Duration) -> Self {
+    self.app_config.system_timer_tick = interval;
+    self
+  }
+
+  pub fn set_watchdog_tick(mut self, interval: Duration) -> Self {
+    self.app_config.watchdog_tick = interval;
+    self
+  }
+
+  pub fn add_plugin(mut self, plugin: impl Plugin + 'static) -> Self {
     plugin.register(&mut self);
     self
   }
 
-  pub fn build(self) -> Machine {
-    Machine::new(
-      self.io_port,
-      self.exp_port,
-      self.switches,
-      self.driver_lookup,
-      self.keyboard_switch_map,
-      self.config,
-      self.io_boards,
-      self.expansion_boards,
-      self.driver_groups,
+  pub async fn run(mut self, initial_systems: Vec<Box<dyn System>>) {
+    self.store.insert(self.operator_config);
+    self.store.insert(self.app_config.clone());
+
+    // lookup expansion boards for led renderer
+    let expansion_boards = self.store.expect::<ExpansionBoards>().clone();
+    let led_renderer = LedRenderer::new(&expansion_boards);
+    let machine = Machine::new(self.io_port, self.exp_port, led_renderer);
+
+    run_loop::run(
+      machine,
+      self.store,
+      self.command_registry,
+      self.app_config,
+      initial_systems,
     )
+    .await;
+  }
+}
+
+#[derive(Debug, Clone, Serialize, Storable)]
+pub struct AppConfig {
+  pub system_timer_tick: Duration,
+  pub watchdog_tick: Duration,
+}
+
+impl Default for AppConfig {
+  fn default() -> Self {
+    Self {
+      system_timer_tick: Duration::from_millis(41),
+      watchdog_tick: Duration::from_millis(1000),
+    }
   }
 }

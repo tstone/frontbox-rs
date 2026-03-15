@@ -4,9 +4,7 @@ use std::collections::HashMap;
 use crate::prelude::*;
 use serde_json::Value;
 
-pub trait StorableType: Any + Storable + Default + PartialEq + Send + Sync + 'static {}
-impl<T: Any + Storable + Default + PartialEq + Send + Sync + 'static> StorableType for T {}
-
+// TODO: rename World
 #[derive(Debug)]
 pub struct Store {
   internal: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
@@ -30,23 +28,52 @@ impl Store {
       .and_then(|boxed| boxed.downcast_ref::<T>())
   }
 
-  pub fn get_mut<T: StorableType>(&mut self) -> &mut T {
-    let type_id = TypeId::of::<T>();
+  pub fn cloned<T: StorableType + Clone>(&self) -> Option<T> {
+    self.get::<T>().cloned()
+  }
 
-    if !self.internal.contains_key(&type_id) {
-      self.internal.insert(type_id, Box::new(T::default()));
+  /// Get the value of type T from the store, or panic if it doesn't exist
+  pub fn expect<T: StorableType>(&self) -> &T {
+    self.get::<T>().expect(&format!(
+      "Expected {} value not found in Store",
+      std::any::type_name::<T>()
+    ))
+  }
+
+  pub fn get_or_default<T: StorableType + Default>(&mut self) -> &T {
+    if !self.internal.contains_key(&TypeId::of::<T>()) {
+      self.insert(T::default());
     }
+    self.get::<T>().unwrap()
+  }
 
+  pub fn get_mut<T: StorableType>(&mut self) -> Option<&mut T> {
     self
       .internal
-      .get_mut(&type_id)
-      .unwrap()
-      .downcast_mut::<T>()
-      .unwrap()
+      .get_mut(&TypeId::of::<T>())
+      .and_then(|boxed| boxed.downcast_mut::<Option<T>>())
+      .and_then(|opt| opt.as_mut())
+  }
+
+  /// Get a mutable reference to the value of type T from the store, or panic if it doesn't exist
+  pub fn expect_mut<T: StorableType>(&mut self) -> &mut T {
+    self.get_mut::<T>().expect(&format!(
+      "Expected {} value not found in Store",
+      std::any::type_name::<T>()
+    ))
+  }
+
+  pub fn get_or_insert<T: StorableType + Default>(&mut self) -> &mut T {
+    if !self.internal.contains_key(&TypeId::of::<T>()) {
+      self.insert(T::default());
+    }
+    self.get_mut::<T>().unwrap()
   }
 
   pub fn insert<T: StorableType>(&mut self, value: T) {
-    self.internal.insert(TypeId::of::<T>(), Box::new(value));
+    self
+      .internal
+      .insert(TypeId::of::<T>(), Box::new(Some(value)));
   }
 
   pub fn remove<T: StorableType>(&mut self) {

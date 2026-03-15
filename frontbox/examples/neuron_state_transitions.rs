@@ -7,7 +7,7 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  MachineBuilder::boot(
+  App::boot(
     BootConfig::default(),
     IoNetworkBuilder::new().build(),
     vec![],
@@ -36,12 +36,12 @@ impl ExampleSystem {
 }
 
 impl System for ExampleSystem {
-  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
     // transition into a state
     cmds.transition(ExampleStateMachine::State2);
   }
 
-  fn is_active(&self, ctx: &Context) -> bool {
+  fn is_active(&self, ctx: &Context_OLD) -> bool {
     // require a specific state to be active for this system to run (receive events, timer ticks, etc.)
     ctx.states.is(ExampleStateMachine::State2)
   }

@@ -18,17 +18,14 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards =
-    vec![
-      ExpansionBoardDefinition::neutron().with_led_port(LedPortDefinition {
-        port: 0,
-        start: 0,
-        led_type: LedType::WS2812,
-        leds: vec![leds::DEMO1],
-      }),
-    ];
+  let expansion_boards = vec![ExpansionBoard::neutron().with_led_port(LedPort {
+    port: 0,
+    start: 0,
+    led_type: LedType::WS2812,
+    leds: vec![leds::DEMO1],
+  })];
 
-  MachineBuilder::boot(
+  App::boot(
     BootConfig::default(),
     IoNetworkBuilder::new().build(),
     expansion_boards,
@@ -50,8 +47,8 @@ impl System1 {
   }
 }
 
-impl CloneableSystem for System1 {
-  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+impl ChildSystem for System1 {
+  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
     cmds.timer.set(
       "example_timer",
       std::time::Duration::from_secs(1),
@@ -59,13 +56,13 @@ impl CloneableSystem for System1 {
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context_OLD, _cmds: &mut Commands) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context_OLD) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::blue())
@@ -87,8 +84,8 @@ impl System2 {
   }
 }
 
-impl CloneableSystem for System2 {
-  fn on_startup(&mut self, _ctx: &Context, cmds: &mut Commands) {
+impl ChildSystem for System2 {
+  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
     cmds.timer.set(
       "example_timer",
       std::time::Duration::from_secs(2),
@@ -96,13 +93,13 @@ impl CloneableSystem for System2 {
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context, _cmds: &mut Commands) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context_OLD, _cmds: &mut Commands) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context_OLD) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::red())

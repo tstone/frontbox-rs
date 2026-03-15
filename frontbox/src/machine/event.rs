@@ -10,88 +10,27 @@ pub(crate) fn next_listener_id() -> u64 {
   LISTENER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-pub trait FrontboxEvent: Any + Debug + Send + Sync {
+pub trait Event: Any + Send + Sync {
   fn as_any(&self) -> &dyn Any;
 }
 
-impl<T: Any + Debug + Send + Sync> FrontboxEvent for T {
+impl<T: Any + Send + Sync> Event for T {
   fn as_any(&self) -> &dyn Any {
     self
   }
 }
 
-// --- Built-in events ---
-
-/// Runs when a switch becomes closed (depressed)
-#[derive(Debug)]
-#[allow(unused)]
-pub struct SwitchClosed {
-  pub switch: Switch,
+pub trait EventExt {
+  fn is<T: Any>(&self) -> bool;
+  fn downcast_ref<T: Any>(&self) -> Option<&T>;
 }
 
-impl SwitchClosed {
-  pub fn new(switch: Switch) -> Box<SwitchClosed> {
-    Box::new(Self { switch })
+impl EventExt for dyn Event {
+  fn is<T: Any>(&self) -> bool {
+    self.as_any().is::<T>()
   }
-}
 
-/// Runs when a switch becomes open (released)
-#[derive(Debug)]
-#[allow(unused)]
-pub struct SwitchOpened {
-  pub switch: Switch,
-}
-
-impl SwitchOpened {
-  pub fn new(switch: Switch) -> Box<SwitchOpened> {
-    Box::new(Self { switch })
-  }
-}
-
-/// Runs when a game starts
-#[derive(Debug)]
-pub struct GameStarted;
-
-impl GameStarted {
-  pub fn new() -> Box<GameStarted> {
-    Box::new(Self)
-  }
-}
-
-/// Runs when a game ends
-#[derive(Debug)]
-pub struct GameEnded;
-
-impl GameEnded {
-  pub fn new() -> Box<GameEnded> {
-    Box::new(Self)
-  }
-}
-
-/// Runs when a player is added
-#[derive(Debug)]
-#[allow(unused)]
-pub struct PlayerAdded {
-  pub player_count: u8,
-}
-
-impl PlayerAdded {
-  pub fn new(player_count: u8) -> Box<PlayerAdded> {
-    Box::new(Self { player_count })
-  }
-}
-
-/// Runs when a player is added
-#[derive(Debug)]
-#[allow(unused)]
-pub struct PlayerChanged {
-  pub current_player_index: u8,
-}
-
-impl PlayerChanged {
-  pub fn new(current_player_index: u8) -> Box<PlayerChanged> {
-    Box::new(Self {
-      current_player_index,
-    })
+  fn downcast_ref<T: Any>(&self) -> Option<&T> {
+    self.as_any().downcast_ref::<T>()
   }
 }

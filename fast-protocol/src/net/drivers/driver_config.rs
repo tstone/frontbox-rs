@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::Power;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DriverConfig {
   Disabled,
   Pulse {
