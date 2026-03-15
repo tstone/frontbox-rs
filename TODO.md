@@ -1,6 +1,6 @@
 System
 
-- Trough system
+- Trough system -- work out the complete plunge/play/drain cycle with a player
 - Systems need to be able to declare some kind of dependency on what they require, so as to get a panic if it's missing
   e.g. `ctx.require_command::<SomeCommand>` to `ctx.require_event::<E>` which also means there needs to be a `ctx::provides_event<E>`.
 

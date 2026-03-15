@@ -52,22 +52,16 @@ impl System for Example {
 }
 ```
 
-#### Tools
+#### Abstractions
 
 - `System` contain private state and allow binding of events to behavior
 - `Event`s allow Systems to broadcast state change and data to each other
 - `Commands` allow Systems to define addressed, exactly once handling of events
 - `Context` (ECS world) allows System to share global, mutable state if necessary
 
-#### Events vs Context
-
-- Prefer Events and private state
-- Use Context when display functions need to access state
-- Use Context when other systems need "reference" data
-
 ### Example System
 
-This system implements a basic pinball "mode". A target is illuminated and must be struck 3 times. Each hit grants 1000 points. After 3 hits, the target will begin flashing. The player has 20 seconds to hit it again for 10,000 points (hurry up shot). After 20 seconds or being hit a 4th time the mode resets.
+This system implements a basic pinball "mode". A target is illuminated and must be struck 3 times. Each hit grants 1000 points. After 3 hits, the target will begin flashing. The player has 20 seconds to hit it again for 25,000 points (hurry up shot). After 20 seconds or being hit a 4th time the mode resets.
 
 - `SwitchClosed` event monitors the target's switch
 - `ctx.set_timer` and `TimerComplete` event monitors the hurry up timer

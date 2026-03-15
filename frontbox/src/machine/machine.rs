@@ -144,7 +144,9 @@ impl Machine {
     let mut declarations = HashMap::new();
     for system in systems.iter_mut() {
       let ctx = ctx_template.clone_for_system(system.id);
-      declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      if system.is_active(&ctx) {
+        declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      }
     }
 
     self.led_renderer.tick(tick_interval);
@@ -186,60 +188,6 @@ impl Machine {
     }
     None
   }
-
-  // TODO: these game/player commands don't need to be on machine itself
-
-  // pub(crate) async fn start_game(&mut self, store: &mut Store) {
-  //   if self.game_state.is_some() {
-  //     return;
-  //   }
-
-  //   log::info!("Starting new game");
-  //   self.game_state = Some(GameState {
-  //     active_player: 0,
-  //     player_count: 1,
-  //   });
-  //   self.report_switches().await; // sync initial switch states
-  //   self.emit(GameStarted::new(), store);
-  // }
-
-  // async fn end_game(&mut self, store: &mut Store) {
-  //   log::info!("Ending game");
-  //   self.emit(GameEnded::new(), store);
-  //   self.game_state = None;
-  // }
-
-  // fn add_player(&mut self, store: &mut Store) {
-  //   log::info!("Adding player to game");
-  //   if let Some(game_state) = &mut self.game_state {
-  //     game_state.player_count += 1;
-  //     let player_count = game_state.player_count;
-  //     self.emit(PlayerAdded::new(player_count), store);
-  //   } else {
-  //     log::warn!("Attempted to add player but no game in progress");
-  //   }
-  // }
-
-  // async fn advance_player(&mut self, store: &mut Store) {
-  //   log::info!("Advancing to next player");
-
-  //   let game_state = store.get_mut::<GameState>();
-
-  //   if game_state.is_none() {
-  //     log::warn!("Attempted to advance player but no game in progress");
-  //     return;
-  //   }
-
-  //   if let Some(game_state) = game_state {
-  //     game_state.active_player += 1;
-  //     if game_state.active_player >= game_state.player_count {
-  //       game_state.active_player = 0;
-  //     }
-  //   }
-
-  //   self.reset_expansion_network().await;
-  //   self.report_switches().await;
-  // }
 
   async fn configure_driver(&mut self, driver: usize, config: DriverConfig) {
     log::info!("Configuring driver {}", driver);
