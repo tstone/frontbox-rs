@@ -1,10 +1,11 @@
 System
 
 - Trough system
+- Systems need to be able to declare some kind of dependency on what they require, so as to get a panic if it's missing
+  e.g. `ctx.require_command::<SomeCommand>` to `ctx.require_event::<E>` which also means there needs to be a `ctx::provides_event<E>`.
 
 Turn Based
 
-- Fix game points plugin -- how is player-specific state handled
 - Current ball index
 - States (BallLocation, GameStartable) -- these now become enums in Store/World
 
