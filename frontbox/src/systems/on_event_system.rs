@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::prelude::*;
 
+/// Create a new system from a closure, for a single event
 pub struct OnEventSystem<E: Event> {
-  pub method: Arc<Mutex<dyn FnMut(&mut Context) + Send>>,
+  pub method: Arc<Mutex<dyn FnMut(&E, &mut Context) + Send>>,
   _phantom: PhantomData<E>,
 }
 
@@ -22,11 +23,11 @@ impl<E: Event> OnEventSystem<E> {
   ///
   /// Example:
   /// ```ignore
-  /// SystemOnEvent::<GameStarted>::new(|ctx, cmds| {
-  ///   cmds.spawn_system( ... );
+  /// SystemOnEvent::<GameStarted>::new(|event, ctx| {
+  ///   ctx.spawn_system( ... );
   /// });
   /// ```
-  pub fn new(f: impl FnMut(&mut Context) + Send + 'static) -> Box<Self> {
+  pub fn new(f: impl FnMut(&E, &mut Context) + Send + 'static) -> Box<Self> {
     Box::new(Self {
       method: Arc::new(Mutex::new(f)),
       _phantom: PhantomData,
@@ -36,8 +37,8 @@ impl<E: Event> OnEventSystem<E> {
 
 impl<E: Event + 'static> ChildSystem for OnEventSystem<E> {
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    handle_event!(event, {
-        E => |_e| { (self.method.lock().unwrap())(ctx); }
-    });
+    if let Some(e) = event.downcast::<E>() {
+      (self.method.lock().unwrap())(e, ctx);
+    }
   }
 }

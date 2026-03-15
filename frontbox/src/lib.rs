@@ -1,8 +1,6 @@
+mod app;
 mod hardware_definition;
 mod led;
-#[macro_use]
-mod macros;
-mod app;
 mod machine;
 pub mod plugins;
 pub mod systems;
@@ -12,7 +10,6 @@ pub use crate::machine::store;
 
 pub mod prelude {
   pub use crate::app::*;
-  pub use crate::handle_event;
   pub use crate::hardware_definition::*;
   pub use crate::led::*;
   pub use crate::machine::config_value::{ConfigItem, ConfigValue};

@@ -7,6 +7,7 @@ use crate::machine::serial_interface::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use fast_protocol::*;
+use serde::de;
 use tokio::sync::mpsc;
 
 #[derive(Debug, Default, Serialize, Storable)]
@@ -61,25 +62,25 @@ impl Machine {
               self.clear_watchdog().await;
             }
             MachineMessage::ResetExpansionNetwork(expansion_boards) => {
-              self.reset_expansion_network(expansion_boards);
+              self.reset_expansion_network(expansion_boards).await;
             }
             MachineMessage::ConfigureDriver(driver_id, config) => {
               self.configure_driver(driver_id, config).await;
             }
-            MachineMessage::ActivateDriver(driver_id, mode) => {
-              self.activate_driver(driver_id, mode).await;
+            MachineMessage::ActivateDriver(driver_id, mode, delay) => {
+              self.activate_driver(driver_id, mode, delay).await;
             }
-            MachineMessage::DeactivateDriver(driver_id, mode) => {
-              self.deactivate_driver(driver_id, mode).await;
+            MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
+              self.deactivate_driver(driver_id, mode, delay).await;
             }
             MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
               for driver_id in driver_ids {
-                self.activate_driver(driver_id, mode.clone()).await;
+                self.activate_driver(driver_id, mode.clone(), None).await;
               }
             }
             MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
               for driver_id in driver_ids {
-                self.deactivate_driver(driver_id, mode.clone()).await;
+                self.deactivate_driver(driver_id, mode.clone(), None).await;
               }
             }
           }
@@ -268,23 +269,33 @@ impl Machine {
     }
   }
 
-  pub async fn activate_driver(&mut self, driver: usize, mode: ActivationMode) {
+  pub async fn activate_driver(
+    &mut self,
+    driver: usize,
+    mode: ActivationMode,
+    delay: Option<Duration>,
+  ) {
     log::info!("Activating driver {} with mode {:?}", driver, mode);
     let control_mode: DriverTriggerControlMode = match mode {
       ActivationMode::Automatic => DriverTriggerControlMode::Automatic,
       ActivationMode::Tap => DriverTriggerControlMode::Manual,
       ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
     };
-    self.trigger_driver(driver, control_mode, None).await;
+    self.trigger_driver(driver, control_mode, delay).await;
   }
 
-  pub async fn deactivate_driver(&mut self, driver: usize, mode: DeactivationMode) {
+  pub async fn deactivate_driver(
+    &mut self,
+    driver: usize,
+    mode: DeactivationMode,
+    delay: Option<Duration>,
+  ) {
     log::info!("Deactivating driver {} with mode {:?}", driver, mode);
     let control_mode: DriverTriggerControlMode = match mode {
       DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
       DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
     };
-    self.trigger_driver(driver, control_mode, None).await;
+    self.trigger_driver(driver, control_mode, delay).await;
   }
 
   async fn trigger_driver(
@@ -323,18 +334,20 @@ impl System for MachineSystem {
   fn on_startup(&mut self, ctx: &mut Context) {
     let sender = self.machine_sender.clone();
     ctx.register_command::<WatchdogPing>(move |_, _ctx| {
-      sender.send(MachineMessage::WatchdogPing);
+      sender.send(MachineMessage::WatchdogPing).ok();
     });
 
     let sender = self.machine_sender.clone();
     ctx.register_command::<ClearWatchdog>(move |_, _ctx| {
-      sender.send(MachineMessage::ClearWatchdog);
+      sender.send(MachineMessage::ClearWatchdog).ok();
     });
 
     let sender = self.machine_sender.clone();
     ctx.register_command::<ResetExpansionNetwork>(move |_, ctx| {
       let boards = ctx.cloned::<ExpansionBoards>().unwrap();
-      sender.send(MachineMessage::ResetExpansionNetwork(boards));
+      sender
+        .send(MachineMessage::ResetExpansionNetwork(boards))
+        .ok();
     });
 
     let sender = self.machine_sender.clone();
@@ -343,7 +356,9 @@ impl System for MachineSystem {
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         let switch_lookup = ctx.expect::<SwitchLookup>();
         let config = cmd.mode.to_config(switch_lookup);
-        sender.send(MachineMessage::ConfigureDriver(driver.id, config));
+        sender
+          .send(MachineMessage::ConfigureDriver(driver.id, config))
+          .ok();
       }
     });
 
@@ -351,7 +366,27 @@ impl System for MachineSystem {
     ctx.register_command::<ActivateDriver>(move |cmd, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender.send(MachineMessage::ActivateDriver(driver.id, cmd.mode.clone()));
+        sender
+          .send(MachineMessage::ActivateDriver(
+            driver.id,
+            cmd.mode.clone(),
+            None,
+          ))
+          .ok();
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<ActivateDriverDelayed>(move |cmd, ctx| {
+      let driver_lookup = ctx.expect::<DriverLookup>();
+      if let Some(driver) = driver_lookup.get(cmd.driver) {
+        sender
+          .send(MachineMessage::ActivateDriver(
+            driver.id,
+            cmd.mode.clone(),
+            Some(cmd.delay),
+          ))
+          .ok();
       }
     });
 
@@ -359,10 +394,27 @@ impl System for MachineSystem {
     ctx.register_command::<DeactivateDriver>(move |cmd, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender.send(MachineMessage::DeactivateDriver(
-          driver.id,
-          cmd.mode.clone(),
-        ));
+        sender
+          .send(MachineMessage::DeactivateDriver(
+            driver.id,
+            cmd.mode.clone(),
+            None,
+          ))
+          .ok();
+      }
+    });
+
+    let sender = self.machine_sender.clone();
+    ctx.register_command::<DeactivateDriverDelayed>(move |cmd, ctx| {
+      let driver_lookup = ctx.expect::<DriverLookup>();
+      if let Some(driver) = driver_lookup.get(cmd.driver) {
+        sender
+          .send(MachineMessage::DeactivateDriver(
+            driver.id,
+            cmd.mode.clone(),
+            Some(cmd.delay),
+          ))
+          .ok();
       }
     });
 
@@ -376,10 +428,12 @@ impl System for MachineSystem {
           .filter_map(|name| lookup.get(name))
           .map(|driver| driver.id)
           .collect();
-        sender.send(MachineMessage::ActivateDriverGroup(
-          driver_ids,
-          cmd.mode.clone(),
-        ));
+        sender
+          .send(MachineMessage::ActivateDriverGroup(
+            driver_ids,
+            cmd.mode.clone(),
+          ))
+          .ok();
       }
     });
 
@@ -393,10 +447,12 @@ impl System for MachineSystem {
           .filter_map(|name| lookup.get(name))
           .map(|driver| driver.id)
           .collect();
-        sender.send(MachineMessage::DeactivateDriverGroup(
-          driver_ids,
-          cmd.mode.clone(),
-        ));
+        sender
+          .send(MachineMessage::DeactivateDriverGroup(
+            driver_ids,
+            cmd.mode.clone(),
+          ))
+          .ok();
       }
     });
   }
@@ -405,7 +461,8 @@ impl System for MachineSystem {
     let boards = ctx.expect::<ExpansionBoards>().clone();
     self
       .machine_sender
-      .send(MachineMessage::ResetExpansionNetwork(boards));
+      .send(MachineMessage::ResetExpansionNetwork(boards))
+      .ok();
   }
 }
 
@@ -414,8 +471,8 @@ enum MachineMessage {
   ClearWatchdog,
   ResetExpansionNetwork(ExpansionBoards),
   ConfigureDriver(usize, DriverConfig),
-  ActivateDriver(usize, ActivationMode),
-  DeactivateDriver(usize, DeactivationMode),
+  ActivateDriver(usize, ActivationMode, Option<Duration>),
+  DeactivateDriver(usize, DeactivationMode, Option<Duration>),
   ActivateDriverGroup(Vec<usize>, ActivationMode),
   DeactivateDriverGroup(Vec<usize>, DeactivationMode),
 }

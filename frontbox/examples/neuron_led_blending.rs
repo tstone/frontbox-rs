@@ -31,7 +31,6 @@ async fn main() {
     expansion_boards,
   )
   .await
-  .build()
   .run(vec![System1::new(), System2::new()])
   .await;
 }
@@ -48,21 +47,21 @@ impl System1 {
 }
 
 impl ChildSystem for System1 {
-  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
-    cmds.timer.set(
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.set_timer(
       "example_timer",
       std::time::Duration::from_secs(1),
       TimerMode::Repeating,
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context_OLD, _cmds: &mut Commands) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context_OLD) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::blue())
@@ -85,21 +84,21 @@ impl System2 {
 }
 
 impl ChildSystem for System2 {
-  fn on_startup(&mut self, _ctx: &Context_OLD, cmds: &mut Commands) {
-    cmds.timer.set(
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.set_timer(
       "example_timer",
       std::time::Duration::from_secs(2),
       TimerMode::Repeating,
     );
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &Context_OLD, _cmds: &mut Commands) {
+  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
     if timer_name == "example_timer" {
       self.on = !self.on;
     }
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context_OLD) -> HashMap<&'static str, LedState> {
+  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::red())
