@@ -117,11 +117,11 @@ pub async fn run(
     &app_sender,
     &system_sender,
     |system, ctx| {
-      system.on_event(&Shutdown, ctx);
+      system.on_shutdown(ctx);
     },
   );
 
-  // sleep to allow systems to process shutdown event and clear timers, etc.
+  // wait a sec to allow systems to process shutdown event and clear timers, etc.
   tokio::time::sleep(Duration::from_millis(1000)).await;
 }
 
