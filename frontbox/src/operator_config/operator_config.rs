@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use frontbox_derive::Storable;
 use serde::Serialize;
 
-use crate::machine::config_value::{ConfigItem, ConfigValue};
 use crate::prelude::*;
 
 #[derive(Serialize, Storable)]
