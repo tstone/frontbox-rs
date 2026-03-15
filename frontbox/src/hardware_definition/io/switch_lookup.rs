@@ -98,21 +98,6 @@ impl SwitchLookup {
     self.by_name.get_mut(switch_name)
   }
 
-  /// Used internally to define an additional virtual (non-hardware backed) switch
-  pub(crate) fn add_virtual_switch(&mut self, switch_name: &'static str, id: usize) {
-    let switch = Switch {
-      id,
-      name: switch_name,
-      native: NativeIdentity {
-        board_idx: 0,
-        pin: 0,
-      }, // Virtual switch, no actual hardware
-    };
-    self.by_id.insert(id, switch.clone());
-    self.by_name.insert(switch_name, switch);
-    self.is_closed.insert(id, false);
-  }
-
   /// Used internally to update switch state via switch events
   pub(crate) fn update_switch_state(&mut self, switch_id: usize, state: SwitchState) {
     let is_closed = matches!(state, SwitchState::Closed);
@@ -167,10 +152,4 @@ pub struct Switch {
   pub id: usize,
   pub native: NativeIdentity,
   pub name: &'static str,
-}
-
-impl Switch {
-  pub fn is_virtual(&self) -> bool {
-    self.id > u16::MAX as usize
-  }
 }
