@@ -18,6 +18,7 @@ async fn main() {
     vec![],
   )
   .await
+  .add_systems(bundles::minimal())
   .run(vec![])
   .await;
 }

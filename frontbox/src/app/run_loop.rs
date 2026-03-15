@@ -12,14 +12,16 @@ pub async fn run(
   mut store: Store,
   mut command_registry: CommandRegistry,
   config: AppConfig,
-  initial_systems: Vec<Box<dyn System>>,
+  mut initial_systems: Vec<Box<dyn System>>,
 ) {
-  let mut systems: Vec<SystemContainer> = vec![];
   let (app_sender, mut app_receiver) = mpsc::unbounded_channel::<AppMessage>();
   let (system_sender, mut system_receiver) = mpsc::unbounded_channel::<SystemMessage>();
   machine.set_app_sender(app_sender.clone());
 
   // initialize systems
+  let mut systems: Vec<SystemContainer> = vec![];
+  initial_systems.push(MachineBridge::new(machine.machine_sender()));
+
   for system in initial_systems {
     SystemCommandsProcessor::spawn_system(
       system,

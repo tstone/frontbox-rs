@@ -6,6 +6,12 @@ const WATCHDOG_TIMER_NAME: &'static str = "watchdog";
 pub struct Watchdog;
 
 impl Watchdog {
+  pub fn new() -> Box<Self> {
+    Box::new(Watchdog)
+  }
+}
+
+impl Watchdog {
   fn enable(ctx: &mut Context) {
     let app_config = ctx.expect::<AppConfig>();
 
