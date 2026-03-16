@@ -101,6 +101,25 @@ fn on_timer(&mut self, name: &'static str, ctx: &mut Context) {
 }
 ```
 
+#### States
+
+While not a separate feature, states are a pattern to combine `Context` with `is_active`. Storing a globally readable `enum` in `Context` allows other systems to toggle their active state based on it.
+
+```rust
+pub enum MachineMode {
+  Attract,
+  InGame,
+  OperatorMenu,
+  // ...
+}
+
+impl System for Example {
+  fn is_active(&self, ctx: &Context) {
+    ctx.is(MachineMode::Attract) || ctx.is(OperatorMenu)
+  }
+}
+```
+
 ### Libraries
 
 - `fast-protocol` - A Rust native implementation of the FAST Pinball hardware protocol

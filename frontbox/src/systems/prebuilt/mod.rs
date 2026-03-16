@@ -1,8 +1,6 @@
-mod credits;
 mod trough;
 mod watchdog;
 
-pub use credits::*;
 pub use trough::*;
 pub use watchdog::*;
 

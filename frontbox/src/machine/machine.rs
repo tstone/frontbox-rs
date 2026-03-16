@@ -9,12 +9,6 @@ use crate::systems::SystemContainer;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Default, Serialize, Storable)]
-pub struct GameState {
-  pub active_player: u8,
-  pub player_count: u8,
-}
-
 pub struct Machine {
   io_port: SerialInterface,
   exp_port: SerialInterface,
