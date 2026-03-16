@@ -29,6 +29,14 @@ impl<'a> Context<'a> {
     }
   }
 
+  /// Check if a value of type T exists in the store and is equal to the given value
+  pub fn is<T: StorableType + PartialEq>(&self, value: T) -> bool {
+    if let Some(stored) = self.get::<T>() {
+      return *stored == value;
+    }
+    false
+  }
+
   pub fn emit<E: Event>(&mut self, event: E) {
     self
       .app_sender
@@ -73,6 +81,8 @@ impl<'a> Context<'a> {
       ))
       .ok();
   }
+
+  // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
   pub fn register_interrupt<E: Event + 'static>(

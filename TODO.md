@@ -1,5 +1,11 @@
 System
 
+- Framework owns all system instances in a flat list (to manage on_command, on_interrupt, etc.)
+- Goal: being able to use self and ctx at the same time
+- System groups -- owned by the framework, spawns from inside the group are scoped to that group, a system can activate/deactivate a whole group
+- Add ctx.spawn_system_group, ctx.activate_system_group, deactivate, and despawn
+- Add ctx.handle_command and ctx.regsiter_interrupt
+
 - Trough system -- work out the complete plunge/play/drain cycle with a player
 - Split trough system and the like out to frontbox-pinball crate
 - Move configuring hardware to a system, make it also deconfigure drivers on shutdown

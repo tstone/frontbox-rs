@@ -1,14 +1,14 @@
-use frontbox::prelude::{Serialize, Storable};
+use frontbox::prelude::{Context, Serialize, Storable};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Storable)]
-pub struct PlayersGameState {
+pub struct GameState {
   pub(crate) player_count: u8,
   pub(crate) player_turns: Vec<u8>,
   pub(crate) max_players: u8,
   pub(crate) current_player: u8,
 }
 
-impl PlayersGameState {
+impl GameState {
   pub fn new(max_players: u8) -> Self {
     Self {
       player_count: 0,
@@ -34,5 +34,15 @@ impl PlayersGameState {
   /// Turn of the current player
   pub fn current_player_turn(&self) -> u8 {
     self.player_turns[self.current_player as usize]
+  }
+}
+
+pub trait GameStateExt {
+  fn is_game_started(&self) -> bool;
+}
+
+impl<'a> GameStateExt for Context<'a> {
+  fn is_game_started(&self) -> bool {
+    self.get::<GameState>().is_some()
   }
 }

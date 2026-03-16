@@ -1,19 +1,48 @@
-use frontbox::prebuilt::{ConsumeCredit, CreditedStart};
 use frontbox::prelude::*;
 use tokio::sync::mpsc;
 
 use crate::*;
 
-pub struct PlayerSystem {
+/// This system provides two main benefits:
+///
+///   1. Systems are organized by player, so that each player can have their own set of systems that are active only during their turn.
+///   2. Player turn management
+///
+/// ## Outputs
+/// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
+/// - Event: `PlayerTurnActive` - Emitted when the ball becomes in play.
+/// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
+///
+/// ## Inputs
+/// - Command: `StartGame` - Starts a new game.
+/// - Command: `EndGame` - Ends the current game (only valid if a game is started).
+/// - Command: `AddPlayer` - Adds a player to the game
+/// - Command: `AdvanceTurn` - Advances the turn to the next player. Only processed after a `PlayerTurnEnding` event has been emitted.
+/// - Event: `TroughFull` - Used to detect when the ball has gone out of play.
+///
+/// ## Interrupts
+/// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
+///
+/// # Arguments:
+/// - `max_players` - The maximum number of players allowed in a game
+/// - `ball_in_play_switches` - A list of switches that can be used to detect when the ball becomes in play. This could be a plunge lane exit switch, or a list of playfield switches.
+///
+pub struct IndividualPlayerSystem {
   initial_scene: Vec<Box<dyn ChildSystem>>,
   player_systems: Vec<Vec<SystemContainer>>,
   system_sender: mpsc::UnboundedSender<SystemMessage>,
   system_receiver: mpsc::UnboundedReceiver<SystemMessage>,
   max_players: u8,
+  ball_in_play_switches: Vec<&'static str>,
 }
 
-impl PlayerSystem {
-  pub fn new(max_players: u8, initial_scene: Vec<Box<dyn ChildSystem>>) -> Box<Self> {
+impl IndividualPlayerSystem {
+  ///
+  pub fn new(
+    max_players: u8,
+    ball_in_play_switches: Vec<&'static str>,
+    initial_scene: Vec<Box<dyn ChildSystem>>,
+  ) -> Box<Self> {
     let mut player_scenes = Vec::new();
     let copy: Vec<SystemContainer> = initial_scene
       .iter()
@@ -35,11 +64,12 @@ impl PlayerSystem {
       system_sender,
       system_receiver,
       max_players,
+      ball_in_play_switches,
     })
   }
 
   fn add_player(&mut self, ctx: &mut Context) {
-    let game_state = ctx.expect_mut::<PlayersGameState>();
+    let game_state = ctx.expect_mut::<GameState>();
     if game_state.player_count >= game_state.max_players {
       return;
     }
@@ -69,7 +99,7 @@ impl PlayerSystem {
       return;
     }
 
-    let current_player = ctx.expect::<PlayersGameState>().current_player();
+    let current_player = ctx.expect::<GameState>().current_player();
 
     if let Some(child_systems) = self.player_systems.get_mut(current_player as usize) {
       let mut ctx_template = ctx.clone_for_manager(self.system_sender.clone(), 0);
@@ -93,31 +123,41 @@ impl PlayerSystem {
   }
 
   fn is_game_started(&self, ctx: &Context) -> bool {
-    ctx.get::<PlayersGameState>().is_some()
+    ctx.get::<GameState>().is_some()
+  }
+
+  fn start_game(ctx: &mut Context, max_players: u8) {
+    ctx.insert(GameState::new(max_players));
+    ctx.insert(GameStartState::PlayerAddable);
+    ctx.emit(GameStarted);
+    ctx.emit(PlayerAdded);
+    ctx.emit(PlayerTurnBeginning::new(0, 0));
+  }
+
+  fn end_game(ctx: &mut Context) {
+    // verify the game is already running
+    if ctx.get::<GameState>().is_none() {
+      return;
+    }
+
+    ctx.remove::<GameState>();
+    ctx.insert(GameStartState::GameStartable);
+    ctx.emit(GameEnded);
   }
 }
 
-impl System for PlayerSystem {
+impl System for IndividualPlayerSystem {
   fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.insert(GameStartState::GameStartable);
+
     let max_players = self.max_players.clone();
-    ctx.register_command::<StartGame>(move |_, _, ctx| {
+    ctx.register_command::<AddPlayer>(move |_, _, ctx| {
       // check if a game is already running
-      if ctx.get::<PlayersGameState>().is_some() {
-        return;
+      if ctx.get::<GameState>().is_some() {
+        self.add_player(ctx);
+      } else {
+        Self::start_game(ctx, max_players);
       }
-
-      ctx.insert(PlayersGameState::new(max_players));
-      ctx.emit(GameStarted);
-    });
-
-    ctx.register_command::<EndGame>(move |_, _, ctx| {
-      // verify the game is already running
-      if ctx.get::<PlayersGameState>().is_none() {
-        return;
-      }
-
-      ctx.remove::<PlayersGameState>();
-      ctx.emit(GameEnded);
     });
 
     // call on_startup for all systems in the initial scene
@@ -130,17 +170,21 @@ impl System for PlayerSystem {
     // call on_shutdown for all systems in the current scene
     self.iterate_current_systems(ctx, |system, ctx| {
       system.on_shutdown(ctx);
-      // TODO: this needs to unregister all for this system
+      // TODO: this needs to unregister all for this system -- not available on context
     });
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(event) = event.downcast::<PlayerTurnBeginning>() {
-      let game_state = ctx.expect_mut::<PlayersGameState>();
-      game_state.current_player = event.current_player;
-      game_state.player_turns[event.current_player as usize] = event.turn;
-    } else if let Some(_event) = event.downcast::<CreditedStart>() {
-      self.add_player(ctx);
+    if let Some(game_state) = ctx.get::<GameState>() {
+      if let Some(e) = event.downcast::<TroughFull>() {
+        if self.ball_in_play_switches.contains(&e.switch.name.as_str()) {
+          ctx.emit(PlayerTurnEnding::new(
+            game_state.current_player(),
+            game_state.turn,
+          ));
+          ctx.command(AdvanceTurn);
+        }
+      }
     }
 
     // Forward event to current player scene
@@ -160,7 +204,7 @@ impl System for PlayerSystem {
     delta_time: Duration,
     ctx: &Context,
   ) -> std::collections::HashMap<&'static str, LedState> {
-    let current_player = ctx.expect::<PlayersGameState>().current_player();
+    let current_player = ctx.expect::<GameState>().current_player();
     let mut leds = std::collections::HashMap::new();
     if let Some(scene) = self.player_systems.get_mut(current_player as usize) {
       for system in scene {
