@@ -3,6 +3,7 @@ use frontbox::prelude::{Serialize, Storable};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Storable)]
 pub struct PlayersGameState {
   pub(crate) player_count: u8,
+  pub(crate) player_turns: Vec<u8>,
   pub(crate) max_players: u8,
   pub(crate) current_player: u8,
 }
@@ -13,6 +14,7 @@ impl PlayersGameState {
       player_count: 0,
       max_players,
       current_player: 0,
+      player_turns: vec![0; max_players as usize],
     }
   }
 
@@ -27,5 +29,10 @@ impl PlayersGameState {
   /// Index of the current player
   pub fn current_player(&self) -> u8 {
     self.current_player
+  }
+
+  /// Turn of the current player
+  pub fn current_player_turn(&self) -> u8 {
+    self.player_turns[self.current_player as usize]
   }
 }

@@ -48,17 +48,61 @@ impl<'a> Context<'a> {
   /// Register a command handler
   pub fn register_command<C: Command + 'static>(
     &mut self,
-    runner: impl for<'ctx> Fn(&C, &mut Context<'ctx>) + Send + Sync + 'static,
+    runner: impl for<'ctx> Fn(&C, u64, &mut Context<'ctx>) + Send + Sync + 'static,
   ) {
     self
       .app_sender
       .send(AppMessage::RegisterCommand(
+        self.system_id,
         TypeId::of::<C>(),
-        Box::new(move |cmd: &dyn Any, ctx: &mut Context| {
+        Box::new(move |cmd: &dyn Any, caller_id: u64, ctx: &mut Context| {
           if let Some(cmd) = cmd.downcast_ref::<C>() {
-            runner(cmd, ctx);
+            runner(cmd, caller_id, ctx);
           }
         }),
+      ))
+      .ok();
+  }
+
+  pub fn unregister_command<C: Command + 'static>(&mut self) {
+    self
+      .app_sender
+      .send(AppMessage::UnregisterCommand(
+        self.system_id,
+        TypeId::of::<C>(),
+      ))
+      .ok();
+  }
+
+  /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
+  pub fn register_interrupt<E: Event + 'static>(
+    &mut self,
+    priority: u16,
+    handler: impl for<'ctx> Fn(&E, &mut Context<'ctx>) -> InterruptResult + Send + Sync + 'static,
+  ) {
+    self
+      .app_sender
+      .send(AppMessage::RegisterInterrupt(
+        self.system_id,
+        TypeId::of::<E>(),
+        priority,
+        Box::new(move |event: &dyn Event, ctx: &mut Context| {
+          if let Some(event) = event.as_any().downcast_ref::<E>() {
+            handler(event, ctx)
+          } else {
+            InterruptResult::Continue
+          }
+        }),
+      ))
+      .ok();
+  }
+
+  pub fn unregister_interrupt<E: Event + 'static>(&mut self) {
+    self
+      .app_sender
+      .send(AppMessage::UnregisterInterrupt(
+        self.system_id,
+        TypeId::of::<E>(),
       ))
       .ok();
   }

@@ -23,7 +23,7 @@ pub struct PlayerScoresSystem;
 
 impl System for PlayerScoresSystem {
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.register_command::<SetMultiplier>(move |command, ctx| {
+    ctx.register_command::<SetMultiplier>(move |command, _, ctx| {
       if let Some(game_state) = ctx.get::<PlayersGameState>() {
         let player_index = game_state.current_player() as usize;
         if let Some(scores) = ctx.get_mut::<PlayerScores>() {
@@ -32,7 +32,7 @@ impl System for PlayerScoresSystem {
       }
     });
 
-    ctx.register_command::<AddPoints>(move |command, ctx| {
+    ctx.register_command::<AddPoints>(move |command, _, ctx| {
       if let Some(game_state) = ctx.get::<PlayersGameState>() {
         let player_index = game_state.current_player() as usize;
 

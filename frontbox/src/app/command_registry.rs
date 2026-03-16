@@ -3,8 +3,13 @@ use std::collections::HashMap;
 
 use crate::prelude::Context;
 
+struct CommandEntry {
+  system_id: u64,
+  runner: Box<dyn for<'ctx> Fn(&dyn Any, u64, &mut Context<'ctx>) + Send + Sync>,
+}
+
 pub struct CommandRegistry {
-  commands: HashMap<TypeId, Box<dyn for<'ctx> Fn(&dyn Any, &mut Context<'ctx>) + Send + Sync>>,
+  commands: HashMap<TypeId, CommandEntry>,
 }
 
 impl CommandRegistry {
@@ -17,14 +22,26 @@ impl CommandRegistry {
   pub fn register(
     &mut self,
     type_id: TypeId,
-    runner: Box<dyn Fn(&dyn Any, &mut Context) + Send + Sync>,
+    system_id: u64,
+    runner: Box<dyn Fn(&dyn Any, u64, &mut Context) + Send + Sync>,
   ) {
-    self.commands.insert(type_id, runner);
+    let entry = CommandEntry { system_id, runner };
+    self.commands.insert(type_id, entry);
   }
 
-  pub fn execute<C: Command + 'static>(&self, command: &C, context: &mut Context) {
-    if let Some(runner) = self.commands.get(&TypeId::of::<C>()) {
-      runner(command, context);
+  pub fn unregister(&mut self, type_id: TypeId) {
+    self.commands.remove(&type_id);
+  }
+
+  pub fn unregister_by_system(&mut self, system_id: u64) {
+    self
+      .commands
+      .retain(|_, entry| entry.system_id != system_id);
+  }
+
+  pub fn execute<C: Command + 'static>(&self, command: &C, caller_id: u64, context: &mut Context) {
+    if let Some(entry) = self.commands.get(&TypeId::of::<C>()) {
+      (entry.runner)(command, caller_id, context);
     } else {
       panic!(
         "No runner registered for command type {:?}",

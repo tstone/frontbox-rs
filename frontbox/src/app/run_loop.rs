@@ -1,6 +1,7 @@
 use fast_protocol::EventResponse;
 use tokio::sync::mpsc;
 
+use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::*;
 use crate::systems::SystemCommandsProcessor;
 use crate::systems::SystemContainer;
@@ -10,10 +11,12 @@ use crate::systems::run_system_timers;
 pub async fn run(
   mut machine: Machine,
   mut store: Store,
-  mut command_registry: CommandRegistry,
   config: AppConfig,
   mut initial_systems: Vec<Box<dyn System>>,
 ) {
+  let mut interrupt_registry = EventInterruptRegistry::new();
+  let mut command_registry = CommandRegistry::new();
+
   let (app_sender, mut app_receiver) = mpsc::unbounded_channel::<AppMessage>();
   let (system_sender, mut system_receiver) = mpsc::unbounded_channel::<SystemMessage>();
   machine.set_app_sender(app_sender.clone());
@@ -58,6 +61,13 @@ pub async fn run(
       Some(command) = app_receiver.recv() => {
         match command {
           AppMessage::EmitEvent(event) => {
+            // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
+            let mut ctx_template = Context::new(&mut store, 0, app_sender.clone(), system_sender.clone());
+            if interrupt_registry.handle(event.as_ref(), &mut ctx_template) == InterruptResult::Halt {
+              continue;
+            }
+
+            // event is only broadcast to systems if no interrupt halted it
             apply_to_systems(&mut systems, &mut store, &app_sender, &system_sender, |system, ctx| {
               system.on_event(event.as_ref(), ctx);
             });
@@ -70,12 +80,26 @@ pub async fn run(
             let mut ctx = Context::new(&mut store, 0, app_sender.clone(), system_sender.clone());
             machine.render_leds(&mut systems, config.system_timer_tick, &mut ctx).await;
           }
-          AppMessage::RegisterCommand(type_id, runner) => {
-            command_registry.register(type_id, runner);
+          AppMessage::RegisterInterrupt(system_id, type_id, priority, handler) => {
+            interrupt_registry.register(type_id, system_id, priority, handler);
+          }
+          AppMessage::UnregisterInterrupt(system_id, type_id) => {
+            interrupt_registry.unregister(system_id, type_id);
+          }
+          AppMessage::RegisterCommand(system_id, type_id, runner) => {
+            command_registry.register(type_id, system_id, runner);
+          }
+          AppMessage::UnregisterCommand(_system_id, type_id) => {
+            command_registry.unregister(type_id);
           }
           AppMessage::ExecuteCommand(system_id, cmd) => {
+            // TODO: the context here is actually being set for the caller, not the system executing the command (which is wrong)
             let mut ctx = Context::new(&mut store, system_id, app_sender.clone(), system_sender.clone());
-            command_registry.execute(&cmd, &mut ctx);
+            command_registry.execute(&cmd, system_id, &mut ctx);
+          }
+          AppMessage::UnregisterAllBySystem(system_id) => {
+            command_registry.unregister_by_system(system_id);
+            interrupt_registry.unregister_by_system(system_id);
           }
           AppMessage::Shutdown => {
             log::info!("⏹️ Shutdown command received, shutting down...");

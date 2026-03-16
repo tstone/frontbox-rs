@@ -299,17 +299,17 @@ impl MachineBridge {
 impl System for MachineBridge {
   fn on_startup(&mut self, ctx: &mut Context) {
     let sender = self.machine_sender.clone();
-    ctx.register_command::<WatchdogPing>(move |_, _ctx| {
+    ctx.register_command::<WatchdogPing>(move |_, _, _ctx| {
       sender.send(MachineMessage::WatchdogPing).ok();
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ClearWatchdog>(move |_, _ctx| {
+    ctx.register_command::<ClearWatchdog>(move |_, _, _ctx| {
       sender.send(MachineMessage::ClearWatchdog).ok();
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ResetExpansionNetwork>(move |_, ctx| {
+    ctx.register_command::<ResetExpansionNetwork>(move |_, _, ctx| {
       let boards = ctx.cloned::<ExpansionBoards>().unwrap();
       sender
         .send(MachineMessage::ResetExpansionNetwork(boards))
@@ -317,7 +317,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ConfigureDriver>(move |cmd, ctx| {
+    ctx.register_command::<ConfigureDriver>(move |cmd, _, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         let switch_lookup = ctx.expect::<SwitchLookup>();
@@ -329,7 +329,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriver>(move |cmd, ctx| {
+    ctx.register_command::<ActivateDriver>(move |cmd, _, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         sender
@@ -343,7 +343,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriverDelayed>(move |cmd, ctx| {
+    ctx.register_command::<ActivateDriverDelayed>(move |cmd, _, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         sender
@@ -357,7 +357,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriver>(move |cmd, ctx| {
+    ctx.register_command::<DeactivateDriver>(move |cmd, _, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         sender
@@ -371,7 +371,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriverDelayed>(move |cmd, ctx| {
+    ctx.register_command::<DeactivateDriverDelayed>(move |cmd, _, ctx| {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         sender
@@ -385,7 +385,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriverGroup>(move |cmd, ctx| {
+    ctx.register_command::<ActivateDriverGroup>(move |cmd, _, ctx| {
       let lookup = ctx.expect::<DriverLookup>();
       let groups = ctx.expect::<DriverGroups>();
       if let Some(group) = groups.get(cmd.group) {
@@ -404,7 +404,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriverGroup>(move |cmd, ctx| {
+    ctx.register_command::<DeactivateDriverGroup>(move |cmd, _, ctx| {
       let lookup = ctx.expect::<DriverLookup>();
       let groups = ctx.expect::<DriverGroups>();
       if let Some(group) = groups.get(cmd.group) {
@@ -423,7 +423,7 @@ impl System for MachineBridge {
     });
 
     let sender = self.machine_sender.clone();
-    ctx.register_command::<RefreshSwitchState>(move |_, _ctx| {
+    ctx.register_command::<RefreshSwitchState>(move |_, _, _ctx| {
       sender.send(MachineMessage::ReportSwitches).ok();
     });
   }

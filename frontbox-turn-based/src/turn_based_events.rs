@@ -1,14 +1,55 @@
 pub struct GameStarted;
 pub struct GameEnded;
 
-/// When the current player changes
-pub struct CurrentPlayerChanged {
-  pub current_player: u8,
+pub enum CurrentPlayerTurnState {
+  /// The beginning of a player's turn, before the ball is launched.
+  Beginning,
+  /// The active part of a player's turn, after the ball is launched and before it goes out of play.
+  Active,
+  /// The end of a player's turn, after the ball goes out of play but before the next turn begins.
+  Ending,
 }
 
-impl CurrentPlayerChanged {
-  pub fn new(current_player: u8) -> Self {
-    Self { current_player }
+/// When the current player's turn starts. This happens at the beginning of each "ball".
+pub struct PlayerTurnBeginning {
+  pub current_player: u8,
+  pub turn: u8,
+}
+
+impl PlayerTurnBeginning {
+  pub fn new(current_player: u8, turn: u8) -> Self {
+    Self {
+      current_player,
+      turn,
+    }
+  }
+}
+
+pub struct PlayerTurnActive {
+  pub current_player: u8,
+  pub turn: u8,
+}
+
+impl PlayerTurnActive {
+  pub fn new(current_player: u8, turn: u8) -> Self {
+    Self {
+      current_player,
+      turn,
+    }
+  }
+}
+
+pub struct PlayerTurnEnding {
+  pub current_player: u8,
+  pub turn: u8,
+}
+
+impl PlayerTurnEnding {
+  pub fn new(current_player: u8, turn: u8) -> Self {
+    Self {
+      current_player,
+      turn,
+    }
   }
 }
 

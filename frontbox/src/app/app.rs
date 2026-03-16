@@ -1,4 +1,3 @@
-use std::any::{Any, TypeId};
 use std::time::Duration;
 
 use crate::app::run_loop;
@@ -13,7 +12,6 @@ pub struct App {
   store: Store,
   operator_config: OperatorConfig,
   app_config: AppConfig,
-  command_registry: CommandRegistry,
   systems: Vec<Box<dyn System>>,
 }
 
@@ -64,7 +62,6 @@ impl App {
       store,
       operator_config: OperatorConfig::new(),
       app_config: AppConfig::default(),
-      command_registry: CommandRegistry::new(),
       systems: Vec::new(),
     }
   }
@@ -246,21 +243,6 @@ impl App {
     }
   }
 
-  pub fn register_command<C: Command + 'static>(
-    &mut self,
-    runner: impl Fn(&C, &mut Context) + Send + Sync + 'static,
-  ) {
-    let type_id = TypeId::of::<C>();
-    self.command_registry.register(
-      type_id,
-      Box::new(move |cmd: &dyn Any, ctx: &mut Context| {
-        if let Some(cmd) = cmd.downcast_ref::<C>() {
-          runner(cmd, ctx);
-        }
-      }),
-    );
-  }
-
   pub fn add_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
     self.operator_config.add_item(key, item);
     self
@@ -296,14 +278,7 @@ impl App {
     let led_renderer = LedRenderer::new(&expansion_boards);
     let machine = Machine::new(self.io_port, self.exp_port, led_renderer);
 
-    run_loop::run(
-      machine,
-      self.store,
-      self.command_registry,
-      self.app_config,
-      self.systems,
-    )
-    .await;
+    run_loop::run(machine, self.store, self.app_config, self.systems).await;
   }
 }
 

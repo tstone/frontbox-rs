@@ -1,13 +1,15 @@
 System
 
 - Trough system -- work out the complete plunge/play/drain cycle with a player
+- Split trough system and the like out to frontbox-pinball crate
+- Move configuring hardware to a system, make it also deconfigure drivers on shutdown
+- When a system is despawned, it's command and interrupt registrations need to be removed
 - Systems need to be able to declare some kind of dependency on what they require, so as to get a panic if it's missing
   e.g. `ctx.require_command::<SomeCommand>` to `ctx.require_event::<E>` which also means there needs to be a `ctx::provides_event<E>`.
 
 Turn Based
 
-- Current ball index
-- States (BallLocation, GameStartable) -- these now become enums in Store/World
+- Current turn
 
 Hardware
 

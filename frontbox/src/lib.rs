@@ -14,6 +14,7 @@ pub mod prelude {
   pub use crate::hardware_definition::*;
   pub use crate::led::*;
   pub use crate::machine::event::*;
+  pub use crate::machine::event_interrupt_registry::InterruptResult;
   pub use crate::machine::machine::*;
   pub use crate::machine::machine_commands::*;
   pub use crate::operator_config::*;

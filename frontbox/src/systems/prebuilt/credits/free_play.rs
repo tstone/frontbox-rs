@@ -22,7 +22,7 @@ impl System for FreePlay {
   }
 
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.register_command::<ConsumeCredit>(|_, _| {
+    ctx.register_command::<ConsumeCredit>(|_, _, _| {
       // no-op
     });
   }

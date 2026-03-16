@@ -100,7 +100,7 @@ impl PlayerSystem {
 impl System for PlayerSystem {
   fn on_startup(&mut self, ctx: &mut Context) {
     let max_players = self.max_players.clone();
-    ctx.register_command::<StartGame>(move |_, ctx| {
+    ctx.register_command::<StartGame>(move |_, _, ctx| {
       // check if a game is already running
       if ctx.get::<PlayersGameState>().is_some() {
         return;
@@ -110,7 +110,7 @@ impl System for PlayerSystem {
       ctx.emit(GameStarted);
     });
 
-    ctx.register_command::<EndGame>(move |_, ctx| {
+    ctx.register_command::<EndGame>(move |_, _, ctx| {
       // verify the game is already running
       if ctx.get::<PlayersGameState>().is_none() {
         return;
@@ -118,19 +118,6 @@ impl System for PlayerSystem {
 
       ctx.remove::<PlayersGameState>();
       ctx.emit(GameEnded);
-    });
-
-    ctx.register_command::<AdvancePlayer>(move |_, ctx| {
-      let new_current_player: u8;
-      {
-        let game_state = ctx.expect_mut::<PlayersGameState>();
-        game_state.current_player += 1;
-        if game_state.current_player >= game_state.max_players {
-          game_state.current_player = 0;
-        }
-        new_current_player = game_state.current_player;
-      }
-      ctx.emit(CurrentPlayerChanged::new(new_current_player));
     });
 
     // call on_startup for all systems in the initial scene
@@ -143,12 +130,15 @@ impl System for PlayerSystem {
     // call on_shutdown for all systems in the current scene
     self.iterate_current_systems(ctx, |system, ctx| {
       system.on_shutdown(ctx);
+      // TODO: this needs to unregister all for this system
     });
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(event) = event.downcast::<CurrentPlayerChanged>() {
-      ctx.expect_mut::<PlayersGameState>().current_player = event.current_player;
+    if let Some(event) = event.downcast::<PlayerTurnBeginning>() {
+      let game_state = ctx.expect_mut::<PlayersGameState>();
+      game_state.current_player = event.current_player;
+      game_state.player_turns[event.current_player as usize] = event.turn;
     } else if let Some(_event) = event.downcast::<CreditedStart>() {
       self.add_player(ctx);
     }

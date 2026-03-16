@@ -1,45 +1,46 @@
 # Frontbox
 
-Frontbox is a Rust native, "ECS light" framework for running pinball machines, built on FAST pinball hardware.
+Frontbox is a Rust native framework for running arcade machines -- particularly homebrew pinball -- built on FAST pinball hardware.
 
 > [!WARNING]
 > Pre-alpha work in progress
 
 ### Overview
 
-**Frontbox** is built around the unit of a `System`. Systems receive events, enqueue commands, manage their own state, and mutably interact with the ECS "world" (called `Context` in Frontbox).
+Frontbox is both an "ECS light" and "actor light" framework.
 
-#### Features
+It's "ECS light" in that there is a shared, global store which all systems can interact with. Unlike traditional ECS, only entity singletons are stored in the "world", and there are no components. This effectively means that exactly one copy of a type can be stored at a time ("anymap"), operating like Bevy's `Resource` type. Like ECS, systems can emit events which are broadcast to all systems, and declare under what conditions they are active.
 
-- Implementation of modern FAST protocol
-- Extensible events system
-- Flexible, hierarchical isolation of concerns (`System`)
-- Player and Co-op/team support
-- LED animation framework
+Frontbox is also "actor light" in that systems can operate as actors, holding internal state private to them and registering commands which they send to each other. Command routing is performed by the App, with only one actor being allowed to respond to a given command (type).
 
-Demo on prototype hardware: https://www.youtube.com/shorts/GHNZA3x88v8
+While multi-paradigm frameworks can sometimes lead to an abundance of choice and sprawling implementation, this hybrid model is implemented with a few design preferences:
 
-#### Vs ECS
+- Data which needs to be read by many things lives in the ECS world (`Context`). In a pinball context the shorthand here is any data which a display component might need access too lives in Context. Additionally global config, like hardware definitions and mappings are stored in Context.
+- Data which is operational -- what the System makes decisions on -- tends to be private to the system, much like an actor. Other systems can mutate this through commands. For example, the `TroughSystem` emits events when the occupancy changes. However a system which manages a physical ball lock may invoke the `BallRemovedFromPlay` command. The trough system has registered itself the handler of that command, and knows upon receiving it to mutate it's internal definition of how many balls are expected to be in the trough, subsequently expecting it's occupancy events.
 
-- Whereas many ECS frameworks eliminate or minimize systems, Frontbox is built around systems as a first class citizen.
-- Whereas many ECS frameworks make systems stateless, Frontbox systems are built on Rust structs making them stateful (more like an Actor than a function).
-- Whereas ECS tends to emphasize components for data, Frontbox only allows singleton data to be stored ("Resources").
-- Whereas ECS tends to run systems on a rendering tick, Frontbox runs systems on events.
+This approach creates modularity, with a clear interface for display operations, where user-defined systems can interact with framework systems, and framework systems can be entirely replaced with user-defined systems when a custom solution is needed. In fact, Frontbox is modular enough that it could also be an operating system for crane machines or coin pushers (provided it runs FAST hardware) as the mechanics of a pinball game are not hard-coded, but exposed as loadable systems.
 
-### Architecture
+#### Abstractions
 
-#### Data
+- `System` contain private state and allow binding of events to behavior
+- `Event`s allow Systems to broadcast state change and data to each other
+- `Commands` allow fire-and-forget, addressed execution of side effects
+- `Context` (ECS world) allows System to share global, mutable state if necessary
+
+#### Context (ECS world)
 
 ```rust
-// all configured hardware is stored in the world (Context)
+// all configured hardware is stored in the Context
 let some_switch = ctx.get::<SwitchLookup>().unwrap().get(switches::START_BUTTON);
-
+// systems can also store their own data. Data can be kept read-only through accessors.
 ```
 
 #### System
 
 ```rust
-struct Example;
+struct Example {
+  private_data: u64,
+}
 
 impl System for Example {
   fn on_startup(&mut self, ctx: &mut Context) {
@@ -52,12 +53,60 @@ impl System for Example {
 }
 ```
 
-#### Abstractions
+#### Commands
 
-- `System` contain private state and allow binding of events to behavior
-- `Event`s allow Systems to broadcast state change and data to each other
-- `Commands` allow Systems to define addressed, exactly once handling of events
-- `Context` (ECS world) allows System to share global, mutable state if necessary
+```rust
+// define a command as a struct
+pub struct ExampleCmd(pub arg1: u64, pub arg2: String);
+
+// and register a handler
+impl System for Example {
+  fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.register_command::<ExampleCmd>(|cmd, ctx| {
+      // do something when the command runs
+    });
+  }
+}
+
+// other systems can now use this with
+ctx.command(ExampleCommand(arg1, arg2));
+```
+
+#### Events
+
+```rust
+// define an event as a struct
+pub struct ExampleEvent {
+  some_data: Vec<u16>
+}
+
+// then emit it
+ctx.emit(ExampleEvent { some_data: vec![] });
+```
+
+#### Event Interrupts
+
+Sometimes there are cases where the normal flow of operation needs to be halted. For example, if a player drains while ball save is active, this would _normally_ emit an event that the player has drained and the turn is over. In these cases it's necessary to allow a system to overide this behavior. This happens by way of event interrupts. Interrupts register themselves with a _priority_, where the App processes interrupts in the highest priority order. This allows, for example, a momentary start-of-ball ball save to take precedence over an extra ball. Event interrupts can be applied to any event within the system.
+
+```rust
+// for example, a ball save system might do something along the lines of...
+ctx.register_interrupt::<TurnEnd>(100 /* priority */, move |event, ctx| {
+  ctx.set_timer(name, Duration::from_secs(5));
+});
+
+// ...
+
+fn on_timer(&mut self, name: &'static str, ctx: &mut Context) {
+  ctx.unregister_interrupt::<TurnEnd>();
+}
+```
+
+### Libraries
+
+- `fast-protocol` - A Rust native implementation of the FAST Pinball hardware protocol
+- `frontbox` - Core framework, Systems, App, routing.
+- `frontbox-pinball` - Systems, events, and commands related pinball operation
+- `frontbox-turn-based` - Systems, events, and commands realted to the traditional turn-based pinball games (as opposed to head-to-head)
 
 ### Example System
 

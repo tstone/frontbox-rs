@@ -37,12 +37,12 @@ impl System for Watchdog {
     Watchdog::enable(ctx);
 
     // Enable watchdog command
-    ctx.register_command::<EnableWatchdog>(move |_, ctx| {
+    ctx.register_command::<EnableWatchdog>(move |_, _, ctx| {
       Watchdog::enable(ctx);
     });
 
     // Disable watchdog command
-    ctx.register_command::<DisableWatchdog>(move |_, ctx| {
+    ctx.register_command::<DisableWatchdog>(move |_, _, ctx| {
       Watchdog::disable(ctx);
     });
   }
