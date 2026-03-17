@@ -110,7 +110,7 @@ impl DropTargetDownUp {
   }
 }
 
-impl ChildSystem for DropTargetDownUp {
+impl System for DropTargetDownUp {
   fn on_startup(&mut self, ctx: &mut Context) {
     // bring up all targets on startup
     ctx.command(ActivateDriverDelayed::new(

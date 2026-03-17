@@ -1,6 +1,7 @@
 System
 
 - Split trough system and the like out to frontbox-pinball crate
+- Auto plunger management system
 - Move configuring hardware to a system, make it also deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
 

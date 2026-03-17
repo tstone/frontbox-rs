@@ -12,8 +12,7 @@ impl SystemGroup {
   pub fn new(systems: Vec<Box<dyn ChildSystem>>) -> Self {
     let mut system_map = HashMap::new();
     for system in systems {
-      let system: Box<dyn System> = Box::new(system);
-      let container = SystemContainer::new_from_system(system);
+      let container = SystemContainer::new_from_system(Box::new(system));
       system_map.insert(container.id, container);
     }
 

@@ -97,7 +97,7 @@ pub async fn run(
             break;
           }
           AppMessage::SpawnSystem(caller_id, system) => {
-            spawn_system(system, Some(caller_id), &mut systems, &mut store, app_sender.clone());
+            spawn_system(Box::new(system), Some(caller_id), &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::ReplaceSystem(system_id, system) => {
             replace_system(system_id, system, &mut systems, &mut store, app_sender.clone());
@@ -308,7 +308,7 @@ fn spawn_system(
 
 fn replace_system(
   system_id: u64,
-  new_system: Box<dyn System>,
+  new_system: Box<dyn SpawnableSystem>,
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -319,7 +319,7 @@ fn replace_system(
       let mut ctx = Context::new(store, container.id, app_sender.clone());
       container.on_shutdown(&mut ctx);
     }
-    let mut new_container = SystemContainer::new_from_system(new_system);
+    let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
     let mut ctx = Context::new(store, new_container.id, app_sender.clone());
     new_container.on_startup(&mut ctx);
     sc.systems.insert(new_container.id, new_container);
@@ -331,7 +331,7 @@ fn replace_system(
           let mut ctx = Context::new(store, container.id, app_sender.clone());
           container.on_shutdown(&mut ctx);
         }
-        let mut new_container = SystemContainer::new_from_system(new_system);
+        let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
         let mut ctx = Context::new(store, new_container.id, app_sender.clone());
         new_container.on_startup(&mut ctx);
         group.insert(new_container.id, new_container);

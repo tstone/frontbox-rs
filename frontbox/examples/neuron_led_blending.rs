@@ -35,7 +35,6 @@ async fn main() {
   .await;
 }
 
-#[derive(Clone)]
 struct System1 {
   on: bool,
 }
@@ -46,7 +45,7 @@ impl System1 {
   }
 }
 
-impl ChildSystem for System1 {
+impl System for System1 {
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.set_timer(
       "example_timer",
@@ -72,7 +71,6 @@ impl ChildSystem for System1 {
   }
 }
 
-#[derive(Clone)]
 struct System2 {
   on: bool,
 }
@@ -83,7 +81,7 @@ impl System2 {
   }
 }
 
-impl ChildSystem for System2 {
+impl System for System2 {
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.set_timer(
       "example_timer",

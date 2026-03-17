@@ -97,13 +97,13 @@ impl<'a> Context<'a> {
 
   // --- System management ---
 
-  pub fn spawn_system(&mut self, system: impl System + 'static) {
+  pub fn spawn_system(&mut self, system: impl SpawnableSystem + 'static) {
     let _ = self
       .app_sender
       .send(AppMessage::SpawnSystem(self.system_id, Box::new(system)));
   }
 
-  pub fn replace_system(&mut self, system: impl System + 'static) {
+  pub fn replace_system(&mut self, system: impl SpawnableSystem + 'static) {
     let _ = self
       .app_sender
       .send(AppMessage::ReplaceSystem(self.system_id, Box::new(system)));
