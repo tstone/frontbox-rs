@@ -66,10 +66,6 @@ impl IndividualPlayerSystem {
     })
   }
 
-  fn is_game_started(&self, ctx: &Context) -> bool {
-    ctx.get::<GameState>().is_some()
-  }
-
   fn start_game(&self, ctx: &mut Context) {
     ctx.insert(GameState::new(self.max_players));
     ctx.insert(GameStartState::PlayerAddable);
@@ -78,7 +74,7 @@ impl IndividualPlayerSystem {
 
   fn add_player(&mut self, ctx: &mut Context) {
     let mut game_started = false;
-    if !self.is_game_started(ctx) {
+    if !ctx.is_game_started() {
       self.start_game(ctx);
       game_started = true;
     }
@@ -187,7 +183,7 @@ impl System for IndividualPlayerSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if self.is_game_started(ctx) {
+    if ctx.is_game_started() {
       match ctx.get::<CurrentPlayerTurnState>() {
         Some(CurrentPlayerTurnState::Beginning) => {
           if let Some(e) = event.downcast_ref::<SwitchClosed>() {

@@ -5,6 +5,13 @@ Frontbox is a Rust native framework for running arcade machines -- particularly 
 > [!WARNING]
 > Pre-alpha work in progress
 
+### Libraries
+
+- `fast-protocol` - A Rust native implementation of the FAST Pinball hardware protocol
+- `frontbox` - Core framework
+- `frontbox-pinball` - Systems, events, and commands related pinball operation
+- `frontbox-turn-based` - Systems, events, and commands realted to the traditional turn-based pinball games (as opposed to head-to-head)
+
 ### Overview
 
 Frontbox is both an "ECS light" and "actor light" framework.
@@ -129,13 +136,6 @@ impl System for Example {
   }
 }
 ```
-
-### Libraries
-
-- `fast-protocol` - A Rust native implementation of the FAST Pinball hardware protocol
-- `frontbox` - Core framework, Systems, App, routing.
-- `frontbox-pinball` - Systems, events, and commands related pinball operation
-- `frontbox-turn-based` - Systems, events, and commands realted to the traditional turn-based pinball games (as opposed to head-to-head)
 
 ### Example System
 
