@@ -86,8 +86,7 @@ pub async fn run(
             execute_command(cmd.as_ref(), &command_registry, &mut systems, &mut store, &app_sender);
           }
           AppMessage::UnregisterAllBySystem(system_id) => {
-            command_registry.unregister_by_system(system_id);
-            interrupt_registry.unregister_by_system(system_id);
+            unregister_all_by_system(system_id, &mut command_registry, &mut interrupt_registry);
           }
           AppMessage::SwitchStates(switch_states) => {
             let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
@@ -104,13 +103,13 @@ pub async fn run(
             replace_system(system_id, system, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::DespawnSystem(system_id) => {
-            despawn_system(system_id, &mut systems, &mut store, app_sender.clone());
+            despawn_system(system_id, &mut systems, &mut store, app_sender.clone(), &mut command_registry, &mut interrupt_registry);
           }
           AppMessage::SpawnSystemGroup(group_name, child_systems, active) => {
             spawn_system_group(group_name, child_systems, active, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::DespawnSystemGroup(group_name) => {
-            despawn_system_group(group_name, &mut systems, &mut store, app_sender.clone());
+            despawn_system_group(group_name, &mut systems, &mut store, app_sender.clone(), &mut command_registry, &mut interrupt_registry);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
             if let Some(group) = systems.groups.get_mut(group_name) {
@@ -348,10 +347,13 @@ fn despawn_system(
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  command_registry: &mut CommandRegistry,
+  interrupt_registry: &mut EventInterruptRegistry,
 ) {
   // check if the system to despawn is a top-level system or a child
   if sc.systems.contains_key(&system_id) {
     if let Some(mut container) = sc.systems.remove(&system_id) {
+      unregister_all_by_system(system_id, command_registry, interrupt_registry);
       let mut ctx = Context::new(store, container.id, app_sender.clone());
       container.on_shutdown(&mut ctx);
     }
@@ -360,6 +362,7 @@ fn despawn_system(
     for group in sc.groups.values_mut() {
       if group.contains_key(&system_id) {
         if let Some(mut container) = group.remove(&system_id) {
+          unregister_all_by_system(system_id, command_registry, interrupt_registry);
           let mut ctx = Context::new(store, container.id, app_sender.clone());
           container.on_shutdown(&mut ctx);
         }
@@ -400,8 +403,14 @@ fn despawn_system_group(
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  command_registry: &mut CommandRegistry,
+  interrupt_registry: &mut EventInterruptRegistry,
 ) {
   if let Some(mut group) = sc.groups.remove(group_name) {
+    for system in group.systems.values() {
+      unregister_all_by_system(system.id, command_registry, interrupt_registry);
+    }
+
     let mut ctx = Context::new(store, 0, app_sender.clone());
     group.on_shutdown(&mut ctx);
   } else {
@@ -440,4 +449,13 @@ fn set_timer(
       timer_name
     );
   }
+}
+
+fn unregister_all_by_system(
+  system_id: u64,
+  command_registry: &mut CommandRegistry,
+  interrupt_registry: &mut EventInterruptRegistry,
+) {
+  command_registry.unregister_by_system(system_id);
+  interrupt_registry.unregister_by_system(system_id);
 }

@@ -1,21 +1,8 @@
 System
 
-- Framework owns all system instances in a flat list (to manage on_command, on_interrupt, etc.)
-- Goal: being able to use self and ctx at the same time
-- System groups -- owned by the framework, spawns from inside the group are scoped to that group, a system can activate/deactivate a whole group
-- Add ctx.spawn_system_group, ctx.activate_system_group, deactivate, and despawn
-- Add ctx.handle_command and ctx.regsiter_interrupt
-
-- Trough system -- work out the complete plunge/play/drain cycle with a player
 - Split trough system and the like out to frontbox-pinball crate
 - Move configuring hardware to a system, make it also deconfigure drivers on shutdown
-- When a system is despawned, it's command and interrupt registrations need to be removed
-- Systems need to be able to declare some kind of dependency on what they require, so as to get a panic if it's missing
-  e.g. `ctx.require_command::<SomeCommand>` to `ctx.require_event::<E>` which also means there needs to be a `ctx::provides_event<E>`.
-
-Turn Based
-
-- Current turn
+- Bring back plugin which can register things like operator configs
 
 Hardware
 
