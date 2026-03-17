@@ -135,6 +135,8 @@ pub async fn run(
         }
       }
     }
+
+    machine.process_messages().await;
   }
 
   // Shutdown sequence

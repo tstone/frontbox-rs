@@ -52,43 +52,39 @@ impl Machine {
     self.app_sender = sender;
   }
 
-  pub async fn listen(&mut self) {
-    loop {
-      tokio::select! {
-        Some(cmd) = self.machine_receiver.recv() => {
-          match cmd {
-            MachineMessage::WatchdogPing => {
-              self.send_watchdog_ping().await;
-            }
-            MachineMessage::ClearWatchdog => {
-              self.clear_watchdog().await;
-            }
-            MachineMessage::ResetExpansionNetwork(expansion_boards) => {
-              self.reset_expansion_network(expansion_boards).await;
-            }
-            MachineMessage::ConfigureDriver(driver_id, config) => {
-              self.configure_driver(driver_id, config).await;
-            }
-            MachineMessage::ActivateDriver(driver_id, mode, delay) => {
-              self.activate_driver(driver_id, mode, delay).await;
-            }
-            MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
-              self.deactivate_driver(driver_id, mode, delay).await;
-            }
-            MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
-              for driver_id in driver_ids {
-                self.activate_driver(driver_id, mode.clone(), None).await;
-              }
-            }
-            MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
-              for driver_id in driver_ids {
-                self.deactivate_driver(driver_id, mode.clone(), None).await;
-              }
-            }
-            MachineMessage::ReportSwitches => {
-              self.report_switches().await;
-            }
+  pub async fn process_messages(&mut self) {
+    while let Ok(cmd) = self.machine_receiver.try_recv() {
+      match cmd {
+        MachineMessage::WatchdogPing => {
+          self.send_watchdog_ping().await;
+        }
+        MachineMessage::ClearWatchdog => {
+          self.clear_watchdog().await;
+        }
+        MachineMessage::ResetExpansionNetwork(expansion_boards) => {
+          self.reset_expansion_network(expansion_boards).await;
+        }
+        MachineMessage::ConfigureDriver(driver_id, config) => {
+          self.configure_driver(driver_id, config).await;
+        }
+        MachineMessage::ActivateDriver(driver_id, mode, delay) => {
+          self.activate_driver(driver_id, mode, delay).await;
+        }
+        MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
+          self.deactivate_driver(driver_id, mode, delay).await;
+        }
+        MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
+          for driver_id in driver_ids {
+            self.activate_driver(driver_id, mode.clone(), None).await;
           }
+        }
+        MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
+          for driver_id in driver_ids {
+            self.deactivate_driver(driver_id, mode.clone(), None).await;
+          }
+        }
+        MachineMessage::ReportSwitches => {
+          self.report_switches().await;
         }
       }
     }
