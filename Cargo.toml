@@ -6,3 +6,5 @@ members = [
     "frontbox-turn-based",
 ]
 resolver = "2"
+
+license-file = ["LICENSE-MIT", "LICENSE-APACHE"]
