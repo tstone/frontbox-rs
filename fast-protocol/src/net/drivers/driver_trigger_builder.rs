@@ -7,7 +7,7 @@ pub struct DriverTriggerBuilder {
 impl DriverTriggerBuilder {
   pub fn new() -> Self {
     Self {
-      flags: DriverTrigger::empty(),
+      flags: DriverTrigger::ENABLED,
     }
   }
 

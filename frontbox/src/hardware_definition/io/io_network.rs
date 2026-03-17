@@ -12,9 +12,11 @@ pub struct IoNetwork {
   pub switches: Vec<SwitchDefinition>,
   pub drivers: Vec<Driver>,
   pub driver_groups: HashMap<&'static str, Vec<&'static str>>,
+  pub switch_groups: HashMap<&'static str, Vec<&'static str>>,
 }
 
 pub type DriverGroups = StorableHashMap<&'static str, Vec<&'static str>>;
+pub type SwitchGroups = StorableHashMap<&'static str, Vec<&'static str>>;
 
 #[derive(Debug, Clone, Serialize, Storable, Hash, PartialEq, Eq)]
 pub struct IoBoard {

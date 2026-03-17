@@ -4,6 +4,7 @@ use crate::hardware_definition::io::*;
 
 pub struct IoNetworkBuilder {
   boards: Vec<IoBoardBuilder>,
+  switch_groups: HashMap<&'static str, Vec<&'static str>>,
   driver_groups: HashMap<&'static str, Vec<&'static str>>,
 }
 
@@ -11,6 +12,7 @@ impl IoNetworkBuilder {
   pub fn new() -> Self {
     Self {
       boards: Vec::new(),
+      switch_groups: HashMap::new(),
       driver_groups: HashMap::new(),
     }
   }
@@ -21,6 +23,10 @@ impl IoNetworkBuilder {
 
   pub fn add_driver_group(&mut self, name: &'static str, drivers: Vec<&'static str>) {
     self.driver_groups.insert(name, drivers);
+  }
+
+  pub fn add_switch_group(&mut self, name: &'static str, switches: Vec<&'static str>) {
+    self.switch_groups.insert(name, switches);
   }
 
   pub fn build(self) -> IoNetwork {
@@ -81,6 +87,7 @@ impl IoNetworkBuilder {
       switches,
       drivers,
       driver_groups: self.driver_groups,
+      switch_groups: self.switch_groups,
     }
   }
 }

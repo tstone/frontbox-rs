@@ -34,7 +34,7 @@ pub async fn run(
   };
 
   // initialize systems
-  initial_systems.push(MachineBridge::new(machine.machine_sender()));
+  initial_systems.insert(0,MachineBridge::new(machine.machine_sender()));
   for system in initial_systems {
     spawn_system(system, None, &mut systems, &mut store, app_sender.clone());
   }

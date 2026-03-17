@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+log = "0.4.29"
 frontbox = { path = "../frontbox" }
 tokio = { version = "1", features = ["full"] }
 dyn-clone = "1.0.20"

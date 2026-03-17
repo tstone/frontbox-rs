@@ -60,8 +60,7 @@ impl Store {
     self
       .internal
       .get_mut(&TypeId::of::<T>())
-      .and_then(|boxed| boxed.downcast_mut::<Option<T>>())
-      .and_then(|opt| opt.as_mut())
+      .and_then(|boxed| boxed.downcast_mut::<T>())
   }
 
   /// Get a mutable reference to the value of type T from the store, or panic if it doesn't exist

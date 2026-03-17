@@ -49,24 +49,24 @@ pub struct IndividualPlayerSystem {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<Box<dyn ChildSystem>>,
   max_players: u8,
-  ball_in_play_switches: Vec<&'static str>,
+  ball_in_play_switch_group: &'static str,
 }
 
 impl IndividualPlayerSystem {
-  ///
   pub fn new(
     max_players: u8,
-    ball_in_play_switches: Vec<&'static str>,
+    ball_in_play_switch_group: &'static str,
     initial_scene: Vec<Box<dyn ChildSystem>>,
   ) -> Box<Self> {
     Box::new(Self {
       systems_template: initial_scene,
       max_players,
-      ball_in_play_switches,
+      ball_in_play_switch_group,
     })
   }
 
   fn start_game(&self, ctx: &mut Context) {
+    log::info!("Starting game with max players: {}", self.max_players);
     ctx.insert(GameState::new(self.max_players));
     ctx.insert(GameStartState::PlayerAddable);
     ctx.emit(GameStarted);
@@ -81,6 +81,7 @@ impl IndividualPlayerSystem {
 
     let game_state = ctx.expect_mut::<GameState>();
     game_state.player_count += 1;
+        log::info!("Adding player to game (current count: {})", game_state.player_count);
 
     // create copy of systems for new player as a new system group
     let copy = self
@@ -101,6 +102,7 @@ impl IndividualPlayerSystem {
   }
 
   fn transition_turn_to_active(&self, ctx: &mut Context) {
+    log::debug!("Transitioning current turn to active");
     ctx.insert(CurrentPlayerTurnState::Active);
     let game_state = ctx.expect::<GameState>();
     ctx.emit(PlayerTurnActive::new(
@@ -110,6 +112,7 @@ impl IndividualPlayerSystem {
   }
 
   fn transition_turn_to_ending(&self, ctx: &mut Context) {
+    log::debug!("Transitioning current turn to ending");
     ctx.insert(CurrentPlayerTurnState::Ending);
     let game_state = ctx.expect::<GameState>();
     ctx.emit(PlayerTurnEnding::new(
@@ -120,7 +123,7 @@ impl IndividualPlayerSystem {
 
   fn advance_turn(&self, ctx: &mut Context) {
     let mut game_state = ctx.cloned::<GameState>().unwrap();
-
+    log::info!("Advancing turn (current player: {})", game_state.current_player);
     let mut next_player = game_state.current_player + 1;
     if next_player >= game_state.player_count {
       next_player = 0;
@@ -187,7 +190,13 @@ impl System for IndividualPlayerSystem {
       match ctx.get::<CurrentPlayerTurnState>() {
         Some(CurrentPlayerTurnState::Beginning) => {
           if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-            if self.ball_in_play_switches.contains(&e.switch.name) {
+            let ball_in_play_switches = ctx
+              .expect::<SwitchGroups>()
+              .get(&self.ball_in_play_switch_group)
+              .cloned()
+              .unwrap_or_default();
+
+            if ball_in_play_switches.contains(&e.switch.name) {
               self.transition_turn_to_active(ctx);
             }
           }

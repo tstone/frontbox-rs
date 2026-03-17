@@ -208,6 +208,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "frontbox",
+ "log",
  "serde",
  "serde_json",
  "tokio",

@@ -56,6 +56,8 @@ impl App {
       expansion_boards,
       "expansion_boards",
     ));
+    store.insert(StorableHashMap::from_map(io_network.driver_groups, "driver_groups"));
+    store.insert(StorableHashMap::from_map(io_network.switch_groups, "switch_groups"));
 
     Self {
       io_port,

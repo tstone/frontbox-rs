@@ -91,7 +91,7 @@ impl Machine {
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState, ctx: &mut Context) {
-    let switch_lookup = ctx.get_mut::<SwitchLookup>().unwrap();
+    let switch_lookup = ctx.expect_mut::<SwitchLookup>();
     let switch = switch_lookup.switch_by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
