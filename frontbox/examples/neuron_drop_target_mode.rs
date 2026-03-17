@@ -121,7 +121,7 @@ impl ChildSystem for DropTargetDownUp {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(event) = event.downcast::<SwitchClosed>() {
+    if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }
   }

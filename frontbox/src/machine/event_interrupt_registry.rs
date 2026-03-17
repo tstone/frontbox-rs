@@ -1,12 +1,9 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
-use crate::prelude::*;
-
-struct Interrupt {
-  system_id: u64,
-  priority: u16,
-  handler: Box<dyn for<'ctx> Fn(&dyn Event, &mut Context<'ctx>) -> InterruptResult + Send + Sync>,
+pub struct Interrupt {
+  pub system_id: u64,
+  pub priority: u16,
 }
 
 pub struct EventInterruptRegistry {
@@ -20,17 +17,10 @@ impl EventInterruptRegistry {
     }
   }
 
-  pub fn register(
-    &mut self,
-    type_id: TypeId,
-    system_id: u64,
-    priority: u16,
-    interrupt: Box<dyn Fn(&dyn Event, &mut Context) -> InterruptResult + Send + Sync>,
-  ) {
+  pub fn register(&mut self, type_id: TypeId, system_id: u64, priority: u16) {
     let interrupt = Interrupt {
       system_id,
       priority,
-      handler: Box::new(move |event, context| interrupt(event, context)),
     };
 
     let interrupts = self.interrupts.entry(type_id).or_default();
@@ -50,18 +40,8 @@ impl EventInterruptRegistry {
     }
   }
 
-  /// Invoke all registered interrupts. If any interrupt returns `Halt`, stop processing further.
-  pub fn handle(&self, event: &dyn Event, ctx_template: &mut Context) -> InterruptResult {
-    if let Some(interrupt) = self.interrupts.get(&event.as_any().type_id()) {
-      for interrupt in interrupt.iter() {
-        let mut ctx = ctx_template.clone_for_system(interrupt.system_id);
-        let result = (interrupt.handler)(event, &mut ctx);
-        if result == InterruptResult::Halt {
-          return InterruptResult::Halt;
-        }
-      }
-    }
-    InterruptResult::Continue
+  pub fn get_interrupts_for_event(&self, event_type: TypeId) -> Option<&Vec<Interrupt>> {
+    self.interrupts.get(&event_type)
   }
 }
 

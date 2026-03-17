@@ -37,7 +37,7 @@ impl<E: Event> OnEventSystem<E> {
 
 impl<E: Event + 'static> ChildSystem for OnEventSystem<E> {
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(e) = event.downcast::<E>() {
+    if let Some(e) = event.downcast_ref::<E>() {
       (self.method.lock().unwrap())(e, ctx);
     }
   }

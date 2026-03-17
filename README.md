@@ -62,9 +62,13 @@ pub struct ExampleCmd(pub arg1: u64, pub arg2: String);
 // and register a handler
 impl System for Example {
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.register_command::<ExampleCmd>(|cmd, ctx| {
-      // do something when the command runs
-    });
+    ctx.register_command::<ExampleCmd>();
+  }
+
+  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+    if let Some(cmd) == command.downcast_ref::<ExampleCmd>() {
+      // ...
+    }
   }
 }
 
@@ -89,15 +93,40 @@ ctx.emit(ExampleEvent { some_data: vec![] });
 Sometimes there are cases where the normal flow of operation needs to be halted. For example, if a player drains while ball save is active, this would _normally_ emit an event that the player has drained and the turn is over. In these cases it's necessary to allow a system to overide this behavior. This happens by way of event interrupts. Interrupts register themselves with a _priority_, where the App processes interrupts in the highest priority order. This allows, for example, a momentary start-of-ball ball save to take precedence over an extra ball. Event interrupts can be applied to any event within the system.
 
 ```rust
-// for example, a ball save system might do something along the lines of...
-ctx.register_interrupt::<TurnEnd>(100 /* priority */, move |event, ctx| {
+
+fn on_startup(&mut self, ctx: &mut Context) {
+  ctx.register_interrupt::<TurnEnd>(100 /* priority */);
+}
+
+fn on_interrupt(&mut self, ctx: &mut Context) {
+  // for example, a ball save system might do something along the lines of...
   ctx.set_timer(name, Duration::from_secs(5));
-});
+}
 
 // ...
 
 fn on_timer(&mut self, name: &'static str, ctx: &mut Context) {
+  // once the timer is up, balls can now drain as normal
   ctx.unregister_interrupt::<TurnEnd>();
+}
+```
+
+#### States
+
+While not a separate feature, states are a pattern to combine `Context` with `is_active`. Storing a globally readable `enum` in `Context` allows other systems to toggle their active state based on it.
+
+```rust
+pub enum MachineMode {
+  Attract,
+  InGame,
+  OperatorMenu,
+  // ...
+}
+
+impl System for Example {
+  fn is_active(&self, ctx: &Context) {
+    ctx.is(MachineMode::Attract) || ctx.is(OperatorMenu)
+  }
 }
 ```
 

@@ -4,16 +4,11 @@ use std::time::Duration;
 
 use crate::hardware_definition::*;
 use crate::machine::serial_interface::*;
+use crate::prelude::app_message::AppMessage;
+use crate::prelude::run_loop::SystemCollection;
 use crate::prelude::*;
-use crate::systems::SystemContainer;
 use fast_protocol::*;
 use tokio::sync::mpsc;
-
-#[derive(Debug, Default, Serialize, Storable)]
-pub struct GameState {
-  pub active_player: u8,
-  pub player_count: u8,
-}
 
 pub struct Machine {
   io_port: SerialInterface,
@@ -137,15 +132,25 @@ impl Machine {
 
   pub async fn render_leds(
     &mut self,
-    systems: &mut Vec<SystemContainer>,
+    sc: &mut SystemCollection,
     tick_interval: Duration,
     ctx_template: &mut Context<'_>,
   ) {
     let mut declarations = HashMap::new();
-    for system in systems.iter_mut() {
+
+    // gather LED declarations from all active systems and child systems (within)
+    for system in sc.systems.values_mut() {
       let ctx = ctx_template.clone_for_system(system.id);
       if system.is_active(&ctx) {
         declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      }
+    }
+    for group in sc.groups.values_mut() {
+      for system in group.systems.values_mut() {
+        let ctx = ctx_template.clone_for_system(system.id);
+        if system.is_active(&ctx) {
+          declarations.insert(system.id, system.leds(tick_interval, &ctx));
+        }
       }
     }
 
@@ -285,7 +290,9 @@ impl Machine {
   }
 }
 
-/// Exposes machine-level commands to systems. If you don't have this, you can't control any hardware
+/// Exposes machine-level commands to systems. If you don't have this, you can't control any hardware. This weirdness
+/// is mainly because Machine cannot support Sync+Send since it contains IO port references. The workaround is to have
+/// a separate "bridge" system that streams commands over channels to the Machine instance.
 pub(crate) struct MachineBridge {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
@@ -298,41 +305,45 @@ impl MachineBridge {
 
 impl System for MachineBridge {
   fn on_startup(&mut self, ctx: &mut Context) {
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<WatchdogPing>(move |_, _, _ctx| {
-      sender.send(MachineMessage::WatchdogPing).ok();
-    });
+    ctx.register_command::<WatchdogPing>();
+    ctx.register_command::<ClearWatchdog>();
+    ctx.register_command::<ResetExpansionNetwork>();
+    ctx.register_command::<ConfigureDriver>();
+    ctx.register_command::<ActivateDriver>();
+    ctx.register_command::<ActivateDriverDelayed>();
+    ctx.register_command::<DeactivateDriver>();
+    ctx.register_command::<DeactivateDriverDelayed>();
+    ctx.register_command::<ActivateDriverGroup>();
+    ctx.register_command::<DeactivateDriverGroup>();
+    ctx.register_command::<RefreshSwitchState>();
+  }
 
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ClearWatchdog>(move |_, _, _ctx| {
-      sender.send(MachineMessage::ClearWatchdog).ok();
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ResetExpansionNetwork>(move |_, _, ctx| {
+  fn on_command(&mut self, cmd: &dyn Command, ctx: &mut Context) {
+    if let Some(_) = cmd.as_any().downcast_ref::<WatchdogPing>() {
+      self.machine_sender.send(MachineMessage::WatchdogPing).ok();
+    } else if let Some(_) = cmd.as_any().downcast_ref::<ClearWatchdog>() {
+      self.machine_sender.send(MachineMessage::ClearWatchdog).ok();
+    } else if let Some(_) = cmd.as_any().downcast_ref::<ResetExpansionNetwork>() {
       let boards = ctx.cloned::<ExpansionBoards>().unwrap();
-      sender
+      self
+        .machine_sender
         .send(MachineMessage::ResetExpansionNetwork(boards))
         .ok();
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ConfigureDriver>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ConfigureDriver>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
         let switch_lookup = ctx.expect::<SwitchLookup>();
         let config = cmd.mode.to_config(switch_lookup);
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::ConfigureDriver(driver.id, config))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriver>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriver>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::ActivateDriver(
             driver.id,
             cmd.mode.clone(),
@@ -340,13 +351,11 @@ impl System for MachineBridge {
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriverDelayed>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriverDelayed>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::ActivateDriver(
             driver.id,
             cmd.mode.clone(),
@@ -354,13 +363,11 @@ impl System for MachineBridge {
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriver>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriver>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::DeactivateDriver(
             driver.id,
             cmd.mode.clone(),
@@ -368,13 +375,11 @@ impl System for MachineBridge {
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriverDelayed>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriverDelayed>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::DeactivateDriver(
             driver.id,
             cmd.mode.clone(),
@@ -382,10 +387,7 @@ impl System for MachineBridge {
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<ActivateDriverGroup>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriverGroup>() {
       let lookup = ctx.expect::<DriverLookup>();
       let groups = ctx.expect::<DriverGroups>();
       if let Some(group) = groups.get(cmd.group) {
@@ -394,17 +396,15 @@ impl System for MachineBridge {
           .filter_map(|name| lookup.get(name))
           .map(|driver| driver.id)
           .collect();
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::ActivateDriverGroup(
             driver_ids,
             cmd.mode.clone(),
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<DeactivateDriverGroup>(move |cmd, _, ctx| {
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriverGroup>() {
       let lookup = ctx.expect::<DriverLookup>();
       let groups = ctx.expect::<DriverGroups>();
       if let Some(group) = groups.get(cmd.group) {
@@ -413,19 +413,20 @@ impl System for MachineBridge {
           .filter_map(|name| lookup.get(name))
           .map(|driver| driver.id)
           .collect();
-        sender
+        self
+          .machine_sender
           .send(MachineMessage::DeactivateDriverGroup(
             driver_ids,
             cmd.mode.clone(),
           ))
           .ok();
       }
-    });
-
-    let sender = self.machine_sender.clone();
-    ctx.register_command::<RefreshSwitchState>(move |_, _, _ctx| {
-      sender.send(MachineMessage::ReportSwitches).ok();
-    });
+    } else if let Some(_) = cmd.as_any().downcast_ref::<RefreshSwitchState>() {
+      self
+        .machine_sender
+        .send(MachineMessage::ReportSwitches)
+        .ok();
+    }
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {

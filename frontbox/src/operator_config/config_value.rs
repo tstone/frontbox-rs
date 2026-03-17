@@ -25,6 +25,24 @@ pub enum ConfigItem {
   },
 }
 
+impl ConfigItem {
+  pub fn name(&self) -> &'static str {
+    match self {
+      ConfigItem::String { name, .. } => name,
+      ConfigItem::Integer { name, .. } => name,
+      ConfigItem::Boolean { name, .. } => name,
+    }
+  }
+
+  pub fn description(&self) -> &'static str {
+    match self {
+      ConfigItem::String { description, .. } => description,
+      ConfigItem::Integer { description, .. } => description,
+      ConfigItem::Boolean { description, .. } => description,
+    }
+  }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub enum ConfigValue {
   String(String),
