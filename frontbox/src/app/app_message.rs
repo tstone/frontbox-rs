@@ -20,7 +20,7 @@ pub enum AppMessage {
   SpawnSystem(u64, Box<dyn System>),
   ReplaceSystem(u64, Box<dyn System>),
   DespawnSystem(u64),
-  SpawnSystemGroup(&'static str, Vec<Box<dyn ChildSystem>>),
+  SpawnSystemGroup(&'static str, Vec<Box<dyn ChildSystem>>, bool),
   DespawnSystemGroup(&'static str),
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),

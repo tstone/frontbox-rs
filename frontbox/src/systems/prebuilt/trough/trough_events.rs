@@ -1,3 +1,5 @@
+pub struct TroughFull;
+
 #[derive(Debug)]
 #[allow(unused)]
 pub struct BallEnteredTrough {

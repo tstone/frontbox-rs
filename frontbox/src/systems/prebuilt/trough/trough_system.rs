@@ -1,3 +1,4 @@
+use crate::prebuilt::TroughFull;
 pub use crate::prelude::*;
 use crate::systems::prebuilt::trough::{BallEnteredTrough, BallExitedTrough};
 
@@ -26,7 +27,12 @@ impl TroughSystem {
       .map(|s| *s == switch_name)
       .unwrap_or(false)
     {
-      ctx.emit(BallEnteredTrough::new(self.get_occupancy(ctx)));
+      let occupancy = self.get_occupancy(ctx);
+      let is_full = occupancy.iter().all(|&o| o);
+      ctx.emit(BallEnteredTrough::new(occupancy));
+      if is_full {
+        ctx.emit(TroughFull);
+      }
     }
   }
 
