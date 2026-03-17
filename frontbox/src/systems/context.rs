@@ -119,10 +119,11 @@ impl<'a> Context<'a> {
     &mut self,
     group_name: &'static str,
     systems: Vec<Box<dyn ChildSystem>>,
+    active: bool,
   ) {
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystemGroup(group_name, systems));
+      .send(AppMessage::SpawnSystemGroup(group_name, systems, active));
   }
 
   pub fn despawn_system_group(&mut self, group_name: &'static str) {

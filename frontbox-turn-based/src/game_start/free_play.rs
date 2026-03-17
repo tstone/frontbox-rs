@@ -22,7 +22,7 @@ impl FreePlay {
 
 impl System for FreePlay {
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(e) = event.downcast::<SwitchClosed>() {
+    if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {
         self.on_start_button_pressed(ctx);
       }

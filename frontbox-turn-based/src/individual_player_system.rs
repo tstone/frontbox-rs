@@ -1,7 +1,24 @@
+use frontbox::prebuilt::TroughFull;
 use frontbox::prelude::*;
-use tokio::sync::mpsc;
 
 use crate::*;
+
+const PLAYER_GROUP_NAMES: [&str; 6] = [
+  "player1", "player2", "player3", "player4", "player5", "player6",
+];
+
+pub mod operator_config {
+  use frontbox::prelude::ConfigItem;
+
+  pub const TURN_COUNT: ConfigItem = ConfigItem::Integer {
+    current: 3,
+    default: 3,
+    min: 1,
+    max: 5,
+    name: "Turn Count",
+    description: "The current turn count for the player. This is automatically incremented at the end of each turn.",
+  };
+}
 
 /// This system provides two main benefits:
 ///
@@ -14,24 +31,23 @@ use crate::*;
 /// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
 ///
 /// ## Inputs
-/// - Command: `StartGame` - Starts a new game.
-/// - Command: `EndGame` - Ends the current game (only valid if a game is started).
 /// - Command: `AddPlayer` - Adds a player to the game
 /// - Command: `AdvanceTurn` - Advances the turn to the next player. Only processed after a `PlayerTurnEnding` event has been emitted.
+/// - Command: `EndGame` - Ends the current game (only valid if a game is started).
 /// - Event: `TroughFull` - Used to detect when the ball has gone out of play.
 ///
 /// ## Interrupts
 /// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
 ///
+/// ## Operator Config
+///
+///
 /// # Arguments:
 /// - `max_players` - The maximum number of players allowed in a game
 /// - `ball_in_play_switches` - A list of switches that can be used to detect when the ball becomes in play. This could be a plunge lane exit switch, or a list of playfield switches.
-///
 pub struct IndividualPlayerSystem {
-  initial_scene: Vec<Box<dyn ChildSystem>>,
-  player_systems: Vec<Vec<SystemContainer>>,
-  system_sender: mpsc::UnboundedSender<SystemMessage>,
-  system_receiver: mpsc::UnboundedReceiver<SystemMessage>,
+  /// This is the template to spin up a new group for the player
+  systems_template: Vec<Box<dyn ChildSystem>>,
   max_players: u8,
   ball_in_play_switches: Vec<&'static str>,
 }
@@ -43,98 +59,98 @@ impl IndividualPlayerSystem {
     ball_in_play_switches: Vec<&'static str>,
     initial_scene: Vec<Box<dyn ChildSystem>>,
   ) -> Box<Self> {
-    let mut player_scenes = Vec::new();
-    let copy: Vec<SystemContainer> = initial_scene
-      .iter()
-      .map(|system| {
-        let cloned: Box<dyn ChildSystem> = dyn_clone::clone_box(&**system);
-        SystemContainer::new_from_system(Box::new(cloned))
-      })
-      .collect();
-    player_scenes.push(copy);
-
-    let mut player_stores = Vec::new();
-    player_stores.push(Store::new());
-
-    let (system_sender, system_receiver) = mpsc::unbounded_channel::<SystemMessage>();
-
     Box::new(Self {
-      initial_scene,
-      player_systems: player_scenes,
-      system_sender,
-      system_receiver,
+      systems_template: initial_scene,
       max_players,
       ball_in_play_switches,
     })
-  }
-
-  fn add_player(&mut self, ctx: &mut Context) {
-    let game_state = ctx.expect_mut::<GameState>();
-    if game_state.player_count >= game_state.max_players {
-      return;
-    }
-
-    // create copy of systems for new player
-    let copy: Vec<SystemContainer> = self
-      .initial_scene
-      .iter()
-      .map(|system| {
-        let cloned: Box<dyn ChildSystem> = dyn_clone::clone_box(&**system);
-        SystemContainer::new_from_system(Box::new(cloned))
-      })
-      .collect();
-    self.player_systems.push(copy);
-
-    // increment global state
-    game_state.player_count += 1;
-    ctx.command(ConsumeCredit);
-  }
-
-  fn iterate_current_systems(
-    &mut self,
-    ctx: &mut Context,
-    mut f: impl FnMut(&mut dyn System, &mut Context),
-  ) {
-    if !self.is_game_started(ctx) {
-      return;
-    }
-
-    let current_player = ctx.expect::<GameState>().current_player();
-
-    if let Some(child_systems) = self.player_systems.get_mut(current_player as usize) {
-      let mut ctx_template = ctx.clone_for_manager(self.system_sender.clone(), 0);
-
-      for system in child_systems {
-        let mut ctx = ctx_template.clone_for_system(system.id);
-        if system.is_active(&ctx) {
-          f(&mut **system, &mut ctx);
-        }
-      }
-
-      // process system commands
-      let current_systems = self
-        .player_systems
-        .get_mut(current_player as usize)
-        .unwrap();
-      while let Ok(cmd) = self.system_receiver.try_recv() {
-        SystemCommandsProcessor::process(cmd, current_systems, ctx);
-      }
-    }
   }
 
   fn is_game_started(&self, ctx: &Context) -> bool {
     ctx.get::<GameState>().is_some()
   }
 
-  fn start_game(ctx: &mut Context, max_players: u8) {
-    ctx.insert(GameState::new(max_players));
+  fn start_game(&self, ctx: &mut Context) {
+    ctx.insert(GameState::new(self.max_players));
     ctx.insert(GameStartState::PlayerAddable);
     ctx.emit(GameStarted);
-    ctx.emit(PlayerAdded);
-    ctx.emit(PlayerTurnBeginning::new(0, 0));
   }
 
-  fn end_game(ctx: &mut Context) {
+  fn add_player(&mut self, ctx: &mut Context) {
+    let mut game_started = false;
+    if !self.is_game_started(ctx) {
+      self.start_game(ctx);
+      game_started = true;
+    }
+
+    let game_state = ctx.expect_mut::<GameState>();
+    game_state.player_count += 1;
+
+    // create copy of systems for new player as a new system group
+    let copy = self
+      .systems_template
+      .iter()
+      .map(|system| dyn_clone::clone_box(&**system))
+      .collect::<Vec<_>>();
+
+    let group_name = PLAYER_GROUP_NAMES[game_state.player_count as usize];
+    ctx.spawn_system_group(group_name, copy, false);
+    ctx.emit(PlayerAdded);
+
+    if game_started {
+      ctx.emit(GameStarted);
+      ctx.insert(CurrentPlayerTurnState::Beginning);
+      ctx.emit(PlayerTurnBeginning::new(0, 0));
+    }
+  }
+
+  fn transition_turn_to_active(&self, ctx: &mut Context) {
+    ctx.insert(CurrentPlayerTurnState::Active);
+    let game_state = ctx.expect::<GameState>();
+    ctx.emit(PlayerTurnActive::new(
+      game_state.current_player(),
+      game_state.current_player_turn(),
+    ));
+  }
+
+  fn transition_turn_to_ending(&self, ctx: &mut Context) {
+    ctx.insert(CurrentPlayerTurnState::Ending);
+    let game_state = ctx.expect::<GameState>();
+    ctx.emit(PlayerTurnEnding::new(
+      game_state.current_player(),
+      game_state.current_player_turn(),
+    ));
+  }
+
+  fn advance_turn(&self, ctx: &mut Context) {
+    let mut game_state = ctx.cloned::<GameState>().unwrap();
+
+    let mut next_player = game_state.current_player + 1;
+    if next_player >= game_state.player_count {
+      next_player = 0;
+    }
+    game_state.current_player = next_player;
+    game_state.player_turns[game_state.current_player as usize] += 1;
+
+    // Verify we haven't gone over the turn limit
+    let max_turn_count = ctx
+      .expect::<OperatorConfig>()
+      .get_value_as_integer(operator_config::TURN_COUNT.name())
+      .unwrap_or(3);
+    if game_state.player_turns[game_state.current_player as usize] > max_turn_count as u8 {
+      self.end_game(ctx);
+      return;
+    }
+
+    ctx.insert(CurrentPlayerTurnState::Beginning);
+    ctx.emit(PlayerTurnBeginning::new(
+      game_state.current_player(),
+      game_state.current_player_turn(),
+    ));
+    ctx.insert(game_state);
+  }
+
+  fn end_game(&self, ctx: &mut Context) {
     // verify the game is already running
     if ctx.get::<GameState>().is_none() {
       return;
@@ -147,73 +163,46 @@ impl IndividualPlayerSystem {
 }
 
 impl System for IndividualPlayerSystem {
+  fn on_command(&mut self, command: &dyn Command, _caller_id: u64, ctx: &mut Context) {
+    if let Some(_) = command.downcast_ref::<AddPlayer>() {
+      self.add_player(ctx);
+    } else if let Some(_) = command.downcast_ref::<AdvanceTurn>() {
+      self.advance_turn(ctx);
+    }
+  }
+
   fn on_startup(&mut self, ctx: &mut Context) {
     ctx.insert(GameStartState::GameStartable);
-
-    let max_players = self.max_players.clone();
-    ctx.register_command::<AddPlayer>(move |_, _, ctx| {
-      // check if a game is already running
-      if ctx.get::<GameState>().is_some() {
-        self.add_player(ctx);
-      } else {
-        Self::start_game(ctx, max_players);
-      }
-    });
-
-    // call on_startup for all systems in the initial scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_startup(ctx);
-    });
+    ctx.register_command::<AddPlayer>();
+    ctx.register_command::<AdvanceTurn>();
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {
-    // call on_shutdown for all systems in the current scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_shutdown(ctx);
-      // TODO: this needs to unregister all for this system -- not available on context
-    });
+    if let Some(game_state) = ctx.get::<GameState>() {
+      for player in 0..game_state.player_count {
+        let group_name = PLAYER_GROUP_NAMES[player as usize];
+        ctx.despawn_system_group(group_name);
+      }
+    }
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
-    if let Some(game_state) = ctx.get::<GameState>() {
-      if let Some(e) = event.downcast::<TroughFull>() {
-        if self.ball_in_play_switches.contains(&e.switch.name.as_str()) {
-          ctx.emit(PlayerTurnEnding::new(
-            game_state.current_player(),
-            game_state.turn,
-          ));
-          ctx.command(AdvanceTurn);
+    if self.is_game_started(ctx) {
+      match ctx.get::<CurrentPlayerTurnState>() {
+        Some(CurrentPlayerTurnState::Beginning) => {
+          if let Some(e) = event.downcast_ref::<SwitchClosed>() {
+            if self.ball_in_play_switches.contains(&e.switch.name) {
+              self.transition_turn_to_active(ctx);
+            }
+          }
         }
+        None => {
+          if let Some(_) = event.downcast_ref::<TroughFull>() {
+            self.transition_turn_to_ending(ctx);
+          }
+        }
+        _ => {}
       }
     }
-
-    // Forward event to current player scene
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_event(event, ctx);
-    });
-  }
-
-  fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
-    self.iterate_current_systems(ctx, |system, ctx| {
-      system.on_tick(delta, ctx);
-    });
-  }
-
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    ctx: &Context,
-  ) -> std::collections::HashMap<&'static str, LedState> {
-    let current_player = ctx.expect::<GameState>().current_player();
-    let mut leds = std::collections::HashMap::new();
-    if let Some(scene) = self.player_systems.get_mut(current_player as usize) {
-      for system in scene {
-        if system.is_active(ctx) {
-          let system_leds = system.leds(delta_time, ctx);
-          leds.extend(system_leds);
-        }
-      }
-    }
-    leds
   }
 }

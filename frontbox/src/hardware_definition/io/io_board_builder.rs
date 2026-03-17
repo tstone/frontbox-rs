@@ -34,6 +34,18 @@ impl IoBoardBuilder {
     self
   }
 
+  pub fn with_driver(mut self, name: &'static str, pin: u16) -> Self {
+    if pin >= self.driver_count as u16 {
+      panic!(
+        "Driver index {} out of bounds for board with {} drivers",
+        pin, self.driver_count
+      );
+    }
+
+    self.driver_map.insert(pin, name);
+    self
+  }
+
   pub fn with_driver_cfg(
     mut self,
     name: &'static str,

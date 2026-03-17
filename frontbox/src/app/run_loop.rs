@@ -106,8 +106,8 @@ pub async fn run(
           AppMessage::DespawnSystem(system_id) => {
             despawn_system(system_id, &mut systems, &mut store, app_sender.clone());
           }
-          AppMessage::SpawnSystemGroup(group_name, child_systems) => {
-            spawn_system_group(group_name, child_systems, &mut systems, &mut store, app_sender.clone());
+          AppMessage::SpawnSystemGroup(group_name, child_systems, active) => {
+            spawn_system_group(group_name, child_systems, active, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::DespawnSystemGroup(group_name) => {
             despawn_system_group(group_name, &mut systems, &mut store, app_sender.clone());
@@ -374,6 +374,7 @@ fn despawn_system(
 fn spawn_system_group(
   group_name: &'static str,
   child_systems: Vec<Box<dyn ChildSystem>>,
+  active: bool,
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -384,6 +385,12 @@ fn spawn_system_group(
   }
 
   let mut group = SystemGroup::new(child_systems);
+  if active {
+    group.activate();
+  } else {
+    group.deactivate();
+  }
+
   let mut ctx = Context::new(store, 0, app_sender.clone());
   group.on_startup(&mut ctx);
   sc.groups.insert(group_name, group);
