@@ -161,7 +161,7 @@ impl<'a> Context<'a> {
       .send(AppMessage::ClearTimer(self.system_id, timer_name));
   }
 
-  pub fn clone_for_system(&mut self, system_id: u64) -> Context {
+  pub fn clone_for_system(&mut self, system_id: u64) -> Context<'_> {
     Context {
       store: self.store,
       system_id,

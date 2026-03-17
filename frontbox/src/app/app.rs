@@ -47,7 +47,7 @@ impl App {
     App::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     // Insert hardware definitions into store for systems to reference
-    log::trace!("Initializaing Store with hardware definitions");
+    log::debug!("Initializaing Store with hardware definitions");
     let mut store = Store::new();
     store.insert(SwitchLookup::new(io_network.switches, initial_switch_state));
     store.insert(DriverLookup::new(io_network.drivers));
@@ -271,17 +271,16 @@ impl App {
 
   pub async fn run(mut self, systems: Vec<Box<dyn System>>) {
     self.systems.extend(systems);
-    log::trace!("Finalizing Store with operator config and app config");
+    log::debug!("Finalizing Store with operator config and app config");
     self.store.insert(self.operator_config);
     self.store.insert(self.app_config.clone());
 
     // lookup expansion boards for led renderer
-    log::trace!("Setting up LED renderer");
     let expansion_boards = self.store.expect::<ExpansionBoards>().clone();
     let led_renderer = LedRenderer::new(&expansion_boards);
     let machine = Machine::new(self.io_port, self.exp_port, led_renderer);
 
-    log::trace!("Starting main run loop");
+    log::debug!("Starting main run loop");
     run_loop::run(machine, self.store, self.app_config, self.systems).await;
   }
 }
