@@ -318,7 +318,7 @@ impl System for MachineBridge {
     ctx.register_command::<RefreshSwitchState>();
   }
 
-  fn on_command(&mut self, cmd: &dyn Command, _caller_id: u64, ctx: &mut Context) {
+  fn on_command(&mut self, cmd: &dyn Command, ctx: &mut Context) {
     if let Some(_) = cmd.as_any().downcast_ref::<WatchdogPing>() {
       self.machine_sender.send(MachineMessage::WatchdogPing).ok();
     } else if let Some(_) = cmd.as_any().downcast_ref::<ClearWatchdog>() {

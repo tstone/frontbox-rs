@@ -13,7 +13,7 @@ pub trait System: Send + Sync {
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {}
-  fn on_command(&mut self, command: &dyn Command, caller_id: u64, ctx: &mut Context) {}
+  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {}
 
   fn on_interrupt(&mut self, event: &dyn Event, ctx: &mut Context) -> InterruptResult {
     InterruptResult::Continue
@@ -36,7 +36,7 @@ pub trait ChildSystem: DynClone + Send + Sync {
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {}
-  fn on_command(&mut self, command: &dyn Command, caller_id: u64, ctx: &mut Context) {}
+  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {}
 
   fn on_interrupt(&mut self, event: &dyn Event, ctx: &mut Context) -> InterruptResult {
     InterruptResult::Continue

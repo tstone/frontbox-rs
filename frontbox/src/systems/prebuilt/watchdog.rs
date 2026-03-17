@@ -40,7 +40,7 @@ impl System for Watchdog {
     ctx.register_command::<DisableWatchdog>();
   }
 
-  fn on_command(&mut self, command: &dyn Command, _caller_id: u64, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<EnableWatchdog>() {
       Watchdog::enable(ctx);
     } else if let Some(_) = command.downcast_ref::<DisableWatchdog>() {
