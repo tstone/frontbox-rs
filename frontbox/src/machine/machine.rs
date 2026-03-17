@@ -290,9 +290,9 @@ impl Machine {
   }
 }
 
-/// Exposes machine-level commands to systems. If you don't have this, you can't control any hardware. This weirdness
-/// is mainly because Machine cannot support Sync+Send since it contains IO port references. The workaround is to have
-/// a separate "bridge" system that streams commands over channels to the Machine instance.
+/// While Machine can *technically* be used directly as a System, this creates problems when the App needs to query for
+/// read the I/O hardware events. Instead of dealing with some kind of Arc reference, the bridge allows the Machine to be
+/// owned by the App while still exposing commands to interact with it as a System.
 pub(crate) struct MachineBridge {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
