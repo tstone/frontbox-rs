@@ -67,7 +67,7 @@ impl System for IndividualScoring {
     ctx.register_command::<AddPoints>();
   }
 
-  fn on_command(&mut self, command: &dyn Command, _caller_id: u64, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<SetMultiplier>() {
       self.set_multiplier(ctx, command.downcast_ref::<SetMultiplier>().unwrap().0);
     } else if let Some(_) = command.downcast_ref::<AddPoints>() {

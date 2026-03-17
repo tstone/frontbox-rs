@@ -81,9 +81,9 @@ pub async fn run(
           }
           AppMessage::UnregisterCommand(_system_id, type_id) => {
             command_registry.unregister(type_id);
-          }
-          AppMessage::ExecuteCommand(system_id, cmd) => {
-            execute_command(cmd.as_ref(), system_id, &command_registry, &mut systems, &mut store, &app_sender);
+        }
+          AppMessage::ExecuteCommand(_system_id, cmd) => {
+            execute_command(cmd.as_ref(), &command_registry, &mut systems, &mut store, &app_sender);
           }
           AppMessage::UnregisterAllBySystem(system_id) => {
             command_registry.unregister_by_system(system_id);
@@ -248,7 +248,6 @@ async fn handle_system_tick(
 
 fn execute_command(
   command: &dyn Command,
-  caller_id: u64,
   command_registry: &CommandRegistry,
   systems: &mut SystemCollection,
   store: &mut Store,
@@ -259,7 +258,7 @@ fn execute_command(
       let mut ctx = Context::new(store, system_id, app_sender.clone());
       // commands must be executed on an active system
       if system.is_active(&ctx) {
-        system.on_command(command, caller_id, &mut ctx);
+        system.on_command(command, &mut ctx);
       }
     } else {
       log::warn!(
