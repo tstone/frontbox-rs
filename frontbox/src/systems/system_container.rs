@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::systems::*;
+
+static LISTENER_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct SystemContainer {
   pub id: u64,
@@ -19,8 +22,12 @@ impl SystemContainer {
     }
   }
 
+  pub(crate) fn next_id() -> u64 {
+    LISTENER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+  }
+
   pub fn new_from_system(system: Box<dyn System>) -> Self {
-    Self::new(SystemCommandsProcessor::next_id(), system)
+    Self::new(SystemContainer::next_id(), system)
   }
 
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {

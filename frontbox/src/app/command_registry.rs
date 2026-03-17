@@ -1,7 +1,5 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
-
-use crate::prelude::Context;
 
 pub struct CommandRegistry {
   commands: HashMap<TypeId, u64>,
@@ -30,16 +28,3 @@ impl CommandRegistry {
     self.commands.get(&type_id).cloned()
   }
 }
-
-pub trait Command: Any + Send + Sync {
-  fn as_any(&self) -> &dyn Any;
-}
-
-impl<T: Any + Send + Sync> Command for T {
-  fn as_any(&self) -> &dyn Any {
-    self
-  }
-}
-
-#[allow(type_alias_bounds)]
-pub type CommandRunner<C: Command> = dyn Fn(&C, &mut Context) + Send + Sync;
