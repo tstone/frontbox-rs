@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::prelude::AppMessage;
+use crate::prelude::app_message::AppMessage;
 
 #[derive(Debug, Clone)]
 pub struct SystemTimer {

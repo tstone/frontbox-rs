@@ -36,15 +36,16 @@ impl System for Watchdog {
     // For now just always start it up
     Watchdog::enable(ctx);
 
-    // Enable watchdog command
-    ctx.register_command::<EnableWatchdog>(move |_, _, ctx| {
-      Watchdog::enable(ctx);
-    });
+    ctx.register_command::<EnableWatchdog>();
+    ctx.register_command::<DisableWatchdog>();
+  }
 
-    // Disable watchdog command
-    ctx.register_command::<DisableWatchdog>(move |_, _, ctx| {
+  fn on_command(&mut self, command: &dyn Command, _caller_id: u64, ctx: &mut Context) {
+    if let Some(_) = command.downcast_ref::<EnableWatchdog>() {
+      Watchdog::enable(ctx);
+    } else if let Some(_) = command.downcast_ref::<DisableWatchdog>() {
       Watchdog::disable(ctx);
-    });
+    }
   }
 
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {
