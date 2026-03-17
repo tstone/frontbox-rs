@@ -31,13 +31,13 @@ impl Watchdog {
 
 impl System for Watchdog {
   fn on_startup(&mut self, ctx: &mut Context) {
+    ctx.register_command::<EnableWatchdog>();
+    ctx.register_command::<DisableWatchdog>();
+
     // Neuron seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
     // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage
     // For now just always start it up
     Watchdog::enable(ctx);
-
-    ctx.register_command::<EnableWatchdog>();
-    ctx.register_command::<DisableWatchdog>();
   }
 
   fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
@@ -49,9 +49,7 @@ impl System for Watchdog {
   }
 
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {
-    if timer_name == WATCHDOG_TIMER_NAME {
-      ctx.command(WatchdogPing);
-    }
+    ctx.command(WatchdogPing);
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {

@@ -3,6 +3,7 @@ mod storable_hash_map;
 mod storable_hash_set;
 mod store;
 mod store_command;
+mod type_name_cache;
 
 pub use storable::*;
 pub use storable_hash_map::*;

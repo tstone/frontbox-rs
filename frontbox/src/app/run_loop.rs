@@ -63,6 +63,7 @@ pub async fn run(
       }
 
       Some(command) = app_receiver.recv() => {
+        log::trace!("Received AppMessage: {}", command);
         match command {
           AppMessage::EmitEvent(event) => {
             emit_event(event.as_ref(), &mut systems, &mut store, &app_sender, &interrupt_registry);

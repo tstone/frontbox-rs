@@ -438,6 +438,7 @@ impl System for MachineBridge {
   }
 }
 
+#[derive(Debug)]
 pub(crate) enum MachineMessage {
   WatchdogPing,
   ClearWatchdog,

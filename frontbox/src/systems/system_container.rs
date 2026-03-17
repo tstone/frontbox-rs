@@ -32,11 +32,6 @@ impl SystemContainer {
 
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut timers_to_remove = vec![];
-    log::trace!(
-      "SystemContainer tick: delta={:?}, timer count={}",
-      delta,
-      self.timers.len()
-    );
     for (timer_name, timer) in &mut self.timers {
       if timer.tick(delta) {
         log::trace!("Timer '{}' completed, triggering event", timer_name);
