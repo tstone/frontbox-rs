@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{TypeId, type_name};
 use std::ops::{Deref, DerefMut};
 
 use tokio::sync::mpsc;
@@ -35,6 +35,7 @@ impl<'a> Context<'a> {
   }
 
   pub fn emit<E: Event>(&mut self, event: E) {
+    log::debug!("📨 Emitting event {}", type_name::<E>());
     self
       .app_sender
       .send(AppMessage::EmitEvent(Box::new(event)))
@@ -44,6 +45,7 @@ impl<'a> Context<'a> {
   // -- Commands --
 
   pub fn command<C: Command>(&mut self, cmd: C) {
+    log::debug!("📨 Executing command {}", type_name::<C>());
     self
       .app_sender
       .send(AppMessage::ExecuteCommand(self.system_id, Box::new(cmd)))
@@ -147,6 +149,7 @@ impl<'a> Context<'a> {
   // --- Timer ---
 
   pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
+    log::debug!("⏲️ Setting timer {}", timer_name);
     let _ = self.app_sender.send(AppMessage::SetTimer(
       self.system_id,
       timer_name,
@@ -156,6 +159,7 @@ impl<'a> Context<'a> {
   }
 
   pub fn clear_timer(&mut self, timer_name: &'static str) {
+    log::debug!("⏲️ Clearing timer {}", timer_name);
     let _ = self
       .app_sender
       .send(AppMessage::ClearTimer(self.system_id, timer_name));

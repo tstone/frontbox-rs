@@ -63,7 +63,6 @@ pub async fn run(
       }
 
       Some(command) = app_receiver.recv() => {
-        log::trace!("Received AppMessage: {}", command);
         match command {
           AppMessage::EmitEvent(event) => {
             emit_event(event.as_ref(), &mut systems, &mut store, &app_sender, &interrupt_registry);
@@ -94,7 +93,7 @@ pub async fn run(
             switch_lookup.update_switch_states(switch_states);
           }
           AppMessage::Shutdown => {
-            log::info!("⏹️ Shutdown command received, shutting down...");
+            log::warn!("⏹️ Shutdown command received, shutting down...");
             break;
           }
           AppMessage::SpawnSystem(caller_id, system) => {
