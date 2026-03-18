@@ -457,8 +457,8 @@ pub struct SwitchClosed {
 }
 
 impl SwitchClosed {
-  pub fn new(switch: Switch) -> Box<SwitchClosed> {
-    Box::new(Self { switch })
+  pub fn new(switch: Switch) -> SwitchClosed {
+    Self { switch }
   }
 }
 
@@ -470,7 +470,7 @@ pub struct SwitchOpened {
 }
 
 impl SwitchOpened {
-  pub fn new(switch: Switch) -> Box<SwitchOpened> {
-    Box::new(Self { switch })
+  pub fn new(switch: Switch) -> SwitchOpened {
+    Self { switch }
   }
 }

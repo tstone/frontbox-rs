@@ -14,13 +14,23 @@ impl FreePlay {
   }
 
   fn on_start_button_pressed(&mut self, ctx: &mut Context) {
-    if ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable) {
-      ctx.command(AddPlayer);
-    }
+    log::info!("Free play: Start button => add player");
+    ctx.command(AddPlayer);
   }
 }
 
 impl System for FreePlay {
+  fn is_active(&self, ctx: &Context) -> bool {
+    let has_start_state = ctx.has::<GameStartState>();
+
+    if !has_start_state {
+      log::warn!("FreePlay expects GameStartState, but is missing from context");
+      return false;
+    }
+
+    ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable)
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {

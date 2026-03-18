@@ -5,6 +5,9 @@ System
 - Auto plunger management system
 - Move configuring hardware to a system, make it also deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
+- Debugging: Record the type_name of a system and log relative to that
+- Debugging: Log when an event/command is skipped due to being inactive
+- Debugging: Some kind of websockets console to see what's going on (could this be an app plugin?)
 
 Hardware
 

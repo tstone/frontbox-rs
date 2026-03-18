@@ -65,7 +65,7 @@ pub async fn run(
       Some(command) = app_receiver.recv() => {
         match command {
           AppMessage::EmitEvent(event) => {
-            emit_event(event.as_ref(), &mut systems, &mut store, &app_sender, &interrupt_registry);
+            emit_event(&*event, &mut systems, &mut store, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
             handle_system_tick(&mut systems, &mut store, &mut machine, &config, &app_sender).await;

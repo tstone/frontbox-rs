@@ -25,6 +25,10 @@ impl Store {
     self.internal.clear();
   }
 
+  pub fn has<T: StorableType>(&self) -> bool {
+    self.internal.contains_key(&TypeId::of::<T>())
+  }
+
   pub fn get<T: StorableType>(&self) -> Option<&T> {
     log::trace!("Getting {} from Store", std::any::type_name::<T>());
     self
