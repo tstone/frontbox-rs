@@ -1,22 +1,20 @@
 System
 
-- Split trough system and the like out to frontbox-pinball crate
+- Split trough system and the like out to frontbox-pinball crate 
+- How does the Game start know if the trough is full at the start w/o an event? (Context?)
 - Auto plunger management system
+- Fix the drop target example, as delayed was removed (use a timer)
 - Make a system to deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
-- Debugging: Some kind of websockets console to see what's going on (could this be an app plugin?)
 
 Hardware
 
 - Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension
 
-Timers
-
-- Timer tick seems to be broken in the drop targets example
-
 DX
 
 - Some kind of console runner that shows switch states and has a terminal/console (this needs to skip the command listening part... somehow)
+- Debugging: Some kind of websockets console to see what's going on (could this be an app plugin?)
 
 Displays (as a System)
 
@@ -34,7 +32,3 @@ LEDs
   - should LED resolver be per LED?
 - Modulators + lenses -- Allow any property to be modulated
 - Support Z-index
-
-Websocket support
-
-- Design it -- as a system

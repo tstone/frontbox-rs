@@ -7,7 +7,10 @@ pub struct DriverTriggerBuilder {
 impl DriverTriggerBuilder {
   pub fn new() -> Self {
     Self {
-      flags: DriverTrigger::ENABLED,
+      // Per the docs "Driver Enabled (DRV_ENA bit 0): This is the only flag that is required"
+      // However this makes all automatic drivers work immediately (e.g. flippers) so also default 
+      // to disabling the switch connection. Drivers must be triggered with TL.
+      flags: DriverTrigger::ENABLED | DriverTrigger::DISABLE_SWITCH,
     }
   }
 
@@ -98,5 +101,11 @@ mod tests {
       DriverTrigger::ENABLED | DriverTrigger::INVERT_SWITCH1 | DriverTrigger::DISABLE_SWITCH;
     assert_eq!(trigger.bits(), 0b10010001);
     assert_eq!(format!("{:X}", trigger.bits()), "91");
+  }
+
+  #[test]
+  fn test_default_enabled_switch_disabled() {
+    let builder = DriverTriggerBuilder::new();
+    assert_eq!(builder.bits(), 0b10000001);
   }
 }

@@ -11,12 +11,12 @@ pub struct TroughSystem {
 impl TroughSystem {
   /// # Arguments
   /// * `switches` - List of trough switches, in order. Index 0 is the switch nearest the exit.
-  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Self {
-    Self {
+  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Box<Self> {
+    Box::new(Self {
       expected_occupancy: switches.len(),
       switches,
       eject_coil,
-    }
+    })
   }
 
   fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &mut Context) {
@@ -28,6 +28,7 @@ impl TroughSystem {
       .unwrap_or(false)
     {
       let occupancy = self.get_occupancy(ctx);
+      log::debug!("Ball entered trough, occupancy: {:?}", occupancy);
       let is_full = occupancy.iter().all(|&o| o);
       ctx.emit(BallEnteredTrough::new(occupancy));
       if is_full {

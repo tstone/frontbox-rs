@@ -38,7 +38,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
-          .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
@@ -60,7 +59,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
-          .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
@@ -82,7 +80,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         DriverTriggerBuilder::new()
           .manual(switch.is_none())
           .invert_switch1(invert_switch)
-          .disable_switch(switch.is_none())
           .bits(),
         switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
@@ -105,7 +102,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
           .invert_switch2(invert_off_switch)
-          .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
         off_switch.unwrap_or(0),
@@ -127,7 +123,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
-          .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
         delay_length.as_millis() / 10, // FAST protocol delay is in 10ms increments
@@ -149,7 +144,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
-          .disable_switch(true)
           .bits(),
         switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
@@ -172,7 +166,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
           self.driver_id,
           DriverTriggerBuilder::new()
             .invert_switch1(invert_button_switch)
-            .disable_switch(false)
             .bits(),
           button_switch,
           eos_switch,
@@ -194,7 +187,6 @@ impl FastCommand for ConfigureDriverCommand<'_> {
           self.driver_id,
           DriverTriggerBuilder::new()
             .invert_switch1(invert_button_switch)
-            .disable_switch(false)
             .bits(),
           button_switch,
           driver_on_time.as_millis(),

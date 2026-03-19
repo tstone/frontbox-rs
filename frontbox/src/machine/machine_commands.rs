@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::DriverMode;
 
 pub struct WatchdogPing;
@@ -36,22 +34,6 @@ impl ActivateDriver {
   }
 }
 
-pub struct ActivateDriverDelayed {
-  pub driver: &'static str,
-  pub mode: ActivationMode,
-  pub delay: Duration,
-}
-
-impl ActivateDriverDelayed {
-  pub fn new(driver: &'static str, mode: ActivationMode, delay: Duration) -> Self {
-    Self {
-      driver,
-      mode,
-      delay,
-    }
-  }
-}
-
 pub struct DeactivateDriver {
   pub driver: &'static str,
   pub mode: DeactivationMode,
@@ -63,48 +45,12 @@ impl DeactivateDriver {
   }
 }
 
-pub struct DeactivateDriverDelayed {
-  pub driver: &'static str,
-  pub mode: DeactivationMode,
-  pub delay: Duration,
-}
-
-impl DeactivateDriverDelayed {
-  pub fn new(driver: &'static str, mode: DeactivationMode, delay: Duration) -> Self {
-    Self {
-      driver,
-      mode,
-      delay,
-    }
-  }
-}
-
-pub struct ActivateDriverGroup {
-  pub group: &'static str,
-  pub mode: ActivationMode,
-}
-
-impl ActivateDriverGroup {
-  pub fn new(group: &'static str, mode: ActivationMode) -> Self {
-    Self { group, mode }
-  }
-}
-
-pub struct DeactivateDriverGroup {
-  pub group: &'static str,
-  pub mode: DeactivationMode,
-}
-
-impl DeactivateDriverGroup {
-  pub fn new(group: &'static str, mode: DeactivationMode) -> Self {
-    Self { group, mode }
-  }
-}
-
 #[derive(Debug, Clone)]
 pub enum ActivationMode {
-  /// let the machine decide when to trigger this driver based on its configured trigger
-  Automatic,
+  /// Let the machine decide when to trigger this driver based on its configured trigger
+  /// FAST clears out the switch whenever the driver is disabled, so it needs to be re-set
+  /// each time it is activated.
+  Automatic(&'static str),
   /// manually trigger (activate) the driver immediately
   Tap,
   /// set virtual switch to 'on' for hold trigger modes

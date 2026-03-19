@@ -40,7 +40,7 @@ impl Machine {
       machine_receiver,
       switch_lookup,
       io_boards,
-      watchdog_interval: Duration::from_millis(1250),
+      watchdog_interval: Duration::from_millis(1250), // TODO: use the configured value
       led_renderer,
     }
   }
@@ -81,26 +81,17 @@ impl Machine {
       MachineMessage::ConfigureDriver(driver_id, config) => {
         self.configure_driver(driver_id, config).await;
       }
-      MachineMessage::ActivateDriver(driver_id, mode, delay) => {
-        self.activate_driver(driver_id, mode, delay).await;
+      MachineMessage::ActivateDriver(driver_id, mode, switch) => {
+        self.activate_driver(driver_id, mode, switch).await;
       }
-      MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
-        self.deactivate_driver(driver_id, mode, delay).await;
-      }
-      MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
-        for driver_id in driver_ids {
-          self.activate_driver(driver_id, mode.clone(), None).await;
-        }
-      }
-      MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
-        for driver_id in driver_ids {
-          self.deactivate_driver(driver_id, mode.clone(), None).await;
-        }
+      MachineMessage::DeactivateDriver(driver_id, mode) => {
+        self.deactivate_driver(driver_id, mode).await;
       }
       MachineMessage::ReportSwitches => {
         self.report_switches().await;
       }
       MachineMessage::RenderLedDeclarations(declarations) => {
+        // TODO: this should use the config value, not a hard-coded one
         self.led_renderer.tick(Duration::from_millis(16));
         self
           .led_renderer
@@ -162,7 +153,7 @@ impl Machine {
       .io_port
       .request(
         &WatchdogCommand::set(self.watchdog_interval),
-        Duration::from_secs(1),
+        Duration::from_millis(200),
       )
       .await;
   }
@@ -170,7 +161,7 @@ impl Machine {
   pub async fn clear_watchdog(&mut self) {
     let _ = self
       .io_port
-      .request(&WatchdogCommand::disable(), Duration::from_secs(1))
+      .request(&WatchdogCommand::disable(), Duration::from_millis(200))
       .await;
   }
 
@@ -193,19 +184,17 @@ impl Machine {
       .io_port
       .request(
         &ConfigureDriverCommand::new(&driver, &config),
-        Duration::from_secs(2),
+        Duration::from_millis(200),
       )
       .await
     {
-      Ok(ProcessedResponse::Processed) => {
-        log::debug!("Driver {} configured successfully", driver);
-      }
       Ok(ProcessedResponse::Failed) => {
         log::error!("Driver {} configuration failed", driver);
       }
       Err(e) => {
         log::error!("Error configuring driver {}: {}", driver, e);
       }
+      _ => {}
     }
   }
 
@@ -231,45 +220,40 @@ impl Machine {
     &mut self,
     driver: usize,
     mode: ActivationMode,
-    delay: Option<Duration>,
+    switch: Option<usize>,
   ) {
     log::info!("Activating driver {} with mode {:?}", driver, mode);
     let control_mode: DriverTriggerControlMode = match mode {
-      ActivationMode::Automatic => DriverTriggerControlMode::Automatic,
+      ActivationMode::Automatic(_) => DriverTriggerControlMode::Automatic,
       ActivationMode::Tap => DriverTriggerControlMode::Manual,
       ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
     };
-    self.trigger_driver(driver, control_mode, delay).await;
+    self.trigger_driver(driver, control_mode, switch).await;
   }
 
   pub async fn deactivate_driver(
     &mut self,
     driver: usize,
     mode: DeactivationMode,
-    delay: Option<Duration>,
   ) {
     log::info!("Deactivating driver {} with mode {:?}", driver, mode);
     let control_mode: DriverTriggerControlMode = match mode {
       DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
       DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
     };
-    self.trigger_driver(driver, control_mode, delay).await;
+    self.trigger_driver(driver, control_mode, None).await;
   }
 
   async fn trigger_driver(
     &mut self,
     driver: usize,
     mode: DriverTriggerControlMode,
-    delay: Option<Duration>,
+    switch: Option<usize>,
   ) {
-    if let Some(delay) = delay {
-      tokio::time::sleep(delay).await;
-    }
-
     log::info!("Triggering driver {}", driver);
     self
       .io_port
-      .dispatch(&TriggerDriverCommand::new(driver, mode, None))
+      .dispatch(&TriggerDriverCommand::new(driver, mode, switch))
       .await;
   }
 
@@ -303,11 +287,7 @@ impl System for MachineBridge {
     ctx.register_command::<ResetExpansionNetwork>();
     ctx.register_command::<ConfigureDriver>();
     ctx.register_command::<ActivateDriver>();
-    ctx.register_command::<ActivateDriverDelayed>();
     ctx.register_command::<DeactivateDriver>();
-    ctx.register_command::<DeactivateDriverDelayed>();
-    ctx.register_command::<ActivateDriverGroup>();
-    ctx.register_command::<DeactivateDriverGroup>();
     ctx.register_command::<RefreshSwitchState>();
   }
 
@@ -335,24 +315,20 @@ impl System for MachineBridge {
     } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriver>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
+        let switch = match cmd.mode {
+          ActivationMode::Automatic(switch_name) => {
+            let switch_lookup = ctx.expect::<SwitchLookup>();
+            switch_lookup.get(&switch_name).map(|s| s.id)
+          }
+          _ => None,
+        };
+
         self
           .machine_sender
           .send(MachineMessage::ActivateDriver(
             driver.id,
             cmd.mode.clone(),
-            None,
-          ))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriverDelayed>() {
-      let driver_lookup = ctx.expect::<DriverLookup>();
-      if let Some(driver) = driver_lookup.get(cmd.driver) {
-        self
-          .machine_sender
-          .send(MachineMessage::ActivateDriver(
-            driver.id,
-            cmd.mode.clone(),
-            Some(cmd.delay),
+            switch,
           ))
           .ok();
       }
@@ -363,53 +339,6 @@ impl System for MachineBridge {
           .machine_sender
           .send(MachineMessage::DeactivateDriver(
             driver.id,
-            cmd.mode.clone(),
-            None,
-          ))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriverDelayed>() {
-      let driver_lookup = ctx.expect::<DriverLookup>();
-      if let Some(driver) = driver_lookup.get(cmd.driver) {
-        self
-          .machine_sender
-          .send(MachineMessage::DeactivateDriver(
-            driver.id,
-            cmd.mode.clone(),
-            Some(cmd.delay),
-          ))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriverGroup>() {
-      let lookup = ctx.expect::<DriverLookup>();
-      let groups = ctx.expect::<DriverGroups>();
-      if let Some(group) = groups.get(cmd.group) {
-        let driver_ids: Vec<usize> = group
-          .iter()
-          .filter_map(|name| lookup.get(name))
-          .map(|driver| driver.id)
-          .collect();
-        self
-          .machine_sender
-          .send(MachineMessage::ActivateDriverGroup(
-            driver_ids,
-            cmd.mode.clone(),
-          ))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriverGroup>() {
-      let lookup = ctx.expect::<DriverLookup>();
-      let groups = ctx.expect::<DriverGroups>();
-      if let Some(group) = groups.get(cmd.group) {
-        let driver_ids: Vec<usize> = group
-          .iter()
-          .filter_map(|name| lookup.get(name))
-          .map(|driver| driver.id)
-          .collect();
-        self
-          .machine_sender
-          .send(MachineMessage::DeactivateDriverGroup(
-            driver_ids,
             cmd.mode.clone(),
           ))
           .ok();
@@ -438,10 +367,8 @@ pub enum MachineMessage {
   ReportSwitches,
   ResetExpansionNetwork(ExpansionBoards),
   ConfigureDriver(usize, DriverConfig),
-  ActivateDriver(usize, ActivationMode, Option<Duration>),
-  DeactivateDriver(usize, DeactivationMode, Option<Duration>),
-  ActivateDriverGroup(Vec<usize>, ActivationMode),
-  DeactivateDriverGroup(Vec<usize>, DeactivationMode),
+  ActivateDriver(usize, ActivationMode, Option<usize>),
+  DeactivateDriver(usize, DeactivationMode),
   RenderLedDeclarations(HashMap<u64, HashMap<&'static str, LedState>>),
 }
 
