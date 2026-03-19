@@ -60,7 +60,11 @@ impl SerialInterface {
   pub async fn read_event(&mut self) -> Option<EventResponse> {
     match self.read().await {
       Some(Ok(raw)) => EventResponse::parse(raw).ok(),
-      _ => None,
+      Some(Err(e)) => {
+        log::error!("Serial read error: {}", e);
+        None
+      }
+      None => None,
     }
   }
 

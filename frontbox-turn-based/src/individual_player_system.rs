@@ -79,6 +79,13 @@ impl IndividualPlayerSystem {
       game_started = true;
     }
 
+    if let Some(game_state) = ctx.get::<GameState>() {
+      if game_state.player_count >= game_state.max_players {
+        log::warn!("Max players reached ({}), cannot add more players", game_state.max_players);
+        return;
+      }
+    }
+
     let game_state = ctx.expect_mut::<GameState>();
     game_state.player_count += 1;
         log::info!("Adding player to game (current count: {})", game_state.player_count);
