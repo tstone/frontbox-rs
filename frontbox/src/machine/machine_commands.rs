@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::DriverMode;
 
 pub struct WatchdogPing;
@@ -19,6 +21,30 @@ impl ConfigureDriver {
     Self {
       driver,
       mode: Box::new(mode),
+    }
+  }
+}
+
+#[derive(Debug, Default)]
+pub struct ConfigureSwitch {
+  pub switch: &'static str,
+  pub inverted: bool,
+  pub debounce_close: Option<Duration>,
+  pub debounce_open: Option<Duration>,
+}
+
+impl ConfigureSwitch {
+  pub fn new(
+    switch: &'static str,
+    inverted: bool,
+    debounce_close: Option<Duration>,
+    debounce_open: Option<Duration>,
+  ) -> Self {
+    Self {
+      switch,
+      inverted,
+      debounce_close,
+      debounce_open,
     }
   }
 }

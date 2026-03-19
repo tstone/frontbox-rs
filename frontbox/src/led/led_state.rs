@@ -47,18 +47,14 @@ impl LedDeclarationBuilder {
     self
   }
 
-  pub fn next_frame(
-    self,
-    name: &'static str,
-    animation: &mut Box<dyn Animation<Color> + 'static>,
-  ) -> Self {
+  pub fn next_frame(self, name: &'static str, animation: &mut Box<dyn Animation<Color>>) -> Self {
     animation.tick(self.delta_time);
     self.on(name, animation.sample())
   }
 
   pub fn next_frames(
     mut self,
-    animation: &mut Box<dyn Animation<Vec<(&'static str, Color)>> + 'static>,
+    animation: &mut Box<dyn Animation<Vec<(&'static str, Color)>>>,
   ) -> Self {
     animation.tick(self.delta_time);
     for (name, color) in animation.sample() {

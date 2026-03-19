@@ -1,4 +1,4 @@
-use frontbox::prebuilt::TroughFull;
+use frontbox::prebuilt::{TroughEject, TroughFull};
 use frontbox::prelude::*;
 
 use crate::*;
@@ -29,6 +29,7 @@ pub mod operator_config {
 /// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
 /// - Event: `PlayerTurnActive` - Emitted when the ball becomes in play.
 /// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
+/// - Command: `TroughEject` - Fired at the start of a player's turn
 ///
 /// ## Inputs
 /// - Command: `AddPlayer` - Adds a player to the game
@@ -38,9 +39,6 @@ pub mod operator_config {
 ///
 /// ## Interrupts
 /// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
-///
-/// ## Operator Config
-///
 ///
 /// # Arguments:
 /// - `max_players` - The maximum number of players allowed in a game
@@ -81,14 +79,20 @@ impl IndividualPlayerSystem {
 
     if let Some(game_state) = ctx.get::<GameState>() {
       if game_state.player_count >= game_state.max_players {
-        log::warn!("Max players reached ({}), cannot add more players", game_state.max_players);
+        log::warn!(
+          "Max players reached ({}), cannot add more players",
+          game_state.max_players
+        );
         return;
       }
     }
 
     let game_state = ctx.expect_mut::<GameState>();
     game_state.player_count += 1;
-        log::info!("Adding player to game (current count: {})", game_state.player_count);
+    log::info!(
+      "Adding player to game (current count: {})",
+      game_state.player_count
+    );
 
     // create copy of systems for new player as a new system group
     let copy = self
@@ -130,7 +134,10 @@ impl IndividualPlayerSystem {
 
   fn advance_turn(&self, ctx: &mut Context) {
     let mut game_state = ctx.cloned::<GameState>().unwrap();
-    log::info!("Advancing turn (current player: {})", game_state.current_player);
+    log::info!(
+      "Advancing turn (current player: {})",
+      game_state.current_player
+    );
     let mut next_player = game_state.current_player + 1;
     if next_player >= game_state.player_count {
       next_player = 0;
@@ -154,6 +161,7 @@ impl IndividualPlayerSystem {
       game_state.current_player_turn(),
     ));
     ctx.insert(game_state);
+    ctx.command(TroughEject);
   }
 
   fn end_game(&self, ctx: &mut Context) {

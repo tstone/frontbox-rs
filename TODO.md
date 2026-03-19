@@ -1,10 +1,7 @@
 System
 
-- Split trough system and the like out to frontbox-pinball crate 
-- How does the Game start know if the trough is full at the start w/o an event? (Context?)
-- Auto plunger management system
 - Fix the drop target example, as delayed was removed (use a timer)
-- Make a system to deconfigure drivers on shutdown
+- Make machine bridge system deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
 
 Hardware

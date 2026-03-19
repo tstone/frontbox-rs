@@ -104,6 +104,18 @@ impl SwitchLookup {
     self.is_closed.insert(switch_id, is_closed);
   }
 
+  pub fn get_switch_config(&self, name: &'static str) -> Option<&SwitchConfig> {
+    self
+      .by_name
+      .get(name)
+      .and_then(|switch| self.configs.get(&switch.id))
+  }
+
+  #[allow(unused)]
+  pub(crate) fn update_switch_config(&mut self, switch_id: usize, config: SwitchConfig) {
+    self.configs.insert(switch_id, config);
+  }
+
   /// Used internally to update all switch states based on a switch report
   pub(crate) fn update_switch_states(&mut self, states: Vec<SwitchState>) {
     for (switch_id, state) in states.into_iter().enumerate() {

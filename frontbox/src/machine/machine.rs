@@ -98,6 +98,11 @@ impl Machine {
           .render(&mut self.exp_port, declarations)
           .await;
       }
+      MachineMessage::ConfigureSwitch(switch_id, inverted, debounce_close, debounce_open) => {
+        self
+          .configure_switch(switch_id, inverted, debounce_close, debounce_open)
+          .await;
+      }
     }
   }
 
@@ -231,11 +236,7 @@ impl Machine {
     self.trigger_driver(driver, control_mode, switch).await;
   }
 
-  pub async fn deactivate_driver(
-    &mut self,
-    driver: usize,
-    mode: DeactivationMode,
-  ) {
+  pub async fn deactivate_driver(&mut self, driver: usize, mode: DeactivationMode) {
     log::info!("Deactivating driver {} with mode {:?}", driver, mode);
     let control_mode: DriverTriggerControlMode = match mode {
       DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
@@ -265,6 +266,30 @@ impl Machine {
       App::reset_expansion_board(&mut self.exp_port, board).await;
     }
   }
+
+  async fn configure_switch(
+    &mut self,
+    switch: usize,
+    inverted: bool,
+    debounce_close: Option<Duration>,
+    debounce_open: Option<Duration>,
+  ) {
+    log::info!("Configuring switch {}", switch);
+    let reporting = if inverted {
+      SwitchReportingMode::ReportInverted
+    } else {
+      SwitchReportingMode::ReportNormal
+    };
+    self
+      .io_port
+      .dispatch(&ConfigureSwitchCommand::new(
+        switch,
+        reporting,
+        debounce_close,
+        debounce_open,
+      ))
+      .await;
+  }
 }
 
 /// While Machine can *technically* be used directly as a System, this creates problems when the App needs to query for
@@ -289,6 +314,7 @@ impl System for MachineBridge {
     ctx.register_command::<ActivateDriver>();
     ctx.register_command::<DeactivateDriver>();
     ctx.register_command::<RefreshSwitchState>();
+    ctx.register_command::<ConfigureSwitch>();
   }
 
   fn on_command(&mut self, cmd: &dyn Command, ctx: &mut Context) {
@@ -348,6 +374,19 @@ impl System for MachineBridge {
         .machine_sender
         .send(MachineMessage::ReportSwitches)
         .ok();
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ConfigureSwitch>() {
+      let switch_lookup = ctx.expect::<SwitchLookup>();
+      if let Some(switch) = switch_lookup.get(cmd.switch) {
+        self
+          .machine_sender
+          .send(MachineMessage::ConfigureSwitch(
+            switch.id,
+            cmd.inverted,
+            cmd.debounce_close,
+            cmd.debounce_open,
+          ))
+          .ok();
+      }
     }
   }
 
@@ -370,6 +409,7 @@ pub enum MachineMessage {
   ActivateDriver(usize, ActivationMode, Option<usize>),
   DeactivateDriver(usize, DeactivationMode),
   RenderLedDeclarations(HashMap<u64, HashMap<&'static str, LedState>>),
+  ConfigureSwitch(usize, bool, Option<Duration>, Option<Duration>),
 }
 
 // -- Events --
