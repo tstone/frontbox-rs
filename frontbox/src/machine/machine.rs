@@ -114,8 +114,11 @@ impl Machine {
     let switch = self.switch_lookup.switch_by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
-      // TODO: App needs to update switch state in the store before sending out the event
-      // self.switch_lookup.update_switch_state(switch_id, state);
+      // App needs to update switch state in the store before sending out the event
+      self
+        .app_sender
+        .send(AppMessage::SingleSwitchState(switch_id, state))
+        .ok();
 
       if matches!(state, SwitchState::Closed) {
         self

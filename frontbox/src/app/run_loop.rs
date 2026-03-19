@@ -76,6 +76,10 @@ pub async fn run(
           AppMessage::UnregisterAllBySystem(system_id) => {
             unregister_all_by_system(system_id, &mut command_registry, &mut interrupt_registry);
           }
+          AppMessage::SingleSwitchState(id, state) => {
+            let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
+            switch_lookup.update_switch_state(id, state);
+          }
           AppMessage::SwitchStates(switch_states) => {
             let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
             switch_lookup.update_switch_states(switch_states);
