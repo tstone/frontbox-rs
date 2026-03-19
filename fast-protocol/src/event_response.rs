@@ -15,14 +15,14 @@ pub enum SwitchState {
 }
 
 impl EventResponse {
-  pub fn parse(raw: RawResponse) -> Result<EventResponse, FastResponseError> {
+  pub fn parse(raw: &RawResponse) -> Result<EventResponse, FastResponseError> {
     if raw.prefix == "-L" {
       switch_state::closed_response(&raw.payload)
     } else if raw.prefix == "/L" {
       switch_state::open_response(&raw.payload)
     } else {
       log::warn!("Unknown event type '{}'", raw.prefix);
-      Err(FastResponseError::UnknownPrefix(raw.prefix))
+      Err(FastResponseError::UnknownPrefix(raw.prefix.clone()))
     }
   }
 }

@@ -17,7 +17,8 @@ pub struct SerialInterface {
   port_name: String,
   reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
   writer: WriteHalf<SerialStream>,
-  event_queue: VecDeque<RawResponse>,
+  response_queue: VecDeque<QueuedResponse>,
+  queue_ttl: Duration,
 }
 
 impl SerialInterface {
@@ -53,30 +54,74 @@ impl SerialInterface {
       port_name: port_path.to_string(),
       reader: framed_reader,
       writer,
-      event_queue: VecDeque::new(),
+      response_queue: VecDeque::new(),
+      queue_ttl: Duration::from_secs(2), // after this time unclaimed messages fall out of the queue
     })
   }
 
   pub async fn read_event(&mut self) -> Option<EventResponse> {
-    match self.read().await {
-      Some(Ok(raw)) => EventResponse::parse(raw).ok(),
+    // Attempt to find the first seen event which parses as an EventResponse
+    // This could have been seen by the dispatch or request methods
+    if let Some(event) = self.find_event_in_queue() {
+      return Some(event);
+    }
+
+    // next poll the serial port for events until we find one that parses successfully
+    // if data is read push it onto the queue. It might be an event or response to command
+    // the next call to read_event will parse it if so
+    match self.read_from_port().await {
+      Some(Ok(raw)) => {
+        self.response_queue.push_back(QueuedResponse {
+          raw,
+          received_at: std::time::Instant::now(),
+        });
+        return self.find_event_in_queue();
+      }
       Some(Err(e)) => {
         log::error!("Serial read error: {}", e);
-        None
       }
-      None => None,
+      None => {}
     }
+
+    None
   }
 
-  async fn read(&mut self) -> Option<tokio_serial::Result<RawResponse>> {
-    let resp = {
-      // first drain any queued events
-      // this can happen when we read a message that isn't a response to a command, but is instead an event (like a switch change)
-      if let Some(event) = self.event_queue.pop_front() {
-        return Some(Ok(event));
-      }
+  fn find_event_in_queue(&mut self) -> Option<EventResponse> {
+    self.prune_queue();
 
-      // otherwise read from the serial port
+    // Not every message in the queue will be an event. It could be a response waiting for a request to parse it.
+    // Search the queue for what validly parses
+    if let Some(pos) = self
+      .response_queue
+      .iter()
+      .position(|r| EventResponse::parse(&r.raw).is_ok())
+    {
+      let entry = self.response_queue.remove(pos).unwrap();
+      return EventResponse::parse(&entry.raw).ok();
+    }
+    None
+  }
+
+  /// Responses in the queue can be one of three things: (a) an event from hardware, e.g. switch hit, (b) a response to a command that was waiting for a response,
+  /// or (c) some part of a response that is neither. Items of C fill up the queue over time. If a prefix shows up frequently here, it might need to be sent as
+  /// request instead of dispatch.
+  fn prune_queue(&mut self) {
+    let now = std::time::Instant::now();
+    self.response_queue.retain(|r| {
+      let expired = now.duration_since(r.received_at) > self.queue_ttl;
+      if expired {
+        log::trace!(
+          "Expiring unclaimed queue response: {}:{}",
+          r.raw.prefix,
+          r.raw.payload
+        );
+      }
+      !expired
+    });
+  }
+
+  async fn read_from_port(&mut self) -> Option<tokio_serial::Result<RawResponse>> {
+    let resp = {
       self.reader.next().await.map(|result| {
         result.map_err(|e| {
           tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string())
@@ -125,15 +170,29 @@ impl SerialInterface {
   ) -> Result<C::Response, FastResponseError> {
     self.dispatch(cmd).await;
 
+    // check seen events (response queue) first, as the expected response could have come in on a different request
+    if let Some(pos) = self
+      .response_queue
+      .iter()
+      .position(|r| r.raw.prefix.to_lowercase() == C::prefix())
+    {
+      let response = self.response_queue.remove(pos).unwrap();
+      return cmd.parse(response.raw);
+    }
+
+    // otherwise poll serial port for response
     tokio::time::timeout(timeout, async {
       loop {
-        match self.read().await {
+        match self.read_from_port().await {
           Some(Ok(response)) => {
             if response.prefix.to_lowercase() == C::prefix() {
               return cmd.parse(response);
             } else {
-              // If the response doesn't match the prefix, it's likely an event that should be queued for reading by a different process
-              self.event_queue.push_back(response);
+              // If the response doesn't match the prefix save it for later processing (it might be an event or something else)
+              self.response_queue.push_back(QueuedResponse {
+                raw: response,
+                received_at: std::time::Instant::now(),
+              });
             }
           }
           Some(Err(e)) => {
@@ -169,4 +228,9 @@ impl SerialInterface {
       tokio::time::sleep(timeout).await;
     }
   }
+}
+
+struct QueuedResponse {
+  raw: RawResponse,
+  received_at: std::time::Instant,
 }

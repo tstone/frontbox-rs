@@ -97,11 +97,7 @@ impl DropTargetDownUp {
         .all(|&target| switch_lookup.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.command(ActivateDriverDelayed::new(
-          drivers::START_BUTTON_LAMP,
-          ActivationMode::Tap,
-          Duration::from_millis(250),
-        ));
+        ctx.set_timer("coil_up", Duration::from_millis(250), TimerMode::OneShot);
 
         // start mode over
         ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
@@ -113,10 +109,9 @@ impl DropTargetDownUp {
 impl System for DropTargetDownUp {
   fn on_startup(&mut self, ctx: &mut Context) {
     // bring up all targets on startup
-    ctx.command(ActivateDriverDelayed::new(
+    ctx.command(ActivateDriver::new(
       drivers::LOWER_DROP_TARGET_COIL,
       ActivationMode::Tap,
-      Duration::from_millis(250),
     ));
   }
 
@@ -124,5 +119,12 @@ impl System for DropTargetDownUp {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }
+  }
+
+  fn on_timer(&mut self, _timer: &str, ctx: &mut Context) {
+    ctx.command(ActivateDriver::new(
+      drivers::START_BUTTON_LAMP,
+      ActivationMode::Tap,
+    ));
   }
 }
