@@ -107,9 +107,18 @@ impl IndividualPlayerSystem {
 
     if game_started {
       ctx.emit(GameStarted);
-      ctx.insert(CurrentPlayerTurnState::Beginning);
-      ctx.emit(PlayerTurnBeginning::new(0, 0));
+      self.start_turn(ctx);
     }
+  }
+
+  fn start_turn(&self, ctx: &mut Context) {
+    ctx.insert(CurrentPlayerTurnState::Beginning);
+    let game_state = ctx.expect::<GameState>();
+    ctx.emit(PlayerTurnBeginning::new(
+      game_state.current_player(),
+      game_state.current_player_turn(),
+    ));
+    ctx.command(TroughEject);
   }
 
   fn transition_turn_to_active(&self, ctx: &mut Context) {
@@ -155,13 +164,7 @@ impl IndividualPlayerSystem {
       return;
     }
 
-    ctx.insert(CurrentPlayerTurnState::Beginning);
-    ctx.emit(PlayerTurnBeginning::new(
-      game_state.current_player(),
-      game_state.current_player_turn(),
-    ));
-    ctx.insert(game_state);
-    ctx.command(TroughEject);
+    self.start_turn(ctx);
   }
 
   fn end_game(&self, ctx: &mut Context) {

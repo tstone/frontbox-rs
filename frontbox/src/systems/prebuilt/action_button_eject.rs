@@ -15,13 +15,13 @@ impl ActionButtonEject {
     action_button: &'static str,
     plunge_lane_switch: &'static str,
     led_setting: LedSetting,
-  ) -> Self {
-    Self {
+  ) -> Box<Self> {
+    Box::new(Self {
       action_button,
       plunge_lane_switch,
       led_setting,
       active: false,
-    }
+    })
   }
 }
 

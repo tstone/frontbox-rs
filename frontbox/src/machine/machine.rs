@@ -280,15 +280,23 @@ impl Machine {
     } else {
       SwitchReportingMode::ReportNormal
     };
-    self
+    match self
       .io_port
-      .dispatch(&ConfigureSwitchCommand::new(
+      .request(&ConfigureSwitchCommand::new(
         switch,
         reporting,
         debounce_close,
         debounce_open,
-      ))
-      .await;
+      ), Duration::from_millis(200))
+      .await {
+      Ok(ProcessedResponse::Failed) => {
+        log::error!("Switch {} configuration failed", switch);
+      }
+      Err(e) => {
+        log::error!("Error configuring switch {}: {}", switch, e);
+      }
+      _ => {}
+    }
   }
 }
 

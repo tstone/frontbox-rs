@@ -5,7 +5,7 @@ use crate::GameStartState;
 /// A system to flash elements like the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
   start_button_driver: Option<&'static str>,
-  action_button: Option<&'static str>,
+  action_button: Option<&'static str>, // TODO: this should take the LED name and require both (combine name with LedSetting?)
   action_button_setting: Option<LedSetting>,
   flash_duration: Duration,
   on: bool,
