@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use fast_protocol::EventResponse;
 use tokio::sync::mpsc;
 
 use crate::app::command_registry::CommandRegistry;
@@ -17,16 +16,15 @@ pub struct SystemCollection {
 }
 
 pub async fn run(
-  mut machine: Machine,
   mut store: Store,
   config: AppConfig,
-  mut initial_systems: Vec<Box<dyn System>>,
+  initial_systems: Vec<Box<dyn System>>,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
+  mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
+  machine_sender: mpsc::UnboundedSender<MachineMessage>,
 ) {
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut command_registry = CommandRegistry::new();
-
-  let (app_sender, mut app_receiver) = mpsc::unbounded_channel::<AppMessage>();
-  machine.set_app_sender(app_sender.clone());
 
   let mut systems = SystemCollection {
     systems: HashMap::new(),
@@ -34,7 +32,6 @@ pub async fn run(
   };
 
   // initialize systems
-  initial_systems.insert(0,MachineBridge::new(machine.machine_sender()));
   for system in initial_systems {
     spawn_system(system, None, &mut systems, &mut store, app_sender.clone());
   }
@@ -53,22 +50,13 @@ pub async fn run(
   log::info!("⟳ Run loop started.");
   loop {
     tokio::select! {
-      Some(hardware_event) = machine.read_io() => {
-        match hardware_event {
-          EventResponse::Switch { switch_id, state } => {
-            let mut ctx = Context::new(&mut store, 0, app_sender.clone());
-            machine.handle_switch_event(switch_id, state, &mut ctx);
-          }
-        }
-      }
-
       Some(command) = app_receiver.recv() => {
         match command {
           AppMessage::EmitEvent(event) => {
             emit_event(&*event, &mut systems, &mut store, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
-            handle_system_tick(&mut systems, &mut store, &mut machine, &config, &app_sender).await;
+            handle_system_tick(&mut systems, &mut store, &config, &app_sender, &machine_sender).await;
           }
           AppMessage::RegisterInterrupt(system_id, type_id, priority) => {
             interrupt_registry.register(type_id, system_id, priority);
@@ -87,6 +75,10 @@ pub async fn run(
           }
           AppMessage::UnregisterAllBySystem(system_id) => {
             unregister_all_by_system(system_id, &mut command_registry, &mut interrupt_registry);
+          }
+          AppMessage::SingleSwitchState(id, state) => {
+            let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
+            switch_lookup.update_switch_state(id, state);
           }
           AppMessage::SwitchStates(switch_states) => {
             let switch_lookup = store.get_mut::<SwitchLookup>().unwrap();
@@ -134,8 +126,6 @@ pub async fn run(
         }
       }
     }
-
-    machine.process_messages().await;
   }
 
   // Shutdown sequence
@@ -178,6 +168,8 @@ fn apply_to_systems<F>(
     let mut ctx = Context::new(store, system.id, app_sender.clone());
     if system.is_active(&ctx) {
       handler(system, &mut ctx);
+    } else {
+      log::trace!("System {} is inactive, skipping", system.id);
     }
   }
 
@@ -187,6 +179,8 @@ fn apply_to_systems<F>(
       let mut ctx = Context::new(store, system.id, app_sender.clone());
       if system.is_active(&ctx) {
         handler(system, &mut ctx);
+      } else {
+        log::trace!("System {} is inactive, skipping", system.id);
       }
     }
   }
@@ -218,6 +212,12 @@ fn emit_event(
             interrupt.system_id
           );
           return;
+        } else {
+          log::trace!(
+            "Interrupt in system {} did not halt event of type {:?}",
+            interrupt.system_id,
+            event.type_id()
+          );
         }
         continue;
       };
@@ -233,18 +233,17 @@ fn emit_event(
 async fn handle_system_tick(
   systems: &mut SystemCollection,
   store: &mut Store,
-  machine: &mut Machine,
   config: &AppConfig,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
+  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
 ) {
   let tick_duration = config.system_timer_tick;
+
   apply_to_systems(systems, store, &app_sender, |system, ctx| {
     system.on_tick(tick_duration, ctx);
   });
-  let mut ctx = Context::new(store, 0, app_sender.clone());
-  machine
-    .render_leds(systems, config.system_timer_tick, &mut ctx)
-    .await;
+
+  render_all_leds(systems, store, tick_duration, app_sender, machine_sender);
 }
 
 fn execute_command(
@@ -260,6 +259,12 @@ fn execute_command(
       // commands must be executed on an active system
       if system.is_active(&ctx) {
         system.on_command(command, &mut ctx);
+      } else {
+        log::warn!(
+          "System {} is inactive, cannot execute command of type {:?}",
+          system_id,
+          command.as_any().type_id()
+        );
       }
     } else {
       log::warn!(
@@ -460,4 +465,39 @@ fn unregister_all_by_system(
 ) {
   command_registry.unregister_by_system(system_id);
   interrupt_registry.unregister_by_system(system_id);
+}
+
+fn render_all_leds(
+  sc: &mut SystemCollection,
+  store: &mut Store,
+  tick_interval: Duration,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
+) {
+  let mut declarations = HashMap::new();
+  let mut ctx_template = Context::new(store, 0, app_sender.clone());
+
+  // gather LED declarations from all active systems and child systems (within)
+  for system in sc.systems.values_mut() {
+    let ctx = ctx_template.clone_for_system(system.id);
+    if system.is_active(&ctx) {
+      declarations.insert(system.id, system.leds(tick_interval, &ctx));
+    } else {
+      log::trace!("System {} is inactive, skipping LED rendering", system.id);
+    }
+  }
+  for group in sc.groups.values_mut() {
+    for system in group.systems.values_mut() {
+      let ctx = ctx_template.clone_for_system(system.id);
+      if system.is_active(&ctx) {
+        declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      } else {
+        log::trace!("System {} is inactive, skipping LED rendering", system.id);
+      }
+    }
+  }
+
+  machine_sender
+    .send(MachineMessage::RenderLedDeclarations(declarations))
+    .ok();
 }

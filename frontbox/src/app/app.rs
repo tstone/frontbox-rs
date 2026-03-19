@@ -3,8 +3,10 @@ use std::time::Duration;
 use crate::app::run_loop;
 use crate::hardware_definition::*;
 use crate::machine::serial_interface::SerialInterface;
+use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use fast_protocol::*;
+use tokio::sync::mpsc;
 
 pub struct App {
   io_port: SerialInterface,
@@ -56,8 +58,14 @@ impl App {
       expansion_boards,
       "expansion_boards",
     ));
-    store.insert(StorableHashMap::from_map(io_network.driver_groups, "driver_groups"));
-    store.insert(StorableHashMap::from_map(io_network.switch_groups, "switch_groups"));
+    store.insert(StorableHashMap::from_map(
+      io_network.driver_groups,
+      "driver_groups",
+    ));
+    store.insert(StorableHashMap::from_map(
+      io_network.switch_groups,
+      "switch_groups",
+    ));
 
     Self {
       io_port,
@@ -277,13 +285,43 @@ impl App {
     self.store.insert(self.operator_config);
     self.store.insert(self.app_config.clone());
 
+    let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     // lookup expansion boards for led renderer
     let expansion_boards = self.store.expect::<ExpansionBoards>().clone();
     let led_renderer = LedRenderer::new(&expansion_boards);
-    let machine = Machine::new(self.io_port, self.exp_port, led_renderer);
+    let switch_lookup = self.store.cloned::<SwitchLookup>().unwrap();
+    let io_boards = self.store.cloned::<StorableHashSet<IoBoard>>().unwrap();
+
+    let mut machine = Machine::new(
+      self.io_port,
+      self.exp_port,
+      switch_lookup,
+      io_boards,
+      app_sender.clone(),
+      led_renderer,
+    );
+    let machine_sender = machine.machine_sender();
+
+    // This needs to appear first to initialize all the commands that others systems expect to be present
+    self
+      .systems
+      .insert(0, MachineBridge::new(machine_sender.clone()));
+
+    // Start machine task
+    tokio::spawn(async move {
+      machine.run().await;
+    });
 
     log::debug!("Starting main run loop");
-    run_loop::run(machine, self.store, self.app_config, self.systems).await;
+    run_loop::run(
+      self.store,
+      self.app_config,
+      self.systems,
+      app_sender,
+      app_receiver,
+      machine_sender,
+    )
+    .await;
   }
 }
 

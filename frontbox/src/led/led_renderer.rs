@@ -9,7 +9,7 @@ const LED_SET_BATCH_SIZE: usize = 24;
 pub struct LedRenderer {
   led_map: HashMap<&'static str, AddressableLed>,
   set_leds: HashMap<&'static str, LedState>,
-  resolver: Box<dyn LedResolver>,
+  resolver: Box<dyn LedResolver + Send + Sync>,
 }
 
 impl LedRenderer {

@@ -48,7 +48,7 @@ impl System for Watchdog {
     }
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {
+  fn on_timer(&mut self, _timer_name: &'static str, ctx: &mut Context) {
     ctx.command(WatchdogPing);
   }
 
