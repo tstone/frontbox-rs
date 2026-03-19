@@ -5,7 +5,6 @@ use std::time::Duration;
 use crate::hardware_definition::*;
 use crate::machine::serial_interface::*;
 use crate::prelude::app_message::AppMessage;
-use crate::prelude::run_loop::SystemCollection;
 use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
@@ -13,98 +12,125 @@ use tokio::sync::mpsc;
 pub struct Machine {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  led_renderer: LedRenderer,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  switch_lookup: SwitchLookup,
+  io_boards: IoBoards,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
+  led_renderer: LedRenderer,
 }
 
 impl Machine {
   pub(crate) fn new(
     io_port: SerialInterface,
     exp_port: SerialInterface,
+    switch_lookup: SwitchLookup,
+    io_boards: IoBoards,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
     led_renderer: LedRenderer,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
-    let (app_sender, _) = mpsc::unbounded_channel::<AppMessage>(); // temporary
 
     Self {
       io_port,
       exp_port,
-      app_sender, // this will overwritten set by App at startup
+      app_sender,
       machine_sender,
       machine_receiver,
-      led_renderer,
+      switch_lookup,
+      io_boards,
       watchdog_interval: Duration::from_millis(1250),
+      led_renderer,
     }
-  }
-
-  pub async fn read_io(&mut self) -> Option<EventResponse> {
-    self.io_port.read_event().await
   }
 
   pub(crate) fn machine_sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
     self.machine_sender.clone()
   }
 
-  pub(crate) fn set_app_sender(&mut self, sender: mpsc::UnboundedSender<AppMessage>) {
-    self.app_sender = sender;
-  }
+  pub async fn run(&mut self) {
+    loop {
+      tokio::select! {
+        Some(event) = self.io_port.read_event() => {
+          match event {
+            EventResponse::Switch { switch_id, state } => {
+              self.handle_switch_event(switch_id, state);
+            }
+          }
+        }
 
-  pub async fn process_messages(&mut self) {
-    while let Ok(cmd) = self.machine_receiver.try_recv() {
-      match cmd {
-        MachineMessage::WatchdogPing => {
-          self.send_watchdog_ping().await;
-        }
-        MachineMessage::ClearWatchdog => {
-          self.clear_watchdog().await;
-        }
-        MachineMessage::ResetExpansionNetwork(expansion_boards) => {
-          self.reset_expansion_network(expansion_boards).await;
-        }
-        MachineMessage::ConfigureDriver(driver_id, config) => {
-          self.configure_driver(driver_id, config).await;
-        }
-        MachineMessage::ActivateDriver(driver_id, mode, delay) => {
-          self.activate_driver(driver_id, mode, delay).await;
-        }
-        MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
-          self.deactivate_driver(driver_id, mode, delay).await;
-        }
-        MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
-          for driver_id in driver_ids {
-            self.activate_driver(driver_id, mode.clone(), None).await;
-          }
-        }
-        MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
-          for driver_id in driver_ids {
-            self.deactivate_driver(driver_id, mode.clone(), None).await;
-          }
-        }
-        MachineMessage::ReportSwitches => {
-          self.report_switches().await;
+        Some(msg) = self.machine_receiver.recv() => {
+          self.process_messages(msg).await;
         }
       }
     }
   }
 
-  pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState, ctx: &mut Context) {
-    let switch_lookup = ctx.expect_mut::<SwitchLookup>();
-    let switch = switch_lookup.switch_by_id(&switch_id).cloned();
+  async fn process_messages(&mut self, msg: MachineMessage) {
+    match msg {
+      MachineMessage::WatchdogPing => {
+        self.send_watchdog_ping().await;
+      }
+      MachineMessage::ClearWatchdog => {
+        self.clear_watchdog().await;
+      }
+      MachineMessage::ResetExpansionNetwork(expansion_boards) => {
+        self.reset_expansion_network(expansion_boards).await;
+      }
+      MachineMessage::ConfigureDriver(driver_id, config) => {
+        self.configure_driver(driver_id, config).await;
+      }
+      MachineMessage::ActivateDriver(driver_id, mode, delay) => {
+        self.activate_driver(driver_id, mode, delay).await;
+      }
+      MachineMessage::DeactivateDriver(driver_id, mode, delay) => {
+        self.deactivate_driver(driver_id, mode, delay).await;
+      }
+      MachineMessage::ActivateDriverGroup(driver_ids, mode) => {
+        for driver_id in driver_ids {
+          self.activate_driver(driver_id, mode.clone(), None).await;
+        }
+      }
+      MachineMessage::DeactivateDriverGroup(driver_ids, mode) => {
+        for driver_id in driver_ids {
+          self.deactivate_driver(driver_id, mode.clone(), None).await;
+        }
+      }
+      MachineMessage::ReportSwitches => {
+        self.report_switches().await;
+      }
+      MachineMessage::RenderLedDeclarations(declarations) => {
+        self.led_renderer.tick(Duration::from_millis(16));
+        self
+          .led_renderer
+          .render(&mut self.exp_port, declarations)
+          .await;
+      }
+    }
+  }
+
+  pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
+    let switch = self.switch_lookup.switch_by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
-      switch_lookup.update_switch_state(switch_id, state);
+      // TODO: App needs to update switch state in the store before sending out the event
+      // self.switch_lookup.update_switch_state(switch_id, state);
 
       if matches!(state, SwitchState::Closed) {
-        ctx.emit(SwitchClosed::new(switch));
+        self
+          .app_sender
+          .send(AppMessage::EmitEvent(Box::new(SwitchClosed::new(switch))))
+          .ok();
       } else {
-        ctx.emit(SwitchOpened::new(switch));
+        self
+          .app_sender
+          .send(AppMessage::EmitEvent(Box::new(SwitchOpened::new(switch))))
+          .ok();
       }
     } else {
       // Report as native board/switch id since this is the easiest way to figure out current switch wiring
-      match Self::get_native_switch_id(switch_id, ctx) {
+      match self.get_native_switch_id(switch_id) {
         Some((board_id, local_id)) => {
           log::warn!(
             "Received event for unknown switch -- board: {}, id: {} -- {:?}",
@@ -124,37 +150,6 @@ impl Machine {
       }
       return;
     }
-  }
-
-  pub async fn render_leds(
-    &mut self,
-    sc: &mut SystemCollection,
-    tick_interval: Duration,
-    ctx_template: &mut Context<'_>,
-  ) {
-    let mut declarations = HashMap::new();
-
-    // gather LED declarations from all active systems and child systems (within)
-    for system in sc.systems.values_mut() {
-      let ctx = ctx_template.clone_for_system(system.id);
-      if system.is_active(&ctx) {
-        declarations.insert(system.id, system.leds(tick_interval, &ctx));
-      }
-    }
-    for group in sc.groups.values_mut() {
-      for system in group.systems.values_mut() {
-        let ctx = ctx_template.clone_for_system(system.id);
-        if system.is_active(&ctx) {
-          declarations.insert(system.id, system.leds(tick_interval, &ctx));
-        }
-      }
-    }
-
-    self.led_renderer.tick(tick_interval);
-    self
-      .led_renderer
-      .render(&mut self.exp_port, declarations)
-      .await;
   }
 
   // ---
@@ -177,10 +172,9 @@ impl Machine {
   }
 
   /// Primarily used for reporting of unkown switches as native board/switch ids
-  fn get_native_switch_id(switch_id: usize, ctx: &Context) -> Option<(usize, usize)> {
+  fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
-    let io_boards = ctx.get::<IoBoards>().unwrap();
-    for (index, board) in io_boards.iter().enumerate() {
+    for (index, board) in self.io_boards.iter().enumerate() {
       if switch_id < (board.switch_count as usize) + offset {
         let native_switch_id = switch_id - offset;
         return Some((index, native_switch_id));
@@ -435,7 +429,7 @@ impl System for MachineBridge {
 }
 
 #[derive(Debug)]
-pub(crate) enum MachineMessage {
+pub enum MachineMessage {
   WatchdogPing,
   ClearWatchdog,
   ReportSwitches,
@@ -445,6 +439,7 @@ pub(crate) enum MachineMessage {
   DeactivateDriver(usize, DeactivationMode, Option<Duration>),
   ActivateDriverGroup(Vec<usize>, ActivationMode),
   DeactivateDriverGroup(Vec<usize>, DeactivationMode),
+  RenderLedDeclarations(HashMap<u64, HashMap<&'static str, LedState>>),
 }
 
 // -- Events --

@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::store::Storable;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StorableHashMap<
   K: Serialize + Eq + Hash + Send + Sync + 'static,
   V: Serialize + Send + Sync + 'static,

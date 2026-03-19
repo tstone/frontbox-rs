@@ -5,10 +5,10 @@ use crate::SwitchDefinition;
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
-#[derive(Debug, Serialize, Storable)]
+#[derive(Debug, Clone, Serialize, Storable)]
 pub struct SwitchLookup {
   by_id: HashMap<usize, Switch>,
-  by_name: HashMap<&'static str, Switch>,
+  pub(crate) by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
 }
