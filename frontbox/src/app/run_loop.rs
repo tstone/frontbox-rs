@@ -168,6 +168,8 @@ fn apply_to_systems<F>(
     let mut ctx = Context::new(store, system.id, app_sender.clone());
     if system.is_active(&ctx) {
       handler(system, &mut ctx);
+    } else {
+      log::trace!("System {} is inactive, skipping", system.id);
     }
   }
 
@@ -177,6 +179,8 @@ fn apply_to_systems<F>(
       let mut ctx = Context::new(store, system.id, app_sender.clone());
       if system.is_active(&ctx) {
         handler(system, &mut ctx);
+      } else {
+        log::trace!("System {} is inactive, skipping", system.id);
       }
     }
   }
@@ -208,6 +212,12 @@ fn emit_event(
             interrupt.system_id
           );
           return;
+        } else {
+          log::trace!(
+            "Interrupt in system {} did not halt event of type {:?}",
+            interrupt.system_id,
+            event.type_id()
+          );
         }
         continue;
       };
@@ -249,6 +259,12 @@ fn execute_command(
       // commands must be executed on an active system
       if system.is_active(&ctx) {
         system.on_command(command, &mut ctx);
+      } else {
+        log::warn!(
+          "System {} is inactive, cannot execute command of type {:?}",
+          system_id,
+          command.as_any().type_id()
+        );
       }
     } else {
       log::warn!(
@@ -466,6 +482,8 @@ fn render_all_leds(
     let ctx = ctx_template.clone_for_system(system.id);
     if system.is_active(&ctx) {
       declarations.insert(system.id, system.leds(tick_interval, &ctx));
+    } else {
+      log::trace!("System {} is inactive, skipping LED rendering", system.id);
     }
   }
   for group in sc.groups.values_mut() {
@@ -473,6 +491,8 @@ fn render_all_leds(
       let ctx = ctx_template.clone_for_system(system.id);
       if system.is_active(&ctx) {
         declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      } else {
+        log::trace!("System {} is inactive, skipping LED rendering", system.id);
       }
     }
   }

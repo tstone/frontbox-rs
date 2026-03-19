@@ -60,6 +60,12 @@ impl System for SystemGroup {
       let mut ctx = ctx.clone_for_system(*id);
       if system.is_active(&ctx) {
         system.on_event(event, &mut ctx);
+      } else {
+        log::trace!(
+          "System {} is inactive, skipping event of type {:?}",
+          id,
+          event.type_id()
+        );
       }
     }
   }
