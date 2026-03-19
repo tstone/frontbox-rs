@@ -41,7 +41,7 @@ impl System for AutoPlunger {
     ctx.command(ConfigureSwitch::new(
       self.lane_switch,
       inverted.map(|c| c.inverted).unwrap_or(false),
-      Some(Duration::from_millis(300)),
+      Some(Duration::from_millis(250)),
       None, // use default
     ));
 

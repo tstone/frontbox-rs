@@ -142,11 +142,11 @@ impl IndividualPlayerSystem {
   }
 
   fn advance_turn(&self, ctx: &mut Context) {
-    let mut game_state = ctx.cloned::<GameState>().unwrap();
-    log::info!(
-      "Advancing turn (current player: {})",
-      game_state.current_player
-    );
+    let max_turn_count = ctx
+      .expect::<OperatorConfig>()
+      .get_value_as_integer(operator_config::TURN_COUNT.name())
+      .unwrap_or(3);
+    let game_state = ctx.expect_mut::<GameState>();
     let mut next_player = game_state.current_player + 1;
     if next_player >= game_state.player_count {
       next_player = 0;
@@ -155,19 +155,23 @@ impl IndividualPlayerSystem {
     game_state.player_turns[game_state.current_player as usize] += 1;
 
     // Verify we haven't gone over the turn limit
-    let max_turn_count = ctx
-      .expect::<OperatorConfig>()
-      .get_value_as_integer(operator_config::TURN_COUNT.name())
-      .unwrap_or(3);
-    if game_state.player_turns[game_state.current_player as usize] > max_turn_count as u8 {
+    if game_state.player_turns[game_state.current_player as usize] >= max_turn_count as u8 {
       self.end_game(ctx);
       return;
     }
+
+    log::info!(
+      "Advancing turn (player: {}, turn: {})",
+      game_state.current_player,
+      game_state.current_player_turn()
+    );
 
     self.start_turn(ctx);
   }
 
   fn end_game(&self, ctx: &mut Context) {
+    log::info!("Ending game");
+
     // verify the game is already running
     if ctx.get::<GameState>().is_none() {
       return;
@@ -219,7 +223,7 @@ impl System for IndividualPlayerSystem {
             }
           }
         }
-        None => {
+        Some(CurrentPlayerTurnState::Active) => {
           if let Some(_) = event.downcast_ref::<TroughFull>() {
             self.transition_turn_to_ending(ctx);
           }

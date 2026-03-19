@@ -21,7 +21,7 @@ impl TroughSystem {
     if self
       .switches
       // only look at the last switch (nearest the exit) for occupancy changes
-      .get(self.expected_occupancy)
+      .get(self.expected_occupancy -1)
       .map(|s| *s == switch_name)
       .unwrap_or(false)
     {
@@ -39,7 +39,7 @@ impl TroughSystem {
     if self
       .switches
       // only look at the last switch (nearest the exit) for occupancy changes
-      .get(self.expected_occupancy)
+      .get(self.expected_occupancy - 1)
       .map(|s| *s == switch_name)
       .unwrap_or(false)
     {
@@ -100,7 +100,7 @@ impl System for TroughSystem {
       switch_cmds.push(ConfigureSwitch::new(
         switch,
         inverted,
-        Some(Duration::from_millis(500)),
+        Some(Duration::from_millis(250)),
         None, // use default
       ));
     }
@@ -114,7 +114,8 @@ impl System for TroughSystem {
       self.eject_coil,
       PulseKickMode {
         initial_pwm_length: Duration::from_millis(50),
-        initial_pwm_power: Power::percent(75),
+        // TODO: make trough power configurable via operator config
+        initial_pwm_power: Power::percent(65),
         kick_length: Duration::from_millis(100),
         ..Default::default()
       },
