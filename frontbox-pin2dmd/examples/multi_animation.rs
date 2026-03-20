@@ -28,7 +28,7 @@ fn main() -> rusb::Result<()> {
   let mut color_anim = Tween::new(
     Duration::from_secs(2),
     Curve::Linear,
-    vec![Rgba::medium_turquoise(), Rgba::goldenrod()],
+    vec![Rgba::orange_red(), Rgba::rebecca_purple()],
     AnimationCycle::Forever,
   );
 
@@ -51,7 +51,8 @@ fn main() -> rusb::Result<()> {
     color_anim.tick(tick);
     frame_anim.tick(tick);
 
-    let mut frame = Frame::for_dmd(&dmd);
+    let mut frame =
+      Frame::for_dmd(&dmd).with_fill(Fill::VerticalGradient(Rgba::black(), Rgba::dark_blue()));
 
     // This clone here is cheap because the asset image is reference-counted and shared across clones,
     // Arc reference and offset coordinates are duplicated
@@ -70,11 +71,14 @@ fn main() -> rusb::Result<()> {
       );
     }
 
-    score += (10..40000).choose(&mut rng).unwrap_or(150);
+    if rng.random_bool(0.4) {
+      score += (10..40000).choose(&mut rng).unwrap_or(150);
+    }
+
     frame.add(
       bold_10px
         .text(TextFormatting::number(score))
-        .recolor_vgradient(color_anim.sample(), Rgba::dark_blue())
+        .recolor_vgradient(color_anim.sample(), Rgba::antique_white())
         .bottom(1)
         .right(4),
     );
