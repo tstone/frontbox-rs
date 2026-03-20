@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::led::animation::Animation;
+use crate::animation::Animation;
 use fast_protocol::Color;
 
 #[derive(Debug, Clone, PartialEq)]

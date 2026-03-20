@@ -1,3 +1,4 @@
+pub mod animation;
 mod app;
 mod hardware_definition;
 mod led;
