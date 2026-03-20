@@ -1,12 +1,11 @@
 use fast_protocol::Color;
 use std::time::Duration;
 
-use crate::led::animation::{Animation, AnimationCycle};
-use crate::led::curve::Curve;
+use crate::animation::*;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified duration using a given curve
 #[derive(Clone)]
-pub struct InterpolationAnimation<T> {
+pub struct Tween<T> {
   duration: Duration,
   elapsed: Duration,
   curve: Curve,
@@ -16,7 +15,7 @@ pub struct InterpolationAnimation<T> {
   current_stop_index: usize,
 }
 
-impl<T> InterpolationAnimation<T> {
+impl<T> Tween<T> {
   pub fn new(duration: Duration, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
       duration,
@@ -46,7 +45,7 @@ impl<T> InterpolationAnimation<T> {
   }
 }
 
-impl<T> Animation<T> for InterpolationAnimation<T>
+impl<T> Animation<T> for Tween<T>
 where
   T: Lerp + Clone + Send + Sync,
 {

@@ -1,6 +1,7 @@
 use fast_protocol::Color;
 
-use crate::prelude::{Animation, LedDeclarationBuilder};
+use crate::animation::Animation;
+use crate::prelude::LedDeclarationBuilder;
 
 #[derive(Clone)]
 pub enum LedSetting {

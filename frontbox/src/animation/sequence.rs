@@ -1,17 +1,17 @@
 use std::time::Duration;
 
-use crate::led::animation::{Animation, AnimationCycle};
+use crate::animation::*;
 
 /// Plays a sequence of animations in order
 #[derive(Clone)]
-pub struct SequenceAnimation<T> {
+pub struct Sequence<T> {
   sequence: Vec<Box<dyn Animation<T>>>,
   current_anim_index: usize,
   cycle: AnimationCycle,
   cycle_count: u32,
 }
 
-impl<T> SequenceAnimation<T> {
+impl<T> Sequence<T> {
   pub fn new(sequence: Vec<Box<dyn Animation<T>>>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
       sequence,
@@ -28,7 +28,7 @@ impl<T> SequenceAnimation<T> {
   }
 }
 
-impl<T> Animation<T> for SequenceAnimation<T>
+impl<T> Animation<T> for Sequence<T>
 where
   T: Clone + Default,
 {

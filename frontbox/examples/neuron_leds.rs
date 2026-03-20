@@ -1,3 +1,4 @@
+use frontbox::animation::*;
 use frontbox::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
@@ -45,27 +46,27 @@ struct LedExample {
 impl LedExample {
   fn new() -> Box<Self> {
     Box::new(Self {
-      flash: InterpolationAnimation::new(
+      flash: Tween::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
         vec![Color::black(), Color::purple()],
         AnimationCycle::Forever,
       ),
-      seq: SequenceAnimation::new(
+      seq: Sequence::new(
         vec![
-          InterpolationAnimation::new(
+          Tween::new(
             Duration::from_millis(1500),
             Curve::QuadraticInOut,
             vec![Color::black(), Color::red()],
             AnimationCycle::Once,
           ),
-          InterpolationAnimation::new(
+          Tween::new(
             Duration::from_millis(200),
             Curve::Sinusoid,
             vec![Color::red(), Color::yellow()],
             AnimationCycle::Once,
           ),
-          InterpolationAnimation::new(
+          Tween::new(
             Duration::from_millis(400),
             Curve::Linear,
             vec![Color::yellow(), Color::black()],
