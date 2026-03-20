@@ -15,7 +15,7 @@ fn main() -> rusb::Result<()> {
     AnimationCycle::Forever,
   );
 
-  let frame_rate = 30.0; // TODO: make this configurable?
+  let frame_rate = 30.0;
   let frame_count = (x_anim.duration.as_secs_f32() * frame_rate).round() as usize;
 
   for _ in 0..frame_count {
