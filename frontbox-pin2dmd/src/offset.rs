@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{Renderable, RenderableImage};
 
 pub struct XOffsetRenderable {
@@ -8,8 +6,8 @@ pub struct XOffsetRenderable {
 }
 
 impl Renderable for XOffsetRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut rendered = self.inner.render(delta);
+  fn render(&self) -> RenderableImage {
+    let mut rendered = self.inner.render();
     rendered.offset_x += self.offset_x;
     rendered
   }
@@ -21,8 +19,8 @@ pub struct YOffsetRenderable {
 }
 
 impl Renderable for YOffsetRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut rendered = self.inner.render(delta);
+  fn render(&self) -> RenderableImage {
+    let mut rendered = self.inner.render();
     rendered.offset_y += self.offset_y;
     rendered
   }

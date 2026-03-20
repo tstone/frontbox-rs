@@ -1,4 +1,4 @@
-use crate::{ImageSprite, Sprite};
+use crate::Asset;
 
 /// Multiple sprite, within the same image file, layed out in a grid
 #[derive(Debug, Clone)]
@@ -29,12 +29,12 @@ impl SpriteSheet {
     self.image.height() as u16 / self.rows as u16
   }
 
-  pub fn image_at(&self, row: u8, col: u8) -> ImageSprite {
+  pub fn image_at(&self, row: u8, col: u8) -> Asset {
     let sprite_width = self.image.width() / self.cols as u32;
     let sprite_height = self.image.height() / self.rows as u32;
     let x = col as u32 * sprite_width;
     let y = row as u32 * sprite_height;
     let sprite = self.image.crop_imm(x, y, sprite_width, sprite_height);
-    Sprite::image(sprite)
+    Asset::image(sprite)
   }
 }
