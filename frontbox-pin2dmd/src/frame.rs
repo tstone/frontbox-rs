@@ -4,7 +4,6 @@ pub struct Frame {
   pub width: usize,
   pub height: usize,
   layers: Vec<Box<dyn Renderable>>,
-  max_index: usize,
 }
 
 impl Frame {
@@ -13,7 +12,6 @@ impl Frame {
       width,
       height,
       layers: Vec::new(),
-      max_index: (width * height * 3) - 1,
     }
   }
 
@@ -29,25 +27,31 @@ impl Frame {
       let rendered = layer.render();
       let img = rendered.image.to_rgba8();
 
-      for y in 0..rendered.image.height() as isize {
-        for x in 0..rendered.image.width() as isize {
-          let idx = ((y + rendered.offset_y) * self.width as isize + (x + rendered.offset_x)) * 3;
+      for y in 0..img.height() as isize {
+        for x in 0..img.width() as isize {
+          let dest_x = x + rendered.offset_x;
+          let dest_y = y + rendered.offset_y;
 
           // ignore out of bounds pixels
-          if idx < 0 || (idx as usize) > self.max_index {
+          if dest_x < 0
+            || dest_y < 0
+            || dest_x >= self.width as isize
+            || dest_y >= self.height as isize
+          {
             continue;
           }
 
           let pixel = img.get_pixel(x as u32, y as u32);
 
-          // ignore transparent pixels (alpha channel)
+          // ignore transparent pixels
           if pixel[3] == 0 {
             continue;
           }
 
-          pixels[idx as usize] = pixel[0];
-          pixels[idx as usize + 1] = pixel[1];
-          pixels[idx as usize + 2] = pixel[2];
+          let idx = (dest_y as usize * self.width + dest_x as usize) * 3;
+          pixels[idx] = pixel[0];
+          pixels[idx + 1] = pixel[1];
+          pixels[idx + 2] = pixel[2];
         }
       }
     }

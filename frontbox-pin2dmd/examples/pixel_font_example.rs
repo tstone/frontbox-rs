@@ -1,7 +1,6 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use fast_protocol::Color;
 use frontbox_pin2dmd::*;
 use image::Rgba;
 
@@ -23,24 +22,31 @@ fn main() -> rusb::Result<()> {
   let mut score3 = 21_110;
   let mut score4 = 30_000;
 
-  for _ in 0..150 {
+  let left = 5;
+  let top = 4;
+
+  for _ in 0..125 {
     score1 += 1630;
     score2 += 1210;
     score3 += 900;
     score4 += 1590;
 
-    frame.add(bold_10px.text(TextFormatting::number(score1)).offset_x(2));
+    frame.add(
+      bold_10px
+        .text(TextFormatting::number(score1))
+        .offset(left, top),
+    );
     frame.add(
       bold_10px
         .text(TextFormatting::number(score2))
         .recolor(Rgba::coral())
-        .offset_x(64),
+        .offset(64, top),
     );
     frame.add(
       bold_10px
         .text(TextFormatting::number(score3))
         .recolor_vgradient(Rgba::medium_turquoise(), Rgba::dark_blue())
-        .offset_y(17),
+        .offset(left, 17),
     );
     frame.add(
       bold_10px
