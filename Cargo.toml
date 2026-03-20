@@ -3,6 +3,8 @@ members = [
     "fast-protocol",
     "frontbox",
     "frontbox-derive",
+    "frontbox-pin2dmd",
+    "frontbox-sound",
     "frontbox-turn-based",
 ]
 resolver = "2"
