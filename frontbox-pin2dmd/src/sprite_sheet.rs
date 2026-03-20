@@ -1,29 +1,40 @@
+use crate::{ImageSprite, Renderable, Sprite};
+
+/// Multiple sprite, within the same image file, layed out in a grid
+#[derive(Debug, Clone)]
 pub struct SpriteSheet {
   image: image::DynamicImage,
-  pub rows: u16,
-  pub cols: u16,
+  pub path: &'static str,
+  pub rows: u8,
+  pub cols: u8,
 }
 
 impl SpriteSheet {
-  pub fn new(path: &'static str, rows: u16, cols: u16) -> Self {
+  pub fn new(path: &'static str, rows: u8, cols: u8) -> Self {
     let image =
       image::open(path).unwrap_or_else(|_| panic!("Failed to load sprite sheet at {}", path));
-    Self { image, rows, cols }
+    Self {
+      path,
+      image,
+      rows,
+      cols,
+    }
   }
 
-  pub fn get_image_at(&self, row: u16, col: u16) -> image::DynamicImage {
+  pub fn sprite_width(&self) -> u16 {
+    self.image.width() as u16 / self.cols as u16
+  }
+
+  pub fn sprite_height(&self) -> u16 {
+    self.image.height() as u16 / self.rows as u16
+  }
+
+  pub fn image_at(&self, row: u8, col: u8) -> ImageSprite {
     let sprite_width = self.image.width() / self.cols as u32;
     let sprite_height = self.image.height() / self.rows as u32;
     let x = col as u32 * sprite_width;
     let y = row as u32 * sprite_height;
-    self.image.crop_imm(x, y, sprite_width, sprite_height)
-  }
-
-  pub fn sprite_width(&self) -> u16 {
-    self.image.width() as u16 / self.cols
-  }
-
-  pub fn sprite_height(&self) -> u16 {
-    self.image.height() as u16 / self.rows
+    let sprite = self.image.crop_imm(x, y, sprite_width, sprite_height);
+    Sprite::image(sprite)
   }
 }

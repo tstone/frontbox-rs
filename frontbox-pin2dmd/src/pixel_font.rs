@@ -2,9 +2,7 @@ use image;
 use image::*;
 use std::collections::HashMap;
 
-use fast_protocol::Color;
-
-use crate::SpriteSheet;
+use crate::*;
 
 pub struct PixelFont {
   sprite_sheet: SpriteSheet,
@@ -26,27 +24,23 @@ impl PixelFont {
   }
 
   /// Set a custom width for a specific character (for variable width fonts)
-  pub fn set_character_width(&mut self, character: char, width: u16) {
+  pub fn set_custom_char_width(&mut self, character: char, width: u16) {
     self.custom_char_widths.insert(character, width);
   }
 
-  pub fn format_number(number: i64) -> String {
-    let mut num_str = number.abs().to_string();
-    let mut formatted = String::new();
-
-    while num_str.len() > 3 {
-      let chunk = num_str.split_off(num_str.len() - 3);
-      formatted = format!(",{}{}", chunk, formatted);
+  pub fn char(&self, c: char) -> ImageSprite {
+    let char_code = c as u32;
+    if char_code < self.starting_char {
+      panic!("Character '{}' is not supported by this font", c);
     }
-    formatted = format!("{}{}", num_str, formatted);
+    let char_index = char_code - self.starting_char;
+    let row = char_index / self.sprite_sheet.cols as u32;
+    let col = char_index % self.sprite_sheet.cols as u32;
 
-    if number < 0 {
-      formatted = format!("-{}", formatted);
-    }
-    formatted
+    self.sprite_sheet.image_at(row as u8, col as u8)
   }
 
-  pub fn render_text(&self, text: &str) -> image::DynamicImage {
+  pub fn text(&self, text: String) -> ImageSprite {
     let text_width = text
       .chars()
       .map(|c| *self.custom_char_widths.get(&c).unwrap_or(&self.char_width))
@@ -54,7 +48,7 @@ impl PixelFont {
 
     let text_height = self.char_height as u32;
     let mut left_offset: i64 = 0;
-    let mut img = image::RgbaImage::new(text_width, text_height);
+    let mut result = RgbaImage::new(text_width, text_height);
 
     for c in text.chars() {
       let char_code = c as u32;
@@ -65,137 +59,25 @@ impl PixelFont {
       let row = char_index / self.sprite_sheet.cols as u32;
       let col = char_index % self.sprite_sheet.cols as u32;
 
-      let mut sprite = self.sprite_sheet.get_image_at(row as u16, col as u16);
+      let sprite = self.sprite_sheet.image_at(row as u8, col as u8);
+      let mut char_img = sprite.render().image;
       if self.custom_char_widths.contains_key(&c) {
         let char_width = *self.custom_char_widths.get(&c).unwrap();
-        sprite = sprite.crop_imm(0, 0, char_width as u32, self.char_height as u32);
+        char_img = char_img.crop_imm(0, 0, char_width as u32, self.char_height as u32);
       }
 
-      image::imageops::overlay(&mut img, &sprite.to_rgba8(), left_offset, 0);
+      image::imageops::overlay(&mut result, &char_img, left_offset, 0);
       left_offset += *self.custom_char_widths.get(&c).unwrap_or(&self.char_width) as i64;
     }
-    image::DynamicImage::ImageRgba8(img)
-  }
-
-  /// Render text, using the brightness of the original image to recolor it to the specified color
-  pub fn render_text_recolor(&self, text: &str, color: Color) -> DynamicImage {
-    let img = self.render_text(text).to_rgba8();
-    let (width, height) = img.dimensions();
-    let bytes = img.as_raw();
-    let mut output = RgbaImage::new(width, height);
-
-    for y in 0..height {
-      for x in 0..width {
-        let idx = (y * width + x) as usize * 4;
-        let alpha = bytes[idx + 3] as f32 / 255.0;
-        if alpha > 0.0 {
-          let brightness = (bytes[idx] as f32 * 0.299
-            + bytes[idx + 1] as f32 * 0.587
-            + bytes[idx + 2] as f32 * 0.114)
-            / 255.0;
-
-          let pixel = Rgba([
-            (color.r * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (color.g * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (color.b * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (alpha * 255.0) as u8,
-          ]);
-
-          output.put_pixel(x, y, pixel);
-        }
-      }
-    }
-    DynamicImage::ImageRgba8(output)
-  }
-
-  /// Render text with a vertical gradient from top_color to bottom_color
-  pub fn render_text_vgradient(
-    &self,
-    text: &str,
-    top_color: Color,
-    bottom_color: Color,
-  ) -> DynamicImage {
-    let img = self.render_text(text).to_rgba8();
-    let (width, height) = img.dimensions();
-    let bytes = img.as_raw();
-    let mut output = RgbaImage::new(width, height);
-
-    for y in 0..height {
-      for x in 0..width {
-        let idx = (y * width + x) as usize * 4;
-        let alpha = bytes[idx + 3] as f32 / 255.0;
-        if alpha > 0.0 {
-          let brightness = (bytes[idx] as f32 * 0.299
-            + bytes[idx + 1] as f32 * 0.587
-            + bytes[idx + 2] as f32 * 0.114)
-            / 255.0;
-
-          let gradient_factor = y as f32 / height as f32;
-          let r = top_color.r * (1.0 - gradient_factor) + bottom_color.r * gradient_factor;
-          let g = top_color.g * (1.0 - gradient_factor) + bottom_color.g * gradient_factor;
-          let b = top_color.b * (1.0 - gradient_factor) + bottom_color.b * gradient_factor;
-
-          let pixel = Rgba([
-            (r * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (g * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (b * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (alpha * 255.0) as u8,
-          ]);
-
-          output.put_pixel(x, y, pixel);
-        }
-      }
-    }
-    DynamicImage::ImageRgba8(output)
-  }
-
-  /// Render text with a horizontal gradient from left_color to right_color
-  pub fn render_text_hgradient(
-    &self,
-    text: &str,
-    left_color: Color,
-    right_color: Color,
-  ) -> DynamicImage {
-    let img = self.render_text(text).to_rgba8();
-    let (width, height) = img.dimensions();
-    let bytes = img.as_raw();
-    let mut output = RgbaImage::new(width, height);
-
-    for y in 0..height {
-      for x in 0..width {
-        let idx = (y * width + x) as usize * 4;
-        let alpha = bytes[idx + 3] as f32 / 255.0;
-        if alpha > 0.0 {
-          let brightness = (bytes[idx] as f32 * 0.299
-            + bytes[idx + 1] as f32 * 0.587
-            + bytes[idx + 2] as f32 * 0.114)
-            / 255.0;
-
-          let gradient_factor = x as f32 / width as f32;
-          let r = left_color.r * (1.0 - gradient_factor) + right_color.r * gradient_factor;
-          let g = left_color.g * (1.0 - gradient_factor) + right_color.g * gradient_factor;
-          let b = left_color.b * (1.0 - gradient_factor) + right_color.b * gradient_factor;
-
-          let pixel = Rgba([
-            (r * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (g * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (b * brightness * 255.0).clamp(0.0, 255.0) as u8,
-            (alpha * 255.0) as u8,
-          ]);
-
-          output.put_pixel(x, y, pixel);
-        }
-      }
-    }
-    DynamicImage::ImageRgba8(output)
+    ImageSprite::new(DynamicImage::ImageRgba8(result))
   }
 }
 
 pub struct PixelFontBuilder {
   sprite_sheet: Option<SpriteSheet>,
   path: Option<&'static str>,
-  rows: Option<u16>,
-  cols: Option<u16>,
+  rows: Option<u8>,
+  cols: Option<u8>,
   starting_char: char,
   char_width: Option<u16>,
   custom_char_widths: HashMap<char, u16>,
@@ -219,7 +101,7 @@ impl PixelFontBuilder {
     self
   }
 
-  pub fn sheet_layout(mut self, rows: u16, cols: u16) -> Self {
+  pub fn sheet_layout(mut self, rows: u8, cols: u8) -> Self {
     self.rows = Some(rows);
     self.cols = Some(cols);
     self
@@ -252,7 +134,7 @@ impl PixelFontBuilder {
 
     let mut font = PixelFont::new(sprite_sheet, self.starting_char);
     for (character, width) in self.custom_char_widths {
-      font.set_character_width(character, width);
+      font.set_custom_char_width(character, width);
     }
 
     if let Some(default_width) = self.char_width {

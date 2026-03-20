@@ -1,11 +1,23 @@
 mod frame;
 mod layer;
+mod offset;
 mod pin2dmd;
 mod pixel_font;
+mod recolor;
+mod renderable;
+mod rgba_color;
+mod sprite;
 mod sprite_sheet;
+mod text_formatting;
 
 pub use frame::*;
 pub use layer::*;
+pub use offset::*;
 pub use pin2dmd::*;
 pub use pixel_font::*;
+pub use recolor::*;
+pub use renderable::*;
+pub use rgba_color::*;
+pub use sprite::*;
 pub use sprite_sheet::*;
+pub use text_formatting::*;
