@@ -34,6 +34,14 @@ pub struct Pin2Dmd {
 }
 
 impl Pin2Dmd {
+  pub fn width(&self) -> usize {
+    self.width
+  }
+
+  pub fn height(&self) -> usize {
+    self.height
+  }
+
   pub fn connect(width: usize, height: usize, panel: PanelType) -> rusb::Result<Self> {
     let context = rusb::Context::new()?;
     let device = context
@@ -65,13 +73,8 @@ impl Pin2Dmd {
     Ok(())
   }
 
-  pub fn render_static(&mut self, frame: &mut Frame) -> rusb::Result<()> {
-    let pixels = frame.render(Duration::ZERO);
-    self.render_pixels(&pixels)
-  }
-
-  pub fn render(&mut self, frame: &mut Frame, delta: Duration) -> rusb::Result<()> {
-    let pixels = frame.render(delta);
+  pub fn render(&mut self, frame: &mut Frame) -> rusb::Result<()> {
+    let pixels = frame.render();
     self.render_pixels(&pixels)
   }
 
@@ -142,9 +145,5 @@ impl Pin2Dmd {
     }
 
     buf
-  }
-
-  pub fn empty_frame(&self) -> Frame {
-    Frame::new(self.width, self.height)
   }
 }

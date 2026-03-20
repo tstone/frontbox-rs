@@ -1,14 +1,12 @@
 use image;
 use image::*;
 use std::collections::HashMap;
-use std::time::Duration;
 
 use crate::*;
 
 pub struct PixelFont {
   sprite_sheet: SpriteSheet,
   pub(crate) char_width: u16,
-  pub(crate) char_height: u16,
   starting_char: u32,
   custom_char_widths: HashMap<char, u16>,
 }
@@ -17,7 +15,6 @@ impl PixelFont {
   pub fn new(sprite_sheet: SpriteSheet, starting_char: char) -> Self {
     Self {
       char_width: sprite_sheet.sprite_width(),
-      char_height: sprite_sheet.sprite_height(),
       starting_char: starting_char as u32,
       custom_char_widths: HashMap::new(),
       sprite_sheet,
@@ -29,7 +26,7 @@ impl PixelFont {
     self.custom_char_widths.insert(character, width);
   }
 
-  pub fn char(&self, c: char) -> ImageSprite {
+  pub fn char(&self, c: char) -> Asset {
     let char_code = c as u32;
     if char_code < self.starting_char {
       panic!("Character '{}' is not supported by this font", c);
@@ -74,11 +71,11 @@ pub struct PixelFontRenderable {
 }
 
 impl Renderable for PixelFontRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut result = RgbaImage::new(self.width, self.glyphs[0].render(delta).image.height());
+  fn render(&self) -> RenderableImage {
+    let mut result = RgbaImage::new(self.width, self.glyphs[0].render().image.height());
     let mut left_offset: isize = 0;
-    for (i, glyph) in self.glyphs.iter_mut().enumerate() {
-      let char_img = glyph.render(delta).image;
+    for (i, glyph) in self.glyphs.iter().enumerate() {
+      let char_img = glyph.render().image;
       image::imageops::overlay(&mut result, &char_img, left_offset as i64, 0);
       left_offset += self.glyph_widths[i] as isize;
     }

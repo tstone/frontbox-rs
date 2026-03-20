@@ -1,12 +1,17 @@
-use std::time::Duration;
-
 use image::DynamicImage;
 
+use crate::Asset;
 use crate::offset::*;
 use crate::recolor::*;
 
 pub trait Renderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage;
+  fn render(&self) -> RenderableImage;
+
+  /// Flatten the renderable into a single, reusable asset that can be rendered multiple times at low cost
+  fn to_asset(&self) -> Asset {
+    let ri = self.render();
+    Asset::new(ri.image, ri.offset_x, ri.offset_y)
+  }
 
   /// Offset the image by the specified amount in the x direction
   fn offset_x(self, x: isize) -> XOffsetRenderable

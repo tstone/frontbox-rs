@@ -8,8 +8,8 @@ pub struct RecolorSolidRenderable {
 }
 
 impl Renderable for RecolorSolidRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut rendered = self.inner.render(delta);
+  fn render(&self) -> RenderableImage {
+    let mut rendered = self.inner.render();
     let mut output = rendered.image.to_rgba8();
     for pixel in output.pixels_mut() {
       let brightness =
@@ -30,8 +30,8 @@ pub struct RecolorVerticalGradientRenderable {
 }
 
 impl Renderable for RecolorVerticalGradientRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut rendered = self.inner.render(delta);
+  fn render(&self) -> RenderableImage {
+    let mut rendered = self.inner.render();
     let mut output = rendered.image.to_rgba8();
     let height = output.height() as f32;
     for (y, row) in output.rows_mut().enumerate() {
@@ -63,8 +63,8 @@ pub struct RecolorHorizontalGradientRenderable {
 }
 
 impl Renderable for RecolorHorizontalGradientRenderable {
-  fn render(&mut self, delta: Duration) -> RenderableImage {
-    let mut rendered = self.inner.render(delta);
+  fn render(&self) -> RenderableImage {
+    let mut rendered = self.inner.render();
     let mut output = rendered.image.to_rgba8();
     let width = output.width() as f32;
     for row in output.rows_mut() {

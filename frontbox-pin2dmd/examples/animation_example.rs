@@ -12,21 +12,24 @@ fn main() -> rusb::Result<()> {
     Duration::from_secs(2),
     Curve::BounceOut,
     vec![-30, 100],
-    AnimationCycle::Forever,
+    AnimationCycle::Once,
   );
 
   let frame_rate = 30.0;
   let frame_count = (x_anim.duration.as_secs_f32() * frame_rate).round() as usize;
+  let forestman = Asset::from_path(local_asset("forestman.png"));
 
   for _ in 0..frame_count {
     let tick = Duration::from_millis(33);
     x_anim.tick(tick);
 
-    let mut frame = dmd.empty_frame();
+    let mut frame = Frame::for_dmd(&dmd);
 
-    frame.add(Sprite::path(local_asset("forestman.png")).offset_x(x_anim.sample()));
+    // This clone here is cheap because the asset image is reference-counted and shared across clones,
+    // Arc reference and offset coordinates are duplicated
+    frame.add(forestman.clone().offset_x(x_anim.sample()));
+    dmd.render(&mut frame)?;
 
-    dmd.render(&mut frame, tick)?;
     sleep(tick);
   }
 
