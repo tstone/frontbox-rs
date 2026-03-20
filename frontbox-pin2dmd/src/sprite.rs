@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use image::DynamicImage;
 
 use crate::{Renderable, RenderableImage};
@@ -29,7 +31,7 @@ impl PathSprite {
 }
 
 impl Renderable for PathSprite {
-  fn render(&self) -> RenderableImage {
+  fn render(&mut self, _delta: Duration) -> RenderableImage {
     let image =
       image::open(&self.path).unwrap_or_else(|_| panic!("Failed to load sprite at {}", self.path));
     crate::RenderableImage::new(image, 0, 0)
@@ -49,7 +51,7 @@ impl ImageSprite {
 }
 
 impl Renderable for ImageSprite {
-  fn render(&self) -> RenderableImage {
+  fn render(&mut self, _delta: Duration) -> RenderableImage {
     crate::RenderableImage::new(self.image.clone(), 0, 0)
   }
 }

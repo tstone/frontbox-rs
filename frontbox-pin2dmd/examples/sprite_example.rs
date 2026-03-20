@@ -11,7 +11,7 @@ fn main() -> rusb::Result<()> {
   frame.add(Sprite::path(local_asset("tree1.png")).offset_x(2));
   frame.add(Sprite::path(local_asset("tree2.png")).offset_x(90));
   frame.add(Sprite::path(local_asset("forestman.png")).offset_x(40));
-  dmd.render_frame(&frame)?;
+  dmd.render_static(&mut frame)?;
 
   sleep(Duration::from_secs(10));
   dmd.clear()?;

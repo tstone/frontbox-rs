@@ -1,6 +1,7 @@
 use image;
 use image::*;
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::*;
 
@@ -40,36 +41,52 @@ impl PixelFont {
     self.sprite_sheet.image_at(row as u8, col as u8)
   }
 
-  pub fn text(&self, text: String) -> ImageSprite {
+  pub fn text(&self, text: String) -> PixelFontRenderable {
     let text_width = text
       .chars()
       .map(|c| *self.custom_char_widths.get(&c).unwrap_or(&self.char_width))
       .sum::<u16>() as u32;
 
-    let text_height = self.char_height as u32;
-    let mut left_offset: i64 = 0;
-    let mut result = RgbaImage::new(text_width, text_height);
+    let mut left_offset: isize = 0;
 
+    let mut sprites = Vec::new();
     for c in text.chars() {
-      let char_code = c as u32;
-      if char_code < self.starting_char {
-        continue; // skip unsupported characters
-      }
-      let char_index = char_code - self.starting_char;
-      let row = char_index / self.sprite_sheet.cols as u32;
-      let col = char_index % self.sprite_sheet.cols as u32;
-
-      let sprite = self.sprite_sheet.image_at(row as u8, col as u8);
-      let mut char_img = sprite.render().image;
-      if self.custom_char_widths.contains_key(&c) {
-        let char_width = *self.custom_char_widths.get(&c).unwrap();
-        char_img = char_img.crop_imm(0, 0, char_width as u32, self.char_height as u32);
-      }
-
-      image::imageops::overlay(&mut result, &char_img, left_offset, 0);
-      left_offset += *self.custom_char_widths.get(&c).unwrap_or(&self.char_width) as i64;
+      let char_sprite = self.char(c);
+      let char_width = *self.custom_char_widths.get(&c).unwrap_or(&self.char_width) as isize;
+      sprites.push(char_sprite.offset_x(left_offset));
+      left_offset += char_width;
     }
-    ImageSprite::new(DynamicImage::ImageRgba8(result))
+    PixelFontRenderable {
+      glyphs: sprites,
+      glyph_widths: text
+        .chars()
+        .map(|c| *self.custom_char_widths.get(&c).unwrap_or(&self.char_width))
+        .collect(),
+      width: text_width,
+    }
+  }
+}
+
+pub struct PixelFontRenderable {
+  glyphs: Vec<XOffsetRenderable>,
+  glyph_widths: Vec<u16>,
+  width: u32,
+}
+
+impl Renderable for PixelFontRenderable {
+  fn render(&mut self, delta: Duration) -> RenderableImage {
+    let mut result = RgbaImage::new(self.width, self.glyphs[0].render(delta).image.height());
+    let mut left_offset: isize = 0;
+    for (i, glyph) in self.glyphs.iter_mut().enumerate() {
+      let char_img = glyph.render(delta).image;
+      image::imageops::overlay(&mut result, &char_img, left_offset as i64, 0);
+      left_offset += self.glyph_widths[i] as isize;
+    }
+    RenderableImage {
+      image: DynamicImage::ImageRgba8(result),
+      offset_x: 0,
+      offset_y: 0,
+    }
   }
 }
 

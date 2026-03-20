@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use image::DynamicImage;
 
 use crate::offset::*;
 use crate::recolor::*;
 
 pub trait Renderable {
-  fn render(&self) -> RenderableImage;
+  fn render(&mut self, delta: Duration) -> RenderableImage;
 
   /// Offset the image by the specified amount in the x direction
   fn offset_x(self, x: isize) -> XOffsetRenderable

@@ -27,6 +27,7 @@ Displays (as a System)
 LEDs
 
 - Should LEDs be managed like sounds, `ctx.command(DeclareLedState(...))` ? -- probably, and a separate system/crate
+- Move animation handling into on_tick
 - LED renderer should use Context to store LED state
 - Allow LEDs to be specified as a group, one name to talk to them all (e.g. for GI) maybe some kind of Into<LedGroup>
 - Allow declarations to happen on groups as well

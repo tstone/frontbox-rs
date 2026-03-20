@@ -55,8 +55,7 @@ fn main() -> rusb::Result<()> {
         .offset(64, 17),
     );
 
-    let pixels = frame.to_pixels();
-    dmd.render(&pixels)?;
+    dmd.render_static(&mut frame)?;
 
     sleep(Duration::from_millis(100));
   }
