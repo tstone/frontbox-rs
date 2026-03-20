@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use image::DynamicImage;
 
-use crate::{Renderable, RenderableImage};
+use crate::{FrameSize, Renderable, RenderableImage};
 
 /// An asset holds a pre-rendered or pre-loaded image that can be cheaply reused across multiple frames
 #[derive(Clone)]
@@ -36,7 +36,7 @@ impl Asset {
 }
 
 impl Renderable for Asset {
-  fn render(&self) -> crate::RenderableImage {
+  fn render(&self, _parent: &FrameSize) -> crate::RenderableImage {
     RenderableImage::new((*self.img).clone(), self.offset_x, self.offset_y)
   }
 }

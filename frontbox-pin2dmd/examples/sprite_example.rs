@@ -9,9 +9,9 @@ fn main() -> rusb::Result<()> {
   let mut frame = Frame::for_dmd(&dmd);
 
   frame.add(Asset::from_path(local_asset("bg.png")));
-  frame.add(Asset::from_path(local_asset("tree1.png")).offset_x(2));
-  frame.add(Asset::from_path(local_asset("tree2.png")).offset_x(90));
-  frame.add(Asset::from_path(local_asset("forestman.png")).offset_x(40));
+  frame.add(Asset::from_path(local_asset("tree1.png")).left(2));
+  frame.add(Asset::from_path(local_asset("tree2.png")).left(90));
+  frame.add(Asset::from_path(local_asset("forestman.png")).left(40));
 
   dmd.render(&mut frame)?;
   sleep(Duration::from_secs(8));

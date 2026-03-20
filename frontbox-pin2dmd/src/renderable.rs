@@ -1,46 +1,68 @@
 use image::DynamicImage;
 
 use crate::Asset;
+use crate::FrameSize;
+use crate::HFlippedRenderable;
 use crate::offset::*;
 use crate::recolor::*;
 
 pub trait Renderable {
-  fn render(&self) -> RenderableImage;
+  fn render(&self, parent: &FrameSize) -> RenderableImage;
 
   /// Flatten the renderable into a single, reusable asset that can be rendered multiple times at low cost
-  fn to_asset(&self) -> Asset {
-    let ri = self.render();
+  fn to_asset(&self, parent: &FrameSize) -> Asset {
+    let ri = self.render(parent);
     Asset::new(ri.image, ri.offset_x, ri.offset_y)
   }
 
   /// Offset the image by the specified amount in the x direction
-  fn offset_x(self, x: isize) -> XOffsetRenderable
+  fn left(self, x: isize) -> LeftOffsetRenderable
   where
     Self: Sized + 'static,
   {
-    XOffsetRenderable {
+    LeftOffsetRenderable {
       inner: Box::new(self),
-      offset_x: x,
+      left: x,
+    }
+  }
+
+  fn right(self, x: isize) -> RightOffsetRenderable
+  where
+    Self: Sized + 'static,
+  {
+    RightOffsetRenderable {
+      inner: Box::new(self),
+      right: x,
     }
   }
 
   /// Offset the image by the specified amount in the y direction
-  fn offset_y(self, y: isize) -> YOffsetRenderable
+  fn top(self, y: isize) -> TopOffsetRenderable
   where
     Self: Sized + 'static,
   {
-    YOffsetRenderable {
+    TopOffsetRenderable {
       inner: Box::new(self),
-      offset_y: y,
+      top: y,
+    }
+  }
+
+  fn bottom(self, y: isize) -> BottomOffsetRenderable
+  where
+    Self: Sized + 'static,
+  {
+    BottomOffsetRenderable {
+      inner: Box::new(self),
+      bottom: y,
     }
   }
 
   /// Offset the image by the specified amount in both x and y directions
-  fn offset(self, x: isize, y: isize) -> XOffsetRenderable
+  fn offset(self, x: isize, y: isize) -> LeftOffsetRenderable
   where
     Self: Sized + 'static,
   {
-    self.offset_y(y).offset_x(x)
+    self.top(y).left(x)
   }
 
   /// Re-color (based on luminance) the image to a single solid color
@@ -83,6 +105,15 @@ pub trait Renderable {
       inner: Box::new(self),
       left_color,
       right_color,
+    }
+  }
+
+  fn fliph(self) -> HFlippedRenderable
+  where
+    Self: Sized + 'static,
+  {
+    HFlippedRenderable {
+      inner: Box::new(self),
     }
   }
 }

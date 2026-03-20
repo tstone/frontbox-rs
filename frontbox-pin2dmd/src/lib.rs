@@ -1,5 +1,6 @@
 mod asset;
 mod frame;
+mod modification;
 mod offset;
 mod pin2dmd;
 mod pixel_font;
@@ -11,6 +12,7 @@ mod text_formatting;
 
 pub use asset::*;
 pub use frame::*;
+pub use modification::*;
 pub use offset::*;
 pub use pin2dmd::*;
 pub use pixel_font::*;

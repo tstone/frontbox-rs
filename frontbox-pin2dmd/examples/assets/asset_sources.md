@@ -17,3 +17,9 @@ https://aamatniekss.itch.io/free-pixelart-platformer-tileset
 https://yukipixels.itch.io/boldpixels
 
 - bold_pixels.png (modified)
+
+#### Cockatiel-bird
+
+https://tulip4ik13.itch.io/cockatiel
+
+- flying.png

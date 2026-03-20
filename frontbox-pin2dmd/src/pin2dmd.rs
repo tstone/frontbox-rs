@@ -2,6 +2,8 @@ use rusb::UsbContext;
 use std::time::Duration;
 
 use crate::Frame;
+use crate::FrameSize;
+use crate::Renderable;
 
 /// Derived from Mission Pinball Framework PIN2DMD driver
 /// https://github.com/missionpinball/mpf
@@ -64,6 +66,12 @@ impl Pin2Dmd {
     })
   }
 
+  pub fn render(&mut self, frame: &Frame) -> rusb::Result<()> {
+    let rendered = frame.render(&FrameSize::for_dmd(&self));
+    let pixels = rendered.image.to_rgb8().into_raw();
+    self.render_pixels(&pixels)
+  }
+
   /// `pixels` is WIDTH*HEIGHT*3 bytes, RGB order, row-major, top-left to bottom-right.
   fn render_pixels(&mut self, pixels: &[u8]) -> rusb::Result<()> {
     let buf = self.pack_rgb24(pixels, self.panel);
@@ -71,11 +79,6 @@ impl Pin2Dmd {
       .handle
       .write_bulk(0x01, &buf, Duration::from_millis(2000))?;
     Ok(())
-  }
-
-  pub fn render(&mut self, frame: &mut Frame) -> rusb::Result<()> {
-    let pixels = frame.render();
-    self.render_pixels(&pixels)
   }
 
   pub fn clear(&mut self) -> rusb::Result<()> {
