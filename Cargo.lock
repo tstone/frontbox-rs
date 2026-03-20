@@ -631,7 +631,6 @@ dependencies = [
 name = "frontbox-pin2dmd"
 version = "0.1.0"
 dependencies = [
- "fast-protocol",
  "frontbox",
  "image",
  "log",
