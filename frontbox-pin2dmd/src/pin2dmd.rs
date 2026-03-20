@@ -57,7 +57,7 @@ impl Pin2Dmd {
   }
 
   /// `pixels` is WIDTH*HEIGHT*3 bytes, RGB order, row-major, top-left to bottom-right.
-  pub fn render(&mut self, pixels: &[u8]) -> rusb::Result<()> {
+  fn render_pixels(&mut self, pixels: &[u8]) -> rusb::Result<()> {
     let buf = self.pack_rgb24(pixels, self.panel);
     self
       .handle
@@ -65,14 +65,19 @@ impl Pin2Dmd {
     Ok(())
   }
 
-  pub fn render_frame(&mut self, frame: &Frame) -> rusb::Result<()> {
-    let pixels = frame.to_pixels();
-    self.render(&pixels)
+  pub fn render_static(&mut self, frame: &mut Frame) -> rusb::Result<()> {
+    let pixels = frame.render(Duration::ZERO);
+    self.render_pixels(&pixels)
+  }
+
+  pub fn render(&mut self, frame: &mut Frame, delta: Duration) -> rusb::Result<()> {
+    let pixels = frame.render(delta);
+    self.render_pixels(&pixels)
   }
 
   pub fn clear(&mut self) -> rusb::Result<()> {
     let pixels = vec![0u8; self.width * self.height * 3];
-    self.render(&pixels)
+    self.render_pixels(&pixels)
   }
 
   /// pack an RGB24 frame into the PIN2DMD wire format

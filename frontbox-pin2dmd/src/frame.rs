@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::Renderable;
 
 pub struct Frame {
@@ -20,11 +22,11 @@ impl Frame {
   }
 
   /// Flatten out frame into pixels for sending to the DMD
-  pub fn to_pixels(&self) -> Vec<u8> {
+  pub fn render(&mut self, delta: Duration) -> Vec<u8> {
     let mut pixels = vec![0u8; self.width * self.height * 3];
 
-    for layer in &self.layers {
-      let rendered = layer.render();
+    for layer in &mut self.layers {
+      let rendered = layer.render(delta);
       let img = rendered.image.to_rgba8();
 
       for y in 0..img.height() as isize {
