@@ -1,4 +1,4 @@
-use crate::{ImageSprite, Renderable, Sprite};
+use crate::{ImageSprite, Sprite};
 
 /// Multiple sprite, within the same image file, layed out in a grid
 #[derive(Debug, Clone)]
