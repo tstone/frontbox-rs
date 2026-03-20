@@ -1,0 +1,11 @@
+[package]
+name = "frontbox-pin2dmd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.29"
+frontbox = { path = "../frontbox" }
+fast-protocol = { path = "../fast-protocol" }
+rusb = "0.9.4"
+image = "0.25.9"
