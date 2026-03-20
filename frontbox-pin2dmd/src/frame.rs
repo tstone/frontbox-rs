@@ -27,6 +27,8 @@ impl Frame {
 
     for layer in &self.layers {
       let rendered = layer.render();
+      let img = rendered.image.to_rgba8();
+
       for y in 0..rendered.image.height() as isize {
         for x in 0..rendered.image.width() as isize {
           let idx = ((y + rendered.offset_y) * self.width as isize + (x + rendered.offset_x)) * 3;
@@ -36,7 +38,6 @@ impl Frame {
             continue;
           }
 
-          let img = rendered.image.to_rgba8();
           let pixel = img.get_pixel(x as u32, y as u32);
 
           // ignore transparent pixels (alpha channel)

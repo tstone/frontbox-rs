@@ -1,5 +1,4 @@
 mod frame;
-mod layer;
 mod offset;
 mod pin2dmd;
 mod pixel_font;
@@ -11,7 +10,6 @@ mod sprite_sheet;
 mod text_formatting;
 
 pub use frame::*;
-pub use layer::*;
 pub use offset::*;
 pub use pin2dmd::*;
 pub use pixel_font::*;
