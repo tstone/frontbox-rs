@@ -4,15 +4,15 @@ use crate::Asset;
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
   image: image::DynamicImage,
-  pub path: &'static str,
+  pub path: String,
   pub rows: u8,
   pub cols: u8,
 }
 
 impl SpriteSheet {
-  pub fn new(path: &'static str, rows: u8, cols: u8) -> Self {
+  pub fn new(path: String, rows: u8, cols: u8) -> Self {
     let image =
-      image::open(path).unwrap_or_else(|_| panic!("Failed to load sprite sheet at {}", path));
+      image::open(&path).unwrap_or_else(|_| panic!("Failed to load sprite sheet at {}", path));
     Self {
       path,
       image,

@@ -50,7 +50,7 @@ impl PixelFont {
     for c in text.chars() {
       let char_sprite = self.char(c);
       let char_width = *self.custom_char_widths.get(&c).unwrap_or(&self.char_width) as isize;
-      sprites.push(char_sprite.offset_x(left_offset));
+      sprites.push(char_sprite.left(left_offset));
       left_offset += char_width;
     }
     PixelFontRenderable {
@@ -65,17 +65,37 @@ impl PixelFont {
 }
 
 pub struct PixelFontRenderable {
-  glyphs: Vec<XOffsetRenderable>,
+  glyphs: Vec<LeftOffsetRenderable>,
   glyph_widths: Vec<u16>,
   width: u32,
 }
 
+impl PixelFontRenderable {
+  pub fn width(&self) -> u32 {
+    self.width
+  }
+
+  /// split a word into a renderable per character
+  pub fn split(&self, parent: &FrameSize) -> Vec<Asset> {
+    let mut results = Vec::new();
+    let mut left_offset: isize = 0;
+
+    for (i, glyph) in self.glyphs.iter().enumerate() {
+      let rendered = glyph.render(parent);
+      results.push(Asset::new(rendered.image, left_offset, 0));
+      left_offset += self.glyph_widths[i] as isize;
+    }
+
+    results
+  }
+}
+
 impl Renderable for PixelFontRenderable {
-  fn render(&self) -> RenderableImage {
-    let mut result = RgbaImage::new(self.width, self.glyphs[0].render().image.height());
+  fn render(&self, parent: &FrameSize) -> RenderableImage {
+    let mut result = RgbaImage::new(self.width, self.glyphs[0].render(parent).image.height());
     let mut left_offset: isize = 0;
     for (i, glyph) in self.glyphs.iter().enumerate() {
-      let char_img = glyph.render().image;
+      let char_img = glyph.render(parent).image;
       image::imageops::overlay(&mut result, &char_img, left_offset as i64, 0);
       left_offset += self.glyph_widths[i] as isize;
     }
@@ -89,7 +109,7 @@ impl Renderable for PixelFontRenderable {
 
 pub struct PixelFontBuilder {
   sprite_sheet: Option<SpriteSheet>,
-  path: Option<&'static str>,
+  path: Option<String>,
   rows: Option<u8>,
   cols: Option<u8>,
   starting_char: char,
@@ -110,7 +130,7 @@ impl PixelFontBuilder {
     }
   }
 
-  pub fn path(mut self, path: &'static str) -> Self {
+  pub fn path(mut self, path: String) -> Self {
     self.path = Some(path);
     self
   }
