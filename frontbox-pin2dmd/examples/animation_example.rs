@@ -7,10 +7,11 @@ use frontbox_pin2dmd::*;
 fn main() -> rusb::Result<()> {
   let mut dmd = Pin2Dmd::connect(128, 32, PanelType::Rgb)?;
 
+  // animate x position
   let mut x_anim = Tween::new(
     Duration::from_secs(2),
-    Curve::ExponentialIn,
-    vec![0, 96],
+    Curve::BounceOut,
+    vec![-30, 100],
     AnimationCycle::Forever,
   );
 
@@ -28,6 +29,8 @@ fn main() -> rusb::Result<()> {
     dmd.render(&mut frame, tick)?;
     sleep(tick);
   }
+
+  sleep(Duration::from_secs(2));
 
   dmd.clear()?;
   Ok(())
