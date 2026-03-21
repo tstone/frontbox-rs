@@ -37,7 +37,7 @@ impl System for ActionButtonEject {
     self.active
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.action_button {
         ctx.command(FirePlunger);

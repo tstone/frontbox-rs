@@ -2,7 +2,7 @@
 
 ## Overview
 
-Frontbox is lightweight, code-first, homebrew arcade framework built in [Rust](https://rust-lang.org/) for [FAST Pinball](https://fastpinball.com/) hardware, built around actor-like constructs called "Systems", which send send and receive signal.
+Frontbox is lightweight, code-first, homebrew arcade framework built in [Rust](https://rust-lang.org/) for [FAST Pinball](https://fastpinball.com/) hardware, designed around an actor-like constructs called "Systems", which send send and receive signal.
 
 ### Features
 
@@ -673,7 +673,7 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(event) = event.downcast::<SwitchClosed>() {
       if event.switch.id == self.target_switch_id {
         self.on_target_hit(ctx);

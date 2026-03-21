@@ -184,7 +184,7 @@ impl IndividualPlayerSystem {
 }
 
 impl System for IndividualPlayerSystem {
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<AddPlayer>() {
       self.add_player(ctx);
     } else if let Some(_) = command.downcast_ref::<AdvanceTurn>() {
@@ -207,7 +207,7 @@ impl System for IndividualPlayerSystem {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if ctx.is_game_started() {
       match ctx.get::<CurrentPlayerTurnState>() {
         Some(CurrentPlayerTurnState::Beginning) => {

@@ -187,7 +187,7 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
-  event: &dyn Event,
+  event: &dyn Signal,
   systems: &mut SystemCollection,
   store: &mut Store,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
@@ -247,7 +247,7 @@ async fn handle_system_tick(
 }
 
 fn execute_command(
-  command: &dyn Command,
+  command: &dyn Signal,
   command_registry: &CommandRegistry,
   systems: &mut SystemCollection,
   store: &mut Store,

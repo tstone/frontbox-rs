@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
-use crate::prelude::{ChildSystem, System, SystemContainer};
+use crate::prelude::*;
 
 pub struct SystemGroup {
   pub(crate) systems: HashMap<u64, SystemContainer>,
@@ -55,7 +55,7 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_event(&mut self, event: &dyn crate::prelude::Event, ctx: &mut super::Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut super::Context) {
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
       if system.is_active(&ctx) {

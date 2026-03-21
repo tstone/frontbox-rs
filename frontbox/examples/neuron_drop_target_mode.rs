@@ -112,7 +112,7 @@ impl System for DropTargetDownUp {
     ));
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }

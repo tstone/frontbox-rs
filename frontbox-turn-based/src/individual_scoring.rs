@@ -67,7 +67,7 @@ impl System for IndividualScoring {
     ctx.register_command::<AddPoints>();
   }
 
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<SetMultiplier>() {
       self.set_multiplier(ctx, command.downcast_ref::<SetMultiplier>().unwrap().0);
     } else if let Some(_) = command.downcast_ref::<AddPoints>() {
@@ -75,7 +75,7 @@ impl System for IndividualScoring {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(_) = event.downcast_ref::<GameStarted>() {
       let player_count = ctx.expect::<GameState>().max_players as usize;
       ctx.insert(IndividualScores::new(player_count));

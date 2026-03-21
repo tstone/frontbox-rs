@@ -34,7 +34,7 @@ impl<'a> Context<'a> {
     false
   }
 
-  pub fn emit<E: Event>(&mut self, event: E) {
+  pub fn emit<E: Signal>(&mut self, event: E) {
     log::debug!("📨 Emitting event {}", type_name::<E>());
     self
       .app_sender
@@ -44,7 +44,7 @@ impl<'a> Context<'a> {
 
   // -- Commands --
 
-  pub fn command<C: Command>(&mut self, cmd: C) {
+  pub fn command<C: Signal>(&mut self, cmd: C) {
     log::debug!("📨 Executing command {}", type_name::<C>());
     self
       .app_sender
@@ -53,7 +53,7 @@ impl<'a> Context<'a> {
   }
 
   /// Register a command handler
-  pub fn register_command<C: Command + 'static>(&mut self) {
+  pub fn register_command<C: Signal + 'static>(&mut self) {
     self
       .app_sender
       .send(AppMessage::RegisterCommand(
@@ -63,7 +63,7 @@ impl<'a> Context<'a> {
       .ok();
   }
 
-  pub fn unregister_command<C: Command + 'static>(&mut self) {
+  pub fn unregister_command<C: Signal + 'static>(&mut self) {
     self
       .app_sender
       .send(AppMessage::UnregisterCommand(
@@ -76,7 +76,7 @@ impl<'a> Context<'a> {
   // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  pub fn register_interrupt<E: Event + 'static>(&mut self, priority: u16) {
+  pub fn register_interrupt<E: Signal + 'static>(&mut self, priority: u16) {
     self
       .app_sender
       .send(AppMessage::RegisterInterrupt(
@@ -87,7 +87,7 @@ impl<'a> Context<'a> {
       .ok();
   }
 
-  pub fn unregister_interrupt<E: Event + 'static>(&mut self) {
+  pub fn unregister_interrupt<E: Signal + 'static>(&mut self) {
     self
       .app_sender
       .send(AppMessage::UnregisterInterrupt(

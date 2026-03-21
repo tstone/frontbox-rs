@@ -31,7 +31,7 @@ impl System for FreePlay {
     ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable)
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {
         self.on_start_button_pressed(ctx);

@@ -57,13 +57,13 @@ impl System for AutoPlunger {
     ));
   }
 
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     if let Some(_fire) = command.downcast_ref::<FirePlunger>() {
       self.on_plunge(ctx);
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.lane_switch && self.do_autoplunge {
         self.activate_plunger(ctx);

@@ -282,13 +282,12 @@ impl Machine {
     };
     match self
       .io_port
-      .request(&ConfigureSwitchCommand::new(
-        switch,
-        reporting,
-        debounce_close,
-        debounce_open,
-      ), Duration::from_millis(200))
-      .await {
+      .request(
+        &ConfigureSwitchCommand::new(switch, reporting, debounce_close, debounce_open),
+        Duration::from_millis(200),
+      )
+      .await
+    {
       Ok(ProcessedResponse::Failed) => {
         log::error!("Switch {} configuration failed", switch);
       }
@@ -325,7 +324,7 @@ impl System for MachineBridge {
     ctx.register_command::<ConfigureSwitch>();
   }
 
-  fn on_command(&mut self, cmd: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, cmd: &dyn Signal, ctx: &mut Context) {
     if let Some(_) = cmd.as_any().downcast_ref::<WatchdogPing>() {
       self.machine_sender.send(MachineMessage::WatchdogPing).ok();
     } else if let Some(_) = cmd.as_any().downcast_ref::<ClearWatchdog>() {
@@ -399,7 +398,7 @@ impl System for MachineBridge {
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {
-    let boards = ctx.expect::<ExpansionBoards>().clone();
+    let boards = ctx.cloned::<ExpansionBoards>().unwrap();
     self
       .machine_sender
       .send(MachineMessage::ResetExpansionNetwork(boards))

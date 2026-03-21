@@ -17,9 +17,9 @@ pub trait System {
   fn on_timer(&mut self, timer_name: &'static str, ctx: &mut Context) {}
 
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {}
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {}
-  fn on_interrupt(&mut self, event: &dyn Event, ctx: &mut Context) -> InterruptResult {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {}
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {}
+  fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptResult {
     InterruptResult::Continue
   }
 
@@ -60,11 +60,11 @@ impl System for Box<dyn SpawnableSystem> {
     self.as_system().on_tick(delta, ctx);
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     self.as_system().on_event(event, ctx);
   }
 
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     self.as_system().on_command(command, ctx);
   }
 }
@@ -91,11 +91,11 @@ impl System for Box<dyn ChildSystem> {
     self.as_system().on_tick(delta, ctx);
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     self.as_system().on_event(event, ctx);
   }
 
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     self.as_system().on_command(command, ctx);
   }
 }

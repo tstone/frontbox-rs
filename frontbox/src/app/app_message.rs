@@ -3,12 +3,11 @@ use std::fmt::Display;
 
 use fast_protocol::SwitchState;
 
-use crate::machine::event::Event;
 use crate::prelude::*;
 
 pub enum AppMessage {
-  EmitEvent(Box<dyn Event>),
-  ExecuteCommand(u64, Box<dyn Command>),
+  EmitEvent(Box<dyn Signal>),
+  ExecuteCommand(u64, Box<dyn Signal>),
   RegisterCommand(u64, TypeId),
   RegisterInterrupt(u64, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),

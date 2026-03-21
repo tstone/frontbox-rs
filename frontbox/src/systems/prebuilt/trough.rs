@@ -21,7 +21,7 @@ impl TroughSystem {
     if self
       .switches
       // only look at the last switch (nearest the exit) for occupancy changes
-      .get(self.expected_occupancy -1)
+      .get(self.expected_occupancy - 1)
       .map(|s| *s == switch_name)
       .unwrap_or(false)
     {
@@ -122,7 +122,7 @@ impl System for TroughSystem {
     ));
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {
@@ -130,7 +130,7 @@ impl System for TroughSystem {
     }
   }
 
-  fn on_command(&mut self, command: &dyn Command, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<TroughEject>() {
       self.eject(ctx);
     } else if let Some(_) = command.downcast_ref::<BallAddedToPlay>() {
