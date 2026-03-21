@@ -67,7 +67,7 @@ async fn main() {
 
   App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
-    .add_systems(bundles::operational())
+    .systems(bundles::operational())
     .run(vec![DropTargetDownUp::new([
       switches::LOWER_DROP_TARGET1,
       switches::LOWER_DROP_TARGET2,
@@ -98,9 +98,6 @@ impl DropTargetDownUp {
 
       if all_down {
         ctx.set_timer("coil_up", Duration::from_millis(250), TimerMode::OneShot);
-
-        // start mode over
-        ctx.replace_system(*DropTargetDownUp::new(self.target_switches));
       }
     }
   }

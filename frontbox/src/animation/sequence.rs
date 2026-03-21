@@ -1,18 +1,16 @@
-use std::time::Duration;
-
-use crate::time::*;
+use crate::animation::*;
 
 /// Plays a sequence of animations in order
 #[derive(Clone)]
-pub struct Sequence<T> {
-  sequence: Vec<Box<dyn Animation<T>>>,
+pub struct Sequence<A, T> {
+  sequence: Vec<Box<dyn Animation<A, T>>>,
   current_anim_index: usize,
   cycle: AnimationCycle,
   cycle_count: u32,
 }
 
-impl<T> Sequence<T> {
-  pub fn new(sequence: Vec<Box<dyn Animation<T>>>, cycle: AnimationCycle) -> Box<Self> {
+impl<A, T> Sequence<A, T> {
+  pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
       sequence,
       current_anim_index: 0,
@@ -28,13 +26,14 @@ impl<T> Sequence<T> {
   }
 }
 
-impl<T> Tickable for Sequence<T>
+impl<A, T> Accumulator<A> for Sequence<A, T>
 where
   T: Clone + Default,
+  A: Copy + Default,
 {
-  fn tick(&mut self, delta_time: Duration) -> Duration {
+  fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
     if let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index) {
-      let remainder = current_anim.tick(delta_time);
+      let result = current_anim.accumulate(delta);
 
       if current_anim.is_complete() {
         self.current_anim_index += 1;
@@ -48,11 +47,21 @@ where
         }
 
         // roll over extra time to next animation, if any
-        return self.tick(remainder);
+        return self.accumulate(result.remainder);
       }
     }
 
-    Duration::ZERO
+    AccumulationResult::default()
+  }
+
+  fn set(&mut self, current: A) {
+    // replay the sequence up to the current value
+    self.reset();
+    let mut remainder = current;
+    for anim in &mut self.sequence {
+      anim.set(current);
+      remainder = anim.accumulate(remainder).remainder;
+    }
   }
 
   fn is_complete(&self) -> bool {
@@ -63,10 +72,6 @@ where
     }
   }
 
-  fn completed_this_tick(&self) -> bool {
-    self.is_complete() && self.current_anim_index == 0
-  }
-
   fn reset(&mut self) {
     self.current_anim_index = 0;
     self.cycle_count = 0;
@@ -74,9 +79,10 @@ where
   }
 }
 
-impl<T> Animation<T> for Sequence<T>
+impl<A, T> Animation<A, T> for Sequence<A, T>
 where
   T: Clone + Default,
+  A: Copy + Default,
 {
   fn sample(&self) -> T {
     if let Some(current_anim) = &mut self.sequence.get(self.current_anim_index) {

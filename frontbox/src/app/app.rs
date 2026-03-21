@@ -254,27 +254,27 @@ impl App {
     }
   }
 
-  pub fn add_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
+  pub fn operator_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
     self.operator_config.add_item(key, item);
     self
   }
 
-  pub fn set_config_value(mut self, key: &'static str, value: ConfigValue) -> Self {
+  pub fn operator_config_value(mut self, key: &'static str, value: ConfigValue) -> Self {
     self.operator_config.set_value(key, value);
     self
   }
 
-  pub fn set_system_tick(mut self, interval: Duration) -> Self {
+  pub fn system_tick(mut self, interval: Duration) -> Self {
     self.app_config.system_timer_tick = interval;
     self
   }
 
-  pub fn set_watchdog_tick(mut self, interval: Duration) -> Self {
+  pub fn watchdog_tick(mut self, interval: Duration) -> Self {
     self.app_config.watchdog_tick = interval;
     self
   }
 
-  pub fn add_systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
+  pub fn systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
     self.systems.extend(systems);
     self
   }

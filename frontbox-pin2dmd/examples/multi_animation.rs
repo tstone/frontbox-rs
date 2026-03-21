@@ -3,7 +3,7 @@ use rand::prelude::IteratorRandom;
 use std::thread::sleep;
 use std::time::Duration; // Import the Rng trait
 
-use frontbox::time::*;
+use frontbox::animation::*;
 use frontbox_pin2dmd::*;
 use image::Rgba;
 
@@ -47,9 +47,9 @@ fn main() -> rusb::Result<()> {
 
   loop {
     let tick = Duration::from_millis(33);
-    x_anim.tick(tick);
-    color_anim.tick(tick);
-    frame_anim.tick(tick);
+    x_anim.accumulate(tick);
+    color_anim.accumulate(tick);
+    frame_anim.accumulate(tick);
 
     let mut frame =
       Frame::for_dmd(&dmd).with_fill(Fill::VerticalGradient(Rgba::black(), Rgba::dark_blue()));

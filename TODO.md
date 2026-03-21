@@ -4,6 +4,9 @@ System
 - Make machine bridge system deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
 - Should Timers be integrated into the Tickable/Timeline ecosystem? (probably)
+- Keyframe animation -- specify "this value, at this point in time" -- lerps between 2 points
+- Is there a library that has something nicer than Duration::from_secs(1), like `1.seconds()`
+- System groups can contain groups
 
 Hardware
 

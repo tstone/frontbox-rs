@@ -18,7 +18,7 @@ async fn main() {
     vec![],
   )
   .await
-  .add_systems(bundles::operational())
+  .systems(bundles::operational())
   .run(vec![])
   .await;
 }

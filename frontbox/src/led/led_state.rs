@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::time::Animation;
+use crate::animation::Animation;
 use fast_protocol::Color;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,16 +47,20 @@ impl LedDeclarationBuilder {
     self
   }
 
-  pub fn next_frame(self, name: &'static str, animation: &mut Box<dyn Animation<Color>>) -> Self {
-    animation.tick(self.delta_time);
+  pub fn next_frame(
+    self,
+    name: &'static str,
+    animation: &mut Box<dyn Animation<Duration, Color>>,
+  ) -> Self {
+    animation.accumulate(self.delta_time);
     self.on(name, animation.sample())
   }
 
   pub fn next_frames(
     mut self,
-    animation: &mut Box<dyn Animation<Vec<(&'static str, Color)>>>,
+    animation: &mut Box<dyn Animation<Duration, Vec<(&'static str, Color)>>>,
   ) -> Self {
-    animation.tick(self.delta_time);
+    animation.accumulate(self.delta_time);
     for (name, color) in animation.sample() {
       self = self.on(name, color);
     }
