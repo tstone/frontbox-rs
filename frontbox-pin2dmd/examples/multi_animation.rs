@@ -3,7 +3,7 @@ use rand::prelude::IteratorRandom;
 use std::thread::sleep;
 use std::time::Duration; // Import the Rng trait
 
-use frontbox::animation::*;
+use frontbox::time::*;
 use frontbox_pin2dmd::*;
 use image::Rgba;
 

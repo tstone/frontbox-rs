@@ -1,4 +1,4 @@
-use frontbox::animation::*;
+use frontbox::time::*;
 use frontbox::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
