@@ -99,19 +99,21 @@ impl<'a> Context<'a> {
 
   // --- System management ---
 
+  /// Start up a new system
   pub fn spawn_system(&mut self, system: impl SpawnableSystem + 'static) {
     let _ = self
       .app_sender
       .send(AppMessage::SpawnSystem(self.system_id, Box::new(system)));
   }
 
-  pub fn replace_system(&mut self, system: impl SpawnableSystem + 'static) {
+  /// Despawn self and immediately spawn a new system in its place
+  pub fn replace_self(&mut self, system: impl SpawnableSystem + 'static) {
     let _ = self
       .app_sender
       .send(AppMessage::ReplaceSystem(self.system_id, Box::new(system)));
   }
 
-  pub fn despawn_system(&mut self) {
+  pub fn despawn_self(&mut self) {
     let _ = self
       .app_sender
       .send(AppMessage::DespawnSystem(self.system_id));

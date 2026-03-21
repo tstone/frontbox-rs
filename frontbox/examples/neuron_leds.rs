@@ -1,4 +1,4 @@
-use frontbox::time::*;
+use frontbox::animation::*;
 use frontbox::prelude::*;
 use std::collections::HashMap;
 use std::io::Write;
@@ -39,8 +39,8 @@ async fn main() {
 
 #[derive(Clone)]
 struct LedExample {
-  flash: Box<dyn Animation<Color>>,
-  seq: Box<dyn Animation<Color>>,
+  flash: Box<dyn Animation<Duration, Color>>,
+  seq: Box<dyn Animation<Duration, Color>>,
 }
 
 impl LedExample {

@@ -24,6 +24,7 @@ impl Store {
     self.internal.clear();
   }
 
+  /// Returns true if the store contains a value of type T
   pub fn has<T: StorableType>(&self) -> bool {
     self.internal.contains_key(&TypeId::of::<T>())
   }

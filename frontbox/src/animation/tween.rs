@@ -1,12 +1,13 @@
-use std::time::Duration;
+use std::ops::{AddAssign, SubAssign};
 
-use crate::time::*;
+use crate::animation::*;
 
-/// Animation implementation that interpolates (lerps) between two values of type T over a specified duration using a given curve
+/// Animation implementation that interpolates (lerps) between two values of type T over a specified quatity using a given curve
 #[derive(Clone)]
-pub struct Tween<T: Lerp + Clone + Send + Sync> {
-  pub duration: Duration,
-  elapsed: Duration,
+pub struct Tween<A: ToF32 + Copy + Default, T: Lerp + Clone + Send + Sync> {
+  // the amount which signals this animation is done
+  pub target: A,
+  current: A,
   pub curve: Curve,
   pub stops: Vec<T>,
   pub cycle: AnimationCycle,
@@ -14,14 +15,15 @@ pub struct Tween<T: Lerp + Clone + Send + Sync> {
   current_stop_index: usize,
 }
 
-impl<T> Tween<T>
+impl<A, T> Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync,
 {
-  pub fn new(duration: Duration, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
+  pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
-      duration,
-      elapsed: Duration::ZERO,
+      target,
+      current: A::default(),
       curve,
       stops,
       cycle,
@@ -36,8 +38,8 @@ where
 
   pub fn reverse(&mut self) {
     Tween {
-      duration: self.duration,
-      elapsed: self.elapsed,
+      target: self.target,
+      current: A::default(),
       curve: Curve::Reverse(Box::new(self.curve.clone())),
       stops: self.stops.clone().into_iter().rev().collect(),
       cycle: self.cycle.clone(),
@@ -47,19 +49,23 @@ where
   }
 }
 
-impl<T> Tickable for Tween<T>
+impl<A, T> Accumulator<A> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialOrd + PartialEq + Send + Sync,
 {
-  fn tick(&mut self, delta_time: Duration) -> Duration {
+  fn accumulate(&mut self, delta_time: A) -> AccumulationResult<A> {
     if self.is_complete() {
-      return Duration::ZERO;
+      return AccumulationResult::default();
     }
 
-    self.elapsed += delta_time;
-    if self.elapsed >= self.duration {
-      self.elapsed -= self.duration;
+    self.current += delta_time;
+    if self.current >= self.target {
+      self.current -= self.target;
       let is_last_stop = self.current_stop_index == self.stops.len() - 2;
+
+      let mut completed_just_now = false;
+      let remainder = self.current;
 
       if is_last_stop {
         match self.cycle {
@@ -68,14 +74,14 @@ where
           }
           AnimationCycle::Once => {
             self.cycle_count += 1;
-            self.elapsed = self.duration; // clamp to end
+            completed_just_now = true;
           }
           AnimationCycle::Times(n) => {
             self.cycle_count += 1;
             if self.cycle_count < n {
               self.current_stop_index = 0;
             } else {
-              self.elapsed = self.duration; // clamp to end
+              completed_just_now = true;
             }
           }
         }
@@ -83,10 +89,13 @@ where
         self.current_stop_index += 1;
       }
 
-      return self.elapsed;
+      return AccumulationResult {
+        completed_just_now,
+        remainder,
+      };
     }
 
-    Duration::ZERO
+    AccumulationResult::default()
   }
 
   fn is_complete(&self) -> bool {
@@ -97,23 +106,24 @@ where
     }
   }
 
-  fn completed_this_tick(&self) -> bool {
-    self.is_complete() && self.elapsed <= self.duration
-  }
-
   fn reset(&mut self) {
-    self.elapsed = Duration::ZERO;
+    self.current = A::default();
     self.cycle_count = 0;
     self.current_stop_index = 0;
   }
+
+  fn set(&mut self, current: A) {
+    self.current = current;
+  }
 }
 
-impl<T> Animation<T> for Tween<T>
+impl<A, T> Animation<A, T> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + PartialOrd + Send + Sync,
 {
   fn sample(&self) -> T {
-    let phase = (self.elapsed.as_secs_f32() / self.duration.as_secs_f32()).min(1.0);
+    let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);
     let curve_value = self.curve.sample(phase);
     let from = &self.stops[self.current_stop_index];
     let to = &self.stops[self.next_index()];
