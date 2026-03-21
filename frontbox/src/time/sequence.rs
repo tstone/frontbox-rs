@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::animation::*;
+use crate::time::*;
 
 /// Plays a sequence of animations in order
 #[derive(Clone)]
@@ -28,7 +28,7 @@ impl<T> Sequence<T> {
   }
 }
 
-impl<T> Animation<T> for Sequence<T>
+impl<T> Tickable for Sequence<T>
 where
   T: Clone + Default,
 {
@@ -55,13 +55,6 @@ where
     Duration::ZERO
   }
 
-  fn sample(&self) -> T {
-    if let Some(current_anim) = &mut self.sequence.get(self.current_anim_index) {
-      return current_anim.sample();
-    }
-    T::default()
-  }
-
   fn is_complete(&self) -> bool {
     match self.cycle {
       AnimationCycle::Once => self.cycle_count >= 1,
@@ -70,9 +63,25 @@ where
     }
   }
 
+  fn completed_this_tick(&self) -> bool {
+    self.is_complete() && self.current_anim_index == 0
+  }
+
   fn reset(&mut self) {
     self.current_anim_index = 0;
     self.cycle_count = 0;
     self.reset_anims();
+  }
+}
+
+impl<T> Animation<T> for Sequence<T>
+where
+  T: Clone + Default,
+{
+  fn sample(&self) -> T {
+    if let Some(current_anim) = &mut self.sequence.get(self.current_anim_index) {
+      return current_anim.sample();
+    }
+    T::default()
   }
 }

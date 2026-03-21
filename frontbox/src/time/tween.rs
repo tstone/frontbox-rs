@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::animation::*;
+use crate::time::*;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified duration using a given curve
 #[derive(Clone)]
@@ -47,7 +47,7 @@ where
   }
 }
 
-impl<T> Animation<T> for Tween<T>
+impl<T> Tickable for Tween<T>
 where
   T: Lerp + Clone + Send + Sync,
 {
@@ -89,14 +89,6 @@ where
     Duration::ZERO
   }
 
-  fn sample(&self) -> T {
-    let phase = (self.elapsed.as_secs_f32() / self.duration.as_secs_f32()).min(1.0);
-    let curve_value = self.curve.sample(phase);
-    let from = &self.stops[self.current_stop_index];
-    let to = &self.stops[self.next_index()];
-    from.interpolate(to, curve_value)
-  }
-
   fn is_complete(&self) -> bool {
     match self.cycle {
       AnimationCycle::Once => self.cycle_count > 0,
@@ -105,9 +97,26 @@ where
     }
   }
 
+  fn completed_this_tick(&self) -> bool {
+    self.is_complete() && self.elapsed <= self.duration
+  }
+
   fn reset(&mut self) {
     self.elapsed = Duration::ZERO;
     self.cycle_count = 0;
     self.current_stop_index = 0;
+  }
+}
+
+impl<T> Animation<T> for Tween<T>
+where
+  T: Lerp + Clone + Send + Sync,
+{
+  fn sample(&self) -> T {
+    let phase = (self.elapsed.as_secs_f32() / self.duration.as_secs_f32()).min(1.0);
+    let curve_value = self.curve.sample(phase);
+    let from = &self.stops[self.current_stop_index];
+    let to = &self.stops[self.next_index()];
+    from.interpolate(to, curve_value)
   }
 }

@@ -3,6 +3,7 @@ System
 - Fix the drop target example, as delayed was removed (use a timer)
 - Make machine bridge system deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
+- Should Timers be integrated into the Tickable/Timeline ecosystem? (probably)
 
 Hardware
 

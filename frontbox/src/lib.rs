@@ -1,4 +1,4 @@
-pub mod animation;
+pub mod time;
 mod app;
 mod hardware_definition;
 mod led;
