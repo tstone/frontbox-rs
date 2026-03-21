@@ -9,7 +9,7 @@ Frontbox is lightweight, code-first, homebrew arcade framework built in [Rust](h
 - **Modern**: FAST Pinball Neuron support
 - **Modular**: Almost every facet of machine operation can be replaced
 - **Coherent**: Limited number of abstractions and consistent architecature throughout
-- **Dynamic**: Flexible animation + accumulation\* system that applies to just about everything
+- **Dynamic**: Flexible animation + accumulation system that applies to just about everything
 - **Retro**: Pin2DMD and NeoSeg\* (alpha numeric) display support out of the box
 
 \* = Coming Soon
