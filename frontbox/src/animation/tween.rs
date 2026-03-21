@@ -1,4 +1,3 @@
-use fast_protocol::Color;
 use std::time::Duration;
 
 use crate::animation::*;
@@ -53,17 +52,38 @@ where
   T: Lerp + Clone + Send + Sync,
 {
   fn tick(&mut self, delta_time: Duration) -> Duration {
+    if self.is_complete() {
+      return Duration::ZERO;
+    }
+
     self.elapsed += delta_time;
     if self.elapsed >= self.duration {
-      if self.cycle != AnimationCycle::Forever && self.cycle_count < u32::MAX {
-        self.cycle_count += 1;
+      self.elapsed -= self.duration;
+      let is_last_stop = self.current_stop_index == self.stops.len() - 2;
+
+      if is_last_stop {
+        match self.cycle {
+          AnimationCycle::Forever => {
+            self.current_stop_index = 0;
+          }
+          AnimationCycle::Once => {
+            self.cycle_count += 1;
+            self.elapsed = self.duration; // clamp to end
+          }
+          AnimationCycle::Times(n) => {
+            self.cycle_count += 1;
+            if self.cycle_count < n {
+              self.current_stop_index = 0;
+            } else {
+              self.elapsed = self.duration; // clamp to end
+            }
+          }
+        }
+      } else {
+        self.current_stop_index += 1;
       }
 
-      if !self.is_complete() {
-        self.elapsed = self.elapsed - self.duration;
-        self.current_stop_index = self.next_index();
-        return self.elapsed;
-      }
+      return self.elapsed;
     }
 
     Duration::ZERO
