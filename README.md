@@ -2,7 +2,10 @@
 
 ## Overview
 
-Frontbox is a code-first homebrew arcade framework built for [FAST Pinball](https://fastpinball.com/) hardware, designed around an actor-like constructs called "Systems", which send send and receive signal.
+Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpinball.com/) hardware, designed around an actor-like constructs called "Systems", which send send and receive signal.
+
+> [!WARNING]
+> Frontbox is in active, pre-release development with unstable APIs
 
 ### Features
 
@@ -14,9 +17,6 @@ Frontbox is a code-first homebrew arcade framework built for [FAST Pinball](http
 - **Immersive**: Sound system with automatic music ducking\*
 
 \* = Coming Soon
-
-> [!WARNING]
-> Frontbox is in active, pre-release development with unstable APIs
 
 ## Guide
 
@@ -701,4 +701,4 @@ impl System for TargetHitter {
 }
 ```
 
-See [examples](frontbox/examples) for more.
+See [examples](frontbox/examples) or the [included plugins](frontbox-rs/tree/main/frontbox-turn-based/src) for more.
