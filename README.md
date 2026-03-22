@@ -20,8 +20,6 @@ Frontbox is a code-first homebrew arcade framework built for [FAST Pinball](http
 
 ## Guide
 
-[Rust](https://rust-lang.org/)
-
 ### Systems
 
 The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through `Signals`. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
@@ -40,7 +38,7 @@ impl System for Example {
 
 #### Startup
 
-Systems can either be given when the framework first starts up, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.
+Systems can given on startup, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.
 
 ```rust
 // Start a new system
@@ -54,8 +52,6 @@ ctx.despawn_self();
 ```
 
 #### Types of Systems
-
-There are three types of systems. The intended use affects which to use.
 
 - `System` - Plain vanilla system which can be started on boot
 - `SpawnableSystem` - System which can be dynamically started at runtime. Must be `Send + Sync` compatible
@@ -86,7 +82,7 @@ impl System for Example {
 }
 ```
 
-Signals are handled by attempting a downcasting into the expected type.
+Signals are handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
@@ -99,7 +95,7 @@ impl System for Example {
 }
 ```
 
-Signals are both something that the framework provides implementations of (e.g. switch open/closed) and something that can be defined entirely by the end user. The only requirement is that values must be thread safe (`Send + Sync`).
+Signals are both something that the framework provides (e.g. switch open/closed) and something that can be defined by the end user. The only requirement is that values be thread safe (`Send + Sync`).
 
 ```rust
 // Signals can simply be a body-less struct representing a typed thing
@@ -143,7 +139,7 @@ For example...
 
 ### Commands
 
-Commands are a specific type of signal whereby a system can register itself as a command handler, allowing any other system to emit that signal. Only one system can be registered as a handler and only that system receives the signal.
+Commands are a specific type of signal where a system can register itself as a command handler by type. Only one system can be registered as a handler and only that system receives the signal.
 
 As the name implies, this type of signal is typically meant to instruct a system to do something.
 
@@ -170,12 +166,12 @@ ctx.command(ExampleCommand(100));
 
 Commands are not run immediately when requested by a system. Instead they are enqueued and run in the order received.
 
-> [!INFO] Convention
+> [!TIP]
 > It's typical for command signals to use tuple style structs, preferring `Cmd(u64)` over `Cmd { id: u64 }`
 
 ### Cues
 
-Cues are signals a system can send to itself. There are three primitive types of cues:
+Cues are signals a system can send to itself. There are four primitive types of cues:
 
 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
 2. **Repeat** -- Cue happens N times, with an interval in between
@@ -187,6 +183,7 @@ struct SomethingImportant(u8);
 
 impl System for Example {
   fn on_startup(&mut self, ctx: &mut Context) {
+    // setup the cue
     ctx.cue(
       Cue::Repeat(3, Duration::from_secs(3)),
       SomethingImportant(100)
@@ -194,16 +191,9 @@ impl System for Example {
   }
 
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
+    // what to do when the cue happens (in this case, 3 times)
     if let Some(v) = cmd.downcast_ref::<SomethingImportant>() {
       log::debug!("Something important: {}!", v.0);
-      // this will log 3 times with the following timeline:
-      // <3 seconds elapse>
-      // "Something important: 100!"
-      // <3 seconds elapse>
-      // "Something important: 100!"
-      // <3 seconds elapse>
-      // "Something important: 100!"
-      // <no more cues after this point as the cue is complete>
     }
   }
 }
@@ -215,8 +205,6 @@ Creating a cue returns a handle that can later be used to cancel it.
 
 ```rust
 let handle = ctx.cue(SomethingRather, Cue::Forever(Duration::from_secs(1)));
-
-// ...
 
 ctx.cancel_cue(handle);
 ```
@@ -233,7 +221,7 @@ ctx.cue_timeline(AllDone, Timeline::new()
 );
 ```
 
-In this case there is not only a cue for each node on the timeline with a specific value, but also a cue for the entire timeline completing. Canceling a timeline cancels all remaining cues within it.
+With timelines, there is not only a cue that happens for each node of the timeline (with a specific value), but also a cue for the entire timeline completing. Canceling a timeline cancels all remaining cues within it.
 
 #### Cycling & Flashing
 
@@ -252,7 +240,7 @@ Cycling works by rotating through the list of values each time the cue is comple
 
 ### Generic Signals
 
-As seen above, in some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
+In some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
 
 - `Anonymous` - An unnamed signal
 - `Named(&'static str)` - A generic named signal
@@ -356,7 +344,7 @@ The other half of `Context` is the global store. All systems have read/write acc
 >
 > To implement a fully signal-based architecture, making systems for the inactive player listening and building up a current view, creates more complexity and opportunity for weird bugs than just using global mutable state. Frontbox adopts a trade-off: global mutable state, while posing some danger, is the simpler and less error prone approach.
 
-> [!INFO] Convention
+> [!TIP]
 > Use the global store only for (1) data that needs to be displayed or (2) read-on-demand reference data
 
 The global store works based on _type_. Only one instance of a given type can be stored in the global store at once. Inserting a value of a type overwrites any previous values.
@@ -394,7 +382,7 @@ if ctx.is(BossFightPhase::HitWithFireballs) {
 }
 ```
 
-> [!INFO] Convention
+> [!TIP]
 > Use enums stored in global context as state machines
 
 ### Active
