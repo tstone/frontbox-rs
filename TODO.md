@@ -1,12 +1,11 @@
 System
 
-- Fix the drop target example, as delayed was removed (use a timer)
+- Cue system
 - Make machine bridge system deconfigure drivers on shutdown
 - Bring back plugin which can register things like operator configs
-- Should Timers be integrated into the Tickable/Timeline ecosystem? (probably)
-- Keyframe animation -- specify "this value, at this point in time" -- lerps between 2 points
 - Is there a library that has something nicer than Duration::from_secs(1), like `1.seconds()`
 - System groups can contain groups
+- Keyframe animation -- specify "this value, at this point in time" -- lerps between 2 points
 
 Hardware
 
@@ -25,7 +24,6 @@ Sound (as a System)
 Displays (as a System)
 
 - FAST LED canvas
-- Pin2DMD support
 - NeoSeg support
 
 LEDs

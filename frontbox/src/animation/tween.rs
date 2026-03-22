@@ -74,6 +74,7 @@ where
           }
           AnimationCycle::Once => {
             self.cycle_count += 1;
+            self.current = self.target; // clear remainder to ensure we don't accidentally roll over into the next cycle
             completed_just_now = true;
           }
           AnimationCycle::Times(n) => {
@@ -81,6 +82,7 @@ where
             if self.cycle_count < n {
               self.current_stop_index = 0;
             } else {
+              self.current = self.target;
               completed_just_now = true;
             }
           }
