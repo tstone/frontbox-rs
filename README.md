@@ -57,7 +57,7 @@ ctx.despawn_self();
 
 There are three types of systems. The intended use affects which to use.
 
-- `System` - Plain vanillia system which can be started on boot
+- `System` - Plain vanilla system which can be started on boot
 - `SpawnableSystem` - System which can be dynamically started at runtime. Must be `Send + Sync` compatible
 - `ChildSystem` - System which can be managed within a group (see "System Groups" below). Must implement `Clone`.
 
@@ -69,7 +69,7 @@ Frontbox systems primarily interact with signals. Signals come in three flavors,
 | --------------- | ----------------------------------------- | -------------------------------- | ------------------------------------------------------------ |
 | **Description** | A signal broadcast to all Systems         | A signal sent to specific system | A signal that a system can send to itself, usually scheduled |
 | **Scope**       | Multi-producer, multi-consumer            | Multi-producer, single-consumer  | Single-producer (self), single-consumer (self)               |
-| **Interrupt**   | Can be interrupted - `register_interrupt` | Uninterruptable                  | Can be cancelled - `cancel_cue`                              |
+| **Interrupt**   | Can be interrupted - `register_interrupt` | Uninterruptible                  | Can be cancelled - `cancel_cue`                              |
 
 Systems can implement a handler per signal type.
 
@@ -133,7 +133,7 @@ impl System for Example {
 
 ##### Event Layering
 
-Sometimes systems receieve lower level events (e.g. switch state changed) and process them into higher level events. These higher level events themselves get processed into game level events.
+Sometimes systems receive lower level events (e.g. switch state changed) and process them into higher level events. These higher level events themselves get processed into game level events.
 
 For example...
 
@@ -143,7 +143,7 @@ For example...
 
 ### Commands
 
-Commands are a specific type of signal whereby a system can register itself as a command handler, allowing any other system to emit that signal. Only one system can be regsitered as a handler and only that system receives the signal.
+Commands are a specific type of signal whereby a system can register itself as a command handler, allowing any other system to emit that signal. Only one system can be registered as a handler and only that system receives the signal.
 
 As the name implies, this type of signal is typically meant to instruct a system to do something.
 
@@ -165,7 +165,7 @@ impl System for Example {
 }
 
 // other systems can signal this command
-ctx.command(ExampleCmmand(100));
+ctx.command(ExampleCommand(100));
 ```
 
 Commands are not run immediately when requested by a system. Instead they are enqueued and run in the order received.
@@ -179,7 +179,7 @@ Cues are signals a system can send to itself. There are three primitive types of
 
 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
 2. **Repeat** -- Cue happens N times, with an interval in between
-3. **Forever** -- Cue happesn until canceled, with an interval in between
+3. **Forever** -- Cue happens until canceled, with an interval in between
 4. **Now** -- Cue happens immediately, once
 
 ```rust
@@ -237,7 +237,7 @@ In this case there is not only a cue for each node on the timeline with a specif
 
 #### Cycling & Flashing
 
-Cycling through a set of states is a common occurence in pinball. For example, flashing is in fact the cycling of two values.
+Cycling through a set of states is a common occurrence in pinball. For example, flashing is in fact the cycling of two values.
 
 ```rust
 ctx.cue_cycling(vec![
@@ -252,7 +252,7 @@ Cycling works by rotating through the list of values each time the cue is comple
 
 ### Generic Signals
 
-As seen above, in some cases, particularly with cueuing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is prefered, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
+As seen above, in some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
 
 - `Anonymous` - An unnamed signal
 - `Named(&'static str)` - A generic named signal
@@ -261,7 +261,7 @@ As seen above, in some cases, particularly with cueuing, it might be a bit tedio
 
 ### Animations
 
-Animations are a fundamental part to any arcade machine and especially to pinball. Whereas a `Cue` is about an event in time that a system handles, an animation is about a value that changes over time (though not necessarily boudn to time). It's useful to establish first what exactly an animation is, before demonstrating how to use it.
+Animations are a fundamental part to any arcade machine and especially to pinball. Whereas a `Cue` is about an event in time that a system handles, an animation is about a value that changes over time (though not necessarily bound to time). It's useful to establish first what exactly an animation is, before demonstrating how to use it.
 
 Animations describe "how does this value change over an accumulated amount?" Usually the thing being accumulated is time.
 
@@ -288,10 +288,10 @@ This example describes how a value will start at `0` and end up at `100` over th
 Animations are actually built on a lower level trait called a `Accumulator`. Accumulator are, as the name implies, accumulators of values. When used with `Duration` they accumulate time.
 
 ```rust
-my_tickable.accumulate(Duration::from_millis(100));
-log::debug!("Is complete? {}", my_tickable.is_complete());
+acc.accumulate(Duration::from_millis(100));
+log::debug!("Is complete? {}", acc.is_complete());
 
-my_tickable.reset();
+acc.reset();
 ```
 
 Systems have an `on_tick` handler, invoked by the framework, that marches forward based on the framework frequency much like all game frameworks. This internal tick is separate from hardware event handling, which is done in real time. Inactive systems do not tick forward (see "Active" section).
@@ -306,7 +306,7 @@ impl System for Example {
 
 #### Accumulation
 
-While in the example above the animation was accumulating time by way of `Duration`, it's possible to accumlate anythign that is, well, accumulatable. There are a few trait restrictions, like it must have a default value and be comparable (`PartialOrd`), summable, etc. but beyond that any accumulatable value can be accumulated.
+While in the example above the animation was accumulating time by way of `Duration`, it's possible to accumulate anything that is, well, accumulatable. There are a few trait restrictions, like it must have a default value and be comparable (`PartialOrd`), summable, etc. but beyond that any accumulatable value can be accumulated.
 
 This means that animations work, not just on time, by for integers that represent hit counts or switch counts. For example, to change the color of LED based on how many time a spinner has spun, an animation can be used for this.
 
@@ -340,7 +340,7 @@ ctx.command(SetLed(leds::SPINNER_LANE, self.anim.sample()));
 
 ### Context
 
-Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provdied, including:
+Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provided, including:
 
 - Register commands, cues, and interrupts
 - Emit events
@@ -357,7 +357,7 @@ The other half of `Context` is the global store. All systems have read/write acc
 > To implement a fully signal-based architecture, making systems for the inactive player listening and building up a current view, creates more complexity and opportunity for weird bugs than just using global mutable state. Frontbox adopts a trade-off: global mutable state, while posing some danger, is the simpler and less error prone approach.
 
 > [!INFO] Convention
-> Use the global store only for (1) data that needs to be displayed or (2) read-on-demand referece data
+> Use the global store only for (1) data that needs to be displayed or (2) read-on-demand reference data
 
 The global store works based on _type_. Only one instance of a given type can be stored in the global store at once. Inserting a value of a type overwrites any previous values.
 
@@ -368,7 +368,7 @@ let value: Option<A> = ctx.get::<A>();
 `Context` provides several access methods:
 
 - `has::<T>` - returns `bool` if `T` exists in the global store
-- `is::<T>(value)` - returns `bool` if value of type `T` is equal to `value`. Requires `T`implements`ParitalEq`.
+- `is::<T>(value)` - returns `bool` if value of type `T` is equal to `value`. Requires `T`implements`PartialEq`.
 - `get::<T>` - returns `Option<&T>`
 - `get_mut<T>` - returns `Option<&mut T>`
 - `get_or_default::<T>` - returns `&T` or `&T::default()`
@@ -447,7 +447,7 @@ TODO: The implementation is minimal and this needs to be flushed out some more.
 
 #### Event Interrupts
 
-Sometimes there are cases where the normal flow of operation needs to be halted. For example, if a player drains while ball save is active, this would _normally_ emit an event that the player has drained and the turn is over. In these cases it's necessary to allow a system to overide this behavior. This happens by way of event interrupts.
+Sometimes there are cases where the normal flow of operation needs to be halted. For example, if a player drains while ball save is active, this would _normally_ emit an event that the player has drained and the turn is over. In these cases it's necessary to allow a system to override this behavior. This happens by way of event interrupts.
 
 Systems can register themselves as an event interrupt. Interrupt registration requires a priority. The framework will interrupts in priority order (highest first). This allows, for example, a temporary start-of-ball ball save to take precedence over an extra ball or outlane ball save.
 
