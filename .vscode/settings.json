@@ -5,6 +5,8 @@
         "despawned",
         "downcasting",
         "Frontbox",
+        "Lerp",
+        "lerps",
         "millis",
         "Spawnable"
     ]

@@ -117,11 +117,27 @@ pub async fn run(
               log::warn!("No system group named '{}' found, cannot deactivate", group_name);
             }
           }
-          AppMessage::ClearTimer(system_id, timer_name) => {
-            clear_timer(system_id, timer_name, &mut systems);
+          AppMessage::CreateCue(system_id, cue_id, cue, signals) => {
+            if let Some(system) = find_system(system_id, &mut systems) {
+              system.create_cue(cue, cue_id, signals);
+            } else {
+              log::warn!(
+                "No system found with ID {}, cannot create cue {:?}",
+                system_id,
+                cue
+              );
+            }
           }
-          AppMessage::SetTimer(system_id, timer_name, duration, mode) => {
-            set_timer(system_id, timer_name, duration, mode, &mut systems);
+          AppMessage::CancelCue(system_id, cue_id) => {
+            if let Some(system) = find_system(system_id, &mut systems) {
+              system.cancel_cue(cue_id);
+            } else {
+              log::warn!(
+                "No system found with ID {}, cannot cancel cue with ID {}",
+                system_id,
+                cue_id
+              );
+            }
           }
         }
       }
@@ -424,36 +440,6 @@ fn despawn_system_group(
     log::warn!(
       "No system group named '{}' found, cannot despawn",
       group_name
-    );
-  }
-}
-
-fn clear_timer(system_id: u64, timer_name: &'static str, sc: &mut SystemCollection) {
-  if let Some(system) = find_system(system_id, sc) {
-    system.clear_timer(timer_name);
-  } else {
-    log::warn!(
-      "No system found with ID {}, cannot clear timer '{}'",
-      system_id,
-      timer_name
-    );
-  }
-}
-
-fn set_timer(
-  system_id: u64,
-  timer_name: &'static str,
-  duration: Duration,
-  mode: TimerMode,
-  sc: &mut SystemCollection,
-) {
-  if let Some(system) = find_system(system_id, sc) {
-    system.set_timer(timer_name, duration, mode);
-  } else {
-    log::warn!(
-      "No system found with ID {}, cannot set timer '{}'",
-      system_id,
-      timer_name
     );
   }
 }

@@ -1,13 +1,13 @@
 use crate::prelude::*;
 
-const WATCHDOG_TIMER_NAME: &'static str = "watchdog";
-
 /// A system which continually pings the FAST hardware to keep 48v active. This is required to use drivers.
-pub struct Watchdog;
+pub struct Watchdog {
+  cue_handle: Option<u64>,
+}
 
 impl Watchdog {
   pub fn new() -> Box<Self> {
-    Box::new(Watchdog)
+    Box::new(Watchdog { cue_handle: None })
   }
 }
 
@@ -15,17 +15,15 @@ impl Watchdog {
   fn enable(ctx: &mut Context) {
     let app_config = ctx.expect::<AppConfig>();
 
-    ctx.set_timer(
-      WATCHDOG_TIMER_NAME,
-      app_config.watchdog_tick,
-      TimerMode::Repeating,
-    );
+    ctx.cue(WatchdogPing, Cue::Loop(app_config.watchdog_tick));
     ctx.command(WatchdogPing);
   }
 
-  fn disable(ctx: &mut Context) {
+  fn disable(&self, ctx: &mut Context) {
     ctx.command(ClearWatchdog);
-    ctx.clear_timer(WATCHDOG_TIMER_NAME);
+    if let Some(handle) = &self.cue_handle {
+      ctx.cancel_cue(*handle);
+    }
   }
 }
 
@@ -44,16 +42,16 @@ impl System for Watchdog {
     if let Some(_) = command.downcast_ref::<EnableWatchdog>() {
       Watchdog::enable(ctx);
     } else if let Some(_) = command.downcast_ref::<DisableWatchdog>() {
-      Watchdog::disable(ctx);
+      self.disable(ctx);
     }
   }
 
-  fn on_timer(&mut self, _timer_name: &'static str, ctx: &mut Context) {
+  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &mut Context) {
     ctx.command(WatchdogPing);
   }
 
   fn on_shutdown(&mut self, ctx: &mut Context) {
-    Watchdog::disable(ctx);
+    self.disable(ctx);
   }
 }
 

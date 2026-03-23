@@ -174,8 +174,8 @@ Commands are not run immediately when requested by a system. Instead they are en
 Cues are signals a system can send to itself. There are four primitive types of cues:
 
 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
-2. **Repeat** -- Cue happens N times, with an interval in between
-3. **Forever** -- Cue happens until canceled, with an interval in between
+2. **Times** -- Cue happens N times, with an interval in between
+3. **Loop** -- Cue happens until canceled, with an interval in between
 4. **Now** -- Cue happens immediately, once
 
 ```rust
@@ -185,7 +185,7 @@ impl System for Example {
   fn on_startup(&mut self, ctx: &mut Context) {
     // setup the cue
     ctx.cue(
-      Cue::Repeat(3, Duration::from_secs(3)),
+      Cue::Times(3, Duration::from_secs(3)),
       SomethingImportant(100)
     )
   }
@@ -228,7 +228,8 @@ With timelines, there is not only a cue that happens for each node of the timeli
 Cycling through a set of states is a common occurrence in pinball. For example, flashing is in fact the cycling of two values.
 
 ```rust
-ctx.cue_cycling(vec![
+// note the use of `signals!` here rather than `vec!`
+ctx.cue_cycling(signals![
     On("example"),
     Off("example"),
   ],
@@ -242,10 +243,10 @@ Cycling works by rotating through the list of values each time the cue is comple
 
 In some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
 
-- `Anonymous` - An unnamed signal
-- `Named(&'static str)` - A generic named signal
-- `On(&'static str)` - A named signal for "on"
-- `Off(&'static str)` - A named signal for "on"
+- `&'static str` - It's possible to use a static string as a signal
+- `Action`
+- `Anonymous`
+- `On` / `Off`
 
 ### Animations
 

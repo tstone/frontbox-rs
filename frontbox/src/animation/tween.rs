@@ -55,6 +55,11 @@ where
   A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialOrd + PartialEq + Send + Sync,
 {
   fn accumulate(&mut self, delta_time: A) -> AccumulationResult<A> {
+    let mut result = AccumulationResult {
+      remainder: A::default(),
+      completed_cycle: false,
+    };
+
     if self.is_complete() {
       return AccumulationResult::default();
     }
@@ -64,8 +69,8 @@ where
       self.current -= self.target;
       let is_last_stop = self.current_stop_index == self.stops.len() - 2;
 
-      let mut completed_just_now = false;
-      let remainder = self.current;
+      result.completed_cycle = true;
+      result.remainder = self.current;
 
       if is_last_stop {
         match self.cycle {
@@ -75,7 +80,7 @@ where
           AnimationCycle::Once => {
             self.cycle_count += 1;
             self.current = self.target; // clear remainder to ensure we don't accidentally roll over into the next cycle
-            completed_just_now = true;
+            result.completed_cycle = true;
           }
           AnimationCycle::Times(n) => {
             self.cycle_count += 1;
@@ -83,21 +88,15 @@ where
               self.current_stop_index = 0;
             } else {
               self.current = self.target;
-              completed_just_now = true;
             }
           }
         }
       } else {
         self.current_stop_index += 1;
       }
-
-      return AccumulationResult {
-        completed_just_now,
-        remainder,
-      };
     }
 
-    AccumulationResult::default()
+    result
   }
 
   fn is_complete(&self) -> bool {

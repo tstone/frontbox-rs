@@ -148,23 +148,35 @@ impl<'a> Context<'a> {
       .send(AppMessage::DeactivateSystemGroup(group_name));
   }
 
-  // --- Timer ---
+  // --- Cues ---
 
-  pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
-    log::debug!("⏲️ Setting timer {}", timer_name);
-    let _ = self.app_sender.send(AppMessage::SetTimer(
-      self.system_id,
-      timer_name,
-      duration,
-      mode,
-    ));
+  pub fn cue(&mut self, signal: impl Signal + 'static, cue: Cue) -> u64 {
+    let cue_id = SystemContainer::next_id();
+    self
+      .app_sender
+      .send(AppMessage::CreateCue(
+        self.system_id,
+        cue_id,
+        cue,
+        vec![Box::new(signal)],
+      ))
+      .ok();
+    cue_id
   }
 
-  pub fn clear_timer(&mut self, timer_name: &'static str) {
-    log::debug!("⏲️ Clearing timer {}", timer_name);
+  pub fn cue_cycling(&mut self, signals: Vec<Box<dyn Signal>>, cue: Cue) -> u64 {
+    let cue_id = SystemContainer::next_id();
+    self
+      .app_sender
+      .send(AppMessage::CreateCue(self.system_id, cue_id, cue, signals))
+      .ok();
+    cue_id
+  }
+
+  pub fn cancel_cue(&mut self, cue_id: u64) {
     let _ = self
       .app_sender
-      .send(AppMessage::ClearTimer(self.system_id, timer_name));
+      .send(AppMessage::CancelCue(self.system_id, cue_id));
   }
 
   pub fn clone_for_system(&mut self, system_id: u64) -> Context<'_> {

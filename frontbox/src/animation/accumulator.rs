@@ -7,13 +7,16 @@ pub trait Accumulator<A>: DynClone + Send + Sync {
   /// Set the accumulator at a specific value
   fn set(&mut self, current: A);
   fn reset(&mut self);
+  /// Returns true if the accumulator has completed all of its cycles
   fn is_complete(&self) -> bool;
 }
 
 dyn_clone::clone_trait_object!(<A> Accumulator<A>);
 
 pub struct AccumulationResult<A> {
-  pub completed_just_now: bool,
+  /// Accumulators can perform multiple cycles (loops). This flag indicates if a cycle was completed during this accumulation step. To check if the entire accumulator has completed all of its cycles, use `._is_complete()` flag.
+  pub completed_cycle: bool,
+  /// If the accumulator overshot its target, this will contain the excess amount that can be applied to the next cycle or used for other logic.
   pub remainder: A,
 }
 
@@ -23,7 +26,7 @@ where
 {
   fn default() -> Self {
     AccumulationResult {
-      completed_just_now: false,
+      completed_cycle: false,
       remainder: A::default(),
     }
   }

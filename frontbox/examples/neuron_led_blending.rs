@@ -47,17 +47,11 @@ impl System1 {
 
 impl System for System1 {
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
-      "example_timer",
-      std::time::Duration::from_secs(1),
-      TimerMode::Repeating,
-    );
+    ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
-    if timer_name == "example_timer" {
-      self.on = !self.on;
-    }
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context) {
+    self.on = !self.on;
   }
 
   fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
@@ -83,17 +77,11 @@ impl System2 {
 
 impl System for System2 {
   fn on_startup(&mut self, ctx: &mut Context) {
-    ctx.set_timer(
-      "example_timer",
-      std::time::Duration::from_secs(2),
-      TimerMode::Repeating,
-    );
+    ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(2)));
   }
 
-  fn on_timer(&mut self, timer_name: &'static str, _ctx: &mut Context) {
-    if timer_name == "example_timer" {
-      self.on = !self.on;
-    }
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context) {
+    self.on = !self.on;
   }
 
   fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {

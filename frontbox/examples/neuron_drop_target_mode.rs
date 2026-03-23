@@ -97,7 +97,7 @@ impl DropTargetDownUp {
         .all(|&target| switch_lookup.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.set_timer("coil_up", Duration::from_millis(250), TimerMode::OneShot);
+        ctx.cue(Action, Cue::Once(Duration::from_millis(250)));
       }
     }
   }
@@ -118,7 +118,7 @@ impl System for DropTargetDownUp {
     }
   }
 
-  fn on_timer(&mut self, _timer: &str, ctx: &mut Context) {
+  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &mut Context) {
     ctx.command(ActivateDriver::new(
       drivers::START_BUTTON_LAMP,
       ActivationMode::Tap,

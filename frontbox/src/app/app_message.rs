@@ -25,8 +25,8 @@ pub enum AppMessage {
   DespawnSystemGroup(&'static str),
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),
-  ClearTimer(u64, &'static str),
-  SetTimer(u64, &'static str, Duration, TimerMode),
+  CreateCue(u64, u64, Cue, Vec<Box<dyn Signal>>),
+  CancelCue(u64, u64),
 }
 
 impl Display for AppMessage {
@@ -62,12 +62,10 @@ impl Display for AppMessage {
       AppMessage::DespawnSystemGroup(name) => write!(f, "DespawnSystemGroup({})", name),
       AppMessage::ActivateSystemGroup(name) => write!(f, "ActivateSystemGroup({})", name),
       AppMessage::DeactivateSystemGroup(name) => write!(f, "DeactivateSystemGroup({})", name),
-      AppMessage::ClearTimer(id, timer_name) => write!(f, "ClearTimer({}, {})", id, timer_name),
-      AppMessage::SetTimer(id, timer_name, duration, mode) => write!(
-        f,
-        "SetTimer({}, {}, {:?}, {:?})",
-        id, timer_name, duration, mode
-      ),
+      AppMessage::CreateCue(system_id, cue_id, cue, _signals) => {
+        write!(f, "CreateCue({}:{}, {:?})", system_id, cue_id, cue)
+      }
+      AppMessage::CancelCue(system_id, cue_id) => write!(f, "CancelCue({}:{})", system_id, cue_id),
     }
   }
 }

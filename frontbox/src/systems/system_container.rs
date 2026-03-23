@@ -3,14 +3,16 @@ use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
+use crate::animation::Accumulator;
+use crate::prelude::Signal;
 use crate::systems::*;
 
-static LISTENER_ID: AtomicU64 = AtomicU64::new(0);
+static INCR_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct SystemContainer {
   pub id: u64,
   pub(crate) inner: Box<dyn System>,
-  timers: HashMap<&'static str, SystemTimer>,
+  cues: HashMap<u64, CueAccumulator>,
 }
 
 impl SystemContainer {
@@ -18,12 +20,12 @@ impl SystemContainer {
     Self {
       id,
       inner: system,
-      timers: HashMap::new(),
+      cues: HashMap::new(),
     }
   }
 
   pub(crate) fn next_id() -> u64 {
-    LISTENER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
   pub fn new_from_system(system: Box<dyn System>) -> Self {
@@ -31,40 +33,31 @@ impl SystemContainer {
   }
 
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
-    let mut timers_to_remove = vec![];
-    for (timer_name, timer) in &mut self.timers {
-      if timer.tick(delta) {
-        log::trace!("Timer '{}' completed, triggering event", timer_name);
-        self.inner.on_timer(timer_name, ctx);
-        if let TimerMode::OneShot = timer.mode() {
-          timers_to_remove.push(*timer_name);
+    let mut cues_to_remove = vec![];
+    for (id, cue) in self.cues.iter_mut() {
+      if cue.accumulate(delta).completed_cycle {
+        log::trace!("Cue completed, triggering signal");
+        if let Some(signal) = cue.signal() {
+          self.inner.on_cue(signal, ctx);
         }
+        cues_to_remove.push(*id);
       }
     }
 
-    for timer_name in timers_to_remove {
-      self.timers.remove(timer_name);
+    for id in cues_to_remove {
+      self.cues.remove(&id);
     }
 
     // bubble tick to inner system after processing timers
     self.inner.on_tick(delta, ctx);
   }
 
-  pub fn set_timer(&mut self, timer_name: &'static str, duration: Duration, mode: TimerMode) {
-    log::debug!(
-      "Setting timer '{}' for {:?} with mode {:?}",
-      timer_name,
-      duration,
-      mode
-    );
-    self
-      .timers
-      .insert(timer_name, SystemTimer::new(duration, mode));
+  pub fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<impl Signal + 'static>) {
+    self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 
-  pub fn clear_timer(&mut self, timer_name: &'static str) {
-    log::debug!("Clearing timer '{}'", timer_name);
-    self.timers.remove(timer_name);
+  pub fn cancel_cue(&mut self, cue_id: u64) {
+    self.cues.remove(&cue_id);
   }
 }
 

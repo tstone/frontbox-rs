@@ -28,8 +28,8 @@ impl SignalExt for dyn Signal {
 #[allow(unused)]
 pub struct Anonymous;
 #[allow(unused)]
-pub struct Named(&'static str);
+pub struct Action;
 #[allow(unused)]
-pub struct On(&'static str);
+pub struct On;
 #[allow(unused)]
-pub struct Off(&'static str);
+pub struct Off;

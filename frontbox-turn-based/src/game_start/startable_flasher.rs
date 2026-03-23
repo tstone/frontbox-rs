@@ -8,7 +8,6 @@ pub struct StartableFlasher {
   action_button: Option<&'static str>, // TODO: this should take the LED name and require both (combine name with LedSetting?)
   action_button_setting: Option<LedSetting>,
   flash_duration: Duration,
-  on: bool,
 }
 
 impl StartableFlasher {
@@ -22,7 +21,6 @@ impl StartableFlasher {
       action_button,
       action_button_setting,
       flash_duration: Duration::from_millis(185),
-      on: false,
     })
   }
 }
@@ -44,24 +42,23 @@ impl System for StartableFlasher {
         }),
       });
     }
-    ctx.set_timer("flash", self.flash_duration, TimerMode::Repeating);
+    ctx.cue_cycling(signals![On, Off], Cue::Loop(self.flash_duration));
   }
 
-  fn on_timer(&mut self, _timer_id: &str, ctx: &mut Context) {
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
     if let Some(driver) = self.start_button_driver {
-      if self.on {
+      if let Some(_) = cue.downcast_ref::<On>() {
         ctx.command(ActivateDriver {
           driver,
           mode: ActivationMode::VirtualSwitchOn,
         });
-      } else {
+      } else if let Some(_) = cue.downcast_ref::<Off>() {
         ctx.command(DeactivateDriver {
           driver,
           mode: DeactivationMode::VirtualSwitchOff,
         });
       }
     }
-    self.on = !self.on;
   }
 
   fn leds(
