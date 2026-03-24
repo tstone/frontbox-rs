@@ -7,12 +7,11 @@ mod io_network_builder;
 mod switch_lookup;
 mod trigger_modes;
 
-pub use switch_lookup::*;
-// TODO: maybe don't export builders?
 pub use driver_lookup::*;
 pub use driver_modes::*;
 pub use fast_io_boards::*;
 pub use io_board_builder::*;
 pub use io_network::*;
 pub use io_network_builder::*;
+pub use switch_lookup::*;
 pub use trigger_modes::*;

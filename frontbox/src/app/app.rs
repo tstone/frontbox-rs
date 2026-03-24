@@ -49,7 +49,7 @@ impl App {
     App::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     // Insert hardware definitions into store for systems to reference
-    log::debug!("Initializaing Store with hardware definitions");
+    log::debug!("Initializing Store with hardware definitions");
     let mut store = Store::new();
     store.insert(SwitchLookup::new(io_network.switches, initial_switch_state));
     store.insert(DriverLookup::new(io_network.drivers));
@@ -299,6 +299,7 @@ impl App {
       io_boards,
       app_sender.clone(),
       led_renderer,
+      self.app_config.clone(),
     );
     let machine_sender = machine.machine_sender();
 

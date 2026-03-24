@@ -8,7 +8,7 @@ use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
-use crate::systems::run_system_timers;
+use crate::systems::spawn_system_tick;
 
 pub struct SystemCollection {
   pub systems: HashMap<u64, SystemContainer>,
@@ -37,8 +37,7 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, None, &mut systems, &mut store, app_sender.clone());
   }
-  // TODO: review how this works and make sure it still makes sense in the new architecture
-  run_system_timers(config.system_timer_tick.clone(), app_sender.clone());
+  spawn_system_tick(config.system_timer_tick.clone(), app_sender.clone());
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();

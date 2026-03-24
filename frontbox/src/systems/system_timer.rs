@@ -46,7 +46,7 @@ pub enum TimerMode {
   Repeating,
 }
 
-pub fn run_system_timers(tick: Duration, sender: mpsc::UnboundedSender<AppMessage>) {
+pub fn spawn_system_tick(tick: Duration, sender: mpsc::UnboundedSender<AppMessage>) {
   let mut timer_interval = tokio::time::interval(tick);
 
   tokio::spawn(async move {

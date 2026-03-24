@@ -39,7 +39,6 @@ impl SwitchLookup {
         },
       );
 
-      // TODO: combine switch config with Switch
       if let Some(config) = spec.config {
         configs.insert(spec.id, config);
       }

@@ -1,13 +1,14 @@
 {
-    "cSpell.words": [
-        "accumulatable",
-        "despawn",
-        "despawned",
-        "downcasting",
-        "Frontbox",
-        "Lerp",
-        "lerps",
-        "millis",
-        "Spawnable"
-    ]
+  "cSpell.words": [
+    "accumulatable",
+    "despawn",
+    "despawned",
+    "downcasting",
+    "Frontbox",
+    "Lerp",
+    "lerps",
+    "mainboard",
+    "millis",
+    "Spawnable"
+  ]
 }

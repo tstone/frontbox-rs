@@ -109,7 +109,6 @@ impl System for TroughSystem {
     }
 
     // configure eject driver
-    // TODO: confirm these values
     ctx.command(ConfigureDriver::new(
       self.eject_coil,
       PulseKickMode {

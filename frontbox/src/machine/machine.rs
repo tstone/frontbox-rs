@@ -17,7 +17,7 @@ pub struct Machine {
   io_boards: IoBoards,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
-  watchdog_interval: Duration,
+  app_config: AppConfig,
   led_renderer: LedRenderer,
 }
 
@@ -29,6 +29,7 @@ impl Machine {
     io_boards: IoBoards,
     app_sender: mpsc::UnboundedSender<AppMessage>,
     led_renderer: LedRenderer,
+    app_config: AppConfig,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
@@ -40,7 +41,7 @@ impl Machine {
       machine_receiver,
       switch_lookup,
       io_boards,
-      watchdog_interval: Duration::from_millis(1250), // TODO: use the configured value
+      app_config,
       led_renderer,
     }
   }
@@ -91,8 +92,7 @@ impl Machine {
         self.report_switches().await;
       }
       MachineMessage::RenderLedDeclarations(declarations) => {
-        // TODO: this should use the config value, not a hard-coded one
-        self.led_renderer.tick(Duration::from_millis(16));
+        self.led_renderer.tick(self.app_config.system_timer_tick);
         self
           .led_renderer
           .render(&mut self.exp_port, declarations)
@@ -157,7 +157,7 @@ impl Machine {
     let _ = self
       .io_port
       .request(
-        &WatchdogCommand::set(self.watchdog_interval),
+        &WatchdogCommand::set(self.app_config.watchdog_tick),
         Duration::from_millis(200),
       )
       .await;
