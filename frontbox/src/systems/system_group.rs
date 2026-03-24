@@ -9,10 +9,10 @@ pub struct SystemGroup {
 }
 
 impl SystemGroup {
-  pub fn new(systems: Vec<Box<dyn ChildSystem>>) -> Self {
+  pub fn new(systems: Vec<Box<dyn ChildSystem>>, ctx: &mut Context) -> Self {
     let mut system_map = HashMap::new();
     for system in systems {
-      let container = SystemContainer::new_from_system(Box::new(system));
+      let container = SystemContainer::new_from_system(Box::new(system), ctx);
       system_map.insert(container.id, container);
     }
 
@@ -29,6 +29,7 @@ impl SystemGroup {
         let mut ctx = ctx.clone_for_system(*id);
         // only emit reactivate to systems that are also individually active
         if system.is_active(&ctx) {
+          ctx.expect_mut::<SystemState>().activate(*id);
           system.on_reactivate(&mut ctx);
         }
       }
@@ -44,6 +45,7 @@ impl SystemGroup {
         // only emit deactivate to systems that are also individually active (since they otherwise would have been active)
         if system.is_active(&ctx) {
           log::trace!("System {} is active, deactivating", id);
+          ctx.expect_mut::<SystemState>().deactivate(*id);
           system.on_deactivate(&mut ctx);
         }
       }
@@ -97,11 +99,11 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, caller_id: u64, ctx: &mut Context) {
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
       if system.handle_active(&mut ctx) {
-        system.on_command(command, &mut ctx);
+        system.on_command(command, caller_id, &mut ctx);
       } else {
         log::trace!(
           "System {} is inactive, skipping command of type {:?}",

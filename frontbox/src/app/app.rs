@@ -54,6 +54,7 @@ impl App {
     let mut store = Store::new();
     store.insert(SwitchLookup::new(io_network.switches, initial_switch_state));
     store.insert(DriverLookup::new(io_network.drivers));
+    store.insert(LedLookup::new(&expansion_boards));
     store.insert(StorableHashSet::from_vec(io_network.boards, "io_boards"));
     store.insert(StorableHashSet::from_vec(
       expansion_boards,
@@ -296,11 +297,9 @@ impl App {
     log::debug!("Finalizing Store with operator config and app config");
     self.store.insert(self.operator_config);
     self.store.insert(self.app_config.clone());
+    self.store.insert(SystemState::new());
 
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
-    // lookup expansion boards for led renderer
-    let expansion_boards = self.store.expect::<ExpansionBoards>().clone();
-    let led_renderer = LedRenderer::new(&expansion_boards);
     let switch_lookup = self.store.cloned::<SwitchLookup>().unwrap();
     let io_boards = self.store.cloned::<StorableHashSet<IoBoard>>().unwrap();
 
@@ -310,15 +309,11 @@ impl App {
       switch_lookup,
       io_boards,
       app_sender.clone(),
-      led_renderer,
       self.app_config.clone(),
     );
-    let machine_sender = machine.machine_sender();
 
     // This needs to appear first to initialize all the commands that others systems expect to be present
-    self
-      .systems
-      .insert(0, MachineBridge::new(machine_sender.clone()));
+    self.systems.insert(0, MachineBridge::new(machine.sender()));
 
     // Start machine task
     tokio::spawn(async move {
@@ -332,7 +327,6 @@ impl App {
       self.systems,
       app_sender,
       app_receiver,
-      machine_sender,
     )
     .await;
   }

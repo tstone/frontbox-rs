@@ -136,7 +136,7 @@ impl System for TroughSystem {
     }
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, _caller_id: u64, ctx: &mut Context) {
     if let Some(_) = command.downcast_ref::<TroughEject>() {
       self.eject(ctx);
     } else if let Some(_) = command.downcast_ref::<BallAddedToPlay>() {

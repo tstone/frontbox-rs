@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::DriverMode;
+use crate::{AddressableLed, DriverMode};
 
 pub struct WatchdogPing;
 pub struct ClearWatchdog;
@@ -89,3 +89,6 @@ pub enum DeactivationMode {
   /// set virtual switch to 'off' for hold trigger modes
   VirtualSwitchOff,
 }
+
+pub struct SetLed(pub AddressableLed);
+pub struct SetLedBulk(pub Vec<AddressableLed>);

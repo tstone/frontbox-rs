@@ -9,6 +9,7 @@ use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
+const LED_SET_BATCH_SIZE: usize = 24;
 pub struct Machine {
   io_port: SerialInterface,
   exp_port: SerialInterface,
@@ -17,9 +18,7 @@ pub struct Machine {
   io_boards: IoBoards,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
-  app_config: AppConfig,
   watchdog_interval: Duration,
-  led_renderer: LedRenderer,
 }
 
 impl Machine {
@@ -29,7 +28,6 @@ impl Machine {
     switch_lookup: SwitchLookup,
     io_boards: IoBoards,
     app_sender: mpsc::UnboundedSender<AppMessage>,
-    led_renderer: LedRenderer,
     app_config: AppConfig,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
@@ -43,12 +41,10 @@ impl Machine {
       switch_lookup,
       io_boards,
       watchdog_interval: app_config.watchdog_tick + Duration::from_millis(250), // add some buffer to account for latency in sending
-      app_config,
-      led_renderer,
     }
   }
 
-  pub(crate) fn machine_sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
+  pub(crate) fn sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
     self.machine_sender.clone()
   }
 
@@ -93,12 +89,11 @@ impl Machine {
       MachineMessage::ReportSwitches => {
         self.report_switches().await;
       }
-      MachineMessage::RenderLedDeclarations(declarations) => {
-        self.led_renderer.tick(self.app_config.system_timer_tick);
-        self
-          .led_renderer
-          .render(&mut self.exp_port, declarations)
-          .await;
+      MachineMessage::SetLed(led) => {
+        self.set_led(led).await;
+      }
+      MachineMessage::SetLedBulk(leds) => {
+        self.set_led_bulk(leds).await;
       }
       MachineMessage::ConfigureSwitch(switch_id, inverted, debounce_close, debounce_open) => {
         self
@@ -172,7 +167,7 @@ impl Machine {
       .await;
   }
 
-  /// Primarily used for reporting of unkown switches as native board/switch ids
+  /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
     for (index, board) in self.io_boards.iter().enumerate() {
@@ -260,9 +255,7 @@ impl Machine {
       .await;
   }
 
-  pub async fn reset_expansion_network(&mut self, expansion_boards: ExpansionBoards) {
-    self.led_renderer.reset();
-
+  async fn reset_expansion_network(&mut self, expansion_boards: ExpansionBoards) {
     for board in expansion_boards.iter() {
       // TODO: move this to a better common location
       App::reset_expansion_board(&mut self.exp_port, board).await;
@@ -299,6 +292,36 @@ impl Machine {
       _ => {}
     }
   }
+
+  async fn set_led(&mut self, led: AddressableLed) {
+    self
+      .exp_port
+      .dispatch(&SetLedCommand::new(
+        led.address.address,
+        led.address.breakout,
+        vec![(led.index, led.color)],
+      ))
+      .await;
+  }
+
+  async fn set_led_bulk(&mut self, leds: Vec<AddressableLed>) {
+    let mut states_by_board: HashMap<(u8, Option<u8>), Vec<(u16, Color)>> = HashMap::new();
+    for led in leds {
+      states_by_board
+        .entry((led.address.address, led.address.breakout))
+        .or_insert_with(Vec::new)
+        .push((led.index, led.color));
+    }
+
+    for ((board_address, breakout), states) in states_by_board {
+      for chunk in states.chunks(LED_SET_BATCH_SIZE) {
+        self
+          .exp_port
+          .dispatch(&SetLedCommand::new(board_address, breakout, chunk.to_vec()))
+          .await;
+      }
+    }
+  }
 }
 
 /// While Machine can *technically* be used directly as a System, this creates problems when the App needs to query for
@@ -324,9 +347,11 @@ impl System for MachineBridge {
     ctx.register_command::<DeactivateDriver>();
     ctx.register_command::<RefreshSwitchState>();
     ctx.register_command::<ConfigureSwitch>();
+    ctx.register_command::<SetLed>();
+    ctx.register_command::<SetLedBulk>();
   }
 
-  fn on_command(&mut self, cmd: &dyn Signal, ctx: &mut Context) {
+  fn on_command(&mut self, cmd: &dyn Signal, _caller_id: u64, ctx: &mut Context) {
     if let Some(_) = cmd.as_any().downcast_ref::<WatchdogPing>() {
       self.machine_sender.send(MachineMessage::WatchdogPing).ok();
     } else if let Some(_) = cmd.as_any().downcast_ref::<ClearWatchdog>() {
@@ -337,6 +362,7 @@ impl System for MachineBridge {
         .machine_sender
         .send(MachineMessage::ResetExpansionNetwork(boards))
         .ok();
+      ctx.emit(ExpansionNetworkReset);
     } else if let Some(cmd) = cmd.as_any().downcast_ref::<ConfigureDriver>() {
       let driver_lookup = ctx.expect::<DriverLookup>();
       if let Some(driver) = driver_lookup.get(cmd.driver) {
@@ -396,6 +422,16 @@ impl System for MachineBridge {
           ))
           .ok();
       }
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<SetLed>() {
+      self
+        .machine_sender
+        .send(MachineMessage::SetLed(cmd.0.clone()))
+        .ok();
+    } else if let Some(cmd) = cmd.as_any().downcast_ref::<SetLedBulk>() {
+      self
+        .machine_sender
+        .send(MachineMessage::SetLedBulk(cmd.0.clone()))
+        .ok();
     }
   }
 
@@ -417,8 +453,9 @@ pub enum MachineMessage {
   ConfigureDriver(usize, DriverConfig),
   ActivateDriver(usize, ActivationMode, Option<usize>),
   DeactivateDriver(usize, DeactivationMode),
-  RenderLedDeclarations(HashMap<u64, HashMap<&'static str, LedState>>),
   ConfigureSwitch(usize, bool, Option<Duration>, Option<Duration>),
+  SetLed(AddressableLed),
+  SetLedBulk(Vec<AddressableLed>),
 }
 
 // -- Events --
@@ -448,3 +485,5 @@ impl SwitchOpened {
     Self { switch }
   }
 }
+
+pub struct ExpansionNetworkReset;

@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::animation::Accumulator;
-use crate::prelude::Signal;
+use crate::prelude::{Signal, SystemState};
 use crate::systems::*;
 
 static INCR_ID: AtomicU64 = AtomicU64::new(0);
@@ -17,7 +17,8 @@ pub struct SystemContainer {
 }
 
 impl SystemContainer {
-  pub fn new(id: u64, system: Box<dyn System>) -> Self {
+  pub fn new(id: u64, system: Box<dyn System>, ctx: &mut Context) -> Self {
+    ctx.expect_mut::<SystemState>().activate(id);
     Self {
       id,
       inner: system,
@@ -30,8 +31,8 @@ impl SystemContainer {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
-  pub fn new_from_system(system: Box<dyn System>) -> Self {
-    Self::new(SystemContainer::next_id(), system)
+  pub fn new_from_system(system: Box<dyn System>, ctx: &mut Context) -> Self {
+    Self::new(SystemContainer::next_id(), system, ctx)
   }
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
@@ -42,9 +43,11 @@ impl SystemContainer {
     if fresh != self.last_active_state {
       if fresh {
         // system just became active
+        ctx.expect_mut::<SystemState>().activate(self.id);
         self.inner.on_reactivate(ctx);
       } else {
         // system just became inactive
+        ctx.expect_mut::<SystemState>().deactivate(self.id);
         self.inner.on_deactivate(ctx);
       }
     }

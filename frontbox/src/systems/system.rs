@@ -23,7 +23,7 @@ pub trait System {
 
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
   fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {}
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {}
+  fn on_command(&mut self, command: &dyn Signal, caller_id: u64, ctx: &mut Context) {}
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {}
   fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptResult {
     InterruptResult::Continue
@@ -70,8 +70,8 @@ impl System for Box<dyn SpawnableSystem> {
     self.as_system().on_event(event, ctx);
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
-    self.as_system().on_command(command, ctx);
+  fn on_command(&mut self, command: &dyn Signal, caller_id: u64, ctx: &mut Context) {
+    self.as_system().on_command(command, caller_id, ctx);
   }
 }
 
@@ -101,8 +101,8 @@ impl System for Box<dyn ChildSystem> {
     self.as_system().on_event(event, ctx);
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
-    self.as_system().on_command(command, ctx);
+  fn on_command(&mut self, command: &dyn Signal, caller_id: u64, ctx: &mut Context) {
+    self.as_system().on_command(command, caller_id, ctx);
   }
 }
 

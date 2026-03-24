@@ -1,4 +1,5 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Color {
   pub r: f32,
   pub g: f32,
@@ -68,6 +69,10 @@ impl Color {
 
   pub fn black() -> Self {
     Self::rgb(0.0, 0.0, 0.0)
+  }
+
+  pub fn off() -> Self {
+    Self::black()
   }
 
   pub fn yellow() -> Self {
@@ -507,6 +512,6 @@ impl Color {
 
 impl Default for Color {
   fn default() -> Self {
-    Self::black()
+    Self::off()
   }
 }

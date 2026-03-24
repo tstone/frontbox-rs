@@ -8,7 +8,6 @@ use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
-use crate::systems::spawn_system_tick;
 
 pub struct SystemCollection {
   pub systems: HashMap<u64, SystemContainer>,
@@ -21,7 +20,6 @@ pub async fn run(
   initial_systems: Vec<Box<dyn System>>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
-  machine_sender: mpsc::UnboundedSender<MachineMessage>,
 ) {
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut command_registry = CommandRegistry::new();
@@ -35,7 +33,16 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, None, &mut systems, &mut store, app_sender.clone());
   }
-  spawn_system_tick(config.system_timer_tick.clone(), app_sender.clone());
+
+  // start system tick loop
+  let mut timer_interval = tokio::time::interval(config.system_timer_tick.clone());
+  let tx = app_sender.clone();
+  tokio::spawn(async move {
+    loop {
+      timer_interval.tick().await;
+      tx.send(AppMessage::SystemTick).ok();
+    }
+  });
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -55,7 +62,7 @@ pub async fn run(
             emit_event(&*event, &mut systems, &mut store, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
-            handle_system_tick(&mut systems, &mut store, &config, &app_sender, &machine_sender).await;
+            handle_system_tick(&mut systems, &mut store, &config, &app_sender).await;
           }
           AppMessage::RegisterInterrupt(system_id, type_id, priority) => {
             interrupt_registry.register(type_id, system_id, priority);
@@ -69,8 +76,8 @@ pub async fn run(
           AppMessage::UnregisterCommand(_system_id, type_id) => {
             command_registry.unregister(type_id);
         }
-          AppMessage::ExecuteCommand(_system_id, cmd) => {
-            execute_command(cmd.as_ref(), &command_registry, &mut systems, &mut store, &app_sender);
+          AppMessage::ExecuteCommand(caller_id, cmd) => {
+            execute_command(cmd.as_ref(), caller_id, &command_registry, &mut systems, &mut store, &app_sender);
           }
           AppMessage::UnregisterAllBySystem(system_id) => {
             unregister_all_by_system(system_id, &mut command_registry, &mut interrupt_registry);
@@ -244,19 +251,17 @@ async fn handle_system_tick(
   store: &mut Store,
   config: &AppConfig,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
-  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
 ) {
   let tick_duration = config.system_timer_tick;
 
   apply_to_systems(systems, store, &app_sender, |system, ctx| {
     system.on_tick(tick_duration, ctx);
   });
-
-  render_all_leds(systems, store, tick_duration, app_sender, machine_sender);
 }
 
 fn execute_command(
   command: &dyn Signal,
+  caller_id: u64,
   command_registry: &CommandRegistry,
   systems: &mut SystemCollection,
   store: &mut Store,
@@ -267,7 +272,7 @@ fn execute_command(
       let mut ctx = Context::new(store, system_id, app_sender.clone());
       // commands must be executed on an active system
       if system.handle_active(&mut ctx) {
-        system.on_command(command, &mut ctx);
+        system.on_command(command, caller_id, &mut ctx);
       } else {
         log::warn!(
           "System {} is inactive, cannot execute command of type {:?}",
@@ -296,7 +301,8 @@ fn spawn_system(
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
-  let mut container: SystemContainer = SystemContainer::new_from_system(system);
+  let mut ctx = Context::new(store, 0, app_sender.clone());
+  let mut container: SystemContainer = SystemContainer::new_from_system(system, &mut ctx);
   let mut ctx = Context::new(store, container.id, app_sender.clone());
   container.on_startup(&mut ctx);
 
@@ -335,8 +341,8 @@ fn replace_system(
       let mut ctx = Context::new(store, container.id, app_sender.clone());
       container.on_shutdown(&mut ctx);
     }
-    let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
-    let mut ctx = Context::new(store, new_container.id, app_sender.clone());
+    let mut ctx = Context::new(store, system_id, app_sender.clone());
+    let mut new_container = SystemContainer::new_from_system(Box::new(new_system), &mut ctx);
     new_container.on_startup(&mut ctx);
     sc.systems.insert(new_container.id, new_container);
   } else {
@@ -347,8 +353,8 @@ fn replace_system(
           let mut ctx = Context::new(store, container.id, app_sender.clone());
           container.on_shutdown(&mut ctx);
         }
-        let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
-        let mut ctx = Context::new(store, new_container.id, app_sender.clone());
+        let mut ctx = Context::new(store, system_id, app_sender.clone());
+        let mut new_container = SystemContainer::new_from_system(Box::new(new_system), &mut ctx);
         new_container.on_startup(&mut ctx);
         group.insert(new_container.id, new_container);
         return;
@@ -403,7 +409,7 @@ fn spawn_system_group(
   }
 
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
-  let mut group = SystemGroup::new(child_systems);
+  let mut group = SystemGroup::new(child_systems, &mut ctx_template);
   if active {
     group.activate(&mut ctx_template);
   } else {
@@ -479,41 +485,6 @@ fn unregister_all_by_system(
 ) {
   command_registry.unregister_by_system(system_id);
   interrupt_registry.unregister_by_system(system_id);
-}
-
-fn render_all_leds(
-  sc: &mut SystemCollection,
-  store: &mut Store,
-  tick_interval: Duration,
-  app_sender: &mpsc::UnboundedSender<AppMessage>,
-  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
-) {
-  let mut declarations = HashMap::new();
-  let mut ctx_template = Context::new(store, 0, app_sender.clone());
-
-  // gather LED declarations from all active systems and child systems (within)
-  for system in sc.systems.values_mut() {
-    let mut ctx = ctx_template.clone_for_system(system.id);
-    if system.handle_active(&mut ctx) {
-      declarations.insert(system.id, system.leds(tick_interval, &ctx));
-    } else {
-      log::trace!("System {} is inactive, skipping LED rendering", system.id);
-    }
-  }
-  for group in sc.groups.values_mut() {
-    for system in group.systems.values_mut() {
-      let mut ctx = ctx_template.clone_for_system(system.id);
-      if system.handle_active(&mut ctx) {
-        declarations.insert(system.id, system.leds(tick_interval, &ctx));
-      } else {
-        log::trace!("System {} is inactive, skipping LED rendering", system.id);
-      }
-    }
-  }
-
-  machine_sender
-    .send(MachineMessage::RenderLedDeclarations(declarations))
-    .ok();
 }
 
 // #[cfg(test)]

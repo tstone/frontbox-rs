@@ -57,7 +57,7 @@ impl System for AutoPlunger {
     ));
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
+  fn on_command(&mut self, command: &dyn Signal, _caller_id: u64, ctx: &mut Context) {
     if let Some(_fire) = command.downcast_ref::<FirePlunger>() {
       self.on_plunge(ctx);
     }

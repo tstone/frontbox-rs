@@ -82,7 +82,7 @@ impl System for Example {
   fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) { }
 
   // handler for registered commands
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) { }
+  fn on_command(&mut self, command: &dyn Signal, caller_id: u64, ctx: &mut Context) { }
 
   // handler for scheduled cues
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) { }
@@ -160,7 +160,7 @@ impl System for Example {
     ctx.register_command::<ExampleCommand>();
   }
 
-  fn on_command(&mut self, cmd: &dyn Signal, ctx: &mut Context) {
+  fn on_command(&mut self, cmd: &dyn Signal, _caller_id: u64, ctx: &mut Context) {
     if let Some(cmd) = cmd.downcast_ref::<ExampleCommand>() {
       log::debug!("Running example command with {}", cmd.0);
     }
