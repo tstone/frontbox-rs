@@ -5,24 +5,19 @@ use crate::prelude::*;
 
 pub struct SystemGroup {
   pub(crate) systems: HashMap<u64, SystemContainer>,
-  systems_active: HashMap<u64, bool>,
   active: bool,
 }
 
 impl SystemGroup {
-  pub fn new(systems: Vec<Box<dyn ChildSystem>>, ctx_template: &mut Context) -> Self {
+  pub fn new(systems: Vec<Box<dyn ChildSystem>>) -> Self {
     let mut system_map = HashMap::new();
-    let mut systems_active = HashMap::new();
     for system in systems {
       let container = SystemContainer::new_from_system(Box::new(system));
-      let ctx = ctx_template.clone_for_system(container.id);
-      systems_active.insert(container.id, container.is_active(&ctx));
       system_map.insert(container.id, container);
     }
 
     Self {
       systems: system_map,
-      systems_active,
       active: true,
     }
   }
@@ -34,14 +29,11 @@ impl SystemGroup {
         let mut ctx = ctx.clone_for_system(*id);
         // only emit reactivate to systems that are also individually active
         if system.is_active(&ctx) {
-          log::trace!("System {} is active, activating", id);
           system.on_reactivate(&mut ctx);
-          self.systems_active.insert(*id, true);
         }
       }
+      self.active = true;
     }
-
-    self.active = true;
   }
 
   pub fn deactivate(&mut self, ctx: &mut Context) {
@@ -55,41 +47,7 @@ impl SystemGroup {
           system.on_deactivate(&mut ctx);
         }
       }
-    }
-    self.active = false;
-  }
-
-  /// Cycle through all systems and check if their active state has changed, firing the deactivation/reactivation handlers as needed.
-  fn check_active_state(&mut self, ctx: &mut Context) {
-    let mut reactivate_systems = Vec::new();
-    let mut deactivate_systems = Vec::new();
-
-    for (id, system) in &mut self.systems {
-      let ctx = ctx.clone_for_system(*id);
-      let currently_active = self.systems_active.get(id).copied().unwrap_or(false);
-      let should_be_active = system.is_active(&ctx);
-
-      if should_be_active && !currently_active {
-        reactivate_systems.push(*id);
-      } else if !should_be_active && currently_active {
-        deactivate_systems.push(*id);
-      }
-    }
-
-    for id in reactivate_systems {
-      if let Some(system) = self.systems.get_mut(&id) {
-        log::trace!("System {} is now active, activating", id);
-        system.on_reactivate(ctx);
-        self.systems_active.insert(id, true);
-      }
-    }
-
-    for id in deactivate_systems {
-      if let Some(system) = self.systems.get_mut(&id) {
-        log::trace!("System {} is now inactive, deactivating", id);
-        system.on_deactivate(ctx);
-        self.systems_active.insert(id, false);
-      }
+      self.active = false;
     }
   }
 }
@@ -110,10 +68,9 @@ impl System for SystemGroup {
   }
 
   fn on_tick(&mut self, delta: std::time::Duration, ctx: &mut Context) {
-    self.check_active_state(ctx);
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
-      if self.systems_active.get(id) == Some(&true) {
+      if system.handle_active(&mut ctx) {
         system.on_tick(delta, &mut ctx);
       } else {
         log::trace!("System {} is inactive, skipping tick", id,);
@@ -122,10 +79,9 @@ impl System for SystemGroup {
   }
 
   fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
-    self.check_active_state(ctx);
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
-      if self.systems_active.get(id) == Some(&true) {
+      if system.handle_active(&mut ctx) {
         system.on_event(event, &mut ctx);
       } else {
         log::trace!(
@@ -133,20 +89,18 @@ impl System for SystemGroup {
           id,
           event.type_id()
         );
-        if self.systems_active.get(id) == Some(&true) {
+        if system.handle_active(&mut ctx) {
           log::trace!("System {} was active but is now inactive, deactivating", id);
           system.on_deactivate(&mut ctx);
-          self.systems_active.insert(*id, false);
         }
       }
     }
   }
 
   fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
-    self.check_active_state(ctx);
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
-      if self.systems_active.get(id) == Some(&true) {
+      if system.handle_active(&mut ctx) {
         system.on_command(command, &mut ctx);
       } else {
         log::trace!(
@@ -154,20 +108,18 @@ impl System for SystemGroup {
           id,
           command.type_id()
         );
-        if self.systems_active.get(id) == Some(&true) {
+        if system.handle_active(&mut ctx) {
           log::trace!("System {} was active but is now inactive, deactivating", id);
           system.on_deactivate(&mut ctx);
-          self.systems_active.insert(*id, false);
         }
       }
     }
   }
 
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
-    self.check_active_state(ctx);
     for (id, system) in &mut self.systems {
       let mut ctx = ctx.clone_for_system(*id);
-      if self.systems_active.get(id) == Some(&true) {
+      if system.handle_active(&mut ctx) {
         system.on_cue(cue, &mut ctx);
       } else {
         log::trace!(
@@ -175,10 +127,9 @@ impl System for SystemGroup {
           id,
           cue.type_id()
         );
-        if self.systems_active.get(id) == Some(&true) {
+        if system.handle_active(&mut ctx) {
           log::trace!("System {} was active but is now inactive, deactivating", id);
           system.on_deactivate(&mut ctx);
-          self.systems_active.insert(*id, false);
         }
       }
     }

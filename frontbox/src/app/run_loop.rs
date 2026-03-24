@@ -12,7 +12,6 @@ use crate::systems::spawn_system_tick;
 
 pub struct SystemCollection {
   pub systems: HashMap<u64, SystemContainer>,
-  pub systems_active: HashMap<u64, bool>,
   pub groups: HashMap<&'static str, SystemGroup>,
 }
 
@@ -29,7 +28,6 @@ pub async fn run(
 
   let mut systems = SystemCollection {
     systems: HashMap::new(),
-    systems_active: HashMap::new(),
     groups: HashMap::new(),
   };
 
@@ -163,7 +161,7 @@ fn find_system(system_id: u64, sc: &mut SystemCollection) -> Option<&mut SystemC
   None
 }
 
-/// Apply the given closure to all systems, including those within groups, respecting is_active
+/// Apply the given closure to all systems, including those within groups, respecting handle_active
 fn apply_to_systems<F>(
   sc: &mut SystemCollection,
   store: &mut Store,
@@ -172,13 +170,10 @@ fn apply_to_systems<F>(
 ) where
   F: FnMut(&mut SystemContainer, &mut Context),
 {
-  let mut ctx_template = Context::new(store, 0, app_sender.clone());
-  check_active_state(sc, &mut ctx_template);
-
   // apply to root systems
   for system in sc.systems.values_mut() {
     let mut ctx = Context::new(store, system.id, app_sender.clone());
-    if sc.systems_active.get(&system.id) == Some(&true) {
+    if system.handle_active(&mut ctx) {
       handler(system, &mut ctx);
     } else {
       log::trace!("System {} is inactive, skipping", system.id);
@@ -189,7 +184,7 @@ fn apply_to_systems<F>(
   for group in sc.groups.values_mut() {
     for system in group.values_mut() {
       let mut ctx = Context::new(store, system.id, app_sender.clone());
-      if sc.systems_active.get(&system.id) == Some(&true) {
+      if system.handle_active(&mut ctx) {
         handler(system, &mut ctx);
       } else {
         log::trace!("System {} is inactive, skipping", system.id);
@@ -217,7 +212,9 @@ fn emit_event(
       if let Some(system) = find_system(interrupt.system_id, systems) {
         let mut ctx = ctx_template.clone_for_system(interrupt.system_id);
         // interrupts must be on an active system to run
-        if system.is_active(&ctx) && system.on_interrupt(event, &mut ctx) == InterruptResult::Halt {
+        if system.handle_active(&mut ctx)
+          && system.on_interrupt(event, &mut ctx) == InterruptResult::Halt
+        {
           log::info!(
             "Event of type {:?} was halted by interrupt in system {}",
             event.type_id(),
@@ -269,7 +266,7 @@ fn execute_command(
     if let Some(system) = find_system(system_id, systems) {
       let mut ctx = Context::new(store, system_id, app_sender.clone());
       // commands must be executed on an active system
-      if system.is_active(&ctx) {
+      if system.handle_active(&mut ctx) {
         system.on_command(command, &mut ctx);
       } else {
         log::warn!(
@@ -406,7 +403,7 @@ fn spawn_system_group(
   }
 
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
-  let mut group = SystemGroup::new(child_systems, &mut ctx_template);
+  let mut group = SystemGroup::new(child_systems);
   if active {
     group.activate(&mut ctx_template);
   } else {
@@ -493,12 +490,11 @@ fn render_all_leds(
 ) {
   let mut declarations = HashMap::new();
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
-  check_active_state(sc, &mut ctx_template);
 
   // gather LED declarations from all active systems and child systems (within)
   for system in sc.systems.values_mut() {
-    let ctx = ctx_template.clone_for_system(system.id);
-    if sc.systems_active.get(&system.id) == Some(&true) {
+    let mut ctx = ctx_template.clone_for_system(system.id);
+    if system.handle_active(&mut ctx) {
       declarations.insert(system.id, system.leds(tick_interval, &ctx));
     } else {
       log::trace!("System {} is inactive, skipping LED rendering", system.id);
@@ -506,9 +502,8 @@ fn render_all_leds(
   }
   for group in sc.groups.values_mut() {
     for system in group.systems.values_mut() {
-      let ctx = ctx_template.clone_for_system(system.id);
-      // TODO: this is wrong but should be eliminated by turning LEDs into a system
-      if system.is_active(&ctx) {
+      let mut ctx = ctx_template.clone_for_system(system.id);
+      if system.handle_active(&mut ctx) {
         declarations.insert(system.id, system.leds(tick_interval, &ctx));
       } else {
         log::trace!("System {} is inactive, skipping LED rendering", system.id);
@@ -521,36 +516,75 @@ fn render_all_leds(
     .ok();
 }
 
-/// Cycle through all systems and check if their active state has changed, firing the deactivation/reactivation handlers as needed.
-fn check_active_state(sc: &mut SystemCollection, ctx: &mut Context) {
-  let mut reactivate_systems = Vec::new();
-  let mut deactivate_systems = Vec::new();
+// #[cfg(test)]
+// mod tests {
+//   use super::*;
 
-  for (id, system) in &mut sc.systems {
-    let ctx = ctx.clone_for_system(*id);
-    let currently_active = sc.systems_active.get(id).copied().unwrap_or(false);
-    let should_be_active = system.is_active(&ctx);
+//   #[derive(Default)]
+//   struct SpySystem {
+//     startup_called: bool,
+//     events_received: Vec<String>,
+//     commands_received: Vec<String>,
+//     cues_received: Vec<String>,
+//     pub active: bool,
+//   }
 
-    if should_be_active && !currently_active {
-      reactivate_systems.push(*id);
-    } else if !should_be_active && currently_active {
-      deactivate_systems.push(*id);
-    }
-  }
+//   impl System for SpySystem {
+//     fn handle_active(&self, ctx: &Context) -> bool {
+//       self.active
+//     }
 
-  for id in reactivate_systems {
-    if let Some(system) = sc.systems.get_mut(&id) {
-      log::trace!("System {} is now active, activating", id);
-      system.on_reactivate(ctx);
-      sc.systems_active.insert(id, true);
-    }
-  }
+//     fn on_startup(&mut self, ctx: &mut Context) {
+//       self.startup_called = true;
+//     }
 
-  for id in deactivate_systems {
-    if let Some(system) = sc.systems.get_mut(&id) {
-      log::trace!("System {} is now inactive, deactivating", id);
-      system.on_deactivate(ctx);
-      sc.systems_active.insert(id, false);
-    }
-  }
-}
+//     fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+//       self
+//         .events_received
+//         .push(std::any::type_name_of_val(event).to_string());
+//     }
+
+//     fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
+//       self
+//         .cues_received
+//         .push(std::any::type_name_of_val(cue).to_string());
+//     }
+//   }
+
+//   #[tokio::test]
+//   async fn test_emit_event() {
+//     let mut store = Store::new();
+//     let (app_sender, _) = mpsc::unbounded_channel::<AppMessage>();
+//     let interrupt_registry = EventInterruptRegistry::new();
+//     let mut systems = SystemCollection {
+//       systems: HashMap::from([
+//         (
+//           1,
+//           SystemContainer {
+//             id: 1,
+//             system: Box::new(SpySystem::default()),
+//             cues: HashMap::new(),
+//           },
+//         ),
+//         (
+//           2,
+//           SystemContainer {
+//             id: 2,
+//             system: Box::new(SpySystem::default()),
+//             cues: HashMap::new(),
+//           },
+//         ),
+//       ]),
+//       systems_active: HashMap::new(),
+//       groups: HashMap::new(),
+//     };
+
+//     emit_event(
+//       &Anonymous,
+//       &mut systems,
+//       &mut store,
+//       &app_sender,
+//       &interrupt_registry,
+//     );
+//   }
+// }

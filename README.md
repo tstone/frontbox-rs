@@ -588,12 +588,11 @@ exp_network.add_board(
 
 ## Roadmap
 
-1. Cueing system
-2. Playing sounds/music
-3. Accumulations
-4. Expansion network definition re-write
-5. LED system revamp: Use new cueing + command systems; support led groups
-6. NeoSeg support
+1. Playing sounds/music
+2. Accumulations
+3. Expansion network definition re-write
+4. LED system revamp: Use new cueing + command systems; support led groups
+5. NeoSeg support
 
 ## Complete Example System
 

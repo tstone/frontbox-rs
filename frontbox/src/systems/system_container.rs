@@ -13,6 +13,7 @@ pub struct SystemContainer {
   pub id: u64,
   pub(crate) inner: Box<dyn System>,
   cues: HashMap<u64, CueAccumulator>,
+  last_active_state: bool,
 }
 
 impl SystemContainer {
@@ -21,6 +22,7 @@ impl SystemContainer {
       id,
       inner: system,
       cues: HashMap::new(),
+      last_active_state: true,
     }
   }
 
@@ -32,11 +34,30 @@ impl SystemContainer {
     Self::new(SystemContainer::next_id(), system)
   }
 
+  /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
+  /// Use `is_active` if you just want to check the active state without firing handlers.
+  pub fn handle_active(&mut self, ctx: &mut Context) -> bool {
+    let fresh = self.inner.is_active(ctx);
+
+    if fresh != self.last_active_state {
+      if fresh {
+        // system just became active
+        self.inner.on_reactivate(ctx);
+      } else {
+        // system just became inactive
+        self.inner.on_deactivate(ctx);
+      }
+    }
+
+    self.last_active_state = fresh;
+    fresh
+  }
+
   pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut cues_to_remove = vec![];
     for (id, cue) in self.cues.iter_mut() {
       if cue.accumulate(delta).completed_cycle {
-        log::trace!("Cue {} cyle completed, triggering signal", id);
+        log::trace!("Cue {} cycle completed, triggering signal", id);
         if let Some(signal) = cue.signal() {
           self.inner.on_cue(signal, ctx);
         }
