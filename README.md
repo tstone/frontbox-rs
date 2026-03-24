@@ -36,6 +36,13 @@ impl System for Example {
 }
 ```
 
+Systems include four lifecycle handlers:
+
+- `on_startup`
+- `on_deactivate`
+- `on_reactivate`
+- `on_shutdown`
+
 #### Startup
 
 Systems can given on startup, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.

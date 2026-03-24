@@ -12,6 +12,7 @@ use crate::systems::run_system_timers;
 
 pub struct SystemCollection {
   pub systems: HashMap<u64, SystemContainer>,
+  pub systems_active: HashMap<u64, bool>,
   pub groups: HashMap<&'static str, SystemGroup>,
 }
 
@@ -28,6 +29,7 @@ pub async fn run(
 
   let mut systems = SystemCollection {
     systems: HashMap::new(),
+    systems_active: HashMap::new(),
     groups: HashMap::new(),
   };
 
@@ -104,18 +106,10 @@ pub async fn run(
             despawn_system_group(group_name, &mut systems, &mut store, app_sender.clone(), &mut command_registry, &mut interrupt_registry);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
-            if let Some(group) = systems.groups.get_mut(group_name) {
-              group.activate();
-            } else {
-              log::warn!("No system group named '{}' found, cannot activate", group_name);
-            }
+            activate_system_group(group_name, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::DeactivateSystemGroup(group_name) => {
-            if let Some(group) = systems.groups.get_mut(group_name) {
-              group.deactivate();
-            } else {
-              log::warn!("No system group named '{}' found, cannot deactivate", group_name);
-            }
+            deactivate_system_group(group_name, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::CreateCue(system_id, cue_id, cue, signals) => {
             if let Some(system) = find_system(system_id, &mut systems) {
@@ -179,10 +173,13 @@ fn apply_to_systems<F>(
 ) where
   F: FnMut(&mut SystemContainer, &mut Context),
 {
+  let mut ctx_template = Context::new(store, 0, app_sender.clone());
+  check_active_state(sc, &mut ctx_template);
+
   // apply to root systems
   for system in sc.systems.values_mut() {
     let mut ctx = Context::new(store, system.id, app_sender.clone());
-    if system.is_active(&ctx) {
+    if sc.systems_active.get(&system.id) == Some(&true) {
       handler(system, &mut ctx);
     } else {
       log::trace!("System {} is inactive, skipping", system.id);
@@ -193,7 +190,7 @@ fn apply_to_systems<F>(
   for group in sc.groups.values_mut() {
     for system in group.values_mut() {
       let mut ctx = Context::new(store, system.id, app_sender.clone());
-      if system.is_active(&ctx) {
+      if sc.systems_active.get(&system.id) == Some(&true) {
         handler(system, &mut ctx);
       } else {
         log::trace!("System {} is inactive, skipping", system.id);
@@ -409,11 +406,12 @@ fn spawn_system_group(
     return;
   }
 
-  let mut group = SystemGroup::new(child_systems);
+  let mut ctx_template = Context::new(store, 0, app_sender.clone());
+  let mut group = SystemGroup::new(child_systems, &mut ctx_template);
   if active {
-    group.activate();
+    group.activate(&mut ctx_template);
   } else {
-    group.deactivate();
+    group.deactivate(&mut ctx_template);
   }
 
   let mut ctx = Context::new(store, 0, app_sender.clone());
@@ -444,6 +442,40 @@ fn despawn_system_group(
   }
 }
 
+fn activate_system_group(
+  group_name: &'static str,
+  sc: &mut SystemCollection,
+  store: &mut Store,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
+) {
+  if let Some(group) = sc.groups.get_mut(group_name) {
+    let mut ctx = Context::new(store, 0, app_sender.clone());
+    group.activate(&mut ctx);
+  } else {
+    log::warn!(
+      "No system group named '{}' found, cannot activate",
+      group_name
+    );
+  }
+}
+
+fn deactivate_system_group(
+  group_name: &'static str,
+  sc: &mut SystemCollection,
+  store: &mut Store,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
+) {
+  if let Some(group) = sc.groups.get_mut(group_name) {
+    let mut ctx = Context::new(store, 0, app_sender.clone());
+    group.deactivate(&mut ctx);
+  } else {
+    log::warn!(
+      "No system group named '{}' found, cannot deactivate",
+      group_name
+    );
+  }
+}
+
 fn unregister_all_by_system(
   system_id: u64,
   command_registry: &mut CommandRegistry,
@@ -462,11 +494,12 @@ fn render_all_leds(
 ) {
   let mut declarations = HashMap::new();
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
+  check_active_state(sc, &mut ctx_template);
 
   // gather LED declarations from all active systems and child systems (within)
   for system in sc.systems.values_mut() {
     let ctx = ctx_template.clone_for_system(system.id);
-    if system.is_active(&ctx) {
+    if sc.systems_active.get(&system.id) == Some(&true) {
       declarations.insert(system.id, system.leds(tick_interval, &ctx));
     } else {
       log::trace!("System {} is inactive, skipping LED rendering", system.id);
@@ -475,6 +508,7 @@ fn render_all_leds(
   for group in sc.groups.values_mut() {
     for system in group.systems.values_mut() {
       let ctx = ctx_template.clone_for_system(system.id);
+      // TODO: this is wrong but should be eliminated by turning LEDs into a system
       if system.is_active(&ctx) {
         declarations.insert(system.id, system.leds(tick_interval, &ctx));
       } else {
@@ -486,4 +520,38 @@ fn render_all_leds(
   machine_sender
     .send(MachineMessage::RenderLedDeclarations(declarations))
     .ok();
+}
+
+/// Cycle through all systems and check if their active state has changed, firing the deactivation/reactivation handlers as needed.
+fn check_active_state(sc: &mut SystemCollection, ctx: &mut Context) {
+  let mut reactivate_systems = Vec::new();
+  let mut deactivate_systems = Vec::new();
+
+  for (id, system) in &mut sc.systems {
+    let ctx = ctx.clone_for_system(*id);
+    let currently_active = sc.systems_active.get(id).copied().unwrap_or(false);
+    let should_be_active = system.is_active(&ctx);
+
+    if should_be_active && !currently_active {
+      reactivate_systems.push(*id);
+    } else if !should_be_active && currently_active {
+      deactivate_systems.push(*id);
+    }
+  }
+
+  for id in reactivate_systems {
+    if let Some(system) = sc.systems.get_mut(&id) {
+      log::trace!("System {} is now active, activating", id);
+      system.on_reactivate(ctx);
+      sc.systems_active.insert(id, true);
+    }
+  }
+
+  for id in deactivate_systems {
+    if let Some(system) = sc.systems.get_mut(&id) {
+      log::trace!("System {} is now inactive, deactivating", id);
+      system.on_deactivate(ctx);
+      sc.systems_active.insert(id, false);
+    }
+  }
 }

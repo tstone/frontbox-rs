@@ -12,7 +12,13 @@ use crate::prelude::*;
 /// templates. These additionally require `Clone`.
 #[allow(unused)]
 pub trait System {
+  /// Called when the system is first started up
   fn on_startup(&mut self, ctx: &mut Context) {}
+  /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
+  fn on_deactivate(&mut self, ctx: &mut Context) {}
+  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
+  fn on_reactivate(&mut self, ctx: &mut Context) {}
+  /// Called when the system is removed
   fn on_shutdown(&mut self, ctx: &mut Context) {}
 
   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {}
