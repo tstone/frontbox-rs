@@ -23,12 +23,34 @@ impl StartableFlasher {
       flash_duration: Duration::from_millis(185),
     })
   }
+
+  fn start_btn_on(&self, ctx: &mut Context) {
+    if let Some(driver) = self.start_button_driver {
+      ctx.command(ActivateDriver {
+        driver,
+        mode: ActivationMode::VirtualSwitchOn,
+      });
+    }
+  }
+
+  fn start_btn_off(&self, ctx: &mut Context) {
+    if let Some(driver) = self.start_button_driver {
+      ctx.command(DeactivateDriver {
+        driver,
+        mode: DeactivationMode::VirtualSwitchOff,
+      });
+    }
+  }
 }
 
 impl System for StartableFlasher {
   fn is_active(&self, ctx: &Context) -> bool {
     ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable)
-    // TODO: turn off lamp driver (on_activated, on_deactivated)
+  }
+
+  fn on_deactivate(&mut self, ctx: &mut Context) {
+    // turn off start button to make sure it's not stuck on one the system is disabled
+    self.start_btn_off(ctx);
   }
 
   fn on_startup(&mut self, ctx: &mut Context) {
@@ -47,18 +69,10 @@ impl System for StartableFlasher {
   }
 
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
-    if let Some(driver) = self.start_button_driver {
-      if let Some(_) = cue.downcast_ref::<On>() {
-        ctx.command(ActivateDriver {
-          driver,
-          mode: ActivationMode::VirtualSwitchOn,
-        });
-      } else if let Some(_) = cue.downcast_ref::<Off>() {
-        ctx.command(DeactivateDriver {
-          driver,
-          mode: DeactivationMode::VirtualSwitchOff,
-        });
-      }
+    if let Some(_) = cue.downcast_ref::<On>() {
+      self.start_btn_on(ctx);
+    } else if let Some(_) = cue.downcast_ref::<Off>() {
+      self.start_btn_off(ctx);
     }
   }
 

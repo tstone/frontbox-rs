@@ -36,11 +36,15 @@ impl SystemContainer {
     let mut cues_to_remove = vec![];
     for (id, cue) in self.cues.iter_mut() {
       if cue.accumulate(delta).completed_cycle {
-        log::trace!("Cue completed, triggering signal");
+        log::trace!("Cue {} cyle completed, triggering signal", id);
         if let Some(signal) = cue.signal() {
           self.inner.on_cue(signal, ctx);
         }
-        cues_to_remove.push(*id);
+
+        if cue.is_complete() {
+          log::trace!("Cue {} is entirely completed, removing", id);
+          cues_to_remove.push(*id);
+        }
       }
     }
 
@@ -52,7 +56,7 @@ impl SystemContainer {
     self.inner.on_tick(delta, ctx);
   }
 
-  pub fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<impl Signal + 'static>) {
+  pub fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Signal>>) {
     self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 

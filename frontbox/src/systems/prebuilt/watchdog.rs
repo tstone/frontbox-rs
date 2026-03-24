@@ -14,12 +14,14 @@ impl Watchdog {
 impl Watchdog {
   fn enable(ctx: &mut Context) {
     let app_config = ctx.expect::<AppConfig>();
+    log::info!("Enabling watchdog with {:?}", app_config.watchdog_tick);
 
     ctx.cue(WatchdogPing, Cue::Loop(app_config.watchdog_tick));
     ctx.command(WatchdogPing);
   }
 
   fn disable(&self, ctx: &mut Context) {
+    log::info!("Disabling watchdog");
     ctx.command(ClearWatchdog);
     if let Some(handle) = &self.cue_handle {
       ctx.cancel_cue(*handle);
@@ -47,6 +49,7 @@ impl System for Watchdog {
   }
 
   fn on_cue(&mut self, _cue: &dyn Signal, ctx: &mut Context) {
+    log::trace!("Watchdog cue => Ping");
     ctx.command(WatchdogPing);
   }
 

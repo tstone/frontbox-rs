@@ -18,6 +18,7 @@ pub struct Machine {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   app_config: AppConfig,
+  watchdog_interval: Duration,
   led_renderer: LedRenderer,
 }
 
@@ -41,6 +42,7 @@ impl Machine {
       machine_receiver,
       switch_lookup,
       io_boards,
+      watchdog_interval: app_config.watchdog_tick + Duration::from_millis(250), // add some buffer to account for latency in sending
       app_config,
       led_renderer,
     }
@@ -157,7 +159,7 @@ impl Machine {
     let _ = self
       .io_port
       .request(
-        &WatchdogCommand::set(self.app_config.watchdog_tick),
+        &WatchdogCommand::set(self.watchdog_interval),
         Duration::from_millis(200),
       )
       .await;

@@ -20,7 +20,7 @@ impl Store {
   }
 
   pub fn clear(&mut self) {
-    log::trace!("Clearing Store");
+    log::warn!("Clearing Store");
     self.internal.clear();
   }
 
@@ -30,7 +30,6 @@ impl Store {
   }
 
   pub fn get<T: StorableType>(&self) -> Option<&T> {
-    log::trace!("Getting {} from Store", std::any::type_name::<T>());
     self
       .internal
       .get(&TypeId::of::<T>())
@@ -67,10 +66,6 @@ impl Store {
   }
 
   pub fn get_mut<T: StorableType>(&mut self) -> Option<&mut T> {
-    log::trace!(
-      "Getting mutable reference to {} from Store",
-      std::any::type_name::<T>()
-    );
     self
       .internal
       .get_mut(&TypeId::of::<T>())

@@ -45,7 +45,12 @@ impl<'a> Context<'a> {
   // -- Commands --
 
   pub fn command<C: Signal>(&mut self, cmd: C) {
-    log::debug!("📨 Executing command {}", type_name::<C>());
+    // since this ping happens a LOT, log it at trace level
+    if cmd.as_any().downcast_ref::<WatchdogPing>().is_some() {
+      log::trace!("📨 Executing command {}", type_name::<C>());
+    } else {
+      log::debug!("📨 Executing command {}", type_name::<C>());  
+    }
     self
       .app_sender
       .send(AppMessage::ExecuteCommand(self.system_id, Box::new(cmd)))

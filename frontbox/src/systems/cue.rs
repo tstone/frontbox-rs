@@ -22,31 +22,28 @@ pub struct CueAccumulator {
 }
 
 impl CueAccumulator {
-  pub fn new(cue: Cue, signals: Vec<impl Signal + 'static>) -> Self {
+  pub fn new(cue: Cue, signals: Vec<Box<dyn Signal>>) -> Self {
+    let signal_index = match cue {
+      Cue::Now => 0,
+      // start with index at end of signals so that first increment will roll it over to 0
+      _ => signals.iter().len(),
+    };
+
     Self {
       cue,
       elapsed: Duration::ZERO,
-      signal_index: signals.iter().len(), // start with index at end of signals so that first increment will roll it over to 0
-      signal: Arc::new(
-        signals
-          .into_iter()
-          .map(|s| Box::new(s) as Box<dyn Signal>)
-          .collect(),
-      ),
+      signal_index, 
+      signal: Arc::new(signals),
       loop_count: 0,
     }
   }
 
   /// Get the current signal to trigger for this cue
   pub fn signal(&self) -> Option<&dyn Signal> {
-    if self.cue == Cue::Now {
-      return self.signal.first().map(|s| &**s);
-    }
-
     if self.signal_index >= self.signal.len() {
       return None;
     }
-    Some(&*self.signal[self.signal_index])
+    Some(&*self.signal[self.signal_index].as_ref())
   }
 
   pub fn target(&self) -> Duration {
@@ -73,28 +70,32 @@ impl Accumulator<Duration> for CueAccumulator {
       completed_cycle: false,
     };
 
-    if self.cue == Cue::Now {
+    if self.cue == Cue::Now || self.is_complete() {
       return result;
     }
 
+    // If we're exactly at the target, we need to roll back to 0 before adding delta
+    // This can happen when the cycle completes and we don't reset to 0 immediately (see below)
+    if self.elapsed == self.target() {
+      self.elapsed -= self.target();
+    }
+
     self.elapsed += delta;
+
     if self.elapsed >= self.target() {
+      // don't reset to 0 if exactly at the target. This will happen the next cycle but doing so too early
+      // makes `sample` incorrect for the last frame of the cycle
+      if self.elapsed > self.target() {
+        self.elapsed -= self.target();
+      }
+
       result.completed_cycle = true;
+      result.remainder = self.elapsed;
       self.increment_signal_index();
 
-      let remainder = self.elapsed - self.target();
-
       match self.cue {
-        Cue::Once(_) => {
-          self.elapsed = self.target();
-          result.remainder = remainder;
-        }
-        Cue::Times(count, _) => {
+        Cue::Times(_, _) => {
           self.loop_count += 1;
-          if self.loop_count >= count {
-            self.elapsed = self.target();
-            result.remainder = remainder;
-          }
         }
         _ => {}
       }
@@ -123,13 +124,13 @@ impl Accumulator<Duration> for CueAccumulator {
 
 #[cfg(test)]
 mod test {
-  use crate::prelude::SignalExt;
+  use crate::{prelude::SignalExt, signals};
 
   pub use super::*;
 
   #[test]
   fn now_cue() {
-    let cue = CueAccumulator::new(Cue::Now, vec!["signal"]);
+    let cue = CueAccumulator::new(Cue::Now, vec![Box::new("signal")]);
 
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
@@ -140,7 +141,7 @@ mod test {
 
   #[test]
   fn once_cue() {
-    let mut cue = CueAccumulator::new(Cue::Once(Duration::from_secs(1)), vec!["signal"]);
+    let mut cue = CueAccumulator::new(Cue::Once(Duration::from_secs(1)), vec![Box::new("signal")]);
 
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_none(), true);
@@ -157,7 +158,7 @@ mod test {
 
   #[test]
   fn times_cue() {
-    let mut cue = CueAccumulator::new(Cue::Times(3, Duration::from_secs(1)), vec!["signal"]);
+    let mut cue = CueAccumulator::new(Cue::Times(3, Duration::from_secs(1)), vec![Box::new("signal")]);
 
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_none(), true);
@@ -186,7 +187,7 @@ mod test {
 
   #[test]
   fn loop_cue() {
-    let mut cue = CueAccumulator::new(Cue::Loop(Duration::from_secs(1)), vec!["signal"]);
+    let mut cue = CueAccumulator::new(Cue::Loop(Duration::from_secs(1)), vec![Box::new("signal")]);
 
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_none(), true);
@@ -211,7 +212,7 @@ mod test {
   fn times_cue_with_multiple_signals() {
     let mut cue = CueAccumulator::new(
       Cue::Times(3, Duration::from_secs(1)),
-      vec!["signal1", "signal2"],
+      signals!["signal1", "signal2"],
     );
 
     // Advance 1 second, should trigger first signal
