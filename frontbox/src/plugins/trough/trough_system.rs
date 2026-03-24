@@ -1,3 +1,4 @@
+use crate::plugins::TroughPlugin;
 pub use crate::prelude::*;
 
 pub struct TroughSystem {
@@ -7,8 +8,6 @@ pub struct TroughSystem {
 }
 
 impl TroughSystem {
-  /// # Arguments
-  /// * `switches` - List of trough switches, in order. Index 0 is the switch nearest the exit.
   pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Box<Self> {
     Box::new(Self {
       expected_occupancy: switches.len(),
@@ -109,13 +108,21 @@ impl System for TroughSystem {
     }
 
     // configure eject driver
+    let trough_kick_len = ctx
+      .expect::<OperatorConfig>()
+      .get_value_as_integer(TroughPlugin::trough_kick_key())
+      .unwrap();
+    let trough_init_power = ctx
+      .expect::<OperatorConfig>()
+      .get_value_as_integer(TroughPlugin::trough_power_key())
+      .unwrap();
+
     ctx.command(ConfigureDriver::new(
       self.eject_coil,
       PulseKickMode {
         initial_pwm_length: Duration::from_millis(50),
-        // TODO: make trough power configurable via operator config
-        initial_pwm_power: Power::percent(65),
-        kick_length: Duration::from_millis(100),
+        initial_pwm_power: Power::percent(trough_init_power as u8),
+        kick_length: Duration::from_millis(trough_kick_len as u64),
         ..Default::default()
       },
     ));

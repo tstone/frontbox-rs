@@ -1,9 +1,14 @@
 System
 
+- Turn individual player system into a plugin + complete team/co-op side
 - Make machine bridge system deconfigure drivers on shutdown
-- Bring back plugin which can register things like operator configs
+- Read/write Store values to disk on boot/shutdown
+- Keep stats on coils fired, etc.
+- Broadcast config changes
+- trough system, auto plunger react to config changes and update driver config
+- move hardware setup out of App
 - System groups can contain groups
-- Keyframe animation -- specify "this value, at this point in time" -- lerps between 2 points
+- Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
 
 Hardware
 

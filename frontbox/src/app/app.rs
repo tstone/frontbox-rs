@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::app::run_loop;
 use crate::hardware_definition::*;
 use crate::machine::serial_interface::SerialInterface;
+use crate::plugins::Plugin;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use fast_protocol::*;
@@ -254,28 +255,39 @@ impl App {
     }
   }
 
-  pub fn operator_config_item(mut self, key: &'static str, item: ConfigItem) -> Self {
-    self.operator_config.add_item(key, item);
+  pub fn operator_config(&mut self, item: impl OperatorConfigBuilder) -> &mut Self {
+    let (key, config_item) = item.build();
+    self.operator_config.add_item(key, config_item);
     self
   }
 
-  pub fn operator_config_value(mut self, key: &'static str, value: ConfigValue) -> Self {
-    self.operator_config.set_value(key, value);
-    self
-  }
-
-  pub fn system_tick(mut self, interval: Duration) -> Self {
+  pub fn system_tick(&mut self, interval: Duration) -> &mut Self {
     self.app_config.system_timer_tick = interval;
     self
   }
 
-  pub fn watchdog_tick(mut self, interval: Duration) -> Self {
+  pub fn watchdog_tick(&mut self, interval: Duration) -> &mut Self {
     self.app_config.watchdog_tick = interval;
     self
   }
 
-  pub fn systems(mut self, systems: Vec<Box<dyn System>>) -> Self {
+  pub fn system(&mut self, system: Box<dyn System>) -> &mut Self {
+    self.systems.extend(vec![system]);
+    self
+  }
+
+  pub fn systems(&mut self, systems: Vec<Box<dyn System>>) -> &mut Self {
     self.systems.extend(systems);
+    self
+  }
+
+  pub fn plugin(mut self, plugin: impl Plugin) -> Self {
+    plugin.register(&mut self);
+    self
+  }
+
+  pub fn configure(mut self, config_fn: impl FnOnce(&mut Self)) -> Self {
+    config_fn(&mut self);
     self
   }
 

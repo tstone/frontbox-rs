@@ -29,7 +29,7 @@ impl OperatorConfig {
     if let Some(item) = self.internal.get_mut(key) {
       match (item, value) {
         (ConfigItem::String { current, .. }, ConfigValue::String(v)) => *current = v,
-        (ConfigItem::Integer { current, .. }, ConfigValue::Integer(v)) => *current = v,
+        (ConfigItem::Integer { value: current, .. }, ConfigValue::Integer(v)) => *current = v,
         (ConfigItem::Boolean { current, .. }, ConfigValue::Boolean(v)) => *current = v,
         _ => {}
       }
@@ -43,7 +43,7 @@ impl OperatorConfig {
   pub fn get_value(&self, key: &'static str) -> Option<ConfigValue> {
     self.internal.get(key).map(|item| match item {
       ConfigItem::String { current, .. } => ConfigValue::String(current.clone()),
-      ConfigItem::Integer { current, .. } => ConfigValue::Integer(*current),
+      ConfigItem::Integer { value: current, .. } => ConfigValue::Integer(*current),
       ConfigItem::Boolean { current, .. } => ConfigValue::Boolean(*current),
     })
   }

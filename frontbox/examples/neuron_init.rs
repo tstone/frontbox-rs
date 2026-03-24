@@ -18,7 +18,7 @@ async fn main() {
     vec![],
   )
   .await
-  .systems(bundles::operational())
+  .plugin(OperationalPlugin)
   .run(vec![])
   .await;
 }

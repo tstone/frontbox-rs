@@ -1,4 +1,4 @@
-use frontbox::prebuilt::{TroughEject, TroughFull};
+use frontbox::plugins::{TroughEject, TroughFull};
 use frontbox::prelude::*;
 
 use crate::*;
@@ -11,12 +11,13 @@ pub mod operator_config {
   use frontbox::prelude::ConfigItem;
 
   pub const TURN_COUNT: ConfigItem = ConfigItem::Integer {
-    current: 3,
+    value: 3,
     default: 3,
-    min: 1,
-    max: 5,
+    min: Some(1),
+    max: Some(5),
     name: "Turn Count",
     description: "The current turn count for the player. This is automatically incremented at the end of each turn.",
+    units: None,
   };
 }
 

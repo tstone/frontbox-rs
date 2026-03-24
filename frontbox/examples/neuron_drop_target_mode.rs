@@ -67,7 +67,7 @@ async fn main() {
 
   App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
-    .systems(bundles::operational())
+    .plugin(OperationalPlugin)
     .run(vec![DropTargetDownUp::new([
       switches::LOWER_DROP_TARGET1,
       switches::LOWER_DROP_TARGET2,
