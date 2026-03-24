@@ -1,10 +1,11 @@
+use std::fmt::Debug;
 use std::ops::{AddAssign, SubAssign};
 
 use crate::animation::*;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified quatity using a given curve
 #[derive(Clone)]
-pub struct Tween<A: ToF32 + Copy + Default, T: Lerp + Clone + Send + Sync> {
+pub struct Tween<A: ToF32 + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
   // the amount which signals this animation is done
   pub target: A,
   current: A,
@@ -18,7 +19,7 @@ pub struct Tween<A: ToF32 + Copy + Default, T: Lerp + Clone + Send + Sync> {
 impl<A, T> Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
 {
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self {
@@ -52,9 +53,9 @@ where
 impl<A, T> Accumulator<A> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialOrd + PartialEq + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialOrd + PartialEq + Send + Sync + Debug,
 {
-  fn accumulate(&mut self, delta_time: A) -> AccumulationResult<A> {
+  fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
     let mut result = AccumulationResult {
       remainder: A::default(),
       completed_cycle: false,
@@ -64,11 +65,21 @@ where
       return AccumulationResult::default();
     }
 
-    self.current += delta_time;
-    if self.current >= self.target {
+    // If we're exactly at the target, we need to roll back to 0 before adding delta
+    // This can happen when the cycle completes and we don't reset to 0 immediately (see below)
+    if self.current == self.target {
       self.current -= self.target;
-      let is_last_stop = self.current_stop_index == self.stops.len() - 2;
+    }
 
+    self.current += delta;
+    if self.current >= self.target {
+      // don't reset to 0 (default) if exactly at the target. This will happen the next cycle but doing so too early
+      // makes `sample` incorrect for the last frame of the cycle
+      if self.current > self.target {
+        self.current -= self.target;
+      }
+
+      let is_last_stop = self.current_stop_index == self.stops.len() - 2;
       result.completed_cycle = true;
       result.remainder = self.current;
 
@@ -79,15 +90,12 @@ where
           }
           AnimationCycle::Once => {
             self.cycle_count += 1;
-            self.current = self.target; // clear remainder to ensure we don't accidentally roll over into the next cycle
             result.completed_cycle = true;
           }
           AnimationCycle::Times(n) => {
             self.cycle_count += 1;
             if self.cycle_count < n {
               self.current_stop_index = 0;
-            } else {
-              self.current = self.target;
             }
           }
         }
@@ -121,7 +129,7 @@ where
 impl<A, T> Animation<A, T> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + PartialOrd + Send + Sync,
+  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + PartialOrd + Send + Sync + Debug,
 {
   fn sample(&self) -> T {
     let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);
@@ -129,5 +137,80 @@ where
     let from = &self.stops[self.current_stop_index];
     let to = &self.stops[self.next_index()];
     from.interpolate(to, curve_value)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_once_tween() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], AnimationCycle::Once);
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 5.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 10.0);
+    assert!(tween.is_complete());
+  }
+
+  #[test]
+  fn test_times_tween() {
+    let mut tween = Tween::new(
+      1.0,
+      Curve::Linear,
+      vec![0.0, 10.0],
+      AnimationCycle::Times(3),
+    );
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 5.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 10.0);
+    assert!(!tween.is_complete());
+  }
+
+  #[test]
+  fn test_forever_tween() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], AnimationCycle::Forever);
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 5.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 10.0);
+    assert!(!tween.is_complete());
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 5.0);
+  }
+
+  #[test]
+  fn test_times_overshoot() {
+    let mut tween = Tween::new(
+      1.0,
+      Curve::Linear,
+      vec![0.0, 10.0],
+      AnimationCycle::Times(3),
+    );
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(1.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 5.0);
+    assert!(!tween.is_complete());
   }
 }
