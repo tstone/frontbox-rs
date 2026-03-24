@@ -28,6 +28,7 @@ impl StartableFlasher {
 impl System for StartableFlasher {
   fn is_active(&self, ctx: &Context) -> bool {
     ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable)
+    // TODO: turn off lamp driver (on_activated, on_deactivated)
   }
 
   fn on_startup(&mut self, ctx: &mut Context) {

@@ -166,6 +166,10 @@ impl IndividualPlayerSystem {
       game_state.current_player_turn()
     );
 
+    if next_player > 0 || game_state.player_turns[game_state.current_player as usize] > 0 {
+      ctx.insert(GameStartState::NotStartable);
+    }
+
     self.start_turn(ctx);
   }
 
