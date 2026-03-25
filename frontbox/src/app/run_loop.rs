@@ -137,9 +137,14 @@ pub async fn run(
   }
 
   // Shutdown sequence
-  apply_to_systems(&mut systems, &mut store, &app_sender, |system, ctx| {
-    system.on_shutdown(ctx);
-  });
+  apply_to_systems(
+    &mut systems,
+    &mut store,
+    &app_sender,
+    |system, ctx, systems| {
+      system.on_shutdown(ctx);
+    },
+  );
 
   // wait a sec to allow systems to process shutdown event and clear timers, etc.
   tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -172,15 +177,22 @@ fn apply_to_systems<F>(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   mut handler: F,
 ) where
-  F: FnMut(&mut SystemContainer, &mut Context),
+  F: FnMut(&mut SystemContainer, &mut Context, &mut Systems),
 {
   // apply to root systems
-  for mut system in sc.systems.values_mut() {
-    let mut ctx = Context::new(store, system.id(), app_sender.clone());
-    if system.handle_active(&mut ctx) {
-      handler(&mut system, &mut ctx);
-    } else {
-      log::trace!("System {} is inactive, skipping", system.id());
+  let system_ids = sc.systems.ids().copied().collect_vec();
+  for system_id in system_ids {
+    if let Some(cell) = sc.systems.lease(system_id) {
+      {
+        let mut system = cell.borrow_mut();
+        let mut ctx = Context::new(store, system.id(), app_sender.clone());
+        if system.handle_active(&mut ctx) {
+          handler(&mut system, &mut ctx, &mut sc.systems);
+        } else {
+          log::trace!("System {} is inactive, skipping", system.id());
+        }
+      }
+      sc.systems.reinsert(system_id, cell);
     }
   }
 
@@ -189,7 +201,7 @@ fn apply_to_systems<F>(
     for mut system in group.values_mut() {
       let mut ctx = Context::new(store, system.id(), app_sender.clone());
       if system.handle_active(&mut ctx) {
-        handler(&mut system, &mut ctx);
+        handler(&mut system, &mut ctx, &mut sc.systems);
       } else {
         log::trace!("System {} is inactive, skipping", system.id());
       }
@@ -238,8 +250,8 @@ fn emit_event(
   }
 
   // event is broadcast to systems if no interrupt halted it
-  apply_to_systems(systems, store, &app_sender, |system, ctx| {
-    system.on_event(event, ctx);
+  apply_to_systems(systems, store, &app_sender, |system, ctx, systems| {
+    system.on_event(event, ctx, systems);
   });
 }
 
@@ -252,7 +264,7 @@ async fn handle_system_tick(
 ) {
   let tick_duration = config.system_timer_tick;
 
-  apply_to_systems(systems, store, &app_sender, |system, ctx| {
+  apply_to_systems(systems, store, &app_sender, |system, ctx, systems| {
     system.on_tick(tick_duration, ctx);
   });
 
@@ -301,7 +313,7 @@ fn spawn_system(
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
   let mut ctx = Context::new(store, system.id(), app_sender.clone());
-  system.on_startup(&mut ctx);
+  system.on_startup(&mut ctx, &mut sc.systems);
 
   // check if the caller is a top-level system or a child
   if let Some(caller_id) = caller_id {
@@ -340,7 +352,7 @@ fn replace_system(
       system.on_shutdown(&mut ctx);
     }
     let mut ctx = Context::new(store, new_system.id(), app_sender.clone());
-    new_system.on_startup(&mut ctx);
+    new_system.on_startup(&mut ctx, &mut sc.systems);
     sc.systems.insert(new_system);
   } else {
     // if not search groups and replace there
@@ -352,7 +364,7 @@ fn replace_system(
           system.on_shutdown(&mut ctx);
         }
         let mut ctx = Context::new(store, new_system.id(), app_sender.clone());
-        new_system.on_startup(&mut ctx);
+        new_system.on_startup(&mut ctx, &mut sc.systems);
         group.insert(new_system);
         return;
       }
@@ -421,7 +433,7 @@ fn spawn_system_group(
   }
 
   let mut ctx = Context::new(store, 0, app_sender.clone());
-  group.on_startup(&mut ctx);
+  group.on_startup(&mut ctx, &mut sc.systems);
   sc.groups.insert(group_name, group);
 }
 
@@ -545,11 +557,11 @@ fn render_all_leds(
 //       self.active
 //     }
 
-//     fn on_startup(&mut self, ctx: &mut Context) {
+//     fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
 //       self.startup_called = true;
 //     }
 
-//     fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+//     fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
 //       self
 //         .events_received
 //         .push(std::any::type_name_of_val(event).to_string());

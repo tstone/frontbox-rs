@@ -32,7 +32,7 @@ impl AutoPlunger {
 }
 
 impl System for AutoPlunger {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.register_command::<FirePlunger>();
 
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
@@ -63,7 +63,7 @@ impl System for AutoPlunger {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.lane_switch && self.do_autoplunge {
         self.activate_plunger(ctx);

@@ -82,7 +82,7 @@ impl TroughSystem {
 }
 
 impl System for TroughSystem {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.register_command::<TroughEject>();
     ctx.register_command::<BallAddedToPlay>();
     ctx.register_command::<BallRemovedFromPlay>();
@@ -128,7 +128,7 @@ impl System for TroughSystem {
     ));
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {

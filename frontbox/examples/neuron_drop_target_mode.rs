@@ -107,7 +107,7 @@ impl DropTargetDownUp {
 }
 
 impl System for DropTargetDownUp {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     // bring up all targets on startup
     ctx.command(ActivateDriver::new(
       drivers::LOWER_DROP_TARGET_COIL,
@@ -115,7 +115,7 @@ impl System for DropTargetDownUp {
     ));
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }
