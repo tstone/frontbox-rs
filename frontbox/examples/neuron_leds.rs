@@ -83,7 +83,12 @@ impl LedExample {
 }
 
 impl System for LedExample {
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+  fn leds(
+    &mut self,
+    delta_time: Duration,
+    _ctx: &Context,
+    _systems: &Systems,
+  ) -> HashMap<&'static str, LedState> {
     LedDeclarationBuilder::new(delta_time)
       .on(leds::DEMO1, Color::deep_sky_blue())
       .on(leds::DEMO2, Color::dark_blue())

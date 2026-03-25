@@ -1,6 +1,6 @@
 use frontbox::prelude::*;
 
-use crate::{AddPlayer, GameStartState};
+use crate::GameManager;
 
 /// A simple system to start a game in free play mode
 #[derive(Clone)]
@@ -13,28 +13,34 @@ impl FreePlay {
     Box::new(Self { start_button_id })
   }
 
-  fn on_start_button_pressed(&mut self, ctx: &mut Context) {
+  fn on_start_button_pressed(&mut self, ctx: &mut Context, systems: &Systems) {
     log::info!("Free play: Start button => add player");
-    ctx.command(AddPlayer);
+
+    if let Some(mut game_management) = systems.get_mut::<GameManager>() {
+      if game_management.is_player_addable() {
+        game_management.add_player(ctx, systems);
+      } else {
+        log::debug!("GameManagement system reports player cannot be added, not adding player");
+      }
+    } else {
+      log::warn!("Free play: GameManagement system not found, cannot start turn");
+    }
   }
 }
 
 impl System for FreePlay {
-  fn is_active(&self, ctx: &Context) -> bool {
-    let has_start_state = ctx.has::<GameStartState>();
-
-    if !has_start_state {
-      log::warn!("FreePlay expects GameStartState, but is missing from context");
-      return false;
-    }
-
-    ctx.is(GameStartState::GameStartable) || ctx.is(GameStartState::PlayerAddable)
+  fn is_active(&self, _ctx: &Context, systems: &Systems) -> bool {
+    // active if players can be added
+    systems
+      .get::<GameManager>()
+      .map(|gm| gm.is_player_addable())
+      .unwrap_or(false)
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {
-        self.on_start_button_pressed(ctx);
+        self.on_start_button_pressed(ctx, systems);
       }
     }
   }

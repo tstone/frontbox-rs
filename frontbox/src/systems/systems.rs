@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
+use std::fmt::Debug;
 
 use crate::prelude::*;
 
@@ -70,6 +71,12 @@ impl Systems {
     })
   }
 
+  pub fn expect<T: System + 'static>(&'_ self) -> Ref<'_, T> {
+    self
+      .get::<T>()
+      .expect("Expected system was not found. Make sure it was added to the App.")
+  }
+
   pub fn get_mut<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     let type_id = TypeId::of::<T>();
     let system_id = self.type_to_id.get(&type_id)?;
@@ -81,6 +88,12 @@ impl Systems {
           .expect("type_to_id mapping was incorrect")
       })
     })
+  }
+
+  pub fn expect_mut<T: System + 'static>(&'_ self) -> RefMut<'_, T> {
+    self
+      .get_mut::<T>()
+      .expect("Expected system was not found. Make sure it was added to the App.")
   }
 
   pub fn contains<T: System + 'static>(&self) -> bool {
@@ -98,5 +111,20 @@ impl Systems {
 
   pub(crate) fn values_mut(&'_ mut self) -> impl Iterator<Item = RefMut<'_, SystemContainer>> + '_ {
     self.systems.values().map(|cell| cell.borrow_mut())
+  }
+}
+
+impl Debug for Systems {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Systems")
+      .field(
+        "systems",
+        &self
+          .systems
+          .iter()
+          .map(|(id, cell)| (id, cell.borrow().name().to_string()))
+          .collect::<HashMap<_, _>>(),
+      )
+      .finish()
   }
 }

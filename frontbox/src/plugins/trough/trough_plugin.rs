@@ -1,4 +1,4 @@
-use crate::plugins::{Plugin, TroughSystem};
+use crate::plugins::{Plugin, Trough};
 pub use crate::prelude::*;
 
 pub struct TroughPlugin {
@@ -66,6 +66,6 @@ impl Plugin for TroughPlugin {
         .units("%"),
     );
 
-    app.system(TroughSystem::new(self.switches.clone(), self.eject_coil));
+    app.system(Trough::new(self.switches.clone(), self.eject_coil));
   }
 }

@@ -12,17 +12,18 @@ impl Watchdog {
 }
 
 impl Watchdog {
-  fn enable(ctx: &mut Context) {
+  pub fn enable(ctx: &mut Context, systems: &Systems) {
     let app_config = ctx.expect::<AppConfig>();
     log::info!("Enabling watchdog with {:?}", app_config.watchdog_tick);
 
     ctx.cue(WatchdogPing, Cue::Loop(app_config.watchdog_tick));
-    ctx.command(WatchdogPing);
+    systems.expect::<Machine>().ping_watchdog();
   }
 
-  fn disable(&self, ctx: &mut Context) {
+  pub fn disable(&self, ctx: &mut Context, systems: &Systems) {
     log::info!("Disabling watchdog");
-    ctx.command(ClearWatchdog);
+    systems.expect::<Machine>().clear_watchdog();
+
     if let Some(handle) = &self.cue_handle {
       ctx.cancel_cue(*handle);
     }
@@ -30,31 +31,20 @@ impl Watchdog {
 }
 
 impl System for Watchdog {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
-    ctx.register_command::<EnableWatchdog>();
-    ctx.register_command::<DisableWatchdog>();
-
+  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
     // Neuron seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
     // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage
     // For now just always start it up
-    Watchdog::enable(ctx);
+    Watchdog::enable(ctx, systems);
   }
 
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
-    if let Some(_) = command.downcast_ref::<EnableWatchdog>() {
-      Watchdog::enable(ctx);
-    } else if let Some(_) = command.downcast_ref::<DisableWatchdog>() {
-      self.disable(ctx);
-    }
-  }
-
-  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &mut Context) {
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context, systems: &Systems) {
     log::trace!("Watchdog cue => Ping");
-    ctx.command(WatchdogPing);
+    systems.expect::<Machine>().ping_watchdog();
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context) {
-    self.disable(ctx);
+  fn on_shutdown(&mut self, ctx: &mut Context, systems: &Systems) {
+    self.disable(ctx, systems);
   }
 }
 

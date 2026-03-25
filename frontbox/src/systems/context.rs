@@ -8,9 +8,9 @@ use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct Context<'a> {
-  pub(crate) store: &'a mut Store,
-  pub(crate) system_id: u64,
-  pub(crate) app_sender: mpsc::UnboundedSender<AppMessage>,
+  store: &'a mut Store,
+  system_id: u64,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
 impl<'a> Context<'a> {
@@ -39,42 +39,6 @@ impl<'a> Context<'a> {
     self
       .app_sender
       .send(AppMessage::EmitEvent(Box::new(event)))
-      .ok();
-  }
-
-  // -- Commands --
-
-  pub fn command<C: Signal>(&mut self, cmd: C) {
-    // since this ping happens a LOT, log it at trace level
-    if cmd.as_any().downcast_ref::<WatchdogPing>().is_some() {
-      log::trace!("📨 Executing command {}", type_name::<C>());
-    } else {
-      log::debug!("📨 Executing command {}", type_name::<C>());
-    }
-    self
-      .app_sender
-      .send(AppMessage::ExecuteCommand(self.system_id, Box::new(cmd)))
-      .ok();
-  }
-
-  /// Register a command handler
-  pub fn register_command<C: Signal + 'static>(&mut self) {
-    self
-      .app_sender
-      .send(AppMessage::RegisterCommand(
-        self.system_id,
-        TypeId::of::<C>(),
-      ))
-      .ok();
-  }
-
-  pub fn unregister_command<C: Signal + 'static>(&mut self) {
-    self
-      .app_sender
-      .send(AppMessage::UnregisterCommand(
-        self.system_id,
-        TypeId::of::<C>(),
-      ))
       .ok();
   }
 

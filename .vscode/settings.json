@@ -11,6 +11,8 @@
     "lerps",
     "mainboard",
     "millis",
-    "Spawnable"
+    "playfield",
+    "Spawnable",
+    "startable"
   ]
 }

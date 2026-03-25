@@ -7,11 +7,8 @@ use crate::prelude::*;
 
 pub enum AppMessage {
   EmitEvent(Box<dyn Signal>),
-  ExecuteCommand(u64, Box<dyn Signal>),
-  RegisterCommand(u64, TypeId),
   RegisterInterrupt(u64, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
-  UnregisterCommand(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
   SystemTick,
@@ -33,18 +30,11 @@ impl Display for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       AppMessage::EmitEvent(_event) => write!(f, "EmitEvent(...)"),
-      AppMessage::ExecuteCommand(id, _) => write!(f, "ExecuteCommand({})", id),
-      AppMessage::RegisterCommand(id, type_id) => {
-        write!(f, "RegisterCommand({}, {:?})", id, type_id)
-      }
       AppMessage::RegisterInterrupt(id, type_id, priority) => {
         write!(f, "RegisterInterrupt({}, {:?}, {})", id, type_id, priority)
       }
       AppMessage::UnregisterInterrupt(id, type_id) => {
         write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
-      }
-      AppMessage::UnregisterCommand(id, type_id) => {
-        write!(f, "UnregisterCommand({}, {:?})", id, type_id)
       }
       AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
       AppMessage::SystemTick => write!(f, "SystemTick"),
