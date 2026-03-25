@@ -41,31 +41,31 @@ pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
-  ball_in_play_switch_group: &'static str,
+  ball_in_play_switches: Vec<&'static str>,
   game_state: Option<GameState>,
 }
 
 impl CompetitiveGame {
   pub fn new(
     max_players: u8,
-    ball_in_play_switch_group: &'static str,
+    ball_in_play_switches: Vec<&'static str>,
     player_template: Vec<ChildSystemContainer>,
   ) -> Self {
     Self {
       systems_template: player_template,
       max_players,
-      ball_in_play_switch_group,
+      ball_in_play_switches,
       game_state: None,
     }
   }
 
-  fn start_game(&mut self, ctx: &mut Context) {
+  fn start_game(&mut self, ctx: &Context) {
     log::info!("Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::new(self.max_players));
     ctx.emit(GameStarted);
   }
 
-  fn start_turn(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn start_turn(&mut self, ctx: &Context, systems: &Systems) {
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Beginning);
     ctx.emit(PlayerTurnBeginning::new(
@@ -78,7 +78,7 @@ impl CompetitiveGame {
     }
   }
 
-  fn transition_turn_to_active(&mut self, ctx: &mut Context) {
+  fn transition_turn_to_active(&mut self, ctx: &Context) {
     log::debug!("Transitioning current turn to active");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
@@ -88,7 +88,7 @@ impl CompetitiveGame {
     ));
   }
 
-  fn transition_turn_to_ending(&mut self, ctx: &mut Context) {
+  fn transition_turn_to_ending(&mut self, ctx: &Context) {
     log::debug!("Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Ending);
@@ -100,7 +100,7 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
-  fn on_shutdown(&mut self, ctx: &mut Context, _systems: &Systems) {
+  fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {
         let group_name = PLAYER_GROUP_NAMES[player as usize];
@@ -109,18 +109,12 @@ impl System for CompetitiveGame {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, _systems: &Systems) {
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
           if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-            let ball_in_play_switches = ctx
-              .expect::<SwitchGroups>()
-              .get(&self.ball_in_play_switch_group)
-              .cloned()
-              .unwrap_or_default();
-
-            if ball_in_play_switches.contains(&e.switch.name) {
+            if self.ball_in_play_switches.contains(&e.switch.name) {
               self.transition_turn_to_active(ctx);
             }
           }
@@ -137,7 +131,7 @@ impl System for CompetitiveGame {
 }
 
 impl GameManagement for CompetitiveGame {
-  fn add_player(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn add_player(&mut self, ctx: &Context, systems: &Systems) {
     let mut game_started = false;
     if !self.is_player_addable() {
       self.start_game(ctx);
@@ -182,11 +176,9 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn advance_turn(&mut self, ctx: &mut Context, systems: &Systems) {
-    let max_turn_count = ctx
-      .expect::<OperatorConfig>()
-      .get_value_as_integer(operator_config::TURN_COUNT.name())
-      .unwrap_or(3);
+  fn advance_turn(&mut self, ctx: &Context, systems: &Systems) {
+    // TODO: read from operator config
+    let max_turn_count = 3;
 
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
@@ -212,7 +204,7 @@ impl GameManagement for CompetitiveGame {
     self.start_turn(ctx, systems);
   }
 
-  fn end_game(&mut self, ctx: &mut Context) {
+  fn end_game(&mut self, ctx: &Context) {
     log::info!("Ending game");
 
     // verify the game is already running

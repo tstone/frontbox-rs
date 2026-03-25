@@ -13,7 +13,7 @@ impl FreePlay {
     Box::new(Self { start_button_id })
   }
 
-  fn on_start_button_pressed(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_start_button_pressed(&mut self, ctx: &Context, systems: &Systems) {
     log::info!("Free play: Start button => add player");
 
     if let Some(mut game_management) = systems.get_mut::<GameManager>() {
@@ -37,7 +37,7 @@ impl System for FreePlay {
       .unwrap_or(false)
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {
         self.on_start_button_pressed(ctx, systems);

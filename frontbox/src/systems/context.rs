@@ -1,5 +1,5 @@
 use std::any::{TypeId, type_name};
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
@@ -8,33 +8,25 @@ use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct Context<'a> {
-  store: &'a mut Store,
+  base: &'a ContextBase,
   system_id: u64,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
 impl<'a> Context<'a> {
   pub fn new(
-    store: &'a mut Store,
+    base: &'a ContextBase,
     system_id: u64,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
     Self {
-      store,
+      base,
       system_id,
       app_sender,
     }
   }
 
-  /// Check if a value of type T exists in the store and is equal to the given value
-  pub fn is<T: StorableType + PartialEq>(&self, value: T) -> bool {
-    if let Some(stored) = self.get::<T>() {
-      return *stored == value;
-    }
-    false
-  }
-
-  pub fn emit<E: Signal>(&mut self, event: E) {
+  pub fn emit<E: Signal>(&self, event: E) {
     log::debug!("📨 Emitting event {}", type_name::<E>());
     self
       .app_sender
@@ -45,7 +37,7 @@ impl<'a> Context<'a> {
   // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  pub fn register_interrupt<E: Signal + 'static>(&mut self, priority: u16) {
+  pub fn register_interrupt<E: Signal + 'static>(&self, priority: u16) {
     self
       .app_sender
       .send(AppMessage::RegisterInterrupt(
@@ -56,7 +48,7 @@ impl<'a> Context<'a> {
       .ok();
   }
 
-  pub fn unregister_interrupt<E: Signal + 'static>(&mut self) {
+  pub fn unregister_interrupt<E: Signal + 'static>(&self) {
     self
       .app_sender
       .send(AppMessage::UnregisterInterrupt(
@@ -69,27 +61,27 @@ impl<'a> Context<'a> {
   // --- System management ---
 
   /// Start up a new system
-  pub fn spawn_system(&mut self, system: impl Into<SpawnableSystemContainer>) {
+  pub fn spawn_system(&self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
       .send(AppMessage::SpawnSystem(self.system_id, system.into()));
   }
 
   /// Despawn self and immediately spawn a new system in its place
-  pub fn replace_self(&mut self, system: impl Into<SpawnableSystemContainer>) {
+  pub fn replace_self(&self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
       .send(AppMessage::ReplaceSystem(self.system_id, system.into()));
   }
 
-  pub fn despawn_self(&mut self) {
+  pub fn despawn_self(&self) {
     let _ = self
       .app_sender
       .send(AppMessage::DespawnSystem(self.system_id));
   }
 
   pub fn spawn_system_group(
-    &mut self,
+    &self,
     group_name: &'static str,
     systems: Vec<ChildSystemContainer>,
     active: bool,
@@ -99,19 +91,19 @@ impl<'a> Context<'a> {
       .send(AppMessage::SpawnSystemGroup(group_name, systems, active));
   }
 
-  pub fn despawn_system_group(&mut self, group_name: &'static str) {
+  pub fn despawn_system_group(&self, group_name: &'static str) {
     let _ = self
       .app_sender
       .send(AppMessage::DespawnSystemGroup(group_name));
   }
 
-  pub fn activate_system_group(&mut self, group_name: &'static str) {
+  pub fn activate_system_group(&self, group_name: &'static str) {
     let _ = self
       .app_sender
       .send(AppMessage::ActivateSystemGroup(group_name));
   }
 
-  pub fn deactivate_system_group(&mut self, group_name: &'static str) {
+  pub fn deactivate_system_group(&self, group_name: &'static str) {
     let _ = self
       .app_sender
       .send(AppMessage::DeactivateSystemGroup(group_name));
@@ -119,7 +111,7 @@ impl<'a> Context<'a> {
 
   // --- Cues ---
 
-  pub fn cue(&mut self, signal: impl Signal + 'static, cue: Cue) -> u64 {
+  pub fn cue(&self, signal: impl Signal + 'static, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -133,7 +125,7 @@ impl<'a> Context<'a> {
     cue_id
   }
 
-  pub fn cue_cycling(&mut self, signals: Vec<Box<dyn Signal>>, cue: Cue) -> u64 {
+  pub fn cue_cycling(&self, signals: Vec<Box<dyn Signal>>, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -142,15 +134,15 @@ impl<'a> Context<'a> {
     cue_id
   }
 
-  pub fn cancel_cue(&mut self, cue_id: u64) {
+  pub fn cancel_cue(&self, cue_id: u64) {
     let _ = self
       .app_sender
       .send(AppMessage::CancelCue(self.system_id, cue_id));
   }
 
-  pub fn clone_for_system(&mut self, system_id: u64) -> Context<'_> {
+  pub fn clone_for_system(&self, system_id: u64) -> Context<'a> {
     Context {
-      store: self.store,
+      base: self.base,
       system_id,
       app_sender: self.app_sender.clone(),
     }
@@ -158,15 +150,9 @@ impl<'a> Context<'a> {
 }
 
 impl Deref for Context<'_> {
-  type Target = Store;
+  type Target = ContextBase;
 
   fn deref(&self) -> &Self::Target {
-    self.store
-  }
-}
-
-impl DerefMut for Context<'_> {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    self.store
+    self.base
   }
 }

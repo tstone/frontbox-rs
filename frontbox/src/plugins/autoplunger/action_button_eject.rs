@@ -26,18 +26,15 @@ impl ActionButtonEject {
 }
 
 impl System for ActionButtonEject {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
-    self.active = ctx
-      .expect::<SwitchLookup>()
-      .is_closed(self.action_button)
-      .unwrap_or(false)
+  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
+    self.active = ctx.switches.is_closed(self.action_button).unwrap_or(false)
   }
 
   fn is_active(&self, _ctx: &Context, _systems: &Systems) -> bool {
     self.active
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.action_button {
         if let Some(mut autoplunger) = systems.get_mut::<AutoPlunger>() {

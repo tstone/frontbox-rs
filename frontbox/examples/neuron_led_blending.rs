@@ -50,11 +50,11 @@ impl System1 {
 }
 
 impl System for System1 {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context, _systems: &Systems) {
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &Context, _systems: &Systems) {
     self.on = !self.on;
   }
 
@@ -85,11 +85,11 @@ impl System2 {
 }
 
 impl System for System2 {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(2)));
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context, _systems: &Systems) {
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &Context, _systems: &Systems) {
     self.on = !self.on;
   }
 

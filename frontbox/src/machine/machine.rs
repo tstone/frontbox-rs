@@ -13,11 +13,9 @@ pub(crate) struct MachineImpl {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  switch_lookup: SwitchLookup,
-  io_boards: IoBoards,
+  context_base: ContextBase,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
-  app_config: AppConfig,
   watchdog_interval: Duration,
   led_renderer: LedRenderer,
 }
@@ -26,11 +24,9 @@ impl MachineImpl {
   pub(crate) fn new(
     io_port: SerialInterface,
     exp_port: SerialInterface,
-    switch_lookup: SwitchLookup,
-    io_boards: IoBoards,
+    context_base: ContextBase,
     app_sender: mpsc::UnboundedSender<AppMessage>,
     led_renderer: LedRenderer,
-    app_config: AppConfig,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
@@ -40,10 +36,8 @@ impl MachineImpl {
       app_sender,
       machine_sender,
       machine_receiver,
-      switch_lookup,
-      io_boards,
-      watchdog_interval: app_config.watchdog_tick + Duration::from_millis(250), // add some buffer to account for latency in sending
-      app_config,
+      watchdog_interval: context_base.app_config.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
+      context_base,
       led_renderer,
     }
   }
@@ -78,8 +72,8 @@ impl MachineImpl {
       MachineMessage::ClearWatchdog => {
         self.clear_watchdog().await;
       }
-      MachineMessage::ResetExpansionNetwork(expansion_boards) => {
-        self.reset_expansion_network(expansion_boards).await;
+      MachineMessage::ResetExpansionNetwork => {
+        self.reset_expansion_network().await;
       }
       MachineMessage::ConfigureDriver(driver_id, config) => {
         self.configure_driver(driver_id, config).await;
@@ -94,7 +88,9 @@ impl MachineImpl {
         self.report_switches().await;
       }
       MachineMessage::RenderLedDeclarations(declarations) => {
-        self.led_renderer.tick(self.app_config.system_timer_tick);
+        self
+          .led_renderer
+          .tick(self.context_base.app_config.system_interval);
         self
           .led_renderer
           .render(&mut self.exp_port, declarations)
@@ -109,7 +105,7 @@ impl MachineImpl {
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    let switch = self.switch_lookup.switch_by_id(&switch_id).cloned();
+    let switch = self.context_base.switches.switch_by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
       // App needs to update switch state in the store before sending out the event
@@ -175,7 +171,7 @@ impl MachineImpl {
   /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
-    for (index, board) in self.io_boards.iter().enumerate() {
+    for (index, board) in self.context_base.io_network.iter().enumerate() {
       if switch_id < (board.switch_count as usize) + offset {
         let native_switch_id = switch_id - offset;
         return Some((index, native_switch_id));
@@ -260,10 +256,10 @@ impl MachineImpl {
       .await;
   }
 
-  pub async fn reset_expansion_network(&mut self, expansion_boards: ExpansionBoards) {
+  pub async fn reset_expansion_network(&mut self) {
     self.led_renderer.reset();
 
-    for board in expansion_boards.iter() {
+    for board in self.context_base.exp_network.iter() {
       // TODO: move this to a better common location
       App::reset_expansion_board(&mut self.exp_port, board).await;
     }
@@ -320,11 +316,10 @@ impl Machine {
     self.machine_sender.send(MachineMessage::ClearWatchdog).ok();
   }
 
-  pub fn reset_expansion_network(&self, ctx: &Context) {
-    let boards = ctx.cloned::<ExpansionBoards>().unwrap();
+  pub fn reset_expansion_network(&self) {
     self
       .machine_sender
-      .send(MachineMessage::ResetExpansionNetwork(boards))
+      .send(MachineMessage::ResetExpansionNetwork)
       .ok();
   }
 
@@ -334,10 +329,8 @@ impl Machine {
     mode: impl DriverMode + 'static,
     ctx: &Context,
   ) {
-    let driver_lookup = ctx.expect::<DriverLookup>();
-    if let Some(driver) = driver_lookup.get(driver) {
-      let switch_lookup = ctx.expect::<SwitchLookup>();
-      let config = mode.to_config(switch_lookup);
+    if let Some(driver) = ctx.drivers.get(driver) {
+      let config = mode.to_config(&ctx.switches);
       self
         .machine_sender
         .send(MachineMessage::ConfigureDriver(driver.id, config))
@@ -346,8 +339,7 @@ impl Machine {
   }
 
   pub fn activate_driver(&self, driver: &'static str, mode: ActivationMode, ctx: &Context) {
-    let driver_lookup = ctx.expect::<DriverLookup>();
-    if let Some(driver) = driver_lookup.get(driver) {
+    if let Some(driver) = ctx.drivers.get(driver) {
       self
         .machine_sender
         .send(MachineMessage::ActivateDriver(driver.id, mode, None))
@@ -356,8 +348,7 @@ impl Machine {
   }
 
   pub fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode, ctx: &Context) {
-    let driver_lookup = ctx.expect::<DriverLookup>();
-    if let Some(driver) = driver_lookup.get(driver) {
+    if let Some(driver) = ctx.drivers.get(driver) {
       self
         .machine_sender
         .send(MachineMessage::DeactivateDriver(driver.id, mode))
@@ -380,8 +371,7 @@ impl Machine {
     debounce_open: Option<Duration>,
     ctx: &Context,
   ) {
-    let switch_lookup = ctx.expect::<SwitchLookup>();
-    if let Some(switch) = switch_lookup.get(switch) {
+    if let Some(switch) = ctx.switches.get(switch) {
       self
         .machine_sender
         .send(MachineMessage::ConfigureSwitch(
@@ -396,13 +386,11 @@ impl Machine {
 }
 
 impl System for Machine {
-  fn on_shutdown(&mut self, ctx: &mut Context, _systems: &Systems) {
+  fn on_shutdown(&mut self, _ctx: &Context, _systems: &Systems) {
     // TODO: disable/unconfigure drivers
-
-    let boards = ctx.cloned::<ExpansionBoards>().unwrap();
     self
       .machine_sender
-      .send(MachineMessage::ResetExpansionNetwork(boards))
+      .send(MachineMessage::ResetExpansionNetwork)
       .ok();
   }
 }
@@ -412,7 +400,7 @@ pub enum MachineMessage {
   WatchdogPing,
   ClearWatchdog,
   ReportSwitches,
-  ResetExpansionNetwork(ExpansionBoards),
+  ResetExpansionNetwork,
   ConfigureDriver(usize, DriverConfig),
   ActivateDriver(usize, ActivationMode, Option<usize>),
   DeactivateDriver(usize, DeactivationMode),

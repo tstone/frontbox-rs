@@ -12,10 +12,10 @@ use tokio::sync::mpsc;
 pub struct App {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  store: Store,
   operator_config: OperatorConfig,
   app_config: AppConfig,
   systems: Vec<SystemContainer>,
+  hardware: Hardware,
 }
 
 impl App {
@@ -51,27 +51,17 @@ impl App {
 
     // Insert hardware definitions into store for systems to reference
     log::debug!("Initializing Store with hardware definitions");
-    let mut store = Store::new();
-    store.insert(SwitchLookup::new(io_network.switches, initial_switch_state));
-    store.insert(DriverLookup::new(io_network.drivers));
-    store.insert(StorableHashSet::from_vec(io_network.boards, "io_boards"));
-    store.insert(StorableHashSet::from_vec(
+    let hardware = Hardware::new(
+      SwitchLookup::new(io_network.switches, initial_switch_state),
+      DriverLookup::new(io_network.drivers),
+      io_network.boards,
       expansion_boards,
-      "expansion_boards",
-    ));
-    store.insert(StorableHashMap::from_map(
-      io_network.driver_groups,
-      "driver_groups",
-    ));
-    store.insert(StorableHashMap::from_map(
-      io_network.switch_groups,
-      "switch_groups",
-    ));
+    );
 
     Self {
       io_port,
       exp_port,
-      store,
+      hardware,
       operator_config: OperatorConfig::new(),
       app_config: AppConfig::default(),
       systems: Vec::new(),
@@ -262,12 +252,12 @@ impl App {
   }
 
   pub fn system_tick(&mut self, interval: Duration) -> &mut Self {
-    self.app_config.system_timer_tick = interval;
+    self.app_config.system_interval = interval;
     self
   }
 
   pub fn watchdog_tick(&mut self, interval: Duration) -> &mut Self {
-    self.app_config.watchdog_tick = interval;
+    self.app_config.watchdog_interval = interval;
     self
   }
 
@@ -288,24 +278,23 @@ impl App {
 
   pub async fn run(mut self) {
     log::debug!("Finalizing Store with operator config and app config");
-    self.store.insert(self.operator_config);
-    self.store.insert(self.app_config.clone());
+    let context_base = ContextBase {
+      switches: self.hardware.switches,
+      drivers: self.hardware.drivers,
+      io_network: self.hardware.io_network,
+      exp_network: self.hardware.exp_network,
+      app_config: self.app_config,
+    };
 
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
-    // lookup expansion boards for led renderer
-    let expansion_boards = self.store.expect::<ExpansionBoards>().clone();
-    let led_renderer = LedRenderer::new(&expansion_boards);
-    let switch_lookup = self.store.cloned::<SwitchLookup>().unwrap();
-    let io_boards = self.store.cloned::<StorableHashSet<IoBoard>>().unwrap();
+    let led_renderer = LedRenderer::new(&context_base.exp_network);
 
     let mut machine = MachineImpl::new(
       self.io_port,
       self.exp_port,
-      switch_lookup,
-      io_boards,
+      context_base.clone(),
       app_sender.clone(),
       led_renderer,
-      self.app_config.clone(),
     );
     let machine_sender = machine.machine_sender();
 
@@ -320,8 +309,7 @@ impl App {
 
     log::debug!("Starting main run loop");
     run_loop::run(
-      self.store,
-      self.app_config,
+      context_base,
       self.systems,
       app_sender,
       app_receiver,
@@ -333,15 +321,17 @@ impl App {
 
 #[derive(Debug, Clone, Serialize, Storable)]
 pub struct AppConfig {
-  pub system_timer_tick: Duration,
-  pub watchdog_tick: Duration,
+  /// The interval at which `on_tick` runs, which in turn affects timers and LED + display render speed
+  pub system_interval: Duration,
+  /// The interval at which the watchdog is pinged (keep alive)
+  pub watchdog_interval: Duration,
 }
 
 impl Default for AppConfig {
   fn default() -> Self {
     Self {
-      system_timer_tick: Duration::from_millis(41),
-      watchdog_tick: Duration::from_millis(1000),
+      system_interval: Duration::from_millis(41),
+      watchdog_interval: Duration::from_millis(1000),
     }
   }
 }

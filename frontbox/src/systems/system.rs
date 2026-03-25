@@ -14,18 +14,18 @@ use crate::prelude::*;
 #[allow(unused)]
 pub trait System: Any {
   /// Called when the system is first started up
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {}
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {}
   /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
-  fn on_deactivate(&mut self, ctx: &mut Context, systems: &Systems) {}
+  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {}
   /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
-  fn on_reactivate(&mut self, ctx: &mut Context, systems: &Systems) {}
+  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {}
   /// Called when the system is removed
-  fn on_shutdown(&mut self, ctx: &mut Context, systems: &Systems) {}
+  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {}
 
-  fn on_tick(&mut self, delta: Duration, ctx: &mut Context, systems: &Systems) {}
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {}
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {}
-  fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptResult {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {}
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {}
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {}
+  fn on_interrupt(&mut self, event: &dyn Signal, ctx: &Context) -> InterruptResult {
     InterruptResult::Continue
   }
 
@@ -55,23 +55,23 @@ impl<T: System + Send + Sync> SpawnableSystem for T {
 }
 
 impl System for Box<dyn SpawnableSystem> {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     self.as_system().on_startup(ctx, systems);
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
     self.as_system().on_shutdown(ctx, systems);
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
     self.as_system().on_cue(cue, ctx, systems);
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &mut Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
     self.as_system().on_tick(delta, ctx, systems);
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     self.as_system().on_event(event, ctx, systems);
   }
 }
@@ -82,23 +82,23 @@ pub trait ChildSystem: System + Send + Sync + DynClone {
 }
 
 impl System for Box<dyn ChildSystem> {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     self.as_system().on_startup(ctx, systems);
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
     self.as_system().on_shutdown(ctx, systems);
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
     self.as_system().on_cue(cue, ctx, systems);
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &mut Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
     self.as_system().on_tick(delta, ctx, systems);
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     self.as_system().on_event(event, ctx, systems);
   }
 }

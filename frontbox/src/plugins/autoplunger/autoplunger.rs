@@ -17,17 +17,16 @@ impl AutoPlunger {
   }
 
   /// Fire the autoplunger immediately
-  fn activate(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn activate(&mut self, ctx: &Context, systems: &Systems) {
     systems
       .expect::<Machine>()
       .activate_driver(self.coil, ActivationMode::Tap, ctx);
   }
 
   /// Fire the autoplunger once the ball is resting in the lane
-  pub fn fire(&mut self, ctx: &mut Context, systems: &Systems) {
+  pub fn fire(&mut self, ctx: &Context, systems: &Systems) {
     // Check the lane switch first to make sure the ball is ready
-    let switch_lookup = ctx.expect::<SwitchLookup>();
-    if switch_lookup.is_closed(self.lane_switch) == Some(true) {
+    if ctx.switches.is_closed(self.lane_switch) == Some(true) {
       self.activate(ctx, systems);
     } else {
       self.do_autoplunge = true;
@@ -36,10 +35,9 @@ impl AutoPlunger {
 }
 
 impl System for AutoPlunger {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
-    let switch_lookup = ctx.expect::<SwitchLookup>();
-    let inverted = switch_lookup.get_switch_config(self.lane_switch);
+    let inverted = ctx.switches.get_switch_config(self.lane_switch);
 
     let machine = systems.expect::<Machine>();
 
@@ -65,7 +63,7 @@ impl System for AutoPlunger {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.lane_switch && self.do_autoplunge {
         self.activate(ctx, systems);
