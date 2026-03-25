@@ -197,7 +197,7 @@ impl System for IndividualPlayerSystem {
     }
   }
 
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.insert(GameStartState::GameStartable);
     ctx.register_command::<AddPlayer>();
     ctx.register_command::<AdvanceTurn>();
@@ -212,7 +212,7 @@ impl System for IndividualPlayerSystem {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if ctx.is_game_started() {
       match ctx.get::<CurrentPlayerTurnState>() {
         Some(CurrentPlayerTurnState::Beginning) => {

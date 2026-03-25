@@ -30,7 +30,7 @@ impl Watchdog {
 }
 
 impl System for Watchdog {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.register_command::<EnableWatchdog>();
     ctx.register_command::<DisableWatchdog>();
 

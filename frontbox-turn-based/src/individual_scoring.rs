@@ -62,7 +62,7 @@ impl IndividualScoring {
 }
 
 impl System for IndividualScoring {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.register_command::<SetMultiplier>();
     ctx.register_command::<AddPoints>();
   }
@@ -75,7 +75,7 @@ impl System for IndividualScoring {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(_) = event.downcast_ref::<GameStarted>() {
       let player_count = ctx.expect::<GameState>().max_players as usize;
       ctx.insert(IndividualScores::new(player_count));

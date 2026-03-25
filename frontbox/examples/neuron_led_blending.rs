@@ -50,7 +50,7 @@ impl System1 {
 }
 
 impl System for System1 {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
@@ -80,7 +80,7 @@ impl System2 {
 }
 
 impl System for System2 {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(2)));
   }
 

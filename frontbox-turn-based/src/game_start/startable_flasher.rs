@@ -53,7 +53,7 @@ impl System for StartableFlasher {
     self.start_btn_off(ctx);
   }
 
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(driver) = self.start_button_driver {
       ctx.command(ConfigureDriver {
         driver,

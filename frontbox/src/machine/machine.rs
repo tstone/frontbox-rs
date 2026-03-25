@@ -172,7 +172,7 @@ impl Machine {
       .await;
   }
 
-  /// Primarily used for reporting of unkown switches as native board/switch ids
+  /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
     for (index, board) in self.io_boards.iter().enumerate() {
@@ -315,7 +315,7 @@ impl MachineBridge {
 }
 
 impl System for MachineBridge {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     ctx.register_command::<WatchdogPing>();
     ctx.register_command::<ClearWatchdog>();
     ctx.register_command::<ResetExpansionNetwork>();

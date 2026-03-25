@@ -30,7 +30,7 @@ struct Example {
 }
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     // <do cool stuff here>
   }
 }
@@ -79,7 +79,7 @@ Systems can implement a handler per signal type.
 ```rust
 impl System for Example {
   // handler for broadcast events
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) { }
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) { }
 
   // handler for registered commands
   fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) { }
@@ -93,7 +93,7 @@ Signals are handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     // detect if the event is of type `SwitchClosed`
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       log::debug!("Switch {} was closed!", e.name);
@@ -126,7 +126,7 @@ ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
 // ...
 
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(custom) = event.downcast_ref::<MyCustomThing2>() {
       log::debug!("Custom thing happened with {}, {}", custom.prop1, custom.prop2);
     }
@@ -155,7 +155,7 @@ As the name implies, this type of signal is typically meant to instruct a system
 pub struct ExampleCommand(u64);
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     // Commands must first be registered
     ctx.register_command::<ExampleCommand>();
   }
@@ -189,7 +189,7 @@ Cues are signals a system can send to itself. There are four primitive types of 
 struct SomethingImportant(u8);
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
     // setup the cue
     ctx.cue(
       Cue::Times(3, Duration::from_secs(3)),
@@ -316,7 +316,7 @@ self.anim = Tween::new(
 );
 
 
-fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
     match e.name {
       switches::SPINNER => {
@@ -450,7 +450,7 @@ Systems can register themselves as an event interrupt. Interrupt registration re
 Event interrupts can be applied to any event within the system.
 
 ```rust
-fn on_startup(&mut self, ctx: &mut Context) {
+fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
   ctx.register_interrupt::<TurnEnd>(100); // 100 is the priority
 }
 
@@ -671,7 +671,7 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
     if let Some(event) = event.downcast::<SwitchClosed>() {
       if event.switch.id == self.target_switch_id {
         self.on_target_hit(ctx);

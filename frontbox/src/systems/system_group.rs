@@ -51,10 +51,10 @@ impl SystemGroup {
 }
 
 impl System for SystemGroup {
-  fn on_startup(&mut self, ctx: &mut Context) {
+  fn on_startup(&mut self, ctx: &mut Context, systems: &mut Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
-      system.on_startup(&mut ctx);
+      system.on_startup(&mut ctx, systems);
     }
   }
 
@@ -76,11 +76,11 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &mut Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       if system.handle_active(&mut ctx) {
-        system.on_event(event, &mut ctx);
+        system.on_event(event, &mut ctx, systems);
       } else {
         log::trace!(
           "System {} is inactive, skipping event of type {:?}",
