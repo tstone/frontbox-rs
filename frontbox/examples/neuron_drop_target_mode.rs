@@ -90,14 +90,12 @@ impl DropTargetDownUp {
     Self { target_switches }
   }
 
-  fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context) {
     if self.target_switches.contains(&switch.name) {
-      let switch_lookup = ctx.expect::<SwitchLookup>();
-
       let all_down = self
         .target_switches
         .iter()
-        .all(|&target| switch_lookup.is_closed(target).unwrap_or(false));
+        .all(|&target| ctx.switches.is_closed(target).unwrap_or(false));
 
       if all_down {
         ctx.cue(Action, Cue::Once(Duration::from_millis(250)));
@@ -107,7 +105,7 @@ impl DropTargetDownUp {
 }
 
 impl System for DropTargetDownUp {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     // bring up all targets on startup
     systems.expect::<Machine>().activate_driver(
       drivers::LOWER_DROP_TARGET_COIL,
@@ -116,13 +114,13 @@ impl System for DropTargetDownUp {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, _systems: &Systems) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &Context, systems: &Systems) {
     systems.expect::<Machine>().activate_driver(
       drivers::START_BUTTON_LAMP,
       ActivationMode::Tap,

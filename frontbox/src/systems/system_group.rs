@@ -20,7 +20,7 @@ impl SystemGroup {
     }
   }
 
-  pub fn activate(&mut self, ctx: &mut Context, systems: &Systems) {
+  pub fn activate(&mut self, ctx: &Context, systems: &Systems) {
     if !self.active {
       log::info!("Activating system group");
       for mut system in self.systems.values_mut() {
@@ -34,7 +34,7 @@ impl SystemGroup {
     }
   }
 
-  pub fn deactivate(&mut self, ctx: &mut Context, systems: &Systems) {
+  pub fn deactivate(&mut self, ctx: &Context, systems: &Systems) {
     if self.active {
       log::info!("Deactivating system group");
       for mut system in self.systems.values_mut() {
@@ -51,21 +51,21 @@ impl SystemGroup {
 }
 
 impl System for SystemGroup {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       system.on_startup(&mut ctx, systems);
     }
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       system.on_shutdown(&mut ctx, systems);
     }
   }
 
-  fn on_tick(&mut self, delta: std::time::Duration, ctx: &mut Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       if system.handle_active(&mut ctx, systems) {
@@ -76,7 +76,7 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       if system.handle_active(&mut ctx, systems) {
@@ -98,7 +98,7 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       if system.handle_active(&mut ctx, systems) {
@@ -120,11 +120,11 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_deactivate(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
     self.deactivate(ctx, systems);
   }
 
-  fn on_reactivate(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {
     self.activate(ctx, systems);
   }
 

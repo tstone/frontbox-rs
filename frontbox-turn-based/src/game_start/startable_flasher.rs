@@ -24,7 +24,7 @@ impl StartableFlasher {
     })
   }
 
-  fn start_btn_on(&self, ctx: &mut Context, systems: &Systems) {
+  fn start_btn_on(&self, ctx: &Context, systems: &Systems) {
     if let Some(driver) = self.start_button_driver {
       systems
         .expect::<Machine>()
@@ -32,7 +32,7 @@ impl StartableFlasher {
     }
   }
 
-  fn start_btn_off(&self, ctx: &mut Context, systems: &Systems) {
+  fn start_btn_off(&self, ctx: &Context, systems: &Systems) {
     if let Some(driver) = self.start_button_driver {
       systems.expect::<Machine>().deactivate_driver(
         driver,
@@ -52,12 +52,12 @@ impl System for StartableFlasher {
       .unwrap_or(false)
   }
 
-  fn on_deactivate(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
     // turn off start button to make sure it's not stuck on one the system is disabled
     self.start_btn_off(ctx, systems);
   }
 
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     if let Some(driver) = self.start_button_driver {
       systems.expect::<Machine>().configure_driver(
         driver,
@@ -73,7 +73,7 @@ impl System for StartableFlasher {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(self.flash_duration));
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context, systems: &Systems) {
+  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
     if let Some(_) = cue.downcast_ref::<On>() {
       self.start_btn_on(ctx, systems);
     } else if let Some(_) = cue.downcast_ref::<Off>() {

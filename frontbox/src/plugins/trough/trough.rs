@@ -1,4 +1,3 @@
-use crate::plugins::TroughPlugin;
 pub use crate::prelude::*;
 
 pub struct Trough {
@@ -16,7 +15,7 @@ impl Trough {
     }
   }
 
-  fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &mut Context) {
+  fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &Context) {
     if self
       .switches
       // only look at the last switch (nearest the exit) for occupancy changes
@@ -34,7 +33,7 @@ impl Trough {
     }
   }
 
-  fn on_trough_switch_opened(&mut self, switch_name: &str, ctx: &mut Context) {
+  fn on_trough_switch_opened(&mut self, switch_name: &str, ctx: &Context) {
     if self
       .switches
       // only look at the last switch (nearest the exit) for occupancy changes
@@ -48,8 +47,7 @@ impl Trough {
     }
   }
 
-  fn get_occupancy(&self, ctx: &mut Context) -> Vec<bool> {
-    let switch_lookup = ctx.expect::<SwitchLookup>();
+  fn get_occupancy(&self, ctx: &Context) -> Vec<bool> {
     let mut occupancy = Vec::new();
     for (_, switch) in self
       .switches
@@ -57,13 +55,13 @@ impl Trough {
       .enumerate()
       .take(self.expected_occupancy)
     {
-      occupancy.push(switch_lookup.is_closed(switch).unwrap());
+      occupancy.push(ctx.switches.is_closed(switch).unwrap());
     }
 
     occupancy
   }
 
-  pub fn eject(&self, ctx: &mut Context, systems: &Systems) {
+  pub fn eject(&self, ctx: &Context, systems: &Systems) {
     systems
       .expect::<Machine>()
       .activate_driver(self.eject_coil, ActivationMode::Tap, ctx);
@@ -84,14 +82,14 @@ impl Trough {
 }
 
 impl System for Trough {
-  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
-    let switch_lookup = ctx.expect::<SwitchLookup>();
     let machine = systems.expect::<Machine>();
 
     for switch in &self.switches {
       // preserve configured inverted settings (if present)
-      let inverted = switch_lookup
+      let inverted = ctx
+        .switches
         .get_switch_config(switch)
         .map(|c| c.inverted)
         .unwrap_or(false);
@@ -106,14 +104,9 @@ impl System for Trough {
     }
 
     // configure eject driver
-    let trough_kick_len = ctx
-      .expect::<OperatorConfig>()
-      .get_value_as_integer(TroughPlugin::trough_kick_key())
-      .unwrap();
-    let trough_init_power = ctx
-      .expect::<OperatorConfig>()
-      .get_value_as_integer(TroughPlugin::trough_power_key())
-      .unwrap();
+    // TODO:
+    let trough_kick_len = 100;
+    let trough_init_power = 70;
     machine.configure_driver(
       self.eject_coil,
       PulseKickMode {
@@ -126,7 +119,7 @@ impl System for Trough {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, _systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {

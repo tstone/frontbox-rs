@@ -6,11 +6,11 @@ use crate::{CompetitiveGame, GameState};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
-  fn add_player(&mut self, ctx: &mut Context, systems: &Systems);
+  fn add_player(&mut self, ctx: &Context, systems: &Systems);
   /// Advances the turn to the next player. Typically should only be called once PlayerTurnEnd event has been fired.
-  fn advance_turn(&mut self, ctx: &mut Context, systems: &Systems);
+  fn advance_turn(&mut self, ctx: &Context, systems: &Systems);
   /// Ends the game. Typically should only be called once GameEnding event has been fired.
-  fn end_game(&mut self, ctx: &mut Context);
+  fn end_game(&mut self, ctx: &Context);
 
   fn is_player_addable(&self) -> bool;
   fn is_game_started(&self) -> bool;
@@ -38,12 +38,12 @@ impl GameManager {
 
   pub fn competitive(
     max_players: u8,
-    ball_in_play_switch_group: &'static str,
+    ball_in_play_switches: Vec<&'static str>,
     player_template: Vec<ChildSystemContainer>,
   ) -> Self {
     Self::new(CompetitiveGame::new(
       max_players,
-      ball_in_play_switch_group,
+      ball_in_play_switches,
       player_template,
     ))
   }
