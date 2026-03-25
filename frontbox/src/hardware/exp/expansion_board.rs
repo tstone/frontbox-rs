@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::hardware_definition::exp::LedPort;
+use crate::hardware::exp::LedPort;
 use crate::prelude::{Storable, StorableHashSet};
 
 #[derive(Debug, Clone, Serialize, Storable, Hash, PartialEq, Eq)]

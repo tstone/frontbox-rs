@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::app::run_loop;
-use crate::hardware_definition::*;
+use crate::hardware::*;
 use crate::machine::serial_interface::SerialInterface;
 use crate::plugins::Plugin;
 use crate::prelude::app_message::AppMessage;

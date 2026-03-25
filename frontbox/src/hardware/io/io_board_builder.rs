@@ -2,7 +2,7 @@ use core::panic;
 use std::collections::HashMap;
 
 use crate::DriverMode;
-use crate::hardware_definition::io::SwitchConfig;
+use crate::hardware::io::SwitchConfig;
 
 #[derive(Default)]
 pub struct IoBoardBuilder {

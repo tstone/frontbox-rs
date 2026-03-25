@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::hardware_definition::*;
+use crate::hardware::*;
 use crate::machine::serial_interface::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
