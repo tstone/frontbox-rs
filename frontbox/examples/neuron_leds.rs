@@ -33,7 +33,10 @@ async fn main() {
     expansion_boards,
   )
   .await
-  .run(vec![LedExample::new()])
+  .configure(|app| {
+    app.system(LedExample::new());
+  })
+  .run()
   .await;
 }
 
@@ -44,8 +47,8 @@ struct LedExample {
 }
 
 impl LedExample {
-  fn new() -> Box<Self> {
-    Box::new(Self {
+  fn new() -> Self {
+    Self {
       flash: Tween::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
@@ -75,7 +78,7 @@ impl LedExample {
         ],
         AnimationCycle::Forever,
       ),
-    })
+    }
   }
 }
 

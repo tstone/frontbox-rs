@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use std::cell::RefMut;
 use std::collections::HashMap;
 
 use tokio::sync::mpsc;
@@ -11,14 +12,14 @@ use crate::systems::SystemContainer;
 use crate::systems::spawn_system_tick;
 
 pub struct SystemCollection {
-  pub systems: HashMap<u64, SystemContainer>,
+  pub systems: Systems,
   pub groups: HashMap<&'static str, SystemGroup>,
 }
 
 pub async fn run(
   mut store: Store,
   config: AppConfig,
-  initial_systems: Vec<Box<dyn System>>,
+  initial_systems: Vec<SystemContainer>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
@@ -27,7 +28,7 @@ pub async fn run(
   let mut command_registry = CommandRegistry::new();
 
   let mut systems = SystemCollection {
-    systems: HashMap::new(),
+    systems: Systems::new(),
     groups: HashMap::new(),
   };
 
@@ -88,10 +89,10 @@ pub async fn run(
             break;
           }
           AppMessage::SpawnSystem(caller_id, system) => {
-            spawn_system(Box::new(system), Some(caller_id), &mut systems, &mut store, app_sender.clone());
+            spawn_system(system.to_system_container(), Some(caller_id), &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::ReplaceSystem(system_id, system) => {
-            replace_system(system_id, system, &mut systems, &mut store, app_sender.clone());
+            replace_system(system_id, system.to_system_container(), &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::DespawnSystem(system_id) => {
             despawn_system(system_id, &mut systems, &mut store, app_sender.clone(), &mut command_registry, &mut interrupt_registry);
@@ -109,7 +110,7 @@ pub async fn run(
             deactivate_system_group(group_name, &mut systems, &mut store, app_sender.clone());
           }
           AppMessage::CreateCue(system_id, cue_id, cue, signals) => {
-            if let Some(system) = find_system(system_id, &mut systems) {
+            if let Some(mut system) = find_system_by_id(system_id, &mut systems) {
               system.create_cue(cue, cue_id, signals);
             } else {
               log::warn!(
@@ -120,7 +121,7 @@ pub async fn run(
             }
           }
           AppMessage::CancelCue(system_id, cue_id) => {
-            if let Some(system) = find_system(system_id, &mut systems) {
+            if let Some(mut system) = find_system_by_id(system_id, &mut systems) {
               system.cancel_cue(cue_id);
             } else {
               log::warn!(
@@ -145,15 +146,18 @@ pub async fn run(
 }
 
 /// Searches for a system by ID in the top-level systems and then within groups
-fn find_system(system_id: u64, sc: &mut SystemCollection) -> Option<&mut SystemContainer> {
+fn find_system_by_id(
+  system_id: u64,
+  sc: &'_ mut SystemCollection,
+) -> Option<RefMut<'_, SystemContainer>> {
   // check the top-level first for fast access
-  if sc.systems.contains_key(&system_id) {
-    return sc.systems.get_mut(&system_id);
+  if sc.systems.contains_id(system_id) {
+    return sc.systems.get_mut_by_id(system_id);
   } else {
     // otherwise search groups for child systems
     for group in sc.groups.values_mut() {
-      if group.contains_key(&system_id) {
-        return group.get_mut(&system_id);
+      if group.contains_id(system_id) {
+        return group.get_mut_by_id(system_id);
       }
     }
   }
@@ -171,23 +175,23 @@ fn apply_to_systems<F>(
   F: FnMut(&mut SystemContainer, &mut Context),
 {
   // apply to root systems
-  for system in sc.systems.values_mut() {
-    let mut ctx = Context::new(store, system.id, app_sender.clone());
+  for mut system in sc.systems.values_mut() {
+    let mut ctx = Context::new(store, system.id(), app_sender.clone());
     if system.handle_active(&mut ctx) {
-      handler(system, &mut ctx);
+      handler(&mut system, &mut ctx);
     } else {
-      log::trace!("System {} is inactive, skipping", system.id);
+      log::trace!("System {} is inactive, skipping", system.id());
     }
   }
 
   // apply to child systems in groups
   for group in sc.groups.values_mut() {
-    for system in group.values_mut() {
-      let mut ctx = Context::new(store, system.id, app_sender.clone());
+    for mut system in group.values_mut() {
+      let mut ctx = Context::new(store, system.id(), app_sender.clone());
       if system.handle_active(&mut ctx) {
-        handler(system, &mut ctx);
+        handler(&mut system, &mut ctx);
       } else {
-        log::trace!("System {} is inactive, skipping", system.id);
+        log::trace!("System {} is inactive, skipping", system.id());
       }
     }
   }
@@ -209,7 +213,7 @@ fn emit_event(
       .sorted_by_key(|i| std::cmp::Reverse(i.priority));
 
     for interrupt in prioritized_interrupts {
-      if let Some(system) = find_system(interrupt.system_id, systems) {
+      if let Some(mut system) = find_system_by_id(interrupt.system_id, systems) {
         let mut ctx = ctx_template.clone_for_system(interrupt.system_id);
         // interrupts must be on an active system to run
         if system.handle_active(&mut ctx)
@@ -263,7 +267,7 @@ fn execute_command(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
 ) {
   if let Some(system_id) = command_registry.get_system_for_command(command.as_any().type_id()) {
-    if let Some(system) = find_system(system_id, systems) {
+    if let Some(mut system) = find_system_by_id(system_id, systems) {
       let mut ctx = Context::new(store, system_id, app_sender.clone());
       // commands must be executed on an active system
       if system.handle_active(&mut ctx) {
@@ -290,25 +294,24 @@ fn execute_command(
 }
 
 fn spawn_system(
-  system: Box<dyn System>,
+  mut system: SystemContainer,
   caller_id: Option<u64>,
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
-  let mut container: SystemContainer = SystemContainer::new_from_system(system);
-  let mut ctx = Context::new(store, container.id, app_sender.clone());
-  container.on_startup(&mut ctx);
+  let mut ctx = Context::new(store, system.id(), app_sender.clone());
+  system.on_startup(&mut ctx);
 
   // check if the caller is a top-level system or a child
   if let Some(caller_id) = caller_id {
-    if sc.systems.contains_key(&caller_id) {
-      sc.systems.insert(container.id, container);
+    if sc.systems.contains_id(caller_id) {
+      sc.systems.insert(system);
     } else {
       // if not search groups and spawn there
       for group in sc.groups.values_mut() {
-        if group.contains_key(&caller_id) {
-          group.insert(container.id, container);
+        if group.contains_id(caller_id) {
+          group.insert(system);
           return;
         }
       }
@@ -318,39 +321,39 @@ fn spawn_system(
       caller_id
     );
   } else {
-    sc.systems.insert(container.id, container);
+    sc.systems.insert(system);
   }
 }
 
 fn replace_system(
   system_id: u64,
-  new_system: Box<dyn SpawnableSystem>,
+  mut new_system: SystemContainer,
   sc: &mut SystemCollection,
   store: &mut Store,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
   // find the system to replace, checking top-level first and then groups
-  if sc.systems.contains_key(&system_id) {
-    if let Some(mut container) = sc.systems.remove(&system_id) {
-      let mut ctx = Context::new(store, container.id, app_sender.clone());
-      container.on_shutdown(&mut ctx);
+  if sc.systems.contains_id(system_id) {
+    if let Some(cell) = sc.systems.remove(system_id) {
+      let mut system = cell.borrow_mut();
+      let mut ctx = Context::new(store, system.id(), app_sender.clone());
+      system.on_shutdown(&mut ctx);
     }
-    let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
-    let mut ctx = Context::new(store, new_container.id, app_sender.clone());
-    new_container.on_startup(&mut ctx);
-    sc.systems.insert(new_container.id, new_container);
+    let mut ctx = Context::new(store, new_system.id(), app_sender.clone());
+    new_system.on_startup(&mut ctx);
+    sc.systems.insert(new_system);
   } else {
     // if not search groups and replace there
     for group in sc.groups.values_mut() {
-      if group.contains_key(&system_id) {
-        if let Some(mut container) = group.remove(&system_id) {
-          let mut ctx = Context::new(store, container.id, app_sender.clone());
-          container.on_shutdown(&mut ctx);
+      if group.contains_id(system_id) {
+        if let Some(cell) = group.remove(system_id) {
+          let mut system = cell.borrow_mut();
+          let mut ctx = Context::new(store, system.id(), app_sender.clone());
+          system.on_shutdown(&mut ctx);
         }
-        let mut new_container = SystemContainer::new_from_system(Box::new(new_system));
-        let mut ctx = Context::new(store, new_container.id, app_sender.clone());
-        new_container.on_startup(&mut ctx);
-        group.insert(new_container.id, new_container);
+        let mut ctx = Context::new(store, new_system.id(), app_sender.clone());
+        new_system.on_startup(&mut ctx);
+        group.insert(new_system);
         return;
       }
     }
@@ -367,20 +370,22 @@ fn despawn_system(
   interrupt_registry: &mut EventInterruptRegistry,
 ) {
   // check if the system to despawn is a top-level system or a child
-  if sc.systems.contains_key(&system_id) {
-    if let Some(mut container) = sc.systems.remove(&system_id) {
+  if sc.systems.contains_id(system_id) {
+    if let Some(container) = sc.systems.remove(system_id) {
+      let mut system = container.borrow_mut();
       unregister_all_by_system(system_id, command_registry, interrupt_registry);
-      let mut ctx = Context::new(store, container.id, app_sender.clone());
-      container.on_shutdown(&mut ctx);
+      let mut ctx = Context::new(store, system.id(), app_sender.clone());
+      system.on_shutdown(&mut ctx);
     }
   } else {
     // if not search groups and despawn there
     for group in sc.groups.values_mut() {
-      if group.contains_key(&system_id) {
-        if let Some(mut container) = group.remove(&system_id) {
+      if group.contains_id(system_id) {
+        if let Some(container) = group.remove(system_id) {
+          let mut system = container.borrow_mut();
           unregister_all_by_system(system_id, command_registry, interrupt_registry);
-          let mut ctx = Context::new(store, container.id, app_sender.clone());
-          container.on_shutdown(&mut ctx);
+          let mut ctx = Context::new(store, system.id(), app_sender.clone());
+          system.on_shutdown(&mut ctx);
         }
         return;
       }
@@ -391,7 +396,7 @@ fn despawn_system(
 
 fn spawn_system_group(
   group_name: &'static str,
-  child_systems: Vec<Box<dyn ChildSystem>>,
+  child_systems: Vec<ChildSystemContainer>,
   active: bool,
   sc: &mut SystemCollection,
   store: &mut Store,
@@ -403,7 +408,12 @@ fn spawn_system_group(
   }
 
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
-  let mut group = SystemGroup::new(child_systems);
+  let mut group = SystemGroup::new(
+    child_systems
+      .into_iter()
+      .map(|c| c.to_system_container())
+      .collect(),
+  );
   if active {
     group.activate(&mut ctx_template);
   } else {
@@ -424,8 +434,9 @@ fn despawn_system_group(
   interrupt_registry: &mut EventInterruptRegistry,
 ) {
   if let Some(mut group) = sc.groups.remove(group_name) {
-    for system in group.systems.values() {
-      unregister_all_by_system(system.id, command_registry, interrupt_registry);
+    for cell in group.systems.values() {
+      let system = cell.borrow();
+      unregister_all_by_system(system.id(), command_registry, interrupt_registry);
     }
 
     let mut ctx = Context::new(store, 0, app_sender.clone());
@@ -492,21 +503,21 @@ fn render_all_leds(
   let mut ctx_template = Context::new(store, 0, app_sender.clone());
 
   // gather LED declarations from all active systems and child systems (within)
-  for system in sc.systems.values_mut() {
-    let mut ctx = ctx_template.clone_for_system(system.id);
+  for mut system in sc.systems.values_mut() {
+    let mut ctx = ctx_template.clone_for_system(system.id());
     if system.handle_active(&mut ctx) {
-      declarations.insert(system.id, system.leds(tick_interval, &ctx));
+      declarations.insert(system.id(), system.leds(tick_interval, &ctx));
     } else {
-      log::trace!("System {} is inactive, skipping LED rendering", system.id);
+      log::trace!("System {} is inactive, skipping LED rendering", system.id());
     }
   }
   for group in sc.groups.values_mut() {
-    for system in group.systems.values_mut() {
-      let mut ctx = ctx_template.clone_for_system(system.id);
+    for mut system in group.systems.values_mut() {
+      let mut ctx = ctx_template.clone_for_system(system.id());
       if system.handle_active(&mut ctx) {
-        declarations.insert(system.id, system.leds(tick_interval, &ctx));
+        declarations.insert(system.id(), system.leds(tick_interval, &ctx));
       } else {
-        log::trace!("System {} is inactive, skipping LED rendering", system.id);
+        log::trace!("System {} is inactive, skipping LED rendering", system.id());
       }
     }
   }

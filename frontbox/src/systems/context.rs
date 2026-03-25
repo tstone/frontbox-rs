@@ -49,7 +49,7 @@ impl<'a> Context<'a> {
     if cmd.as_any().downcast_ref::<WatchdogPing>().is_some() {
       log::trace!("📨 Executing command {}", type_name::<C>());
     } else {
-      log::debug!("📨 Executing command {}", type_name::<C>());  
+      log::debug!("📨 Executing command {}", type_name::<C>());
     }
     self
       .app_sender
@@ -105,17 +105,17 @@ impl<'a> Context<'a> {
   // --- System management ---
 
   /// Start up a new system
-  pub fn spawn_system(&mut self, system: impl SpawnableSystem + 'static) {
+  pub fn spawn_system(&mut self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystem(self.system_id, Box::new(system)));
+      .send(AppMessage::SpawnSystem(self.system_id, system.into()));
   }
 
   /// Despawn self and immediately spawn a new system in its place
-  pub fn replace_self(&mut self, system: impl SpawnableSystem + 'static) {
+  pub fn replace_self(&mut self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::ReplaceSystem(self.system_id, Box::new(system)));
+      .send(AppMessage::ReplaceSystem(self.system_id, system.into()));
   }
 
   pub fn despawn_self(&mut self) {
@@ -127,7 +127,7 @@ impl<'a> Context<'a> {
   pub fn spawn_system_group(
     &mut self,
     group_name: &'static str,
-    systems: Vec<Box<dyn ChildSystem>>,
+    systems: Vec<ChildSystemContainer>,
     active: bool,
   ) {
     let _ = self

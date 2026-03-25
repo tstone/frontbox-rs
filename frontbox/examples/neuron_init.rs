@@ -19,6 +19,6 @@ async fn main() {
   )
   .await
   .plugin(OperationalPlugin)
-  .run(vec![])
+  .run()
   .await;
 }

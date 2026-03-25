@@ -15,7 +15,7 @@ pub struct App {
   store: Store,
   operator_config: OperatorConfig,
   app_config: AppConfig,
-  systems: Vec<Box<dyn System>>,
+  systems: Vec<SystemContainer>,
 }
 
 impl App {
@@ -271,13 +271,8 @@ impl App {
     self
   }
 
-  pub fn system(&mut self, system: Box<dyn System>) -> &mut Self {
-    self.systems.extend(vec![system]);
-    self
-  }
-
-  pub fn systems(&mut self, systems: Vec<Box<dyn System>>) -> &mut Self {
-    self.systems.extend(systems);
+  pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
+    self.systems.push(system.into());
     self
   }
 
@@ -291,8 +286,7 @@ impl App {
     self
   }
 
-  pub async fn run(mut self, systems: Vec<Box<dyn System>>) {
-    self.systems.extend(systems);
+  pub async fn run(mut self) {
     log::debug!("Finalizing Store with operator config and app config");
     self.store.insert(self.operator_config);
     self.store.insert(self.app_config.clone());
@@ -316,9 +310,8 @@ impl App {
     let machine_sender = machine.machine_sender();
 
     // This needs to appear first to initialize all the commands that others systems expect to be present
-    self
-      .systems
-      .insert(0, MachineBridge::new(machine_sender.clone()));
+    let bridge = MachineBridge::new(machine_sender.clone());
+    self.systems.insert(0, SystemContainer::new(bridge));
 
     // Start machine task
     tokio::spawn(async move {

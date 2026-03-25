@@ -6,8 +6,8 @@ pub struct Watchdog {
 }
 
 impl Watchdog {
-  pub fn new() -> Box<Self> {
-    Box::new(Watchdog { cue_handle: None })
+  pub fn new() -> Self {
+    Self { cue_handle: None }
   }
 }
 

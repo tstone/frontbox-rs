@@ -68,11 +68,14 @@ async fn main() {
   App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
     .plugin(OperationalPlugin)
-    .run(vec![DropTargetDownUp::new([
-      switches::LOWER_DROP_TARGET1,
-      switches::LOWER_DROP_TARGET2,
-      switches::LOWER_DROP_TARGET3,
-    ])])
+    .configure(|app| {
+      app.system(DropTargetDownUp::new([
+        switches::LOWER_DROP_TARGET1,
+        switches::LOWER_DROP_TARGET2,
+        switches::LOWER_DROP_TARGET3,
+      ]));
+    })
+    .run()
     .await;
 }
 
@@ -83,8 +86,8 @@ struct DropTargetDownUp {
 }
 
 impl DropTargetDownUp {
-  pub fn new(target_switches: [&'static str; 3]) -> Box<Self> {
-    Box::new(Self { target_switches })
+  pub fn new(target_switches: [&'static str; 3]) -> Self {
+    Self { target_switches }
   }
 
   fn on_switch_closed(&mut self, switch: &Switch, ctx: &mut Context) {

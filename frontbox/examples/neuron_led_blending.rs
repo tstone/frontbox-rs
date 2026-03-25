@@ -31,7 +31,11 @@ async fn main() {
     expansion_boards,
   )
   .await
-  .run(vec![System1::new(), System2::new()])
+  .configure(|app| {
+    app.system(System1::new());
+    app.system(System2::new());
+  })
+  .run()
   .await;
 }
 
@@ -40,8 +44,8 @@ struct System1 {
 }
 
 impl System1 {
-  fn new() -> Box<Self> {
-    Box::new(Self { on: false })
+  fn new() -> Self {
+    Self { on: false }
   }
 }
 
@@ -70,8 +74,8 @@ struct System2 {
 }
 
 impl System2 {
-  fn new() -> Box<Self> {
-    Box::new(Self { on: false })
+  fn new() -> Self {
+    Self { on: false }
   }
 }
 

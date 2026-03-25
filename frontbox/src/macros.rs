@@ -4,3 +4,10 @@ macro_rules! signals {
     vec![$(Box::new($signal) as Box<dyn Signal>),*]
   }
 }
+
+#[macro_export]
+macro_rules! systems {
+  ($($system:expr),* $(,)?) => {
+    vec![$($system.into()),*]
+  }
+}
