@@ -1,4 +1,4 @@
-use crate::plugins::FirePlunger;
+use crate::plugins::AutoPlunger;
 use crate::prelude::*;
 
 /// A system to fire the auto plunger when the action button is pressed
@@ -26,21 +26,23 @@ impl ActionButtonEject {
 }
 
 impl System for ActionButtonEject {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
     self.active = ctx
       .expect::<SwitchLookup>()
       .is_closed(self.action_button)
       .unwrap_or(false)
   }
 
-  fn is_active(&self, _ctx: &Context) -> bool {
+  fn is_active(&self, _ctx: &Context, _systems: &Systems) -> bool {
     self.active
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.action_button {
-        ctx.command(FirePlunger);
+        if let Some(mut autoplunger) = systems.get_mut::<AutoPlunger>() {
+          autoplunger.fire(ctx, systems);
+        }
       } else if e.switch.name == self.plunge_lane_switch {
         self.active = true;
       }
@@ -55,11 +57,16 @@ impl System for ActionButtonEject {
     &mut self,
     delta_time: Duration,
     _ctx: &Context,
+    _systems: &Systems,
   ) -> std::collections::HashMap<&'static str, LedState> {
-    let builder = LedDeclarationBuilder::new(delta_time);
-    self
-      .led_setting
-      .add_declaration(builder, self.action_button)
-      .collect()
+    if self.active {
+      let builder = LedDeclarationBuilder::new(delta_time);
+      self
+        .led_setting
+        .add_declaration(builder, self.action_button)
+        .collect()
+    } else {
+      LedDeclarationBuilder::empty()
+    }
   }
 }

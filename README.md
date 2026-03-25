@@ -30,7 +30,7 @@ struct Example {
 }
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
     // <do cool stuff here>
   }
 }
@@ -66,23 +66,20 @@ ctx.despawn_self();
 
 ### Signals
 
-Frontbox systems primarily interact with signals. Signals come in three flavors, addressing a unique set of needs: Events, Commands, and Cues.
+Frontbox systems primarily interact with events.
 
-|                 | Event                                     | Command                          | Cue                                                          |
-| --------------- | ----------------------------------------- | -------------------------------- | ------------------------------------------------------------ |
-| **Description** | A signal broadcast to all Systems         | A signal sent to specific system | A signal that a system can send to itself, usually scheduled |
-| **Scope**       | Multi-producer, multi-consumer            | Multi-producer, single-consumer  | Single-producer (self), single-consumer (self)               |
-| **Interrupt**   | Can be interrupted - `register_interrupt` | Uninterruptible                  | Can be cancelled - `cancel_cue`                              |
+|                 | Event                                     | Cue                                                          |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------ |
+| **Description** | A signal broadcast to all Systems         | A signal that a system can send to itself, usually scheduled |
+| **Scope**       | Multi-producer, multi-consumer            | Single-producer (self), single-consumer (self)               |
+| **Interrupt**   | Can be interrupted - `register_interrupt` | Can be cancelled - `cancel_cue`                              |
 
 Systems can implement a handler per signal type.
 
 ```rust
 impl System for Example {
   // handler for broadcast events
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) { }
-
-  // handler for registered commands
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) { }
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) { }
 
   // handler for scheduled cues
   fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) { }
@@ -93,7 +90,7 @@ Signals are handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
     // detect if the event is of type `SwitchClosed`
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       log::debug!("Switch {} was closed!", e.name);
@@ -126,7 +123,7 @@ ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
 // ...
 
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
     if let Some(custom) = event.downcast_ref::<MyCustomThing2>() {
       log::debug!("Custom thing happened with {}, {}", custom.prop1, custom.prop2);
     }
@@ -144,38 +141,6 @@ For example...
 - The `Trough` system interprets this and emits `TroughOccupancyChanged` and possibly `TroughFull`
 - These trough level events are received by a game manager that may emit `PlayerTurnEnding`.
 
-### Commands
-
-Commands are a specific type of signal where a system can register itself as a command handler by type. Only one system can be registered as a handler and only that system receives the signal.
-
-As the name implies, this type of signal is typically meant to instruct a system to do something.
-
-```rust
-// Commands are signals, and likewise can have a body or be body-less
-pub struct ExampleCommand(u64);
-
-impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
-    // Commands must first be registered
-    ctx.register_command::<ExampleCommand>();
-  }
-
-  fn on_command(&mut self, cmd: &dyn Signal, ctx: &mut Context) {
-    if let Some(cmd) = cmd.downcast_ref::<ExampleCommand>() {
-      log::debug!("Running example command with {}", cmd.0);
-    }
-  }
-}
-
-// other systems can signal this command
-ctx.command(ExampleCommand(100));
-```
-
-Commands are not run immediately when requested by a system. Instead they are enqueued and run in the order received.
-
-> [!TIP]
-> It's typical for command signals to use tuple style structs, preferring `Cmd(u64)` over `Cmd { id: u64 }`
-
 ### Cues
 
 Cues are signals a system can send to itself. There are four primitive types of cues:
@@ -189,7 +154,7 @@ Cues are signals a system can send to itself. There are four primitive types of 
 struct SomethingImportant(u8);
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
     // setup the cue
     ctx.cue(
       Cue::Times(3, Duration::from_secs(3)),
@@ -316,7 +281,7 @@ self.anim = Tween::new(
 );
 
 
-fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
     match e.name {
       switches::SPINNER => {
@@ -338,7 +303,7 @@ ctx.command(SetLed(leds::SPINNER_LANE, self.anim.sample()));
 
 Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provided, including:
 
-- Register commands, cues, and interrupts
+- Register cues and interrupts
 - Emit events
 - Access to the global store (below)
 
@@ -450,7 +415,7 @@ Systems can register themselves as an event interrupt. Interrupt registration re
 Event interrupts can be applied to any event within the system.
 
 ```rust
-fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
   ctx.register_interrupt::<TurnEnd>(100); // 100 is the priority
 }
 
@@ -647,15 +612,17 @@ impl TargetHitter {
   }
 
   // Here's what happens when the target is it -- if the mode is in "hurry up"
-  fn on_target_hit(&mut self, ctx: &Context) {
+  fn on_target_hit(&mut self, ctx: &Context, systems: &Systems) {
+    let game_manager = systems.expect_mut::<GameManager>();
+
     match self.state {
       TargetHitterState::HurryUp => {
-        ctx.command(AddPoints(25_000));
+        game_manager.add_points(25_000, ctx);
         self.on_hurry_up_done();
       }
       TargetHitterState::Building => {
         self.hits = self.hits.saturating_add(1);
-        ctx.command(AddPoints(1000));
+        game_manager.add_points(1000, ctx);
 
         if self.hits == 3 {
           self.hurry_up_active = true;
@@ -671,7 +638,7 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, systems: &Systems) {
     if let Some(event) = event.downcast::<SwitchClosed>() {
       if event.switch.id == self.target_switch_id {
         self.on_target_hit(ctx);

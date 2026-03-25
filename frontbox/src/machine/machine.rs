@@ -9,7 +9,7 @@ use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
-pub struct Machine {
+pub(crate) struct MachineImpl {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -22,7 +22,7 @@ pub struct Machine {
   led_renderer: LedRenderer,
 }
 
-impl Machine {
+impl MachineImpl {
   pub(crate) fn new(
     io_port: SerialInterface,
     exp_port: SerialInterface,
@@ -301,105 +301,104 @@ impl Machine {
   }
 }
 
-/// While Machine can *technically* be used directly as a System, this creates problems when the App needs to query for
-/// read the I/O hardware events. Instead of dealing with some kind of Arc reference, the bridge allows the Machine to be
-/// owned by the App while still exposing commands to interact with it as a System.
-pub(crate) struct MachineBridge {
+/// Primary interface for sending commands to the machine and receiving machine commands
+pub struct Machine {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
 
-impl MachineBridge {
+#[allow(unused)]
+impl Machine {
   pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Self {
     Self { machine_sender }
   }
-}
 
-impl System for MachineBridge {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
-    ctx.register_command::<WatchdogPing>();
-    ctx.register_command::<ClearWatchdog>();
-    ctx.register_command::<ResetExpansionNetwork>();
-    ctx.register_command::<ConfigureDriver>();
-    ctx.register_command::<ActivateDriver>();
-    ctx.register_command::<DeactivateDriver>();
-    ctx.register_command::<RefreshSwitchState>();
-    ctx.register_command::<ConfigureSwitch>();
+  pub fn ping_watchdog(&self) {
+    self.machine_sender.send(MachineMessage::WatchdogPing).ok();
   }
 
-  fn on_command(&mut self, cmd: &dyn Signal, ctx: &mut Context) {
-    if let Some(_) = cmd.as_any().downcast_ref::<WatchdogPing>() {
-      self.machine_sender.send(MachineMessage::WatchdogPing).ok();
-    } else if let Some(_) = cmd.as_any().downcast_ref::<ClearWatchdog>() {
-      self.machine_sender.send(MachineMessage::ClearWatchdog).ok();
-    } else if let Some(_) = cmd.as_any().downcast_ref::<ResetExpansionNetwork>() {
-      let boards = ctx.cloned::<ExpansionBoards>().unwrap();
-      self
-        .machine_sender
-        .send(MachineMessage::ResetExpansionNetwork(boards))
-        .ok();
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ConfigureDriver>() {
-      let driver_lookup = ctx.expect::<DriverLookup>();
-      if let Some(driver) = driver_lookup.get(cmd.driver) {
-        let switch_lookup = ctx.expect::<SwitchLookup>();
-        let config = cmd.mode.to_config(switch_lookup);
-        self
-          .machine_sender
-          .send(MachineMessage::ConfigureDriver(driver.id, config))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ActivateDriver>() {
-      let driver_lookup = ctx.expect::<DriverLookup>();
-      if let Some(driver) = driver_lookup.get(cmd.driver) {
-        let switch = match cmd.mode {
-          ActivationMode::Automatic(switch_name) => {
-            let switch_lookup = ctx.expect::<SwitchLookup>();
-            switch_lookup.get(&switch_name).map(|s| s.id)
-          }
-          _ => None,
-        };
+  pub fn clear_watchdog(&self) {
+    self.machine_sender.send(MachineMessage::ClearWatchdog).ok();
+  }
 
-        self
-          .machine_sender
-          .send(MachineMessage::ActivateDriver(
-            driver.id,
-            cmd.mode.clone(),
-            switch,
-          ))
-          .ok();
-      }
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<DeactivateDriver>() {
-      let driver_lookup = ctx.expect::<DriverLookup>();
-      if let Some(driver) = driver_lookup.get(cmd.driver) {
-        self
-          .machine_sender
-          .send(MachineMessage::DeactivateDriver(
-            driver.id,
-            cmd.mode.clone(),
-          ))
-          .ok();
-      }
-    } else if let Some(_) = cmd.as_any().downcast_ref::<RefreshSwitchState>() {
+  pub fn reset_expansion_network(&self, ctx: &Context) {
+    let boards = ctx.cloned::<ExpansionBoards>().unwrap();
+    self
+      .machine_sender
+      .send(MachineMessage::ResetExpansionNetwork(boards))
+      .ok();
+  }
+
+  pub fn configure_driver(
+    &self,
+    driver: &'static str,
+    mode: impl DriverMode + 'static,
+    ctx: &Context,
+  ) {
+    let driver_lookup = ctx.expect::<DriverLookup>();
+    if let Some(driver) = driver_lookup.get(driver) {
+      let switch_lookup = ctx.expect::<SwitchLookup>();
+      let config = mode.to_config(switch_lookup);
       self
         .machine_sender
-        .send(MachineMessage::ReportSwitches)
+        .send(MachineMessage::ConfigureDriver(driver.id, config))
         .ok();
-    } else if let Some(cmd) = cmd.as_any().downcast_ref::<ConfigureSwitch>() {
-      let switch_lookup = ctx.expect::<SwitchLookup>();
-      if let Some(switch) = switch_lookup.get(cmd.switch) {
-        self
-          .machine_sender
-          .send(MachineMessage::ConfigureSwitch(
-            switch.id,
-            cmd.inverted,
-            cmd.debounce_close,
-            cmd.debounce_open,
-          ))
-          .ok();
-      }
     }
   }
 
-  fn on_shutdown(&mut self, ctx: &mut Context) {
+  pub fn activate_driver(&self, driver: &'static str, mode: ActivationMode, ctx: &Context) {
+    let driver_lookup = ctx.expect::<DriverLookup>();
+    if let Some(driver) = driver_lookup.get(driver) {
+      self
+        .machine_sender
+        .send(MachineMessage::ActivateDriver(driver.id, mode, None))
+        .ok();
+    }
+  }
+
+  pub fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode, ctx: &Context) {
+    let driver_lookup = ctx.expect::<DriverLookup>();
+    if let Some(driver) = driver_lookup.get(driver) {
+      self
+        .machine_sender
+        .send(MachineMessage::DeactivateDriver(driver.id, mode))
+        .ok();
+    }
+  }
+
+  pub fn refresh_switch_state(&self) {
+    self
+      .machine_sender
+      .send(MachineMessage::ReportSwitches)
+      .ok();
+  }
+
+  pub fn configure_switch(
+    &self,
+    switch: &'static str,
+    inverted: bool,
+    debounce_close: Option<Duration>,
+    debounce_open: Option<Duration>,
+    ctx: &Context,
+  ) {
+    let switch_lookup = ctx.expect::<SwitchLookup>();
+    if let Some(switch) = switch_lookup.get(switch) {
+      self
+        .machine_sender
+        .send(MachineMessage::ConfigureSwitch(
+          switch.id,
+          inverted,
+          debounce_close,
+          debounce_open,
+        ))
+        .ok();
+    }
+  }
+}
+
+impl System for Machine {
+  fn on_shutdown(&mut self, ctx: &mut Context, _systems: &Systems) {
+    // TODO: disable/unconfigure drivers
+
     let boards = ctx.cloned::<ExpansionBoards>().unwrap();
     self
       .machine_sender

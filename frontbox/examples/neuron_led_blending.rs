@@ -50,15 +50,20 @@ impl System1 {
 }
 
 impl System for System1 {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context) {
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context, _systems: &Systems) {
     self.on = !self.on;
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+  fn leds(
+    &mut self,
+    delta_time: Duration,
+    _ctx: &Context,
+    _systems: &Systems,
+  ) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::blue())
@@ -80,15 +85,20 @@ impl System2 {
 }
 
 impl System for System2 {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_startup(&mut self, ctx: &mut Context, _systems: &Systems) {
     ctx.cue_cycling(signals![On, Off], Cue::Loop(Duration::from_secs(2)));
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context) {
+  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &mut Context, _systems: &Systems) {
     self.on = !self.on;
   }
 
-  fn leds(&mut self, delta_time: Duration, _ctx: &Context) -> HashMap<&'static str, LedState> {
+  fn leds(
+    &mut self,
+    delta_time: Duration,
+    _ctx: &Context,
+    _systems: &Systems,
+  ) -> HashMap<&'static str, LedState> {
     if self.on {
       LedDeclarationBuilder::new(delta_time)
         .on(leds::DEMO1, Color::red())

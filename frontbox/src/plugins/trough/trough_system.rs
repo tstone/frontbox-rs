@@ -1,13 +1,13 @@
 use crate::plugins::TroughPlugin;
 pub use crate::prelude::*;
 
-pub struct TroughSystem {
+pub struct Trough {
   pub switches: Vec<&'static str>,
   pub eject_coil: &'static str,
   pub expected_occupancy: usize,
 }
 
-impl TroughSystem {
+impl Trough {
   pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Self {
     Self {
       expected_occupancy: switches.len(),
@@ -63,48 +63,46 @@ impl TroughSystem {
     occupancy
   }
 
-  fn eject(&self, ctx: &mut Context) {
-    ctx.command(ActivateDriver::new(self.eject_coil, ActivationMode::Tap));
+  pub fn eject(&self, ctx: &mut Context, systems: &Systems) {
+    systems
+      .expect::<Machine>()
+      .activate_driver(self.eject_coil, ActivationMode::Tap, ctx);
   }
 
-  fn ball_added_to_play(&mut self) {
+  pub fn ball_added_to_play(&mut self) {
     let max_occupancy = self.switches.len();
     if self.expected_occupancy < max_occupancy {
       self.expected_occupancy += 1;
     }
   }
 
-  fn ball_removed_from_play(&mut self) {
+  pub fn ball_removed_from_play(&mut self) {
     if self.expected_occupancy > 0 {
       self.expected_occupancy -= 1;
     }
   }
 }
 
-impl System for TroughSystem {
-  fn on_startup(&mut self, ctx: &mut Context, _systems: &mut Systems) {
-    ctx.register_command::<TroughEject>();
-    ctx.register_command::<BallAddedToPlay>();
-    ctx.register_command::<BallRemovedFromPlay>();
-
+impl System for Trough {
+  fn on_startup(&mut self, ctx: &mut Context, systems: &Systems) {
     // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
     let switch_lookup = ctx.expect::<SwitchLookup>();
-    let mut switch_cmds = Vec::new();
+    let machine = systems.expect::<Machine>();
+
     for switch in &self.switches {
       // preserve configured inverted settings (if present)
       let inverted = switch_lookup
         .get_switch_config(switch)
         .map(|c| c.inverted)
         .unwrap_or(false);
-      switch_cmds.push(ConfigureSwitch::new(
+
+      machine.configure_switch(
         switch,
         inverted,
         Some(Duration::from_millis(250)),
-        None, // use default
-      ));
-    }
-    for cmd in switch_cmds {
-      ctx.command(cmd);
+        None,
+        ctx,
+      );
     }
 
     // configure eject driver
@@ -116,8 +114,7 @@ impl System for TroughSystem {
       .expect::<OperatorConfig>()
       .get_value_as_integer(TroughPlugin::trough_power_key())
       .unwrap();
-
-    ctx.command(ConfigureDriver::new(
+    machine.configure_driver(
       self.eject_coil,
       PulseKickMode {
         initial_pwm_length: Duration::from_millis(50),
@@ -125,24 +122,15 @@ impl System for TroughSystem {
         kick_length: Duration::from_millis(trough_kick_len as u64),
         ..Default::default()
       },
-    ));
+      ctx,
+    );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &mut Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context, _systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {
       self.on_trough_switch_opened(&e.switch.name, ctx);
-    }
-  }
-
-  fn on_command(&mut self, command: &dyn Signal, ctx: &mut Context) {
-    if let Some(_) = command.downcast_ref::<TroughEject>() {
-      self.eject(ctx);
-    } else if let Some(_) = command.downcast_ref::<BallAddedToPlay>() {
-      self.ball_added_to_play();
-    } else if let Some(_) = command.downcast_ref::<BallRemovedFromPlay>() {
-      self.ball_removed_from_play();
     }
   }
 }

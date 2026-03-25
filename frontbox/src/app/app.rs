@@ -298,7 +298,7 @@ impl App {
     let switch_lookup = self.store.cloned::<SwitchLookup>().unwrap();
     let io_boards = self.store.cloned::<StorableHashSet<IoBoard>>().unwrap();
 
-    let mut machine = Machine::new(
+    let mut machine = MachineImpl::new(
       self.io_port,
       self.exp_port,
       switch_lookup,
@@ -310,7 +310,7 @@ impl App {
     let machine_sender = machine.machine_sender();
 
     // This needs to appear first to initialize all the commands that others systems expect to be present
-    let bridge = MachineBridge::new(machine_sender.clone());
+    let bridge = Machine::new(machine_sender.clone());
     self.systems.insert(0, SystemContainer::new(bridge));
 
     // Start machine task
