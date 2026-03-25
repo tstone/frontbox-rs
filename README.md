@@ -22,7 +22,7 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 
 ### Systems
 
-The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through `Signals`. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
+The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through `Events`. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
 
 ```rust
 struct Example {
@@ -64,29 +64,17 @@ ctx.despawn_self();
 - `SpawnableSystem` - System which can be dynamically started at runtime. Must be `Send + Sync` compatible
 - `ChildSystem` - System which can be managed within a group (see "System Groups" below). Must implement `Clone`.
 
-### Signals
+### Events
 
-Frontbox systems primarily interact with events.
-
-|                 | Event                                     | Cue                                                          |
-| --------------- | ----------------------------------------- | ------------------------------------------------------------ |
-| **Description** | A signal broadcast to all Systems         | A signal that a system can send to itself, usually scheduled |
-| **Scope**       | Multi-producer, multi-consumer            | Single-producer (self), single-consumer (self)               |
-| **Interrupt**   | Can be interrupted - `register_interrupt` | Can be cancelled - `cancel_cue`                              |
-
-Systems can implement a handler per signal type.
+Frontbox systems primarily interact with events. Events are handled with the `on_event` handler.
 
 ```rust
 impl System for Example {
-  // handler for broadcast events
   fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) { }
-
-  // handler for scheduled cues
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) { }
 }
 ```
 
-Signals are handled by attempting a downcast into the expected type.
+Events are handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
@@ -99,13 +87,13 @@ impl System for Example {
 }
 ```
 
-Signals are both something that the framework provides (e.g. switch open/closed) and something that can be defined by the end user. The only requirement is that values be thread safe (`Send + Sync`).
+Events are both something that the framework provides (e.g. switch open/closed) and something that can be defined by the end user. The only requirement is that values be thread safe (`Send + Sync`).
 
 ```rust
-// Signals can simply be a body-less struct representing a typed thing
+// Events can simply be a body-less struct representing a typed thing
 pub struct MyCustomThing;
 
-// Signals can also contain data
+// Events can also contain data
 pub struct MyCustomThing2 {
   pub prop1: u8,
   pub prop2: String,
@@ -115,7 +103,7 @@ pub struct MyTupleLikeThing(i8, i8);
 
 ### Events
 
-Events are signals which are broadcast to to all systems. While it's technically possible for every system to emit every event, in practice typically only a small handle of systems emit a particular event.
+Events are events which are broadcast to to all systems. While it's technically possible for every system to emit every event, in practice typically only a small handle of systems emit a particular event.
 
 ```rust
 ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
@@ -143,7 +131,7 @@ For example...
 
 ### Cues
 
-Cues are signals a system can send to itself. There are four primitive types of cues:
+Cues are events a system can send to itself. There are four primitive types of cues:
 
 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
 2. **Times** -- Cue happens N times, with an interval in between
@@ -162,7 +150,7 @@ impl System for Example {
     )
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &mut Context) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
     // what to do when the cue happens (in this case, 3 times)
     if let Some(v) = cmd.downcast_ref::<SomethingImportant>() {
       log::debug!("Something important: {}!", v.0);
@@ -200,8 +188,8 @@ With timelines, there is not only a cue that happens for each node of the timeli
 Cycling through a set of states is a common occurrence in pinball. For example, flashing is in fact the cycling of two values.
 
 ```rust
-// note the use of `signals!` here rather than `vec!`
-ctx.cue_cycling(signals![
+// note the use of `events!` here rather than `vec!`
+ctx.cue_cycling(events![
     On("example"),
     Off("example"),
   ],
@@ -211,9 +199,9 @@ ctx.cue_cycling(signals![
 
 Cycling works by rotating through the list of values each time the cue is complete. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On("example")` would be cued. Another second would elapse and `Off("example")` would be cued. Another second would elapse and `On("example")` would be cued, and so on.
 
-### Generic Signals
+### Generic Events
 
-In some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built signals that can be used as one-offs:
+In some cases, particularly with cueing, it might be a bit tedious to create a custom type for every little thing that happens. Generally this is preferred, but for insignificant situations the framework provides a few pre-built events that can be used as one-offs:
 
 - `&'static str` - It's possible to use a static string as a signal
 - `Action`
@@ -305,58 +293,14 @@ Each handler receives a reference to `Context`. As this guide has shown, it's th
 
 - Register cues and interrupts
 - Emit events
-- Access to the global store (below)
-
-#### Global Store
-
-The other half of `Context` is the global store. All systems have read/write access to a shared state bucket.
-
-> _**BZZT**_ We interrupt this guide for a special broadcast. Typically global, mutable state is a poor design choice, easy to abuse, and a bringer of monolithic mess. However, in architecture design, everything is a trade-off. A fully signal-based approach brings a few hefty requirements: (1) systems must always be active and receiving all events; and (2) systems must implement internal buffering/caching to infer current state from a stream of signals. A corollary to (1) is that (3) systems typically always need some kind of "bootstrap" process if they come online in the middle of execution to get a view of the current state.
->
-> With pinball in particular, these requirements don't mesh well with machine operation: Displays need shared access (e.g. current player, score, extra ball status, etc.); Multiplayer games means there is constant switching of which set of listening systems are active.
->
-> To implement a fully signal-based architecture, making systems for the inactive player listening and building up a current view, creates more complexity and opportunity for weird bugs than just using global mutable state. Frontbox adopts a trade-off: global mutable state, while posing some danger, is the simpler and less error prone approach.
-
-> [!TIP]
-> Use the global store only for (1) data that needs to be displayed or (2) read-on-demand reference data
-
-The global store works based on _type_. Only one instance of a given type can be stored in the global store at once. Inserting a value of a type overwrites any previous values.
+- Access hardware configuration and state
 
 ```rust
-let value: Option<A> = ctx.get::<A>();
+ctx.switches
+ctx.drivers
+ctx.io_network
+ctx.exp_network
 ```
-
-`Context` provides several access methods:
-
-- `has::<T>` - returns `bool` if `T` exists in the global store
-- `is::<T>(value)` - returns `bool` if value of type `T` is equal to `value`. Requires `T`implements`PartialEq`.
-- `get::<T>` - returns `Option<&T>`
-- `get_mut<T>` - returns `Option<&mut T>`
-- `get_or_default::<T>` - returns `&T` or `&T::default()`
-- `get_or_insert::<T>` - returns `&mut T` or `&mut T::default()`, inserting it automatically if not present
-- `insert::<T>` - inserts `T` into the store
-- `remove::<T>` - removes `T` into the store
-- `expect::<T>` - returns `&T`, panics if it doesn't exist
-- `expect_mut::<T>` - returns `&mut T`, panics if it doesn't exist
-
-##### States
-
-A useful pattern with global state is storing `enum` values, allowing a kind of distributed state machine. Several framework systems use this approach.
-
-```rust
-pub enum BossFightPhase {
-  CentralHit,
-  HitWithFireballs,
-  HahaYouThoughtHeWasDead,
-}
-
-if ctx.is(BossFightPhase::HitWithFireballs) {
-  // ...
-}
-```
-
-> [!TIP]
-> Use enums stored in global context as state machines
 
 ### Active
 
@@ -427,7 +371,7 @@ fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptRe
 
 #### System Groups
 
-System groups are a feature that allows a group of systems to be toggled active or inactive together. This is independent from the `is_active` handler, which is a per-system feature. An entire group can be made inactive, which automatically makes each system within that group no longer receive signals. The systems could still be declaring themselves as active. Within a group, the active/inactive nature is actually a combination `group is active && system is active`.
+System groups are a feature that allows a group of systems to be toggled active or inactive together. This is independent from the `is_active` handler, which is a per-system feature. An entire group can be made inactive, which automatically makes each system within that group no longer receive events. The systems could still be declaring themselves as active. Within a group, the active/inactive nature is actually a combination `group is active && system is active`.
 
 This feature is primarily used by the framework to implement automatic switching of systems based on active player, but it likewise could be used to implement scene switching.
 
