@@ -40,9 +40,11 @@ impl System for Watchdog {
     Watchdog::enable(ctx, systems);
   }
 
-  fn on_cue(&mut self, _cue: &dyn Signal, _ctx: &Context, systems: &Systems) {
-    log::trace!("Watchdog cue => Ping");
-    systems.expect::<Machine>().ping_watchdog();
+  fn on_event(&mut self, event: &dyn Signal, _ctx: &Context, systems: &Systems) {
+    if !event.is::<WatchdogPing>() {
+      log::trace!("Watchdog event => Ping");
+      systems.expect::<Machine>().ping_watchdog();
+    }
   }
 
   fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {

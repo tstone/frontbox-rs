@@ -35,9 +35,6 @@ macro_rules! delegate_system {
       fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
         self.$field.on_event(event, ctx, systems)
       }
-      fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
-        self.$field.on_cue(cue, ctx, systems)
-      }
       fn on_interrupt(&mut self, event: &dyn Signal, ctx: &Context) -> InterruptResult {
         self.$field.on_interrupt(event, ctx)
       }

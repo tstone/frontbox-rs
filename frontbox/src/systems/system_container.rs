@@ -75,7 +75,7 @@ impl SystemContainer {
       if cue.accumulate(delta).completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
         if let Some(signal) = cue.signal() {
-          self.inner.on_cue(signal, ctx, systems);
+          self.inner.on_event(signal, ctx, systems);
         }
 
         if cue.is_complete() {

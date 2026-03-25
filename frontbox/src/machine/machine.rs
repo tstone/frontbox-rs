@@ -386,7 +386,17 @@ impl Machine {
 }
 
 impl System for Machine {
-  fn on_shutdown(&mut self, _ctx: &Context, _systems: &Systems) {
+  fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
+    for driver in ctx.drivers.values() {
+      self
+        .machine_sender
+        .send(MachineMessage::DeactivateDriver(
+          driver.id,
+          DeactivationMode::Disabled,
+        ))
+        .ok();
+    }
+
     // TODO: disable/unconfigure drivers
     self
       .machine_sender

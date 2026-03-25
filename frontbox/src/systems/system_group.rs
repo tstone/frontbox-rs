@@ -98,28 +98,6 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_cue(&mut self, cue: &dyn Signal, ctx: &Context, systems: &Systems) {
-    for mut system in self.systems.values_mut() {
-      let mut ctx = ctx.clone_for_system(system.id());
-      if system.handle_active(&mut ctx, systems) {
-        system.on_cue(cue, &mut ctx, systems);
-      } else {
-        log::trace!(
-          "System {} is inactive, skipping cue of type {:?}",
-          system.id(),
-          cue.type_id()
-        );
-        if system.handle_active(&mut ctx, systems) {
-          log::trace!(
-            "System {} was active but is now inactive, deactivating",
-            system.id()
-          );
-          system.on_deactivate(&mut ctx, systems);
-        }
-      }
-    }
-  }
-
   fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
     self.deactivate(ctx, systems);
   }

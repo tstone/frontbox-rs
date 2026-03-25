@@ -10,7 +10,6 @@ pub mod switches {
 }
 
 pub mod drivers {
-  pub const START_BUTTON_LAMP: &str = "start_button_lamp";
   pub const LOWER_DROP_TARGET_COIL: &str = "lower_drop_target_coil";
 }
 
@@ -118,13 +117,5 @@ impl System for DropTargetDownUp {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     }
-  }
-
-  fn on_cue(&mut self, _cue: &dyn Signal, ctx: &Context, systems: &Systems) {
-    systems.expect::<Machine>().activate_driver(
-      drivers::START_BUTTON_LAMP,
-      ActivationMode::Tap,
-      ctx,
-    );
   }
 }
