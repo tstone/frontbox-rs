@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use crate::prelude::*;
 /// Spawning systems dynamically during runtime requires the system to be Send+Sync. Some systems can be managed as others, or used as
 /// templates. These additionally require `Clone`.
 #[allow(unused)]
-pub trait System {
+pub trait System: Any {
   /// Called when the system is first started up
   fn on_startup(&mut self, ctx: &mut Context) {}
   /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)

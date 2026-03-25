@@ -8,12 +8,12 @@ pub struct AutoPlunger {
 }
 
 impl AutoPlunger {
-  pub fn new(lane_switch: &'static str, coil: &'static str) -> Box<Self> {
-    Box::new(Self {
+  pub fn new(lane_switch: &'static str, coil: &'static str) -> Self {
+    Self {
       lane_switch,
       coil,
       do_autoplunge: false,
-    })
+    }
   }
 
   fn activate_plunger(&mut self, ctx: &mut Context) {

@@ -309,8 +309,8 @@ pub(crate) struct MachineBridge {
 }
 
 impl MachineBridge {
-  pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Box<Self> {
-    Box::new(Self { machine_sender })
+  pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Self {
+    Self { machine_sender }
   }
 }
 

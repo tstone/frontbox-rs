@@ -1,3 +1,4 @@
+use std::any::{Any, TypeId, type_name_of_val};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicU64;
@@ -10,33 +11,48 @@ use crate::systems::*;
 static INCR_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct SystemContainer {
-  pub id: u64,
-  pub(crate) inner: Box<dyn System>,
+  id: u64,
+  name: String,
+  inner: Box<dyn System>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
+  as_any: fn(&dyn System) -> &dyn Any,
+  as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
 }
 
 impl SystemContainer {
-  pub fn new(id: u64, system: Box<dyn System>) -> Self {
+  pub fn new<T: System + 'static>(system: T) -> Self {
+    let name = type_name_of_val(&system).to_string();
     Self {
-      id,
-      inner: system,
+      id: Self::next_id(),
+      name,
+      inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,
+      as_any: |s| s as &dyn Any,
+      as_any_mut: |s| s as &mut dyn Any,
     }
+  }
+
+  pub fn id(&self) -> u64 {
+    self.id
+  }
+
+  pub fn name(&self) -> &str {
+    &self.name
+  }
+
+  pub fn type_id(&self) -> TypeId {
+    (self.as_any)(self.inner.as_ref()).type_id()
   }
 
   pub(crate) fn next_id() -> u64 {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
-  pub fn new_from_system(system: Box<dyn System>) -> Self {
-    Self::new(SystemContainer::next_id(), system)
-  }
-
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
-  pub fn handle_active(&mut self, ctx: &mut Context) -> bool {
+  pub(crate) fn handle_active(&mut self, ctx: &mut Context) -> bool {
     let fresh = self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
@@ -53,7 +69,7 @@ impl SystemContainer {
     fresh
   }
 
-  pub fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
+  pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
     let mut cues_to_remove = vec![];
     for (id, cue) in self.cues.iter_mut() {
       if cue.accumulate(delta).completed_cycle {
@@ -77,12 +93,19 @@ impl SystemContainer {
     self.inner.on_tick(delta, ctx);
   }
 
-  pub fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Signal>>) {
+  pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Signal>>) {
     self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 
-  pub fn cancel_cue(&mut self, cue_id: u64) {
+  pub(crate) fn cancel_cue(&mut self, cue_id: u64) {
     self.cues.remove(&cue_id);
+  }
+
+  pub(crate) fn downcast_ref<T: System + 'static>(&self) -> Option<&T> {
+    (self.as_any)(self.inner.as_ref()).downcast_ref::<T>()
+  }
+  pub(crate) fn downcast_mut<T: System + 'static>(&mut self) -> Option<&mut T> {
+    (self.as_any_mut)(self.inner.as_mut()).downcast_mut::<T>()
   }
 }
 
@@ -97,5 +120,98 @@ impl Deref for SystemContainer {
 impl DerefMut for SystemContainer {
   fn deref_mut(&mut self) -> &mut Self::Target {
     &mut *self.inner
+  }
+}
+
+impl<T: System + 'static> From<T> for SystemContainer {
+  fn from(system: T) -> Self {
+    Self::new(system)
+  }
+}
+
+pub struct SpawnableSystemContainer {
+  id: u64,
+  name: String,
+  inner: Box<dyn SpawnableSystem>,
+  cues: HashMap<u64, CueAccumulator>,
+  last_active_state: bool,
+  as_any: fn(&dyn System) -> &dyn Any,
+  as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
+}
+
+impl SpawnableSystemContainer {
+  pub fn new<T: SpawnableSystem + 'static>(system: T) -> Self {
+    let name = type_name_of_val(&system).to_string();
+    Self {
+      id: SystemContainer::next_id(),
+      name,
+      inner: Box::new(system),
+      cues: HashMap::new(),
+      last_active_state: true,
+      as_any: |s| s as &dyn Any,
+      as_any_mut: |s| s as &mut dyn Any,
+    }
+  }
+
+  pub fn to_system_container(self) -> SystemContainer {
+    SystemContainer {
+      id: self.id,
+      name: self.name,
+      inner: self.inner,
+      cues: HashMap::new(),
+      last_active_state: self.last_active_state,
+      as_any: self.as_any,
+      as_any_mut: self.as_any_mut,
+    }
+  }
+}
+
+impl<T: SpawnableSystem + 'static> From<T> for SpawnableSystemContainer {
+  fn from(system: T) -> Self {
+    Self::new(system)
+  }
+}
+
+#[derive(Clone)]
+pub struct ChildSystemContainer {
+  id: u64,
+  name: String,
+  inner: Box<dyn ChildSystem>,
+  cues: HashMap<u64, CueAccumulator>,
+  last_active_state: bool,
+  as_any: fn(&dyn System) -> &dyn Any,
+  as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
+}
+
+impl ChildSystemContainer {
+  pub fn new<T: ChildSystem + 'static>(system: T) -> Self {
+    let name = type_name_of_val(&system).to_string();
+    Self {
+      id: SystemContainer::next_id(),
+      name,
+      inner: Box::new(system),
+      cues: HashMap::new(),
+      last_active_state: true,
+      as_any: |s| s as &dyn Any,
+      as_any_mut: |s| s as &mut dyn Any,
+    }
+  }
+
+  pub fn to_system_container(self) -> SystemContainer {
+    SystemContainer {
+      id: self.id,
+      name: self.name,
+      inner: self.inner,
+      cues: HashMap::new(),
+      last_active_state: self.last_active_state,
+      as_any: self.as_any,
+      as_any_mut: self.as_any_mut,
+    }
+  }
+}
+
+impl<T: ChildSystem + 'static> From<T> for ChildSystemContainer {
+  fn from(system: T) -> Self {
+    Self::new(system)
   }
 }

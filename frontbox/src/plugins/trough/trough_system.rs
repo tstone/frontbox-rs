@@ -8,12 +8,12 @@ pub struct TroughSystem {
 }
 
 impl TroughSystem {
-  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Box<Self> {
-    Box::new(Self {
+  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Self {
+    Self {
       expected_occupancy: switches.len(),
       switches,
       eject_coil,
-    })
+    }
   }
 
   fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &mut Context) {

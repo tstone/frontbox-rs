@@ -46,7 +46,7 @@ pub mod operator_config {
 /// - `ball_in_play_switches` - A list of switches that can be used to detect when the ball becomes in play. This could be a plunge lane exit switch, or a list of playfield switches.
 pub struct IndividualPlayerSystem {
   /// This is the template to spin up a new group for the player
-  systems_template: Vec<Box<dyn ChildSystem>>,
+  systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
   ball_in_play_switch_group: &'static str,
 }
@@ -55,10 +55,10 @@ impl IndividualPlayerSystem {
   pub fn new(
     max_players: u8,
     ball_in_play_switch_group: &'static str,
-    initial_scene: Vec<Box<dyn ChildSystem>>,
+    player_template: Vec<ChildSystemContainer>,
   ) -> Box<Self> {
     Box::new(Self {
-      systems_template: initial_scene,
+      systems_template: player_template,
       max_players,
       ball_in_play_switch_group,
     })
@@ -99,7 +99,7 @@ impl IndividualPlayerSystem {
     let copy = self
       .systems_template
       .iter()
-      .map(|system| dyn_clone::clone_box(&**system))
+      .map(|system| system.clone())
       .collect::<Vec<_>>();
 
     let group_name = PLAYER_GROUP_NAMES[game_state.player_count as usize];
