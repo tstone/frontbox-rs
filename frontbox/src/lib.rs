@@ -1,6 +1,6 @@
 pub mod animation;
 mod app;
-mod hardware_definition;
+mod hardware;
 mod led;
 mod machine;
 mod macros;
@@ -9,11 +9,11 @@ pub mod plugins;
 mod store;
 pub mod systems;
 
-pub use crate::hardware_definition::*;
+pub use crate::hardware::*;
 
 pub mod prelude {
   pub use crate::app::*;
-  pub use crate::hardware_definition::*;
+  pub use crate::hardware::*;
   pub use crate::led::*;
   pub use crate::machine::event_interrupt_registry::InterruptResult;
   pub use crate::machine::machine::*;

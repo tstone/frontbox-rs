@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::hardware_definition::io::*;
+use crate::hardware::io::*;
 
 pub struct IoNetworkBuilder {
   boards: Vec<IoBoardBuilder>,
