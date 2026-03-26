@@ -31,7 +31,7 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, None, &mut sc, &base, app_sender.clone());
   }
-  spawn_system_tick(base.app_config.system_interval.clone(), app_sender.clone());
+  spawn_system_tick(base.system_interval.clone(), app_sender.clone());
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -51,7 +51,7 @@ pub async fn run(
             emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
-            handle_system_tick(&mut sc, &base, &base.app_config, &app_sender, &machine_sender).await;
+            handle_system_tick(&mut sc, &base, &app_sender, &machine_sender).await;
           }
           AppMessage::RegisterInterrupt(system_id, type_id, priority) => {
             interrupt_registry.register(type_id, system_id, priority);
@@ -222,11 +222,10 @@ fn emit_event(
 async fn handle_system_tick(
   systems: &mut SystemCollection,
   base: &ContextBase,
-  config: &AppConfig,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   machine_sender: &mpsc::UnboundedSender<MachineMessage>,
 ) {
-  let tick_duration = config.system_interval;
+  let tick_duration = base.system_interval;
 
   apply_to_systems(systems, base, &app_sender, |system, ctx, systems| {
     system.on_tick(tick_duration, ctx, systems);
