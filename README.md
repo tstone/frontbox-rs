@@ -22,7 +22,7 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 
 ### Systems
 
-The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through `Events`. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
+The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through events. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
 
 ```rust
 struct Example {
@@ -45,7 +45,7 @@ Systems include four lifecycle handlers:
 
 #### Startup
 
-Systems can given on startup, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.
+Systems can be given on startup, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.
 
 ```rust
 // Start a new system
@@ -60,13 +60,13 @@ ctx.despawn_self();
 
 #### Types of Systems
 
-- `System` - Plain vanilla system which can be started on boot
+- `System` - System which can be started on boot
 - `SpawnableSystem` - System which can be dynamically started at runtime. Must be `Send + Sync` compatible
 - `ChildSystem` - System which can be managed within a group (see "System Groups" below). Must implement `Clone`.
 
 ### Events
 
-Frontbox systems primarily interact with events. Events are handled with the `on_event` handler.
+Frontbox systems receive events through the `on_event` handler.
 
 ```rust
 impl System for Example {
@@ -74,7 +74,7 @@ impl System for Example {
 }
 ```
 
-Events are handled by attempting a downcast into the expected type.
+Events are typically handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
@@ -83,6 +83,9 @@ impl System for Example {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       log::debug!("Switch {} was closed!", e.name);
     }
+
+    // simple tests are also possible:
+    let is_switch_closed = event.is::<SwitchClosed>();
   }
 }
 ```
@@ -101,9 +104,9 @@ pub struct MyCustomThing2 {
 pub struct MyTupleLikeThing(i8, i8);
 ```
 
-### Events
+#### Emitting Event
 
-Events are events which are broadcast to to all systems. While it's technically possible for every system to emit every event, in practice typically only a small handle of systems emit a particular event.
+Events are broadcast to to all systems. While it's technically possible for every system to emit every event, in practice typically only a small handle of systems emit a particular event.
 
 ```rust
 ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
@@ -131,7 +134,7 @@ For example...
 
 ### Cues
 
-Cues are events a system can send to itself. There are four primitive types of cues:
+Cues are events that a system can send to itself. There are four primitive types of cues:
 
 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
 2. **Times** -- Cue happens N times, with an interval in between
@@ -208,9 +211,26 @@ In some cases, particularly with cueing, it might be a bit tedious to create a c
 - `Anonymous`
 - `On` / `Off`
 
+### Commands & Services
+
+Systems can choose to expose public (`pub`) functions that are accessible to other systems.
+
+```rust
+systems.get::<Trough>().eject();
+```
+
+These are accessible through:
+
+- `get::<S>`
+- `get_mut::<S>`
+- `expect::<S>`
+- `expect_mut::<S>`
+- `get_id::<S>`
+- `contains::<S>`
+
 ### Animations
 
-Animations are a fundamental part to any arcade machine and especially to pinball. Whereas a `Cue` is about an event in time that a system handles, an animation is about a value that changes over time (though not necessarily bound to time). It's useful to establish first what exactly an animation is, before demonstrating how to use it.
+Animations are a fundamental part of any arcade machine and especially to pinball. Whereas a `Cue` is about an event in time that a system handles, an animation is about a value that changes over time (though not necessarily bound to time). It's useful to establish first what exactly an animation is, before demonstrating how to use it.
 
 Animations describe "how does this value change over an accumulated amount?" Usually the thing being accumulated is time.
 
@@ -346,7 +366,12 @@ ctx.command(FadeOutMusic(Duration::from_millis(150)));
 
 ### Operator Config
 
-TODO: The implementation is minimal and this needs to be flushed out some more.
+Operator config provides a standard way to read operator-level settings. Plugins (see below) define operator config when loaded. Systems can read operator config through `Systems`. Typically, plugins list their config keys as `Plugin::config()`.
+
+```rust
+let value = systems.expect::<OperatorConfig>()
+  .get_string(KnownPlugin::config().something);
+```
 
 ### Niche Features
 

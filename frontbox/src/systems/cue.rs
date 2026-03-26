@@ -32,7 +32,7 @@ impl CueAccumulator {
     Self {
       cue,
       elapsed: Duration::ZERO,
-      signal_index, 
+      signal_index,
       signal: Arc::new(signals),
       loop_count: 0,
     }
@@ -124,7 +124,7 @@ impl Accumulator<Duration> for CueAccumulator {
 
 #[cfg(test)]
 mod test {
-  use crate::{prelude::SignalExt, signals};
+  use crate::{events, prelude::SignalExt};
 
   pub use super::*;
 
@@ -158,7 +158,10 @@ mod test {
 
   #[test]
   fn times_cue() {
-    let mut cue = CueAccumulator::new(Cue::Times(3, Duration::from_secs(1)), vec![Box::new("signal")]);
+    let mut cue = CueAccumulator::new(
+      Cue::Times(3, Duration::from_secs(1)),
+      vec![Box::new("signal")],
+    );
 
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_none(), true);
@@ -212,7 +215,7 @@ mod test {
   fn times_cue_with_multiple_signals() {
     let mut cue = CueAccumulator::new(
       Cue::Times(3, Duration::from_secs(1)),
-      signals!["signal1", "signal2"],
+      events!["signal1", "signal2"],
     );
 
     // Advance 1 second, should trigger first signal

@@ -50,6 +50,11 @@ impl Systems {
     self.systems.remove(&system_id)
   }
 
+  pub fn get_id<T: System + 'static>(&self) -> Option<u64> {
+    let type_id = TypeId::of::<T>();
+    self.type_to_id.get(&type_id).copied()
+  }
+
   pub fn get_by_id(&self, system_id: u64) -> Option<&RefCell<SystemContainer>> {
     self.systems.get(&system_id)
   }
