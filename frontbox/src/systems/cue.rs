@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::animation::*;
-use crate::prelude::Signal;
+use crate::prelude::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cue {
@@ -16,13 +16,13 @@ pub enum Cue {
 pub struct CueAccumulator {
   cue: Cue,
   elapsed: Duration,
-  signal: Arc<Vec<Box<dyn Signal>>>,
+  signal: Arc<Vec<Box<dyn Event>>>,
   signal_index: usize,
   loop_count: u16,
 }
 
 impl CueAccumulator {
-  pub fn new(cue: Cue, signals: Vec<Box<dyn Signal>>) -> Self {
+  pub fn new(cue: Cue, signals: Vec<Box<dyn Event>>) -> Self {
     let signal_index = match cue {
       Cue::Now => 0,
       // start with index at end of signals so that first increment will roll it over to 0
@@ -39,7 +39,7 @@ impl CueAccumulator {
   }
 
   /// Get the current signal to trigger for this cue
-  pub fn signal(&self) -> Option<&dyn Signal> {
+  pub fn signal(&self) -> Option<&dyn Event> {
     if self.signal_index >= self.signal.len() {
       return None;
     }
@@ -124,7 +124,7 @@ impl Accumulator<Duration> for CueAccumulator {
 
 #[cfg(test)]
 mod test {
-  use crate::{events, prelude::SignalExt};
+  use crate::{events, prelude::EventExt};
 
   pub use super::*;
 

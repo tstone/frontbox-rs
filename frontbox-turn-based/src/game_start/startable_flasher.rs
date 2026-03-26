@@ -73,7 +73,7 @@ impl System for StartableFlasher {
     ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(_) = event.downcast_ref::<On>() {
       self.start_btn_on(ctx, systems);
     } else if let Some(_) = event.downcast_ref::<Off>() {

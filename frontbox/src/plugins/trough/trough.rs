@@ -125,7 +125,7 @@ impl System for Trough {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, _systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {

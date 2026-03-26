@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::animation::Accumulator;
-use crate::prelude::Signal;
+use crate::prelude::Event;
 use crate::systems::*;
 
 static INCR_ID: AtomicU64 = AtomicU64::new(0);
@@ -93,7 +93,7 @@ impl SystemContainer {
     self.inner.on_tick(delta, ctx, systems);
   }
 
-  pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Signal>>) {
+  pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
     self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 

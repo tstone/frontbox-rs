@@ -1,7 +1,7 @@
 #[macro_export]
 macro_rules! events {
   ($($signal:expr),* $(,)?) => {
-    vec![$(Box::new($signal) as Box<dyn Signal>),*]
+    vec![$(Box::new($signal) as Box<dyn Event>),*]
   }
 }
 
@@ -32,10 +32,10 @@ macro_rules! delegate_system {
       fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
         self.$field.on_tick(delta, ctx, systems)
       }
-      fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+      fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
         self.$field.on_event(event, ctx, systems)
       }
-      fn on_interrupt(&mut self, event: &dyn Signal, ctx: &Context) -> InterruptResult {
+      fn on_interrupt(&mut self, event: &dyn Event, ctx: &Context) -> InterruptResult {
         self.$field.on_interrupt(event, ctx)
       }
       fn is_active(&self, ctx: &Context, systems: &Systems) -> bool {

@@ -34,7 +34,7 @@ impl System for ActionButtonEject {
     self.active
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.action_button {
         if let Some(mut autoplunger) = systems.get_mut::<AutoPlunger>() {

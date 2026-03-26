@@ -76,7 +76,7 @@ impl System for SystemGroup {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
       if system.handle_active(&mut ctx, systems) {

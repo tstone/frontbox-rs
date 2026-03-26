@@ -1,21 +1,21 @@
 use std::any::Any;
 
-pub trait Signal: Any + Send + Sync {
+pub trait Event: Any + Send + Sync {
   fn as_any(&self) -> &dyn Any;
 }
 
-impl<T: Any + Send + Sync> Signal for T {
+impl<T: Any + Send + Sync> Event for T {
   fn as_any(&self) -> &dyn Any {
     self
   }
 }
 
-pub trait SignalExt {
+pub trait EventExt {
   fn is<T: Any>(&self) -> bool;
   fn downcast_ref<T: Any>(&self) -> Option<&T>;
 }
 
-impl SignalExt for dyn Signal {
+impl EventExt for dyn Event {
   fn is<T: Any>(&self) -> bool {
     self.as_any().is::<T>()
   }

@@ -23,8 +23,8 @@ pub trait System: Any {
   fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {}
 
   fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {}
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {}
-  fn on_interrupt(&mut self, event: &dyn Signal, ctx: &Context) -> InterruptResult {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {}
+  fn on_interrupt(&mut self, event: &dyn Event, ctx: &Context) -> InterruptResult {
     InterruptResult::Continue
   }
 
@@ -66,7 +66,7 @@ impl System for Box<dyn SpawnableSystem> {
     self.as_system().on_tick(delta, ctx, systems);
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     self.as_system().on_event(event, ctx, systems);
   }
 }
@@ -89,7 +89,7 @@ impl System for Box<dyn ChildSystem> {
     self.as_system().on_tick(delta, ctx, systems);
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     self.as_system().on_event(event, ctx, systems);
   }
 }

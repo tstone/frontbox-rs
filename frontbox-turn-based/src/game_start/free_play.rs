@@ -37,7 +37,7 @@ impl System for FreePlay {
       .unwrap_or(false)
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.start_button_id {
         self.on_start_button_pressed(ctx, systems);

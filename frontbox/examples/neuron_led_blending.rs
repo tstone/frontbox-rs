@@ -54,7 +54,7 @@ impl System for System1 {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_event(&mut self, event: &dyn Signal, _ctx: &Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, _ctx: &Context, _systems: &Systems) {
     if let Some(_) = event.downcast_ref::<On>() {
       self.on = true;
     } else if let Some(_) = event.downcast_ref::<Off>() {
@@ -93,7 +93,7 @@ impl System for System2 {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(2)));
   }
 
-  fn on_event(&mut self, event: &dyn Signal, _ctx: &Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, _ctx: &Context, _systems: &Systems) {
     if let Some(_) = event.downcast_ref::<On>() {
       self.on = true;
     } else if let Some(_) = event.downcast_ref::<Off>() {

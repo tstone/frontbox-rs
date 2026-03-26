@@ -171,7 +171,7 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
-  event: &dyn Signal,
+  event: &dyn Event,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,

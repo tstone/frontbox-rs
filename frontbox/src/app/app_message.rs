@@ -6,7 +6,7 @@ use fast_protocol::SwitchState;
 use crate::prelude::*;
 
 pub enum AppMessage {
-  EmitEvent(Box<dyn Signal>),
+  EmitEvent(Box<dyn Event>),
   RegisterInterrupt(u64, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
@@ -22,7 +22,7 @@ pub enum AppMessage {
   DespawnSystemGroup(&'static str),
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),
-  CreateCue(u64, u64, Cue, Vec<Box<dyn Signal>>),
+  CreateCue(u64, u64, Cue, Vec<Box<dyn Event>>),
   CancelCue(u64, u64),
 }
 

@@ -63,7 +63,7 @@ impl System for AutoPlunger {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if e.switch.name == self.lane_switch && self.do_autoplunge {
         self.activate(ctx, systems);

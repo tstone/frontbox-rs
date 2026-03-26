@@ -26,7 +26,7 @@ impl<'a> Context<'a> {
     }
   }
 
-  pub fn emit<E: Signal>(&self, event: E) {
+  pub fn emit<E: Event>(&self, event: E) {
     log::debug!("📨 Emitting event {}", type_name::<E>());
     self
       .app_sender
@@ -37,7 +37,7 @@ impl<'a> Context<'a> {
   // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  pub fn register_interrupt<E: Signal + 'static>(&self, priority: u16) {
+  pub fn register_interrupt<E: Event + 'static>(&self, priority: u16) {
     self
       .app_sender
       .send(AppMessage::RegisterInterrupt(
@@ -48,7 +48,7 @@ impl<'a> Context<'a> {
       .ok();
   }
 
-  pub fn unregister_interrupt<E: Signal + 'static>(&self) {
+  pub fn unregister_interrupt<E: Event + 'static>(&self) {
     self
       .app_sender
       .send(AppMessage::UnregisterInterrupt(
@@ -111,7 +111,7 @@ impl<'a> Context<'a> {
 
   // --- Cues ---
 
-  pub fn cue(&self, signal: impl Signal + 'static, cue: Cue) -> u64 {
+  pub fn cue(&self, signal: impl Event + 'static, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -125,7 +125,7 @@ impl<'a> Context<'a> {
     cue_id
   }
 
-  pub fn cue_cycling(&self, signals: Vec<Box<dyn Signal>>, cue: Cue) -> u64 {
+  pub fn cue_cycling(&self, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
