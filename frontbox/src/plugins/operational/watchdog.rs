@@ -13,12 +13,9 @@ impl Watchdog {
 
 impl Watchdog {
   pub fn enable(ctx: &Context, systems: &Systems) {
-    log::info!(
-      "Enabling watchdog with {:?}",
-      ctx.app_config.watchdog_interval
-    );
+    log::info!("Enabling watchdog with {:?}", ctx.watchdog_interval);
 
-    ctx.cue(WatchdogPing, Cue::Loop(ctx.app_config.watchdog_interval));
+    ctx.cue(WatchdogPing, Cue::Loop(ctx.watchdog_interval));
     systems.expect::<Machine>().ping_watchdog();
   }
 

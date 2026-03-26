@@ -13,7 +13,7 @@ pub(crate) struct MachineImpl {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  context_base: ContextBase,
+  base: ContextBase,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
@@ -36,8 +36,8 @@ impl MachineImpl {
       app_sender,
       machine_sender,
       machine_receiver,
-      watchdog_interval: context_base.app_config.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
-      context_base,
+      watchdog_interval: context_base.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
+      base: context_base,
       led_renderer,
     }
   }
@@ -88,9 +88,7 @@ impl MachineImpl {
         self.report_switches().await;
       }
       MachineMessage::RenderLedDeclarations(declarations) => {
-        self
-          .led_renderer
-          .tick(self.context_base.app_config.system_interval);
+        self.led_renderer.tick(self.base.system_interval);
         self
           .led_renderer
           .render(&mut self.exp_port, declarations)
@@ -105,7 +103,7 @@ impl MachineImpl {
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    let switch = self.context_base.switches.switch_by_id(&switch_id).cloned();
+    let switch = self.base.switches.switch_by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
       // App needs to update switch state in the store before sending out the event
@@ -171,7 +169,7 @@ impl MachineImpl {
   /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
-    for (index, board) in self.context_base.io_network.iter().enumerate() {
+    for (index, board) in self.base.io_network.iter().enumerate() {
       if switch_id < (board.switch_count as usize) + offset {
         let native_switch_id = switch_id - offset;
         return Some((index, native_switch_id));
@@ -259,7 +257,7 @@ impl MachineImpl {
   pub async fn reset_expansion_network(&mut self) {
     self.led_renderer.reset();
 
-    for board in self.context_base.exp_network.iter() {
+    for board in self.base.exp_network.iter() {
       // TODO: move this to a better common location
       App::reset_expansion_board(&mut self.exp_port, board).await;
     }
@@ -387,6 +385,7 @@ impl Machine {
 
 impl System for Machine {
   fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
+    // Disable drivers and revert config on shutdown
     for driver in ctx.drivers.values() {
       self
         .machine_sender
@@ -395,9 +394,16 @@ impl System for Machine {
           DeactivationMode::Disabled,
         ))
         .ok();
+      self
+        .machine_sender
+        .send(MachineMessage::ConfigureDriver(
+          driver.id,
+          DriverConfig::Disabled,
+        ))
+        .ok();
     }
 
-    // TODO: disable/unconfigure drivers
+    // Reset expansion network on shutdown to ensure a clean slate on next startup
     self
       .machine_sender
       .send(MachineMessage::ResetExpansionNetwork)

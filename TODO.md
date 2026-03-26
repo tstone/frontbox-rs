@@ -2,7 +2,6 @@ System
 
 - Operator config should become a system
 - Turn individual player system into a plugin + complete team/co-op side
-- Make machine bridge system deconfigure drivers on shutdown
 - Read/write Store values to disk on boot/shutdown
 - Keep stats on coils fired, etc.
 - Broadcast config changes
