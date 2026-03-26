@@ -22,6 +22,7 @@ pub mod prelude {
   pub use crate::operator_config::*;
   pub use crate::plugins::Plugin;
   pub use crate::store::*;
+  pub use crate::systems;
   pub use crate::systems::*;
 
   // re-exports

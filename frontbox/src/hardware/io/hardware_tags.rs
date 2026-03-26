@@ -47,6 +47,8 @@ pub mod tags {
   pub struct CoinDrop;
   #[derive(Clone, Debug)]
   pub struct Tilt;
+  #[derive(Clone, Debug)]
+  pub struct SlingShot;
 
   // drivers
   #[derive(Clone, Debug)]

@@ -18,7 +18,7 @@ pub trait GameManagement: SpawnableSystem {
   fn game_state(&self) -> Option<&GameState>;
 
   /// Add points to the current player/team
-  fn add_points(&mut self, points: u32, ctx: &mut Context);
+  fn add_points(&mut self, points: u32, ctx: &Context);
   /// Set points multiplier for current player/team
   fn set_multiplier(&mut self, multiplier: f32);
   /// Clear points multiplier for current player/team

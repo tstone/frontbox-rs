@@ -78,19 +78,28 @@ pub trait ChildSystem: System + Send + Sync + DynClone {
 
 impl System for Box<dyn ChildSystem> {
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    self.as_system().on_startup(ctx, systems);
+    <dyn ChildSystem>::as_system(self).on_startup(ctx, systems);
   }
 
   fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
-    self.as_system().on_shutdown(ctx, systems);
+    <dyn ChildSystem>::as_system(self).on_shutdown(ctx, systems);
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
-    self.as_system().on_tick(delta, ctx, systems);
+    <dyn ChildSystem>::as_system(self).on_tick(delta, ctx, systems);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
-    self.as_system().on_event(event, ctx, systems);
+    <dyn ChildSystem>::as_system(self).on_event(event, ctx, systems);
+  }
+}
+
+impl<T: System + Send + Sync> ChildSystem for T
+where
+  T: Clone,
+{
+  fn as_system(&mut self) -> &mut dyn System {
+    self
   }
 }
 
