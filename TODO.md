@@ -1,5 +1,6 @@
 System
 
+- Cue timeline
 - Some kind of persistable storage
 - Keep stats on coils fired, etc.
 - Auto plunger plugin has operator config for coil power/kick length

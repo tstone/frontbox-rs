@@ -70,7 +70,7 @@ impl System for StartableFlasher {
         ctx,
       );
     }
-    ctx.cue_cycling(signals![On, Off], Cue::Loop(self.flash_duration));
+    ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
   }
 
   fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {

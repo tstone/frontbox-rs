@@ -1,5 +1,5 @@
 #[macro_export]
-macro_rules! signals {
+macro_rules! events {
   ($($signal:expr),* $(,)?) => {
     vec![$(Box::new($signal) as Box<dyn Signal>),*]
   }
