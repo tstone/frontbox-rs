@@ -38,7 +38,8 @@ impl App {
     let initial_switch_state = Hardware::get_initial_switch_states(&mut io_port).await;
 
     // Configure drivers
-    Hardware::configure_drivers(&mut io_port, &io_network.drivers).await;
+    let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
+    Hardware::configure_drivers(&mut io_port, &io_network.drivers, &switch_lookup).await;
 
     // open EXP port
     let mut exp_port = SerialInterface::new(config.exp_port_path)
@@ -52,7 +53,7 @@ impl App {
     // Insert hardware definitions into store for systems to reference
     log::debug!("Initializing Store with hardware definitions");
     let hardware = Hardware::new(
-      SwitchLookup::new(io_network.switches, initial_switch_state),
+      switch_lookup,
       DriverLookup::new(io_network.drivers),
       io_network.boards,
       expansion_boards,

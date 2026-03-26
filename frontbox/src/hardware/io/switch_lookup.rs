@@ -5,46 +5,49 @@ use crate::SwitchDefinition;
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
-#[derive(Debug, Clone, Serialize, Storable)]
+#[derive(Clone)]
 pub struct SwitchLookup {
   by_id: HashMap<usize, Switch>,
   pub(crate) by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
+  tags: HashMap<usize, Vec<Box<dyn HardwareTag>>>,
 }
 
 impl SwitchLookup {
-  pub fn new(switch_specs: Vec<SwitchDefinition>, initial_state: Vec<SwitchState>) -> Self {
+  pub fn new(definitions: Vec<SwitchDefinition>, initial_state: Vec<SwitchState>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
     let mut configs = HashMap::new();
-
-    for spec in switch_specs {
+    let mut tags = HashMap::new();
+    for definition in definitions {
       by_id.insert(
-        spec.id,
+        definition.id,
         Switch {
-          id: spec.id,
-          name: spec.name,
-          native: spec.native.clone(),
+          id: definition.id,
+          name: definition.name,
+          native: definition.native.clone(),
         },
       );
 
       by_name.insert(
-        spec.name,
+        definition.name,
         Switch {
-          id: spec.id,
-          name: spec.name,
-          native: spec.native.clone(),
+          id: definition.id,
+          name: definition.name,
+          native: definition.native.clone(),
         },
       );
 
-      if let Some(config) = spec.config {
-        configs.insert(spec.id, config);
+      if let Some(config) = definition.config {
+        configs.insert(definition.id, config);
       }
 
+      tags.insert(definition.id, definition.tags);
+
       // Actual state is populated below from initial report
-      is_closed.insert(spec.id, false);
+      is_closed.insert(definition.id, false);
     }
 
     let mut context = Self {
@@ -52,6 +55,7 @@ impl SwitchLookup {
       by_name,
       is_closed,
       configs,
+      tags,
     };
 
     // set initial states
@@ -97,13 +101,27 @@ impl SwitchLookup {
     self.by_name.get_mut(switch_name)
   }
 
+  pub fn switches_by_tag<T: HardwareTag + 'static>(&self) -> Vec<&Switch> {
+    self
+      .by_id
+      .values()
+      .filter(|switch| {
+        self
+          .tags
+          .get(&switch.id)
+          .map(|tags| tags.iter().any(|tag| <dyn HardwareTag>::as_any(tag).is::<T>()))
+          .unwrap_or(false)
+      })
+      .collect()
+  }
+
   /// Used internally to update switch state via switch events
   pub(crate) fn update_switch_state(&mut self, switch_id: usize, state: SwitchState) {
     let is_closed = matches!(state, SwitchState::Closed);
     self.is_closed.insert(switch_id, is_closed);
   }
 
-  pub fn get_switch_config(&self, name: &'static str) -> Option<&SwitchConfig> {
+  pub fn switch_config(&self, name: &'static str) -> Option<&SwitchConfig> {
     self
       .by_name
       .get(name)
@@ -140,7 +158,7 @@ impl SwitchLookup {
 }
 
 impl SwitchNameToId for SwitchLookup {
-  fn get_switch_id(&self, name: &str) -> Option<usize> {
+  fn switch_id(&self, name: &str) -> Option<usize> {
     self.by_name.get(name).map(|switch| switch.id)
   }
 }

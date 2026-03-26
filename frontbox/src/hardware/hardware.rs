@@ -45,13 +45,17 @@ impl Hardware {
       .await
   }
 
-  pub async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<Driver>) {
+  pub async fn configure_drivers(
+    io_port: &mut SerialInterface,
+    drivers: &Vec<DriverDefinition>,
+    switch_lookup: &SwitchLookup,
+  ) {
     for driver in drivers {
-      if let Some(config) = &driver.config {
-        log::info!("Configuring driver {} with {:?}", driver.name, config);
+      if let Some(mode) = &driver.mode {
+        log::info!("Configuring driver {} with {:?}", driver.name, mode);
         match io_port
           .request(
-            &ConfigureDriverCommand::new(&driver.id, config),
+            &ConfigureDriverCommand::new(&driver.id, &mode.to_config(switch_lookup)),
             Duration::from_millis(500),
           )
           .await

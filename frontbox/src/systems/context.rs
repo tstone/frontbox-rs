@@ -6,7 +6,6 @@ use tokio::sync::mpsc;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
-#[derive(Debug)]
 pub struct Context<'a> {
   base: &'a ContextBase,
   system_id: u64,

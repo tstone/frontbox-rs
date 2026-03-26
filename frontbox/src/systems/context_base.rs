@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ContextBase {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,

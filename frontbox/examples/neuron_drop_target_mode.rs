@@ -1,4 +1,5 @@
 use frontbox::prelude::*;
+use frontbox::tags::Playfield;
 
 use std::io::Write;
 use std::time::Duration;
@@ -25,42 +26,45 @@ async fn main() {
 
   io_network.add_board(
     FastIoBoards::io_1616()
-      .with_switch_cfg(
-        switches::LOWER_DROP_TARGET1,
-        5,
-        SwitchConfig {
-          inverted: true,
-          debounce_open: Some(Duration::from_millis(10)),
-          ..Default::default()
-        },
+      .with(
+        switch(5)
+          .named(switches::LOWER_DROP_TARGET1)
+          .tagged(Playfield)
+          .config(SwitchConfig {
+            inverted: true,
+            debounce_open: Some(Duration::from_millis(10)),
+            ..Default::default()
+          }),
       )
-      .with_switch_cfg(
-        switches::LOWER_DROP_TARGET2,
-        6,
-        SwitchConfig {
-          inverted: true,
-          debounce_open: Some(Duration::from_millis(10)),
-          ..Default::default()
-        },
+      .with(
+        switch(6)
+          .named(switches::LOWER_DROP_TARGET2)
+          .tagged(Playfield)
+          .config(SwitchConfig {
+            inverted: true,
+            debounce_open: Some(Duration::from_millis(10)),
+            ..Default::default()
+          }),
       )
-      .with_switch_cfg(
-        switches::LOWER_DROP_TARGET3,
-        7,
-        SwitchConfig {
-          inverted: true,
-          debounce_open: Some(Duration::from_millis(10)),
-          ..Default::default()
-        },
+      .with(
+        switch(7)
+          .named(switches::LOWER_DROP_TARGET3)
+          .tagged(Playfield)
+          .config(SwitchConfig {
+            inverted: true,
+            debounce_open: Some(Duration::from_millis(10)),
+            ..Default::default()
+          }),
       )
-      .with_driver_cfg(
-        drivers::LOWER_DROP_TARGET_COIL,
-        3,
-        PulseMode {
-          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-          initial_pwm_length: Duration::from_millis(250),
-          initial_pwm_power: Power::FULL,
-          ..Default::default()
-        },
+      .with(
+        driver(3)
+          .named(drivers::LOWER_DROP_TARGET_COIL)
+          .mode(Box::new(PulseMode {
+            trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+            initial_pwm_length: Duration::from_millis(250),
+            initial_pwm_power: Power::FULL,
+            ..Default::default()
+          })),
       ),
   );
 

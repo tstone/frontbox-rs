@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::time::Duration;
 
+use dyn_clone::DynClone;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::{DriverTriggerDualMode, DriverTriggerMode};
@@ -8,9 +10,11 @@ use crate::{DriverTriggerDualMode, DriverTriggerMode};
 /// DriverMode is a wrapper around DriverConfig that allows these features:
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
-pub trait DriverMode: Send + Sync {
+pub trait DriverMode: DynClone + Debug + Send + Sync {
   fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig;
 }
+
+dyn_clone::clone_trait_object!(DriverMode);
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/
@@ -56,11 +60,11 @@ impl DriverMode for PulseMode {
 }
 
 pub trait SwitchNameToId {
-  fn get_switch_id(&self, name: &str) -> Option<usize>;
+  fn switch_id(&self, name: &str) -> Option<usize>;
 }
 
 impl SwitchNameToId for HashMap<&'static str, usize> {
-  fn get_switch_id(&self, name: &str) -> Option<usize> {
+  fn switch_id(&self, name: &str) -> Option<usize> {
     self.get(name).copied()
   }
 }
@@ -312,11 +316,11 @@ impl DriverMode for FlipperMainDirectMode {
   fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
       button_switch: switch_lookup
-        .get_switch_id(self.button_switch)
+        .switch_id(self.button_switch)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
       eos_switch: switch_lookup
-        .get_switch_id(self.eos_switch)
+        .switch_id(self.eos_switch)
         .expect("Flipper main direct mode requires a valid EOS switch"),
       initial_pwm_power: self.initial_pwm_power,
       secondary_pwm_power: self.secondary_pwm_power,
@@ -352,7 +356,7 @@ impl DriverMode for FlipperHoldDirectMode {
   fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
       button_switch: switch_lookup
-        .get_switch_id(self.button_switch)
+        .switch_id(self.button_switch)
         .expect("Flipper hold direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
       driver_on_time: self.driver_on_time,
@@ -368,8 +372,8 @@ fn get_switch_invert(
 ) -> (Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerMode::Disabled => (None, None),
-    DriverTriggerMode::Switch(s) => (switch_lookup.get_switch_id(s), Some(false)),
-    DriverTriggerMode::InvertedSwitch(s) => (switch_lookup.get_switch_id(s), Some(true)),
+    DriverTriggerMode::Switch(s) => (switch_lookup.switch_id(s), Some(false)),
+    DriverTriggerMode::InvertedSwitch(s) => (switch_lookup.switch_id(s), Some(true)),
     DriverTriggerMode::VirtualSwitchTrue => (None, Some(false)),
     DriverTriggerMode::VirtualSwitchFalse => (None, Some(true)),
   }
@@ -385,58 +389,58 @@ fn get_switches_inverts(
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get_switch_id(flip_switch),
+      switch_lookup.switch_id(flip_switch),
       Some(false),
-      switch_lookup.get_switch_id(flop_switch),
+      switch_lookup.switch_id(flop_switch),
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchTrue {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get_switch_id(flip_switch),
+      switch_lookup.switch_id(flip_switch),
       Some(true),
-      switch_lookup.get_switch_id(flop_switch),
+      switch_lookup.switch_id(flop_switch),
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchTrue_FlopSwitchFalse {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get_switch_id(flip_switch),
+      switch_lookup.switch_id(flip_switch),
       Some(false),
-      switch_lookup.get_switch_id(flop_switch),
+      switch_lookup.switch_id(flop_switch),
       Some(true),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchFalse {
       flip_switch,
       flop_switch,
     } => (
-      switch_lookup.get_switch_id(flip_switch),
+      switch_lookup.switch_id(flip_switch),
       Some(true),
-      switch_lookup.get_switch_id(flop_switch),
+      switch_lookup.switch_id(flop_switch),
       Some(true),
     ),
     DriverTriggerDualMode::VirtualFlip_FlopSwitchTrue(virtual_flip) => (
       None,
       Some(false),
-      switch_lookup.get_switch_id(virtual_flip),
+      switch_lookup.switch_id(virtual_flip),
       Some(false),
     ),
     DriverTriggerDualMode::VirtualFlip_FlopSwitchFalse(virtual_flip) => (
       None,
       Some(false),
-      switch_lookup.get_switch_id(virtual_flip),
+      switch_lookup.switch_id(virtual_flip),
       Some(true),
     ),
     DriverTriggerDualMode::FlipSwitchTrue_VirtualFlop(virtual_flop) => (
-      switch_lookup.get_switch_id(virtual_flop),
+      switch_lookup.switch_id(virtual_flop),
       Some(false),
       None,
       Some(false),
     ),
     DriverTriggerDualMode::FlipSwitchFalse_VirtualFlop(virtual_flop) => (
-      switch_lookup.get_switch_id(virtual_flop),
+      switch_lookup.switch_id(virtual_flop),
       Some(true),
       None,
       Some(false),

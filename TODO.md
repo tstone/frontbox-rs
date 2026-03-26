@@ -10,6 +10,7 @@ System
 
 Hardware
 
+- What if hardware (switches, drivers, etc.) could be tagged with a &dyn Tag then searched/filtered on that? could hold roles like `StartButton`
 - Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension
 
 DX
