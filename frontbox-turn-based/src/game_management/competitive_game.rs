@@ -117,7 +117,7 @@ impl System for CompetitiveGame {
 impl GameManagement for CompetitiveGame {
   fn add_player(&mut self, ctx: &Context, systems: &Systems) {
     let mut game_started = false;
-    if !self.is_player_addable() {
+    if !self.is_game_started() {
       self.start_game(ctx);
       game_started = true;
     }

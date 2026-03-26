@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{TypeId, type_name};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
@@ -77,9 +77,13 @@ impl Systems {
   }
 
   pub fn expect<T: System + 'static>(&'_ self) -> Ref<'_, T> {
-    self
-      .get::<T>()
-      .expect("Expected system was not found. Make sure it was added to the App.")
+    self.get::<T>().expect(
+      format!(
+        "Expected system {} was not found. Make sure it was added to the App.",
+        type_name::<T>()
+      )
+      .as_str(),
+    )
   }
 
   pub fn get_mut<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {

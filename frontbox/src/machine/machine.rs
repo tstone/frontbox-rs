@@ -384,15 +384,8 @@ impl Machine {
 
 impl System for Machine {
   fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
-    // Disable drivers and revert config on shutdown
+    // Disable drivers
     for driver in ctx.drivers.values() {
-      self
-        .machine_sender
-        .send(MachineMessage::DeactivateDriver(
-          driver.id,
-          DeactivationMode::Disabled,
-        ))
-        .ok();
       self
         .machine_sender
         .send(MachineMessage::ConfigureDriver(

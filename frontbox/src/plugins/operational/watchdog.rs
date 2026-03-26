@@ -38,7 +38,7 @@ impl System for Watchdog {
   }
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &Context, systems: &Systems) {
-    if !event.is::<WatchdogPing>() {
+    if event.is::<WatchdogPing>() {
       log::trace!("Watchdog event => Ping");
       systems.expect::<Machine>().ping_watchdog();
     }

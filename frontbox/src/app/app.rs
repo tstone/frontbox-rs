@@ -198,14 +198,14 @@ impl App {
     );
     let machine_sender = machine.machine_sender();
 
-    // This needs to appear first to initialize all the commands that others systems expect to be present
+    // These systems need to apoear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine_sender.clone());
+    self.systems.insert(
+      0,
+      SystemContainer::new(OperatorConfig::new(self.operator_config)),
+    );
     self.systems.insert(0, SystemContainer::new(bridge));
-    // Insert required plugins
     self.systems.push(SystemContainer::new(Watchdog::new()));
-    self.systems.push(SystemContainer::new(OperatorConfig::new(
-      self.operator_config,
-    )));
 
     // Start machine task
     tokio::spawn(async move {
