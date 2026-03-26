@@ -38,7 +38,8 @@ impl PixelFont {
     self.sprite_sheet.image_at(row as u8, col as u8)
   }
 
-  pub fn text(&self, text: String) -> PixelFontRenderable {
+  pub fn text(&self, text: impl Into<String>) -> PixelFontRenderable {
+    let text = text.into();
     let text_width = text
       .chars()
       .map(|c| *self.custom_char_widths.get(&c).unwrap_or(&self.char_width))

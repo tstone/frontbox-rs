@@ -12,6 +12,7 @@ mod text_formatting;
 
 pub use asset::*;
 pub use frame::*;
+pub use image::Rgba;
 pub use modification::*;
 pub use offset::*;
 pub use pin2dmd::*;

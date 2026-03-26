@@ -68,6 +68,21 @@ impl GameState {
     }
   }
 
+  pub fn current_player_score(&self) -> Option<u32> {
+    match self {
+      GameState::Competitive {
+        current_player,
+        player_scores,
+        ..
+      } => player_scores.get(*current_player as usize).copied(),
+      GameState::Cooperative {
+        current_player,
+        player_scores,
+        ..
+      } => player_scores.get(*current_player as usize).copied(),
+    }
+  }
+
   pub(crate) fn increment_player_count(&mut self) {
     match self {
       GameState::Competitive { player_count, .. } => *player_count += 1,

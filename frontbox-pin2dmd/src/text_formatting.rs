@@ -2,7 +2,8 @@ pub struct TextFormatting;
 
 impl TextFormatting {
   /// Formats a number with commas as thousands separators.
-  pub fn number(number: i64) -> String {
+  pub fn number(number: impl Into<i64>) -> String {
+    let number = number.into();
     let mut num_str = number.abs().to_string();
     let mut formatted = String::new();
 
