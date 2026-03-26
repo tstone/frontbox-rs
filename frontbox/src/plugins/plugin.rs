@@ -1,5 +1,5 @@
 use crate::prelude::App;
 
 pub trait Plugin {
-  fn register(&self, app: &mut App);
+  fn build(&self, app: &mut App);
 }

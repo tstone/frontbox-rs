@@ -7,13 +7,19 @@ pub struct TroughPlugin {
   pub expected_occupancy: usize,
 }
 
-impl TroughPlugin {
-  pub fn trough_kick_key() -> &'static str {
-    "trough_kick"
-  }
+pub struct TroughPluginConfig {
+  pub trough_kick: &'static str,
+  pub trough_power: &'static str,
+}
 
-  pub fn trough_power_key() -> &'static str {
-    "trough_power"
+const CONFIG: TroughPluginConfig = TroughPluginConfig {
+  trough_kick: "trough_kick_key",
+  trough_power: "trough_power_key",
+};
+
+impl TroughPlugin {
+  pub fn config() -> &'static TroughPluginConfig {
+    &CONFIG
   }
 
   /// The plugin will monitor the specified switches to track the occupancy of the trough, and fire the eject coil when the trough is full and a new ball enters.
@@ -45,9 +51,9 @@ impl TroughPlugin {
 }
 
 impl Plugin for TroughPlugin {
-  fn register(&self, app: &mut App) {
+  fn build(&self, app: &mut App) {
     app.operator_config(
-      OperatorConfigs::integer(Self::trough_kick_key())
+      OperatorConfigs::integer(TroughPlugin::config().trough_kick)
         .default(100)
         .min(0)
         .max(255)
@@ -57,7 +63,7 @@ impl Plugin for TroughPlugin {
     );
 
     app.operator_config(
-      OperatorConfigs::integer(Self::trough_power_key())
+      OperatorConfigs::integer(TroughPlugin::config().trough_power)
         .default(70)
         .min(0)
         .max(100)

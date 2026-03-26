@@ -1,3 +1,4 @@
+use crate::plugins::TroughPlugin;
 pub use crate::prelude::*;
 
 pub struct Trough {
@@ -104,9 +105,14 @@ impl System for Trough {
     }
 
     // configure eject driver
-    // TODO:
-    let trough_kick_len = 100;
-    let trough_init_power = 70;
+    let operator_config = systems.expect::<OperatorConfig>();
+    let trough_kick_len = operator_config
+      .get_integer(TroughPlugin::config().trough_kick)
+      .unwrap_or(100);
+    let trough_init_power = operator_config
+      .get_integer(TroughPlugin::config().trough_power)
+      .unwrap_or(70);
+
     machine.configure_driver(
       self.eject_coil,
       PulseKickMode {

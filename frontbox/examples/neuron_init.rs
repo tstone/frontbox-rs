@@ -18,7 +18,6 @@ async fn main() {
     vec![],
   )
   .await
-  .plugin(OperationalPlugin)
   .run()
   .await;
 }

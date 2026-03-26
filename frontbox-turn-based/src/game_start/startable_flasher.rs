@@ -15,13 +15,13 @@ impl StartableFlasher {
     start_button_driver: Option<&'static str>,
     action_button: Option<&'static str>,
     action_button_setting: Option<LedSetting>,
-  ) -> Box<Self> {
-    Box::new(Self {
+  ) -> Self {
+    Self {
       start_button_driver,
       action_button,
       action_button_setting,
       flash_duration: Duration::from_millis(185),
-    })
+    }
   }
 
   fn start_btn_on(&self, ctx: &Context, systems: &Systems) {

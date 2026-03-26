@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::prelude::ConfigValue;
+
 #[derive(Debug, Clone, Serialize)]
 pub enum ConfigItem {
   String {
@@ -40,6 +42,14 @@ impl ConfigItem {
       ConfigItem::String { description, .. } => description,
       ConfigItem::Integer { description, .. } => description,
       ConfigItem::Boolean { description, .. } => description,
+    }
+  }
+
+  pub fn value(&self) -> ConfigValue {
+    match self {
+      ConfigItem::String { current, .. } => ConfigValue::String(current.clone()),
+      ConfigItem::Integer { value, .. } => ConfigValue::Integer(*value),
+      ConfigItem::Boolean { current, .. } => ConfigValue::Boolean(*current),
     }
   }
 }
