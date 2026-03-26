@@ -1,16 +1,27 @@
 use frontbox::prelude::*;
+use frontbox::tags::StartButton;
 
 use crate::GameManager;
 
 /// A simple system to start a game in free play mode
 #[derive(Clone)]
 pub struct FreePlay {
-  start_button_id: &'static str,
+  start_button_switch: HardwareSelection,
+}
+
+impl Default for FreePlay {
+  fn default() -> Self {
+    Self {
+      start_button_switch: HardwareSelection::tag::<StartButton>(),
+    }
+  }
 }
 
 impl FreePlay {
-  pub fn new(start_button_id: &'static str) -> Self {
-    Self { start_button_id }
+  pub fn new(selection: HardwareSelection) -> Self {
+    Self {
+      start_button_switch: selection,
+    }
   }
 
   fn on_start_button_pressed(&mut self, ctx: &Context, systems: &Systems) {
@@ -39,7 +50,7 @@ impl System for FreePlay {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-      if e.switch.name == self.start_button_id {
+      if self.start_button_switch.matches_switch(&e.switch) {
         self.on_start_button_pressed(ctx, systems);
       }
     }

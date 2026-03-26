@@ -1,13 +1,14 @@
 use dyn_clone::DynClone;
 use std::any::Any;
+use std::fmt::Debug;
 
-pub trait HardwareTag: DynClone + Send + Sync + Any {
+pub trait HardwareTag: Debug + DynClone + Send + Sync + Any {
   fn as_any(&self) -> &dyn Any;
 }
 
 impl<T: Any + Send + Sync> HardwareTag for T
 where
-  T: Clone + Send + Sync,
+  T: Debug + Clone + Send + Sync,
 {
   fn as_any(&self) -> &dyn Any {
     self
@@ -18,48 +19,48 @@ dyn_clone::clone_trait_object!(HardwareTag);
 
 pub mod tags {
   // switches
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Button;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct StartButton;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct ActionButton;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct FlipperButton;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct FlipperButtonLeft;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct FlipperButtonRight;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct LeftOutlane;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct LeftInlane;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct RightInlane;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct RightOutlane;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct AutoPlungerSwitch;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct CoinDoor;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct CoinDrop;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Tilt;
 
   // drivers
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct TroughCoil;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct AutoPlungerCoil;
 
   // multi
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Playfield;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Cabinet;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Lane;
-  #[derive(Clone)]
+  #[derive(Clone, Debug)]
   pub struct Ramp;
 }

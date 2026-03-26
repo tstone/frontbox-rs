@@ -21,3 +21,9 @@ pub struct NativeIdentity {
   pub board_idx: usize,
   pub pin: usize,
 }
+
+impl NativeIdentity {
+  pub fn new(board_idx: usize, pin: usize) -> Self {
+    Self { board_idx, pin }
+  }
+}

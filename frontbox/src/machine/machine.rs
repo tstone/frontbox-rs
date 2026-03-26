@@ -103,7 +103,7 @@ impl MachineImpl {
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    let switch = self.base.switches.switch_by_id(&switch_id).cloned();
+    let switch = self.base.switches.by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
       // App needs to update switch state in the store before sending out the event

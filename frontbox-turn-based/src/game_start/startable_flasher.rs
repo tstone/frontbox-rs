@@ -1,41 +1,55 @@
 use frontbox::prelude::*;
+use frontbox::tags::StartButton;
 
 use crate::GameManager;
 
 /// A system to flash elements like the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
-  start_button_driver: Option<&'static str>,
-  action_button: Option<&'static str>, // TODO: this should take the LED name and require both (combine name with LedSetting?)
+  start_button_driver: Option<HardwareSelection>,
+  action_button_led: Option<&'static str>, // TODO: this should take the LED name and require both (combine name with LedSetting?)
   action_button_setting: Option<LedSetting>,
   flash_duration: Duration,
 }
 
 impl StartableFlasher {
-  pub fn new(
-    start_button_driver: Option<&'static str>,
-    action_button: Option<&'static str>,
-    action_button_setting: Option<LedSetting>,
-  ) -> Self {
+  pub fn new() -> Self {
     Self {
-      start_button_driver,
-      action_button,
-      action_button_setting,
+      start_button_driver: Some(HardwareSelection::tag::<StartButton>()),
+      action_button_led: None, // TODO: hardware selection based on tag
+      action_button_setting: None,
       flash_duration: Duration::from_millis(185),
     }
   }
 
+  pub fn start_button_driver(mut self, driver: HardwareSelection) -> Self {
+    self.start_button_driver = Some(driver);
+    self
+  }
+
+  pub fn action_button_led(mut self, led: &'static str) -> Self {
+    self.action_button_led = Some(led);
+    self
+  }
+
+  pub fn action_button_setting(mut self, setting: LedSetting) -> Self {
+    self.action_button_setting = Some(setting);
+    self
+  }
+
   fn start_btn_on(&self, ctx: &Context, systems: &Systems) {
-    if let Some(driver) = self.start_button_driver {
-      systems
-        .expect::<Machine>()
-        .activate_driver(driver, ActivationMode::VirtualSwitchOn, ctx);
+    for driver in self.start_button_driver.get_drivers(ctx) {
+      systems.expect::<Machine>().activate_driver(
+        driver.name,
+        ActivationMode::VirtualSwitchOn,
+        ctx,
+      );
     }
   }
 
   fn start_btn_off(&self, ctx: &Context, systems: &Systems) {
-    if let Some(driver) = self.start_button_driver {
+    for driver in self.start_button_driver.get_drivers(ctx) {
       systems.expect::<Machine>().deactivate_driver(
-        driver,
+        driver.name,
         DeactivationMode::VirtualSwitchOff,
         ctx,
       );
@@ -58,9 +72,9 @@ impl System for StartableFlasher {
   }
 
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    if let Some(driver) = self.start_button_driver {
+    for driver in self.start_button_driver.get_drivers(ctx) {
       systems.expect::<Machine>().configure_driver(
-        driver,
+        driver.name,
         PulseHoldMode {
           trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
           initial_pwm_power: Power::ZERO,
@@ -87,7 +101,7 @@ impl System for StartableFlasher {
     _ctx: &Context,
     _systems: &Systems,
   ) -> std::collections::HashMap<&'static str, LedState> {
-    match (self.action_button, self.action_button_setting.as_mut()) {
+    match (self.action_button_led, self.action_button_setting.as_mut()) {
       (Some(button), Some(setting)) => {
         let builder = LedDeclarationBuilder::new(delta_time);
         return setting.add_declaration(builder, button).collect();

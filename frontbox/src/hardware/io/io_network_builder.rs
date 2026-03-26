@@ -1,20 +1,12 @@
-use std::collections::HashMap;
-
 use crate::hardware::io::*;
 
 pub struct IoNetworkBuilder {
   boards: Vec<IoBoardBuilder>,
-  switch_groups: HashMap<&'static str, Vec<&'static str>>,
-  driver_groups: HashMap<&'static str, Vec<&'static str>>,
 }
 
 impl IoNetworkBuilder {
   pub fn new() -> Self {
-    Self {
-      boards: Vec::new(),
-      switch_groups: HashMap::new(),
-      driver_groups: HashMap::new(),
-    }
+    Self { boards: Vec::new() }
   }
 
   pub fn add_board(&mut self, spec: IoBoardBuilder) {

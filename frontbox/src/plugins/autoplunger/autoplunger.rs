@@ -37,7 +37,7 @@ impl AutoPlunger {
 impl System for AutoPlunger {
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
-    let inverted = ctx.switches.switch_config(self.lane_switch);
+    let inverted = ctx.switches.config(self.lane_switch);
 
     let machine = systems.expect::<Machine>();
 

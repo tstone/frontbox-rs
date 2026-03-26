@@ -91,7 +91,7 @@ impl System for Trough {
       // preserve configured inverted settings (if present)
       let inverted = ctx
         .switches
-        .switch_config(switch)
+        .config(switch)
         .map(|c| c.inverted)
         .unwrap_or(false);
 

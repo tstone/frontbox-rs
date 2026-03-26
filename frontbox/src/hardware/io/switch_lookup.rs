@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -11,7 +12,6 @@ pub struct SwitchLookup {
   pub(crate) by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
-  tags: HashMap<usize, Vec<Box<dyn HardwareTag>>>,
 }
 
 impl SwitchLookup {
@@ -20,7 +20,6 @@ impl SwitchLookup {
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
     let mut configs = HashMap::new();
-    let mut tags = HashMap::new();
     for definition in definitions {
       by_id.insert(
         definition.id,
@@ -28,6 +27,7 @@ impl SwitchLookup {
           id: definition.id,
           name: definition.name,
           native: definition.native.clone(),
+          tags: definition.tags.clone(),
         },
       );
 
@@ -37,14 +37,13 @@ impl SwitchLookup {
           id: definition.id,
           name: definition.name,
           native: definition.native.clone(),
+          tags: definition.tags.clone(),
         },
       );
 
       if let Some(config) = definition.config {
         configs.insert(definition.id, config);
       }
-
-      tags.insert(definition.id, definition.tags);
 
       // Actual state is populated below from initial report
       is_closed.insert(definition.id, false);
@@ -55,7 +54,6 @@ impl SwitchLookup {
       by_name,
       is_closed,
       configs,
-      tags,
     };
 
     // set initial states
@@ -85,33 +83,40 @@ impl SwitchLookup {
       .and_then(|switch| self.is_open_by_id(switch.id))
   }
 
-  pub fn switch_by_id(&self, switch_id: &usize) -> Option<&Switch> {
+  pub fn by_id(&self, switch_id: &usize) -> Option<&Switch> {
     self.by_id.get(switch_id)
   }
 
-  pub fn switch_by_id_mut(&mut self, switch_id: &usize) -> Option<&mut Switch> {
+  pub fn by_id_mut(&mut self, switch_id: &usize) -> Option<&mut Switch> {
     self.by_id.get_mut(switch_id)
   }
 
-  pub fn switch_by_name(&self, switch_name: &'static str) -> Option<&Switch> {
+  pub fn by_name(&self, switch_name: &'static str) -> Option<&Switch> {
     self.by_name.get(switch_name)
   }
 
-  pub fn switch_by_name_mut(&mut self, switch_name: &'static str) -> Option<&mut Switch> {
+  pub fn by_name_mut(&mut self, switch_name: &'static str) -> Option<&mut Switch> {
     self.by_name.get_mut(switch_name)
   }
 
-  pub fn switches_by_tag<T: HardwareTag + 'static>(&self) -> Vec<&Switch> {
+  pub fn by_tag<T: HardwareTag + 'static>(&self) -> Vec<&Switch> {
     self
       .by_id
       .values()
       .filter(|switch| {
-        self
+        switch
           .tags
-          .get(&switch.id)
-          .map(|tags| tags.iter().any(|tag| <dyn HardwareTag>::as_any(tag).is::<T>()))
-          .unwrap_or(false)
+          .iter()
+          .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
       })
+      .collect()
+  }
+
+  pub fn by_selection(&self, selection: &HardwareSelection) -> Vec<&Switch> {
+    self
+      .by_id
+      .values()
+      .filter(|switch| selection.matches_switch(switch))
       .collect()
   }
 
@@ -121,7 +126,7 @@ impl SwitchLookup {
     self.is_closed.insert(switch_id, is_closed);
   }
 
-  pub fn switch_config(&self, name: &'static str) -> Option<&SwitchConfig> {
+  pub fn config(&self, name: &'static str) -> Option<&SwitchConfig> {
     self
       .by_name
       .get(name)
@@ -176,9 +181,78 @@ impl DerefMut for SwitchLookup {
   }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct Switch {
   pub id: usize,
   pub native: NativeIdentity,
   pub name: &'static str,
+  pub tags: Vec<Box<dyn HardwareTag>>,
+}
+
+impl Switch {
+  pub fn has_tag<T: HardwareTag + 'static>(&self) -> bool {
+    self
+      .tags
+      .iter()
+      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
+  }
+
+  pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
+    self
+      .tags
+      .iter()
+      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).type_id() == type_id)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use crate::NativeIdentity;
+  use crate::tags::{FlipperButton, Playfield};
+
+  use super::*;
+
+  #[test]
+  fn tag_lookup() {
+    let lookup = SwitchLookup::new(
+      vec![SwitchDefinition {
+        id: 1,
+        name: "switch1",
+        native: NativeIdentity::new(0, 1),
+        tags: vec![Box::new(Playfield)],
+        config: None,
+      }],
+      vec![SwitchState::Open],
+    );
+
+    let switches = lookup.by_tag::<Playfield>();
+    assert_eq!(switches.len(), 1);
+    assert_eq!(switches[0].name, "switch1");
+  }
+
+  #[test]
+  fn switch_has_tag() {
+    let switch = Switch {
+      id: 1,
+      name: "switch1",
+      native: NativeIdentity::new(0, 1),
+      tags: vec![Box::new(Playfield)],
+    };
+
+    assert!(switch.has_tag::<Playfield>());
+    assert!(!switch.has_tag::<FlipperButton>());
+  }
+
+  #[test]
+  fn switch_has_tag_type_id() {
+    let switch = Switch {
+      id: 1,
+      name: "switch1",
+      native: NativeIdentity::new(0, 1),
+      tags: vec![Box::new(Playfield)],
+    };
+
+    let type_id = TypeId::of::<Playfield>();
+    assert!(switch.has_typed_tag(type_id));
+  }
 }

@@ -1,6 +1,7 @@
 use frontbox::prelude::*;
+use frontbox::tags::{Playfield, StartButton};
 
-use crate::{CompetitiveGame, FreePlay};
+use crate::{CompetitiveGame, FreePlay, GameManager};
 
 /// This plugin provides:
 ///
@@ -19,13 +20,6 @@ use crate::{CompetitiveGame, FreePlay};
 /// # Arguments:
 /// - `max_players` - The maximum number of players allowed in a game
 /// - `ball_in_play_switches` - A list of switches that can be used to detect when the ball becomes in play. This could be a plunge lane exit switch, or a list of playfield switches.
-pub struct CompetitiveGamePlugin {
-  systems_template: Vec<ChildSystemContainer>,
-  max_players: u8,
-  start_button_name: &'static str,
-  ball_in_play_switches: Vec<&'static str>,
-}
-
 pub struct CompetitiveGamePluginConfig {
   pub turn_count: &'static str,
   pub payment_mode: &'static str,
@@ -38,23 +32,45 @@ const CONFIG: CompetitiveGamePluginConfig = CompetitiveGamePluginConfig {
   credits_required: "credits_required",
 };
 
+pub struct CompetitiveGamePlugin {
+  max_players: u8,
+  systems_template: Vec<ChildSystemContainer>,
+  start_button_switch: HardwareSelection,
+  ball_in_play_switches: HardwareSelection,
+}
+
 impl CompetitiveGamePlugin {
   pub fn config() -> &'static CompetitiveGamePluginConfig {
     &CONFIG
   }
 
-  pub fn new(
-    max_players: u8,
-    ball_in_play_switches: Vec<&'static str>,
-    start_button_name: &'static str,
-    systems_template: Vec<ChildSystemContainer>,
-  ) -> Self {
+  pub fn new(systems_template: Vec<ChildSystemContainer>) -> Self {
     Self {
       systems_template,
-      max_players,
-      ball_in_play_switches,
-      start_button_name,
+      max_players: 4,
+      start_button_switch: HardwareSelection::tag::<StartButton>(),
+      ball_in_play_switches: HardwareSelection::tag::<Playfield>(),
     }
+  }
+
+  pub fn max_players(mut self, max_players: u8) -> Self {
+    self.max_players = max_players;
+    self
+  }
+
+  pub fn systems(mut self, systems: Vec<ChildSystemContainer>) -> Self {
+    self.systems_template.extend(systems);
+    self
+  }
+
+  pub fn ball_in_play_switches(mut self, switches: HardwareSelection) -> Self {
+    self.ball_in_play_switches = switches;
+    self
+  }
+
+  pub fn start_button_switch(mut self, switch: HardwareSelection) -> Self {
+    self.start_button_switch = switch;
+    self
   }
 }
 
@@ -86,12 +102,13 @@ impl Plugin for CompetitiveGamePlugin {
         .description("The number of credits required to start the game"),
     );
 
-    app.system(CompetitiveGame::new(
+    app.system(GameManager::new(CompetitiveGame::new(
       self.max_players,
-      self.ball_in_play_switches.clone(),
       self.systems_template.clone(),
-    ));
+      self.ball_in_play_switches.clone(),
+    )));
 
-    app.system(FreePlay::new(self.start_button_name));
+    // TODO: need some kind of freeplay/credits switching system
+    app.system(FreePlay::new(self.start_button_switch.clone()));
   }
 }

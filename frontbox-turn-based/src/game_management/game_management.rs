@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox::{delegate_system, prelude::*};
 
-use crate::{CompetitiveGame, GameState};
+use crate::GameState;
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
@@ -30,22 +30,10 @@ pub struct GameManager {
 }
 
 impl GameManager {
-  fn new(impl_box: impl GameManagement + 'static) -> Self {
+  pub fn new(game_management: impl GameManagement + 'static) -> Self {
     Self {
-      inner: Box::new(impl_box),
+      inner: Box::new(game_management),
     }
-  }
-
-  pub fn competitive(
-    max_players: u8,
-    ball_in_play_switches: Vec<&'static str>,
-    player_template: Vec<ChildSystemContainer>,
-  ) -> Self {
-    Self::new(CompetitiveGame::new(
-      max_players,
-      ball_in_play_switches,
-      player_template,
-    ))
   }
 }
 

@@ -25,15 +25,15 @@ pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
-  ball_in_play_switches: Vec<&'static str>,
+  ball_in_play_switches: HardwareSelection,
   game_state: Option<GameState>,
 }
 
 impl CompetitiveGame {
   pub fn new(
     max_players: u8,
-    ball_in_play_switches: Vec<&'static str>,
     player_template: Vec<ChildSystemContainer>,
+    ball_in_play_switches: HardwareSelection,
   ) -> Self {
     Self {
       systems_template: player_template,
@@ -98,7 +98,7 @@ impl System for CompetitiveGame {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
           if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-            if self.ball_in_play_switches.contains(&e.switch.name) {
+            if self.ball_in_play_switches.matches_switch(&e.switch) {
               self.transition_turn_to_active(ctx);
             }
           }

@@ -465,6 +465,12 @@ App::boot(
 
 The I/O network is defined using the `IoNetworkBuilder`. See [Defining Hardware]() guide for more details. I/O network devices can either associate a name with a pin, or can optionally provide a configuration. Configurations given here are automatically applied at startup.
 
+Hardware is defined on a board by specifying it's pin, `switch(3)` and giving it a name `switch(3).named("foo")`. It is a good idea to declare names as constants, wrapped in a module for easy access.
+
+Hardware can also be tagged `.tagged(Playfield)`. This serves to _classify_ something about the switch, possibly location or purpose. This makes it easy to implement modes that need to say things like "if any playfield switch has been hit, then...". These tags are arbitrary. Frontbox comes with several, but they can be user-defined as well.
+
+Lastly, depending on the type of hardware being defined, an optional config (`.config(...)`) or mode (`.mode(...)`) can be given.
+
 ```rust
 pub mod switches {
   pub const LEFT_INLANE: &str = "left_inlane";
@@ -480,18 +486,82 @@ let mut io_network = IoNetworkBuilder::new();
 
 io_network.add_board(
   FastIoBoards::io_3208()
-    .with_switch(switches::LEFT_INLANE, 3)
-    .with_switch_cfg(switches::LEFT_OUTLANE, 4, SwitchConfig {
-      inverted: true,
-      debounce_open: Some(Duration::from_millis(60))
-    })
-    .with_driver(drivers::TROUGH_EJECT, 0)
-    .with_driver_cfg(drivers::AUTOPLUNGER, 1, PulseMode {
-      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_power: Power::FULL,
-      ..Default::default()
-    })
+    .with(switch(3).named(switches::LEFT_INLANE))
+    .with(
+      switch(4)
+        .named(switches::LEFT_OUTLANE)
+        .tagged(Playfield)
+        .tagged(Drain)
+        .config(SwitchConfig {
+          inverted: true,
+          debounce_open: Some(Duration::from_millis(60))
+        })
+    )
+    .with(
+      driver(0)
+        .named(drivers::TROUGH_EJECT)
+        .tagged(Drain)
+    )
+    .with(
+      driver(1)
+        .named(drivers::AUTOPLUNGER)
+        .tagged(AutoPlungeCoil)
+        .config(PulseMode {
+          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+          initial_pwm_power: Power::FULL,
+          ..Default::default()
+        })
+    )
 );
+```
+
+### Tagging & Selections
+
+Selections are a way to describe what hardware to use.
+
+```rust
+// select by name
+let sel = HardwareSelection::name("foo");
+// select by group of names
+let sel = HardwareSelection::group(vec!["foo", "bar"]);
+// select by tag (see hardware definition below for more on tagging)
+let sel = HardwareSelection::tag::<Playfield>();
+// combinations
+let sel = HardwareSelection::name("start_button").or(HardwareSelection::tag::<StartButton>());
+let sel = HardwareSelection::tag::<Playfield>().and(HardwareSelection::tag::<Cabinet>());
+```
+
+Selections can be used as a query with `Context` or as a predicate with an event.
+
+```rust
+let switches = ctx.switches.by_selection(sel);
+
+// ...
+
+fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  if let Some(e) = event.downcast_ref::<SwitchClosed>() {
+    if sel.matches_switch(e.switch) {
+      // ...
+    }
+  }
+}
+```
+
+All of the included Systems and Plugins use selections, and most all include sane defaults. For example, to require payment in order to play, the `CreditsPlay` could be spun up as...
+
+```rust
+CreditsPlay::new(
+  HardwareSelection::name(switches::START_BUTTON),
+  HardwareSelection::group(vec![switches::COIN1, switches::COIN2]),
+)
+```
+
+This _explicitly_ sets which switches to listen to based on IDs. Alternately just using default will use the tags you'd most expect. This latter approach follows more of a convention over configuration. Tag your hardware with all the tags that make sense and most things should just work™.
+
+```rust
+CreditsPlay::default()
+// switches tagged with StartButton are used as the start button
+// switches tagged with CoinDrop are used to identify incoming coins
 ```
 
 ##### Expansion Network
