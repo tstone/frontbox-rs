@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::app::run_loop;
 use crate::hardware::*;
 use crate::machine::serial_interface::SerialInterface;
-use crate::plugins::Plugin;
+use crate::plugins::{Plugin, Watchdog};
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use fast_protocol::*;
@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 pub struct App {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  operator_config: OperatorConfig,
+  operator_config: OperatorConfigStore,
   app_config: AppConfig,
   systems: Vec<SystemContainer>,
   hardware: Hardware,
@@ -35,10 +35,10 @@ impl App {
     App::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
-    let initial_switch_state = App::get_initial_switch_states(&mut io_port).await;
+    let initial_switch_state = Hardware::get_initial_switch_states(&mut io_port).await;
 
     // Configure drivers
-    App::configure_drivers(&mut io_port, &io_network.drivers).await;
+    Hardware::configure_drivers(&mut io_port, &io_network.drivers).await;
 
     // open EXP port
     let mut exp_port = SerialInterface::new(config.exp_port_path)
@@ -46,8 +46,8 @@ impl App {
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
-    App::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
-    App::configure_led_ports(&mut exp_port, &expansion_boards).await;
+    Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
+    Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     // Insert hardware definitions into store for systems to reference
     log::debug!("Initializing Store with hardware definitions");
@@ -62,7 +62,7 @@ impl App {
       io_port,
       exp_port,
       hardware,
-      operator_config: OperatorConfig::new(),
+      operator_config: OperatorConfigStore::new(),
       app_config: AppConfig::default(),
       systems: Vec::new(),
     }
@@ -105,24 +105,6 @@ impl App {
       .await;
   }
 
-  /// Read the hardware state of all switches at startup to initialize the switch context
-  async fn get_initial_switch_states(io_port: &mut SerialInterface) -> Vec<SwitchState> {
-    io_port
-      .request_until_match(
-        ReportSwitchesCommand::new(),
-        Duration::from_millis(2000),
-        |resp| {
-          if let SwitchReportResponse::SwitchReport { switches } = resp {
-            log::debug!("🥾 Initial switch states: {:?}", switches);
-            Some(switches)
-          } else {
-            None
-          }
-        },
-      )
-      .await
-  }
-
   /// Verify the watchdog is responsive. Sometimes the first few commands will fail.
   async fn verify_watchdog(io_port: &mut SerialInterface) {
     let _ = io_port.request_until_match(
@@ -162,92 +144,9 @@ impl App {
     }
   }
 
-  async fn configure_drivers(io_port: &mut SerialInterface, drivers: &Vec<Driver>) {
-    for driver in drivers {
-      if let Some(config) = &driver.config {
-        log::info!("Configuring driver {} with {:?}", driver.name, config);
-        match io_port
-          .request(
-            &ConfigureDriverCommand::new(&driver.id, config),
-            Duration::from_millis(500),
-          )
-          .await
-        {
-          Ok(ProcessedResponse::Processed) => {
-            log::debug!("Driver {} configured successfully", driver.name);
-          }
-          Ok(ProcessedResponse::Failed) => {
-            panic!("Driver {} configuration failed", driver.name);
-          }
-          Err(e) => {
-            panic!("Error configuring driver {}: {}", driver.name, e);
-          }
-        }
-      }
-    }
-  }
-
-  async fn reset_expansion_boards(
-    exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoard>,
-  ) {
-    for board in expansion_boards {
-      App::reset_expansion_board(exp_port, board).await;
-    }
-  }
-
-  pub(crate) async fn reset_expansion_board(
-    exp_port: &mut SerialInterface,
-    board: &ExpansionBoard,
-  ) {
-    if board.breakout.is_none() {
-      log::info!("Resetting expansion board at address {:X}", board.address);
-      match exp_port
-        .request(
-          &BoardResetCommand::new(board.address),
-          Duration::from_millis(2000),
-        )
-        .await
-      {
-        Ok(ProcessedResponse::Processed) => {
-          log::debug!("Expansion board {:X} reset successfully", board.address);
-        }
-        Ok(ProcessedResponse::Failed) => {
-          panic!(
-            "Expansion board {:X} reset failed. Is this configured correctly?",
-            board.address
-          );
-        }
-        Err(e) => {
-          panic!("Error resetting expansion board {:X}: {}", board.address, e);
-        }
-      }
-    }
-  }
-
-  async fn configure_led_ports(
-    exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoard>,
-  ) {
-    for board in expansion_boards {
-      for led_port in &board.led_ports {
-        let cmd = ConfigureLedPortCommand::new(
-          board.address,
-          board.breakout,
-          led_port.port,
-          led_port.led_type.clone(),
-          led_port.start,
-          led_port.leds.len() as u8,
-        );
-        // configure port/block
-        let _ = exp_port.request(&cmd, Duration::from_millis(250)).await;
-      }
-    }
-  }
-
   pub fn operator_config(&mut self, item: impl OperatorConfigBuilder) -> &mut Self {
     let (key, config_item) = item.build();
-    self.operator_config.add_item(key, config_item);
+    self.operator_config.insert(key, config_item);
     self
   }
 
@@ -267,7 +166,7 @@ impl App {
   }
 
   pub fn plugin(mut self, plugin: impl Plugin) -> Self {
-    plugin.register(&mut self);
+    plugin.build(&mut self);
     self
   }
 
@@ -301,6 +200,11 @@ impl App {
     // This needs to appear first to initialize all the commands that others systems expect to be present
     let bridge = Machine::new(machine_sender.clone());
     self.systems.insert(0, SystemContainer::new(bridge));
+    // Insert required plugins
+    self.systems.push(SystemContainer::new(Watchdog::new()));
+    self.systems.push(SystemContainer::new(OperatorConfig::new(
+      self.operator_config,
+    )));
 
     // Start machine task
     tokio::spawn(async move {

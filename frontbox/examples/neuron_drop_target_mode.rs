@@ -66,7 +66,6 @@ async fn main() {
 
   App::boot(BootConfig::default(), io_network.build(), vec![])
     .await
-    .plugin(OperationalPlugin)
     .configure(|app| {
       app.system(DropTargetDownUp::new([
         switches::LOWER_DROP_TARGET1,

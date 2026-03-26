@@ -31,7 +31,7 @@ impl AutoplungerPlugin {
 }
 
 impl Plugin for AutoplungerPlugin {
-  fn register(&self, app: &mut App) {
+  fn build(&self, app: &mut App) {
     app.system(AutoPlunger::new(
       self.plunge_lane_switch,
       self.autoplunge_coil,

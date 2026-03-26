@@ -1,14 +1,11 @@
 System
 
-- Operator config should become a system
-- Turn individual player system into a plugin + complete team/co-op side
-- Read/write Store values to disk on boot/shutdown
+- Some kind of persistable storage
 - Keep stats on coils fired, etc.
-- Broadcast config changes
-- trough system, auto plunger react to config changes and update driver config
-- move hardware setup out of App
+- Auto plunger plugin has operator config for coil power/kick length
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
+- Should events be required to be Serialize?
 
 Hardware
 

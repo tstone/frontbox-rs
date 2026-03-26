@@ -258,8 +258,7 @@ impl MachineImpl {
     self.led_renderer.reset();
 
     for board in self.base.exp_network.iter() {
-      // TODO: move this to a better common location
-      App::reset_expansion_board(&mut self.exp_port, board).await;
+      Hardware::reset_expansion_board(&mut self.exp_port, board).await;
     }
   }
 

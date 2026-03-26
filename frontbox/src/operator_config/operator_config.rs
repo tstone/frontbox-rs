@@ -1,98 +1,79 @@
 use std::collections::HashMap;
 
-use frontbox_derive::Storable;
-use serde::Serialize;
-
 use crate::prelude::*;
 
-#[derive(Serialize, Storable)]
+pub type OperatorConfigStore = HashMap<&'static str, ConfigItem>;
+
+#[derive(Debug)]
 pub struct OperatorConfig {
-  internal: HashMap<&'static str, ConfigItem>,
-  change_queue: Vec<&'static str>,
+  internal: OperatorConfigStore,
 }
 
 impl OperatorConfig {
-  pub fn new() -> Self {
-    Self {
-      internal: HashMap::new(),
-      change_queue: Vec::new(),
-    }
+  pub fn new(store: OperatorConfigStore) -> Self {
+    Self { internal: store }
   }
 
-  pub fn add_item(&mut self, key: &'static str, item: ConfigItem) {
-    self.internal.insert(key, item);
-  }
-
-  pub fn set_value(&mut self, key: &'static str, value: impl Into<ConfigValue>) {
+  pub fn set_value(&mut self, key: &'static str, value: impl Into<ConfigValue>, ctx: &mut Context) {
     let value = value.into();
-    self.change_queue.push(key);
     if let Some(item) = self.internal.get_mut(key) {
+      let old_value = item.value();
+      let new_value = value.clone();
       match (item, value) {
         (ConfigItem::String { current, .. }, ConfigValue::String(v)) => *current = v,
         (ConfigItem::Integer { value: current, .. }, ConfigValue::Integer(v)) => *current = v,
         (ConfigItem::Boolean { current, .. }, ConfigValue::Boolean(v)) => *current = v,
         _ => {}
       }
+      ctx.emit(ConfigChanged::new(key, old_value, new_value));
     }
   }
 
-  pub fn get_item(&self, key: &'static str) -> Option<&ConfigItem> {
+  fn get(&self, key: &'static str) -> Option<&ConfigItem> {
     self.internal.get(key)
   }
 
-  pub fn get_value(&self, key: &'static str) -> Option<ConfigValue> {
-    self.internal.get(key).map(|item| match item {
-      ConfigItem::String { current, .. } => ConfigValue::String(current.clone()),
-      ConfigItem::Integer { value: current, .. } => ConfigValue::Integer(*current),
-      ConfigItem::Boolean { current, .. } => ConfigValue::Boolean(*current),
+  #[allow(unused)]
+  fn get_mut(&mut self, key: &'static str) -> Option<&mut ConfigItem> {
+    self.internal.get_mut(key)
+  }
+
+  pub fn get_string(&self, key: &'static str) -> Option<String> {
+    self.get(key).and_then(|item| match item {
+      ConfigItem::String { current, .. } => Some(current.clone()),
+      _ => None,
     })
   }
 
-  pub fn get_value_as_string(&self, key: &'static str) -> Option<String> {
-    self.get_value(key).and_then(|v| v.as_string())
+  pub fn get_integer(&self, key: &'static str) -> Option<i32> {
+    self.get(key).and_then(|item| match item {
+      ConfigItem::Integer { value, .. } => Some(*value),
+      _ => None,
+    })
   }
 
-  pub fn get_value_as_integer(&self, key: &'static str) -> Option<i32> {
-    self.get_value(key).and_then(|v| v.as_integer())
-  }
-
-  pub fn get_value_as_boolean(&self, key: &'static str) -> Option<bool> {
-    self.get_value(key).and_then(|v| v.as_boolean())
-  }
-
-  pub fn get_value_as_usize(&self, key: &'static str) -> Option<usize> {
-    self.get_value(key).and_then(|v| v.as_usize())
-  }
-
-  pub fn get_value_as_u64(&self, key: &'static str) -> Option<u64> {
-    self.get_value_as_integer(key).map(|v| v as u64)
-  }
-
-  pub fn get_value_as_u32(&self, key: &'static str) -> Option<u32> {
-    self.get_value(key).and_then(|v| v.as_u32())
-  }
-
-  pub fn get_value_as_u16(&self, key: &'static str) -> Option<u16> {
-    self.get_value(key).and_then(|v| v.as_u16())
-  }
-
-  pub fn get_value_as_u8(&self, key: &'static str) -> Option<u8> {
-    self.get_value(key).and_then(|v| v.as_u8())
-  }
-
-  pub fn read_changes(&mut self) -> Option<&'static str> {
-    self.change_queue.pop()
+  pub fn get_boolean(&self, key: &'static str) -> Option<bool> {
+    self.get(key).and_then(|item| match item {
+      ConfigItem::Boolean { current, .. } => Some(*current),
+      _ => None,
+    })
   }
 }
 
-pub mod default_config {
-  pub const WATCHDOG_TICK: &str = "watchdog.tick_ms";
-  pub const SYSTEM_TIMER_TICK: &str = "system.timer_tick_ms";
-  pub const LED_RENDERER_TICK: &str = "led.renderer_tick_ms";
+impl System for OperatorConfig {}
+
+pub struct ConfigChanged {
+  pub key: &'static str,
+  pub old_value: ConfigValue,
+  pub new_value: ConfigValue,
 }
 
-impl Default for OperatorConfig {
-  fn default() -> Self {
-    Self::new()
+impl ConfigChanged {
+  pub fn new(key: &'static str, old_value: ConfigValue, new_value: ConfigValue) -> Self {
+    Self {
+      key,
+      old_value,
+      new_value,
+    }
   }
 }

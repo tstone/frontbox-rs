@@ -9,8 +9,8 @@ pub struct FreePlay {
 }
 
 impl FreePlay {
-  pub fn new(start_button_id: &'static str) -> Box<Self> {
-    Box::new(Self { start_button_id })
+  pub fn new(start_button_id: &'static str) -> Self {
+    Self { start_button_id }
   }
 
   fn on_start_button_pressed(&mut self, ctx: &Context, systems: &Systems) {

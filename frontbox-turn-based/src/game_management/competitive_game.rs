@@ -21,22 +21,6 @@ pub mod operator_config {
   };
 }
 
-/// This system provides two main benefits:
-///
-///   1. Systems are organized by player, so that each player can have their own set of systems that are active only during their turn.
-///   2. Player turn management
-///
-/// ## Outputs
-/// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
-/// - Event: `PlayerTurnActive` - Emitted when the ball becomes in play.
-/// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
-///
-/// ## Interrupts
-/// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
-///
-/// # Arguments:
-/// - `max_players` - The maximum number of players allowed in a game
-/// - `ball_in_play_switches` - A list of switches that can be used to detect when the ball becomes in play. This could be a plunge lane exit switch, or a list of playfield switches.
 pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
@@ -177,8 +161,10 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn advance_turn(&mut self, ctx: &Context, systems: &Systems) {
-    // TODO: read from operator config
-    let max_turn_count = 3;
+    let max_turn_count = systems
+      .expect::<OperatorConfig>()
+      .get_integer("turn_count")
+      .unwrap_or(3);
 
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
