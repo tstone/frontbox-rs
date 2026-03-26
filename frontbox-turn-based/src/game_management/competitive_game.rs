@@ -237,7 +237,7 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn add_points(&mut self, points: u32, ctx: &mut Context) {
+  fn add_points(&mut self, points: u32, ctx: &Context) {
     if let Some(game_state) = &mut self.game_state {
       let multiplier = game_state.current_player_multiplier();
       let points_received = (points as f32 * multiplier) as u32;
