@@ -1,8 +1,6 @@
 System
 
-- BUG: Competitive game mode with 2 players goes P1,B1, P2,B2
-- BUG: disabling drivers on shutdown seems to fail
-- StartableFlasher doesn't seem to use default driver selection correctly
+- BUG: Tween seems to accumulate time as stops are added. Duration should be for all stops
 - Cue timeline
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.

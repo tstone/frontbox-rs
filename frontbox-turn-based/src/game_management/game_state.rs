@@ -27,7 +27,7 @@ pub enum GameState {
 }
 
 impl GameState {
-  pub fn new(max_players: u8) -> Self {
+  pub fn competitive(max_players: u8) -> Self {
     GameState::Competitive {
       player_count: 0,
       max_players,
@@ -97,7 +97,6 @@ impl GameState {
     } else {
       self.set_current_player(next_player);
     }
-    self.increment_current_player_turn();
   }
 
   pub(crate) fn increment_current_player_turn(&mut self) {

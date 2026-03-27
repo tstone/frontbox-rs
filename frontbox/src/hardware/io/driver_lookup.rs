@@ -121,13 +121,13 @@ impl Driver {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag).is::<T>())
+      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
   }
 
   pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag).type_id() == type_id)
+      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).type_id() == type_id)
   }
 }

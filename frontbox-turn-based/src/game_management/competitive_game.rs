@@ -45,7 +45,7 @@ impl CompetitiveGame {
 
   fn start_game(&mut self, ctx: &Context) {
     log::info!("Starting game with max players: {}", self.max_players);
-    self.game_state = Some(GameState::new(self.max_players));
+    self.game_state = Some(GameState::competitive(self.max_players));
     ctx.emit(GameStarted);
   }
 
@@ -116,10 +116,10 @@ impl System for CompetitiveGame {
 
 impl GameManagement for CompetitiveGame {
   fn add_player(&mut self, ctx: &Context, systems: &Systems) {
-    let mut game_started = false;
+    let mut game_started_just_now = false;
     if !self.is_game_started() {
       self.start_game(ctx);
-      game_started = true;
+      game_started_just_now = true;
     }
 
     let game_state = if let Some(game_state) = &mut self.game_state {
@@ -152,10 +152,14 @@ impl GameManagement for CompetitiveGame {
 
     let group_name = PLAYER_GROUP_NAMES[game_state.player_count() as usize];
     ctx.spawn_system_group(group_name, copy, false);
+
+    if game_started_just_now {
+      ctx.emit(GameStarted);
+    }
+
     ctx.emit(PlayerAdded);
 
-    if game_started {
-      ctx.emit(GameStarted);
+    if game_started_just_now {
       self.start_turn(ctx, systems);
     }
   }
@@ -173,6 +177,8 @@ impl GameManagement for CompetitiveGame {
       return;
     };
 
+    // increment the previous player's turn before advancing to next player/turn
+    game_state.increment_current_player_turn();
     game_state.advance_turn();
 
     // Verify we haven't gone over the turn limit

@@ -336,10 +336,15 @@ impl Machine {
   }
 
   pub fn activate_driver(&self, driver: &'static str, mode: ActivationMode, ctx: &Context) {
+    // remap switch to id
+    let switch = mode
+      .switch_name()
+      .and_then(|sw| ctx.switches.by_name(sw))
+      .map(|sw| sw.id);
     if let Some(driver) = ctx.drivers.get(driver) {
       self
         .machine_sender
-        .send(MachineMessage::ActivateDriver(driver.id, mode, None))
+        .send(MachineMessage::ActivateDriver(driver.id, mode, switch))
         .ok();
     }
   }

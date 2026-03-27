@@ -83,6 +83,15 @@ pub enum ActivationMode {
   VirtualSwitchOn,
 }
 
+impl ActivationMode {
+  pub fn switch_name(&self) -> Option<&'static str> {
+    match self {
+      Self::Automatic(name) => Some(name),
+      _ => None,
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub enum DeactivationMode {
   Disabled,

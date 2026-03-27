@@ -28,7 +28,7 @@ impl<A, T> Sequence<A, T> {
 
 impl<A, T> Accumulator<A> for Sequence<A, T>
 where
-  T: Clone + Default,
+  T: Clone,
   A: Copy + Default,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
@@ -81,13 +81,10 @@ where
 
 impl<A, T> Animation<A, T> for Sequence<A, T>
 where
-  T: Clone + Default,
+  T: Clone,
   A: Copy + Default,
 {
   fn sample(&self) -> T {
-    if let Some(current_anim) = &mut self.sequence.get(self.current_anim_index) {
-      return current_anim.sample();
-    }
-    T::default()
+    self.sequence.get(self.current_anim_index).unwrap().sample()
   }
 }
