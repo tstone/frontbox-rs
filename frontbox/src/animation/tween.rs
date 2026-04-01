@@ -1,11 +1,12 @@
+use std::cmp::max;
 use std::fmt::Debug;
 use std::ops::{AddAssign, SubAssign};
 
 use crate::animation::*;
 
-/// Animation implementation that interpolates (lerps) between two values of type T over a specified quatity using a given curve
+/// Animation implementation that interpolates (lerps) between two values of type T over a specified quantity using a given curve
 #[derive(Clone)]
-pub struct Tween<A: ToF32 + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
+pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
   // the amount which signals this animation is done
   pub target: A,
   current: A,
@@ -19,11 +20,13 @@ pub struct Tween<A: ToF32 + Copy + Default + Debug, T: Lerp + Clone + Send + Syn
 impl<A, T> Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
+  A: Tweenable + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
 {
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
+    assert!(stops.len() >= 2, "Tween requires at least 2 stops");
+
     Box::new(Self {
-      target,
+      target: target.div_usize(stops.len() - 1),
       current: A::default(),
       curve,
       stops,
@@ -53,7 +56,16 @@ where
 impl<A, T> Accumulator<A> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialOrd + PartialEq + Send + Sync + Debug,
+  A: Tweenable
+    + Copy
+    + Default
+    + AddAssign
+    + SubAssign
+    + PartialOrd
+    + PartialEq
+    + Send
+    + Sync
+    + Debug,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
     let mut result = AccumulationResult {
@@ -65,28 +77,20 @@ where
       return AccumulationResult::default();
     }
 
-    // If we're exactly at the target, we need to roll back to 0 before adding delta
-    // This can happen when the cycle completes and we don't reset to 0 immediately (see below)
-    if self.current == self.target {
-      self.current -= self.target;
-    }
-
     self.current += delta;
     if self.current >= self.target {
-      // don't reset to 0 (default) if exactly at the target. This will happen the next cycle but doing so too early
-      // makes `sample` incorrect for the last frame of the cycle
-      if self.current > self.target {
-        self.current -= self.target;
-      }
+      self.current -= self.target;
+      self.current_stop_index += 1;
 
-      let is_last_stop = self.current_stop_index == self.stops.len() - 2;
-      result.completed_cycle = true;
+      result.completed_cycle = self.current_stop_index == max(self.stops.len() - 1, 1);
       result.remainder = self.current;
 
-      if is_last_stop {
+      if result.completed_cycle {
         match self.cycle {
           AnimationCycle::Forever => {
-            self.current_stop_index = 0;
+            if self.current > A::default() {
+              self.current_stop_index = 0;
+            }
           }
           AnimationCycle::Once => {
             self.cycle_count += 1;
@@ -94,13 +98,11 @@ where
           }
           AnimationCycle::Times(n) => {
             self.cycle_count += 1;
-            if self.cycle_count < n {
+            if self.cycle_count < n && self.current > A::default() {
               self.current_stop_index = 0;
             }
           }
         }
-      } else {
-        self.current_stop_index += 1;
       }
     }
 
@@ -129,7 +131,16 @@ where
 impl<A, T> Animation<A, T> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: ToF32 + Copy + Default + AddAssign + SubAssign + PartialEq + PartialOrd + Send + Sync + Debug,
+  A: Tweenable
+    + Copy
+    + Default
+    + AddAssign
+    + SubAssign
+    + PartialEq
+    + PartialOrd
+    + Send
+    + Sync
+    + Debug,
 {
   fn sample(&self) -> T {
     let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);
@@ -156,6 +167,30 @@ mod tests {
     let result = tween.accumulate(0.5);
     assert_eq!(result.completed_cycle, true);
     assert_eq!(tween.sample(), 10.0);
+    assert!(tween.is_complete());
+  }
+
+  #[test]
+  fn test_multi_stop_tween() {
+    let mut tween = Tween::new(
+      1.5,
+      Curve::Linear,
+      vec![0.0, 10.0, 20.0, 30.0],
+      AnimationCycle::Once,
+    );
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 10.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 20.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 30.0);
     assert!(tween.is_complete());
   }
 

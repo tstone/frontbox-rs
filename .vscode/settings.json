@@ -13,6 +13,7 @@
     "millis",
     "playfield",
     "Spawnable",
-    "startable"
+    "startable",
+    "Tweenable"
   ]
 }
