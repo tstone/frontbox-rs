@@ -1,6 +1,6 @@
 System
 
-- BUG: Tween seems to accumulate time as stops are added. Duration should be for all stops
+- BUG: Cue::Once repeats
 - Cue timeline
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
