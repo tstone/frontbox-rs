@@ -37,7 +37,6 @@ impl StartableFlasher {
   }
 
   fn start_btn_on(&self, ctx: &Context, systems: &Systems) {
-    log::debug!("SELECTION {:?}", self.start_button_driver);
     for driver in self.start_button_driver.get_drivers(ctx) {
       log::info!("Driver on {:?}", driver);
       systems.expect::<Machine>().activate_driver(
@@ -91,7 +90,6 @@ impl System for StartableFlasher {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     if let Some(_) = event.downcast_ref::<On>() {
-      log::debug!("ON");
       self.start_btn_on(ctx, systems);
     } else if let Some(_) = event.downcast_ref::<Off>() {
       self.start_btn_off(ctx, systems);
