@@ -154,6 +154,11 @@ mod test {
       cue.signal().and_then(|s| s.downcast_ref::<&str>()),
       Some(&"signal")
     );
+
+    // Verify that accumulating more time doesn't change the state
+    let result = cue.accumulate(Duration::from_secs(1));
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(cue.is_complete(), true);
   }
 
   #[test]
