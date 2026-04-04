@@ -1,6 +1,7 @@
 use crate::common::expansion_addr;
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct IdCommand {
   address: Option<FastAddress>,
 }
@@ -23,13 +24,7 @@ impl IdCommand {
   }
 }
 
-impl FastCommand for IdCommand {
-  type Response = IdResponse;
-
-  fn prefix() -> &'static str {
-    "id"
-  }
-
+impl FastStringCommand for IdCommand {
   fn to_string(&self) -> String {
     match self.address {
       Some(FastAddress::Io(id)) => format!("ID@{}:\r", id),
@@ -38,6 +33,14 @@ impl FastCommand for IdCommand {
       }
       None => "ID:\r".to_string(),
     }
+  }
+}
+
+impl FastRequestCommand for IdCommand {
+  type Response = IdResponse;
+
+  fn prefix() -> &'static str {
+    "id"
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

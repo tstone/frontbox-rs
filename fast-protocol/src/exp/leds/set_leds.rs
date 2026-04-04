@@ -1,14 +1,15 @@
 use crate::common::expansion_addr;
 use crate::*;
 
-pub struct SetLedCommand {
+/// Set the color of multiple LEDs in a single command (RS)
+#[derive(Debug, Clone)]
+pub struct SetLedsCommand {
   expansion_board: u8,
   breakout: Option<u8>,
-  // None: Off, Some(color): On with the given color
   states: Vec<(u16, Color)>,
 }
 
-impl SetLedCommand {
+impl SetLedsCommand {
   pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u16, Color)>) -> Self {
     Self {
       expansion_board,
@@ -18,13 +19,7 @@ impl SetLedCommand {
   }
 }
 
-impl FastCommand for SetLedCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "rs"
-  }
-
+impl FastStringCommand for SetLedsCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/exp/rs/
     let address = expansion_addr(self.expansion_board, self.breakout);
@@ -36,10 +31,6 @@ impl FastCommand for SetLedCommand {
       .join(",");
     format!("RS@{}:{}\r", address, states_part)
   }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    ProcessedResponse::parse(raw)
-  }
 }
 
 #[cfg(test)]
@@ -49,7 +40,7 @@ mod tests {
   #[test]
   fn test_request() {
     let result =
-      SetLedCommand::new(0x48, None, vec![(0, Color::red()), (1, Color::green())]).to_string();
+      SetLedsCommand::new(0x48, None, vec![(0, Color::red()), (1, Color::green())]).to_string();
     assert_eq!(result, "RS@48:0FF0000,100FF00\r");
   }
 }

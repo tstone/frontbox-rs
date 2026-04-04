@@ -1,9 +1,10 @@
 use super::LedType;
 use crate::common::{ProcessedResponse, expansion_addr};
 use crate::error::FastResponseError;
-use crate::fast_command::FastCommand;
 use crate::raw_response::RawResponse;
+use crate::{FastRequestCommand, FastStringCommand};
 
+#[derive(Debug, Clone)]
 pub struct ConfigureLedPortCommand {
   expansion_board: u8,
   breakout: Option<u8>,
@@ -33,23 +34,25 @@ impl ConfigureLedPortCommand {
   }
 }
 
-impl FastCommand for ConfigureLedPortCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "er"
-  }
-
+impl FastStringCommand for ConfigureLedPortCommand {
   fn to_string(&self) -> String {
     let address = expansion_addr(self.expansion_board, self.breakout);
     format!(
-      "ER@{}:{:X},{},{},{}\r",
+      "ER@{}:{:X},{},{:X},{:X}\r",
       address,
       self.port,
       self.led_type.clone() as u8,
       self.start,
       self.count
     )
+  }
+}
+
+impl FastRequestCommand for ConfigureLedPortCommand {
+  type Response = ProcessedResponse;
+
+  fn prefix() -> &'static str {
+    "er"
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

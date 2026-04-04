@@ -1,6 +1,6 @@
-use crate::common::ProcessedResponse;
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct TriggerDriverCommand {
   driver_id: usize,
   control_mode: DriverTriggerControlMode,
@@ -21,13 +21,7 @@ impl TriggerDriverCommand {
   }
 }
 
-impl FastCommand for TriggerDriverCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "tl"
-  }
-
+impl FastStringCommand for TriggerDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/tl/
     format!(
@@ -36,10 +30,6 @@ impl FastCommand for TriggerDriverCommand {
       self.control_mode as u8,
       self.switch.map_or("".to_string(), |s| format!("{:X}", s))
     )
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    ProcessedResponse::parse(raw)
   }
 }
 

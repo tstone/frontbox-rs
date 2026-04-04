@@ -1,22 +1,19 @@
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct ReportSwitchesCommand;
 
-impl ReportSwitchesCommand {
-  pub fn new() -> Self {
-    ReportSwitchesCommand
+impl FastStringCommand for ReportSwitchesCommand {
+  fn to_string(&self) -> String {
+    "SA:\r".to_string()
   }
 }
 
-impl FastCommand for ReportSwitchesCommand {
+impl FastRequestCommand for ReportSwitchesCommand {
   type Response = SwitchReportResponse;
 
   fn prefix() -> &'static str {
     "sa"
-  }
-
-  fn to_string(&self) -> String {
-    "SA:\r".to_string()
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

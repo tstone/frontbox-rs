@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct ConfigureHardwareCommand {
   pub platform_id: u16,
   pub switch_reporting: Option<SwitchReporting>,
@@ -14,13 +15,7 @@ impl ConfigureHardwareCommand {
   }
 }
 
-impl FastCommand for ConfigureHardwareCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "ch"
-  }
-
+impl FastStringCommand for ConfigureHardwareCommand {
   fn to_string(&self) -> String {
     format!(
       "CH:{:04},{}\r",
@@ -30,6 +25,14 @@ impl FastCommand for ConfigureHardwareCommand {
         .as_ref()
         .unwrap_or(&SwitchReporting::None) as u8
     )
+  }
+}
+
+impl FastRequestCommand for ConfigureHardwareCommand {
+  type Response = ProcessedResponse;
+
+  fn prefix() -> &'static str {
+    "ch"
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

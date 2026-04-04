@@ -1,6 +1,7 @@
 use crate::*;
 use std::time::Duration;
 
+#[derive(Debug, Clone)]
 pub struct ConfigureSwitchCommand {
   switch_id: usize,
   reporting: SwitchReportingMode,
@@ -24,13 +25,7 @@ impl ConfigureSwitchCommand {
   }
 }
 
-impl FastCommand for ConfigureSwitchCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "sl"
-  }
-
+impl FastStringCommand for ConfigureSwitchCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/sl/
     format!(
@@ -46,6 +41,14 @@ impl FastCommand for ConfigureSwitchCommand {
         .unwrap_or(Duration::from_millis(20))
         .as_millis()
     )
+  }
+}
+
+impl FastRequestCommand for ConfigureSwitchCommand {
+  type Response = ProcessedResponse;
+
+  fn prefix() -> &'static str {
+    "sl"
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

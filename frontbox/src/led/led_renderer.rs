@@ -152,7 +152,7 @@ impl LedRenderer {
     // set LEDs by board/port in batches
     for address in leds_to_set.keys() {
       for chunk in leds_to_set[&address].chunks(LED_SET_BATCH_SIZE) {
-        let cmd = SetLedCommand::new(address.address, address.breakout, chunk.to_vec());
+        let cmd = SetLedsCommand::new(address.address, address.breakout, chunk.to_vec());
         let _ = exp_port.dispatch(&cmd).await;
       }
     }

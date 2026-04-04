@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct BoardResetCommand {
   address: u8,
 }
@@ -10,15 +11,17 @@ impl BoardResetCommand {
   }
 }
 
-impl FastCommand for BoardResetCommand {
+impl FastStringCommand for BoardResetCommand {
+  fn to_string(&self) -> String {
+    format!("BR@{:X}:\r", self.address)
+  }
+}
+
+impl FastRequestCommand for BoardResetCommand {
   type Response = ProcessedResponse;
 
   fn prefix() -> &'static str {
     "br"
-  }
-
-  fn to_string(&self) -> String {
-    format!("BR@{:X}:\r", self.address)
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

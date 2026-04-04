@@ -8,7 +8,7 @@ impl DriverTriggerBuilder {
   pub fn new() -> Self {
     Self {
       // Per the docs "Driver Enabled (DRV_ENA bit 0): This is the only flag that is required"
-      // However this makes all automatic drivers work immediately (e.g. flippers) so also default 
+      // However this makes all automatic drivers work immediately (e.g. flippers) so also default
       // to disabling the switch connection. Drivers must be triggered with TL.
       flags: DriverTrigger::ENABLED | DriverTrigger::DISABLE_SWITCH,
     }
@@ -32,7 +32,7 @@ impl DriverTriggerBuilder {
     self
   }
 
-  pub fn invert_switch1(mut self, invert: &Option<bool>) -> Self {
+  pub fn invert_switch1(mut self, invert: Option<bool>) -> Self {
     if let Some(true) = invert {
       self.flags.insert(DriverTrigger::INVERT_SWITCH1);
     } else {
@@ -41,7 +41,7 @@ impl DriverTriggerBuilder {
     self
   }
 
-  pub fn invert_switch2(mut self, invert: &Option<bool>) -> Self {
+  pub fn invert_switch2(mut self, invert: Option<bool>) -> Self {
     if let Some(true) = invert {
       self.flags.insert(DriverTrigger::INVERT_SWITCH2);
     } else {
