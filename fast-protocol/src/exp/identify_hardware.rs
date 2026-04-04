@@ -1,6 +1,7 @@
 use crate::common::expansion_addr;
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct IdentifyHardwareCommand {
   expansion_board: u8,
   breakout: u8,
@@ -15,16 +16,18 @@ impl IdentifyHardwareCommand {
   }
 }
 
-impl FastCommand for IdentifyHardwareCommand {
+impl FastStringCommand for IdentifyHardwareCommand {
+  fn to_string(&self) -> String {
+    let address = expansion_addr(self.expansion_board, Some(self.breakout));
+    format!("IH@{}:\r", address)
+  }
+}
+
+impl FastRequestCommand for IdentifyHardwareCommand {
   type Response = ExpansionBreakoutInfo;
 
   fn prefix() -> &'static str {
     "ih"
-  }
-
-  fn to_string(&self) -> String {
-    let address = expansion_addr(self.expansion_board, Some(self.breakout));
-    format!("IH@{}:\r", address)
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -17,7 +16,6 @@ pub(crate) struct MachineImpl {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
-  led_renderer: LedRenderer,
 }
 
 impl MachineImpl {
@@ -26,7 +24,6 @@ impl MachineImpl {
     exp_port: SerialInterface,
     context_base: ContextBase,
     app_sender: mpsc::UnboundedSender<AppMessage>,
-    led_renderer: LedRenderer,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
@@ -38,7 +35,6 @@ impl MachineImpl {
       machine_receiver,
       watchdog_interval: context_base.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
       base: context_base,
-      led_renderer,
     }
   }
 
@@ -64,40 +60,29 @@ impl MachineImpl {
     }
   }
 
+  fn port_for(&mut self, port: Port) -> &mut SerialInterface {
+    match port {
+      Port::Io => &mut self.io_port,
+      Port::Expansion => &mut self.exp_port,
+    }
+  }
+
   async fn process_messages(&mut self, msg: MachineMessage) {
     match msg {
       MachineMessage::WatchdogPing => {
         self.send_watchdog_ping().await;
       }
-      MachineMessage::ClearWatchdog => {
-        self.clear_watchdog().await;
+      MachineMessage::Dispatch { port, command } => {
+        let port = self.port_for(port);
+        port.dispatch(&*command).await;
       }
-      MachineMessage::ResetExpansionNetwork => {
-        self.reset_expansion_network().await;
-      }
-      MachineMessage::ConfigureDriver(driver_id, config) => {
-        self.configure_driver(driver_id, config).await;
-      }
-      MachineMessage::ActivateDriver(driver_id, mode, switch) => {
-        self.activate_driver(driver_id, mode, switch).await;
-      }
-      MachineMessage::DeactivateDriver(driver_id, mode) => {
-        self.deactivate_driver(driver_id, mode).await;
-      }
-      MachineMessage::ReportSwitches => {
-        self.report_switches().await;
-      }
-      MachineMessage::RenderLedDeclarations(declarations) => {
-        self.led_renderer.tick(self.base.system_interval);
-        self
-          .led_renderer
-          .render(&mut self.exp_port, declarations)
-          .await;
-      }
-      MachineMessage::ConfigureSwitch(switch_id, inverted, debounce_close, debounce_open) => {
-        self
-          .configure_switch(switch_id, inverted, debounce_close, debounce_open)
-          .await;
+      MachineMessage::Request {
+        port,
+        command,
+        timeout,
+      } => {
+        let port = self.port_for(port);
+        port.request_any(&*command, timeout).await.ok();
       }
     }
   }
@@ -159,13 +144,6 @@ impl MachineImpl {
       .await;
   }
 
-  pub async fn clear_watchdog(&mut self) {
-    let _ = self
-      .io_port
-      .request(&WatchdogCommand::disable(), Duration::from_millis(200))
-      .await;
-  }
-
   /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
@@ -177,59 +155,6 @@ impl MachineImpl {
       offset += board.switch_count as usize;
     }
     None
-  }
-
-  async fn configure_driver(&mut self, driver: usize, config: DriverConfig) {
-    log::info!("Configuring driver {}", driver);
-    match self
-      .io_port
-      .request(
-        &ConfigureDriverCommand::new(&driver, &config),
-        Duration::from_millis(200),
-      )
-      .await
-    {
-      Ok(ProcessedResponse::Failed) => {
-        log::error!("Driver {} configuration failed", driver);
-      }
-      Err(e) => {
-        log::error!("Error configuring driver {}: {}", driver, e);
-      }
-      _ => {}
-    }
-  }
-
-  async fn report_switches(&mut self) {
-    match self
-      .io_port
-      .request(&ReportSwitchesCommand::new(), Duration::from_secs(2))
-      .await
-    {
-      Ok(SwitchReportResponse::SwitchReport { switches }) => {
-        self
-          .app_sender
-          .send(AppMessage::SwitchStates(switches))
-          .ok();
-      }
-      _ => {
-        log::error!("Failed to report switches");
-      }
-    }
-  }
-
-  pub async fn activate_driver(
-    &mut self,
-    driver: usize,
-    mode: ActivationMode,
-    switch: Option<usize>,
-  ) {
-    log::info!("Activating driver {} with mode {:?}", driver, mode);
-    let control_mode: DriverTriggerControlMode = match mode {
-      ActivationMode::Automatic(_) => DriverTriggerControlMode::Automatic,
-      ActivationMode::Tap => DriverTriggerControlMode::Manual,
-      ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
-    };
-    self.trigger_driver(driver, control_mode, switch).await;
   }
 
   pub async fn deactivate_driver(&mut self, driver: usize, mode: DeactivationMode) {
@@ -253,45 +178,6 @@ impl MachineImpl {
       .dispatch(&TriggerDriverCommand::new(driver, mode, switch))
       .await;
   }
-
-  pub async fn reset_expansion_network(&mut self) {
-    self.led_renderer.reset();
-
-    for board in self.base.exp_network.iter() {
-      Hardware::reset_expansion_board(&mut self.exp_port, board).await;
-    }
-  }
-
-  async fn configure_switch(
-    &mut self,
-    switch: usize,
-    inverted: bool,
-    debounce_close: Option<Duration>,
-    debounce_open: Option<Duration>,
-  ) {
-    log::info!("Configuring switch {}", switch);
-    let reporting = if inverted {
-      SwitchReportingMode::ReportInverted
-    } else {
-      SwitchReportingMode::ReportNormal
-    };
-    match self
-      .io_port
-      .request(
-        &ConfigureSwitchCommand::new(switch, reporting, debounce_close, debounce_open),
-        Duration::from_millis(200),
-      )
-      .await
-    {
-      Ok(ProcessedResponse::Failed) => {
-        log::error!("Switch {} configuration failed", switch);
-      }
-      Err(e) => {
-        log::error!("Error configuring switch {}: {}", switch, e);
-      }
-      _ => {}
-    }
-  }
 }
 
 /// Primary interface for sending commands to the machine and receiving machine commands
@@ -310,14 +196,27 @@ impl Machine {
   }
 
   pub fn clear_watchdog(&self) {
-    self.machine_sender.send(MachineMessage::ClearWatchdog).ok();
-  }
-
-  pub fn reset_expansion_network(&self) {
     self
       .machine_sender
-      .send(MachineMessage::ResetExpansionNetwork)
+      .send(MachineMessage::Request {
+        port: Port::Io,
+        command: Box::new(WatchdogCommand::disable()),
+        timeout: Duration::from_millis(200),
+      })
       .ok();
+  }
+
+  pub fn reset_expansion_network(&self, ctx: &Context) {
+    for board in ctx.exp_network.iter() {
+      self
+        .machine_sender
+        .send(MachineMessage::Request {
+          port: Port::Io,
+          command: Box::new(BoardResetCommand::new(board.address)),
+          timeout: Duration::from_millis(200),
+        })
+        .ok();
+    }
   }
 
   pub fn configure_driver(
@@ -330,7 +229,11 @@ impl Machine {
       let config = mode.to_config(&ctx.switches);
       self
         .machine_sender
-        .send(MachineMessage::ConfigureDriver(driver.id, config))
+        .send(MachineMessage::Request {
+          port: Port::Io,
+          command: Box::new(ConfigureDriverCommand::new(driver.id, config)),
+          timeout: Duration::from_millis(200),
+        })
         .ok();
     }
   }
@@ -342,26 +245,43 @@ impl Machine {
       .and_then(|sw| ctx.switches.by_name(sw))
       .map(|sw| sw.id);
     if let Some(driver) = ctx.drivers.get(driver) {
-      self
-        .machine_sender
-        .send(MachineMessage::ActivateDriver(driver.id, mode, switch))
-        .ok();
+      let control_mode: DriverTriggerControlMode = match mode {
+        ActivationMode::Automatic(_) => DriverTriggerControlMode::Automatic,
+        ActivationMode::Tap => DriverTriggerControlMode::Manual,
+        ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
+      };
+      self.trigger_driver(driver.id, control_mode, switch);
     }
   }
 
   pub fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode, ctx: &Context) {
     if let Some(driver) = ctx.drivers.get(driver) {
-      self
-        .machine_sender
-        .send(MachineMessage::DeactivateDriver(driver.id, mode))
-        .ok();
+      let control_mode: DriverTriggerControlMode = match mode {
+        DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
+        DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
+      };
+      self.trigger_driver(driver.id, control_mode, None);
     }
+  }
+
+  fn trigger_driver(&self, driver: usize, mode: DriverTriggerControlMode, switch: Option<usize>) {
+    self
+      .machine_sender
+      .send(MachineMessage::Dispatch {
+        port: Port::Io,
+        command: Box::new(TriggerDriverCommand::new(driver, mode, switch)),
+      })
+      .ok();
   }
 
   pub fn refresh_switch_state(&self) {
     self
       .machine_sender
-      .send(MachineMessage::ReportSwitches)
+      .send(MachineMessage::Request {
+        port: Port::Io,
+        command: Box::new(ReportSwitchesCommand),
+        timeout: Duration::from_secs(2),
+      })
       .ok();
   }
 
@@ -374,14 +294,23 @@ impl Machine {
     ctx: &Context,
   ) {
     if let Some(switch) = ctx.switches.get(switch) {
+      let reporting = if inverted {
+        SwitchReportingMode::ReportInverted
+      } else {
+        SwitchReportingMode::ReportNormal
+      };
       self
         .machine_sender
-        .send(MachineMessage::ConfigureSwitch(
-          switch.id,
-          inverted,
-          debounce_close,
-          debounce_open,
-        ))
+        .send(MachineMessage::Request {
+          port: Port::Io,
+          command: Box::new(ConfigureSwitchCommand::new(
+            switch.id,
+            reporting,
+            debounce_close,
+            debounce_open,
+          )),
+          timeout: Duration::from_millis(200),
+        })
         .ok();
     }
   }
@@ -393,32 +322,39 @@ impl System for Machine {
     for driver in ctx.drivers.values() {
       self
         .machine_sender
-        .send(MachineMessage::ConfigureDriver(
-          driver.id,
-          DriverConfig::Disabled,
-        ))
+        .send(MachineMessage::Request {
+          port: Port::Io,
+          command: Box::new(ConfigureDriverCommand::new(
+            driver.id,
+            DriverConfig::Disabled,
+          )),
+          timeout: Duration::from_millis(200),
+        })
         .ok();
     }
-
-    // Reset expansion network on shutdown to ensure a clean slate on next startup
-    self
-      .machine_sender
-      .send(MachineMessage::ResetExpansionNetwork)
-      .ok();
   }
 }
 
-#[derive(Debug)]
+pub enum Port {
+  Io,
+  Expansion,
+}
+
 pub enum MachineMessage {
   WatchdogPing,
-  ClearWatchdog,
-  ReportSwitches,
-  ResetExpansionNetwork,
-  ConfigureDriver(usize, DriverConfig),
-  ActivateDriver(usize, ActivationMode, Option<usize>),
-  DeactivateDriver(usize, DeactivationMode),
-  RenderLedDeclarations(HashMap<u64, HashMap<&'static str, LedState>>),
-  ConfigureSwitch(usize, bool, Option<Duration>, Option<Duration>),
+  Dispatch {
+    port: Port,
+    command: Box<dyn FastBinaryCommand>,
+  },
+  Request {
+    port: Port,
+    command: Box<dyn FastAnyRequestCommand>,
+    timeout: Duration,
+  },
+}
+
+fn boxed_request(cmd: impl FastAnyRequestCommand + 'static) -> Box<dyn FastAnyRequestCommand> {
+  Box::new(cmd)
 }
 
 // -- Events --

@@ -1,13 +1,16 @@
+use std::any::Any;
 use std::collections::VecDeque;
 use std::time::Duration;
 
+use fast_protocol::FastAnyRequestCommand;
+use fast_protocol::FastBinaryCommand;
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 use tokio_util::codec::FramedRead;
 
 use crate::machine::fast_codec::FastRawCodec;
-use fast_protocol::FastCommand;
+use fast_protocol::FastRequestCommand;
 use fast_protocol::RawResponse;
 use fast_protocol::{EventResponse, FastResponseError};
 
@@ -143,14 +146,14 @@ impl SerialInterface {
   }
 
   // Send off a command without concern for a response
-  async fn send(&mut self, cmd: &str) {
-    if cmd.starts_with("WD:") {
-      log::trace!("🖥️ -> 👾 : {}", cmd);
+  async fn send(&mut self, cmd: &[u8]) {
+    if cmd.starts_with(b"WD:") {
+      log::trace!("🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
     } else {
-      log::debug!("🖥️ -> 👾 : {}", cmd);
+      log::debug!("🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
     }
 
-    match self.writer.write_all(cmd.as_bytes()).await {
+    match self.writer.write_all(cmd).await {
       Ok(_) => (),
       Err(e) => {
         log::error!("Failed to send on {}: {:?}", self.port_name, e);
@@ -158,37 +161,34 @@ impl SerialInterface {
     }
   }
 
-  pub async fn dispatch<C: FastCommand>(&mut self, cmd: &C) {
-    self.send(&cmd.to_string()).await
+  pub async fn dispatch<C: FastBinaryCommand + ?Sized>(&mut self, cmd: &C) {
+    self.send(&cmd.to_bytes()).await
   }
 
-  /// Send a command and wait for a response to that command
-  pub async fn request<C: FastCommand>(
+  async fn request_inner<R>(
     &mut self,
-    cmd: &C,
+    prefix: &str,
     timeout: Duration,
-  ) -> Result<C::Response, FastResponseError> {
-    self.dispatch(cmd).await;
+    parse: impl Fn(RawResponse) -> Result<R, FastResponseError>,
+  ) -> Result<R, FastResponseError> {
+    let prefix = prefix.to_lowercase();
 
-    // check seen events (response queue) first, as the expected response could have come in on a different request
     if let Some(pos) = self
       .response_queue
       .iter()
-      .position(|r| r.raw.prefix.to_lowercase() == C::prefix())
+      .position(|r| r.raw.prefix.to_lowercase() == prefix)
     {
       let response = self.response_queue.remove(pos).unwrap();
-      return cmd.parse(response.raw);
+      return parse(response.raw);
     }
 
-    // otherwise poll serial port for response
     tokio::time::timeout(timeout, async {
       loop {
         match self.read_from_port().await {
           Some(Ok(response)) => {
-            if response.prefix.to_lowercase() == C::prefix() {
-              return cmd.parse(response);
+            if response.prefix.to_lowercase() == prefix {
+              return parse(response);
             } else {
-              // If the response doesn't match the prefix save it for later processing (it might be an event or something else)
               self.response_queue.push_back(QueuedResponse {
                 raw: response,
                 received_at: std::time::Instant::now(),
@@ -197,7 +197,7 @@ impl SerialInterface {
           }
           Some(Err(e)) => {
             log::error!("Error reading response: {:?}", e);
-            return Err(FastResponseError::UnknownResponse); // ???
+            return Err(FastResponseError::UnknownResponse);
           }
           None => {
             log::error!("Serial stream ended unexpectedly");
@@ -210,23 +210,28 @@ impl SerialInterface {
     .unwrap_or_else(|_| Err(FastResponseError::Timeout))
   }
 
-  /// Keep sending the command until a response comes in
-  pub async fn request_until_match<C: FastCommand, R>(
+  /// Dispatch a command and wait for a response
+  pub async fn request<C: FastRequestCommand>(
     &mut self,
-    cmd: C,
+    cmd: &C,
     timeout: Duration,
-    f: fn(C::Response) -> Option<R>,
-  ) -> R {
-    loop {
-      if let Ok(response) = self.request(&cmd, timeout).await {
-        if let Some(result) = f(response) {
-          return result;
-        }
-      }
+  ) -> Result<C::Response, FastResponseError> {
+    self.dispatch(cmd).await;
+    self
+      .request_inner(C::prefix(), timeout, |raw| cmd.parse(raw))
+      .await
+  }
 
-      // sleep if a match wasn't found
-      tokio::time::sleep(timeout).await;
-    }
+  /// Dispatch a command and wait for a response, but the caller doesn't know the type of the response at compile time
+  pub async fn request_any<C: FastAnyRequestCommand + ?Sized>(
+    &mut self,
+    cmd: &C,
+    timeout: Duration,
+  ) -> Result<Box<dyn Any + Send + Sync>, FastResponseError> {
+    self.dispatch(cmd).await;
+    self
+      .request_inner(cmd.cmd_prefix(), timeout, |raw| cmd.parse_any(raw))
+      .await
   }
 }
 

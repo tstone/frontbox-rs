@@ -30,20 +30,17 @@ impl Hardware {
 
   /// Read the hardware state of all switches at startup to initialize the switch context
   pub async fn get_initial_switch_states(io_port: &mut SerialInterface) -> Vec<SwitchState> {
-    io_port
-      .request_until_match(
-        ReportSwitchesCommand::new(),
-        Duration::from_millis(2000),
-        |resp| {
-          if let SwitchReportResponse::SwitchReport { switches } = resp {
-            log::debug!("🥾 Initial switch states: {:?}", switches);
-            Some(switches)
-          } else {
-            None
-          }
-        },
-      )
+    match io_port
+      .request(&ReportSwitchesCommand, Duration::from_millis(2000))
       .await
+      .unwrap()
+    {
+      SwitchReportResponse::SwitchReport { switches } => switches,
+      other => panic!(
+        "Unexpected response while requesting initial switch states: {:?}",
+        other
+      ),
+    }
   }
 
   pub async fn configure_drivers(
@@ -56,7 +53,7 @@ impl Hardware {
         log::info!("Configuring driver {} with {:?}", driver.name, mode);
         match io_port
           .request(
-            &ConfigureDriverCommand::new(&driver.id, &mode.to_config(switch_lookup)),
+            &ConfigureDriverCommand::new(driver.id, mode.to_config(switch_lookup)),
             Duration::from_millis(500),
           )
           .await
@@ -134,6 +131,7 @@ impl Hardware {
               tags: illum.tags().clone(),
               coordinates: illum.coordinates().clone(),
               global_indexes: (offset..offset + illum.led_count() as u16).collect_vec(),
+              source: illum.clone(),
             });
           }
           resolved_ports.push(ResolvedLedPort {

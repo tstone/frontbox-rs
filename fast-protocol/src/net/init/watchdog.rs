@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct WatchdogCommand {
   duration: Option<Duration>,
 }
@@ -26,19 +27,21 @@ impl WatchdogCommand {
   }
 }
 
-impl FastCommand for WatchdogCommand {
-  type Response = WatchdogResponse;
-
-  fn prefix() -> &'static str {
-    "wd"
-  }
-
+impl FastStringCommand for WatchdogCommand {
   fn to_string(&self) -> String {
     match self.duration {
       // Convert decimal to hex string for milliseconds
       Some(dur) => format!("WD:{:X}\r", dur.as_millis()),
       None => "WD:\r".to_string(),
     }
+  }
+}
+
+impl FastRequestCommand for WatchdogCommand {
+  type Response = WatchdogResponse;
+
+  fn prefix() -> &'static str {
+    "wd"
   }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {

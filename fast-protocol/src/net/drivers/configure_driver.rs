@@ -3,24 +3,19 @@ use crate::net::prelude::*;
 use crate::*;
 
 /// Configure a driver in Fast IO boards (DL)
-pub struct ConfigureDriverCommand<'a> {
-  driver_id: &'a usize,
-  config: &'a DriverConfig,
+#[derive(Debug, Clone)]
+pub struct ConfigureDriverCommand {
+  driver_id: usize,
+  config: DriverConfig,
 }
 
-impl ConfigureDriverCommand<'_> {
-  pub fn new<'a>(driver_id: &'a usize, config: &'a DriverConfig) -> ConfigureDriverCommand<'a> {
+impl ConfigureDriverCommand {
+  pub fn new(driver_id: usize, config: DriverConfig) -> ConfigureDriverCommand {
     ConfigureDriverCommand { driver_id, config }
   }
 }
 
-impl FastCommand for ConfigureDriverCommand<'_> {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
-    "dl"
-  }
-
+impl FastStringCommand for ConfigureDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/dl/
     match self.config {
@@ -196,6 +191,14 @@ impl FastCommand for ConfigureDriverCommand<'_> {
       }
     }
   }
+}
+
+impl FastRequestCommand for ConfigureDriverCommand {
+  type Response = ProcessedResponse;
+
+  fn prefix() -> &'static str {
+    "dl"
+  }
 
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
     if raw.payload.to_lowercase() == "p" {
@@ -225,7 +228,7 @@ mod tests {
       secondary_pwm_power: Power::percent(50),
       rest: Duration::from_millis(500),
     };
-    let request_str = ConfigureDriverCommand::new(&10, &config).to_string();
+    let request_str = ConfigureDriverCommand::new(10, config).to_string();
     assert_eq!(request_str, "DL:A,91,5,10,64,FF,32,7F,1F4\r");
   }
 }

@@ -72,26 +72,21 @@ impl App {
 
   /// wait for the mainboard to be ready to respond
   async fn boot_mainboard(io_port: &mut SerialInterface) {
-    let _ = io_port
-      .request_until_match(IdCommand::new(), Duration::from_millis(500), |response| {
-        if let IdResponse::Report {
-          processor,
-          product_number,
-          firmware_version,
-        } = response
-        {
-          log::info!(
-            "🥾 Connected to mainboard {} {} with firmware: {}",
-            processor,
-            product_number,
-            firmware_version
-          );
-          Some(true)
-        } else {
-          None
+    loop {
+      match io_port
+        .request(&IdCommand::new(), Duration::from_millis(500))
+        .await
+      {
+        Ok(IdResponse::Report { .. }) => {
+          log::info!("🥾 Mainboard is ready");
+          break;
         }
-      })
-      .await;
+        _ => {
+          log::debug!("Mainboard not ready, retrying...");
+          tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+      };
+    }
   }
 
   async fn configure_hardware(io_port: &mut SerialInterface, platform: FastPlatform) {
@@ -109,17 +104,23 @@ impl App {
 
   /// Verify the watchdog is responsive. Sometimes the first few commands will fail.
   async fn verify_watchdog(io_port: &mut SerialInterface) {
-    let _ = io_port.request_until_match(
-      WatchdogCommand::set(Duration::from_millis(1250)),
-      Duration::from_secs(1),
-      |resp| match resp {
-        WatchdogResponse::Processed => {
+    loop {
+      match io_port
+        .request(
+          &WatchdogCommand::set(Duration::from_millis(1250)),
+          Duration::from_secs(1),
+        )
+        .await
+      {
+        Ok(WatchdogResponse::Processed) => {
           log::info!("🥾 Watchdog is ready");
-          Some(true)
+          break;
         }
-        _ => None,
-      },
-    );
+        _ => {
+          tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+      };
+    }
   }
 
   async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchDefinition>) {
@@ -188,14 +189,12 @@ impl App {
     };
 
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
-    let led_renderer = LedRenderer::new(&context_base.exp_network);
 
     let mut machine = MachineImpl::new(
       self.io_port,
       self.exp_port,
       context_base.clone(),
       app_sender.clone(),
-      led_renderer,
     );
     let machine_sender = machine.machine_sender();
 
