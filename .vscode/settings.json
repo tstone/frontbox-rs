@@ -3,6 +3,7 @@
     "accumulatable",
     "autoplunge",
     "Autoplunger",
+    "crossfade",
     "despawn",
     "despawned",
     "downcasting",
@@ -12,9 +13,11 @@
     "lerps",
     "mainboard",
     "millis",
+    "neoseg",
     "playfield",
     "Spawnable",
     "startable",
-    "Tweenable"
+    "Tweenable",
+    "unduck"
   ]
 }

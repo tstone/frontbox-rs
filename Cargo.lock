@@ -655,6 +655,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontbox-neoseg"
+version = "0.1.0"
+dependencies = [
+ "frontbox",
+ "log",
+]
+
+[[package]]
 name = "frontbox-pin2dmd"
 version = "0.1.0"
 dependencies = [

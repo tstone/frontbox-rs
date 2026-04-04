@@ -4,6 +4,7 @@ members = [
     "frontbox",
     "frontbox-derive",
     "frontbox-pin2dmd",
+    "frontbox-neoseg",
     "frontbox-sound",
     "frontbox-turn-based",
 ]
