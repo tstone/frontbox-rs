@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use fast_protocol::*;
+use itertools::Itertools;
 
 use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
@@ -9,7 +10,7 @@ pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
   pub io_network: Vec<IoBoard>,
-  pub exp_network: Vec<ExpansionBoard>,
+  pub exp_network: Vec<ResolvedExpansionBoard>,
 }
 
 impl Hardware {
@@ -17,7 +18,7 @@ impl Hardware {
     switches: SwitchLookup,
     drivers: DriverLookup,
     io_network: Vec<IoBoard>,
-    exp_network: Vec<ExpansionBoard>,
+    exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     Self {
       switches,
@@ -76,14 +77,17 @@ impl Hardware {
 
   pub async fn reset_expansion_boards(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoard>,
+    expansion_boards: &Vec<ResolvedExpansionBoard>,
   ) {
     for board in expansion_boards {
       Self::reset_expansion_board(exp_port, board).await;
     }
   }
 
-  pub async fn reset_expansion_board(exp_port: &mut SerialInterface, board: &ExpansionBoard) {
+  pub async fn reset_expansion_board(
+    exp_port: &mut SerialInterface,
+    board: &ResolvedExpansionBoard,
+  ) {
     if board.breakout.is_none() {
       log::info!("Resetting expansion board at address {:X}", board.address);
       match exp_port
@@ -109,29 +113,82 @@ impl Hardware {
     }
   }
 
+  /// Take the user-defined expansion board configurations and resolve actual hardware indexes/addresses
+  pub fn resolve_expansion_boards(
+    expansion_boards: &Vec<ExpansionBoard>,
+  ) -> Vec<ResolvedExpansionBoard> {
+    let mut resolved_boards = Vec::new();
+    for board in expansion_boards {
+      let mut resolved_ports = Vec::new();
+      let mut offset = 0;
+
+      // sum up actual LEDs present and calculate index offsets
+      for idx in 0..board.hardware_led_port_count.unwrap_or(0) {
+        if let Some(port) = board.led_ports.get(&idx) {
+          let mut port_led_total_count: u8 = 0;
+          let mut resolved_illuminations = Vec::new();
+          for illum in &port.illuminations {
+            port_led_total_count += illum.led_count();
+            resolved_illuminations.push(ResolvedIllumination {
+              name: illum.name(),
+              tags: illum.tags().clone(),
+              coordinates: illum.coordinates().clone(),
+              global_indexes: (offset..offset + illum.led_count() as u16).collect_vec(),
+            });
+          }
+          resolved_ports.push(ResolvedLedPort {
+            led_type: port.led_type.clone(),
+            start: offset,
+            length: port_led_total_count,
+            illuminations: resolved_illuminations,
+          });
+
+          offset += port_led_total_count as u16;
+        } else {
+          // no port defined = assume the default (32 LEDs)
+          resolved_ports.push(ResolvedLedPort {
+            led_type: LedType::WS2812,
+            start: offset,
+            length: 32,
+            illuminations: Vec::new(),
+          });
+          offset += 32;
+        }
+      }
+
+      resolved_boards.push(ResolvedExpansionBoard {
+        address: board.address,
+        breakout: board.breakout,
+        led_ports: resolved_ports,
+      });
+    }
+    resolved_boards
+  }
+
   pub async fn configure_led_ports(
     exp_port: &mut SerialInterface,
-    expansion_boards: &Vec<ExpansionBoard>,
+    expansion_boards: &Vec<ResolvedExpansionBoard>,
   ) {
     for board in expansion_boards {
-      for led_port in &board.led_ports {
-        Self::configure_led_port(exp_port, board, led_port).await;
+      for (port_index, led_port) in board.led_ports.iter().enumerate() {
+        Self::configure_led_port(exp_port, board, port_index as u8, led_port).await;
       }
     }
   }
 
   pub async fn configure_led_port(
     exp_port: &mut SerialInterface,
-    board: &ExpansionBoard,
-    led_port: &LedPort,
+    board: &ResolvedExpansionBoard,
+    port_index: u8,
+    led_port: &ResolvedLedPort,
   ) {
     let cmd = ConfigureLedPortCommand::new(
       board.address,
       board.breakout,
-      led_port.port,
+      port_index,
       led_port.led_type.clone(),
-      led_port.start,
-      led_port.leds.len() as u8,
+      led_port.length,
+      led_port.length,
     );
     // configure port/block
     let _ = exp_port.request(&cmd, Duration::from_millis(250)).await;

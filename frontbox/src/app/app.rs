@@ -47,6 +47,7 @@ impl App {
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
 
+    let expansion_boards = Hardware::resolve_expansion_boards(&expansion_boards);
     Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
     Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
@@ -198,7 +199,7 @@ impl App {
     );
     let machine_sender = machine.machine_sender();
 
-    // These systems need to apoear first because other systems expect them to be present on startup
+    // These systems need to appear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine_sender.clone());
     self.systems.insert(
       0,

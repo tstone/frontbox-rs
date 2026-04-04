@@ -7,7 +7,7 @@ pub struct ContextBase {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
   pub io_network: Vec<IoBoard>,
-  pub exp_network: Vec<ExpansionBoard>,
+  pub exp_network: Vec<ResolvedExpansionBoard>,
   pub(crate) app_config: AppConfig,
 }
 
