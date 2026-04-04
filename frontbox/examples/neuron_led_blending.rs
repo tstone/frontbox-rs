@@ -20,7 +20,7 @@ async fn main() {
 
   let expansion_boards = vec![ExpansionBoard::neutron().with_led_port(LedPort {
     port: 0,
-    start: 0,
+    led_count: 0,
     led_type: LedType::WS2812,
     leds: vec![leds::DEMO1],
   })];

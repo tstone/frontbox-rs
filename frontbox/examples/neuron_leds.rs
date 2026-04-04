@@ -20,12 +20,21 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards = vec![ExpansionBoard::neutron().with_led_port(LedPort {
-    port: 0,
-    start: 0,
-    led_type: LedType::WS2812,
-    leds: vec![leds::DEMO1, leds::DEMO2, leds::DEMO3, leds::DEMO4],
-  })];
+  let expansion_boards = vec![
+    ExpansionBoard::neutron()
+      .port(
+        0,
+        LedPort::ws2812()
+          .with(led(leds::DEMO1).tagged(tags::ActionButton))
+          .with(led(leds::DEMO2).coords(15.5, 10.3))
+          .with(led(leds::DEMO3).coords(1.0, 1.0))
+          .with(led(leds::DEMO4).tagged(tags::StartButton).coords(5.0, 5.0)),
+      )
+      .port(
+        1,
+        LedPort::ws2812().with(led_strip("example", 8).coords(7, 1.45, 3.8)),
+      ),
+  ];
 
   App::boot(
     BootConfig::default(),

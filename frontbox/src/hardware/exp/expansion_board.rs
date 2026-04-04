@@ -1,29 +1,36 @@
-use serde::Serialize;
+use std::collections::HashMap;
 
+use crate::ResolvedLedPort;
 use crate::hardware::exp::LedPort;
-use crate::prelude::{Storable, StorableHashSet};
 
-#[derive(Debug, Clone, Serialize, Storable, Hash, PartialEq, Eq)]
+#[derive(Debug)]
 #[allow(dead_code)]
 pub struct ExpansionBoard {
   pub address: u8,
   pub breakout: Option<u8>,
-  pub led_ports: Vec<LedPort>,
+  pub hardware_led_port_count: Option<u8>,
+  pub led_ports: HashMap<u8, LedPort>,
 }
 
-pub type ExpansionBoards = StorableHashSet<ExpansionBoard>;
+#[derive(Debug, Clone)]
+pub struct ResolvedExpansionBoard {
+  pub address: u8,
+  pub breakout: Option<u8>,
+  pub led_ports: Vec<ResolvedLedPort>,
+}
 
 impl ExpansionBoard {
-  pub fn custom(address: &'static str, breakout: Option<u8>) -> Self {
+  pub fn new(address: &'static str, led_port_count: Option<u8>, breakout: Option<u8>) -> Self {
     Self {
       address: u8::from_str_radix(address, 16).unwrap(),
       breakout,
-      led_ports: Vec::new(),
+      hardware_led_port_count: led_port_count,
+      led_ports: HashMap::new(),
     }
   }
 
   pub fn neutron() -> Self {
-    Self::custom("48", None)
+    Self::new("48", Some(4), None)
   }
 
   // TODO: fp_exp0051
@@ -38,7 +45,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "93",
     };
 
-    Self::custom(address, None)
+    Self::new(address, Some(4), None)
   }
 
   /// 4 servos, 128 LEDs
@@ -50,7 +57,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "B7",
     };
 
-    Self::custom(address, None)
+    Self::new(address, Some(4), None)
   }
 
   /// 256 LEDs
@@ -62,7 +69,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "87",
     };
 
-    Self::custom(address, None)
+    Self::new(address, Some(8), None)
   }
 
   pub fn fp_exp0091(jumper_0: JumperState, jumper_1: JumperState) -> Self {
@@ -73,7 +80,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "8B",
     };
 
-    Self::custom(address, None)
+    Self::new(address, Some(4), None)
   }
 
   /// shaker motor
@@ -85,11 +92,31 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "33",
     };
 
-    Self::custom(address, None)
+    Self::new(address, None, None)
   }
 
-  pub fn with_led_port(mut self, port: LedPort) -> Self {
-    self.led_ports.push(port);
+  pub fn port(mut self, index: u8, port: LedPort) -> Self {
+    // Verify this port is valid
+    if self.hardware_led_port_count.is_none() {
+      panic!(
+        "Cannot add LED port to board {:X} because it does not support LED ports",
+        self.address
+      );
+    } else if index > self.hardware_led_port_count.unwrap() {
+      panic!(
+        "LED port index {} exceeds hardware limit of {} for board {:X}",
+        index,
+        self.hardware_led_port_count.unwrap(),
+        self.address
+      );
+    } else if self.led_ports.contains_key(&index) {
+      panic!(
+        "LED port index {} is already occupied on board {:X}",
+        index, self.address
+      );
+    }
+
+    self.led_ports.insert(index, port);
     self
   }
 }
