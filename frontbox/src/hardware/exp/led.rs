@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{HardwareTag, Illumination};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Led {
   name: &'static str,
   tags: Vec<Box<dyn HardwareTag>>,
