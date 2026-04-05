@@ -1,3 +1,10 @@
+LEDs
+
+- LedSystem tests
+- Introduce idea of "scopes" e.g. `let leds = systems.expect_mut::<LedSystem>().scope(ctx.current_system_id())`
+- Implement binary versions of LED commands
+- Single channel flasher support
+
 System
 
 - Get neuron version and check >= rev 6 to support ER
@@ -24,12 +31,3 @@ Displays (as a System)
 
 - FAST LED canvas
 - NeoSeg support
-
-LEDs
-
-- A nice way of setting LEDs based on state of another system
-- LedSystem tests
-- Introduce idea of "scopes" e.g. `let leds = systems.expect_mut::<LedSystem>().scope(ctx.current_system_id())`
-- Implement binary versions of LED commands
-- Single channel flasher support
-- Modulators + lenses -- Allow any property to be modulated
