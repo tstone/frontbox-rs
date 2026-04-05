@@ -16,6 +16,15 @@ impl AutoPlunger {
     }
   }
 
+  pub fn is_ball_in_trough(&self, ctx: &Context) -> bool {
+    for switch in self.lane_switch.get_switches(ctx) {
+      if ctx.switches.is_closed(switch.name) == Some(true) {
+        return true;
+      }
+    }
+    false
+  }
+
   /// Fire the autoplunger immediately
   fn activate(&mut self, ctx: &Context, systems: &Systems) {
     for driver in self.coil.get_drivers(ctx) {
