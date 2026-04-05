@@ -6,8 +6,6 @@ use crate::GameManager;
 /// A system to flash elements like the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
   start_button_driver: Option<HardwareSelection>,
-  action_button_led: Option<&'static str>, // TODO: this should take the LED name and require both (combine name with LedSetting?)
-  action_button_setting: Option<LedSetting>,
   flash_duration: Duration,
 }
 
@@ -15,24 +13,12 @@ impl StartableFlasher {
   pub fn new() -> Self {
     Self {
       start_button_driver: Some(HardwareSelection::tag::<StartButton>()),
-      action_button_led: None, // TODO: hardware selection based on tag
-      action_button_setting: None,
       flash_duration: Duration::from_millis(185),
     }
   }
 
   pub fn start_button_driver(mut self, driver: HardwareSelection) -> Self {
     self.start_button_driver = Some(driver);
-    self
-  }
-
-  pub fn action_button_led(mut self, led: &'static str) -> Self {
-    self.action_button_led = Some(led);
-    self
-  }
-
-  pub fn action_button_setting(mut self, setting: LedSetting) -> Self {
-    self.action_button_setting = Some(setting);
     self
   }
 
@@ -94,22 +80,5 @@ impl System for StartableFlasher {
     } else if let Some(_) = event.downcast_ref::<Off>() {
       self.start_btn_off(ctx, systems);
     }
-  }
-
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    _ctx: &Context,
-    _systems: &Systems,
-  ) -> std::collections::HashMap<&'static str, LedState> {
-    match (self.action_button_led, self.action_button_setting.as_mut()) {
-      (Some(button), Some(setting)) => {
-        let builder = LedDeclarationBuilder::new(delta_time);
-        return setting.add_declaration(builder, button).collect();
-      }
-      _ => {}
-    }
-
-    LedDeclarationBuilder::empty()
   }
 }
