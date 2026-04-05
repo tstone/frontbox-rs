@@ -1,6 +1,5 @@
 use fast_protocol::Color;
 
-use crate::animation::Animation;
 use crate::prelude::*;
 
 pub fn named_led(ctx: &Context, name: &str) -> NamedLed {
@@ -25,10 +24,6 @@ impl NamedLed {
       color,
       z_index: self.z_index,
     }
-  }
-
-  pub fn sample<A>(self, anim: &Box<dyn Animation<A, Color>>) -> NamedLedDeclaration {
-    self.color(anim.sample())
   }
 
   pub fn z_index(mut self, z: i8) -> Self {

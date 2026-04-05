@@ -2,7 +2,7 @@ use fast_protocol::Color;
 
 use crate::AddressableLed;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LedDeclarations {
   pub pairings: Vec<(AddressableLed, Option<Color>)>,
   pub z_index: i8,
@@ -12,6 +12,22 @@ impl LedDeclarations {
   pub fn new(pairings: Vec<(AddressableLed, Option<Color>)>, z_index: i8) -> Self {
     Self { pairings, z_index }
   }
+
+  /// Update all defined colors to the provided color, leaving any uncolored LEDs unchanged.
+  pub fn recolor(self, color: Color) -> Self {
+    let recolored_pairings = self
+      .pairings
+      .into_iter()
+      .map(|(led, old_color)| match old_color {
+        Some(_) => (led, Some(color)),
+        None => (led, None),
+      })
+      .collect();
+    Self {
+      pairings: recolored_pairings,
+      z_index: self.z_index,
+    }
+  }
 }
 
 impl From<(AddressableLed, Option<Color>)> for LedDeclarations {
@@ -20,7 +36,7 @@ impl From<(AddressableLed, Option<Color>)> for LedDeclarations {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LedIdentifications {
   pub leds: Vec<AddressableLed>,
   pub z_index: i8,

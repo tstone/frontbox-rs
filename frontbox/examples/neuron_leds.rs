@@ -52,27 +52,27 @@ struct LedExample {
 impl LedExample {
   fn new() -> Self {
     Self {
-      flash: Tween::new(
+      flash: Tween::boxed(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
         vec![Color::black(), Color::purple()],
         AnimationCycle::Forever,
       ),
-      seq: Sequence::new(
+      seq: Sequence::boxed(
         vec![
-          Tween::new(
+          Tween::boxed(
             Duration::from_millis(1500),
             Curve::QuadraticInOut,
             vec![Color::black(), Color::red()],
             AnimationCycle::Once,
           ),
-          Tween::new(
+          Tween::boxed(
             Duration::from_millis(200),
             Curve::Sinusoid,
             vec![Color::red(), Color::yellow()],
             AnimationCycle::Once,
           ),
-          Tween::new(
+          Tween::boxed(
             Duration::from_millis(400),
             Curve::Linear,
             vec![Color::yellow(), Color::black()],
@@ -110,10 +110,8 @@ impl System for LedExample {
     // re-declare LEDs with updated animated colors
     leds.declare(
       ctx.current_system_id(),
-      named_led(ctx, leds::DEMO3).sample(&self.flash),
+      named_led(ctx, leds::DEMO3).color(self.flash.sample()),
     );
-
-    // anim.sample can also be used manually
     leds.declare(
       ctx.current_system_id(),
       named_led(ctx, leds::DEMO4).color(self.seq.sample()),

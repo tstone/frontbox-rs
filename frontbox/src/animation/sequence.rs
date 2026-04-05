@@ -10,16 +10,21 @@ pub struct Sequence<A, T> {
 }
 
 impl<A, T> Sequence<A, T> {
-  pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Box<Self> {
-    Box::new(Self {
+  pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Self {
+    Self {
       sequence,
       current_anim_index: 0,
       cycle,
       cycle_count: 0,
-    })
+    }
   }
 
-  fn reset_anims(&mut self) {
+  pub fn boxed(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Box<Self> {
+    Box::new(Self::new(sequence, cycle))
+  }
+
+  /// Reset all child animations
+  fn reset_all(&mut self) {
     for anim in &mut self.sequence {
       anim.reset();
     }
@@ -43,7 +48,7 @@ where
             self.cycle_count += 1;
           }
           self.current_anim_index = 0;
-          self.reset_anims();
+          self.reset_all();
         }
 
         // roll over extra time to next animation, if any
@@ -75,7 +80,7 @@ where
   fn reset(&mut self) {
     self.current_anim_index = 0;
     self.cycle_count = 0;
-    self.reset_anims();
+    self.reset_all();
   }
 }
 

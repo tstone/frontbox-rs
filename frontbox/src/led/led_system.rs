@@ -24,7 +24,22 @@ impl LedSystem {
     }
   }
 
+  /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
   pub fn declare(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
+    self.declare_inner(owning_system, declarations, true);
+  }
+
+  /// Same as declare but doesn't render until activate_by_system is called. Useful for systems that want to prepare declarations in advance and activate them all at once later.
+  pub fn declare_inactive(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
+    self.declare_inner(owning_system, declarations, false);
+  }
+
+  fn declare_inner(
+    &mut self,
+    owning_system: u64,
+    declarations: impl Into<LedDeclarations>,
+    active: bool,
+  ) {
     let declarations: LedDeclarations = declarations.into();
     for (led, color) in declarations.pairings {
       // A color value of None is the same as undeclaring
@@ -35,7 +50,7 @@ impl LedSystem {
 
       let declaration = StatefulLedDeclaration {
         owning_system,
-        active: true,
+        active,
         color: color.unwrap(),
         z_index: declarations.z_index,
       };

@@ -22,10 +22,10 @@ where
   T: Lerp + Clone + Send + Sync,
   A: Tweenable + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
 {
-  pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
+  pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Self {
     assert!(stops.len() >= 2, "Tween requires at least 2 stops");
 
-    Box::new(Self {
+    Self {
       target: target.div_usize(stops.len() - 1),
       current: A::default(),
       curve,
@@ -33,7 +33,11 @@ where
       cycle,
       cycle_count: 0,
       current_stop_index: 0,
-    })
+    }
+  }
+
+  pub fn boxed(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
+    Box::new(Self::new(target, curve, stops, cycle))
   }
 
   fn next_index(&self) -> usize {
