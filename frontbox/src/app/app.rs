@@ -56,6 +56,7 @@ impl App {
     let hardware = Hardware::new(
       switch_lookup,
       DriverLookup::new(io_network.drivers),
+      IlluminationLookup::new(&expansion_boards),
       io_network.boards,
       expansion_boards,
     );
@@ -183,6 +184,7 @@ impl App {
     let context_base = ContextBase {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
+      illuminations: self.hardware.illuminations,
       io_network: self.hardware.io_network,
       exp_network: self.hardware.exp_network,
       app_config: self.app_config,
@@ -196,10 +198,9 @@ impl App {
       context_base.clone(),
       app_sender.clone(),
     );
-    let machine_sender = machine.machine_sender();
 
     // These systems need to appear first because other systems expect them to be present on startup
-    let bridge = Machine::new(machine_sender.clone());
+    let bridge = Machine::new(machine.sender());
     self.systems.insert(
       0,
       SystemContainer::new(OperatorConfig::new(self.operator_config)),
@@ -213,23 +214,17 @@ impl App {
     });
 
     log::debug!("Starting main run loop");
-    run_loop::run(
-      context_base,
-      self.systems,
-      app_sender,
-      app_receiver,
-      machine_sender,
-    )
-    .await;
+    run_loop::run(context_base, self.systems, app_sender, app_receiver).await;
   }
 }
 
-#[derive(Debug, Clone, Serialize, Storable)]
+#[derive(Debug, Clone)]
 pub struct AppConfig {
   /// The interval at which `on_tick` runs, which in turn affects timers and LED + display render speed
   pub system_interval: Duration,
   /// The interval at which the watchdog is pinged (keep alive)
   pub watchdog_interval: Duration,
+  pub canvas: Option<Canvas>,
 }
 
 impl Default for AppConfig {
@@ -237,6 +232,14 @@ impl Default for AppConfig {
     Self {
       system_interval: Duration::from_millis(41),
       watchdog_interval: Duration::from_millis(1000),
+      canvas: None,
     }
   }
+}
+
+#[derive(Debug, Clone)]
+pub struct Canvas {
+  pub width: f32,
+  pub height: f32,
+  pub dpi: f32, // default: 2.5
 }

@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::HashMap;
 use std::time::Duration;
 
 use dyn_clone::DynClone;
@@ -15,30 +14,37 @@ use crate::prelude::*;
 pub trait System: Any {
   /// Called when the system is first started up
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {}
-  /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
-  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {}
-  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
-  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {}
   /// Called when the system is removed
   fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {}
 
+  /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
+  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
+    if let Some(mut led_system) = systems.get_mut::<LedSystem>() {
+      led_system.deactivate_by_system(ctx.current_system_id());
+    }
+  }
+
+  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
+  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {
+    if let Some(mut led_system) = systems.get_mut::<LedSystem>() {
+      led_system.activate_by_system(ctx.current_system_id());
+    }
+  }
+
+  /// On tick is called every system tick, which is typically 30-60Hz, but can be configured by the app. This is where most of the game logic should go.
   fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {}
+  /// On render is called every system tick after on_tick, and is where rendering (LEDs, DMD, screen, etc.) should be handled since on_tick processed all state needed for rendering.
+  fn on_render(&mut self, ctx: &Context, systems: &Systems) {}
+
+  /// Called when an event is emitted into the system (switch press, game state change, etc.)
   fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {}
+  /// Invoked by the framework to handle an potential interrupt
   fn on_interrupt(&mut self, event: &dyn Event, ctx: &Context) -> InterruptResult {
     InterruptResult::Continue
   }
 
   fn is_active(&self, ctx: &Context, systems: &Systems) -> bool {
     true
-  }
-
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    ctx: &Context,
-    systems: &Systems,
-  ) -> HashMap<&'static str, LedState> {
-    HashMap::new()
   }
 }
 

@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use fast_protocol::Color;
 
-use crate::{HardwareTag, Illumination};
+use crate::{Bitmap, HardwareTag, Illumination, Point, RenderableGeom};
 
 #[derive(Debug, Clone)]
 pub struct Led {
   name: &'static str,
   tags: Vec<Box<dyn HardwareTag>>,
-  coordinates: HashMap<u8, (f32, f32)>,
+  geom: Option<RenderableGeom>,
 }
 
 impl Led {
@@ -14,7 +14,7 @@ impl Led {
     Self {
       name,
       tags: Vec::new(),
-      coordinates: HashMap::new(),
+      geom: None,
     }
   }
 
@@ -23,8 +23,11 @@ impl Led {
     self
   }
 
-  pub fn coords(mut self, x: f32, y: f32) -> Self {
-    self.coordinates.insert(0, (x, y));
+  pub fn geom(mut self, x: f32, y: f32, diam: f32) -> Self {
+    self.geom = Some(RenderableGeom::Circle {
+      center: Point(x, y),
+      radius: diam / 2.0,
+    });
     self
   }
 }
@@ -38,12 +41,25 @@ impl Illumination for Led {
     &self.tags
   }
 
-  fn coordinates(&self) -> &HashMap<u8, (f32, f32)> {
-    &self.coordinates
+  fn geom(&self) -> Option<&RenderableGeom> {
+    self.geom.as_ref()
   }
 
   fn led_count(&self) -> u8 {
     1
+  }
+
+  fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<fast_protocol::Color> {
+    // Use the center pixel's color for the whole LED since it's just a single point
+    let center_x = bitmap.width as f32 / 2.0;
+    let center_y = bitmap.height as f32 / 2.0;
+    let center_index =
+      (center_y.floor() as usize * bitmap.width as usize + center_x.floor() as usize) * 3;
+    vec![Color::rgb(
+      bitmap.data[center_index],
+      bitmap.data[center_index + 1],
+      bitmap.data[center_index + 2],
+    )]
   }
 }
 

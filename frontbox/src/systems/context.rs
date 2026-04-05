@@ -25,6 +25,10 @@ impl<'a> Context<'a> {
     }
   }
 
+  pub fn current_system_id(&self) -> u64 {
+    self.system_id
+  }
+
   pub fn emit<E: Event>(&self, event: E) {
     log::debug!("📨 Emitting event {}", type_name::<E>());
     self

@@ -19,7 +19,6 @@ pub async fn run(
   initial_systems: Vec<SystemContainer>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
-  machine_sender: mpsc::UnboundedSender<MachineMessage>,
 ) {
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut sc = SystemCollection {
@@ -51,7 +50,7 @@ pub async fn run(
             emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
-            handle_system_tick(&mut sc, &base, &app_sender, &machine_sender).await;
+            handle_system_tick(&mut sc, &base, &app_sender).await;
           }
           AppMessage::RegisterInterrupt(system_id, type_id, priority) => {
             interrupt_registry.register(type_id, system_id, priority);
@@ -223,7 +222,6 @@ async fn handle_system_tick(
   systems: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
-  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
 ) {
   let tick_duration = base.system_interval;
 
@@ -231,7 +229,9 @@ async fn handle_system_tick(
     system.on_tick(tick_duration, ctx, systems);
   });
 
-  render_all_leds(systems, base, tick_duration, app_sender, machine_sender);
+  apply_to_systems(systems, base, &app_sender, |system, ctx, systems| {
+    system.on_render(ctx, systems);
+  });
 }
 
 fn spawn_system(
@@ -424,46 +424,4 @@ fn deactivate_system_group(
 
 fn unregister_all_by_system(system_id: u64, interrupt_registry: &mut EventInterruptRegistry) {
   interrupt_registry.unregister_by_system(system_id);
-}
-
-// TODO: eliminate this in favor of just invoking a `declare_led` function on an LedSystem
-fn render_all_leds(
-  sc: &mut SystemCollection,
-  base: &ContextBase,
-  tick_interval: Duration,
-  app_sender: &mpsc::UnboundedSender<AppMessage>,
-  machine_sender: &mpsc::UnboundedSender<MachineMessage>,
-) {
-  let system_ids = sc.systems.ids().copied().collect_vec();
-  let mut declarations = HashMap::new();
-
-  // gather LED declarations from all active systems and child systems (within)
-  for system_id in system_ids {
-    if let Some(cell) = sc.systems.lease(system_id) {
-      {
-        let mut system = cell.borrow_mut();
-        let mut ctx = Context::new(base, system.id(), app_sender.clone());
-        if system.handle_active(&mut ctx, &sc.systems) {
-          declarations.insert(system.id(), system.leds(tick_interval, &ctx, &sc.systems));
-        } else {
-          log::trace!("System {} is inactive, skipping LED rendering", system.id());
-        }
-      }
-      sc.systems.reinsert(system_id, cell);
-    }
-  }
-  for group in sc.groups.values_mut() {
-    for mut system in group.systems.values_mut() {
-      let mut ctx = Context::new(base, system.id(), app_sender.clone());
-      if system.handle_active(&mut ctx, &sc.systems) {
-        declarations.insert(system.id(), system.leds(tick_interval, &ctx, &sc.systems));
-      } else {
-        log::trace!("System {} is inactive, skipping LED rendering", system.id());
-      }
-    }
-  }
-
-  machine_sender
-    .send(MachineMessage::RenderLedDeclarations(declarations))
-    .ok();
 }

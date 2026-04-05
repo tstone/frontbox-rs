@@ -67,6 +67,20 @@ impl HardwareSelection {
     }
   }
 
+  pub fn matches_illumination(&self, illumination: &AddressableIllumination) -> bool {
+    match self {
+      Self::Name(name) => illumination.name() == *name,
+      Self::Group(names) => names.contains(&illumination.name()),
+      Self::Tag(tag) => illumination.has_typed_tag(*tag),
+      Self::And(left, right) => {
+        left.matches_illumination(illumination) && right.matches_illumination(illumination)
+      }
+      Self::Or(left, right) => {
+        left.matches_illumination(illumination) || right.matches_illumination(illumination)
+      }
+    }
+  }
+
   pub fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch> {
     ctx.switches.by_selection(&self)
   }
@@ -74,11 +88,20 @@ impl HardwareSelection {
   pub fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver> {
     ctx.drivers.by_selection(&self)
   }
+
+  pub fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination> {
+    ctx
+      .illuminations
+      .values()
+      .filter(|illum| self.matches_illumination(illum))
+      .collect()
+  }
 }
 
 pub trait HardwareTagExt {
   fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch>;
   fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver>;
+  fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination>;
 }
 
 impl HardwareTagExt for Option<HardwareSelection> {
@@ -93,6 +116,13 @@ impl HardwareTagExt for Option<HardwareSelection> {
     self
       .as_ref()
       .map(|sel| sel.get_drivers(ctx))
+      .unwrap_or_default()
+  }
+
+  fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination> {
+    self
+      .as_ref()
+      .map(|sel| sel.get_illuminations(ctx))
       .unwrap_or_default()
   }
 }

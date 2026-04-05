@@ -33,6 +33,31 @@ impl Color {
     Self { r, g, b, w }
   }
 
+  pub fn mix_all(colors: &[Color]) -> Self {
+    if colors.is_empty() {
+      return Self::black();
+    } else if colors.len() == 1 {
+      return colors[0];
+    } else if colors.len() == 2 {
+      return colors[0].mix(&colors[1], 0.5);
+    }
+
+    let n = colors.len() as f32;
+    let r = colors.iter().map(|c| c.r).sum::<f32>() / n;
+    let g = colors.iter().map(|c| c.g).sum::<f32>() / n;
+    let b = colors.iter().map(|c| c.b).sum::<f32>() / n;
+
+    let w_values: Vec<f32> = colors.iter().filter_map(|c| c.w).collect();
+
+    let w = if w_values.len() == colors.len() {
+      Some(w_values.iter().sum::<f32>() / n)
+    } else {
+      None
+    };
+
+    Self { r, g, b, w }
+  }
+
   pub fn to_hex(&self) -> String {
     let r = (self.r.clamp(0.0, 1.0) * 255.0) as u8;
     let g = (self.g.clamp(0.0, 1.0) * 255.0) as u8;

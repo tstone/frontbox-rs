@@ -41,14 +41,6 @@ macro_rules! delegate_system {
       fn is_active(&self, ctx: &Context, systems: &Systems) -> bool {
         self.$field.is_active(ctx, systems)
       }
-      fn leds(
-        &mut self,
-        delta_time: Duration,
-        ctx: &Context,
-        systems: &Systems,
-      ) -> std::collections::HashMap<&'static str, LedState> {
-        self.$field.leds(delta_time, ctx, systems)
-      }
     }
   };
 }
