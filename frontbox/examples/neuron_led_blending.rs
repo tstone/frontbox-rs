@@ -1,5 +1,4 @@
 use frontbox::prelude::*;
-use std::collections::HashMap;
 use std::io::Write;
 
 /**
@@ -18,12 +17,8 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards = vec![ExpansionBoard::neutron().with_led_port(LedPort {
-    port: 0,
-    led_count: 0,
-    led_type: LedType::WS2812,
-    leds: vec![leds::DEMO1],
-  })];
+  let expansion_boards =
+    vec![ExpansionBoard::neutron().port(0, LedPort::ws2812().with(led(leds::DEMO1)))];
 
   App::boot(
     BootConfig::default(),
@@ -32,87 +27,51 @@ async fn main() {
   )
   .await
   .configure(|app| {
-    app.system(System1::new());
-    app.system(System2::new());
+    app.system(System1);
+    app.system(System2);
   })
   .run()
   .await;
 }
 
-struct System1 {
-  on: bool,
-}
-
-impl System1 {
-  fn new() -> Self {
-    Self { on: false }
-  }
-}
+struct System1;
 
 impl System for System1 {
   fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_event(&mut self, event: &dyn Event, _ctx: &Context, _systems: &Systems) {
-    if let Some(_) = event.downcast_ref::<On>() {
-      self.on = true;
-    } else if let Some(_) = event.downcast_ref::<Off>() {
-      self.on = false;
-    }
-  }
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+    let mut led_system = systems.expect_mut::<LedSystem>();
 
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    _ctx: &Context,
-    _systems: &Systems,
-  ) -> HashMap<&'static str, LedState> {
-    if self.on {
-      LedDeclarationBuilder::new(delta_time)
-        .on(leds::DEMO1, Color::blue())
-        .collect()
-    } else {
-      LedDeclarationBuilder::empty()
+    if event.is::<On>() {
+      led_system.declare(
+        ctx.current_system_id(),
+        named_led(ctx, leds::DEMO1).color(Color::red()),
+      );
+    } else if event.is::<Off>() {
+      led_system.undeclare(ctx.current_system_id(), named_led(ctx, leds::DEMO1));
     }
   }
 }
 
-struct System2 {
-  on: bool,
-}
-
-impl System2 {
-  fn new() -> Self {
-    Self { on: false }
-  }
-}
+struct System2;
 
 impl System for System2 {
   fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
-    ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(2)));
+    ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(1)));
   }
 
-  fn on_event(&mut self, event: &dyn Event, _ctx: &Context, _systems: &Systems) {
-    if let Some(_) = event.downcast_ref::<On>() {
-      self.on = true;
-    } else if let Some(_) = event.downcast_ref::<Off>() {
-      self.on = false;
-    }
-  }
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+    let mut led_system = systems.expect_mut::<LedSystem>();
 
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    _ctx: &Context,
-    _systems: &Systems,
-  ) -> HashMap<&'static str, LedState> {
-    if self.on {
-      LedDeclarationBuilder::new(delta_time)
-        .on(leds::DEMO1, Color::red())
-        .collect()
-    } else {
-      LedDeclarationBuilder::empty()
+    if event.is::<On>() {
+      led_system.declare(
+        ctx.current_system_id(),
+        named_led(ctx, leds::DEMO1).color(Color::blue()),
+      );
+    } else if event.is::<Off>() {
+      led_system.undeclare(ctx.current_system_id(), named_led(ctx, leds::DEMO1));
     }
   }
 }

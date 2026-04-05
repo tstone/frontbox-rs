@@ -38,7 +38,7 @@ impl MachineImpl {
     }
   }
 
-  pub(crate) fn machine_sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
+  pub(crate) fn sender(&self) -> mpsc::UnboundedSender<MachineMessage> {
     self.machine_sender.clone()
   }
 
@@ -180,7 +180,7 @@ impl MachineImpl {
   }
 }
 
-/// Primary interface for sending commands to the machine and receiving machine commands
+/// Primary interface for interaction with FAST hardware
 pub struct Machine {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
 }
@@ -191,10 +191,12 @@ impl Machine {
     Self { machine_sender }
   }
 
+  /// Ping the watchdog to prevent it from triggering a reset (WD)
   pub fn ping_watchdog(&self) {
     self.machine_sender.send(MachineMessage::WatchdogPing).ok();
   }
 
+  /// Immediately expire the watchdog (WD:0)
   pub fn clear_watchdog(&self) {
     self
       .machine_sender
@@ -219,6 +221,7 @@ impl Machine {
     }
   }
 
+  /// Configure a driver with a specific mode (e.g. enable with certain power level, or set to automatic) (DL)
   pub fn configure_driver(
     &self,
     driver: &'static str,
@@ -238,6 +241,7 @@ impl Machine {
     }
   }
 
+  /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
   pub fn activate_driver(&self, driver: &'static str, mode: ActivationMode, ctx: &Context) {
     // remap switch to id
     let switch = mode
@@ -254,6 +258,7 @@ impl Machine {
     }
   }
 
+  /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
   pub fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode, ctx: &Context) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
@@ -274,6 +279,7 @@ impl Machine {
       .ok();
   }
 
+  /// Request the current state of all switches (SA). This will also automatically update Context with the latest switch states.
   pub fn refresh_switch_state(&self) {
     self
       .machine_sender
@@ -285,6 +291,7 @@ impl Machine {
       .ok();
   }
 
+  /// Configure a switch to report in a certain way (e.g. inverted, or with debounce) (SL)
   pub fn configure_switch(
     &self,
     switch: &'static str,
@@ -313,6 +320,61 @@ impl Machine {
         })
         .ok();
     }
+  }
+
+  /// Set the color of multiple LEDs in a single command (RS)
+  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, Color)>) {
+    self
+      .machine_sender
+      .send(MachineMessage::Dispatch {
+        port: Port::Io,
+        command: Box::new(SetLedsCommand::new(expansion_id, breakout, led_states)),
+      })
+      .ok();
+  }
+
+  /// Set all LEDs on a port/breakout to the same color (RP)
+  pub fn set_multiple_leds(
+    &self,
+    expansion_id: u8,
+    breakout: Option<u8>,
+    color: Color,
+    indexes: Vec<u16>,
+  ) {
+    self
+      .machine_sender
+      .send(MachineMessage::Dispatch {
+        port: Port::Io,
+        command: Box::new(SetMultipleLedsCommand::new(
+          expansion_id,
+          breakout,
+          color,
+          indexes,
+        )),
+      })
+      .ok();
+  }
+
+  /// Set all LEDs on a port/breakout to the same color (RA)
+  pub fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, color: Color) {
+    self
+      .machine_sender
+      .send(MachineMessage::Dispatch {
+        port: Port::Io,
+        command: Box::new(SetAllLedsCommand::new(expansion_id, breakout, color)),
+      })
+      .ok();
+  }
+
+  /// Set the white channel of multiple LEDs in a single command (RW)
+  pub fn set_leds_white(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, u8)>) {
+    self
+      .machine_sender
+      .send(MachineMessage::Dispatch {
+        port: Port::Io,
+        command: Box::new(SetWhiteCommand::new(expansion_id, breakout, led_states)),
+      })
+      .ok();
   }
 }
 
@@ -351,10 +413,6 @@ pub enum MachineMessage {
     command: Box<dyn FastAnyRequestCommand>,
     timeout: Duration,
   },
-}
-
-fn boxed_request(cmd: impl FastAnyRequestCommand + 'static) -> Box<dyn FastAnyRequestCommand> {
-  Box::new(cmd)
 }
 
 // -- Events --

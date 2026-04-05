@@ -2,10 +2,9 @@ use crate::plugins::{ActionButtonEject, AutoPlunger};
 use crate::prelude::*;
 
 pub struct AutoplungerPlugin {
-  plunge_lane_switch: &'static str,
-  autoplunge_coil: &'static str,
-  action_button: &'static str,
-  led_setting: LedSetting,
+  plunge_lane_switch: HardwareSelection,
+  autoplunge_coil: HardwareSelection,
+  action_button_switch: Option<HardwareSelection>,
 }
 
 impl AutoplungerPlugin {
@@ -15,31 +14,32 @@ impl AutoplungerPlugin {
   /// ## Inputs
   /// - Command: `FirePlunger` - Fires the plunger coil if the ball is resting in the lane
   ///
-  pub fn new(
-    action_button: &'static str,
-    plunge_lane_switch: &'static str,
-    autoplunge_coil: &'static str,
-    led_setting: LedSetting,
-  ) -> Self {
+  pub fn new(plunge_lane_switch: HardwareSelection, autoplunge_coil: HardwareSelection) -> Self {
     Self {
       plunge_lane_switch,
       autoplunge_coil,
-      action_button,
-      led_setting,
+      action_button_switch: None,
     }
+  }
+
+  pub fn action_button_switch(mut self, switch: HardwareSelection) -> Self {
+    self.action_button_switch = Some(switch);
+    self
   }
 }
 
 impl Plugin for AutoplungerPlugin {
   fn build(&self, app: &mut App) {
     app.system(AutoPlunger::new(
-      self.plunge_lane_switch,
-      self.autoplunge_coil,
+      self.plunge_lane_switch.clone(),
+      self.autoplunge_coil.clone(),
     ));
-    app.system(ActionButtonEject::new(
-      self.action_button,
-      self.plunge_lane_switch,
-      self.led_setting.clone(),
-    ));
+
+    if let Some(action_button_switch) = &self.action_button_switch {
+      app.system(ActionButtonEject::new(
+        action_button_switch.clone(),
+        self.plunge_lane_switch.clone(),
+      ));
+    }
   }
 }

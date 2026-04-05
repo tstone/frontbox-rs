@@ -9,6 +9,7 @@ System
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
 - Should events be required to be Serialize?
+- has_tag/has_typed_tag should probably be a trait
 
 Hardware
 
@@ -19,11 +20,6 @@ DX
 - Some kind of console runner that shows switch states and has a terminal/console (this needs to skip the command listening part... somehow)
 - Debugging: Some kind of websockets console to see what's going on (could this be an app plugin?)
 
-Sound (as a System)
-
-- basic interface (play music, play sound, play sfx)
-- kira implementation in a separate crate
-
 Displays (as a System)
 
 - FAST LED canvas
@@ -31,10 +27,9 @@ Displays (as a System)
 
 LEDs
 
-- Should LEDs be managed like sounds, `ctx.command(DeclareLedState(...))` ? -- probably, and a separate system/crate
-- Move animation handling into on_tick
-- Single color flasher support
-- LED configuration at startup (mostly specify resolution behavior)
-- Make LED resolver something that can be changed dynamically at any time `ctx.command(ConfigLed)`
+- A nice way of setting LEDs based on state of another system
+- LedSystem tests
+- Introduce idea of "scopes" e.g. `let leds = systems.expect_mut::<LedSystem>().scope(ctx.current_system_id())`
+- Implement binary versions of LED commands
+- Single channel flasher support
 - Modulators + lenses -- Allow any property to be modulated
-- Support Z-index

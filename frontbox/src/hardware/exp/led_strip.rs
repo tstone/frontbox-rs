@@ -1,12 +1,10 @@
-use std::collections::HashMap;
-
-use crate::{HardwareTag, Illumination};
+use crate::{Bitmap, HardwareTag, Illumination, Point, RenderableGeom};
 
 #[derive(Debug, Clone)]
 pub struct LedStrip {
   pub name: &'static str,
   pub tags: Vec<Box<dyn HardwareTag>>,
-  pub coordinates: HashMap<u8, (f32, f32)>,
+  pub geom: Option<RenderableGeom>,
   pub led_count: u8,
 }
 
@@ -15,8 +13,8 @@ impl LedStrip {
     Self {
       name,
       tags: Vec::new(),
-      coordinates: HashMap::new(),
       led_count,
+      geom: None,
     }
   }
 
@@ -25,8 +23,11 @@ impl LedStrip {
     self
   }
 
-  pub fn coords(mut self, index: u8, x: f32, y: f32) -> Self {
-    self.coordinates.insert(index, (x, y));
+  pub fn geom(mut self, top_left: Point, bottom_right: Point) -> Self {
+    self.geom = Some(RenderableGeom::Rectangle {
+      top_left,
+      bottom_right,
+    });
     self
   }
 }
@@ -40,12 +41,36 @@ impl Illumination for LedStrip {
     &self.tags
   }
 
-  fn coordinates(&self) -> &HashMap<u8, (f32, f32)> {
-    &self.coordinates
-  }
-
   fn led_count(&self) -> u8 {
     self.led_count
+  }
+
+  fn geom(&self) -> Option<&RenderableGeom> {
+    self.geom.as_ref()
+  }
+
+  fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<fast_protocol::Color> {
+    match &self.geom {
+      Some(RenderableGeom::Rectangle {
+        top_left,
+        bottom_right,
+      }) => {
+        let mut colors = Vec::new();
+        for i in 0..self.led_count {
+          let t = i as f32 / (self.led_count - 1) as f32;
+          let x = top_left.0 + (bottom_right.0 - top_left.0) * t;
+          let y = top_left.1 + (bottom_right.1 - top_left.1) * t;
+          let index = (y.floor() as usize * bitmap.width as usize + x.floor() as usize) * 3;
+          colors.push(fast_protocol::Color::rgb(
+            bitmap.data[index],
+            bitmap.data[index + 1],
+            bitmap.data[index + 2],
+          ));
+        }
+        colors
+      }
+      _ => vec![], // If no geometry is defined, we can't render anything meaningful
+    }
   }
 }
 

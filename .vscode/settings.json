@@ -1,6 +1,7 @@
 {
   "cSpell.words": [
     "accumulatable",
+    "Adressable",
     "autoplunge",
     "Autoplunger",
     "crossfade",
@@ -8,8 +9,10 @@
     "despawn",
     "despawned",
     "downcasting",
+    "ecurtz",
     "Frontbox",
     "illum",
+    "illums",
     "kira",
     "Lerp",
     "lerps",
@@ -17,10 +20,12 @@
     "millis",
     "neoseg",
     "playfield",
+    "Renderable",
     "RGBW",
     "Spawnable",
     "startable",
     "Tweenable",
+    "undeclaring",
     "unduck"
   ]
 }

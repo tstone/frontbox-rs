@@ -9,6 +9,7 @@ use crate::prelude::*;
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
+  pub illuminations: IlluminationLookup,
   pub io_network: Vec<IoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
@@ -17,12 +18,14 @@ impl Hardware {
   pub fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
+    illuminations: IlluminationLookup,
     io_network: Vec<IoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     Self {
       switches,
       drivers,
+      illuminations,
       io_network,
       exp_network,
     }
@@ -126,11 +129,20 @@ impl Hardware {
           let mut resolved_illuminations = Vec::new();
           for illum in &port.illuminations {
             port_led_total_count += illum.led_count();
-            resolved_illuminations.push(ResolvedIllumination {
-              name: illum.name(),
-              tags: illum.tags().clone(),
-              coordinates: illum.coordinates().clone(),
-              global_indexes: (offset..offset + illum.led_count() as u16).collect_vec(),
+
+            let addressable_leds = (offset..offset + illum.led_count() as u16)
+              .map(|i| AddressableLed {
+                address: LedAddress {
+                  address: board.address,
+                  breakout: board.breakout,
+                  port: idx as u8,
+                },
+                index: i,
+              })
+              .collect_vec();
+
+            resolved_illuminations.push(AddressableIllumination {
+              leds: addressable_leds,
               source: illum.clone(),
             });
           }

@@ -1,6 +1,5 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
-use std::collections::HashMap;
 use std::io::Write;
 
 /**
@@ -21,19 +20,15 @@ async fn main() {
     .init();
 
   let expansion_boards = vec![
-    ExpansionBoard::neutron()
-      .port(
-        0,
-        LedPort::ws2812()
-          .with(led(leds::DEMO1).tagged(tags::ActionButton))
-          .with(led(leds::DEMO2).coords(15.5, 10.3))
-          .with(led(leds::DEMO3).coords(1.0, 1.0))
-          .with(led(leds::DEMO4).tagged(tags::StartButton).coords(5.0, 5.0)),
-      )
-      .port(
-        1,
-        LedPort::ws2812().with(led_strip("example", 8).coords(7, 1.45, 3.8)),
-      ),
+    ExpansionBoard::neutron().port(
+      0,
+      LedPort::ws2812()
+        // like other hardware, LEDs can be arbitrary tagged for later querying
+        .with(led(leds::DEMO1).tagged(tags::ActionButton))
+        .with(led(leds::DEMO2))
+        .with(led(leds::DEMO3))
+        .with(led(leds::DEMO4)),
+    ),
   ];
 
   App::boot(
@@ -49,7 +44,6 @@ async fn main() {
   .await;
 }
 
-#[derive(Clone)]
 struct LedExample {
   flash: Box<dyn Animation<Duration, Color>>,
   seq: Box<dyn Animation<Duration, Color>>,
@@ -92,17 +86,37 @@ impl LedExample {
 }
 
 impl System for LedExample {
-  fn leds(
-    &mut self,
-    delta_time: Duration,
-    _ctx: &Context,
-    _systems: &Systems,
-  ) -> HashMap<&'static str, LedState> {
-    LedDeclarationBuilder::new(delta_time)
-      .on(leds::DEMO1, Color::deep_sky_blue())
-      .on(leds::DEMO2, Color::dark_blue())
-      .next_frame(leds::DEMO3, &mut self.flash)
-      .next_frame(leds::DEMO4, &mut self.seq)
-      .collect()
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+    let mut leds = systems.expect_mut::<LedSystem>();
+
+    // set static LED colors on demand
+    leds.declare(
+      ctx.current_system_id(),
+      named_led(ctx, leds::DEMO1).color(Color::blue()),
+    );
+    leds.declare(
+      ctx.current_system_id(),
+      named_led(ctx, leds::DEMO2).color(Color::dark_blue()),
+    );
+  }
+
+  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+    // tick animations to update their internal state
+    self.flash.accumulate(delta);
+    self.seq.accumulate(delta);
+
+    let mut leds = systems.expect_mut::<LedSystem>();
+
+    // re-declare LEDs with updated animated colors
+    leds.declare(
+      ctx.current_system_id(),
+      named_led(ctx, leds::DEMO3).sample(&self.flash),
+    );
+
+    // anim.sample can also be used manually
+    leds.declare(
+      ctx.current_system_id(),
+      named_led(ctx, leds::DEMO4).color(self.seq.sample()),
+    );
   }
 }

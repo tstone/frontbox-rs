@@ -1,6 +1,6 @@
 use fast_protocol::LedType;
 
-use crate::{Illumination, ResolvedIllumination};
+use crate::{AddressableIllumination, Illumination};
 
 #[derive(Debug)]
 pub struct LedPort {
@@ -11,7 +11,7 @@ pub struct LedPort {
 #[derive(Debug, Clone)]
 pub struct ResolvedLedPort {
   pub led_type: LedType,
-  pub illuminations: Vec<ResolvedIllumination>,
+  pub illuminations: Vec<AddressableIllumination>,
   pub start: u16,
   pub length: u8,
 }
