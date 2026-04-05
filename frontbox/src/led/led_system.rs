@@ -142,7 +142,11 @@ impl System for LedSystem {
             LedConflictResolution::Mix => {
               leds_to_set.push((
                 led.clone(),
-                BezierMixResolver::resolve(top_declarations.iter().map(|d| d.color).collect()),
+                top_declarations
+                  .iter()
+                  .map(|d| d.color)
+                  .collect::<Vec<_>>()
+                  .mix_all(),
               ));
             }
             LedConflictResolution::Alternate => {

@@ -535,3 +535,31 @@ impl Default for Color {
     Self::black()
   }
 }
+
+pub trait ColorsExt {
+  fn mix_all(&self) -> Color;
+}
+
+impl ColorsExt for Vec<Color> {
+  fn mix_all(&self) -> Color {
+    Color::mix_all(&self)
+  }
+}
+
+impl ColorsExt for &Vec<Color> {
+  fn mix_all(&self) -> Color {
+    Color::mix_all(&self)
+  }
+}
+
+impl ColorsExt for [Color] {
+  fn mix_all(&self) -> Color {
+    Color::mix_all(&self)
+  }
+}
+
+impl ColorsExt for &[Color] {
+  fn mix_all(&self) -> Color {
+    Color::mix_all(&self)
+  }
+}

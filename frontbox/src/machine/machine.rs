@@ -156,28 +156,6 @@ impl MachineImpl {
     }
     None
   }
-
-  pub async fn deactivate_driver(&mut self, driver: usize, mode: DeactivationMode) {
-    log::info!("Deactivating driver {} with mode {:?}", driver, mode);
-    let control_mode: DriverTriggerControlMode = match mode {
-      DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
-      DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
-    };
-    self.trigger_driver(driver, control_mode, None).await;
-  }
-
-  async fn trigger_driver(
-    &mut self,
-    driver: usize,
-    mode: DriverTriggerControlMode,
-    switch: Option<usize>,
-  ) {
-    log::info!("Triggering driver {}", driver);
-    self
-      .io_port
-      .dispatch(&TriggerDriverCommand::new(driver, mode, switch))
-      .await;
-  }
 }
 
 /// Primary interface for interaction with FAST hardware
