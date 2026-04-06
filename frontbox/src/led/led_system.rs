@@ -24,6 +24,14 @@ impl LedSystem {
     }
   }
 
+  /// Create a reference to this system that automatically includes the owning system's ID for declarations
+  pub fn scoped(&mut self, owning_system: u64) -> ScopedLedSystem<'_> {
+    ScopedLedSystem {
+      system: self,
+      owning_system,
+    }
+  }
+
   /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
   pub fn declare(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
     self.declare_inner(owning_system, declarations, true);
@@ -218,6 +226,35 @@ impl System for LedSystem {
         }
       }
     }
+  }
+}
+
+pub struct ScopedLedSystem<'a> {
+  system: &'a mut LedSystem,
+  owning_system: u64,
+}
+
+impl ScopedLedSystem<'_> {
+  pub fn declare(&mut self, declarations: impl Into<LedDeclarations>) {
+    self.system.declare(self.owning_system, declarations);
+  }
+
+  pub fn declare_inactive(&mut self, declarations: impl Into<LedDeclarations>) {
+    self
+      .system
+      .declare_inactive(self.owning_system, declarations);
+  }
+
+  pub fn undeclare(&mut self, identifications: impl Into<LedIdentifications>) {
+    self.system.undeclare(self.owning_system, identifications);
+  }
+
+  pub fn deactivate(&mut self) {
+    self.system.deactivate_by_system(self.owning_system);
+  }
+
+  pub fn activate(&mut self) {
+    self.system.activate_by_system(self.owning_system);
   }
 }
 
