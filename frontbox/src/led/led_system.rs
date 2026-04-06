@@ -49,10 +49,8 @@ impl LedSystem {
       }
 
       let declaration = StatefulLedDeclaration {
-        owning_system,
         active,
         color: color.unwrap(),
-        z_index: declarations.z_index,
       };
       self
         .declarations
@@ -71,10 +69,14 @@ impl LedSystem {
   /// Remove declarations for the LED. If z-index is provided, only remove declarations for that layer.
   pub fn undeclare(&mut self, system_id: u64, identifications: impl Into<LedIdentifications>) {
     let identifications: LedIdentifications = identifications.into();
+    let target_id = DeclarationIdentifier {
+      system_id,
+      z_index: identifications.z_index,
+    };
+
     for led in identifications.leds {
       if let Some(declarations) = self.declarations.get_mut(&led) {
-        declarations
-          .retain(|d, _| d.system_id != system_id && d.z_index != identifications.z_index);
+        declarations.retain(|id, _| id != &target_id);
         if declarations.is_empty() {
           self.declarations.remove(&led);
         }
@@ -85,8 +87,8 @@ impl LedSystem {
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
     for declarations in self.declarations.values_mut() {
-      for declaration in declarations.values_mut() {
-        if declaration.owning_system == system_id {
+      for (id, declaration) in declarations.iter_mut() {
+        if id.system_id == system_id {
           declaration.active = false;
         }
       }
@@ -96,8 +98,8 @@ impl LedSystem {
   /// Mark any existing declarations as active
   pub fn activate_by_system(&mut self, system_id: u64) {
     for declarations in self.declarations.values_mut() {
-      for declaration in declarations.values_mut() {
-        if declaration.owning_system == system_id {
+      for (id, declaration) in declarations.iter_mut() {
+        if id.system_id == system_id {
           declaration.active = true;
         }
       }
@@ -136,14 +138,18 @@ impl System for LedSystem {
     for led in self.all_leds.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         // take only active, highest z-index declaration for each LED
-        let active = declarations.values().filter(|d| d.active);
-        let maz_z_index = active.clone().map(|d| d.z_index).max().unwrap_or(i8::MIN);
+        let active = declarations.iter().filter(|(_, d)| d.active);
+        let maz_z_index = active
+          .clone()
+          .map(|(id, _)| id.z_index)
+          .max()
+          .unwrap_or(i8::MIN);
         let top_declarations = active
-          .filter(|d| d.z_index == maz_z_index)
+          .filter(|(id, _)| id.z_index == maz_z_index)
           .collect::<Vec<_>>();
 
         if top_declarations.len() == 1 {
-          leds_to_set.push((led.clone(), top_declarations[0].color));
+          leds_to_set.push((led.clone(), top_declarations[0].1.color));
         } else if top_declarations.len() > 1 {
           let resolution_strategy = self
             .conflict_resolution
@@ -152,20 +158,20 @@ impl System for LedSystem {
 
           match resolution_strategy {
             LedConflictResolution::FirstWins => {
-              leds_to_set.push((led.clone(), top_declarations[0].color));
+              leds_to_set.push((led.clone(), top_declarations[0].1.color));
             }
             LedConflictResolution::Mix => {
               leds_to_set.push((
                 led.clone(),
                 top_declarations
                   .iter()
-                  .map(|d| d.color)
+                  .map(|(_, d)| d.color)
                   .collect::<Vec<_>>()
                   .mix_all(),
               ));
             }
             LedConflictResolution::Alternate => {
-              let colors = top_declarations.iter().map(|d| d.color).collect();
+              let colors = top_declarations.iter().map(|(_, d)| d.color).collect();
               leds_to_set.push((
                 led.clone(),
                 self.alternate_resolver.resolve(led.clone(), colors),
@@ -219,8 +225,6 @@ impl System for LedSystem {
 struct StatefulLedDeclaration {
   active: bool,
   color: Color,
-  owning_system: u64,
-  z_index: i8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -243,5 +247,60 @@ pub enum LedConflictResolution {
 mod tests {
   use super::*;
 
-  // TODO
+  #[test]
+  fn test_declare_and_undeclare_systems() {
+    let mut system = LedSystem::new();
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 0),
+    );
+    assert!(system.declarations.get(&led).unwrap().len() == 1);
+    system.declare(
+      43,
+      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 0),
+    );
+    assert!(system.declarations.get(&led).unwrap().len() == 2);
+
+    system.undeclare(42, LedIdentifications::new(vec![led.clone()], 0));
+
+    // the declaration for system 43 should still be there
+    assert!(system.declarations.get(&led).unwrap().len() == 1);
+  }
+
+  #[test]
+  fn test_declare_and_undeclare_z_index() {
+    let mut system = LedSystem::new();
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 1),
+    );
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led.clone(), Some(Color::blue()))], 2),
+    );
+    assert!(system.declarations.get(&led).unwrap().len() == 2);
+
+    system.undeclare(42, LedIdentifications::new(vec![led.clone()], 1));
+
+    // the declaration for z-index 2 should still be there
+    assert!(system.declarations.get(&led).unwrap().len() == 1);
+  }
 }
