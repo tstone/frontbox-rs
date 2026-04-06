@@ -1,6 +1,5 @@
 LEDs
 
-- Introduce idea of "scopes" e.g. `let leds = systems.expect_mut::<LedSystem>().scope(ctx.current_system_id())`
 - Implement binary versions of LED commands
 - Update docs
 - Single channel flasher support
