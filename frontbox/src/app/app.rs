@@ -31,17 +31,12 @@ impl App {
       .expect("Failed to open IO NET port");
     log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
 
-    App::boot_mainboard(&mut io_port).await;
+    let mainboard_name = App::boot_mainboard(&mut io_port).await;
 
     // Verify user-configuration and load firmware/board versions
     let resolved_io_network = Hardware::resolve_io_network(&mut io_port, &io_network).await;
-    let mainboard = resolved_io_network
-      .boards
-      .iter()
-      .find(|b| b.name.contains("CPU"))
-      .expect("No mainboard found in IO network");
     let platform =
-      FastPlatform::from_name(&mainboard.name).expect("Unsupported mainboard platform");
+      FastPlatform::from_name(&mainboard_name).expect("Unsupported mainboard platform");
 
     App::configure_hardware(&mut io_port, platform).await;
     App::verify_watchdog(&mut io_port).await;
@@ -87,15 +82,15 @@ impl App {
   }
 
   /// wait for the mainboard to be ready to respond
-  async fn boot_mainboard(io_port: &mut SerialInterface) {
+  async fn boot_mainboard(io_port: &mut SerialInterface) -> String {
     loop {
       match io_port
         .request(&IdCommand::new(), Duration::from_millis(500))
         .await
       {
-        Ok(IdResponse::Report { .. }) => {
+        Ok(IdResponse::Report { mainboard_name, .. }) => {
           log::info!("🥾 Mainboard is ready");
-          break;
+          return mainboard_name;
         }
         _ => {
           log::debug!("Mainboard not ready, retrying...");
