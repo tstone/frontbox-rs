@@ -1,5 +1,5 @@
 use crate::plugins::{Plugin, Trough};
-pub use crate::prelude::*;
+use crate::prelude::*;
 
 pub struct TroughPlugin {
   pub switches: Vec<&'static str>,

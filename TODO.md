@@ -1,10 +1,6 @@
 LEDs
 
-- Hardware resolve led port tests
-- Led system conflict resolution tests
-- Led plugin
 - Implement binary versions of LED commands
-- Update docs
 - Single channel flasher support
 
 LED Canvas
@@ -15,8 +11,6 @@ LED Canvas
 
 System
 
-- Fix SoundSystem (cannot load device)
-- Get neuron version and check >= rev 6 to support ER
 - BUG: Cue::Once repeats
 - Cue timeline
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
@@ -24,7 +18,7 @@ System
 - Auto plunger plugin has operator config for coil power/kick length
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
-- Should events be required to be Serialize?
+- Should events be required to be Serialize? -- no but Websockets or things that use it must require it
 - has_tag/has_typed_tag should probably be a trait
 
 Hardware
