@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use serde::Serialize;
 
-/** This module contains the "final" form that is shared with the rest of the code */
-
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
   pub switches: Vec<SwitchDefinition>,
