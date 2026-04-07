@@ -1,11 +1,19 @@
 LEDs
 
+- Led plugin
 - Implement binary versions of LED commands
 - Update docs
 - Single channel flasher support
 
+LED Canvas
+
+- Create a new frontbox-canvas crate
+- combine DMD rendering + led canvas rendering
+- standardize on image/Rgba<u8> for canvas
+
 System
 
+- Fix SoundSystem (cannot load device)
 - Get neuron version and check >= rev 6 to support ER
 - BUG: Cue::Once repeats
 - Cue timeline
@@ -26,7 +34,6 @@ DX
 - Some kind of console runner that shows switch states and has a terminal/console (this needs to skip the command listening part... somehow)
 - Debugging: Some kind of websockets console to see what's going on (could this be an app plugin?)
 
-Displays (as a System)
+Displays
 
-- FAST LED canvas
 - NeoSeg support

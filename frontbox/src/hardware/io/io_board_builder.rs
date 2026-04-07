@@ -9,8 +9,8 @@ use crate::{
 #[derive(Default)]
 pub struct IoBoardBuilder {
   pub(crate) description: &'static str,
-  pub(crate) switch_count: u32,
-  pub(crate) driver_count: u32,
+  pub(crate) switch_count: u16,
+  pub(crate) driver_count: u16,
   pub(crate) switches: Vec<SwitchDefinition>,
   pub(crate) drivers: Vec<DriverDefinition>,
 }

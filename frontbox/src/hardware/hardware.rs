@@ -10,7 +10,7 @@ pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
   pub illuminations: IlluminationLookup,
-  pub io_network: Vec<IoBoard>,
+  pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
 
@@ -19,7 +19,7 @@ impl Hardware {
     switches: SwitchLookup,
     drivers: DriverLookup,
     illuminations: IlluminationLookup,
-    io_network: Vec<IoBoard>,
+    io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     Self {
@@ -110,6 +110,66 @@ impl Hardware {
           panic!("Error resetting expansion board {:X}: {}", board.address, e);
         }
       }
+    }
+  }
+
+  /// Query the I/O network to resolve actual hardware configurations (switch/driver counts, versions, etc) for each board
+  /// Verify that the actual hardware matches the user-defined configuration. This also loads firmware and PCB version for
+  /// cases where minimum supported versions need to be checked.
+  pub async fn resolve_io_network(
+    io_port: &mut SerialInterface,
+    io_network: &IoNetwork,
+  ) -> ResolvedIoNetwork {
+    let mut resolved_boards = Vec::new();
+
+    for (id, board) in io_network.boards.iter().enumerate() {
+      // query each board for its actual hardware configuration (switch/driver counts, version, etc)
+      let response = io_port
+        .request(&NodeNameCommand::new(id as u8), Duration::from_millis(500))
+        .await;
+      match response {
+        Ok(NodeInfo::Success {
+          node_id,
+          name,
+          board_revision,
+          firmware_version,
+          driver_count,
+          switch_count,
+        }) => {
+          assert!(
+            driver_count == board.driver_count,
+            "Driver count mismatch for board {}: expected {}, got {}. Boards may be misconfigured or inserted out of order",
+            board.description,
+            board.driver_count,
+            driver_count,
+          );
+          assert!(
+            switch_count == board.switch_count,
+            "Switch count mismatch for board {}: expected {}, got {}. Boards may be misconfigured or inserted out of order",
+            board.description,
+            board.switch_count,
+            switch_count,
+          );
+
+          resolved_boards.push(ResolvedIoBoard {
+            node_id,
+            description: board.description,
+            name,
+            firmware_version,
+            board_revision,
+            switch_count,
+            driver_count,
+          });
+        }
+        other => panic!(
+          "Unexpected response while querying board info for {}: {:?}",
+          board.description, other
+        ),
+      }
+    }
+
+    ResolvedIoNetwork {
+      boards: resolved_boards,
     }
   }
 
