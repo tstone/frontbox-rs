@@ -13,7 +13,7 @@ impl NodeNameCommand {
 
 impl FastStringCommand for NodeNameCommand {
   fn to_string(&self) -> String {
-    format!("NN@{:X}:\r", self.id)
+    format!("NN:{:X}\r", self.id)
   }
 }
 
@@ -40,14 +40,10 @@ impl FastRequestCommand for NodeNameCommand {
       .map_err(|_| FastResponseError::InvalidFormat)?;
     let name = parts[1].trim().to_string();
     let firmware_version = parts[2].trim().to_string();
-    let driver_count = parts[3]
-      .trim()
-      .parse::<u16>()
-      .map_err(|_| FastResponseError::InvalidFormat)?;
-    let switch_count = parts[4]
-      .trim()
-      .parse::<u16>()
-      .map_err(|_| FastResponseError::InvalidFormat)?;
+    let driver_count =
+      u16::from_str_radix(parts[3].trim(), 16).map_err(|_| FastResponseError::InvalidFormat)?;
+    let switch_count =
+      u16::from_str_radix(parts[4].trim(), 16).map_err(|_| FastResponseError::InvalidFormat)?;
 
     let board_revision = name
       .split('-')
@@ -86,7 +82,7 @@ mod tests {
 
   #[test]
   fn test_response_success() {
-    let data = "02,FP-I/O-0804-1  ,00.89,04,08,04,06,00,00,00,00";
+    let data = "02,FP-I/O-0804-1  ,00.89,04,18,04,06,00,00,00,00";
     let result = NodeNameCommand::new(2).parse(RawResponse {
       prefix: "NN:".to_string(),
       payload: data.to_string(),
@@ -108,7 +104,7 @@ mod tests {
         assert_eq!(board_revision, 1);
         assert_eq!(firmware_version, "00.89");
         assert_eq!(driver_count, 4);
-        assert_eq!(switch_count, 8);
+        assert_eq!(switch_count, 24);
       }
       _ => panic!("Expected NodeInfo"),
     }

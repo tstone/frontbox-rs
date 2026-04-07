@@ -125,10 +125,7 @@ impl Hardware {
     for (id, board) in io_network.boards.iter().enumerate() {
       // query each board for its actual hardware configuration (switch/driver counts, version, etc)
       let response = io_port
-        .request(
-          &NodeNameCommand::new((id + 1) as u8),
-          Duration::from_millis(500),
-        )
+        .request(&NodeNameCommand::new(id as u8), Duration::from_millis(500))
         .await;
       match response {
         Ok(NodeInfo::Success {
@@ -154,7 +151,13 @@ impl Hardware {
             switch_count,
           );
 
-          log::info!("Confirmed I/O node board {} {} v{} ({})", node_id, name, firmware_version, board.description);
+          log::info!(
+            "Confirmed I/O node board {} {} v{} ({})",
+            node_id,
+            name,
+            firmware_version,
+            board.description
+          );
 
           resolved_boards.push(ResolvedIoBoard {
             node_id,
@@ -185,7 +188,9 @@ impl Hardware {
     let mut resolved_boards = Vec::new();
     for board in expansion_boards {
       if board.model == FastExpansionBoardModels::Neuron {
-        log::warn!("Remapping Neuron LED ports to default 32-LED configuration for backwards compatibility");
+        log::warn!(
+          "Remapping Neuron LED ports to default 32-LED configuration for backwards compatibility"
+        );
       }
 
       // sum up actual LEDs present and calculate index offsets
@@ -197,7 +202,8 @@ impl Hardware {
             FastExpansionBoardModels::Neuron => Some(32),
             _ => None,
           };
-          let port = Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
+          let port =
+            Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
           offset += port.length as u16;
           resolved_ports.push(port);
         } else {
@@ -246,7 +252,11 @@ impl Hardware {
       port_led_total_count = port_led_total_count.saturating_add(illum.led_count());
     }
 
-    log::trace!("Mapped {} illuminations: {:?}", resolved_illuminations.len(), resolved_illuminations);
+    log::trace!(
+      "Mapped {} illuminations: {:?}",
+      resolved_illuminations.len(),
+      resolved_illuminations
+    );
 
     ResolvedLedPort {
       led_type: port.led_type.clone(),
