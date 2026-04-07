@@ -191,7 +191,7 @@ impl Machine {
       self
         .machine_sender
         .send(MachineMessage::Request {
-          port: Port::Io,
+          port: Port::Exp,
           command: Box::new(BoardResetCommand::new(board.address)),
           timeout: Duration::from_millis(200),
         })
@@ -358,6 +358,9 @@ impl Machine {
 
 impl System for Machine {
   fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
+    // Clear out LEDs, servos, etc.
+    self.reset_expansion_network(ctx);
+
     // Disable drivers
     for driver in ctx.drivers.values() {
       self

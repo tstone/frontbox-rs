@@ -154,6 +154,8 @@ impl Hardware {
             switch_count,
           );
 
+          log::info!("Confirmed I/O node board {} {} v{} ({})", node_id, name, firmware_version, board.description);
+
           resolved_boards.push(ResolvedIoBoard {
             node_id,
             description: board.description,
@@ -189,14 +191,14 @@ impl Hardware {
       // sum up actual LEDs present and calculate index offsets
       let mut offset = 0;
       let mut resolved_ports = Vec::new();
-      for idx in 0..board.hardware_led_port_count.unwrap_or(0) {
-        if let Some(port) = board.led_ports.get(&idx) {
+      for port_idx in 0..board.hardware_led_port_count.unwrap_or(0) {
+        if let Some(port) = board.led_ports.get(&port_idx) {
           let port_count_override = match board.model {
             FastExpansionBoardModels::Neuron => Some(32),
             _ => None,
           };
-          let port = Self::resolve_led_port(board, port, idx as u8, offset, port_count_override);
-          offset = port.start + port.length as u16;
+          let port = Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
+          offset += port.length as u16;
           resolved_ports.push(port);
         } else {
           // no port defined = assume the default (32 LEDs)
@@ -218,23 +220,21 @@ impl Hardware {
   fn resolve_led_port(
     board: &ExpansionBoard,
     port: &LedPort,
-    idx: u8,
+    port_idx: u8,
     offset: u16,
     port_count_override: Option<u8>,
   ) -> ResolvedLedPort {
     let mut port_led_total_count: u8 = 0;
     let mut resolved_illuminations = Vec::new();
     for illum in &port.illuminations {
-      port_led_total_count += illum.led_count();
-
-      let addressable_leds = (offset..offset + illum.led_count() as u16)
+      let addressable_leds = (0..illum.led_count() as u16)
         .map(|i| AddressableLed {
           address: LedAddress {
             address: board.address,
             breakout: board.breakout,
-            port: idx as u8,
+            port: port_idx as u8,
           },
-          index: i,
+          index: i + port_led_total_count as u16 + offset,
         })
         .collect_vec();
 
@@ -242,7 +242,11 @@ impl Hardware {
         leds: addressable_leds,
         source: illum.clone(),
       });
+
+      port_led_total_count = port_led_total_count.saturating_add(illum.led_count());
     }
+
+    log::trace!("Mapped {} illuminations: {:?}", resolved_illuminations.len(), resolved_illuminations);
 
     ResolvedLedPort {
       led_type: port.led_type.clone(),

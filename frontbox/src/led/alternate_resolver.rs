@@ -11,7 +11,7 @@ impl AlternateResolver {
   pub fn new() -> Self {
     Self {
       states: HashMap::new(),
-      alternate_duration: Duration::from_millis(225), // TODO: make this configurable
+      alternate_duration: Duration::from_millis(215), // TODO: make this configurable
     }
   }
 
@@ -25,17 +25,23 @@ impl AlternateResolver {
     // check first if we have an existing system for this led, and if it's still valid
     if let Some(entry) = self.states.get_mut(&led) {
       if entry.colors == colors {
-        // same colors, just update the duration
-        entry.acc_duration += self.alternate_duration;
+        if entry.acc_duration >= self.alternate_duration {
+          entry.acc_duration = Duration::ZERO;
+          entry.idx += 1;
+          if entry.idx == entry.colors.len() {
+            entry.idx = 0;
+          }
+        }
         return entry.colors[entry.idx];
       } else {
         // different colors, reset the duration and move to the next color
-        entry.acc_duration = Duration::from_millis(0);
-        entry.idx = (entry.idx + 1) % colors.len();
+        entry.acc_duration = Duration::ZERO;
+        entry.idx = 0;
         entry.colors = colors;
         return entry.colors[entry.idx];
       }
     } else {
+      log::trace!("Creating new alternating state");
       // no existing record of colors, create a new one
       self.states.insert(
         led.clone(),

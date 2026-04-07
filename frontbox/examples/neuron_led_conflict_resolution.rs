@@ -1,4 +1,3 @@
-use frontbox::animation::*;
 use frontbox::prelude::*;
 use std::io::Write;
 
@@ -31,7 +30,7 @@ async fn main() {
   .configure(|app| {
     app.system(LedSystem::new());
     app.system(System1);
-    app.system(System2::new());
+    app.system(System2);
   })
   .run()
   .await;
@@ -42,48 +41,31 @@ struct System1;
 
 impl System for System1 {
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    systems.expect_mut::<LedSystem>().declare_inactive(
-      ctx.current_system_id(),
-      named_led(ctx, leds::DEMO1).color(Color::red()),
-    );
+    ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));
 
-    ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_millis(200)));
+    let mut led_system = systems.expect_mut::<LedSystem>();
+    led_system.declare(
+      ctx.current_system_id(), 
+      named_led(ctx, leds::DEMO1).color(Color::red())
+    );
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
     let mut led_system = systems.expect_mut::<LedSystem>();
 
     if event.is::<On>() {
-      led_system.activate_by_system(ctx.current_system_id());
+      led_system.set_conflict_resolution(named_led(ctx, leds::DEMO1), LedConflictResolution::Alternate);
     } else if event.is::<Off>() {
-      led_system.deactivate_by_system(ctx.current_system_id());
+      led_system.set_conflict_resolution(named_led(ctx, leds::DEMO1), LedConflictResolution::Mix);
     }
   }
 }
 
-/// Here's another way to flash an LED, via animations. This also has the benefit of controlling the transition to look more organic.
-struct System2 {
-  anim: Tween<Duration, Color>,
-}
-
-impl System2 {
-  fn new() -> Self {
-    Self {
-      anim: Tween::new(
-        Duration::from_millis(1000),
-        Curve::ExponentialInOut,
-        vec![Color::default(), Color::blue()],
-        AnimationCycle::Forever,
-      ),
-    }
-  }
-}
+struct System2;
 
 impl System for System2 {
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
-    self.anim.accumulate(delta);
-
-    let decl = named_led(ctx, leds::DEMO1).color(self.anim.sample());
+  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+    let decl = named_led(ctx, leds::DEMO1).color(Color::blue());
     systems
       .expect_mut::<LedSystem>()
       .declare(ctx.current_system_id(), decl);
