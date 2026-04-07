@@ -211,24 +211,94 @@ In some cases, particularly with cueing, it might be a bit tedious to create a c
 - `Anonymous`
 - `On` / `Off`
 
+### Context
+
+Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provided, including:
+
+- Register cues and interrupts
+- Emit events
+- Access hardware configuration and state
+
+```rust
+ctx.switches
+ctx.drivers
+ctx.io_network
+ctx.exp_network
+```
+
 ### Commands & Services
 
-Systems can choose to expose public (`pub`) functions that are accessible to other systems.
+Systems can choose to expose public (`pub`) functions that are accessible to other systems. Each handler also receives a reference to `Systems` which grants access to this public methods.
 
 ```rust
 systems.get::<Trough>().eject();
 ```
 
-These are accessible through:
+There are several ways to access another system, depending on the situation:
 
-- `get::<S>`
-- `get_mut::<S>`
-- `expect::<S>`
-- `expect_mut::<S>`
-- `get_id::<S>`
-- `contains::<S>`
+- `get::<S>` - Returns `Option<S>`
+- `get_mut::<S>` - Returns a mutable reference to `Object<S>`
+- `expect::<S>` - Returns `S`, panics if it does not exist
+- `expect_mut::<S>` - Returns mutable reference to `S`, also panics if it does not exist
+- `get_id::<S>` - Returns `Option<S>`
+- `contains::<S>` - Returns `bool` if the system of type `S` currently exists or not
 
-### Animations
+### Active
+
+By default, all systems spawned are active. Systems can be despawned, which removes them entirely, but sometimes it's necessary to keep a system around, having it automatically become active in certain situations. Frontbox supports this feature by way of the `is_active() -> bool` handler.
+
+If `is_active` returns `false`, the framework will by skip all other handlers (the ones starting with `on_*`). Within `is_active`, only read access to `self` and `Context` is provided.
+
+```rust
+// a common 'active toggle' is that a system is only active when at least one ball is in play for a player
+impl System for Example {
+  fn is_active(&self, ctx: &Context) -> bool {
+    ctx.is(CurrentPlayerTurnState::Active)
+  }
+}
+```
+
+### LEDs
+
+LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by commanding the machine directly. However this skips out on many features. A better choice is to include the bundled `LedPlugin` which adds the `LedSystem` providing the following benefits:
+
+- Conflict Resolution -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
+- Layer (z-index) support -- It's possible to keep an "under layer" active while playing temporary animations a layer above
+- An easy way to de-activate LED declarations when a system is de-activated
+- Automatic clearing of unset LEDs per frame
+
+#### LedSystem
+
+Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
+
+```rust
+let mut led_system = systems.expect_mut::<LedSystem>();
+
+// declare LEDs by name...
+led_system.declare(
+  ctx.current_system_id(),
+  named_led(leds::EXAMPLE)
+    .color(Color::yellow())
+    .z_index(3)
+);
+
+// ...or by group
+led_system.declare(
+  ctx.current_system_id(),
+  named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
+    .gradient(Color::red(), Color::yellow())
+);
+```
+
+Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
+
+```rust
+led_system.deactivate_by_system(ctx.current_system_id());
+```
+
+In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
+
+#### Animations
 
 Animations are a fundamental part of any arcade machine and especially to pinball. Whereas a `Cue` is about an event in time that a system handles, an animation is about a value that changes over time (though not necessarily bound to time). It's useful to establish first what exactly an animation is, before demonstrating how to use it.
 
@@ -302,86 +372,13 @@ fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
   }
 }
 
-// elsewhere the animation value can be used to set the LED color
-
-ctx.command(SetLed(leds::SPINNER_LANE, self.anim.sample()));
+// elsewhere the animation value can be used to set the LED color (see below)
+self.anim.sample()
 ```
-
-### Context
-
-Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provided, including:
-
-- Register cues and interrupts
-- Emit events
-- Access hardware configuration and state
-
-```rust
-ctx.switches
-ctx.drivers
-ctx.io_network
-ctx.exp_network
-```
-
-### Active
-
-By default, all systems spawned are active. Systems can be despawned, which removes them entirely, but sometimes it's necessary to keep a system around, having it automatically become active in certain situations. Frontbox supports this feature by way of the `is_active() -> bool` handler.
-
-If `is_active` returns `false`, the framework will by skip all other handlers (the ones starting with `on_*`). Within `is_active`, only read access to `self` and `Context` is provided.
-
-```rust
-// a common 'active toggle' is that a system is only active when at least one ball is in play for a player
-impl System for Example {
-  fn is_active(&self, ctx: &Context) -> bool {
-    ctx.is(CurrentPlayerTurnState::Active)
-  }
-}
-```
-
-### Multimedia
-
-#### LEDs
-
-LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by commanding the machine directly. However this skips out on many features. A better choice is to include the bundled `LedPlugin` which adds the `LedSystem` providing the following benefits:
-
-- Conflict Resolution -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
-- Layer (z-index) support -- It's possible to keep an "under layer" active while playing temporary animations a layer above
-- An easy way to de-activate LED declarations when a system is de-activated
-- Automatic clearing of unset LEDs per frame
-
-#### LedSystem
-
-Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
-
-```rust
-let mut led_system = systems.expect_mut::<LedSystem>();
-
-// declare LEDs by name...
-led_system.declare(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Color::yellow())
-    .z_index(3)
-);
-
-// ...or by group
-led_system.declare(
-  ctx.current_system_id(),
-  named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
-    .gradient(Color::red(), Color::yellow())
-);
-```
-
-Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
-
-```rust
-led_system.deactivate_by_system(ctx.current_system_id());
-```
-
-In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
 
 #### LED Animations
 
-LEDs can of course be combined with animations. Recall that animations are just accumulators of time, that map a value to the amount of accumulation.
+LEDs colors can of course be combined with animations. This works by accumulating the animation _and_ re-declaring the LED on the same tick.
 
 ```rust
 pub struct AnimExample {
@@ -403,7 +400,7 @@ impl System for AnimExample {
 }
 ```
 
-This works with more than just colors. Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it. `color_idx` only turns on that one LED.
+Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it. `color_idx` only turns on that one LED.
 
 ```rust
 pub struct AnimExample {
@@ -426,7 +423,7 @@ impl System for AnimExample {
 }
 ```
 
-#### Sounds
+### Sounds
 
 Frontbox includes `SoundSystem` that supports three types of sounds:
 
