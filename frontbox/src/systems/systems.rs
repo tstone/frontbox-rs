@@ -100,9 +100,14 @@ impl Systems {
   }
 
   pub fn expect_mut<T: System + 'static>(&'_ self) -> RefMut<'_, T> {
-    self
-      .get_mut::<T>()
-      .expect("Expected system was not found. Make sure it was added to the App.")
+    let system_name = type_name::<T>();
+    self.get_mut::<T>().expect(
+      format!(
+        "Expected system {} was not found. Make sure it was added to the App.",
+        system_name
+      )
+      .as_str(),
+    )
   }
 
   pub fn contains<T: System + 'static>(&self) -> bool {
