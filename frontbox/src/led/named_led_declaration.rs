@@ -3,7 +3,7 @@ use fast_protocol::Color;
 use crate::prelude::*;
 
 pub fn named_led(ctx: &Context, name: &str) -> NamedLed {
-  let ill = ctx.illuminations.get(name).expect("LED not found");
+  let ill = ctx.illuminations.get(name).expect(format!("LED {} not found", name).as_str());
   let led = ill
     .leds
     .first()

@@ -56,8 +56,7 @@ impl App {
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", exp_port_path);
 
-    let expansion_boards =
-      Hardware::resolve_expansion_boards(&expansion_boards, &resolved_io_network);
+    let expansion_boards = Hardware::resolve_expansion_boards(&expansion_boards);
     Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
     Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 

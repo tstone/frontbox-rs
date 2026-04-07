@@ -29,6 +29,7 @@ async fn main() {
   )
   .await
   .configure(|app| {
+    app.system(LedSystem::new());
     app.system(System1);
     app.system(System2::new());
   })

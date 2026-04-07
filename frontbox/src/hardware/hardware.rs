@@ -179,37 +179,23 @@ impl Hardware {
   /// Take the user-defined expansion board configurations and resolve actual hardware indexes/addresses
   pub fn resolve_expansion_boards(
     expansion_boards: &Vec<ExpansionBoard>,
-    io_network: &ResolvedIoNetwork,
   ) -> Vec<ResolvedExpansionBoard> {
     let mut resolved_boards = Vec::new();
     for board in expansion_boards {
-      // Check the Neuron revision as earlier versions don't support ER mapping and we need to reset the offsets if so
-      let (neuron_revision, pre_er_supported_neuron) =
-        Self::check_neuron_revision(io_network, board);
+      if board.model == FastExpansionBoardModels::Neuron {
+        log::warn!("Remapping Neuron LED ports to default 32-LED configuration for backwards compatibility");
+      }
 
       // sum up actual LEDs present and calculate index offsets
       let mut offset = 0;
       let mut resolved_ports = Vec::new();
       for idx in 0..board.hardware_led_port_count.unwrap_or(0) {
         if let Some(port) = board.led_ports.get(&idx) {
-          if pre_er_supported_neuron && port.illuminations.len() > 32 {
-            panic!(
-              "Configured LED port {} on Neuron expansion board with {} illuminations which exceeds the maximum of 32 for Neuron revisions before 6. Cannot continue.",
-              idx,
-              port.illuminations.len()
-            );
-          } else if pre_er_supported_neuron {
-            log::warn!(
-              "Remapping Neuron expansion board LED port {} to the default 32-LED configuration because this Neuron revision {} does not support ER port remapping",
-              idx,
-              neuron_revision.unwrap(),
-            );
-            resolved_ports.push(ResolvedLedPort::default(offset));
-            offset += 32;
-            continue;
-          }
-
-          let port = Self::resolve_led_port(board, port, idx as u8, offset);
+          let port_count_override = match board.model {
+            FastExpansionBoardModels::Neuron => Some(32),
+            _ => None,
+          };
+          let port = Self::resolve_led_port(board, port, idx as u8, offset, port_count_override);
           offset = port.start + port.length as u16;
           resolved_ports.push(port);
         } else {
@@ -229,38 +215,12 @@ impl Hardware {
     resolved_boards
   }
 
-  fn check_neuron_revision(
-    resolved_io_network: &ResolvedIoNetwork,
-    board: &ExpansionBoard,
-  ) -> (Option<u16>, bool) {
-    let neuron_revision = resolved_io_network
-      .boards
-      .iter()
-      .find(|b| b.name.contains("FP-CPU-2000"))
-      .map(|b| b.board_revision);
-
-    // "Early Neuron versions run the LEDs off their own chip, the ER stuff probably never got back ported" -- ecurtz
-    // https://fastpinball.slack.com/archives/C07686P8X/p1775231363684309?thread_ts=1775230784.588849&cid=C07686P8X
-    // Check if this revision of the Neuron does not support ER mapping and instead re-map given ports to the default 32 configuration
-    let pre_er_supported_neuron = board.model == FastExpansionBoardModels::Neuron
-      && neuron_revision.is_some()
-      && neuron_revision.unwrap() < 6;
-
-    if pre_er_supported_neuron {
-      log::warn!(
-        "Detected Neuron expansion board with revision {} which does not support ER mapping. Neuron expansion LED ports will be remapped to the default 32-LED configuration. Neuron revision 6 or later required to use custom LED port configurations.",
-        neuron_revision.unwrap()
-      );
-    }
-
-    (neuron_revision, pre_er_supported_neuron)
-  }
-
   fn resolve_led_port(
     board: &ExpansionBoard,
     port: &LedPort,
     idx: u8,
     offset: u16,
+    port_count_override: Option<u8>,
   ) -> ResolvedLedPort {
     let mut port_led_total_count: u8 = 0;
     let mut resolved_illuminations = Vec::new();
@@ -287,7 +247,7 @@ impl Hardware {
     ResolvedLedPort {
       led_type: port.led_type.clone(),
       start: offset,
-      length: port_led_total_count,
+      length: port_count_override.unwrap_or(port_led_total_count),
       illuminations: resolved_illuminations,
     }
   }

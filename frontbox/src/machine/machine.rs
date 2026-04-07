@@ -63,7 +63,7 @@ impl MachineImpl {
   fn port_for(&mut self, port: Port) -> &mut SerialInterface {
     match port {
       Port::Io => &mut self.io_port,
-      Port::Expansion => &mut self.exp_port,
+      Port::Exp => &mut self.exp_port,
     }
   }
 
@@ -305,7 +305,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Io,
+        port: Port::Exp,
         command: Box::new(SetLedsCommand::new(expansion_id, breakout, led_states)),
       })
       .ok();
@@ -322,7 +322,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Io,
+        port: Port::Exp,
         command: Box::new(SetMultipleLedsCommand::new(
           expansion_id,
           breakout,
@@ -338,7 +338,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Io,
+        port: Port::Exp,
         command: Box::new(SetAllLedsCommand::new(expansion_id, breakout, color)),
       })
       .ok();
@@ -349,7 +349,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Io,
+        port: Port::Exp,
         command: Box::new(SetWhiteCommand::new(expansion_id, breakout, led_states)),
       })
       .ok();
@@ -377,7 +377,7 @@ impl System for Machine {
 
 pub enum Port {
   Io,
-  Expansion,
+  Exp,
 }
 
 pub enum MachineMessage {
