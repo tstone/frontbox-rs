@@ -20,21 +20,31 @@ pub struct App {
 
 impl App {
   pub async fn boot(
-    config: BootConfig,
+    // TODO: is it possible to just autodetect this?
+    io_net_port_path: &'static str,
+    exp_port_path: &'static str,
     io_network: IoNetwork,
     expansion_boards: Vec<ExpansionBoard>,
   ) -> Self {
-    let mut io_port = SerialInterface::new(config.io_net_port_path)
+    let mut io_port = SerialInterface::new(io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", config.io_net_port_path);
+    log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
 
     App::boot_mainboard(&mut io_port).await;
-    App::configure_hardware(&mut io_port, config.platform).await;
-    App::verify_watchdog(&mut io_port).await;
 
     // Verify user-configuration and load firmware/board versions
     let resolved_io_network = Hardware::resolve_io_network(&mut io_port, &io_network).await;
+    let mainboard = resolved_io_network
+      .boards
+      .iter()
+      .find(|b| b.name.contains("CPU"))
+      .expect("No mainboard found in IO network");
+    let platform =
+      FastPlatform::from_name(&mainboard.name).expect("Unsupported mainboard platform");
+
+    App::configure_hardware(&mut io_port, platform).await;
+    App::verify_watchdog(&mut io_port).await;
 
     App::configure_switches(&mut io_port, &io_network.switches).await;
 
@@ -46,12 +56,13 @@ impl App {
     Hardware::configure_drivers(&mut io_port, &io_network.drivers, &switch_lookup).await;
 
     // open EXP port
-    let mut exp_port = SerialInterface::new(config.exp_port_path)
+    let mut exp_port = SerialInterface::new(exp_port_path)
       .await
       .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", config.exp_port_path);
+    log::info!("🥾 Opened EXP port at {}", exp_port_path);
 
-    let expansion_boards = Hardware::resolve_expansion_boards(&expansion_boards);
+    let expansion_boards =
+      Hardware::resolve_expansion_boards(&expansion_boards, &resolved_io_network);
     Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
     Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 

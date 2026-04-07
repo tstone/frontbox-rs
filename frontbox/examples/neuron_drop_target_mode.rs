@@ -68,7 +68,7 @@ async fn main() {
       ),
   );
 
-  App::boot(BootConfig::default(), io_network.build(), vec![])
+  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network.build(), vec![])
     .await
     .configure(|app| {
       app.system(DropTargetDownUp::new([

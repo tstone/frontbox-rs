@@ -3,6 +3,18 @@ use std::collections::HashMap;
 use crate::ResolvedLedPort;
 use crate::hardware::exp::LedPort;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FastExpansionBoardModels {
+  Neuron,
+  FpExp0051,
+  FpExp0061,
+  FpExp0071,
+  FpExp0081,
+  FpExp0091,
+  FpExp1313,
+  Custom,
+}
+
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct ExpansionBoard {
@@ -10,6 +22,7 @@ pub struct ExpansionBoard {
   pub breakout: Option<u8>,
   pub hardware_led_port_count: Option<u8>,
   pub led_ports: HashMap<u8, LedPort>,
+  pub model: FastExpansionBoardModels,
 }
 
 #[derive(Debug, Clone)]
@@ -17,20 +30,27 @@ pub struct ResolvedExpansionBoard {
   pub address: u8,
   pub breakout: Option<u8>,
   pub led_ports: Vec<ResolvedLedPort>,
+  pub model: FastExpansionBoardModels,
 }
 
 impl ExpansionBoard {
-  pub fn new(address: &'static str, led_port_count: Option<u8>, breakout: Option<u8>) -> Self {
+  pub fn new(
+    address: &'static str,
+    led_port_count: Option<u8>,
+    breakout: Option<u8>,
+    model: FastExpansionBoardModels,
+  ) -> Self {
     Self {
       address: u8::from_str_radix(address, 16).unwrap(),
       breakout,
       hardware_led_port_count: led_port_count,
       led_ports: HashMap::new(),
+      model,
     }
   }
 
-  pub fn neutron() -> Self {
-    Self::new("48", Some(4), None)
+  pub fn neuron() -> Self {
+    Self::new("48", Some(4), None, FastExpansionBoardModels::Neuron)
   }
 
   // TODO: fp_exp0051
@@ -45,7 +65,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "93",
     };
 
-    Self::new(address, Some(4), None)
+    Self::new(address, Some(4), None, FastExpansionBoardModels::FpExp0061)
   }
 
   /// 4 servos, 128 LEDs
@@ -57,7 +77,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "B7",
     };
 
-    Self::new(address, Some(4), None)
+    Self::new(address, Some(4), None, FastExpansionBoardModels::FpExp0071)
   }
 
   /// 256 LEDs
@@ -69,7 +89,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "87",
     };
 
-    Self::new(address, Some(8), None)
+    Self::new(address, Some(8), None, FastExpansionBoardModels::FpExp0081)
   }
 
   pub fn fp_exp0091(jumper_0: JumperState, jumper_1: JumperState) -> Self {
@@ -80,7 +100,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "8B",
     };
 
-    Self::new(address, Some(4), None)
+    Self::new(address, Some(4), None, FastExpansionBoardModels::FpExp0091)
   }
 
   /// shaker motor
@@ -92,7 +112,7 @@ impl ExpansionBoard {
       (JumperState::Closed, JumperState::Closed) => "33",
     };
 
-    Self::new(address, None, None)
+    Self::new(address, None, None, FastExpansionBoardModels::FpExp1313)
   }
 
   pub fn port(mut self, index: u8, port: LedPort) -> Self {
