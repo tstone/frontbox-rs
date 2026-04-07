@@ -98,7 +98,7 @@ impl System for LedExample {
     );
     leds.declare(
       ctx.current_system_id(),
-      named_led(ctx, leds::DEMO2).color(Color::dark_blue()),
+      named_led(ctx, leds::DEMO2).color(Color::yellow()),
     );
   }
 

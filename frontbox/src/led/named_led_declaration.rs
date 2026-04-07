@@ -12,6 +12,7 @@ pub fn named_led(ctx: &Context, name: &str) -> NamedLed {
   NamedLed { led, z_index: None }
 }
 
+#[derive(Debug, Clone)]
 pub struct NamedLed {
   led: AddressableLed,
   z_index: Option<i8>,

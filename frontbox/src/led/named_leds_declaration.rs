@@ -39,6 +39,7 @@ pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclar
   }
 }
 
+#[derive(Debug, Clone)]
 pub struct MultipleLedDeclarations {
   pairings: Vec<(AddressableLed, Option<Color>)>,
   z_index: Option<i8>,

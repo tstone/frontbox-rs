@@ -1,5 +1,7 @@
 LEDs
 
+- Hardware resolve led port tests
+- Led system conflict resolution tests
 - Led plugin
 - Implement binary versions of LED commands
 - Update docs

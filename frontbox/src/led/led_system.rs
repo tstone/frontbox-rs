@@ -24,14 +24,6 @@ impl LedSystem {
     }
   }
 
-  /// Create a reference to this system that automatically includes the owning system's ID for declarations
-  pub fn scoped(&mut self, owning_system: u64) -> ScopedLedSystem<'_> {
-    ScopedLedSystem {
-      system: self,
-      owning_system,
-    }
-  }
-
   /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
   pub fn declare(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
     self.declare_inner(owning_system, declarations, true);
@@ -116,10 +108,13 @@ impl LedSystem {
 
   pub fn set_conflict_resolution(
     &mut self,
-    led: &AddressableLed,
+    identifications: impl Into<LedIdentifications>,
     resolution: LedConflictResolution,
   ) {
-    self.conflict_resolution.insert(led.clone(), resolution);
+    let identifications = identifications.into();
+    for led in identifications.leds {
+      self.conflict_resolution.insert(led.clone(), resolution);
+    }
   }
 }
 
@@ -163,6 +158,7 @@ impl System for LedSystem {
             .conflict_resolution
             .get(led)
             .unwrap_or(&LedConflictResolution::FirstWins);
+          log::trace!("Resolving LED declaration conflict on {:?} with {:?}", led, resolution_strategy);
 
           match resolution_strategy {
             LedConflictResolution::FirstWins => {
@@ -229,35 +225,6 @@ impl System for LedSystem {
   }
 }
 
-pub struct ScopedLedSystem<'a> {
-  system: &'a mut LedSystem,
-  owning_system: u64,
-}
-
-impl ScopedLedSystem<'_> {
-  pub fn declare(&mut self, declarations: impl Into<LedDeclarations>) {
-    self.system.declare(self.owning_system, declarations);
-  }
-
-  pub fn declare_inactive(&mut self, declarations: impl Into<LedDeclarations>) {
-    self
-      .system
-      .declare_inactive(self.owning_system, declarations);
-  }
-
-  pub fn undeclare(&mut self, identifications: impl Into<LedIdentifications>) {
-    self.system.undeclare(self.owning_system, identifications);
-  }
-
-  pub fn deactivate(&mut self) {
-    self.system.deactivate_by_system(self.owning_system);
-  }
-
-  pub fn activate(&mut self) {
-    self.system.activate_by_system(self.owning_system);
-  }
-}
-
 #[derive(Debug)]
 struct StatefulLedDeclaration {
   active: bool,
@@ -270,7 +237,7 @@ struct DeclarationIdentifier {
   z_index: i8,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LedConflictResolution {
   /// Alternate between conflicting systems every N milliseconds (250ms)
   Alternate,
@@ -311,6 +278,42 @@ mod tests {
 
     // the declaration for system 43 should still be there
     assert!(system.declarations.get(&led).unwrap().len() == 1);
+  }
+
+  #[test]
+  fn test_declare_and_undeclare_multiple() {
+    let mut system = LedSystem::new();
+    let led1 = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+    let led2 = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 2,
+    };
+
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led1.clone(), Some(Color::red()))], 0),
+    );
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led2.clone(), Some(Color::red()))], 0),
+    );
+    assert!(system.declarations.get(&led1).unwrap().len() == 2);
+
+    system.undeclare(42, LedIdentifications::new(vec![led1.clone()], 0));
+
+    // the declaration for led2 should still be there
+    assert!(system.declarations.get(&led1).unwrap().len() == 1);
   }
 
   #[test]
