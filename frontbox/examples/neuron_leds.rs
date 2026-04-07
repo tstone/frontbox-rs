@@ -39,6 +39,7 @@ async fn main() {
   )
   .await
   .configure(|app| {
+    app.system(LedSystem::new());
     app.system(LedExample::new());
   })
   .run()
