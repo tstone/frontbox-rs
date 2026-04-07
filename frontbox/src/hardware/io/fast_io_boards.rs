@@ -4,7 +4,7 @@ use crate::IoBoardBuilder;
 pub struct FastIoBoards;
 
 impl FastIoBoards {
-  pub fn custom(switch_count: u32, driver_count: u32) -> IoBoardBuilder {
+  pub fn custom(switch_count: u16, driver_count: u16) -> IoBoardBuilder {
     IoBoardBuilder {
       description: Box::leak(
         format!(

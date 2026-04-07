@@ -32,13 +32,17 @@ impl App {
     App::boot_mainboard(&mut io_port).await;
     App::configure_hardware(&mut io_port, config.platform).await;
     App::verify_watchdog(&mut io_port).await;
+
+    // Verify user-configuration and load firmware/board versions
+    let resolved_io_network = Hardware::resolve_io_network(&mut io_port, &io_network).await;
+
     App::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
     let initial_switch_state = Hardware::get_initial_switch_states(&mut io_port).await;
+    let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
 
     // Configure drivers
-    let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
     Hardware::configure_drivers(&mut io_port, &io_network.drivers, &switch_lookup).await;
 
     // open EXP port
@@ -57,7 +61,7 @@ impl App {
       switch_lookup,
       DriverLookup::new(io_network.drivers),
       IlluminationLookup::new(&expansion_boards),
-      io_network.boards,
+      resolved_io_network.boards,
       expansion_boards,
     );
 

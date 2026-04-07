@@ -9,11 +9,26 @@ pub struct IoNetwork {
   pub drivers: Vec<DriverDefinition>,
 }
 
+pub struct ResolvedIoNetwork {
+  pub boards: Vec<ResolvedIoBoard>,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct IoBoard {
   pub description: &'static str,
-  pub switch_count: u32,
-  pub driver_count: u32,
+  pub switch_count: u16,
+  pub driver_count: u16,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ResolvedIoBoard {
+  pub node_id: u8,
+  pub name: String,
+  pub board_revision: u16,
+  pub firmware_version: String,
+  pub description: &'static str,
+  pub switch_count: u16,
+  pub driver_count: u16,
 }
 
 #[derive(Debug, Clone, Serialize)]
