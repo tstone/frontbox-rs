@@ -8,12 +8,8 @@ async fn main() {
     .init();
 
   App::boot(
-    BootConfig {
-      platform: FastPlatform::Neuron,
-      io_net_port_path: "/dev/ttyACM0",
-      exp_port_path: "/dev/ttyACM1",
-      ..Default::default()
-    },
+    "/dev/ttyACM0",
+    "/dev/ttyACM1",
     IoNetworkBuilder::new().build(),
     vec![],
   )

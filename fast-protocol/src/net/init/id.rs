@@ -54,11 +54,11 @@ impl FastRequestCommand for IdCommand {
     }
 
     let processor = parts[0].trim().to_string();
-    let product_number = parts[1].trim().to_string();
+    let mainboard_name = parts[1].trim().to_string();
     let firmware_version = parts[2].trim().to_string();
     Ok(IdResponse::Report {
       processor,
-      product_number,
+      mainboard_name,
       firmware_version,
     })
   }
@@ -68,7 +68,7 @@ impl FastRequestCommand for IdCommand {
 pub enum IdResponse {
   Report {
     processor: String,
-    product_number: String,
+    mainboard_name: String,
     firmware_version: String,
   },
   Failed,
@@ -80,7 +80,7 @@ mod tests {
 
   #[test]
   fn test_response_success() {
-    let data = "FP-CPU-002  3208 2.00";
+    let data = "NET FP-SBI-0095  01.99";
     let result = IdCommand::new().parse(RawResponse {
       prefix: "ID:".to_string(),
       payload: data.to_string(),
@@ -91,12 +91,12 @@ mod tests {
     match result.unwrap() {
       IdResponse::Report {
         processor,
-        product_number,
+        mainboard_name,
         firmware_version,
       } => {
-        assert_eq!(processor, "FP-CPU-002");
-        assert_eq!(product_number, "3208");
-        assert_eq!(firmware_version, "2.00");
+        assert_eq!(processor, "NET");
+        assert_eq!(mainboard_name, "FP-SBI-0095");
+        assert_eq!(firmware_version, "01.99");
       }
       _ => panic!("Expected IdResponse"),
     }

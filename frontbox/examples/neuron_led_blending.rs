@@ -19,10 +19,11 @@ async fn main() {
     .init();
 
   let expansion_boards =
-    vec![ExpansionBoard::neutron().port(0, LedPort::ws2812().with(led(leds::DEMO1)))];
+    vec![ExpansionBoard::neuron().port(0, LedPort::ws2812().with(led(leds::DEMO1)))];
 
   App::boot(
-    BootConfig::default(),
+    "/dev/ttyACM0",
+    "/dev/ttyACM1",
     IoNetworkBuilder::new().build(),
     expansion_boards,
   )

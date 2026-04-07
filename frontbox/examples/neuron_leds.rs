@@ -20,7 +20,7 @@ async fn main() {
     .init();
 
   let expansion_boards = vec![
-    ExpansionBoard::neutron().port(
+    ExpansionBoard::neuron().port(
       0,
       LedPort::ws2812()
         // like other hardware, LEDs can be arbitrary tagged for later querying
@@ -32,7 +32,8 @@ async fn main() {
   ];
 
   App::boot(
-    BootConfig::default(),
+    "/dev/ttyACM0",
+    "/dev/ttyACM1",
     IoNetworkBuilder::new().build(),
     expansion_boards,
   )

@@ -8,14 +8,6 @@ pub struct LedPort {
   pub illuminations: Vec<Box<dyn Illumination>>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ResolvedLedPort {
-  pub led_type: LedType,
-  pub illuminations: Vec<AddressableIllumination>,
-  pub start: u16,
-  pub length: u8,
-}
-
 impl LedPort {
   pub fn new(led_type: LedType) -> Self {
     Self {
@@ -40,5 +32,24 @@ impl LedPort {
   pub fn with(mut self, illumination: impl Illumination + 'static) -> Self {
     self.illuminations.push(Box::new(illumination));
     self
+  }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedLedPort {
+  pub led_type: LedType,
+  pub illuminations: Vec<AddressableIllumination>,
+  pub start: u16,
+  pub length: u8,
+}
+
+impl ResolvedLedPort {
+  pub fn default(start: u16) -> Self {
+    Self {
+      led_type: LedType::WS2812,
+      illuminations: Vec::new(),
+      start,
+      length: 32,
+    }
   }
 }
