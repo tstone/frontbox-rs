@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
 use frontbox::prelude::*;
 use kira::sound::PlaybackState;
@@ -70,7 +71,9 @@ impl SoundSystem {
       if !desc.name().contains(device_name) {
         return false;
       };
-      d.default_output_config().is_ok()
+      desc.supports_output()
+        && d.default_output_config().is_ok()
+        && d.default_output_config().unwrap().sample_format() == SampleFormat::F32
     });
 
     if device.is_none() {
