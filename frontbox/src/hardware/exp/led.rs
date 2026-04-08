@@ -1,5 +1,4 @@
-use fast_protocol::Color;
-
+use crate::prelude::*;
 use crate::{Bitmap, HardwareTag, Illumination, Point, RenderableGeom};
 
 #[derive(Debug, Clone)]
@@ -49,18 +48,19 @@ impl Illumination for Led {
     1
   }
 
-  fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<fast_protocol::Color> {
-    // Use the center pixel's color for the whole LED since it's just a single point
-    let center_x = bitmap.width as f32 / 2.0;
-    let center_y = bitmap.height as f32 / 2.0;
-    let center_index =
-      (center_y.floor() as usize * bitmap.width as usize + center_x.floor() as usize) * 3;
-    vec![Color::rgb(
-      bitmap.data[center_index],
-      bitmap.data[center_index + 1],
-      bitmap.data[center_index + 2],
-    )]
-  }
+  // fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<Rgba<<u8>>> {
+  //   // Use the center pixel's color for the whole LED since it's just a single point
+  //   let center_x = bitmap.width as f32 / 2.0;
+  //   let center_y = bitmap.height as f32 / 2.0;
+  //   let center_index =
+  //     (center_y.floor() as usize * bitmap.width as usize + center_x.floor() as usize) * 3;
+  //   vec![Rgba::new([
+  //     bitmap.data[center_index],
+  //     bitmap.data[center_index + 1],
+  //     bitmap.data[center_index + 2],
+  //     255,
+  //   ])]
+  // }
 }
 
 /// A single LED

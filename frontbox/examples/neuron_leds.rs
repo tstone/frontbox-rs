@@ -47,8 +47,8 @@ async fn main() {
 }
 
 struct LedExample {
-  flash: Box<dyn Animation<Duration, Color>>,
-  seq: Box<dyn Animation<Duration, Color>>,
+  flash: Box<dyn Animation<Duration, Rgba<u8>>>,
+  seq: Box<dyn Animation<Duration, Rgba<u8>>>,
 }
 
 impl LedExample {
@@ -57,7 +57,7 @@ impl LedExample {
       flash: Tween::boxed(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
-        vec![Color::black(), Color::purple()],
+        vec![Rgba::black(), Rgba::purple()],
         AnimationCycle::Forever,
       ),
       seq: Sequence::boxed(
@@ -65,19 +65,19 @@ impl LedExample {
           Tween::boxed(
             Duration::from_millis(1500),
             Curve::QuadraticInOut,
-            vec![Color::black(), Color::red()],
+            vec![Rgba::black(), Rgba::red()],
             AnimationCycle::Once,
           ),
           Tween::boxed(
             Duration::from_millis(200),
             Curve::Sinusoid,
-            vec![Color::red(), Color::yellow()],
+            vec![Rgba::red(), Rgba::yellow()],
             AnimationCycle::Once,
           ),
           Tween::boxed(
             Duration::from_millis(400),
             Curve::Linear,
-            vec![Color::yellow(), Color::black()],
+            vec![Rgba::yellow(), Rgba::black()],
             AnimationCycle::Once,
           ),
         ],
@@ -94,11 +94,11 @@ impl System for LedExample {
     // set static LED colors on demand
     leds.declare(
       ctx.current_system_id(),
-      named_led(ctx, leds::DEMO1).color(Color::blue()),
+      named_led(ctx, leds::DEMO1).color(Rgba::blue()),
     );
     leds.declare(
       ctx.current_system_id(),
-      named_led(ctx, leds::DEMO2).color(Color::yellow()),
+      named_led(ctx, leds::DEMO2).color(Rgba::yellow()),
     );
   }
 

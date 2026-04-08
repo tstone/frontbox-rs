@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 log = "0.4.29"
-frontbox = { path = "../frontbox", features = ["image"] }
+frontbox = { path = "../frontbox" }

@@ -49,29 +49,29 @@ impl Illumination for LedStrip {
     self.geom.as_ref()
   }
 
-  fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<fast_protocol::Color> {
-    match &self.geom {
-      Some(RenderableGeom::Rectangle {
-        top_left,
-        bottom_right,
-      }) => {
-        let mut colors = Vec::new();
-        for i in 0..self.led_count {
-          let t = i as f32 / (self.led_count - 1) as f32;
-          let x = top_left.0 + (bottom_right.0 - top_left.0) * t;
-          let y = top_left.1 + (bottom_right.1 - top_left.1) * t;
-          let index = (y.floor() as usize * bitmap.width as usize + x.floor() as usize) * 3;
-          colors.push(fast_protocol::Color::rgb(
-            bitmap.data[index],
-            bitmap.data[index + 1],
-            bitmap.data[index + 2],
-          ));
-        }
-        colors
-      }
-      _ => vec![], // If no geometry is defined, we can't render anything meaningful
-    }
-  }
+  // fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<fast_protocol::Color> {
+  //   match &self.geom {
+  //     Some(RenderableGeom::Rectangle {
+  //       top_left,
+  //       bottom_right,
+  //     }) => {
+  //       let mut colors = Vec::new();
+  //       for i in 0..self.led_count {
+  //         let t = i as f32 / (self.led_count - 1) as f32;
+  //         let x = top_left.0 + (bottom_right.0 - top_left.0) * t;
+  //         let y = top_left.1 + (bottom_right.1 - top_left.1) * t;
+  //         let index = (y.floor() as usize * bitmap.width as usize + x.floor() as usize) * 3;
+  //         colors.push(fast_protocol::Color::rgb(
+  //           bitmap.data[index],
+  //           bitmap.data[index + 1],
+  //           bitmap.data[index + 2],
+  //         ));
+  //       }
+  //       colors
+  //     }
+  //     _ => vec![], // If no geometry is defined, we can't render anything meaningful
+  //   }
+  // }
 }
 
 /// A sequence of anonymous, addressable LEDs

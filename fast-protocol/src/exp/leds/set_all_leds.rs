@@ -33,7 +33,7 @@ mod tests {
 
   #[test]
   fn test_request() {
-    let result = SetAllLedsCommand::new(0x48, None, Color::red()).to_string();
+    let result = SetAllLedsCommand::new(0x48, None, Color::rgb(255, 0, 0)).to_string();
     assert_eq!(result, "RA@48:FF0000\r");
   }
 }

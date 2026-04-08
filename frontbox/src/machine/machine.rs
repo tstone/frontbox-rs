@@ -301,7 +301,12 @@ impl Machine {
   }
 
   /// Set the color of multiple LEDs in a single command (RS)
-  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, Color)>) {
+  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, Rgba<u8>)>) {
+    let led_states = led_states
+      .iter()
+      .map(|(index, color)| (*index, color.to_color()))
+      .collect::<Vec<_>>();
+
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
@@ -316,7 +321,7 @@ impl Machine {
     &self,
     expansion_id: u8,
     breakout: Option<u8>,
-    color: Color,
+    rgba: Rgba<u8>,
     indexes: Vec<u16>,
   ) {
     self
@@ -326,7 +331,7 @@ impl Machine {
         command: Box::new(SetMultipleLedsCommand::new(
           expansion_id,
           breakout,
-          color,
+          rgba.to_color(),
           indexes,
         )),
       })
@@ -334,12 +339,16 @@ impl Machine {
   }
 
   /// Set all LEDs on a port/breakout to the same color (RA)
-  pub fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, color: Color) {
+  pub fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: Port::Exp,
-        command: Box::new(SetAllLedsCommand::new(expansion_id, breakout, color)),
+        command: Box::new(SetAllLedsCommand::new(
+          expansion_id,
+          breakout,
+          rgba.to_color(),
+        )),
       })
       .ok();
   }

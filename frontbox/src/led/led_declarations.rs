@@ -1,20 +1,20 @@
-use fast_protocol::Color;
+use image::Rgba;
 
 use crate::AddressableLed;
 
 #[derive(Debug, Clone)]
 pub struct LedDeclarations {
-  pub pairings: Vec<(AddressableLed, Option<Color>)>,
+  pub pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>,
   pub z_index: i8,
 }
 
 impl LedDeclarations {
-  pub fn new(pairings: Vec<(AddressableLed, Option<Color>)>, z_index: i8) -> Self {
+  pub fn new(pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>, z_index: i8) -> Self {
     Self { pairings, z_index }
   }
 
   /// Update all defined colors to the provided color, leaving any uncolored LEDs unchanged.
-  pub fn recolor(self, color: Color) -> Self {
+  pub fn recolor(self, color: Rgba<u8>) -> Self {
     let recolored_pairings = self
       .pairings
       .into_iter()
@@ -30,8 +30,8 @@ impl LedDeclarations {
   }
 }
 
-impl From<(AddressableLed, Option<Color>)> for LedDeclarations {
-  fn from(pairing: (AddressableLed, Option<Color>)) -> Self {
+impl From<(AddressableLed, Option<Rgba<u8>>)> for LedDeclarations {
+  fn from(pairing: (AddressableLed, Option<Rgba<u8>>)) -> Self {
     LedDeclarations::new(vec![pairing], 0)
   }
 }

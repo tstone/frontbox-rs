@@ -4,8 +4,8 @@ use std::thread::sleep;
 use std::time::Duration; // Import the Rng trait
 
 use frontbox::animation::*;
+use frontbox::prelude::*;
 use frontbox_pin2dmd::*;
-use image::Rgba;
 
 fn main() -> rusb::Result<()> {
   let mut dmd = Pin2Dmd::connect(128, 32, PanelType::Rgb)?;

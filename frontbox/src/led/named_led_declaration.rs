@@ -1,9 +1,10 @@
-use fast_protocol::Color;
-
 use crate::prelude::*;
 
 pub fn named_led(ctx: &Context, name: &str) -> NamedLed {
-  let ill = ctx.illuminations.get(name).expect(format!("LED {} not found", name).as_str());
+  let ill = ctx
+    .illuminations
+    .get(name)
+    .expect(format!("LED {} not found", name).as_str());
   let led = ill
     .leds
     .first()
@@ -19,7 +20,7 @@ pub struct NamedLed {
 }
 
 impl NamedLed {
-  pub fn color(self, color: Color) -> NamedLedDeclaration {
+  pub fn color(self, color: Rgba<u8>) -> NamedLedDeclaration {
     NamedLedDeclaration {
       led: self.led,
       color,
@@ -41,7 +42,7 @@ impl From<NamedLed> for LedIdentifications {
 
 pub struct NamedLedDeclaration {
   led: AddressableLed,
-  color: Color,
+  color: Rgba<u8>,
   z_index: Option<i8>,
 }
 

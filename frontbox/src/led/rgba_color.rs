@@ -1,3 +1,4 @@
+use fast_protocol::Color;
 use image::Rgba;
 
 pub trait RgbaColor {
@@ -141,9 +142,62 @@ pub trait RgbaColor {
   fn dark_slate_grey() -> Self;
   fn charcoal() -> Self;
   fn rebecca_purple() -> Self;
+
+  fn off() -> Self;
+  fn default() -> Self;
+
+  fn to_color(self) -> Color;
+
+  fn mix(a: Self, b: Self, t: f32) -> Self;
+  fn mix_with(&self, b: Self, t: f32) -> Self;
+
+  fn over(src: Self, dst: Self) -> Self;
+  fn composite_over(&self, dst: Self) -> Self;
 }
 
 impl RgbaColor for Rgba<u8> {
+  fn to_color(self) -> Color {
+    Color::rgb(self[0], self[1], self[2])
+  }
+
+  /// Combine two colors as peers, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
+  fn mix(a: Rgba<u8>, b: Rgba<u8>, t: f32) -> Rgba<u8> {
+    let lerp = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Rgba([
+      lerp(a.0[0], b.0[0]),
+      lerp(a.0[1], b.0[1]),
+      lerp(a.0[2], b.0[2]),
+      lerp(a.0[3], b.0[3]),
+    ])
+  }
+
+  /// Combine with b, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
+  fn mix_with(&self, b: Rgba<u8>, t: f32) -> Rgba<u8> {
+    Self::mix(*self, b, t)
+  }
+
+  /// Composite `src` over `dst` using alpha blending, e.g. red over white with 50% alpha results in pink
+  fn over(src: Rgba<u8>, dst: Rgba<u8>) -> Rgba<u8> {
+    let sa = src.0[3] as f32 / 255.0;
+    let da = dst.0[3] as f32 / 255.0;
+    let out_a = sa + da * (1.0 - sa);
+    if out_a == 0.0 {
+      return Rgba([0, 0, 0, 0]);
+    }
+    let blend = |s: u8, d: u8| ((s as f32 * sa + d as f32 * da * (1.0 - sa)) / out_a) as u8;
+    Rgba([
+      blend(src.0[0], dst.0[0]),
+      blend(src.0[1], dst.0[1]),
+      blend(src.0[2], dst.0[2]),
+      (out_a * 255.0) as u8,
+    ])
+  }
+
+  /// Composite over top of `dst` using alpha blending, e.g. red over white with 50% alpha results in pink
+  fn composite_over(&self, dst: Self) -> Self {
+    Self::over(*self, dst)
+  }
+
   fn red() -> Self {
     Rgba([255, 0, 0, 255])
   }
@@ -563,5 +617,11 @@ impl RgbaColor for Rgba<u8> {
   }
   fn rebecca_purple() -> Self {
     Rgba([102, 51, 153, 255])
+  }
+  fn off() -> Self {
+    Rgba([0, 0, 0, 255])
+  }
+  fn default() -> Self {
+    Rgba([0, 0, 0, 0])
   }
 }

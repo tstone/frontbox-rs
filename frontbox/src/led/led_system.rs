@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::i8;
 
+use image::Rgba;
+
 use crate::prelude::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
@@ -8,7 +10,7 @@ pub struct LedSystem {
   all_leds: Vec<AddressableLed>,
   // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.
   declarations: HashMap<AddressableLed, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
-  prior_render: HashMap<AddressableLed, Color>,
+  prior_render: HashMap<AddressableLed, Rgba<u8>>,
   conflict_resolution: HashMap<AddressableLed, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
 }
@@ -137,7 +139,7 @@ impl System for LedSystem {
   }
 
   fn on_render(&mut self, _ctx: &Context, systems: &Systems) {
-    let mut leds_to_set: Vec<(AddressableLed, Color)> = Vec::new();
+    let mut leds_to_set: Vec<(AddressableLed, Rgba<u8>)> = Vec::new();
     for led in self.all_leds.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         // take only active, highest z-index declaration for each LED
@@ -158,7 +160,11 @@ impl System for LedSystem {
             .conflict_resolution
             .get(led)
             .unwrap_or(&LedConflictResolution::FirstWins);
-          log::trace!("Resolving LED declaration conflict on {:?} with {:?}", led, resolution_strategy);
+          log::trace!(
+            "Resolving LED declaration conflict on {:?} with {:?}",
+            led,
+            resolution_strategy
+          );
 
           match resolution_strategy {
             LedConflictResolution::FirstWins => {
@@ -170,8 +176,8 @@ impl System for LedSystem {
                 top_declarations
                   .iter()
                   .map(|(_, d)| d.color)
-                  .collect::<Vec<_>>()
-                  .mix_all(),
+                  .reduce(|acc, c| acc.mix_with(c, 0.5))
+                  .unwrap_or(Rgba::default()),
               ));
             }
             LedConflictResolution::Alternate => {
@@ -186,7 +192,7 @@ impl System for LedSystem {
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
-        leds_to_set.push((led.clone(), Color::default()));
+        leds_to_set.push((led.clone(), Rgba::default()));
       }
     }
 
@@ -204,7 +210,7 @@ impl System for LedSystem {
 
     if leds_to_set.len() > 0 {
       // group by address to send to machine
-      let outgoing: HashMap<LedAddress, Vec<(u16, Color)>> =
+      let outgoing: HashMap<LedAddress, Vec<(u16, Rgba<u8>)>> =
         leds_to_set
           .into_iter()
           .fold(HashMap::new(), |mut acc, (led, color)| {
@@ -228,7 +234,7 @@ impl System for LedSystem {
 #[derive(Debug)]
 struct StatefulLedDeclaration {
   active: bool,
-  color: Color,
+  color: Rgba<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -265,12 +271,12 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 0),
+      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 1);
     system.declare(
       43,
-      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 0),
+      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
@@ -302,11 +308,11 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led1.clone(), Some(Color::red()))], 0),
+      LedDeclarations::new(vec![(led1.clone(), Some(Rgba::red()))], 0),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led2.clone(), Some(Color::red()))], 0),
+      LedDeclarations::new(vec![(led2.clone(), Some(Rgba::red()))], 0),
     );
     assert!(system.declarations.get(&led1).unwrap().len() == 2);
 
@@ -330,11 +336,11 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Color::red()))], 1),
+      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 1),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Color::blue()))], 2),
+      LedDeclarations::new(vec![(led.clone(), Some(Rgba::blue()))], 2),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 

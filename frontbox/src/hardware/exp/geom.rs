@@ -17,6 +17,6 @@ pub enum RenderableGeom {
 pub struct Bitmap {
   pub height: u16,
   pub width: u16,
-  /// Color channels arranged as r,g,b
+  /// Color channels arranged as r,g,b,a
   pub data: Vec<f32>,
 }

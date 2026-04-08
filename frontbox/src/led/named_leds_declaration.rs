@@ -1,6 +1,4 @@
-use fast_protocol::Color;
-
-use crate::prelude::{Context, LedDeclarations, LedIdentifications};
+use crate::prelude::*;
 use crate::{AddressableLed, HardwareSelection};
 
 pub fn named_leds(ctx: Context, names: Vec<&str>) -> MultipleLedDeclarations {
@@ -41,13 +39,13 @@ pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclar
 
 #[derive(Debug, Clone)]
 pub struct MultipleLedDeclarations {
-  pairings: Vec<(AddressableLed, Option<Color>)>,
+  pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>,
   z_index: Option<i8>,
 }
 
 impl MultipleLedDeclarations {
   /// Set all LEDs to the same color
-  pub fn color_all(mut self, color: Color) -> MultipleLedDeclarations {
+  pub fn color_all(mut self, color: Rgba<u8>) -> MultipleLedDeclarations {
     for (_, c) in self.pairings.iter_mut() {
       *c = Some(color);
     }
@@ -55,13 +53,13 @@ impl MultipleLedDeclarations {
   }
 
   /// Set a single LED to a color, identified by its index in the original list of names
-  pub fn color_idx(mut self, index: usize, color: Color) -> MultipleLedDeclarations {
+  pub fn color_idx(mut self, index: usize, color: Rgba<u8>) -> MultipleLedDeclarations {
     self.pairings.get_mut(index).expect("Index out of bounds").1 = Some(color);
     self
   }
 
   /// Set the LEDs to alternate between the provided colors in order
-  pub fn alternate(mut self, colors: Vec<Color>) -> MultipleLedDeclarations {
+  pub fn alternate(mut self, colors: Vec<Rgba<u8>>) -> MultipleLedDeclarations {
     for (i, (_, c)) in self.pairings.iter_mut().enumerate() {
       *c = Some(colors[i % colors.len()]);
     }
@@ -69,7 +67,7 @@ impl MultipleLedDeclarations {
   }
 
   /// Create a gradient across all LEDs from the from color to the to color
-  pub fn gradient(mut self, from: Color, to: Color) -> MultipleLedDeclarations {
+  pub fn gradient(mut self, from: Rgba<u8>, to: Rgba<u8>) -> MultipleLedDeclarations {
     let n = self.pairings.len();
     for (i, (_, c)) in self.pairings.iter_mut().enumerate() {
       let t = if n == 1 {
@@ -77,7 +75,7 @@ impl MultipleLedDeclarations {
       } else {
         i as f32 / (n - 1) as f32
       };
-      *c = Some(from.mix(&to, t));
+      *c = Some(from.mix_with(to, t));
     }
     self
   }

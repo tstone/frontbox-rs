@@ -39,8 +39,12 @@ mod tests {
 
   #[test]
   fn test_request() {
-    let result =
-      SetLedsCommand::new(0x48, None, vec![(0, Color::red()), (1, Color::green())]).to_string();
+    let result = SetLedsCommand::new(
+      0x48,
+      None,
+      vec![(0, Color::rgb(255, 0, 0)), (1, Color::rgb(0, 255, 0))],
+    )
+    .to_string();
     assert_eq!(result, "RS@48:0FF0000,100FF00\r");
   }
 }

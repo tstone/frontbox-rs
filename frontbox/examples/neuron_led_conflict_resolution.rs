@@ -45,8 +45,8 @@ impl System for System1 {
 
     let mut led_system = systems.expect_mut::<LedSystem>();
     led_system.declare(
-      ctx.current_system_id(), 
-      named_led(ctx, leds::DEMO1).color(Color::red())
+      ctx.current_system_id(),
+      named_led(ctx, leds::DEMO1).color(Rgba::red()),
     );
   }
 
@@ -54,7 +54,10 @@ impl System for System1 {
     let mut led_system = systems.expect_mut::<LedSystem>();
 
     if event.is::<On>() {
-      led_system.set_conflict_resolution(named_led(ctx, leds::DEMO1), LedConflictResolution::Alternate);
+      led_system.set_conflict_resolution(
+        named_led(ctx, leds::DEMO1),
+        LedConflictResolution::Alternate,
+      );
     } else if event.is::<Off>() {
       led_system.set_conflict_resolution(named_led(ctx, leds::DEMO1), LedConflictResolution::Mix);
     }
@@ -65,7 +68,7 @@ struct System2;
 
 impl System for System2 {
   fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    let decl = named_led(ctx, leds::DEMO1).color(Color::blue());
+    let decl = named_led(ctx, leds::DEMO1).color(Rgba::blue());
     systems
       .expect_mut::<LedSystem>()
       .declare(ctx.current_system_id(), decl);

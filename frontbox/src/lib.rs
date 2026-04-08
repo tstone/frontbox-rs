@@ -27,8 +27,9 @@ pub mod prelude {
 
   // re-exports
   pub use fast_protocol::driver_config::*;
-  pub use fast_protocol::{Color, ColorsExt, DriverTriggerControlMode, LedType, Power};
+  pub use fast_protocol::{DriverTriggerControlMode, LedType, Power};
   pub use frontbox_derive::*;
+  pub use image::Rgba;
   pub use serde::Serialize;
   pub use std::time::Duration;
 

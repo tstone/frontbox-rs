@@ -21,7 +21,7 @@ impl AlternateResolver {
     }
   }
 
-  pub fn resolve(&mut self, led: AddressableLed, colors: Vec<Color>) -> Color {
+  pub fn resolve(&mut self, led: AddressableLed, colors: Vec<Rgba<u8>>) -> Rgba<u8> {
     // check first if we have an existing system for this led, and if it's still valid
     if let Some(entry) = self.states.get_mut(&led) {
       if entry.colors == colors {
@@ -57,7 +57,7 @@ impl AlternateResolver {
 }
 
 struct AlternatingEntry {
-  colors: Vec<Color>,
+  colors: Vec<Rgba<u8>>,
   acc_duration: Duration,
   idx: usize,
 }

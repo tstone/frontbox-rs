@@ -1,6 +1,4 @@
 use fast_protocol::Color;
-
-#[cfg(feature = "image")]
 use image::Rgba;
 
 /// Linear interpolation between two values of type T
@@ -115,7 +113,6 @@ impl Lerp for Color {
   }
 }
 
-#[cfg(feature = "image")]
 impl Lerp for Rgba<u8> {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
     Rgba([
