@@ -24,6 +24,7 @@
     "neoseg",
     "playfield",
     "Renderable",
+    "Rgba",
     "RGBW",
     "rusb",
     "Spawnable",

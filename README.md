@@ -279,7 +279,7 @@ let mut led_system = systems.expect_mut::<LedSystem>();
 led_system.declare(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
-    .color(Color::yellow())
+    .color(Rgba::yellow())
     .z_index(3)
 );
 
@@ -287,7 +287,7 @@ led_system.declare(
 led_system.declare(
   ctx.current_system_id(),
   named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
-    .gradient(Color::red(), Color::yellow())
+    .gradient(Rgba::red(), Rgba::yellow())
 );
 ```
 
@@ -308,7 +308,7 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 led_system.declare(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
-    .color(Color::red().with_alpha_f32(0.5))
+    .color(Rgba::red().with_alpha_f32(0.5))
     .z_index(1)
 );
 
@@ -316,7 +316,7 @@ led_system.declare(
 led_system.declare(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
-    .color(Color::white())
+    .color(Rgba::white())
     .z_index(0)
 );
 
@@ -379,7 +379,7 @@ This means that animations work, not just on time, by for integers that represen
 self.anim = Tween::new(
   100, // target
   Curve::Linear,
-  vec![Color::yellow(), Color::red()],
+  vec![Rgba::yellow(), Rgba::red()],
   AnimationCycle::Once
 );
 
@@ -761,7 +761,7 @@ impl TargetHitter {
       flash_anim: InterpolationAnimation::new(
         Duration::from_millis(450),
         Curve::ExponentialInOut,
-        vec![Color::black(), Color::red()],
+        vec![Rgba::black(), Rgba::red()],
         AnimationCycle::Forever,
       )
     })
@@ -824,9 +824,9 @@ impl System for TargetHitter {
       }
       TargetHitterState::Building => {
         let color = match self.hits {
-          0 => Color::yellow(),
-          1 => Color::orange(),
-          2 => Color::red(),
+          0 => Rgba::yellow(),
+          1 => Rgba::orange(),
+          2 => Rgba::red(),
         }
         LedDeclarationBuilder::new(delta_time)
           .on(self.indicator_id, color)
