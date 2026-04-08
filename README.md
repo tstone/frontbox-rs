@@ -264,6 +264,7 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 
 - Conflict Resolution -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
 - Layer (z-index) support -- It's possible to keep an "under layer" active while playing temporary animations a layer above
+- Alpha Compositing -- LEDs are rendered in RGBA which supports transparency (under colors show through partially)
 - An easy way to de-activate LED declarations when a system is de-activated
 - Automatic clearing of unset LEDs per frame
 
@@ -297,6 +298,30 @@ led_system.deactivate_by_system(ctx.current_system_id());
 ```
 
 In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
+
+#### Layering
+
+It is possible to declare multiple layers for the same LED. If higher layers are opaque they will be rendered. If higher layers are transparent, they will render with a degree of "see-through" to layers below them.
+
+```rust
+// higher layer declares 50% transparent red
+led_system.declare(
+  ctx.current_system_id(),
+  named_led(leds::EXAMPLE)
+    .color(Color::red().with_alpha_f32(0.5))
+    .z_index(1)
+);
+
+// over top of white
+led_system.declare(
+  ctx.current_system_id(),
+  named_led(leds::EXAMPLE)
+    .color(Color::white())
+    .z_index(0)
+);
+
+// final color renders as pink [255, 127, 127, 255]
+```
 
 #### Animations
 

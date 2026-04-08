@@ -151,6 +151,9 @@ pub trait RgbaColor {
   fn mix(a: Self, b: Self, t: f32) -> Self;
   fn mix_with(&self, b: Self, t: f32) -> Self;
 
+  fn with_alpha(self, alpha: u8) -> Self;
+  fn with_alpha_f32(self, alpha: f32) -> Self;
+
   fn over(src: Self, dst: Self) -> Self;
   fn composite_over(&self, dst: Self) -> Self;
 }
@@ -174,6 +177,14 @@ impl RgbaColor for Rgba<u8> {
   /// Combine with b, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
   fn mix_with(&self, b: Rgba<u8>, t: f32) -> Rgba<u8> {
     Self::mix(*self, b, t)
+  }
+
+  fn with_alpha(self, alpha: u8) -> Self {
+    Rgba([self.0[0], self.0[1], self.0[2], alpha])
+  }
+
+  fn with_alpha_f32(self, alpha: f32) -> Self {
+    self.with_alpha((alpha * 255.0) as u8)
   }
 
   /// Composite `src` over `dst` using alpha blending, e.g. red over white with 50% alpha results in pink

@@ -1,5 +1,6 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
+use image::Pixel;
 use std::io::Write;
 
 /**
@@ -98,7 +99,7 @@ impl System for LedExample {
     );
     leds.declare(
       ctx.current_system_id(),
-      named_led(ctx, leds::DEMO2).color(Rgba::yellow()),
+      named_led(ctx, leds::DEMO2).color(Rgba::yellow().with_alpha(127)),
     );
   }
 
