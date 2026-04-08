@@ -3,6 +3,7 @@
     "accumulatable",
     "Adressable",
     "animatable",
+    "anims",
     "autoplunge",
     "Autoplunger",
     "bitplanes",
@@ -22,6 +23,7 @@
     "millis",
     "multiball",
     "neoseg",
+    "Perlin",
     "playfield",
     "Renderable",
     "Rgba",
@@ -31,6 +33,7 @@
     "startable",
     "Tweenable",
     "undeclaring",
-    "unduck"
+    "unduck",
+    "Worley"
   ]
 }

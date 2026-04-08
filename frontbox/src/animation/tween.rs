@@ -36,6 +36,26 @@ where
     }
   }
 
+  pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Sequence<A, T>
+  where
+    A: PartialOrd + 'static,
+    T: 'static,
+  {
+    Sequence::new(
+      vec![
+        Tween::boxed(target, curve.clone(), stops.clone(), AnimationCycle::Once)
+          as Box<dyn Animation<A, T>>,
+        Tween::boxed(
+          target,
+          Curve::Reverse(Box::new(curve.clone())),
+          stops.into_iter().rev().collect(),
+          AnimationCycle::Once,
+        ),
+      ],
+      cycle,
+    )
+  }
+
   pub fn boxed(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
     Box::new(Self::new(target, curve, stops, cycle))
   }
@@ -134,7 +154,7 @@ where
 
 impl<A, T> Animation<A, T> for Tween<A, T>
 where
-  T: Lerp + Clone + Send + Sync,
+  T: Lerp + Clone + Send + Sync + 'static,
   A: Tweenable
     + Copy
     + Default
@@ -144,7 +164,8 @@ where
     + PartialOrd
     + Send
     + Sync
-    + Debug,
+    + Debug
+    + 'static,
 {
   fn sample(&self) -> T {
     let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);

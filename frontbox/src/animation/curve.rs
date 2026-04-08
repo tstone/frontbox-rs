@@ -1,5 +1,7 @@
 use std::{f32::consts::PI, fmt::Debug};
 
+use noise::{MultiFractal, NoiseFn};
+
 #[derive(Debug, Default, Clone)]
 pub enum Curve {
   #[default]
@@ -14,12 +16,36 @@ pub enum Curve {
   ExponentialOut,
   ExponentialInOut,
   Sinusoid,
+  ElasticIn,
+  ElasticOut,
+  ElasticInOut,
+  BackIn,
+  BackOut,
+  BackInOut,
   BounceIn,
   BounceOut,
   BounceInOut,
-  Constant(f32),
+  SineIn,
+  SineOut,
+  SineInOut,
+  Random,
+  SmoothRandom,
+  /// Organic noise that is similar to Random but with smooth transitions between values, seeded by the given u32
+  SimplexNoise(u32),
+  /// Cracked/cellular noise that produces random flat regions separated by sharp edges, seeded by the given u32
+  WorleyNoise(u32),
+  /// Stormy, turbulent noise with a fractal structure, seeded by the given u32 and with the given number of octaves
+  FractalBrownianMotion(u32, usize),
+  /// Mostly linear but with random spikes of intensity that increase with the given intensity parameter (0.0 to 1.0)
+  Glitch(f32),
+  /// Discrete steps instead of a continuous curve, with the given number of steps
   Steps(usize),
+  /// Steps but with with random dropouts that increase with the given intensity parameter (0.0 to 1.0)
+  Stutter(usize, f32),
+  Constant(f32),
   Reverse(Box<Self>),
+  /// Combines two curves by multiplying their outputs together, allowing for complex interactions between curve shapes
+  /// Most useful for combining a simple curve with noise, e.g. Remap(Glitch(0.1), EaseOut)
   Remap(Box<Self>, Box<Self>),
 }
 
@@ -41,6 +67,45 @@ impl Curve {
       Self::BounceIn => sample_bounce_in(phase),
       Self::BounceOut => sample_bounce_out(phase),
       Self::BounceInOut => sample_bounce_inout(phase),
+      Self::ElasticIn => sample_elastic_in(phase),
+      Self::ElasticOut => sample_elastic_out(phase),
+      Self::ElasticInOut => sample_elastic_inout(phase),
+      Self::BackIn => phase.powf(2.0) * ((phase * 2.0 - 1.0) * 2.7 + 1.7),
+      Self::BackOut => 1.0 - (1.0 - phase).powf(2.0) * (((1.0 - phase) * 2.0 - 1.0) * 2.7 + 1.7),
+      Self::BackInOut => {
+        if phase < 0.5 {
+          (phase * 2.0).powf(2.0) * ((phase * 4.0 - 1.0) * 2.7 + 1.7) / 2.0
+        } else {
+          1.0 - (1.0 - phase * 2.0).powf(2.0) * (((1.0 - phase) * 4.0 - 1.0) * 2.7 + 1.7) / 2.0
+        }
+      }
+      Self::SineIn => 1.0 - (phase * PI / 2.0).cos(),
+      Self::SineOut => (phase * PI / 2.0).sin(),
+      Self::SineInOut => -(f32::cos(PI * phase) - 1.0) / 2.0,
+      Self::Random => rand::random::<f32>(),
+      Self::SmoothRandom => {
+        let x = (phase * 1000.0) as u32;
+        let x = x ^ (x << 13) ^ (x >> 17);
+        x as f32 / u32::MAX as f32
+      }
+      Self::SimplexNoise(seed) => noise::Simplex::new(*seed).get([phase as f64, 0.0]) as f32,
+      Self::WorleyNoise(seed) => noise::Worley::new(*seed).get([phase as f64, 0.0]) as f32,
+      Self::FractalBrownianMotion(seed, octaves) => noise::Fbm::<noise::Perlin>::new(*seed)
+        .set_octaves(*octaves)
+        .get([phase as f64, 0.0]) as f32,
+      Self::Glitch(intensity) => {
+        let x = (phase * 1000.0) as u32;
+        let hash = x ^ (x << 13) ^ (x >> 17);
+        let spike = (hash as f32 / u32::MAX as f32) < *intensity;
+        if spike { 1.0 - phase } else { phase }
+      }
+      Self::Stutter(steps, dropout) => {
+        let stepped = (phase * *steps as f32).floor() / *steps as f32;
+        let x = (phase * 1000.0) as u32;
+        let hash = x ^ (x << 13);
+        let dead = (hash as f32 / u32::MAX as f32) < *dropout;
+        if dead { 0.0 } else { stepped }
+      }
 
       Self::Steps(steps) => sample_steps(*steps, phase), // should steps be a quantization of an existing Curve?
       Self::Reverse(other) => 1.0 - other.sample(phase),
@@ -110,5 +175,37 @@ fn sample_bounce_inout(phase: f32) -> f32 {
     (1.0 - sample_bounce_out(1.0 - 2.0 * phase)) / 2.0
   } else {
     (1.0 + sample_bounce_out(2.0 * phase - 1.0)) / 2.0
+  }
+}
+
+fn sample_elastic_in(phase: f32) -> f32 {
+  if phase == 0.0 {
+    0.0
+  } else if phase == 1.0 {
+    1.0
+  } else {
+    -2.0f32.powf(10.0 * phase - 10.0) * (phase * 10.0 - 10.75).sin()
+  }
+}
+
+fn sample_elastic_out(phase: f32) -> f32 {
+  if phase == 0.0 {
+    0.0
+  } else if phase == 1.0 {
+    1.0
+  } else {
+    2.0f32.powf(-10.0 * phase) * (phase * 10.0 - 0.75).sin() + 1.0
+  }
+}
+
+fn sample_elastic_inout(phase: f32) -> f32 {
+  if phase == 0.0 {
+    0.0
+  } else if phase == 1.0 {
+    1.0
+  } else if phase < 0.5 {
+    -(2.0f32.powf(20.0 * phase - 10.0) * (20.0 * phase - 11.125).sin()) / 2.0
+  } else {
+    (2.0f32.powf(-20.0 * phase + 10.0) * (20.0 * phase - 11.125).sin()) / 2.0 + 1.0
   }
 }
