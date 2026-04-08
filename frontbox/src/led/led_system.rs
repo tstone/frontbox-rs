@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::i8;
 
-use image::Rgba;
+use image::{Pixel, Rgba};
+use itertools::Itertools;
 
 use crate::prelude::*;
 
@@ -44,16 +45,7 @@ impl LedSystem {
   ) {
     let declarations: LedDeclarations = declarations.into();
     for (led, color) in declarations.pairings {
-      // A color value of None is the same as undeclaring
-      if color.is_none() {
-        self.undeclare(owning_system, (led, Some(declarations.z_index)));
-        continue;
-      }
-
-      let declaration = StatefulLedDeclaration {
-        active,
-        color: color.unwrap(),
-      };
+      let declaration = StatefulLedDeclaration { active, color };
       self
         .declarations
         .entry(led.clone())
@@ -118,6 +110,69 @@ impl LedSystem {
       self.conflict_resolution.insert(led.clone(), resolution);
     }
   }
+
+  fn resolve_led_color(
+    led: &AddressableLed,
+    mut z_indexes: Vec<i8>,
+    declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
+    conflict_resolution: &HashMap<AddressableLed, LedConflictResolution>,
+    alternate_resolver: &mut AlternateResolver,
+  ) -> Rgba<u8> {
+    let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
+    let top_declarations = declarations
+      .iter()
+      .filter(|(id, _)| id.z_index == *max_z)
+      .collect::<Vec<_>>();
+
+    println!(
+      "Resolving color for {:?} with declarations: {:?}",
+      led, top_declarations
+    );
+
+    let top_color = if top_declarations.len() == 1 {
+      top_declarations[0].1.color
+    } else if top_declarations.len() > 1 {
+      let resolution_strategy = conflict_resolution
+        .get(led)
+        .unwrap_or(&LedConflictResolution::FirstWins);
+
+      log::trace!(
+        "Resolving LED declaration conflict on {:?} with {:?}",
+        led,
+        resolution_strategy
+      );
+
+      match resolution_strategy {
+        LedConflictResolution::FirstWins => top_declarations[0].1.color,
+        LedConflictResolution::Mix => top_declarations
+          .iter()
+          .map(|(_, d)| d.color)
+          .reduce(|acc, c| acc.mix_with(c, 0.5))
+          .unwrap_or(Rgba::default()),
+        LedConflictResolution::Alternate => {
+          let colors = top_declarations.iter().map(|(_, d)| d.color).collect();
+          alternate_resolver.resolve(led.clone(), colors)
+        }
+      }
+    } else {
+      Rgba::default()
+    };
+
+    // if the top color is transparent, composite it with the next highest declaration below it
+    if top_color.alpha() < 255 && z_indexes.len() > 1 {
+      z_indexes.pop();
+      let next_color = Self::resolve_led_color(
+        led,
+        z_indexes,
+        declarations,
+        conflict_resolution,
+        alternate_resolver,
+      );
+      top_color.composite_over(next_color)
+    } else {
+      top_color
+    }
+  }
 }
 
 impl System for LedSystem {
@@ -140,55 +195,32 @@ impl System for LedSystem {
 
   fn on_render(&mut self, _ctx: &Context, systems: &Systems) {
     let mut leds_to_set: Vec<(AddressableLed, Rgba<u8>)> = Vec::new();
+
     for led in self.all_leds.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         // take only active, highest z-index declaration for each LED
         let active = declarations.iter().filter(|(_, d)| d.active);
-        let maz_z_index = active
-          .clone()
-          .map(|(id, _)| id.z_index)
-          .max()
-          .unwrap_or(i8::MIN);
-        let top_declarations = active
-          .filter(|(id, _)| id.z_index == maz_z_index)
-          .collect::<Vec<_>>();
+        // assemble a list of unique z-indexes defined for this LED
+        let z_indexes =
+          active
+            .clone()
+            .map(|(id, _)| id.z_index)
+            .sorted()
+            .fold(Vec::new(), |mut acc, z| {
+              if !acc.contains(&z) {
+                acc.push(z);
+              }
+              acc
+            });
 
-        if top_declarations.len() == 1 {
-          leds_to_set.push((led.clone(), top_declarations[0].1.color));
-        } else if top_declarations.len() > 1 {
-          let resolution_strategy = self
-            .conflict_resolution
-            .get(led)
-            .unwrap_or(&LedConflictResolution::FirstWins);
-          log::trace!(
-            "Resolving LED declaration conflict on {:?} with {:?}",
-            led,
-            resolution_strategy
-          );
-
-          match resolution_strategy {
-            LedConflictResolution::FirstWins => {
-              leds_to_set.push((led.clone(), top_declarations[0].1.color));
-            }
-            LedConflictResolution::Mix => {
-              leds_to_set.push((
-                led.clone(),
-                top_declarations
-                  .iter()
-                  .map(|(_, d)| d.color)
-                  .reduce(|acc, c| acc.mix_with(c, 0.5))
-                  .unwrap_or(Rgba::default()),
-              ));
-            }
-            LedConflictResolution::Alternate => {
-              let colors = top_declarations.iter().map(|(_, d)| d.color).collect();
-              leds_to_set.push((
-                led.clone(),
-                self.alternate_resolver.resolve(led.clone(), colors),
-              ));
-            }
-          }
-        }
+        let final_color = Self::resolve_led_color(
+          led,
+          z_indexes,
+          declarations,
+          &self.conflict_resolution,
+          &mut self.alternate_resolver,
+        );
+        leds_to_set.push((led.clone(), final_color));
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
@@ -257,6 +289,7 @@ pub enum LedConflictResolution {
 mod tests {
   use super::*;
 
+  // Two different systems declare the same LED
   #[test]
   fn test_declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
@@ -271,12 +304,12 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 0),
+      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 1);
     system.declare(
       43,
-      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 0),
+      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
@@ -286,6 +319,7 @@ mod tests {
     assert!(system.declarations.get(&led).unwrap().len() == 1);
   }
 
+  // One system declares two different LEDs
   #[test]
   fn test_declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
@@ -308,20 +342,22 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led1.clone(), Some(Rgba::red()))], 0),
+      LedDeclarations::new(vec![(led1.clone(), Rgba::red())], 0),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led2.clone(), Some(Rgba::red()))], 0),
+      LedDeclarations::new(vec![(led2.clone(), Rgba::red())], 0),
     );
-    assert!(system.declarations.get(&led1).unwrap().len() == 2);
+    assert_eq!(system.declarations.get(&led1).unwrap().len(), 1);
+    assert_eq!(system.declarations.get(&led2).unwrap().len(), 1);
 
     system.undeclare(42, LedIdentifications::new(vec![led1.clone()], 0));
 
     // the declaration for led2 should still be there
-    assert!(system.declarations.get(&led1).unwrap().len() == 1);
+    assert_eq!(system.declarations.get(&led2).unwrap().len(), 1);
   }
 
+  // One system declares the same LED at two different z-indexes
   #[test]
   fn test_declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
@@ -336,11 +372,11 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Rgba::red()))], 1),
+      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 1),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Some(Rgba::blue()))], 2),
+      LedDeclarations::new(vec![(led.clone(), Rgba::blue())], 2),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
@@ -348,5 +384,157 @@ mod tests {
 
     // the declaration for z-index 2 should still be there
     assert!(system.declarations.get(&led).unwrap().len() == 1);
+  }
+
+  #[test]
+  fn test_resolve_color() {
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    let declarations = HashMap::from([
+      (
+        DeclarationIdentifier {
+          system_id: 42,
+          z_index: 0,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba::red(),
+        },
+      ),
+      (
+        DeclarationIdentifier {
+          system_id: 43,
+          z_index: 1, // higher index, blue should win
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba::blue(),
+        },
+      ),
+    ]);
+
+    let conflict_resolution = HashMap::new();
+    let mut alternate_resolver = AlternateResolver::new();
+
+    let resolved_color = LedSystem::resolve_led_color(
+      &led,
+      vec![1],
+      &declarations,
+      &conflict_resolution,
+      &mut alternate_resolver,
+    );
+
+    assert_eq!(resolved_color, Rgba([0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn test_resolve_color_conflict() {
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    let declarations = HashMap::from([
+      (
+        DeclarationIdentifier {
+          system_id: 42,
+          z_index: 0,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba::red(),
+        },
+      ),
+      (
+        DeclarationIdentifier {
+          system_id: 43,
+          z_index: 0,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba::blue(),
+        },
+      ),
+    ]);
+
+    let conflict_resolution = HashMap::from([(
+      led.clone(),
+      LedConflictResolution::Mix, // red and blue should mix to purple
+    )]);
+    let mut alternate_resolver = AlternateResolver::new();
+
+    let resolved_color = LedSystem::resolve_led_color(
+      &led,
+      vec![0],
+      &declarations,
+      &conflict_resolution,
+      &mut alternate_resolver,
+    );
+
+    assert_eq!(resolved_color, Rgba([127, 0, 127, 255]));
+  }
+
+  // alpha compositing test - top semi-transparent declaration should composite with the next highest declaration below it
+  #[test]
+  fn test_resolve_color_alpha_compositing() {
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    let declarations = HashMap::from([
+      (
+        DeclarationIdentifier {
+          system_id: 42,
+          z_index: 1,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba([255, 0, 0, 127]), // semi-transparent red
+        },
+      ),
+      (
+        DeclarationIdentifier {
+          system_id: 43,
+          z_index: 0,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba([255, 255, 255, 255]), // opaque white
+        },
+      ),
+    ]);
+
+    let conflict_resolution = HashMap::from([(
+      led.clone(),
+      LedConflictResolution::Mix, // red and blue should mix to purple
+    )]);
+    let mut alternate_resolver = AlternateResolver::new();
+
+    let resolved_color = LedSystem::resolve_led_color(
+      &led,
+      vec![0, 1],
+      &declarations,
+      &conflict_resolution,
+      &mut alternate_resolver,
+    );
+
+    // final color shows through as pink
+    assert_eq!(resolved_color, Rgba([255, 127, 127, 255]));
   }
 }

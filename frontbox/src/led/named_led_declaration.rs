@@ -48,10 +48,7 @@ pub struct NamedLedDeclaration {
 
 impl From<NamedLedDeclaration> for LedDeclarations {
   fn from(decl: NamedLedDeclaration) -> Self {
-    LedDeclarations::new(
-      vec![(decl.led, Some(decl.color))],
-      decl.z_index.unwrap_or(0),
-    )
+    LedDeclarations::new(vec![(decl.led, decl.color)], decl.z_index.unwrap_or(0))
   }
 }
 

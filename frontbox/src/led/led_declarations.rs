@@ -4,12 +4,12 @@ use crate::AddressableLed;
 
 #[derive(Debug, Clone)]
 pub struct LedDeclarations {
-  pub pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>,
+  pub pairings: Vec<(AddressableLed, Rgba<u8>)>,
   pub z_index: i8,
 }
 
 impl LedDeclarations {
-  pub fn new(pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>, z_index: i8) -> Self {
+  pub fn new(pairings: Vec<(AddressableLed, Rgba<u8>)>, z_index: i8) -> Self {
     Self { pairings, z_index }
   }
 
@@ -18,10 +18,7 @@ impl LedDeclarations {
     let recolored_pairings = self
       .pairings
       .into_iter()
-      .map(|(led, old_color)| match old_color {
-        Some(_) => (led, Some(color)),
-        None => (led, None),
-      })
+      .map(|(led, _)| (led, color))
       .collect();
     Self {
       pairings: recolored_pairings,
@@ -30,8 +27,8 @@ impl LedDeclarations {
   }
 }
 
-impl From<(AddressableLed, Option<Rgba<u8>>)> for LedDeclarations {
-  fn from(pairing: (AddressableLed, Option<Rgba<u8>>)) -> Self {
+impl From<(AddressableLed, Rgba<u8>)> for LedDeclarations {
+  fn from(pairing: (AddressableLed, Rgba<u8>)) -> Self {
     LedDeclarations::new(vec![pairing], 0)
   }
 }

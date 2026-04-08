@@ -11,7 +11,7 @@ pub fn named_leds(ctx: Context, names: Vec<&str>) -> MultipleLedDeclarations {
         .first()
         .expect("LED has no addressable LEDs")
         .clone(),
-      None,
+      Rgba::default(),
     ));
   }
 
@@ -27,7 +27,7 @@ pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclar
   let mut leds = Vec::new();
   for ill in illums {
     for led in &ill.leds {
-      leds.push((led.clone(), None));
+      leds.push((led.clone(), Rgba::default()));
     }
   }
 
@@ -39,7 +39,7 @@ pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclar
 
 #[derive(Debug, Clone)]
 pub struct MultipleLedDeclarations {
-  pairings: Vec<(AddressableLed, Option<Rgba<u8>>)>,
+  pairings: Vec<(AddressableLed, Rgba<u8>)>,
   z_index: Option<i8>,
 }
 
@@ -47,21 +47,21 @@ impl MultipleLedDeclarations {
   /// Set all LEDs to the same color
   pub fn color_all(mut self, color: Rgba<u8>) -> MultipleLedDeclarations {
     for (_, c) in self.pairings.iter_mut() {
-      *c = Some(color);
+      *c = color;
     }
     self
   }
 
   /// Set a single LED to a color, identified by its index in the original list of names
   pub fn color_idx(mut self, index: usize, color: Rgba<u8>) -> MultipleLedDeclarations {
-    self.pairings.get_mut(index).expect("Index out of bounds").1 = Some(color);
+    self.pairings.get_mut(index).expect("Index out of bounds").1 = color;
     self
   }
 
   /// Set the LEDs to alternate between the provided colors in order
   pub fn alternate(mut self, colors: Vec<Rgba<u8>>) -> MultipleLedDeclarations {
     for (i, (_, c)) in self.pairings.iter_mut().enumerate() {
-      *c = Some(colors[i % colors.len()]);
+      *c = colors[i % colors.len()];
     }
     self
   }
@@ -75,7 +75,7 @@ impl MultipleLedDeclarations {
       } else {
         i as f32 / (n - 1) as f32
       };
-      *c = Some(from.mix_with(to, t));
+      *c = from.mix_with(to, t);
     }
     self
   }
