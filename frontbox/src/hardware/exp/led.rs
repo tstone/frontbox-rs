@@ -1,5 +1,4 @@
-use crate::prelude::*;
-use crate::{Bitmap, HardwareTag, Illumination, Point, RenderableGeom};
+use crate::{HardwareTag, Illumination, Point, RenderableGeom};
 
 #[derive(Debug, Clone)]
 pub struct Led {

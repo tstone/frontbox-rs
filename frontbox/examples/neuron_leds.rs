@@ -1,6 +1,5 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
-use image::Pixel;
 use std::io::Write;
 
 /**
@@ -89,8 +88,8 @@ impl LedExample {
 }
 
 impl System for LedExample {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    let mut leds = systems.expect_mut::<LedSystem>();
+  fn on_spawn(&mut self, ctx: &Context) {
+    let mut leds = ctx.systems.expect::<LedSystem>();
 
     // set static LED colors on demand
     leds.declare(
@@ -103,12 +102,12 @@ impl System for LedExample {
     );
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     // tick animations to update their internal state
     self.flash.accumulate(delta);
     self.seq.accumulate(delta);
 
-    let mut leds = systems.expect_mut::<LedSystem>();
+    let mut leds = ctx.systems.expect::<LedSystem>();
 
     // re-declare LEDs with updated animated colors
     leds.declare(

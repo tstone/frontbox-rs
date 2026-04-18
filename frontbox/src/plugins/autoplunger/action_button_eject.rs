@@ -23,15 +23,15 @@ impl ActionButtonEject {
 }
 
 impl System for ActionButtonEject {
-  fn is_active(&self, _ctx: &Context, _systems: &Systems) -> bool {
+  fn is_active(&self, _ctx: &Context) -> bool {
     self.active
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if self.action_button_switch.matches_switch(&e.switch) {
-        if let Some(mut autoplunger) = systems.get_mut::<AutoPlunger>() {
-          autoplunger.fire(ctx, systems);
+        if let Some(mut autoplunger) = ctx.systems.get::<AutoPlunger>() {
+          autoplunger.fire(ctx);
         }
       } else if self.plunge_lane_switch.matches_switch(&e.switch) {
         self.active = true;

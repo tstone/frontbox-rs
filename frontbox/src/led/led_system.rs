@@ -176,7 +176,7 @@ impl LedSystem {
 }
 
 impl System for LedSystem {
-  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     // Create a copy of all LEDs to reference during rendering
     for board in &ctx.exp_network {
       for port in &board.led_ports {
@@ -189,11 +189,11 @@ impl System for LedSystem {
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, _ctx: &Context, _systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, _ctx: &Context) {
     self.alternate_resolver.accumulate(delta);
   }
 
-  fn on_render(&mut self, _ctx: &Context, systems: &Systems) {
+  fn on_render(&mut self, ctx: &Context) {
     let mut leds_to_set: Vec<(AddressableLed, Rgba<u8>)> = Vec::new();
 
     for led in self.all_leds.iter() {
@@ -253,7 +253,7 @@ impl System for LedSystem {
             acc
           });
 
-      let machine = systems.expect::<Machine>();
+      let machine = ctx.systems.expect::<Machine>();
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
           machine.set_leds(address.address, address.breakout, chunk.to_vec());

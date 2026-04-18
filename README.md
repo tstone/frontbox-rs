@@ -30,7 +30,7 @@ struct Example {
 }
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context) {
     // <do cool stuff here>
   }
 }
@@ -70,7 +70,7 @@ Frontbox systems receive events through the `on_event` handler.
 
 ```rust
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) { }
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context) { }
 }
 ```
 
@@ -78,7 +78,7 @@ Events are typically handled by attempting a downcast into the expected type.
 
 ```rust
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
     // detect if the event is of type `SwitchClosed`
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       log::debug!("Switch {} was closed!", e.name);
@@ -114,7 +114,7 @@ ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
 // ...
 
 impl System for Example {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
     if let Some(custom) = event.downcast_ref::<MyCustomThing2>() {
       log::debug!("Custom thing happened with {}, {}", custom.prop1, custom.prop2);
     }
@@ -145,7 +145,7 @@ Cues are events that a system can send to itself. There are four primitive types
 struct SomethingImportant(u8);
 
 impl System for Example {
-  fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
+  fn on_startup(&mut self, ctx: &Context) {
     // setup the cue
     ctx.cue(
       Cue::Times(3, Duration::from_secs(3)),
@@ -231,16 +231,14 @@ ctx.exp_network
 Systems can choose to expose public (`pub`) functions that are accessible to other systems. Each handler also receives a reference to `Systems` which grants access to this public methods.
 
 ```rust
-systems.get::<Trough>().eject();
+ctx.systems.get::<Trough>().eject();
 ```
 
 There are several ways to access another system, depending on the situation:
 
-- `get::<S>` - Returns `Option<S>`
-- `get_mut::<S>` - Returns a mutable reference to `Object<S>`
-- `expect::<S>` - Returns `S`, panics if it does not exist
-- `expect_mut::<S>` - Returns mutable reference to `S`, also panics if it does not exist
-- `get_id::<S>` - Returns `Option<S>`
+- `get::<S>` - Returns a mutable reference to `Object<S>`
+- `expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
+- `get_by_id::<S>` - Returns a mutable reference to `Option<S>`
 - `contains::<S>` - Returns `bool` if the system of type `S` currently exists or not
 
 ### Active
@@ -273,7 +271,7 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 
 ```rust
-let mut led_system = systems.expect_mut::<LedSystem>();
+let mut led_system = ctx.systems.expect::<LedSystem>();
 
 // declare LEDs by name...
 led_system.declare(
@@ -384,7 +382,7 @@ self.anim = Tween::new(
 );
 
 
-fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
     match e.name {
       switches::SPINNER => {
@@ -411,11 +409,11 @@ pub struct AnimExample {
 }
 
 impl System for AnimExample {
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     self.anim.accumulate(delta);
 
     // re-declaring the same LED will overwrite the previous declaration
-    systems.expect_mut::<LedSystem>()
+    ctx.systems.expect::<LedSystem>()
       .declare(
         ctx.current_system_id(),
         // declare the current animated value as the color of that LED
@@ -434,10 +432,10 @@ pub struct AnimExample {
 }
 
 impl System for AnimExample {
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     self.anim.accumulate(delta);
 
-    systems.expect_mut::<LedSystem>()
+    ctx.systems.expect::<LedSystem>()
       .declare(
         ctx.current_system_id(),
         named_leds(vec![leds::LEFT_LANE_ARROW, leds::LEFT_LANE1, leds::LEFT_LANE2])
@@ -472,7 +470,7 @@ Frontbox includes `SoundSystem` that supports three types of sounds:
 - Can crossfade into each other
 
 ```rust
-let sound_system = systems.expect_mut::<SoundSystem>();
+let sound_system = ctx.systems.expect::<SoundSystem>();
 
 // typically done `on_startup`
 sound_system.preload("name", "/game/assets/sfx/example.wav");
@@ -492,7 +490,7 @@ sound_system.crossfade_music("/game/assets/music/track2.mp3");
 Operator config provides a standard way to read operator-level settings. Plugins (see below) define operator config when loaded. Systems can read operator config through `Systems`. Typically, plugins list their config keys as `Plugin::config()`.
 
 ```rust
-let value = systems.expect::<OperatorConfig>()
+let value = ctx.systems.expect::<OperatorConfig>()
   .get_string(KnownPlugin::config().something);
 ```
 
@@ -507,7 +505,7 @@ Systems can register themselves as an event interrupt. Interrupt registration re
 Event interrupts can be applied to any event within the system.
 
 ```rust
-fn on_startup(&mut self, ctx: &Context, _systems: &Systems) {
+fn on_startup(&mut self, ctx: &Context) {
   ctx.register_interrupt::<TurnEnd>(100); // 100 is the priority
 }
 
@@ -661,7 +659,7 @@ let switches = ctx.switches.by_selection(sel);
 
 // ...
 
-fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
     if sel.matches_switch(e.switch) {
       // ...
@@ -774,8 +772,8 @@ impl TargetHitter {
   }
 
   // Here's what happens when the target is it -- if the mode is in "hurry up"
-  fn on_target_hit(&mut self, ctx: &Context, systems: &Systems) {
-    let game_manager = systems.expect_mut::<GameManager>();
+  fn on_target_hit(&mut self, ctx: &Context) {
+    let game_manager = ctx.systems.expect::<GameManager>();
 
     match self.state {
       TargetHitterState::HurryUp => {
@@ -800,7 +798,7 @@ impl TargetHitter {
 }
 
 impl System for TargetHitter {
-  fn on_event(&mut self, event: &dyn Signal, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
     if let Some(event) = event.downcast::<SwitchClosed>() {
       if event.switch.id == self.target_switch_id {
         self.on_target_hit(ctx);

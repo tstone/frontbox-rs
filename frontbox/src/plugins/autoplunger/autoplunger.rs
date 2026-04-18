@@ -26,16 +26,17 @@ impl AutoPlunger {
   }
 
   /// Fire the autoplunger immediately
-  fn activate(&mut self, ctx: &Context, systems: &Systems) {
+  fn activate(&mut self, ctx: &Context) {
     for driver in self.coil.get_drivers(ctx) {
-      systems
+      ctx
+        .systems
         .expect::<Machine>()
         .activate_driver(driver.name, ActivationMode::Tap, ctx);
     }
   }
 
   /// Fire the autoplunger once the ball is resting in the lane
-  pub fn fire(&mut self, ctx: &Context, systems: &Systems) {
+  pub fn fire(&mut self, ctx: &Context) {
     // Check the lane switch first to make sure the ball is ready
     let is_closed = self
       .lane_switch
@@ -44,7 +45,7 @@ impl AutoPlunger {
       .all(|s| ctx.switches.is_closed(*&s.name) == Some(true));
 
     if is_closed {
-      self.activate(ctx, systems);
+      self.activate(ctx);
     } else {
       self.do_autoplunge = true;
     }
@@ -52,8 +53,8 @@ impl AutoPlunger {
 }
 
 impl System for AutoPlunger {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    let machine = systems.expect::<Machine>();
+  fn on_spawn(&mut self, ctx: &Context) {
+    let machine = ctx.systems.expect::<Machine>();
 
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
     for switch in self.lane_switch.get_switches(ctx) {
@@ -68,7 +69,7 @@ impl System for AutoPlunger {
     }
 
     // configure plunger driver
-    let machine = systems.expect::<Machine>();
+    let machine = ctx.systems.expect::<Machine>();
     for driver in self.coil.get_drivers(ctx) {
       machine.configure_driver(
         driver.name,
@@ -83,10 +84,10 @@ impl System for AutoPlunger {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if self.lane_switch.matches_switch(&e.switch) && self.do_autoplunge {
-        self.activate(ctx, systems);
+        self.activate(ctx);
         self.do_autoplunge = false;
       }
     }

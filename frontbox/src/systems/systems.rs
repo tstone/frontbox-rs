@@ -1,5 +1,5 @@
 use std::any::{TypeId, type_name};
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
 use std::fmt::Debug;
@@ -55,38 +55,11 @@ impl Systems {
     self.type_to_id.get(&type_id).copied()
   }
 
-  pub fn get_by_id(&self, system_id: u64) -> Option<&RefCell<SystemContainer>> {
-    self.systems.get(&system_id)
-  }
-
-  pub fn get_mut_by_id(&'_ mut self, system_id: u64) -> Option<RefMut<'_, SystemContainer>> {
+  pub fn get_by_id(&'_ mut self, system_id: u64) -> Option<RefMut<'_, SystemContainer>> {
     self.systems.get(&system_id).map(|cell| cell.borrow_mut())
   }
 
-  pub fn get<T: System + 'static>(&'_ self) -> Option<Ref<'_, T>> {
-    let type_id = TypeId::of::<T>();
-    let system_id = self.type_to_id.get(&type_id)?;
-
-    self.systems.get(system_id).map(|cell| {
-      Ref::map(cell.borrow(), |container| {
-        container
-          .downcast_ref::<T>()
-          .expect("type_to_id mapping was incorrect")
-      })
-    })
-  }
-
-  pub fn expect<T: System + 'static>(&'_ self) -> Ref<'_, T> {
-    self.get::<T>().expect(
-      format!(
-        "Expected system {} was not found. Make sure it was added to the App.",
-        type_name::<T>()
-      )
-      .as_str(),
-    )
-  }
-
-  pub fn get_mut<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
+  pub fn get<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     let type_id = TypeId::of::<T>();
     let system_id = self.type_to_id.get(&type_id)?;
 
@@ -99,9 +72,9 @@ impl Systems {
     })
   }
 
-  pub fn expect_mut<T: System + 'static>(&'_ self) -> RefMut<'_, T> {
+  pub fn expect<T: System + 'static>(&'_ self) -> RefMut<'_, T> {
     let system_name = type_name::<T>();
-    self.get_mut::<T>().expect(
+    self.get::<T>().expect(
       format!(
         "Expected system {} was not found. Make sure it was added to the App.",
         system_name

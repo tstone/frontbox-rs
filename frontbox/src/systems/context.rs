@@ -9,6 +9,7 @@ use crate::prelude::*;
 pub struct Context<'a> {
   base: &'a ContextBase,
   system_id: u64,
+  pub systems: &'a Systems,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
@@ -16,11 +17,13 @@ impl<'a> Context<'a> {
   pub fn new(
     base: &'a ContextBase,
     system_id: u64,
+    systems: &'a Systems,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
     Self {
       base,
       system_id,
+      systems,
       app_sender,
     }
   }
@@ -147,6 +150,7 @@ impl<'a> Context<'a> {
     Context {
       base: self.base,
       system_id,
+      systems: self.systems,
       app_sender: self.app_sender.clone(),
     }
   }

@@ -366,7 +366,7 @@ impl Machine {
 }
 
 impl System for Machine {
-  fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
+  fn on_despawn(&mut self, ctx: &Context) {
     // Clear out LEDs, servos, etc.
     self.reset_expansion_network(ctx);
 

@@ -2,9 +2,8 @@ use std::any::Any;
 use std::fmt::Debug;
 
 use dyn_clone::DynClone;
-use image::Rgba;
 
-use crate::{Bitmap, HardwareTag, RenderableGeom};
+use crate::{HardwareTag, RenderableGeom};
 
 pub trait Illumination: DynClone + Debug + Any + Send + Sync {
   fn name(&self) -> &'static str;

@@ -49,7 +49,7 @@ impl CompetitiveGame {
     ctx.emit(GameStarted);
   }
 
-  fn start_turn(&mut self, ctx: &Context, systems: &Systems) {
+  fn start_turn(&mut self, ctx: &Context) {
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Beginning);
     ctx.emit(PlayerTurnBeginning::new(
@@ -57,8 +57,8 @@ impl CompetitiveGame {
       game_state.current_player_turn(),
     ));
 
-    if let Some(trough) = systems.get::<Trough>() {
-      trough.eject(ctx, systems);
+    if let Some(trough) = ctx.systems.get::<Trough>() {
+      trough.eject(ctx);
     }
   }
 
@@ -84,7 +84,7 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
-  fn on_shutdown(&mut self, ctx: &Context, _systems: &Systems) {
+  fn on_despawn(&mut self, ctx: &Context) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {
         let group_name = PLAYER_GROUP_NAMES[player as usize];
@@ -93,7 +93,7 @@ impl System for CompetitiveGame {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
@@ -115,7 +115,7 @@ impl System for CompetitiveGame {
 }
 
 impl GameManagement for CompetitiveGame {
-  fn add_player(&mut self, ctx: &Context, systems: &Systems) {
+  fn add_player(&mut self, ctx: &Context) {
     let mut game_started_just_now = false;
     if !self.is_game_started() {
       self.start_game(ctx);
@@ -160,12 +160,13 @@ impl GameManagement for CompetitiveGame {
     ctx.emit(PlayerAdded);
 
     if game_started_just_now {
-      self.start_turn(ctx, systems);
+      self.start_turn(ctx);
     }
   }
 
-  fn advance_turn(&mut self, ctx: &Context, systems: &Systems) {
-    let max_turn_count = systems
+  fn advance_turn(&mut self, ctx: &Context) {
+    let max_turn_count = ctx
+      .systems
       .expect::<OperatorConfig>()
       .get_integer("turn_count")
       .unwrap_or(3);
@@ -193,7 +194,7 @@ impl GameManagement for CompetitiveGame {
       game_state.current_player_turn()
     );
 
-    self.start_turn(ctx, systems);
+    self.start_turn(ctx);
   }
 
   fn end_game(&mut self, ctx: &Context) {

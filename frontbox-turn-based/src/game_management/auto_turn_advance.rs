@@ -14,10 +14,10 @@ impl AutoTurnAdvance {
 }
 
 impl System for AutoTurnAdvance {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(_) = event.downcast_ref::<PlayerTurnEnding>() {
-      if let Some(mut game_manager) = systems.get_mut::<GameManager>() {
-        game_manager.advance_turn(ctx, systems);
+      if let Some(mut game_manager) = ctx.systems.get::<GameManager>() {
+        game_manager.advance_turn(ctx);
       }
     }
   }

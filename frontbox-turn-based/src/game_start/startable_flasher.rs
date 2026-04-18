@@ -22,10 +22,10 @@ impl StartableFlasher {
     self
   }
 
-  fn start_btn_on(&self, ctx: &Context, systems: &Systems) {
+  fn start_btn_on(&self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
       log::info!("Driver on {:?}", driver);
-      systems.expect::<Machine>().activate_driver(
+      ctx.systems.expect::<Machine>().activate_driver(
         driver.name,
         ActivationMode::VirtualSwitchOn,
         ctx,
@@ -33,9 +33,9 @@ impl StartableFlasher {
     }
   }
 
-  fn start_btn_off(&self, ctx: &Context, systems: &Systems) {
+  fn start_btn_off(&self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
-      systems.expect::<Machine>().deactivate_driver(
+      ctx.systems.expect::<Machine>().deactivate_driver(
         driver.name,
         DeactivationMode::VirtualSwitchOff,
         ctx,
@@ -45,22 +45,23 @@ impl StartableFlasher {
 }
 
 impl System for StartableFlasher {
-  fn is_active(&self, _ctx: &Context, systems: &Systems) -> bool {
+  fn is_active(&self, ctx: &Context) -> bool {
     // active if game is startable or player addable
-    systems
+    ctx
+      .systems
       .get::<GameManager>()
       .map(|gm| gm.is_player_addable())
       .unwrap_or(false)
   }
 
-  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_deactivate(&mut self, ctx: &Context) {
     // turn off start button to make sure it's not stuck on one the system is disabled
-    self.start_btn_off(ctx, systems);
+    self.start_btn_off(ctx);
   }
 
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
-      systems.expect::<Machine>().configure_driver(
+      ctx.systems.expect::<Machine>().configure_driver(
         driver.name,
         PulseHoldMode {
           trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
@@ -74,11 +75,11 @@ impl System for StartableFlasher {
     ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(_) = event.downcast_ref::<On>() {
-      self.start_btn_on(ctx, systems);
+      self.start_btn_on(ctx);
     } else if let Some(_) = event.downcast_ref::<Off>() {
-      self.start_btn_off(ctx, systems);
+      self.start_btn_off(ctx);
     }
   }
 }

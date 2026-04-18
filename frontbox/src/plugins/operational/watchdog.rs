@@ -12,16 +12,16 @@ impl Watchdog {
 }
 
 impl Watchdog {
-  pub fn enable(ctx: &Context, systems: &Systems) {
+  pub fn enable(ctx: &Context) {
     log::info!("Enabling watchdog with {:?}", ctx.watchdog_interval);
 
     ctx.cue(WatchdogPing, Cue::Loop(ctx.watchdog_interval));
-    systems.expect::<Machine>().ping_watchdog();
+    ctx.systems.expect::<Machine>().ping_watchdog();
   }
 
-  pub fn disable(&self, ctx: &Context, systems: &Systems) {
+  pub fn disable(&self, ctx: &Context) {
     log::info!("Disabling watchdog");
-    systems.expect::<Machine>().clear_watchdog();
+    ctx.systems.expect::<Machine>().clear_watchdog();
 
     if let Some(handle) = &self.cue_handle {
       ctx.cancel_cue(*handle);
@@ -30,22 +30,22 @@ impl Watchdog {
 }
 
 impl System for Watchdog {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     // Neuron seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
     // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage
     // For now just always start it up
-    Watchdog::enable(ctx, systems);
+    Watchdog::enable(ctx);
   }
 
-  fn on_event(&mut self, event: &dyn Event, _ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if event.is::<WatchdogPing>() {
       log::trace!("Watchdog event => Ping");
-      systems.expect::<Machine>().ping_watchdog();
+      ctx.systems.expect::<Machine>().ping_watchdog();
     }
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
-    self.disable(ctx, systems);
+  fn on_despawn(&mut self, ctx: &Context) {
+    self.disable(ctx);
   }
 }
 

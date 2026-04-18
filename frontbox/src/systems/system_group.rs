@@ -20,29 +20,29 @@ impl SystemGroup {
     }
   }
 
-  pub fn activate(&mut self, ctx: &Context, systems: &Systems) {
+  pub fn activate(&mut self, ctx: &Context) {
     if !self.active {
       log::info!("Activating system group");
       for mut system in self.systems.values_mut() {
         let mut ctx = ctx.clone_for_system(system.id());
         // only emit reactivate to systems that are also individually active
-        if system.is_active(&ctx, systems) {
-          system.on_reactivate(&mut ctx, systems);
+        if system.is_active(&ctx) {
+          system.on_reactivate(&mut ctx);
         }
       }
       self.active = true;
     }
   }
 
-  pub fn deactivate(&mut self, ctx: &Context, systems: &Systems) {
+  pub fn deactivate(&mut self, ctx: &Context) {
     if self.active {
       log::info!("Deactivating system group");
       for mut system in self.systems.values_mut() {
         let mut ctx = ctx.clone_for_system(system.id());
         // only emit deactivate to systems that are also individually active (since they otherwise would have been active)
-        if system.is_active(&ctx, systems) {
+        if system.is_active(&ctx) {
           log::trace!("System {} is active, deactivating", system.id());
-          system.on_deactivate(&mut ctx, systems);
+          system.on_deactivate(&mut ctx);
         }
       }
       self.active = false;
@@ -51,62 +51,62 @@ impl SystemGroup {
 }
 
 impl System for SystemGroup {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
-      system.on_startup(&mut ctx, systems);
+      system.on_spawn(&mut ctx);
     }
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_despawn(&mut self, ctx: &Context) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
-      system.on_shutdown(&mut ctx, systems);
+      system.on_despawn(&mut ctx);
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
-      if system.handle_active(&mut ctx, systems) {
-        system.on_tick(delta, &mut ctx, systems);
+      if system.handle_active(&mut ctx) {
+        system.on_tick(delta, &mut ctx);
       } else {
         log::trace!("System {} is inactive, skipping tick", system.id(),);
       }
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     for mut system in self.systems.values_mut() {
       let mut ctx = ctx.clone_for_system(system.id());
-      if system.handle_active(&mut ctx, systems) {
-        system.on_event(event, &mut ctx, systems);
+      if system.handle_active(&mut ctx) {
+        system.on_event(event, &mut ctx);
       } else {
         log::trace!(
           "System {} is inactive, skipping event of type {:?}",
           system.id(),
           event.type_id()
         );
-        if system.handle_active(&mut ctx, systems) {
+        if system.handle_active(&mut ctx) {
           log::trace!(
             "System {} was active but is now inactive, deactivating",
             system.id()
           );
-          system.on_deactivate(&mut ctx, systems);
+          system.on_deactivate(&mut ctx);
         }
       }
     }
   }
 
-  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
-    self.deactivate(ctx, systems);
+  fn on_deactivate(&mut self, ctx: &Context) {
+    self.deactivate(ctx);
   }
 
-  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {
-    self.activate(ctx, systems);
+  fn on_reactivate(&mut self, ctx: &Context) {
+    self.activate(ctx);
   }
 
-  fn is_active(&self, _ctx: &Context, _systems: &Systems) -> bool {
+  fn is_active(&self, _ctx: &Context) -> bool {
     self.active
   }
 }

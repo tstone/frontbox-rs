@@ -11,6 +11,8 @@ LED Canvas
 
 System
 
+- Extension methods for declare LED, activate driver, etc.
+- Hardware selection by ID
 - BUG: Cue::Once repeats
 - Cue timeline
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
@@ -18,7 +20,6 @@ System
 - Auto plunger plugin has operator config for coil power/kick length
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
-- Should events be required to be Serialize? -- no but Websockets or things that use it must require it
 - has_tag/has_typed_tag should probably be a trait
 
 Hardware

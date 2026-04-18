@@ -13,37 +13,37 @@ use crate::prelude::*;
 #[allow(unused)]
 pub trait System: Any {
   /// Called when the system is first started up
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {}
+  fn on_spawn(&mut self, ctx: &Context) {}
   /// Called when the system is removed
-  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {}
+  fn on_despawn(&mut self, ctx: &Context) {}
 
   /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
-  fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
-    if let Some(mut led_system) = systems.get_mut::<LedSystem>() {
+  fn on_deactivate(&mut self, ctx: &Context) {
+    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
       led_system.deactivate_by_system(ctx.current_system_id());
     }
   }
 
   /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
-  fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {
-    if let Some(mut led_system) = systems.get_mut::<LedSystem>() {
+  fn on_reactivate(&mut self, ctx: &Context) {
+    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
       led_system.activate_by_system(ctx.current_system_id());
     }
   }
 
   /// On tick is called every system tick, which is typically 30-60Hz, but can be configured by the app. This is where most of the game logic should go.
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {}
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {}
   /// On render is called every system tick after on_tick, and is where rendering (LEDs, DMD, screen, etc.) should be handled since on_tick processed all state needed for rendering.
-  fn on_render(&mut self, ctx: &Context, systems: &Systems) {}
+  fn on_render(&mut self, ctx: &Context) {}
 
   /// Called when an event is emitted into the system (switch press, game state change, etc.)
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {}
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {}
   /// Invoked by the framework to handle an potential interrupt
   fn on_interrupt(&mut self, event: &dyn Event, ctx: &Context) -> InterruptResult {
     InterruptResult::Continue
   }
 
-  fn is_active(&self, ctx: &Context, systems: &Systems) -> bool {
+  fn is_active(&self, ctx: &Context) -> bool {
     true
   }
 }
@@ -60,20 +60,20 @@ impl<T: System + Send + Sync> SpawnableSystem for T {
 }
 
 impl System for Box<dyn SpawnableSystem> {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    self.as_system().on_startup(ctx, systems);
+  fn on_spawn(&mut self, ctx: &Context) {
+    self.as_system().on_spawn(ctx);
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
-    self.as_system().on_shutdown(ctx, systems);
+  fn on_despawn(&mut self, ctx: &Context) {
+    self.as_system().on_despawn(ctx);
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
-    self.as_system().on_tick(delta, ctx, systems);
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+    self.as_system().on_tick(delta, ctx);
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
-    self.as_system().on_event(event, ctx, systems);
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+    self.as_system().on_event(event, ctx);
   }
 }
 
@@ -83,20 +83,20 @@ pub trait ChildSystem: System + Send + Sync + DynClone {
 }
 
 impl System for Box<dyn ChildSystem> {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-    <dyn ChildSystem>::as_system(self).on_startup(ctx, systems);
+  fn on_spawn(&mut self, ctx: &Context) {
+    <dyn ChildSystem>::as_system(self).on_spawn(ctx);
   }
 
-  fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
-    <dyn ChildSystem>::as_system(self).on_shutdown(ctx, systems);
+  fn on_despawn(&mut self, ctx: &Context) {
+    <dyn ChildSystem>::as_system(self).on_despawn(ctx);
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
-    <dyn ChildSystem>::as_system(self).on_tick(delta, ctx, systems);
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+    <dyn ChildSystem>::as_system(self).on_tick(delta, ctx);
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
-    <dyn ChildSystem>::as_system(self).on_event(event, ctx, systems);
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+    <dyn ChildSystem>::as_system(self).on_event(event, ctx);
   }
 }
 

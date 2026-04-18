@@ -40,18 +40,18 @@ async fn main() {
 struct System1;
 
 impl System for System1 {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));
 
-    let mut led_system = systems.expect_mut::<LedSystem>();
+    let mut led_system = ctx.systems.expect::<LedSystem>();
     led_system.declare(
       ctx.current_system_id(),
       named_led(ctx, leds::DEMO1).color(Rgba::red()),
     );
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
-    let mut led_system = systems.expect_mut::<LedSystem>();
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+    let mut led_system = ctx.systems.expect::<LedSystem>();
 
     if event.is::<On>() {
       led_system.set_conflict_resolution(
@@ -67,10 +67,11 @@ impl System for System1 {
 struct System2;
 
 impl System for System2 {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     let decl = named_led(ctx, leds::DEMO1).color(Rgba::blue());
-    systems
-      .expect_mut::<LedSystem>()
+    ctx
+      .systems
+      .expect::<LedSystem>()
       .declare(ctx.current_system_id(), decl);
   }
 }

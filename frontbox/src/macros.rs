@@ -17,29 +17,29 @@ macro_rules! systems {
 macro_rules! delegate_system {
   ($type:ty, $field:ident) => {
     impl System for $type {
-      fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
-        self.$field.on_startup(ctx, systems)
+      fn on_spawn(&mut self, ctx: &Context) {
+        self.$field.on_spawn(ctx)
       }
-      fn on_deactivate(&mut self, ctx: &Context, systems: &Systems) {
-        self.$field.on_deactivate(ctx, systems)
+      fn on_deactivate(&mut self, ctx: &Context) {
+        self.$field.on_deactivate(ctx)
       }
-      fn on_reactivate(&mut self, ctx: &Context, systems: &Systems) {
-        self.$field.on_reactivate(ctx, systems)
+      fn on_reactivate(&mut self, ctx: &Context) {
+        self.$field.on_reactivate(ctx)
       }
-      fn on_shutdown(&mut self, ctx: &Context, systems: &Systems) {
-        self.$field.on_shutdown(ctx, systems)
+      fn on_despawn(&mut self, ctx: &Context) {
+        self.$field.on_despawn(ctx)
       }
-      fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
-        self.$field.on_tick(delta, ctx, systems)
+      fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+        self.$field.on_tick(delta, ctx)
       }
-      fn on_event(&mut self, event: &dyn Event, ctx: &Context, systems: &Systems) {
-        self.$field.on_event(event, ctx, systems)
+      fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+        self.$field.on_event(event, ctx)
       }
       fn on_interrupt(&mut self, event: &dyn Event, ctx: &Context) -> InterruptResult {
         self.$field.on_interrupt(event, ctx)
       }
-      fn is_active(&self, ctx: &Context, systems: &Systems) -> bool {
-        self.$field.is_active(ctx, systems)
+      fn is_active(&self, ctx: &Context) -> bool {
+        self.$field.is_active(ctx)
       }
     }
   };

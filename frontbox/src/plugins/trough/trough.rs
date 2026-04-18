@@ -62,8 +62,9 @@ impl Trough {
     occupancy
   }
 
-  pub fn eject(&self, ctx: &Context, systems: &Systems) {
-    systems
+  pub fn eject(&self, ctx: &Context) {
+    ctx
+      .systems
       .expect::<Machine>()
       .activate_driver(self.eject_coil, ActivationMode::Tap, ctx);
   }
@@ -83,9 +84,9 @@ impl Trough {
 }
 
 impl System for Trough {
-  fn on_startup(&mut self, ctx: &Context, systems: &Systems) {
+  fn on_spawn(&mut self, ctx: &Context) {
     // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
-    let machine = systems.expect::<Machine>();
+    let machine = ctx.systems.expect::<Machine>();
 
     for switch in &self.switches {
       // preserve configured inverted settings (if present)
@@ -105,7 +106,7 @@ impl System for Trough {
     }
 
     // configure eject driver
-    let operator_config = systems.expect::<OperatorConfig>();
+    let operator_config = ctx.systems.expect::<OperatorConfig>();
     let trough_kick_len = operator_config
       .get_integer(TroughPlugin::config().trough_kick)
       .unwrap_or(100);
@@ -125,7 +126,7 @@ impl System for Trough {
     );
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context, _systems: &Systems) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {

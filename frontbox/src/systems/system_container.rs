@@ -52,16 +52,16 @@ impl SystemContainer {
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
-  pub(crate) fn handle_active(&mut self, ctx: &Context, systems: &Systems) -> bool {
-    let fresh = self.inner.is_active(ctx, systems);
+  pub(crate) fn handle_active(&mut self, ctx: &Context) -> bool {
+    let fresh = self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
       if fresh {
         // system just became active
-        self.inner.on_reactivate(ctx, systems);
+        self.inner.on_reactivate(ctx);
       } else {
         // system just became inactive
-        self.inner.on_deactivate(ctx, systems);
+        self.inner.on_deactivate(ctx);
       }
     }
 
@@ -69,13 +69,13 @@ impl SystemContainer {
     fresh
   }
 
-  pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context, systems: &Systems) {
+  pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     let mut cues_to_remove = vec![];
     for (id, cue) in self.cues.iter_mut() {
       if cue.accumulate(delta).completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
         if let Some(signal) = cue.signal() {
-          self.inner.on_event(signal, ctx, systems);
+          self.inner.on_event(signal, ctx);
         }
 
         if cue.is_complete() {
@@ -90,7 +90,7 @@ impl SystemContainer {
     }
 
     // bubble tick to inner system after processing timers
-    self.inner.on_tick(delta, ctx, systems);
+    self.inner.on_tick(delta, ctx);
   }
 
   pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
@@ -104,6 +104,7 @@ impl SystemContainer {
   pub(crate) fn downcast_ref<T: System + 'static>(&self) -> Option<&T> {
     (self.as_any)(self.inner.as_ref()).downcast_ref::<T>()
   }
+  
   pub(crate) fn downcast_mut<T: System + 'static>(&mut self) -> Option<&mut T> {
     (self.as_any_mut)(self.inner.as_mut()).downcast_mut::<T>()
   }
