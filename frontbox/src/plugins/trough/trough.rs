@@ -63,10 +63,7 @@ impl Trough {
   }
 
   pub fn eject(&self, ctx: &Context) {
-    ctx
-      .systems
-      .expect::<Machine>()
-      .activate_driver(self.eject_coil, ActivationMode::Tap, ctx);
+    ctx.activate_driver(self.eject_coil, ActivationMode::Tap);
   }
 
   pub fn ball_added_to_play(&mut self) {
@@ -86,8 +83,6 @@ impl Trough {
 impl System for Trough {
   fn on_spawn(&mut self, ctx: &Context) {
     // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
-    let machine = ctx.systems.expect::<Machine>();
-
     for switch in &self.switches {
       // preserve configured inverted settings (if present)
       let inverted = ctx
@@ -96,13 +91,7 @@ impl System for Trough {
         .map(|c| c.inverted)
         .unwrap_or(false);
 
-      machine.configure_switch(
-        switch,
-        inverted,
-        Some(Duration::from_millis(250)),
-        None,
-        ctx,
-      );
+      ctx.configure_switch(switch, inverted, Some(Duration::from_millis(250)), None);
     }
 
     // configure eject driver
@@ -114,7 +103,7 @@ impl System for Trough {
       .get_integer(TroughPlugin::config().trough_power)
       .unwrap_or(70);
 
-    machine.configure_driver(
+    ctx.configure_driver(
       self.eject_coil,
       PulseKickMode {
         initial_pwm_length: Duration::from_millis(50),
@@ -122,7 +111,6 @@ impl System for Trough {
         kick_length: Duration::from_millis(trough_kick_len as u64),
         ..Default::default()
       },
-      ctx,
     );
   }
 

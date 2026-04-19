@@ -11,7 +11,6 @@ LED Canvas
 
 System
 
-- Extension methods for declare LED, activate driver, etc.
 - Hardware selection by ID
 - BUG: Cue::Once repeats
 - Cue timeline

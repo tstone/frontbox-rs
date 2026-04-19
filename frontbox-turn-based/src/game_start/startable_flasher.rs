@@ -25,21 +25,13 @@ impl StartableFlasher {
   fn start_btn_on(&self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
       log::info!("Driver on {:?}", driver);
-      ctx.systems.expect::<Machine>().activate_driver(
-        driver.name,
-        ActivationMode::VirtualSwitchOn,
-        ctx,
-      );
+      ctx.activate_driver(driver.name, ActivationMode::VirtualSwitchOn);
     }
   }
 
   fn start_btn_off(&self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
-      ctx.systems.expect::<Machine>().deactivate_driver(
-        driver.name,
-        DeactivationMode::VirtualSwitchOff,
-        ctx,
-      );
+      ctx.deactivate_driver(driver.name, DeactivationMode::VirtualSwitchOff);
     }
   }
 }
@@ -61,7 +53,7 @@ impl System for StartableFlasher {
 
   fn on_spawn(&mut self, ctx: &Context) {
     for driver in self.start_button_driver.get_drivers(ctx) {
-      ctx.systems.expect::<Machine>().configure_driver(
+      ctx.configure_driver(
         driver.name,
         PulseHoldMode {
           trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
@@ -69,7 +61,6 @@ impl System for StartableFlasher {
           secondary_pwm_power: Power::FULL,
           ..Default::default()
         },
-        ctx,
       );
     }
     ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));

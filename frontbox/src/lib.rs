@@ -19,6 +19,7 @@ pub mod prelude {
   pub use crate::machine::event_interrupt_registry::InterruptResult;
   pub use crate::machine::machine::*;
   pub use crate::machine::machine_commands::*;
+  pub use crate::machine::machine_ext::*;
   pub use crate::operator_config::*;
   pub use crate::plugins::Plugin;
   pub use crate::store::*;

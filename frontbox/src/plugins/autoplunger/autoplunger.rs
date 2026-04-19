@@ -28,10 +28,7 @@ impl AutoPlunger {
   /// Fire the autoplunger immediately
   fn activate(&mut self, ctx: &Context) {
     for driver in self.coil.get_drivers(ctx) {
-      ctx
-        .systems
-        .expect::<Machine>()
-        .activate_driver(driver.name, ActivationMode::Tap, ctx);
+      ctx.activate_driver(driver.name, ActivationMode::Tap);
     }
   }
 
@@ -54,24 +51,20 @@ impl AutoPlunger {
 
 impl System for AutoPlunger {
   fn on_spawn(&mut self, ctx: &Context) {
-    let machine = ctx.systems.expect::<Machine>();
-
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
     for switch in self.lane_switch.get_switches(ctx) {
       let inverted = ctx.switches.config(switch.name);
-      machine.configure_switch(
+      ctx.configure_switch(
         switch.name,
         inverted.map(|c| c.inverted).unwrap_or(false),
         Some(Duration::from_millis(250)),
         None, // use default
-        ctx,
       );
     }
 
     // configure plunger driver
-    let machine = ctx.systems.expect::<Machine>();
     for driver in self.coil.get_drivers(ctx) {
-      machine.configure_driver(
+      ctx.configure_driver(
         driver.name,
         PulseKickMode {
           initial_pwm_length: Duration::from_millis(50),
@@ -79,7 +72,6 @@ impl System for AutoPlunger {
           kick_length: Duration::from_millis(300),
           ..Default::default()
         },
-        ctx,
       );
     }
   }
