@@ -89,17 +89,8 @@ impl LedExample {
 
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &Context) {
-    let mut leds = ctx.systems.expect::<LedSystem>();
-
-    // set static LED colors on demand
-    leds.declare(
-      ctx.current_system_id(),
-      named_led(ctx, leds::DEMO1).color(Rgba::blue()),
-    );
-    leds.declare(
-      ctx.current_system_id(),
-      named_led(ctx, leds::DEMO2).color(Rgba::yellow().with_alpha(127)),
-    );
+    ctx.declare_leds(named_led(ctx, leds::DEMO1).color(Rgba::blue()));
+    ctx.declare_leds(named_led(ctx, leds::DEMO2).color(Rgba::yellow().with_alpha(127)));
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
@@ -107,16 +98,8 @@ impl System for LedExample {
     self.flash.accumulate(delta);
     self.seq.accumulate(delta);
 
-    let mut leds = ctx.systems.expect::<LedSystem>();
-
     // re-declare LEDs with updated animated colors
-    leds.declare(
-      ctx.current_system_id(),
-      named_led(ctx, leds::DEMO3).color(self.flash.sample()),
-    );
-    leds.declare(
-      ctx.current_system_id(),
-      named_led(ctx, leds::DEMO4).color(self.seq.sample()),
-    );
+    ctx.declare_leds(named_led(ctx, leds::DEMO3).color(self.flash.sample()));
+    ctx.declare_leds(named_led(ctx, leds::DEMO4).color(self.seq.sample()));
   }
 }

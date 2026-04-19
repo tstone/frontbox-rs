@@ -271,10 +271,8 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 
 ```rust
-let mut led_system = ctx.systems.expect::<LedSystem>();
-
 // declare LEDs by name...
-led_system.declare(
+ctx.declare_leds(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
     .color(Rgba::yellow())
@@ -282,7 +280,7 @@ led_system.declare(
 );
 
 // ...or by group
-led_system.declare(
+ctx.declare_leds(
   ctx.current_system_id(),
   named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
     .gradient(Rgba::red(), Rgba::yellow())
@@ -292,7 +290,7 @@ led_system.declare(
 Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
 
 ```rust
-led_system.deactivate_by_system(ctx.current_system_id());
+ctx.deactivate_led_declarations();
 ```
 
 In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
@@ -303,7 +301,7 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 
 ```rust
 // higher layer declares 50% transparent red
-led_system.declare(
+ctx.declare_leds(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
     .color(Rgba::red().with_alpha_f32(0.5))
@@ -311,7 +309,7 @@ led_system.declare(
 );
 
 // over top of white
-led_system.declare(
+ctx.declare_leds(
   ctx.current_system_id(),
   named_led(leds::EXAMPLE)
     .color(Rgba::white())
@@ -413,12 +411,10 @@ impl System for AnimExample {
     self.anim.accumulate(delta);
 
     // re-declaring the same LED will overwrite the previous declaration
-    ctx.systems.expect::<LedSystem>()
-      .declare(
-        ctx.current_system_id(),
-        // declare the current animated value as the color of that LED
-        named_led(leds::EXAMPLE).color(self.anim.sample())
-      )
+    ctx.declare_leds(
+      // declare the current animated value as the color of that LED
+      named_led(leds::EXAMPLE).color(self.anim.sample())
+    )
   }
 }
 ```
@@ -435,13 +431,12 @@ impl System for AnimExample {
   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     self.anim.accumulate(delta);
 
-    ctx.systems.expect::<LedSystem>()
-      .declare(
-        ctx.current_system_id(),
-        named_leds(vec![leds::LEFT_LANE_ARROW, leds::LEFT_LANE1, leds::LEFT_LANE2])
-          .color_idx(self.anim.sample())
-          .z_index(2)
-      )
+    ctx.declare_leds(
+      ctx.current_system_id(),
+      named_leds(vec![leds::LEFT_LANE_ARROW, leds::LEFT_LANE1, leds::LEFT_LANE2])
+        .color_idx(self.anim.sample())
+        .z_index(2)
+    )
   }
 }
 ```

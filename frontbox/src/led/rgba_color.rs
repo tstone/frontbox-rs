@@ -151,6 +151,12 @@ pub trait RgbaColor {
   fn mix(a: Self, b: Self, t: f32) -> Self;
   fn mix_with(&self, b: Self, t: f32) -> Self;
 
+  fn with_red(self, red: u8) -> Self;
+  fn with_red_f32(self, red: f32) -> Self;
+  fn with_blue(self, blue: u8) -> Self;
+  fn with_blue_f32(self, blue: f32) -> Self;
+  fn with_green(self, green: u8) -> Self;
+  fn with_green_f32(self, green: f32) -> Self;
   fn with_alpha(self, alpha: u8) -> Self;
   fn with_alpha_f32(self, alpha: f32) -> Self;
 
@@ -163,7 +169,7 @@ impl RgbaColor for Rgba<u8> {
     Color::rgb(self[0], self[1], self[2])
   }
 
-  /// Combine two colors as peers, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
+  /// Combine two colors, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
   fn mix(a: Rgba<u8>, b: Rgba<u8>, t: f32) -> Rgba<u8> {
     let lerp = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
     Rgba([
@@ -177,6 +183,30 @@ impl RgbaColor for Rgba<u8> {
   /// Combine with b, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
   fn mix_with(&self, b: Rgba<u8>, t: f32) -> Rgba<u8> {
     Self::mix(*self, b, t)
+  }
+
+  fn with_red(self, red: u8) -> Self {
+    Rgba([red, self.0[1], self.0[2], self.0[3]])
+  }
+
+  fn with_red_f32(self, red: f32) -> Self {
+    self.with_red((red * 255.0) as u8)
+  }
+
+  fn with_blue(self, blue: u8) -> Self {
+    Rgba([self.0[0], self.0[1], blue, self.0[3]])
+  }
+
+  fn with_blue_f32(self, blue: f32) -> Self {
+    self.with_blue((blue * 255.0) as u8)
+  }
+
+  fn with_green(self, green: u8) -> Self {
+    Rgba([self.0[0], green, self.0[2], self.0[3]])
+  }
+
+  fn with_green_f32(self, green: f32) -> Self {
+    self.with_green((green * 255.0) as u8)
   }
 
   fn with_alpha(self, alpha: u8) -> Self {
