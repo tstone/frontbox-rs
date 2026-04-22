@@ -1,6 +1,7 @@
 mod context;
 mod context_base;
 mod cue;
+mod cue_timeline_builder;
 mod system;
 mod system_container;
 mod system_group;
@@ -10,6 +11,7 @@ mod systems;
 pub use context::*;
 pub use context_base::*;
 pub use cue::*;
+pub use cue_timeline_builder::*;
 pub use system::*;
 pub use system_container::*;
 pub use system_group::*;

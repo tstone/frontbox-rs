@@ -103,6 +103,17 @@ pub async fn run(
               );
             }
           }
+          AppMessage::CreateCueTimeline(system_id, cue_id, timeline) => {
+            if let Some(mut system) = sc.systems.get_by_id(system_id) {
+              system.create_cue_timeline(timeline, cue_id);
+            } else {
+              log::warn!(
+                "No system found with ID {}, cannot create cue timeline {:?}",
+                system_id,
+                cue_id
+              );
+            }
+          }
           AppMessage::CancelCue(system_id, cue_id) => {
             if let Some(mut system) = sc.systems.get_by_id(system_id) {
               system.cancel_cue(cue_id);

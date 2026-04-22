@@ -23,6 +23,7 @@ pub enum AppMessage {
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),
   CreateCue(u64, u64, Cue, Vec<Box<dyn Event>>),
+  CreateCueTimeline(u64, u64, CueTimeline),
   CancelCue(u64, u64),
 }
 
@@ -54,6 +55,9 @@ impl Display for AppMessage {
       AppMessage::DeactivateSystemGroup(name) => write!(f, "DeactivateSystemGroup({})", name),
       AppMessage::CreateCue(system_id, cue_id, cue, _signals) => {
         write!(f, "CreateCue({}:{}, {:?})", system_id, cue_id, cue)
+      }
+      AppMessage::CreateCueTimeline(system_id, cue_id, _timeline) => {
+        write!(f, "CreateCueTimeline({}:{})", system_id, cue_id)
       }
       AppMessage::CancelCue(system_id, cue_id) => write!(f, "CancelCue({}:{})", system_id, cue_id),
     }

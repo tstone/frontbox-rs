@@ -148,8 +148,8 @@ impl System for Example {
   fn on_startup(&mut self, ctx: &Context) {
     // setup the cue
     ctx.cue(
+      SomethingImportant(100),
       Cue::Times(3, Duration::from_secs(3)),
-      SomethingImportant(100)
     )
   }
 
@@ -171,20 +171,6 @@ let handle = ctx.cue(SomethingRather, Cue::Forever(Duration::from_secs(1)));
 
 ctx.cancel_cue(handle);
 ```
-
-#### Timelines
-
-Sometimes it's easier to express things as a linear timeline. The same example as above could also be expressed as...
-
-```rust
-ctx.cue_timeline(AllDone, Timeline::new()
-  .cue_at(Duration::from_secs(3), SomethingImportant(5))
-  .cue_at(Duration::from_secs(6), SomethingImportant(50))
-  .cue_at(Duration::from_secs(9), SomethingImportant(500))
-);
-```
-
-With timelines, there is not only a cue that happens for each node of the timeline (with a specific value), but also a cue for the entire timeline completing. Canceling a timeline cancels all remaining cues within it.
 
 #### Cycling & Flashing
 
@@ -210,6 +196,20 @@ In some cases, particularly with cueing, it might be a bit tedious to create a c
 - `Action`
 - `Anonymous`
 - `On` / `Off`
+
+#### Timelines
+
+Sometimes it's easier to express things as a linear timeline. The same example as above could also be expressed as...
+
+```rust
+ctx.cue_timeline(CueTimeline::new()
+  .cue_at(Duration::from_secs(3), SomethingImportant(5))
+  .cue_at(Duration::from_millis(4150), SomethingImportant(50))
+  .cue_at(Duration::from_secs(9), SomethingImportant(500))
+);
+```
+
+Timelines are a way to group a bunch of one-off cues into a sequence. Canceling a timeline cancels all remaining cues within it.
 
 ### Context
 

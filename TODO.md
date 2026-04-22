@@ -11,15 +11,15 @@ LED Canvas
 
 System
 
-- Hardware selection by ID
-- BUG: Cue::Once repeats
 - Cue timeline
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
-- Auto plunger plugin has operator config for coil power/kick length
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
 - has_tag/has_typed_tag should probably be a trait
+- OperatorConfig should be a separate System -- this will need a way for plugins to register data for systems that aren't yet started
+- LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color modifications
+- Auto plunger plugin has operator config for coil power/kick length
 
 Hardware
 

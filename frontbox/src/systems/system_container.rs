@@ -94,7 +94,13 @@ impl SystemContainer {
   }
 
   pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
-    self.cues.insert(id, CueAccumulator::new(cue, signals));
+    self.cues.insert(id, CueAccumulator::from_cue(cue, signals));
+  }
+
+  pub(crate) fn create_cue_timeline(&mut self, timeline: CueTimeline, id: u64) {
+    self
+      .cues
+      .insert(id, CueAccumulator::from_points(timeline.points()));
   }
 
   pub(crate) fn cancel_cue(&mut self, cue_id: u64) {
@@ -104,7 +110,7 @@ impl SystemContainer {
   pub(crate) fn downcast_ref<T: System + 'static>(&self) -> Option<&T> {
     (self.as_any)(self.inner.as_ref()).downcast_ref::<T>()
   }
-  
+
   pub(crate) fn downcast_mut<T: System + 'static>(&mut self) -> Option<&mut T> {
     (self.as_any_mut)(self.inner.as_mut()).downcast_mut::<T>()
   }

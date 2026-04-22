@@ -140,6 +140,19 @@ impl<'a> Context<'a> {
     cue_id
   }
 
+  pub fn cue_timeline(&self, timeline: CueTimeline) -> u64 {
+    let cue_id = SystemContainer::next_id();
+    self
+      .app_sender
+      .send(AppMessage::CreateCueTimeline(
+        self.system_id,
+        cue_id,
+        timeline,
+      ))
+      .ok();
+    cue_id
+  }
+
   pub fn cancel_cue(&self, cue_id: u64) {
     let _ = self
       .app_sender
