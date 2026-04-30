@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::{AddressableLed, HardwareSelection};
 
-pub fn named_leds(ctx: Context, names: Vec<&str>) -> MultipleLedDeclarations {
+pub fn named_leds(ctx: &Context, names: Vec<&str>) -> MultipleLedDeclarations {
   let mut leds = Vec::new();
   for name in names {
     let ill = ctx.illuminations.get(name).expect("LED not found");
@@ -21,7 +21,7 @@ pub fn named_leds(ctx: Context, names: Vec<&str>) -> MultipleLedDeclarations {
   }
 }
 
-pub fn named_led_strip(ctx: Context, name: &str) -> MultipleLedDeclarations {
+pub fn named_led_strip(ctx: &Context, name: &str) -> MultipleLedDeclarations {
   let ill = ctx.illuminations.get(name).expect("LED strip not found");
   let leds = ill
     .leds
@@ -98,7 +98,13 @@ impl MultipleLedDeclarations {
   pub fn rotate_right(mut self, deg: f32) -> MultipleLedDeclarations {
     let n = self.pairings.len();
     let steps = (deg / 360.0 * n as f32).round() as usize % n;
-    self.pairings.rotate_right(steps);
+
+    let (leds, mut declarations): (Vec<AddressableLed>, Vec<Rgba<u8>>) =
+      self.pairings.into_iter().unzip();
+    declarations.rotate_right(steps);
+
+    self.pairings = leds.into_iter().zip(declarations).collect();
+
     self
   }
 
@@ -106,7 +112,12 @@ impl MultipleLedDeclarations {
   pub fn rotate_left(mut self, deg: f32) -> MultipleLedDeclarations {
     let n = self.pairings.len();
     let steps = (deg / 360.0 * n as f32).round() as usize % n;
-    self.pairings.rotate_left(steps);
+
+    let (leds, mut declarations): (Vec<AddressableLed>, Vec<Rgba<u8>>) =
+      self.pairings.into_iter().unzip();
+    declarations.rotate_left(steps);
+
+    self.pairings = leds.into_iter().zip(declarations).collect();
     self
   }
 

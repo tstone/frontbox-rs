@@ -61,7 +61,11 @@ where
   }
 
   fn next_index(&self) -> usize {
-    (self.current_stop_index + 1) % self.stops.len()
+    let idx = self.current_stop_index + 1;
+    if idx == self.stops.len() {
+      return 0;
+    }
+    return idx;
   }
 
   pub fn reverse(&mut self) {
@@ -106,7 +110,7 @@ where
       self.current -= self.target;
       self.current_stop_index += 1;
 
-      result.completed_cycle = self.current_stop_index == max(self.stops.len() - 1, 1);
+      result.completed_cycle = self.current_stop_index >= max(self.stops.len() - 1, 1);
       result.remainder = self.current;
 
       if result.completed_cycle {

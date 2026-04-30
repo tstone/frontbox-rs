@@ -1,5 +1,8 @@
 Before Show
 
+- BUG: there seems to be a bug with Tween where occasionally after ~8 seconds it plays backwards (is it when it's accumulated the exact amount?)
+- Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
+- Add a multi-stop gradient to the declarations
 - frontbox-sound multi-stem music support
 - frontbox-sound loop point support
 - Create a new frontbox-canvas crate
@@ -18,7 +21,6 @@ Nice to Have
 
 LEDs
 
-- Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
 - Implement binary versions of LED commands
 - System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between

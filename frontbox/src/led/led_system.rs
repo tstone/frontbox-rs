@@ -124,11 +124,6 @@ impl LedSystem {
       .filter(|(id, _)| id.z_index == *max_z)
       .collect::<Vec<_>>();
 
-    println!(
-      "Resolving color for {:?} with declarations: {:?}",
-      led, top_declarations
-    );
-
     let top_color = if top_declarations.len() == 1 {
       top_declarations[0].1.color
     } else if top_declarations.len() > 1 {
@@ -224,6 +219,7 @@ impl System for LedSystem {
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
+        log::trace!("Turning off LED at {:?}", led);
         leds_to_set.push((led.clone(), Rgba::default()));
       }
     }
@@ -233,10 +229,17 @@ impl System for LedSystem {
     leds_to_set.retain(|(led, color)| {
       if let Some(prior_color) = self.prior_render.get(led) {
         if prior_color == color {
+          log::trace!(
+            "Skipping LED at {:?} because no change ({:?} vs {:?})",
+            led,
+            prior_color,
+            color
+          );
           return false;
         }
       }
       self.prior_render.insert(led.clone(), *color);
+      log::trace!("Setting LED at {:?} to {:?}", led, color);
       true
     });
 
@@ -317,6 +320,36 @@ mod tests {
 
     // the declaration for system 43 should still be there
     assert!(system.declarations.get(&led).unwrap().len() == 1);
+  }
+
+  // One system declares multiple times to overwrite
+  #[test]
+  fn test_declare_overwrite() {
+    let mut system = LedSystem::new();
+    let led = AddressableLed {
+      address: LedAddress {
+        address: 3,
+        breakout: None,
+        port: 0,
+      },
+      index: 1,
+    };
+
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
+    );
+    assert_eq!(system.declarations.get(&led).unwrap().len(), 1);
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(led.clone(), Rgba::blue())], 0),
+    );
+
+    let final_map = system.declarations.get(&led).unwrap();
+    assert_eq!(final_map.len(), 1);
+
+    let final_dec = final_map.values().into_iter().next().unwrap();
+    assert_eq!(final_dec.color, Rgba::blue());
   }
 
   // One system declares two different LEDs
