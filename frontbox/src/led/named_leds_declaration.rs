@@ -21,6 +21,20 @@ pub fn named_leds(ctx: Context, names: Vec<&str>) -> MultipleLedDeclarations {
   }
 }
 
+pub fn named_led_strip(ctx: Context, name: &str) -> MultipleLedDeclarations {
+  let ill = ctx.illuminations.get(name).expect("LED strip not found");
+  let leds = ill
+    .leds
+    .iter()
+    .map(|led| (led.clone(), Rgba::default()))
+    .collect();
+
+  MultipleLedDeclarations {
+    pairings: leds,
+    z_index: None,
+  }
+}
+
 pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclarations {
   let illums = sel.get_illuminations(ctx);
 
