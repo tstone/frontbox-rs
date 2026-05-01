@@ -105,6 +105,17 @@ where
       return AccumulationResult::default();
     }
 
+    // Edge case: In Times & Forever modes the current stop is only reset if the accumulated value overshoots the target
+    // This is so that in the case where the accumulation is exactly the target, the `sample()` method will return the
+    // final stop value instead of jumping back to the first stop. However, this edge case then needs to be caught on the
+    // next accumulation and correct (below).
+    if delta > A::default()
+      && self.current == A::default()
+      && self.current_stop_index >= self.stops.len() - 1
+    {
+      self.current_stop_index = 0;
+    }
+
     self.current += delta;
     if self.current >= self.target {
       self.current -= self.target;
@@ -258,6 +269,30 @@ mod tests {
     assert!(!tween.is_complete());
 
     let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 5.0);
+  }
+
+  #[test]
+  fn test_forever_tween_exact_boundary() {
+    let mut tween = Tween::new(
+      1.0,
+      Curve::Linear,
+      vec![0.0, 10.0, 20.0],
+      AnimationCycle::Forever,
+    );
+
+    assert_eq!(tween.sample(), 0.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(tween.sample(), 10.0);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 20.0);
+
+    let result = tween.accumulate(0.25);
     assert_eq!(result.completed_cycle, false);
     assert_eq!(tween.sample(), 5.0);
   }
