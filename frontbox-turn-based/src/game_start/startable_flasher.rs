@@ -5,19 +5,19 @@ use crate::GameManager;
 
 /// A system to flash elements like the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
-  start_button_driver: Option<HardwareSelection>,
+  start_button_driver: Option<HardwareQuery>,
   flash_duration: Duration,
 }
 
 impl StartableFlasher {
   pub fn new() -> Self {
     Self {
-      start_button_driver: Some(HardwareSelection::tag::<StartButton>()),
+      start_button_driver: Some(Q::tag::<StartButton>()),
       flash_duration: Duration::from_millis(185),
     }
   }
 
-  pub fn start_button_driver(mut self, driver: HardwareSelection) -> Self {
+  pub fn start_button_driver(mut self, driver: HardwareQuery) -> Self {
     self.start_button_driver = Some(driver);
     self
   }

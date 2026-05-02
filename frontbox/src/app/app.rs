@@ -193,6 +193,7 @@ impl App {
     let context_base = ContextBase {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
+      leds: LedLookup::new(self.hardware.illuminations.clone()),
       illuminations: self.hardware.illuminations,
       io_network: self.hardware.io_network,
       exp_network: self.hardware.exp_network,

@@ -1,8 +1,10 @@
 Before Show
 
-- BUG: there seems to be a bug with Tween where occasionally after ~8 seconds it plays backwards (is it when it's accumulated the exact amount?)
 - Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
+- Seems like EITHER leds or illuminations need to be accessible
+- Should illuminations encompass leds and drivers (e.g. is a start button an illumination?)
 - Add a multi-stop gradient to the declarations
+- An illumination needs to be allowed to be declared as the combination of ports (e.g. two NeoSeg14s back to back would likely be 2 physical ports but treated as a single illumination of 16 characters)
 - frontbox-sound multi-stem music support
 - frontbox-sound loop point support
 - Create a new frontbox-canvas crate

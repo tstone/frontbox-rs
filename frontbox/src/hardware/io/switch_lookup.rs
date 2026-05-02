@@ -112,11 +112,11 @@ impl SwitchLookup {
       .collect()
   }
 
-  pub fn by_selection(&self, selection: &HardwareSelection) -> Vec<&Switch> {
+  pub fn query(&self, query: &HardwareQuery) -> Vec<&Switch> {
     self
       .by_id
       .values()
-      .filter(|switch| selection.matches_switch(switch))
+      .filter(|switch| query.matches_switch(switch))
       .collect()
   }
 

@@ -33,26 +33,3 @@ impl From<(AddressableLed, Rgba<u8>)> for LedDeclarations {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct LedIdentifications {
-  pub leds: Vec<AddressableLed>,
-  pub z_index: i8,
-}
-
-impl LedIdentifications {
-  pub fn new(leds: Vec<AddressableLed>, z_index: i8) -> Self {
-    Self { leds, z_index }
-  }
-}
-
-impl From<AddressableLed> for LedIdentifications {
-  fn from(led: AddressableLed) -> Self {
-    LedIdentifications::new(vec![led], 0)
-  }
-}
-
-impl From<(AddressableLed, Option<i8>)> for LedIdentifications {
-  fn from((led, z_index): (AddressableLed, Option<i8>)) -> Self {
-    LedIdentifications::new(vec![led], z_index.unwrap_or(0))
-  }
-}

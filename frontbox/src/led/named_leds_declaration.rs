@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::{AddressableLed, HardwareSelection};
+use crate::{AddressableLed, HardwareQuery};
 
 pub fn named_leds(ctx: &Context, names: Vec<&str>) -> MultipleLedDeclarations {
   let mut leds = Vec::new();
@@ -35,7 +35,7 @@ pub fn named_led_strip(ctx: &Context, name: &str) -> MultipleLedDeclarations {
   }
 }
 
-pub fn selected_leds(ctx: &Context, sel: HardwareSelection) -> MultipleLedDeclarations {
+pub fn selected_leds(ctx: &Context, sel: HardwareQuery) -> MultipleLedDeclarations {
   let illums = sel.get_illuminations(ctx);
 
   let mut leds = Vec::new();

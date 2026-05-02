@@ -35,8 +35,8 @@ const CONFIG: CompetitiveGamePluginConfig = CompetitiveGamePluginConfig {
 pub struct CompetitiveGamePlugin {
   max_players: u8,
   systems_template: Vec<ChildSystemContainer>,
-  start_button_switch: HardwareSelection,
-  ball_in_play_switches: HardwareSelection,
+  start_button_switch: HardwareQuery,
+  ball_in_play_switches: HardwareQuery,
 }
 
 impl CompetitiveGamePlugin {
@@ -48,8 +48,8 @@ impl CompetitiveGamePlugin {
     Self {
       systems_template,
       max_players: 4,
-      start_button_switch: HardwareSelection::tag::<StartButton>(),
-      ball_in_play_switches: HardwareSelection::tag::<Playfield>(),
+      start_button_switch: Q::tag::<StartButton>(),
+      ball_in_play_switches: Q::tag::<Playfield>(),
     }
   }
 
@@ -63,12 +63,12 @@ impl CompetitiveGamePlugin {
     self
   }
 
-  pub fn ball_in_play_switches(mut self, switches: HardwareSelection) -> Self {
+  pub fn ball_in_play_switches(mut self, switches: HardwareQuery) -> Self {
     self.ball_in_play_switches = switches;
     self
   }
 
-  pub fn start_button_switch(mut self, switch: HardwareSelection) -> Self {
+  pub fn start_button_switch(mut self, switch: HardwareQuery) -> Self {
     self.start_button_switch = switch;
     self
   }
