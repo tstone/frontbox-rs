@@ -10,7 +10,7 @@ pub struct ConfigureLedPortCommand {
   breakout: Option<u8>,
   port: u8,
   led_type: LedType,
-  start: u8,
+  start: u16,
   count: u8,
 }
 
@@ -20,7 +20,7 @@ impl ConfigureLedPortCommand {
     breakout: Option<u8>,
     port: u8,
     led_type: LedType,
-    start: u8,
+    start: u16,
     count: u8,
   ) -> Self {
     Self {

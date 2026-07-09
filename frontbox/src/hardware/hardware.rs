@@ -270,9 +270,11 @@ impl Hardware {
     exp_port: &mut SerialInterface,
     expansion_boards: &Vec<ResolvedExpansionBoard>,
   ) {
+    let mut led_offset = 0;
     for board in expansion_boards {
       for (port_index, led_port) in board.led_ports.iter().enumerate() {
-        Self::configure_led_port(exp_port, board, port_index as u8, led_port).await;
+        Self::configure_led_port(exp_port, board, port_index as u8, led_offset, led_port).await;
+        led_offset += led_port.length as u16;
       }
     }
   }
@@ -281,6 +283,7 @@ impl Hardware {
     exp_port: &mut SerialInterface,
     board: &ResolvedExpansionBoard,
     port_index: u8,
+    led_index_offset: u16,
     led_port: &ResolvedLedPort,
   ) {
     let cmd = ConfigureLedPortCommand::new(
@@ -288,7 +291,7 @@ impl Hardware {
       board.breakout,
       port_index,
       led_port.led_type.clone(),
-      led_port.length,
+      led_index_offset,
       led_port.length,
     );
     // configure port/block

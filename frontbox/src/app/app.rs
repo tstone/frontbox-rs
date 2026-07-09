@@ -40,7 +40,6 @@ impl App {
 
     App::configure_hardware(&mut io_port, platform).await;
     App::verify_watchdog(&mut io_port).await;
-
     App::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
