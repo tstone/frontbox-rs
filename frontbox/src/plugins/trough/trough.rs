@@ -98,7 +98,7 @@ impl System for Trough {
     let operator_config = ctx.systems.expect::<OperatorConfig>();
     let trough_kick_len = operator_config
       .get_integer(TroughPlugin::config().trough_kick)
-      .unwrap_or(100);
+      .unwrap_or(115);
     let trough_init_power = operator_config
       .get_integer(TroughPlugin::config().trough_power)
       .unwrap_or(70);
@@ -106,9 +106,11 @@ impl System for Trough {
     ctx.configure_driver(
       self.eject_coil,
       PulseKickMode {
-        initial_pwm_length: Duration::from_millis(50),
-        initial_pwm_power: Power::percent(trough_init_power as u8),
-        kick_length: Duration::from_millis(trough_kick_len as u64),
+        initial_pwm_length: Duration::from_millis(7),
+        initial_pwm_power: Power::FULL,
+        secondary_pwm_power: Power::percent(trough_init_power as u8),
+        secondary_pwm_length: Duration::from_millis(trough_kick_len as u64),
+        kick_length: Duration::from_millis(10),
         ..Default::default()
       },
     );

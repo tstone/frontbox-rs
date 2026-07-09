@@ -54,7 +54,7 @@ impl Plugin for TroughPlugin {
   fn build(&self, app: &mut App) {
     app.operator_config(
       OperatorConfigs::integer(TroughPlugin::config().trough_kick)
-        .default(100)
+        .default(115)
         .min(0)
         .max(255)
         .name("Trough Kick Power")
