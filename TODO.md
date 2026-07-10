@@ -15,6 +15,7 @@ Before Show
 - NeoSeg support
 - Auto plunger plugin has operator config for coil power/kick length
 - OperatorConfig should be a separate System -- this will need a way for plugins to register data for systems that aren't yet started
+- System groups can contain groups
 
 Nice to Have
 
@@ -24,7 +25,6 @@ Nice to Have
 LEDs
 
 - Implement binary versions of LED commands
-- System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
 - has_tag/has_typed_tag should probably be a trait
 - Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension

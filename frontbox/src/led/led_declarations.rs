@@ -4,6 +4,7 @@ use crate::AddressableLed;
 
 #[derive(Debug, Clone)]
 pub struct LedDeclarations {
+  // TODO: this is practically identical to MultipleLedDeclarations
   pub pairings: Vec<(AddressableLed, Rgba<u8>)>,
   pub z_index: i8,
 }
@@ -32,4 +33,3 @@ impl From<(AddressableLed, Rgba<u8>)> for LedDeclarations {
     LedDeclarations::new(vec![pairing], 0)
   }
 }
-
