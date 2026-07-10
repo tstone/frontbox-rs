@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::hardware::exp::addressable_illumination::*;
-use crate::{HardwareQuery, HardwareTag, ResolvedExpansionBoard};
+use crate::{HardwareQuery, Tag, ResolvedExpansionBoard};
 
 #[derive(Debug, Clone)]
 pub struct IlluminationLookup {
@@ -28,7 +28,7 @@ impl IlluminationLookup {
     self.by_name.get(name)
   }
 
-  pub fn by_tag<T: HardwareTag + 'static>(&self) -> Vec<&AddressableIllumination> {
+  pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&AddressableIllumination> {
     self
       .by_name
       .values()
@@ -36,7 +36,7 @@ impl IlluminationLookup {
         illum
           .tags()
           .iter()
-          .any(|tag| <dyn HardwareTag>::as_any(&**tag).is::<T>())
+          .any(|tag| <dyn Tag>::as_any(&**tag).is::<T>())
       })
       .collect()
   }

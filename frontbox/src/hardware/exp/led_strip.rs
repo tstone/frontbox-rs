@@ -1,9 +1,9 @@
-use crate::{HardwareTag, Illumination, Point, RenderableGeom};
+use crate::{Tag, Illumination, Point, RenderableGeom};
 
 #[derive(Debug, Clone)]
 pub struct LedStrip {
   pub name: &'static str,
-  pub tags: Vec<Box<dyn HardwareTag>>,
+  pub tags: Vec<Box<dyn Tag>>,
   pub geom: Option<RenderableGeom>,
   pub led_count: u8,
 }
@@ -18,7 +18,7 @@ impl LedStrip {
     }
   }
 
-  pub fn tagged(mut self, tag: impl HardwareTag + 'static) -> Self {
+  pub fn tagged(mut self, tag: impl Tag + 'static) -> Self {
     self.tags.push(Box::new(tag));
     self
   }
@@ -37,7 +37,7 @@ impl Illumination for LedStrip {
     self.name
   }
 
-  fn tags(&self) -> &Vec<Box<dyn HardwareTag>> {
+  fn tags(&self) -> &Vec<Box<dyn Tag>> {
     &self.tags
   }
 

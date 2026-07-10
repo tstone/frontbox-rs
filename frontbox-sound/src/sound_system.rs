@@ -10,7 +10,6 @@ use kira::track::{TrackBuilder, TrackHandle};
 use kira::{
   AudioManager, AudioManagerSettings,
   backend::cpal::{CpalBackend, CpalBackendSettings, Error},
-  sound::Region,
 };
 use kira::{Decibels, Tween};
 

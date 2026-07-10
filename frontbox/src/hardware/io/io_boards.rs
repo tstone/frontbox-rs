@@ -1,9 +1,9 @@
 use crate::IoBoardBuilder;
 
 /// Pre-built definitions of FAST IO board configurations
-pub struct FastIoBoards;
+pub struct IoBoards;
 
-impl FastIoBoards {
+impl IoBoards {
   pub fn custom(switch_count: u16, driver_count: u16) -> IoBoardBuilder {
     IoBoardBuilder {
       description: Box::leak(

@@ -601,7 +601,7 @@ pub mod drivers {
 let mut io_network = IoNetworkBuilder::new();
 
 io_network.add_board(
-  FastIoBoards::io_3208()
+  IoBoards::io_3208()
     .with(switch(3).named(switches::LEFT_INLANE))
     .with(
       switch(4)

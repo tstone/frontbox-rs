@@ -98,7 +98,6 @@ impl HardwareTagExt for Option<HardwareQuery> {
 
 #[cfg(test)]
 mod tests {
-  use crate::NativeIdentity;
   use crate::tags::Playfield;
 
   use super::*;
@@ -110,8 +109,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));
@@ -124,8 +127,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));
@@ -138,8 +145,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));
@@ -152,8 +163,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
-      tags: vec![],
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
+      tags: vec![Box::new(Playfield)],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));
@@ -166,8 +181,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
-      tags: vec![],
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
+      tags: vec![Box::new(Playfield)],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));
@@ -180,8 +199,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: BoardAssignment::IO {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      locations: vec![],
     };
 
     assert!(selection.matches_switch(&switch));

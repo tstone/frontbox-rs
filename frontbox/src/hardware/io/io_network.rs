@@ -3,7 +3,7 @@ use serde::Serialize;
 
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
-  pub switches: Vec<SwitchDefinition>,
+  pub switches: Vec<Addressed<SwitchDefinition>>,
   pub drivers: Vec<DriverDefinition>,
 }
 

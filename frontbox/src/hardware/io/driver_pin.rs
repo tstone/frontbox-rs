@@ -1,4 +1,4 @@
-use crate::{DriverMode, HardwareTag, NativeIdentity};
+use crate::{DriverMode, NativeIdentity, Tag};
 
 pub struct DriverPin(pub u16);
 
@@ -21,12 +21,12 @@ pub fn driver(index: u16) -> DriverPin {
 pub struct DriverMapping {
   pub(crate) key: &'static str,
   pub(crate) pin: u16,
-  pub(crate) tags: Vec<Box<dyn HardwareTag>>,
+  pub(crate) tags: Vec<Box<dyn Tag>>,
   pub(crate) mode: Option<Box<dyn DriverMode>>,
 }
 
 impl DriverMapping {
-  pub fn tagged(mut self, tag: impl HardwareTag + 'static) -> Self {
+  pub fn tagged(mut self, tag: impl Tag + 'static) -> Self {
     self.tags.push(Box::new(tag));
     self
   }
@@ -43,5 +43,5 @@ pub struct DriverDefinition {
   pub name: &'static str,
   pub native: NativeIdentity,
   pub mode: Option<Box<dyn DriverMode>>,
-  pub tags: Vec<Box<dyn HardwareTag>>,
+  pub tags: Vec<Box<dyn Tag>>,
 }

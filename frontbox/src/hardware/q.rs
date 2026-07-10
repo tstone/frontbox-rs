@@ -20,7 +20,7 @@ impl Q {
   }
 
   /// Creates a selection that matches any switch/driver with the specified tag type.
-  pub fn tag<T: HardwareTag + 'static>() -> HardwareQuery {
+  pub fn tag<T: Tag + 'static>() -> HardwareQuery {
     HardwareQuery::Tag(TypeId::of::<T>())
   }
 

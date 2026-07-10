@@ -132,15 +132,22 @@ impl App {
     }
   }
 
-  async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchDefinition>) {
+  async fn configure_switches(
+    io_port: &mut SerialInterface,
+    switches: &Vec<Addressed<SwitchDefinition>>,
+  ) {
     for switch in switches {
-      if let Some(config) = &switch.config {
+      if let Some(config) = &switch.definition.config {
         let reporting = if config.inverted {
           SwitchReportingMode::ReportInverted
         } else {
           SwitchReportingMode::ReportNormal
         };
-        log::info!("Configuring switch {} with {:?}", switch.name, config);
+        log::info!(
+          "Configuring switch {} with {:?}",
+          switch.definition.name,
+          config
+        );
         let _ = io_port
           .request(
             &ConfigureSwitchCommand::new(
