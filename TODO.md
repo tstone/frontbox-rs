@@ -1,8 +1,10 @@
 Before Show
 
-- BUG: there seems to be a bug with Tween where occasionally after ~8 seconds it plays backwards (is it when it's accumulated the exact amount?)
 - Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
+- Seems like EITHER leds or illuminations need to be accessible
+- Should illuminations encompass leds and drivers (e.g. is a start button an illumination?)
 - Add a multi-stop gradient to the declarations
+- An illumination needs to be allowed to be declared as the combination of ports (e.g. two NeoSeg14s back to back would likely be 2 physical ports but treated as a single illumination of 16 characters)
 - frontbox-sound multi-stem music support
 - frontbox-sound loop point support
 - Create a new frontbox-canvas crate
@@ -13,6 +15,7 @@ Before Show
 - NeoSeg support
 - Auto plunger plugin has operator config for coil power/kick length
 - OperatorConfig should be a separate System -- this will need a way for plugins to register data for systems that aren't yet started
+- System groups can contain groups
 
 Nice to Have
 
@@ -22,7 +25,6 @@ Nice to Have
 LEDs
 
 - Implement binary versions of LED commands
-- System groups can contain groups
 - Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
 - has_tag/has_typed_tag should probably be a trait
 - Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension

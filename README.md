@@ -631,32 +631,35 @@ io_network.add_board(
 );
 ```
 
-### Tagging & Selections
+### Tagging & Querying Hardware
 
-Selections are a way to describe what hardware to use.
+Hardware queries are a way to describe what hardware to use.
 
 ```rust
 // select by name
-let sel = HardwareSelection::name("foo");
-// select by group of names
-let sel = HardwareSelection::group(vec!["foo", "bar"]);
+let q = Q::name("foo");
+let q = Q::names(vec!["foo", "bar"]);
 // select by tag (see hardware definition below for more on tagging)
-let sel = HardwareSelection::tag::<Playfield>();
+let q = Q::tag::<Playfield>();
 // combinations
-let sel = HardwareSelection::name("start_button").or(HardwareSelection::tag::<StartButton>());
-let sel = HardwareSelection::tag::<Playfield>().and(HardwareSelection::tag::<Cabinet>());
+let q = Q::name("start_button").or(Q::tag::<StartButton>());
+let q = Q::tag::<Playfield>().and(Q::tag::<Cabinet>());
 ```
 
-Selections can be used as a query with `Context` or as a predicate with an event.
+Queries are just a description of hardware and don't contain the reference to matching hardware. However they can be used a predicate with an event or given `Context` to resolve into the matching hardware.
+
+#### Query as Predicate
 
 ```rust
-let switches = ctx.switches.by_selection(sel);
+// Get all matching switches (resolve query to hardware reference)
+let switches = ctx.switches.query(q);
 
 // ...
 
 fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-    if sel.matches_switch(e.switch) {
+    // use as a predicate
+    if q.matches_switch(e.switch) {
       // ...
     }
   }
@@ -667,8 +670,8 @@ All of the included Systems and Plugins use selections, and most all include san
 
 ```rust
 CreditsPlay::new(
-  HardwareSelection::name(switches::START_BUTTON),
-  HardwareSelection::group(vec![switches::COIN1, switches::COIN2]),
+  Q::name(switches::START_BUTTON),
+  Q::names(vec![switches::COIN1, switches::COIN2]),
 )
 ```
 

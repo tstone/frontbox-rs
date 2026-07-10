@@ -1,5 +1,6 @@
 mod alternate_resolver;
 mod led_declarations;
+mod led_identifications;
 mod led_system;
 mod led_system_ext;
 mod named_led_declaration;
@@ -8,6 +9,7 @@ mod rgba_color;
 
 pub use alternate_resolver::*;
 pub use led_declarations::*;
+pub use led_identifications::*;
 pub use led_system::*;
 pub use led_system_ext::*;
 pub use named_led_declaration::*;

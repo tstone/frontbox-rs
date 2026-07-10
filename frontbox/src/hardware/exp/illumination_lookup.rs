@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::hardware::exp::addressable_illumination::*;
-use crate::{HardwareSelection, HardwareTag, ResolvedExpansionBoard};
+use crate::{HardwareQuery, HardwareTag, ResolvedExpansionBoard};
 
 #[derive(Debug, Clone)]
 pub struct IlluminationLookup {
@@ -41,7 +41,7 @@ impl IlluminationLookup {
       .collect()
   }
 
-  pub fn by_selection(&self, selection: &HardwareSelection) -> Vec<&AddressableIllumination> {
+  pub fn query(&self, selection: &HardwareQuery) -> Vec<&AddressableIllumination> {
     self
       .by_name
       .values()

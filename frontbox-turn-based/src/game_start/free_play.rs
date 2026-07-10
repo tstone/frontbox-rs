@@ -6,19 +6,19 @@ use crate::GameManager;
 /// A simple system to start a game in free play mode
 #[derive(Clone)]
 pub struct FreePlay {
-  start_button_switch: HardwareSelection,
+  start_button_switch: HardwareQuery,
 }
 
 impl Default for FreePlay {
   fn default() -> Self {
     Self {
-      start_button_switch: HardwareSelection::tag::<StartButton>(),
+      start_button_switch: Q::tag::<StartButton>(),
     }
   }
 }
 
 impl FreePlay {
-  pub fn new(selection: HardwareSelection) -> Self {
+  pub fn new(selection: HardwareQuery) -> Self {
     Self {
       start_button_switch: selection,
     }

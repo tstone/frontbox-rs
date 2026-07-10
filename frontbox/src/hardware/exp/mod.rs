@@ -4,6 +4,7 @@ mod geom;
 mod illumination;
 mod illumination_lookup;
 mod led;
+mod led_lookup;
 mod led_port;
 mod led_strip;
 
@@ -13,5 +14,6 @@ pub use geom::*;
 pub use illumination::*;
 pub use illumination_lookup::*;
 pub use led::*;
+pub use led_lookup::*;
 pub use led_port::*;
 pub use led_strip::*;
