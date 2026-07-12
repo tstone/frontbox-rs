@@ -56,9 +56,15 @@ pub mod tags {
   #[derive(Clone, Debug)]
   pub struct AutoPlungerCoil;
 
+  // LED
+  #[derive(Clone, Debug)]
+  pub struct GI;
+
   // multi
   #[derive(Clone, Debug)]
   pub struct Playfield;
+  #[derive(Clone, Debug)]
+  pub struct Target;
   #[derive(Clone, Debug)]
   pub struct Cabinet;
   #[derive(Clone, Debug)]
