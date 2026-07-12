@@ -2,9 +2,9 @@ use crate::plugins::{ActionButtonEject, AutoPlunger};
 use crate::prelude::*;
 
 pub struct AutoplungerPlugin {
-  plunge_lane_switch: HardwareSelection,
-  autoplunge_coil: HardwareSelection,
-  action_button_switch: Option<HardwareSelection>,
+  plunge_lane_switch: HardwareQuery,
+  autoplunge_coil: HardwareQuery,
+  action_button_switch: Option<HardwareQuery>,
 }
 
 impl AutoplungerPlugin {
@@ -14,7 +14,7 @@ impl AutoplungerPlugin {
   /// ## Inputs
   /// - Command: `FirePlunger` - Fires the plunger coil if the ball is resting in the lane
   ///
-  pub fn new(plunge_lane_switch: HardwareSelection, autoplunge_coil: HardwareSelection) -> Self {
+  pub fn new(plunge_lane_switch: HardwareQuery, autoplunge_coil: HardwareQuery) -> Self {
     Self {
       plunge_lane_switch,
       autoplunge_coil,
@@ -22,7 +22,7 @@ impl AutoplungerPlugin {
     }
   }
 
-  pub fn action_button_switch(mut self, switch: HardwareSelection) -> Self {
+  pub fn action_button_switch(mut self, switch: HardwareQuery) -> Self {
     self.action_button_switch = Some(switch);
     self
   }

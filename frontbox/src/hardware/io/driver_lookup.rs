@@ -86,7 +86,7 @@ impl DriverLookup {
       .collect()
   }
 
-  pub fn by_selection(&self, selection: &HardwareSelection) -> Vec<&Driver> {
+  pub fn by_selection(&self, selection: &HardwareQuery) -> Vec<&Driver> {
     self
       .by_id
       .values()

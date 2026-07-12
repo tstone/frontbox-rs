@@ -2,13 +2,13 @@ pub use crate::prelude::*;
 
 /// Simple system to automatically fire the plunger coil on `FirePlunger` command
 pub struct AutoPlunger {
-  lane_switch: HardwareSelection,
-  coil: HardwareSelection,
+  lane_switch: HardwareQuery,
+  coil: HardwareQuery,
   do_autoplunge: bool,
 }
 
 impl AutoPlunger {
-  pub fn new(lane_switch: HardwareSelection, coil: HardwareSelection) -> Self {
+  pub fn new(lane_switch: HardwareQuery, coil: HardwareQuery) -> Self {
     Self {
       lane_switch,
       coil,
