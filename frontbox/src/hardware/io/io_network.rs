@@ -1,10 +1,20 @@
 use crate::prelude::*;
-use serde::Serialize;
 
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
   pub switches: Vec<Addressed<SwitchDefinition>>,
-  pub drivers: Vec<DriverDefinition>,
+  pub drivers: Vec<Addressed<DriverDefinition>>,
+}
+
+impl IoNetwork {
+  pub fn new(boards: Vec<IoBoardBuilder>) -> Self {
+    let builder = IoNetworkBuilder { boards };
+    builder.build()
+  }
+
+  pub fn empty() -> Self {
+    Self::new(Vec::new())
+  }
 }
 
 pub struct ResolvedIoNetwork {
@@ -27,16 +37,4 @@ pub struct ResolvedIoBoard {
   pub description: &'static str,
   pub switch_count: u16,
   pub driver_count: u16,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct NativeIdentity {
-  pub board_idx: usize,
-  pub pin: usize,
-}
-
-impl NativeIdentity {
-  pub fn new(board_idx: usize, pin: usize) -> Self {
-    Self { board_idx, pin }
-  }
 }

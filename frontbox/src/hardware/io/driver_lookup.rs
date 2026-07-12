@@ -12,34 +12,25 @@ pub struct DriverLookup {
 }
 
 impl DriverLookup {
-  pub fn new(drivers: Vec<DriverDefinition>) -> Self {
+  pub fn new(drivers: Vec<Addressed<DriverDefinition>>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
 
-    for definition in drivers {
-      by_id.insert(
-        definition.id,
-        Driver {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+    for addressed in drivers {
+      let driver = Driver {
+        id: addressed.id,
+        name: addressed.definition.name,
+        assignment: addressed.assignment.clone(),
+        tags: addressed.definition.tags.clone(),
+        locations: addressed.definition.locations.clone(),
+      };
 
-      by_name.insert(
-        definition.name,
-        Driver {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+      by_id.insert(addressed.id, driver.clone());
+      by_name.insert(addressed.definition.name, driver);
 
-      if let Some(config) = definition.mode {
-        configs.insert(definition.id, config);
+      if let Some(config) = addressed.definition.mode {
+        configs.insert(addressed.id, config);
       }
     }
 
@@ -112,8 +103,9 @@ impl DerefMut for DriverLookup {
 pub struct Driver {
   pub id: usize,
   pub name: &'static str,
-  pub native: NativeIdentity,
+  pub assignment: BoardAssignment,
   pub tags: Vec<Box<dyn Tag>>,
+  pub locations: Vec<Location>,
 }
 
 impl Driver {

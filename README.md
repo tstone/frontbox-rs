@@ -577,6 +577,23 @@ App::boot(
 
 #### Hardware Definition
 
+##### Commonalities
+
+Every piece of hardware shares three points of definition in common:
+
+- **name** - Name is a unique, static string identifier that will always refer to that exact piece of hardware. In most cases this is explicitly given, but in same cases (e.g. LED strips) it is automatically generated.
+- **tags** - Tags are a way to arbitrarily classify something along any dimension desired (e.g. part of a mech, on the playfield, of a type, etc.)
+- **location** - Location specifies where something is in space within a certain context (tag). This location can then be used for spacial effects or bitmap rendering. The most obvious use is `Playfield`, treating all LEDs as a sparse DMD for rendering, but there are other cases where this could be useful as well (backbox, coin door, a custom mech with LEDs, etc.). Because location is associated with a tag, location tags are automatically copied over to **tags**.
+
+Configured hardware moves through four phases within Frontbox:
+
+1. Definition -- Static configuration such as name, tags, location, and any configuration _(user responsibility)_
+2. Wiring -- A definition is assigned to a specific pin on a specific board _(user responsibility)_
+3. Addressable -- A wired definition is automatically resolved to it's absolute address (id) on the network _(framework responsibility)_
+4. Stateful -- Some hardware (e.g. switches) also become stateful, keeping track of things like open/closed state _(framework responsibility)_
+
+Generally, static **definitions** should be available for reference throughout the app. Stateful representations, where applicable, are available through `Context`.
+
 ##### I/O Network
 
 The I/O network is defined using the `IoNetworkBuilder`. See [Defining Hardware]() guide for more details. I/O network devices can either associate a name with a pin, or can optionally provide a configuration. Configurations given here are automatically applied at startup.
@@ -588,47 +605,100 @@ Hardware can also be tagged `.tagged(Playfield)`. This serves to _classify_ some
 Lastly, depending on the type of hardware being defined, an optional config (`.config(...)`) or mode (`.mode(...)`) can be given.
 
 ```rust
-pub mod switches {
-  pub const LEFT_INLANE: &str = "left_inlane";
-  pub const LEFT_OUTLANE: &str = "left_outlane";
-}
+// Step 1. Define hardware
 
-pub mod drivers {
-  pub const TROUGH_EJECT: &str = "trough_eject";
-  pub const AUTOPLUNGER: &str = "autoplunger";
-}
+pub const left_inlane_switch = SwitchDefinition::new("linlane")
+  .tag(Playfield)
+  .build();
 
-let mut io_network = IoNetworkBuilder::new();
+pub const left_outlane_switch = SwitchDefinition::new("loutlane")
+  .tag(Playfield)
+  .tag(Drain)
+  .inverted()
+  .debounce_open(Duration::from_millis(40))
+  .build();
 
-io_network.add_board(
+pub const trough_eject_coil = DriverDefinition::new("trough_eject").build();
+
+pub const shooter_coil = DriverDefinition::new("shooter")
+  .tag(AutoPlungeCoil)
+  .mode(PulseMode {
+    trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+    initial_pwm_power: Power::FULL,
+    ..Default::default()
+  })
+  .build();
+
+// Step 2. Define and wire the network
+//
+// NOTE: order matters here. Boards must be listed in the order they appear on the network
+// e.g. Neuron => IO3208 => IO1616 => Neuron would be defined as:
+
+let io_network = IoNetwork::new(vec![
   IoBoards::io_3208()
-    .with(switch(3).named(switches::LEFT_INLANE))
-    .with(
-      switch(4)
-        .named(switches::LEFT_OUTLANE)
-        .tagged(Playfield)
-        .tagged(Drain)
-        .config(SwitchConfig {
-          inverted: true,
-          debounce_open: Some(Duration::from_millis(60))
-        })
-    )
-    .with(
-      driver(0)
-        .named(drivers::TROUGH_EJECT)
-        .tagged(Drain)
-    )
-    .with(
-      driver(1)
-        .named(drivers::AUTOPLUNGER)
-        .tagged(AutoPlungeCoil)
-        .config(PulseMode {
-          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-          initial_pwm_power: Power::FULL,
-          ..Default::default()
-        })
-    )
-);
+    .wire_switch(3, left_inlane)
+    .wire_switch(4, left_outlane)
+    .wire_driver(0, trough_eject_coil)
+    .wire_driver(1, shooter_coil),
+  IoBoards::io_1616(),
+]);
+```
+
+##### Expansion Network
+
+The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defining Hardware]() guide for more details.
+
+```rust
+// Step 1. Define exp devices
+
+let left_inlane_led = SingleLedDefinition::new("linlane")
+  .location(Location::new(Playfield, 3.4, 32.5))
+  .channels(ColorChannels::GRBW)
+  .build();
+
+let left_outlane_led = SingleLedDefinition::new("loutlane")
+  .location(Location::new(Playfield, 2.125, 32.5))
+  .channels(ColorChannels::RGB)
+  .build();
+
+// Cabinet lighting along the art blade area
+let left_cabinet_strip = LedMatrixDefinition::new("lcab")
+  .tag(Cabinet)
+  // LED strip: 1 row, 64 columns
+  .grid(1, 64)
+  // rotation (deg), top_left, bottom_right
+  .location(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0))
+  .build();
+
+// Step 2. Define boards and wire the network
+
+let exp_network = ExpansionNetwork::new(vec![
+  ExpansionBoard::fp_exp0061()
+    .wire_led_port(0, LedType::WS2812b, vec![
+        left_inlane_led,
+        left_outlane_led,
+      ]
+    ),
+    .wire_led_port(1, LedType::WS2812b, vec![left_cabinet_strip])
+]);
+```
+
+##### Hardware Organization
+
+Despite the examples in this document showing everything defined all together, it usually makes more sense to group all definitions by region or mech, then wire the network in the same spot. For example, a game might be setup to have regions like `hardware/lower_thirds.rs`, `hardware/mid_field.rs`, and `hardware/upper_playfield.rs`, then a separate `io_network.rs` and `exp_network.rs` which references those hardware definitions and wires up the network.
+
+Depending on the complexity of the playfield, it might also be useful to group regions into modules.
+
+```rust
+// upper_playfield.rs
+
+pub const left_ramp_switch = ...;
+pub const right_ramp_switch = ...;
+
+pub mod custom_mech {
+  pub const entrance_switch = ...;
+  pub const kicker_coil = ...;
+}
 ```
 
 ### Tagging & Querying Hardware
@@ -639,11 +709,30 @@ Hardware queries are a way to describe what hardware to use.
 // select by name
 let q = Q::name("foo");
 let q = Q::names(vec!["foo", "bar"]);
+let q = Q::name(left_inlane_led.name); // names can be referenced from definitions
+let q = Q::name(left_cabinet_strip.name) // LED groups can be referenced by name
+let q = Q::name(left_cabinet_strip.child(0).name) // Specific children within LED groups can be referenced
+
 // select by tag (see hardware definition below for more on tagging)
 let q = Q::tag::<Playfield>();
-// combinations
+
+// select things in a location
+let q = Q::location::<LowerThirds>();
+
+// multiple criteria
 let q = Q::name("start_button").or(Q::tag::<StartButton>());
-let q = Q::tag::<Playfield>().and(Q::tag::<Cabinet>());
+let q = Q::location::<LowerThirds>().and(Q::tag::<Drain>()); // both criteria must be met
+
+// masking/exclusions
+// select everything that is not tagged Playfield
+let q = Q::not(Q::tag::<Playfield>);
+// select everything tagged Playfield that is not also tagged Target
+let q = Q::tag::<Playfield>().not(Q::tag::<Target>());
+
+// other
+let q = Q::all(); // select everything of this type
+let q = Q::rand(10); // take 10 random, even if there are more
+let q = Q::tag::<Playfield>().rand(10);
 ```
 
 Queries are just a description of hardware and don't contain the reference to matching hardware. However they can be used a predicate with an event or given `Context` to resolve into the matching hardware.
@@ -681,32 +770,6 @@ This _explicitly_ sets which switches to listen to based on IDs. Alternately jus
 CreditsPlay::default()
 // switches tagged with StartButton are used as the start button
 // switches tagged with CoinDrop are used to identify incoming coins
-```
-
-##### Expansion Network
-
-> [!WARNING]
-> Defining the expansion network is scheduled to be re-written to be more consistent with defining the I/O network and be more flexible around defining LED groups, ports, etc.
-
-The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defining Hardware]() guide for more details.
-
-```rust
-pub mod leds {
-  pub const LEFT_INLANE: &str = "left_inlane";
-  pub const LEFT_OUTLANE: &str = "left_outlane";
-}
-
-let mut exp_network = ExpansionNetworkBuilder::new();
-
-exp_network.add_board(
-  ExpansionBoard::fp_exp0061()
-    .with_led_port(LedPort {
-      port: 0,
-      start: 0,
-      led_type: LedType::WS2812,
-      leds: vec![leds::LEFT_INLANE, leds::LEFT_OUTLANE]
-    })
-)
 ```
 
 ## Roadmap

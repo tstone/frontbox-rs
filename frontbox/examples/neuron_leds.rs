@@ -34,7 +34,7 @@ async fn main() {
   App::boot(
     "/dev/ttyACM0",
     "/dev/ttyACM1",
-    IoNetworkBuilder::new().build(),
+    IoNetwork::empty(),
     expansion_boards,
   )
   .await

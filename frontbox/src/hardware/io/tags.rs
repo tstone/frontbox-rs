@@ -54,6 +54,8 @@ pub struct SlingShot;
 pub struct TroughCoil;
 #[derive(Clone, Debug)]
 pub struct AutoPlungerCoil;
+#[derive(Clone, Debug)]
+pub(crate) struct _FrontboxDrivenLamp;
 
 // multi
 #[derive(Clone, Debug)]

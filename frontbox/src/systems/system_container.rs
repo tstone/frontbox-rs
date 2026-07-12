@@ -107,6 +107,7 @@ impl SystemContainer {
     self.cues.remove(&cue_id);
   }
 
+  #[allow(unused)]
   pub(crate) fn downcast_ref<T: System + 'static>(&self) -> Option<&T> {
     (self.as_any)(self.inner.as_ref()).downcast_ref::<T>()
   }

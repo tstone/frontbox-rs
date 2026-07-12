@@ -1,6 +1,5 @@
-use image::Rgba;
-
 use crate::AddressableLed;
+use image::Rgba;
 
 #[derive(Debug, Clone)]
 pub struct LedDeclarations {

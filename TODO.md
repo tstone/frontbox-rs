@@ -19,6 +19,7 @@ Before Show
 
 Nice to Have
 
+- Should tagging hardware into a location automatically copy that tag into tags? Probably
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
 

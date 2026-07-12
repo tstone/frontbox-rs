@@ -48,12 +48,16 @@ impl Hardware {
 
   pub async fn configure_drivers(
     io_port: &mut SerialInterface,
-    drivers: &Vec<DriverDefinition>,
+    drivers: &Vec<Addressed<DriverDefinition>>,
     switch_lookup: &SwitchLookup,
   ) {
     for driver in drivers {
-      if let Some(mode) = &driver.mode {
-        log::info!("Configuring driver {} with {:?}", driver.name, mode);
+      if let Some(mode) = &driver.definition.mode {
+        log::info!(
+          "Configuring driver {} with {:?}",
+          driver.definition.name,
+          mode
+        );
         match io_port
           .request(
             &ConfigureDriverCommand::new(driver.id, mode.to_config(switch_lookup)),
@@ -62,13 +66,13 @@ impl Hardware {
           .await
         {
           Ok(ProcessedResponse::Processed) => {
-            log::debug!("Driver {} configured successfully", driver.name);
+            log::debug!("Driver {} configured successfully", driver.definition.name);
           }
           Ok(ProcessedResponse::Failed) => {
-            panic!("Driver {} configuration failed", driver.name);
+            panic!("Driver {} configuration failed", driver.definition.name);
           }
           Err(e) => {
-            panic!("Error configuring driver {}: {}", driver.name, e);
+            panic!("Error configuring driver {}: {}", driver.definition.name, e);
           }
         }
       }

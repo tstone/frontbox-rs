@@ -1,23 +1,23 @@
 mod driver_lookup;
 pub mod driver_modes;
-mod driver_pin;
+mod driver_definition;
 mod io_board_builder;
 mod io_boards;
 mod io_network;
 mod io_network_builder;
 mod switch_lookup;
-mod switch;
+mod switch_definition;
 pub mod tags;
 mod trigger_modes;
 
 pub use driver_lookup::*;
 pub use driver_modes::*;
-pub use driver_pin::*;
+pub use driver_definition::*;
 pub use io_board_builder::*;
 pub use io_boards::*;
 pub use io_network::*;
 pub use io_network_builder::*;
 pub use switch_lookup::*;
-pub use switch::*;
+pub use switch_definition::*;
 pub use tags::Tag;
 pub use trigger_modes::*;

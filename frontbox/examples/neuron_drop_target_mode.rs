@@ -32,26 +32,25 @@ async fn main() {
     .debounce_open(Duration::from_millis(10))
     .build();
 
-  let mut io_network = IoNetworkBuilder::new();
-  io_network.add_board(IoBoards::io_3208());
-  io_network.add_board(
+  let bank_coil = DriverDefinition::new("drop_coil")
+    .mode(PulseMode {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      initial_pwm_length: Duration::from_millis(250),
+      initial_pwm_power: Power::FULL,
+      ..Default::default()
+    })
+    .build();
+
+  let io_network = IoNetwork::new(vec![
+    IoBoards::io_3208(),
     IoBoards::io_1616()
       .wire_switch(5, &target1)
       .wire_switch(6, &target2)
       .wire_switch(7, &target3)
-      .with(
-        driver(3)
-          .named(drivers::LOWER_DROP_TARGET_COIL)
-          .mode(PulseMode {
-            trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-            initial_pwm_length: Duration::from_millis(250),
-            initial_pwm_power: Power::FULL,
-            ..Default::default()
-          }),
-      ),
-  );
+      .wire_driver(3, &bank_coil),
+  ]);
 
-  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network.build(), vec![])
+  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network, vec![])
     .await
     .configure(|app| {
       app.system(DropTargetDownUp::new([

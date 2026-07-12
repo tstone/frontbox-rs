@@ -2,18 +2,10 @@ use crate::hardware::io::*;
 use crate::prelude::{Addressed, BoardAssignment};
 
 pub struct IoNetworkBuilder {
-  boards: Vec<IoBoardBuilder>,
+  pub(crate) boards: Vec<IoBoardBuilder>,
 }
 
 impl IoNetworkBuilder {
-  pub fn new() -> Self {
-    Self { boards: Vec::new() }
-  }
-
-  pub fn add_board(&mut self, spec: IoBoardBuilder) {
-    self.boards.push(spec);
-  }
-
   pub fn build(self) -> IoNetwork {
     let mut boards: Vec<IoBoard> = Vec::new();
     let mut switches = Vec::new();
@@ -49,12 +41,21 @@ impl IoNetworkBuilder {
     }
 
     for (i, board) in self.boards.into_iter().enumerate() {
-      for def in board.drivers {
-        let mut def = def.clone();
-        // re-write IDs to be sequential along I/O network        def.id = driver_offset as usize + def.id;
-        def.native.board_idx = i;
-        def.id = driver_offset as usize + def.id;
-        drivers.push(def);
+      for wired in board.drivers {
+        let pin = match wired.assignment {
+          BoardAssignment::IO { pin, .. } => pin,
+          _ => 0,
+        };
+        let addressed = Addressed {
+          definition: wired.definition.clone(),
+          assignment: BoardAssignment::IO {
+            board_idx: i as u8,
+            pin,
+          },
+          // write IDs to be sequential along I/O network
+          id: driver_offset as usize + pin as usize,
+        };
+        drivers.push(addressed);
       }
       driver_offset += board.driver_count;
     }
