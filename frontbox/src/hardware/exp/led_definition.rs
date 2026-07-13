@@ -1,22 +1,40 @@
-// TODO: migrate LED to using HardwareDefinition
-// TODO: there needs to be an underlying type here that actually produces Vec<HardwareDefinition>
-// things that contain multiple LEDs should maybe generate unique names for them, which are later referenceable
-// e.g. MultiLedDefinition.child(2).name
-
+use indexmap::IndexSet;
 use std::borrow::Cow;
 
 use crate::hardware::exp::led_strip_builder::LedStripBuilder;
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LedDefinition {
-  pub name: Cow<'static, str>,
-  pub tags: Vec<Box<dyn Tag>>,
-  pub location: Option<Vec3>,
-  pub config: Option<LedConfiguration>,
+  names: IndexSet<String>,
+  children: Vec<SingleLedDefinition>,
 }
 
 impl LedDefinition {
+  pub fn new(
+    name: &'static str,
+    tags: Vec<Box<dyn Tag>>,
+    count: u16,
+    locations: Vec<Vec3>,
+    config: Option<LedConfiguration>,
+  ) -> Self {
+    let children: Vec<SingleLedDefinition> = (0..count)
+      .map(|index| SingleLedDefinition {
+        name: Self::child_name(name, index),
+        tags: tags.clone(),
+        location: locations.get(index as usize).map(|loc| *loc),
+        config: config.clone(),
+      })
+      .collect();
+    Self {
+      names: children
+        .iter()
+        .map(|child| child.name.to_string())
+        .collect::<IndexSet<_>>(),
+      children,
+    }
+  }
+
   pub fn single(name: &'static str) -> SingleLedDefinitionBuilder {
     SingleLedDefinitionBuilder::new(name)
   }
@@ -28,43 +46,25 @@ impl LedDefinition {
   pub fn strip(name: &'static str, count: u16) -> LedStripBuilder {
     LedStripBuilder::new(name, count)
   }
-}
 
-impl HardwareDefinition for LedDefinition {
-  fn name(&self) -> Cow<'static, str> {
-    self.name.clone()
+  pub(crate) fn child_name(name: &'static str, index: u16) -> Cow<'static, str> {
+    Cow::Owned(format!("___child::{}::{}", name, index))
   }
 
-  fn tags(&self) -> Vec<Box<dyn Tag>> {
-    self.tags.clone()
+  pub fn child(&self, index: u16) -> Option<&SingleLedDefinition> {
+    self.children.get(index as usize)
   }
 
-  fn location(&self) -> Option<Vec3> {
-    self.location
+  pub fn children(&self) -> &Vec<SingleLedDefinition> {
+    &self.children
+  }
+
+  pub fn names(&self) -> &IndexSet<String> {
+    &self.names
+  }
+
+  /// Query for LED(s) in this definition
+  pub fn q(&self) -> HardwareQuery {
+    Q::names(&self.names)
   }
 }
-
-#[derive(Debug, Clone, Default)]
-pub struct LedConfiguration {
-  pub channels: LedChannels,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub enum LedChannels {
-  #[default]
-  RGB,
-  GRB,
-  BRG,
-  RGBW,
-  GRBW,
-  BRGW,
-}
-
-// pub struct LedMatrixDefinition {
-//   pub name: &'static str,
-//   pub tags: Vec<Box<dyn Tag>>,
-//   pub height: u16,
-//   pub width: u16,
-//   // where CornerLocation is -- { tag: Box<dyn Tag>, rotation: f32, top_left: (f32, f32), bottom_right: (f32, f32) }
-//   pub locations: Vec<CornerLocation>,
-// }

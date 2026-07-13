@@ -652,31 +652,34 @@ The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defin
 ```rust
 // Step 1. Define exp devices
 
-let left_inlane_led = LedDefinition::single("linlane")
-  .location(Vec2::new(3.4, 32.5).relative_to(PLAYFIELD))
-  .channels(ColorChannels::GRBW)
-  .build();
+pub mod leds {
+  use super::*;
 
-let left_outlane_led = LedDefinition::new("loutlane")
-  .location(Vec2::new(2.125, 32.5).relative_to(PLAYFIELD))
-  .build();
+  hardware_defs! {
+    pub LEFT_INLANE: LedDefinition = LedDefinition::single("linlane")
+      .location(Vec2::new(3.4, 32.5).relative_to(PLAYFIELD))
+      .channels(ColorChannels::GRBW);
 
-// Cabinet lighting along the left art blade area
-let left_cabinet_strip = LedDefinition::strip("lcab", 32)
-  .tag(Cabinet)
-  .locations(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0))
-  .build();
+    pub LEFT_OUTLANE: LedDefinition = LedDefinition::new("loutlane")
+      .location(Vec2::new(2.125, 32.5).relative_to(PLAYFIELD));
+
+    // Cabinet lighting along the left art blade area
+    pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::strip("lcab", 32)
+      .tag(Cabinet)
+      .locations(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0));
+  }
+}
 
 // Step 2. Define boards and wire the network
 
 let exp_network = ExpansionNetwork::new(vec![
   ExpansionBoard::fp_exp0061()
-    .wire_led_port(0, LedType::WS2812b, vec![
-        left_inlane_led,
-        left_outlane_led,
+    .wire_led_port(0, LedPort::ws2812b().leds(vec![
+        &leds::LEFT_INLANE,
+        &leds::LEFT_OUTLANE,
       ]
-    ),
-    .wire_led_port(1, LedType::WS2812b, vec![left_cabinet_strip])
+    )),
+    .wire_led_port(1, LedPort::wS2812b().leds(vec![&leds::LEFT_CAB_STRIP]))
 ]);
 ```
 

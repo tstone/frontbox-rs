@@ -5,7 +5,7 @@ use crate::prelude::*;
 #[derive(Debug)]
 pub struct LedPort {
   pub led_type: LedType,
-  pub leds: Vec<&'static MultiLedDefinition>,
+  pub leds: Vec<&'static LedDefinition>,
 }
 
 impl LedPort {
@@ -29,7 +29,7 @@ impl LedPort {
     Self::new(LedType::APA102)
   }
 
-  pub fn leds(mut self, leds: Vec<&'static MultiLedDefinition>) -> Self {
+  pub fn leds(mut self, leds: Vec<&'static LedDefinition>) -> Self {
     self.leds = leds;
     self
   }
@@ -38,7 +38,7 @@ impl LedPort {
 #[derive(Debug, Clone)]
 pub struct ResolvedLedPort {
   pub led_type: LedType,
-  pub leds: Vec<ExpAddressed<LedDefinition>>,
+  pub leds: Vec<ExpAddressed<SingleLedDefinition>>,
   pub start: u16,
   pub length: u8,
 }

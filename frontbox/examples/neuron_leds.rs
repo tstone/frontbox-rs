@@ -11,10 +11,10 @@ pub mod leds {
 
   hardware_defs! {
     // like other hardware, LEDs can be arbitrary tagged for later querying
-    pub DEMO1: MultiLedDefinition = LedDefinition::single("demo1").tag(tags::Lane);
-    pub DEMO2: MultiLedDefinition = LedDefinition::single("demo2");
-    pub DEMO3: MultiLedDefinition = LedDefinition::single("demo3");
-    pub DEMO4: MultiLedDefinition = LedDefinition::single("demo4");
+    pub DEMO1: LedDefinition = LedDefinition::single("demo1").tag(tags::Lane);
+    pub DEMO2: LedDefinition = LedDefinition::single("demo2");
+    pub DEMO3: LedDefinition = LedDefinition::single("demo3");
+    pub DEMO4: LedDefinition = LedDefinition::single("demo4");
   }
 }
 

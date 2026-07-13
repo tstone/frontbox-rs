@@ -53,12 +53,12 @@ impl MultiLedDefinitionBuilder {
     self.config.get_or_insert_with(LedConfiguration::default)
   }
 
-  pub fn build(self) -> MultiLedDefinition {
+  pub fn build(self) -> LedDefinition {
     let count = if self.count == 0 {
       self.locations.len() as u16
     } else {
       self.count
     };
-    MultiLedDefinition::new(self.name, self.tags, count, self.locations, self.config)
+    LedDefinition::new(self.name, self.tags, count, self.locations, self.config)
   }
 }

@@ -32,21 +32,21 @@ impl Contextual<LedIdentifications> for HardwareQuery {
   }
 }
 
-impl Contextual<LedIdentifications> for MultiLedDefinition {
+impl Contextual<LedIdentifications> for LedDefinition {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self.q().get_leds_addresses(&ctx);
     LedIdentifications::new(addresses, 0)
   }
 }
 
-impl Contextual<LedIdentifications> for &LazyLock<MultiLedDefinition> {
+impl Contextual<LedIdentifications> for &LazyLock<LedDefinition> {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self.q().get_leds_addresses(&ctx);
     LedIdentifications::new(addresses, 0)
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<LazyLock<MultiLedDefinition>> {
+impl Contextual<LedIdentifications> for Vec<LazyLock<LedDefinition>> {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self
       .iter()

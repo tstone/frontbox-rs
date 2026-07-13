@@ -1,18 +1,18 @@
 mod expansion_board;
 mod led;
-mod led_definition;
+mod single_led_definition;
 mod led_lookup;
 mod led_port;
 mod led_strip_builder;
-mod multi_led_definition;
+mod led_definition;
 mod multi_led_definition_builder;
 mod single_led_definition_builder;
 
 pub use expansion_board::*;
 pub use led::*;
-pub use led_definition::*;
+pub use single_led_definition::*;
 pub use led_lookup::*;
 pub use led_port::*;
-pub use multi_led_definition::*;
+pub use led_definition::*;
 pub use multi_led_definition_builder::*;
 pub use single_led_definition_builder::*;

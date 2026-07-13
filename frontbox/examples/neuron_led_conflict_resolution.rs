@@ -11,7 +11,7 @@ pub mod leds {
   use super::*;
 
   hardware_defs! {
-    pub DEMO1: MultiLedDefinition = LedDefinition::single("demo1");
+    pub DEMO1: LedDefinition = LedDefinition::single("demo1");
   }
 }
 

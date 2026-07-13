@@ -5,7 +5,17 @@ use std::io::Write;
 use std::time::Duration;
 
 pub mod drivers {
-  pub const LOWER_DROP_TARGET_COIL: &str = "lower_drop_target_coil";
+  use super::*;
+
+  hardware_defs! {
+    pub BANK_COIL: DriverDefinition = DriverDefinition::new("drop_coil")
+    .mode(PulseMode {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      initial_pwm_length: Duration::from_millis(250),
+      initial_pwm_power: Power::FULL,
+      ..Default::default()
+    });
+  }
 }
 
 #[tokio::main]
@@ -32,22 +42,13 @@ async fn main() {
     .debounce_open(Duration::from_millis(10))
     .build();
 
-  let bank_coil = DriverDefinition::new("drop_coil")
-    .mode(PulseMode {
-      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(250),
-      initial_pwm_power: Power::FULL,
-      ..Default::default()
-    })
-    .build();
-
   let io_network = IoNetwork::new(vec![
     IoBoards::io_3208(),
     IoBoards::io_1616()
       .wire_switch(5, &target1)
       .wire_switch(6, &target2)
       .wire_switch(7, &target3)
-      .wire_driver(3, &bank_coil),
+      .wire_driver(3, &drivers::BANK_COIL),
   ]);
 
   App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network, vec![])
@@ -91,7 +92,7 @@ impl DropTargetDownUp {
 impl System for DropTargetDownUp {
   fn on_spawn(&mut self, ctx: &Context) {
     // bring up all targets on startup
-    ctx.activate_driver(drivers::LOWER_DROP_TARGET_COIL, ActivationMode::Tap);
+    ctx.activate_driver(drivers::BANK_COIL.name, ActivationMode::Tap);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {

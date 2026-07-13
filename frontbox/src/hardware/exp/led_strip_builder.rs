@@ -69,7 +69,7 @@ impl LedStripBuilder {
     self.config.get_or_insert_with(LedConfiguration::default)
   }
 
-  pub fn build(self) -> MultiLedDefinition {
+  pub fn build(self) -> LedDefinition {
     let plane = if self.locations.len() > 0 {
       self.plane.unwrap()
     } else {
@@ -82,7 +82,7 @@ impl LedStripBuilder {
       .map(|p| p.relative_to(plane))
       .collect();
 
-    MultiLedDefinition::new(self.name, self.tags, self.count, locations, self.config)
+    LedDefinition::new(self.name, self.tags, self.count, locations, self.config)
   }
 }
 

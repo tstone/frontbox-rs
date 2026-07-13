@@ -45,11 +45,11 @@ impl SingleLedDefinitionBuilder {
     self.config.get_or_insert_with(LedConfiguration::default)
   }
 
-  pub fn build(self) -> MultiLedDefinition {
+  pub fn build(self) -> LedDefinition {
     let locations = match self.location {
       Some(loc) => vec![loc],
       None => Vec::new(),
     };
-    MultiLedDefinition::new(self.name, self.tags, 1, locations, self.config)
+    LedDefinition::new(self.name, self.tags, 1, locations, self.config)
   }
 }
