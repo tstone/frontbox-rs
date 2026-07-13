@@ -57,6 +57,10 @@ pub struct AutoPlungerCoil;
 #[derive(Clone, Debug)]
 pub(crate) struct _FrontboxDrivenLamp;
 
+// LEDs
+#[derive(Clone, Debug)]
+pub struct GeneralIllumination;
+
 // multi
 #[derive(Clone, Debug)]
 pub struct Playfield;
@@ -64,5 +68,7 @@ pub struct Playfield;
 pub struct Cabinet;
 #[derive(Clone, Debug)]
 pub struct Lane;
+#[derive(Clone, Debug)]
+pub struct Target;
 #[derive(Clone, Debug)]
 pub struct Ramp;

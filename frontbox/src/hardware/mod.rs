@@ -13,6 +13,7 @@ pub use fast_platform::*;
 pub use hardware::*;
 pub use hardware_definition::*;
 pub use hardware_query::*;
+#[allow(unused)]
 pub use hardware_query_conversions::*;
 pub use io::*;
 pub use location::*;

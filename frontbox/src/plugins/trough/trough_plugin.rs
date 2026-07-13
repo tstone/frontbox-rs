@@ -2,9 +2,8 @@ use crate::plugins::{Plugin, Trough};
 use crate::prelude::*;
 
 pub struct TroughPlugin {
-  pub switches: Vec<&'static str>,
-  pub eject_coil: &'static str,
-  pub expected_occupancy: usize,
+  pub switches: HardwareQuery,
+  pub eject_coil: HardwareQuery,
 }
 
 pub struct TroughPluginConfig {
@@ -39,13 +38,12 @@ impl TroughPlugin {
   /// - `trough_power_key` (integer, ms) - The initial power to contact the ball
   ///
   /// ## Arguments
-  /// * `switches` - List of trough switches, in order. Index 0 is the switch nearest the exit.
-  /// * `eject_coil` - The name of the trough eject coil
-  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Self {
+  /// * `switches` - Query of trough switches, in order. First switch is the switch nearest the exit.
+  /// * `eject_coil` - Query of the trough eject coil (driver)
+  pub fn new(switches: impl Into<HardwareQuery>, eject_coil: impl Into<HardwareQuery>) -> Self {
     Self {
-      expected_occupancy: switches.len(),
-      switches,
-      eject_coil,
+      switches: switches.into(),
+      eject_coil: eject_coil.into(),
     }
   }
 }
@@ -72,6 +70,6 @@ impl Plugin for TroughPlugin {
         .units("%"),
     );
 
-    app.system(Trough::new(self.switches.clone(), self.eject_coil));
+    app.system(Trough::new(self.switches.clone(), self.eject_coil.clone()));
   }
 }

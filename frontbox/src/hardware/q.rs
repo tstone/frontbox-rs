@@ -1,4 +1,3 @@
-use indexmap::IndexSet;
 use std::any::TypeId;
 
 use crate::prelude::*;
@@ -12,8 +11,8 @@ impl Q {
   }
 
   /// Creates a selection that matches any of the provided names.
-  pub fn names(names: &IndexSet<String>) -> HardwareQuery {
-    HardwareQuery::Names(names.clone())
+  pub fn names<S: Into<String>>(names: impl IntoIterator<Item = S>) -> HardwareQuery {
+    HardwareQuery::Names(names.into_iter().map(Into::into).collect())
   }
 
   /// Creates a selection that matches any switch/driver with the specified tag type.

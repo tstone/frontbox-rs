@@ -10,8 +10,20 @@ impl From<Vec<HardwareQuery>> for HardwareQuery {
   }
 }
 
+impl From<LazyLock<SwitchDefinition>> for HardwareQuery {
+  fn from(value: LazyLock<SwitchDefinition>) -> Self {
+    Q::name(value.name)
+  }
+}
+
 impl From<&LazyLock<SwitchDefinition>> for HardwareQuery {
   fn from(value: &LazyLock<SwitchDefinition>) -> Self {
+    Q::name(value.name)
+  }
+}
+
+impl From<LazyLock<DriverDefinition>> for HardwareQuery {
+  fn from(value: LazyLock<DriverDefinition>) -> Self {
     Q::name(value.name)
   }
 }
@@ -19,6 +31,12 @@ impl From<&LazyLock<SwitchDefinition>> for HardwareQuery {
 impl From<&LazyLock<DriverDefinition>> for HardwareQuery {
   fn from(value: &LazyLock<DriverDefinition>) -> Self {
     Q::name(value.name)
+  }
+}
+
+impl From<LazyLock<LedDefinition>> for HardwareQuery {
+  fn from(value: LazyLock<LedDefinition>) -> Self {
+    Q::names(value.names())
   }
 }
 

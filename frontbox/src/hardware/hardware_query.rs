@@ -52,14 +52,32 @@ impl HardwareQuery {
     }
   }
 
+  /// Resolve the query into a reference for all matching Switches
   pub fn get_switches<'c>(&self, ctx: &'c Context) -> Vec<&'c Switch> {
     ctx.switches.query(&self)
   }
 
+  /// Resolve the query into a the names of all matching Switches
+  pub fn get_switch_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
+    ctx.switches.query(&self).iter().map(|sw| sw.name).collect()
+  }
+
+  /// Resolve the query into a reference for all matching Drivers
   pub fn get_drivers<'c>(&self, ctx: &'c Context) -> Vec<&'c Driver> {
     ctx.drivers.by_selection(&self)
   }
 
+  /// Resolve the query into a the names of all matching Drivers
+  pub fn get_driver_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
+    ctx
+      .drivers
+      .by_selection(&self)
+      .iter()
+      .map(|d| d.name)
+      .collect()
+  }
+
+  /// Resolve the query into a reference for all matching LEDs
   pub fn get_leds<'c>(&self, ctx: &'c Context) -> Vec<&'c LED> {
     ctx
       .leds
@@ -68,6 +86,7 @@ impl HardwareQuery {
       .collect()
   }
 
+  /// Resolve the query into a the address of all matching LEDs
   pub fn get_leds_addresses(&self, ctx: &Context) -> Vec<LedAddress> {
     ctx
       .leds

@@ -14,16 +14,19 @@ impl AutoplungerPlugin {
   /// ## Inputs
   /// - Command: `FirePlunger` - Fires the plunger coil if the ball is resting in the lane
   ///
-  pub fn new(plunge_lane_switch: HardwareQuery, autoplunge_coil: HardwareQuery) -> Self {
+  pub fn new(
+    plunge_lane_switch: impl Into<HardwareQuery>,
+    autoplunge_coil: impl Into<HardwareQuery>,
+  ) -> Self {
     Self {
-      plunge_lane_switch,
-      autoplunge_coil,
+      plunge_lane_switch: plunge_lane_switch.into(),
+      autoplunge_coil: autoplunge_coil.into(),
       action_button_switch: None,
     }
   }
 
-  pub fn action_button_switch(mut self, switch: HardwareQuery) -> Self {
-    self.action_button_switch = Some(switch);
+  pub fn action_button_switch(mut self, switch: impl Into<HardwareQuery>) -> Self {
+    self.action_button_switch = Some(switch.into());
     self
   }
 }

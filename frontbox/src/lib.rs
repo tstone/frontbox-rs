@@ -33,6 +33,7 @@ pub mod prelude {
   pub use frontbox_derive::*;
   pub use glam::{Quat, Vec2, Vec3};
   pub use image::Rgba;
+  pub use indexmap::IndexSet;
   pub use serde::Serialize;
   pub use std::time::Duration;
 
