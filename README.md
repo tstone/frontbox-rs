@@ -268,24 +268,23 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 
 #### LedSystem
 
-Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
+Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 
 ```rust
 // declare LEDs by name...
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::yellow())
-    .z_index(3)
+  leds::EXAMPLE.q().at_z(3),
+  Rgba::yellow()
 );
 
 // ...or by group
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
-    .gradient(Rgba::red(), Rgba::yellow())
+  vec![leds::EX1.q(), leds::EX2.q(), leds::EX3.q()],
+  Colors::gradient(vec![Rgba::red(), Rgba::yellow()])
 );
 ```
+
+`declare_leds` takes a `HardwareQuery`, which is the reason for `.q()`. More about this later.
 
 Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
 
@@ -302,19 +301,12 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 ```rust
 // higher layer declares 50% transparent red
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::red().with_alpha_f32(0.5))
-    .z_index(1)
+  leds::EXAMPLE.q().at_z(1),
+  Rgba::red().with_alpha_f32(0.5)
 );
 
 // over top of white
-ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::white())
-    .z_index(0)
-);
+ctx.declare_leds(leds::EXAMPLE.q(), Rgba::white());
 
 // final color renders as pink [255, 127, 127, 255]
 ```
@@ -413,13 +405,13 @@ impl System for AnimExample {
     // re-declaring the same LED will overwrite the previous declaration
     ctx.declare_leds(
       // declare the current animated value as the color of that LED
-      named_led(leds::EXAMPLE).color(self.anim.sample())
+      leds::EXAMPLE.q(), self.anim.sample()
     )
   }
 }
 ```
 
-Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it. `color_idx` only turns on that one LED.
+Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it.
 
 ```rust
 pub struct AnimExample {
@@ -432,10 +424,8 @@ impl System for AnimExample {
     self.anim.accumulate(delta);
 
     ctx.declare_leds(
-      ctx.current_system_id(),
-      named_leds(vec![leds::LEFT_LANE_ARROW, leds::LEFT_LANE1, leds::LEFT_LANE2])
-        .color_idx(self.anim.sample())
-        .z_index(2)
+      vec![leds::LEFT_LANE_ARROW.q(), leds::LEFT_LANE1.q(), leds::LEFT_LANE2.q()].at_z(2),
+      Colors::pattern(self.anim.sample(), vec![Rgba::red()])
     )
   }
 }

@@ -1,5 +1,3 @@
-use std::sync::LazyLock;
-
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -19,12 +17,6 @@ impl LedIdentifications {
   }
 }
 
-impl Contextual<LedIdentifications> for LedIdentifications {
-  fn resolve(&self, _ctx: &Context) -> LedIdentifications {
-    self.clone()
-  }
-}
-
 impl Contextual<LedIdentifications> for HardwareQuery {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self.get_leds_addresses(&ctx);
@@ -32,26 +24,30 @@ impl Contextual<LedIdentifications> for HardwareQuery {
   }
 }
 
-impl Contextual<LedIdentifications> for LedDefinition {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
-    let addresses = self.q().get_leds_addresses(&ctx);
-    LedIdentifications::new(addresses, 0)
-  }
-}
-
-impl Contextual<LedIdentifications> for &LazyLock<LedDefinition> {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
-    let addresses = self.q().get_leds_addresses(&ctx);
-    LedIdentifications::new(addresses, 0)
-  }
-}
-
-impl Contextual<LedIdentifications> for Vec<&LazyLock<LedDefinition>> {
+impl Contextual<LedIdentifications> for Vec<HardwareQuery> {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self
       .iter()
-      .flat_map(|def| def.q().get_leds_addresses(&ctx))
+      .flat_map(|q| q.get_leds_addresses(ctx))
       .collect();
     LedIdentifications::new(addresses, 0)
+  }
+}
+
+impl Contextual<LedIdentifications> for LedIdentifications {
+  fn resolve(&self, _ctx: &Context) -> LedIdentifications {
+    self.clone()
+  }
+}
+
+impl Contextual<LedIdentifications> for Box<dyn Contextual<LedIdentifications>> {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    (**self).resolve(ctx)
+  }
+}
+
+impl Contextual<LedIdentifications> for &Box<dyn Contextual<LedIdentifications>> {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    (**self).resolve(ctx)
   }
 }
