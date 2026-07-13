@@ -87,8 +87,15 @@ impl LedExample {
 
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &Context) {
+    // Declare individually
     ctx.declare_leds(&leds::DEMO1, Rgba::blue());
     ctx.declare_leds(&leds::DEMO2, Rgba::yellow().with_alpha(127));
+
+    // Or declare as a sequence
+    ctx.declare_leds(
+      vec![&leds::DEMO1, &leds::DEMO2, &leds::DEMO3],
+      Colors::gradient(vec![Rgba::blue(), Rgba::red()]).reverse(),
+    );
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &Context) {

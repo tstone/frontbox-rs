@@ -46,7 +46,7 @@ impl Contextual<LedIdentifications> for &LazyLock<LedDefinition> {
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<LazyLock<LedDefinition>> {
+impl Contextual<LedIdentifications> for Vec<&LazyLock<LedDefinition>> {
   fn resolve(&self, ctx: &Context) -> LedIdentifications {
     let addresses = self
       .iter()
@@ -55,22 +55,3 @@ impl Contextual<LedIdentifications> for Vec<LazyLock<LedDefinition>> {
     LedIdentifications::new(addresses, 0)
   }
 }
-
-// pub trait LedIdentificationsExt {
-//   /// Set the z-index
-//   fn at_z(self, z_index: i8) -> LedIdentifications;
-// }
-
-// impl LedIdentificationsExt for LedAddress {
-//   fn at_z(self, z_index: i8) -> LedIdentifications {
-//     let ids: LedIdentifications = self.into();
-//     ids.at_z(z_index)
-//   }
-// }
-
-// impl LedIdentificationsExt for Vec<LedAddress> {
-//   fn at_z(self, z_index: i8) -> LedIdentifications {
-//     let ids: LedIdentifications = self.into();
-//     ids.at_z(z_index)
-//   }
-// }

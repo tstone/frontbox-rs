@@ -1,10 +1,10 @@
 mod alternate_resolver;
 mod color_sequence;
+mod color_sequences;
 mod led_declarations;
 mod led_identifications;
 mod led_system;
 mod led_system_ext;
-mod named_leds_declaration;
 mod rgba_color;
 
 pub use alternate_resolver::*;
@@ -13,5 +13,8 @@ pub use led_declarations::*;
 pub use led_identifications::*;
 pub use led_system::*;
 pub use led_system_ext::*;
-pub use named_leds_declaration::*;
 pub use rgba_color::*;
+
+pub use color_sequences::gradient::GradientStop;
+#[allow(unused)]
+pub use color_sequences::rgba::*;
