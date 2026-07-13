@@ -14,7 +14,10 @@ pub struct SwitchLookup {
 }
 
 impl SwitchLookup {
-  pub fn new(addressed: Vec<Addressed<SwitchDefinition>>, initial_state: Vec<SwitchState>) -> Self {
+  pub fn new(
+    addressed: Vec<IoAddressed<SwitchDefinition>>,
+    initial_state: Vec<SwitchState>,
+  ) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
@@ -25,7 +28,7 @@ impl SwitchLookup {
         name: addressed.definition.name,
         assignment: addressed.assignment.clone(),
         tags: addressed.definition.tags.clone(),
-        locations: addressed.definition.locations,
+        location: addressed.definition.location,
       };
 
       by_id.insert(addressed.id, switch.clone());
@@ -174,10 +177,10 @@ impl DerefMut for SwitchLookup {
 #[derive(Debug, Clone)]
 pub struct Switch {
   pub name: &'static str,
-  pub assignment: BoardAssignment,
+  pub assignment: IoAddress,
   pub id: usize,
   pub tags: Vec<Box<dyn Tag>>,
-  pub locations: Vec<Location>,
+  pub location: Option<Vec3>,
 }
 
 impl Switch {
@@ -205,17 +208,14 @@ mod tests {
   #[test]
   fn tag_lookup() {
     let lookup = SwitchLookup::new(
-      vec![Addressed {
+      vec![IoAddressed {
         definition: SwitchDefinition {
           name: "switch1",
           tags: vec![Box::new(Playfield)],
-          locations: vec![],
+          location: None,
           config: None,
         },
-        assignment: BoardAssignment::IO {
-          board_idx: 0,
-          pin: 1,
-        },
+        assignment: IoAddress::new(0, 1),
         id: 1,
       }],
       vec![SwitchState::Open],
@@ -231,12 +231,9 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      assignment: BoardAssignment::IO {
-        board_idx: 0,
-        pin: 1,
-      },
+      assignment: IoAddress::new(0, 1),
       tags: vec![Box::new(Playfield)],
-      locations: vec![],
+      location: None,
     };
 
     assert!(switch.has_tag::<Playfield>());
@@ -248,12 +245,9 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      assignment: BoardAssignment::IO {
-        board_idx: 0,
-        pin: 1,
-      },
+      assignment: IoAddress::new(0, 1),
       tags: vec![Box::new(Playfield)],
-      locations: vec![],
+      location: None,
     };
 
     let type_id = TypeId::of::<Playfield>();

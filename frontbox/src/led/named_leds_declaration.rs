@@ -1,59 +1,11 @@
+use crate::LedAddress;
 use crate::prelude::*;
-use crate::{AddressableLed, HardwareQuery};
 
-pub fn named_leds(ctx: &Context, names: Vec<&str>) -> MultipleLedDeclarations {
-  let mut leds = Vec::new();
-  for name in names {
-    let ill = ctx.illuminations.get(name).expect("LED not found");
-    leds.push((
-      ill
-        .leds
-        .first()
-        .expect("LED has no addressable LEDs")
-        .clone(),
-      Rgba::default(),
-    ));
-  }
-
-  MultipleLedDeclarations {
-    pairings: leds,
-    z_index: None,
-  }
-}
-
-pub fn named_led_strip(ctx: &Context, name: &str) -> MultipleLedDeclarations {
-  let ill = ctx.illuminations.get(name).expect("LED strip not found");
-  let leds = ill
-    .leds
-    .iter()
-    .map(|led| (led.clone(), Rgba::default()))
-    .collect();
-
-  MultipleLedDeclarations {
-    pairings: leds,
-    z_index: None,
-  }
-}
-
-pub fn selected_leds(ctx: &Context, sel: HardwareQuery) -> MultipleLedDeclarations {
-  let illums = sel.get_illuminations(ctx);
-
-  let mut leds = Vec::new();
-  for ill in illums {
-    for led in &ill.leds {
-      leds.push((led.clone(), Rgba::default()));
-    }
-  }
-
-  MultipleLedDeclarations {
-    pairings: leds,
-    z_index: None,
-  }
-}
+// TODO: port this to ColorSequence
 
 #[derive(Debug, Clone)]
 pub struct MultipleLedDeclarations {
-  pairings: Vec<(AddressableLed, Rgba<u8>)>,
+  pairings: Vec<(LedAddress, Rgba<u8>)>,
   z_index: Option<i8>,
 }
 
@@ -99,7 +51,7 @@ impl MultipleLedDeclarations {
     let n = self.pairings.len();
     let steps = (deg / 360.0 * n as f32).round() as usize % n;
 
-    let (leds, mut declarations): (Vec<AddressableLed>, Vec<Rgba<u8>>) =
+    let (leds, mut declarations): (Vec<LedAddress>, Vec<Rgba<u8>>) =
       self.pairings.into_iter().unzip();
     declarations.rotate_right(steps);
 
@@ -113,7 +65,7 @@ impl MultipleLedDeclarations {
     let n = self.pairings.len();
     let steps = (deg / 360.0 * n as f32).round() as usize % n;
 
-    let (leds, mut declarations): (Vec<AddressableLed>, Vec<Rgba<u8>>) =
+    let (leds, mut declarations): (Vec<LedAddress>, Vec<Rgba<u8>>) =
       self.pairings.into_iter().unzip();
     declarations.rotate_left(steps);
 
@@ -124,20 +76,5 @@ impl MultipleLedDeclarations {
   pub fn z_index(mut self, z: i8) -> Self {
     self.z_index = Some(z);
     self
-  }
-}
-
-impl From<MultipleLedDeclarations> for LedDeclarations {
-  fn from(decl: MultipleLedDeclarations) -> Self {
-    LedDeclarations::new(decl.pairings, decl.z_index.unwrap_or(0))
-  }
-}
-
-impl From<MultipleLedDeclarations> for LedIdentifications {
-  fn from(decl: MultipleLedDeclarations) -> Self {
-    LedIdentifications::new(
-      decl.pairings.into_iter().map(|(led, _)| led).collect(),
-      decl.z_index.unwrap_or(0),
-    )
   }
 }

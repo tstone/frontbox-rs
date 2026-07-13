@@ -1,13 +1,14 @@
+use std::borrow::Cow;
 use std::time::Duration;
 
 use crate::Tag;
-use crate::prelude::{HardwareDefinition, Location};
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct SwitchDefinition {
   pub name: &'static str,
   pub tags: Vec<Box<dyn Tag>>,
-  pub locations: Vec<Location>,
+  pub location: Option<Vec3>,
   pub config: Option<SwitchConfig>,
 }
 
@@ -18,23 +19,23 @@ impl SwitchDefinition {
 }
 
 impl HardwareDefinition for SwitchDefinition {
-  fn name(&self) -> &'static str {
-    self.name
+  fn name(&self) -> Cow<'static, str> {
+    Cow::Borrowed(self.name)
   }
 
   fn tags(&self) -> Vec<Box<dyn Tag>> {
     self.tags.clone()
   }
 
-  fn locations(&self) -> Vec<Location> {
-    self.locations.clone()
+  fn location(&self) -> Option<Vec3> {
+    self.location
   }
 }
 
 pub struct SwitchDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
-  location: Vec<Location>,
+  location: Option<Vec3>,
   config: Option<SwitchConfig>,
 }
 
@@ -43,7 +44,7 @@ impl SwitchDefinitionBuilder {
     Self {
       name,
       tags: Vec::new(),
-      location: Vec::new(),
+      location: None,
       config: None,
     }
   }
@@ -58,13 +59,8 @@ impl SwitchDefinitionBuilder {
     self
   }
 
-  pub fn location(mut self, location: Location) -> Self {
-    self.location.push(location);
-    self
-  }
-
-  pub fn locations(mut self, locations: impl IntoIterator<Item = Location>) -> Self {
-    self.location.extend(locations);
+  pub fn location(mut self, location: Vec3) -> Self {
+    self.location = Some(location);
     self
   }
 
@@ -104,7 +100,7 @@ impl SwitchDefinitionBuilder {
     SwitchDefinition {
       name: self.name,
       tags: self.tags,
-      locations: self.location,
+      location: self.location,
       config: self.config,
     }
   }

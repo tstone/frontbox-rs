@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use fast_protocol::*;
-use itertools::Itertools;
 
 use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
@@ -9,7 +8,7 @@ use crate::prelude::*;
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
-  pub illuminations: IlluminationLookup,
+  pub leds: LedLookup,
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
@@ -18,14 +17,14 @@ impl Hardware {
   pub fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
-    illuminations: IlluminationLookup,
+    leds: LedLookup,
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     Self {
       switches,
       drivers,
-      illuminations,
+      leds,
       io_network,
       exp_network,
     }
@@ -48,7 +47,7 @@ impl Hardware {
 
   pub async fn configure_drivers(
     io_port: &mut SerialInterface,
-    drivers: &Vec<Addressed<DriverDefinition>>,
+    drivers: &Vec<IoAddressed<DriverDefinition>>,
     switch_lookup: &SwitchLookup,
   ) {
     for driver in drivers {
@@ -235,38 +234,38 @@ impl Hardware {
     port_count_override: Option<u8>,
   ) -> ResolvedLedPort {
     let mut port_led_total_count: u8 = 0;
-    let mut resolved_illuminations = Vec::new();
-    for illum in &port.illuminations {
-      let addressable_leds = (0..illum.led_count() as u16)
-        .map(|i| AddressableLed {
-          address: LedAddress {
-            address: board.address,
-            breakout: board.breakout,
-            port: port_idx as u8,
-          },
-          index: i + port_led_total_count as u16 + offset,
-        })
-        .collect_vec();
+    let mut addressed_leds = Vec::new();
+    for multi_def in &port.leds {
+      multi_def
+        .children()
+        .iter()
+        .enumerate()
+        .for_each(|(i, led)| {
+          addressed_leds.push(ExpAddressed {
+            definition: led.clone(),
+            assignment: ExpAddress {
+              board_address: board.address,
+              breakout: board.breakout,
+              port: port_idx as u8,
+            },
+            id: i + port_led_total_count as usize + offset as usize,
+          });
+        });
 
-      resolved_illuminations.push(AddressableIllumination {
-        leds: addressable_leds,
-        source: illum.clone(),
-      });
-
-      port_led_total_count = port_led_total_count.saturating_add(illum.led_count());
+      port_led_total_count = port_led_total_count.saturating_add(multi_def.children().len() as u8);
     }
 
     log::trace!(
       "Mapped {} illuminations: {:?}",
-      resolved_illuminations.len(),
-      resolved_illuminations
+      addressed_leds.len(),
+      addressed_leds
     );
 
     ResolvedLedPort {
       led_type: port.led_type.clone(),
       start: offset,
       length: port_count_override.unwrap_or(port_led_total_count),
-      illuminations: resolved_illuminations,
+      leds: addressed_leds,
     }
   }
 

@@ -2,7 +2,7 @@ use crate::prelude::*;
 use std::collections::HashMap;
 
 pub struct AlternateResolver {
-  states: HashMap<AddressableLed, AlternatingEntry>,
+  states: HashMap<LedAddress, AlternatingEntry>,
   // how much time must pass before we switch to the next system in a conflict
   alternate_duration: Duration,
 }
@@ -21,7 +21,7 @@ impl AlternateResolver {
     }
   }
 
-  pub fn resolve(&mut self, led: AddressableLed, colors: Vec<Rgba<u8>>) -> Rgba<u8> {
+  pub fn resolve(&mut self, led: LedAddress, colors: Vec<Rgba<u8>>) -> Rgba<u8> {
     // check first if we have an existing system for this led, and if it's still valid
     if let Some(entry) = self.states.get_mut(&led) {
       if entry.colors == colors {

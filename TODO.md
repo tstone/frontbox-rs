@@ -1,6 +1,6 @@
 Before Show
 
-- Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
+- Defining an LED grid like strip, but with rows/cols and serpentine directions
 - Seems like EITHER leds or illuminations need to be accessible
 - Should illuminations encompass leds and drivers (e.g. is a start button an illumination?)
 - Add a multi-stop gradient to the declarations

@@ -15,6 +15,7 @@ pub mod prelude {
   pub use crate::app::*;
   pub use crate::events;
   pub use crate::hardware::*;
+  pub use crate::hardware_defs;
   pub use crate::led::*;
   pub use crate::machine::event_interrupt_registry::InterruptResult;
   pub use crate::machine::machine::*;
@@ -30,6 +31,7 @@ pub mod prelude {
   pub use fast_protocol::driver_config::*;
   pub use fast_protocol::{DriverTriggerControlMode, LedType, Power};
   pub use frontbox_derive::*;
+  pub use glam::{Quat, Vec2, Vec3};
   pub use image::Rgba;
   pub use serde::Serialize;
   pub use std::time::Duration;

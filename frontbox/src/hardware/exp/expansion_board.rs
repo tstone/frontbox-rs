@@ -115,28 +115,29 @@ impl ExpansionBoard {
     Self::new(address, None, None, FastExpansionBoardModels::FpExp1313)
   }
 
-  pub fn port(mut self, index: u8, port: LedPort) -> Self {
+  /// * `port_name` reflects the port printed on the PCB. e.g. "PORT 1" on the PCB is specified as `1` here
+  pub fn wire_led_port(mut self, port_num: u8, port: LedPort) -> Self {
     // Verify this port is valid
     if self.hardware_led_port_count.is_none() {
       panic!(
         "Cannot add LED port to board {:X} because it does not support LED ports",
         self.address
       );
-    } else if index > self.hardware_led_port_count.unwrap() {
+    } else if port_num > self.hardware_led_port_count.unwrap() {
       panic!(
         "LED port index {} exceeds hardware limit of {} for board {:X}",
-        index,
+        port_num,
         self.hardware_led_port_count.unwrap(),
         self.address
       );
-    } else if self.led_ports.contains_key(&index) {
+    } else if self.led_ports.contains_key(&port_num) {
       panic!(
         "LED port index {} is already occupied on board {:X}",
-        index, self.address
+        port_num, self.address
       );
     }
 
-    self.led_ports.insert(index, port);
+    self.led_ports.insert(port_num - 1, port);
     self
   }
 }

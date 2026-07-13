@@ -1,11 +1,11 @@
 use fast_protocol::LedType;
 
-use crate::{AddressableIllumination, Illumination};
+use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct LedPort {
   pub led_type: LedType,
-  pub illuminations: Vec<Box<dyn Illumination>>,
+  pub leds: Vec<&'static MultiLedDefinition>,
 }
 
 impl LedPort {
@@ -13,7 +13,7 @@ impl LedPort {
     Self {
       led_type,
 
-      illuminations: Vec::new(),
+      leds: Vec::new(),
     }
   }
 
@@ -29,8 +29,8 @@ impl LedPort {
     Self::new(LedType::APA102)
   }
 
-  pub fn with(mut self, illumination: impl Illumination + 'static) -> Self {
-    self.illuminations.push(Box::new(illumination));
+  pub fn leds(mut self, leds: Vec<&'static MultiLedDefinition>) -> Self {
+    self.leds = leds;
     self
   }
 }
@@ -38,7 +38,7 @@ impl LedPort {
 #[derive(Debug, Clone)]
 pub struct ResolvedLedPort {
   pub led_type: LedType,
-  pub illuminations: Vec<AddressableIllumination>,
+  pub leds: Vec<ExpAddressed<LedDefinition>>,
   pub start: u16,
   pub length: u8,
 }
@@ -47,7 +47,7 @@ impl ResolvedLedPort {
   pub fn default(start: u16) -> Self {
     Self {
       led_type: LedType::WS2812,
-      illuminations: Vec::new(),
+      leds: Vec::new(),
       start,
       length: 32,
     }

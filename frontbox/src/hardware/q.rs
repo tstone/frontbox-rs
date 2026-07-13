@@ -1,3 +1,4 @@
+use indexmap::IndexSet;
 use std::any::TypeId;
 
 use crate::prelude::*;
@@ -7,30 +8,26 @@ pub struct Q;
 impl Q {
   /// Creates a selection that matches any switch/driver with the specified name.
   pub fn name(name: &'static str) -> HardwareQuery {
-    HardwareQuery::Name(name)
+    HardwareQuery::Name(name.to_string())
   }
 
   /// Creates a selection that matches any of the provided names.
-  pub fn names(names: Vec<&'static str>) -> HardwareQuery {
-    names
-      .into_iter()
-      .map(HardwareQuery::Name)
-      .reduce(Self::or)
-      .unwrap()
+  pub fn names(names: &IndexSet<String>) -> HardwareQuery {
+    HardwareQuery::Names(names.clone())
   }
 
   /// Creates a selection that matches any switch/driver with the specified tag type.
-  pub fn tag<T: Tag + 'static>() -> HardwareQuery {
+  pub fn tag<'a, T: Tag + 'static>() -> HardwareQuery {
     HardwareQuery::Tag(TypeId::of::<T>())
   }
 
   /// Creates a selection that matches if both sub-selections match.
-  pub fn and(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
+  pub fn and<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
     HardwareQuery::And(Box::new(left), Box::new(right))
   }
 
   /// Creates a selection that matches if either sub-selection matches.
-  pub fn or(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
+  pub fn or<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
     HardwareQuery::Or(Box::new(left), Box::new(right))
   }
 

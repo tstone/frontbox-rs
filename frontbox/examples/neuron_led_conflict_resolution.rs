@@ -8,7 +8,11 @@ use std::io::Write;
  */
 
 pub mod leds {
-  pub const DEMO1: &str = "demo1";
+  use super::*;
+
+  hardware_defs! {
+    pub DEMO1: MultiLedDefinition = LedDefinition::single("demo1");
+  }
 }
 
 #[tokio::main]
@@ -18,7 +22,7 @@ async fn main() {
     .init();
 
   let expansion_boards =
-    vec![ExpansionBoard::neuron().port(0, LedPort::ws2812().with(led(leds::DEMO1)))];
+    vec![ExpansionBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1]))];
 
   App::boot(
     "/dev/ttyACM0",
@@ -42,19 +46,14 @@ struct System1;
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &Context) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));
-    ctx.declare_leds(named_led(ctx, leds::DEMO1).color(Rgba::red()));
+    ctx.declare_leds(&leds::DEMO1, Rgba::red());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    let mut led_system = ctx.systems.expect::<LedSystem>();
-
     if event.is::<On>() {
-      led_system.set_conflict_resolution(
-        named_led(ctx, leds::DEMO1),
-        LedConflictResolution::Alternate,
-      );
+      ctx.set_led_conflict_resolution(&leds::DEMO1, LedConflictResolution::Alternate);
     } else if event.is::<Off>() {
-      led_system.set_conflict_resolution(named_led(ctx, leds::DEMO1), LedConflictResolution::Mix);
+      ctx.set_led_conflict_resolution(&leds::DEMO1, LedConflictResolution::Mix);
     }
   }
 }
@@ -63,6 +62,6 @@ struct System2;
 
 impl System for System2 {
   fn on_spawn(&mut self, ctx: &Context) {
-    ctx.declare_leds(named_led(ctx, leds::DEMO1).color(Rgba::blue()));
+    ctx.declare_leds(&leds::DEMO1, Rgba::blue());
   }
 }

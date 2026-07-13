@@ -1,19 +1,18 @@
-mod addressable_illumination;
 mod expansion_board;
-mod geom;
-mod illumination;
-mod illumination_lookup;
 mod led;
+mod led_definition;
 mod led_lookup;
 mod led_port;
-mod led_strip;
+mod led_strip_builder;
+mod multi_led_definition;
+mod multi_led_definition_builder;
+mod single_led_definition_builder;
 
-pub use addressable_illumination::*;
 pub use expansion_board::*;
-pub use geom::*;
-pub use illumination::*;
-pub use illumination_lookup::*;
 pub use led::*;
+pub use led_definition::*;
 pub use led_lookup::*;
 pub use led_port::*;
-pub use led_strip::*;
+pub use multi_led_definition::*;
+pub use multi_led_definition_builder::*;
+pub use single_led_definition_builder::*;

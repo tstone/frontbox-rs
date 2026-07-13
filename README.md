@@ -607,27 +607,28 @@ Lastly, depending on the type of hardware being defined, an optional config (`.c
 ```rust
 // Step 1. Define hardware
 
-pub const left_inlane_switch = SwitchDefinition::new("linlane")
-  .tag(Playfield)
-  .build();
+pub mod hw {
+  use super::*;
 
-pub const left_outlane_switch = SwitchDefinition::new("loutlane")
-  .tag(Playfield)
-  .tag(Drain)
-  .inverted()
-  .debounce_open(Duration::from_millis(40))
-  .build();
+  pub left_inlane_switch: SwitchDefinition = SwitchDefinition::new("linlane")
+    .tag(Playfield);
 
-pub const trough_eject_coil = DriverDefinition::new("trough_eject").build();
+  pub left_outlane_switch: SwitchDefinition = SwitchDefinition::new("loutlane")
+    .tag(Playfield)
+    .tag(Drain)
+    .inverted()
+    .debounce_open(Duration::from_millis(40));
 
-pub const shooter_coil = DriverDefinition::new("shooter")
-  .tag(AutoPlungeCoil)
-  .mode(PulseMode {
-    trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-    initial_pwm_power: Power::FULL,
-    ..Default::default()
-  })
-  .build();
+  pub trough_eject_coil: DriverDefinition = DriverDefinition::new("trough_eject").build();
+
+  pub shooter_coil: DriverDefinition = DriverDefinition::new("shooter")
+    .tag(AutoPlungeCoil)
+    .mode(PulseMode {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      initial_pwm_power: Power::FULL,
+      ..Default::default()
+    });
+}
 
 // Step 2. Define and wire the network
 //
@@ -636,10 +637,10 @@ pub const shooter_coil = DriverDefinition::new("shooter")
 
 let io_network = IoNetwork::new(vec![
   IoBoards::io_3208()
-    .wire_switch(3, left_inlane)
-    .wire_switch(4, left_outlane)
-    .wire_driver(0, trough_eject_coil)
-    .wire_driver(1, shooter_coil),
+    .wire_switch(3, &hw::left_inlane)
+    .wire_switch(4, &hw::left_outlane)
+    .wire_driver(0, &hw::trough_eject_coil)
+    .wire_driver(1, &hw::shooter_coil),
   IoBoards::io_1616(),
 ]);
 ```
@@ -651,23 +652,19 @@ The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defin
 ```rust
 // Step 1. Define exp devices
 
-let left_inlane_led = SingleLedDefinition::new("linlane")
-  .location(Location::new(Playfield, 3.4, 32.5))
+let left_inlane_led = LedDefinition::single("linlane")
+  .location(Vec2::new(3.4, 32.5).relative_to(PLAYFIELD))
   .channels(ColorChannels::GRBW)
   .build();
 
-let left_outlane_led = SingleLedDefinition::new("loutlane")
-  .location(Location::new(Playfield, 2.125, 32.5))
-  .channels(ColorChannels::RGB)
+let left_outlane_led = LedDefinition::new("loutlane")
+  .location(Vec2::new(2.125, 32.5).relative_to(PLAYFIELD))
   .build();
 
-// Cabinet lighting along the art blade area
-let left_cabinet_strip = LedMatrixDefinition::new("lcab")
+// Cabinet lighting along the left art blade area
+let left_cabinet_strip = LedDefinition::strip("lcab", 32)
   .tag(Cabinet)
-  // LED strip: 1 row, 64 columns
-  .grid(1, 64)
-  // rotation (deg), top_left, bottom_right
-  .location(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0))
+  .locations(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0))
   .build();
 
 // Step 2. Define boards and wire the network

@@ -1,6 +1,8 @@
 use fast_protocol::Color;
 use image::Rgba;
 
+use crate::prelude::LedChannels;
+
 pub trait RgbaColor {
   fn red() -> Self;
   fn green() -> Self;
@@ -147,6 +149,7 @@ pub trait RgbaColor {
   fn default() -> Self;
 
   fn to_color(self) -> Color;
+  fn remap(self, channels: LedChannels) -> Self;
 
   fn mix(a: Self, b: Self, t: f32) -> Self;
   fn mix_with(&self, b: Self, t: f32) -> Self;
@@ -167,6 +170,15 @@ pub trait RgbaColor {
 impl RgbaColor for Rgba<u8> {
   fn to_color(self) -> Color {
     Color::rgb(self[0], self[1], self[2])
+  }
+
+  /// Re-map the current color, based on given channel order
+  fn remap(self, channels: LedChannels) -> Self {
+    match channels {
+      LedChannels::RGB | LedChannels::RGBW => self,
+      LedChannels::BRG | LedChannels::BRGW => Rgba([self[2], self[0], self[1], 0]),
+      LedChannels::GRB | LedChannels::GRBW => Rgba([self[1], self[0], self[2], 0]),
+    }
   }
 
   /// Combine two colors, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::prelude::*;
 use crate::{DriverMode, Tag};
 
@@ -5,7 +7,7 @@ use crate::{DriverMode, Tag};
 pub struct DriverDefinition {
   pub name: &'static str,
   pub tags: Vec<Box<dyn Tag>>,
-  pub locations: Vec<Location>,
+  pub location: Option<Vec3>,
   pub mode: Option<Box<dyn DriverMode>>,
 }
 
@@ -21,23 +23,23 @@ impl DriverDefinition {
 }
 
 impl HardwareDefinition for DriverDefinition {
-  fn name(&self) -> &'static str {
-    self.name
+  fn name(&self) -> Cow<'static, str> {
+    Cow::Borrowed(self.name)
   }
 
   fn tags(&self) -> Vec<Box<dyn Tag>> {
     self.tags.clone()
   }
 
-  fn locations(&self) -> Vec<Location> {
-    self.locations.clone()
+  fn location(&self) -> Option<Vec3> {
+    self.location
   }
 }
 
 pub struct DriverDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
-  locations: Vec<Location>,
+  location: Option<Vec3>,
   mode: Option<Box<dyn DriverMode>>,
 }
 
@@ -46,7 +48,7 @@ impl DriverDefinitionBuilder {
     Self {
       name,
       tags: Vec::new(),
-      locations: Vec::new(),
+      location: None,
       mode: None,
     }
   }
@@ -61,13 +63,8 @@ impl DriverDefinitionBuilder {
     self
   }
 
-  pub fn location(mut self, location: Location) -> Self {
-    self.locations.push(location);
-    self
-  }
-
-  pub fn locations(mut self, locations: impl IntoIterator<Item = Location>) -> Self {
-    self.locations.extend(locations);
+  pub fn location(mut self, location: Vec3) -> Self {
+    self.location = Some(location);
     self
   }
 
@@ -80,7 +77,7 @@ impl DriverDefinitionBuilder {
     DriverDefinition {
       name: self.name,
       tags: self.tags,
-      locations: self.locations,
+      location: self.location,
       mode: self.mode,
     }
   }
@@ -89,7 +86,7 @@ impl DriverDefinitionBuilder {
 pub struct LampDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
-  locations: Vec<Location>,
+  location: Option<Vec3>,
 }
 
 impl LampDefinitionBuilder {
@@ -97,7 +94,7 @@ impl LampDefinitionBuilder {
     Self {
       name,
       tags: vec![Box::new(tags::_FrontboxDrivenLamp)],
-      locations: Vec::new(),
+      location: None,
     }
   }
 
@@ -111,13 +108,8 @@ impl LampDefinitionBuilder {
     self
   }
 
-  pub fn location(mut self, location: Location) -> Self {
-    self.locations.push(location);
-    self
-  }
-
-  pub fn locations(mut self, locations: impl IntoIterator<Item = Location>) -> Self {
-    self.locations.extend(locations);
+  pub fn location(mut self, location: Vec3) -> Self {
+    self.location = Some(location);
     self
   }
 
@@ -125,7 +117,7 @@ impl LampDefinitionBuilder {
     DriverDefinition {
       name: self.name,
       tags: self.tags,
-      locations: self.locations,
+      location: self.location,
       mode: Some(Box::new(PulseHoldMode {
         trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
         initial_pwm_power: Power::ZERO,

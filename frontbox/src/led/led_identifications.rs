@@ -1,13 +1,15 @@
+use std::sync::LazyLock;
+
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct LedIdentifications {
-  pub leds: Vec<AddressableLed>,
+  pub leds: Vec<LedAddress>,
   pub z_index: i8,
 }
 
 impl LedIdentifications {
-  pub fn new(leds: Vec<AddressableLed>, z_index: i8) -> Self {
+  pub fn new(leds: Vec<LedAddress>, z_index: i8) -> Self {
     Self { leds, z_index }
   }
 
@@ -17,39 +19,58 @@ impl LedIdentifications {
   }
 }
 
-impl From<AddressableLed> for LedIdentifications {
-  fn from(led: AddressableLed) -> Self {
-    LedIdentifications::new(vec![led], 0)
+impl Contextual<LedIdentifications> for LedIdentifications {
+  fn resolve(&self, _ctx: &Context) -> LedIdentifications {
+    self.clone()
   }
 }
 
-impl From<Vec<AddressableLed>> for LedIdentifications {
-  fn from(leds: Vec<AddressableLed>) -> Self {
-    LedIdentifications::new(leds, 0)
+impl Contextual<LedIdentifications> for HardwareQuery {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    let addresses = self.get_leds_addresses(&ctx);
+    LedIdentifications::new(addresses, 0)
   }
 }
 
-impl From<(AddressableLed, Option<i8>)> for LedIdentifications {
-  fn from((led, z_index): (AddressableLed, Option<i8>)) -> Self {
-    LedIdentifications::new(vec![led], z_index.unwrap_or(0))
+impl Contextual<LedIdentifications> for MultiLedDefinition {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    let addresses = self.q().get_leds_addresses(&ctx);
+    LedIdentifications::new(addresses, 0)
   }
 }
 
-pub trait LedIdentificationsExt {
-  /// Set the z-index
-  fn at_z(self, z_index: i8) -> LedIdentifications;
-}
-
-impl LedIdentificationsExt for AddressableLed {
-  fn at_z(self, z_index: i8) -> LedIdentifications {
-    let ids: LedIdentifications = self.into();
-    ids.at_z(z_index)
+impl Contextual<LedIdentifications> for &LazyLock<MultiLedDefinition> {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    let addresses = self.q().get_leds_addresses(&ctx);
+    LedIdentifications::new(addresses, 0)
   }
 }
 
-impl LedIdentificationsExt for Vec<AddressableLed> {
-  fn at_z(self, z_index: i8) -> LedIdentifications {
-    let ids: LedIdentifications = self.into();
-    ids.at_z(z_index)
+impl Contextual<LedIdentifications> for Vec<LazyLock<MultiLedDefinition>> {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    let addresses = self
+      .iter()
+      .flat_map(|def| def.q().get_leds_addresses(&ctx))
+      .collect();
+    LedIdentifications::new(addresses, 0)
   }
 }
+
+// pub trait LedIdentificationsExt {
+//   /// Set the z-index
+//   fn at_z(self, z_index: i8) -> LedIdentifications;
+// }
+
+// impl LedIdentificationsExt for LedAddress {
+//   fn at_z(self, z_index: i8) -> LedIdentifications {
+//     let ids: LedIdentifications = self.into();
+//     ids.at_z(z_index)
+//   }
+// }
+
+// impl LedIdentificationsExt for Vec<LedAddress> {
+//   fn at_z(self, z_index: i8) -> LedIdentifications {
+//     let ids: LedIdentifications = self.into();
+//     ids.at_z(z_index)
+//   }
+// }

@@ -7,10 +7,15 @@ use std::io::Write;
  */
 
 pub mod leds {
-  pub const DEMO1: &str = "demo1";
-  pub const DEMO2: &str = "demo2";
-  pub const DEMO3: &str = "demo3";
-  pub const DEMO4: &str = "demo4";
+  use super::*;
+
+  hardware_defs! {
+    // like other hardware, LEDs can be arbitrary tagged for later querying
+    pub DEMO1: MultiLedDefinition = LedDefinition::single("demo1").tag(tags::Lane);
+    pub DEMO2: MultiLedDefinition = LedDefinition::single("demo2");
+    pub DEMO3: MultiLedDefinition = LedDefinition::single("demo3");
+    pub DEMO4: MultiLedDefinition = LedDefinition::single("demo4");
+  }
 }
 
 #[tokio::main]
@@ -19,23 +24,16 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards = vec![
-    ExpansionBoard::neuron().port(
-      0,
-      LedPort::ws2812()
-        // like other hardware, LEDs can be arbitrary tagged for later querying
-        .with(led(leds::DEMO1).tagged(tags::ActionButton))
-        .with(led(leds::DEMO2))
-        .with(led(leds::DEMO3))
-        .with(led(leds::DEMO4)),
-    ),
-  ];
+  let exp_network = vec![ExpansionBoard::neuron().wire_led_port(
+    0,
+    LedPort::ws2812().leds(vec![&leds::DEMO1, &leds::DEMO2, &leds::DEMO3, &leds::DEMO4]),
+  )];
 
   App::boot(
     "/dev/ttyACM0",
     "/dev/ttyACM1",
     IoNetwork::empty(),
-    expansion_boards,
+    exp_network,
   )
   .await
   .configure(|app| {
@@ -89,8 +87,8 @@ impl LedExample {
 
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &Context) {
-    ctx.declare_leds(named_led(ctx, leds::DEMO1).color(Rgba::blue()));
-    ctx.declare_leds(named_led(ctx, leds::DEMO2).color(Rgba::yellow().with_alpha(127)));
+    ctx.declare_leds(&leds::DEMO1, Rgba::blue());
+    ctx.declare_leds(&leds::DEMO2, Rgba::yellow().with_alpha(127));
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
@@ -99,7 +97,7 @@ impl System for LedExample {
     self.seq.accumulate(delta);
 
     // re-declare LEDs with updated animated colors
-    ctx.declare_leds(named_led(ctx, leds::DEMO3).color(self.flash.sample()));
-    ctx.declare_leds(named_led(ctx, leds::DEMO4).color(self.seq.sample()));
+    ctx.declare_leds(&leds::DEMO3, self.flash.sample());
+    ctx.declare_leds(&leds::DEMO4, self.seq.sample());
   }
 }

@@ -2,8 +2,8 @@ use crate::prelude::*;
 
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
-  pub switches: Vec<Addressed<SwitchDefinition>>,
-  pub drivers: Vec<Addressed<DriverDefinition>>,
+  pub switches: Vec<IoAddressed<SwitchDefinition>>,
+  pub drivers: Vec<IoAddressed<DriverDefinition>>,
 }
 
 impl IoNetwork {

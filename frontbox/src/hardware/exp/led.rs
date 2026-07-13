@@ -1,68 +1,35 @@
-use crate::{Tag, Illumination, Point, RenderableGeom};
+use std::any::TypeId;
+
+use crate::prelude::*;
 
 #[derive(Debug, Clone)]
-pub struct Led {
-  name: &'static str,
-  tags: Vec<Box<dyn Tag>>,
-  geom: Option<RenderableGeom>,
+pub struct LED {
+  pub name: String,
+  pub address: LedAddress,
+  pub tags: Vec<Box<dyn Tag>>,
+  pub location: Option<Vec3>,
 }
 
-impl Led {
-  pub fn new(name: &'static str) -> Self {
-    Self {
-      name,
-      tags: Vec::new(),
-      geom: None,
-    }
-  }
-
-  pub fn tagged(mut self, tag: impl Tag + 'static) -> Self {
-    self.tags.push(Box::new(tag));
+impl LED {
+  pub fn has_tag<T: Tag + 'static>(&self) -> bool {
     self
+      .tags
+      .iter()
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).is::<T>())
   }
 
-  pub fn geom(mut self, x: f32, y: f32, diam: f32) -> Self {
-    self.geom = Some(RenderableGeom::Circle {
-      center: Point(x, y),
-      radius: diam / 2.0,
-    });
+  pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
     self
+      .tags
+      .iter()
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
   }
 }
 
-impl Illumination for Led {
-  fn name(&self) -> &'static str {
-    self.name
-  }
-
-  fn tags(&self) -> &Vec<Box<dyn Tag>> {
-    &self.tags
-  }
-
-  fn geom(&self) -> Option<&RenderableGeom> {
-    self.geom.as_ref()
-  }
-
-  fn led_count(&self) -> u8 {
-    1
-  }
-
-  // fn render_bitmap(&self, bitmap: &Bitmap) -> Vec<Rgba<<u8>>> {
-  //   // Use the center pixel's color for the whole LED since it's just a single point
-  //   let center_x = bitmap.width as f32 / 2.0;
-  //   let center_y = bitmap.height as f32 / 2.0;
-  //   let center_index =
-  //     (center_y.floor() as usize * bitmap.width as usize + center_x.floor() as usize) * 3;
-  //   vec![Rgba::new([
-  //     bitmap.data[center_index],
-  //     bitmap.data[center_index + 1],
-  //     bitmap.data[center_index + 2],
-  //     255,
-  //   ])]
-  // }
-}
-
-/// A single LED
-pub fn led(name: &'static str) -> Led {
-  Led::new(name)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LedAddress {
+  pub board: u8,
+  pub breakout: Option<u8>,
+  pub port: u8,
+  pub index: u16,
 }
