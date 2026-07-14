@@ -44,3 +44,20 @@ macro_rules! delegate_system {
     }
   };
 }
+
+/// Declares one or more hardware definitions as lazily-initialized statics.
+/// Each entry is a builder chain (no `.build()` needed -- the macro adds it),
+/// wrapped in a `LazyLock<T>` so it's usable as `&'static T` anywhere via deref.
+#[macro_export]
+macro_rules! hardware_defs {
+    ($(
+        $(#[$attr:meta])*
+        $vis:vis $name:ident : $ty:ty = $builder:expr;
+    )*) => {
+        $(
+            $(#[$attr])*
+            $vis static $name: ::std::sync::LazyLock<$ty> =
+                ::std::sync::LazyLock::new(|| $builder.build());
+        )*
+    };
+}

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use fast_protocol::*;
-use itertools::Itertools;
 
 use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
@@ -9,7 +8,7 @@ use crate::prelude::*;
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
-  pub illuminations: IlluminationLookup,
+  pub leds: LedLookup,
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
@@ -18,14 +17,14 @@ impl Hardware {
   pub fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
-    illuminations: IlluminationLookup,
+    leds: LedLookup,
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     Self {
       switches,
       drivers,
-      illuminations,
+      leds,
       io_network,
       exp_network,
     }
@@ -48,12 +47,16 @@ impl Hardware {
 
   pub async fn configure_drivers(
     io_port: &mut SerialInterface,
-    drivers: &Vec<DriverDefinition>,
+    drivers: &Vec<IoAddressed<DriverDefinition>>,
     switch_lookup: &SwitchLookup,
   ) {
     for driver in drivers {
-      if let Some(mode) = &driver.mode {
-        log::info!("Configuring driver {} with {:?}", driver.name, mode);
+      if let Some(mode) = &driver.definition.mode {
+        log::info!(
+          "Configuring driver {} with {:?}",
+          driver.definition.name,
+          mode
+        );
         match io_port
           .request(
             &ConfigureDriverCommand::new(driver.id, mode.to_config(switch_lookup)),
@@ -62,13 +65,13 @@ impl Hardware {
           .await
         {
           Ok(ProcessedResponse::Processed) => {
-            log::debug!("Driver {} configured successfully", driver.name);
+            log::debug!("Driver {} configured successfully", driver.definition.name);
           }
           Ok(ProcessedResponse::Failed) => {
-            panic!("Driver {} configuration failed", driver.name);
+            panic!("Driver {} configuration failed", driver.definition.name);
           }
           Err(e) => {
-            panic!("Error configuring driver {}: {}", driver.name, e);
+            panic!("Error configuring driver {}: {}", driver.definition.name, e);
           }
         }
       }
@@ -197,19 +200,26 @@ impl Hardware {
       let mut offset = 0;
       let mut resolved_ports = Vec::new();
       for port_idx in 0..board.hardware_led_port_count.unwrap_or(0) {
+        // For EXP boards which have multiple LED port banks, the offset needs to be reset every 5th port
+        if port_idx > 0 && port_idx % 4 == 0 {
+          offset = 0;
+        }
+
         if let Some(port) = board.led_ports.get(&port_idx) {
           let port_count_override = match board.model {
+            // Known bug: Older versions of the Neuron have an internal Exp board which does not respect ER:
             FastExpansionBoardModels::Neuron => Some(32),
             _ => None,
           };
+
           let port =
             Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
           offset += port.length as u16;
           resolved_ports.push(port);
         } else {
           // no port defined = assume the default (32 LEDs)
-          offset += 32;
           resolved_ports.push(ResolvedLedPort::default(offset));
+          offset += 32;
         }
       }
 
@@ -231,38 +241,34 @@ impl Hardware {
     port_count_override: Option<u8>,
   ) -> ResolvedLedPort {
     let mut port_led_total_count: u8 = 0;
-    let mut resolved_illuminations = Vec::new();
-    for illum in &port.illuminations {
-      let addressable_leds = (0..illum.led_count() as u16)
-        .map(|i| AddressableLed {
-          address: LedAddress {
-            address: board.address,
-            breakout: board.breakout,
-            port: port_idx as u8,
-          },
-          index: i + port_led_total_count as u16 + offset,
-        })
-        .collect_vec();
+    let mut addressed_leds = Vec::new();
+    for multi_def in &port.leds {
+      multi_def
+        .children()
+        .iter()
+        .enumerate()
+        .for_each(|(i, led)| {
+          addressed_leds.push(ExpAddressed {
+            definition: led.clone(),
+            assignment: ExpAddress {
+              board_address: board.address,
+              breakout: Some(port_idx / 4),
+              port: port_idx as u8,
+            },
+            id: i + port_led_total_count as usize + offset as usize,
+          });
+        });
 
-      resolved_illuminations.push(AddressableIllumination {
-        leds: addressable_leds,
-        source: illum.clone(),
-      });
-
-      port_led_total_count = port_led_total_count.saturating_add(illum.led_count());
+      port_led_total_count = port_led_total_count.saturating_add(multi_def.children().len() as u8);
     }
 
-    log::trace!(
-      "Mapped {} illuminations: {:?}",
-      resolved_illuminations.len(),
-      resolved_illuminations
-    );
+    log::trace!("Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
 
     ResolvedLedPort {
       led_type: port.led_type.clone(),
-      start: offset,
+      offset,
       length: port_count_override.unwrap_or(port_led_total_count),
-      illuminations: resolved_illuminations,
+      leds: addressed_leds,
     }
   }
 
@@ -270,11 +276,10 @@ impl Hardware {
     exp_port: &mut SerialInterface,
     expansion_boards: &Vec<ResolvedExpansionBoard>,
   ) {
-    let mut led_offset = 0;
     for board in expansion_boards {
       for (port_index, led_port) in board.led_ports.iter().enumerate() {
-        Self::configure_led_port(exp_port, board, port_index as u8, led_offset, led_port).await;
-        led_offset += led_port.length as u16;
+        Self::configure_led_port(exp_port, board, port_index as u8, led_port.offset, led_port)
+          .await;
       }
     }
   }

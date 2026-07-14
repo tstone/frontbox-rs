@@ -12,34 +12,25 @@ pub struct DriverLookup {
 }
 
 impl DriverLookup {
-  pub fn new(drivers: Vec<DriverDefinition>) -> Self {
+  pub fn new(drivers: Vec<IoAddressed<DriverDefinition>>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
 
-    for definition in drivers {
-      by_id.insert(
-        definition.id,
-        Driver {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+    for addressed in drivers {
+      let driver = Driver {
+        id: addressed.id,
+        name: addressed.definition.name,
+        assignment: addressed.assignment.clone(),
+        tags: addressed.definition.tags.clone(),
+        location: addressed.definition.location(),
+      };
 
-      by_name.insert(
-        definition.name,
-        Driver {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+      by_id.insert(addressed.id, driver.clone());
+      by_name.insert(addressed.definition.name, driver);
 
-      if let Some(config) = definition.mode {
-        configs.insert(definition.id, config);
+      if let Some(config) = addressed.definition.mode {
+        configs.insert(addressed.id, config);
       }
     }
 
@@ -73,7 +64,7 @@ impl DriverLookup {
       .and_then(|driver| self.configs.get(&driver.id))
   }
 
-  pub fn by_tag<T: HardwareTag + 'static>(&self) -> Vec<&Driver> {
+  pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Driver> {
     self
       .by_id
       .values()
@@ -81,7 +72,7 @@ impl DriverLookup {
         driver
           .tags
           .iter()
-          .any(|tag| <dyn HardwareTag>::as_any(&**tag).is::<T>())
+          .any(|tag| <dyn Tag>::as_any(&**tag).is::<T>())
       })
       .collect()
   }
@@ -112,22 +103,23 @@ impl DerefMut for DriverLookup {
 pub struct Driver {
   pub id: usize,
   pub name: &'static str,
-  pub native: NativeIdentity,
-  pub tags: Vec<Box<dyn HardwareTag>>,
+  pub assignment: IoAddress,
+  pub tags: Vec<Box<dyn Tag>>,
+  pub location: Option<Vec3>,
 }
 
 impl Driver {
-  pub fn has_tag<T: HardwareTag + 'static>(&self) -> bool {
+  pub fn has_tag<T: Tag + 'static>(&self) -> bool {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).is::<T>())
   }
 
   pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).type_id() == type_id)
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
   }
 }

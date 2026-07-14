@@ -1,26 +1,30 @@
 Before Show
 
-- Defining an LED or strip (eg. `led(...)`, `led_strip(...)`) should be the same as when declaring them, `led` vs `named_led` is weird
-- Seems like EITHER leds or illuminations need to be accessible
-- Should illuminations encompass leds and drivers (e.g. is a start button an illumination?)
-- Add a multi-stop gradient to the declarations
-- An illumination needs to be allowed to be declared as the combination of ports (e.g. two NeoSeg14s back to back would likely be 2 physical ports but treated as a single illumination of 16 characters)
-- frontbox-sound multi-stem music support
-- frontbox-sound loop point support
-- Create a new frontbox-canvas crate
-- combine DMD rendering + led canvas rendering
-- standardize on image/Rgba<u8> for canvas
-- LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color modifications
-- Single channel flasher support
-- NeoSeg support
+- Add ability to re-order, shuffle, take, etc. Contextual<LedIdentifications> (or should this be a mutation of ColorSequence?)
+- Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
+- Defining an LED grid like strip, but with rows/cols and serpentine directions
+- New frontbox-canvas crate that uses locations for 2d plane rendering via projections
 - Auto plunger plugin has operator config for coil power/kick length
-- OperatorConfig should be a separate System -- this will need a way for plugins to register data for systems that aren't yet started
-- System groups can contain groups
+- Some kind of persistable storage (re-use Store, but add Deserialize requirement)
+- Keep stats on coils fired, etc.
+
+OperatorConfig
+
+- Needs a redo
+- Configs should probably be defined ahead of time like hardware, and maybe associated at hardware definition time?
+- Having a plugin just to add operator configs for a system is lame
+- Should OperatorConfig be a separate System instead of baked-in? (ideally)
 
 Nice to Have
 
-- Some kind of persistable storage (re-use Store, but add Deserialize requirement)
-- Keep stats on coils fired, etc.
+- Streamline curve choices
+- combine DMD rendering + led canvas rendering
+- LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color modifications
+- Single channel flasher support
+- NeoSeg support
+- System groups can contain groups
+- frontbox-sound multi-stem music support
+- frontbox-sound loop point support
 
 LEDs
 

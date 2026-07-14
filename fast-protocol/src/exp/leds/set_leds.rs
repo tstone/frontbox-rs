@@ -26,7 +26,7 @@ impl FastStringCommand for SetLedsCommand {
     let states_part = self
       .states
       .iter()
-      .map(|(led_idx, color)| format!("{:X}{}", led_idx, color.to_hex()))
+      .map(|(led_idx, color)| format!("{:02X}{}", led_idx, color.to_hex()))
       .collect::<Vec<_>>()
       .join(",");
     format!("RS@{}:{}\r", address, states_part)
@@ -45,6 +45,6 @@ mod tests {
       vec![(0, Color::rgb(255, 0, 0)), (1, Color::rgb(0, 255, 0))],
     )
     .to_string();
-    assert_eq!(result, "RS@48:0FF0000,100FF00\r");
+    assert_eq!(result, "RS@48:00FF0000,0100FF00\r");
   }
 }

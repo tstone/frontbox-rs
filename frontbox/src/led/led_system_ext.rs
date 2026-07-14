@@ -1,34 +1,63 @@
 use crate::prelude::*;
 
 pub trait LedSystemExt {
-  fn declare_leds(&self, declarations: impl Into<LedDeclarations>);
-  fn declare_leds_inactive(&self, declarations: impl Into<LedDeclarations>);
-  fn undeclare_leds(&self, identifications: impl Into<LedIdentifications>);
+  fn declare_leds<T: Contextual<LedIdentifications>, C: ColorSequence>(
+    &self,
+    targets: T,
+    colors: C,
+  );
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>, C: ColorSequence>(
+    &self,
+    targets: T,
+    colors: C,
+  );
+  fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: T);
   fn activate_led_declarations(&self);
   fn deactivate_led_declarations(&self);
-  fn set_led_conflict_resolution(
+  fn set_led_conflict_resolution<T: Contextual<LedIdentifications>>(
     &self,
-    identifications: impl Into<LedIdentifications>,
+    targets: T,
     resolution: LedConflictResolution,
   );
 }
 
 impl<'a> LedSystemExt for Context<'a> {
-  fn declare_leds(&self, declarations: impl Into<LedDeclarations>) {
+  fn declare_leds<T: Contextual<LedIdentifications>, C: ColorSequence>(
+    &self,
+    targets: T,
+    colors: C,
+  ) {
     with_led_system(self, |led_system| {
+      let targets = targets.resolve(&self);
+      let colors = colors.render(targets.leds.len());
+      let declarations = LedDeclarations {
+        pairings: targets.leds.iter().zip(colors).collect(),
+        z_index: targets.z_index,
+      };
       led_system.declare(self.current_system_id(), declarations);
     });
   }
 
-  fn declare_leds_inactive(&self, declarations: impl Into<LedDeclarations>) {
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>, C: ColorSequence>(
+    &self,
+    targets: T,
+    colors: C,
+  ) {
     with_led_system(self, |led_system| {
+      let targets = targets.resolve(&self);
+      let colors = colors.render(targets.leds.len());
+      let declarations = LedDeclarations {
+        pairings: targets.leds.iter().zip(colors).collect(),
+        z_index: targets.z_index,
+      };
       led_system.declare_inactive(self.current_system_id(), declarations);
     });
   }
 
-  fn undeclare_leds(&self, identifications: impl Into<LedIdentifications>) {
+  fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: T) {
     with_led_system(self, |led_system| {
-      led_system.undeclare(self.current_system_id(), identifications);
+      let targets = targets.resolve(&self);
+      led_system.undeclare(self.current_system_id(), targets);
     });
   }
 
@@ -44,13 +73,14 @@ impl<'a> LedSystemExt for Context<'a> {
     });
   }
 
-  fn set_led_conflict_resolution(
+  fn set_led_conflict_resolution<T: Contextual<LedIdentifications>>(
     &self,
-    identifications: impl Into<LedIdentifications>,
+    targets: T,
     resolution: LedConflictResolution,
   ) {
     with_led_system(self, |led_system| {
-      led_system.set_conflict_resolution(identifications, resolution);
+      let targets = targets.resolve(&self);
+      led_system.set_conflict_resolution(targets, resolution);
     });
   }
 }

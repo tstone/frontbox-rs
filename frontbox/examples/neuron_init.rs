@@ -7,13 +7,8 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  App::boot(
-    "/dev/ttyACM0",
-    "/dev/ttyACM1",
-    IoNetworkBuilder::new().build(),
-    vec![],
-  )
-  .await
-  .run()
-  .await;
+  App::boot("/dev/ttyACM0", "/dev/ttyACM1", IoNetwork::empty(), vec![])
+    .await
+    .run()
+    .await;
 }

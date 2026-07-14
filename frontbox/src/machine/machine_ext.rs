@@ -14,6 +14,7 @@ pub trait MachineExt {
 }
 
 impl<'a> MachineExt for Context<'a> {
+  // TODO: allow DriverDefinition to be passed in directly
   fn configure_driver(&self, driver: &'static str, mode: impl DriverMode + 'static) {
     with_machine(self, |machine| {
       machine.configure_driver(driver, mode, self);

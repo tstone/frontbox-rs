@@ -1,104 +1,147 @@
 use std::any::TypeId;
 
+use indexmap::IndexSet;
+
 use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HardwareQuery {
-  Name(&'static str),
+  Name(String),
+  Names(IndexSet<String>),
   Tag(TypeId),
   And(Box<HardwareQuery>, Box<HardwareQuery>),
   Or(Box<HardwareQuery>, Box<HardwareQuery>),
+  Reverse(Box<HardwareQuery>), // TODO: change this to Order w/ the serpentine methods
 }
 
 impl HardwareQuery {
+  pub fn reverse(self) -> HardwareQuery {
+    HardwareQuery::Reverse(Box::new(self))
+  }
+
   pub fn matches_switch(&self, switch: &Switch) -> bool {
     match self {
       Self::Name(name) => switch.name == *name,
+      Self::Names(names) => names.contains(switch.name),
       Self::Tag(tag) => switch.has_typed_tag(*tag),
       Self::And(left, right) => left.matches_switch(switch) && right.matches_switch(switch),
       Self::Or(left, right) => left.matches_switch(switch) || right.matches_switch(switch),
+      Self::Reverse(q) => q.matches_switch(switch),
     }
   }
 
   pub fn matches_driver(&self, driver: &Driver) -> bool {
     match self {
       Self::Name(name) => driver.name == *name,
+      Self::Names(names) => names.contains(driver.name),
       Self::Tag(tag) => driver.has_typed_tag(*tag),
       Self::And(left, right) => left.matches_driver(driver) && right.matches_driver(driver),
       Self::Or(left, right) => left.matches_driver(driver) || right.matches_driver(driver),
+      Self::Reverse(q) => q.matches_driver(driver),
     }
   }
 
-  pub fn matches_illumination(&self, illumination: &AddressableIllumination) -> bool {
+  pub fn matches_led(&self, led: &LED) -> bool {
     match self {
-      Self::Name(name) => illumination.name() == *name,
-      Self::Tag(tag) => illumination.has_typed_tag(*tag),
-      Self::And(left, right) => {
-        left.matches_illumination(illumination) && right.matches_illumination(illumination)
-      }
-      Self::Or(left, right) => {
-        left.matches_illumination(illumination) || right.matches_illumination(illumination)
-      }
+      Self::Name(name) => led.name == *name,
+      Self::Names(names) => names.contains(&led.name),
+      Self::Tag(tag) => led.has_typed_tag(*tag),
+      Self::And(left, right) => left.matches_led(led) && right.matches_led(led),
+      Self::Or(left, right) => left.matches_led(led) || right.matches_led(led),
+      Self::Reverse(q) => q.matches_led(led),
     }
   }
 
-  pub fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch> {
+  /// Resolve the query into a reference for all matching Switches
+  pub fn get_switches<'c>(&self, ctx: &'c Context) -> Vec<&'c Switch> {
     ctx.switches.query(&self)
   }
 
-  pub fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver> {
+  /// Resolve the query into a the names of all matching Switches
+  pub fn get_switch_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
+    ctx.switches.query(&self).iter().map(|sw| sw.name).collect()
+  }
+
+  /// Resolve the query into a reference for all matching Drivers
+  pub fn get_drivers<'c>(&self, ctx: &'c Context) -> Vec<&'c Driver> {
     ctx.drivers.by_selection(&self)
   }
 
-  pub fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination> {
+  /// Resolve the query into a the names of all matching Drivers
+  pub fn get_driver_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
     ctx
-      .illuminations
-      .values()
-      .filter(|illum| self.matches_illumination(illum))
+      .drivers
+      .by_selection(&self)
+      .iter()
+      .map(|d| d.name)
       .collect()
   }
 
-  pub fn get_leds<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableLed> {
-    self
-      .get_illuminations(ctx)
-      .iter()
-      .flat_map(|illum| &illum.leds)
+  /// Resolve the query into a reference for all matching LEDs
+  pub fn get_leds<'c>(&self, ctx: &'c Context) -> Vec<&'c LED> {
+    ctx
+      .leds
+      .values()
+      .filter(|led| self.matches_led(led))
       .collect()
+  }
+
+  /// Resolve the query into a the address of all matching LEDs
+  pub fn get_leds_addresses(&self, ctx: &Context) -> Vec<LedAddress> {
+    match self {
+      Self::Name(name) => vec![ctx.leds.get(name).unwrap().address.clone()],
+      Self::Names(names) => names
+        .iter()
+        .map(|n| ctx.leds.get(n).unwrap().address.clone())
+        .collect(),
+      _ => {
+        let mut matches: Vec<LedAddress> = ctx
+          .leds
+          .values()
+          .filter_map(|led| {
+            if self.matches_led(led) {
+              Some(led.address.clone())
+            } else {
+              None
+            }
+          })
+          .collect();
+        // maintain consistent order
+        matches.sort_by_key(|addr| addr.index);
+        matches
+      }
+    }
   }
 }
 
 pub trait HardwareTagExt {
   fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch>;
   fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver>;
-  fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination>;
+  fn get_leds<'a>(&self, ctx: &'a Context) -> Vec<&'a LED>;
 }
 
 impl HardwareTagExt for Option<HardwareQuery> {
-  fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch> {
+  fn get_switches<'c>(&self, ctx: &'c Context) -> Vec<&'c Switch> {
     self
       .as_ref()
-      .map(|sel| sel.get_switches(ctx))
+      .map(|q| q.get_switches(ctx))
       .unwrap_or_default()
   }
 
-  fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver> {
+  fn get_drivers<'c>(&self, ctx: &'c Context) -> Vec<&'c Driver> {
     self
       .as_ref()
-      .map(|sel| sel.get_drivers(ctx))
+      .map(|q| q.get_drivers(ctx))
       .unwrap_or_default()
   }
 
-  fn get_illuminations<'a>(&self, ctx: &'a Context) -> Vec<&'a AddressableIllumination> {
-    self
-      .as_ref()
-      .map(|sel| sel.get_illuminations(ctx))
-      .unwrap_or_default()
+  fn get_leds<'c>(&self, ctx: &'c Context) -> Vec<&'c LED> {
+    self.as_ref().map(|q| q.get_leds(ctx)).unwrap_or_default()
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::NativeIdentity;
   use crate::tags::Playfield;
 
   use super::*;
@@ -110,8 +153,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));
@@ -124,8 +171,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));
@@ -138,8 +189,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));
@@ -152,8 +207,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
-      tags: vec![],
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
+      tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));
@@ -166,8 +225,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
-      tags: vec![],
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
+      tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));
@@ -180,8 +243,12 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
       tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(selection.matches_switch(&switch));

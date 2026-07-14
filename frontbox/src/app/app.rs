@@ -64,7 +64,7 @@ impl App {
     let hardware = Hardware::new(
       switch_lookup,
       DriverLookup::new(io_network.drivers),
-      IlluminationLookup::new(&expansion_boards),
+      LedLookup::new(&expansion_boards),
       resolved_io_network.boards,
       expansion_boards,
     );
@@ -132,15 +132,22 @@ impl App {
     }
   }
 
-  async fn configure_switches(io_port: &mut SerialInterface, switches: &Vec<SwitchDefinition>) {
+  async fn configure_switches(
+    io_port: &mut SerialInterface,
+    switches: &Vec<IoAddressed<SwitchDefinition>>,
+  ) {
     for switch in switches {
-      if let Some(config) = &switch.config {
+      if let Some(config) = &switch.definition.config {
         let reporting = if config.inverted {
           SwitchReportingMode::ReportInverted
         } else {
           SwitchReportingMode::ReportNormal
         };
-        log::info!("Configuring switch {} with {:?}", switch.name, config);
+        log::info!(
+          "Configuring switch {} with {:?}",
+          switch.definition.name,
+          config
+        );
         let _ = io_port
           .request(
             &ConfigureSwitchCommand::new(
@@ -192,8 +199,7 @@ impl App {
     let context_base = ContextBase {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
-      leds: LedLookup::new(self.hardware.illuminations.clone()),
-      illuminations: self.hardware.illuminations,
+      leds: self.hardware.leds,
       io_network: self.hardware.io_network,
       exp_network: self.hardware.exp_network,
       app_config: self.app_config,

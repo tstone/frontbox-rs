@@ -8,11 +8,11 @@ use crate::prelude::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 pub struct LedSystem {
-  all_leds: Vec<AddressableLed>,
+  all_addresses: Vec<LedAddress>,
   // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.
-  declarations: HashMap<AddressableLed, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
-  prior_render: HashMap<AddressableLed, Rgba<u8>>,
-  conflict_resolution: HashMap<AddressableLed, LedConflictResolution>,
+  declarations: HashMap<LedAddress, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
+  prior_render: HashMap<LedAddress, Rgba<u8>>,
+  conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
 }
 
@@ -20,7 +20,7 @@ impl LedSystem {
   pub fn new() -> Self {
     Self {
       declarations: HashMap::new(),
-      all_leds: Vec::new(),
+      all_addresses: Vec::new(),
       prior_render: HashMap::new(),
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
@@ -28,19 +28,23 @@ impl LedSystem {
   }
 
   /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
-  pub fn declare(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
+  pub fn declare<'a>(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations<'a>>) {
     self.declare_inner(owning_system, declarations, true);
   }
 
   /// Same as declare but doesn't render until activate_by_system is called. Useful for systems that want to prepare declarations in advance and activate them all at once later.
-  pub fn declare_inactive(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations>) {
+  pub fn declare_inactive<'a>(
+    &mut self,
+    owning_system: u64,
+    declarations: impl Into<LedDeclarations<'a>>,
+  ) {
     self.declare_inner(owning_system, declarations, false);
   }
 
-  fn declare_inner(
+  fn declare_inner<'a>(
     &mut self,
     owning_system: u64,
-    declarations: impl Into<LedDeclarations>,
+    declarations: impl Into<LedDeclarations<'a>>,
     active: bool,
   ) {
     let declarations: LedDeclarations = declarations.into();
@@ -112,10 +116,10 @@ impl LedSystem {
   }
 
   fn resolve_led_color(
-    led: &AddressableLed,
+    led: &LedAddress,
     mut z_indexes: Vec<i8>,
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
-    conflict_resolution: &HashMap<AddressableLed, LedConflictResolution>,
+    conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
   ) -> Rgba<u8> {
     let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
@@ -172,16 +176,8 @@ impl LedSystem {
 
 impl System for LedSystem {
   fn on_spawn(&mut self, ctx: &Context) {
-    // Create a copy of all LEDs to reference during rendering
-    for board in &ctx.exp_network {
-      for port in &board.led_ports {
-        for illuminations in &port.illuminations {
-          for led in &illuminations.leds {
-            self.all_leds.push(led.clone());
-          }
-        }
-      }
-    }
+    // Create a copy of all LEDs addresses to reference during rendering
+    self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
   }
 
   fn on_tick(&mut self, delta: Duration, _ctx: &Context) {
@@ -189,9 +185,9 @@ impl System for LedSystem {
   }
 
   fn on_render(&mut self, ctx: &Context) {
-    let mut leds_to_set: Vec<(AddressableLed, Rgba<u8>)> = Vec::new();
+    let mut leds_to_set: Vec<(LedAddress, Rgba<u8>)> = Vec::new();
 
-    for led in self.all_leds.iter() {
+    for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         // take only active, highest z-index declaration for each LED
         let active = declarations.iter().filter(|(_, d)| d.active);
@@ -245,21 +241,23 @@ impl System for LedSystem {
 
     if leds_to_set.len() > 0 {
       // group by address to send to machine
-      let outgoing: HashMap<LedAddress, Vec<(u16, Rgba<u8>)>> =
+      let outgoing: HashMap<ExpAddress, Vec<(u16, Rgba<u8>)>> =
         leds_to_set
           .into_iter()
-          .fold(HashMap::new(), |mut acc, (led, color)| {
+          .fold(HashMap::new(), |mut acc, (addr, color)| {
+            let channels = ctx.leds.color_channels_by_id(&addr);
+            let remapped_color = color.remap(channels);
             acc
-              .entry(led.address.clone())
+              .entry(addr.exp)
               .or_insert_with(Vec::new)
-              .push((led.index, color));
+              .push((addr.index, remapped_color));
             acc
           });
 
       let machine = ctx.systems.expect::<Machine>();
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
-          machine.set_leds(address.address, address.breakout, chunk.to_vec());
+          machine.set_leds(address.board_address, address.breakout, chunk.to_vec());
         }
       }
     }
@@ -296,9 +294,9 @@ mod tests {
   #[test]
   fn test_declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -307,12 +305,12 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 1);
     system.declare(
       43,
-      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
@@ -326,9 +324,9 @@ mod tests {
   #[test]
   fn test_declare_overwrite() {
     let mut system = LedSystem::new();
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -337,12 +335,12 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 0),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
     );
     assert_eq!(system.declarations.get(&led).unwrap().len(), 1);
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Rgba::blue())], 0),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::blue())], 0),
     );
 
     let final_map = system.declarations.get(&led).unwrap();
@@ -356,17 +354,17 @@ mod tests {
   #[test]
   fn test_declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
-    let led1 = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led1 = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
       index: 1,
     };
-    let led2 = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led2 = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -375,11 +373,11 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led1.clone(), Rgba::red())], 0),
+      LedDeclarations::new(vec![(&led1.clone(), Rgba::red())], 0),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led2.clone(), Rgba::red())], 0),
+      LedDeclarations::new(vec![(&led2.clone(), Rgba::red())], 0),
     );
     assert_eq!(system.declarations.get(&led1).unwrap().len(), 1);
     assert_eq!(system.declarations.get(&led2).unwrap().len(), 1);
@@ -394,9 +392,9 @@ mod tests {
   #[test]
   fn test_declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -405,11 +403,11 @@ mod tests {
 
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Rgba::red())], 1),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 1),
     );
     system.declare(
       42,
-      LedDeclarations::new(vec![(led.clone(), Rgba::blue())], 2),
+      LedDeclarations::new(vec![(&led.clone(), Rgba::blue())], 2),
     );
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
@@ -421,9 +419,9 @@ mod tests {
 
   #[test]
   fn test_resolve_color() {
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -469,9 +467,9 @@ mod tests {
 
   #[test]
   fn test_resolve_color_conflict() {
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },
@@ -521,9 +519,9 @@ mod tests {
   // alpha compositing test - top semi-transparent declaration should composite with the next highest declaration below it
   #[test]
   fn test_resolve_color_alpha_compositing() {
-    let led = AddressableLed {
-      address: LedAddress {
-        address: 3,
+    let led = LedAddress {
+      exp: ExpAddress {
+        board_address: 3,
         breakout: None,
         port: 0,
       },

@@ -1,16 +1,15 @@
+use crate::LedAddress;
 use image::Rgba;
 
-use crate::AddressableLed;
-
 #[derive(Debug, Clone)]
-pub struct LedDeclarations {
+pub struct LedDeclarations<'a> {
   // TODO: this is practically identical to MultipleLedDeclarations
-  pub pairings: Vec<(AddressableLed, Rgba<u8>)>,
+  pub pairings: Vec<(&'a LedAddress, Rgba<u8>)>,
   pub z_index: i8,
 }
 
-impl LedDeclarations {
-  pub fn new(pairings: Vec<(AddressableLed, Rgba<u8>)>, z_index: i8) -> Self {
+impl<'a> LedDeclarations<'a> {
+  pub fn new(pairings: Vec<(&'a LedAddress, Rgba<u8>)>, z_index: i8) -> Self {
     Self { pairings, z_index }
   }
 
@@ -28,8 +27,8 @@ impl LedDeclarations {
   }
 }
 
-impl From<(AddressableLed, Rgba<u8>)> for LedDeclarations {
-  fn from(pairing: (AddressableLed, Rgba<u8>)) -> Self {
+impl<'a> From<(&'a LedAddress, Rgba<u8>)> for LedDeclarations<'a> {
+  fn from(pairing: (&'a LedAddress, Rgba<u8>)) -> Self {
     LedDeclarations::new(vec![pairing], 0)
   }
 }

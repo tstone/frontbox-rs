@@ -38,7 +38,7 @@ impl FastStringCommand for ConfigureLedPortCommand {
   fn to_string(&self) -> String {
     let address = expansion_addr(self.expansion_board, self.breakout);
     format!(
-      "ER@{}:{:X},{},{:X},{:X}\r",
+      "ER@{}:{:X},{},{:02X},{:02X}\r",
       address,
       self.port,
       self.led_type.clone() as u8,

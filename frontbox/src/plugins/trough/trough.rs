@@ -2,23 +2,27 @@ use crate::plugins::TroughPlugin;
 pub use crate::prelude::*;
 
 pub struct Trough {
-  pub switches: Vec<&'static str>,
-  pub eject_coil: &'static str,
-  pub expected_occupancy: usize,
+  switches_query: HardwareQuery,
+  eject_coil_query: HardwareQuery,
+  switch_names: Vec<&'static str>,
+  eject_coil_name: &'static str,
+  expected_occupancy: usize,
 }
 
 impl Trough {
-  pub fn new(switches: Vec<&'static str>, eject_coil: &'static str) -> Self {
+  pub fn new(switches_query: HardwareQuery, eject_coil_query: HardwareQuery) -> Self {
     Self {
-      expected_occupancy: switches.len(),
-      switches,
-      eject_coil,
+      switches_query,
+      eject_coil_query,
+      switch_names: Vec::new(),
+      eject_coil_name: "",
+      expected_occupancy: 0,
     }
   }
 
   fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &Context) {
     if self
-      .switches
+      .switch_names
       // only look at the last switch (nearest the exit) for occupancy changes
       .get(self.expected_occupancy - 1)
       .map(|s| *s == switch_name)
@@ -36,7 +40,7 @@ impl Trough {
 
   fn on_trough_switch_opened(&mut self, switch_name: &str, ctx: &Context) {
     if self
-      .switches
+      .switch_names
       // only look at the last switch (nearest the exit) for occupancy changes
       .get(self.expected_occupancy - 1)
       .map(|s| *s == switch_name)
@@ -51,7 +55,7 @@ impl Trough {
   fn get_occupancy(&self, ctx: &Context) -> Vec<bool> {
     let mut occupancy = Vec::new();
     for (_, switch) in self
-      .switches
+      .switch_names
       .iter()
       .enumerate()
       .take(self.expected_occupancy)
@@ -63,11 +67,11 @@ impl Trough {
   }
 
   pub fn eject(&self, ctx: &Context) {
-    ctx.activate_driver(self.eject_coil, ActivationMode::Tap);
+    ctx.activate_driver(self.eject_coil_name, ActivationMode::Tap);
   }
 
   pub fn ball_added_to_play(&mut self) {
-    let max_occupancy = self.switches.len();
+    let max_occupancy = self.switch_names.len();
     if self.expected_occupancy < max_occupancy {
       self.expected_occupancy += 1;
     }
@@ -82,16 +86,21 @@ impl Trough {
 
 impl System for Trough {
   fn on_spawn(&mut self, ctx: &Context) {
+    // memoize names for fast lookup
+    self.eject_coil_name = self.eject_coil_query.get_driver_names(ctx)[0];
+    self.switch_names = self.switches_query.get_switch_names(ctx);
+    self.expected_occupancy = self.switch_names.len();
+
     // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
-    for switch in &self.switches {
+    for name in &self.switch_names {
       // preserve configured inverted settings (if present)
       let inverted = ctx
         .switches
-        .config(switch)
+        .config(name)
         .map(|c| c.inverted)
         .unwrap_or(false);
 
-      ctx.configure_switch(switch, inverted, Some(Duration::from_millis(250)), None);
+      ctx.configure_switch(name, inverted, Some(Duration::from_millis(250)), None);
     }
 
     // configure eject driver
@@ -104,7 +113,7 @@ impl System for Trough {
       .unwrap_or(70);
 
     ctx.configure_driver(
-      self.eject_coil,
+      self.eject_coil_name,
       PulseKickMode {
         initial_pwm_length: Duration::from_millis(7),
         initial_pwm_power: Power::FULL,

@@ -268,24 +268,23 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 
 #### LedSystem
 
-Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
+Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 
 ```rust
 // declare LEDs by name...
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::yellow())
-    .z_index(3)
+  leds::EXAMPLE.q().at_z(3),
+  Rgba::yellow()
 );
 
 // ...or by group
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_leds(vec![leds::EX1, leds::EX2, leds::EX3])
-    .gradient(Rgba::red(), Rgba::yellow())
+  vec![leds::EX1.q(), leds::EX2.q(), leds::EX3.q()],
+  Colors::gradient(vec![Rgba::red(), Rgba::yellow()])
 );
 ```
+
+`declare_leds` takes a `HardwareQuery`, which is the reason for `.q()`. More about this later.
 
 Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
 
@@ -302,19 +301,12 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 ```rust
 // higher layer declares 50% transparent red
 ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::red().with_alpha_f32(0.5))
-    .z_index(1)
+  leds::EXAMPLE.q().at_z(1),
+  Rgba::red().with_alpha_f32(0.5)
 );
 
 // over top of white
-ctx.declare_leds(
-  ctx.current_system_id(),
-  named_led(leds::EXAMPLE)
-    .color(Rgba::white())
-    .z_index(0)
-);
+ctx.declare_leds(leds::EXAMPLE.q(), Rgba::white());
 
 // final color renders as pink [255, 127, 127, 255]
 ```
@@ -413,13 +405,13 @@ impl System for AnimExample {
     // re-declaring the same LED will overwrite the previous declaration
     ctx.declare_leds(
       // declare the current animated value as the color of that LED
-      named_led(leds::EXAMPLE).color(self.anim.sample())
+      leds::EXAMPLE.q(), self.anim.sample()
     )
   }
 }
 ```
 
-Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it. `color_idx` only turns on that one LED.
+Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it.
 
 ```rust
 pub struct AnimExample {
@@ -432,10 +424,8 @@ impl System for AnimExample {
     self.anim.accumulate(delta);
 
     ctx.declare_leds(
-      ctx.current_system_id(),
-      named_leds(vec![leds::LEFT_LANE_ARROW, leds::LEFT_LANE1, leds::LEFT_LANE2])
-        .color_idx(self.anim.sample())
-        .z_index(2)
+      vec![leds::LEFT_LANE_ARROW.q(), leds::LEFT_LANE1.q(), leds::LEFT_LANE2.q()].at_z(2),
+      Colors::pattern(self.anim.sample(), vec![Rgba::red()])
     )
   }
 }
@@ -577,6 +567,23 @@ App::boot(
 
 #### Hardware Definition
 
+##### Commonalities
+
+Every piece of hardware shares three points of definition in common:
+
+- **name** - Name is a unique, static string identifier that will always refer to that exact piece of hardware. In most cases this is explicitly given, but in same cases (e.g. LED strips) it is automatically generated.
+- **tags** - Tags are a way to arbitrarily classify something along any dimension desired (e.g. part of a mech, on the playfield, of a type, etc.)
+- **location** - Location specifies where something is in space within a certain context (tag). This location can then be used for spacial effects or bitmap rendering. The most obvious use is `Playfield`, treating all LEDs as a sparse DMD for rendering, but there are other cases where this could be useful as well (backbox, coin door, a custom mech with LEDs, etc.). Because location is associated with a tag, location tags are automatically copied over to **tags**.
+
+Configured hardware moves through four phases within Frontbox:
+
+1. Definition -- Static configuration such as name, tags, location, and any configuration _(user responsibility)_
+2. Wiring -- A definition is assigned to a specific pin on a specific board _(user responsibility)_
+3. Addressable -- A wired definition is automatically resolved to it's absolute address (id) on the network _(framework responsibility)_
+4. Stateful -- Some hardware (e.g. switches) also become stateful, keeping track of things like open/closed state _(framework responsibility)_
+
+Generally, static **definitions** should be available for reference throughout the app. Stateful representations, where applicable, are available through `Context`.
+
 ##### I/O Network
 
 The I/O network is defined using the `IoNetworkBuilder`. See [Defining Hardware]() guide for more details. I/O network devices can either associate a name with a pin, or can optionally provide a configuration. Configurations given here are automatically applied at startup.
@@ -588,47 +595,100 @@ Hardware can also be tagged `.tagged(Playfield)`. This serves to _classify_ some
 Lastly, depending on the type of hardware being defined, an optional config (`.config(...)`) or mode (`.mode(...)`) can be given.
 
 ```rust
-pub mod switches {
-  pub const LEFT_INLANE: &str = "left_inlane";
-  pub const LEFT_OUTLANE: &str = "left_outlane";
+// Step 1. Define hardware
+
+pub mod hw {
+  use super::*;
+
+  pub left_inlane_switch: SwitchDefinition = SwitchDefinition::new("linlane")
+    .tag(Playfield);
+
+  pub left_outlane_switch: SwitchDefinition = SwitchDefinition::new("loutlane")
+    .tag(Playfield)
+    .tag(Drain)
+    .inverted()
+    .debounce_open(Duration::from_millis(40));
+
+  pub trough_eject_coil: DriverDefinition = DriverDefinition::new("trough_eject").build();
+
+  pub shooter_coil: DriverDefinition = DriverDefinition::new("shooter")
+    .tag(AutoPlungeCoil)
+    .mode(PulseMode {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      initial_pwm_power: Power::FULL,
+      ..Default::default()
+    });
 }
 
-pub mod drivers {
-  pub const TROUGH_EJECT: &str = "trough_eject";
-  pub const AUTOPLUNGER: &str = "autoplunger";
+// Step 2. Define and wire the network
+//
+// NOTE: order matters here. Boards must be listed in the order they appear on the network
+// e.g. Neuron => IO3208 => IO1616 => Neuron would be defined as:
+
+let io_network = IoNetwork::new(vec![
+  IoBoards::io_3208()
+    .wire_switch(3, &hw::left_inlane)
+    .wire_switch(4, &hw::left_outlane)
+    .wire_driver(0, &hw::trough_eject_coil)
+    .wire_driver(1, &hw::shooter_coil),
+  IoBoards::io_1616(),
+]);
+```
+
+##### Expansion Network
+
+The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defining Hardware]() guide for more details.
+
+```rust
+// Step 1. Define exp devices
+
+pub mod leds {
+  use super::*;
+
+  hardware_defs! {
+    pub LEFT_INLANE: LedDefinition = LedDefinition::single("linlane")
+      .location(Vec2::new(3.4, 32.5).relative_to(PLAYFIELD))
+      .channels(ColorChannels::GRBW);
+
+    pub LEFT_OUTLANE: LedDefinition = LedDefinition::new("loutlane")
+      .location(Vec2::new(2.125, 32.5).relative_to(PLAYFIELD));
+
+    // Cabinet lighting along the left art blade area
+    pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::strip("lcab", 32)
+      .tag(Cabinet)
+      .locations(CabinetLeft, 15.0, (10.25, 0), (48.5, 3.0));
+  }
 }
 
-let mut io_network = IoNetworkBuilder::new();
+// Step 2. Define boards and wire the network
 
-io_network.add_board(
-  FastIoBoards::io_3208()
-    .with(switch(3).named(switches::LEFT_INLANE))
-    .with(
-      switch(4)
-        .named(switches::LEFT_OUTLANE)
-        .tagged(Playfield)
-        .tagged(Drain)
-        .config(SwitchConfig {
-          inverted: true,
-          debounce_open: Some(Duration::from_millis(60))
-        })
-    )
-    .with(
-      driver(0)
-        .named(drivers::TROUGH_EJECT)
-        .tagged(Drain)
-    )
-    .with(
-      driver(1)
-        .named(drivers::AUTOPLUNGER)
-        .tagged(AutoPlungeCoil)
-        .config(PulseMode {
-          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-          initial_pwm_power: Power::FULL,
-          ..Default::default()
-        })
-    )
-);
+let exp_network = ExpansionNetwork::new(vec![
+  ExpansionBoard::fp_exp0061()
+    .wire_led_port(0, LedPort::ws2812b().leds(vec![
+        &leds::LEFT_INLANE,
+        &leds::LEFT_OUTLANE,
+      ]
+    )),
+    .wire_led_port(1, LedPort::wS2812b().leds(vec![&leds::LEFT_CAB_STRIP]))
+]);
+```
+
+##### Hardware Organization
+
+Despite the examples in this document showing everything defined all together, it usually makes more sense to group all definitions by region or mech, then wire the network in the same spot. For example, a game might be setup to have regions like `hardware/lower_thirds.rs`, `hardware/mid_field.rs`, and `hardware/upper_playfield.rs`, then a separate `io_network.rs` and `exp_network.rs` which references those hardware definitions and wires up the network.
+
+Depending on the complexity of the playfield, it might also be useful to group regions into modules.
+
+```rust
+// upper_playfield.rs
+
+pub const left_ramp_switch = ...;
+pub const right_ramp_switch = ...;
+
+pub mod custom_mech {
+  pub const entrance_switch = ...;
+  pub const kicker_coil = ...;
+}
 ```
 
 ### Tagging & Querying Hardware
@@ -639,11 +699,30 @@ Hardware queries are a way to describe what hardware to use.
 // select by name
 let q = Q::name("foo");
 let q = Q::names(vec!["foo", "bar"]);
+let q = Q::name(left_inlane_led.name); // names can be referenced from definitions
+let q = Q::name(left_cabinet_strip.name) // LED groups can be referenced by name
+let q = Q::name(left_cabinet_strip.child(0).name) // Specific children within LED groups can be referenced
+
 // select by tag (see hardware definition below for more on tagging)
 let q = Q::tag::<Playfield>();
-// combinations
+
+// select things in a location
+let q = Q::location::<LowerThirds>();
+
+// multiple criteria
 let q = Q::name("start_button").or(Q::tag::<StartButton>());
-let q = Q::tag::<Playfield>().and(Q::tag::<Cabinet>());
+let q = Q::location::<LowerThirds>().and(Q::tag::<Drain>()); // both criteria must be met
+
+// masking/exclusions
+// select everything that is not tagged Playfield
+let q = Q::not(Q::tag::<Playfield>);
+// select everything tagged Playfield that is not also tagged Target
+let q = Q::tag::<Playfield>().not(Q::tag::<Target>());
+
+// other
+let q = Q::all(); // select everything of this type
+let q = Q::rand(10); // take 10 random, even if there are more
+let q = Q::tag::<Playfield>().rand(10);
 ```
 
 Queries are just a description of hardware and don't contain the reference to matching hardware. However they can be used a predicate with an event or given `Context` to resolve into the matching hardware.
@@ -681,32 +760,6 @@ This _explicitly_ sets which switches to listen to based on IDs. Alternately jus
 CreditsPlay::default()
 // switches tagged with StartButton are used as the start button
 // switches tagged with CoinDrop are used to identify incoming coins
-```
-
-##### Expansion Network
-
-> [!WARNING]
-> Defining the expansion network is scheduled to be re-written to be more consistent with defining the I/O network and be more flexible around defining LED groups, ports, etc.
-
-The expansion network is defined using the `ExpansionNetworkBuilder`. See [Defining Hardware]() guide for more details.
-
-```rust
-pub mod leds {
-  pub const LEFT_INLANE: &str = "left_inlane";
-  pub const LEFT_OUTLANE: &str = "left_outlane";
-}
-
-let mut exp_network = ExpansionNetworkBuilder::new();
-
-exp_network.add_board(
-  ExpansionBoard::fp_exp0061()
-    .with_led_port(LedPort {
-      port: 0,
-      start: 0,
-      led_type: LedType::WS2812,
-      leds: vec![leds::LEFT_INLANE, leds::LEFT_OUTLANE]
-    })
-)
 ```
 
 ## Roadmap

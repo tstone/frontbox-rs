@@ -2,7 +2,6 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
-use crate::SwitchDefinition;
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
@@ -15,38 +14,32 @@ pub struct SwitchLookup {
 }
 
 impl SwitchLookup {
-  pub fn new(definitions: Vec<SwitchDefinition>, initial_state: Vec<SwitchState>) -> Self {
+  pub fn new(
+    addressed: Vec<IoAddressed<SwitchDefinition>>,
+    initial_state: Vec<SwitchState>,
+  ) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
     let mut configs = HashMap::new();
-    for definition in definitions {
-      by_id.insert(
-        definition.id,
-        Switch {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+    for addressed in addressed {
+      let switch = Switch {
+        id: addressed.id,
+        name: addressed.definition.name,
+        assignment: addressed.assignment.clone(),
+        tags: addressed.definition.tags.clone(),
+        location: addressed.definition.location,
+      };
 
-      by_name.insert(
-        definition.name,
-        Switch {
-          id: definition.id,
-          name: definition.name,
-          native: definition.native.clone(),
-          tags: definition.tags.clone(),
-        },
-      );
+      by_id.insert(addressed.id, switch.clone());
+      by_name.insert(addressed.definition.name, switch);
 
-      if let Some(config) = definition.config {
-        configs.insert(definition.id, config);
+      if let Some(config) = addressed.definition.config {
+        configs.insert(addressed.id, config);
       }
 
       // Actual state is populated below from initial report
-      is_closed.insert(definition.id, false);
+      is_closed.insert(addressed.id, false);
     }
 
     let mut context = Self {
@@ -99,7 +92,7 @@ impl SwitchLookup {
     self.by_name.get_mut(switch_name)
   }
 
-  pub fn by_tag<T: HardwareTag + 'static>(&self) -> Vec<&Switch> {
+  pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Switch> {
     self
       .by_id
       .values()
@@ -107,7 +100,7 @@ impl SwitchLookup {
         switch
           .tags
           .iter()
-          .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
+          .any(|tag| <dyn Tag>::as_any(tag.as_ref()).is::<T>())
       })
       .collect()
   }
@@ -183,31 +176,31 @@ impl DerefMut for SwitchLookup {
 
 #[derive(Debug, Clone)]
 pub struct Switch {
-  pub id: usize,
-  pub native: NativeIdentity,
   pub name: &'static str,
-  pub tags: Vec<Box<dyn HardwareTag>>,
+  pub assignment: IoAddress,
+  pub id: usize,
+  pub tags: Vec<Box<dyn Tag>>,
+  pub location: Option<Vec3>,
 }
 
 impl Switch {
-  pub fn has_tag<T: HardwareTag + 'static>(&self) -> bool {
+  pub fn has_tag<T: Tag + 'static>(&self) -> bool {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).is::<T>())
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).is::<T>())
   }
 
   pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
     self
       .tags
       .iter()
-      .any(|tag| <dyn HardwareTag>::as_any(tag.as_ref()).type_id() == type_id)
+      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use crate::NativeIdentity;
   use crate::tags::{FlipperButton, Playfield};
 
   use super::*;
@@ -215,12 +208,15 @@ mod tests {
   #[test]
   fn tag_lookup() {
     let lookup = SwitchLookup::new(
-      vec![SwitchDefinition {
+      vec![IoAddressed {
+        definition: SwitchDefinition {
+          name: "switch1",
+          tags: vec![Box::new(Playfield)],
+          location: None,
+          config: None,
+        },
+        assignment: IoAddress::new(0, 1),
         id: 1,
-        name: "switch1",
-        native: NativeIdentity::new(0, 1),
-        tags: vec![Box::new(Playfield)],
-        config: None,
       }],
       vec![SwitchState::Open],
     );
@@ -235,8 +231,9 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress::new(0, 1),
       tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     assert!(switch.has_tag::<Playfield>());
@@ -248,8 +245,9 @@ mod tests {
     let switch = Switch {
       id: 1,
       name: "switch1",
-      native: NativeIdentity::new(0, 1),
+      assignment: IoAddress::new(0, 1),
       tags: vec![Box::new(Playfield)],
+      location: None,
     };
 
     let type_id = TypeId::of::<Playfield>();

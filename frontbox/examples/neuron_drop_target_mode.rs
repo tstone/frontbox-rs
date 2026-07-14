@@ -4,14 +4,18 @@ use frontbox::tags::Playfield;
 use std::io::Write;
 use std::time::Duration;
 
-pub mod switches {
-  pub const LOWER_DROP_TARGET1: &str = "lower_drop_target1";
-  pub const LOWER_DROP_TARGET2: &str = "lower_drop_target2";
-  pub const LOWER_DROP_TARGET3: &str = "lower_drop_target3";
-}
-
 pub mod drivers {
-  pub const LOWER_DROP_TARGET_COIL: &str = "lower_drop_target_coil";
+  use super::*;
+
+  hardware_defs! {
+    pub BANK_COIL: DriverDefinition = DriverDefinition::new("drop_coil")
+    .mode(PulseMode {
+      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+      initial_pwm_length: Duration::from_millis(250),
+      initial_pwm_power: Power::FULL,
+      ..Default::default()
+    });
+  }
 }
 
 #[tokio::main]
@@ -20,61 +24,40 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let mut io_network = IoNetworkBuilder::new();
+  let target1 = SwitchDefinition::new("drop_target1")
+    .tag(Playfield)
+    .inverted()
+    .debounce_open(Duration::from_millis(10))
+    .build();
 
-  io_network.add_board(FastIoBoards::io_3208());
+  let target2 = SwitchDefinition::new("drop_target2")
+    .tag(Playfield)
+    .inverted()
+    .debounce_open(Duration::from_millis(10))
+    .build();
 
-  io_network.add_board(
-    FastIoBoards::io_1616()
-      .with(
-        switch(5)
-          .named(switches::LOWER_DROP_TARGET1)
-          .tagged(Playfield)
-          .config(SwitchConfig {
-            inverted: true,
-            debounce_open: Some(Duration::from_millis(10)),
-            ..Default::default()
-          }),
-      )
-      .with(
-        switch(6)
-          .named(switches::LOWER_DROP_TARGET2)
-          .tagged(Playfield)
-          .config(SwitchConfig {
-            inverted: true,
-            debounce_open: Some(Duration::from_millis(10)),
-            ..Default::default()
-          }),
-      )
-      .with(
-        switch(7)
-          .named(switches::LOWER_DROP_TARGET3)
-          .tagged(Playfield)
-          .config(SwitchConfig {
-            inverted: true,
-            debounce_open: Some(Duration::from_millis(10)),
-            ..Default::default()
-          }),
-      )
-      .with(
-        driver(3)
-          .named(drivers::LOWER_DROP_TARGET_COIL)
-          .mode(PulseMode {
-            trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-            initial_pwm_length: Duration::from_millis(250),
-            initial_pwm_power: Power::FULL,
-            ..Default::default()
-          }),
-      ),
-  );
+  let target3 = SwitchDefinition::new("drop_target3")
+    .tag(Playfield)
+    .inverted()
+    .debounce_open(Duration::from_millis(10))
+    .build();
 
-  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network.build(), vec![])
+  let io_network = IoNetwork::new(vec![
+    IoBoards::io_3208(),
+    IoBoards::io_1616()
+      .wire_switch(5, &target1)
+      .wire_switch(6, &target2)
+      .wire_switch(7, &target3)
+      .wire_driver(3, &drivers::BANK_COIL),
+  ]);
+
+  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network, vec![])
     .await
     .configure(|app| {
       app.system(DropTargetDownUp::new([
-        switches::LOWER_DROP_TARGET1,
-        switches::LOWER_DROP_TARGET2,
-        switches::LOWER_DROP_TARGET3,
+        target1.name,
+        target2.name,
+        target3.name,
       ]));
     })
     .run()
@@ -109,7 +92,7 @@ impl DropTargetDownUp {
 impl System for DropTargetDownUp {
   fn on_spawn(&mut self, ctx: &Context) {
     // bring up all targets on startup
-    ctx.activate_driver(drivers::LOWER_DROP_TARGET_COIL, ActivationMode::Tap);
+    ctx.activate_driver(drivers::BANK_COIL.name, ActivationMode::Tap);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
