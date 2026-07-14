@@ -28,8 +28,20 @@ impl LED {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LedAddress {
-  pub board: u8,
-  pub breakout: Option<u8>,
-  pub port: u8,
+  pub exp: ExpAddress,
   pub index: u16,
+}
+
+impl LedAddress {
+  pub fn board(&self) -> u8 {
+    self.exp.board_address
+  }
+
+  pub fn breakout(&self) -> Option<u8> {
+    self.exp.breakout
+  }
+
+  pub fn port(&self) -> u8 {
+    self.exp.port
+  }
 }

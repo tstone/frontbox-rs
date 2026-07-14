@@ -2,6 +2,7 @@ use std::any::TypeId;
 
 use crate::prelude::*;
 
+#[derive(Debug)]
 pub struct Q;
 
 impl Q {

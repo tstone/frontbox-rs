@@ -88,17 +88,29 @@ impl HardwareQuery {
 
   /// Resolve the query into a the address of all matching LEDs
   pub fn get_leds_addresses(&self, ctx: &Context) -> Vec<LedAddress> {
-    ctx
-      .leds
-      .values()
-      .filter_map(|led| {
-        if self.matches_led(led) {
-          Some(led.address.clone())
-        } else {
-          None
-        }
-      })
-      .collect()
+    match self {
+      Self::Name(name) => vec![ctx.leds.get(name).unwrap().address.clone()],
+      Self::Names(names) => names
+        .iter()
+        .map(|n| ctx.leds.get(n).unwrap().address.clone())
+        .collect(),
+      _ => {
+        let mut matches: Vec<LedAddress> = ctx
+          .leds
+          .values()
+          .filter_map(|led| {
+            if self.matches_led(led) {
+              Some(led.address.clone())
+            } else {
+              None
+            }
+          })
+          .collect();
+        // maintain consistent order
+        matches.sort_by_key(|addr| addr.index);
+        matches
+      }
+    }
   }
 }
 

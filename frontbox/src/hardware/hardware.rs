@@ -200,19 +200,26 @@ impl Hardware {
       let mut offset = 0;
       let mut resolved_ports = Vec::new();
       for port_idx in 0..board.hardware_led_port_count.unwrap_or(0) {
+        // For EXP boards which have multiple LED port banks, the offset needs to be reset every 5th port
+        if port_idx > 0 && port_idx % 4 == 0 {
+          offset = 0;
+        }
+
         if let Some(port) = board.led_ports.get(&port_idx) {
           let port_count_override = match board.model {
+            // Known bug: Older versions of the Neuron have an internal Exp board which does not respect ER:
             FastExpansionBoardModels::Neuron => Some(32),
             _ => None,
           };
+
           let port =
             Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
           offset += port.length as u16;
           resolved_ports.push(port);
         } else {
           // no port defined = assume the default (32 LEDs)
-          offset += 32;
           resolved_ports.push(ResolvedLedPort::default(offset));
+          offset += 32;
         }
       }
 
@@ -245,7 +252,7 @@ impl Hardware {
             definition: led.clone(),
             assignment: ExpAddress {
               board_address: board.address,
-              breakout: board.breakout,
+              breakout: Some(port_idx / 4),
               port: port_idx as u8,
             },
             id: i + port_led_total_count as usize + offset as usize,
@@ -255,15 +262,11 @@ impl Hardware {
       port_led_total_count = port_led_total_count.saturating_add(multi_def.children().len() as u8);
     }
 
-    log::trace!(
-      "Mapped {} illuminations: {:?}",
-      addressed_leds.len(),
-      addressed_leds
-    );
+    log::trace!("Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
 
     ResolvedLedPort {
       led_type: port.led_type.clone(),
-      start: offset,
+      offset,
       length: port_count_override.unwrap_or(port_led_total_count),
       leds: addressed_leds,
     }
@@ -273,11 +276,10 @@ impl Hardware {
     exp_port: &mut SerialInterface,
     expansion_boards: &Vec<ResolvedExpansionBoard>,
   ) {
-    let mut led_offset = 0;
     for board in expansion_boards {
       for (port_index, led_port) in board.led_ports.iter().enumerate() {
-        Self::configure_led_port(exp_port, board, port_index as u8, led_offset, led_port).await;
-        led_offset += led_port.length as u16;
+        Self::configure_led_port(exp_port, board, port_index as u8, led_port.offset, led_port)
+          .await;
       }
     }
   }

@@ -14,7 +14,7 @@ impl ColorSequence for Tile {
       let mut pointer: usize = 0;
 
       for index in 0..count {
-        colors[index] = self.seq[index];
+        colors[index] = self.seq[pointer];
 
         pointer += 1;
         if pointer >= self.seq.len() {

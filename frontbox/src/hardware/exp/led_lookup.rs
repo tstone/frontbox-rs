@@ -21,9 +21,7 @@ impl LedLookup {
       for port in &board.led_ports {
         for led in &port.leds {
           let address = LedAddress {
-            board: led.assignment.board_address,
-            breakout: led.assignment.breakout,
-            port: led.assignment.port,
+            exp: led.assignment.clone(),
             index: led.id as u16,
           };
 

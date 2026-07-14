@@ -67,7 +67,7 @@ pub struct IoAddressed<T: HardwareDefinition> {
 
 // -- Exp --
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExpAddress {
   pub board_address: u8,
   pub breakout: Option<u8>,

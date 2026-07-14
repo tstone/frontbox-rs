@@ -241,14 +241,14 @@ impl System for LedSystem {
 
     if leds_to_set.len() > 0 {
       // group by address to send to machine
-      let outgoing: HashMap<LedAddress, Vec<(u16, Rgba<u8>)>> =
+      let outgoing: HashMap<ExpAddress, Vec<(u16, Rgba<u8>)>> =
         leds_to_set
           .into_iter()
           .fold(HashMap::new(), |mut acc, (addr, color)| {
             let channels = ctx.leds.color_channels_by_id(&addr);
             let remapped_color = color.remap(channels);
             acc
-              .entry(addr.clone())
+              .entry(addr.exp)
               .or_insert_with(Vec::new)
               .push((addr.index, remapped_color));
             acc
@@ -257,7 +257,7 @@ impl System for LedSystem {
       let machine = ctx.systems.expect::<Machine>();
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
-          machine.set_leds(address.board, address.breakout, chunk.to_vec());
+          machine.set_leds(address.board_address, address.breakout, chunk.to_vec());
         }
       }
     }
@@ -295,9 +295,11 @@ mod tests {
   fn test_declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
@@ -323,9 +325,11 @@ mod tests {
   fn test_declare_overwrite() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
@@ -351,15 +355,19 @@ mod tests {
   fn test_declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
     let led1 = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
     let led2 = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 2,
     };
 
@@ -385,9 +393,11 @@ mod tests {
   fn test_declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
@@ -410,9 +420,11 @@ mod tests {
   #[test]
   fn test_resolve_color() {
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
@@ -456,9 +468,11 @@ mod tests {
   #[test]
   fn test_resolve_color_conflict() {
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
@@ -506,9 +520,11 @@ mod tests {
   #[test]
   fn test_resolve_color_alpha_compositing() {
     let led = LedAddress {
-      board: 3,
-      breakout: None,
-      port: 0,
+      exp: ExpAddress {
+        board_address: 3,
+        breakout: None,
+        port: 0,
+      },
       index: 1,
     };
 
