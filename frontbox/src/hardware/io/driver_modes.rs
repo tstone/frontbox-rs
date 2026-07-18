@@ -194,8 +194,8 @@ pub struct PulseHoldCancelMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,
   pub initial_pwm_length: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
   pub secondary_pwm_power: HardwareValue<Power>,
-  pub secondary_pwm_length: HardwareValue<Duration>,
   /// Time after the driver goes off before it can be triggered again
   pub rest: HardwareValue<Duration>,
 }
@@ -205,8 +205,8 @@ impl Default for PulseHoldCancelMode {
     Self {
       trigger_mode: DriverTriggerDualMode::Disabled,
       initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
       secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
-      secondary_pwm_length: HardwareValue::Fixed(Duration::from_millis(500)),
       rest: HardwareValue::Fixed(Duration::from_millis(500)),
     }
   }
@@ -223,8 +223,8 @@ impl DriverMode for PulseHoldCancelMode {
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
       initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
       secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
       rest: self.rest.resolve(&ctx.operator_config),
     }
   }
@@ -232,7 +232,7 @@ impl DriverMode for PulseHoldCancelMode {
   fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
-      self.secondary_pwm_length.config_value(),
+      self.initial_pwm_power.config_value(),
       self.secondary_pwm_power.config_value(),
     ]
     .into_iter()

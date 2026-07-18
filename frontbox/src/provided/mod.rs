@@ -1,4 +1,4 @@
-mod autoplunger;
+pub mod autoplunger;
 mod operational;
 mod trough;
 

@@ -88,7 +88,7 @@ impl FastStringCommand for ConfigureDriverCommand {
         off_switch,
         invert_off_switch,
         initial_pwm_length,
-        secondary_pwm_length,
+        initial_pwm_power,
         secondary_pwm_power,
         rest,
       } => format!(
@@ -101,7 +101,7 @@ impl FastStringCommand for ConfigureDriverCommand {
         switch.unwrap_or(0),
         off_switch.unwrap_or(0),
         initial_pwm_length.as_millis(),
-        secondary_pwm_length.as_millis(),
+        initial_pwm_power,
         secondary_pwm_power,
         rest.as_millis()
       ),

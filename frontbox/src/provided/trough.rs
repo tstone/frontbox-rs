@@ -15,9 +15,13 @@ pub struct Trough {
 }
 
 impl Trough {
-  pub fn new() -> Self {
+  pub fn new(switch_count: usize) -> Self {
     Self {
-      switch_names: Vec::new(),
+      switch_names: (0..switch_count)
+        .map(|i| -> &'static str {
+          Box::leak(format!("trough_switchswitch_{i}_{}", Uuid::new_v4()).into_boxed_str())
+        })
+        .collect(),
       eject_coil_name: Box::leak(format!("trough_eject_coil_{}", Uuid::new_v4()).into_boxed_str()),
       expected_occupancy: 0,
     }
@@ -48,16 +52,8 @@ impl Trough {
       .tag(tags::Trough)
   }
 
-  pub fn switch_definition(&mut self, index: usize) -> SwitchDefinitionBuilder {
-    let name = Box::leak(format!("trough_switch_{}_{}", index, Uuid::new_v4()).into_boxed_str());
-
-    // TODO: add to switch names, in order
-    if index >= self.switch_names.len() {
-      self.switch_names.resize(index + 1, Default::default());
-    }
-    self.switch_names[index] = name;
-
-    SwitchDefinitionBuilder::new(name)
+  pub fn switch_definition(&self, index: usize) -> SwitchDefinitionBuilder {
+    SwitchDefinitionBuilder::new(self.switch_names[index])
       .debounce_open(Duration::from_millis(250))
       .tag(tags::Trough)
   }

@@ -1,7 +1,6 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
 use std::io::Write;
-use std::path::Path;
 
 /**
  * This example demonstrates how to use the animation system to various LED effects
