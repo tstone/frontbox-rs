@@ -1,3 +1,4 @@
+
 /// A state indicating the current phase of a player's turn. Will only be present when a game is active.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TurnState {
@@ -8,3 +9,4 @@ pub enum TurnState {
   /// The end of a player's turn, after the ball goes out of play but before the next turn begins.
   Ending,
 }
+

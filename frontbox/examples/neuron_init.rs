@@ -7,8 +7,14 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  App::boot("/dev/ttyACM0", "/dev/ttyACM1", IoNetwork::empty(), vec![])
-    .await
-    .run()
-    .await;
+  App::boot(BootConfig {
+    io_net_port_path: "/dev/ttyACM0",
+    exp_port_path: "/dev/ttyACM1",
+    io_network: IoNetwork::empty(),
+    exp_network: vec![],
+    config_path: None,
+  })
+  .await
+  .run()
+  .await;
 }

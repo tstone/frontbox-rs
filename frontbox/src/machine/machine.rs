@@ -12,18 +12,21 @@ pub(crate) struct MachineImpl {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  base: ContextBase,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
+  switches: SwitchLookup,
+  io_network: Vec<ResolvedIoBoard>,
 }
 
 impl MachineImpl {
   pub(crate) fn new(
     io_port: SerialInterface,
     exp_port: SerialInterface,
-    context_base: ContextBase,
     app_sender: mpsc::UnboundedSender<AppMessage>,
+    switches: SwitchLookup,
+    io_network: Vec<ResolvedIoBoard>,
+    app_config: AppConfig,
   ) -> Self {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
@@ -33,8 +36,9 @@ impl MachineImpl {
       app_sender,
       machine_sender,
       machine_receiver,
-      watchdog_interval: context_base.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
-      base: context_base,
+      watchdog_interval: app_config.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
+      switches,
+      io_network,
     }
   }
 
@@ -88,7 +92,7 @@ impl MachineImpl {
   }
 
   pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    let switch = self.base.switches.by_id(&switch_id).cloned();
+    let switch = self.switches.by_id(&switch_id).cloned();
 
     if let Some(switch) = switch {
       // App needs to update switch state in the store before sending out the event
@@ -147,7 +151,7 @@ impl MachineImpl {
   /// Primarily used for reporting of unknown switches as native board/switch ids
   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
     let mut offset: usize = 0;
-    for (index, board) in self.base.io_network.iter().enumerate() {
+    for (index, board) in self.io_network.iter().enumerate() {
       if switch_id < (board.switch_count as usize) + offset {
         let native_switch_id = switch_id - offset;
         return Some((index, native_switch_id));
@@ -200,14 +204,9 @@ impl Machine {
   }
 
   /// Configure a driver with a specific mode (e.g. enable with certain power level, or set to automatic) (DL)
-  pub fn configure_driver(
-    &self,
-    driver: &'static str,
-    mode: impl DriverMode + 'static,
-    ctx: &Context,
-  ) {
+  pub fn configure_driver(&self, driver: &str, mode: impl DriverMode + 'static, ctx: &Context) {
     if let Some(driver) = ctx.drivers.get(driver) {
-      let config = mode.to_config(&ctx.switches);
+      let config = mode.to_config(&ctx);
       self
         .machine_sender
         .send(MachineMessage::Request {
@@ -220,7 +219,7 @@ impl Machine {
   }
 
   /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
-  pub fn activate_driver(&self, driver: &'static str, mode: ActivationMode, ctx: &Context) {
+  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &Context) {
     // remap switch to id
     let switch = mode
       .switch_name()
@@ -237,7 +236,7 @@ impl Machine {
   }
 
   /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
-  pub fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode, ctx: &Context) {
+  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &Context) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
         DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
@@ -272,7 +271,7 @@ impl Machine {
   /// Configure a switch to report in a certain way (e.g. inverted, or with debounce) (SL)
   pub fn configure_switch(
     &self,
-    switch: &'static str,
+    switch: &str,
     inverted: bool,
     debounce_close: Option<Duration>,
     debounce_open: Option<Duration>,

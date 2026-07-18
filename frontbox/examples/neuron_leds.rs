@@ -1,6 +1,7 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
 use std::io::Write;
+use std::path::Path;
 
 /**
  * This example demonstrates how to use the animation system to various LED effects
@@ -29,16 +30,14 @@ async fn main() {
     LedPort::ws2812().leds(vec![&leds::DEMO1, &leds::DEMO2, &leds::DEMO3, &leds::DEMO4]),
   )];
 
-  App::boot(
-    "/dev/ttyACM0",
-    "/dev/ttyACM1",
-    IoNetwork::empty(),
+  App::boot(BootConfig {
     exp_network,
-  )
+    ..Default::default()
+  })
   .await
   .configure(|app| {
-    app.system(LedSystem::new());
-    app.system(LedExample::new());
+    app.startup_system(LedSystem::new());
+    app.startup_system(LedExample::new());
   })
   .run()
   .await;

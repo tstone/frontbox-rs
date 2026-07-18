@@ -1,17 +1,20 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
 use dyn_clone::DynClone;
 use fast_protocol::{DriverConfig, Power};
 
+use crate::hardware::io::driver_switches::*;
+use crate::operator_config::{HardwareValue, LoadableConfigValue};
+use crate::prelude::ContextBase;
 use crate::{DriverTriggerDualMode, DriverTriggerMode};
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
 pub trait DriverMode: DynClone + Debug + Send + Sync {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig;
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig;
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue>;
 }
 
 dyn_clone::clone_trait_object!(DriverMode);
@@ -22,50 +25,53 @@ dyn_clone::clone_trait_object!(DriverMode);
 pub struct PulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
-  pub initial_pwm_length: Duration,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_length: Duration,
-  pub secondary_pwm_power: Power,
+  pub initial_pwm_length: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
   /// Time after the driver goes off before it can be triggered again
-  pub rest: Duration,
+  pub rest: HardwareValue<Duration>,
 }
 
 impl Default for PulseMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(20),
-      initial_pwm_power: Power::FULL,
-      secondary_pwm_length: Duration::ZERO,
-      secondary_pwm_power: Power::ZERO,
-      rest: Duration::from_millis(80),
+      initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(20)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
+      secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
+      rest: HardwareValue::Fixed(Duration::from_millis(80)),
     }
   }
 }
 
 impl DriverMode for PulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::Pulse {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length,
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_length: self.secondary_pwm_length,
-      secondary_pwm_power: self.secondary_pwm_power,
-      rest: self.rest,
+      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
     }
   }
-}
 
-pub trait SwitchNameToId {
-  fn switch_id(&self, name: &str) -> Option<usize>;
-}
-
-impl SwitchNameToId for HashMap<&'static str, usize> {
-  fn switch_id(&self, name: &str) -> Option<usize> {
-    self.get(name).copied()
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_length.config_value(),
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+      self.rest.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -77,40 +83,53 @@ impl SwitchNameToId for HashMap<&'static str, usize> {
 pub struct PulseKickMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
-  pub initial_pwm_length: Duration,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_length: Duration,
-  pub secondary_pwm_power: Power,
+  pub initial_pwm_length: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
   /// Time that the driver is held at full power after the initial and secondary PWM times
-  pub kick_length: Duration,
+  pub kick_length: HardwareValue<Duration>,
 }
 
 impl Default for PulseKickMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(30),
-      initial_pwm_power: Power::FULL,
-      secondary_pwm_length: Duration::ZERO,
-      secondary_pwm_power: Power::ZERO,
-      kick_length: Duration::from_millis(500),
+      initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
+      secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
+      kick_length: HardwareValue::Fixed(Duration::from_millis(500)),
     }
   }
 }
 
 impl DriverMode for PulseKickMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::PulseKick {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length,
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_length: self.secondary_pwm_length,
-      secondary_pwm_power: self.secondary_pwm_power,
-      kick_length: self.kick_length,
+      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      kick_length: self.kick_length.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_length.config_value(),
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+      self.kick_length.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -121,37 +140,49 @@ impl DriverMode for PulseKickMode {
 pub struct PulseHoldMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
-  pub initial_pwm_length: Duration,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_power: Power,
+  pub initial_pwm_length: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_power: HardwareValue<Power>,
   /// Time after the driver goes off before it can be triggered again
-  pub rest: Duration,
+  pub rest: HardwareValue<Duration>,
 }
 
 impl Default for PulseHoldMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(30),
-      initial_pwm_power: Power::FULL,
-      secondary_pwm_power: Power::ZERO,
-      rest: Duration::ZERO,
+      initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
+      rest: HardwareValue::Fixed(Duration::ZERO),
     }
   }
 }
 
 impl DriverMode for PulseHoldMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::PulseHold {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length,
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_power: self.secondary_pwm_power,
-      rest: self.rest,
+      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_length.config_value(),
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_power.config_value(),
+      self.rest.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -162,40 +193,51 @@ impl DriverMode for PulseHoldMode {
 pub struct PulseHoldCancelMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,
-  pub initial_pwm_length: Duration,
-  pub secondary_pwm_power: Power,
-  pub secondary_pwm_length: Duration,
+  pub initial_pwm_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_length: HardwareValue<Duration>,
   /// Time after the driver goes off before it can be triggered again
-  pub rest: Duration,
+  pub rest: HardwareValue<Duration>,
 }
 
 impl Default for PulseHoldCancelMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerDualMode::Disabled,
-      initial_pwm_length: Duration::from_millis(30),
-      secondary_pwm_power: Power::percent(10),
-      secondary_pwm_length: Duration::from_millis(500),
-      rest: Duration::from_millis(500),
+      initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
+      secondary_pwm_length: HardwareValue::Fixed(Duration::from_millis(500)),
+      rest: HardwareValue::Fixed(Duration::from_millis(500)),
     }
   }
 }
 
 impl DriverMode for PulseHoldCancelMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
-      get_switches_inverts(&self.trigger_mode, switch_lookup);
+      get_switch_ids_and_inverts(&self.trigger_mode, ctx);
 
     DriverConfig::PulseHoldCancel {
       switch: flip_switch,
       invert_switch: invert_flip_switch,
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
-      initial_pwm_length: self.initial_pwm_length,
-      secondary_pwm_power: self.secondary_pwm_power,
-      secondary_pwm_length: self.secondary_pwm_length,
-      rest: self.rest,
+      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_length.config_value(),
+      self.secondary_pwm_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -206,40 +248,52 @@ impl DriverMode for PulseHoldCancelMode {
 pub struct DelayedPulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
-  pub delay_length: Duration,
-  pub initial_full_power_length: Duration,
-  pub secondary_pwm_length: Duration,
-  pub secondary_pwm_power: Power,
+  pub delay_length: HardwareValue<Duration>,
+  pub initial_full_power_length: HardwareValue<Duration>,
+  pub secondary_pwm_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
   /// Time after the driver goes off before it can be triggered again
-  pub rest: Duration,
+  pub rest: HardwareValue<Duration>,
 }
 
 impl Default for DelayedPulseMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      delay_length: Duration::from_millis(30),
-      initial_full_power_length: Duration::from_millis(30),
-      secondary_pwm_length: Duration::ZERO,
-      secondary_pwm_power: Power::ZERO,
-      rest: Duration::from_millis(80),
+      delay_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      initial_full_power_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
+      secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
+      rest: HardwareValue::Fixed(Duration::from_millis(80)),
     }
   }
 }
 
 impl DriverMode for DelayedPulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::DelayedPulse {
       switch,
       invert_switch,
-      delay_length: self.delay_length,
-      initial_full_power_length: self.initial_full_power_length,
-      secondary_pwm_length: self.secondary_pwm_length,
-      secondary_pwm_power: self.secondary_pwm_power,
-      rest: self.rest,
+      delay_length: self.delay_length.resolve(&ctx.operator_config),
+      initial_full_power_length: self.initial_full_power_length.resolve(&ctx.operator_config),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.delay_length.config_value(),
+      self.initial_full_power_length.config_value(),
+      self.secondary_pwm_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -249,40 +303,53 @@ impl DriverMode for DelayedPulseMode {
 pub struct LongPulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
-  pub initial_pwm_length: Duration,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_length: Duration,
-  pub secondary_pwm_power: Power,
+  pub initial_pwm_length: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
   /// Time after the driver goes off before it can be triggered again
-  pub rest: Duration,
+  pub rest: HardwareValue<Duration>,
 }
 
 impl Default for LongPulseMode {
   fn default() -> Self {
     Self {
       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(200),
-      initial_pwm_power: Power::FULL,
-      secondary_pwm_length: Duration::from_millis(1000),
-      secondary_pwm_power: Power::percent(25),
-      rest: Duration::from_millis(1000),
+      initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(200)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_length: HardwareValue::Fixed(Duration::from_millis(1000)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::percent(25)),
+      rest: HardwareValue::Fixed(Duration::from_millis(1000)),
     }
   }
 }
 
 impl DriverMode for LongPulseMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_invert(&self.trigger_mode, switch_lookup);
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::LongPulse {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length,
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_length: self.secondary_pwm_length,
-      secondary_pwm_power: self.secondary_pwm_power,
-      rest: self.rest,
+      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_length.config_value(),
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+      self.rest.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -292,10 +359,10 @@ pub struct FlipperMainDirectMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,
   pub eos_switch: &'static str,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_power: Power,
-  pub max_eos_time: Duration,
-  pub next_flip_refresh: Duration,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_power: HardwareValue<Power>,
+  pub max_eos_time: HardwareValue<Duration>,
+  pub next_flip_refresh: HardwareValue<Duration>,
 }
 
 impl Default for FlipperMainDirectMode {
@@ -304,29 +371,45 @@ impl Default for FlipperMainDirectMode {
       button_switch: "",
       invert_button_switch: None,
       eos_switch: "",
-      initial_pwm_power: Power::percent(45),
-      secondary_pwm_power: Power::FULL,
-      max_eos_time: Duration::from_millis(60),
-      next_flip_refresh: Duration::from_millis(8),
+      initial_pwm_power: HardwareValue::Fixed(Power::percent(45)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::FULL),
+      max_eos_time: HardwareValue::Fixed(Duration::from_millis(60)),
+      next_flip_refresh: HardwareValue::Fixed(Duration::from_millis(8)),
     }
   }
 }
 
 impl DriverMode for FlipperMainDirectMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
-      button_switch: switch_lookup
-        .switch_id(self.button_switch)
+      button_switch: ctx
+        .switches
+        .by_name(self.button_switch)
+        .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      eos_switch: switch_lookup
-        .switch_id(self.eos_switch)
+      eos_switch: ctx
+        .switches
+        .by_name(self.eos_switch)
+        .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid EOS switch"),
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_power: self.secondary_pwm_power,
-      max_eos_time: self.max_eos_time,
-      next_flip_refresh: self.next_flip_refresh,
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      max_eos_time: self.max_eos_time.resolve(&ctx.operator_config),
+      next_flip_refresh: self.next_flip_refresh.resolve(&ctx.operator_config),
     }
+  }
+
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_power.config_value(),
+      self.max_eos_time.config_value(),
+      self.next_flip_refresh.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }
 
@@ -335,9 +418,9 @@ impl DriverMode for FlipperMainDirectMode {
 pub struct FlipperHoldDirectMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,
-  pub driver_on_time: Duration,
-  pub initial_pwm_power: Power,
-  pub secondary_pwm_power: Power,
+  pub driver_on_time: HardwareValue<Duration>,
+  pub initial_pwm_power: HardwareValue<Power>,
+  pub secondary_pwm_power: HardwareValue<Power>,
 }
 
 impl Default for FlipperHoldDirectMode {
@@ -345,105 +428,36 @@ impl Default for FlipperHoldDirectMode {
     Self {
       button_switch: "",
       invert_button_switch: None,
-      driver_on_time: Duration::from_millis(48),
-      initial_pwm_power: Power::FULL,
-      secondary_pwm_power: Power::FULL,
+      driver_on_time: HardwareValue::Fixed(Duration::from_millis(48)),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_power: HardwareValue::Fixed(Power::FULL),
     }
   }
 }
 
 impl DriverMode for FlipperHoldDirectMode {
-  fn to_config(&self, switch_lookup: &dyn SwitchNameToId) -> DriverConfig {
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
-      button_switch: switch_lookup
-        .switch_id(self.button_switch)
+      button_switch: ctx
+        .switches
+        .by_name(self.button_switch)
+        .map(|sw| sw.id)
         .expect("Flipper hold direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      driver_on_time: self.driver_on_time,
-      initial_pwm_power: self.initial_pwm_power,
-      secondary_pwm_power: self.secondary_pwm_power,
+      driver_on_time: self.driver_on_time.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
     }
   }
-}
 
-fn get_switch_invert(
-  trigger_mode: &DriverTriggerMode,
-  switch_lookup: &dyn SwitchNameToId,
-) -> (Option<usize>, Option<bool>) {
-  match trigger_mode {
-    DriverTriggerMode::Disabled => (None, None),
-    DriverTriggerMode::Switch(s) => (switch_lookup.switch_id(s), Some(false)),
-    DriverTriggerMode::InvertedSwitch(s) => (switch_lookup.switch_id(s), Some(true)),
-    DriverTriggerMode::VirtualSwitchTrue => (None, Some(false)),
-    DriverTriggerMode::VirtualSwitchFalse => (None, Some(true)),
-  }
-}
-
-fn get_switches_inverts(
-  trigger_mode: &DriverTriggerDualMode,
-  switch_lookup: &dyn SwitchNameToId,
-) -> (Option<usize>, Option<bool>, Option<usize>, Option<bool>) {
-  match trigger_mode {
-    DriverTriggerDualMode::Disabled => (None, None, None, None),
-    DriverTriggerDualMode::FlipSwitchTrue_FlopSwitchTrue {
-      flip_switch,
-      flop_switch,
-    } => (
-      switch_lookup.switch_id(flip_switch),
-      Some(false),
-      switch_lookup.switch_id(flop_switch),
-      Some(false),
-    ),
-    DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchTrue {
-      flip_switch,
-      flop_switch,
-    } => (
-      switch_lookup.switch_id(flip_switch),
-      Some(true),
-      switch_lookup.switch_id(flop_switch),
-      Some(false),
-    ),
-    DriverTriggerDualMode::FlipSwitchTrue_FlopSwitchFalse {
-      flip_switch,
-      flop_switch,
-    } => (
-      switch_lookup.switch_id(flip_switch),
-      Some(false),
-      switch_lookup.switch_id(flop_switch),
-      Some(true),
-    ),
-    DriverTriggerDualMode::FlipSwitchFalse_FlopSwitchFalse {
-      flip_switch,
-      flop_switch,
-    } => (
-      switch_lookup.switch_id(flip_switch),
-      Some(true),
-      switch_lookup.switch_id(flop_switch),
-      Some(true),
-    ),
-    DriverTriggerDualMode::VirtualFlip_FlopSwitchTrue(virtual_flip) => (
-      None,
-      Some(false),
-      switch_lookup.switch_id(virtual_flip),
-      Some(false),
-    ),
-    DriverTriggerDualMode::VirtualFlip_FlopSwitchFalse(virtual_flip) => (
-      None,
-      Some(false),
-      switch_lookup.switch_id(virtual_flip),
-      Some(true),
-    ),
-    DriverTriggerDualMode::FlipSwitchTrue_VirtualFlop(virtual_flop) => (
-      switch_lookup.switch_id(virtual_flop),
-      Some(false),
-      None,
-      Some(false),
-    ),
-    DriverTriggerDualMode::FlipSwitchFalse_VirtualFlop(virtual_flop) => (
-      switch_lookup.switch_id(virtual_flop),
-      Some(true),
-      None,
-      Some(false),
-    ),
+  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+    vec![
+      self.driver_on_time.config_value(),
+      self.initial_pwm_power.config_value(),
+      self.secondary_pwm_power.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
   }
 }

@@ -1,19 +1,13 @@
 Before Show
 
-- Add ability to re-order, shuffle, take, etc. Contextual<LedIdentifications> (or should this be a mutation of ColorSequence?)
+- Add ability to re-order, shuffle, take, etc. ColorSequence?
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
 - Defining an LED grid like strip, but with rows/cols and serpentine directions
 - New frontbox-canvas crate that uses locations for 2d plane rendering via projections
-- Auto plunger plugin has operator config for coil power/kick length
+- Operator configs should have some kind of "on config value changed" event
+- Operator config changes should update HardwareValues automatically
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
-
-OperatorConfig
-
-- Needs a redo
-- Configs should probably be defined ahead of time like hardware, and maybe associated at hardware definition time?
-- Having a plugin just to add operator configs for a system is lame
-- Should OperatorConfig be a separate System instead of baked-in? (ideally)
 
 Nice to Have
 

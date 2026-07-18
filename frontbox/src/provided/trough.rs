@@ -1,23 +1,65 @@
-use crate::plugins::TroughPlugin;
-pub use crate::prelude::*;
+use uuid::Uuid;
 
+use crate::prelude::*;
+
+/// This system will monitor the specified switches to track the occupancy of the trough, and fire the eject coil when the trough is full and a new ball enters.
+///
+/// ## Events
+/// - `BallEnteredTrough` - Emitted when a ball enters the trough
+/// - `BallExitedTrough` - Emitted when a ball exits the trough
+/// - `TroughFull` - Emitted when the trough reaches full occupancy
 pub struct Trough {
-  switches_query: HardwareQuery,
-  eject_coil_query: HardwareQuery,
   switch_names: Vec<&'static str>,
   eject_coil_name: &'static str,
   expected_occupancy: usize,
 }
 
 impl Trough {
-  pub fn new(switches_query: HardwareQuery, eject_coil_query: HardwareQuery) -> Self {
+  pub fn new() -> Self {
     Self {
-      switches_query,
-      eject_coil_query,
       switch_names: Vec::new(),
-      eject_coil_name: "",
+      eject_coil_name: Box::leak(format!("trough_eject_coil_{}", Uuid::new_v4()).into_boxed_str()),
       expected_occupancy: 0,
     }
+  }
+
+  pub fn eject_coil_definition(&self) -> DriverDefinitionBuilder {
+    DriverDefinitionBuilder::new(self.eject_coil_name)
+      .mode(PulseKickMode {
+        initial_pwm_length: HardwareValue::config(
+          "Trough Plunger Touch Time",
+          "Duration by which the eject plunger is brought into contact with the ball, before full eject",
+          Duration::from_millis(7),
+          Ranges::duration(0, 100),
+        ),
+        initial_pwm_power: HardwareValue::fixed(
+          Power::percent(75),
+        ),
+        secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
+        secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
+        kick_length: HardwareValue::config(
+          "Trough Eject Time",
+          "Duration that the plunger exert full power onto the ball (kick)",
+          Duration::from_millis(75),
+          Ranges::duration(10, 300),
+        ),
+        ..Default::default()
+      })
+      .tag(tags::Trough)
+  }
+
+  pub fn switch_definition(&mut self, index: usize) -> SwitchDefinitionBuilder {
+    let name = Box::leak(format!("trough_switch_{}_{}", index, Uuid::new_v4()).into_boxed_str());
+
+    // TODO: add to switch names, in order
+    if index >= self.switch_names.len() {
+      self.switch_names.resize(index + 1, Default::default());
+    }
+    self.switch_names[index] = name;
+
+    SwitchDefinitionBuilder::new(name)
+      .debounce_open(Duration::from_millis(250))
+      .tag(tags::Trough)
   }
 
   fn on_trough_switch_closed(&mut self, switch_name: &str, ctx: &Context) {
@@ -85,44 +127,8 @@ impl Trough {
 }
 
 impl System for Trough {
-  fn on_spawn(&mut self, ctx: &Context) {
-    // memoize names for fast lookup
-    self.eject_coil_name = self.eject_coil_query.get_driver_names(ctx)[0];
-    self.switch_names = self.switches_query.get_switch_names(ctx);
+  fn on_spawn(&mut self, _ctx: &Context) {
     self.expected_occupancy = self.switch_names.len();
-
-    // configure switch debounce to be long to avoid triggering events as the ball rolls down the trough and hits multiple switches in quick succession.
-    for name in &self.switch_names {
-      // preserve configured inverted settings (if present)
-      let inverted = ctx
-        .switches
-        .config(name)
-        .map(|c| c.inverted)
-        .unwrap_or(false);
-
-      ctx.configure_switch(name, inverted, Some(Duration::from_millis(250)), None);
-    }
-
-    // configure eject driver
-    let operator_config = ctx.systems.expect::<OperatorConfig>();
-    let trough_kick_len = operator_config
-      .get_integer(TroughPlugin::config().trough_kick)
-      .unwrap_or(115);
-    let trough_init_power = operator_config
-      .get_integer(TroughPlugin::config().trough_power)
-      .unwrap_or(70);
-
-    ctx.configure_driver(
-      self.eject_coil_name,
-      PulseKickMode {
-        initial_pwm_length: Duration::from_millis(7),
-        initial_pwm_power: Power::FULL,
-        secondary_pwm_power: Power::percent(trough_init_power as u8),
-        secondary_pwm_length: Duration::from_millis(trough_kick_len as u64),
-        kick_length: Duration::from_millis(10),
-        ..Default::default()
-      },
-    );
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {

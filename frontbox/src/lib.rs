@@ -4,8 +4,8 @@ mod hardware;
 mod led;
 mod machine;
 mod macros;
-mod operator_config;
-pub mod plugins;
+pub mod operator_config;
+pub mod provided;
 mod store;
 pub mod systems;
 
@@ -22,7 +22,6 @@ pub mod prelude {
   pub use crate::machine::machine_commands::*;
   pub use crate::machine::machine_ext::*;
   pub use crate::operator_config::*;
-  pub use crate::plugins::Plugin;
   pub use crate::store::*;
   pub use crate::systems;
   pub use crate::systems::*;

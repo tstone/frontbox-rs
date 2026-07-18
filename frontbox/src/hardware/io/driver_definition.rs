@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::operator_config::HardwareValue;
 use crate::prelude::*;
 use crate::{DriverMode, Tag};
 
@@ -120,8 +121,8 @@ impl LampDefinitionBuilder {
       location: self.location,
       mode: Some(Box::new(PulseHoldMode {
         trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-        initial_pwm_power: Power::ZERO,
-        secondary_pwm_power: Power::FULL,
+        initial_pwm_power: HardwareValue::Fixed(Power::ZERO),
+        secondary_pwm_power: HardwareValue::Fixed(Power::FULL),
         ..Default::default()
       })),
     }

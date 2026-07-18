@@ -1,126 +1,36 @@
-use serde::Serialize;
+use std::fmt::Debug;
 
-#[derive(Debug, Clone, Serialize)]
-pub enum ConfigValue {
-  String(String),
-  Integer(i32),
-  Boolean(bool),
+use crate::operator_config::{Domain, OperatorConfig};
+use crate::prelude::Context;
+
+#[derive(Debug, Clone)]
+pub struct ConfigValue<T, D: Domain<T>> {
+  pub name: &'static str,
+  pub desc: &'static str,
+  pub default: T,
+  pub domain: D,
 }
 
-impl Into<ConfigValue> for String {
-  fn into(self) -> ConfigValue {
-    ConfigValue::String(self)
+impl<T, D: Domain<T>> ConfigValue<T, D>
+where
+  T: Clone + Send + Sync + 'static,
+{
+  pub fn get(&self, ctx: &Context) -> T {
+    ctx.operator_config.get(self)
   }
-}
 
-impl Into<ConfigValue> for &str {
-  fn into(self) -> ConfigValue {
-    ConfigValue::String(self.to_string())
-  }
-}
-
-impl Into<ConfigValue> for u8 {
-  fn into(self) -> ConfigValue {
-    ConfigValue::Integer(self as i32)
-  }
-}
-
-impl Into<ConfigValue> for u16 {
-  fn into(self) -> ConfigValue {
-    ConfigValue::Integer(self as i32)
+  pub fn resolve(&self, op: &OperatorConfig) -> T {
+    op.get(self)
   }
 }
 
-impl Into<ConfigValue> for i32 {
-  fn into(self) -> ConfigValue {
-    ConfigValue::Integer(self)
-  }
-}
-
-impl Into<ConfigValue> for bool {
-  fn into(self) -> ConfigValue {
-    ConfigValue::Boolean(self)
-  }
-}
-
-impl ConfigValue {
-  pub fn as_string(&self) -> Option<String> {
-    if let ConfigValue::String(s) = self {
-      Some(s.clone())
-    } else {
-      None
-    }
-  }
-
-  pub fn as_str(&self) -> Option<&str> {
-    if let ConfigValue::String(s) = self {
-      Some(s)
-    } else {
-      None
-    }
-  }
-
-  pub fn as_integer(&self) -> Option<i32> {
-    if let ConfigValue::Integer(i) = self {
-      Some(*i)
-    } else {
-      None
-    }
-  }
-
-  pub fn as_usize(&self) -> Option<usize> {
-    if let ConfigValue::Integer(i) = self {
-      if *i >= 0 { Some(*i as usize) } else { None }
-    } else {
-      None
-    }
-  }
-
-  pub fn as_u64(&self) -> Option<u64> {
-    if let ConfigValue::Integer(i) = self {
-      if *i >= 0 { Some(*i as u64) } else { None }
-    } else {
-      None
-    }
-  }
-
-  pub fn as_u32(&self) -> Option<u32> {
-    if let ConfigValue::Integer(i) = self {
-      if *i >= 0 { Some(*i as u32) } else { None }
-    } else {
-      None
-    }
-  }
-
-  pub fn as_u16(&self) -> Option<u16> {
-    if let ConfigValue::Integer(i) = self {
-      if *i >= 0 && *i <= u16::MAX as i32 {
-        Some(*i as u16)
-      } else {
-        None
-      }
-    } else {
-      None
-    }
-  }
-
-  pub fn as_u8(&self) -> Option<u8> {
-    if let ConfigValue::Integer(i) = self {
-      if *i >= 0 && *i <= u8::MAX as i32 {
-        Some(*i as u8)
-      } else {
-        None
-      }
-    } else {
-      None
-    }
-  }
-
-  pub fn as_boolean(&self) -> Option<bool> {
-    if let ConfigValue::Boolean(b) = self {
-      Some(*b)
-    } else {
-      None
+impl<T, D: Domain<T>> ConfigValue<T, D> {
+  pub fn new(name: &'static str, desc: &'static str, default: T, domain: D) -> Self {
+    ConfigValue {
+      name,
+      desc,
+      default,
+      domain,
     }
   }
 }

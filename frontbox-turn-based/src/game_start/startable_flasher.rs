@@ -3,9 +3,11 @@ use frontbox::tags::StartButton;
 
 use crate::GameManager;
 
-/// A system to flash elements like the start button and/or action button when the game is startable or player addable
+/// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
   start_button_driver: Option<HardwareQuery>,
+  // TODO: action button should flash too
+  // TODO: this should be more generic "startable state" that easily allows a given lamp driver/LED state when something is true
   flash_duration: Duration,
 }
 
@@ -52,17 +54,17 @@ impl System for StartableFlasher {
   }
 
   fn on_spawn(&mut self, ctx: &Context) {
-    for driver in self.start_button_driver.get_drivers(ctx) {
-      ctx.configure_driver(
-        driver.name,
-        PulseHoldMode {
-          trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-          initial_pwm_power: Power::ZERO,
-          secondary_pwm_power: Power::FULL,
-          ..Default::default()
-        },
-      );
-    }
+    // for driver in self.start_button_driver.get_drivers(ctx) {
+    //   ctx.configure_driver(
+    //     driver.name,
+    //     PulseHoldMode {
+    //       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+    //       initial_pwm_power: Power::ZERO,
+    //       secondary_pwm_power: Power::FULL,
+    //       ..Default::default()
+    //     },
+    //   );
+    // }
     ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
   }
 

@@ -11,9 +11,9 @@ pub struct IoBoardBuilder {
 }
 
 impl IoBoardBuilder {
-  pub fn wire_switch(mut self, pin: u16, switch: &SwitchDefinition) -> Self {
+  pub fn wire_switch(mut self, pin: u16, switch: &'static SwitchDefinition) -> Self {
     let wired = IoWired::new(
-      switch.clone(),
+      switch,
       IoAddress {
         board_idx: 0, // Set later
         pin,
@@ -23,8 +23,8 @@ impl IoBoardBuilder {
     self
   }
 
-  pub fn wire_driver(mut self, pin: u16, driver: &DriverDefinition) -> Self {
-    let wired = IoWired::new(driver.clone(), IoAddress::new(0, pin));
+  pub fn wire_driver(mut self, pin: u16, driver: &'static DriverDefinition) -> Self {
+    let wired = IoWired::new(driver, IoAddress::new(0, pin));
     self.drivers.push(wired);
     self
   }

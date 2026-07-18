@@ -1,7 +1,8 @@
 use std::fmt::{Display, UpperHex};
+use std::ops::{Add, Deref, Rem, Sub};
 
 /// 8-bit power for original coil modes
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Power {
   pub power: u8,
@@ -17,6 +18,40 @@ impl Power {
   pub const FULL: Power = Power { power: 255 };
   pub const OFF: Power = Power { power: 0 };
   pub const ZERO: Power = Power { power: 0 };
+}
+
+impl Deref for Power {
+  type Target = u8;
+  fn deref(&self) -> &Self::Target {
+    &self.power
+  }
+}
+
+impl Add for Power {
+  type Output = Self;
+  fn add(self, rhs: Self) -> Self::Output {
+    Power {
+      power: self.power + rhs.power,
+    }
+  }
+}
+
+impl Sub for Power {
+  type Output = Self;
+  fn sub(self, rhs: Self) -> Self::Output {
+    Power {
+      power: self.power - rhs.power,
+    }
+  }
+}
+
+impl Rem for Power {
+  type Output = Self;
+  fn rem(self, rhs: Self) -> Self::Output {
+    Power {
+      power: self.power % rhs.power,
+    }
+  }
 }
 
 impl Display for Power {

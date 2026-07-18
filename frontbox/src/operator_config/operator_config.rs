@@ -1,79 +1,67 @@
+use std::any::Any;
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
 
-use crate::prelude::*;
+use crate::operator_config::{ConfigValue, Domain, LoadableConfigValue};
 
-pub type OperatorConfigStore = HashMap<&'static str, ConfigItem>;
-
-#[derive(Debug)]
 pub struct OperatorConfig {
-  internal: OperatorConfigStore,
+  current_values: HashMap<&'static str, Box<dyn Any + Send + Sync>>,
+  pending_disk: HashMap<String, toml::Value>, // raw until a matching ConfigValue registers
 }
 
 impl OperatorConfig {
-  pub fn new(store: OperatorConfigStore) -> Self {
-    Self { internal: store }
-  }
-
-  pub fn set_value(&mut self, key: &'static str, value: impl Into<ConfigValue>, ctx: &mut Context) {
-    let value = value.into();
-    if let Some(item) = self.internal.get_mut(key) {
-      let old_value = item.value();
-      let new_value = value.clone();
-      match (item, value) {
-        (ConfigItem::String { current, .. }, ConfigValue::String(v)) => *current = v,
-        (ConfigItem::Integer { value: current, .. }, ConfigValue::Integer(v)) => *current = v,
-        (ConfigItem::Boolean { current, .. }, ConfigValue::Boolean(v)) => *current = v,
-        _ => {}
-      }
-      ctx.emit(ConfigChanged::new(key, old_value, new_value));
-    }
-  }
-
-  fn get(&self, key: &'static str) -> Option<&ConfigItem> {
-    self.internal.get(key)
-  }
-
-  #[allow(unused)]
-  fn get_mut(&mut self, key: &'static str) -> Option<&mut ConfigItem> {
-    self.internal.get_mut(key)
-  }
-
-  pub fn get_string(&self, key: &'static str) -> Option<String> {
-    self.get(key).and_then(|item| match item {
-      ConfigItem::String { current, .. } => Some(current.clone()),
-      _ => None,
-    })
-  }
-
-  pub fn get_integer(&self, key: &'static str) -> Option<i32> {
-    self.get(key).and_then(|item| match item {
-      ConfigItem::Integer { value, .. } => Some(*value),
-      _ => None,
-    })
-  }
-
-  pub fn get_boolean(&self, key: &'static str) -> Option<bool> {
-    self.get(key).and_then(|item| match item {
-      ConfigItem::Boolean { current, .. } => Some(*current),
-      _ => None,
-    })
-  }
-}
-
-impl System for OperatorConfig {}
-
-pub struct ConfigChanged {
-  pub key: &'static str,
-  pub old_value: ConfigValue,
-  pub new_value: ConfigValue,
-}
-
-impl ConfigChanged {
-  pub fn new(key: &'static str, old_value: ConfigValue, new_value: ConfigValue) -> Self {
+  pub fn new() -> Self {
     Self {
-      key,
-      old_value,
-      new_value,
+      current_values: HashMap::new(),
+      pending_disk: HashMap::new(),
     }
+  }
+
+  /// Reads values from disk into a temporary buffer, but waits until a config value is registered before assignment
+  pub fn load_from_disk(path: &Path) -> Self {
+    let pending_disk = fs::read_to_string(path)
+      .ok()
+      .and_then(|s| toml::from_str(&s).ok())
+      .unwrap_or_default();
+    Self {
+      current_values: HashMap::new(),
+      pending_disk,
+    }
+  }
+
+  /// Activate a config value and automatically pre-populate it with either the previously saved value or the default
+  pub fn register(&mut self, cv: &'static dyn LoadableConfigValue) {
+    if self.current_values.contains_key(cv.key()) {
+      return; // already registered — safe if the same ConfigValue is reachable from two defs
+    }
+    match self.pending_disk.get(cv.key()) {
+      Some(raw) => cv.load_from_toml(raw, &mut self.current_values),
+      None => cv.insert_default(&mut self.current_values),
+    }
+  }
+}
+
+impl OperatorConfig {
+  pub fn get<T, D>(&self, config: &ConfigValue<T, D>) -> T
+  where
+    T: Clone + Send + Sync + 'static,
+    D: Domain<T>,
+  {
+    match self.current_values.get(config.name) {
+      Some(v) => v
+        .downcast_ref::<T>()
+        .expect("config type mismatch for key")
+        .clone(),
+      None => config.default.clone(),
+    }
+  }
+
+  pub fn set<T, D>(&mut self, config: &ConfigValue<T, D>, value: T)
+  where
+    T: Clone + Send + Sync + 'static,
+    D: Domain<T>,
+  {
+    self.current_values.insert(config.name, Box::new(value));
   }
 }
