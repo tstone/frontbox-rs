@@ -4,8 +4,8 @@ use dyn_clone::DynClone;
 pub trait Accumulator<A>: DynClone + Send + Sync {
   /// Returns the remainder, if any
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A>;
-  /// Set the accumulator at a specific value
-  fn set(&mut self, current: A);
+  /// Set the accumulator at a specific value (e.g. phase shifting)
+  fn force(&mut self, current: A);
   fn reset(&mut self);
   /// Returns true if the accumulator has completed all of its cycles
   fn is_complete(&self) -> bool;

@@ -273,13 +273,13 @@ Using the LedSystems works by way of a _declaration_. A declaration doesn't forc
 ```rust
 // declare LEDs by name...
 ctx.declare_leds(
-  leds::EXAMPLE.q().at_z(3),
+  &leds::EXAMPLE.q().at_z(3),
   Rgba::yellow()
 );
 
 // ...or by group
 ctx.declare_leds(
-  vec![leds::EX1.q(), leds::EX2.q(), leds::EX3.q()],
+  vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
   Colors::gradient(vec![Rgba::red(), Rgba::yellow()])
 );
 ```
@@ -301,12 +301,12 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 ```rust
 // higher layer declares 50% transparent red
 ctx.declare_leds(
-  leds::EXAMPLE.q().at_z(1),
+  &leds::EXAMPLE.q().at_z(1),
   Rgba::red().with_alpha_f32(0.5)
 );
 
 // over top of white
-ctx.declare_leds(leds::EXAMPLE.q(), Rgba::white());
+ctx.declare_leds(&leds::EXAMPLE.q(), Rgba::white());
 
 // final color renders as pink [255, 127, 127, 255]
 ```
@@ -385,11 +385,23 @@ fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
   }
 }
 
+
 // elsewhere the animation value can be used to set the LED color (see below)
 self.anim.sample()
 ```
 
-#### LED Animations
+#### Modulators
+
+A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedEffects).
+
+```rust
+let modulator = Modulator::new(
+  self.anim,
+  |value| {  }
+)
+```
+
+#### LED Animations (Manual)
 
 LEDs colors can of course be combined with animations. This works by accumulating the animation _and_ re-declaring the LED on the same tick.
 
@@ -405,7 +417,7 @@ impl System for AnimExample {
     // re-declaring the same LED will overwrite the previous declaration
     ctx.declare_leds(
       // declare the current animated value as the color of that LED
-      leds::EXAMPLE.q(), self.anim.sample()
+      &leds::EXAMPLE.q(), self.anim.sample()
     )
   }
 }
@@ -424,12 +436,16 @@ impl System for AnimExample {
     self.anim.accumulate(delta);
 
     ctx.declare_leds(
-      vec![leds::LEFT_LANE_ARROW.q(), leds::LEFT_LANE1.q(), leds::LEFT_LANE2.q()].at_z(2),
+      vec![&leds::LEFT_LANE_ARROW.q(), &leds::LEFT_LANE1.q(), &leds::LEFT_LANE2.q()].at_z(2),
       Colors::pattern(self.anim.sample(), vec![Rgba::red()])
     )
   }
 }
 ```
+
+#### LED Animations (Effects)
+
+A simpler want to manage LED animations is through modulations. A modulation combines an animation with a lens-style setter.
 
 ### Sounds
 

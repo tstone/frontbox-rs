@@ -44,14 +44,14 @@ struct System1;
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &Context) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));
-    ctx.declare_leds(leds::DEMO1.q(), Rgba::red());
+    ctx.declare_leds(&leds::DEMO1.q(), Rgba::red());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if event.is::<On>() {
-      ctx.set_led_conflict_resolution(leds::DEMO1.q(), LedConflictResolution::Alternate);
+      ctx.set_led_conflict_resolution(&leds::DEMO1.q(), LedConflictResolution::Alternate);
     } else if event.is::<Off>() {
-      ctx.set_led_conflict_resolution(leds::DEMO1.q(), LedConflictResolution::Mix);
+      ctx.set_led_conflict_resolution(&leds::DEMO1.q(), LedConflictResolution::Mix);
     }
   }
 }
@@ -60,6 +60,6 @@ struct System2;
 
 impl System for System2 {
   fn on_spawn(&mut self, ctx: &Context) {
-    ctx.declare_leds(leds::DEMO1.q(), Rgba::blue());
+    ctx.declare_leds(&leds::DEMO1.q(), Rgba::blue());
   }
 }

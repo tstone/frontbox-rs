@@ -1,98 +1,41 @@
+use dyn_clone::DynClone;
 use image::Rgba;
 
-use crate::led::color_sequences::gamma::*;
 use crate::led::color_sequences::gradient::*;
-use crate::led::color_sequences::hue_shift::*;
-use crate::led::color_sequences::invert::*;
 use crate::led::color_sequences::pattern::*;
-use crate::led::color_sequences::reverse::*;
-use crate::led::color_sequences::rotate::*;
-use crate::led::color_sequences::saturation::*;
 use crate::led::color_sequences::tile::*;
 
+dyn_clone::clone_trait_object!(ColorSequence);
+
 /// A description of a sequence of colors, given a of colors to generate
-pub trait ColorSequence {
-  fn render(&self, count: usize) -> Vec<Rgba<u8>>;
+pub trait ColorSequence: DynClone + Send + Sync {
+  fn base_render(&self, count: usize) -> Vec<Rgba<u8>>;
+  fn rotation(&self) -> f32;
+  fn reversed(&self) -> bool;
 
-  fn reverse(self) -> Reverse
-  where
-    Self: Sized + 'static,
-  {
-    Reverse {
-      other: Box::new(self),
+  fn render(&self, count: usize) -> Vec<Rgba<u8>> {
+    let mut colors = self.base_render(count);
+    util::rotate(self.rotation(), count, &mut colors);
+
+    if self.reversed() {
+      colors.reverse();
     }
+
+    colors
+  }
+}
+
+impl ColorSequence for Box<dyn ColorSequence> {
+  fn base_render(&self, count: usize) -> Vec<Rgba<u8>> {
+    (**self).base_render(count)
   }
 
-  fn pattern_at(self, index: u16, colors: Vec<Rgba<u8>>) -> Pattern
-  where
-    Self: Sized + 'static,
-  {
-    Pattern {
-      seq: colors,
-      index,
-      other: Some(Box::new(self)),
-    }
+  fn reversed(&self) -> bool {
+    (**self).reversed()
   }
 
-  fn rotated_left(self, degrees: f32) -> Rotate
-  where
-    Self: Sized + 'static,
-  {
-    Rotate {
-      direction: Rotation::CounterClockwise,
-      degrees,
-      other: Box::new(self),
-    }
-  }
-
-  fn rotated_right(self, degrees: f32) -> Rotate
-  where
-    Self: Sized + 'static,
-  {
-    Rotate {
-      direction: Rotation::Clockwise,
-      degrees,
-      other: Box::new(self),
-    }
-  }
-
-  fn invert(self) -> Invert
-  where
-    Self: Sized + 'static,
-  {
-    Invert {
-      other: Box::new(self),
-    }
-  }
-
-  fn hue_shift(self, degrees: f32) -> HueShift
-  where
-    Self: Sized + 'static,
-  {
-    HueShift {
-      degrees,
-      other: Box::new(self),
-    }
-  }
-
-  fn brightness(self, value: f32) -> Gamma
-  where
-    Self: Sized + 'static,
-  {
-    Gamma {
-      value,
-      other: Box::new(self),
-    }
-  }
-
-  fn saturation(self, factor: f32) -> Saturation
-  where
-    Self: Sized + 'static,
-  {
-    Saturation {
-      factor,
-      other: Box::new(self),
-    }
+  fn rotation(&self) -> f32 {
+    (**self).rotation()
   }
 }
 
@@ -111,14 +54,32 @@ impl Colors {
 
   /// A sequence of colors, applied once
   pub fn pattern(colors: Vec<Rgba<u8>>) -> Pattern {
-    Pattern {
-      seq: colors,
-      index: 0,
-      other: None,
-    }
+    Pattern::new(colors)
+  }
+
+  /// A sequence of colors, applied once
+  pub fn pattern_at(colors: Vec<Rgba<u8>>, index: u16) -> Pattern {
+    Pattern::at(index, colors)
   }
 
   pub fn tile(colors: Vec<Rgba<u8>>) -> Tile {
-    Tile { seq: colors }
+    Tile::new(colors)
+  }
+}
+
+pub(crate) mod util {
+  use image::Rgba;
+
+  pub fn rotate(degrees: f32, count: usize, colors: &mut Vec<Rgba<u8>>) {
+    if degrees != 0.0 {
+      let steps = (degrees.abs() / 360.0 * count as f32).round() as usize % count;
+
+      // negative rotation = counterclockwise
+      if degrees < 0.0 {
+        colors.rotate_left(steps);
+      } else {
+        colors.rotate_right(steps);
+      }
+    }
   }
 }

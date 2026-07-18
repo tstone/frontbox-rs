@@ -34,6 +34,16 @@ impl Contextual<LedIdentifications> for Vec<HardwareQuery> {
   }
 }
 
+impl Contextual<LedIdentifications> for Vec<&HardwareQuery> {
+  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+    let addresses = self
+      .iter()
+      .flat_map(|q| q.get_leds_addresses(ctx))
+      .collect();
+    LedIdentifications::new(addresses, 0)
+  }
+}
+
 impl Contextual<LedIdentifications> for LedIdentifications {
   fn resolve(&self, _ctx: &Context) -> LedIdentifications {
     self.clone()

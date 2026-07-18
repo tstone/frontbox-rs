@@ -59,12 +59,12 @@ where
     AccumulationResult::default()
   }
 
-  fn set(&mut self, current: A) {
+  fn force(&mut self, current: A) {
     // replay the sequence up to the current value
     self.reset();
     let mut remainder = current;
     for anim in &mut self.sequence {
-      anim.set(current);
+      anim.force(current);
       remainder = anim.accumulate(remainder).remainder;
     }
   }

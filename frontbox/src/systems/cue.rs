@@ -196,7 +196,7 @@ impl Accumulator<Duration> for CueAccumulator {
     result
   }
 
-  fn set(&mut self, elapsed: Duration) {
+  fn force(&mut self, elapsed: Duration) {
     self.elapsed = elapsed;
   }
 
