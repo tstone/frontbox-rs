@@ -3,11 +3,15 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use tokio::sync::mpsc;
+
 use crate::operator_config::{ConfigValue, Domain, LoadableConfigValue};
+use crate::prelude::app_message::AppMessage;
 
 pub struct OperatorConfig {
   current_values: HashMap<&'static str, Box<dyn Any + Send + Sync>>,
   pending_disk: HashMap<String, toml::Value>, // raw until a matching ConfigValue registers
+  pub(crate) app_sender: Option<mpsc::UnboundedSender<AppMessage>>,
 }
 
 impl OperatorConfig {
@@ -15,6 +19,7 @@ impl OperatorConfig {
     Self {
       current_values: HashMap::new(),
       pending_disk: HashMap::new(),
+      app_sender: None,
     }
   }
 
@@ -27,6 +32,7 @@ impl OperatorConfig {
     Self {
       current_values: HashMap::new(),
       pending_disk,
+      app_sender: None,
     }
   }
 
@@ -40,9 +46,7 @@ impl OperatorConfig {
       None => cv.insert_default(&mut self.current_values),
     }
   }
-}
 
-impl OperatorConfig {
   pub fn get<T, D>(&self, config: &ConfigValue<T, D>) -> T
   where
     T: Clone + Send + Sync + 'static,
@@ -63,5 +67,13 @@ impl OperatorConfig {
     D: Domain<T>,
   {
     self.current_values.insert(config.name, Box::new(value));
+
+    if let Some(app_sender) = &self.app_sender {
+      let _ = app_sender.send(AppMessage::EmitEvent(Box::new(OperatorConfigChanged(
+        config.name,
+      ))));
+    }
   }
 }
+
+pub struct OperatorConfigChanged(pub &'static str);

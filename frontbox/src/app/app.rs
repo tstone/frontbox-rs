@@ -236,7 +236,9 @@ impl App {
   }
 
   pub async fn run(mut self) {
-    log::debug!("Finalizing Store with operator config and app config");
+    let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
+    self.operator_config.app_sender = Some(app_sender.clone());
+
     let context_base = ContextBase {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
@@ -249,9 +251,7 @@ impl App {
 
     Hardware::configure_drivers(&mut self.io_port, &context_base).await;
 
-    let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
-
-    let mut machine = MachineImpl::new(
+    let mut machine: MachineImpl = MachineImpl::new(
       self.io_port,
       self.exp_port,
       app_sender.clone(),

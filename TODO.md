@@ -4,8 +4,7 @@ Before Show
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
 - Defining an LED grid like strip, but with rows/cols and serpentine directions
 - New frontbox-canvas crate that uses locations for 2d plane rendering via projections
-- Operator configs should have some kind of "on config value changed" event
-- Operator config changes should update HardwareValues automatically
+- Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
 
