@@ -102,11 +102,13 @@ impl MachineImpl {
         .ok();
 
       if matches!(state, SwitchState::Closed) {
+        log::debug!("🎚️ Switch {} closed", switch.name);
         self
           .app_sender
           .send(AppMessage::EmitEvent(Box::new(SwitchClosed::new(switch))))
           .ok();
       } else {
+        log::debug!("🎚️ Switch {} opened", switch.name);
         self
           .app_sender
           .send(AppMessage::EmitEvent(Box::new(SwitchOpened::new(switch))))

@@ -1,40 +1,42 @@
 use frontbox::prelude::*;
-use frontbox::tags::StartButton;
+use frontbox::tags::{Cabinet, StartButton};
 
 use crate::GameManager;
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct StartableFlasher {
-  start_button_driver: Option<HardwareQuery>,
+  lamp_driver_name: &'static str,
   // TODO: action button should flash too
   // TODO: this should be more generic "startable state" that easily allows a given lamp driver/LED state when something is true
   flash_duration: Duration,
 }
 
 impl StartableFlasher {
-  pub fn new() -> Self {
+  pub fn new(lamp_driver_name: &'static str) -> Self {
     Self {
-      start_button_driver: Some(Q::tag::<StartButton>()),
+      lamp_driver_name,
       flash_duration: Duration::from_millis(185),
     }
   }
 
-  pub fn start_button_driver(mut self, driver: HardwareQuery) -> Self {
-    self.start_button_driver = Some(driver);
-    self
+  pub fn lamp_driver(name: &'static str) -> DriverDefinitionBuilder {
+    DriverDefinitionBuilder::new(name)
+      .mode(PulseHoldMode {
+        trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+        initial_pwm_power: HardwareValue::fixed(Power::ZERO),
+        secondary_pwm_power: HardwareValue::fixed(Power::FULL),
+        ..Default::default()
+      })
+      .tag(Cabinet)
+      .tag(StartButton)
   }
 
   fn start_btn_on(&self, ctx: &Context) {
-    for driver in self.start_button_driver.get_drivers(ctx) {
-      log::info!("Driver on {:?}", driver);
-      ctx.activate_driver(driver.name, ActivationMode::VirtualSwitchOn);
-    }
+    ctx.activate_driver(self.lamp_driver_name, ActivationMode::VirtualSwitchOn);
   }
 
   fn start_btn_off(&self, ctx: &Context) {
-    for driver in self.start_button_driver.get_drivers(ctx) {
-      ctx.deactivate_driver(driver.name, DeactivationMode::VirtualSwitchOff);
-    }
+    ctx.deactivate_driver(self.lamp_driver_name, DeactivationMode::VirtualSwitchOff);
   }
 }
 
