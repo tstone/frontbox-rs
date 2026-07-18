@@ -1,6 +1,7 @@
 use crate::animation::*;
 use crate::prelude::*;
 
+#[derive(Clone)]
 pub struct LedEffect<S: ColorSequence + Clone + 'static> {
   query: HardwareQuery,
   colors: S,

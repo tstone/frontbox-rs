@@ -1,6 +1,7 @@
 mod alternate_resolver;
 mod color_sequence;
 mod color_sequences;
+pub mod effect_systems;
 mod led_declarations;
 mod led_effect;
 mod led_identifications;
