@@ -51,7 +51,7 @@ pub struct SlingShot;
 
 // drivers
 #[derive(Clone, Debug)]
-pub struct TroughCoil;
+pub struct Trough;
 #[derive(Clone, Debug)]
 pub struct AutoPlungerCoil;
 #[derive(Clone, Debug)]

@@ -4,17 +4,35 @@ use frontbox::tags::Playfield;
 use std::io::Write;
 use std::time::Duration;
 
+use crate::drivers::*;
+
 pub mod drivers {
   use super::*;
 
   hardware_defs! {
     pub BANK_COIL: DriverDefinition = DriverDefinition::new("drop_coil")
-    .mode(PulseMode {
-      trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-      initial_pwm_length: Duration::from_millis(250),
-      initial_pwm_power: Power::FULL,
-      ..Default::default()
-    });
+      .mode(PulseMode {
+        trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
+        initial_pwm_length: HardwareValue::fixed(Duration::from_millis(250)),
+        initial_pwm_power: HardwareValue::fixed(Power::FULL),
+        ..Default::default()
+      });
+
+    pub TARGET_1: SwitchDefinition = SwitchDefinition::new("drop_target1")
+      .tag(Playfield)
+      .inverted()
+      .debounce_open(Duration::from_millis(10));
+
+    pub TARGET_2: SwitchDefinition = SwitchDefinition::new("drop_target2")
+      .tag(Playfield)
+      .inverted()
+      .debounce_open(Duration::from_millis(10));
+
+    pub TARGET_3: SwitchDefinition = SwitchDefinition::new("drop_target3")
+      .tag(Playfield)
+      .inverted()
+      .debounce_open(Duration::from_millis(10));
+
   }
 }
 
@@ -24,44 +42,29 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let target1 = SwitchDefinition::new("drop_target1")
-    .tag(Playfield)
-    .inverted()
-    .debounce_open(Duration::from_millis(10))
-    .build();
-
-  let target2 = SwitchDefinition::new("drop_target2")
-    .tag(Playfield)
-    .inverted()
-    .debounce_open(Duration::from_millis(10))
-    .build();
-
-  let target3 = SwitchDefinition::new("drop_target3")
-    .tag(Playfield)
-    .inverted()
-    .debounce_open(Duration::from_millis(10))
-    .build();
-
   let io_network = IoNetwork::new(vec![
     IoBoards::io_3208(),
     IoBoards::io_1616()
-      .wire_switch(5, &target1)
-      .wire_switch(6, &target2)
-      .wire_switch(7, &target3)
+      .wire_switch(5, &TARGET_1)
+      .wire_switch(6, &TARGET_2)
+      .wire_switch(7, &TARGET_3)
       .wire_driver(3, &drivers::BANK_COIL),
   ]);
 
-  App::boot("/dev/ttyACM0", "/dev/ttyACM1", io_network, vec![])
-    .await
-    .configure(|app| {
-      app.system(DropTargetDownUp::new([
-        target1.name,
-        target2.name,
-        target3.name,
-      ]));
-    })
-    .run()
-    .await;
+  App::boot(BootConfig {
+    io_network,
+    ..Default::default()
+  })
+  .await
+  .configure(|app| {
+    app.system(DropTargetDownUp::new([
+      TARGET_1.name,
+      TARGET_2.name,
+      TARGET_3.name,
+    ]));
+  })
+  .run()
+  .await;
 }
 
 /// Example game mode where all three drop targets must be down then the targets are reset

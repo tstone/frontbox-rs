@@ -42,16 +42,16 @@ impl IoAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct IoWired<D: HardwareDefinition + Clone> {
-  pub definition: D,
+pub struct IoWired<D: HardwareDefinition + Clone + 'static> {
+  pub definition: &'static D,
   pub assignment: IoAddress,
 }
 
 impl<T> IoWired<T>
 where
-  T: HardwareDefinition + Clone,
+  T: HardwareDefinition + Clone + 'static,
 {
-  pub fn new(definition: T, assignment: IoAddress) -> Self {
+  pub fn new(definition: &'static T, assignment: IoAddress) -> Self {
     IoWired {
       definition,
       assignment,
@@ -59,8 +59,8 @@ where
   }
 }
 
-pub struct IoAddressed<T: HardwareDefinition> {
-  pub definition: T,
+pub struct IoAddressed<T: HardwareDefinition + 'static> {
+  pub definition: &'static T,
   pub assignment: IoAddress,
   pub id: usize,
 }

@@ -34,8 +34,8 @@ impl SwitchLookup {
       by_id.insert(addressed.id, switch.clone());
       by_name.insert(addressed.definition.name, switch);
 
-      if let Some(config) = addressed.definition.config {
-        configs.insert(addressed.id, config);
+      if let Some(config) = &addressed.definition.config {
+        configs.insert(addressed.id, config.clone());
       }
 
       // Actual state is populated below from initial report
@@ -62,14 +62,14 @@ impl SwitchLookup {
     self.is_closed.get(&switch_id).copied()
   }
 
-  pub fn is_closed(&self, switch_name: &'static str) -> Option<bool> {
+  pub fn is_closed(&self, switch_name: &str) -> Option<bool> {
     self
       .by_name
       .get(switch_name)
       .and_then(|switch| self.is_closed_by_id(switch.id))
   }
 
-  pub fn is_open(&self, switch_name: &'static str) -> Option<bool> {
+  pub fn is_open(&self, switch_name: &str) -> Option<bool> {
     self
       .by_name
       .get(switch_name)
@@ -84,11 +84,11 @@ impl SwitchLookup {
     self.by_id.get_mut(switch_id)
   }
 
-  pub fn by_name(&self, switch_name: &'static str) -> Option<&Switch> {
+  pub fn by_name(&self, switch_name: &str) -> Option<&Switch> {
     self.by_name.get(switch_name)
   }
 
-  pub fn by_name_mut(&mut self, switch_name: &'static str) -> Option<&mut Switch> {
+  pub fn by_name_mut(&mut self, switch_name: &str) -> Option<&mut Switch> {
     self.by_name.get_mut(switch_name)
   }
 
@@ -155,12 +155,6 @@ impl SwitchLookup {
   }
 }
 
-impl SwitchNameToId for SwitchLookup {
-  fn switch_id(&self, name: &str) -> Option<usize> {
-    self.by_name.get(name).map(|switch| switch.id)
-  }
-}
-
 impl Deref for SwitchLookup {
   type Target = HashMap<&'static str, Switch>;
   fn deref(&self) -> &Self::Target {
@@ -201,20 +195,24 @@ impl Switch {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::LazyLock;
+
   use crate::tags::{FlipperButton, Playfield};
 
   use super::*;
 
   #[test]
   fn tag_lookup() {
+    static DEF: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition {
+      name: "switch1",
+      tags: vec![Box::new(Playfield)],
+      location: None,
+      config: None,
+    });
+
     let lookup = SwitchLookup::new(
       vec![IoAddressed {
-        definition: SwitchDefinition {
-          name: "switch1",
-          tags: vec![Box::new(Playfield)],
-          location: None,
-          config: None,
-        },
+        definition: &DEF,
         assignment: IoAddress::new(0, 1),
         id: 1,
       }],

@@ -26,6 +26,7 @@
 //! ## Ball Save, Extra Balls, and Similar Mechanics
 //! For mechanics that can extend a player's turn, such as ball saves or extra balls, this can be implemented by registering an event interrupt on `TroughFull`. Halting the broadcast of that command will also prevent the player/team system from transitioning to PlayerTurnEnding.
 
+pub mod configs;
 mod game_management;
 mod game_start;
 

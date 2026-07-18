@@ -1,4 +1,4 @@
-use frontbox::plugins::{Trough, TroughFull};
+use frontbox::provided::{Trough, TroughFull};
 use frontbox::prelude::*;
 
 use crate::*;
@@ -7,20 +7,19 @@ const PLAYER_GROUP_NAMES: [&str; 6] = [
   "player1", "player2", "player3", "player4", "player5", "player6",
 ];
 
-pub mod operator_config {
-  use frontbox::prelude::ConfigItem;
-
-  pub const TURN_COUNT: ConfigItem = ConfigItem::Integer {
-    value: 3,
-    default: 3,
-    min: Some(1),
-    max: Some(5),
-    name: "Turn Count",
-    description: "The current turn count for the player. This is automatically incremented at the end of each turn.",
-    units: None,
-  };
-}
-
+/// CompetitiveGame manages the game state against players competing against each other
+///
+///   1. Systems are organized by player, so that each player can have their own set of systems that are active only during their turn.
+///   2. Player turn management
+///   3. Start game management
+///
+/// ## Outputs
+/// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
+/// - Event: `PlayerTurnActive` - Emitted when the ball becomes in play.
+/// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
+///
+/// ## Interrupts
+/// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
 pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
@@ -84,6 +83,10 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
+  fn config_values(&self) -> Vec<&'static dyn LoadableConfigValue> {
+    vec![&*configs::TURN_COUNT]
+  }
+
   fn on_despawn(&mut self, ctx: &Context) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {
@@ -165,12 +168,7 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn advance_turn(&mut self, ctx: &Context) {
-    let max_turn_count = ctx
-      .systems
-      .expect::<OperatorConfig>()
-      .get_integer("turn_count")
-      .unwrap_or(3);
-
+    let max_turn_count = ctx.operator_config.get(&configs::TURN_COUNT);
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {

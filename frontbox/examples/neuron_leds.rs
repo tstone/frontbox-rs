@@ -29,12 +29,10 @@ async fn main() {
     LedPort::ws2812().leds(vec![&leds::DEMO1, &leds::DEMO2, &leds::DEMO3, &leds::DEMO4]),
   )];
 
-  App::boot(
-    "/dev/ttyACM0",
-    "/dev/ttyACM1",
-    IoNetwork::empty(),
+  App::boot(BootConfig {
     exp_network,
-  )
+    ..Default::default()
+  })
   .await
   .configure(|app| {
     app.system(LedSystem::new());

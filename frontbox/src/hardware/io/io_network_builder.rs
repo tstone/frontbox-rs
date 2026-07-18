@@ -23,7 +23,7 @@ impl IoNetworkBuilder {
       for wired in &board.switches {
         let pin = wired.assignment.pin;
         let addressed = IoAddressed {
-          definition: wired.definition.clone(),
+          definition: wired.definition,
           assignment: IoAddress::new(i as u8, pin),
           // write IDs to be sequential along I/O network
           id: switch_offset as usize + pin as usize,
@@ -38,7 +38,7 @@ impl IoNetworkBuilder {
       for wired in board.drivers {
         let pin = wired.assignment.pin;
         let addressed = IoAddressed {
-          definition: wired.definition.clone(),
+          definition: wired.definition,
           assignment: IoAddress::new(i as u8, pin),
           // write IDs to be sequential along I/O network
           id: driver_offset as usize + pin as usize,

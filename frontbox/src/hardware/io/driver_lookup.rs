@@ -8,7 +8,7 @@ use crate::prelude::*;
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
-  configs: HashMap<usize, Box<dyn DriverMode>>,
+  configs: HashMap<usize, &'static Box<dyn DriverMode>>,
 }
 
 impl DriverLookup {
@@ -29,7 +29,7 @@ impl DriverLookup {
       by_id.insert(addressed.id, driver.clone());
       by_name.insert(addressed.definition.name, driver);
 
-      if let Some(config) = addressed.definition.mode {
+      if let Some(config) = &addressed.definition.mode {
         configs.insert(addressed.id, config);
       }
     }
@@ -49,19 +49,19 @@ impl DriverLookup {
     self.by_id.get_mut(driver_id)
   }
 
-  pub fn by_name(&self, driver_name: &'static str) -> Option<&Driver> {
+  pub fn by_name(&self, driver_name: &str) -> Option<&Driver> {
     self.by_name.get(driver_name)
   }
 
-  pub fn by_name_mut(&mut self, driver_name: &'static str) -> Option<&mut Driver> {
+  pub fn by_name_mut(&mut self, driver_name: &str) -> Option<&mut Driver> {
     self.by_name.get_mut(driver_name)
   }
 
-  pub fn config(&self, name: &'static str) -> Option<&Box<dyn DriverMode>> {
+  pub fn config(&self, name: &str) -> Option<&'static Box<dyn DriverMode>> {
     self
       .by_name
       .get(name)
-      .and_then(|driver| self.configs.get(&driver.id))
+      .and_then(|driver| self.configs.get(&driver.id).map(|b| *b))
   }
 
   pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Driver> {

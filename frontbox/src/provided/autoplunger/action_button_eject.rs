@@ -1,4 +1,4 @@
-use crate::plugins::AutoPlunger;
+use crate::provided::AutoPlunger;
 use crate::prelude::*;
 
 /// A system to fire the auto plunger when the action button is pressed

@@ -24,12 +24,10 @@ async fn main() {
   let expansion_boards =
     vec![ExpansionBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1]))];
 
-  App::boot(
-    "/dev/ttyACM0",
-    "/dev/ttyACM1",
-    IoNetwork::empty(),
-    expansion_boards,
-  )
+  App::boot(BootConfig {
+    exp_network: expansion_boards,
+    ..Default::default()
+  })
   .await
   .configure(|app| {
     app.system(LedSystem::new());

@@ -38,8 +38,8 @@ pub enum DriverConfig {
     off_switch: Option<usize>,
     invert_off_switch: Option<bool>,
     initial_pwm_length: Duration,
+    initial_pwm_power: Power,
     secondary_pwm_power: Power,
-    secondary_pwm_length: Duration,
     rest: Duration,
   },
   DelayedPulse {

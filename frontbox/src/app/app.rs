@@ -1,44 +1,62 @@
+use std::path::Path;
 use std::time::Duration;
 
 use crate::app::run_loop;
 use crate::hardware::*;
 use crate::machine::serial_interface::SerialInterface;
-use crate::plugins::{Plugin, Watchdog};
+use crate::operator_config::OperatorConfig;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
+use crate::provided::Watchdog;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
 pub struct App {
   io_port: SerialInterface,
   exp_port: SerialInterface,
-  operator_config: OperatorConfigStore,
+  operator_config: OperatorConfig,
   app_config: AppConfig,
   systems: Vec<SystemContainer>,
   hardware: Hardware,
 }
 
+pub struct BootConfig {
+  // TODO: is it possible to just autodetect this?
+  pub io_net_port_path: &'static str,
+  pub exp_port_path: &'static str,
+  pub io_network: IoNetwork,
+  pub exp_network: Vec<ExpansionBoard>,
+  pub config_path: Option<&'static Path>,
+}
+
+impl Default for BootConfig {
+  fn default() -> Self {
+    BootConfig {
+      io_net_port_path: "/dev/ttyACM0",
+      exp_port_path: "/dev/ttyACM1",
+      io_network: IoNetwork::empty(),
+      exp_network: Vec::new(),
+      config_path: None,
+    }
+  }
+}
+
 impl App {
-  pub async fn boot(
-    // TODO: is it possible to just autodetect this?
-    io_net_port_path: &'static str,
-    exp_port_path: &'static str,
-    io_network: IoNetwork,
-    expansion_boards: Vec<ExpansionBoard>,
-  ) -> Self {
-    let mut io_port = SerialInterface::new(io_net_port_path)
+  pub async fn boot(boot_config: BootConfig) -> Self {
+    let mut io_port = SerialInterface::new(boot_config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
+    log::info!("🥾 Opened IO NET port at {}", boot_config.io_net_port_path);
 
     let mainboard_name = App::boot_mainboard(&mut io_port).await;
 
     // Verify user-configuration and load firmware/board versions
+    let io_network = boot_config.io_network;
     let resolved_io_network = Hardware::resolve_io_network(&mut io_port, &io_network).await;
     let platform =
       FastPlatform::from_name(&mainboard_name).expect("Unsupported mainboard platform");
 
-    App::configure_hardware(&mut io_port, platform).await;
+    App::configure_mainboard(&mut io_port, platform).await;
     App::verify_watchdog(&mut io_port).await;
     App::configure_switches(&mut io_port, &io_network.switches).await;
 
@@ -46,16 +64,20 @@ impl App {
     let initial_switch_state = Hardware::get_initial_switch_states(&mut io_port).await;
     let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
 
-    // Configure drivers
-    Hardware::configure_drivers(&mut io_port, &io_network.drivers, &switch_lookup).await;
+    // Setup operator config
+    let mut operator_config = match boot_config.config_path {
+      Some(path) => OperatorConfig::load_from_disk(path),
+      None => OperatorConfig::new(),
+    };
+    App::register_driver_operator_configs(&io_network.drivers, &mut operator_config);
 
     // open EXP port
-    let mut exp_port = SerialInterface::new(exp_port_path)
+    let mut exp_port = SerialInterface::new(boot_config.exp_port_path)
       .await
       .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", exp_port_path);
+    log::info!("🥾 Opened EXP port at {}", boot_config.exp_port_path);
 
-    let expansion_boards = Hardware::resolve_expansion_boards(&expansion_boards);
+    let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network);
     Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
     Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
@@ -73,7 +95,7 @@ impl App {
       io_port,
       exp_port,
       hardware,
-      operator_config: OperatorConfigStore::new(),
+      operator_config,
       app_config: AppConfig::default(),
       systems: Vec::new(),
     }
@@ -98,7 +120,8 @@ impl App {
     }
   }
 
-  async fn configure_hardware(io_port: &mut SerialInterface, platform: FastPlatform) {
+  /// Initialize the mainboard with the right firmware
+  async fn configure_mainboard(io_port: &mut SerialInterface, platform: FastPlatform) {
     log::info!(
       "🥾 Configuring mainboard hardware as platform {:?}",
       platform
@@ -163,10 +186,18 @@ impl App {
     }
   }
 
-  pub fn operator_config(&mut self, item: impl OperatorConfigBuilder) -> &mut Self {
-    let (key, config_item) = item.build();
-    self.operator_config.insert(key, config_item);
-    self
+  /// Scan all the drivers looking for operator configs
+  fn register_driver_operator_configs<'a>(
+    drivers: &[IoAddressed<DriverDefinition>],
+    operator_config: &mut OperatorConfig,
+  ) {
+    for driver in drivers {
+      if let Some(mode) = &driver.definition.mode {
+        for cv in mode.loadable_config_values() {
+          operator_config.register(cv);
+        }
+      }
+    }
   }
 
   pub fn system_tick(&mut self, interval: Duration) -> &mut Self {
@@ -179,13 +210,23 @@ impl App {
     self
   }
 
+  /// Register and launch system at startup
   pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
-    self.systems.push(system.into());
+    let sys = system.into();
+    // auto-register startup systems
+    for cv in sys.config_values() {
+      self.operator_config.register(cv);
+    }
+
+    self.systems.push(sys);
     self
   }
 
-  pub fn plugin(mut self, plugin: impl Plugin) -> Self {
-    plugin.build(&mut self);
+  /// Manually register configs
+  pub fn register_configs(&mut self, configs: impl IntoConfigs) -> &mut Self {
+    for cv in configs.into_configs() {
+      self.operator_config.register(cv);
+    }
     self
   }
 
@@ -195,7 +236,9 @@ impl App {
   }
 
   pub async fn run(mut self) {
-    log::debug!("Finalizing Store with operator config and app config");
+    let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
+    self.operator_config.app_sender = Some(app_sender.clone());
+
     let context_base = ContextBase {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
@@ -203,23 +246,22 @@ impl App {
       io_network: self.hardware.io_network,
       exp_network: self.hardware.exp_network,
       app_config: self.app_config,
+      operator_config: self.operator_config,
     };
 
-    let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
+    Hardware::configure_drivers(&mut self.io_port, &context_base).await;
 
-    let mut machine = MachineImpl::new(
+    let mut machine: MachineImpl = MachineImpl::new(
       self.io_port,
       self.exp_port,
-      context_base.clone(),
       app_sender.clone(),
+      context_base.switches.clone(),
+      context_base.io_network.clone(),
+      context_base.app_config.clone(),
     );
 
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine.sender());
-    self.systems.insert(
-      0,
-      SystemContainer::new(OperatorConfig::new(self.operator_config)),
-    );
     self.systems.insert(0, SystemContainer::new(bridge));
     self.systems.push(SystemContainer::new(Watchdog::new()));
 
@@ -239,7 +281,6 @@ pub struct AppConfig {
   pub system_interval: Duration,
   /// The interval at which the watchdog is pinged (keep alive)
   pub watchdog_interval: Duration,
-  pub canvas: Option<Canvas>,
 }
 
 impl Default for AppConfig {
@@ -247,14 +288,22 @@ impl Default for AppConfig {
     Self {
       system_interval: Duration::from_millis(41),
       watchdog_interval: Duration::from_millis(1000),
-      canvas: None,
     }
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct Canvas {
-  pub width: f32,
-  pub height: f32,
-  pub dpi: f32, // default: 2.5
+pub trait IntoConfigs {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue>;
+}
+
+impl<T: System + 'static> IntoConfigs for &T {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+    self.config_values()
+  }
+}
+
+impl IntoConfigs for Vec<&'static dyn LoadableConfigValue> {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+    self
+  }
 }
