@@ -30,9 +30,9 @@ async fn main() {
   })
   .await
   .configure(|app| {
-    app.startup_system(LedSystem::new());
-    app.startup_system(System1);
-    app.startup_system(System2);
+    app.system(LedSystem::new());
+    app.system(System1);
+    app.system(System2);
   })
   .run()
   .await;

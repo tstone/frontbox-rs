@@ -1,5 +1,3 @@
-use uuid::Uuid;
-
 use crate::prelude::*;
 
 /// This system will monitor the specified switches to track the occupancy of the trough, and fire the eject coil when the trough is full and a new ball enters.
@@ -15,20 +13,18 @@ pub struct Trough {
 }
 
 impl Trough {
-  pub fn new(switch_count: usize) -> Self {
+  /// * `eject_coil_name` - Name of trough eject coil (driver)
+  /// * `switch_names` - Names of trough switches, in order. First switch is the switch nearest the exit.
+  pub fn new(eject_coil_name: &'static str, switch_names: Vec<&'static str>) -> Self {
     Self {
-      switch_names: (0..switch_count)
-        .map(|i| -> &'static str {
-          Box::leak(format!("trough_switchswitch_{i}_{}", Uuid::new_v4()).into_boxed_str())
-        })
-        .collect(),
-      eject_coil_name: Box::leak(format!("trough_eject_coil_{}", Uuid::new_v4()).into_boxed_str()),
+      switch_names,
+      eject_coil_name,
       expected_occupancy: 0,
     }
   }
 
-  pub fn eject_coil_definition(&self) -> DriverDefinitionBuilder {
-    DriverDefinitionBuilder::new(self.eject_coil_name)
+  pub fn eject_coil_definition(name: &'static str) -> DriverDefinitionBuilder {
+    DriverDefinitionBuilder::new(name)
       .mode(PulseKickMode {
         initial_pwm_length: HardwareValue::config(
           "Trough Plunger Touch Time",
@@ -52,8 +48,8 @@ impl Trough {
       .tag(tags::Trough)
   }
 
-  pub fn switch_definition(&self, index: usize) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(self.switch_names[index])
+  pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
+    SwitchDefinitionBuilder::new(name)
       .debounce_open(Duration::from_millis(250))
       .tag(tags::Trough)
   }

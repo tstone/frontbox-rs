@@ -526,10 +526,13 @@ impl System for Example {
   App::boot(BootConfig::default()).await
     .configure(|app| {
       // config values will be automatically registered
-      app.startup_system(MySystem::new())
+      app.system(MySystem::new())
 
-      // dynamically loaded systems must be manually registered
-      app.register_system(DeepGameMode::new())
+      // manually register configs on a system
+      app.register_configs(some_system)
+
+      // or manually register explicit configs
+      app.register_configs(vec![MY_CONFIG1, MY_CONFIG2])
     })
 ```
 

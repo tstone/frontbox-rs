@@ -211,7 +211,7 @@ impl App {
   }
 
   /// Register and launch system at startup
-  pub fn startup_system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
+  pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
     let sys = system.into();
     // auto-register startup systems
     for cv in sys.config_values() {
@@ -222,13 +222,11 @@ impl App {
     self
   }
 
-  /// Registers a System for use that will be dynamically loaded later. This will not start the system but is useful for doing eager setup, such as registering operator config values.
-  pub fn register_system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
-    let sys = system.into();
-    for cv in sys.config_values() {
+  /// Manually register configs
+  pub fn register_configs(&mut self, configs: impl IntoConfigs) -> &mut Self {
+    for cv in configs.into_configs() {
       self.operator_config.register(cv);
     }
-
     self
   }
 
@@ -283,7 +281,6 @@ pub struct AppConfig {
   pub system_interval: Duration,
   /// The interval at which the watchdog is pinged (keep alive)
   pub watchdog_interval: Duration,
-  pub canvas: Option<Canvas>,
 }
 
 impl Default for AppConfig {
@@ -291,14 +288,22 @@ impl Default for AppConfig {
     Self {
       system_interval: Duration::from_millis(41),
       watchdog_interval: Duration::from_millis(1000),
-      canvas: None,
     }
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct Canvas {
-  pub width: f32,
-  pub height: f32,
-  pub dpi: f32, // default: 2.5
+pub trait IntoConfigs {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue>;
+}
+
+impl<T: System + 'static> IntoConfigs for &T {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+    self.config_values()
+  }
+}
+
+impl IntoConfigs for Vec<&'static dyn LoadableConfigValue> {
+  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+    self
+  }
 }

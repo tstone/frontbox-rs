@@ -1,6 +1,5 @@
 use crate::operator_config::*;
 use crate::prelude::*;
-use uuid::Uuid;
 
 /// Simple system to manage firing the plunger eject coil
 pub struct AutoPlunger {
@@ -10,23 +9,21 @@ pub struct AutoPlunger {
 }
 
 impl AutoPlunger {
-  pub fn new() -> Self {
+  pub fn new(coil_name: &'static str, lane_switch_name: &'static str) -> Self {
     Self {
       do_autoplunge: false,
-      lane_switch_name: Box::leak(
-        format!("autoplunger_lane_switch_{}", Uuid::new_v4()).into_boxed_str(),
-      ),
-      coil_name: Box::leak(format!("autoplunger_coil_{}", Uuid::new_v4()).into_boxed_str()),
+      lane_switch_name,
+      coil_name,
     }
   }
 
-  pub fn switch_definition(&self) -> SwitchDefinitionBuilder {
+  pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
-    SwitchDefinitionBuilder::new(self.lane_switch_name).debounce_open(Duration::from_millis(250))
+    SwitchDefinitionBuilder::new(name).debounce_open(Duration::from_millis(250))
   }
 
-  pub fn coil_definition(&self) -> DriverDefinitionBuilder {
-    DriverDefinitionBuilder::new(self.coil_name).mode(PulseKickMode {
+  pub fn coil_definition(name: &'static str) -> DriverDefinitionBuilder {
+    DriverDefinitionBuilder::new(name).mode(PulseKickMode {
       initial_pwm_length: HardwareValue::config(
         "Autoplunger Touch Time",
         "Duration by which the forks are brought into contact with the ball, before full launch",

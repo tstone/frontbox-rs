@@ -57,7 +57,7 @@ async fn main() {
   })
   .await
   .configure(|app| {
-    app.startup_system(DropTargetDownUp::new([
+    app.system(DropTargetDownUp::new([
       TARGET_1.name,
       TARGET_2.name,
       TARGET_3.name,

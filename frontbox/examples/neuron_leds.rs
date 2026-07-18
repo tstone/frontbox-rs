@@ -35,8 +35,8 @@ async fn main() {
   })
   .await
   .configure(|app| {
-    app.startup_system(LedSystem::new());
-    app.startup_system(LedExample::new());
+    app.system(LedSystem::new());
+    app.system(LedExample::new());
   })
   .run()
   .await;
