@@ -170,11 +170,17 @@ pub trait RgbaColor {
   fn with_hue_shift(self, degrees: f32) -> Self;
   fn inverted(self) -> Self;
 
+  fn luma(&self) -> f32;
+
   fn over(src: Self, dst: Self) -> Self;
   fn composite_over(&self, dst: Self) -> Self;
 }
 
 impl RgbaColor for Rgba<u8> {
+  fn luma(&self) -> f32 {
+    (0.2126 * self.0[0] as f32 + 0.7152 * self.0[1] as f32 + 0.0722 * self.0[2] as f32) / 255.0
+  }
+
   fn to_color(self) -> Color {
     Color::rgb(self[0], self[1], self[2])
   }
