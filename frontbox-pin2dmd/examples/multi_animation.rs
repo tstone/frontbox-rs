@@ -66,7 +66,7 @@ fn main() -> rusb::Result<()> {
       frame.add(
         bird_sheet
           .image_at(0, frame_anim.sample())
-          .fliph()
+          .flip_h()
           .left(x_anim.sample()),
       );
     }
