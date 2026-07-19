@@ -22,6 +22,7 @@ where
   T: Lerp + Clone + Send + Sync,
   A: Tweenable + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
 {
+  /// *target* - Accumulated value to get to, e.g. Duration::from_secs(1) = animation lasts for a minute
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Self {
     assert!(stops.len() >= 2, "Tween requires at least 2 stops");
 
@@ -34,6 +35,18 @@ where
       cycle_count: 0,
       current_stop_index: 0,
     }
+  }
+
+  pub fn once(target: A, curve: Curve, stops: Vec<T>) -> Self {
+    Self::new(target, curve, stops, AnimationCycle::Once)
+  }
+
+  pub fn forever(target: A, curve: Curve, stops: Vec<T>) -> Self {
+    Self::new(target, curve, stops, AnimationCycle::Forever)
+  }
+
+  pub fn linear(target: A, stops: Vec<T>, cycle: AnimationCycle) -> Self {
+    Self::new(target, Curve::Linear, stops, cycle)
   }
 
   pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Sequence<A, T>
@@ -162,7 +175,7 @@ where
     self.current_stop_index = 0;
   }
 
-  fn set(&mut self, current: A) {
+  fn force(&mut self, current: A) {
     self.current = current;
   }
 }

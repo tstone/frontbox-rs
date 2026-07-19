@@ -2,21 +2,37 @@ use image::Rgba;
 
 use crate::prelude::*;
 
+#[derive(Clone)]
 pub struct Pattern {
   pub seq: Vec<Rgba<u8>>,
-  pub index: u16,
-  pub other: Option<Box<dyn ColorSequence>>,
+  pub insert_index: u16,
+  pub rotation: f32,
+  pub reversed: bool,
+  pub progress: f32,
+}
+
+impl Pattern {
+  pub fn new(pattern: Vec<Rgba<u8>>) -> Self {
+    Self::at(0, pattern)
+  }
+
+  pub fn at(insert_index: u16, pattern: Vec<Rgba<u8>>) -> Self {
+    Pattern {
+      insert_index,
+      seq: pattern,
+      rotation: 0.0,
+      reversed: false,
+      progress: 1.0,
+    }
+  }
 }
 
 impl ColorSequence for Pattern {
-  fn render(&self, count: usize) -> Vec<image::Rgba<u8>> {
-    let mut colors = match &self.other {
-      Some(other) => other.render(count),
-      None => (0..count).map(|_| Rgba::default()).collect(),
-    };
+  fn base_render(&self, count: usize) -> Vec<image::Rgba<u8>> {
+    let mut colors: Vec<Rgba<u8>> = (0..count).map(|_| Rgba::default()).collect();
 
     for (offset, pixel) in self.seq.iter().enumerate() {
-      let index = self.index as usize + offset;
+      let index = self.insert_index as usize + offset;
 
       if index < count {
         if index >= colors.len() {
@@ -28,5 +44,17 @@ impl ColorSequence for Pattern {
     }
 
     colors
+  }
+
+  fn reversed(&self) -> bool {
+    self.reversed
+  }
+
+  fn rotation(&self) -> f32 {
+    self.rotation
+  }
+
+  fn progress(&self) -> f32 {
+    self.progress
   }
 }

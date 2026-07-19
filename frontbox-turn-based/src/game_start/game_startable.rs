@@ -1,22 +1,35 @@
 use frontbox::prelude::*;
 use frontbox::tags::{Cabinet, StartButton};
 
-use crate::GameManager;
+use crate::{GameManagementExt, GameManager};
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
-pub struct StartableFlasher {
-  lamp_driver_name: &'static str,
-  // TODO: action button should flash too
-  // TODO: this should be more generic "startable state" that easily allows a given lamp driver/LED state when something is true
+pub struct GameStartable {
+  lamp_driver_name: Option<&'static str>,
+  effects: Vec<Box<dyn DynLedEffect>>,
   flash_duration: Duration,
 }
 
-impl StartableFlasher {
-  pub fn new(lamp_driver_name: &'static str) -> Self {
+impl GameStartable {
+  pub fn new() -> Self {
     Self {
-      lamp_driver_name,
+      effects: Vec::new(),
+      lamp_driver_name: None,
       flash_duration: Duration::from_millis(185),
     }
+  }
+
+  pub fn flash_lamp(mut self, name: &'static str) -> Self {
+    self.lamp_driver_name = Some(name);
+    self
+  }
+
+  pub fn effect<S: ColorSequence + Clone + Send + Sync + 'static>(
+    mut self,
+    effect: LedEffect<S>,
+  ) -> Self {
+    self.effects.push(Box::new(effect));
+    self
   }
 
   pub fn lamp_driver(name: &'static str) -> DriverDefinitionBuilder {
@@ -32,15 +45,19 @@ impl StartableFlasher {
   }
 
   fn start_btn_on(&self, ctx: &Context) {
-    ctx.activate_driver(self.lamp_driver_name, ActivationMode::VirtualSwitchOn);
+    if let Some(name) = self.lamp_driver_name {
+      ctx.activate_driver(name, ActivationMode::VirtualSwitchOn);
+    }
   }
 
   fn start_btn_off(&self, ctx: &Context) {
-    ctx.deactivate_driver(self.lamp_driver_name, DeactivationMode::VirtualSwitchOff);
+    if let Some(name) = self.lamp_driver_name {
+      ctx.deactivate_driver(name, DeactivationMode::VirtualSwitchOff);
+    }
   }
 }
 
-impl System for StartableFlasher {
+impl System for GameStartable {
   fn is_active(&self, ctx: &Context) -> bool {
     // active if game is startable or player addable
     ctx
@@ -56,17 +73,6 @@ impl System for StartableFlasher {
   }
 
   fn on_spawn(&mut self, ctx: &Context) {
-    // for driver in self.start_button_driver.get_drivers(ctx) {
-    //   ctx.configure_driver(
-    //     driver.name,
-    //     PulseHoldMode {
-    //       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-    //       initial_pwm_power: Power::ZERO,
-    //       secondary_pwm_power: Power::FULL,
-    //       ..Default::default()
-    //     },
-    //   );
-    // }
     ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
   }
 
@@ -75,6 +81,15 @@ impl System for StartableFlasher {
       self.start_btn_on(ctx);
     } else if let Some(_) = event.downcast_ref::<Off>() {
       self.start_btn_off(ctx);
+    }
+  }
+
+  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+    // only apply LED effects while game isn't started (since presumably the game will have it's own LED effects)
+    if !ctx.is_game_started() {
+      for effect in &mut self.effects {
+        effect.apply(delta, ctx);
+      }
     }
   }
 }

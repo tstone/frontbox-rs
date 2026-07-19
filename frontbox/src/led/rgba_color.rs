@@ -1,5 +1,6 @@
 use fast_protocol::Color;
 use image::Rgba;
+use palette::{FromColor, Hsl, IntoColor, Srgb};
 
 use crate::prelude::LedChannels;
 
@@ -162,12 +163,24 @@ pub trait RgbaColor {
   fn with_green_f32(self, green: f32) -> Self;
   fn with_alpha(self, alpha: u8) -> Self;
   fn with_alpha_f32(self, alpha: f32) -> Self;
+  fn with_hue(self, value: f32) -> Self;
+  fn with_saturation(self, value: f32) -> Self;
+  fn with_lightness(self, value: f32) -> Self;
+  fn with_gamma(self, value: f32) -> Self;
+  fn with_hue_shift(self, degrees: f32) -> Self;
+  fn inverted(self) -> Self;
+
+  fn luma(&self) -> f32;
 
   fn over(src: Self, dst: Self) -> Self;
   fn composite_over(&self, dst: Self) -> Self;
 }
 
 impl RgbaColor for Rgba<u8> {
+  fn luma(&self) -> f32 {
+    (0.2126 * self.0[0] as f32 + 0.7152 * self.0[1] as f32 + 0.0722 * self.0[2] as f32) / 255.0
+  }
+
   fn to_color(self) -> Color {
     Color::rgb(self[0], self[1], self[2])
   }
@@ -195,6 +208,47 @@ impl RgbaColor for Rgba<u8> {
   /// Combine with b, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
   fn mix_with(&self, b: Rgba<u8>, t: f32) -> Rgba<u8> {
     Self::mix(*self, b, t)
+  }
+
+  fn with_hue(self, degrees: f32) -> Self {
+    let (mut hsl, a) = to_hsl(self);
+    hsl.hue = palette::RgbHue::from_degrees(degrees.rem_euclid(360.0));
+    from_hsl(hsl, a)
+  }
+
+  fn with_saturation(self, value: f32) -> Self {
+    let (mut hsl, a) = to_hsl(self);
+    hsl.saturation = value.clamp(0.0, 1.0);
+    from_hsl(hsl, a)
+  }
+
+  fn with_lightness(self, value: f32) -> Self {
+    let (mut hsl, a) = to_hsl(self);
+    hsl.lightness = value.clamp(0.0, 1.0);
+    from_hsl(hsl, a)
+  }
+
+  fn with_gamma(self, value: f32) -> Self {
+    let mut new = self.clone();
+    for c in 0..3 {
+      let n = new.0[c] as f32 / 255.0;
+      new.0[c] = (n.powf(value) * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+    new
+  }
+
+  fn with_hue_shift(self, degrees: f32) -> Self {
+    let (mut hsl, a) = to_hsl(self);
+    hsl.hue += palette::RgbHue::from_degrees(degrees);
+    from_hsl(hsl, a)
+  }
+
+  fn inverted(self) -> Self {
+    let mut new = self.clone();
+    for c in 0..3 {
+      new.0[c] = 255 - new.0[c];
+    }
+    new
   }
 
   fn with_red(self, red: u8) -> Self {
@@ -677,4 +731,62 @@ impl RgbaColor for Rgba<u8> {
   fn default() -> Self {
     Rgba([0, 0, 0, 0])
   }
+}
+
+pub fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+  let r = r as f32 / 255.0;
+  let g = g as f32 / 255.0;
+  let b = b as f32 / 255.0;
+
+  let max = r.max(g).max(b);
+  let min = r.min(g).min(b);
+  let delta = max - min;
+
+  let h = if delta == 0.0 {
+    0.0
+  } else if max == r {
+    60.0 * (((g - b) / delta).rem_euclid(6.0))
+  } else if max == g {
+    60.0 * (((b - r) / delta) + 2.0)
+  } else {
+    60.0 * (((r - g) / delta) + 4.0)
+  };
+
+  let s = if max == 0.0 { 0.0 } else { delta / max };
+  let v = max;
+
+  (h, s, v)
+}
+
+pub fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+  let c = v * s;
+  let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
+  let m = v - c;
+
+  let (r1, g1, b1) = match h as u32 {
+    0..=59 => (c, x, 0.0),
+    60..=119 => (x, c, 0.0),
+    120..=179 => (0.0, c, x),
+    180..=239 => (0.0, x, c),
+    240..=299 => (x, 0.0, c),
+    _ => (c, 0.0, x),
+  };
+
+  (
+    ((r1 + m) * 255.0).round() as u8,
+    ((g1 + m) * 255.0).round() as u8,
+    ((b1 + m) * 255.0).round() as u8,
+  )
+}
+
+fn to_hsl(c: Rgba<u8>) -> (Hsl, u8) {
+  let srgb: Srgb<u8> = Srgb::new(c.0[0], c.0[1], c.0[2]);
+  let hsl: Hsl = srgb.into_format::<f32>().into_color();
+  (hsl, c.0[3])
+}
+
+fn from_hsl(hsl: Hsl, alpha: u8) -> Rgba<u8> {
+  let srgb: Srgb<f32> = Srgb::from_color(hsl);
+  let srgb_u8 = srgb.into_format::<u8>();
+  Rgba([srgb_u8.red, srgb_u8.green, srgb_u8.blue, alpha])
 }

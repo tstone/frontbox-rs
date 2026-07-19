@@ -2,6 +2,7 @@ use image::Rgba;
 
 use crate::prelude::{ColorSequence, RgbaColor};
 
+#[derive(Clone, Debug)]
 pub struct GradientStop {
   pub color: Rgba<u8>,
   pub position: f32, // 0.0..=1.0
@@ -14,13 +15,22 @@ impl GradientStop {
   }
 }
 
+#[derive(Clone)]
 pub struct Gradient {
-  stops: Vec<GradientStop>, // must be sorted by position, ascending
+  pub stops: Vec<GradientStop>, // must be sorted by position, ascending
+  pub rotation: f32,
+  pub reversed: bool,
+  pub progress: f32,
 }
 
 impl Gradient {
   pub fn new(stops: Vec<GradientStop>) -> Self {
-    Gradient { stops }
+    Gradient {
+      stops,
+      rotation: 0.0,
+      reversed: false,
+      progress: 100.0,
+    }
   }
 
   /// Even distribution of colors without complexity of multi-stop
@@ -34,7 +44,12 @@ impl Gradient {
         position: i as f32 / (len - 1).max(1) as f32,
       })
       .collect();
-    Gradient { stops }
+    Gradient {
+      stops,
+      rotation: 0.0,
+      reversed: false,
+      progress: 0.0,
+    }
   }
 
   pub fn from_to(from: Rgba<u8>, to: Rgba<u8>) -> Self {
@@ -75,7 +90,7 @@ impl Gradient {
 }
 
 impl ColorSequence for Gradient {
-  fn render(&self, count: usize) -> Vec<Rgba<u8>> {
+  fn base_render(&self, count: usize) -> Vec<Rgba<u8>> {
     (0..count)
       .map(|i| {
         let t = if count <= 1 {
@@ -86,5 +101,17 @@ impl ColorSequence for Gradient {
         self.sample(t)
       })
       .collect()
+  }
+
+  fn reversed(&self) -> bool {
+    self.reversed
+  }
+
+  fn rotation(&self) -> f32 {
+    self.rotation
+  }
+
+  fn progress(&self) -> f32 {
+    self.progress
   }
 }

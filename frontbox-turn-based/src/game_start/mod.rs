@@ -3,7 +3,7 @@
 //! Game start systems are responsible for checking GameStartState to verify if the game can be started or player can be added.
 
 mod free_play;
-mod startable_flasher;
+mod game_startable;
 
 pub use free_play::*;
-pub use startable_flasher::*;
+pub use game_startable::*;
