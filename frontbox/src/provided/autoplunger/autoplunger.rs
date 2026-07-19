@@ -19,7 +19,7 @@ impl AutoPlunger {
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
     // Configure a meaty debounce to make sure the ball is fully resting on the forks
-    SwitchDefinitionBuilder::new(name).debounce_open(Duration::from_millis(250))
+    SwitchDefinitionBuilder::new(name).debounce_close(Duration::from_millis(250))
   }
 
   pub fn coil_definition(name: &'static str) -> DriverDefinitionBuilder {

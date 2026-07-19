@@ -50,7 +50,7 @@ impl Trough {
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
     SwitchDefinitionBuilder::new(name)
-      .debounce_open(Duration::from_millis(250))
+      .debounce_close(Duration::from_millis(250))
       .tag(tags::Trough)
   }
 
