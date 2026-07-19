@@ -20,6 +20,7 @@ pub struct Gradient {
   pub stops: Vec<GradientStop>, // must be sorted by position, ascending
   pub rotation: f32,
   pub reversed: bool,
+  pub progress: f32,
 }
 
 impl Gradient {
@@ -28,6 +29,7 @@ impl Gradient {
       stops,
       rotation: 0.0,
       reversed: false,
+      progress: 100.0,
     }
   }
 
@@ -46,6 +48,7 @@ impl Gradient {
       stops,
       rotation: 0.0,
       reversed: false,
+      progress: 0.0,
     }
   }
 
