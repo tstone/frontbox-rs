@@ -7,6 +7,7 @@ pub struct Tile {
   pub seq: Vec<Rgba<u8>>,
   pub rotation: f32,
   pub reversed: bool,
+  pub progress: f32,
 }
 
 impl Tile {
@@ -15,6 +16,7 @@ impl Tile {
       seq: pattern,
       rotation: 0.0,
       reversed: false,
+      progress: 1.0,
     }
   }
 }
@@ -45,5 +47,9 @@ impl ColorSequence for Tile {
 
   fn rotation(&self) -> f32 {
     self.rotation
+  }
+
+  fn progress(&self) -> f32 {
+    self.progress
   }
 }

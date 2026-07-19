@@ -1,4 +1,4 @@
 pub mod gradient;
 pub mod pattern;
-pub mod rgba;
+pub mod solid;
 pub mod tile;

@@ -8,6 +8,7 @@ pub struct Pattern {
   pub insert_index: u16,
   pub rotation: f32,
   pub reversed: bool,
+  pub progress: f32,
 }
 
 impl Pattern {
@@ -21,6 +22,7 @@ impl Pattern {
       seq: pattern,
       rotation: 0.0,
       reversed: false,
+      progress: 1.0,
     }
   }
 }
@@ -50,5 +52,9 @@ impl ColorSequence for Pattern {
 
   fn rotation(&self) -> f32 {
     self.rotation
+  }
+
+  fn progress(&self) -> f32 {
+    self.progress
   }
 }

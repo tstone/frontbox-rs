@@ -44,7 +44,7 @@ struct System1;
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &Context) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));
-    ctx.declare_leds(&leds::DEMO1.q(), Rgba::red());
+    ctx.declare_leds(&leds::DEMO1.q(), Colors::solid(Rgba::red()));
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
@@ -60,6 +60,6 @@ struct System2;
 
 impl System for System2 {
   fn on_spawn(&mut self, ctx: &Context) {
-    ctx.declare_leds(&leds::DEMO1.q(), Rgba::blue());
+    ctx.declare_leds(&leds::DEMO1.q(), Colors::solid(Rgba::blue()));
   }
 }

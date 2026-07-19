@@ -1,21 +1,31 @@
 use dyn_clone::DynClone;
-use image::Rgba;
 
 use crate::led::color_sequences::gradient::*;
 use crate::led::color_sequences::pattern::*;
+use crate::led::color_sequences::solid::*;
 use crate::led::color_sequences::tile::*;
+use crate::prelude::*;
 
 dyn_clone::clone_trait_object!(ColorSequence);
 
 /// A description of a sequence of colors, given a of colors to generate
 pub trait ColorSequence: DynClone + Send + Sync {
   fn base_render(&self, count: usize) -> Vec<Rgba<u8>>;
-  fn rotation(&self) -> f32;
   fn reversed(&self) -> bool;
+  fn rotation(&self) -> f32;
+  fn progress(&self) -> f32;
 
   fn render(&self, count: usize) -> Vec<Rgba<u8>> {
-    let mut colors = self.base_render(count);
+    // first factor in progress, and only render percentage filled
+    let actual_count = (count as f32 / self.progress()) as usize;
+
+    let mut colors = self.base_render(actual_count);
     util::rotate(self.rotation(), count, &mut colors);
+
+    // pad empty area
+    if actual_count < count {
+      (0..(count - actual_count)).for_each(|_| colors.push(Rgba::default()));
+    }
 
     if self.reversed() {
       colors.reverse();
@@ -36,6 +46,10 @@ impl ColorSequence for Box<dyn ColorSequence> {
 
   fn rotation(&self) -> f32 {
     (**self).rotation()
+  }
+
+  fn progress(&self) -> f32 {
+    (**self).progress()
   }
 }
 
@@ -64,6 +78,10 @@ impl Colors {
 
   pub fn tile(colors: Vec<Rgba<u8>>) -> Tile {
     Tile::new(colors)
+  }
+
+  pub fn solid(color: Rgba<u8>) -> Solid {
+    Solid::new(color)
   }
 }
 

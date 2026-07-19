@@ -110,4 +110,8 @@ impl ColorSequence for Gradient {
   fn rotation(&self) -> f32 {
     self.rotation
   }
+
+  fn progress(&self) -> f32 {
+    self.progress
+  }
 }

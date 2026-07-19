@@ -23,5 +23,4 @@ pub use led_system_ext::*;
 pub use rgba_color::*;
 
 pub use color_sequences::gradient::GradientStop;
-#[allow(unused)]
-pub use color_sequences::rgba::*;
+pub use color_sequences::solid::*;

@@ -274,7 +274,7 @@ Using the LedSystems works by way of a _declaration_. A declaration doesn't forc
 // declare LEDs by name...
 ctx.declare_leds(
   &leds::EXAMPLE.q().at_z(3),
-  Rgba::yellow()
+  Colors::solid(Rgba::yellow())
 );
 
 // ...or by group
@@ -302,11 +302,11 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 // higher layer declares 50% transparent red
 ctx.declare_leds(
   &leds::EXAMPLE.q().at_z(1),
-  Rgba::red().with_alpha_f32(0.5)
+  Colors::solid(Rgba::red().with_alpha_f32(0.5))
 );
 
 // over top of white
-ctx.declare_leds(&leds::EXAMPLE.q(), Rgba::white());
+ctx.declare_leds(&leds::EXAMPLE.q(), Colors::solid(Rgba::white()));
 
 // final color renders as pink [255, 127, 127, 255]
 ```
@@ -417,7 +417,7 @@ impl System for AnimExample {
     // re-declaring the same LED will overwrite the previous declaration
     ctx.declare_leds(
       // declare the current animated value as the color of that LED
-      &leds::EXAMPLE.q(), self.anim.sample()
+      &leds::EXAMPLE.q(), Colors::solid(self.anim.sample())
     )
   }
 }
