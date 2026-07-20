@@ -43,19 +43,19 @@ fn main() -> rusb::Result<()> {
     frame.add(
       bold_10px
         .text(TextFormatting::number(score2))
-        .recolor(Rgba::coral())
+        .recolor(Rgba::pink())
         .offset(66, top),
     );
     frame.add(
       bold_10px
         .text(TextFormatting::number(score3))
-        .recolor_vgradient(Rgba::medium_turquoise(), Rgba::dark_blue())
+        .recolor_vgradient(Rgba::turquoise(), Rgba::blue())
         .offset(left, 17),
     );
     frame.add(
       bold_10px
         .text(TextFormatting::number(score4))
-        .recolor_hgradient(Rgba::yellow(), Rgba::sea_green())
+        .recolor_hgradient(Rgba::yellow(), Rgba::green())
         .offset(66, 17),
     );
 

@@ -6,7 +6,7 @@ use crate::{GameManagementExt, GameManager};
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
   lamp_driver_name: Option<&'static str>,
-  effects: Vec<Box<dyn DynLedEffect>>,
+  effects: Vec<LedEffect>,
   flash_duration: Duration,
 }
 
@@ -24,11 +24,8 @@ impl GameStartable {
     self
   }
 
-  pub fn effect<S: ColorSequence + Clone + Send + Sync + 'static>(
-    mut self,
-    effect: LedEffect<S>,
-  ) -> Self {
-    self.effects.push(Box::new(effect));
+  pub fn effect(mut self, effect: LedEffect) -> Self {
+    self.effects.push(effect);
     self
   }
 

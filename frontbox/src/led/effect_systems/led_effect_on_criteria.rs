@@ -4,26 +4,20 @@ use crate::prelude::*;
 
 #[derive(Clone)]
 pub struct LedEffectOnCriteria {
-  effects: Vec<Box<dyn DynLedEffect>>,
+  effects: Vec<LedEffect>,
   criteria: Arc<dyn Fn(&Context) -> bool + 'static>,
 }
 
 impl LedEffectOnCriteria {
   /// Create a system that applies an effect if the given criteria is met
-  pub fn single<S>(criteria: impl Fn(&Context) -> bool + 'static, effect: LedEffect<S>) -> Self
-  where
-    S: ColorSequence + Clone + Send + Sync + 'static,
-  {
+  pub fn single<S>(criteria: impl Fn(&Context) -> bool + 'static, effect: LedEffect) -> Self {
     Self {
-      effects: vec![Box::new(effect)],
+      effects: vec![effect],
       criteria: Arc::new(criteria),
     }
   }
 
-  pub fn multi(
-    criteria: impl Fn(&Context) -> bool + 'static,
-    effects: Vec<Box<dyn DynLedEffect>>,
-  ) -> Self {
+  pub fn multi(criteria: impl Fn(&Context) -> bool + 'static, effects: Vec<LedEffect>) -> Self {
     Self {
       effects,
       criteria: Arc::new(criteria),

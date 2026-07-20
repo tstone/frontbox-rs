@@ -1,5 +1,6 @@
 pub mod animation;
 mod app;
+mod cycle;
 mod hardware;
 mod led;
 mod machine;
@@ -13,6 +14,7 @@ pub use crate::hardware::*;
 
 pub mod prelude {
   pub use crate::app::*;
+  pub use crate::cycle::*;
   pub use crate::events;
   pub use crate::hardware::*;
   pub use crate::hardware_defs;

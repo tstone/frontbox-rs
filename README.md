@@ -256,6 +256,143 @@ impl System for Example {
 }
 ```
 
+### Color
+
+Frontbox standardizes on the the `image` crate `Rgba<u8>` color type. This color accounts for four channel colors: red, green, blue, and alpha. All rendering functions within Frontbox account for alpha channel blending.
+
+Colors can be created manually.
+
+```rust
+let red = Rgba([255, 0, 0, 255]);
+```
+
+Or by using a handful of named colors.
+
+```rust
+let red = Rgba::red();
+let cyan = Rgba::cyan();
+```
+
+Colors can also be modified by lightness, saturation, or hue shifted.
+
+```rust
+let c = Rgba::red()
+  .lighten(0.4)
+  .desaturate(0.1)
+  .hue_shift(-15.0)
+  .inverted();
+```
+
+#### Color Sequence
+
+Generating more than one color is typically done by away of a `ColorSequence`. Colors sequences are not a list of colors, but contain a description of a sequences of colors. This description includes base fill, defined area for the fill, and modifications.
+
+Color sequences can be resolved into a list of colors.
+
+```rust
+// turn a color sequence into a list of colors
+let seq = ColorSequence::fade(Rgba::red(), Rgba::blue());
+let colors: Vec<Rgba<u8>> = seq.generate(6); // generates 6 colors, linearly interpolated from red to blue
+```
+
+#### Extents
+
+Because color sequences are _relative_, when specifying numerical values like offsets or lengths, this is done using an `Extent`. Extents can be either absolute or relative. The concrete value is resolved when `generate` is called with a length.
+
+```rust
+Extent::relative(0.5) // half way, 50%
+Extent::absolute(2) // concretely at index 2
+```
+
+##### Fill Types
+
+- **Pattern** - Defines an optionally repeating, fixed pattern. e.g. "red, white, blue three times"
+- **Gradient** - Defines a linear fade between N colors
+
+```rust
+/// red, white, and blue, three times
+ColorSequence::pattern(vec![Rgba::red(), Rgba::white(), Rgba::blue()], Cycle::Times(3));
+
+// multi-gradient
+ColorSequence::gradient(vec![
+  GradientStop::new(Rgba::red(), Extent::zero()),
+  GradientStop::new(Rgba::magenta(), Extent::relative(0.35)),
+  GradientStop::new(Rgba::blue(), Extent::full()),
+])
+```
+
+A handful of convenience construction methods are provided as well:
+
+```rust
+// 2 point gradient
+ColorSequence::fade(Rgba::red(), Rgba::blue())
+
+// Single pixel forever repeating pattern
+ColorSequence::solid(Rgba::red(), Rgba::blue())
+
+// Forever repeating pattern
+ColorSequence::tile(vec![Rgba::red(), Rgba::white()])
+
+// Three point gradient with given color as the center point, and hue arc of the given degrees
+// This produces a red to orange to yellow gradient
+ColorSequence::analogous(Rgba::orange(), 60.0)
+
+// Three point gradient with the given lightness range, with the given color as the center point
+// This produces a pink to red to dark red gradient
+ColorSequence::monochromatic(Rgba::red(), 0.8)
+```
+
+#### Fill Area
+
+Color sequence fills can also be offset or length-constrained and aligned.
+
+```rust
+// skip the outer 2 pixels
+let seq = ColorSequence::solid(Rgba::red())
+  .padded(Extent::absolute(1), Extent:: absolute(1));
+let colors = seq.generate(3);
+// Result: vec![Rgba::default(), Rgba::red(), Rgba::default()]
+
+// render only half of the total length, center-aligned
+let seq = ColorSequence::solid(Rgba::red())
+  .anchored(Anchor::Center, Extent::relative(0.5));
+let colors = seq.generate(4);
+// Result: vec![Rgba::default(), Rgba::red(), Rgba::red(), Rgba::default()]
+```
+
+Modifying the fill area is useful for creating progress bar-like effects.
+
+```rust
+// red to blue gradient progress bar, left aligned
+let seq = ColorSequence::fade(Rgba::red(), Rgba::blue())
+  .anchored(Anchor::Left, Extent::relative(percent_complete));
+```
+
+#### Color Sequence Modifications
+
+Modifications are chained onto a ColorSequence by way of `modify`.
+
+```rust
+let seq = ColorSequence::fade(Rgba::purple(), Rgba::white())
+  .modify(Modification::rotated(180.0));
+```
+
+##### Modifications
+
+- **Reversed** - Applies color sequence in opposite order
+- **Rotated** - Positive degree shifts clockwise, negative degree shifts counter-clockwise
+- **Shuffle** - Randomly re-order sequence
+- **InnerFill** - Over-write base fill with a child fill
+
+InnerFill can also be used to apply a masking effect, removing some pixels from the sequence.
+
+```rust
+let seq = ColorSequence::solid(Rgba::purple())
+  .modify(Modification::transparent_at(Extent::absolute(1)));
+let colors = seq.generate(3);
+// Result: vec![Rgba::red(), Rgba::default(), Rgba::red()]
+```
+
 ### LEDs
 
 LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by commanding the machine directly. However this skips out on many features. A better choice is to include the bundled `LedPlugin` which adds the `LedSystem` providing the following benefits:
@@ -266,6 +403,10 @@ LEDs can be managed in multiple ways. At the lowest level, LEDs can be set by co
 - An easy way to de-activate LED declarations when a system is de-activated
 - Automatic clearing of unset LEDs per frame
 
+#### Hardware Querying
+
+Like other hardware, LEDs can be tagged. See _Tagging & Querying Hardware_ for additional examples.
+
 #### LedSystem
 
 Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
@@ -274,13 +415,13 @@ Using the LedSystems works by way of a _declaration_. A declaration doesn't forc
 // declare LEDs by name...
 ctx.declare_leds(
   &leds::EXAMPLE.q().at_z(3),
-  Colors::solid(Rgba::yellow())
+  ColorSequence::solid(Rgba::yellow())
 );
 
 // ...or by group
 ctx.declare_leds(
   vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
-  Colors::gradient(vec![Rgba::red(), Rgba::yellow()])
+  ColorSequence::gradient(vec![Rgba::red(), Rgba::yellow()])
 );
 ```
 
@@ -302,11 +443,11 @@ It is possible to declare multiple layers for the same LED. If higher layers are
 // higher layer declares 50% transparent red
 ctx.declare_leds(
   &leds::EXAMPLE.q().at_z(1),
-  Colors::solid(Rgba::red().with_alpha_f32(0.5))
+  ColorSequence::solid(Rgba::red().with_alpha_f32(0.5))
 );
 
 // over top of white
-ctx.declare_leds(&leds::EXAMPLE.q(), Colors::solid(Rgba::white()));
+ctx.declare_leds(&leds::EXAMPLE.q(), ColorSequence::solid(Rgba::white()));
 
 // final color renders as pink [255, 127, 127, 255]
 ```
@@ -417,7 +558,7 @@ impl System for AnimExample {
     // re-declaring the same LED will overwrite the previous declaration
     ctx.declare_leds(
       // declare the current animated value as the color of that LED
-      &leds::EXAMPLE.q(), Colors::solid(self.anim.sample())
+      &leds::EXAMPLE.q(), ColorSequence::solid(self.anim.sample())
     )
   }
 }
@@ -437,7 +578,7 @@ impl System for AnimExample {
 
     ctx.declare_leds(
       vec![&leds::LEFT_LANE_ARROW.q(), &leds::LEFT_LANE1.q(), &leds::LEFT_LANE2.q()].at_z(2),
-      Colors::pattern(self.anim.sample(), vec![Rgba::red()])
+      ColorSequence::pattern(self.anim.sample(), vec![Rgba::red()])
     )
   }
 }
