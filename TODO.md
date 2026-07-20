@@ -1,6 +1,5 @@
 Before Show
 
-- Giving an Rgba for an LedEffect makes it impossible to animate that color
 - Add ability to re-order, shuffle, take, etc. ColorSequence?
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
 - Defining an LED grid like strip, but with rows/cols and serpentine directions
