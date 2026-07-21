@@ -156,7 +156,7 @@ impl ColorSequence {
         Modification::Reversed => modification::reverse(&mut seq),
         Modification::Rotated { rotation } => modification::rotate(&mut seq, *rotation),
         Modification::InnerFill { fill, area } => fill::render_into(&mut seq, fill, area),
-        Modification::Shuffle { seed } => modification::shuffle(&mut seq, seed),
+        Modification::Shuffle { seed } => modification::shuffle(&mut seq, *seed),
       }
     }
 

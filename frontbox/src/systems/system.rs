@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use dyn_clone::DynClone;
 
-use crate::operator_config::LoadableConfigValue;
+use crate::operator_config::GeneralizedConfigValue;
 use crate::prelude::*;
 
 /// A `System` is a basic building block of Frontbox which responds to events, schedules timers, registers command, and handles interrupts.
@@ -48,7 +48,7 @@ pub trait System: Any {
     true
   }
 
-  fn config_values(&self) -> Vec<&'static dyn LoadableConfigValue> {
+  fn config_values(&self) -> Vec<&'static dyn GeneralizedConfigValue> {
     Vec::new()
   }
 }

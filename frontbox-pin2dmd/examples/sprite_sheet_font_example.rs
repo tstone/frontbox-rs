@@ -6,7 +6,7 @@ use frontbox_pin2dmd::*;
 
 fn main() -> rusb::Result<()> {
   let mut dmd = Pin2Dmd::connect(128, 32, PanelType::Rgb)?;
-  let bold_10px = PixelFontBuilder::new()
+  let bold_10px = SpriteSheetFontBuilder::new()
     .path(
       concat!(
         env!("CARGO_MANIFEST_DIR"),

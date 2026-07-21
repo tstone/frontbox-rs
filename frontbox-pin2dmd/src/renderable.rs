@@ -108,7 +108,7 @@ pub trait Renderable {
     }
   }
 
-  fn fliph(self) -> HFlippedRenderable
+  fn flip_h(self) -> HFlippedRenderable
   where
     Self: Sized + 'static,
   {

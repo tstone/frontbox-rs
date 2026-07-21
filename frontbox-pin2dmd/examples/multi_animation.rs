@@ -35,7 +35,7 @@ fn main() -> rusb::Result<()> {
   let mut facing_left = true;
   let bird_sheet = SpriteSheet::new(local_asset("flying.png"), 1, 3);
 
-  let bold_10px = PixelFontBuilder::new()
+  let bold_10px = SpriteSheetFontBuilder::new()
     .path(local_asset("bold_pixels.png"))
     .sheet_layout(4, 16)
     .default_char_width(9)
@@ -66,7 +66,7 @@ fn main() -> rusb::Result<()> {
       frame.add(
         bird_sheet
           .image_at(0, frame_anim.sample())
-          .fliph()
+          .flip_h()
           .left(x_anim.sample()),
       );
     }

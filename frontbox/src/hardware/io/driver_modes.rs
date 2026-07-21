@@ -5,7 +5,7 @@ use dyn_clone::DynClone;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{HardwareValue, LoadableConfigValue};
+use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
 use crate::prelude::ContextBase;
 use crate::{DriverTriggerDualMode, DriverTriggerMode};
 
@@ -14,7 +14,7 @@ use crate::{DriverTriggerDualMode, DriverTriggerMode};
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
 pub trait DriverMode: DynClone + Debug + Send + Sync {
   fn to_config(&self, ctx: &ContextBase) -> DriverConfig;
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue>;
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue>;
 }
 
 dyn_clone::clone_trait_object!(DriverMode);
@@ -61,7 +61,7 @@ impl DriverMode for PulseMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
       self.initial_pwm_power.config_value(),
@@ -119,7 +119,7 @@ impl DriverMode for PulseKickMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
       self.initial_pwm_power.config_value(),
@@ -173,7 +173,7 @@ impl DriverMode for PulseHoldMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
       self.initial_pwm_power.config_value(),
@@ -229,7 +229,7 @@ impl DriverMode for PulseHoldCancelMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
       self.initial_pwm_power.config_value(),
@@ -284,7 +284,7 @@ impl DriverMode for DelayedPulseMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.delay_length.config_value(),
       self.initial_full_power_length.config_value(),
@@ -339,7 +339,7 @@ impl DriverMode for LongPulseMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_length.config_value(),
       self.initial_pwm_power.config_value(),
@@ -400,7 +400,7 @@ impl DriverMode for FlipperMainDirectMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.initial_pwm_power.config_value(),
       self.secondary_pwm_power.config_value(),
@@ -450,7 +450,7 @@ impl DriverMode for FlipperHoldDirectMode {
     }
   }
 
-  fn loadable_config_values(&self) -> Vec<&dyn LoadableConfigValue> {
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
     vec![
       self.driver_on_time.config_value(),
       self.initial_pwm_power.config_value(),

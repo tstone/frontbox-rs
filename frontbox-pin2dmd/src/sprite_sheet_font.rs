@@ -4,14 +4,14 @@ use std::collections::HashMap;
 
 use crate::*;
 
-pub struct PixelFont {
+pub struct SpriteSheetFont {
   sprite_sheet: SpriteSheet,
   pub(crate) char_width: u16,
   starting_char: u32,
   custom_char_widths: HashMap<char, u16>,
 }
 
-impl PixelFont {
+impl SpriteSheetFont {
   pub fn new(sprite_sheet: SpriteSheet, starting_char: char) -> Self {
     Self {
       char_width: sprite_sheet.sprite_width(),
@@ -38,7 +38,7 @@ impl PixelFont {
     self.sprite_sheet.image_at(row as u8, col as u8)
   }
 
-  pub fn text(&self, text: impl Into<String>) -> PixelFontRenderable {
+  pub fn text(&self, text: impl Into<String>) -> SpriteSheetFontRenderable {
     let text = text.into();
     let text_width = text
       .chars()
@@ -54,7 +54,7 @@ impl PixelFont {
       sprites.push(char_sprite.left(left_offset));
       left_offset += char_width;
     }
-    PixelFontRenderable {
+    SpriteSheetFontRenderable {
       glyphs: sprites,
       glyph_widths: text
         .chars()
@@ -65,13 +65,13 @@ impl PixelFont {
   }
 }
 
-pub struct PixelFontRenderable {
+pub struct SpriteSheetFontRenderable {
   glyphs: Vec<LeftOffsetRenderable>,
   glyph_widths: Vec<u16>,
   width: u32,
 }
 
-impl PixelFontRenderable {
+impl SpriteSheetFontRenderable {
   pub fn width(&self) -> u32 {
     self.width
   }
@@ -91,7 +91,7 @@ impl PixelFontRenderable {
   }
 }
 
-impl Renderable for PixelFontRenderable {
+impl Renderable for SpriteSheetFontRenderable {
   fn render(&self, parent: &FrameSize) -> RenderableImage {
     let mut result = RgbaImage::new(self.width, self.glyphs[0].render(parent).image.height());
     let mut left_offset: isize = 0;
@@ -108,7 +108,7 @@ impl Renderable for PixelFontRenderable {
   }
 }
 
-pub struct PixelFontBuilder {
+pub struct SpriteSheetFontBuilder {
   sprite_sheet: Option<SpriteSheet>,
   path: Option<String>,
   rows: Option<u8>,
@@ -118,7 +118,7 @@ pub struct PixelFontBuilder {
   custom_char_widths: HashMap<char, u16>,
 }
 
-impl PixelFontBuilder {
+impl SpriteSheetFontBuilder {
   pub fn new() -> Self {
     Self {
       sprite_sheet: None,
@@ -157,7 +157,7 @@ impl PixelFontBuilder {
     self
   }
 
-  pub fn build(self) -> PixelFont {
+  pub fn build(self) -> SpriteSheetFont {
     let sprite_sheet = if let Some(sprite_sheet) = self.sprite_sheet {
       sprite_sheet
     } else if let (Some(path), Some(rows), Some(cols)) = (self.path, self.rows, self.cols) {
@@ -167,7 +167,7 @@ impl PixelFontBuilder {
       panic!("Must provide either a SpriteSheet or path + layout");
     };
 
-    let mut font = PixelFont::new(sprite_sheet, self.starting_char);
+    let mut font = SpriteSheetFont::new(sprite_sheet, self.starting_char);
     for (character, width) in self.custom_char_widths {
       font.set_custom_char_width(character, width);
     }
