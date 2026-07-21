@@ -117,13 +117,13 @@ impl RgbaColor for Rgba<u8> {
     from_hsl(hsl, a)
   }
 
-  fn lighten(self, amount: f32) -> Self {
+  fn darken(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
     hsl.lightness = (hsl.lightness * amount).clamp(0.0, 1.0);
     from_hsl(hsl, a)
   }
 
-  fn darken(self, amount: f32) -> Self {
+  fn lighten(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
     hsl.lightness = (1.0 - (hsl.lightness * amount)).clamp(0.0, 1.0);
     from_hsl(hsl, a)

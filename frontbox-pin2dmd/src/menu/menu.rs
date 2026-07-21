@@ -6,13 +6,13 @@ use crate::menu::MenuSection;
 use crate::{Fill, Frame, PixelFont, Renderable};
 
 pub struct Menu {
-  font: &'static PixelFont,
+  font: PixelFont,
   rows: Vec<MenuRow>,
   selected_config: Option<Arc<&'static dyn GeneralizedConfigValue>>,
 }
 
 impl Menu {
-  pub fn new(root: MenuSection, font: &'static PixelFont, ctx: &Context) -> Self {
+  pub fn new(root: &'static MenuSection, font: PixelFont, ctx: &Context) -> Self {
     let mut rows = Self::section_to_rows(&root, ctx);
     // start with the first row selected
     if let Some(first) = rows.get_mut(0) {
@@ -81,9 +81,12 @@ impl Menu {
   }
 
   fn render_menu_list(&self, frame: &mut Frame, ctx: &Context) {
+    let mut outer = Frame::new(frame.width(), frame.height(), Fill::Transparent)
+      .with_border(Rgba::blue().darken(0.1), 1);
+
     let row_height = (self.font.height() + 1) as usize;
     let total_rows_allowed = (frame.height() - 1) / row_height;
-    let item_col_width = (frame.width() as f32 * 0.6) as usize;
+    let item_col_width = (frame.width() as f32 * 0.7) as usize;
     let mut item_col = Frame::new(item_col_width, frame.height(), Fill::Transparent);
     let mut value_col = Frame::new(
       frame.width() - item_col_width - 1,
@@ -139,15 +142,16 @@ impl Menu {
       }
     }
 
-    frame.add(item_col);
-    frame.add(value_col.left(item_col_width as isize));
+    outer.add(item_col.left(2).top(2));
+    outer.add(value_col.left(item_col_width as isize + 2).top(2));
+    frame.add(outer);
   }
 
   fn highlight_color(selected: bool) -> Rgba<u8> {
     if selected {
-      Rgba::red()
+      Rgba::white()
     } else {
-      Rgba::yellow()
+      Rgba::yellow().darken(0.05)
     }
   }
 
@@ -161,18 +165,18 @@ impl Menu {
     row_offset: usize,
   ) {
     let color = Self::highlight_color(highlighted);
+    let name = if highlighted {
+      format!(">{}", section.name)
+    } else {
+      section.name.to_string()
+    };
 
-    item_column.add(
-      self
-        .font
-        .text(section.name, color)
-        .offset(0, row_offset as isize),
-    );
+    item_column.add(self.font.text(name, color).offset(0, row_offset as isize));
     value_column.add(
       self
         .font
         .text(format!("({})", row_count), color)
-        .offset(0, row_offset as isize),
+        .top(row_offset as isize),
     )
   }
 
