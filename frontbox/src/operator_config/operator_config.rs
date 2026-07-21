@@ -5,7 +5,8 @@ use std::path::Path;
 
 use tokio::sync::mpsc;
 
-use crate::operator_config::{ConfigValue, Domain, LoadableConfigValue};
+use crate::operator_config::{ConfigValue, Domain, GeneralizedConfigValue};
+use crate::prelude::System;
 use crate::prelude::app_message::AppMessage;
 
 pub struct OperatorConfig {
@@ -37,11 +38,11 @@ impl OperatorConfig {
   }
 
   /// Activate a config value and automatically pre-populate it with either the previously saved value or the default
-  pub fn register(&mut self, cv: &'static dyn LoadableConfigValue) {
-    if self.current_values.contains_key(cv.key()) {
+  pub fn register(&mut self, cv: &'static dyn GeneralizedConfigValue) {
+    if self.current_values.contains_key(cv.text()) {
       return; // already registered — safe if the same ConfigValue is reachable from two defs
     }
-    match self.pending_disk.get(cv.key()) {
+    match self.pending_disk.get(cv.text()) {
       Some(raw) => cv.load_from_toml(raw, &mut self.current_values),
       None => cv.insert_default(&mut self.current_values),
     }
@@ -75,5 +76,7 @@ impl OperatorConfig {
     }
   }
 }
+
+impl System for OperatorConfig {}
 
 pub struct OperatorConfigChanged(pub &'static str);

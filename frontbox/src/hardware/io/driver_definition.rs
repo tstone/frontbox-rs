@@ -21,6 +21,13 @@ impl DriverDefinition {
   pub fn lamp(name: &'static str) -> LampDefinitionBuilder {
     LampDefinitionBuilder::new(name)
   }
+
+  pub fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+    match &self.mode {
+      Some(mode) => mode.generalized_config_values(),
+      None => Vec::new(),
+    }
+  }
 }
 
 impl HardwareDefinition for DriverDefinition {

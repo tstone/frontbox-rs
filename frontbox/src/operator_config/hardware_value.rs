@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::operator_config::loadable_config_value::LoadableConfigValue;
+use crate::operator_config::generalized_config_value::GeneralizedConfigValue;
 use crate::operator_config::*;
 
 /// A value that can be assigned to configure a piece of hardware, either with a fixed value or using operator config
@@ -37,9 +37,9 @@ where
   }
 
   /// Typed version for TOML read/write
-  pub fn loadable_config_value(&self) -> Option<&dyn LoadableConfigValue>
+  pub fn generalized_config_value(&self) -> Option<&dyn GeneralizedConfigValue>
   where
-    T: Serialize + DeserializeOwned + Send + Sync,
+    T: ConfigDisplay + Serialize + DeserializeOwned + Send + Sync,
     D: Send + Sync,
   {
     match self {

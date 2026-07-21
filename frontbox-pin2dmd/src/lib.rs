@@ -1,12 +1,14 @@
 mod asset;
 mod frame;
+pub mod menu;
 mod modification;
 mod offset;
 mod pin2dmd;
-mod sprite_sheet_font;
+mod pixel_font;
 mod recolor;
 mod renderable;
 mod sprite_sheet;
+mod sprite_sheet_font;
 mod text_formatting;
 
 pub use asset::*;
@@ -14,8 +16,9 @@ pub use frame::*;
 pub use modification::*;
 pub use offset::*;
 pub use pin2dmd::*;
-pub use sprite_sheet_font::*;
+pub use pixel_font::*;
 pub use recolor::*;
 pub use renderable::*;
 pub use sprite_sheet::*;
+pub use sprite_sheet_font::*;
 pub use text_formatting::*;

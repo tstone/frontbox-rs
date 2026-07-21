@@ -193,7 +193,7 @@ impl App {
   ) {
     for driver in drivers {
       if let Some(mode) = &driver.definition.mode {
-        for cv in mode.loadable_config_values() {
+        for cv in mode.generalized_config_values() {
           operator_config.register(cv);
         }
       }
@@ -293,17 +293,17 @@ impl Default for AppConfig {
 }
 
 pub trait IntoConfigs {
-  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue>;
+  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue>;
 }
 
 impl<T: System + 'static> IntoConfigs for &T {
-  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue> {
     self.config_values()
   }
 }
 
-impl IntoConfigs for Vec<&'static dyn LoadableConfigValue> {
-  fn into_configs(self) -> Vec<&'static dyn LoadableConfigValue> {
+impl IntoConfigs for Vec<&'static dyn GeneralizedConfigValue> {
+  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue> {
     self
   }
 }

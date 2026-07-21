@@ -83,7 +83,7 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
-  fn config_values(&self) -> Vec<&'static dyn LoadableConfigValue> {
+  fn config_values(&self) -> Vec<&'static dyn GeneralizedConfigValue> {
     vec![&*configs::TURN_COUNT]
   }
 
