@@ -101,13 +101,13 @@ impl RgbaColor for Rgba<u8> {
 
   fn saturate(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
-    hsl.saturation = (1.0 - (hsl.saturation * amount)).clamp(0.0, 1.0);
+    hsl.saturation = (hsl.saturation + amount).clamp(0.0, 1.0);
     from_hsl(hsl, a)
   }
 
   fn desaturate(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
-    hsl.saturation = (hsl.saturation * amount).clamp(0.0, 1.0);
+    hsl.saturation = (hsl.saturation - amount).clamp(0.0, 1.0);
     from_hsl(hsl, a)
   }
 
@@ -119,13 +119,13 @@ impl RgbaColor for Rgba<u8> {
 
   fn darken(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
-    hsl.lightness = (hsl.lightness * amount).clamp(0.0, 1.0);
+    hsl.lightness = (hsl.lightness - amount).clamp(0.0, 1.0);
     from_hsl(hsl, a)
   }
 
   fn lighten(self, amount: f32) -> Self {
     let (mut hsl, a) = to_hsl(self);
-    hsl.lightness = (1.0 - (hsl.lightness * amount)).clamp(0.0, 1.0);
+    hsl.lightness = (hsl.lightness + amount).clamp(0.0, 1.0);
     from_hsl(hsl, a)
   }
 

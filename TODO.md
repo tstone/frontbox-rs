@@ -1,12 +1,21 @@
 Before Show
 
-- Add ability to re-order, shuffle, take, etc. ColorSequence?
+- lighten/darken colors are weird
+- Context extensions need to NOT work unless they are imported
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
 - Defining an LED grid like strip, but with rows/cols and serpentine directions
 - New frontbox-canvas crate that uses locations for 2d plane rendering via projections
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
+
+DMD Menu
+
+- Highlighted item renders with a bar behind it and inverted colors
+- Ability to render an image larger than what's available and "crop" it to a visible area
+- Why is Renderable so weird?
+- Frame offsets don't seem to factor into border widths
+- Some kind of screen transition (z+, "plays" over top and goes away -- maybe a separate system?)
 
 Nice to Have
 

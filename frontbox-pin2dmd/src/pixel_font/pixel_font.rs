@@ -18,6 +18,7 @@ impl PixelFont {
   pub fn char(&self, c: char, color: Rgba<u8>) -> Option<PixelFontRenderable> {
     let mut glyph = self.char_map.glyphs.get(&c);
 
+    // check upper case if not found
     if glyph.is_none() {
       glyph = self.char_map.glyphs.get(&c.to_ascii_uppercase())
     }
@@ -47,6 +48,7 @@ impl PixelFont {
 
     for c in text.into().chars() {
       let mut glyph = self.char_map.glyphs.get(&c);
+      // check upper case if not found
       if glyph.is_none() {
         glyph = self.char_map.glyphs.get(&c.to_ascii_uppercase())
       }
