@@ -1,15 +1,11 @@
 use crate::prelude::*;
 
 pub trait LedSystemExt {
-  fn declare_leds<T: Contextual<LedIdentifications>, C: ColorSequence>(
+  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, colors: ColorSequence);
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(
     &self,
     targets: &T,
-    colors: C,
-  );
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>, C: ColorSequence>(
-    &self,
-    targets: &T,
-    colors: C,
+    colors: ColorSequence,
   );
   fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T);
   fn activate_led_declarations(&self);
@@ -22,14 +18,10 @@ pub trait LedSystemExt {
 }
 
 impl<'a> LedSystemExt for Context<'a> {
-  fn declare_leds<T: Contextual<LedIdentifications>, C: ColorSequence>(
-    &self,
-    targets: &T,
-    colors: C,
-  ) {
+  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, seq: ColorSequence) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      let colors = colors.base_render(targets.leds.len());
+      let colors = seq.generate(targets.leds.len());
       let declarations = LedDeclarations {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,
@@ -38,14 +30,14 @@ impl<'a> LedSystemExt for Context<'a> {
     });
   }
 
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>, C: ColorSequence>(
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(
     &self,
     targets: &T,
-    colors: C,
+    seq: ColorSequence,
   ) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      let colors = colors.base_render(targets.leds.len());
+      let colors = seq.generate(targets.leds.len());
       let declarations = LedDeclarations {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,

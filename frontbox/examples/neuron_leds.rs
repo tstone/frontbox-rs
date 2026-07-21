@@ -86,16 +86,16 @@ impl LedExample {
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &Context) {
     // Declare individually
-    ctx.declare_leds(&leds::DEMO1.q(), Colors::solid(Rgba::blue()));
+    ctx.declare_leds(&leds::DEMO1.q(), ColorSequence::solid(Rgba::blue()));
     ctx.declare_leds(
       &leds::DEMO2.q().at_z(3),
-      Colors::solid(Rgba::yellow().with_alpha(127)),
+      ColorSequence::solid(Rgba::yellow().with_alpha(127)),
     );
 
     // Or declare as a sequence
     ctx.declare_leds(
       &vec![leds::DEMO1.q(), leds::DEMO2.q(), leds::DEMO3.q()].at_z(5),
-      Colors::gradient(vec![Rgba::blue(), Rgba::red()]),
+      ColorSequence::fade(Rgba::blue(), Rgba::red()),
     );
   }
 
@@ -105,7 +105,7 @@ impl System for LedExample {
     self.seq.accumulate(delta);
 
     // re-declare LEDs with updated animated colors
-    ctx.declare_leds(&leds::DEMO3.q(), Colors::solid(self.flash.sample()));
-    ctx.declare_leds(&leds::DEMO4.q(), Colors::solid(self.seq.sample()));
+    ctx.declare_leds(&leds::DEMO3.q(), ColorSequence::solid(self.flash.sample()));
+    ctx.declare_leds(&leds::DEMO4.q(), ColorSequence::solid(self.seq.sample()));
   }
 }

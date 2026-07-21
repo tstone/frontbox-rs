@@ -2,36 +2,33 @@ use crate::animation::*;
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct LedEffect<S: ColorSequence + Clone + 'static> {
+pub struct LedEffect {
   query: HardwareQuery,
-  colors: S,
-  modulation: Option<MultiModulator<S, Duration>>,
+  colors: ColorSequence,
+  modulation: Option<MultiModulator<ColorSequence, Duration>>,
 }
 
-impl<S> LedEffect<S>
-where
-  S: ColorSequence + Clone,
-{
-  pub fn new(query: HardwareQuery, starting_colors: S) -> Self {
+impl LedEffect {
+  pub fn new(query: HardwareQuery, sequence: ColorSequence) -> Self {
     Self {
       query,
-      colors: starting_colors,
+      colors: sequence,
       modulation: None,
     }
   }
 
   pub fn animate<T: Clone + Send + Sync + 'static>(
     mut self,
-    setter: impl Fn(&mut S, T) + Send + Sync + 'static,
+    setter: impl Fn(&mut ColorSequence, T) + Send + Sync + 'static,
     animation: impl Animation<Duration, T> + 'static,
   ) -> Self {
-    let modulator = Modulator::<S, T, Duration>::new(animation, setter);
+    let modulator = Modulator::<ColorSequence, T, Duration>::new(animation, setter);
     match &mut self.modulation {
       Some(m) => {
         m.add(modulator);
       }
       None => {
-        let multi = MultiModulator::<S, Duration>::new(vec![Box::new(modulator)]);
+        let multi = MultiModulator::<ColorSequence, Duration>::new(vec![Box::new(modulator)]);
         self.modulation = Some(multi);
       }
     }

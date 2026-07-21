@@ -1,24 +1,18 @@
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct LedEffectOnSpawn<S: ColorSequence + Clone + Send + Sync + 'static> {
-  effect: LedEffect<S>,
+pub struct LedEffectOnSpawn {
+  effect: LedEffect,
 }
 
-impl<S> LedEffectOnSpawn<S>
-where
-  S: ColorSequence + Clone + Send + Sync + 'static,
-{
+impl LedEffectOnSpawn {
   /// Apply the given LedEffect on spawn
-  pub fn new(effect: LedEffect<S>) -> Self {
+  pub fn new(effect: LedEffect) -> Self {
     Self { effect }
   }
 }
 
-impl<S> System for LedEffectOnSpawn<S>
-where
-  S: ColorSequence + Clone + Send + Sync + 'static,
-{
+impl System for LedEffectOnSpawn {
   fn on_spawn(&mut self, ctx: &Context) {
     self.effect.apply(Duration::ZERO, ctx)
   }
