@@ -11,6 +11,10 @@ impl PixelFont {
     Self { char_map }
   }
 
+  pub fn height(&self) -> u8 {
+    self.char_map.height
+  }
+
   pub fn char(&self, c: char, color: Rgba<u8>) -> Option<PixelFontRenderable> {
     let glyph = self.char_map.glyphs.get(&c)?;
 

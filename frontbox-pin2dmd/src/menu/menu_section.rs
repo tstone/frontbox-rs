@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use frontbox::prelude::*;
 
+#[derive(Clone)]
 pub struct MenuSection {
-  name: &'static str,
-  sections: Vec<MenuSection>,
-  configs: Vec<Box<&'static dyn GeneralizedConfigValue>>,
+  pub name: &'static str,
+  pub sections: Vec<MenuSection>,
+  pub configs: Vec<Arc<&'static dyn GeneralizedConfigValue>>,
 }
 
 impl MenuSection {
@@ -26,8 +29,12 @@ impl MenuSection {
 
   pub fn configs(mut self, configs: Vec<&'static dyn GeneralizedConfigValue>) -> Self {
     for config in configs {
-      self.configs.push(Box::new(config));
+      self.configs.push(Arc::new(config));
     }
     self
+  }
+
+  pub fn child_count(&self) -> usize {
+    self.sections.len() + self.configs.len()
   }
 }
