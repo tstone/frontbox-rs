@@ -26,8 +26,54 @@ impl Menu {
     }
   }
 
+  pub fn increment(&mut self) {
+    if let Some(selected_config) = &self.selected_config {
+      todo!();
+    } else {
+      if let Some((rows, highlighted)) = Self::find_current_highlight_mut(&mut self.rows) {
+        let next = highlighted.saturating_add(1).clamp(0, rows.len());
+        *rows[highlighted].highlighted_mut() = false;
+        *rows[next].highlighted_mut() = true;
+      }
+    }
+  }
+
+  pub fn decrement(&mut self) {
+    if let Some(selected_config) = &self.selected_config {
+      todo!();
+    } else {
+      if let Some((rows, highlighted)) = Self::find_current_highlight_mut(&mut self.rows) {
+        let prev = highlighted.saturating_sub(1).clamp(0, rows.len());
+        *rows[highlighted].highlighted_mut() = false;
+        *rows[prev].highlighted_mut() = true;
+      }
+    }
+  }
+
+  pub fn select(&mut self) {
+    if let Some(selected_config) = &self.selected_config {
+      self.selected_config = None;
+    } else {
+      if let Some((rows, highlighted)) = Self::find_current_highlight_mut(&mut self.rows) {
+        *rows[highlighted].highlighted_mut() = false;
+        match &mut rows[highlighted] {
+          MenuRow::Section { section, rows, .. } => {
+            // select first item of child
+            if let Some(row) = rows.get_mut(0) {
+              *row.highlighted_mut() = true;
+            }
+          }
+          MenuRow::Config { config, .. } => self.selected_config = Some(config.clone()),
+        }
+      }
+    }
+  }
+
+  pub fn back(&mut self) {}
+
   pub fn render(&self, frame: &mut Frame, ctx: &Context) {
     if let Some(selected_config) = &self.selected_config {
+      // render a view with the description, default, and current value
       todo!();
     } else {
       self.render_menu_list(frame, ctx);
@@ -46,7 +92,7 @@ impl Menu {
     );
 
     // find selection
-    if let Some((rows, selected)) = Self::find_current_selection(&self.rows) {
+    if let Some((rows, selected)) = Self::find_current_highlight(&self.rows) {
       let mut rendered_rows = 0;
       let mut row_offset = 0;
 
@@ -155,22 +201,44 @@ impl Menu {
     )
   }
 
-  fn find_current_selection(rows: &Vec<MenuRow>) -> Option<(&Vec<MenuRow>, usize)> {
+  fn find_current_highlight(rows: &Vec<MenuRow>) -> Option<(&Vec<MenuRow>, usize)> {
     for (i, row) in rows.iter().enumerate() {
       match row {
-        MenuRow::Config {
-          highlighted: selected,
-          ..
-        } if *selected => return Some((rows, i)),
-        MenuRow::Section {
-          highlighted: selected,
-          ..
-        } if *selected => return Some((rows, i)),
-        MenuRow::Section { rows, .. } => match Self::find_current_selection(rows) {
+        MenuRow::Config { highlighted, .. } if *highlighted => return Some((rows, i)),
+        MenuRow::Section { highlighted, .. } if *highlighted => return Some((rows, i)),
+        MenuRow::Section { rows, .. } => match Self::find_current_highlight(rows) {
           Some(rs) => return Some(rs),
           None => {}
         },
         _ => {}
+      }
+    }
+
+    None
+  }
+
+  fn find_current_highlight_mut(rows: &mut Vec<MenuRow>) -> Option<(&mut Vec<MenuRow>, usize)> {
+    for (i, row) in rows.iter_mut().enumerate() {
+      match row {
+        MenuRow::Config { highlighted, .. } if *highlighted => {
+          return Some((rows, i));
+        }
+        MenuRow::Section { highlighted, .. } if *highlighted => {
+          return Some((rows, i));
+        }
+        _ => {}
+      }
+    }
+
+    // second pass for recursion — see below
+    for row in rows.iter_mut() {
+      if let MenuRow::Section {
+        rows: child_rows, ..
+      } = row
+      {
+        if let Some(found) = Self::find_current_highlight_mut(child_rows) {
+          return Some(found);
+        }
       }
     }
 
