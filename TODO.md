@@ -1,9 +1,7 @@
 Before Show
 
-- lighten/darken colors are weird
 - Context extensions need to NOT work unless they are imported
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
-- Defining an LED grid like strip, but with rows/cols and serpentine directions
 - New frontbox-canvas crate that uses locations for 2d plane rendering via projections
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
@@ -16,9 +14,12 @@ DMD Menu
 - Why is Renderable so weird?
 - Frame offsets don't seem to factor into border widths
 - Some kind of screen transition (z+, "plays" over top and goes away -- maybe a separate system?)
+- Play sounds on inc/dec/select/back
+- Only show menu if door is open
 
 Nice to Have
 
+- Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?
 - Streamline curve choices
 - combine DMD rendering + led canvas rendering
 - LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color modifications
