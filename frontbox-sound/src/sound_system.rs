@@ -49,7 +49,7 @@ impl SoundSystem {
       },
       ..Default::default()
     })
-    .map(|manager| Self::raw(manager))
+    .map(Self::raw)
   }
 
   #[allow(unused)]
@@ -195,18 +195,17 @@ impl System for SoundSystem {
     } = self;
 
     // un-duck music if callout finished
-    if active_callout.is_some() {
-      if active_callout.as_ref().unwrap().state() == PlaybackState::Stopped {
-        // check if there are any queued callouts, and if so play the next one instead of un-ducking music
-        if let Some(next_key) = self.callout_queue.pop() {
-          if let Some(sound) = self.sounds.get(next_key) {
-            self.play_callout_sound(sound.clone());
-            return;
-          }
-        } else {
-          self.active_callout = None;
-          Self::unduck_track(music_track);
+    if active_callout.is_some()
+      && active_callout.as_ref().unwrap().state() == PlaybackState::Stopped
+    {
+      // check if there are any queued callouts, and if so play the next one instead of un-ducking music
+      if let Some(next_key) = self.callout_queue.pop() {
+        if let Some(sound) = self.sounds.get(next_key) {
+          self.play_callout_sound(sound.clone());
         }
+      } else {
+        self.active_callout = None;
+        Self::unduck_track(music_track);
       }
     }
   }

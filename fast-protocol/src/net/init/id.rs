@@ -64,6 +64,12 @@ impl FastRequestCommand for IdCommand {
   }
 }
 
+impl Default for IdCommand {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdResponse {
   Report {

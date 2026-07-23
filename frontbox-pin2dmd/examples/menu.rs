@@ -5,7 +5,7 @@ use frontbox_pin2dmd::menu::*;
 
 fn main() {
   hardware_defs! {
-    pub drop_coil: DriverDefinition = DriverDefinition::new("example")
+    pub DROP_COIL: DriverDefinition = DriverDefinition::new("example")
       .mode(PulseMode {
         initial_pwm_length: HardwareValue::config(
           "Drop Target Reset Duration",
@@ -17,7 +17,7 @@ fn main() {
       });
   }
 
-  let menu = MenuSection::root()
-    .section(MenuSection::new("Section 1").configs(drop_coil.generalized_config_values()))
+  let _menu = MenuSection::root()
+    .section(MenuSection::new("Section 1").configs(DROP_COIL.generalized_config_values()))
     .section(MenuSection::new("Section 2"));
 }

@@ -50,10 +50,10 @@ impl System for FreePlay {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-      if self.start_button_switch.matches_switch(&e.switch) {
-        self.on_start_button_pressed(ctx);
-      }
+    if let Some(e) = event.downcast_ref::<SwitchClosed>()
+      && self.start_button_switch.matches_switch(&e.switch)
+    {
+      self.on_start_button_pressed(ctx);
     }
   }
 }

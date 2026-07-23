@@ -6,14 +6,14 @@ use crate::menu::MenuSection;
 use crate::{Fill, Frame, PixelFont, Renderable};
 
 pub struct Menu {
-  font: PixelFont,
+  font: &'static PixelFont,
   rows: Vec<MenuRow>,
   selected_config: Option<Arc<&'static dyn GeneralizedConfigValue>>,
 }
 
 impl Menu {
-  pub fn new(root: &'static MenuSection, font: PixelFont, ctx: &Context) -> Self {
-    let mut rows = Self::section_to_rows(&root, ctx);
+  pub fn new(root: MenuSection, font: &'static PixelFont) -> Self {
+    let mut rows = Self::section_to_rows(&root);
     // start with the first row selected
     if let Some(first) = rows.get_mut(0) {
       *first.highlighted_mut() = true;
@@ -57,7 +57,7 @@ impl Menu {
       if let Some((rows, highlighted)) = Self::find_current_highlight_mut(&mut self.rows) {
         *rows[highlighted].highlighted_mut() = false;
         match &mut rows[highlighted] {
-          MenuRow::Section { section, rows, .. } => {
+          MenuRow::Section { rows, .. } => {
             // select first item of child
             if let Some(row) = rows.get_mut(0) {
               *row.highlighted_mut() = true;
@@ -81,12 +81,9 @@ impl Menu {
   }
 
   fn render_menu_list(&self, frame: &mut Frame, ctx: &Context) {
-    let mut outer = Frame::new(frame.width(), frame.height(), Fill::Transparent)
-      .with_border(Rgba::blue().darken(0.1), 1);
-
     let row_height = (self.font.height() + 1) as usize;
     let total_rows_allowed = (frame.height() - 1) / row_height;
-    let item_col_width = (frame.width() as f32 * 0.7) as usize;
+    let item_col_width = (frame.width() as f32 * 0.6) as usize;
     let mut item_col = Frame::new(item_col_width, frame.height(), Fill::Transparent);
     let mut value_col = Frame::new(
       frame.width() - item_col_width - 1,
@@ -142,16 +139,15 @@ impl Menu {
       }
     }
 
-    outer.add(item_col.left(2).top(2));
-    outer.add(value_col.left(item_col_width as isize + 2).top(2));
-    frame.add(outer);
+    frame.add(item_col);
+    frame.add(value_col.left(item_col_width as isize));
   }
 
   fn highlight_color(selected: bool) -> Rgba<u8> {
     if selected {
-      Rgba::white()
+      Rgba::red()
     } else {
-      Rgba::yellow().darken(0.05)
+      Rgba::yellow()
     }
   }
 
@@ -165,18 +161,18 @@ impl Menu {
     row_offset: usize,
   ) {
     let color = Self::highlight_color(highlighted);
-    let name = if highlighted {
-      format!(">{}", section.name)
-    } else {
-      section.name.to_string()
-    };
 
-    item_column.add(self.font.text(name, color).offset(0, row_offset as isize));
+    item_column.add(
+      self
+        .font
+        .text(section.name, color)
+        .offset(0, row_offset as isize),
+    );
     value_column.add(
       self
         .font
         .text(format!("({})", row_count), color)
-        .top(row_offset as isize),
+        .offset(0, row_offset as isize),
     )
   }
 
@@ -236,24 +232,25 @@ impl Menu {
 
     // second pass for recursion — see below
     for row in rows.iter_mut() {
-      if let MenuRow::Section {
-        rows: child_rows, ..
-      } = row
-      {
-        if let Some(found) = Self::find_current_highlight_mut(child_rows) {
-          return Some(found);
+      match row {
+        // search child rows
+        MenuRow::Section { rows, .. } => {
+          if let Some(found) = Self::find_current_highlight_mut(rows) {
+            return Some(found);
+          }
         }
+        _ => {}
       }
     }
 
     None
   }
 
-  fn section_to_rows(section: &MenuSection, ctx: &Context) -> Vec<MenuRow> {
+  fn section_to_rows(section: &MenuSection) -> Vec<MenuRow> {
     let mut rows: Vec<MenuRow> = Vec::new();
 
     for section in &section.sections {
-      let children = Self::section_to_rows(&section, ctx);
+      let children = Self::section_to_rows(section);
       rows.push(MenuRow::Section {
         section: section.clone(),
         rows: children,

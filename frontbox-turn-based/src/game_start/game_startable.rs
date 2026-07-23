@@ -54,6 +54,12 @@ impl GameStartable {
   }
 }
 
+impl Default for GameStartable {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl System for GameStartable {
   fn is_active(&self, ctx: &Context) -> bool {
     // active if game is startable or player addable
@@ -74,9 +80,9 @@ impl System for GameStartable {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    if let Some(_) = event.downcast_ref::<On>() {
+    if event.downcast_ref::<On>().is_some() {
       self.start_btn_on(ctx);
-    } else if let Some(_) = event.downcast_ref::<Off>() {
+    } else if event.downcast_ref::<Off>().is_some() {
       self.start_btn_off(ctx);
     }
   }

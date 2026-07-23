@@ -4,6 +4,12 @@ pub struct DriverTriggerBuilder {
   flags: DriverTrigger,
 }
 
+impl Default for DriverTriggerBuilder {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl DriverTriggerBuilder {
   pub fn new() -> Self {
     Self {

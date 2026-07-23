@@ -53,8 +53,7 @@ pub fn derive_storable(input: TokenStream) -> TokenStream {
 }
 
 fn to_camel_case(s: &str) -> String {
-  s.to_string()
-    .split('_')
+  s.split('_')
     .map(|word| {
       let mut chars = word.chars();
       match chars.next() {

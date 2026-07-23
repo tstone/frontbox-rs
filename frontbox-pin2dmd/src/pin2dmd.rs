@@ -67,7 +67,7 @@ impl Pin2Dmd {
   }
 
   pub fn render(&mut self, frame: &Frame) -> rusb::Result<()> {
-    let rendered = frame.render(&FrameSize::for_dmd(&self));
+    let rendered = frame.render(&FrameSize::for_dmd(self));
     let pixels = rendered.image.to_rgb8().into_raw();
     self.render_pixels(&pixels)
   }
@@ -134,7 +134,7 @@ impl Pin2Dmd {
           | ((prl & 1) << 3)
           | ((pg & 1) << 2)
           | ((pb & 1) << 1)
-          | ((pr & 1) << 0);
+          | (pr & 1);
 
         pr >>= 1;
         pg >>= 1;

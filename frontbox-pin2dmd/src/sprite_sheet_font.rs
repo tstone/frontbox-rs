@@ -161,8 +161,7 @@ impl SpriteSheetFontBuilder {
     let sprite_sheet = if let Some(sprite_sheet) = self.sprite_sheet {
       sprite_sheet
     } else if let (Some(path), Some(rows), Some(cols)) = (self.path, self.rows, self.cols) {
-      let sprite_sheet = SpriteSheet::new(path, rows, cols);
-      sprite_sheet
+      SpriteSheet::new(path, rows, cols)
     } else {
       panic!("Must provide either a SpriteSheet or path + layout");
     };
@@ -177,5 +176,11 @@ impl SpriteSheetFontBuilder {
     }
 
     font
+  }
+}
+
+impl Default for SpriteSheetFontBuilder {
+  fn default() -> Self {
+    Self::new()
   }
 }
