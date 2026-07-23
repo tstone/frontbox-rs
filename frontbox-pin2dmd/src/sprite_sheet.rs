@@ -1,6 +1,6 @@
 use crate::Asset;
 
-/// Multiple sprite, within the same image file, layed out in a grid
+/// Multiple sprite, within the same image file, laid out in a grid
 #[derive(Debug, Clone)]
 pub struct SpriteSheet {
   image: image::DynamicImage,

@@ -1,11 +1,17 @@
-Before Show
-
 - Context extensions need to NOT work unless they are imported
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
-- New frontbox-canvas crate that uses locations for 2d plane rendering via projections
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
+
+Canvas
+
+- Render whole image + sprite sheet off disk
+- Remove duplicate elements from DMD (keep pixel font rendering in DMD)
+- Pixel font rendering should maybe just take a pixel char map
+- Modulations should work with canvas
+- Uses locations for 2d plane rendering via projections
+- Reference plane stitching
 
 DMD Menu
 
