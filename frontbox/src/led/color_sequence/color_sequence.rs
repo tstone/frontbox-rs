@@ -98,7 +98,7 @@ impl ColorSequence {
     }
   }
 
-  pub fn padded(mut self, padding_left: Extent, padding_right: Extent) -> Self {
+  pub fn padded(mut self, padding_left: Extent<u16>, padding_right: Extent<u16>) -> Self {
     self.fill_area = FillArea::Padded {
       left: padding_left,
       right: padding_right,
@@ -106,7 +106,7 @@ impl ColorSequence {
     self
   }
 
-  pub fn padding_left(mut self, padding: Extent) -> Self {
+  pub fn padding_left(mut self, padding: Extent<u16>) -> Self {
     self.fill_area = match self.fill_area {
       FillArea::Padded { right, .. } => FillArea::Padded {
         left: padding,
@@ -120,7 +120,7 @@ impl ColorSequence {
     self
   }
 
-  pub fn padding_right(mut self, padding: Extent) -> Self {
+  pub fn padding_right(mut self, padding: Extent<u16>) -> Self {
     self.fill_area = match self.fill_area {
       FillArea::Padded { left, .. } => FillArea::Padded {
         left,
@@ -134,7 +134,7 @@ impl ColorSequence {
     self
   }
 
-  pub fn anchored(mut self, anchor: Anchor, length: Extent) -> Self {
+  pub fn anchored(mut self, anchor: Anchor, length: Extent<u16>) -> Self {
     self.fill_area = FillArea::Anchored { length, anchor };
     self
   }

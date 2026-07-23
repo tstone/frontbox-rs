@@ -28,7 +28,7 @@ impl Modification {
     Self::Shuffle { seed }
   }
 
-  pub fn transparent_at(extant: Extent) -> Self {
+  pub fn transparent_at(extant: Extent<u16>) -> Self {
     Self::inner_fill(
       Fill::Pattern {
         pattern: vec![Rgba::default()],

@@ -6,12 +6,12 @@ use crate::prelude::*;
 #[derive(Clone, Debug)]
 pub struct GradientStop {
   pub color: Rgba<u8>,
-  pub position: Extent, // 0.0..=1.0
+  pub position: Extent<u16>, // 0.0..=1.0
 }
 
 impl GradientStop {
   /// position = 0.0..=1.0
-  pub fn new(position: impl Into<Extent>, color: Rgba<u8>) -> Self {
+  pub fn new(position: impl Into<Extent<u16>>, color: Rgba<u8>) -> Self {
     GradientStop {
       color,
       position: position.into(),
@@ -19,7 +19,7 @@ impl GradientStop {
   }
 }
 
-pub fn render(stops: &Vec<GradientStop>, length: usize) -> Vec<Rgba<u8>> {
+pub fn render(stops: &Vec<GradientStop>, length: u16) -> Vec<Rgba<u8>> {
   (0..length)
     .map(|i| {
       let t = if length <= 1 {
@@ -32,7 +32,7 @@ pub fn render(stops: &Vec<GradientStop>, length: usize) -> Vec<Rgba<u8>> {
     .collect()
 }
 
-fn sample(stops: &Vec<GradientStop>, length: usize, t: f32) -> Rgba<u8> {
+fn sample(stops: &Vec<GradientStop>, length: u16, t: f32) -> Rgba<u8> {
   // find the two stops that straddle t
   let pair = stops
     .windows(2)

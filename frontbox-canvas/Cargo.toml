@@ -1,0 +1,10 @@
+[package]
+name = "frontbox-canvas"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.29"
+frontbox = { path = "../frontbox" }
+image = "0.25.9"
+glam = "0.33.2"

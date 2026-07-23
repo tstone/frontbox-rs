@@ -2,7 +2,7 @@ use image::Rgba;
 
 use crate::prelude::*;
 
-pub fn render(pattern: &Vec<Rgba<u8>>, cycle: Cycle, length: usize) -> Vec<Rgba<u8>> {
+pub fn render(pattern: &Vec<Rgba<u8>>, cycle: Cycle, length: u16) -> Vec<Rgba<u8>> {
   let mut pattern_offset: usize = 0;
   let mut cycle_count = 0;
 
