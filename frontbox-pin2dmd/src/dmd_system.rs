@@ -9,6 +9,13 @@ pub struct DmdSystem {
 }
 
 impl DmdSystem {
+  pub fn new(dmd: Pin2Dmd) -> Self {
+    Self {
+      dmd,
+      canvas: Canvas::new(),
+    }
+  }
+
   pub fn insert_layer(&mut self, z_index: usize, layer: impl Into<LayerEntry>) {
     self.canvas.insert(z_index, layer.into());
   }
@@ -19,7 +26,7 @@ impl DmdSystem {
 
   pub fn clear(&mut self) {
     self.canvas.clear();
-    self.dmd.clear();
+    let _ = self.dmd.clear();
   }
 
   pub fn size(&self) -> &Size<u32> {
@@ -30,6 +37,6 @@ impl DmdSystem {
 impl System for DmdSystem {
   fn on_render(&mut self, _ctx: &Context) {
     let pixels = self.canvas.to_pixels(&self.dmd.size);
-    self.dmd.render(&pixels);
+    let _ = self.dmd.render(&pixels);
   }
 }

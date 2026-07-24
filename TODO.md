@@ -1,3 +1,6 @@
+- There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
+  States: attract, door open, in-game
+
 - Context extensions need to NOT work unless they are imported
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
@@ -6,22 +9,21 @@
 
 Canvas
 
+- LayerGen can't be re-positioned like Layer can
+- Container probably needs a fill behind it instead of relying on rectangle
+- Update examples
 - Render whole image + sprite sheet off disk
-- Remove duplicate elements from DMD (keep pixel font rendering in DMD)
-- Pixel font rendering should maybe just take a pixel char map
 - Modulations should work with canvas
 - Uses locations for 2d plane rendering via projections
+- Fill2d needs a perlin noise fill
 - Reference plane stitching
 
 DMD Menu
 
-- Highlighted item renders with a bar behind it and inverted colors
-- Ability to render an image larger than what's available and "crop" it to a visible area
-- Why is Renderable so weird?
-- Frame offsets don't seem to factor into border widths
-- Some kind of screen transition (z+, "plays" over top and goes away -- maybe a separate system?)
-- Play sounds on inc/dec/select/back
-- Only show menu if door is open
+- How will DMD menu system know about the sound system (interface?)
+- Menu up/down navigation doesn't work
+- Need to be able to edit a config
+- Some kind of left/right menu transition animations (z+, "plays" over top and goes away -- maybe a separate system?)
 
 Nice to Have
 

@@ -11,11 +11,12 @@ const INC_SOUND: &'static str = "dmd_menu_inc";
 const DEC_SOUND: &'static str = "dmd_menu_dec";
 const BACK_SND: &'static str = "dmd_menu_back";
 const NOT_ALLOWED_SND: &'static str = "dmd_menu_not_allowed";
+const MENU_BEGIN_SND: &'static str = "dmd_menu_begin";
+const MENU_END_SND: &'static str = "dmd_menu_end";
 
 pub struct DmdMenuSystem {
   switch_names: MenuSwitches,
   theme: DmdMenuTheme,
-  root: &'static MenuSection,
   section_lookup: HashMap<u64, SectionEntry>,
   active_section: &'static MenuSection,
   rows: Vec<MenuRow>,
@@ -28,12 +29,18 @@ pub struct DmdMenuSystem {
 impl DmdMenuSystem {
   pub fn new(switch_names: MenuSwitches, root: &'static MenuSection, theme: DmdMenuTheme) -> Self {
     let mut section_lookup = HashMap::<u64, SectionEntry>::new();
+    section_lookup.insert(
+      root.id,
+      SectionEntry {
+        section: root,
+        parent: None,
+      },
+    );
     Self::build_section_lookup(&mut section_lookup, root);
 
     Self {
       switch_names,
       theme,
-      root,
       section_lookup,
       requires_row_refresh: true,
       active_section: root,
@@ -43,20 +50,17 @@ impl DmdMenuSystem {
     }
   }
 
+  /// Build a quick id => section, section parent lookup table for fast navigation
   fn build_section_lookup(lookup: &mut HashMap<u64, SectionEntry>, parent: &'static MenuSection) {
     for section in &parent.sections {
-      lookup.insert(section.id, SectionEntry { section, parent });
+      lookup.insert(
+        section.id,
+        SectionEntry {
+          section,
+          parent: Some(parent),
+        },
+      );
       Self::build_section_lookup(lookup, section);
-    }
-  }
-
-  fn build_parent_lookup(
-    lookup: &mut HashMap<u64, &'static MenuSection>,
-    explore_section: &'static MenuSection,
-  ) {
-    for section in &explore_section.sections {
-      lookup.insert(section.id, explore_section);
-      Self::build_parent_lookup(lookup, section);
     }
   }
 
@@ -67,9 +71,13 @@ impl DmdMenuSystem {
   }
 
   fn navigate_back(&mut self, ctx: &Context) {
-    if let Some(entry) = self.section_lookup.get(&self.active_section.id) {
+    let parent = self
+      .section_lookup
+      .get(&self.active_section.id)
+      .and_then(|e| e.parent);
+    if let Some(parent) = parent {
       self.play_sound(BACK_SND, ctx);
-      self.activate_section(entry.parent, ctx);
+      self.activate_section(parent, ctx);
     } else {
       self.play_sound(NOT_ALLOWED_SND, ctx);
     }
@@ -82,6 +90,7 @@ impl DmdMenuSystem {
         self.activate_section(section, ctx);
       }
       MenuRow::Config { name, .. } => {
+        // How to associate a menu row back to a config value?
         todo!();
       }
     }
@@ -227,6 +236,7 @@ impl System for DmdMenuSystem {
   fn on_spawn(&mut self, ctx: &Context) {
     // TODO: register sounds
     // TODO: need a direct dependency on frontbox-sound (is there a way to GameManager interface this?)
+    self.on_reactivate(ctx);
   }
 
   fn on_reactivate(&mut self, ctx: &Context) {
@@ -234,6 +244,7 @@ impl System for DmdMenuSystem {
       dmd.clear();
       self.requires_row_refresh = true;
     }
+    self.play_sound(MENU_BEGIN_SND, ctx);
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &Context) {
@@ -287,5 +298,5 @@ pub struct MenuSwitches {
 
 struct SectionEntry {
   section: &'static MenuSection,
-  parent: &'static MenuSection,
+  parent: Option<&'static MenuSection>,
 }
