@@ -21,6 +21,14 @@ where
     Self::Relative(100.0)
   }
 
+  pub fn fixed(t: T) -> Self {
+    Self::Absolute(t)
+  }
+
+  pub fn percent(p: f32) -> Self {
+    Self::Relative(p)
+  }
+
   pub fn to_absolute(&self, full: T) -> T {
     match self {
       Self::Absolute(i) => *i,

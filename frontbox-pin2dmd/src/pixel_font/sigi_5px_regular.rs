@@ -852,6 +852,18 @@ pub static SIGI_REGULAR_5PX_FONT: LazyLock<PixelFontCharacterMap> = LazyLock::ne
     },
   );
 
+  glyphs.insert(
+    '…',
+    PixelFontGlyph {
+      name: "…",
+      width: 5,
+      pixels: vec![
+        false, false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, true, false, true, false, true,
+      ],
+    },
+  );
+
   PixelFontCharacterMap {
     name: "Sigi 5px Regular",
     height: 5,

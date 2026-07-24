@@ -1,4 +1,4 @@
-use image::{ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgba};
 
 use crate::*;
 
@@ -10,6 +10,12 @@ pub enum LayerEntry {
 impl From<Layer> for LayerEntry {
   fn from(value: Layer) -> Self {
     LayerEntry::Static(value)
+  }
+}
+
+impl From<DynamicImage> for LayerEntry {
+  fn from(value: DynamicImage) -> Self {
+    LayerEntry::Static(Layer::top_left(value))
   }
 }
 
@@ -30,8 +36,8 @@ impl LayerEntry {
       LayerEntry::Static(l) => l,
       LayerEntry::Generated(g) => &g.generate(viewport),
     };
-    let layer_img = layer.img.to_rgba8();
-    let (viewport_offset_x, viewport_offset_y) = layer.offsets(viewport);
+    let layer_img = layer.image.to_rgba8();
+    let (viewport_offset_x, viewport_offset_y) = layer.absolute_offsets(viewport);
 
     for y in 0..layer_img.height() as i32 {
       for x in 0..layer_img.width() as i32 {

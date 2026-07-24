@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 log = "0.4.29"
 frontbox = { path = "../frontbox" }
+frontbox-canvas = { path = "../frontbox-canvas" }
 rusb = "0.9.4"
 image = "0.25.9"
 rand = "0.10.0"

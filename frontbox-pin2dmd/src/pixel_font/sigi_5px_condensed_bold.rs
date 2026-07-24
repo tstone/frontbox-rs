@@ -837,6 +837,18 @@ pub static SIGI_CONDENSED_BOLD_5PX_FONT: LazyLock<PixelFontCharacterMap> = LazyL
     },
   );
 
+  glyphs.insert(
+    '…',
+    PixelFontGlyph {
+      name: "…",
+      width: 5,
+      pixels: vec![
+        false, false, false, false, false, false, false, false, false, false, false, false, false,
+        false, false, false, false, false, false, false, true, false, true, false, true,
+      ],
+    },
+  );
+
   PixelFontCharacterMap {
     name: "Sigi 5px Condensed Bold",
     height: 5,

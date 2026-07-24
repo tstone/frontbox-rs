@@ -22,6 +22,14 @@ impl Canvas {
     self.layers.insert(index, layer.into());
   }
 
+  pub fn remove(&mut self, index: usize) {
+    self.layers.remove(index);
+  }
+
+  pub fn clear(&mut self) {
+    self.layers.clear();
+  }
+
   pub fn to_image(&self, viewport: &Size<u32>) -> DynamicImage {
     let mut buffer = RgbaImage::new(viewport.width, viewport.height);
     LayerEntry::render_all_at(&self.layers, viewport, Position::zero(), &mut buffer);

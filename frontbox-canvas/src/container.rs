@@ -57,6 +57,11 @@ impl Container {
     self
   }
 
+  pub fn with_padding(mut self, padding: Padding) -> Self {
+    self.padding = padding;
+    self
+  }
+
   /// Add a layer above all other layers
   pub fn push(&mut self, layer: impl Into<LayerEntry>) {
     self.layers.push(layer.into());
@@ -114,7 +119,7 @@ impl LayerGenerator for Container {
     }
 
     Layer {
-      img: DynamicImage::ImageRgba8(buffer),
+      image: DynamicImage::ImageRgba8(buffer),
       horizontal: self.horizontal,
       vertical: self.vertical,
     }
@@ -132,6 +137,15 @@ pub struct Padding {
 impl Padding {
   pub fn zero() -> Self {
     Padding::default()
+  }
+
+  pub fn new(left: u32, top: u32, right: u32, bottom: u32) -> Self {
+    Self {
+      left,
+      right,
+      top,
+      bottom,
+    }
   }
 }
 

@@ -13,6 +13,16 @@ pub struct Rectangle {
 }
 
 impl Rectangle {
+  pub fn new(width: impl Into<Extent<u32>>, height: impl Into<Extent<u32>>, fill: Fill2d) -> Self {
+    Self {
+      size: Size::new(width.into(), height.into()),
+      horizontal: Horizontal::default(),
+      vertical: Vertical::default(),
+      fill,
+      border: None,
+    }
+  }
+
   pub fn transparent(width: impl Into<Extent<u32>>, height: impl Into<Extent<u32>>) -> Self {
     Self {
       size: Size::new(width.into(), height.into()),
@@ -88,57 +98,6 @@ impl Rectangle {
     self.border = Some(Border::new(width, color));
     self
   }
-
-  fn axis_length(width: u32, height: u32, angle_degrees: f32) -> f32 {
-    let theta = angle_degrees.to_radians();
-    width as f32 * theta.cos().abs() + height as f32 * theta.sin().abs()
-  }
-
-  fn gradient_axis_position(x: u32, y: u32, width: u32, height: u32, angle_degrees: f32) -> f32 {
-    let theta = angle_degrees.to_radians();
-    let (dx, dy) = (theta.cos(), theta.sin());
-
-    let cx = x as f32 - (width as f32 - 1.0) / 2.0;
-    let cy = y as f32 - (height as f32 - 1.0) / 2.0;
-    let projection = cx * dx + cy * dy;
-
-    // Shift from centered [-LEN/2, LEN/2] into [0, LEN]
-    projection + Self::axis_length(width, height, angle_degrees) / 2.0
-  }
-
-  fn sample_gradient_stops(stops: &[GradientStop], axis_pos: f32, axis_len: u16) -> Rgba<u8> {
-    if stops.is_empty() {
-      return Rgba([0, 0, 0, 0]);
-    }
-    if stops.len() == 1 {
-      return stops[0].color;
-    }
-
-    let axis_pos = axis_pos.clamp(0.0, axis_len as f32);
-
-    let mut lower = &stops[0];
-    let mut upper = &stops[stops.len() - 1];
-
-    for pair in stops.windows(2) {
-      let lo_pos = pair[0].position.to_absolute(axis_len) as f32;
-      let hi_pos = pair[1].position.to_absolute(axis_len) as f32;
-      if axis_pos >= lo_pos && axis_pos <= hi_pos {
-        lower = &pair[0];
-        upper = &pair[1];
-        break;
-      }
-    }
-
-    let lo_pos = lower.position.to_absolute(axis_len) as f32;
-    let hi_pos = upper.position.to_absolute(axis_len) as f32;
-
-    if hi_pos <= lo_pos {
-      return lower.color;
-    }
-
-    let local_t = (axis_pos - lo_pos) / (hi_pos - lo_pos);
-    lower.color.mix_with(upper.color, local_t)
-  }
 }
 
 impl LayerGenerator for Rectangle {
@@ -146,17 +105,18 @@ impl LayerGenerator for Rectangle {
     let width = self.size.width.to_absolute(viewport.width);
     let height = self.size.height.to_absolute(viewport.height);
     let mut buffer = RgbaImage::new(width, height);
+    let gradient = if let Fill2d::Gradient(stops, angle) = &self.fill {
+      Gradient2d::new(stops.clone(), *angle, Size::new(width, height))
+    } else {
+      Gradient2d::default()
+    };
 
     for y in 0..height {
       for x in 0..width {
         let pixel = match &self.fill {
           Fill2d::Transparent => Rgba([0, 0, 0, 0]),
           Fill2d::Solid(color) => *color,
-          Fill2d::Gradient(stops, angle) => {
-            let axis_len = Self::axis_length(width, height, *angle).round() as u16;
-            let axis_pos = Self::gradient_axis_position(x, y, width, height, *angle);
-            Self::sample_gradient_stops(stops, axis_pos, axis_len)
-          }
+          Fill2d::Gradient(..) => gradient.sample_at_point(x, y),
         };
 
         if pixel[3] == 0 {
@@ -168,7 +128,7 @@ impl LayerGenerator for Rectangle {
     }
 
     Layer {
-      img: DynamicImage::ImageRgba8(buffer),
+      image: DynamicImage::ImageRgba8(buffer),
       horizontal: self.horizontal,
       vertical: self.vertical,
     }

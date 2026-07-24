@@ -698,6 +698,7 @@ name = "frontbox-pin2dmd"
 version = "0.1.0"
 dependencies = [
  "frontbox",
+ "frontbox-canvas",
  "image",
  "log",
  "rand 0.10.0",

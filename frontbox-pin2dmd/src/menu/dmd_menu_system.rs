@@ -1,0 +1,291 @@
+use std::collections::HashMap;
+
+use frontbox::prelude::*;
+use frontbox_canvas::*;
+
+use crate::menu::{DmdMenuTheme, MenuSection};
+use crate::{DmdSystem, SIGI_5PX_BOLD, SIGI_5PX_REGULAR, SYMBOLS_5PX_REGULAR};
+
+const SELECT_SND: &'static str = "dmd_menu_select";
+const INC_SOUND: &'static str = "dmd_menu_inc";
+const DEC_SOUND: &'static str = "dmd_menu_dec";
+const BACK_SND: &'static str = "dmd_menu_back";
+const NOT_ALLOWED_SND: &'static str = "dmd_menu_not_allowed";
+
+pub struct DmdMenuSystem {
+  switch_names: MenuSwitches,
+  theme: DmdMenuTheme,
+  root: &'static MenuSection,
+  section_lookup: HashMap<u64, SectionEntry>,
+  active_section: &'static MenuSection,
+  rows: Vec<MenuRow>,
+  selected_row: usize,
+  selected_config: Option<Box<dyn GeneralizedConfigValue>>,
+  // indicates that the rows vector needs to be re-generated because something changed
+  requires_row_refresh: bool,
+}
+
+impl DmdMenuSystem {
+  pub fn new(switch_names: MenuSwitches, root: &'static MenuSection, theme: DmdMenuTheme) -> Self {
+    let mut section_lookup = HashMap::<u64, SectionEntry>::new();
+    Self::build_section_lookup(&mut section_lookup, root);
+
+    Self {
+      switch_names,
+      theme,
+      root,
+      section_lookup,
+      requires_row_refresh: true,
+      active_section: root,
+      rows: Vec::new(),
+      selected_row: 0,
+      selected_config: None,
+    }
+  }
+
+  fn build_section_lookup(lookup: &mut HashMap<u64, SectionEntry>, parent: &'static MenuSection) {
+    for section in &parent.sections {
+      lookup.insert(section.id, SectionEntry { section, parent });
+      Self::build_section_lookup(lookup, section);
+    }
+  }
+
+  fn build_parent_lookup(
+    lookup: &mut HashMap<u64, &'static MenuSection>,
+    explore_section: &'static MenuSection,
+  ) {
+    for section in &explore_section.sections {
+      lookup.insert(section.id, explore_section);
+      Self::build_parent_lookup(lookup, section);
+    }
+  }
+
+  fn activate_section(&mut self, section: &'static MenuSection, ctx: &Context) {
+    self.active_section = section;
+    self.selected_row = 0;
+    self.refresh_current_selection(ctx);
+  }
+
+  fn navigate_back(&mut self, ctx: &Context) {
+    if let Some(entry) = self.section_lookup.get(&self.active_section.id) {
+      self.play_sound(BACK_SND, ctx);
+      self.activate_section(entry.parent, ctx);
+    } else {
+      self.play_sound(NOT_ALLOWED_SND, ctx);
+    }
+  }
+
+  fn navigate_fwd(&mut self, ctx: &Context) {
+    match self.rows[self.selected_row] {
+      MenuRow::Section { id, .. } => {
+        let section = self.section_lookup.get(&id).unwrap().section;
+        self.activate_section(section, ctx);
+      }
+      MenuRow::Config { name, .. } => {
+        todo!();
+      }
+    }
+  }
+
+  // MenuRows contained memoized values which may change. Upon trigger, re-generate these rows with the latest values
+  fn refresh_current_selection(&self, ctx: &Context) -> Vec<MenuRow> {
+    let mut rows: Vec<MenuRow> = Vec::new();
+
+    for section in &self.active_section.sections {
+      rows.push(MenuRow::Section {
+        id: section.id,
+        name: section.name,
+        selected: rows.len() == self.selected_row,
+      });
+    }
+
+    for config in &self.active_section.configs {
+      rows.push(MenuRow::Config {
+        name: config.text(),
+        is_default: !config.value_modified(ctx),
+        value: config.current_value(ctx),
+        selected: rows.len() == self.selected_row,
+      });
+    }
+
+    rows
+  }
+
+  fn render(&self, viewport: &Size<u32>) -> Container {
+    let mut window = Container::new(Extent::full(), Extent::full());
+
+    let mut rendered_height = 0;
+    let mut row_index = self
+      .selected_row
+      .saturating_sub(2)
+      .clamp(0, self.rows.len());
+
+    loop {
+      if let Some(row) = self.rows.get(row_index) {
+        let g = match row {
+          MenuRow::Section { name, selected, .. } => self.render_section(name, *selected),
+          MenuRow::Config {
+            name,
+            value,
+            is_default,
+            selected,
+          } => self.render_config(name, value.clone(), *is_default, *selected),
+        };
+        let layer = g.generate(viewport);
+        rendered_height += layer.size().height;
+        window.push(layer);
+
+        if rendered_height >= viewport.height {
+          break;
+        }
+        row_index += 1;
+      } else {
+        break;
+      }
+    }
+
+    window
+  }
+
+  fn render_section(&self, name: &'static str, selected: bool) -> Container {
+    let height = if selected { 7 } else { 6 };
+    let mut row = Container::new(Extent::full(), height).with_padding(Padding::new(1, 1, 1, 1));
+
+    let text_color = if selected {
+      self.theme.selected_section_color
+    } else {
+      self.theme.unselected_section_color
+    };
+    let bg: Fill2d = if selected {
+      self.theme.selected_section_bg.clone()
+    } else {
+      self.theme.unselected_section_bg.clone()
+    };
+
+    // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
+    row.push(Rectangle::new(Extent::full(), Extent::full(), bg));
+    row.push(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+    row.push(
+      SYMBOLS_5PX_REGULAR
+        .text("▶", text_color, 1)
+        .with_horizontal(Horizontal::RightOffset(Extent::full())),
+    );
+
+    row
+  }
+
+  fn render_config(
+    &self,
+    name: &'static str,
+    value: String,
+    is_default: bool,
+    selected: bool,
+  ) -> Container {
+    let height = if selected { 7 } else { 6 };
+    let mut row = Container::new(Extent::full(), height).with_padding(Padding::new(1, 1, 1, 1));
+
+    let text_color = if selected {
+      self.theme.selected_config_color
+    } else {
+      self.theme.unselected_config_color
+    };
+    let bg: Fill2d = if selected {
+      self.theme.selected_config_bg.clone()
+    } else {
+      self.theme.unselected_config_bg.clone()
+    };
+
+    // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
+    row.push(Rectangle::new(Extent::full(), Extent::full(), bg));
+    row.push(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+
+    let value_font = if is_default {
+      &SIGI_5PX_REGULAR
+    } else {
+      &SIGI_5PX_BOLD
+    };
+
+    // TODO: can't right align LayerGenerator
+    row.push(value_font.overflow_text(value, text_color, 1));
+
+    row
+  }
+
+  fn play_sound(&self, sound: &'static str, ctx: &Context) {
+    // TODO
+  }
+}
+
+impl System for DmdMenuSystem {
+  fn is_active(&self, ctx: &Context) -> bool {
+    ctx
+      .switches
+      .is_open(self.switch_names.coin_door)
+      .unwrap_or(false)
+  }
+
+  fn on_spawn(&mut self, ctx: &Context) {
+    // TODO: register sounds
+    // TODO: need a direct dependency on frontbox-sound (is there a way to GameManager interface this?)
+  }
+
+  fn on_reactivate(&mut self, ctx: &Context) {
+    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
+      dmd.clear();
+      self.requires_row_refresh = true;
+    }
+  }
+
+  fn on_tick(&mut self, _delta: Duration, ctx: &Context) {
+    if self.requires_row_refresh {
+      self.refresh_current_selection(ctx);
+      self.requires_row_refresh = false;
+    }
+
+    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
+      let size = dmd.size().clone();
+      dmd.insert_layer(0, self.render(&size));
+    }
+  }
+
+  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+    if let Some(event) = event.downcast_ref::<SwitchClosed>() {
+      if event.switch.name == self.switch_names.back_btn {
+        self.navigate_back(ctx);
+      } else if event.switch.name == self.switch_names.select_btn {
+        self.navigate_fwd(ctx);
+      } else if event.switch.name == self.switch_names.inc_btn {
+        todo!();
+      } else if event.switch.name == self.switch_names.dec_btn {
+        todo!();
+      }
+    }
+  }
+}
+
+enum MenuRow {
+  Section {
+    id: u64,
+    name: &'static str,
+    selected: bool,
+  },
+  Config {
+    name: &'static str,
+    value: String,
+    is_default: bool,
+    selected: bool,
+  },
+}
+
+pub struct MenuSwitches {
+  pub coin_door: &'static str,
+  pub back_btn: &'static str,
+  pub select_btn: &'static str,
+  pub inc_btn: &'static str,
+  pub dec_btn: &'static str,
+}
+
+struct SectionEntry {
+  section: &'static MenuSection,
+  parent: &'static MenuSection,
+}
