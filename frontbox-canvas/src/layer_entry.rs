@@ -69,8 +69,8 @@ impl LayerEntry {
     }
   }
 
-  pub fn render_all_at(
-    layers: &Vec<LayerEntry>,
+  pub fn render_all_at<'a>(
+    layers: impl IntoIterator<Item = &'a LayerEntry>,
     viewport: &Size<u32>,
     offset: Position,
     buffer: &mut ImageBuffer<Rgba<u8>, Vec<u8>>,

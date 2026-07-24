@@ -69,7 +69,14 @@ impl Pin2Dmd {
 
   /// pack an RGB24 frame into the PIN2DMD wire format
   pub fn pack_rgb24(&self, pixels: &[u8], panel: PanelType) -> Vec<u8> {
-    assert_eq!(pixels.len() as u32, self.size.width * self.size.height * 3);
+    let expected_len = self.size.width * self.size.height * 3;
+    assert_eq!(
+      pixels.len() as u32,
+      expected_len,
+      "Expected {} pixels to render PIN2DMD but received {}",
+      expected_len,
+      pixels.len()
+    );
     let mut buf = vec![0u8; self.elements as usize * 6 + 4];
     buf[0] = 0x81;
     buf[1] = 0xC3;

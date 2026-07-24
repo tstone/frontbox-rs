@@ -18,7 +18,7 @@ where
   }
 
   pub fn full() -> Self {
-    Self::Relative(100.0)
+    Self::Relative(1.0)
   }
 
   pub fn fixed(t: T) -> Self {

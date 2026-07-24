@@ -63,13 +63,8 @@ impl Container {
   }
 
   /// Add a layer above all other layers
-  pub fn push(&mut self, layer: impl Into<LayerEntry>) {
+  pub fn add(&mut self, layer: impl Into<LayerEntry>) {
     self.layers.push(layer.into());
-  }
-
-  /// Insert a layer at a specific index, shifting all layers after it rightward
-  pub fn insert(&mut self, index: usize, layer: impl Into<LayerEntry>) {
-    self.layers.insert(index, layer.into());
   }
 }
 
@@ -90,6 +85,16 @@ impl LayerGenerator for Container {
       width: container_width - self.padding.left - self.padding.right - (border_width * 2),
       height: container_height - self.padding.top - self.padding.bottom - (border_width * 2),
     };
+
+    log::trace!(
+      "container size: {}x{}, viewport: {}x{}, usable: {}x{}",
+      container_width,
+      container_height,
+      viewport.width,
+      viewport.height,
+      usable_area.width,
+      usable_area.height,
+    );
 
     let mut buffer = RgbaImage::new(container_width, container_height);
     LayerEntry::render_all_at(

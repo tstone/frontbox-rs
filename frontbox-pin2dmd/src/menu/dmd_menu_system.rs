@@ -121,7 +121,7 @@ impl DmdMenuSystem {
   }
 
   fn render(&self, viewport: &Size<u32>) -> Container {
-    let mut window = Container::new(Extent::full(), Extent::full());
+    let mut frame = Container::new(Extent::full(), Extent::full());
 
     let mut rendered_height = 0;
     let mut row_index = self
@@ -131,7 +131,7 @@ impl DmdMenuSystem {
 
     loop {
       if let Some(row) = self.rows.get(row_index) {
-        let g = match row {
+        let layer = match row {
           MenuRow::Section { name, selected, .. } => self.render_section(name, *selected),
           MenuRow::Config {
             name,
@@ -140,9 +140,8 @@ impl DmdMenuSystem {
             selected,
           } => self.render_config(name, value.clone(), *is_default, *selected),
         };
-        let layer = g.generate(viewport);
-        rendered_height += layer.size().height;
-        window.push(layer);
+        rendered_height += 7;
+        frame.add(layer);
 
         if rendered_height >= viewport.height {
           break;
@@ -153,7 +152,7 @@ impl DmdMenuSystem {
       }
     }
 
-    window
+    frame
   }
 
   fn render_section(&self, name: &'static str, selected: bool) -> Container {
@@ -172,9 +171,9 @@ impl DmdMenuSystem {
     };
 
     // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
-    row.push(Rectangle::new(Extent::full(), Extent::full(), bg));
-    row.push(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
-    row.push(
+    row.add(Rectangle::new(Extent::full(), Extent::full(), bg));
+    row.add(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+    row.add(
       SYMBOLS_5PX_REGULAR
         .text("▶", text_color, 1)
         .with_horizontal(Horizontal::RightOffset(Extent::full())),
@@ -205,8 +204,8 @@ impl DmdMenuSystem {
     };
 
     // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
-    row.push(Rectangle::new(Extent::full(), Extent::full(), bg));
-    row.push(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+    row.add(Rectangle::new(Extent::full(), Extent::full(), bg));
+    row.add(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
 
     let value_font = if is_default {
       &SIGI_5PX_REGULAR
@@ -215,7 +214,7 @@ impl DmdMenuSystem {
     };
 
     // TODO: can't right align LayerGenerator
-    row.push(value_font.overflow_text(value, text_color, 1));
+    row.add(value_font.overflow_text(value, text_color, 1));
 
     row
   }
@@ -253,6 +252,7 @@ impl System for DmdMenuSystem {
       self.requires_row_refresh = false;
     }
 
+    // TODO: this should probably only update the layer if something has changed
     if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
       let size = dmd.size().clone();
       dmd.insert_layer(0, self.render(&size));
