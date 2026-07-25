@@ -49,6 +49,8 @@ pub trait RgbaColor {
   fn desaturate(self, amount: f32) -> Self;
   fn inverted(self) -> Self;
 
+  fn brightness(&self) -> f32;
+
   fn over(src: Self, dst: Self) -> Self;
   fn composite_over(&self, dst: Self) -> Self;
 }
@@ -56,6 +58,10 @@ pub trait RgbaColor {
 impl RgbaColor for Rgba<u8> {
   fn with_luma(&self) -> f32 {
     (0.2126 * self.0[0] as f32 + 0.7152 * self.0[1] as f32 + 0.0722 * self.0[2] as f32) / 255.0
+  }
+
+  fn brightness(&self) -> f32 {
+    (0.299 * self[0] as f32 + 0.587 * self[1] as f32 + 0.114 * self[2] as f32) / 255.0
   }
 
   fn to_color(self) -> Color {

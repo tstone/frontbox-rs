@@ -1,15 +1,12 @@
 mod dmd_system;
 mod linear_stitch;
 pub mod menu;
-mod overflow_text;
 mod pin2dmd;
 mod pixel_font;
 mod sprite_sheet;
 mod text_formatting;
 
 pub use dmd_system::*;
-pub use linear_stitch::*;
-pub use overflow_text::*;
 pub use pin2dmd::*;
 pub use pixel_font::*;
 pub use sprite_sheet::*;

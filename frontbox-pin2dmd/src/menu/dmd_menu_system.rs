@@ -4,7 +4,7 @@ use frontbox::prelude::*;
 use frontbox_canvas::*;
 
 use crate::menu::{DmdMenuTheme, MenuSection};
-use crate::{DmdSystem, SIGI_5PX_BOLD, SIGI_5PX_REGULAR, SYMBOLS_5PX_REGULAR};
+use crate::*;
 
 const SELECT_SND: &'static str = "dmd_menu_select";
 const INC_SOUND: &'static str = "dmd_menu_inc";
@@ -120,10 +120,16 @@ impl DmdMenuSystem {
     rows
   }
 
-  fn render(&self, viewport: &Size<u32>) -> Container {
-    let mut frame = Container::new(Extent::full(), Extent::full());
+  fn draw(&self, viewport: &Size<u32>) -> Container {
+    let mut frame = Container::new(self.theme.menu_bg.clone()).with_padding(1, 1, 1, 1);
+    if let Some(theme_border) = &self.theme.menu_border {
+      if let Some(border) = frame.border_mut() {
+        *border = theme_border.clone();
+      }
+    }
 
-    let mut rendered_height = 0;
+    let row_height = SIGI_REGULAR_5PX_FONT.height + 1;
+    let mut acc_height = 0;
     let mut row_index = self
       .selected_row
       .saturating_sub(2)
@@ -132,18 +138,18 @@ impl DmdMenuSystem {
     loop {
       if let Some(row) = self.rows.get(row_index) {
         let layer = match row {
-          MenuRow::Section { name, selected, .. } => self.render_section(name, *selected),
+          MenuRow::Section { name, selected, .. } => self.draw_section(name, *selected),
           MenuRow::Config {
             name,
             value,
             is_default,
             selected,
-          } => self.render_config(name, value.clone(), *is_default, *selected),
+          } => self.draw_config(name, value.clone(), *is_default, *selected),
         };
-        rendered_height += 7;
-        frame.add(layer);
+        acc_height += row_height as u32;
+        frame.add(layer.default_position());
 
-        if rendered_height >= viewport.height {
+        if acc_height >= viewport.height {
           break;
         }
         row_index += 1;
@@ -155,66 +161,72 @@ impl DmdMenuSystem {
     frame
   }
 
-  fn render_section(&self, name: &'static str, selected: bool) -> Container {
-    let height = if selected { 7 } else { 6 };
-    let mut row = Container::new(Extent::full(), height).with_padding(Padding::new(1, 1, 1, 1));
+  fn draw_section(&self, name: &'static str, selected: bool) -> Container {
+    let bg: Fill2d = if selected {
+      self.theme.selected_section_bg.clone()
+    } else {
+      self.theme.unselected_section_bg.clone()
+    };
+    let mut row = Container::new(bg).with_padding(1, 1, 1, 1);
 
     let text_color = if selected {
       self.theme.selected_section_color
     } else {
       self.theme.unselected_section_color
     };
-    let bg: Fill2d = if selected {
-      self.theme.selected_section_bg.clone()
-    } else {
-      self.theme.unselected_section_bg.clone()
-    };
 
-    // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
-    row.add(Rectangle::new(Extent::full(), Extent::full(), bg));
-    row.add(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+    row.add(
+      SIGI_REGULAR_5PX_FONT
+        .overflow_text(name, text_color, 1)
+        .default_position(),
+    );
     row.add(
       SYMBOLS_5PX_REGULAR
         .text("▶", text_color, 1)
-        .with_horizontal(Horizontal::RightOffset(Extent::full())),
+        .horizontal(Horizontal::RightOffset(Extent::full())),
     );
 
     row
   }
 
-  fn render_config(
+  fn draw_config(
     &self,
     name: &'static str,
     value: String,
     is_default: bool,
     selected: bool,
   ) -> Container {
-    let height = if selected { 7 } else { 6 };
-    let mut row = Container::new(Extent::full(), height).with_padding(Padding::new(1, 1, 1, 1));
-
-    let text_color = if selected {
-      self.theme.selected_config_color
-    } else {
-      self.theme.unselected_config_color
-    };
     let bg: Fill2d = if selected {
       self.theme.selected_config_bg.clone()
     } else {
       self.theme.unselected_config_bg.clone()
     };
 
-    // TODO: check if this renders inside of the padding or not (fill might need to be a container property...)
-    row.add(Rectangle::new(Extent::full(), Extent::full(), bg));
-    row.add(SIGI_5PX_REGULAR.overflow_text(name, text_color, 1));
+    let mut row = Container::new(bg).with_padding(1, 1, 1, 1);
 
-    let value_font = if is_default {
-      &SIGI_5PX_REGULAR
+    let text_color = if selected {
+      self.theme.selected_config_color
     } else {
-      &SIGI_5PX_BOLD
+      self.theme.unselected_config_color
     };
 
-    // TODO: can't right align LayerGenerator
-    row.add(value_font.overflow_text(value, text_color, 1));
+    row.add(
+      SIGI_REGULAR_5PX_FONT
+        .overflow_text(name, text_color, 1)
+        .default_position(),
+    );
+
+    let value_font = if is_default {
+      &SIGI_REGULAR_5PX_FONT
+    } else {
+      &SIGI_BOLD_5PX_FONT
+    };
+
+    row.add(
+      value_font
+        .overflow_text(value, text_color, 1)
+        .horizontal(Horizontal::right_offset(0)),
+    );
 
     row
   }
@@ -255,7 +267,7 @@ impl System for DmdMenuSystem {
     // TODO: this should probably only update the layer if something has changed
     if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
       let size = dmd.size().clone();
-      dmd.insert_layer(0, self.render(&size));
+      dmd.insert_layer(0, self.draw(&size).default_position());
     }
   }
 

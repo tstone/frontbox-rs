@@ -5,9 +5,11 @@ use image::DynamicImage;
 
 mod sprite_sheet_font;
 mod sprite_sheet_font_builder;
+mod sprite_sheet_text;
 
 pub use sprite_sheet_font::*;
 pub use sprite_sheet_font_builder::*;
+pub use sprite_sheet_text::*;
 
 /// Multiple sprite, within the same image file, laid out in a grid
 #[derive(Debug, Clone)]

@@ -1,5 +1,10 @@
 use std::collections::HashMap;
 
+use frontbox::prelude::Rgba;
+use frontbox_canvas::CanvasView;
+
+use crate::{PixelFontOverflowText, PixelFontText};
+
 pub struct PixelFontCharacterMap {
   pub name: &'static str,
   pub height: u8,
@@ -11,4 +16,62 @@ pub struct PixelFontGlyph {
   pub name: &'static str,
   pub width: u8,
   pub pixels: Vec<bool>,
+}
+
+impl PixelFontCharacterMap {
+  /// Return a layer of renderable text
+  pub fn text(
+    &'static self,
+    text: impl Into<String>,
+    color: Rgba<u8>,
+    spacing: u8,
+  ) -> PixelFontText {
+    PixelFontText {
+      text: text.into(),
+      color,
+      font: &self,
+      spacing,
+    }
+  }
+
+  /// Same as `text` but will truncate the string with '…' if there is not enough space
+  pub fn overflow_text(
+    &'static self,
+    text: impl Into<String>,
+    color: Rgba<u8>,
+    spacing: u8,
+  ) -> PixelFontOverflowText {
+    PixelFontOverflowText {
+      text: text.into(),
+      color,
+      font: &self,
+      spacing,
+    }
+  }
+
+  pub fn glyph(&self, c: char) -> Option<&PixelFontGlyph> {
+    self.glyphs.get(&c)
+  }
+
+  pub fn render_char_image(&self, c: char, color: Rgba<u8>, canvas: &mut CanvasView) -> u8 {
+    let mut glyph = self.glyphs.get(&c);
+    // check upper case if not found
+    if glyph.is_none() {
+      glyph = self.glyphs.get(&c.to_ascii_uppercase())
+    }
+
+    if let Some(glyph) = glyph {
+      for (i, &on) in glyph.pixels.iter().enumerate() {
+        if on {
+          let x = (i % glyph.width as usize) as u32;
+          let y = (i / glyph.width as usize) as u32;
+          canvas.put_pixel(x, y, color);
+        }
+      }
+
+      // return rendered width to maintain kerning
+      return glyph.width;
+    }
+    0
+  }
 }

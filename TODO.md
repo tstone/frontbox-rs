@@ -9,8 +9,6 @@
 
 Canvas
 
-- LayerGen can't be re-positioned like Layer can
-- Container probably needs a fill behind it instead of relying on rectangle
 - Update examples
 - Render whole image + sprite sheet off disk
 - Modulations should work with canvas

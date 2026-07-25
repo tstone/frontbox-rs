@@ -37,3 +37,5 @@ where
     Self { width, height }
   }
 }
+
+impl<T> Copy for Size<T> where T: Debug + Clone + Copy {}

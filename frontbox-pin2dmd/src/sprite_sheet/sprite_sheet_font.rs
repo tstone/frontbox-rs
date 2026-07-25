@@ -8,7 +8,6 @@ use crate::*;
 pub struct SpriteSheetFont {
   sprite_sheet: SpriteSheet,
   pub(crate) char_width: u16,
-  char_height: u32,
   starting_char: u32,
   custom_char_widths: HashMap<char, u16>,
 }
@@ -18,7 +17,6 @@ impl SpriteSheetFont {
     let sprite_size = sprite_sheet.sprite_size();
     Self {
       char_width: sprite_size.width as u16,
-      char_height: sprite_size.height,
       starting_char: starting_char as u32,
       custom_char_widths: HashMap::new(),
       sprite_sheet,
@@ -32,28 +30,32 @@ impl SpriteSheetFont {
   }
 
   /// A single character or glyph
-  pub fn char_image(&self, c: char) -> Option<DynamicImage> {
+  pub fn render_char_image(&self, c: char, canvas: &mut CanvasView) -> u32 {
     let char_code = c as u32;
     if char_code < self.starting_char {
-      return None;
+      return 0;
     }
+
     let char_index = char_code - self.starting_char;
     let row = char_index / self.sprite_sheet.cols as u32;
     let col = char_index % self.sprite_sheet.cols as u32;
 
-    // TODO: drop extra pixels if custom character width is set
-    Some(self.sprite_sheet.image_at(row as u8, col as u8))
+    let glyph = self.sprite_sheet.image_at(row as u8, col as u8);
+    for x in 0..glyph.width() {
+      for y in 0..glyph.height() {
+        canvas.put_pixel(x, y, glyph.get_pixel(x, y));
+      }
+    }
+
+    glyph.width()
   }
 
   /// Render a full string into sprites per character
-  pub fn text(&self, text: impl Into<String>, spacing: u8) -> Layer {
-    let text = text.into();
-    let glyph_images = text
-      .chars()
-      .map(|c| self.char_image(c))
-      .flatten()
-      .collect::<Vec<_>>();
-
-    Layer::top_left(LinearStitch::horizontal(&glyph_images, spacing as u32))
+  pub fn text(&'static self, text: impl Into<String>, spacing: u8) -> SpriteSheetFontText {
+    SpriteSheetFontText {
+      text: text.into(),
+      font: self,
+      spacing,
+    }
   }
 }

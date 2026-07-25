@@ -11,19 +11,19 @@ pub struct DmdSystem {
 impl DmdSystem {
   pub fn new(dmd: Pin2Dmd) -> Self {
     Self {
+      canvas: Canvas::new(dmd.size.width, dmd.size.height),
       dmd,
-      canvas: Canvas::new(),
     }
   }
 
   /// Add a layer above all other layers
-  pub fn add_layer(&mut self, layer: impl Into<LayerEntry>) {
-    self.canvas.add(layer.into());
+  pub fn add_layer(&mut self, layer: impl PositionedLayer + 'static) {
+    self.canvas.add(layer);
   }
 
   /// Insert a layer at a specific Z-index
-  pub fn insert_layer(&mut self, z_index: i8, layer: impl Into<LayerEntry>) {
-    self.canvas.insert(z_index, layer.into());
+  pub fn insert_layer(&mut self, z_index: i8, layer: impl PositionedLayer + 'static) {
+    self.canvas.insert(z_index, layer);
   }
 
   pub fn remove_layer(&mut self, z_index: i8) {
@@ -47,14 +47,13 @@ impl System for DmdSystem {
 
   fn on_render(&mut self, _ctx: &Context) {
     let start = std::time::Instant::now();
+
     if self.canvas.len() > 0 {
       log::trace!("canvas layer count: {}", self.canvas.len());
-      let pixels = self.canvas.to_pixels(&self.dmd.size);
+      let pixels = self.canvas.to_pixels();
       let _ = self.dmd.render(&pixels);
     }
-    log::trace!(
-      "DMDSystem on_render elapsed {}",
-      start.elapsed().as_micros()
-    );
+
+    log::trace!("DMDSystem on_render took {}μs", start.elapsed().as_micros());
   }
 }

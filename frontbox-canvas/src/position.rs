@@ -12,6 +12,14 @@ impl Horizontal {
     Self::LeftOffset(Extent::zero())
   }
 
+  pub fn left_offset(v: impl Into<Extent<i32>>) -> Self {
+    Self::LeftOffset(v.into())
+  }
+
+  pub fn right_offset(v: impl Into<Extent<i32>>) -> Self {
+    Self::RightOffset(v.into())
+  }
+
   pub fn left_mut(&mut self) -> Option<&mut Extent<i32>> {
     match self {
       Self::LeftOffset(l) => Some(l),
@@ -43,6 +51,14 @@ pub enum Vertical {
 impl Vertical {
   pub fn zero() -> Self {
     Self::TopOffset(Extent::zero())
+  }
+
+  pub fn top_offset(v: impl Into<Extent<i32>>) -> Self {
+    Self::TopOffset(v.into())
+  }
+
+  pub fn bottom_offset(v: impl Into<Extent<i32>>) -> Self {
+    Self::BottomOffset(v.into())
   }
 
   pub fn top_mut(&mut self) -> Option<&mut Extent<i32>> {

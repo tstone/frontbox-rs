@@ -1,63 +1,35 @@
 use frontbox::prelude::color_sequence::GradientStop;
 use frontbox::prelude::*;
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::Rgba;
 
 use crate::*;
 
 pub struct Rectangle {
-  size: Size<Extent<u32>>,
-  pub horizontal: Horizontal,
-  pub vertical: Vertical,
   pub fill: Fill2d,
   pub border: Option<Border>,
 }
 
 impl Rectangle {
-  pub fn new(width: impl Into<Extent<u32>>, height: impl Into<Extent<u32>>, fill: Fill2d) -> Self {
-    Self {
-      size: Size::new(width.into(), height.into()),
-      horizontal: Horizontal::default(),
-      vertical: Vertical::default(),
-      fill,
-      border: None,
-    }
+  pub fn new(fill: Fill2d) -> Self {
+    Self { fill, border: None }
   }
 
-  pub fn transparent(width: impl Into<Extent<u32>>, height: impl Into<Extent<u32>>) -> Self {
+  pub fn transparent() -> Self {
     Self {
-      size: Size::new(width.into(), height.into()),
-      horizontal: Horizontal::default(),
-      vertical: Vertical::default(),
       fill: Fill2d::Transparent,
       border: None,
     }
   }
 
-  pub fn solid(
-    width: impl Into<Extent<u32>>,
-    height: impl Into<Extent<u32>>,
-    color: Rgba<u8>,
-  ) -> Self {
+  pub fn solid(color: Rgba<u8>) -> Self {
     Self {
-      size: Size::new(width.into(), height.into()),
-      horizontal: Horizontal::default(),
-      vertical: Vertical::default(),
       fill: Fill2d::Solid(color),
       border: None,
     }
   }
 
-  pub fn fade(
-    width: impl Into<Extent<u32>>,
-    height: impl Into<Extent<u32>>,
-    from: Rgba<u8>,
-    to: Rgba<u8>,
-    angle: f32,
-  ) -> Self {
+  pub fn fade(from: Rgba<u8>, to: Rgba<u8>, angle: f32) -> Self {
     Self {
-      size: Size::new(width.into(), height.into()),
-      horizontal: Horizontal::default(),
-      vertical: Vertical::default(),
       fill: Fill2d::Gradient(
         vec![
           GradientStop::new(Extent::zero(), from),
@@ -69,29 +41,11 @@ impl Rectangle {
     }
   }
 
-  pub fn gradient(
-    width: impl Into<Extent<u32>>,
-    height: impl Into<Extent<u32>>,
-    stops: Vec<GradientStop>,
-    angle: f32,
-  ) -> Self {
+  pub fn gradient(stops: Vec<GradientStop>, angle: f32) -> Self {
     Self {
-      size: Size::new(width.into(), height.into()),
-      horizontal: Horizontal::default(),
-      vertical: Vertical::default(),
       fill: Fill2d::Gradient(stops, angle),
       border: None,
     }
-  }
-
-  pub fn with_horizontal(mut self, pos: Horizontal) -> Self {
-    self.horizontal = pos;
-    self
-  }
-
-  pub fn with_vertical(mut self, pos: Vertical) -> Self {
-    self.vertical = pos;
-    self
   }
 
   pub fn with_border(mut self, width: u8, color: Rgba<u8>) -> Self {
@@ -100,16 +54,18 @@ impl Rectangle {
   }
 }
 
-impl LayerGenerator for Rectangle {
-  fn generate(&self, viewport: &Size<u32>) -> Layer {
-    let width = self.size.width.to_absolute(viewport.width);
-    let height = self.size.height.to_absolute(viewport.height);
-    let mut buffer = RgbaImage::new(width, height);
+impl Layer for Rectangle {
+  fn render<'a>(&self, canvas: &mut CanvasView<'a>) {
+    let width = canvas.bounds.width;
+    let height = canvas.bounds.height;
+
     let gradient = if let Fill2d::Gradient(stops, angle) = &self.fill {
       Gradient2d::new(stops.clone(), *angle, Size::new(width, height))
     } else {
       Gradient2d::default()
     };
+
+    // TODO: render border
 
     for y in 0..height {
       for x in 0..width {
@@ -123,14 +79,8 @@ impl LayerGenerator for Rectangle {
           continue;
         }
 
-        buffer.put_pixel(x, y, pixel);
+        canvas.buffer.put_pixel_at(x, y, pixel);
       }
-    }
-
-    Layer {
-      image: DynamicImage::ImageRgba8(buffer),
-      horizontal: self.horizontal,
-      vertical: self.vertical,
     }
   }
 }
@@ -140,4 +90,16 @@ pub enum Fill2d {
   Transparent,
   Solid(Rgba<u8>),
   Gradient(Vec<GradientStop>, f32),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Border {
+  pub color: Rgba<u8>,
+  pub width: u8,
+}
+
+impl Border {
+  pub fn new(width: u8, color: Rgba<u8>) -> Self {
+    Self { color, width }
+  }
 }
