@@ -42,7 +42,7 @@ impl Ranges {
     Range {
       min: Power { power: from },
       max: Power { power: to },
-      step: Power { power: 1 },
+      step: Power { power: 2 },
     }
   }
 

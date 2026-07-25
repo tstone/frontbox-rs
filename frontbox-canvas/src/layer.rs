@@ -38,11 +38,39 @@ pub trait Layer {
     }
   }
 
+  fn left_offset(self, extent: impl Into<Extent<i32>>) -> Positioned<Self>
+  where
+    Self: Sized,
+  {
+    Positioned::new(self).horizontal(Horizontal::LeftOffset(extent.into()))
+  }
+
+  fn right_offset(self, extent: impl Into<Extent<i32>>) -> Positioned<Self>
+  where
+    Self: Sized,
+  {
+    Positioned::new(self).horizontal(Horizontal::RightOffset(extent.into()))
+  }
+
   fn horizontal(self, h: impl Into<Horizontal>) -> Positioned<Self>
   where
     Self: Sized,
   {
     Positioned::new(self).horizontal(h.into())
+  }
+
+  fn top_offset(self, extent: impl Into<Extent<i32>>) -> Positioned<Self>
+  where
+    Self: Sized,
+  {
+    Positioned::new(self).vertical(Vertical::TopOffset(extent.into()))
+  }
+
+  fn bottom_offset(self, extent: impl Into<Extent<i32>>) -> Positioned<Self>
+  where
+    Self: Sized,
+  {
+    Positioned::new(self).vertical(Vertical::BottomOffset(extent.into()))
   }
 
   fn vertical(self, v: impl Into<Vertical>) -> Positioned<Self>

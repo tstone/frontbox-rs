@@ -77,7 +77,7 @@ impl Layer for Rectangle {
           continue;
         }
 
-        canvas.buffer.put_pixel_at(x, y, pixel);
+        canvas.put_pixel(x, y, pixel);
       }
     }
   }

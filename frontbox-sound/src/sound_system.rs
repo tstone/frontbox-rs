@@ -94,6 +94,7 @@ impl SoundSystem {
   }
 
   pub fn preload(&mut self, name: &'static str, path: impl AsRef<Path>) {
+    log::debug!("Preloading sound '{}' at {:?}", name, path.as_ref());
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
         self.sounds.insert(name, sound);

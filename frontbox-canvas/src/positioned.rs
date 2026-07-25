@@ -41,8 +41,28 @@ impl<L: Layer> Positioned<L> {
     &mut self.layer
   }
 
+  pub fn left_offset(mut self, extent: impl Into<Extent<i32>>) -> Self {
+    self.placement.horizontal = Horizontal::LeftOffset(extent.into());
+    self
+  }
+
+  pub fn right_offset(mut self, extent: impl Into<Extent<i32>>) -> Self {
+    self.placement.horizontal = Horizontal::RightOffset(extent.into());
+    self
+  }
+
   pub fn horizontal(mut self, h: impl Into<Horizontal>) -> Self {
     self.placement.horizontal = h.into();
+    self
+  }
+
+  pub fn top_offset(mut self, extent: impl Into<Extent<i32>>) -> Self {
+    self.placement.vertical = Vertical::TopOffset(extent.into());
+    self
+  }
+
+  pub fn bottom_offset(mut self, extent: impl Into<Extent<i32>>) -> Self {
+    self.placement.vertical = Vertical::BottomOffset(extent.into());
     self
   }
 

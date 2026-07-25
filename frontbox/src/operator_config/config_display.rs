@@ -14,7 +14,7 @@ impl ConfigDisplay for Duration {
 
 impl ConfigDisplay for Power {
   fn config_display(&self) -> String {
-    format!("{:.2}%", self.power as f32 / 255.0)
+    format!("{}%", ((self.power as f32 / 255.0) * 100.0) as u8)
   }
 }
 

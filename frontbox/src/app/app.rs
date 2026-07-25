@@ -286,7 +286,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
   fn default() -> Self {
     Self {
-      system_interval: Duration::from_millis(41),
+      system_interval: Duration::from_millis(83),
       watchdog_interval: Duration::from_millis(1000),
     }
   }

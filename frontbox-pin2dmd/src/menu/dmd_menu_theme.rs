@@ -5,42 +5,25 @@ use frontbox_canvas::*;
 pub struct DmdMenuTheme {
   pub menu_bg: Fill2d,
   pub menu_border: Option<Border>,
-  pub unselected_section_color: Rgba<u8>,
-  pub unselected_section_bg: Fill2d,
-  pub selected_section_color: Rgba<u8>,
-  pub selected_section_bg: Fill2d,
-  pub unselected_config_color: Rgba<u8>,
-  pub unselected_config_bg: Fill2d,
-  pub selected_config_color: Rgba<u8>,
-  pub selected_config_bg: Fill2d,
+  pub heading_color: Rgba<u8>,
+  pub heading_bg: Fill2d,
+  pub selected_color: Rgba<u8>,
+  pub selected_bg: Fill2d,
+  pub unselected_color: Rgba<u8>,
+  pub unselected_bg: Fill2d,
 }
 
 impl Default for DmdMenuTheme {
   fn default() -> Self {
-    let unselected_bg = Fill2d::Transparent;
-    let unselected_color = Rgba::yellow().darken(0.15);
-    let selected_bg = Fill2d::Gradient(
-      vec![
-        GradientStop::new(0.0, Rgba::cyan().lighten(0.15)),
-        GradientStop::new(1.0, Rgba::white()),
-      ],
-      45.0,
-    );
-    let selected_color = Rgba::black();
-
     DmdMenuTheme {
       menu_bg: Fill2d::Transparent,
       menu_border: Some(Border::new(1, Rgba::blue().darken(0.15))),
-      // unselected
-      unselected_section_bg: unselected_bg.clone(),
-      unselected_config_bg: unselected_bg,
-      unselected_section_color: unselected_color,
-      unselected_config_color: unselected_color,
-      // selected
-      selected_config_bg: selected_bg.clone(),
-      selected_section_bg: selected_bg,
-      selected_config_color: selected_color,
-      selected_section_color: selected_color,
+      heading_bg: Fill2d::Solid(Rgba([0x27, 0x28, 0x22, 0xff])),
+      heading_color: Rgba::black().lighten(0.85),
+      unselected_bg: Fill2d::Transparent,
+      unselected_color: Rgba::yellow().lighten(0.3),
+      selected_bg: Fill2d::Transparent,
+      selected_color: Rgba::cyan().lighten(0.3),
     }
   }
 }
@@ -54,79 +37,46 @@ impl DmdMenuTheme {
     let sun = Rgba([0xff, 0xb7, 0x03, 0xff]); // #ffb703
     let sunset = Rgba([0xfb, 0x85, 0x00, 0xff]); // #fb8500
 
-    let unselected_bg = Fill2d::Transparent;
-    let unselected_color = sky;
-
-    // Sections get a cool "ocean" gradient when selected
-    let selected_section_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, ocean), GradientStop::new(1.0, sky)],
-      45.0,
-    );
-
-    // Configs get a warm "sunset" gradient when selected, to visually
-    // distinguish the two row kinds using the same palette
-    let selected_config_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, sunset), GradientStop::new(1.0, sun)],
-      45.0,
-    );
-
     DmdMenuTheme {
       menu_bg: Fill2d::Transparent,
-      menu_border: Some(Border::new(1, deep)),
-      // unselected
-      unselected_section_bg: unselected_bg.clone(),
-      unselected_config_bg: unselected_bg,
-      unselected_section_color: unselected_color,
-      unselected_config_color: unselected_color,
-      // selected
-      selected_section_bg,
-      selected_config_bg,
-      selected_section_color: deep,
-      selected_config_color: deep,
+      menu_border: Some(Border::new(1, sun)),
+      heading_bg: Fill2d::Transparent,
+      heading_color: sunset,
+      unselected_bg: Fill2d::Transparent,
+      unselected_color: sunset,
+      selected_bg: Fill2d::Gradient(
+        vec![GradientStop::new(0.0, ocean), GradientStop::new(1.0, sky)],
+        45.0,
+      ),
+      selected_color: deep,
     }
   }
 
   /// Dark, high-contrast theme inspired by a popular programming editor color schemes
-  pub fn carbon() -> Self {
+  pub fn sherbet() -> Self {
     let bg = Rgba([0x27, 0x28, 0x22, 0xff]); // near-black charcoal
     let fg = Rgba([0xf8, 0xf8, 0xf2, 0xff]); // off-white
     let pink = Rgba([0xf9, 0x26, 0x72, 0xff]);
     let green = Rgba([0xa6, 0xe2, 0x2e, 0xff]);
-    let orange = Rgba([0xfd, 0x97, 0x1f, 0xff]);
-    let blue = Rgba([0x66, 0xd9, 0xef, 0xff]);
-
-    let unselected_bg = Fill2d::Transparent;
-    let unselected_color = fg.darken(0.25);
-
-    let selected_section_bg = Fill2d::Gradient(
-      vec![
-        GradientStop::new(0.0, pink.darken(0.1)),
-        GradientStop::new(0.6, blue.darken(0.25)),
-        GradientStop::new(1.0, fg.darken(0.4)),
-      ],
-      100.5,
-    );
-
-    // Configs selected: warm pink/orange sweep, mirroring the section/config
-    // split from the summer theme
-    let selected_config_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, pink), GradientStop::new(1.0, orange)],
-      45.0,
-    );
+    // let orange = Rgba([0xfd, 0x97, 0x1f, 0xff]);
+    let blue = Rgba([0x66, 0xd9, 0xef, 0xff]).darken(0.25);
 
     DmdMenuTheme {
       menu_bg: Fill2d::Solid(bg),
       menu_border: Some(Border::new(1, fg.darken(0.3))),
-      // unselected
-      unselected_section_bg: unselected_bg.clone(),
-      unselected_config_bg: unselected_bg,
-      unselected_section_color: unselected_color,
-      unselected_config_color: unselected_color,
-      // selected
-      selected_section_bg,
-      selected_config_bg,
-      selected_section_color: Rgba::black(),
-      selected_config_color: Rgba::black(),
+      heading_bg: Fill2d::Transparent,
+      heading_color: green,
+      unselected_bg: Fill2d::Transparent,
+      unselected_color: fg.darken(0.25),
+      selected_bg: Fill2d::Gradient(
+        vec![
+          GradientStop::new(0.0, pink.darken(0.1)),
+          GradientStop::new(0.6, blue),
+          GradientStop::new(1.0, fg.darken(0.4)),
+        ],
+        100.5,
+      ),
+      selected_color: Rgba::black(),
     }
   }
 
@@ -138,37 +88,21 @@ impl DmdMenuTheme {
     let rose = Rgba([0xe0, 0x7a, 0x8f, 0xff]); // fading sunset pink
     let ember = Rgba([0xf2, 0xa6, 0x5a, 0xff]); // last light of the horizon
 
-    let unselected_bg = Fill2d::Transparent;
-    let unselected_color = periwinkle;
-
-    // Sections selected: cool violet/periwinkle sweep, evoking deepening sky
-    let selected_section_bg = Fill2d::Gradient(
-      vec![
-        GradientStop::new(0.0, violet),
-        GradientStop::new(1.0, periwinkle),
-      ],
-      45.0,
-    );
-
-    // Configs selected: warm rose/ember sweep, the fading horizon glow
-    let selected_config_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, rose), GradientStop::new(1.0, ember)],
-      45.0,
-    );
-
     DmdMenuTheme {
       menu_bg: Fill2d::Solid(dusk),
       menu_border: Some(Border::new(1, violet.lighten(0.1))),
-      // unselected
-      unselected_section_bg: unselected_bg.clone(),
-      unselected_config_bg: unselected_bg,
-      unselected_section_color: unselected_color,
-      unselected_config_color: unselected_color,
-      // selected
-      selected_section_bg,
-      selected_config_bg,
-      selected_section_color: Rgba::black(),
-      selected_config_color: Rgba::black(),
+      heading_bg: Fill2d::Solid(ember),
+      heading_color: rose,
+      unselected_bg: Fill2d::Transparent,
+      unselected_color: periwinkle,
+      selected_bg: Fill2d::Gradient(
+        vec![
+          GradientStop::new(0.0, violet),
+          GradientStop::new(1.0, periwinkle),
+        ],
+        45.0,
+      ),
+      selected_color: Rgba::black(),
     }
   }
 
@@ -181,25 +115,18 @@ impl DmdMenuTheme {
     let coral = Rgba([0xe5, 0x6b, 0x6f, 0xff]); // #e56b6f
     let peach = Rgba([0xea, 0xac, 0x8b, 0xff]); // #eaac8b
 
-    let unselected_bg = Fill2d::Transparent;
-    let selected_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, coral), GradientStop::new(1.0, plum)],
-      95.0,
-    );
-
     DmdMenuTheme {
       menu_bg: Fill2d::Solid(charcoal),
       menu_border: Some(Border::new(1, peach)),
-      // unselected
-      unselected_section_bg: unselected_bg.clone(),
-      unselected_config_bg: unselected_bg,
-      unselected_section_color: navy,
-      unselected_config_color: rose,
-      // selected
-      selected_section_bg: selected_bg.clone(),
-      selected_config_bg: selected_bg,
-      selected_section_color: Rgba::black(),
-      selected_config_color: Rgba::black(),
+      heading_bg: Fill2d::Solid(navy),
+      heading_color: Rgba::cyan(),
+      unselected_bg: Fill2d::Transparent,
+      unselected_color: rose,
+      selected_bg: Fill2d::Gradient(
+        vec![GradientStop::new(0.0, coral), GradientStop::new(1.0, plum)],
+        95.0,
+      ),
+      selected_color: Rgba::black(),
     }
   }
 }
