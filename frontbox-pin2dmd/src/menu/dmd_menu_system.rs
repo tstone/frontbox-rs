@@ -117,6 +117,7 @@ impl DmdMenuSystem {
       }
       DisplayMenuRow::Special(name) => {
         self.selected_special = Some(name);
+        ctx.play_sfx(SELECT_SND);
       }
       _ => {}
     }
@@ -184,6 +185,7 @@ impl DmdMenuSystem {
         self.requires_render = true;
       }
     }
+    ctx.play_sfx(INC_SOUND);
   }
 
   fn navigate_dec(&mut self, ctx: &Context) {
@@ -218,6 +220,8 @@ impl DmdMenuSystem {
         self.requires_render = true;
       }
     }
+
+    ctx.play_sfx(DEC_SOUND);
   }
 
   // Display rows contained memoized values which may change. Upon trigger, re-generate these rows with the latest values
@@ -455,14 +459,14 @@ impl DmdMenuSystem {
         .text("Frontbox", Rgba::black(), 1)
         .width(63)
         .horizontal(Horizontal::Centered)
-        .top_offset(6),
+        .top_offset(5),
     );
     window.add(
       SIGI_CONDENSED_BOLD_5PX_FONT
         .text(env!("CARGO_PKG_VERSION"), Rgba::black(), 1)
         .width(25)
         .horizontal(Horizontal::Centered)
-        .top_offset(15),
+        .top_offset(13),
     );
 
     window.add(
@@ -470,7 +474,7 @@ impl DmdMenuSystem {
         .text("Neon Blue Pinball 2026", Rgba::black(), 1)
         .width(102)
         .horizontal(Horizontal::Centered)
-        .top_offset(23),
+        .top_offset(20),
     );
     window
   }
@@ -485,16 +489,22 @@ impl System for DmdMenuSystem {
   }
 
   fn on_spawn(&mut self, ctx: &Context) {
-    let exe_dir = std::env::current_exe()
-      .unwrap()
-      .parent()
-      .unwrap()
-      .to_path_buf();
-    ctx.preload_sound(MENU_BEGIN_SND, exe_dir.join("assets/sounds/door-open.mp3"));
+    if let Some(mut snd) = ctx.systems.get::<SoundSystem>() {
+      snd.preload_embedded(MENU_BEGIN_SND, menu::sounds::DOOR_OPEN);
+      snd.preload_embedded(BACK_SND, menu::sounds::MENU_BACK);
+      snd.preload_embedded(SELECT_SND, menu::sounds::MENU_FWD);
+      snd.preload_embedded(INC_SOUND, menu::sounds::MENU_UP);
+      snd.preload_embedded(DEC_SOUND, menu::sounds::MENU_DOWN);
+    }
 
-    // TODO: register all sounds
-
-    self.on_reactivate(ctx);
+    // catch the case where the coin door may already be open when the system starts
+    if ctx
+      .switches
+      .is_open(self.switch_names.coin_door)
+      .unwrap_or(false)
+    {
+      self.on_reactivate(ctx);
+    }
   }
 
   fn on_reactivate(&mut self, ctx: &Context) {

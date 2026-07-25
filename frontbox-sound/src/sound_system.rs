@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::path::Path;
 
-use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::{FromSample, SampleFormat};
 use frontbox::prelude::*;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
@@ -104,6 +105,20 @@ impl SoundSystem {
         path.as_ref().display(),
         e
       ),
+    }
+  }
+
+  pub fn preload_embedded(&mut self, name: &'static str, bytes: &'static [u8]) {
+    log::debug!(
+      "Preloading embedded sound '{}' ({} bytes)",
+      name,
+      bytes.len()
+    );
+    match StaticSoundData::from_cursor(Cursor::new(bytes)) {
+      Ok(sound) => {
+        self.sounds.insert(name, sound);
+      }
+      Err(e) => log::error!("Failed to preload embedded sound {}: {:?}", name, e),
     }
   }
 
