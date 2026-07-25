@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use frontbox::prelude::*;
 use frontbox_canvas::*;
+#[cfg(feature = "sound")]
+use frontbox_sound::*;
 
 use crate::menu::{DmdMenuTheme, MenuSection};
 use crate::*;
@@ -76,10 +78,10 @@ impl DmdMenuSystem {
       .get(&self.active_section.id)
       .and_then(|e| e.parent);
     if let Some(parent) = parent {
-      self.play_sound(BACK_SND, ctx);
+      ctx.play_sfx(BACK_SND);
       self.activate_section(parent, ctx);
     } else {
-      self.play_sound(NOT_ALLOWED_SND, ctx);
+      ctx.play_sfx(NOT_ALLOWED_SND);
     }
   }
 
@@ -88,10 +90,12 @@ impl DmdMenuSystem {
       MenuRow::Section { id, .. } => {
         let section = self.section_lookup.get(&id).unwrap().section;
         self.activate_section(section, ctx);
+        ctx.play_sfx(SELECT_SND);
       }
       MenuRow::Config { name, .. } => {
         // How to associate a menu row back to a config value?
         todo!();
+        ctx.play_sfx(SELECT_SND);
       }
     }
   }
@@ -236,10 +240,6 @@ impl DmdMenuSystem {
 
     row
   }
-
-  fn play_sound(&self, sound: &'static str, ctx: &Context) {
-    // TODO
-  }
 }
 
 impl System for DmdMenuSystem {
@@ -251,8 +251,15 @@ impl System for DmdMenuSystem {
   }
 
   fn on_spawn(&mut self, ctx: &Context) {
-    // TODO: register sounds
-    // TODO: need a direct dependency on frontbox-sound (is there a way to GameManager interface this?)
+    let exe_dir = std::env::current_exe()
+      .unwrap()
+      .parent()
+      .unwrap()
+      .to_path_buf();
+    ctx.preload_sound(MENU_BEGIN_SND, exe_dir.join("assets/sounds/door-open.mp3"));
+
+    // TODO: register all sounds
+
     self.on_reactivate(ctx);
   }
 
@@ -261,7 +268,11 @@ impl System for DmdMenuSystem {
       dmd.clear();
       self.requires_row_refresh = true;
     }
-    self.play_sound(MENU_BEGIN_SND, ctx);
+    ctx.play_sfx(MENU_BEGIN_SND);
+  }
+
+  fn on_deactivate(&mut self, ctx: &Context) {
+    ctx.play_sfx(MENU_END_SND);
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &Context) {

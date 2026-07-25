@@ -7,6 +7,11 @@ edition = "2024"
 log = "0.4.29"
 frontbox = { path = "../frontbox" }
 frontbox-canvas = { path = "../frontbox-canvas" }
+frontbox-sound = { path = "../frontbox-sound", optional = true }
 rusb = "0.9.4"
 image = "0.25.9"
 rand = "0.10.0"
+
+[features]
+default = ["sound"]
+sound = ["dep:frontbox-sound"]
