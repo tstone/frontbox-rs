@@ -28,7 +28,7 @@ impl Layer for PixelFontOverflowText {
 
       let mut char_canvas = canvas.child_view(
         // shift origin left as characters are accumulated
-        Position::new(canvas.origin.x + offset, canvas.origin.y),
+        Position::new(offset, 0),
         canvas.bounds,
       );
 

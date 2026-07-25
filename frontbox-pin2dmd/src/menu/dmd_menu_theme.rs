@@ -96,12 +96,15 @@ impl DmdMenuTheme {
     let blue = Rgba([0x66, 0xd9, 0xef, 0xff]);
 
     let unselected_bg = Fill2d::Transparent;
-    let unselected_color = fg;
+    let unselected_color = fg.darken(0.25);
 
-    // Sections selected: cool blue/green sweep
     let selected_section_bg = Fill2d::Gradient(
-      vec![GradientStop::new(0.0, blue), GradientStop::new(1.0, green)],
-      45.0,
+      vec![
+        GradientStop::new(0.0, pink.darken(0.1)),
+        GradientStop::new(0.6, blue.darken(0.25)),
+        GradientStop::new(1.0, fg.darken(0.4)),
+      ],
+      100.5,
     );
 
     // Configs selected: warm pink/orange sweep, mirroring the section/config
@@ -122,8 +125,8 @@ impl DmdMenuTheme {
       // selected
       selected_section_bg,
       selected_config_bg,
-      selected_section_color: bg,
-      selected_config_color: bg,
+      selected_section_color: Rgba::black(),
+      selected_config_color: Rgba::black(),
     }
   }
 
@@ -164,8 +167,8 @@ impl DmdMenuTheme {
       // selected
       selected_section_bg,
       selected_config_bg,
-      selected_section_color: dusk,
-      selected_config_color: dusk,
+      selected_section_color: Rgba::black(),
+      selected_config_color: Rgba::black(),
     }
   }
 
@@ -179,21 +182,9 @@ impl DmdMenuTheme {
     let peach = Rgba([0xea, 0xac, 0x8b, 0xff]); // #eaac8b
 
     let unselected_bg = Fill2d::Transparent;
-    let unselected_color = peach;
-
-    // Sections selected: flat, punchy solid block — no blend
-    let selected_section_bg = Fill2d::Solid(coral);
-
-    // Configs selected: hard two-tone gradient (sharp color relationship,
-    // not a soft fade) to keep the "graphic," not "atmospheric," feel
-    let selected_config_bg = Fill2d::Gradient(
-      vec![
-        GradientStop::new(0.0, navy),
-        GradientStop::new(0.5, navy),
-        GradientStop::new(0.5, plum),
-        GradientStop::new(1.0, plum),
-      ],
-      0.0,
+    let selected_bg = Fill2d::Gradient(
+      vec![GradientStop::new(0.0, coral), GradientStop::new(1.0, plum)],
+      95.0,
     );
 
     DmdMenuTheme {
@@ -202,13 +193,13 @@ impl DmdMenuTheme {
       // unselected
       unselected_section_bg: unselected_bg.clone(),
       unselected_config_bg: unselected_bg,
-      unselected_section_color: unselected_color,
-      unselected_config_color: unselected_color,
+      unselected_section_color: navy,
+      unselected_config_color: rose,
       // selected
-      selected_section_bg,
-      selected_config_bg,
-      selected_section_color: charcoal,
-      selected_config_color: rose,
+      selected_section_bg: selected_bg.clone(),
+      selected_config_bg: selected_bg,
+      selected_section_color: Rgba::black(),
+      selected_config_color: Rgba::black(),
     }
   }
 }

@@ -5,12 +5,23 @@ use frontbox::prelude::{Extent, Rgba};
 
 use crate::*;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Placement {
   pub horizontal: Horizontal,
   pub vertical: Vertical,
   pub width: Extent<u32>,
   pub height: Extent<u32>,
+}
+
+impl Default for Placement {
+  fn default() -> Self {
+    Self {
+      horizontal: Horizontal::default(),
+      vertical: Vertical::default(),
+      width: Extent::full(),
+      height: Extent::full(),
+    }
+  }
 }
 
 pub struct Positioned<L: Layer> {

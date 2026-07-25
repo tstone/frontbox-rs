@@ -97,38 +97,36 @@ impl DmdMenuSystem {
   }
 
   // MenuRows contained memoized values which may change. Upon trigger, re-generate these rows with the latest values
-  fn refresh_current_selection(&self, ctx: &Context) -> Vec<MenuRow> {
-    let mut rows: Vec<MenuRow> = Vec::new();
+  fn refresh_current_selection(&mut self, ctx: &Context) {
+    self.rows.clear();
 
     for section in &self.active_section.sections {
-      rows.push(MenuRow::Section {
+      self.rows.push(MenuRow::Section {
         id: section.id,
         name: section.name,
-        selected: rows.len() == self.selected_row,
+        selected: self.rows.len() == self.selected_row,
       });
     }
 
     for config in &self.active_section.configs {
-      rows.push(MenuRow::Config {
+      self.rows.push(MenuRow::Config {
         name: config.text(),
         is_default: !config.value_modified(ctx),
         value: config.current_value(ctx),
-        selected: rows.len() == self.selected_row,
+        selected: self.rows.len() == self.selected_row,
       });
     }
-
-    rows
   }
 
   fn draw(&self, viewport: &Size<u32>) -> Container {
-    let mut frame = Container::new(self.theme.menu_bg.clone()).with_padding(1, 1, 1, 1);
+    let mut frame = Container::new(self.theme.menu_bg.clone());
     if let Some(theme_border) = &self.theme.menu_border {
       if let Some(border) = frame.border_mut() {
         *border = theme_border.clone();
       }
     }
 
-    let row_height = SIGI_REGULAR_5PX_FONT.height + 1;
+    let row_height = SIGI_REGULAR_5PX_FONT.height as u32 + 2; // 2 leading between
     let mut acc_height = 0;
     let mut row_index = self
       .selected_row
@@ -146,8 +144,13 @@ impl DmdMenuSystem {
             selected,
           } => self.draw_config(name, value.clone(), *is_default, *selected),
         };
+
+        frame.add(
+          layer
+            .vertical(Vertical::top_offset(acc_height))
+            .height(row_height),
+        );
         acc_height += row_height as u32;
-        frame.add(layer.default_position());
 
         if acc_height >= viewport.height {
           break;
@@ -167,7 +170,8 @@ impl DmdMenuSystem {
     } else {
       self.theme.unselected_section_bg.clone()
     };
-    let mut row = Container::new(bg).with_padding(1, 1, 1, 1);
+
+    let mut row = Container::new(bg).with_padding(2, 1, 0, 0);
 
     let text_color = if selected {
       self.theme.selected_section_color
@@ -180,10 +184,12 @@ impl DmdMenuSystem {
         .overflow_text(name, text_color, 1)
         .default_position(),
     );
+
     row.add(
-      SYMBOLS_5PX_REGULAR
+      SYMBOLS_5PX_REGULAR_FONT
         .text("▶", text_color, 1)
-        .horizontal(Horizontal::RightOffset(Extent::full())),
+        .width(5)
+        .horizontal(Horizontal::right_offset(2)),
     );
 
     row
@@ -202,7 +208,7 @@ impl DmdMenuSystem {
       self.theme.unselected_config_bg.clone()
     };
 
-    let mut row = Container::new(bg).with_padding(1, 1, 1, 1);
+    let mut row = Container::new(bg).with_padding(2, 1, 0, 0);
 
     let text_color = if selected {
       self.theme.selected_config_color

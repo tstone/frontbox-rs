@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 
 use crate::pixel_font::{PixelFontCharacterMap, PixelFontGlyph};
 
-pub static SYMBOLS_5PX_REGULAR: LazyLock<PixelFontCharacterMap> = LazyLock::new(|| {
+pub static SYMBOLS_5PX_REGULAR_FONT: LazyLock<PixelFontCharacterMap> = LazyLock::new(|| {
   let mut glyphs = HashMap::new();
 
   glyphs.insert(

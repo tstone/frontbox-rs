@@ -45,6 +45,10 @@ impl System for DmdSystem {
     self.clear();
   }
 
+  fn on_despawn(&mut self, ctx: &Context) {
+    self.clear();
+  }
+
   fn on_render(&mut self, _ctx: &Context) {
     let start = std::time::Instant::now();
 
