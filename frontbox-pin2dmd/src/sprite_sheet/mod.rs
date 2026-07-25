@@ -20,9 +20,10 @@ pub struct SpriteSheet {
 }
 
 impl SpriteSheet {
-  pub fn new(path: &Path, rows: u8, cols: u8) -> Self {
-    let image =
-      image::open(&path).unwrap_or_else(|_| panic!("Failed to load sprite sheet at {:?}", path));
+  pub fn new(path: impl Into<&'static Path>, rows: u8, cols: u8) -> Self {
+    let path = path.into();
+    let image = image::open(path)
+      .unwrap_or_else(|_| panic!("Failed to load sprite sheet at {:?}", path.clone()));
     Self { image, rows, cols }
   }
 

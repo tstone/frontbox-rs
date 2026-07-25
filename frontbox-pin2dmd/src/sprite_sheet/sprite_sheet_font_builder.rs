@@ -3,9 +3,9 @@ use std::path::Path;
 
 use crate::{SpriteSheet, SpriteSheetFont};
 
-pub struct SpriteSheetFontBuilder<'a> {
+pub struct SpriteSheetFontBuilder {
   sprite_sheet: Option<SpriteSheet>,
-  path: Option<&'a Path>,
+  path: Option<&'static Path>,
   rows: Option<u8>,
   cols: Option<u8>,
   starting_char: char,
@@ -13,7 +13,7 @@ pub struct SpriteSheetFontBuilder<'a> {
   custom_char_widths: HashMap<char, u16>,
 }
 
-impl<'a> SpriteSheetFontBuilder<'a> {
+impl SpriteSheetFontBuilder {
   pub fn new() -> Self {
     Self {
       sprite_sheet: None,
@@ -26,8 +26,8 @@ impl<'a> SpriteSheetFontBuilder<'a> {
     }
   }
 
-  pub fn path(mut self, path: &'a Path) -> Self {
-    self.path = Some(path);
+  pub fn path(mut self, path: impl Into<&'static Path>) -> Self {
+    self.path = Some(path.into());
     self
   }
 
@@ -74,7 +74,7 @@ impl<'a> SpriteSheetFontBuilder<'a> {
   }
 }
 
-impl<'a> Default for SpriteSheetFontBuilder<'a> {
+impl Default for SpriteSheetFontBuilder {
   fn default() -> Self {
     Self::new()
   }
