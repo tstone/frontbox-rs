@@ -9,7 +9,6 @@
 
 Canvas
 
-- Render whole image + sprite sheet off disk
 - Modulations should work with canvas
 - Uses locations for 2d plane rendering via projections
 - Fill2d needs a perlin noise fill
