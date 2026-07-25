@@ -21,7 +21,9 @@ DMD Menu
 - How will DMD menu system know about the sound system (interface?)
 - Menu up/down navigation doesn't work
 - Need to be able to edit a config
-- Some kind of left/right menu transition animations (z+, "plays" over top and goes away -- maybe a separate system?)
+- Animate right offset of section arrow when selected
+- Transition left/right ease between sections
+- Fancy: the selection box animates between vertical offsets
 
 Nice to Have
 

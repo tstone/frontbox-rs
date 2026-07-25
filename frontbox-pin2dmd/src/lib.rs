@@ -1,5 +1,4 @@
 mod dmd_system;
-mod linear_stitch;
 pub mod menu;
 mod pin2dmd;
 mod pixel_font;
