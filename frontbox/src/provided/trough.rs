@@ -27,7 +27,7 @@ impl Trough {
     DriverDefinitionBuilder::new(name)
       .mode(PulseKickMode {
         initial_pwm_length: HardwareValue::config(
-          "Trough Plunger Touch Time",
+          "Plunger Touch Time",
           "Duration by which the eject plunger is brought into contact with the ball, before full eject",
           Duration::from_millis(7),
           Ranges::duration(0, 100),
@@ -38,7 +38,7 @@ impl Trough {
         secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
         secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
         kick_length: HardwareValue::config(
-          "Trough Eject Time",
+          "Eject Time",
           "Duration that the plunger exert full power onto the ball (kick)",
           Duration::from_millis(75),
           Ranges::duration(10, 300),

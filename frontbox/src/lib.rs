@@ -18,6 +18,7 @@ pub mod prelude {
   pub use crate::events;
   pub use crate::hardware::*;
   pub use crate::hardware_defs;
+  pub use crate::led::color_sequence::{Extent, GradientStop};
   pub use crate::led::*;
   pub use crate::machine::event_interrupt_registry::InterruptResult;
   pub use crate::machine::machine::*;

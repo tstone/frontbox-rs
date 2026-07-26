@@ -39,7 +39,7 @@ where
   /// Typed version for TOML read/write
   pub fn generalized_config_value(&self) -> Option<&dyn GeneralizedConfigValue>
   where
-    T: ConfigDisplay + Serialize + DeserializeOwned + Send + Sync,
+    T: PartialEq + ConfigDisplay + Serialize + DeserializeOwned + Send + Sync,
     D: Send + Sync,
   {
     match self {

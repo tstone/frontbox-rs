@@ -1,9 +1,6 @@
+use frontbox_canvas::Size;
 use rusb::UsbContext;
 use std::time::Duration;
-
-use crate::Frame;
-use crate::FrameSize;
-use crate::Renderable;
 
 /// Derived from Mission Pinball Framework PIN2DMD driver
 /// https://github.com/missionpinball/mpf
@@ -30,21 +27,12 @@ pub enum PanelType {
 pub struct Pin2Dmd {
   handle: rusb::DeviceHandle<rusb::Context>,
   panel: PanelType,
-  width: usize,
-  height: usize,
+  pub size: Size<u32>,
   elements: usize,
 }
 
 impl Pin2Dmd {
-  pub fn width(&self) -> usize {
-    self.width
-  }
-
-  pub fn height(&self) -> usize {
-    self.height
-  }
-
-  pub fn connect(width: usize, height: usize, panel: PanelType) -> rusb::Result<Self> {
+  pub fn connect(width: u32, height: u32, panel: PanelType) -> rusb::Result<Self> {
     let context = rusb::Context::new()?;
     let device = context
       .devices()?
@@ -60,20 +48,13 @@ impl Pin2Dmd {
     Ok(Self {
       handle,
       panel,
-      width,
-      height,
-      elements: width * height / 2,
+      size: Size::new(width, height),
+      elements: width as usize * height as usize / 2,
     })
   }
 
-  pub fn render(&mut self, frame: &Frame) -> rusb::Result<()> {
-    let rendered = frame.render(&FrameSize::for_dmd(self));
-    let pixels = rendered.image.to_rgb8().into_raw();
-    self.render_pixels(&pixels)
-  }
-
   /// `pixels` is WIDTH*HEIGHT*3 bytes, RGB order, row-major, top-left to bottom-right.
-  fn render_pixels(&mut self, pixels: &[u8]) -> rusb::Result<()> {
+  pub fn render(&mut self, pixels: &[u8]) -> rusb::Result<()> {
     let buf = self.pack_rgb24(pixels, self.panel);
     self
       .handle
@@ -82,14 +63,21 @@ impl Pin2Dmd {
   }
 
   pub fn clear(&mut self) -> rusb::Result<()> {
-    let pixels = vec![0u8; self.width * self.height * 3];
-    self.render_pixels(&pixels)
+    let pixels = vec![0u8; self.size.width as usize * self.size.height as usize * 3];
+    self.render(&pixels)
   }
 
   /// pack an RGB24 frame into the PIN2DMD wire format
   pub fn pack_rgb24(&self, pixels: &[u8], panel: PanelType) -> Vec<u8> {
-    assert_eq!(pixels.len(), self.width * self.height * 3);
-    let mut buf = vec![0u8; self.elements * 6 + 4];
+    let expected_len = self.size.width * self.size.height * 3;
+    assert_eq!(
+      pixels.len() as u32,
+      expected_len,
+      "Expected {} pixels to render PIN2DMD but received {}",
+      expected_len,
+      pixels.len()
+    );
+    let mut buf = vec![0u8; self.elements as usize * 6 + 4];
     buf[0] = 0x81;
     buf[1] = 0xC3;
     buf[2] = 0xE9;

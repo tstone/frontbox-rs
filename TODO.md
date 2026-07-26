@@ -1,21 +1,27 @@
-Before Show
+- There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
+  States: attract, door open, in-game
 
 - Context extensions need to NOT work unless they are imported
 - Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
-- New frontbox-canvas crate that uses locations for 2d plane rendering via projections
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.
 
+Canvas
+
+- Modulations should work with canvas
+- Uses locations for 2d plane rendering via projections
+- Fill2d needs a perlin noise fill
+- Reference plane stitching
+
 DMD Menu
 
-- Highlighted item renders with a bar behind it and inverted colors
-- Ability to render an image larger than what's available and "crop" it to a visible area
-- Why is Renderable so weird?
-- Frame offsets don't seem to factor into border widths
-- Some kind of screen transition (z+, "plays" over top and goes away -- maybe a separate system?)
-- Play sounds on inc/dec/select/back
-- Only show menu if door is open
+- Menu up/down navigation doesn't work
+- Need to be able to edit a config
+- Implement all sounds
+- Animate right offset of section arrow when selected
+- Transition left/right ease between sections
+- Fancy: the selection box animates between vertical offsets
 
 Nice to Have
 

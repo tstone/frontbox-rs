@@ -72,31 +72,31 @@ pub enum FillArea {
   #[default]
   Full,
   Padded {
-    left: Extent,
-    right: Extent,
+    left: Extent<u16>,
+    right: Extent<u16>,
   },
   Anchored {
-    length: Extent,
+    length: Extent<u16>,
     anchor: Anchor,
   },
 }
 
 impl FillArea {
-  pub fn left_padding_mut(&mut self) -> Option<&mut Extent> {
+  pub fn left_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
     match self {
       Self::Padded { left, .. } => Some(left),
       _ => None,
     }
   }
 
-  pub fn right_padding_mut(&mut self) -> Option<&mut Extent> {
+  pub fn right_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
     match self {
       Self::Padded { right, .. } => Some(right),
       _ => None,
     }
   }
 
-  pub fn anchor_length_mut(&mut self) -> Option<&mut Extent> {
+  pub fn anchor_length_mut(&mut self) -> Option<&mut Extent<u16>> {
     match self {
       Self::Anchored { length, .. } => Some(length),
       _ => None,
@@ -111,15 +111,16 @@ impl FillArea {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum Anchor {
+  #[default]
   Start,
   Center,
   End,
 }
 
 pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill, area: &FillArea) {
-  let starting_len = seq.len();
+  let starting_len = seq.len() as u16;
 
   // calculate actual fill length based on area setting
   let fill_len = match area {
@@ -148,6 +149,6 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill, area: &FillArea)
   };
 
   for (i, pixel) in fill.iter().enumerate() {
-    seq[i + left] = *pixel;
+    seq[i + left as usize] = *pixel;
   }
 }

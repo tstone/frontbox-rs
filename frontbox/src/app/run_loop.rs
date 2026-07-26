@@ -38,6 +38,7 @@ pub async fn run(
     tokio::signal::ctrl_c()
       .await
       .expect("failed to listen for ctrl-c");
+    log::debug!("Ctrl+C signal received.");
     let _ = tx.send(AppMessage::Shutdown);
   });
 
@@ -45,6 +46,9 @@ pub async fn run(
   loop {
     tokio::select! {
       Some(command) = app_receiver.recv() => {
+        log::trace!("AppMessage queue depth: {}", app_receiver.len());
+        let start = std::time::Instant::now();
+
         match command {
           AppMessage::EmitEvent(event) => {
             emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
@@ -126,6 +130,8 @@ pub async fn run(
             }
           }
         }
+
+        log::trace!("Run loop elapsed {}", start.elapsed().as_micros());
       }
     }
   }

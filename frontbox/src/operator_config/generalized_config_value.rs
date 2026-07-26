@@ -21,13 +21,15 @@ pub trait GeneralizedConfigValue: Send + Sync {
   fn text(&self) -> &'static str;
   fn description(&self) -> &'static str;
   fn current_value(&self, ctx: &Context) -> String;
+  /// True if the value is NOT default
+  fn value_modified(&self, ctx: &Context) -> bool;
   fn increment(&self, ctx: &Context) -> String;
   fn decrement(&self, ctx: &Context) -> String;
 }
 
 impl<T, D> HardwareValue<T, D>
 where
-  T: Clone + 'static,
+  T: PartialEq + Clone + 'static,
   D: Domain<T>,
 {
   pub fn config_value(&self) -> Option<&dyn GeneralizedConfigValue>
@@ -44,7 +46,7 @@ where
 
 impl<T, D> GeneralizedConfigValue for ConfigValue<T, D>
 where
-  T: ConfigDisplay + Clone + Serialize + DeserializeOwned + Send + Sync + 'static,
+  T: ConfigDisplay + Clone + Serialize + DeserializeOwned + Send + Sync + PartialEq + 'static,
   D: Domain<T> + Send + Sync,
 {
   fn text(&self) -> &'static str {
@@ -62,6 +64,14 @@ where
       .expect("Operator Config system not running");
     let value = op_config.get(self);
     format!("{}", value.config_display())
+  }
+
+  fn value_modified(&self, ctx: &Context) -> bool {
+    let op_config = ctx
+      .systems
+      .get::<OperatorConfig>()
+      .expect("Operator Config system not running");
+    op_config.get(self) != self.default
   }
 
   fn decrement(&self, ctx: &Context) -> String {
