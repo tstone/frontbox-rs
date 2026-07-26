@@ -16,12 +16,9 @@ Canvas
 
 DMD Menu
 
-- Menu up/down navigation doesn't work
-- Need to be able to edit a config
-- Implement all sounds
-- Animate right offset of section arrow when selected
+- Add "can't do that" sound
 - Transition left/right ease between sections
-- Fancy: the selection box animates between vertical offsets
+- Animate right offset of section arrow when selected
 
 Nice to Have
 
