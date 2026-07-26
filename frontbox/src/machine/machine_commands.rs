@@ -77,9 +77,9 @@ pub enum ActivationMode {
   /// FAST clears out the switch whenever the driver is disabled, so it needs to be re-set
   /// each time it is activated.
   Automatic(&'static str),
-  /// manually trigger (activate) the driver immediately
+  /// Manually trigger (fire/activate) the driver immediately
   Tap,
-  /// set virtual switch to 'on' for hold trigger modes
+  /// Set virtual switch to 'on' for hold trigger modes
   VirtualSwitchOn,
 }
 

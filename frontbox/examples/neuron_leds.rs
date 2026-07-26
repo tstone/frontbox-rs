@@ -54,7 +54,7 @@ impl LedExample {
         Duration::from_millis(450),
         Curve::ExponentialInOut,
         vec![Rgba::black(), Rgba::purple()],
-        AnimationCycle::Forever,
+        Cycle::Forever,
       ),
       seq: Sequence::boxed(
         vec![
@@ -62,22 +62,22 @@ impl LedExample {
             Duration::from_millis(1500),
             Curve::QuadraticInOut,
             vec![Rgba::black(), Rgba::red()],
-            AnimationCycle::Once,
+            Cycle::Once,
           ),
           Tween::boxed(
             Duration::from_millis(200),
             Curve::Sinusoid,
             vec![Rgba::red(), Rgba::yellow()],
-            AnimationCycle::Once,
+            Cycle::Once,
           ),
           Tween::boxed(
             Duration::from_millis(400),
             Curve::Linear,
             vec![Rgba::yellow(), Rgba::black()],
-            AnimationCycle::Once,
+            Cycle::Once,
           ),
         ],
-        AnimationCycle::Forever,
+        Cycle::Forever,
       ),
     }
   }

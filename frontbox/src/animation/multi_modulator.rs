@@ -14,6 +14,12 @@ impl<S, A> MultiModulator<S, A> {
     self.modulators.push(Box::new(modulation));
   }
 
+  pub fn reset(&mut self) {
+    for modulator in &mut self.modulators {
+      modulator.reset();
+    }
+  }
+
   /// Advances every modulator by `delta`, then applies all of them to `target`.
   pub fn apply(&mut self, delta: A, target: &mut S)
   where

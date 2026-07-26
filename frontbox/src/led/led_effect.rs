@@ -6,6 +6,7 @@ pub struct LedEffect {
   query: HardwareQuery,
   colors: ColorSequence,
   modulation: Option<MultiModulator<ColorSequence, Duration>>,
+  active: bool,
 }
 
 impl LedEffect {
@@ -14,6 +15,7 @@ impl LedEffect {
       query,
       colors: sequence,
       modulation: None,
+      active: true,
     }
   }
 
@@ -35,11 +37,34 @@ impl LedEffect {
     self
   }
 
+  pub fn play(&mut self) {
+    self.active = true;
+  }
+
+  pub fn pause(&mut self) {
+    self.active = true;
+  }
+
+  pub fn stop(&mut self) {
+    self.pause();
+    self.reset();
+  }
+
+  pub fn reset(&mut self) {
+    if let Some(m) = &mut self.modulation {
+      m.reset();
+    }
+  }
+
   /// Applies accumulation and any animation
   pub fn apply(&mut self, delta: Duration, ctx: &Context) {
-    if let Some(modulation) = &mut self.modulation {
-      modulation.apply(delta, &mut self.colors);
+    if self.active {
+      if let Some(modulation) = &mut self.modulation {
+        modulation.apply(delta, &mut self.colors);
+      }
+      ctx.declare_leds(&self.query, self.colors.clone());
+    } else {
+      ctx.undeclare_leds(&self.query);
     }
-    ctx.declare_leds(&self.query, self.colors.clone());
   }
 }

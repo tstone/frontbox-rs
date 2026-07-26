@@ -1,25 +1,27 @@
-use crate::animation::*;
+use crate::{animation::*, cycle::Cycle};
 
 /// Plays a sequence of animations in order
 #[derive(Clone)]
 pub struct Sequence<A, T> {
   sequence: Vec<Box<dyn Animation<A, T>>>,
   current_anim_index: usize,
-  cycle: AnimationCycle,
+  cycle: Cycle,
   cycle_count: u32,
+  active: bool,
 }
 
 impl<A, T> Sequence<A, T> {
-  pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Self {
+  pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: Cycle) -> Self {
     Self {
       sequence,
       current_anim_index: 0,
       cycle,
       cycle_count: 0,
+      active: true,
     }
   }
 
-  pub fn boxed(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: AnimationCycle) -> Box<Self> {
+  pub fn boxed(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: Cycle) -> Box<Self> {
     Box::new(Self::new(sequence, cycle))
   }
 
@@ -37,14 +39,14 @@ where
   A: Copy + Default,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
-    if let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index) {
+    if self.active && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index) {
       let result = current_anim.accumulate(delta);
 
       if current_anim.is_complete() {
         self.current_anim_index += 1;
 
         if self.current_anim_index >= self.sequence.len() {
-          if self.cycle != AnimationCycle::Forever && self.cycle_count < u32::MAX {
+          if self.cycle != Cycle::Forever && self.cycle_count < u32::MAX {
             self.cycle_count += 1;
           }
           self.current_anim_index = 0;
@@ -71,9 +73,9 @@ where
 
   fn is_complete(&self) -> bool {
     match self.cycle {
-      AnimationCycle::Once => self.cycle_count >= 1,
-      AnimationCycle::Times(n) => self.cycle_count >= n,
-      AnimationCycle::Forever => false,
+      Cycle::Once => self.cycle_count >= 1,
+      Cycle::Times(n) => self.cycle_count >= n,
+      Cycle::Forever => false,
     }
   }
 
@@ -91,5 +93,13 @@ where
 {
   fn sample(&self) -> T {
     self.sequence.get(self.current_anim_index).unwrap().sample()
+  }
+
+  fn pause(&mut self) {
+    self.active = false;
+  }
+
+  fn play(&mut self) {
+    self.active = true;
   }
 }
