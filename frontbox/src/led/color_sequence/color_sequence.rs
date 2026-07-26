@@ -87,6 +87,17 @@ impl ColorSequence {
     }
   }
 
+  /// Repeat the given pattern exactly once
+  pub fn exact(pattern: Vec<Rgba<u8>>) -> Self {
+    ColorSequence {
+      fill: Fill::Pattern {
+        pattern,
+        cycle: Cycle::Once,
+      },
+      ..Default::default()
+    }
+  }
+
   /// Repeat a pattern forever
   pub fn tile(pattern: Vec<Rgba<u8>>) -> Self {
     ColorSequence {

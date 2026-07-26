@@ -3,16 +3,18 @@ use std::fmt::Debug;
 use std::ops::{AddAssign, SubAssign};
 
 use crate::animation::*;
+use crate::cycle::Cycle;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified quantity using a given curve
 #[derive(Clone)]
 pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
   // the amount which signals this animation is done
   pub target: A,
+  active: bool,
   current: A,
   pub curve: Curve,
   pub stops: Vec<T>,
-  pub cycle: AnimationCycle,
+  pub cycle: Cycle,
   cycle_count: u32,
   current_stop_index: usize,
 }
@@ -23,12 +25,13 @@ where
   A: Tweenable + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
 {
   /// *target* - Accumulated value to get to, e.g. Duration::from_secs(1) = animation lasts for a minute
-  pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Self {
+  pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Self {
     assert!(stops.len() >= 2, "Tween requires at least 2 stops");
 
     Self {
       target: target.div_usize(stops.len() - 1),
       current: A::default(),
+      active: true,
       curve,
       stops,
       cycle,
@@ -38,38 +41,37 @@ where
   }
 
   pub fn once(target: A, curve: Curve, stops: Vec<T>) -> Self {
-    Self::new(target, curve, stops, AnimationCycle::Once)
+    Self::new(target, curve, stops, Cycle::Once)
   }
 
   pub fn forever(target: A, curve: Curve, stops: Vec<T>) -> Self {
-    Self::new(target, curve, stops, AnimationCycle::Forever)
+    Self::new(target, curve, stops, Cycle::Forever)
   }
 
-  pub fn linear(target: A, stops: Vec<T>, cycle: AnimationCycle) -> Self {
+  pub fn linear(target: A, stops: Vec<T>, cycle: Cycle) -> Self {
     Self::new(target, Curve::Linear, stops, cycle)
   }
 
-  pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Sequence<A, T>
+  pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Sequence<A, T>
   where
     A: PartialOrd + 'static,
     T: 'static,
   {
     Sequence::new(
       vec![
-        Tween::boxed(target, curve.clone(), stops.clone(), AnimationCycle::Once)
-          as Box<dyn Animation<A, T>>,
+        Tween::boxed(target, curve.clone(), stops.clone(), Cycle::Once) as Box<dyn Animation<A, T>>,
         Tween::boxed(
           target,
           Curve::Reverse(Box::new(curve.clone())),
           stops.into_iter().rev().collect(),
-          AnimationCycle::Once,
+          Cycle::Once,
         ),
       ],
       cycle,
     )
   }
 
-  pub fn boxed(target: A, curve: Curve, stops: Vec<T>, cycle: AnimationCycle) -> Box<Self> {
+  pub fn boxed(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Box<Self> {
     Box::new(Self::new(target, curve, stops, cycle))
   }
 
@@ -85,6 +87,7 @@ where
     Tween {
       target: self.target,
       current: A::default(),
+      active: self.active,
       curve: Curve::Reverse(Box::new(self.curve.clone())),
       stops: self.stops.clone().into_iter().rev().collect(),
       cycle: self.cycle.clone(),
@@ -114,7 +117,7 @@ where
       completed_cycle: false,
     };
 
-    if self.is_complete() {
+    if !self.active || self.is_complete() {
       return AccumulationResult::default();
     }
 
@@ -139,16 +142,16 @@ where
 
       if result.completed_cycle {
         match self.cycle {
-          AnimationCycle::Forever => {
+          Cycle::Forever => {
             if self.current > A::default() {
               self.current_stop_index = 0;
             }
           }
-          AnimationCycle::Once => {
+          Cycle::Once => {
             self.cycle_count += 1;
             result.completed_cycle = true;
           }
-          AnimationCycle::Times(n) => {
+          Cycle::Times(n) => {
             self.cycle_count += 1;
             if self.cycle_count < n && self.current > A::default() {
               self.current_stop_index = 0;
@@ -163,9 +166,9 @@ where
 
   fn is_complete(&self) -> bool {
     match self.cycle {
-      AnimationCycle::Once => self.cycle_count > 0,
-      AnimationCycle::Times(n) => self.cycle_count >= n,
-      AnimationCycle::Forever => false,
+      Cycle::Once => self.cycle_count > 0,
+      Cycle::Times(n) => self.cycle_count >= n,
+      Cycle::Forever => false,
     }
   }
 
@@ -202,6 +205,14 @@ where
     let to = &self.stops[self.next_index()];
     from.interpolate(to, curve_value)
   }
+
+  fn pause(&mut self) {
+    self.active = false;
+  }
+
+  fn play(&mut self) {
+    self.active = true;
+  }
 }
 
 #[cfg(test)]
@@ -210,7 +221,7 @@ mod tests {
 
   #[test]
   fn test_once_tween() {
-    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], AnimationCycle::Once);
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once);
     assert_eq!(tween.sample(), 0.0);
 
     let result = tween.accumulate(0.5);
@@ -225,12 +236,7 @@ mod tests {
 
   #[test]
   fn test_multi_stop_tween() {
-    let mut tween = Tween::new(
-      1.5,
-      Curve::Linear,
-      vec![0.0, 10.0, 20.0, 30.0],
-      AnimationCycle::Once,
-    );
+    let mut tween = Tween::new(1.5, Curve::Linear, vec![0.0, 10.0, 20.0, 30.0], Cycle::Once);
     assert_eq!(tween.sample(), 0.0);
 
     let result = tween.accumulate(0.5);
@@ -249,12 +255,7 @@ mod tests {
 
   #[test]
   fn test_times_tween() {
-    let mut tween = Tween::new(
-      1.0,
-      Curve::Linear,
-      vec![0.0, 10.0],
-      AnimationCycle::Times(3),
-    );
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Times(3));
     assert_eq!(tween.sample(), 0.0);
 
     let result = tween.accumulate(0.5);
@@ -269,7 +270,7 @@ mod tests {
 
   #[test]
   fn test_forever_tween() {
-    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], AnimationCycle::Forever);
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Forever);
     assert_eq!(tween.sample(), 0.0);
 
     let result = tween.accumulate(0.5);
@@ -288,12 +289,7 @@ mod tests {
 
   #[test]
   fn test_forever_tween_exact_boundary() {
-    let mut tween = Tween::new(
-      1.0,
-      Curve::Linear,
-      vec![0.0, 10.0, 20.0],
-      AnimationCycle::Forever,
-    );
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0, 20.0], Cycle::Forever);
 
     assert_eq!(tween.sample(), 0.0);
 
@@ -312,12 +308,7 @@ mod tests {
 
   #[test]
   fn test_times_overshoot() {
-    let mut tween = Tween::new(
-      1.0,
-      Curve::Linear,
-      vec![0.0, 10.0],
-      AnimationCycle::Times(3),
-    );
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Times(3));
     assert_eq!(tween.sample(), 0.0);
 
     let result = tween.accumulate(1.5);

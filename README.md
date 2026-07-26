@@ -463,7 +463,7 @@ let anim = Tween::new(
   Duration::from_secs(1),
   Curve::Linear,
   vec![0, 100],
-  AnimationCycle::Once
+  Cycle::Once
 );
 
 log::debug!("Current value: {}", anim.sample());
@@ -509,7 +509,7 @@ self.anim = Tween::new(
   100, // target
   Curve::Linear,
   vec![Rgba::yellow(), Rgba::red()],
-  AnimationCycle::Once
+  Cycle::Once
 );
 
 
@@ -1032,7 +1032,7 @@ impl TargetHitter {
         Duration::from_millis(450),
         Curve::ExponentialInOut,
         vec![Rgba::black(), Rgba::red()],
-        AnimationCycle::Forever,
+        Cycle::Forever,
       )
     })
   }

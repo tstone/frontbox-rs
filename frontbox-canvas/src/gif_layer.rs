@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use frontbox::animation::*;
+use frontbox::prelude::*;
 use image::codecs::gif::GifDecoder;
 use image::{AnimationDecoder, Frame};
 
@@ -14,10 +15,11 @@ pub struct GifLayer {
   frames: Vec<Frame>,
   current_frame: usize,
   animation: Tween<Duration, usize>,
+  active: bool,
 }
 
 impl GifLayer {
-  pub fn new(path: impl Into<&'static Path>, length: Duration, cycle: AnimationCycle) -> Self {
+  pub fn new(path: impl Into<&'static Path>, length: Duration, cycle: Cycle) -> Self {
     let path = path.into();
     let file_in =
       BufReader::new(File::open(path).expect(format!("Failed to load gif at {:?}", path).as_str()));
@@ -28,6 +30,7 @@ impl GifLayer {
       animation: Tween::new(length, Curve::Linear, vec![0, frames.len()], cycle),
       frames,
       current_frame: 0,
+      active: true,
     }
   }
 
@@ -51,7 +54,11 @@ impl Layer for GifLayer {
 
 impl Accumulator<Duration> for GifLayer {
   fn accumulate(&mut self, delta: Duration) -> AccumulationResult<Duration> {
-    self.animation.accumulate(delta)
+    if self.active {
+      self.animation.accumulate(delta)
+    } else {
+      AccumulationResult::default()
+    }
   }
 
   fn force(&mut self, current: Duration) {
@@ -70,6 +77,14 @@ impl Accumulator<Duration> for GifLayer {
 impl Animation<Duration, usize> for GifLayer {
   fn sample(&self) -> usize {
     self.animation.sample()
+  }
+
+  fn pause(&mut self) {
+    self.active = false;
+  }
+
+  fn play(&mut self) {
+    self.active = true;
   }
 }
 

@@ -19,6 +19,14 @@ impl HardwareQuery {
     HardwareQuery::Reverse(Box::new(self))
   }
 
+  pub fn or(self, other: Self) -> Self {
+    Self::Or(Box::new(self), Box::new(other))
+  }
+
+  pub fn and(self, other: Self) -> Self {
+    Self::And(Box::new(self), Box::new(other))
+  }
+
   pub fn matches_switch(&self, switch: &Switch) -> bool {
     match self {
       Self::Name(name) => switch.name == *name,
