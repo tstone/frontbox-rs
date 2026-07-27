@@ -1,3 +1,4 @@
+use std::cell::RefMut;
 use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
@@ -18,6 +19,10 @@ impl SystemGroup {
       systems,
       active: true,
     }
+  }
+
+  pub fn get_by_id(&'_ mut self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
+    self.systems.get_by_id(system_id)
   }
 
   pub fn activate(&mut self, ctx: &Context) {

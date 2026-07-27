@@ -5,14 +5,10 @@ use tokio::sync::mpsc;
 
 use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::system_collection::SystemCollection;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::spawn_system_tick;
-
-pub struct SystemCollection {
-  pub systems: Systems,
-  pub groups: HashMap<&'static str, SystemGroup>,
-}
 
 pub async fn run(
   mut base: ContextBase,
@@ -97,7 +93,7 @@ pub async fn run(
             deactivate_system_group(group_name, &mut sc, &base, app_sender.clone());
           }
           AppMessage::CreateCue(system_id, cue_id, cue, signals) => {
-            if let Some(mut system) = sc.systems.get_by_id(system_id) {
+            if let Some(mut system) = sc.get_by_id(&system_id) {
               system.create_cue(cue, cue_id, signals);
             } else {
               log::warn!(
@@ -108,7 +104,7 @@ pub async fn run(
             }
           }
           AppMessage::CreateCueTimeline(system_id, cue_id, timeline) => {
-            if let Some(mut system) = sc.systems.get_by_id(system_id) {
+            if let Some(mut system) = sc.get_by_id(&system_id) {
               system.create_cue_timeline(timeline, cue_id);
             } else {
               log::warn!(
@@ -119,7 +115,7 @@ pub async fn run(
             }
           }
           AppMessage::CancelCue(system_id, cue_id) => {
-            if let Some(mut system) = sc.systems.get_by_id(system_id) {
+            if let Some(mut system) = sc.get_by_id(&system_id) {
               system.cancel_cue(cue_id);
             } else {
               log::warn!(
@@ -240,10 +236,12 @@ async fn handle_system_tick(
 ) {
   let tick_duration = base.system_interval;
 
+  // Tick first is where most systems should do any time-based processing
   apply_to_systems(systems, base, &app_sender, |system, ctx| {
     system.on_tick(tick_duration, ctx);
   });
 
+  // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
   apply_to_systems(systems, base, &app_sender, |system, ctx| {
     system.on_render(ctx);
   });
@@ -261,12 +259,12 @@ fn spawn_system(
 
   // check if the caller is a top-level system or a child
   if let Some(caller_id) = caller_id {
-    if sc.systems.contains_id(caller_id) {
+    if sc.systems.contains_id(&caller_id) {
       sc.systems.insert(system);
     } else {
       // if not search groups and spawn there
       for group in sc.groups.values_mut() {
-        if group.contains_id(caller_id) {
+        if group.contains_id(&caller_id) {
           group.insert(system);
           return;
         }
@@ -289,7 +287,7 @@ fn replace_system(
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
   // find the system to replace, checking top-level first and then groups
-  if sc.systems.contains_id(system_id) {
+  if sc.systems.contains_id(&system_id) {
     if let Some(cell) = sc.systems.remove(system_id) {
       let mut system = cell.borrow_mut();
       let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
@@ -301,7 +299,7 @@ fn replace_system(
   } else {
     // if not search groups and replace there
     for group in sc.groups.values_mut() {
-      if group.contains_id(system_id) {
+      if group.contains_id(&system_id) {
         if let Some(cell) = group.remove(system_id) {
           let mut system = cell.borrow_mut();
           let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
@@ -325,7 +323,7 @@ fn despawn_system(
   interrupt_registry: &mut EventInterruptRegistry,
 ) {
   // check if the system to despawn is a top-level system or a child
-  if sc.systems.contains_id(system_id) {
+  if sc.systems.contains_id(&system_id) {
     if let Some(container) = sc.systems.remove(system_id) {
       let mut system = container.borrow_mut();
       unregister_all_by_system(system_id, interrupt_registry);
@@ -335,7 +333,7 @@ fn despawn_system(
   } else {
     // if not search groups and despawn there
     for group in sc.groups.values_mut() {
-      if group.contains_id(system_id) {
+      if group.contains_id(&system_id) {
         if let Some(container) = group.remove(system_id) {
           let mut system = container.borrow_mut();
           unregister_all_by_system(system_id, interrupt_registry);
