@@ -1,7 +1,7 @@
 pub struct GameStarted;
 pub struct GameEnded;
 
-/// When the current player's turn starts. This happens at the beginning of each "ball".
+/// When the current player's turn starts. This happens at the beginning of each "ball" when the ball has been fed to the plunge lane
 pub struct PlayerTurnBeginning {
   pub current_player: u8,
   pub turn: u8,
@@ -30,6 +30,7 @@ impl PlayerTurnActive {
   }
 }
 
+/// Emitted when the ball goes out of play and is in the trough. This would be the time to render bonus scores, show the player ball end information, etc.
 pub struct PlayerTurnEnding {
   pub current_player: u8,
   pub turn: u8,
