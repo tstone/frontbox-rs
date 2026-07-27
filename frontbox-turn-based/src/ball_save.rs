@@ -4,6 +4,7 @@ use frontbox::provided::TroughFull;
 use crate::{PlayerTurnActive, PlayerTurnEnding};
 
 /// Standard ball save at the start of a ball
+#[derive(Clone)]
 pub struct BallSaveSystem {
   duration: Duration,
   effects: Vec<LedEffect>,
@@ -16,9 +17,9 @@ impl BallSaveSystem {
     25
   }
 
-  pub fn new(duration: Duration) -> Self {
+  pub fn new(initial_duration: Duration) -> Self {
     Self {
-      duration,
+      duration: initial_duration,
       effects: Vec::new(),
       cue: None,
       active: false,
@@ -49,6 +50,10 @@ impl BallSaveSystem {
     }
 
     ctx.unregister_interrupt::<TroughFull>();
+  }
+
+  pub fn duration_mut(&mut self) -> &mut Duration {
+    &mut self.duration
   }
 }
 

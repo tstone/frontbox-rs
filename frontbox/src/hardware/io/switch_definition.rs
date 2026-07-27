@@ -32,6 +32,12 @@ impl HardwareDefinition for SwitchDefinition {
   }
 }
 
+impl Into<&'static str> for SwitchDefinition {
+  fn into(self) -> &'static str {
+    self.name
+  }
+}
+
 pub struct SwitchDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,

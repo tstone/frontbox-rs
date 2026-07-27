@@ -50,7 +50,6 @@ pub async fn run(
             emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
-            // IDEA: if there's already a tick in the queue, don't create another one
             handle_system_tick(&mut sc, &base, &app_sender).await;
           }
           AppMessage::RegisterInterrupt(system_id, type_id, priority) => {

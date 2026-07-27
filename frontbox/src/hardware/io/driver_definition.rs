@@ -44,6 +44,12 @@ impl HardwareDefinition for DriverDefinition {
   }
 }
 
+impl Into<&'static str> for DriverDefinition {
+  fn into(self) -> &'static str {
+    self.name
+  }
+}
+
 pub struct DriverDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,

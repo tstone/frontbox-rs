@@ -68,3 +68,9 @@ impl LedDefinition {
     Q::names(&self.names)
   }
 }
+
+impl Into<HardwareQuery> for LedDefinition {
+  fn into(self) -> HardwareQuery {
+    self.q()
+  }
+}
