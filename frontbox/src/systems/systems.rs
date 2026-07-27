@@ -55,8 +55,8 @@ impl Systems {
     self.type_to_id.get(&type_id).copied()
   }
 
-  pub fn get_by_id(&'_ mut self, system_id: u64) -> Option<RefMut<'_, SystemContainer>> {
-    self.systems.get(&system_id).map(|cell| cell.borrow_mut())
+  pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
+    self.systems.get(system_id).map(|cell| cell.borrow_mut())
   }
 
   pub fn get<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
@@ -88,8 +88,8 @@ impl Systems {
     self.type_to_id.contains_key(&type_id)
   }
 
-  pub fn contains_id(&self, system_id: u64) -> bool {
-    self.systems.contains_key(&system_id)
+  pub fn contains_id(&self, system_id: &u64) -> bool {
+    self.systems.contains_key(system_id)
   }
 
   pub(crate) fn values(&self) -> impl Iterator<Item = &RefCell<SystemContainer>> {
