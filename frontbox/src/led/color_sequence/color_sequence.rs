@@ -135,7 +135,7 @@ impl ColorSequence {
       },
       _ => Fill1dArea::Padded {
         left: padding.into(),
-        right: Extent::full(),
+        right: Extent::zero(),
       },
     };
     self

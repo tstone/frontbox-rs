@@ -109,9 +109,9 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
   // calculate actual fill length based on area setting
   let fill_len = match area {
     Fill1dArea::Full => starting_len,
-    Fill1dArea::Padded { left, right } => {
-      starting_len - left.to_absolute(starting_len) - right.to_absolute(starting_len)
-    }
+    Fill1dArea::Padded { left, right } => starting_len
+      .saturating_sub(left.to_absolute(starting_len))
+      .saturating_sub(right.to_absolute(starting_len)),
     Fill1dArea::Anchored { length: l, .. } => l.to_absolute(starting_len),
   };
 

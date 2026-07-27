@@ -82,7 +82,14 @@ impl LedEffect {
       RotationDirection::CounterClockwise => vec![360.0f32, 0.0],
     };
     Self::new(query, colors.modify(Modification::rotated(0.0))).animate(
-      |seq, value| *seq.modifications[0].rotation_mut().unwrap() = value,
+      // TODO: the real fix is to attach modifications to the effect not the sequence
+      |seq, value| {
+        if let Some(modification) = seq.modifications.get_mut(0) {
+          *modification.rotation_mut().unwrap() = value;
+        } else {
+          seq.modifications.push(Modification::rotated(value));
+        }
+      },
       Tween::new(duration, Curve::Linear, stops, Cycle::Forever),
     )
   }
