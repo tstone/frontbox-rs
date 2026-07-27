@@ -61,14 +61,10 @@ impl LedEffect {
 
   /// Flash all LEDs on and off. Duration is a full on/off cycle
   pub fn flash(query: HardwareQuery, color: Rgba<u8>, duration: Duration) -> Self {
-    Self::new(query, ColorSequence::tile(vec![color])).animate(
-      |seq, value| *seq.fill.pattern_mut().unwrap() = vec![value],
-      Tween::new(
-        duration / 2,
-        Curve::Steps(2),
-        vec![color, Rgba::default()],
-        Cycle::Forever,
-      ),
+    Self::new(query, ColorSequence::tile(vec![color])).cycle(
+      vec![ColorSequence::tile(vec![Rgba::default()])],
+      duration,
+      Curve::Steps(2),
     )
   }
 
@@ -118,6 +114,11 @@ impl LedEffect {
     }
     log::debug!("pending_deactivation = true");
     self.pending_deactivation = true;
+  }
+
+  pub fn stop_and_clear(&mut self, ctx: &Context) {
+    self.stop();
+    self.clear(ctx);
   }
 
   pub fn clear(&mut self, ctx: &Context) {

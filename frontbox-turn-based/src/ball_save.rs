@@ -44,12 +44,15 @@ impl BallSaveSystem {
 
   pub fn deactivate(&mut self, ctx: &Context) {
     self.active = false;
+    ctx.unregister_interrupt::<TroughFull>();
 
     if let Some(cue_id) = self.cue {
       ctx.cancel_cue(cue_id);
     }
 
-    ctx.unregister_interrupt::<TroughFull>();
+    for effect in &mut self.effects {
+      effect.stop_and_clear(ctx);
+    }
   }
 
   pub fn duration_mut(&mut self) -> &mut Duration {
