@@ -1,4 +1,5 @@
 use crate::animation::*;
+use crate::prelude::color_sequence::Modification;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -35,6 +36,27 @@ impl LedEffect {
       }
     }
     self
+  }
+
+  /// Flash all LEDs on and off. Duration is a full on/off cycle
+  pub fn flash(query: HardwareQuery, color: Rgba<u8>, duration: Duration) -> Self {
+    Self::new(query, ColorSequence::tile(vec![color])).animate(
+      |seq, value| *seq.fill.pattern_mut().unwrap() = vec![value],
+      Tween::new(
+        duration / 2,
+        Curve::Steps(2),
+        vec![color, Rgba::default()],
+        Cycle::Forever,
+      ),
+    )
+  }
+
+  /// Rotate the given color sequence
+  pub fn rotate(query: HardwareQuery, colors: ColorSequence, duration: Duration) -> Self {
+    Self::new(query, colors.modify(Modification::rotated(0.0))).animate(
+      |seq, value| *seq.modifications[0].rotation_mut().unwrap() = value,
+      Tween::new(duration, Curve::Linear, vec![0.0f32, 360.0], Cycle::Forever),
+    )
   }
 
   pub fn play(&mut self) {
