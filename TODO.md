@@ -1,3 +1,6 @@
+- BUG: Curve::Steps doesn't seem to work right
+- BUG: BallSaveSystem flashing light never goes off
+
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
 
