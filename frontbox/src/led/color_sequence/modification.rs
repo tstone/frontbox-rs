@@ -8,7 +8,7 @@ pub enum Modification {
   Reversed,
   Rotated { rotation: f32 },
   Shuffle { seed: u64 },
-  InnerFill { fill: Fill, area: FillArea },
+  InnerFill { fill: Fill1d, area: Fill1dArea },
 }
 
 impl Modification {
@@ -20,7 +20,7 @@ impl Modification {
     Self::Rotated { rotation }
   }
 
-  pub fn inner_fill(fill: Fill, area: FillArea) -> Self {
+  pub fn inner_fill(fill: Fill1d, area: Fill1dArea) -> Self {
     Self::InnerFill { fill, area }
   }
 
@@ -30,11 +30,11 @@ impl Modification {
 
   pub fn transparent_at(extant: Extent<u16>) -> Self {
     Self::inner_fill(
-      Fill::Pattern {
+      Fill1d::Pattern {
         pattern: vec![Rgba::default()],
         cycle: Cycle::Once,
       },
-      FillArea::Padded {
+      Fill1dArea::Padded {
         left: extant,
         right: Extent::full(),
       },
@@ -48,14 +48,14 @@ impl Modification {
     }
   }
 
-  pub fn inner_fill_mut(&mut self) -> Option<&mut Fill> {
+  pub fn inner_fill_mut(&mut self) -> Option<&mut Fill1d> {
     match self {
       Self::InnerFill { fill, .. } => Some(fill),
       _ => None,
     }
   }
 
-  pub fn inner_fill_area_mut(&mut self) -> Option<&mut FillArea> {
+  pub fn inner_fill_area_mut(&mut self) -> Option<&mut Fill1dArea> {
     match self {
       Self::InnerFill { area, .. } => Some(area),
       _ => None,

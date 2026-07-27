@@ -3,7 +3,7 @@ use crate::led::color_sequence::*;
 use crate::prelude::*;
 
 #[derive(Clone, Debug)]
-pub enum Fill {
+pub enum Fill1d {
   /// Linear interpolate between multiple colors
   Gradient { stops: Vec<GradientStop> },
   /// Apply an explicit pattern with a variable repeat
@@ -13,7 +13,7 @@ pub enum Fill {
   },
 }
 
-impl Fill {
+impl Fill1d {
   pub fn gradient_stops_mut(&mut self) -> Option<&mut Vec<GradientStop>> {
     match self {
       Self::Gradient { stops } => Some(stops),
@@ -68,11 +68,11 @@ impl Fill {
   }
 }
 
-impl Lerp for Fill {
+impl Lerp for Fill1d {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
     match (self, other) {
-      (Fill::Gradient { stops: a }, Fill::Gradient { stops: b }) if a.len() == b.len() => {
-        Fill::Gradient {
+      (Fill1d::Gradient { stops: a }, Fill1d::Gradient { stops: b }) if a.len() == b.len() => {
+        Fill1d::Gradient {
           stops: a
             .iter()
             .zip(b)
@@ -80,10 +80,10 @@ impl Lerp for Fill {
             .collect(),
         }
       }
-      (Fill::Pattern { pattern: a, cycle }, Fill::Pattern { pattern: b, .. })
+      (Fill1d::Pattern { pattern: a, cycle }, Fill1d::Pattern { pattern: b, .. })
         if a.len() == b.len() =>
       {
-        Fill::Pattern {
+        Fill1d::Pattern {
           pattern: a
             .iter()
             .zip(b)
@@ -103,29 +103,29 @@ impl Lerp for Fill {
   }
 }
 
-pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill, area: &FillArea) {
+pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dArea) {
   let starting_len = seq.len() as u16;
 
   // calculate actual fill length based on area setting
   let fill_len = match area {
-    FillArea::Full => starting_len,
-    FillArea::Padded { left, right } => {
+    Fill1dArea::Full => starting_len,
+    Fill1dArea::Padded { left, right } => {
       starting_len - left.to_absolute(starting_len) - right.to_absolute(starting_len)
     }
-    FillArea::Anchored { length: l, .. } => l.to_absolute(starting_len),
+    Fill1dArea::Anchored { length: l, .. } => l.to_absolute(starting_len),
   };
 
   // generate fill
   let fill = match fill {
-    Fill::Gradient { stops } => gradient::render(stops, fill_len),
-    Fill::Pattern { pattern, cycle } => pattern::render(pattern, *cycle, fill_len),
+    Fill1d::Gradient { stops } => gradient::render(stops, fill_len),
+    Fill1d::Pattern { pattern, cycle } => pattern::render(pattern, *cycle, fill_len),
   };
 
   // copy fill into offset position
   let left = match area {
-    FillArea::Full => 0,
-    FillArea::Padded { left, .. } => left.to_absolute(starting_len),
-    FillArea::Anchored { anchor, .. } => match anchor {
+    Fill1dArea::Full => 0,
+    Fill1dArea::Padded { left, .. } => left.to_absolute(starting_len),
+    Fill1dArea::Anchored { anchor, .. } => match anchor {
       Anchor::Start => 0,
       Anchor::End => starting_len - fill_len,
       Anchor::Center => (starting_len - fill_len) / 2,

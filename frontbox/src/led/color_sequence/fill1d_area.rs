@@ -2,7 +2,7 @@ use crate::animation::Lerp;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Default)]
-pub enum FillArea {
+pub enum Fill1dArea {
   #[default]
   Full,
   Padded {
@@ -15,7 +15,7 @@ pub enum FillArea {
   },
 }
 
-impl FillArea {
+impl Fill1dArea {
   pub fn left_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
     match self {
       Self::Padded { left, .. } => Some(left),
@@ -53,30 +53,30 @@ pub enum Anchor {
   End,
 }
 
-impl Lerp for FillArea {
+impl Lerp for Fill1dArea {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
     match (self, other) {
-      (FillArea::Full, FillArea::Full) => FillArea::Full,
+      (Fill1dArea::Full, Fill1dArea::Full) => Fill1dArea::Full,
       (
-        FillArea::Padded {
+        Fill1dArea::Padded {
           left: la,
           right: ra,
         },
-        FillArea::Padded {
+        Fill1dArea::Padded {
           left: lb,
           right: rb,
         },
-      ) => FillArea::Padded {
+      ) => Fill1dArea::Padded {
         left: la.interpolate(lb, t),
         right: ra.interpolate(rb, t),
       },
       (
-        FillArea::Anchored {
+        Fill1dArea::Anchored {
           length: len_a,
           anchor,
         },
-        FillArea::Anchored { length: len_b, .. },
-      ) => FillArea::Anchored {
+        Fill1dArea::Anchored { length: len_b, .. },
+      ) => Fill1dArea::Anchored {
         length: len_a.interpolate(len_b, t),
         anchor: *anchor,
       },

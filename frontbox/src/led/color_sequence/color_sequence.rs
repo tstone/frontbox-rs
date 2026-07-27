@@ -2,21 +2,22 @@ use crate::animation::Lerp;
 use crate::led::color_sequence::*;
 use crate::prelude::*;
 
+/// A 1d description of a sequence of colors
 #[derive(Clone, Debug)]
 pub struct ColorSequence {
-  pub fill: Fill,
-  pub fill_area: FillArea,
+  pub fill: Fill1d,
+  pub fill_area: Fill1dArea,
   pub modifications: Vec<Modification>,
 }
 
 impl Default for ColorSequence {
   fn default() -> Self {
     Self {
-      fill: Fill::Pattern {
+      fill: Fill1d::Pattern {
         pattern: vec![Rgba::default()],
         cycle: Cycle::Forever,
       },
-      fill_area: FillArea::Full,
+      fill_area: Fill1dArea::Full,
       modifications: Vec::new(),
     }
   }
@@ -76,7 +77,7 @@ impl ColorSequence {
 
   pub fn gradient(stops: Vec<GradientStop>) -> Self {
     ColorSequence {
-      fill: Fill::Gradient { stops },
+      fill: Fill1d::Gradient { stops },
       ..Default::default()
     }
   }
@@ -87,7 +88,7 @@ impl ColorSequence {
 
   pub fn pattern(pattern: Vec<Rgba<u8>>, cycle: Cycle) -> Self {
     ColorSequence {
-      fill: Fill::Pattern { pattern, cycle },
+      fill: Fill1d::Pattern { pattern, cycle },
       ..Default::default()
     }
   }
@@ -95,7 +96,7 @@ impl ColorSequence {
   /// Repeat the given pattern exactly once
   pub fn exact(pattern: Vec<Rgba<u8>>) -> Self {
     ColorSequence {
-      fill: Fill::Pattern {
+      fill: Fill1d::Pattern {
         pattern,
         cycle: Cycle::Once,
       },
@@ -106,7 +107,7 @@ impl ColorSequence {
   /// Repeat a pattern forever
   pub fn tile(pattern: Vec<Rgba<u8>>) -> Self {
     ColorSequence {
-      fill: Fill::Pattern {
+      fill: Fill1d::Pattern {
         pattern,
         cycle: Cycle::Forever,
       },
@@ -114,44 +115,51 @@ impl ColorSequence {
     }
   }
 
-  pub fn padded(mut self, padding_left: Extent<u16>, padding_right: Extent<u16>) -> Self {
-    self.fill_area = FillArea::Padded {
-      left: padding_left,
-      right: padding_right,
+  pub fn padded(
+    mut self,
+    padding_left: impl Into<Extent<u16>>,
+    padding_right: impl Into<Extent<u16>>,
+  ) -> Self {
+    self.fill_area = Fill1dArea::Padded {
+      left: padding_left.into(),
+      right: padding_right.into(),
     };
     self
   }
 
-  pub fn padding_left(mut self, padding: Extent<u16>) -> Self {
+  pub fn padding_left(mut self, padding: impl Into<Extent<u16>>) -> Self {
     self.fill_area = match self.fill_area {
-      FillArea::Padded { right, .. } => FillArea::Padded {
-        left: padding,
+      Fill1dArea::Padded { right, .. } => Fill1dArea::Padded {
+        left: padding.into(),
         right,
       },
-      _ => FillArea::Padded {
-        left: padding,
+      _ => Fill1dArea::Padded {
+        left: padding.into(),
         right: Extent::full(),
       },
     };
     self
   }
 
-  pub fn padding_right(mut self, padding: Extent<u16>) -> Self {
+  pub fn padding_right(mut self, padding: impl Into<Extent<u16>>) -> Self {
     self.fill_area = match self.fill_area {
-      FillArea::Padded { left, .. } => FillArea::Padded {
+      Fill1dArea::Padded { left, .. } => Fill1dArea::Padded {
         left,
-        right: padding,
+        right: padding.into(),
       },
-      _ => FillArea::Padded {
+      _ => Fill1dArea::Padded {
         left: Extent::zero(),
-        right: padding,
+        right: padding.into(),
       },
     };
     self
   }
 
-  pub fn anchored(mut self, anchor: Anchor, length: Extent<u16>) -> Self {
-    self.fill_area = FillArea::Anchored { length, anchor };
+  pub fn anchored(mut self, anchor: Anchor, length: impl Into<Extent<u16>>) -> Self {
+    self.fill_area = Fill1dArea::Anchored {
+      length: length.into(),
+      anchor,
+    };
     self
   }
 
@@ -164,14 +172,14 @@ impl ColorSequence {
   pub fn generate(&self, qty: usize) -> Vec<Rgba<u8>> {
     // render base starting fill
     let mut seq = vec![Rgba::default(); qty];
-    fill::render_into(&mut seq, &self.fill, &self.fill_area);
+    fill1d::render_into(&mut seq, &self.fill, &self.fill_area);
 
     // apply modifications
     for m in &self.modifications {
       match m {
         Modification::Reversed => modification::reverse(&mut seq),
         Modification::Rotated { rotation } => modification::rotate(&mut seq, *rotation),
-        Modification::InnerFill { fill, area } => fill::render_into(&mut seq, fill, area),
+        Modification::InnerFill { fill, area } => fill1d::render_into(&mut seq, fill, area),
         Modification::Shuffle { seed } => modification::shuffle(&mut seq, *seed),
       }
     }
