@@ -23,6 +23,10 @@ impl Default for ColorSequence {
 }
 
 impl ColorSequence {
+  pub fn off() -> Self {
+    Self::tile(vec![Rgba::default()])
+  }
+
   pub fn fade(from: Rgba<u8>, to: Rgba<u8>) -> Self {
     Self::gradient(vec![
       GradientStop {

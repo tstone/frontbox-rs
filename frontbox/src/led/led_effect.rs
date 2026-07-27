@@ -20,6 +20,7 @@ impl LedEffect {
     }
   }
 
+  /// Apply a modulation to the ColorSequence
   pub fn animate<T: Clone + Send + Sync + 'static>(
     mut self,
     setter: impl Fn(&mut ColorSequence, T) + Send + Sync + 'static,
@@ -38,10 +39,10 @@ impl LedEffect {
     self
   }
 
-  /// Animate by cycling through the multiple ColorSequences, including the base one
+  /// Cycling through the multiple ColorSequences, including the base one
   /// `duration` - Time each ColorSequence stays before moving to the next
   /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
-  pub fn cycle_animate(self, others: Vec<ColorSequence>, duration: Duration, curve: Curve) -> Self {
+  pub fn cycle(self, others: Vec<ColorSequence>, duration: Duration, curve: Curve) -> Self {
     let mut seq_of_seq = others.clone();
     seq_of_seq.insert(0, self.colors.clone());
     self.animate(
