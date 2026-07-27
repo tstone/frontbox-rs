@@ -1,3 +1,4 @@
+use crate::animation::Lerp;
 use crate::led::color_sequence::*;
 use crate::prelude::*;
 
@@ -67,56 +68,39 @@ impl Fill {
   }
 }
 
-#[derive(Debug, Clone, Default)]
-pub enum FillArea {
-  #[default]
-  Full,
-  Padded {
-    left: Extent<u16>,
-    right: Extent<u16>,
-  },
-  Anchored {
-    length: Extent<u16>,
-    anchor: Anchor,
-  },
-}
-
-impl FillArea {
-  pub fn left_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
-    match self {
-      Self::Padded { left, .. } => Some(left),
-      _ => None,
+impl Lerp for Fill {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    match (self, other) {
+      (Fill::Gradient { stops: a }, Fill::Gradient { stops: b }) if a.len() == b.len() => {
+        Fill::Gradient {
+          stops: a
+            .iter()
+            .zip(b)
+            .map(|(sa, sb)| sa.interpolate(sb, t))
+            .collect(),
+        }
+      }
+      (Fill::Pattern { pattern: a, cycle }, Fill::Pattern { pattern: b, .. })
+        if a.len() == b.len() =>
+      {
+        Fill::Pattern {
+          pattern: a
+            .iter()
+            .zip(b)
+            .map(|(ca, cb)| ca.interpolate(cb, t))
+            .collect(),
+          cycle: cycle.clone(),
+        }
+      }
+      _ => {
+        if t < 0.5 {
+          self.clone()
+        } else {
+          other.clone()
+        }
+      }
     }
   }
-
-  pub fn right_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
-    match self {
-      Self::Padded { right, .. } => Some(right),
-      _ => None,
-    }
-  }
-
-  pub fn anchor_length_mut(&mut self) -> Option<&mut Extent<u16>> {
-    match self {
-      Self::Anchored { length, .. } => Some(length),
-      _ => None,
-    }
-  }
-
-  pub fn anchor_mut(&mut self) -> Option<&mut Anchor> {
-    match self {
-      Self::Anchored { anchor, .. } => Some(anchor),
-      _ => None,
-    }
-  }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub enum Anchor {
-  #[default]
-  Start,
-  Center,
-  End,
 }
 
 pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill, area: &FillArea) {

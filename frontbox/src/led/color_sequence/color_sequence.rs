@@ -1,3 +1,4 @@
+use crate::animation::Lerp;
 use crate::led::color_sequence::*;
 use crate::prelude::*;
 
@@ -172,5 +173,19 @@ impl ColorSequence {
     }
 
     seq
+  }
+}
+
+impl Lerp for ColorSequence {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    ColorSequence {
+      fill: self.fill.interpolate(&other.fill, t),
+      fill_area: self.fill_area.interpolate(&other.fill_area, t),
+      modifications: if t < 0.5 {
+        self.modifications.clone()
+      } else {
+        other.modifications.clone()
+      },
+    }
   }
 }

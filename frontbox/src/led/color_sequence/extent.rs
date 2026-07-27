@@ -1,5 +1,7 @@
 use num_traits::AsPrimitive;
 
+use crate::animation::Lerp;
+
 /// Captures a description of a position or length, either absolute (fixed) or relative (percent)
 #[derive(Debug, Clone, Copy)]
 pub enum Extent<T: Copy> {
@@ -54,6 +56,25 @@ where
     match self {
       Self::Absolute(v) => Some(v),
       _ => None,
+    }
+  }
+}
+
+impl<T: Copy> Lerp for Extent<T>
+where
+  T: Lerp,
+{
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    match (self, other) {
+      (Extent::Relative(a), Extent::Relative(b)) => Extent::Relative(a + (b - a) * t),
+      (Extent::Absolute(a), Extent::Absolute(b)) => Extent::Absolute(a.interpolate(b, t)),
+      _ => {
+        if t < 0.5 {
+          *self
+        } else {
+          *other
+        }
+      }
     }
   }
 }

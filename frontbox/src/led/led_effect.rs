@@ -38,6 +38,24 @@ impl LedEffect {
     self
   }
 
+  /// Animate by cycling through the multiple ColorSequences, including the base one
+  /// `duration` - Time each ColorSequence stays before moving to the next
+  /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
+  pub fn cycle_animate(self, others: Vec<ColorSequence>, duration: Duration, curve: Curve) -> Self {
+    let mut seq_of_seq = others.clone();
+    seq_of_seq.insert(0, self.colors.clone());
+    self.animate(
+      |seq, cs| *seq = cs,
+      Tween::new(
+        duration * (others.len() as u32 + 1),
+        // Curve::Steps(seq_of_seq.len()),
+        curve,
+        seq_of_seq,
+        Cycle::Forever,
+      ),
+    )
+  }
+
   /// Flash all LEDs on and off. Duration is a full on/off cycle
   pub fn flash(query: HardwareQuery, color: Rgba<u8>, duration: Duration) -> Self {
     Self::new(query, ColorSequence::tile(vec![color])).animate(
@@ -52,10 +70,19 @@ impl LedEffect {
   }
 
   /// Rotate the given color sequence
-  pub fn rotate(query: HardwareQuery, colors: ColorSequence, duration: Duration) -> Self {
+  pub fn rotate(
+    query: HardwareQuery,
+    colors: ColorSequence,
+    duration: Duration,
+    direction: RotationDirection,
+  ) -> Self {
+    let stops = match direction {
+      RotationDirection::Clockwise => vec![0.0f32, 360.0],
+      RotationDirection::CounterClockwise => vec![360.0f32, 0.0],
+    };
     Self::new(query, colors.modify(Modification::rotated(0.0))).animate(
       |seq, value| *seq.modifications[0].rotation_mut().unwrap() = value,
-      Tween::new(duration, Curve::Linear, vec![0.0f32, 360.0], Cycle::Forever),
+      Tween::new(duration, Curve::Linear, stops, Cycle::Forever),
     )
   }
 
@@ -89,4 +116,9 @@ impl LedEffect {
       ctx.undeclare_leds(&self.query);
     }
   }
+}
+
+pub enum RotationDirection {
+  Clockwise,
+  CounterClockwise,
 }

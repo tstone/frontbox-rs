@@ -1,5 +1,6 @@
 use image::Rgba;
 
+use crate::animation::Lerp;
 use crate::led::color_sequence::Extent;
 use crate::prelude::*;
 
@@ -15,6 +16,15 @@ impl GradientStop {
     GradientStop {
       color,
       position: position.into(),
+    }
+  }
+}
+
+impl Lerp for GradientStop {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    GradientStop {
+      color: self.color.interpolate(&other.color, t),
+      position: self.position.interpolate(&other.position, t),
     }
   }
 }
