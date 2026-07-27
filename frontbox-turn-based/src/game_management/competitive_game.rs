@@ -1,5 +1,5 @@
-use frontbox::provided::{Trough, TroughFull};
 use frontbox::prelude::*;
+use frontbox::provided::{Trough, TroughFull};
 
 use crate::*;
 
@@ -155,10 +155,6 @@ impl GameManagement for CompetitiveGame {
 
     let group_name = PLAYER_GROUP_NAMES[game_state.player_count() as usize];
     ctx.spawn_system_group(group_name, copy, false);
-
-    if game_started_just_now {
-      ctx.emit(GameStarted);
-    }
 
     ctx.emit(PlayerAdded);
 

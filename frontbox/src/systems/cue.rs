@@ -176,9 +176,11 @@ impl Accumulator<Duration> for CueAccumulator {
 
     if self.elapsed >= self.target() {
       // don't reset to 0 if exactly at the target. This will happen the next cycle but doing so too early
-      // makes `sample` incorrect for the last frame of the cycle
-      if self.elapsed > self.target() {
-        self.elapsed -= self.target();
+      // makes `sample` incorrect for the last frame of the cycle. Since once never cycles, don't reset elapsed
+      // in that case either.
+      let loops = !matches!(self.cue, CueInternal::Once(_));
+      if self.elapsed > self.target() && loops {
+          self.elapsed -= self.target();
       }
 
       result.completed_cycle = true;
@@ -246,6 +248,32 @@ mod test {
 
     // Advance 1 second, should trigger signal
     let result = cue.accumulate(Duration::from_secs(1));
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(cue.is_complete(), true);
+    assert_eq!(
+      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
+      Some(&"signal")
+    );
+
+    // Verify that accumulating more time doesn't change the state
+    let result = cue.accumulate(Duration::from_secs(1));
+    assert_eq!(result.completed_cycle, false);
+    assert_eq!(cue.is_complete(), true);
+  }
+
+  /// A Once cue that goes over the exact accumulated time
+  #[test]
+  fn once_over_cue() {
+    let mut cue = CueAccumulator::new(
+      CueInternal::Once(Duration::from_secs(1)),
+      vec![Box::new("signal")],
+    );
+
+    assert_eq!(cue.is_complete(), false);
+    assert_eq!(cue.signal().is_none(), true);
+
+    // Advance 1 second, should trigger signal
+    let result = cue.accumulate(Duration::from_millis(1100));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(

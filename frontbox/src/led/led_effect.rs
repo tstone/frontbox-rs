@@ -8,6 +8,7 @@ pub struct LedEffect {
   colors: ColorSequence,
   modulation: Option<MultiModulator<ColorSequence, Duration>>,
   active: bool,
+  pending_deactivation: bool,
 }
 
 impl LedEffect {
@@ -17,6 +18,7 @@ impl LedEffect {
       colors: sequence,
       modulation: None,
       active: true,
+      pending_deactivation: false,
     }
   }
 
@@ -94,14 +96,17 @@ impl LedEffect {
     )
   }
 
+  /// Sets the effect as active
   pub fn play(&mut self) {
     self.active = true;
   }
 
+  /// Stops the effect as active but does not clear state or LEDs
   pub fn pause(&mut self) {
-    self.active = true;
+    self.active = false;
   }
 
+  /// Stops the effect and clears current state
   pub fn stop(&mut self) {
     self.pause();
     self.reset();
@@ -111,6 +116,13 @@ impl LedEffect {
     if let Some(m) = &mut self.modulation {
       m.reset();
     }
+    log::debug!("pending_deactivation = true");
+    self.pending_deactivation = true;
+  }
+
+  pub fn clear(&mut self, ctx: &Context) {
+    ctx.undeclare_leds(&self.query);
+    self.pending_deactivation = false;
   }
 
   /// Applies accumulation and any animation
@@ -120,8 +132,8 @@ impl LedEffect {
         modulation.apply(delta, &mut self.colors);
       }
       ctx.declare_leds(&self.query, self.colors.clone());
-    } else {
-      ctx.undeclare_leds(&self.query);
+    } else if self.pending_deactivation {
+      self.clear(ctx);
     }
   }
 }

@@ -74,3 +74,21 @@ impl Into<HardwareQuery> for LedDefinition {
     self.q()
   }
 }
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_children() {
+    let def = LedDefinition::strip("test", 6);
+    assert_eq!(def.build().children().len(), 6);
+  }
+
+  #[test]
+  fn test_names() {
+    let def = LedDefinition::strip("test", 8);
+    assert_eq!(def.build().names().len(), 8);
+  }
+}

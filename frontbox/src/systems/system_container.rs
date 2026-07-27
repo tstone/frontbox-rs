@@ -70,8 +70,8 @@ impl SystemContainer {
   }
 
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context) {
-    let mut cues_to_remove = vec![];
-    for (id, cue) in self.cues.iter_mut() {
+    let mut cues_to_remove = Vec::new();
+    for (id, cue) in &mut self.cues {
       if cue.accumulate(delta).completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
         if let Some(signal) = cue.signal() {
@@ -79,14 +79,25 @@ impl SystemContainer {
         }
 
         if cue.is_complete() {
-          log::trace!("Cue {} is entirely completed, removing", id);
+          log::trace!(
+            "Cue {} @ system {} is entirely completed, removing",
+            self.id,
+            id
+          );
           cues_to_remove.push(*id);
         }
       }
     }
 
-    for id in cues_to_remove {
-      self.cues.remove(&id);
+    if cues_to_remove.len() > 0 {
+      for id in cues_to_remove {
+        self.cues.remove(&id);
+      }
+      log::trace!(
+        "Remaining cue count for system {}: {}",
+        self.id,
+        self.cues.len()
+      )
     }
 
     // bubble tick to inner system after processing timers
