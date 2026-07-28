@@ -7,7 +7,7 @@ use crate::prelude::*;
 pub struct ColorSequence {
   pub fill: Fill1d,
   pub fill_area: Fill1dArea,
-  pub modifications: Vec<Modification>,
+  pub alterations: Vec<ColorSequenceAlteration>,
 }
 
 impl Default for ColorSequence {
@@ -18,7 +18,7 @@ impl Default for ColorSequence {
         cycle: Cycle::Forever,
       },
       fill_area: Fill1dArea::Full,
-      modifications: Vec::new(),
+      alterations: Vec::new(),
     }
   }
 }
@@ -155,7 +155,7 @@ impl ColorSequence {
     self
   }
 
-  pub fn anchored(mut self, anchor: Anchor, length: impl Into<Extent<u16>>) -> Self {
+  pub fn anchored(mut self, anchor: Anchor1d, length: impl Into<Extent<u16>>) -> Self {
     self.fill_area = Fill1dArea::Anchored {
       length: length.into(),
       anchor,
@@ -163,9 +163,35 @@ impl ColorSequence {
     self
   }
 
-  pub fn modify(mut self, modification: Modification) -> Self {
-    self.modifications.push(modification);
+  pub fn reverse(mut self) -> Self {
+    self.alterations.push(ColorSequenceAlteration::Reverse);
     self
+  }
+
+  pub fn rotate(mut self, angle: f32) -> Self {
+    self
+      .alterations
+      .push(ColorSequenceAlteration::Rotate(Extent::Relative(angle)));
+    self
+  }
+
+  pub fn shuffle(mut self, seed: u64) -> Self {
+    self
+      .alterations
+      .push(ColorSequenceAlteration::Shuffle(seed));
+    self
+  }
+
+  /// Overwrite an inner fill over top of the 'base' ColorSequence
+  pub fn overwrite(mut self, fill: Fill1d, area: Fill1dArea) -> Self {
+    self
+      .alterations
+      .push(ColorSequenceAlteration::Overwrite(fill, area));
+    self
+  }
+
+  pub fn alter(&mut self, alteration: ColorSequenceAlteration) {
+    self.alterations.push(alteration);
   }
 
   /// Generate the sequence for the given quantity
@@ -175,12 +201,12 @@ impl ColorSequence {
     fill1d::render_into(&mut seq, &self.fill, &self.fill_area);
 
     // apply modifications
-    for m in &self.modifications {
+    for m in &self.alterations {
       match m {
-        Modification::Reversed => modification::reverse(&mut seq),
-        Modification::Rotated { rotation } => modification::rotate(&mut seq, *rotation),
-        Modification::InnerFill { fill, area } => fill1d::render_into(&mut seq, fill, area),
-        Modification::Shuffle { seed } => modification::shuffle(&mut seq, *seed),
+        ColorSequenceAlteration::Reverse => alteration::reverse(&mut seq),
+        ColorSequenceAlteration::Rotate(rotation) => alteration::rotate(&mut seq, *rotation),
+        ColorSequenceAlteration::Overwrite(fill, area) => fill1d::render_into(&mut seq, fill, area),
+        ColorSequenceAlteration::Shuffle(seed) => alteration::shuffle(&mut seq, *seed),
       }
     }
 
@@ -193,10 +219,10 @@ impl Lerp for ColorSequence {
     ColorSequence {
       fill: self.fill.interpolate(&other.fill, t),
       fill_area: self.fill_area.interpolate(&other.fill_area, t),
-      modifications: if t < 0.5 {
-        self.modifications.clone()
+      alterations: if t < 0.5 {
+        self.alterations.clone()
       } else {
-        other.modifications.clone()
+        other.alterations.clone()
       },
     }
   }

@@ -126,9 +126,9 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
     Fill1dArea::Full => 0,
     Fill1dArea::Padded { left, .. } => left.to_absolute(starting_len),
     Fill1dArea::Anchored { anchor, .. } => match anchor {
-      Anchor::Start => 0,
-      Anchor::End => starting_len - fill_len,
-      Anchor::Center => (starting_len - fill_len) / 2,
+      Anchor1d::Start => 0,
+      Anchor1d::End => starting_len - fill_len,
+      Anchor1d::Center => (starting_len - fill_len) / 2,
     },
   };
 

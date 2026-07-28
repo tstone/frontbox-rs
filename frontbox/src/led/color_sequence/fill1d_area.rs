@@ -11,7 +11,7 @@ pub enum Fill1dArea {
   },
   Anchored {
     length: Extent<u16>,
-    anchor: Anchor,
+    anchor: Anchor1d,
   },
 }
 
@@ -37,7 +37,7 @@ impl Fill1dArea {
     }
   }
 
-  pub fn anchor_mut(&mut self) -> Option<&mut Anchor> {
+  pub fn anchor_mut(&mut self) -> Option<&mut Anchor1d> {
     match self {
       Self::Anchored { anchor, .. } => Some(anchor),
       _ => None,
@@ -46,7 +46,7 @@ impl Fill1dArea {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub enum Anchor {
+pub enum Anchor1d {
   #[default]
   Start,
   Center,

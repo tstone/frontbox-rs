@@ -35,7 +35,7 @@ impl BallSaveSystem {
     self.active = true;
 
     for effect in &mut self.effects {
-      effect.play();
+      effect.resume();
     }
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
