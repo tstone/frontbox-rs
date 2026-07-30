@@ -82,6 +82,13 @@ impl LedSystem {
     }
   }
 
+  /// Entirely remove all declarations by the given system
+  pub fn undeclare_by_system(&mut self, system_id: &u64) {
+    for declarations in self.declarations.values_mut() {
+      declarations.retain(|id, _| &id.system_id != system_id);
+    }
+  }
+
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
     for declarations in self.declarations.values_mut() {
@@ -180,6 +187,12 @@ impl System for LedSystem {
     self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
   }
 
+  fn on_event(&mut self, event: &dyn Event, _ctx: &Context) {
+    if let Some(SystemDespawned(system_id)) = event.downcast_ref::<SystemDespawned>() {
+      self.undeclare_by_system(system_id); 
+    }
+  }
+
   fn on_tick(&mut self, delta: Duration, _ctx: &Context) {
     self.alternate_resolver.accumulate(delta);
   }
@@ -194,7 +207,6 @@ impl System for LedSystem {
         // assemble a list of unique z-indexes defined for this LED
         let z_indexes =
           active
-            .clone()
             .map(|(id, _)| id.z_index)
             .sorted()
             .fold(Vec::new(), |mut acc, z| {
@@ -295,11 +307,7 @@ mod tests {
   fn declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -325,11 +333,7 @@ mod tests {
   fn declare_overwrite() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -355,11 +359,7 @@ mod tests {
   fn declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
     let led1 = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
     let led2 = LedAddress {
@@ -393,11 +393,7 @@ mod tests {
   fn declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -420,11 +416,7 @@ mod tests {
   #[test]
   fn resolve_color() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -468,11 +460,7 @@ mod tests {
   #[test]
   fn resolve_color_conflict() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -520,11 +508,7 @@ mod tests {
   #[test]
   fn resolve_color_alpha_compositing() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 

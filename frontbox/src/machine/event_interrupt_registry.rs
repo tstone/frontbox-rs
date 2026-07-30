@@ -34,9 +34,9 @@ impl EventInterruptRegistry {
     }
   }
 
-  pub fn unregister_by_system(&mut self, system_id: u64) {
+  pub fn unregister_by_system(&mut self, system_id: &u64) {
     for interrupts in self.interrupts.values_mut() {
-      interrupts.retain(|i| i.system_id != system_id);
+      interrupts.retain(|i| &i.system_id != system_id);
     }
   }
 

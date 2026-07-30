@@ -33,3 +33,8 @@ pub struct Action;
 pub struct On;
 #[allow(unused)]
 pub struct Off;
+
+#[derive(Debug, Clone, Copy)]
+pub struct SystemSpawned(pub u64);
+#[derive(Debug, Clone, Copy)]
+pub struct SystemDespawned(pub u64);
