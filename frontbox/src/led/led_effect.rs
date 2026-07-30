@@ -1,4 +1,5 @@
 use crate::animation::*;
+use crate::prelude::color_sequence::ColorSequenceAlteration;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -83,6 +84,13 @@ impl LedEffect {
       .push(LedEffectAlteration::Rotating(Rotating::new(
         duration, curve,
       )));
+    self
+  }
+
+  pub fn shuffled(mut self, seed: u64) -> Self {
+    self.alterations.push(LedEffectAlteration::Static(
+      ColorSequenceAlteration::Shuffle(seed),
+    ));
     self
   }
 
