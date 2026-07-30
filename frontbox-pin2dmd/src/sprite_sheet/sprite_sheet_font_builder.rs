@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use std::path::Path;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::{SpriteSheet, SpriteSheetFont};
 
 pub struct SpriteSheetFontBuilder {
   sprite_sheet: Option<SpriteSheet>,
-  path: Option<&'static Path>,
+  path: Option<PathBuf>,
   rows: Option<u8>,
   cols: Option<u8>,
   starting_char: char,
@@ -26,8 +26,8 @@ impl SpriteSheetFontBuilder {
     }
   }
 
-  pub fn path(mut self, path: impl Into<&'static Path>) -> Self {
-    self.path = Some(path.into());
+  pub fn path(mut self, path: impl AsRef<Path>) -> Self {
+    self.path = Some(path.as_ref().to_path_buf());
     self
   }
 
