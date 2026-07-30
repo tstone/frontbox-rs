@@ -49,11 +49,12 @@ impl LedEffect {
     query: HardwareQuery,
     duration: Duration,
     curve: Curve,
+    cycle: Cycle,
     sequences: Vec<ColorSequence>,
   ) -> Self {
     Self {
       query,
-      anim: Box::new(Tween::new(duration, curve, sequences, Cycle::Forever)),
+      anim: Box::new(Tween::new(duration, curve, sequences, cycle)),
       alterations: Vec::new(),
       active: true,
     }
@@ -70,6 +71,7 @@ impl LedEffect {
       query,
       duration,
       Curve::EaseInOut,
+      Cycle::Forever,
       vec![ColorSequence::solid(color1), ColorSequence::solid(color2)],
     )
   }
