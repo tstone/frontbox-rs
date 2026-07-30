@@ -65,7 +65,7 @@ impl System for BallSaveSystem {
     if event.downcast_ref::<PlayerTurnActive>().is_some() {
       // automatically do ball save at the start of a turn
       self.activate(ctx);
-    } else if event.is::<PlayerTurnEnding>() {
+    } else if event.is::<PlayerTurnEnding>() || event.is::<EndBallSave>() {
       // cancel any pending ball saves if the turn is over
       self.deactivate(ctx);
     }

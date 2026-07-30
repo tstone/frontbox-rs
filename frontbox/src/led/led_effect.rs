@@ -109,10 +109,14 @@ impl LedEffect {
     self.active = true;
   }
 
-  /// Remove LED effects from being applied and stop applying them in the future
-  pub fn stop_and_clear(&mut self, ctx: &Context) {
+  pub fn stop(&mut self) {
     self.active = false;
     self.reset();
+  }
+
+  /// Remove LED effects from being applied and stop applying them in the future
+  pub fn stop_and_clear(&mut self, ctx: &Context) {
+    self.stop();
     self.clear(ctx);
   }
 
