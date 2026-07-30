@@ -354,7 +354,7 @@ impl DmdMenuSystem {
 
     row.add(
       SYMBOLS_5PX_REGULAR_FONT
-        .text("▶", text_color, 1)
+        .text("▶", text_color, 1, TextAlignment::Left)
         .width(5)
         .horizontal(Horizontal::right_offset(2)),
     );
@@ -422,20 +422,20 @@ impl DmdMenuSystem {
 
     window.add(
       SIGI_REGULAR_5PX_FONT
-        .text(name, self.theme.heading_color, 1)
+        .left_aligned(name, self.theme.heading_color)
         .default_position(),
     );
 
     window.add(
       SIGI_CONDENSED_REGULAR_5PX_FONT
-        .text(desc, self.theme.unselected_color, 1)
+        .left_aligned(desc, self.theme.unselected_color)
         .width(0.70)
         .top_offset(9),
     );
 
     window.add(
       SIGI_REGULAR_5PX_FONT
-        .text(value, self.theme.unselected_color, 1)
+        .left_aligned(value, self.theme.unselected_color)
         .top_offset(9)
         .right_offset(0)
         .width(0.25),
@@ -456,14 +456,14 @@ impl DmdMenuSystem {
     ));
     window.add(
       SIGI_BOLD_7PX_FONT
-        .text("Frontbox", Rgba::black(), 1)
+        .left_aligned("Frontbox", Rgba::black())
         .width(63)
         .horizontal(Horizontal::Centered)
         .top_offset(5),
     );
     window.add(
       SIGI_CONDENSED_BOLD_5PX_FONT
-        .text(env!("CARGO_PKG_VERSION"), Rgba::black(), 1)
+        .left_aligned(env!("CARGO_PKG_VERSION"), Rgba::black())
         .width(25)
         .horizontal(Horizontal::Centered)
         .top_offset(13),
@@ -471,7 +471,7 @@ impl DmdMenuSystem {
 
     window.add(
       SIGI_CONDENSED_REGULAR_5PX_FONT
-        .text("Neon Blue Pinball 2026", Rgba::black(), 1)
+        .left_aligned("Neon Blue Pinball 2026", Rgba::black())
         .width(102)
         .horizontal(Horizontal::Centered)
         .top_offset(20),

@@ -12,8 +12,8 @@ pub struct StaticImage {
 impl StaticImage {
   pub fn new(path: impl Into<&'static Path>) -> Self {
     let path = path.into();
-    let image = image::open(path)
-      .unwrap_or_else(|_| panic!("Failed to load static image at {:?}", path.clone()));
+    let image =
+      image::open(path).unwrap_or_else(|_| panic!("Failed to load static image at {:?}", path));
     Self { image }
   }
 }
