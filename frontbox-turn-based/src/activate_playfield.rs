@@ -5,6 +5,7 @@ use frontbox::prelude::*;
 
 /// Turn drivers on and off in bulk, automatically (manual supported too)
 /// This is mainly used to call activate driver/automatic for all playfield drivers at the start and stop of a turn
+#[derive(Clone, Debug, Default)]
 pub struct ActivatePlayfieldSystem {
   // driver name, switch name
   driver_table: HashMap<&'static str, &'static str>,
@@ -45,7 +46,7 @@ impl ActivatePlayfieldSystem {
 
 impl System for ActivatePlayfieldSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    if let Some(_) = event.downcast_ref::<PlayerTurnBeginning>() {
+    if event.is::<PlayerTurnBeginning>() {
       log::info!("Activating playfield drivers due to turn start");
       self.activate(ctx);
     } else if event.is::<PlayerTurnEnding>() {

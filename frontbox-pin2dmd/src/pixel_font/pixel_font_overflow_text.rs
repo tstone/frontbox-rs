@@ -12,12 +12,11 @@ pub struct PixelFontOverflowText {
 
 impl Layer for PixelFontOverflowText {
   fn render<'a>(&self, canvas: &mut frontbox_canvas::CanvasView<'a>) {
-    let ellipsis_width = self.font.glyph('…').map(|g| g.width).expect(
-      format!(
+    let ellipsis_width = self.font.glyph('…').map(|g| g.width).unwrap_or_else(|| 
+      panic!(
         "Expected font {} to include ellipsis character '…' but did not.",
         self.font.name
       )
-      .as_str(),
     ) as i32;
     let mut offset: i32 = 0;
 

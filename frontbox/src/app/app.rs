@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::time::Duration;
 
 use crate::app::run_loop;
@@ -166,7 +165,7 @@ impl App {
   }
 
   /// Scan all the drivers looking for operator configs
-  fn register_driver_operator_configs<'a>(
+  fn register_driver_operator_configs(
     drivers: &[IoAddressed<DriverDefinition>],
     operator_config: &mut OperatorConfig,
   ) {

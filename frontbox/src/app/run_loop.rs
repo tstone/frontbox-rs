@@ -26,7 +26,7 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, None, &mut sc, &base, app_sender.clone());
   }
-  spawn_system_tick(base.system_interval.clone(), app_sender.clone());
+  spawn_system_tick(base.system_interval, app_sender.clone());
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -157,7 +157,7 @@ fn apply_to_systems<F>(
       {
         let mut system = cell.borrow_mut();
         let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-        if system.handle_active(&mut ctx) {
+        if system.handle_active(&ctx) {
           handler(&mut system, &mut ctx);
         } else {
           log::trace!("System {} is inactive, skipping", system.id());
@@ -171,7 +171,7 @@ fn apply_to_systems<F>(
   for group in sc.groups.values_mut() {
     for mut system in group.values_mut() {
       let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-      if system.handle_active(&mut ctx) {
+      if system.handle_active(&ctx) {
         handler(&mut system, &mut ctx);
       } else {
         log::trace!("System {} is inactive, skipping", system.id());
@@ -198,10 +198,10 @@ fn emit_event(
       if let Some(cell) = sc.systems.lease(interrupt.system_id) {
         {
           let mut system = cell.borrow_mut();
-          let mut ctx = Context::new(base, interrupt.system_id, &&sc.systems, app_sender.clone());
+          let ctx = Context::new(base, interrupt.system_id, &sc.systems, app_sender.clone());
           // interrupts must be on an active system to run
-          if system.handle_active(&mut ctx)
-            && system.on_interrupt(event, &mut ctx) == InterruptResult::Halt
+          if system.handle_active(&ctx)
+            && system.on_interrupt(event, &ctx) == InterruptResult::Halt
           {
             log::info!(
               "Event of type {:?} was halted by interrupt in system {}",
@@ -224,7 +224,7 @@ fn emit_event(
   }
 
   // event is broadcast to systems if no interrupt halted it
-  apply_to_systems(sc, base, &app_sender, |system, ctx| {
+  apply_to_systems(sc, base, app_sender, |system, ctx| {
     system.on_event(event, ctx);
   });
 }
@@ -237,12 +237,12 @@ async fn handle_system_tick(
   let tick_duration = base.system_interval;
 
   // Tick first is where most systems should do any time-based processing
-  apply_to_systems(systems, base, &app_sender, |system, ctx| {
+  apply_to_systems(systems, base, app_sender, |system, ctx| {
     system.on_tick(tick_duration, ctx);
   });
 
   // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
-  apply_to_systems(systems, base, &app_sender, |system, ctx| {
+  apply_to_systems(systems, base, app_sender, |system, ctx| {
     system.on_render(ctx);
   });
 }
@@ -254,8 +254,8 @@ fn spawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
-  let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-  system.on_spawn(&mut ctx);
+  let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+  system.on_spawn(&ctx);
 
   // check if the caller is a top-level system or a child
   if let Some(caller_id) = caller_id {
@@ -290,11 +290,11 @@ fn replace_system(
   if sc.systems.contains_id(&system_id) {
     if let Some(cell) = sc.systems.remove(system_id) {
       let mut system = cell.borrow_mut();
-      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-      system.on_despawn(&mut ctx);
+      let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+      system.on_despawn(&ctx);
     }
-    let mut ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
-    new_system.on_spawn(&mut ctx);
+    let ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
+    new_system.on_spawn(&ctx);
     sc.systems.insert(new_system);
   } else {
     // if not search groups and replace there
@@ -302,11 +302,11 @@ fn replace_system(
       if group.contains_id(&system_id) {
         if let Some(cell) = group.remove(system_id) {
           let mut system = cell.borrow_mut();
-          let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-          system.on_despawn(&mut ctx);
+          let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+          system.on_despawn(&ctx);
         }
-        let mut ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
-        new_system.on_spawn(&mut ctx);
+        let ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
+        new_system.on_spawn(&ctx);
         group.insert(new_system);
         return;
       }

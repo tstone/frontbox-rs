@@ -17,8 +17,8 @@ impl Layer for RecolorGradientLayer {
     };
     let mut recolor_canvas = CanvasView {
       buffer: &mut recolor_buffer,
-      origin: canvas.origin.clone(),
-      bounds: canvas.bounds.clone(),
+      origin: canvas.origin,
+      bounds: canvas.bounds,
     };
     self.other.render(&mut recolor_canvas);
   }

@@ -8,13 +8,13 @@ use frontbox_sound::*;
 use crate::menu::{DmdMenuTheme, MenuRow, MenuSection};
 use crate::*;
 
-const SELECT_SND: &'static str = "dmd_menu_select";
-const INC_SOUND: &'static str = "dmd_menu_inc";
-const DEC_SOUND: &'static str = "dmd_menu_dec";
-const BACK_SND: &'static str = "dmd_menu_back";
-const NOT_ALLOWED_SND: &'static str = "dmd_menu_not_allowed";
-const MENU_BEGIN_SND: &'static str = "dmd_menu_begin";
-const MENU_END_SND: &'static str = "dmd_menu_end";
+const SELECT_SND: & str = "dmd_menu_select";
+const INC_SOUND: & str = "dmd_menu_inc";
+const DEC_SOUND: & str = "dmd_menu_dec";
+const BACK_SND: & str = "dmd_menu_back";
+const NOT_ALLOWED_SND: & str = "dmd_menu_not_allowed";
+const MENU_BEGIN_SND: & str = "dmd_menu_begin";
+const MENU_END_SND: & str = "dmd_menu_end";
 
 pub struct DmdMenuSystem {
   switch_names: MenuSwitches,
@@ -51,15 +51,15 @@ impl DmdMenuSystem {
         parent: None,
       },
     );
-    Self::build_row_lookup(&mut row_lookup, &root);
+    Self::build_row_lookup(&mut row_lookup, root);
 
     Self {
       switch_names,
       theme,
       row_lookup,
-      active_section: &root,
+      active_section: root,
       display_rows: Vec::new(),
-      selected_row: Self::first_non_header_row(&root),
+      selected_row: Self::first_non_header_row(root),
       selected_config: None,
       selected_special: None,
       requires_row_refresh: true,
@@ -88,10 +88,7 @@ impl DmdMenuSystem {
     section
       .rows
       .iter()
-      .position(|r| match r {
-        MenuRow::Heading(_, _) => false,
-        _ => true,
-      })
+      .position(|r| !matches!(r, MenuRow::Heading(_, _)))
       .unwrap_or(0)
   }
 
@@ -124,11 +121,11 @@ impl DmdMenuSystem {
   }
 
   fn navigate_back(&mut self, ctx: &Context) {
-    if let Some(_) = &self.selected_config {
+    if self.selected_config.is_some() {
       self.selected_config = None;
       self.requires_render = true;
       ctx.play_sfx(BACK_SND);
-    } else if let Some(_) = &self.selected_special {
+    } else if self.selected_special.is_some() {
       self.selected_special = None;
       self.requires_render = true;
       ctx.play_sfx(BACK_SND);
@@ -148,16 +145,16 @@ impl DmdMenuSystem {
 
   fn navigate_inc(&mut self, ctx: &Context) {
     if let Some(row) = &mut self.selected_config {
-      self
+      if let Some(value) = self
         .display_rows
         .iter_mut()
         .find(|r| r.id() == row.id())
         .unwrap()
         .value_mut()
-        .map(|v| {
-          *v = row.increment(ctx);
-          log::debug!("increment: {}", v);
-        });
+        {
+          *value = row.increment(ctx);
+          log::debug!("increment: {}", value);
+        }
       self.requires_render = true;
     } else {
       let mut next = self.selected_row;
@@ -190,13 +187,14 @@ impl DmdMenuSystem {
 
   fn navigate_dec(&mut self, ctx: &Context) {
     if let Some(row) = &self.selected_config {
-      self
+      if let Some(value) = self
         .display_rows
         .iter_mut()
         .find(|r| r.id() == row.id())
         .unwrap()
-        .value_mut()
-        .map(|v| *v = row.decrement(ctx));
+        .value_mut() {
+        *value = row.decrement(ctx);
+      }
       self.requires_render = true;
     } else if self.selected_row > 0 {
       let mut prev = self.selected_row;
@@ -280,12 +278,11 @@ impl DmdMenuSystem {
 
   fn draw_menu(&self, viewport: &Size<u32>) -> Container {
     let mut frame = Container::new(self.theme.menu_bg.clone());
-    if let Some(theme_border) = &self.theme.menu_border {
-      if let Some(border) = frame.border_mut() {
-        *border = theme_border.clone();
+    if let Some(theme_border) = &self.theme.menu_border
+      && let Some(border) = frame.border_mut() {
+        *border = *theme_border;
         frame.padding = Padding::new(1, 1, 1, 1);
       }
-    }
 
     let row_height = SIGI_REGULAR_5PX_FONT.height as u32 + 2; // 2 leading between
     let mut acc_height = 0;
@@ -295,37 +292,33 @@ impl DmdMenuSystem {
       .clamp(0, self.display_rows.len());
 
     // draw rows that fit into the viewport
-    loop {
-      if let Some(row) = self.display_rows.get(row_index) {
-        let selected = row_index == self.selected_row;
-        let layer = match row {
-          DisplayMenuRow::Section { name, .. } => self.draw_section(name, selected),
-          DisplayMenuRow::Config {
-            #[allow(unused)]
-            id,
-            name,
-            value,
-            is_default,
-            ..
-          } => self.draw_config_row(name, value.clone(), *is_default, selected),
-          DisplayMenuRow::Heading { text, .. } => self.draw_heading(text),
-          DisplayMenuRow::Special(name) => self.draw_section(name, selected),
-        };
+    while let Some(row) = self.display_rows.get(row_index)  {
+      let selected = row_index == self.selected_row;
+      let layer = match row {
+        DisplayMenuRow::Section { name, .. } => self.draw_section(name, selected),
+        DisplayMenuRow::Config {
+          #[allow(unused)]
+          id,
+          name,
+          value,
+          is_default,
+          ..
+        } => self.draw_config_row(name, value.clone(), *is_default, selected),
+        DisplayMenuRow::Heading { text, .. } => self.draw_heading(text),
+        DisplayMenuRow::Special(name) => self.draw_section(name, selected),
+      };
 
-        frame.add(
-          layer
-            .vertical(Vertical::top_offset(acc_height))
-            .height(row_height),
-        );
-        acc_height += row_height as u32;
+      frame.add(
+        layer
+          .vertical(Vertical::top_offset(acc_height))
+          .height(row_height),
+      );
+      acc_height += row_height;
 
-        if acc_height >= viewport.height {
-          break;
-        }
-        row_index += 1;
-      } else {
+      if acc_height >= viewport.height {
         break;
       }
+      row_index += 1;
     }
 
     frame
@@ -528,7 +521,7 @@ impl System for DmdMenuSystem {
     if self.requires_render
       && let Some(mut dmd) = ctx.systems.get::<DmdSystem>()
     {
-      let size = dmd.size().clone();
+      let size = *dmd.size();
       dmd.insert_layer(0, self.draw(&size).default_position());
     }
   }

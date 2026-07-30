@@ -1,4 +1,4 @@
-mod expansion_board;
+mod exp_board;
 mod led;
 mod single_led_definition;
 mod led_lookup;
@@ -9,7 +9,7 @@ mod multi_led_definition_builder;
 mod single_led_definition_builder;
 mod exp_network;
 
-pub use expansion_board::*;
+pub use exp_board::*;
 pub use led::*;
 pub use single_led_definition::*;
 pub use led_lookup::*;

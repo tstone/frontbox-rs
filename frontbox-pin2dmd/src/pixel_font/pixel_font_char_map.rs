@@ -30,7 +30,7 @@ impl PixelFontCharacterMap {
     PixelFontText {
       text: text.into(),
       color,
-      font: &self,
+      font: self,
       spacing,
       alignment,
     }
@@ -58,7 +58,7 @@ impl PixelFontCharacterMap {
     PixelFontOverflowText {
       text: text.into(),
       color,
-      font: &self,
+      font: self,
       spacing,
     }
   }
@@ -72,7 +72,7 @@ impl PixelFontCharacterMap {
     PixelFontMultiLineText {
       text: text.into(),
       color,
-      font: &self,
+      font: self,
       spacing,
     }
   }

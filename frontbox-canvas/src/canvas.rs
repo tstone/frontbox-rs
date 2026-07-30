@@ -47,6 +47,10 @@ impl Canvas {
     self.layers.len()
   }
 
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
   pub fn to_pixels(&mut self) -> Vec<u8> {
     // reset buffer
     for px in self.buffer.pixels_mut() {

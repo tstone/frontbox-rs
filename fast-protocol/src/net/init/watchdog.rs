@@ -51,9 +51,9 @@ impl FastRequestCommand for WatchdogCommand {
 
 pub fn response(data: &str) -> Result<WatchdogResponse, FastResponseError> {
   if data.to_lowercase() == "p" {
-    return Ok(WatchdogResponse::Processed);
+    Ok(WatchdogResponse::Processed)
   } else if data.to_lowercase() == "f" {
-    return Ok(WatchdogResponse::Failed);
+    Ok(WatchdogResponse::Failed)
   } else if data == "00000000" {
     Ok(WatchdogResponse::WatchdogDisabled)
   } else if data == "FFFFFFFF" {

@@ -6,9 +6,11 @@ pub trait Modulation<A, S> {
   fn apply(&mut self, delta: A, target: &mut S);
 }
 
+pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + Send + Sync + 'static;
+
 #[derive(Clone)]
 pub struct Modulator<S, T, A> {
-  setter: Arc<dyn Fn(&mut S, T) + Send + Sync + 'static>,
+  setter: Arc<ModulationSetter<S, T>>,
   animation: Box<dyn Animation<A, T>>,
 }
 

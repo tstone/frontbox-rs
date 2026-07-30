@@ -39,7 +39,7 @@ impl BallSaveSystem {
     }
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
-    ctx.cue(EndBallSave, Cue::Once(self.duration.clone()));
+    ctx.cue(EndBallSave, Cue::Once(self.duration));
   }
 
   pub fn deactivate(&mut self, ctx: &Context) {

@@ -130,7 +130,7 @@ impl Lerp for Vec<Rgba<u8>> {
     self
       .iter()
       .enumerate()
-      .map(|(i, pixel)| pixel.interpolate(&other.get(i).unwrap_or(&Rgba::default()), t))
+      .map(|(i, pixel)| pixel.interpolate(other.get(i).unwrap_or(&Rgba::default()), t))
       .collect()
   }
 }

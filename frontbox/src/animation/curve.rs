@@ -107,7 +107,8 @@ impl Curve {
         if dead { 0.0 } else { stepped }
       }
 
-      Self::Steps(steps) => sample_steps(*&steps.saturating_sub(1).clamp(1, usize::MAX), phase), // should steps be a quantization of an existing Curve?
+       // should steps be a quantization of an existing Curve?
+      Self::Steps(steps) => sample_steps(steps.saturating_sub(1).clamp(1, usize::MAX), phase),
       Self::Reverse(other) => 1.0 - other.sample(phase),
       Self::Remap(a, b) => a.sample(phase) * b.sample(phase),
     }

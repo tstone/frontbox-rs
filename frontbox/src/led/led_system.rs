@@ -292,7 +292,7 @@ mod tests {
 
   // Two different systems declare the same LED
   #[test]
-  fn test_declare_and_undeclare_systems() {
+  fn declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
     let led = LedAddress {
       exp: ExpAddress {
@@ -322,7 +322,7 @@ mod tests {
 
   // One system declares multiple times to overwrite
   #[test]
-  fn test_declare_overwrite() {
+  fn declare_overwrite() {
     let mut system = LedSystem::new();
     let led = LedAddress {
       exp: ExpAddress {
@@ -352,7 +352,7 @@ mod tests {
 
   // One system declares two different LEDs
   #[test]
-  fn test_declare_and_undeclare_multiple() {
+  fn declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
     let led1 = LedAddress {
       exp: ExpAddress {
@@ -390,7 +390,7 @@ mod tests {
 
   // One system declares the same LED at two different z-indexes
   #[test]
-  fn test_declare_and_undeclare_z_index() {
+  fn declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
     let led = LedAddress {
       exp: ExpAddress {
@@ -418,7 +418,7 @@ mod tests {
   }
 
   #[test]
-  fn test_resolve_color() {
+  fn resolve_color() {
     let led = LedAddress {
       exp: ExpAddress {
         board_address: 3,
@@ -466,7 +466,7 @@ mod tests {
   }
 
   #[test]
-  fn test_resolve_color_conflict() {
+  fn resolve_color_conflict() {
     let led = LedAddress {
       exp: ExpAddress {
         board_address: 3,
@@ -518,7 +518,7 @@ mod tests {
 
   // alpha compositing test - top semi-transparent declaration should composite with the next highest declaration below it
   #[test]
-  fn test_resolve_color_alpha_compositing() {
+  fn resolve_color_alpha_compositing() {
     let led = LedAddress {
       exp: ExpAddress {
         board_address: 3,

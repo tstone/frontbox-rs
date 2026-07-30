@@ -67,6 +67,6 @@ mod tests {
   #[test]
   fn test_request() {
     let command = ConfigureLedPortCommand::new(1, Some(2), 3, LedType::SK6812, 4, 5);
-    assert_eq!(command.to_string(), "ER@12:3,1,4,5\r");
+    assert_eq!(command.to_string(), "ER@12:3,1,04,05\r");
   }
 }

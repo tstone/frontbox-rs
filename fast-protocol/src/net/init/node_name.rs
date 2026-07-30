@@ -47,7 +47,7 @@ impl FastRequestCommand for NodeNameCommand {
 
     let board_revision = name
       .split('-')
-      .last()
+      .next_back()
       .unwrap_or("0")
       .parse::<u16>()
       .unwrap_or(0);

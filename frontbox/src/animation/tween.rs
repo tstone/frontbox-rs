@@ -80,7 +80,7 @@ where
     if idx == self.stops.len() {
       return 0;
     }
-    return idx;
+    idx
   }
 
   pub fn reverse(&mut self) {
@@ -90,7 +90,7 @@ where
       active: self.active,
       curve: Curve::Reverse(Box::new(self.curve.clone())),
       stops: self.stops.clone().into_iter().rev().collect(),
-      cycle: self.cycle.clone(),
+      cycle: self.cycle,
       cycle_count: self.cycle_count,
       current_stop_index: self.current_stop_index,
     };

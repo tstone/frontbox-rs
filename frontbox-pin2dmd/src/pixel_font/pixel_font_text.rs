@@ -12,7 +12,7 @@ pub struct PixelFontText {
 }
 
 impl PixelFontText {
-  fn render_left_alignment<'a>(&self, canvas: &mut CanvasView, mut offset: i32) {
+  fn render_left_alignment(&self, canvas: &mut CanvasView, mut offset: i32) {
     for c in self.text.chars() {
       let mut char_canvas = canvas.child_view(
         // shift origin left as characters are accumulated
@@ -24,12 +24,12 @@ impl PixelFontText {
     }
   }
 
-  fn render_center_alignment<'a>(&self, canvas: &mut CanvasView) {
+  fn render_center_alignment(&self, canvas: &mut CanvasView) {
     let left_offset = (canvas.bounds.width as u16 / 2) - (self.total_width() / 2);
     self.render_left_alignment(canvas, left_offset as i32);
   }
 
-  fn render_right_alignment<'a>(&self, canvas: &mut CanvasView) {
+  fn render_right_alignment(&self, canvas: &mut CanvasView) {
     // starting from the max width, render the right-most characters, offsetting to the left by the width of the char
     let mut offset = canvas.bounds.width as i32;
     for c in self.text.chars().rev() {

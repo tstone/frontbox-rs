@@ -77,7 +77,7 @@ impl Pin2Dmd {
       expected_len,
       pixels.len()
     );
-    let mut buf = vec![0u8; self.elements as usize * 6 + 4];
+    let mut buf = vec![0u8; self.elements * 6 + 4];
     buf[0] = 0x81;
     buf[1] = 0xC3;
     buf[2] = 0xE9;
