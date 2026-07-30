@@ -8,6 +8,7 @@ mod sigi_5px_condensed_regular;
 mod sigi_5px_regular;
 mod sigi_7px_bold;
 mod sigi_7px_regular;
+mod sigish_4px_regular;
 mod symbols_5px_regular;
 
 pub use pixel_font_char_map::*;
@@ -20,4 +21,5 @@ pub use sigi_5px_condensed_regular::*;
 pub use sigi_5px_regular::*;
 pub use sigi_7px_bold::*;
 pub use sigi_7px_regular::*;
+pub use sigish_4px_regular::*;
 pub use symbols_5px_regular::*;
