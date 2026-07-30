@@ -17,7 +17,7 @@ pub enum FastExpansionBoardModels {
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct ExpansionBoard {
+pub struct ExpBoard {
   pub address: u8,
   pub breakout: Option<u8>,
   pub hardware_led_port_count: Option<u8>,
@@ -33,7 +33,7 @@ pub struct ResolvedExpansionBoard {
   pub model: FastExpansionBoardModels,
 }
 
-impl ExpansionBoard {
+impl ExpBoard {
   pub fn new(
     address: &'static str,
     led_port_count: Option<u8>,

@@ -11,7 +11,7 @@ async fn main() {
     io_net_port_path: "/dev/ttyACM0",
     exp_port_path: "/dev/ttyACM1",
     io_network: IoNetwork::empty(),
-    exp_network: vec![],
+    exp_network: ExpNetwork::empty(),
     config_path: None,
   })
   .await

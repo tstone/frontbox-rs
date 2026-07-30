@@ -178,7 +178,7 @@ impl Hardware {
 
   /// Take the user-defined expansion board configurations and resolve actual hardware indexes/addresses
   pub fn resolve_expansion_boards(
-    expansion_boards: &Vec<ExpansionBoard>,
+    expansion_boards: &Vec<ExpBoard>,
   ) -> Vec<ResolvedExpansionBoard> {
     let mut resolved_boards = Vec::new();
     for board in expansion_boards {
@@ -226,7 +226,7 @@ impl Hardware {
   }
 
   fn resolve_led_port(
-    board: &ExpansionBoard,
+    board: &ExpBoard,
     port: &LedPort,
     port_idx: u8,
     offset: u16,

@@ -4,7 +4,7 @@
   States: attract, door open, in-game
 
 - Context extensions need to NOT work unless they are imported
-- Wrap Vec<ExpansionBoard> in an ExpNetwork struct; make plural consistent IoBoards vs ExpBoard. Check why there is an IoBoard and IoBoards
+- Check why there is an IoBoard and IoBoards
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Keep stats on coils fired, etc.

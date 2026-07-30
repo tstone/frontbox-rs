@@ -7,6 +7,7 @@ mod led_strip_builder;
 mod led_definition;
 mod multi_led_definition_builder;
 mod single_led_definition_builder;
+mod exp_network;
 
 pub use expansion_board::*;
 pub use led::*;
@@ -16,3 +17,4 @@ pub use led_port::*;
 pub use led_definition::*;
 pub use multi_led_definition_builder::*;
 pub use single_led_definition_builder::*;
+pub use exp_network::*;

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Default)]
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
   pub switches: Vec<IoAddressed<SwitchDefinition>>,

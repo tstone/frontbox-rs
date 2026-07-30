@@ -20,27 +20,6 @@ pub struct App {
   hardware: Hardware,
 }
 
-pub struct BootConfig {
-  // TODO: is it possible to just autodetect this?
-  pub io_net_port_path: &'static str,
-  pub exp_port_path: &'static str,
-  pub io_network: IoNetwork,
-  pub exp_network: Vec<ExpansionBoard>,
-  pub config_path: Option<&'static Path>,
-}
-
-impl Default for BootConfig {
-  fn default() -> Self {
-    BootConfig {
-      io_net_port_path: "/dev/ttyACM0",
-      exp_port_path: "/dev/ttyACM1",
-      io_network: IoNetwork::empty(),
-      exp_network: Vec::new(),
-      config_path: None,
-    }
-  }
-}
-
 impl App {
   pub async fn boot(boot_config: BootConfig) -> Self {
     let mut io_port = SerialInterface::new(boot_config.io_net_port_path)
@@ -77,7 +56,7 @@ impl App {
       .expect("Failed to open EXP port");
     log::info!("🥾 Opened EXP port at {}", boot_config.exp_port_path);
 
-    let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network);
+    let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
     Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
     Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
 

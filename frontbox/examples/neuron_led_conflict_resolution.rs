@@ -21,11 +21,12 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let expansion_boards =
-    vec![ExpansionBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1]))];
+  let exp_network = ExpNetwork::new(
+    vec![ExpBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1]))]
+  );
 
   App::boot(BootConfig {
-    exp_network: expansion_boards,
+    exp_network,
     ..Default::default()
   })
   .await
