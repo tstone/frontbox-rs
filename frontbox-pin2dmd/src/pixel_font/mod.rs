@@ -1,3 +1,4 @@
+mod bold_pixels_10px_bold;
 mod pixel_font_char_map;
 mod pixel_font_multi_line_text;
 mod pixel_font_overflow_text;
@@ -11,6 +12,7 @@ mod sigi_7px_regular;
 mod sigish_4px_regular;
 mod symbols_5px_regular;
 
+pub use bold_pixels_10px_bold::*;
 pub use pixel_font_char_map::*;
 pub use pixel_font_multi_line_text::*;
 pub use pixel_font_overflow_text::*;
