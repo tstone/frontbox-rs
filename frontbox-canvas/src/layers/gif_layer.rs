@@ -18,7 +18,7 @@ pub struct GifLayer {
 
 impl GifLayer {
   pub fn new(path: impl AsRef<Path>, length: Duration, cycle: Cycle) -> Self {
-    let frames = Gif::decode_frames(path);
+    let frames = Gif::decode_from_path(path);
     Self {
       animation: Tween::new(length, Curve::Linear, vec![0, frames.len()], cycle),
       frames,

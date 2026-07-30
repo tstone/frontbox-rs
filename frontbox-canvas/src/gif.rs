@@ -8,7 +8,7 @@ use image::{AnimationDecoder, Frame};
 pub struct Gif;
 
 impl Gif {
-  pub fn decode_frames(path: impl AsRef<Path>) -> Vec<Frame> {
+  pub fn decode_from_path(path: impl AsRef<Path>) -> Vec<Frame> {
     let path = path.as_ref();
     let file_in =
       BufReader::new(File::open(path).expect(format!("Failed to load gif at {:?}", path).as_str()));
