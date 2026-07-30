@@ -1,4 +1,5 @@
 use crate::animation::*;
+use crate::prelude::color_sequence::ColorSequenceAlteration;
 use crate::prelude::*;
 
 #[derive(Clone)]
@@ -48,11 +49,12 @@ impl LedEffect {
     query: HardwareQuery,
     duration: Duration,
     curve: Curve,
+    cycle: Cycle,
     sequences: Vec<ColorSequence>,
   ) -> Self {
     Self {
       query,
-      anim: Box::new(Tween::new(duration, curve, sequences, Cycle::Forever)),
+      anim: Box::new(Tween::new(duration, curve, sequences, cycle)),
       alterations: Vec::new(),
       active: true,
     }
@@ -69,6 +71,7 @@ impl LedEffect {
       query,
       duration,
       Curve::EaseInOut,
+      Cycle::Forever,
       vec![ColorSequence::solid(color1), ColorSequence::solid(color2)],
     )
   }
@@ -83,6 +86,13 @@ impl LedEffect {
       .push(LedEffectAlteration::Rotating(Rotating::new(
         duration, curve,
       )));
+    self
+  }
+
+  pub fn shuffled(mut self, seed: u64) -> Self {
+    self.alterations.push(LedEffectAlteration::Static(
+      ColorSequenceAlteration::Shuffle(seed),
+    ));
     self
   }
 
@@ -101,10 +111,14 @@ impl LedEffect {
     self.active = true;
   }
 
-  /// Remove LED effects from being applied and stop applying them in the future
-  pub fn stop_and_clear(&mut self, ctx: &Context) {
+  pub fn stop(&mut self) {
     self.active = false;
     self.reset();
+  }
+
+  /// Remove LED effects from being applied and stop applying them in the future
+  pub fn stop_and_clear(&mut self, ctx: &Context) {
+    self.stop();
     self.clear(ctx);
   }
 
@@ -120,5 +134,23 @@ impl LedEffect {
 
       ctx.declare_leds(&self.query, base);
     }
+  }
+}
+
+impl Accumulator<Duration> for LedEffect {
+  fn accumulate(&mut self, delta: Duration) -> AccumulationResult<Duration> {
+    self.anim.accumulate(delta)
+  }
+
+  fn force(&mut self, current: Duration) {
+    self.anim.force(current);
+  }
+
+  fn is_complete(&self) -> bool {
+    self.anim.is_complete()
+  }
+
+  fn reset(&mut self) {
+    self.anim.reset();
   }
 }

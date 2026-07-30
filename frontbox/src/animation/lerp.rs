@@ -1,5 +1,6 @@
+use crate::led::RgbaColor;
 use fast_protocol::Color;
-use image::Rgba;
+use image::{Rgba, RgbaImage};
 
 /// Linear interpolation between two values of type T
 pub trait Lerp {
@@ -121,5 +122,34 @@ impl Lerp for Rgba<u8> {
       self[2].interpolate(&other[2], t),
       self[3].interpolate(&other[3], t),
     ])
+  }
+}
+
+impl Lerp for Vec<Rgba<u8>> {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    self
+      .iter()
+      .enumerate()
+      .map(|(i, pixel)| pixel.interpolate(&other.get(i).unwrap_or(&Rgba::default()), t))
+      .collect()
+  }
+}
+
+impl Lerp for RgbaImage {
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    let mut buffer = RgbaImage::new(self.width(), self.height());
+
+    for x in 0..self.width() {
+      for y in 0..self.height() {
+        let p = self.get_pixel(x, y);
+        let other = match other.get_pixel_checked(x, y) {
+          Some(p) => p,
+          None => &Rgba::default(),
+        };
+        buffer.put_pixel(x, y, p.interpolate(other, t));
+      }
+    }
+
+    buffer
   }
 }

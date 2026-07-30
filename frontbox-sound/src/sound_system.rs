@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
 
+use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
-use cpal::{FromSample, SampleFormat};
 use frontbox::prelude::*;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};

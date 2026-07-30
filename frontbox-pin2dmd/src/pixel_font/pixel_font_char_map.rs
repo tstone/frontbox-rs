@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use frontbox::prelude::Rgba;
 use frontbox_canvas::CanvasView;
 
-use crate::{PixelFontOverflowText, PixelFontText};
+use crate::{PixelFontMultiLineText, PixelFontOverflowText, PixelFontText, TextAlignment};
 
 pub struct PixelFontCharacterMap {
   pub name: &'static str,
@@ -25,13 +25,27 @@ impl PixelFontCharacterMap {
     text: impl Into<String>,
     color: Rgba<u8>,
     spacing: u8,
+    alignment: TextAlignment,
   ) -> PixelFontText {
     PixelFontText {
       text: text.into(),
       color,
       font: &self,
       spacing,
+      alignment,
     }
+  }
+
+  pub fn left_aligned(&'static self, text: impl Into<String>, color: Rgba<u8>) -> PixelFontText {
+    self.text(text, color, 1, TextAlignment::Left)
+  }
+
+  pub fn center_aligned(&'static self, text: impl Into<String>, color: Rgba<u8>) -> PixelFontText {
+    self.text(text, color, 1, TextAlignment::Centered)
+  }
+
+  pub fn right_aligned(&'static self, text: impl Into<String>, color: Rgba<u8>) -> PixelFontText {
+    self.text(text, color, 1, TextAlignment::Right)
   }
 
   /// Same as `text` but will truncate the string with '…' if there is not enough space
@@ -42,6 +56,20 @@ impl PixelFontCharacterMap {
     spacing: u8,
   ) -> PixelFontOverflowText {
     PixelFontOverflowText {
+      text: text.into(),
+      color,
+      font: &self,
+      spacing,
+    }
+  }
+
+  pub fn multi_line_text(
+    &'static self,
+    text: impl Into<String>,
+    color: Rgba<u8>,
+    spacing: u8,
+  ) -> PixelFontMultiLineText {
+    PixelFontMultiLineText {
       text: text.into(),
       color,
       font: &self,
