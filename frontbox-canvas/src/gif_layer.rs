@@ -1,13 +1,11 @@
-use std::fs::File;
-use std::io::BufReader;
 use std::path::Path;
 use std::time::Duration;
 
 use frontbox::animation::*;
 use frontbox::prelude::*;
-use image::codecs::gif::GifDecoder;
-use image::{AnimationDecoder, Frame};
+use image::Frame;
 
+use crate::Gif;
 use crate::{CanvasView, Layer};
 
 #[derive(Clone)]
@@ -19,13 +17,8 @@ pub struct GifLayer {
 }
 
 impl GifLayer {
-  pub fn new(path: impl Into<&'static Path>, length: Duration, cycle: Cycle) -> Self {
-    let path = path.into();
-    let file_in =
-      BufReader::new(File::open(path).expect(format!("Failed to load gif at {:?}", path).as_str()));
-    let decoder = GifDecoder::new(file_in).unwrap();
-    let frames = decoder.into_frames();
-    let frames = frames.collect_frames().expect("error decoding gif");
+  pub fn new(path: impl AsRef<Path>, length: Duration, cycle: Cycle) -> Self {
+    let frames = Gif::decode_frames(path);
     Self {
       animation: Tween::new(length, Curve::Linear, vec![0, frames.len()], cycle),
       frames,
