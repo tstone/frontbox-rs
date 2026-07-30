@@ -136,3 +136,21 @@ impl LedEffect {
     }
   }
 }
+
+impl Accumulator<Duration> for LedEffect {
+  fn accumulate(&mut self, delta: Duration) -> AccumulationResult<Duration> {
+    self.anim.accumulate(delta)
+  }
+
+  fn force(&mut self, current: Duration) {
+    self.anim.force(current);
+  }
+
+  fn is_complete(&self) -> bool {
+    self.anim.is_complete()
+  }
+
+  fn reset(&mut self) {
+    self.anim.reset();
+  }
+}
