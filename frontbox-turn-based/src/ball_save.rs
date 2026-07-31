@@ -1,5 +1,5 @@
+use frontbox::provided::{Trough, TroughFull};
 use frontbox::{prelude::*, provided::BallSaved};
-use frontbox::provided::TroughFull;
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
 
@@ -75,6 +75,12 @@ impl System for BallSaveSystem {
     // while active all TroughFull events are stopped
     log::debug!("Ball save interrupting TroughFull");
     ctx.emit(BallSaved);
+
+    // Feed ball back to player
+    if let Some(trough) = ctx.systems.get::<Trough>() {
+      trough.eject(ctx);
+    }
+
     InterruptResult::Halt
   }
 

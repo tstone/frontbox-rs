@@ -6,18 +6,18 @@ pub struct PlungeLaneSystem {
   re_enter_timeout: Duration,
   state: PlungeLaneState,
   wait_cue_id: Option<u64>,
-  ball_present_effects: Vec<LedEffect>
+  ball_present_effects: Vec<LedEffect>,
 }
 
 impl PlungeLaneSystem {
   pub fn new(plunge_lane_switch_name: &'static str, re_enter_timeout: Duration) -> Self {
-    Self { 
-      plunge_lane_switch_name, 
+    Self {
+      plunge_lane_switch_name,
       expect_ball: false,
       re_enter_timeout,
       state: PlungeLaneState::NoBall,
       wait_cue_id: None,
-      ball_present_effects: Vec::new()
+      ball_present_effects: Vec::new(),
     }
   }
 
@@ -55,26 +55,28 @@ impl System for PlungeLaneSystem {
       ctx.emit(BallExitedPlungeLane);
       self.state = PlungeLaneState::NoBall;
     } else if let Some(event) = event.downcast_ref::<SwitchClosed>()
-      && event.switch.name.eq(self.plunge_lane_switch_name) {
-        // If a pending wait cue is running, then the ball has re-entered
-        // Cancel it and don't emit any events.
-        if let Some(cue_id) = self.wait_cue_id {
-          ctx.cancel_cue(cue_id);
-          self.wait_cue_id = None;
-          return;
-        }
+      && event.switch.name.eq(self.plunge_lane_switch_name)
+    {
+      // If a pending wait cue is running, then the ball has re-entered
+      // Cancel it and don't emit any events.
+      if let Some(cue_id) = self.wait_cue_id {
+        ctx.cancel_cue(cue_id);
+        self.wait_cue_id = None;
+        return;
+      }
 
-        if self.expect_ball {
-          self.state = PlungeLaneState::ExpectedBallPresent;
-        } else {
-          self.state = PlungeLaneState::UnexpectedBallPresent;
-        }
-        ctx.emit(BallEnteredPlungeLane);
-        self.expect_ball = false;
-        
-    } else if let Some(event) = event.downcast_ref::<SwitchOpened>() 
-        && event.switch.name.eq(self.plunge_lane_switch_name) {
-        self.wait_cue_id = Some(ctx.cue(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+      if self.expect_ball {
+        self.state = PlungeLaneState::ExpectedBallPresent;
+      } else {
+        self.state = PlungeLaneState::UnexpectedBallPresent;
+      }
+
+      ctx.emit(BallEnteredPlungeLane::new(self.state));
+      self.expect_ball = false;
+    } else if let Some(event) = event.downcast_ref::<SwitchOpened>()
+      && event.switch.name.eq(self.plunge_lane_switch_name)
+    {
+      self.wait_cue_id = Some(ctx.cue(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
     }
   }
 
@@ -98,6 +100,15 @@ pub enum PlungeLaneState {
 struct TimesUpBallsGone;
 
 // Public events
-pub struct BallEnteredPlungeLane;
+pub struct BallEnteredPlungeLane {
+  pub state: PlungeLaneState,
+}
+
+impl BallEnteredPlungeLane {
+  pub fn new(state: PlungeLaneState) -> Self {
+    Self { state }
+  }
+}
+
 pub struct BallExitedPlungeLane;
 pub struct BallSaved; // TODO: set state as unexpected if ball was saved

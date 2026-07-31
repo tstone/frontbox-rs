@@ -26,14 +26,14 @@ impl AutoPlungerSystem {
         Duration::from_millis(7),
         Ranges::duration(0, 100),
       ),
-      initial_pwm_power: HardwareValue::fixed(Power::percent(75)),
+      initial_pwm_power: HardwareValue::fixed(Power::percent(50)),
       secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
       secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
       kick_length: HardwareValue::config(
         "Autoplunger Coil Launch Time",
         "Duration that the forks exert full power onto the ball (kick)",
-        Duration::from_millis(85),
-        Ranges::duration(10, 300),
+        Duration::from_millis(24),
+        Ranges::duration(5, 75),
       ),
       ..Default::default()
     })
@@ -59,13 +59,12 @@ impl AutoPlungerSystem {
 
 impl System for AutoPlungerSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    if event.is::<BallEnteredPlungeLane>() {
-      let plunge_lane = ctx.systems.expect::<PlungeLaneSystem>();
-
+    if let Some(event) = event.downcast_ref::<BallEnteredPlungeLane>() {
       if self.do_autoplunge {
         self.activate_coil(ctx);
         self.do_autoplunge = false;
-      } else if plunge_lane.current_state() == &PlungeLaneState::UnexpectedBallPresent {
+      } else if event.state == PlungeLaneState::UnexpectedBallPresent {
+        log::debug!("Firing auto-plunger due to unexpected ball in plunge lane");
         // Automatically launch if it wasn't an expected ball
         self.fire(ctx);
       }

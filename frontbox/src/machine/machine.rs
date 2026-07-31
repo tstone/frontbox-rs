@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -102,16 +103,20 @@ impl MachineImpl {
         .ok();
 
       if matches!(state, SwitchState::Closed) {
-        log::debug!("🎚️ Switch {} closed", switch.name);
+        log::debug!("🎚️  Switch {} closed", switch.name);
+        let event = SwitchClosed::new(switch);
+        let type_id = event.type_id();
         self
           .app_sender
-          .send(AppMessage::EmitEvent(Box::new(SwitchClosed::new(switch))))
+          .send(AppMessage::EmitEvent(Box::new(event), type_id))
           .ok();
       } else {
-        log::debug!("🎚️ Switch {} opened", switch.name);
+        log::debug!("🎚️  Switch {} opened", switch.name);
+        let event = SwitchOpened::new(switch);
+        let type_id = event.type_id();
         self
           .app_sender
-          .send(AppMessage::EmitEvent(Box::new(SwitchOpened::new(switch))))
+          .send(AppMessage::EmitEvent(Box::new(event), type_id))
           .ok();
       }
     } else {

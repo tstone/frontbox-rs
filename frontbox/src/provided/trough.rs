@@ -33,15 +33,15 @@ impl Trough {
           Ranges::duration(0, 100),
         ),
         initial_pwm_power: HardwareValue::fixed(
-          Power::percent(75),
+          Power::percent(50),
         ),
         secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
         secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
         kick_length: HardwareValue::config(
           "Eject Time",
           "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(65),
-          Ranges::duration(10, 300),
+          Duration::from_millis(24),
+          Ranges::duration(5, 75),
         ),
         ..Default::default()
       })
@@ -72,20 +72,6 @@ impl Trough {
     }
   }
 
-  fn on_trough_switch_opened(&mut self, switch_name: &str, ctx: &Context) {
-    if self
-      .switch_names
-      // only look at the last switch (nearest the exit) for occupancy changes
-      .get(self.expected_occupancy - 1)
-      .map(|s| *s == switch_name)
-      .unwrap_or(false)
-    {
-      let occupancy = self.get_occupancy(ctx);
-      log::debug!("Ball exited trough, occupancy: {:?}", occupancy);
-      ctx.emit(BallExitedTrough::new(occupancy));
-    }
-  }
-
   fn get_occupancy(&self, ctx: &Context) -> Vec<bool> {
     let mut occupancy = Vec::new();
     for (_, switch) in self
@@ -102,6 +88,7 @@ impl Trough {
 
   pub fn eject(&self, ctx: &Context) {
     ctx.activate_driver(self.eject_coil_name, ActivationMode::Tap);
+    ctx.emit(BallExitedTrough::new(self.get_occupancy(ctx)));
   }
 
   pub fn ball_added_to_play(&mut self) {
@@ -126,8 +113,6 @@ impl System for Trough {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       self.on_trough_switch_closed(&e.switch.name, ctx);
-    } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {
-      self.on_trough_switch_opened(&e.switch.name, ctx);
     }
   }
 }
@@ -143,8 +128,8 @@ pub struct BallEnteredTrough {
 }
 
 impl BallEnteredTrough {
-  pub fn new(occupancy: Vec<bool>) -> Box<BallEnteredTrough> {
-    Box::new(Self { occupancy })
+  pub fn new(occupancy: Vec<bool>) -> BallEnteredTrough {
+    Self { occupancy }
   }
 }
 
@@ -155,7 +140,7 @@ pub struct BallExitedTrough {
 }
 
 impl BallExitedTrough {
-  pub fn new(occupancy: Vec<bool>) -> Box<BallExitedTrough> {
-    Box::new(Self { occupancy })
+  pub fn new(occupancy: Vec<bool>) -> BallExitedTrough {
+    Self { occupancy }
   }
 }

@@ -6,7 +6,7 @@ use fast_protocol::SwitchState;
 use crate::prelude::*;
 
 pub enum AppMessage {
-  EmitEvent(Box<dyn Event>),
+  EmitEvent(Box<dyn Event>, TypeId),
   RegisterInterrupt(u64, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
@@ -30,7 +30,7 @@ pub enum AppMessage {
 impl Display for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      AppMessage::EmitEvent(_event) => write!(f, "EmitEvent(...)"),
+      AppMessage::EmitEvent(_event, type_id) => write!(f, "EmitEvent({:?})", type_id),
       AppMessage::RegisterInterrupt(id, type_id, priority) => {
         write!(f, "RegisterInterrupt({}, {:?}, {})", id, type_id, priority)
       }

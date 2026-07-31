@@ -1,11 +1,13 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct Interrupt {
   pub system_id: u64,
   pub priority: u16,
 }
 
+#[derive(Debug)]
 pub struct EventInterruptRegistry {
   interrupts: HashMap<TypeId, Vec<Interrupt>>,
 }

@@ -1,4 +1,6 @@
 use itertools::Itertools;
+use std::any::Any;
+use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -48,8 +50,8 @@ pub async fn run(
         let start = std::time::Instant::now();
 
         match command {
-          AppMessage::EmitEvent(event) => {
-            emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
+          AppMessage::EmitEvent(event, type_id) => {
+            emit_event(event.as_ref(), type_id, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
             handle_system_tick(&mut sc, &base, &app_sender).await;
@@ -184,13 +186,19 @@ fn apply_to_systems<F>(
 
 fn emit_event(
   event: &dyn Event,
+  event_type_id: TypeId,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
 ) {
+  log::debug!("Interrupt registry: {:?}", interrupt_registry);
+
   // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
-  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event.type_id()) {
+  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_type_id) {
+    // TODO: it might actually be getting inside of here?
+    // TODO: explicitly passing the type_id might not be necessary (maybe it should pass the type name in a wrapped struct EventContainer)
+
     // interrupts must be evaluated in order of priority (highest first)
     let prioritized_interrupts = interrupts
       .iter()
@@ -202,12 +210,11 @@ fn emit_event(
           let mut system = cell.borrow_mut();
           let ctx = Context::new(base, interrupt.system_id, &sc.systems, app_sender.clone());
           // interrupts must be on an active system to run
-          if system.handle_active(&ctx)
-            && system.on_interrupt(event, &ctx) == InterruptResult::Halt
+          if system.handle_active(&ctx) && system.on_interrupt(event, &ctx) == InterruptResult::Halt
           {
             log::info!(
               "Event of type {:?} was halted by interrupt in system {}",
-              event.type_id(),
+              event_type_id,
               interrupt.system_id
             );
             return;
@@ -223,6 +230,8 @@ fn emit_event(
         continue;
       };
     }
+  } else {
+    log::debug!("No interrupts registered for {:?}", event_type_id);
   }
 
   // event is broadcast to systems if no interrupt halted it
@@ -267,7 +276,9 @@ fn spawn_system(
   };
 
   parent.insert(system);
-  let _ = app_sender.send(EmitEvent(Box::new(SystemSpawned(system_id))));
+  let event = SystemSpawned(system_id);
+  let type_id = event.type_id();
+  let _ = app_sender.send(EmitEvent(Box::new(event), type_id));
 }
 
 fn replace_system(
@@ -276,7 +287,7 @@ fn replace_system(
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &mut EventInterruptRegistry
+  interrupt_registry: &mut EventInterruptRegistry,
 ) {
   despawn_system(system_id, sc, base, app_sender.clone(), interrupt_registry);
   spawn_system(new_system, Some(system_id), sc, base, app_sender);
@@ -291,16 +302,16 @@ fn despawn_system(
   interrupt_registry: &mut EventInterruptRegistry,
 ) -> bool {
   // check if the system to despawn is a top-level system or a child
-  let container: Option<RefCell<SystemContainer>> = if sc.systems.contains_id(&system_id) 
-    && let Some(container) = sc.systems.remove(system_id) {
+  let container: Option<RefCell<SystemContainer>> = if sc.systems.contains_id(&system_id)
+    && let Some(container) = sc.systems.remove(system_id)
+  {
     Some(container)
   } else {
     // if not search groups and despawn there
-    sc.groups.values_mut()
+    sc.groups
+      .values_mut()
       .find(|g| g.contains_id(&system_id))
-      .and_then(|group| {
-        group.remove(system_id)
-      })
+      .and_then(|group| group.remove(system_id))
   };
 
   if let Some(container) = container {
@@ -308,9 +319,11 @@ fn despawn_system(
     interrupt_registry.unregister_by_system(&system_id);
     let ctx = Context::new(base, system_id, &sc.systems, app_sender.clone());
     system.on_despawn(&ctx);
- 
+
     // Emit event that a system was despawned
-    let _ = app_sender.send(EmitEvent(Box::new(SystemDespawned(system_id))));
+    let event = SystemDespawned(system_id);
+    let type_id = event.type_id();
+    let _ = app_sender.send(EmitEvent(Box::new(event), type_id));
     true
   } else {
     false
