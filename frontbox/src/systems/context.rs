@@ -3,6 +3,7 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
+use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
@@ -38,10 +39,9 @@ impl<'a> Context<'a> {
       type_name::<E>(),
       event.type_id()
     );
-    let type_id = event.type_id();
     self
       .app_sender
-      .send(AppMessage::EmitEvent(Box::new(event), type_id))
+      .send(AppMessage::EmitEvent(EventBox::new(event)))
       .ok();
   }
 

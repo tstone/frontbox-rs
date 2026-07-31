@@ -1,12 +1,11 @@
 use itertools::Itertools;
-use std::any::Any;
-use std::any::TypeId;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
 use crate::app::app_message::AppMessage::EmitEvent;
+use crate::app::app_message::EventBox;
 use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::system_collection::SystemCollection;
@@ -50,8 +49,8 @@ pub async fn run(
         let start = std::time::Instant::now();
 
         match command {
-          AppMessage::EmitEvent(event, type_id) => {
-            emit_event(event.as_ref(), type_id, &mut sc, &base, &app_sender, &interrupt_registry);
+          AppMessage::EmitEvent(event_box) => {
+            emit_event(event_box, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
             handle_system_tick(&mut sc, &base, &app_sender).await;
@@ -146,6 +145,47 @@ pub async fn run(
 }
 
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
+fn apply_to_system<F, T>(
+  system_id: u64,
+  sc: &mut SystemCollection,
+  base: &ContextBase,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  mut handler: F,
+) -> Option<T> where
+  F: FnMut(&mut SystemContainer, &mut Context) -> T,
+{
+  // apply to root systems if present
+  if let Some(cell) = sc.systems.lease(system_id) {
+    let mut result: Option<T> = None;
+    {
+      let mut system = cell.borrow_mut();
+      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+      if system.handle_active(&ctx) {
+        result = Some(handler(&mut system, &mut ctx));
+      } else {
+        log::trace!("System {} is inactive, skipping", system.id());
+      }
+    }
+    sc.systems.reinsert(system_id, cell);
+    result
+  } else {
+    // otherwise search the groups to apply
+    sc.groups.values_mut()
+      .find(|g| g.contains_id(&system_id))
+      .and_then(|g| g.get_by_id(&system_id))
+      .and_then(|mut system| {
+        let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+        if system.handle_active(&ctx) {
+          Some(handler(&mut system, &mut ctx))
+        } else {
+          log::trace!("System {} is inactive, skipping", system.id());
+          None
+        }
+      })
+  }
+}
+
+/// Apply the given closure to all systems, including those within groups, respecting handle_active
 fn apply_to_systems<F>(
   sc: &mut SystemCollection,
   base: &ContextBase,
@@ -185,58 +225,40 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
-  event: &dyn Event,
-  event_type_id: TypeId,
+  event_box: EventBox,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
 ) {
-  log::debug!("Interrupt registry: {:?}", interrupt_registry);
-
   // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
-  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_type_id) {
-    // TODO: it might actually be getting inside of here?
-    // TODO: explicitly passing the type_id might not be necessary (maybe it should pass the type name in a wrapped struct EventContainer)
-
+  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_box.type_id) {
     // interrupts must be evaluated in order of priority (highest first)
     let prioritized_interrupts = interrupts
       .iter()
       .sorted_by_key(|i| std::cmp::Reverse(i.priority));
 
     for interrupt in prioritized_interrupts {
-      if let Some(cell) = sc.systems.lease(interrupt.system_id) {
-        {
-          let mut system = cell.borrow_mut();
-          let ctx = Context::new(base, interrupt.system_id, &sc.systems, app_sender.clone());
-          // interrupts must be on an active system to run
-          if system.handle_active(&ctx) && system.on_interrupt(event, &ctx) == InterruptResult::Halt
-          {
-            log::info!(
-              "Event of type {:?} was halted by interrupt in system {}",
-              event_type_id,
-              interrupt.system_id
-            );
-            return;
-          } else {
-            log::trace!(
-              "Interrupt in system {} did not halt event of type {:?}",
-              interrupt.system_id,
-              event.type_id()
-            );
-          }
-        }
-        sc.systems.reinsert(interrupt.system_id, cell);
-        continue;
-      };
+      let interrupt_result = apply_to_system(interrupt.system_id, sc, base, app_sender, |system, ctx| {
+        system.on_interrupt(event_box.event.as_ref(), &ctx)
+      });
+
+      if interrupt_result == Some(InterruptResult::Halt) {
+        log::info!(
+          "Event {} was halted by interrupt in system {}",
+          event_box.type_name,
+          interrupt.system_id
+        );
+        return;
+      }
     }
   } else {
-    log::debug!("No interrupts registered for {:?}", event_type_id);
+    log::debug!("No interrupts registered for {}", event_box.type_name);
   }
 
   // event is broadcast to systems if no interrupt halted it
   apply_to_systems(sc, base, app_sender, |system, ctx| {
-    system.on_event(event, ctx);
+    system.on_event(event_box.event.as_ref(), ctx);
   });
 }
 
@@ -277,8 +299,7 @@ fn spawn_system(
 
   parent.insert(system);
   let event = SystemSpawned(system_id);
-  let type_id = event.type_id();
-  let _ = app_sender.send(EmitEvent(Box::new(event), type_id));
+  let _ = app_sender.send(EmitEvent(EventBox::new(event)));
 }
 
 fn replace_system(
@@ -322,8 +343,7 @@ fn despawn_system(
 
     // Emit event that a system was despawned
     let event = SystemDespawned(system_id);
-    let type_id = event.type_id();
-    let _ = app_sender.send(EmitEvent(Box::new(event), type_id));
+    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
     true
   } else {
     false

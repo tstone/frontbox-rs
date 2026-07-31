@@ -1,7 +1,7 @@
-use std::any::Any;
 use std::fmt::Debug;
 use std::time::Duration;
 
+use crate::app::app_message::EventBox;
 use crate::hardware::*;
 use crate::machine::serial_interface::*;
 use crate::prelude::app_message::AppMessage;
@@ -105,18 +105,16 @@ impl MachineImpl {
       if matches!(state, SwitchState::Closed) {
         log::debug!("🎚️  Switch {} closed", switch.name);
         let event = SwitchClosed::new(switch);
-        let type_id = event.type_id();
         self
           .app_sender
-          .send(AppMessage::EmitEvent(Box::new(event), type_id))
+          .send(AppMessage::EmitEvent(EventBox::new(event)))
           .ok();
       } else {
         log::debug!("🎚️  Switch {} opened", switch.name);
         let event = SwitchOpened::new(switch);
-        let type_id = event.type_id();
         self
           .app_sender
-          .send(AppMessage::EmitEvent(Box::new(event), type_id))
+          .send(AppMessage::EmitEvent(EventBox::new(event)))
           .ok();
       }
     } else {
