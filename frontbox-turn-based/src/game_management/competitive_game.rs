@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::provided::{Trough, TroughFull};
+use frontbox::provided::{BallExitedPlungeLane, Trough, TroughFull};
 
 use crate::*;
 
@@ -100,10 +100,13 @@ impl System for CompetitiveGame {
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
-          if let Some(e) = event.downcast_ref::<SwitchClosed>()
-            && self.ball_in_play_switches.matches_switch(&e.switch) {
-              self.transition_turn_to_active(ctx);
-            }
+          if event.is::<BallExitedPlungeLane>() {
+            self.transition_turn_to_active(ctx);
+          } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
+            && self.ball_in_play_switches.matches_switch(&e.switch)
+          {
+            self.transition_turn_to_active(ctx);
+          }
         }
         TurnState::Active => {
           if event.is::<TroughFull>() {
@@ -146,11 +149,7 @@ impl GameManagement for CompetitiveGame {
     );
 
     // create copy of systems for new player as a new system group
-    let copy = self
-      .systems_template
-      .iter()
-      .cloned()
-      .collect::<Vec<_>>();
+    let copy = self.systems_template.iter().cloned().collect::<Vec<_>>();
 
     let group_name = PLAYER_GROUP_NAMES[game_state.player_count() as usize];
     ctx.spawn_system_group(group_name, copy, false);
@@ -223,16 +222,18 @@ impl GameManagement for CompetitiveGame {
 
   fn clear_multiplier(&mut self) {
     if let Some(game_state) = &mut self.game_state
-      && let Some(multiplier) = game_state.current_player_multiplier_mut() {
-        *multiplier = 1.0;
-      }
+      && let Some(multiplier) = game_state.current_player_multiplier_mut()
+    {
+      *multiplier = 1.0;
+    }
   }
 
   fn set_multiplier(&mut self, multiplier: f32) {
     if let Some(game_state) = &mut self.game_state
-      && let Some(current_multiplier) = game_state.current_player_multiplier_mut() {
-        *current_multiplier = multiplier;
-      }
+      && let Some(current_multiplier) = game_state.current_player_multiplier_mut()
+    {
+      *current_multiplier = multiplier;
+    }
   }
 
   fn add_points(&mut self, points: u32, ctx: &Context) {

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
+use crate::app::app_message::AppMessage::EmitEvent;
 use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::system_collection::SystemCollection;
@@ -25,7 +26,7 @@ pub async fn run(
 
   // initialize systems
   for system in initial_systems {
-    spawn_system(system, None, &mut sc, &base, app_sender.clone(), &mut interrupt_registry);
+    spawn_system(system, None, &mut sc, &base, app_sender.clone());
   }
   spawn_system_tick(base.system_interval, app_sender.clone());
 
@@ -73,7 +74,7 @@ pub async fn run(
             break;
           }
           AppMessage::SpawnSystem(caller_id, system) => {
-            spawn_system(system.to_system_container(), Some(caller_id), &mut sc, &base, app_sender.clone(), &mut interrupt_registry);
+            spawn_system(system.to_system_container(), Some(caller_id), &mut sc, &base, app_sender.clone());
           }
           AppMessage::ReplaceSystem(system_id, system) => {
             replace_system(system_id, system.to_system_container(), &mut sc, &base, app_sender.clone(), &mut interrupt_registry);
@@ -254,7 +255,6 @@ fn spawn_system(
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &EventInterruptRegistry
 ) {
   let system_id = system.id();
   let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
@@ -267,7 +267,7 @@ fn spawn_system(
   };
 
   parent.insert(system);
-  emit_event(&SystemSpawned(system_id), sc, base, &app_sender, interrupt_registry);
+  let _ = app_sender.send(EmitEvent(Box::new(SystemSpawned(system_id))));
 }
 
 fn replace_system(
@@ -279,7 +279,7 @@ fn replace_system(
   interrupt_registry: &mut EventInterruptRegistry
 ) {
   despawn_system(system_id, sc, base, app_sender.clone(), interrupt_registry);
-  spawn_system(new_system, Some(system_id), sc, base, app_sender, interrupt_registry);
+  spawn_system(new_system, Some(system_id), sc, base, app_sender);
 }
 
 /// Despawns the system, returning true if it succeeded
@@ -310,7 +310,7 @@ fn despawn_system(
     system.on_despawn(&ctx);
  
     // Emit event that a system was despawned
-    emit_event(&SystemDespawned(system_id), sc, base, &app_sender, interrupt_registry);
+    let _ = app_sender.send(EmitEvent(Box::new(SystemDespawned(system_id))));
     true
   } else {
     false

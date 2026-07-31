@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox::{prelude::*, provided::BallSaved};
 use frontbox::provided::TroughFull;
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
@@ -71,9 +71,10 @@ impl System for BallSaveSystem {
     }
   }
 
-  fn on_interrupt(&mut self, _event: &dyn Event, _ctx: &Context) -> InterruptResult {
+  fn on_interrupt(&mut self, _event: &dyn Event, ctx: &Context) -> InterruptResult {
     // while active all TroughFull events are stopped
     log::debug!("Ball save interrupting TroughFull");
+    ctx.emit(BallSaved);
     InterruptResult::Halt
   }
 
@@ -86,4 +87,5 @@ impl System for BallSaveSystem {
   }
 }
 
+// Cues
 struct EndBallSave;

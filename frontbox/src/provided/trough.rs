@@ -132,15 +132,6 @@ impl System for Trough {
   }
 }
 
-// -- Commands --
-
-pub struct TroughEject;
-
-/// This command causes the trough to expect one less ball in it's occupancy calculations. This is typically called in situations where something like a physical ball lock is holding onto a ball that should no longer be expected in the trough.
-pub struct BallRemovedFromPlay;
-/// This command causes the trough to expect one more ball in it's occupancy calculations. This is typically called in situations where a ball is added back into play, such as when a ball is released from a physical lock.
-pub struct BallAddedToPlay;
-
 // -- Events --
 
 pub struct TroughFull;
