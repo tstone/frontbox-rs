@@ -40,6 +40,7 @@ impl BallSaveSystem {
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
     ctx.cue(EndBallSave, Cue::Once(self.duration));
+    log::debug!("🪩 Ball save started.")
   }
 
   pub fn deactivate(&mut self, ctx: &Context) {
@@ -53,6 +54,8 @@ impl BallSaveSystem {
     for effect in &mut self.effects {
       effect.stop_and_clear(ctx);
     }
+
+    log::debug!("🪩 Ball save ended.");
   }
 
   pub fn duration_mut(&mut self) -> &mut Duration {
