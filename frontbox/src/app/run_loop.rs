@@ -144,7 +144,7 @@ pub async fn run(
   tokio::time::sleep(Duration::from_millis(1000)).await;
 }
 
-/// Apply the given closure to all systems, including those within groups, respecting handle_active
+/// Find and apply the closure to the system. Returns None if not foudn or inactive.
 fn apply_to_system<F, T>(
   system_id: u64,
   sc: &mut SystemCollection,
