@@ -1,4 +1,4 @@
-- BUG: BallSaveSystem flashing light never goes off (IDEA: slowly fade it to transparent as it expires)
+- BallSave does not correctly interrupt TroughFull
 
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game

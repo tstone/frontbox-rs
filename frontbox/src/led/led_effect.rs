@@ -97,6 +97,7 @@ impl LedEffect {
   }
 
   pub fn reset(&mut self) {
+    self.anim.reset();
     for alteration in &mut self.alterations {
       alteration.reset();
     }
@@ -109,10 +110,12 @@ impl LedEffect {
 
   pub fn resume(&mut self) {
     self.active = true;
+    self.anim.play();
   }
 
   pub fn stop(&mut self) {
     self.active = false;
+    self.anim.stop();
     self.reset();
   }
 

@@ -99,7 +99,6 @@ impl LedSystem {
         }
       }
     }
-    log::debug!("Activations: {:?}", self.declarations);
   }
 
   /// Mark any existing declarations as active

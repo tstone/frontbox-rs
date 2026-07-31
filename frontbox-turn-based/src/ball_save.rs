@@ -73,6 +73,7 @@ impl System for BallSaveSystem {
 
   fn on_interrupt(&mut self, _event: &dyn Event, _ctx: &Context) -> InterruptResult {
     // while active all TroughFull events are stopped
+    log::debug!("Ball save interrupting TroughFull");
     InterruptResult::Halt
   }
 
