@@ -40,7 +40,7 @@ impl Trough {
         kick_length: HardwareValue::config(
           "Eject Time",
           "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(75),
+          Duration::from_millis(70),
           Ranges::duration(10, 300),
         ),
         ..Default::default()
