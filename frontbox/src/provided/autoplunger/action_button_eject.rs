@@ -1,5 +1,5 @@
-use crate::provided::AutoPlunger;
 use crate::prelude::*;
+use crate::provided::AutoPlungerSystem;
 
 /// A system to fire the auto plunger when the action button is pressed
 /// Button can only be pressed when there is a ball in the plunge lane
@@ -27,7 +27,7 @@ impl System for ActionButtonEject {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if self.action_button_switch.matches_switch(&e.switch) {
-        if let Some(mut autoplunger) = ctx.systems.get::<AutoPlunger>() {
+        if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
           autoplunger.fire(ctx);
         }
       } else if self.plunge_lane_switch.matches_switch(&e.switch) {

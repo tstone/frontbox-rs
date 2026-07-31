@@ -5,12 +5,12 @@ use crate::provided::PlungeLaneState;
 use crate::provided::PlungeLaneSystem;
 
 /// Simple system to manage firing the plunger eject coil
-pub struct AutoPlunger {
+pub struct AutoPlungerSystem {
   coil_name: &'static str,
   do_autoplunge: bool,
 }
 
-impl AutoPlunger {
+impl AutoPlungerSystem {
   pub fn new(coil_name: &'static str) -> Self {
     Self {
       do_autoplunge: false,
@@ -57,12 +57,12 @@ impl AutoPlunger {
   }
 }
 
-impl System for AutoPlunger {
+impl System for AutoPlungerSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if event.is::<BallEnteredPlungeLane>() {
       let plunge_lane = ctx.systems.expect::<PlungeLaneSystem>();
 
-      if self.do_autoplunge  {
+      if self.do_autoplunge {
         self.activate_coil(ctx);
         self.do_autoplunge = false;
       } else if plunge_lane.current_state() == &PlungeLaneState::UnexpectedBallPresent {
