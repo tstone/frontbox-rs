@@ -1,5 +1,5 @@
-use frontbox::prelude::*;
-use frontbox::provided::TroughFull;
+use frontbox::provided::{Trough, TroughFull};
+use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
 
@@ -40,6 +40,7 @@ impl BallSaveSystem {
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
     ctx.cue(EndBallSave, Cue::Once(self.duration));
+    log::debug!("🪩 Ball save started.")
   }
 
   pub fn deactivate(&mut self, ctx: &Context) {
@@ -53,6 +54,8 @@ impl BallSaveSystem {
     for effect in &mut self.effects {
       effect.stop_and_clear(ctx);
     }
+
+    log::debug!("🪩 Ball save ended.");
   }
 
   pub fn duration_mut(&mut self) -> &mut Duration {
@@ -71,8 +74,16 @@ impl System for BallSaveSystem {
     }
   }
 
-  fn on_interrupt(&mut self, _event: &dyn Event, _ctx: &Context) -> InterruptResult {
+  fn on_interrupt(&mut self, _event: &dyn Event, ctx: &Context) -> InterruptResult {
     // while active all TroughFull events are stopped
+    log::debug!("Ball save interrupting TroughFull");
+    ctx.emit(BallSaved);
+
+    // Feed ball back to player
+    if let Some(trough) = ctx.systems.get::<Trough>() {
+      trough.eject(ctx);
+    }
+
     InterruptResult::Halt
   }
 
@@ -85,4 +96,5 @@ impl System for BallSaveSystem {
   }
 }
 
+// Cues
 struct EndBallSave;

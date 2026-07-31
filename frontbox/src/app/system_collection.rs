@@ -24,4 +24,20 @@ impl SystemCollection {
     }
     None
   }
+
+  pub fn parent(&'_ mut self, system_id: &u64) -> Option<&mut Systems> {
+    if self.systems.contains_id(system_id) {
+      Some(&mut self.systems)
+    } else if let Some(group) = self.parent_group(&system_id) {
+      Some(group)
+    } else {
+      None
+    }
+  }
+
+  /// Finds the parent system group that a system is in, if any
+  pub fn parent_group(&'_ mut self, system_id: &u64) -> Option<&mut SystemGroup> {
+    self.groups.values_mut()
+      .find(|g| g.contains_id(system_id))
+  }
 }

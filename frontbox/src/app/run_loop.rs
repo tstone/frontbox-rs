@@ -1,8 +1,11 @@
 use itertools::Itertools;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use tokio::sync::mpsc;
 
+use crate::app::app_message::AppMessage::EmitEvent;
+use crate::app::app_message::EventBox;
 use crate::machine::event_interrupt_registry::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::system_collection::SystemCollection;
@@ -46,8 +49,8 @@ pub async fn run(
         let start = std::time::Instant::now();
 
         match command {
-          AppMessage::EmitEvent(event) => {
-            emit_event(&*event, &mut sc, &base, &app_sender, &interrupt_registry);
+          AppMessage::EmitEvent(event_box) => {
+            emit_event(event_box, &mut sc, &base, &app_sender, &interrupt_registry);
           }
           AppMessage::SystemTick => {
             handle_system_tick(&mut sc, &base, &app_sender).await;
@@ -59,7 +62,7 @@ pub async fn run(
             interrupt_registry.unregister(system_id, type_id);
           }
           AppMessage::UnregisterAllBySystem(system_id) => {
-            unregister_all_by_system(system_id, &mut interrupt_registry);
+            unregister_all_by_system(&system_id, &mut interrupt_registry);
           }
           AppMessage::SingleSwitchState(id, state) => {
             base.switches.update_switch_state(id, state);
@@ -75,7 +78,7 @@ pub async fn run(
             spawn_system(system.to_system_container(), Some(caller_id), &mut sc, &base, app_sender.clone());
           }
           AppMessage::ReplaceSystem(system_id, system) => {
-            replace_system(system_id, system.to_system_container(), &mut sc, &base, app_sender.clone());
+            replace_system(system_id, system.to_system_container(), &mut sc, &base, app_sender.clone(), &mut interrupt_registry);
           }
           AppMessage::DespawnSystem(system_id) => {
             despawn_system(system_id, &mut sc, &base, app_sender.clone(), &mut interrupt_registry);
@@ -141,6 +144,47 @@ pub async fn run(
   tokio::time::sleep(Duration::from_millis(1000)).await;
 }
 
+/// Find and apply the closure to the system. Returns None if not foudn or inactive.
+fn apply_to_system<F, T>(
+  system_id: u64,
+  sc: &mut SystemCollection,
+  base: &ContextBase,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  mut handler: F,
+) -> Option<T> where
+  F: FnMut(&mut SystemContainer, &mut Context) -> T,
+{
+  // apply to root systems if present
+  if let Some(cell) = sc.systems.lease(system_id) {
+    let mut result: Option<T> = None;
+    {
+      let mut system = cell.borrow_mut();
+      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+      if system.handle_active(&ctx) {
+        result = Some(handler(&mut system, &mut ctx));
+      } else {
+        log::trace!("System {} is inactive, skipping", system.id());
+      }
+    }
+    sc.systems.reinsert(system_id, cell);
+    result
+  } else {
+    // otherwise search the groups to apply
+    sc.groups.values_mut()
+      .find(|g| g.contains_id(&system_id))
+      .and_then(|g| g.get_by_id(&system_id))
+      .and_then(|mut system| {
+        let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+        if system.handle_active(&ctx) {
+          Some(handler(&mut system, &mut ctx))
+        } else {
+          log::trace!("System {} is inactive, skipping", system.id());
+          None
+        }
+      })
+  }
+}
+
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
 fn apply_to_systems<F>(
   sc: &mut SystemCollection,
@@ -181,51 +225,40 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
-  event: &dyn Event,
+  event_box: EventBox,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
 ) {
   // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
-  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event.type_id()) {
+  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_box.type_id) {
     // interrupts must be evaluated in order of priority (highest first)
     let prioritized_interrupts = interrupts
       .iter()
       .sorted_by_key(|i| std::cmp::Reverse(i.priority));
 
     for interrupt in prioritized_interrupts {
-      if let Some(cell) = sc.systems.lease(interrupt.system_id) {
-        {
-          let mut system = cell.borrow_mut();
-          let ctx = Context::new(base, interrupt.system_id, &sc.systems, app_sender.clone());
-          // interrupts must be on an active system to run
-          if system.handle_active(&ctx)
-            && system.on_interrupt(event, &ctx) == InterruptResult::Halt
-          {
-            log::info!(
-              "Event of type {:?} was halted by interrupt in system {}",
-              event.type_id(),
-              interrupt.system_id
-            );
-            return;
-          } else {
-            log::trace!(
-              "Interrupt in system {} did not halt event of type {:?}",
-              interrupt.system_id,
-              event.type_id()
-            );
-          }
-        }
-        sc.systems.reinsert(interrupt.system_id, cell);
-        continue;
-      };
+      let interrupt_result = apply_to_system(interrupt.system_id, sc, base, app_sender, |system, ctx| {
+        system.on_interrupt(event_box.event.as_ref(), &ctx)
+      });
+
+      if interrupt_result == Some(InterruptResult::Halt) {
+        log::info!(
+          "Event {} was halted by interrupt in system {}",
+          event_box.type_name,
+          interrupt.system_id
+        );
+        return;
+      }
     }
+  } else {
+    log::debug!("No interrupts registered for {}", event_box.type_name);
   }
 
   // event is broadcast to systems if no interrupt halted it
   apply_to_systems(sc, base, app_sender, |system, ctx| {
-    system.on_event(event, ctx);
+    system.on_event(event_box.event.as_ref(), ctx);
   });
 }
 
@@ -254,96 +287,66 @@ fn spawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
+  let system_id = system.id();
   let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
   system.on_spawn(&ctx);
 
-  // check if the caller is a top-level system or a child
-  if let Some(caller_id) = caller_id {
-    if sc.systems.contains_id(&caller_id) {
-      sc.systems.insert(system);
-    } else {
-      // if not search groups and spawn there
-      for group in sc.groups.values_mut() {
-        if group.contains_id(&caller_id) {
-          group.insert(system);
-          return;
-        }
-      }
-    }
-    log::warn!(
-      "No system found with ID {}, cannot spawn new system as child",
-      caller_id
-    );
+  let parent: &mut Systems = if let Some(caller_id) = caller_id {
+    sc.parent(&caller_id).unwrap()
   } else {
-    sc.systems.insert(system);
-  }
+    &mut sc.systems
+  };
+
+  parent.insert(system);
+  let event = SystemSpawned(system_id);
+  let _ = app_sender.send(EmitEvent(EventBox::new(event)));
 }
 
 fn replace_system(
   system_id: u64,
-  mut new_system: SystemContainer,
+  new_system: SystemContainer,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  interrupt_registry: &mut EventInterruptRegistry,
 ) {
-  // find the system to replace, checking top-level first and then groups
-  if sc.systems.contains_id(&system_id) {
-    if let Some(cell) = sc.systems.remove(system_id) {
-      let mut system = cell.borrow_mut();
-      let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-      system.on_despawn(&ctx);
-    }
-    let ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
-    new_system.on_spawn(&ctx);
-    sc.systems.insert(new_system);
-  } else {
-    // if not search groups and replace there
-    for group in sc.groups.values_mut() {
-      if group.contains_id(&system_id) {
-        if let Some(cell) = group.remove(system_id) {
-          let mut system = cell.borrow_mut();
-          let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-          system.on_despawn(&ctx);
-        }
-        let ctx = Context::new(base, new_system.id(), &sc.systems, app_sender.clone());
-        new_system.on_spawn(&ctx);
-        group.insert(new_system);
-        return;
-      }
-    }
-    log::warn!("No system found with ID {}, cannot replace", system_id);
-  }
+  despawn_system(system_id, sc, base, app_sender.clone(), interrupt_registry);
+  spawn_system(new_system, Some(system_id), sc, base, app_sender);
 }
 
+/// Despawns the system, returning true if it succeeded
 fn despawn_system(
   system_id: u64,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
-) {
+) -> bool {
   // check if the system to despawn is a top-level system or a child
-  if sc.systems.contains_id(&system_id) {
-    if let Some(container) = sc.systems.remove(system_id) {
-      let mut system = container.borrow_mut();
-      unregister_all_by_system(system_id, interrupt_registry);
-      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-      system.on_despawn(&mut ctx);
-    }
+  let container: Option<RefCell<SystemContainer>> = if sc.systems.contains_id(&system_id)
+    && let Some(container) = sc.systems.remove(system_id)
+  {
+    Some(container)
   } else {
     // if not search groups and despawn there
-    for group in sc.groups.values_mut() {
-      if group.contains_id(&system_id) {
-        if let Some(container) = group.remove(system_id) {
-          let mut system = container.borrow_mut();
-          unregister_all_by_system(system_id, interrupt_registry);
-          let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
-          system.on_despawn(&mut ctx);
-        }
-        return;
-      }
-    }
-    log::warn!("No system found with ID {}, cannot despawn", system_id);
+    sc.groups
+      .values_mut()
+      .find(|g| g.contains_id(&system_id))
+      .and_then(|group| group.remove(system_id))
+  };
+
+  if let Some(container) = container {
+    let mut system = container.borrow_mut();
+    interrupt_registry.unregister_by_system(&system_id);
+    let ctx = Context::new(base, system_id, &sc.systems, app_sender.clone());
+    system.on_despawn(&ctx);
+
+    // Emit event that a system was despawned
+    let event = SystemDespawned(system_id);
+    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
+    true
+  } else {
+    false
   }
 }
 
@@ -388,7 +391,7 @@ fn despawn_system_group(
   if let Some(mut group) = sc.groups.remove(group_name) {
     for cell in group.systems.values() {
       let system = cell.borrow();
-      unregister_all_by_system(system.id(), interrupt_registry);
+      unregister_all_by_system(&system.id(), interrupt_registry);
     }
 
     let mut ctx = Context::new(base, 0, &sc.systems, app_sender.clone());
@@ -435,6 +438,6 @@ fn deactivate_system_group(
   }
 }
 
-fn unregister_all_by_system(system_id: u64, interrupt_registry: &mut EventInterruptRegistry) {
+fn unregister_all_by_system(system_id: &u64, interrupt_registry: &mut EventInterruptRegistry) {
   interrupt_registry.unregister_by_system(system_id);
 }

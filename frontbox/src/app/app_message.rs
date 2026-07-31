@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{TypeId, type_name};
 use std::fmt::Display;
 
 use fast_protocol::SwitchState;
@@ -6,7 +6,7 @@ use fast_protocol::SwitchState;
 use crate::prelude::*;
 
 pub enum AppMessage {
-  EmitEvent(Box<dyn Event>),
+  EmitEvent(EventBox),
   RegisterInterrupt(u64, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
@@ -30,7 +30,7 @@ pub enum AppMessage {
 impl Display for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      AppMessage::EmitEvent(_event) => write!(f, "EmitEvent(...)"),
+      AppMessage::EmitEvent(event) => write!(f, "EmitEvent({})", event.type_name),
       AppMessage::RegisterInterrupt(id, type_id, priority) => {
         write!(f, "RegisterInterrupt({}, {:?}, {})", id, type_id, priority)
       }
@@ -60,6 +60,22 @@ impl Display for AppMessage {
         write!(f, "CreateCueTimeline({}:{})", system_id, cue_id)
       }
       AppMessage::CancelCue(system_id, cue_id) => write!(f, "CancelCue({}:{})", system_id, cue_id),
+    }
+  }
+}
+
+pub struct EventBox {
+  pub event: Box<dyn Event>,
+  pub type_id: TypeId,
+  pub type_name: &'static str,
+}
+
+impl EventBox {
+  pub fn new<E: Event>(event: E) -> Self {
+    EventBox {
+      type_id: event.type_id(),
+      type_name: type_name::<E>(),
+      event: Box::new(event)
     }
   }
 }

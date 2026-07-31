@@ -82,8 +82,16 @@ impl LedSystem {
     }
   }
 
+  /// Entirely remove all declarations by the given system
+  pub fn undeclare_by_system(&mut self, system_id: &u64) {
+    for declarations in self.declarations.values_mut() {
+      declarations.retain(|id, _| &id.system_id != system_id);
+    }
+  }
+
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
+    log::debug!("Deactivating all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       for (id, declaration) in declarations.iter_mut() {
         if id.system_id == system_id {
@@ -121,11 +129,11 @@ impl LedSystem {
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
     conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
-  ) -> Rgba<u8> {
+  ) -> Rgba<u8> {   
     let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
     let top_declarations = declarations
       .iter()
-      .filter(|(id, _)| id.z_index == *max_z)
+      .filter(|(id, dec)| id.z_index == *max_z && dec.active)
       .collect::<Vec<_>>();
 
     let top_color = if top_declarations.len() == 1 {
@@ -159,6 +167,7 @@ impl LedSystem {
 
     // if the top color is transparent, composite it with the next highest declaration below it
     if top_color.alpha() < 255 && z_indexes.len() > 1 {
+      // TODO: remove inactive indexes (here or above?)
       z_indexes.pop();
       let next_color = Self::resolve_led_color(
         led,
@@ -180,6 +189,12 @@ impl System for LedSystem {
     self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
   }
 
+  fn on_event(&mut self, event: &dyn Event, _ctx: &Context) {
+    if let Some(SystemDespawned(system_id)) = event.downcast_ref::<SystemDespawned>() {
+      self.undeclare_by_system(system_id);
+    }
+  }
+
   fn on_tick(&mut self, delta: Duration, _ctx: &Context) {
     self.alternate_resolver.accumulate(delta);
   }
@@ -189,20 +204,13 @@ impl System for LedSystem {
 
     for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
-        // take only active, highest z-index declaration for each LED
-        let active = declarations.iter().filter(|(_, d)| d.active);
-        // assemble a list of unique z-indexes defined for this LED
-        let z_indexes =
-          active
-            .clone()
-            .map(|(id, _)| id.z_index)
-            .sorted()
-            .fold(Vec::new(), |mut acc, z| {
-              if !acc.contains(&z) {
-                acc.push(z);
-              }
-              acc
-            });
+        // assemble a list of unique z-indexes which are defined for this LED
+        let z_indexes = declarations.iter()
+          .filter(|(_, d)| d.active)
+          .map(|(id, _)| id.z_index)
+          .sorted()
+          .unique()
+          .collect();
 
         let final_color = Self::resolve_led_color(
           led,
@@ -295,11 +303,7 @@ mod tests {
   fn declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -325,11 +329,7 @@ mod tests {
   fn declare_overwrite() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -355,11 +355,7 @@ mod tests {
   fn declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
     let led1 = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
     let led2 = LedAddress {
@@ -393,11 +389,7 @@ mod tests {
   fn declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -418,13 +410,54 @@ mod tests {
   }
 
   #[test]
+  fn alpha_fall_through_ignores_disabled() {
+    let led = LedAddress {
+      exp: ExpAddress::new(3, None, 0),
+      index: 1,
+    };
+
+    let declarations = HashMap::from([
+      (
+        DeclarationIdentifier {
+          system_id: 42,
+          z_index: 1,
+        },
+        StatefulLedDeclaration {
+          active: true,
+          color: Rgba::default(),
+        },
+      ),
+      (
+        DeclarationIdentifier {
+          system_id: 43,
+          z_index: 0,
+        },
+        StatefulLedDeclaration {
+          active: false, // final color should NOT be red
+          color: Rgba::red(),
+        },
+      ),
+    ]);
+
+    let conflict_resolution = HashMap::new();
+    let mut alternate_resolver = AlternateResolver::new();
+
+    let resolved_color = LedSystem::resolve_led_color(
+      &led,
+      vec![0, 1],
+      &declarations,
+      &conflict_resolution,
+      &mut alternate_resolver,
+    );
+
+    // final color should be clear since system 11 declarations are inactive
+    assert_eq!(resolved_color, Rgba::default());
+  }
+
+  #[test]
   fn resolve_color() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -468,11 +501,7 @@ mod tests {
   #[test]
   fn resolve_color_conflict() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 
@@ -520,11 +549,7 @@ mod tests {
   #[test]
   fn resolve_color_alpha_compositing() {
     let led = LedAddress {
-      exp: ExpAddress {
-        board_address: 3,
-        breakout: None,
-        port: 0,
-      },
+      exp: ExpAddress::new(3, None, 0),
       index: 1,
     };
 

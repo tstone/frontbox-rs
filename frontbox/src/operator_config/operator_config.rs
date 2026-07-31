@@ -5,6 +5,7 @@ use std::path::Path;
 
 use tokio::sync::mpsc;
 
+use crate::app::app_message::EventBox;
 use crate::operator_config::{ConfigValue, Domain, GeneralizedConfigValue};
 use crate::prelude::System;
 use crate::prelude::app_message::AppMessage;
@@ -70,9 +71,8 @@ impl OperatorConfig {
     self.current_values.insert(config.name, Box::new(value));
 
     if let Some(app_sender) = &self.app_sender {
-      let _ = app_sender.send(AppMessage::EmitEvent(Box::new(OperatorConfigChanged(
-        config.name,
-      ))));
+      let event = OperatorConfigChanged(config.name);
+      let _ = app_sender.send(AppMessage::EmitEvent(EventBox::new(event)));
     }
   }
 }

@@ -3,6 +3,7 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
+use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
@@ -33,10 +34,14 @@ impl<'a> Context<'a> {
   }
 
   pub fn emit<E: Event>(&self, event: E) {
-    log::debug!("📨 Emitting event {}", type_name::<E>());
+    log::debug!(
+      "📨 Emitting event {} {:?}",
+      type_name::<E>(),
+      event.type_id()
+    );
     self
       .app_sender
-      .send(AppMessage::EmitEvent(Box::new(event)))
+      .send(AppMessage::EmitEvent(EventBox::new(event)))
       .ok();
   }
 
@@ -44,6 +49,11 @@ impl<'a> Context<'a> {
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
   pub fn register_interrupt<E: Event + 'static>(&self, priority: u16) {
+    log::debug!(
+      "Registering interrupt for {} by {}",
+      type_name::<E>(),
+      self.system_id,
+    );
     self
       .app_sender
       .send(AppMessage::RegisterInterrupt(
@@ -55,6 +65,11 @@ impl<'a> Context<'a> {
   }
 
   pub fn unregister_interrupt<E: Event + 'static>(&self) {
+    log::debug!(
+      "Unregistering interrupt for {} by {}",
+      type_name::<E>(),
+      self.system_id,
+    );
     self
       .app_sender
       .send(AppMessage::UnregisterInterrupt(
