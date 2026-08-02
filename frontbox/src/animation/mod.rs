@@ -5,6 +5,7 @@ mod modulation;
 mod modulator;
 mod multi_modulator;
 mod sequence;
+mod single_frame_anim;
 mod tween;
 mod tweenable;
 
@@ -15,6 +16,7 @@ pub use modulation::*;
 pub use modulator::*;
 pub use multi_modulator::*;
 pub use sequence::*;
+pub use single_frame_anim::*;
 pub use tween::*;
 pub use tweenable::*;
 
