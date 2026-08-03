@@ -297,7 +297,7 @@ fn despawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
-) -> bool {
+) {
   if let Some(parent) = groups.get_mut(handle.parent_key)
     && let Some(cell) = parent.remove(handle.id)
   {
@@ -305,9 +305,6 @@ fn despawn_system(
     let ctx = Context::new(base, handle, groups, app_sender.clone());
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
-    true
-  } else {
-    false
   }
 }
 
