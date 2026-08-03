@@ -1,7 +1,6 @@
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
-use std::collections::hash_map::Keys;
 use std::fmt::Debug;
 
 use crate::prelude::*;
@@ -21,8 +20,12 @@ impl Systems {
     }
   }
 
-  pub fn ids(&self) -> Keys<'_, u64, RefCell<SystemContainer>> {
-    self.systems.keys()
+  pub fn ids(&self) -> Vec<&u64> {
+    self.systems.keys().collect()
+  }
+
+  pub fn names(&self) -> Vec<&'static str> {
+    self.systems.values().map(|s| s.borrow().name()).collect()
   }
 
   pub(crate) fn insert(&mut self, system: impl Into<SystemContainer>) {
@@ -61,6 +64,11 @@ impl Systems {
 
   pub fn get_by_type<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     let type_id = TypeId::of::<T>();
+    log::debug!(
+      "Getting system by type {}, system_id: {:?}",
+      std::any::type_name::<T>(),
+      self.type_to_id.get(&type_id)
+    );
     let system_id = self.type_to_id.get(&type_id)?;
     self.systems.get(system_id).map(|cell| {
       RefMut::map(cell.borrow_mut(), |container| {

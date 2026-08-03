@@ -11,6 +11,7 @@ use crate::prelude::*;
 pub struct Context<'a> {
   base: &'a ContextBase,
   system_id: u64,
+  parent_key: Option<&'static str>,
   pub systems: SystemsContext<'a>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
@@ -19,6 +20,8 @@ impl<'a> Context<'a> {
   pub fn new(
     base: &'a ContextBase,
     system_id: u64,
+    // This needs to be explicitly passed in due to the lease/reinsert operation
+    parent_key: Option<&'static str>,
     system_collection: &'a SystemCollection,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
@@ -27,8 +30,9 @@ impl<'a> Context<'a> {
       system_id,
       systems: SystemsContext {
         system_collection,
-        system_id,
+        parent_key
       },
+      parent_key,
       app_sender,
     }
   }
@@ -89,14 +93,14 @@ impl<'a> Context<'a> {
   pub fn spawn_system(&self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystem(self.system_id, system.into()));
+      .send(AppMessage::SpawnSystem(self.parent_key, system.into()));
   }
 
   /// Despawn self and immediately spawn a new system in its place
   pub fn replace_self(&self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::ReplaceSystem(self.system_id, system.into()));
+      .send(AppMessage::ReplaceSystem(self.system_id, self.parent_key, system.into()));
   }
 
   pub fn despawn_self(&self) {
@@ -182,6 +186,7 @@ impl<'a> Context<'a> {
     Context {
       base: self.base,
       system_id,
+      parent_key: self.parent_key, // TODO: this assumes the same parent; probably shouldn't
       systems: self.systems.clone(),
       app_sender: self.app_sender.clone(),
     }

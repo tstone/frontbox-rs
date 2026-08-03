@@ -1,3 +1,4 @@
+- Refactor the way systems are managed. Everything is in a group, and there's just a default group of '__root'
 - LedEffect needs something like `::single().rotating()`
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to

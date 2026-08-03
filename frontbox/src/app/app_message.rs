@@ -15,8 +15,8 @@ pub enum AppMessage {
   Shutdown,
   SingleSwitchState(usize, SwitchState),
   SwitchStates(Vec<SwitchState>),
-  SpawnSystem(u64, SpawnableSystemContainer),
-  ReplaceSystem(u64, SpawnableSystemContainer),
+  SpawnSystem(Option<&'static str>, SpawnableSystemContainer),
+  ReplaceSystem(u64, Option<&'static str>, SpawnableSystemContainer),
   DespawnSystem(u64),
   SpawnSystemGroup(&'static str, Vec<ChildSystemContainer>, bool),
   DespawnSystemGroup(&'static str),
@@ -44,8 +44,8 @@ impl Display for AppMessage {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
       }
       AppMessage::SwitchStates(states) => write!(f, "SwitchStates({:?})", states),
-      AppMessage::SpawnSystem(id, _) => write!(f, "SpawnSystem({})", id),
-      AppMessage::ReplaceSystem(id, _) => write!(f, "ReplaceSystem({})", id),
+      AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
+      AppMessage::ReplaceSystem(id, _, _) => write!(f, "ReplaceSystem({})", id),
       AppMessage::DespawnSystem(id) => write!(f, "DespawnSystem({})", id),
       AppMessage::SpawnSystemGroup(name, _, exclusive) => {
         write!(f, "SpawnSystemGroup({}, exclusive={})", name, exclusive)

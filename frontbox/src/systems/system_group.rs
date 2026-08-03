@@ -21,6 +21,10 @@ impl SystemGroup {
     }
   }
 
+  pub fn child_ids(&self) -> Vec<&u64> {
+    self.systems.ids()
+  }
+
   pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
     self.systems.get_by_id(system_id)
   }
