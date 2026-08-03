@@ -144,14 +144,15 @@ pub async fn run(
   tokio::time::sleep(Duration::from_millis(1000)).await;
 }
 
-/// Find and apply the closure to the system. Returns None if not foudn or inactive.
+/// Find and apply the closure to the system. Returns None if not found or inactive.
 fn apply_to_system<F, T>(
   system_id: u64,
   sc: &mut SystemCollection,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   mut handler: F,
-) -> Option<T> where
+) -> Option<T>
+where
   F: FnMut(&mut SystemContainer, &mut Context) -> T,
 {
   // apply to root systems if present
@@ -159,7 +160,7 @@ fn apply_to_system<F, T>(
     let mut result: Option<T> = None;
     {
       let mut system = cell.borrow_mut();
-      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+      let mut ctx = Context::new(base, system.id(), &sc, app_sender.clone());
       if system.handle_active(&ctx) {
         result = Some(handler(&mut system, &mut ctx));
       } else {
@@ -170,11 +171,12 @@ fn apply_to_system<F, T>(
     result
   } else {
     // otherwise search the groups to apply
-    sc.groups.values_mut()
+    sc.groups
+      .values()
       .find(|g| g.contains_id(&system_id))
       .and_then(|g| g.get_by_id(&system_id))
       .and_then(|mut system| {
-        let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+        let mut ctx = Context::new(base, system.id(), &sc, app_sender.clone());
         if system.handle_active(&ctx) {
           Some(handler(&mut system, &mut ctx))
         } else {
@@ -200,7 +202,7 @@ fn apply_to_systems<F>(
     if let Some(cell) = sc.systems.lease(system_id) {
       {
         let mut system = cell.borrow_mut();
-        let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+        let mut ctx = Context::new(base, system.id(), &sc, app_sender.clone());
         if system.handle_active(&ctx) {
           handler(&mut system, &mut ctx);
         } else {
@@ -212,9 +214,10 @@ fn apply_to_systems<F>(
   }
 
   // apply to child systems in groups
-  for group in sc.groups.values_mut() {
-    for mut system in group.values_mut() {
-      let mut ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+  for group in sc.groups.values() {
+    for cell in group.values() {
+      let mut system = cell.borrow_mut();
+      let mut ctx = Context::new(base, system.id(), &sc, app_sender.clone());
       if system.handle_active(&ctx) {
         handler(&mut system, &mut ctx);
       } else {
@@ -239,9 +242,10 @@ fn emit_event(
       .sorted_by_key(|i| std::cmp::Reverse(i.priority));
 
     for interrupt in prioritized_interrupts {
-      let interrupt_result = apply_to_system(interrupt.system_id, sc, base, app_sender, |system, ctx| {
-        system.on_interrupt(event_box.event.as_ref(), &ctx)
-      });
+      let interrupt_result =
+        apply_to_system(interrupt.system_id, sc, base, app_sender, |system, ctx| {
+          system.on_interrupt(event_box.event.as_ref(), &ctx)
+        });
 
       if interrupt_result == Some(InterruptResult::Halt) {
         log::info!(
@@ -288,11 +292,11 @@ fn spawn_system(
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
   let system_id = system.id();
-  let ctx = Context::new(base, system.id(), &sc.systems, app_sender.clone());
+  let ctx = Context::new(base, system.id(), &sc, app_sender.clone());
   system.on_spawn(&ctx);
 
   let parent: &mut Systems = if let Some(caller_id) = caller_id {
-    sc.parent(&caller_id).unwrap()
+    sc.parent_mut(&caller_id).unwrap()
   } else {
     &mut sc.systems
   };
@@ -338,7 +342,7 @@ fn despawn_system(
   if let Some(container) = container {
     let mut system = container.borrow_mut();
     interrupt_registry.unregister_by_system(&system_id);
-    let ctx = Context::new(base, system_id, &sc.systems, app_sender.clone());
+    let ctx = Context::new(base, system_id, &sc, app_sender.clone());
     system.on_despawn(&ctx);
 
     // Emit event that a system was despawned
@@ -363,7 +367,7 @@ fn spawn_system_group(
     return;
   }
 
-  let mut ctx_template = Context::new(base, 0, &sc.systems, app_sender.clone());
+  let mut ctx_template = Context::new(base, 0, &sc, app_sender.clone());
   let mut group = SystemGroup::new(
     child_systems
       .into_iter()
@@ -371,12 +375,12 @@ fn spawn_system_group(
       .collect(),
   );
   if active {
-    group.activate(&mut ctx_template);
+    group.activate_children(&mut ctx_template);
   } else {
-    group.deactivate(&mut ctx_template);
+    group.deactivate_children(&mut ctx_template);
   }
 
-  let mut ctx = Context::new(base, 0, &sc.systems, app_sender.clone());
+  let mut ctx = Context::new(base, 0, &sc, app_sender.clone());
   group.on_spawn(&mut ctx);
   sc.groups.insert(group_name, group);
 }
@@ -394,7 +398,7 @@ fn despawn_system_group(
       unregister_all_by_system(&system.id(), interrupt_registry);
     }
 
-    let mut ctx = Context::new(base, 0, &sc.systems, app_sender.clone());
+    let mut ctx = Context::new(base, 0, &sc, app_sender.clone());
     group.on_despawn(&mut ctx);
   } else {
     log::warn!(
@@ -410,9 +414,14 @@ fn activate_system_group(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
-  if let Some(group) = sc.groups.get_mut(group_name) {
-    let mut ctx = Context::new(base, 0, &sc.systems, app_sender.clone());
-    group.activate(&mut ctx);
+  if sc.groups.contains_key(group_name) {
+    if let Some(group) = sc.groups.get_mut(group_name) {
+      group.active = true;
+    }
+    if let Some(group) = sc.groups.get(group_name) {
+      let ctx = Context::new(base, 0, &sc, app_sender.clone());
+      group.activate_children(&ctx);
+    }
   } else {
     log::warn!(
       "No system group named '{}' found, cannot activate",
@@ -427,9 +436,14 @@ fn deactivate_system_group(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 ) {
-  if let Some(group) = sc.groups.get_mut(group_name) {
-    let mut ctx = Context::new(base, 0, &sc.systems, app_sender.clone());
-    group.deactivate(&mut ctx);
+  if sc.groups.contains_key(group_name) {
+    if let Some(group) = sc.groups.get_mut(group_name) {
+      group.active = false;
+    }
+    if let Some(group) = sc.groups.get(group_name) {
+      let mut ctx = Context::new(base, 0, &sc, app_sender.clone());
+      group.deactivate_children(&mut ctx);
+    }
   } else {
     log::warn!(
       "No system group named '{}' found, cannot deactivate",

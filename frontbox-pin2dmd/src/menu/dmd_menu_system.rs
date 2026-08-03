@@ -8,13 +8,13 @@ use frontbox_sound::*;
 use crate::menu::{DmdMenuTheme, MenuRow, MenuSection};
 use crate::*;
 
-const SELECT_SND: & str = "dmd_menu_select";
-const INC_SOUND: & str = "dmd_menu_inc";
-const DEC_SOUND: & str = "dmd_menu_dec";
-const BACK_SND: & str = "dmd_menu_back";
-const NOT_ALLOWED_SND: & str = "dmd_menu_not_allowed";
-const MENU_BEGIN_SND: & str = "dmd_menu_begin";
-const MENU_END_SND: & str = "dmd_menu_end";
+const SELECT_SND: &str = "dmd_menu_select";
+const INC_SOUND: &str = "dmd_menu_inc";
+const DEC_SOUND: &str = "dmd_menu_dec";
+const BACK_SND: &str = "dmd_menu_back";
+const NOT_ALLOWED_SND: &str = "dmd_menu_not_allowed";
+const MENU_BEGIN_SND: &str = "dmd_menu_begin";
+const MENU_END_SND: &str = "dmd_menu_end";
 
 pub struct DmdMenuSystem {
   switch_names: MenuSwitches,
@@ -151,10 +151,10 @@ impl DmdMenuSystem {
         .find(|r| r.id() == row.id())
         .unwrap()
         .value_mut()
-        {
-          *value = row.increment(ctx);
-          log::debug!("increment: {}", value);
-        }
+      {
+        *value = row.increment(ctx);
+        log::debug!("increment: {}", value);
+      }
       self.requires_render = true;
     } else {
       let mut next = self.selected_row;
@@ -192,7 +192,8 @@ impl DmdMenuSystem {
         .iter_mut()
         .find(|r| r.id() == row.id())
         .unwrap()
-        .value_mut() {
+        .value_mut()
+      {
         *value = row.decrement(ctx);
       }
       self.requires_render = true;
@@ -279,10 +280,11 @@ impl DmdMenuSystem {
   fn draw_menu(&self, viewport: &Size<u32>) -> Container {
     let mut frame = Container::new(self.theme.menu_bg.clone());
     if let Some(theme_border) = &self.theme.menu_border
-      && let Some(border) = frame.border_mut() {
-        *border = *theme_border;
-        frame.padding = Padding::new(1, 1, 1, 1);
-      }
+      && let Some(border) = frame.border_mut()
+    {
+      *border = *theme_border;
+      frame.padding = Padding::new(1, 1, 1, 1);
+    }
 
     let row_height = SIGI_REGULAR_5PX_FONT.height as u32 + 2; // 2 leading between
     let mut acc_height = 0;
@@ -292,7 +294,7 @@ impl DmdMenuSystem {
       .clamp(0, self.display_rows.len());
 
     // draw rows that fit into the viewport
-    while let Some(row) = self.display_rows.get(row_index)  {
+    while let Some(row) = self.display_rows.get(row_index) {
       let selected = row_index == self.selected_row;
       let layer = match row {
         DisplayMenuRow::Section { name, .. } => self.draw_section(name, selected),

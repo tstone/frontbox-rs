@@ -129,7 +129,7 @@ impl LedSystem {
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
     conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
-  ) -> Rgba<u8> {   
+  ) -> Rgba<u8> {
     let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
     let top_declarations = declarations
       .iter()
@@ -205,7 +205,8 @@ impl System for LedSystem {
     for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         // assemble a list of unique z-indexes which are defined for this LED
-        let z_indexes = declarations.iter()
+        let z_indexes = declarations
+          .iter()
           .filter(|(_, d)| d.active)
           .map(|(id, _)| id.z_index)
           .sorted()

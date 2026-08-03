@@ -5,12 +5,13 @@ use tokio::sync::mpsc;
 
 use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::system_collection::SystemCollection;
 use crate::prelude::*;
 
 pub struct Context<'a> {
   base: &'a ContextBase,
   system_id: u64,
-  pub systems: &'a Systems,
+  pub systems: SystemsContext<'a>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
@@ -18,13 +19,16 @@ impl<'a> Context<'a> {
   pub fn new(
     base: &'a ContextBase,
     system_id: u64,
-    systems: &'a Systems,
+    system_collection: &'a SystemCollection,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
     Self {
       base,
       system_id,
-      systems,
+      systems: SystemsContext {
+        system_collection,
+        system_id,
+      },
       app_sender,
     }
   }
@@ -178,7 +182,7 @@ impl<'a> Context<'a> {
     Context {
       base: self.base,
       system_id,
-      systems: self.systems,
+      systems: self.systems.clone(),
       app_sender: self.app_sender.clone(),
     }
   }

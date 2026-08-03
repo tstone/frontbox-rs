@@ -5,7 +5,7 @@ use crate::prelude::*;
 
 pub struct SystemGroup {
   pub(crate) systems: Systems,
-  active: bool,
+  pub(crate) active: bool,
 }
 
 impl SystemGroup {
@@ -21,28 +21,29 @@ impl SystemGroup {
     }
   }
 
-  pub fn get_by_id(&'_ mut self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
+  pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
     self.systems.get_by_id(system_id)
   }
 
-  pub fn activate(&mut self, ctx: &Context) {
+  pub fn activate_children(&self, ctx: &Context) {
     if !self.active {
       log::info!("Activating system group");
-      for mut system in self.systems.values_mut() {
+      for cell in self.systems.values() {
+        let mut system = cell.borrow_mut();
         let mut ctx = ctx.clone_for_system(system.id());
         // only emit reactivate to systems that are also individually active
         if system.is_active(&ctx) {
           system.on_reactivate(&mut ctx);
         }
       }
-      self.active = true;
     }
   }
 
-  pub fn deactivate(&mut self, ctx: &Context) {
+  pub fn deactivate_children(&self, ctx: &Context) {
     if self.active {
       log::info!("Deactivating system group");
-      for mut system in self.systems.values_mut() {
+      for cell in self.systems.values() {
+        let mut system = cell.borrow_mut();
         let mut ctx = ctx.clone_for_system(system.id());
         // only emit deactivate to systems that are also individually active (since they otherwise would have been active)
         if system.is_active(&ctx) {
@@ -50,7 +51,6 @@ impl SystemGroup {
           system.on_deactivate(&mut ctx);
         }
       }
-      self.active = false;
     }
   }
 }
@@ -104,11 +104,11 @@ impl System for SystemGroup {
   }
 
   fn on_deactivate(&mut self, ctx: &Context) {
-    self.deactivate(ctx);
+    self.deactivate_children(ctx);
   }
 
   fn on_reactivate(&mut self, ctx: &Context) {
-    self.activate(ctx);
+    self.activate_children(ctx);
   }
 
   fn is_active(&self, _ctx: &Context) -> bool {

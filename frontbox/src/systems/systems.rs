@@ -1,4 +1,4 @@
-use std::any::{TypeId, type_name};
+use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::collections::hash_map::Keys;
@@ -59,10 +59,9 @@ impl Systems {
     self.systems.get(system_id).map(|cell| cell.borrow_mut())
   }
 
-  pub fn get<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
+  pub fn get_by_type<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     let type_id = TypeId::of::<T>();
     let system_id = self.type_to_id.get(&type_id)?;
-
     self.systems.get(system_id).map(|cell| {
       RefMut::map(cell.borrow_mut(), |container| {
         container
@@ -70,17 +69,6 @@ impl Systems {
           .expect("type_to_id mapping was incorrect")
       })
     })
-  }
-
-  pub fn expect<T: System + 'static>(&'_ self) -> RefMut<'_, T> {
-    let system_name = type_name::<T>();
-    self.get::<T>().expect(
-      format!(
-        "Expected system {} was not found. Make sure it was added to the App.",
-        system_name
-      )
-      .as_str(),
-    )
   }
 
   pub fn contains<T: System + 'static>(&self) -> bool {

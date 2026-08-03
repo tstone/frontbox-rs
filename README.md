@@ -723,11 +723,15 @@ fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptRe
 
 #### System Groups
 
-System groups are a feature that allows a group of systems to be toggled active or inactive together. This is independent from the `is_active` handler, which is a per-system feature. An entire group can be made inactive, which automatically makes each system within that group no longer receive events. The systems could still be declaring themselves as active. Within a group, the active/inactive nature is actually a combination `group is active && system is active`.
+System groups allow a set of child systems to be run as a single unit, with some particular behaviors:
 
-This feature is primarily used by the framework to implement automatic switching of systems based on active player, but it likewise could be used to implement scene switching.
+- **The system constraint of one-instance-per-type only applies within a group** -- For example, it might make sense to have a copy of `PlayerScoreSystem` _per player_. Normally only one of these could be spawned at the root. However, if a group was created per player, then one copy could be run per group.
 
-Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`.
+- **Active state spans the entire group** -- Group can be made active or inactive, which cascades to all children. Like with scoring, this allows all systems for a player to be disabled at once.
+
+- **System lookup also includes siblings** -- By default, performing `ctx.systems.get::<T>` only looks at root systems. When a system is part of a group however, it will _also_ check for all sibling. In the case where the same system is running both within a group and at the root, priority is given to nearness. Siblings are searched first, then global.
+
+Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`. If getting errors trying to add a child to a group, make sure to add `#[derive(Clone)]` to the system definition.
 
 ```rust
 const group_name: &'static str = "example";
