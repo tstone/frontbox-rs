@@ -7,7 +7,7 @@ use crate::prelude::*;
 
 pub enum AppMessage {
   EmitEvent(EventBox),
-  RegisterInterrupt(u64, TypeId, u16),
+  RegisterInterrupt(SystemHandle, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
@@ -15,24 +15,28 @@ pub enum AppMessage {
   Shutdown,
   SingleSwitchState(usize, SwitchState),
   SwitchStates(Vec<SwitchState>),
-  SpawnSystem(Option<&'static str>, SpawnableSystemContainer),
-  ReplaceSystem(u64, Option<&'static str>, SpawnableSystemContainer),
-  DespawnSystem(u64),
+  SpawnSystem(&'static str, SpawnableSystemContainer),
+  ReplaceSystem(SystemHandle, SpawnableSystemContainer),
+  DespawnSystem(SystemHandle),
   SpawnSystemGroup(&'static str, Vec<ChildSystemContainer>, bool),
   DespawnSystemGroup(&'static str),
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),
-  CreateCue(u64, u64, Cue, Vec<Box<dyn Event>>),
-  CreateCueTimeline(u64, u64, CueTimeline),
-  CancelCue(u64, u64),
+  CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
+  CreateCueTimeline(SystemHandle, u64, CueTimeline),
+  CancelCue(SystemHandle, u64),
 }
 
 impl Display for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       AppMessage::EmitEvent(event) => write!(f, "EmitEvent({})", event.type_name),
-      AppMessage::RegisterInterrupt(id, type_id, priority) => {
-        write!(f, "RegisterInterrupt({}, {:?}, {})", id, type_id, priority)
+      AppMessage::RegisterInterrupt(handle, type_id, priority) => {
+        write!(
+          f,
+          "RegisterInterrupt({}, {:?}, {})",
+          handle.id, type_id, priority
+        )
       }
       AppMessage::UnregisterInterrupt(id, type_id) => {
         write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
@@ -45,21 +49,25 @@ impl Display for AppMessage {
       }
       AppMessage::SwitchStates(states) => write!(f, "SwitchStates({:?})", states),
       AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
-      AppMessage::ReplaceSystem(id, _, _) => write!(f, "ReplaceSystem({})", id),
-      AppMessage::DespawnSystem(id) => write!(f, "DespawnSystem({})", id),
+      AppMessage::ReplaceSystem(handle, _) => {
+        write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)
+      }
+      AppMessage::DespawnSystem(handle) => {
+        write!(f, "DespawnSystem({}, {})", handle.id, handle.parent_key)
+      }
       AppMessage::SpawnSystemGroup(name, _, exclusive) => {
         write!(f, "SpawnSystemGroup({}, exclusive={})", name, exclusive)
       }
       AppMessage::DespawnSystemGroup(name) => write!(f, "DespawnSystemGroup({})", name),
       AppMessage::ActivateSystemGroup(name) => write!(f, "ActivateSystemGroup({})", name),
       AppMessage::DeactivateSystemGroup(name) => write!(f, "DeactivateSystemGroup({})", name),
-      AppMessage::CreateCue(system_id, cue_id, cue, _signals) => {
-        write!(f, "CreateCue({}:{}, {:?})", system_id, cue_id, cue)
+      AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
+        write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
       }
-      AppMessage::CreateCueTimeline(system_id, cue_id, _timeline) => {
-        write!(f, "CreateCueTimeline({}:{})", system_id, cue_id)
+      AppMessage::CreateCueTimeline(handle, cue_id, _timeline) => {
+        write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
       }
-      AppMessage::CancelCue(system_id, cue_id) => write!(f, "CancelCue({}:{})", system_id, cue_id),
+      AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
     }
   }
 }
@@ -75,7 +83,7 @@ impl EventBox {
     EventBox {
       type_id: event.type_id(),
       type_name: type_name::<E>(),
-      event: Box::new(event)
+      event: Box::new(event),
     }
   }
 }

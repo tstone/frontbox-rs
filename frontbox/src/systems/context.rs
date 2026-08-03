@@ -5,13 +5,11 @@ use tokio::sync::mpsc;
 
 use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
-use crate::prelude::system_collection::SystemCollection;
 use crate::prelude::*;
 
 pub struct Context<'a> {
   base: &'a ContextBase,
-  system_id: u64,
-  parent_key: Option<&'static str>,
+  handle: SystemHandle,
   pub systems: SystemsContext<'a>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
@@ -19,26 +17,27 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
   pub fn new(
     base: &'a ContextBase,
-    system_id: u64,
-    // This needs to be explicitly passed in due to the lease/reinsert operation
-    parent_key: Option<&'static str>,
-    system_collection: &'a SystemCollection,
+    handle: SystemHandle,
+    groups: &'a Groups,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
     Self {
       base,
-      system_id,
       systems: SystemsContext {
-        system_collection,
-        parent_key
+        groups,
+        parent_key: handle.parent_key,
       },
-      parent_key,
+      handle,
       app_sender,
     }
   }
 
   pub fn current_system_id(&self) -> u64 {
-    self.system_id
+    self.handle.id
+  }
+
+  pub fn current_handle(&self) -> &SystemHandle {
+    &self.handle
   }
 
   pub fn emit<E: Event>(&self, event: E) {
@@ -60,12 +59,12 @@ impl<'a> Context<'a> {
     log::debug!(
       "Registering interrupt for {} by {}",
       type_name::<E>(),
-      self.system_id,
+      self.handle.id,
     );
     self
       .app_sender
       .send(AppMessage::RegisterInterrupt(
-        self.system_id,
+        self.handle,
         TypeId::of::<E>(),
         priority,
       ))
@@ -76,12 +75,12 @@ impl<'a> Context<'a> {
     log::debug!(
       "Unregistering interrupt for {} by {}",
       type_name::<E>(),
-      self.system_id,
+      self.handle.id,
     );
     self
       .app_sender
       .send(AppMessage::UnregisterInterrupt(
-        self.system_id,
+        self.handle.id,
         TypeId::of::<E>(),
       ))
       .ok();
@@ -91,22 +90,21 @@ impl<'a> Context<'a> {
 
   /// Start up a new system
   pub fn spawn_system(&self, system: impl Into<SpawnableSystemContainer>) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::SpawnSystem(self.parent_key, system.into()));
+    let _ = self.app_sender.send(AppMessage::SpawnSystem(
+      self.handle.parent_key,
+      system.into(),
+    ));
   }
 
   /// Despawn self and immediately spawn a new system in its place
   pub fn replace_self(&self, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::ReplaceSystem(self.system_id, self.parent_key, system.into()));
+      .send(AppMessage::ReplaceSystem(self.handle, system.into()));
   }
 
   pub fn despawn_self(&self) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::DespawnSystem(self.system_id));
+    let _ = self.app_sender.send(AppMessage::DespawnSystem(self.handle));
   }
 
   pub fn spawn_system_group(
@@ -145,7 +143,7 @@ impl<'a> Context<'a> {
     self
       .app_sender
       .send(AppMessage::CreateCue(
-        self.system_id,
+        self.handle,
         cue_id,
         cue,
         vec![Box::new(signal)],
@@ -158,7 +156,7 @@ impl<'a> Context<'a> {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
-      .send(AppMessage::CreateCue(self.system_id, cue_id, cue, signals))
+      .send(AppMessage::CreateCue(self.handle, cue_id, cue, signals))
       .ok();
     cue_id
   }
@@ -167,11 +165,7 @@ impl<'a> Context<'a> {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
-      .send(AppMessage::CreateCueTimeline(
-        self.system_id,
-        cue_id,
-        timeline,
-      ))
+      .send(AppMessage::CreateCueTimeline(self.handle, cue_id, timeline))
       .ok();
     cue_id
   }
@@ -179,14 +173,13 @@ impl<'a> Context<'a> {
   pub fn cancel_cue(&self, cue_id: u64) {
     let _ = self
       .app_sender
-      .send(AppMessage::CancelCue(self.system_id, cue_id));
+      .send(AppMessage::CancelCue(self.handle, cue_id));
   }
 
-  pub fn clone_for_system(&self, system_id: u64) -> Context<'a> {
+  pub fn clone_for_system(&self, handle: SystemHandle) -> Context<'a> {
     Context {
       base: self.base,
-      system_id,
-      parent_key: self.parent_key, // TODO: this assumes the same parent; probably shouldn't
+      handle,
       systems: self.systems.clone(),
       app_sender: self.app_sender.clone(),
     }
