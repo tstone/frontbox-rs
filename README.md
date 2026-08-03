@@ -1,4 +1,4 @@
-# Frontbox
+![Frontbox](logo.png)
 
 ## Overview
 
