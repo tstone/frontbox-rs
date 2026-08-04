@@ -33,7 +33,7 @@ impl FastStringCommand for ConfigureDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/dl/
     match self.config {
-      DriverConfig::Disabled => format!("DL:{:X},81,0,0,0,0,0,0,0\r", self.driver_id),
+      DriverConfig::Disabled => format!("DL:{:X},80,0,0,0,0,0,0,0\r", self.driver_id),
       DriverConfig::Pulse {
         switch,
         invert_switch,
