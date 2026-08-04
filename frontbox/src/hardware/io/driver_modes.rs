@@ -207,7 +207,7 @@ impl Default for PulseHoldCancelMode {
       initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
       initial_pwm_power: HardwareValue::Fixed(Power::FULL),
       secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
-      rest: HardwareValue::Fixed(Duration::from_millis(500)),
+      rest: HardwareValue::Fixed(Duration::from_millis(255)),
     }
   }
 }
@@ -222,7 +222,7 @@ impl DriverMode for PulseHoldCancelMode {
       invert_switch: invert_flip_switch,
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
-      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
+      initial_max_on_time: self.initial_pwm_length.resolve(&ctx.operator_config),
       initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
       secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
       rest: self.rest.resolve(&ctx.operator_config),
@@ -297,6 +297,61 @@ impl DriverMode for DelayedPulseMode {
   }
 }
 
+/// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
+/// switch (flop) is activated.
+/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/
+#[derive(Debug, Clone)]
+pub struct PulseCancelMode {
+  /// What causes the driver to fire (be triggered)
+  pub trigger_mode: DriverTriggerDualMode,
+  pub initial_full_power_length: HardwareValue<Duration>,
+  pub secondary_power_length: HardwareValue<Duration>,
+  pub secondary_pwm_power: HardwareValue<Power>,
+  /// Time after the driver goes off before it can be triggered again
+  pub rest: HardwareValue<Duration>,
+}
+
+impl Default for PulseCancelMode {
+  fn default() -> Self {
+    Self {
+      trigger_mode: DriverTriggerDualMode::Disabled,
+      initial_full_power_length: HardwareValue::Fixed(Duration::from_millis(30)),
+      secondary_power_length: HardwareValue::Fixed(Duration::from_millis(500)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
+      rest: HardwareValue::Fixed(Duration::from_millis(255)),
+    }
+  }
+}
+
+impl DriverMode for PulseCancelMode {
+  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+    let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
+      get_switch_ids_and_inverts(&self.trigger_mode, ctx);
+
+    DriverConfig::PulseCancel {
+      switch: flip_switch,
+      invert_switch: invert_flip_switch,
+      off_switch: flop_switch,
+      invert_off_switch: invert_flop_switch,
+      initial_full_power_length: self.initial_full_power_length.resolve(&ctx.operator_config),
+      secondary_power_length: self.secondary_power_length.resolve(&ctx.operator_config),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      rest: self.rest.resolve(&ctx.operator_config),
+    }
+  }
+
+  fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+    vec![
+      self.initial_full_power_length.config_value(),
+      self.secondary_power_length.config_value(),
+      self.secondary_pwm_power.config_value(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+  }
+}
+
 /// Mode 70 - Pulse the driver for an initial time (up to 255ms), then hold it for a secondary time (up to 25s).
 /// https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/
 #[derive(Debug, Clone)]
@@ -319,7 +374,7 @@ impl Default for LongPulseMode {
       initial_pwm_power: HardwareValue::Fixed(Power::FULL),
       secondary_pwm_length: HardwareValue::Fixed(Duration::from_millis(1000)),
       secondary_pwm_power: HardwareValue::Fixed(Power::percent(25)),
-      rest: HardwareValue::Fixed(Duration::from_millis(1000)),
+      rest: HardwareValue::Fixed(Duration::from_millis(255)),
     }
   }
 }

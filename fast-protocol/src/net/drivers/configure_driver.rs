@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::net::drivers::driver_trigger_builder::DriverTriggerBuilder;
 use crate::net::prelude::*;
 use crate::*;
@@ -15,6 +17,18 @@ impl ConfigureDriverCommand {
   }
 }
 
+// 1 ms tick (single byte, max 255)
+pub fn fast_ms_byte(duration: Duration) -> String {
+  let ms = duration.as_millis().min(255) as u8;
+  format!("{:02X}", ms)
+}
+
+// ms tick multiplier (single byte)
+pub fn fast_unit_ms_byte(duration: Duration, unit: u8) -> String {
+  let ticks = (duration.as_millis() / unit as u128).min(255) as u8;
+  format!("{:02X}", ticks)
+}
+
 impl FastStringCommand for ConfigureDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/dl/
@@ -29,17 +43,17 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_power,
         rest,
       } => format!(
-        "DL:{:X},{:X},{:X},10,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},10,{},{:X},{},{:X},{}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
+        fast_ms_byte(initial_pwm_length),
         initial_pwm_power,
-        secondary_pwm_length.as_millis(),
+        fast_ms_byte(secondary_pwm_length),
         secondary_pwm_power,
-        rest.as_millis()
+        fast_ms_byte(rest)
       ),
       DriverConfig::PulseKick {
         switch,
@@ -50,17 +64,17 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_power,
         kick_length,
       } => format!(
-        "DL:{:X},{:X},{:X},12,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},12,{},{:X},{},{:X},{}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
+        fast_ms_byte(initial_pwm_length),
         initial_pwm_power,
-        secondary_pwm_length.as_millis(),
+        fast_ms_byte(secondary_pwm_length),
         secondary_pwm_power,
-        kick_length.as_millis()
+        fast_ms_byte(kick_length)
       ),
       DriverConfig::PulseHold {
         switch,
@@ -70,29 +84,29 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_power,
         rest,
       } => format!(
-        "DL:{:X},{:X},{:X},18,{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},18,{},{:X},{:X},{},\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .manual(switch.is_none())
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
+        fast_ms_byte(initial_pwm_length),
         initial_pwm_power,
         secondary_pwm_power,
-        rest.as_millis()
+        fast_ms_byte(rest)
       ),
       DriverConfig::PulseHoldCancel {
         switch,
         invert_switch,
         off_switch,
         invert_off_switch,
-        initial_pwm_length,
+        initial_max_on_time: initial_pwm_length,
         initial_pwm_power,
         secondary_pwm_power,
         rest,
       } => format!(
-        "DL:{:X},{:X},{:X},75,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},20,{:X},{},{:X},{:X},{}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
@@ -100,10 +114,10 @@ impl FastStringCommand for ConfigureDriverCommand {
           .bits(),
         switch.unwrap_or(0),
         off_switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
+        fast_ms_byte(initial_pwm_length),
         initial_pwm_power,
         secondary_pwm_power,
-        rest.as_millis()
+        fast_ms_byte(rest)
       ),
       DriverConfig::DelayedPulse {
         switch,
@@ -114,17 +128,17 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_length,
         rest,
       } => format!(
-        "DL:{:X},{:X},{:X},30,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},30,{},{},{},{:X},{}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
-        delay_length.as_millis() / 10, // FAST protocol delay is in 10ms increments
-        initial_full_power_length.as_millis(),
-        secondary_pwm_length.as_millis(),
+        fast_unit_ms_byte(delay_length, 10),
+        fast_ms_byte(initial_full_power_length),
+        fast_ms_byte(secondary_pwm_length),
         secondary_pwm_power,
-        rest.as_millis()
+        fast_ms_byte(rest)
       ),
       DriverConfig::LongPulse {
         switch,
@@ -135,17 +149,40 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_power,
         rest,
       } => format!(
-        "DL:{:X},{:X},{:X},70,{:X},{:X},{:X},{:X},{:X}\r",
+        "DL:{:X},{:X},{:X},70,{},{:X},{},{:X},{}\r",
         self.driver_id,
         DriverTriggerBuilder::new()
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
-        initial_pwm_length.as_millis(),
+        fast_ms_byte(initial_pwm_length),
         initial_pwm_power,
-        secondary_pwm_length.as_millis(),
+        fast_unit_ms_byte(secondary_pwm_length, 100),
         secondary_pwm_power,
-        rest.as_millis()
+        fast_ms_byte(rest)
+      ),
+      DriverConfig::PulseCancel {
+        switch,
+        invert_switch,
+        off_switch,
+        invert_off_switch,
+        initial_full_power_length: initial_power_length,
+        secondary_power_length,
+        secondary_pwm_power,
+        rest,
+      } => format!(
+        "DL:{:X},{:X},{:X},75,{:X},{},{},{:X},{}\r",
+        self.driver_id,
+        DriverTriggerBuilder::new()
+          .invert_switch1(invert_switch)
+          .invert_switch2(invert_off_switch)
+          .bits(),
+        switch.unwrap_or(0),
+        off_switch.unwrap_or(0),
+        fast_ms_byte(initial_power_length),
+        fast_unit_ms_byte(secondary_power_length, 100),
+        secondary_pwm_power,
+        fast_ms_byte(rest)
       ),
       DriverConfig::FlipperMainDirect {
         button_switch,
@@ -157,7 +194,7 @@ impl FastStringCommand for ConfigureDriverCommand {
         next_flip_refresh,
       } => {
         format!(
-          "DL:{:X},{:X},{:X},5E,{:X},{:X},{:X},{:X},{:X}\r",
+          "DL:{:X},{:X},{:X},5E,{:X},{:X},{:X},{},{}\r",
           self.driver_id,
           DriverTriggerBuilder::new()
             .invert_switch1(invert_button_switch)
@@ -166,8 +203,8 @@ impl FastStringCommand for ConfigureDriverCommand {
           eos_switch,
           initial_pwm_power,
           secondary_pwm_power,
-          max_eos_time.as_millis(),
-          next_flip_refresh.as_millis()
+          fast_ms_byte(max_eos_time),
+          fast_ms_byte(next_flip_refresh)
         )
       }
       DriverConfig::FlipperHoldDirect {
@@ -178,13 +215,13 @@ impl FastStringCommand for ConfigureDriverCommand {
         secondary_pwm_power,
       } => {
         format!(
-          "DL:{:X},{:X},{:X},5D,{:X},{:X},{:X},00,00\r",
+          "DL:{:X},{:X},{:X},5D,{},{:X},{:X},00,00\r",
           self.driver_id,
           DriverTriggerBuilder::new()
             .invert_switch1(invert_button_switch)
             .bits(),
           button_switch,
-          driver_on_time.as_millis(),
+          fast_ms_byte(driver_on_time),
           initial_pwm_power,
           secondary_pwm_power,
         )

@@ -9,11 +9,30 @@ pub struct Power {
 }
 
 impl Power {
+  /// Set as PWM in units of 8ms with binary, e.g. 0b10101010 (on, off, on, off...) is 50% power
+  pub fn raw(value: u8) -> Self {
+    Self { power: value }
+  }
+
+  /// WARNING: Using an arbitrary value likely does not guarantee symmetry and may result in buzzing for longer holds
   pub fn percent(percent: u8) -> Self {
     let clamped = percent.min(100);
     let power = (clamped as u16 * 255 / 100) as u8;
     Self { power }
   }
+
+  /// 12.5% power (symmetrical PWM)
+  pub const EIGHT: Power = Power { power: 0b10000000 };
+  /// 25% power (symmetrical PWM)
+  pub const QUARTER: Power = Power { power: 0b1000100 };
+  /// 37.5% power (asymmetrical PWM)
+  pub const THREE_EIGHTS: Power = Power { power: 0b10010010 };
+  /// 50% power (symmetrical PWM)
+  pub const HALF: Power = Power { power: 0b10101010 };
+  /// 75% power (symmetrical PWM)
+  pub const THREE_QUARTERS: Power = Power { power: 0b11101110 };
+  /// 87.5% power (asymmetrical PWM)
+  pub const SEVEN_EIGHTS: Power = Power { power: 0b11111110 };
 
   pub const FULL: Power = Power { power: 255 };
   pub const OFF: Power = Power { power: 0 };
