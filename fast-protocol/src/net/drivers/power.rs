@@ -22,7 +22,7 @@ impl Power {
   }
 
   /// 12.5% power (symmetrical PWM)
-  pub const EIGHT: Power = Power { power: 0b10000000 };
+  pub const EIGHTH: Power = Power { power: 0b10000000 };
   /// 25% power (symmetrical PWM)
   pub const QUARTER: Power = Power { power: 0b1000100 };
   /// 37.5% power (asymmetrical PWM)
@@ -91,7 +91,7 @@ mod tests {
 
   #[test]
   fn test_half_power() {
-    let power = Power::percent(50);
+    let power = Power::HALF;
     assert_eq!(power.power, 127);
     assert_eq!(format!("{}", power), "127");
     assert_eq!(format!("{:X}", power), "7F");

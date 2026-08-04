@@ -644,7 +644,7 @@ hardware_defs! {
       // configurable value that can be adjusted via operator config
       initial_pwm_power: HardwareValue::config(
         "coil_power",  // name
-        Power::percent(0.75) // default
+        Power::THREE_QUARTERS // default
         Ranges::power(0.5, 1.0), // domain
       ),
       ..Default::default()

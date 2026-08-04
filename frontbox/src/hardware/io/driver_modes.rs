@@ -206,7 +206,7 @@ impl Default for PulseHoldCancelMode {
       trigger_mode: DriverTriggerDualMode::Disabled,
       initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(30)),
       initial_pwm_power: HardwareValue::Fixed(Power::FULL),
-      secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::EIGHTH),
       rest: HardwareValue::Fixed(Duration::from_millis(255)),
     }
   }
@@ -317,7 +317,7 @@ impl Default for PulseCancelMode {
       trigger_mode: DriverTriggerDualMode::Disabled,
       initial_full_power_length: HardwareValue::Fixed(Duration::from_millis(30)),
       secondary_power_length: HardwareValue::Fixed(Duration::from_millis(500)),
-      secondary_pwm_power: HardwareValue::Fixed(Power::percent(10)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::EIGHTH),
       rest: HardwareValue::Fixed(Duration::from_millis(255)),
     }
   }
@@ -373,7 +373,7 @@ impl Default for LongPulseMode {
       initial_pwm_length: HardwareValue::Fixed(Duration::from_millis(200)),
       initial_pwm_power: HardwareValue::Fixed(Power::FULL),
       secondary_pwm_length: HardwareValue::Fixed(Duration::from_millis(1000)),
-      secondary_pwm_power: HardwareValue::Fixed(Power::percent(25)),
+      secondary_pwm_power: HardwareValue::Fixed(Power::QUARTER),
       rest: HardwareValue::Fixed(Duration::from_millis(255)),
     }
   }

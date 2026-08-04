@@ -262,7 +262,7 @@ mod tests {
       initial_pwm_length: Duration::from_millis(100),
       initial_pwm_power: Power::FULL,
       secondary_pwm_length: Duration::from_millis(50),
-      secondary_pwm_power: Power::percent(50),
+      secondary_pwm_power: Power::HALF,
       rest: Duration::from_millis(500),
     };
     let request_str = ConfigureDriverCommand::new(10, config).to_string();

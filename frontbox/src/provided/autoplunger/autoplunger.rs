@@ -26,7 +26,7 @@ impl AutoPlungerSystem {
         Duration::from_millis(7),
         Ranges::duration(0, 100),
       ),
-      initial_pwm_power: HardwareValue::fixed(Power::percent(50)),
+      initial_pwm_power: HardwareValue::fixed(Power::HALF),
       secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
       secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
       kick_length: HardwareValue::config(
