@@ -1,10 +1,19 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use crate::prelude::SystemHandle;
+
 #[derive(Debug)]
 pub struct Interrupt {
   pub system_id: u64,
+  pub parent_key: &'static str,
   pub priority: u16,
+}
+
+impl Interrupt {
+  pub fn to_handle(&self) -> SystemHandle {
+    SystemHandle::new(self.system_id, self.parent_key)
+  }
 }
 
 #[derive(Debug)]
@@ -19,9 +28,16 @@ impl EventInterruptRegistry {
     }
   }
 
-  pub fn register(&mut self, type_id: TypeId, system_id: u64, priority: u16) {
+  pub fn register(
+    &mut self,
+    type_id: TypeId,
+    system_id: u64,
+    parent_key: &'static str,
+    priority: u16,
+  ) {
     let interrupt = Interrupt {
       system_id,
+      parent_key,
       priority,
     };
 

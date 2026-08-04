@@ -12,7 +12,7 @@ static INCR_ID: AtomicU64 = AtomicU64::new(0);
 
 pub struct SystemContainer {
   id: u64,
-  name: String,
+  name: &'static str,
   inner: Box<dyn System>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
@@ -22,10 +22,9 @@ pub struct SystemContainer {
 
 impl SystemContainer {
   pub fn new<T: System + 'static>(system: T) -> Self {
-    let name = type_name_of_val(&system).to_string();
     Self {
       id: Self::next_id(),
-      name,
+      name: type_name_of_val(&system),
       inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,
@@ -38,7 +37,7 @@ impl SystemContainer {
     self.id
   }
 
-  pub fn name(&self) -> &str {
+  pub fn name(&self) -> &'static str {
     &self.name
   }
 
@@ -150,7 +149,7 @@ impl<T: System + 'static> From<T> for SystemContainer {
 
 pub struct SpawnableSystemContainer {
   id: u64,
-  name: String,
+  name: &'static str,
   inner: Box<dyn SpawnableSystem>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
@@ -160,10 +159,9 @@ pub struct SpawnableSystemContainer {
 
 impl SpawnableSystemContainer {
   pub fn new<T: SpawnableSystem + 'static>(system: T) -> Self {
-    let name = type_name_of_val(&system).to_string();
     Self {
       id: SystemContainer::next_id(),
-      name,
+      name: type_name_of_val(&system),
       inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,
@@ -194,7 +192,7 @@ impl<T: SpawnableSystem + 'static> From<T> for SpawnableSystemContainer {
 #[derive(Clone)]
 pub struct ChildSystemContainer {
   id: u64,
-  name: String,
+  name: &'static str,
   inner: Box<dyn ChildSystem>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
@@ -204,10 +202,9 @@ pub struct ChildSystemContainer {
 
 impl ChildSystemContainer {
   pub fn new<T: ChildSystem + 'static>(system: T) -> Self {
-    let name = type_name_of_val(&system).to_string();
     Self {
       id: SystemContainer::next_id(),
-      name,
+      name: type_name_of_val(&system),
       inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,

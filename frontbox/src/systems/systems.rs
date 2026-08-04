@@ -1,7 +1,6 @@
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
-use std::collections::hash_map::Keys;
 use std::fmt::Debug;
 
 use crate::prelude::*;
@@ -21,8 +20,12 @@ impl Systems {
     }
   }
 
-  pub fn ids(&self) -> Keys<'_, u64, RefCell<SystemContainer>> {
-    self.systems.keys()
+  pub fn ids(&self) -> Vec<&u64> {
+    self.systems.keys().collect()
+  }
+
+  pub fn names(&self) -> Vec<&'static str> {
+    self.systems.values().map(|s| s.borrow().name()).collect()
   }
 
   pub(crate) fn insert(&mut self, system: impl Into<SystemContainer>) {
@@ -32,22 +35,12 @@ impl Systems {
     self.systems.insert(system.id(), RefCell::new(system));
   }
 
-  pub(crate) fn reinsert(&mut self, system_id: u64, cell: RefCell<SystemContainer>) {
-    self.systems.insert(system_id, cell);
-  }
-
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
     let result = self.systems.remove(&system_id);
     if let Some(system_type) = self.id_to_type.remove(&system_id) {
       self.type_to_id.remove(&system_type);
     }
     result
-  }
-
-  /// Lease removes the system from the systems collection and returns it, but does not remove the type/id mapping.
-  /// This is used for temporarily taking ownership of a system to spawn it as a child. Reinsert with `reinsert` when done.
-  pub(crate) fn lease(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
-    self.systems.remove(&system_id)
   }
 
   pub fn get_id<T: System + 'static>(&self) -> Option<u64> {
@@ -82,10 +75,6 @@ impl Systems {
 
   pub(crate) fn values(&self) -> impl Iterator<Item = &RefCell<SystemContainer>> {
     self.systems.values()
-  }
-
-  pub(crate) fn values_mut(&'_ mut self) -> impl Iterator<Item = RefMut<'_, SystemContainer>> + '_ {
-    self.systems.values().map(|cell| cell.borrow_mut())
   }
 }
 

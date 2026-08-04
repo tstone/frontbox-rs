@@ -1,10 +1,16 @@
 mod app;
 pub mod app_message;
+mod boot_config;
 mod event;
 pub mod run_loop;
-pub mod system_collection;
-mod boot_config;
+
+use std::collections::HashMap;
 
 pub use app::*;
-pub use event::*;
 pub use boot_config::*;
+pub use event::*;
+
+use crate::prelude::SystemGroup;
+
+pub const ROOT_GROUP: &'static str = "__root";
+pub type Groups = HashMap<&'static str, SystemGroup>;
