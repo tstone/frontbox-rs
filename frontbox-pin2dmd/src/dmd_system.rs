@@ -63,7 +63,7 @@ impl System for DmdSystem {
     if self.needs_render {
       let start = std::time::Instant::now();
 
-      if self.canvas.len() > 0 {
+      if !self.canvas.is_empty() {
         log::trace!("canvas layer count: {}", self.canvas.len());
         let pixels = self.canvas.to_pixels();
         let _ = self.dmd.render(&pixels);

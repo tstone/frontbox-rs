@@ -108,11 +108,10 @@ impl System for CompetitiveGame {
             self.transition_turn_to_active(ctx);
           }
         }
-        TurnState::Active => {
-          if event.is::<TroughFull>() {
+        TurnState::Active
+          if event.is::<TroughFull>() => {
             self.transition_turn_to_ending(ctx);
           }
-        }
         _ => {}
       }
     }
@@ -149,7 +148,7 @@ impl GameManagement for CompetitiveGame {
     );
 
     // create copy of systems for new player as a new system group
-    let copy = self.systems_template.iter().cloned().collect::<Vec<_>>();
+    let copy = self.systems_template.to_vec();
 
     let group_name = PLAYER_GROUP_NAMES[game_state.player_count() as usize];
     ctx.spawn_system_group(group_name, copy, false);
