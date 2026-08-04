@@ -87,7 +87,6 @@ impl FastStringCommand for ConfigureDriverCommand {
         "DL:{:X},{:X},{:X},18,{},{:X},{:X},{},\r",
         self.driver_id,
         DriverTriggerBuilder::new()
-          .manual(switch.is_none())
           .invert_switch1(invert_switch)
           .bits(),
         switch.unwrap_or(0),
