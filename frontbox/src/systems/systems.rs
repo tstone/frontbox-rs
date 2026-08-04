@@ -54,11 +54,6 @@ impl Systems {
 
   pub fn get_by_type<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     let type_id = TypeId::of::<T>();
-    log::debug!(
-      "Getting system by type {}, system_id: {:?}",
-      std::any::type_name::<T>(),
-      self.type_to_id.get(&type_id)
-    );
     let system_id = self.type_to_id.get(&type_id)?;
     self.systems.get(system_id).map(|cell| {
       RefMut::map(cell.borrow_mut(), |container| {
