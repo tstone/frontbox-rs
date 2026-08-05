@@ -76,13 +76,13 @@ impl System for GameStartable {
   }
 
   fn on_spawn(&mut self, ctx: &Context) {
-    ctx.cue_cycling(events![On, Off], Cue::Loop(self.flash_duration));
+    ctx.cue_cycling(events![LampOn, LampOff], Cue::Loop(self.flash_duration));
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
-    if event.is::<On>() {
+    if event.is::<LampOn>() {
       self.start_btn_on(ctx);
-    } else if event.is::<Off>() {
+    } else if event.is::<LampOff>() {
       self.start_btn_off(ctx);
     } else if event.is::<GameStarted>() {
       for effect in &mut self.effects {
@@ -104,3 +104,6 @@ impl System for GameStartable {
     }
   }
 }
+
+struct LampOn;
+struct LampOff;
