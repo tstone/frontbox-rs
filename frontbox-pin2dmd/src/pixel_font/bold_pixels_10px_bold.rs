@@ -6,7 +6,7 @@ use crate::pixel_font::{PixelFontCharacterMap, PixelFontGlyph};
 
 /// Bold Pixels by YukiPixels
 /// CC Share Alike 4.0
-/// https://yukipixels.itch.io/boldpixels
+/// <https://yukipixels.itch.io/boldpixels>
 pub static BOLD_PIXELS_10PX_REGULAR_FONT: LazyLock<PixelFontCharacterMap> = LazyLock::new(|| {
   let mut glyphs = HashMap::new();
 

@@ -73,6 +73,8 @@ struct DropTargetDownUp {
   target_switches: [&'static str; 3],
 }
 
+struct DropUp; // cue to send self
+
 impl DropTargetDownUp {
   pub fn new(target_switches: [&'static str; 3]) -> Self {
     Self { target_switches }
@@ -86,9 +88,13 @@ impl DropTargetDownUp {
         .all(|&target| ctx.switches.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.cue(Action, Cue::Once(Duration::from_millis(250)));
+        ctx.cue(DropUp, Cue::Once(Duration::from_millis(250)));
       }
     }
+  }
+
+  pub fn up(&self, ctx: &Context) {
+    // TODO
   }
 }
 
@@ -101,6 +107,8 @@ impl System for DropTargetDownUp {
   fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
+    } else if event.is::<DropUp>() {
+      self.up(ctx);
     }
   }
 }

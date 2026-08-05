@@ -42,6 +42,9 @@ async fn main() {
 /// This implementation flashes an LED by pre-declaring an LED state then using activate/deactivate for flashing. This is efficient approach since it re-uses the same declaration.
 struct System1;
 
+pub struct On;
+pub struct Off;
+
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &Context) {
     ctx.cue_cycling(events![On, Off], Cue::Loop(Duration::from_secs(4)));

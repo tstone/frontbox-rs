@@ -1,9 +1,19 @@
+//! # Frontbox
+//! Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpinball.com/) hardware, 
+//! designed around an actor-like constructs called "Systems", which send and receive signal.
+//! 
+//! ## Getting Started
+//! 1. Define your [app](mod@crate::app).
+//! 2. Define your [hardware](mod@crate::hardware).
+//! 3. Write a [system](mod@crate::systems).
+//! 4. Turn on some [LEDs](mod@crate::led).
+
 pub mod animation;
-mod app;
+pub mod app;
 mod cycle;
-mod hardware;
-mod led;
-mod machine;
+pub mod hardware;
+pub mod led;
+pub mod machine;
 mod macros;
 pub mod operator_config;
 pub mod provided;

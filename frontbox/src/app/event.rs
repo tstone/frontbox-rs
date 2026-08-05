@@ -1,5 +1,7 @@
 use std::any::Any;
 
+use crate::systems::SystemHandle;
+
 pub trait Event: Any + Send + Sync {
   fn as_any(&self) -> &dyn Any;
 }
@@ -25,16 +27,10 @@ impl EventExt for dyn Event {
   }
 }
 
-#[allow(unused)]
-pub struct Anonymous;
-#[allow(unused)]
-pub struct Action;
-#[allow(unused)]
-pub struct On;
-#[allow(unused)]
-pub struct Off;
+/// Event that happens when a new system is spawned
+#[derive(Debug, Clone, Copy)]
+pub struct SystemSpawned(pub SystemHandle);
 
+/// Event that happens when an existing system is despawned
 #[derive(Debug, Clone, Copy)]
-pub struct SystemSpawned(pub u64);
-#[derive(Debug, Clone, Copy)]
-pub struct SystemDespawned(pub u64);
+pub struct SystemDespawned(pub SystemHandle);

@@ -2,6 +2,7 @@ use crate::animation::*;
 use crate::prelude::color_sequence::ColorSequenceAlteration;
 use crate::prelude::*;
 
+/// An LedEffect combines (a) which LEDs, ()
 #[derive(Clone)]
 pub struct LedEffect {
   query: HardwareQuery,

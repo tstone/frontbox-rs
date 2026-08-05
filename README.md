@@ -17,7 +17,15 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 
 \* = Coming Soon
 
-## Guide
+## Guides
+
+- App -- Booting things up
+- Hardware -- Defining what exists
+- Systems -- The behavorial unit everything happens within
+- Drivers -- Turning things like coils on and off
+- Switches -- Capturing input
+- LEDs -- Lighting things up
+- DMD -- Dot matrix display rendering
 
 ### Systems
 
@@ -1111,3 +1119,12 @@ impl System for TargetHitter {
 ```
 
 See [examples](frontbox/examples) or the [included plugins](frontbox-rs/tree/main/frontbox-turn-based/src) for more.
+
+### AI Usage
+
+This project generally follows the [Rust language LLM use policy](https://forge.rust-lang.org/policies/llm-usage.html).
+
+- It’s fine to use LLMs to answer questions, analyze, distill, refine, check, suggest, review. But not to **create**.
+- LLMs work best when used as a tool to write _better_, not _faster_.
+
+**Designs ("style") should be human-driven.**

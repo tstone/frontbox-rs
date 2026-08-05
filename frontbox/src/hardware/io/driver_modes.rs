@@ -20,7 +20,7 @@ pub trait DriverMode: DynClone + Debug + Send + Sync {
 dyn_clone::clone_trait_object!(DriverMode);
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/>
 #[derive(Debug, Clone)]
 pub struct PulseMode {
   /// What causes the driver to fire (be triggered)
@@ -78,7 +78,7 @@ impl DriverMode for PulseMode {
 /// Mode 12 - Sends up to 2 variable PWM times, then kicks (full power) at the end of the cycle. Useful for gently
 /// moving a coil and then kicking it the rest of the way, e.g. VUK or trough eject. Reduces force applied
 /// to ball by ensuring a plunger has full contact with the ball before a full kick occurs.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/>
 #[derive(Debug, Clone)]
 pub struct PulseKickMode {
   /// What causes the driver to fire (be triggered)
@@ -135,7 +135,7 @@ impl DriverMode for PulseKickMode {
 
 /// Mode 18 - Holds a driver in the on state as long as the trigger is active. An initial PWM can be configured
 /// before the long hold.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/>
 #[derive(Debug, Clone)]
 pub struct PulseHoldMode {
   /// What causes the driver to fire (be triggered)
@@ -188,7 +188,7 @@ impl DriverMode for PulseHoldMode {
 
 /// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
 /// switch (flop) is activated.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/>
 #[derive(Debug, Clone)]
 pub struct PulseHoldCancelMode {
   /// What causes the driver to fire (be triggered)
@@ -243,7 +243,7 @@ impl DriverMode for PulseHoldCancelMode {
 
 /// Mode 30 - Insert a delay between when the switch is triggered and the driver fires.
 /// Useful for things kickbacks where a bit of delay needs to be added into the automatic flow.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/30/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/30/>
 #[derive(Debug, Clone)]
 pub struct DelayedPulseMode {
   /// What causes the driver to fire (be triggered)
@@ -299,7 +299,7 @@ impl DriverMode for DelayedPulseMode {
 
 /// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
 /// switch (flop) is activated.
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/>
 #[derive(Debug, Clone)]
 pub struct PulseCancelMode {
   /// What causes the driver to fire (be triggered)
@@ -353,7 +353,7 @@ impl DriverMode for PulseCancelMode {
 }
 
 /// Mode 70 - Pulse the driver for an initial time (up to 255ms), then hold it for a secondary time (up to 25s).
-/// https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/
+/// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/>
 #[derive(Debug, Clone)]
 pub struct LongPulseMode {
   /// What causes the driver to fire (be triggered)
