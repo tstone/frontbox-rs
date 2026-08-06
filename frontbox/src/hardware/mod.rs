@@ -34,25 +34,25 @@
 //! 
 //! 2. **Wiring** -- A static hardware definition is assigned to a specific pin on a specific board _(user responsibility)_
 //! ```rust
-//! #static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
-//!   SwitchDefinition::new("example_switch")
-//!    .tag(Playfield)
-//!    .tag(Target)
-//! });
+//! # static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
+//! #  SwitchDefinition::new("example_switch")
+//! #   .tag(Playfield)
+//! #   .tag(Target)
+//! # });
 //! let io_network = IoNetwork::new(vec![
 //!     IoBoards::io_3208()
 //!      .wire_switch(0, &EXAMPLE)
-//! ])
+//! ]);
 //! ```
 //! 
 //! 3. **Addressable** -- A wired definition is automatically resolved, on boot, to it's absolute address (id) on the network _(framework responsibility)_
 //! 4. **Stateful** -- Some hardware (e.g. switches) also become stateful, keeping track of things like open/closed state _(framework responsibility)_ (accessible via [Context](crate::systems::Context))
 //! ```rust,no_run
-//! #static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
-//!   SwitchDefinition::new("example_switch")
-//!    .tag(Playfield)
-//!    .tag(Target)
-//! });
+//! # static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
+//! #  SwitchDefinition::new("example_switch")
+//! #   .tag(Playfield)
+//! #   .tag(Target)
+//! # });
 //! fn on_spawn(&mut self, ctx: &Context) {
 //!   if ctx.switches.is_open(EXAMPLE.name) {
 //!     // do something
