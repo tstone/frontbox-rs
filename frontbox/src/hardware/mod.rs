@@ -29,6 +29,7 @@
 //!   SwitchDefinition::new("example_switch")
 //!    .tag(Playfield)
 //!    .tag(Target)
+//!    .build()
 //! });
 //! ```
 //! 
@@ -60,9 +61,9 @@
 //! }
 //! ```
 //! 
-//! #### Defining Hardware Macro
+//! ### Defining Hardware Macro
 //! 
-//! For convinience, a hardware_defs! macro simplifies the LazyLock setup. Use of this is optional.
+//! For convinience, a `hardware_defs!`` macro simplifies the LazyLock setup. Use of this is optional, but does make definitions shorter to declare.
 //! 
 //! ```rust
 //! hardware_defs! {
@@ -74,7 +75,7 @@
 //! ### Best Pratices
 //! 
 //! - Don't use one large file for everything
-//! - Split up a hardware into multiple files, having either one file per mech or lane (e.g. `left_orbit.rs`, `right_ramp.rs`) or by region (e.g. `upper_playfield.rs``)
+//! - Split up a hardware into multiple files, having either one file per mech or lane (e.g. `left_orbit.rs`, `right_ramp.rs`) or by region (e.g. `upper_playfield.rs`) ([Example](https://github.com/tstone/lotko-homebrew/tree/main/src/hardware))
 //! - Group common query definitions into the hardware definition files
 //! - Implement basic event wrapper systems for hardware into the same spot
 //! 
