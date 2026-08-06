@@ -1,9 +1,7 @@
-- Merge BootConfig and AppConfig
-- Rename app.config to something like init_systems
-- LedEffect needs something like `::single().rotating()`
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
+- Add `by_location` to hardware lookup implementations + HardwareQuery
 
 - Context extensions need to NOT work unless they are imported
 - Check why there is an IoBoard and IoBoards

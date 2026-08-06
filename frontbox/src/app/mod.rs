@@ -1,7 +1,5 @@
 //! App is the runnable root of a Frontbox project. Every machine runs exactly one app. Apps provide a place to 
-//! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems. Running an 
-//! `App` is an async process which requires a [Tokio](https://tokio.rs/) runtime. This is most easily achieved 
-//! by tagging the main function as `#[tokio::main]`.
+//! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems. 
 //! 
 //! An app has three distinct phases: 
 //!   1. **Booting** - The mainboard and key hardware is initialized
@@ -11,6 +9,9 @@
 //! - See [BootConfig] for details on what is configurable.
 //! - See [mod@crate::hardware] for details on setting up I/O and expansion networks.
 //! - See [mod@crate::operator_config] for details on operator configuration registration.
+//! 
+//! Running an  `App` is an async process which requires a [Tokio](https://tokio.rs/) runtime. This is 
+//! most easily achieved by tagging the main function as `#[tokio::main]`.
 //! 
 //! # Examples
 //! 
