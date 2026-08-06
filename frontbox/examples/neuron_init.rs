@@ -12,7 +12,9 @@ async fn main() {
     exp_port_path: "/dev/ttyACM1",
     io_network: IoNetwork::empty(),
     exp_network: ExpNetwork::empty(),
-    config_path: None,
+    system_interval: Duration::from_millis(83),
+    watchdog_interval: Duration::from_secs(1),
+    ..Default::default()
   })
   .await
   .run()

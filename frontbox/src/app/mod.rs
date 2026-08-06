@@ -1,10 +1,18 @@
-//! App is the runnable root of a Frontbox project. Every machine runs exactly one app. Apps provide a place to specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems.
+//! App is the runnable root of a Frontbox project. Every machine runs exactly one app. Apps provide a place to 
+//! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems. Running an 
+//! `App` is an async process which requires a [Tokio](https://tokio.rs/) runtime. This is most easily achieved 
+//! by tagging the main function as `#[tokio::main]`.
 //! 
-//! App is an async process which requires a [Tokio](https://tokio.rs/) runtime. This is most easily achieved by tagging the main function as `#[tokio::main]`.
+//! An app has three distinct phases: 
+//!   1. **Booting** - The mainboard and key hardware is initialized
+//!   2. **Configuration** - Defining initial systems and registering custom operator configs
+//!   3. **Running** -  The main event loop processes events and systems
 //! 
-//! An app has two distinct phases: (1) booting, where the mainboard and key hardware is initialized; and (2) running, where the main event loop processes events and systems.
+//! - See [BootConfig] for details on what is configurable.
+//! - See [mod@crate::hardware] for details on setting up I/O and expansion networks.
+//! - See [mod@crate::operator_config] for details on operator configuration registration.
 //! 
-//! # Example
+//! # Examples
 //! 
 //! ```rust,no_run
 //! use frontbox::prelude::*;
@@ -25,6 +33,14 @@
 //!     ..Default::default()
 //!   })
 //!   .await
+//!   .configure(|app| {
+//!     // add initial system(s) that will start on `.run()`
+//!     app.system(MySystem::new())
+//!     app.system(MySystem2::new())
+//! 
+//!     // register custom operator configs
+//!     app.register_configs(vec![MY_CONFIG1, MY_CONFIG2])
+//!   })
 //!   // Running the app starts the game
 //!   .run()
 //!   .await;
@@ -37,10 +53,12 @@ mod boot_config;
 mod event;
 mod into_configs;
 pub(crate) mod run_loop;
+pub(crate) mod app_config;
 
 use std::collections::HashMap;
 
 pub(crate) use into_configs::*;
+pub(crate) use app_config::*;
 pub use app::*;
 pub use boot_config::*;
 pub use event::*;

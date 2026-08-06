@@ -190,8 +190,8 @@ impl System for LedSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &Context) {
-    if let Some(SystemDespawned(handle)) = event.downcast_ref::<SystemDespawned>() {
-      self.undeclare_by_system(&handle.id);
+    if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
+      self.undeclare_by_system(id);
     }
   }
 

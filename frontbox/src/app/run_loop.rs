@@ -259,16 +259,15 @@ fn spawn_system(
       .get_by_id(&system_id)
       .unwrap();
 
-    let handle = SystemHandle::new(system_id, parent_key);
     let ctx = Context::new(
       base,
-      handle,
+      SystemHandle::new(system_id, parent_key),
       groups,
       app_sender.clone(),
     );
     system.on_spawn(&ctx);
 
-    let event = SystemSpawned(handle);
+    let event = SystemSpawned::new(system_id, parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
   }
 }
@@ -307,7 +306,7 @@ fn despawn_system(
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
 
-    let event = SystemDespawned(handle);
+    let event = SystemDespawned::new(handle.id, handle.parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
   }
 }
