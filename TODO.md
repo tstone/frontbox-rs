@@ -2,7 +2,6 @@
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
 - Animations should be able to be specified as relative to the frame rate
-- Move Extent somewhere more common that makes sense (similar problem as Cycle)
 - Establish (and document) consistent log targets
 - Check why there is an IoBoard and IoBoards
 - Audits: Keep stats on coils fired, etc.
@@ -21,8 +20,6 @@ Canvas
 
 DMD Menu
 
-- Menu up/down navigation doesn't work
-- Need to be able to edit a config
 - Implement all sounds
 - Animate right offset of section arrow when selected
 - Transition left/right ease between sections

@@ -11,7 +11,6 @@ pub enum AppMessage {
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
-  SystemTick,
   Shutdown,
   SingleSwitchState(usize, SwitchState),
   SwitchStates(Vec<SwitchState>),
@@ -42,7 +41,6 @@ impl Display for AppMessage {
         write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
       }
       AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
-      AppMessage::SystemTick => write!(f, "SystemTick"),
       AppMessage::Shutdown => write!(f, "Shutdown"),
       AppMessage::SingleSwitchState(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)

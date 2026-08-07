@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use tokio::sync::mpsc;
+use tokio::sync::{watch, mpsc};
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_message::EventBox;
@@ -16,6 +16,7 @@ pub async fn run(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
 ) {
+  let (tick_tx, mut tick_rx) = watch::channel(());
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = HashMap::new();
   groups.insert(ROOT_GROUP, SystemGroup::new());
@@ -24,7 +25,7 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, ROOT_GROUP, &mut groups, &base, app_sender.clone());
   }
-  spawn_system_ticker(base.system_interval, app_sender.clone());
+  spawn_system_ticker(base.system_interval,tick_tx);
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -46,9 +47,6 @@ pub async fn run(
         match command {
           AppMessage::EmitEvent(event_box) => {
             emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry);
-          }
-          AppMessage::SystemTick => {
-            handle_system_tick(&mut groups, &base, &app_sender).await;
           }
           AppMessage::RegisterInterrupt(handle, type_id, priority) => {
             interrupt_registry.register(type_id, handle.id, handle.parent_key, priority);
@@ -102,6 +100,10 @@ pub async fn run(
         }
 
         log::trace!("Run loop elapsed {}", start.elapsed().as_micros());
+      }
+    
+      Ok(_) = tick_rx.changed() => {
+        handle_system_tick(&mut groups, &base, &app_sender).await;
       }
     }
   }
@@ -500,14 +502,14 @@ fn group_child_ids(groups: &Groups, group_name: &'static str) -> Vec<u64> {
     .unwrap_or(Vec::new())
 }
 
-fn spawn_system_ticker(tick: Duration, sender: mpsc::UnboundedSender<AppMessage>) {
+fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>) {
   let mut timer_interval = tokio::time::interval(tick);
   timer_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
   tokio::spawn(async move {
     loop {
       timer_interval.tick().await;
-      sender.send(AppMessage::SystemTick).ok();
+      let _ = sender.send(());
     }
   });
 }
