@@ -168,16 +168,20 @@ impl DerefMut for SwitchLookup {
   }
 }
 
+/// Represents a hardware switch
 #[derive(Debug, Clone)]
 pub struct Switch {
   pub name: &'static str,
+  /// The original wiring assignment
   pub assignment: IoAddress,
+  /// The resolve I/O network address
   pub id: usize,
   pub tags: Vec<Box<dyn Tag>>,
   pub location: Option<Vec3>,
 }
 
 impl Switch {
+  /// Returns true if the Switch contains tag `T`
   pub fn has_tag<T: Tag + 'static>(&self) -> bool {
     self
       .tags

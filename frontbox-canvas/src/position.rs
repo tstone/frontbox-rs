@@ -1,4 +1,4 @@
-use frontbox::prelude::color_sequence::Extent;
+use frontbox::prelude::Extent;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Horizontal {

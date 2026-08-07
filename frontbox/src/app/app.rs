@@ -1,15 +1,17 @@
 use std::time::Duration;
 
+use crate::app::app_config::AppConfig;
 use crate::app::run_loop;
 use crate::hardware::*;
 use crate::machine::serial_interface::SerialInterface;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
-use crate::provided::Watchdog;
+use crate::provided::WatchdogSystem;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
+/// Main runnable of Frontbox
 pub struct App {
   io_port: SerialInterface,
   exp_port: SerialInterface,
@@ -21,6 +23,8 @@ pub struct App {
 
 impl App {
   pub async fn boot(boot_config: BootConfig) -> Self {
+    let app_config = AppConfig::from_boot_config(&boot_config);
+    
     let mut io_port = SerialInterface::new(boot_config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
@@ -74,7 +78,7 @@ impl App {
       exp_port,
       hardware,
       operator_config,
-      app_config: AppConfig::default(),
+      app_config,
       systems: Vec::new(),
     }
   }
@@ -178,16 +182,6 @@ impl App {
     }
   }
 
-  pub fn system_tick(&mut self, interval: Duration) -> &mut Self {
-    self.app_config.system_interval = interval;
-    self
-  }
-
-  pub fn watchdog_tick(&mut self, interval: Duration) -> &mut Self {
-    self.app_config.watchdog_interval = interval;
-    self
-  }
-
   /// Register and launch system at startup
   pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
     let sys = system.into();
@@ -241,7 +235,7 @@ impl App {
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine.sender());
     self.systems.insert(0, SystemContainer::new(bridge));
-    self.systems.push(SystemContainer::new(Watchdog::new()));
+    self.systems.push(SystemContainer::new(WatchdogSystem::new()));
 
     // Start machine task
     tokio::spawn(async move {
@@ -253,35 +247,4 @@ impl App {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct AppConfig {
-  /// The interval at which `on_tick` runs, which in turn affects timers and LED + display render speed
-  pub system_interval: Duration,
-  /// The interval at which the watchdog is pinged (keep alive)
-  pub watchdog_interval: Duration,
-}
 
-impl Default for AppConfig {
-  fn default() -> Self {
-    Self {
-      system_interval: Duration::from_millis(83),
-      watchdog_interval: Duration::from_millis(1000),
-    }
-  }
-}
-
-pub trait IntoConfigs {
-  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue>;
-}
-
-impl<T: System + 'static> IntoConfigs for &T {
-  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue> {
-    self.config_values()
-  }
-}
-
-impl IntoConfigs for Vec<&'static dyn GeneralizedConfigValue> {
-  fn into_configs(self) -> Vec<&'static dyn GeneralizedConfigValue> {
-    self
-  }
-}

@@ -2,7 +2,13 @@ use num_traits::AsPrimitive;
 
 use crate::animation::Lerp;
 
-/// Captures a description of a position or length, either absolute (fixed) or relative (percent)
+/// Captures a description of a position or length, either absolute (fixed) or relative (percent).
+/// Extents are used by the framework in places where the actual value is later determined at some future computational point.
+/// 
+/// ```rust
+/// Extent::relative(0.5) // half way, 50%
+/// Extent::absolute(2) // concretely at 2
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub enum Extent<T: Copy> {
   /// Values 0.0..=1.0 where 0.0 represents 0% and 1.0 represents 100%

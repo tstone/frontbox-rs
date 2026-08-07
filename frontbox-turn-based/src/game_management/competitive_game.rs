@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::provided::{BallExitedPlungeLane, Trough, TroughFull};
+use frontbox::provided::{BallExitedPlungeLane, TroughSystem, TroughFull};
 
 use crate::*;
 
@@ -56,7 +56,7 @@ impl CompetitiveGame {
       game_state.current_player_turn(),
     ));
 
-    if let Some(trough) = ctx.systems.get::<Trough>() {
+    if let Some(trough) = ctx.systems.get::<TroughSystem>() {
       trough.eject(ctx);
     }
   }

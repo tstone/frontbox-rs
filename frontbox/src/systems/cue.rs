@@ -1,3 +1,72 @@
+//! # Cues
+//! 
+//! Cues are events that a system can send to itself. There are four primitive types of cues:
+//! 
+//! 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
+//! 2. **Times** -- Cue happens N times, with an interval in between
+//! 3. **Loop** -- Cue happens until canceled, with an interval in between
+//! 4. **Now** -- Cue happens immediately, once
+//! 
+//! ```rust
+//! struct SomethingImportant(u8);
+//! 
+//! impl System for Example {
+//!   fn on_startup(&mut self, ctx: &Context) {
+//!     // setup the cue
+//!     ctx.cue(
+//!       SomethingImportant(100),
+//!       Cue::Times(3, Duration::from_secs(3)),
+//!     )
+//!   }
+//! 
+//!   fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
+//!     // what to do when the cue happens (in this case, 3 times)
+//!     if let Some(v) = cmd.downcast_ref::<SomethingImportant>() {
+//!       log::debug!("Something important: {}!", v.0);
+//!     }
+//!   }
+//! }
+//! ```
+//! 
+//! ### Handles
+//! 
+//! Creating a cue returns a handle that can later be used to cancel it.
+//! 
+//! ```rust
+//! let handle = ctx.cue(SomethingRather, Cue::Forever(Duration::from_secs(1)));
+//! // ...
+//! ctx.cancel_cue(handle);
+//! ```
+//! 
+//! ### Cycling
+//! 
+//! Cycling through a set of states is a common occurrence in pinball. For example, flashing is in fact the cycling of two values.
+//! 
+//! ```rust
+//! // note the use of `events!` here rather than `vec!`
+//! ctx.cue_cycling(
+//!   events![On, Off],
+//!   Cue::Forever(Duration::from_secs(1))
+//! );
+//! ```
+//! 
+//! Cycling works by rotating through the list of values each time the cue is complete. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On("example")` would be cued. Another second would elapse and `Off("example")` would be cued. Another second would elapse and `On("example")` would be cued, and so on.
+//! 
+//! ### Timelines
+//! 
+//! Sometimes it's easier to express things as a linear timeline. The same example as above could also be expressed as...
+//! 
+//! ```rust
+//! ctx.cue_timeline(CueTimeline::new()
+//!   .cue_at(Duration::from_secs(3), SomethingImportant(5))
+//!   .cue_at(Duration::from_millis(4150), SomethingImportant(50))
+//!   .cue_at(Duration::from_secs(9), SomethingImportant(500))
+//! );
+//! ```
+//! 
+//! Timelines are a way to group a bunch of one-off cues into a sequence. Canceling a timeline cancels all remaining cues within it.
+//! 
+
 use std::sync::Arc;
 use std::time::Duration;
 

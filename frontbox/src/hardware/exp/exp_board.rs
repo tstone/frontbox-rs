@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ResolvedLedPort;
-use crate::hardware::exp::LedPort;
+use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FastExpansionBoardModels {

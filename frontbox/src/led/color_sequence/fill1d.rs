@@ -14,6 +14,17 @@ pub enum Fill1d {
 }
 
 impl Fill1d {
+  pub fn solid(color: Rgba<u8>) -> Self {
+    Self::Pattern { pattern: vec![color], cycle: Cycle::Forever }
+  }
+
+  pub fn fade(from: Rgba<u8>, to: Rgba<u8>) -> Self {
+    Self::Gradient { stops: vec![
+      GradientStop::new(0.0, from),
+      GradientStop::new(1.0, to),
+    ] }
+  }
+
   pub fn gradient_stops_mut(&mut self) -> Option<&mut Vec<GradientStop>> {
     match self {
       Self::Gradient { stops } => Some(stops),

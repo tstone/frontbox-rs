@@ -10,6 +10,7 @@ mod switch_definition;
 mod switch_lookup;
 pub mod tags;
 mod trigger_modes;
+mod driver_activations;
 
 pub use driver_definition::*;
 pub use driver_lookup::*;
@@ -22,3 +23,4 @@ pub use switch_definition::*;
 pub use switch_lookup::*;
 pub use tags::Tag;
 pub use trigger_modes::*;
+pub use driver_activations::*;

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use crate::operator_config::HardwareValue;
 use crate::prelude::*;
-use crate::{DriverMode, Tag};
 
 #[derive(Debug, Clone)]
 pub struct DriverDefinition {

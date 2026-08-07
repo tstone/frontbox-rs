@@ -6,7 +6,7 @@ use crate::pixel_font::{PixelFontCharacterMap, PixelFontGlyph};
 
 /// Sigi Bold 5px pixel font by Rasmus Andersson
 /// CC0 Public Domain License
-/// https://github.com/rsms/sigi-pixel-font/tree/master
+/// <https://github.com/rsms/sigi-pixel-font>
 pub static SIGI_BOLD_5PX_FONT: LazyLock<PixelFontCharacterMap> = LazyLock::new(|| {
   let mut glyphs = HashMap::new();
 

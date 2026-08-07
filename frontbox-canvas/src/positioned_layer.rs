@@ -1,6 +1,6 @@
 use crate::*;
 
-/// A type erased Positioned<Layer>
+/// A type erased ``Positioned<Layer>``
 pub trait PositionedLayer {
   fn render_relative(&self, parent: &mut CanvasView);
 }

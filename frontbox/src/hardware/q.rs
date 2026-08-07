@@ -2,6 +2,70 @@ use std::any::TypeId;
 
 use crate::prelude::*;
 
+/// # Hardware Queries (`Q`)
+/// 
+/// Hardware queries are a way to describe what hardware to use.
+/// 
+/// ```rust
+/// // select by name
+/// let q = Q::name("foo");
+/// let q = Q::names(vec!["foo", "bar"]);
+///
+/// // names can be referenced from definitions
+/// let q = Q::name(left_inlane_led.name);
+/// 
+/// // But defintions also have a build-in query helper that's shorter
+/// let q = left_inlane_led.q();
+/// 
+/// // Entire LED strips can be referenced by name
+/// let q = Q::name(left_cabinet_strip.name);
+/// // or specific children can be referenced
+/// let q = Q::name(left_cabinet_strip.child(0).name);
+/// // children have their own query helper too
+/// let q = left_cabinet_strip.child(0).q();
+/// 
+/// // select by tag (see hardware definition below for more on tagging)
+/// let q = Q::tag::<Playfield>();
+/// 
+/// // select things in a location
+/// let q = Q::location(Location::Radius(x, y, r));
+/// 
+/// // multiple criteria
+/// let q = Q::name("start_button").or(Q::tag::<StartButton>());
+/// let q = Q::location((Location::Radius(x, y, r)))
+///   .and(Q::tag::<Custom>()); // must be within location and have tag to match
+/// 
+/// // masking/exclusions
+/// // select everything that is not tagged Playfield
+/// let q = Q::not(Q::tag::<Playfield>);
+/// // select everything tagged Playfield that is not also tagged Target
+/// let q = Q::tag::<Playfield>().not(Q::tag::<Target>());
+/// 
+/// // other
+/// let q = Q::all(); // select everything of this type
+/// let q = Q::rand(10); // take 10 random, even if there are more
+/// let q = Q::tag::<Playfield>().rand(10);
+/// ```
+/// 
+/// Queries are just a description of hardware and don't contain the reference to matching hardware. However they can be used a predicate with an event or given `Context` to resolve into the matching hardware.
+/// 
+/// #### Query as Predicate
+/// 
+/// ```rust
+/// // Get all matching switches (resolve query to hardware reference)
+/// let switches = ctx.switches.query(q);
+/// 
+/// // ...
+/// 
+/// fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+///   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
+///     // use as a predicate
+///     if q.matches_switch(e.switch) {
+///       // ...
+///     }
+///   }
+/// }
+/// ```
 #[derive(Debug)]
 pub struct Q;
 

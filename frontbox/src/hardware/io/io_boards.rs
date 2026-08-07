@@ -1,4 +1,4 @@
-use crate::IoBoardBuilder;
+use crate::prelude::*;
 
 /// Pre-built definitions of FAST IO board configurations
 pub struct IoBoards;

@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::time::Duration;
 
-use crate::Tag;
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]

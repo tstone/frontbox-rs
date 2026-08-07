@@ -6,14 +6,14 @@ use crate::prelude::*;
 /// - `BallEnteredTrough` - Emitted when a ball enters the trough
 /// - `BallExitedTrough` - Emitted when a ball exits the trough
 /// - `TroughFull` - Emitted when the trough reaches full occupancy
-pub struct Trough {
+pub struct TroughSystem {
   switch_names: Vec<&'static str>,
   eject_coil_name: &'static str,
   expected_occupancy: usize,
   last_occupancy: usize,
 }
 
-impl Trough {
+impl TroughSystem {
   /// * `eject_coil_name` - Name of trough eject coil (driver)
   /// * `switch_names` - Names of trough switches, in order. First switch is the switch nearest the exit.
   pub fn new(eject_coil_name: &'static str, switch_names: Vec<&'static str>) -> Self {
@@ -124,7 +124,7 @@ impl Trough {
   }
 }
 
-impl System for Trough {
+impl System for TroughSystem {
   fn on_spawn(&mut self, ctx: &Context) {
     log::debug!("Trough spawn");
     self.last_occupancy = self.get_occupancy(ctx).iter().filter(|b| **b).count();

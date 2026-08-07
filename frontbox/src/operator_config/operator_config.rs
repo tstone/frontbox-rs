@@ -26,7 +26,7 @@ impl OperatorConfig {
   }
 
   /// Reads values from disk into a temporary buffer, but waits until a config value is registered before assignment
-  pub fn load_from_disk(path: &Path) -> Self {
+  pub fn load_from_disk(path: impl AsRef<Path>) -> Self {
     let pending_disk = fs::read_to_string(path)
       .ok()
       .and_then(|s| toml::from_str(&s).ok())
