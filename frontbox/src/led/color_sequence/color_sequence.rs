@@ -14,30 +14,83 @@ use crate::prelude::*;
 /// ```
 /// As shown, colors sequences are not just a list of colors, though it could do that, but instead contain a description colors including the base fill, a defined area for that fill, and alterations layered over top.
 /// 
-/// ### Example: Everything is red
+/// ### Fill Types
+/// 
+/// - **Pattern** - Defines an optionally repeating, fixed pattern. e.g. "red, white, blue three times"
+/// - **Gradient** - Defines a linear fade between N colors
+/// 
 /// ```rust
+/// // everything is red
 /// ColorSequence::solid(Rgba::red())
+/// 
+/// // 2 point gradient
+/// ColorSequence::fade(Rgba::red(), Rgba::blue())
+/// 
+/// // Three point gradient with given color as the center point, and hue arc of the given degrees
+/// // This produces a red to orange to yellow gradient
+/// ColorSequence::analogous(Rgba::orange(), 60.0)
+/// 
+/// // Three point gradient with the given lightness range, with the given color as the center point
+/// // This produces a pink to red to dark red gradient
+/// ColorSequence::monochromatic(Rgba::red(), 0.8)
+/// 
+/// // Complex multi-stop gradient
+/// ColorSequence::gradient(vec![
+///   GradientStop::new(Rgba::red(), Extent::zero()),
+///   GradientStop::new(Rgba::magenta(), Extent::relative(0.35)),
+///   GradientStop::new(Rgba::blue(), Extent::full()),
+/// ])
+/// 
+/// // red, white, and blue, exactly three times
+/// ColorSequence::pattern(
+///   vec![Rgba::red(), Rgba::white(), Rgba::blue()], 
+///   Cycle::Times(3)
+/// );
+/// 
+/// // Forever repeating pattern
+/// ColorSequence::tile(vec![Rgba::red(), Rgba::white()])
 /// ```
 /// 
-/// ### Example: blue to red gradient
+/// ### Fill Area
+/// 
+/// Color sequence fills can also be offset or length-constrained and aligned.
+/// 
 /// ```rust
-/// ColorSequence::fade(Rgba::blue(), Rgba::red())
+/// // skip the outer 2 pixels
+/// let seq = ColorSequence::solid(Rgba::red())
+///   .padded(Extent::absolute(1), Extent:: absolute(1));
+/// let colors = seq.generate(3);
+/// // Result: vec![Rgba::default(), Rgba::red(), Rgba::default()]
+/// 
+/// // render only half of the total length, center-aligned
+/// let seq = ColorSequence::solid(Rgba::red())
+///   .anchored(Anchor::Center, Extent::relative(0.5));
+/// let colors = seq.generate(4);
+/// // Result: vec![Rgba::default(), Rgba::red(), Rgba::red(), Rgba::default()]
 /// ```
 /// 
-/// ### Example: Progress bar at 70%
+/// Modifying the fill area is useful for creating progress bar-like effects.
+/// 
 /// ```rust
-/// ColorSequence::solid(Rgba::orange())
-///   .anchored(Anchor1d::Start, 0.70);
+/// // red to blue gradient progress bar, left aligned
+/// let seq = ColorSequence::fade(Rgba::red(), Rgba::blue())
+///   .anchored(Anchor::Left, Extent::relative(percent_complete));
 /// ```
 /// 
-/// ### Example: yellow with an inner green area that takes up 50%
+/// ### Alterations
+/// 
+/// Alterations are chained onto a ColorSequence by way of `alter`. More than one alteration can be applied to a color sequence.
+/// 
 /// ```rust
-/// ColorSequence::solid(Rgba::yellow())
-///   .overwrite(
-///     Fill1d::solid(Rgba::lime()), 
-///     Fill1dArea::anchored(Anchor1d::Centered, 0.5)
-///   )
+/// let seq = ColorSequence::fade(Rgba::purple(), Rgba::white())
+///   .rotate(180.0)
+///   .reverse();
 /// ```
+/// 
+/// - **Reversed** - Applies color sequence in opposite order
+/// - **Rotated** - Positive degree shifts clockwise, negative degree shifts counter-clockwise
+/// - **Shuffle** - Randomly re-order sequence
+/// - **Overwrite** - Overwrite base fill with a child fill
 /// 
 /// #### Extents
 /// 

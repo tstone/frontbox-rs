@@ -51,7 +51,54 @@
 //! 2. LEDs can be directly manipulated via [Machine](crate::machine::Machine) (_not recommended_, unless building a custom LED management system)
 //! 
 //! <div class="warning">`LedSystem` must be spawned in order to use it. The framework does not automatically start this system.</div>
-
+//! 
+//! ## Animating LEDs
+//! LEDs colors can, of course, be animated -- either manually or with [LedEffects](crate::led::LedEffect).
+//! 
+//! ### Manually Animating LEDs
+//! This approach takes more setup and manual wiring, but ends up being more flexible all overall, compared to [LedEffect]. It works by accumulating the animation _and_ re-declaring the LED on the same tick.
+//! 
+//! ```rust
+//! pub struct AnimExample {
+//!   anim: Tween<Duration, Color>
+//! }
+//! 
+//! impl System for AnimExample {
+//!   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+//!     self.anim.accumulate(delta);
+//! 
+//!     // re-declaring the same LED will overwrite the previous declaration
+//!     ctx.declare_leds(
+//!       // declare the current animated value as the color of that LED
+//!       &leds::EXAMPLE.q(), ColorSequence::solid(self.anim.sample())
+//!     )
+//!   }
+//! }
+//! ```
+//! 
+//! Any declarable attribute is animatable. For example, a common technique with pinball machines that have 3 or more LEDs for a lane is to use those LEDs to animate a pointing motion. This could be achieved by creating a group of all lane LEDs, then turning one of them on, and animation which one is lit. By giving the declaration a higher z-index, the state of the lane indicators below remains the same, but the animated effect applies "over top of" it.
+//! 
+//! ```rust
+//! pub struct AnimExample {
+//!   // notice the value being animated is a u8, not Color
+//!   anim: Tween<Duration, u8>
+//! }
+//! 
+//! impl System for AnimExample {
+//!   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+//!     self.anim.accumulate(delta);
+//! 
+//!     ctx.declare_leds(
+//!       vec![&leds::LEFT_LANE_ARROW.q(), &leds::LEFT_LANE1.q(), &leds::LEFT_LANE2.q()].at_z(2),
+//!       ColorSequence::pattern(self.anim.sample(), vec![Rgba::red()])
+//!     )
+//!   }
+//! }
+//! ```
+//! 
+//! #### Automatic Led Animation (LedEffect)
+//! 
+//! A simpler approach is to use an [LedEffect] that accepts a hardware query and animation, and applies it.
 
 mod alternate_resolver;
 pub mod color_sequence;
