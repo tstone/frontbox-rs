@@ -36,7 +36,7 @@ impl TroughSystem {
           Ranges::duration(0, 50),
         ),
         initial_pwm_power: HardwareValue::fixed(
-          Power::percent(40),
+          Power::HALF,
         ),
         secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
         secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),

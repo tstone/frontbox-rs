@@ -425,8 +425,8 @@ impl Default for FlipperMainDirectMode {
       button_switch: "",
       invert_button_switch: None,
       eos_switch: "",
-      initial_pwm_power: HardwareValue::Fixed(Power::percent(45)),
-      secondary_pwm_power: HardwareValue::Fixed(Power::FULL),
+      initial_pwm_power: HardwareValue::Fixed(Power::FULL),
+      secondary_pwm_power: HardwareValue::Fixed(Power::HALF),
       max_eos_time: HardwareValue::Fixed(Duration::from_millis(60)),
       next_flip_refresh: HardwareValue::Fixed(Duration::from_millis(8)),
     }
