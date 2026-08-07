@@ -4,26 +4,31 @@ use std::collections::HashMap;
 use tokio::sync::{watch, mpsc};
 
 use crate::app::app_message::AppMessage::EmitEvent;
-use crate::app::app_message::EventBox;
+use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
 use crate::systems::event_interrupts::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 
+pub(crate) type TracerSenders = Vec<mpsc::UnboundedSender<app_tracer::TraceEvent>>;
+
 pub async fn run(
   mut base: ContextBase,
   initial_systems: Vec<SystemContainer>,
+  app_tracers: Vec<Box<dyn AppTracer>>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
 ) {
   let (tick_tx, mut tick_rx) = watch::channel(());
+  let tracer_txs: TracerSenders = app_tracers.iter().map(|tracer| tracer.sender()).collect();
+
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = HashMap::new();
   groups.insert(ROOT_GROUP, SystemGroup::new());
 
-  // initialize systems
+  // initialize root systems
   for system in initial_systems {
-    spawn_system(system, ROOT_GROUP, &mut groups, &base, app_sender.clone());
+    spawn_system(system, ROOT_GROUP, &mut groups, &base, app_sender.clone(), &tracer_txs);
   }
   spawn_system_ticker(base.system_interval,tick_tx);
 
@@ -46,7 +51,7 @@ pub async fn run(
 
         match command {
           AppMessage::EmitEvent(event_box) => {
-            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry);
+            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs);
           }
           AppMessage::RegisterInterrupt(handle, type_id, priority) => {
             interrupt_registry.register(type_id, handle.id, handle.parent_key, priority);
@@ -68,25 +73,25 @@ pub async fn run(
             break;
           }
           AppMessage::SpawnSystem(parent_key, system) => {
-            spawn_system(system.to_system_container(), parent_key, &mut groups, &base, app_sender.clone());
+            spawn_system(system.to_system_container(), parent_key, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::ReplaceSystem(handle, system) => {
-            replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry);
+            replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
           }
           AppMessage::DespawnSystem(handle) => {
-            despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry);
+            despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
           }
           AppMessage::SpawnSystemGroup(group_name, child_systems, active) => {
-            spawn_system_group(group_name, child_systems, active, &mut groups, &base, app_sender.clone());
+            spawn_system_group(group_name, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DespawnSystemGroup(group_name) => {
-            despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry);
+            despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
-            activate_system_group(group_name, &mut groups, &base, app_sender.clone());
+            activate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DeactivateSystemGroup(group_name) => {
-            deactivate_system_group(group_name, &mut groups, &base, app_sender.clone());
+            deactivate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::CreateCue(handle, cue_id, cue, signals) => {
             create_cue(handle, cue_id, cue, signals, &groups);
@@ -103,13 +108,13 @@ pub async fn run(
       }
     
       Ok(_) = tick_rx.changed() => {
-        handle_system_tick(&mut groups, &base, &app_sender).await;
+        handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
       }
     }
   }
 
   // Shutdown sequence
-  apply_to_systems(&mut groups, &base, &app_sender, |system, ctx| {
+  apply_to_systems(&mut groups, &base, &app_sender, &tracer_txs, |system, ctx| {
     system.on_despawn(ctx);
   });
 
@@ -123,6 +128,7 @@ fn apply_to_system<F, T>(
   groups: &Groups,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
   mut handler: F,
 ) -> Option<T>
 where
@@ -134,7 +140,7 @@ where
     && let Some(mut system) = group.get_by_id(&handle.id)
   {
     let mut ctx = Context::new(base, handle, groups, app_sender.clone());
-    if system.handle_active(&ctx) {
+    if system.handle_active(&ctx, tracer_txs) {
       result = Some(handler(&mut system, &mut ctx));
     } else {
       log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
@@ -149,6 +155,7 @@ fn apply_to_systems<F>(
   groups: &Groups,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
   mut handler: F,
 ) where
   F: FnMut(&mut SystemContainer, &mut Context),
@@ -162,7 +169,7 @@ fn apply_to_systems<F>(
         groups,
         app_sender.clone(),
       );
-      if system.handle_active(&ctx) {
+      if system.handle_active(&ctx, tracer_txs) {
         handler(&mut system, &mut ctx);
       } else {
         log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
@@ -177,7 +184,10 @@ fn emit_event(
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
+  tracer_txs: &TracerSenders,
 ) {
+  let mut interrupt_evals = Vec::new();
+
   // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
   if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_box.type_id) {
     // interrupts must be evaluated in order of priority (highest first)
@@ -191,8 +201,16 @@ fn emit_event(
         groups,
         base,
         app_sender,
+        tracer_txs,
         |system, ctx| system.on_interrupt(event_box.event.as_ref(), &ctx),
       );
+
+      if let Some(result) = interrupt_result {
+        interrupt_evals.push(InterruptEvaluation {
+          interrupter: interrupt.system_id,
+          result,
+        });
+      }
 
       if interrupt_result == Some(InterruptResult::Halt) {
         log::info!(
@@ -207,8 +225,18 @@ fn emit_event(
     log::debug!("No interrupts registered for {}", event_box.type_name);
   }
 
+  // notify any monitoring tracers
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::Event { 
+      type_id: event_box.type_id, 
+      type_name: event_box.type_name, 
+      interrupts: interrupt_evals.clone(), 
+      event: event_box.try_json() 
+    });
+  }
+
   // event is broadcast to systems if no interrupt halted it
-  apply_to_systems(groups, base, app_sender, |system, ctx| {
+  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     system.on_event(event_box.event.as_ref(), ctx);
   });
 }
@@ -217,16 +245,14 @@ async fn handle_system_tick(
   groups: &Groups,
   base: &ContextBase,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
 ) {
   let tick_duration = base.system_interval;
 
-  // Tick first is where most systems should do any time-based processing
-  apply_to_systems(groups, base, app_sender, |system, ctx| {
+  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
+    // Tick first is where most systems should do any time-based processing
     system.on_tick(tick_duration, ctx);
-  });
-
-  // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
-  apply_to_systems(groups, base, app_sender, |system, ctx| {
+    // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
     system.on_render(ctx);
   });
 }
@@ -237,6 +263,7 @@ fn spawn_system(
   groups: &mut Groups,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
 ) {
   let system_id = system.id();
 
@@ -268,6 +295,10 @@ fn spawn_system(
     );
     system.on_spawn(&ctx);
 
+    for tracer in tracer_txs {
+      let _ = tracer.send(TraceEvent::SystemSpawned { id: system_id, name: system.name(), parent_key });
+    }
+
     let event = SystemSpawned::new(system_id, parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
   }
@@ -280,6 +311,7 @@ fn replace_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
+  tracer_txs: &TracerSenders,
 ) {
   despawn_system(
     old_handle,
@@ -287,8 +319,9 @@ fn replace_system(
     base,
     app_sender.clone(),
     interrupt_registry,
+    tracer_txs,
   );
-  spawn_system(new_system, old_handle.parent_key, groups, base, app_sender);
+  spawn_system(new_system, old_handle.parent_key, groups, base, app_sender, tracer_txs);
 }
 
 /// Despawns the system, returning true if it succeeded
@@ -298,6 +331,7 @@ fn despawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
+  tracer_txs: &TracerSenders,
 ) {
   if let Some(parent) = groups.get_mut(handle.parent_key)
     && let Some(cell) = parent.remove(handle.id)
@@ -306,6 +340,10 @@ fn despawn_system(
     let ctx = Context::new(base, handle, groups, app_sender.clone());
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
+
+    for tracer in tracer_txs {
+      let _ = tracer.send(TraceEvent::SystemDespawned { id: handle.id, parent_key: handle.parent_key });
+    }
 
     let event = SystemDespawned::new(handle.id, handle.parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
@@ -319,6 +357,7 @@ fn spawn_system_group(
   groups: &mut Groups,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
 ) {
   if groups.contains_key(group_name) {
     log::warn!("System group '{}' already exists, cannot spawn", group_name);
@@ -333,11 +372,16 @@ fn spawn_system_group(
       groups,
       base,
       app_sender.clone(),
+      tracer_txs,
     );
   }
 
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: group_name });
+  }
+
   if !active {
-    deactivate_system_group(group_name, groups, base, app_sender);
+    deactivate_system_group(group_name, groups, base, app_sender, tracer_txs);
   }
 }
 
@@ -347,6 +391,7 @@ fn despawn_system_group(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
+  tracer_txs: &TracerSenders,
 ) {
   if !groups.contains_key(group_name) {
     log::warn!(
@@ -359,7 +404,11 @@ fn despawn_system_group(
   let child_ids = group_child_ids(groups, group_name);
   for id in child_ids {
     let handle = SystemHandle::new(id, group_name);
-    despawn_system(handle, groups, base, app_sender.clone(), interrupt_registry);
+    despawn_system(handle, groups, base, app_sender.clone(), interrupt_registry, tracer_txs);
+  }
+
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupDespawned { key: group_name });
   }
 
   let _ = groups.remove(group_name);
@@ -370,6 +419,7 @@ fn activate_system_group(
   groups: &mut Groups,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
 ) {
   if !groups.contains_key(group_name) {
     log::warn!(
@@ -400,7 +450,14 @@ fn activate_system_group(
       groups,
       app_sender.clone(),
     );
-    system.on_reactivate(&ctx);
+
+    if system.is_active(&ctx) {
+      system.on_reactivate(&ctx);
+    }
+  }
+
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange { key: group_name, active: true });
   }
 }
 
@@ -409,6 +466,7 @@ fn deactivate_system_group(
   groups: &mut Groups,
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
 ) {
   if !groups.contains_key(group_name) {
     log::warn!(
@@ -440,6 +498,10 @@ fn deactivate_system_group(
       app_sender.clone(),
     );
     system.on_deactivate(&ctx);
+  }
+
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange { key: group_name, active: false });
   }
 }
 

@@ -5,9 +5,8 @@ use std::path::Path;
 
 use tokio::sync::mpsc;
 
-use crate::app::app_message::EventBox;
 use crate::operator_config::{ConfigValue, Domain, GeneralizedConfigValue};
-use crate::prelude::System;
+use crate::prelude::*;
 use crate::prelude::app_message::AppMessage;
 
 pub struct OperatorConfig {

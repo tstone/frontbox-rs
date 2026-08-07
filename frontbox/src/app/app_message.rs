@@ -1,4 +1,4 @@
-use std::any::{TypeId, type_name};
+use std::any::TypeId;
 use std::fmt::Display;
 
 use fast_protocol::SwitchState;
@@ -70,18 +70,3 @@ impl Display for AppMessage {
   }
 }
 
-pub struct EventBox {
-  pub event: Box<dyn Event>,
-  pub type_id: TypeId,
-  pub type_name: &'static str,
-}
-
-impl EventBox {
-  pub fn new<E: Event>(event: E) -> Self {
-    EventBox {
-      type_id: event.type_id(),
-      type_name: type_name::<E>(),
-      event: Box::new(event),
-    }
-  }
-}

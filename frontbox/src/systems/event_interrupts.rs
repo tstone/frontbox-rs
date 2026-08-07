@@ -82,7 +82,7 @@ impl EventInterruptRegistry {
   }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InterruptResult {
   /// Event is broadcast to all systems (default operation)
   Continue,

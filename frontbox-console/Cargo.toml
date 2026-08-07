@@ -1,0 +1,9 @@
+[package]
+name = "frontbox-console"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.29"
+frontbox = { path = "../frontbox" }
+axum = "0.8.9"

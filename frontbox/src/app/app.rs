@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::app::app_config::AppConfig;
+use crate::app::app_tracer::AppTracer;
 use crate::app::run_loop;
 use crate::hardware::*;
 use crate::machine::serial_interface::SerialInterface;
@@ -19,6 +20,7 @@ pub struct App {
   app_config: AppConfig,
   systems: Vec<SystemContainer>,
   hardware: Hardware,
+  tracers: Vec<Box<dyn AppTracer>>,
 }
 
 impl App {
@@ -80,6 +82,7 @@ impl App {
       operator_config,
       app_config,
       systems: Vec::new(),
+      tracers: Vec::new(),
     }
   }
 
@@ -194,6 +197,12 @@ impl App {
     self
   }
 
+  /// Register a tracer to monitor things
+  pub fn tracer(&mut self, tracer: impl AppTracer + 'static) -> &mut Self {
+    self.tracers.push(Box::new(tracer));
+    self
+  }
+
   /// Manually register configs
   pub fn register_configs(&mut self, configs: impl IntoConfigs) -> &mut Self {
     for cv in configs.into_configs() {
@@ -242,8 +251,12 @@ impl App {
       machine.run().await;
     });
 
+    for tracer in &mut self.tracers {
+      tracer.start();
+    }
+
     log::debug!("Starting main run loop");
-    run_loop::run(context_base, self.systems, app_sender, app_receiver).await;
+    run_loop::run(context_base, self.systems, self.tracers, app_sender, app_receiver).await;
   }
 }
 

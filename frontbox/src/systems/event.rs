@@ -88,11 +88,16 @@ use std::any::Any;
 /// ```
 pub trait Event: Any + Send + Sync {
   fn as_any(&self) -> &dyn Any;
+  fn to_json(&self) -> Option<serde_json::Value>;
 }
 
 impl<T: Any + Send + Sync> Event for T {
   fn as_any(&self) -> &dyn Any {
     self
+  }
+
+  fn to_json(&self) -> Option<serde_json::Value> {
+    None
   }
 }
 

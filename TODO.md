@@ -10,6 +10,7 @@
 - Add `by_location` to hardware lookup implementations + HardwareQuery
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Clean up hardware exports
+- It's only a matter of time before passing around Context results in a system shutting down itself and accidentally shutting down it's caller
 
 Canvas
 

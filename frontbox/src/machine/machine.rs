@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::app::app_message::EventBox;
 use crate::hardware::*;
 use crate::machine::serial_interface::*;
 use crate::prelude::app_message::AppMessage;
@@ -64,10 +63,10 @@ impl MachineImpl {
     }
   }
 
-  fn port_for(&mut self, port: Port) -> &mut SerialInterface {
+  fn port_for(&mut self, port: MachinePort) -> &mut SerialInterface {
     match port {
-      Port::Io => &mut self.io_port,
-      Port::Exp => &mut self.exp_port,
+      MachinePort::Io => &mut self.io_port,
+      MachinePort::Exp => &mut self.exp_port,
     }
   }
 
@@ -187,7 +186,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Request {
-        port: Port::Io,
+        port: MachinePort::Io,
         command: Box::new(WatchdogCommand::disable()),
         timeout: Duration::from_millis(200),
       })
@@ -199,7 +198,7 @@ impl Machine {
       self
         .machine_sender
         .send(MachineMessage::Request {
-          port: Port::Exp,
+          port: MachinePort::Exp,
           command: Box::new(BoardResetCommand::new(board.address)),
           timeout: Duration::from_millis(200),
         })
@@ -214,7 +213,7 @@ impl Machine {
       self
         .machine_sender
         .send(MachineMessage::Request {
-          port: Port::Io,
+          port: MachinePort::Io,
           command: Box::new(ConfigureDriverCommand::new(driver.id, config)),
           timeout: Duration::from_millis(200),
         })
@@ -254,7 +253,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Io,
+        port: MachinePort::Io,
         command: Box::new(TriggerDriverCommand::new(driver, mode, switch)),
       })
       .ok();
@@ -265,7 +264,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Request {
-        port: Port::Io,
+        port: MachinePort::Io,
         command: Box::new(ReportSwitchesCommand),
         timeout: Duration::from_secs(2),
       })
@@ -290,7 +289,7 @@ impl Machine {
       self
         .machine_sender
         .send(MachineMessage::Request {
-          port: Port::Io,
+          port: MachinePort::Io,
           command: Box::new(ConfigureSwitchCommand::new(
             switch.id,
             reporting,
@@ -313,7 +312,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Exp,
+        port: MachinePort::Exp,
         command: Box::new(SetLedsCommand::new(expansion_id, breakout, led_states)),
       })
       .ok();
@@ -330,7 +329,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Exp,
+        port: MachinePort::Exp,
         command: Box::new(SetMultipleLedsCommand::new(
           expansion_id,
           breakout,
@@ -346,7 +345,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Exp,
+        port: MachinePort::Exp,
         command: Box::new(SetAllLedsCommand::new(
           expansion_id,
           breakout,
@@ -361,7 +360,7 @@ impl Machine {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
-        port: Port::Exp,
+        port: MachinePort::Exp,
         command: Box::new(SetWhiteCommand::new(expansion_id, breakout, led_states)),
       })
       .ok();
@@ -378,7 +377,7 @@ impl System for Machine {
       self
         .machine_sender
         .send(MachineMessage::Request {
-          port: Port::Io,
+          port: MachinePort::Io,
           command: Box::new(ConfigureDriverCommand::new(
             driver.id,
             DriverConfig::Disabled,
@@ -390,7 +389,7 @@ impl System for Machine {
   }
 }
 
-pub enum Port {
+pub enum MachinePort {
   Io,
   Exp,
 }
@@ -398,11 +397,11 @@ pub enum Port {
 pub enum MachineMessage {
   WatchdogPing,
   Dispatch {
-    port: Port,
+    port: MachinePort,
     command: Box<dyn FastBinaryCommand>,
   },
   Request {
-    port: Port,
+    port: MachinePort,
     command: Box<dyn FastAnyRequestCommand>,
     timeout: Duration,
   },

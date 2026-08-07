@@ -3,7 +3,6 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
-use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
