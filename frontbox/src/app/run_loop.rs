@@ -5,11 +5,10 @@ use tokio::sync::mpsc;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_message::EventBox;
-use crate::machine::event_interrupt_registry::EventInterruptRegistry;
+use crate::systems::event_interrupts::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
-use crate::systems::spawn_system_tick;
 
 pub async fn run(
   mut base: ContextBase,
@@ -25,7 +24,7 @@ pub async fn run(
   for system in initial_systems {
     spawn_system(system, ROOT_GROUP, &mut groups, &base, app_sender.clone());
   }
-  spawn_system_tick(base.system_interval, app_sender.clone());
+  spawn_system_ticker(base.system_interval, app_sender.clone());
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -33,7 +32,7 @@ pub async fn run(
     tokio::signal::ctrl_c()
       .await
       .expect("failed to listen for ctrl-c");
-    log::debug!("Ctrl+C signal received.");
+    log::info!("Ctrl+C signal received.");
     let _ = tx.send(AppMessage::Shutdown);
   });
 
@@ -499,4 +498,16 @@ fn group_child_ids(groups: &Groups, group_name: &'static str) -> Vec<u64> {
     .get(group_name)
     .map(|g| g.systems.values().map(|s| s.borrow().id()).collect())
     .unwrap_or(Vec::new())
+}
+
+fn spawn_system_ticker(tick: Duration, sender: mpsc::UnboundedSender<AppMessage>) {
+  let mut timer_interval = tokio::time::interval(tick);
+  timer_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+  tokio::spawn(async move {
+    loop {
+      timer_interval.tick().await;
+      sender.send(AppMessage::SystemTick).ok();
+    }
+  });
 }

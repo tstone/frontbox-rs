@@ -7,6 +7,61 @@ use itertools::Itertools;
 use crate::prelude::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
+
+/// # LedSystem
+/// 
+/// ### Features 
+/// - **Conflict Resolution** -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
+/// - **Layer (z-index) Support** -- It's possible to keep an "under layer" active while playing temporary animations a layer above
+/// - **Alpha Compositing** -- LEDs are rendered in RGBA which supports transparency (under colors show through partially)
+/// - An easy way to de-activate LED declarations when a system is de-activated
+/// - Automatic clearing of unset LEDs per frame
+/// 
+/// ### In Use
+/// 
+/// Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
+/// 
+/// ```rust
+/// // declare LEDs by name...
+/// ctx.declare_leds(
+///   &leds::EXAMPLE.q().at_z(3),
+///   ColorSequence::solid(Rgba::yellow())
+/// );
+/// 
+/// // ...or by group
+/// ctx.declare_leds(
+///   vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
+///   ColorSequence::gradient(vec![Rgba::red(), Rgba::yellow()])
+/// );
+/// ```
+/// 
+/// `declare_leds` takes a `HardwareQuery`, which is the reason for `.q()`. More about this later.
+/// 
+/// Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
+/// 
+/// ```rust
+/// ctx.deactivate_led_declarations();
+/// ```
+/// 
+/// In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
+/// 
+/// ### Layering
+/// 
+/// It is possible to declare multiple layers for the same LED. If higher layers are opaque they will be rendered. If higher layers are transparent, they will render with a degree of "see-through" to layers below them.
+/// 
+/// ```rust
+/// // higher layer declares 50% transparent red
+/// ctx.declare_leds(
+///   &leds::EXAMPLE.q().at_z(1),
+///   ColorSequence::solid(Rgba::red().with_alpha_f32(0.5))
+/// );
+/// 
+/// // over top of white
+/// ctx.declare_leds(&leds::EXAMPLE.q(), ColorSequence::solid(Rgba::white()));
+/// 
+/// // final color renders as pink [255, 127, 127, 255]
+/// ```
+
 pub struct LedSystem {
   all_addresses: Vec<LedAddress>,
   // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.

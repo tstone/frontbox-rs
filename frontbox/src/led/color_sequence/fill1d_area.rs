@@ -16,6 +16,18 @@ pub enum Fill1dArea {
 }
 
 impl Fill1dArea {
+  pub fn full() -> Self {
+    Self::Full
+  }
+
+  pub fn padded(left: impl Into<Extent<u16>>, right: impl Into<Extent<u16>>) -> Self {
+    Self::Padded { left: left.into(), right: right.into() }
+  }
+
+  pub fn anchored(anchor: Anchor1d, length: impl Into<Extent<u16>>) -> Self {
+    Self::Anchored { length: length.into(), anchor }
+  }
+
   pub fn left_padding_mut(&mut self) -> Option<&mut Extent<u16>> {
     match self {
       Self::Padded { left, .. } => Some(left),

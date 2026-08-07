@@ -1,10 +1,29 @@
+//! # Event Interrupts
+//! 
+//! Sometimes there are cases where the normal flow of operation needs to be halted. For example, if a player drains while ball save is active, this would _normally_ emit an event that the player has drained and the turn is over. In these cases it's necessary to allow a system to override this behavior. This happens by way of event interrupts.
+//! 
+//! Systems can register themselves as an event interrupt. Interrupt registration requires a priority. The framework will interrupts in priority order (highest first). This allows, for example, a temporary start-of-ball ball save to take precedence over an extra ball or outlane ball save.
+//! 
+//! Event interrupts can be applied to any event within the system.
+//! 
+//! ```rust
+//! fn on_spawn(&mut self, ctx: &Context) {
+//!   ctx.register_interrupt::<TroughFull>(100); // 100 is the priority
+//! }
+//! 
+//! fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptResult {
+//!   // interrupt handlers must return a result
+//!   InterruptResult::Continue // or InterruptResult::Halt
+//! }
+//! ```
+
 use std::any::TypeId;
 use std::collections::HashMap;
 
 use crate::prelude::SystemHandle;
 
 #[derive(Debug)]
-pub struct Interrupt {
+pub(crate) struct Interrupt {
   pub system_id: u64,
   pub parent_key: &'static str,
   pub priority: u16,
@@ -17,7 +36,7 @@ impl Interrupt {
 }
 
 #[derive(Debug)]
-pub struct EventInterruptRegistry {
+pub(crate) struct EventInterruptRegistry {
   interrupts: HashMap<TypeId, Vec<Interrupt>>,
 }
 
@@ -65,6 +84,8 @@ impl EventInterruptRegistry {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum InterruptResult {
+  /// Event is broadcast to all systems (default operation)
   Continue,
+  /// Event is not broadcast. Only the interrupting system has seen the event.
   Halt,
 }

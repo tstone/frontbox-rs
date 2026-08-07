@@ -7,7 +7,7 @@ use crate::machine::serial_interface::SerialInterface;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
-use crate::provided::Watchdog;
+use crate::provided::WatchdogSystem;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
@@ -235,7 +235,7 @@ impl App {
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine.sender());
     self.systems.insert(0, SystemContainer::new(bridge));
-    self.systems.push(SystemContainer::new(Watchdog::new()));
+    self.systems.push(SystemContainer::new(WatchdogSystem::new()));
 
     // Start machine task
     tokio::spawn(async move {

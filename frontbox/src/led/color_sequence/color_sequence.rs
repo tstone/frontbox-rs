@@ -2,7 +2,46 @@ use crate::animation::Lerp;
 use crate::led::color_sequence::*;
 use crate::prelude::*;
 
-/// A 1d description of a sequence of colors
+/// # Color Sequence
+/// 
+/// A color sequence is a way to describe a series of colors without knowing exactly how many colors you need in total. For example "fade from red to blue" is a color sequence. A color sequence can be resolved into a specific set of colors by being given a concrete quantity.
+/// ```rust
+/// let seq = ColorSequence::fade(Rgba::red(), Rgba::blue());
+/// 
+/// // generates 6 colors, linearly interpolated from red to blue
+/// let colors: Vec<Rgba<u8>> = seq.generate(6);
+/// // colors[3] is probably purple-ish
+/// ```
+/// As shown, colors sequences are not just a list of colors, though it could do that, but instead contain a description colors including the base fill, a defined area for that fill, and alterations layered over top.
+/// 
+/// ### Example: Everything is red
+/// ```rust
+/// ColorSequence::solid(Rgba::red())
+/// ```
+/// 
+/// ### Example: blue to red gradient
+/// ```rust
+/// ColorSequence::fade(Rgba::blue(), Rgba::red())
+/// ```
+/// 
+/// ### Example: Progress bar at 70%
+/// ```rust
+/// ColorSequence::solid(Rgba::orange())
+///   .anchored(Anchor1d::Start, 0.70);
+/// ```
+/// 
+/// ### Example: yellow with an inner green area that takes up 50%
+/// ```rust
+/// ColorSequence::solid(Rgba::yellow())
+///   .overwrite(
+///     Fill1d::solid(Rgba::lime()), 
+///     Fill1dArea::anchored(Anchor1d::Centered, 0.5)
+///   )
+/// ```
+/// 
+/// #### Extents
+/// 
+/// Because color sequences are _relative_, when specifying numerical values like offsets or lengths, these are given an [Extent].
 #[derive(Clone, Debug)]
 pub struct ColorSequence {
   pub fill: Fill1d,

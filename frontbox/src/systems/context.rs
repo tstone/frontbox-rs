@@ -7,9 +7,24 @@ use crate::app::app_message::EventBox;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
+/// # Context
+/// 
+/// Each handler receives a reference to `Context`. As this guide has shown, it's through Context that access several features is provided, including:
+/// 
+/// - Register cues and interrupts
+/// - Emit events
+/// - Access hardware configuration and state
+/// 
+/// ```rust
+/// ctx.switches
+/// ctx.drivers
+/// ctx.io_network
+/// ctx.exp_network
+/// ```
 pub struct Context<'a> {
   base: &'a ContextBase,
   handle: SystemHandle,
+  /// Access to sibling and root systems
   pub systems: SystemsContext<'a>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
@@ -32,14 +47,17 @@ impl<'a> Context<'a> {
     }
   }
 
+  /// Each system is automatically assigned an internal ID. This returns the ID for the current system.
   pub fn current_system_id(&self) -> u64 {
     self.handle.id
   }
 
+  /// The complete handle (parent + ID) for the current system
   pub fn current_handle(&self) -> &SystemHandle {
     &self.handle
   }
 
+  /// Dispatch an event to all other active systems
   pub fn emit<E: Event>(&self, event: E) {
     log::debug!(
       "📨 Emitting event {} {:?}",
@@ -55,6 +73,7 @@ impl<'a> Context<'a> {
   // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
+  /// See [event interrupts](crate::systems::event_interrupts)
   pub fn register_interrupt<E: Event + 'static>(&self, priority: u16) {
     log::debug!(
       "Registering interrupt for {} by {}",

@@ -1,4 +1,3 @@
-use std::fmt::Debug;
 use std::time::Duration;
 
 use crate::app::app_message::EventBox;
@@ -407,32 +406,4 @@ pub enum MachineMessage {
     command: Box<dyn FastAnyRequestCommand>,
     timeout: Duration,
   },
-}
-
-// -- Events --
-
-/// Runs when a switch becomes closed (depressed)
-#[derive(Debug)]
-#[allow(unused)]
-pub struct SwitchClosed {
-  pub switch: Switch,
-}
-
-impl SwitchClosed {
-  pub fn new(switch: Switch) -> SwitchClosed {
-    Self { switch }
-  }
-}
-
-/// Runs when a switch becomes open (released)
-#[derive(Debug)]
-#[allow(unused)]
-pub struct SwitchOpened {
-  pub switch: Switch,
-}
-
-impl SwitchOpened {
-  pub fn new(switch: Switch) -> SwitchOpened {
-    Self { switch }
-  }
 }

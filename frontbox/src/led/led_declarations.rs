@@ -1,9 +1,8 @@
-use crate::LedAddress;
+use crate::hardware::LedAddress;
 use image::Rgba;
 
 #[derive(Debug, Clone)]
 pub struct LedDeclarations<'a> {
-  // TODO: this is practically identical to MultipleLedDeclarations
   pub pairings: Vec<(&'a LedAddress, Rgba<u8>)>,
   pub z_index: i8,
 }

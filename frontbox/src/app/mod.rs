@@ -1,3 +1,7 @@
+//! # App
+//! 
+//! <div class="warning">Stability Level: Moderate</div>
+//! 
 //! App is the runnable root of a Frontbox project. Every machine runs exactly one app. Apps provide a place to 
 //! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems. 
 //! 
@@ -28,30 +32,29 @@
 //!   
 //!   // Booting the app initializes hardware
 //!   App::boot(BootConfig {
-//!     io_net_port_path: "/dev/ttyACM0",
-//!     // see section on hardware for how these are configured
-//!     io_network: IoNetwork::empty(),
-//!     ..Default::default()
-//!   })
-//!   .await
-//!   .configure(|app| {
-//!     // add initial system(s) that will start on `.run()`
-//!     app.system(MySystem::new())
-//!     app.system(MySystem2::new())
+//!       io_net_port_path: "/dev/ttyACM0",
+//!       // see section on hardware for how these are configured
+//!       io_network: IoNetwork::empty(),
+//!       ..Default::default()
+//!     })
+//!     .await
+//!     .configure(|app| {
+//!       // add initial system(s) that will start on `.run()`
+//!       app.system(MySystem::new())
+//!       app.system(MySystem2::new())
 //! 
-//!     // register custom operator configs
-//!     app.register_configs(vec![MY_CONFIG1, MY_CONFIG2])
-//!   })
-//!   // Running the app starts the game
-//!   .run()
-//!   .await;
+//!       // register custom operator configs
+//!       app.register_configs(vec![MY_CONFIG1, MY_CONFIG2])
+//!     })
+//!     // Running the app starts the game
+//!     .run()
+//!     .await;
 //! }
 //! ```
 
 mod app;
 pub(crate) mod app_message;
 mod boot_config;
-mod event;
 mod into_configs;
 pub(crate) mod run_loop;
 pub(crate) mod app_config;
@@ -62,7 +65,6 @@ pub(crate) use into_configs::*;
 pub(crate) use app_config::*;
 pub use app::*;
 pub use boot_config::*;
-pub use event::*;
 
 use crate::prelude::SystemGroup;
 

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
-use crate::{HardwareQuery, ResolvedExpansionBoard, Tag};
 
 #[derive(Debug, Clone)]
 pub struct LedLookup {

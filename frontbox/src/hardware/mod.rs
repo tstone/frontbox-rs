@@ -1,5 +1,7 @@
 //! # Core Hardware
 //! 
+//! <div class="warning">Stability Level: Moderate-High</div>
+//! 
 //! - drivers (coils)
 //! - switches
 //! - LEDs
@@ -74,11 +76,21 @@
 //! 
 //! ### Best Pratices
 //! 
-//! - Don't use one large file for everything
-//! - Split up a hardware into multiple files, having either one file per mech or lane (e.g. `left_orbit.rs`, `right_ramp.rs`) or by region (e.g. `upper_playfield.rs`) ([Example](https://github.com/tstone/lotko-homebrew/tree/main/src/hardware))
-//! - Group common query definitions into the hardware definition files
-//! - Implement basic event wrapper systems for hardware into the same spot
+//! Despite the examples in this document showing everything defined all together, it usually makes more sense to group all definitions by region or mech, then wire the network in the same spot. For example, a game might be setup to have regions like `hardware/lower_thirds.rs`, `hardware/mid_field.rs`, and `hardware/upper_playfield.rs`, then a separate `io_network.rs` and `exp_network.rs` which references those hardware definitions and wires up the network.
 //! 
+//! Depending on the complexity of the playfield, it might also be useful to group regions into modules.
+//! 
+//! ```rust
+//! // upper_playfield.rs
+//! 
+//! pub const left_ramp_switch = ...;
+//! pub const right_ramp_switch = ...;
+//! 
+//! pub mod custom_mech {
+//!   pub const entrance_switch = ...;
+//!   pub const kicker_coil = ...;
+//! }
+//! ```
 
 mod exp;
 mod fast_platform;

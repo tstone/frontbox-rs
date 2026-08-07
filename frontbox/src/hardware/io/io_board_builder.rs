@@ -1,5 +1,4 @@
-use crate::DriverDefinition;
-use crate::prelude::{IoAddress, IoWired, SwitchDefinition};
+use crate::prelude::*;
 
 #[derive(Default)]
 pub struct IoBoardBuilder {

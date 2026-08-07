@@ -1,4 +1,4 @@
-use frontbox::provided::{Trough, TroughFull};
+use frontbox::provided::{TroughSystem, TroughFull};
 use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
@@ -80,7 +80,7 @@ impl System for BallSaveSystem {
     ctx.emit(BallSaved);
 
     // Feed ball back to player
-    if let Some(trough) = ctx.systems.get::<Trough>() {
+    if let Some(trough) = ctx.systems.get::<TroughSystem>() {
       trough.eject(ctx);
     }
 

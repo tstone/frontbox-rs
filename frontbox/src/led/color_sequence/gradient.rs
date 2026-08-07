@@ -1,7 +1,6 @@
 use image::Rgba;
 
 use crate::animation::Lerp;
-use crate::led::color_sequence::Extent;
 use crate::prelude::*;
 
 #[derive(Clone, Debug)]

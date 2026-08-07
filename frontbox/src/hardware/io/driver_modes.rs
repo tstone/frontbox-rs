@@ -6,8 +6,7 @@ use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
 use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
-use crate::prelude::ContextBase;
-use crate::{DriverTriggerDualMode, DriverTriggerMode};
+use crate::prelude::*;
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets

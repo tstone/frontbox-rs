@@ -1,4 +1,4 @@
-use crate::ExpBoard;
+use crate::hardware::ExpBoard;
 
 #[derive(Default)]
 pub struct ExpNetwork {
