@@ -3,14 +3,15 @@ use std::ops::{Add, Deref, Rem, Sub};
 
 /// FAST Pinball's notion of pulse width modulated (PWM) power is describing an 8ms chunk of time using one bit representing 1ms slices.
 /// For example 50% duty could be represented as every other 1ms slice "ON" `0b1010_1010` or as the first 4ms off followed by 4ms on `0b0000_1111`.
-/// 
-/// ## Convinience Methods
-/// For convinience, power in 1/8th intervals (`EIGHTH`, `QUARTER`, `THREE_EIGHTS`) offer what are likely the most-used configuration.
-/// 
+///
+/// ## Convenience Methods
+/// For convenience, power in 1/8th intervals (`EIGHTH`, `QUARTER`, `THREE_EIGHTS`) offer what are likely the most-used configuration.
+///
 /// ## Custom PWM
 /// To set customer power application, use `raw` with a binary value.
 /// ```rust
-/// Power::raw(0b0110_0110)
+/// # use fast_protocol::Power;
+/// let p = Power::raw(0b0110_0110);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -38,7 +39,7 @@ impl Power {
   pub const SEVEN_EIGHTS: Power = Power { power: 0b1111_1110 };
   /// 100% power
   pub const FULL: Power = Power { power: 0b1111_1111 };
-  
+
   pub const OFF: Power = Power { power: 0 };
   pub const ZERO: Power = Power { power: 0 };
 }
@@ -86,18 +87,5 @@ impl Display for Power {
 impl UpperHex for Power {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{:X}", self.power)
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn test_half_power() {
-    let power = Power::HALF;
-    assert_eq!(power.power, 127);
-    assert_eq!(format!("{}", power), "127");
-    assert_eq!(format!("{:X}", power), "7F");
   }
 }

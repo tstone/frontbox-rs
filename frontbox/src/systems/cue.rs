@@ -292,11 +292,11 @@ impl Accumulator<Duration> for CueAccumulator {
 mod test {
   use crate::{events, prelude::EventExt};
 
-  #[derive(serde::Serialize, Event)]
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
   struct Signal;
-  #[derive(serde::Serialize, Event)]
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
   struct Signal2;
-  #[derive(serde::Serialize, Event)]
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
   struct Signal3;
 
   pub use super::*;
@@ -307,8 +307,8 @@ mod test {
 
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
   }
 
@@ -327,8 +327,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Verify that accumulating more time doesn't change the state
@@ -353,8 +353,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Verify that accumulating more time doesn't change the state
@@ -378,8 +378,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -410,8 +410,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -434,8 +434,8 @@ mod test {
     let result = cue.accumulate(Duration::from_millis(500));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -443,8 +443,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal2")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
+      Some(&Signal2)
     );
 
     // Advance another second, should loop back around to the first signal
@@ -452,8 +452,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
   }
 
@@ -472,16 +472,16 @@ mod test {
     let result = cue.accumulate(Duration::from_secs(1));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
     let result = cue.accumulate(Duration::from_secs(1));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal2")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
+      Some(&Signal2)
     );
 
     // Advance another second, should trigger third signal and complete
@@ -489,8 +489,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal3")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal3>()),
+      Some(&Signal3)
     );
   }
 }

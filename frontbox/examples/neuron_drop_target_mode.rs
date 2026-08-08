@@ -94,7 +94,7 @@ impl DropTargetDownUp {
     }
   }
 
-  pub fn up(&self, ctx: &Context) {
+  pub fn up(&self, _ctx: &Context) {
     // TODO
   }
 }
