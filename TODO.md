@@ -1,3 +1,4 @@
+- Possible BUG: If Cue time is less than system tick time, what happens?
 - Need to be able to specify a z-index on LedEffect
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
