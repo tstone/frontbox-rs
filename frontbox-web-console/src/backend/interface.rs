@@ -1,7 +1,4 @@
-use axum::Json;
 use axum::Router;
-use axum::extract::Query;
-use axum::extract::State;
 use axum::routing::*;
 use frontbox::prelude::app_tracer::TraceEvent;
 use std::collections::VecDeque;
@@ -84,9 +81,9 @@ impl WebInterface {
           } => {
             let mut events = events_writer.lock().unwrap();
             if events.len() > 128 {
-              let _ = events.pop_front();
+              let _ = events.pop_back();
             }
-            events.push_back(SystemEvent::new(type_name, interrupts, event));
+            events.push_front(SystemEvent::new(type_name, interrupts, event));
           }
         }
       }

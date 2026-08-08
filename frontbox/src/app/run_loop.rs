@@ -24,7 +24,11 @@ pub async fn run(
 
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = HashMap::new();
+
   groups.insert(ROOT_GROUP, SystemGroup::new());
+  for tracer in &tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: ROOT_GROUP });
+  }
 
   // initialize root systems
   for system in initial_systems {
@@ -150,6 +154,7 @@ where
   let mut result: Option<T> = None;
 
   if let Some(group) = groups.get(handle.parent_key)
+    && group.active
     && let Some(mut system) = group.get_by_id(&handle.id)
   {
     let mut ctx = Context::new(base, handle, groups, app_sender.clone());
@@ -174,18 +179,20 @@ fn apply_to_systems<F>(
   F: FnMut(&mut SystemContainer, &mut Context),
 {
   for (key, group) in groups {
-    for cell in group.values() {
-      let mut system = cell.borrow_mut();
-      let mut ctx = Context::new(
-        base,
-        SystemHandle::new(system.id(), key),
-        groups,
-        app_sender.clone(),
-      );
-      if system.handle_active(&ctx, tracer_txs) {
-        handler(&mut system, &mut ctx);
-      } else {
-        log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
+    if group.active {
+      for cell in group.values() {
+        let mut system = cell.borrow_mut();
+        let mut ctx = Context::new(
+          base,
+          SystemHandle::new(system.id(), key),
+          groups,
+          app_sender.clone(),
+        );
+        if system.handle_active(&ctx, tracer_txs) {
+          handler(&mut system, &mut ctx);
+        } else {
+          log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
+        }
       }
     }
   }
@@ -391,6 +398,10 @@ fn spawn_system_group(
   }
   groups.insert(group_name, SystemGroup::new());
 
+  for tracer in tracer_txs {
+    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: group_name });
+  }
+
   for child in child_systems {
     spawn_system(
       child.to_system_container(),
@@ -400,10 +411,6 @@ fn spawn_system_group(
       app_sender.clone(),
       tracer_txs,
     );
-  }
-
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: group_name });
   }
 
   if !active {
