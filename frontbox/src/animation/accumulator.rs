@@ -14,7 +14,7 @@ pub trait Accumulator<A>: DynClone + Send + Sync {
 dyn_clone::clone_trait_object!(<A> Accumulator<A>);
 
 pub struct AccumulationResult<A> {
-  /// Accumulators can perform multiple cycles (loops). This flag indicates if a cycle was completed during this accumulation step. To check if the entire accumulator has completed all of its cycles, use `._is_complete()` flag.
+  /// Accumulators can perform multiple cycles (loops). This flag indicates if a cycle was completed during this accumulation step. To check if the entire accumulator has completed all of its cycles, use `.is_complete()` flag.
   pub completed_cycle: bool,
   /// If the accumulator overshot its target, this will contain the excess amount that can be applied to the next cycle or used for other logic.
   pub remainder: A,

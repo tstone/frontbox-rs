@@ -85,11 +85,11 @@ impl System for GameStartable {
       self.start_btn_off(ctx);
     } else if event.is::<GameStarted>() {
       for effect in &mut self.effects {
-        effect.stop_and_clear(ctx);
+        effect.stop(ctx);
       }
     } else if event.is::<GameEnded>() {
       for effect in &mut self.effects {
-        effect.resume();
+        effect.play();
       }
     }
   }

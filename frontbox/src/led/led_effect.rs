@@ -85,11 +85,11 @@ impl LedEffect {
     Self::flash(query, color, Rgba::default(), duration)
   }
 
-  pub fn rotating(mut self, duration: Duration, curve: Curve) -> Self {
+  pub fn rotating(mut self, duration: Duration, curve: Curve, cycle: Cycle) -> Self {
     self
       .alterations
       .push(LedEffectAlteration::Rotating(Rotating::new(
-        duration, curve,
+        duration, curve, cycle,
       )));
     self
   }
@@ -101,6 +101,12 @@ impl LedEffect {
     self
   }
 
+  pub fn stopped(mut self) -> Self {
+    self.active = false;
+    self.anim.pause();
+    self
+  }
+
   pub fn reset(&mut self) {
     self.anim.reset();
     for alteration in &mut self.alterations {
@@ -108,26 +114,17 @@ impl LedEffect {
     }
   }
 
-  /// Remove LED effects from being applied
-  pub fn clear(&mut self, ctx: &Context) {
-    ctx.undeclare_leds(&self.query);
-  }
-
-  pub fn resume(&mut self) {
+  pub fn play(&mut self) {
     self.active = true;
     self.anim.play();
   }
 
-  pub fn stop(&mut self) {
+  // Halts the animation and clears any LED declarations applied by this effect
+  pub fn stop(&mut self, ctx: &Context) {
     self.active = false;
     self.anim.stop();
+    ctx.undeclare_leds(&self.query);
     self.reset();
-  }
-
-  /// Remove LED effects from being applied and stop applying them in the future
-  pub fn stop_and_clear(&mut self, ctx: &Context) {
-    self.stop();
-    self.clear(ctx);
   }
 
   /// Applies accumulation and any animation
@@ -141,6 +138,8 @@ impl LedEffect {
       }
 
       ctx.declare_leds(&self.query, base);
+    } else if self.anim.is_complete() {
+      self.stop(ctx);
     }
   }
 }
