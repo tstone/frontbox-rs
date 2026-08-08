@@ -89,7 +89,7 @@ impl System for PlungeLaneSystem {
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum PlungeLaneState {
   NoBall,
   ExpectedBallPresent,
@@ -97,9 +97,11 @@ pub enum PlungeLaneState {
 }
 
 // Cues
+#[derive(serde::Serialize, Event)]
 struct TimesUpBallsGone;
 
 // Public events
+#[derive(serde::Serialize, Event)]
 pub struct BallEnteredPlungeLane {
   pub state: PlungeLaneState,
 }
@@ -110,5 +112,7 @@ impl BallEnteredPlungeLane {
   }
 }
 
+#[derive(serde::Serialize, Event)]
 pub struct BallExitedPlungeLane;
+#[derive(serde::Serialize, Event)]
 pub struct BallSaved; // TODO: set state as unexpected if ball was saved

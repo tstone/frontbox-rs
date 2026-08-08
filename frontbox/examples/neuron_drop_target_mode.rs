@@ -73,6 +73,7 @@ struct DropTargetDownUp {
   target_switches: [&'static str; 3],
 }
 
+#[derive(serde::Serialize, Event)]
 struct DropUp; // cue to send self
 
 impl DropTargetDownUp {

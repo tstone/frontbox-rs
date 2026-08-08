@@ -26,7 +26,7 @@ pub struct App {
 impl App {
   pub async fn boot(boot_config: BootConfig) -> Self {
     let app_config = AppConfig::from_boot_config(&boot_config);
-    
+
     let mut io_port = SerialInterface::new(boot_config.io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
@@ -244,20 +244,23 @@ impl App {
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = Machine::new(machine.sender());
     self.systems.insert(0, SystemContainer::new(bridge));
-    self.systems.push(SystemContainer::new(WatchdogSystem::new()));
+    self
+      .systems
+      .push(SystemContainer::new(WatchdogSystem::new()));
 
     // Start machine task
     tokio::spawn(async move {
       machine.run().await;
     });
 
-    for tracer in &mut self.tracers {
-      tracer.start();
-    }
-
     log::debug!("Starting main run loop");
-    run_loop::run(context_base, self.systems, self.tracers, app_sender, app_receiver).await;
+    run_loop::run(
+      context_base,
+      self.systems,
+      self.tracers,
+      app_sender,
+      app_receiver,
+    )
+    .await;
   }
 }
-
-

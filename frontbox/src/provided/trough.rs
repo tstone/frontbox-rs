@@ -48,13 +48,10 @@ impl TroughSystem {
         ),
         ..Default::default()
       })
-      .tag(tags::Trough)
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(name)
-      .debounce_close(Duration::from_millis(250))
-      .tag(tags::Trough)
+    SwitchDefinitionBuilder::new(name).debounce_close(Duration::from_millis(250))
   }
 
   fn on_switch(&mut self, switch_name: &str, ctx: &Context) {
@@ -147,10 +144,10 @@ impl System for TroughSystem {
 
 // -- Events --
 
+#[derive(serde::Serialize, Event)]
 pub struct TroughFull;
 
-#[derive(Debug)]
-#[allow(unused)]
+#[derive(serde::Serialize, Event)]
 pub struct BallEnteredTrough {
   pub occupancy: Vec<bool>,
 }
@@ -161,8 +158,7 @@ impl BallEnteredTrough {
   }
 }
 
-#[derive(Debug)]
-#[allow(unused)]
+#[derive(serde::Serialize, Event)]
 pub struct BallExitedTrough {
   pub occupancy: Vec<bool>,
 }

@@ -1,14 +1,14 @@
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use tokio::sync::{watch, mpsc};
+use tokio::sync::{mpsc, watch};
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
-use crate::systems::event_interrupts::EventInterruptRegistry;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
+use crate::systems::event_interrupts::EventInterruptRegistry;
 
 pub(crate) type TracerSenders = Vec<mpsc::UnboundedSender<app_tracer::TraceEvent>>;
 
@@ -28,9 +28,16 @@ pub async fn run(
 
   // initialize root systems
   for system in initial_systems {
-    spawn_system(system, ROOT_GROUP, &mut groups, &base, app_sender.clone(), &tracer_txs);
+    spawn_system(
+      system,
+      ROOT_GROUP,
+      &mut groups,
+      &base,
+      app_sender.clone(),
+      &tracer_txs,
+    );
   }
-  spawn_system_ticker(base.system_interval,tick_tx);
+  spawn_system_ticker(base.system_interval, tick_tx);
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -106,7 +113,7 @@ pub async fn run(
 
         log::trace!("Run loop elapsed {}", start.elapsed().as_micros());
       }
-    
+
       Ok(_) = tick_rx.changed() => {
         handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
       }
@@ -114,9 +121,15 @@ pub async fn run(
   }
 
   // Shutdown sequence
-  apply_to_systems(&mut groups, &base, &app_sender, &tracer_txs, |system, ctx| {
-    system.on_despawn(ctx);
-  });
+  apply_to_systems(
+    &mut groups,
+    &base,
+    &app_sender,
+    &tracer_txs,
+    |system, ctx| {
+      system.on_despawn(ctx);
+    },
+  );
 
   // wait a sec to allow systems to process shutdown event and clear timers, etc.
   tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -227,11 +240,10 @@ fn emit_event(
 
   // notify any monitoring tracers
   for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::Event { 
-      type_id: event_box.type_id, 
-      type_name: event_box.type_name, 
-      interrupts: interrupt_evals.clone(), 
-      event: event_box.try_json() 
+    let _ = tracer.send(TraceEvent::Event {
+      type_name: event_box.type_name,
+      interrupts: interrupt_evals.clone(),
+      event: event_box.try_json(),
     });
   }
 
@@ -296,7 +308,11 @@ fn spawn_system(
     system.on_spawn(&ctx);
 
     for tracer in tracer_txs {
-      let _ = tracer.send(TraceEvent::SystemSpawned { id: system_id, name: system.name(), parent_key });
+      let _ = tracer.send(TraceEvent::SystemSpawned {
+        id: system_id,
+        name: system.name(),
+        parent_key,
+      });
     }
 
     let event = SystemSpawned::new(system_id, parent_key);
@@ -321,7 +337,14 @@ fn replace_system(
     interrupt_registry,
     tracer_txs,
   );
-  spawn_system(new_system, old_handle.parent_key, groups, base, app_sender, tracer_txs);
+  spawn_system(
+    new_system,
+    old_handle.parent_key,
+    groups,
+    base,
+    app_sender,
+    tracer_txs,
+  );
 }
 
 /// Despawns the system, returning true if it succeeded
@@ -342,7 +365,10 @@ fn despawn_system(
     interrupt_registry.unregister_by_system(&handle.id);
 
     for tracer in tracer_txs {
-      let _ = tracer.send(TraceEvent::SystemDespawned { id: handle.id, parent_key: handle.parent_key });
+      let _ = tracer.send(TraceEvent::SystemDespawned {
+        id: handle.id,
+        parent_key: handle.parent_key,
+      });
     }
 
     let event = SystemDespawned::new(handle.id, handle.parent_key);
@@ -404,7 +430,14 @@ fn despawn_system_group(
   let child_ids = group_child_ids(groups, group_name);
   for id in child_ids {
     let handle = SystemHandle::new(id, group_name);
-    despawn_system(handle, groups, base, app_sender.clone(), interrupt_registry, tracer_txs);
+    despawn_system(
+      handle,
+      groups,
+      base,
+      app_sender.clone(),
+      interrupt_registry,
+      tracer_txs,
+    );
   }
 
   for tracer in tracer_txs {
@@ -457,7 +490,10 @@ fn activate_system_group(
   }
 
   for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange { key: group_name, active: true });
+    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange {
+      key: group_name,
+      active: true,
+    });
   }
 }
 
@@ -501,7 +537,10 @@ fn deactivate_system_group(
   }
 
   for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange { key: group_name, active: false });
+    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange {
+      key: group_name,
+      active: false,
+    });
   }
 }
 

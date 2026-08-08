@@ -169,7 +169,7 @@ impl DerefMut for SwitchLookup {
 }
 
 /// Represents a hardware switch
-#[derive(Debug, Clone)]
+#[derive(serde::Serialize, Event, Debug, Clone)]
 pub struct Switch {
   pub name: &'static str,
   /// The original wiring assignment
@@ -201,7 +201,7 @@ impl Switch {
 mod tests {
   use std::sync::LazyLock;
 
-  use crate::tags::{FlipperButton, Playfield};
+  use crate::tags::{Playfield, Target};
 
   use super::*;
 
@@ -239,7 +239,7 @@ mod tests {
     };
 
     assert!(switch.has_tag::<Playfield>());
-    assert!(!switch.has_tag::<FlipperButton>());
+    assert!(!switch.has_tag::<Target>());
   }
 
   #[test]

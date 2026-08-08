@@ -1,74 +1,52 @@
 use dyn_clone::DynClone;
+use frontbox_derive::Tag;
 use std::any::Any;
 use std::fmt::Debug;
 
+/// Targets are a data-less struct that acts as a typed classifier. Tags must always implement `Tag` (derivable).
+///
+/// ```rust
+/// #[derive(Tag)]
+/// pub struct Example;
+///
+/// #[derive(Tag)]
+/// pub struct Rainbow;
+/// ```
 pub trait Tag: Debug + DynClone + Send + Sync + Any {
   fn as_any(&self) -> &dyn Any;
-}
-
-impl<T: Any + Send + Sync> Tag for T
-where
-  T: Debug + Clone + Send + Sync,
-{
-  fn as_any(&self) -> &dyn Any {
-    self
-  }
+  fn tag_name(&self) -> &'static str;
 }
 
 dyn_clone::clone_trait_object!(Tag);
 
-// switches
-#[derive(Clone, Debug)]
-pub struct Button;
-#[derive(Clone, Debug)]
-pub struct StartButton;
-#[derive(Clone, Debug)]
-pub struct ActionButton;
-#[derive(Clone, Debug)]
-pub struct FlipperButton;
-#[derive(Clone, Debug)]
-pub struct FlipperButtonLeft;
-#[derive(Clone, Debug)]
-pub struct FlipperButtonRight;
-#[derive(Clone, Debug)]
-pub struct LeftOutlane;
-#[derive(Clone, Debug)]
-pub struct LeftInlane;
-#[derive(Clone, Debug)]
-pub struct RightInlane;
-#[derive(Clone, Debug)]
-pub struct RightOutlane;
-#[derive(Clone, Debug)]
-pub struct AutoPlungerSwitch;
-#[derive(Clone, Debug)]
-pub struct CoinDoor;
-#[derive(Clone, Debug)]
-pub struct CoinDrop;
-#[derive(Clone, Debug)]
-pub struct Tilt;
-#[derive(Clone, Debug)]
-pub struct SlingShot;
+impl serde::Serialize for dyn Tag {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(self.tag_name())
+  }
+}
 
+// switches
+#[derive(Tag)]
+pub struct Button;
 // drivers
-#[derive(Clone, Debug)]
-pub struct Trough;
-#[derive(Clone, Debug)]
-pub struct AutoPlungerCoil;
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub(crate) struct _FrontboxDrivenLamp;
 
 // LEDs
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct GeneralIllumination;
 
 // multi
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct Playfield;
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct Cabinet;
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct Lane;
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct Target;
-#[derive(Clone, Debug)]
+#[derive(Tag)]
 pub struct Ramp;

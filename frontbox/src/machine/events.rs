@@ -1,7 +1,8 @@
 use crate::hardware::Switch;
+use crate::prelude::*;
 
 /// Runs when a switch becomes closed (depressed)
-#[derive(Debug)]
+#[derive(serde::Serialize, Event, Debug, Clone)]
 #[allow(unused)]
 pub struct SwitchClosed {
   pub switch: Switch,
@@ -14,7 +15,7 @@ impl SwitchClosed {
 }
 
 /// Runs when a switch becomes open (released)
-#[derive(Debug)]
+#[derive(serde::Serialize, Event, Debug, Clone)]
 #[allow(unused)]
 pub struct SwitchOpened {
   pub switch: Switch,

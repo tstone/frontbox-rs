@@ -64,16 +64,47 @@ fn to_camel_case(s: &str) -> String {
     .collect()
 }
 
-#[proc_macro_derive(FrontboxEvent)]
-pub fn derive_frontbox_event(input: TokenStream) -> TokenStream {
+/// Turn any object in a Frontbox Event. Child data must implement serde::Serialize
+#[proc_macro_derive(Event)]
+pub fn derive_event(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   let name = &input.ident;
 
   let expanded = quote! {
-      impl FrontboxEvent for #name {
-          fn as_any(&self) -> &dyn Any {
+      impl frontbox::systems::Event for #name {
+          fn as_any(&self) -> &dyn std::any::Any {
               self
           }
+          fn to_json(&self) -> Option<serde_json::Value> {
+              serde_json::to_value(self).ok()
+          }
+      }
+  };
+
+  TokenStream::from(expanded)
+}
+
+/// Turn any object in a Frontbox Tag
+#[proc_macro_derive(Tag)]
+pub fn derive_tag(input: TokenStream) -> TokenStream {
+  let input = parse_macro_input!(input as DeriveInput);
+  let name = &input.ident;
+  let name_str = name.to_string();
+
+  let expanded = quote! {
+      impl frontbox::hardware::Tag for #name {
+          fn as_any(&self) -> &dyn std::any::Any { self }
+          fn tag_name(&self) -> &'static str { #name_str }
+      }
+
+      impl std::fmt::Debug for #name {
+          fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+              f.write_str(#name_str)
+          }
+      }
+
+      impl Clone for #name {
+          fn clone(&self) -> Self { #name }
       }
   };
 

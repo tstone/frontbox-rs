@@ -1,5 +1,4 @@
 use frontbox::prelude::*;
-use frontbox::tags::StartButton;
 
 use crate::GameManager;
 
@@ -9,18 +8,10 @@ pub struct FreePlay {
   start_button_switch: HardwareQuery,
 }
 
-impl Default for FreePlay {
-  fn default() -> Self {
-    Self {
-      start_button_switch: Q::tag::<StartButton>(),
-    }
-  }
-}
-
 impl FreePlay {
-  pub fn new(selection: HardwareQuery) -> Self {
+  pub fn new(q: HardwareQuery) -> Self {
     Self {
-      start_button_switch: selection,
+      start_button_switch: q,
     }
   }
 

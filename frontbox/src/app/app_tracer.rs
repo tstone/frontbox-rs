@@ -1,28 +1,26 @@
-use std::any::TypeId;
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
 
 pub trait AppTracer {
-  fn start(&mut self);
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum TraceEvent {
   Event {
-    type_id: TypeId,
     type_name: &'static str,
     interrupts: Vec<InterruptEvaluation>,
-    event: Option<serde_json::Value>
+    event: Option<serde_json::Value>,
   },
   SystemSpawned {
     id: u64,
     name: &'static str,
-    parent_key: &'static str
+    parent_key: &'static str,
   },
   SystemDespawned {
     id: u64,
-    parent_key: &'static str
+    parent_key: &'static str,
   },
   SystemGroupSpawned {
     key: &'static str,
@@ -37,10 +35,11 @@ pub enum TraceEvent {
   SystemGroupActiveStateChange {
     key: &'static str,
     active: bool,
-  }
+  },
+  // TODO: some kind of game-specific state push that is JSON encodable
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct InterruptEvaluation {
   pub interrupter: u64,
   pub result: InterruptResult,

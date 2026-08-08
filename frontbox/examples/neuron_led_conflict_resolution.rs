@@ -21,9 +21,9 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  let exp_network = ExpNetwork::new(
-    vec![ExpBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1]))]
-  );
+  let exp_network = ExpNetwork::new(vec![
+    ExpBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1])),
+  ]);
 
   App::boot(BootConfig {
     exp_network,
@@ -42,7 +42,9 @@ async fn main() {
 /// This implementation flashes an LED by pre-declaring an LED state then using activate/deactivate for flashing. This is efficient approach since it re-uses the same declaration.
 struct System1;
 
+#[derive(serde::Serialize, Event)]
 pub struct On;
+#[derive(serde::Serialize, Event)]
 pub struct Off;
 
 impl System for System1 {

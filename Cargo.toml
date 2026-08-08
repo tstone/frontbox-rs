@@ -3,11 +3,11 @@ members = [
     "fast-protocol",
     "frontbox",
     "frontbox-canvas",
-    "frontbox-console",
     "frontbox-derive",
     "frontbox-pin2dmd",
     "frontbox-sound",
     "frontbox-turn-based",
+    "frontbox-web-console",
 ]
 resolver = "2"
 

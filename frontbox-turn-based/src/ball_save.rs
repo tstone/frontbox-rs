@@ -1,4 +1,4 @@
-use frontbox::provided::{TroughSystem, TroughFull};
+use frontbox::provided::{TroughFull, TroughSystem};
 use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
@@ -97,4 +97,5 @@ impl System for BallSaveSystem {
 }
 
 // Cues
+#[derive(serde::Serialize, Event)]
 struct EndBallSave;
