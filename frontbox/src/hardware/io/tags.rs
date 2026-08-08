@@ -38,6 +38,8 @@ pub(crate) struct _FrontboxDrivenLamp;
 // LEDs
 #[derive(Tag)]
 pub struct GeneralIllumination;
+#[derive(Tag)]
+pub struct Insert;
 
 // multi
 #[derive(Tag)]

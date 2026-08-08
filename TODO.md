@@ -1,3 +1,4 @@
+- Need to be able to specify a z-index on LedEffect
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game

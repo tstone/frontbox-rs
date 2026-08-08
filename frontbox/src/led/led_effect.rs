@@ -71,18 +71,24 @@ impl LedEffect {
     color1: Rgba<u8>,
     color2: Rgba<u8>,
     duration: Duration,
+    cycle: Cycle,
   ) -> Self {
     Self::cycle(
       query,
       duration,
       Curve::EaseInOut,
-      Cycle::Forever,
+      cycle,
       vec![ColorSequence::solid(color1), ColorSequence::solid(color2)],
     )
   }
 
-  pub fn flash_on_off(query: HardwareQuery, color: Rgba<u8>, duration: Duration) -> Self {
-    Self::flash(query, color, Rgba::default(), duration)
+  pub fn flash_on_off(
+    query: HardwareQuery,
+    color: Rgba<u8>,
+    duration: Duration,
+    cycle: Cycle,
+  ) -> Self {
+    Self::flash(query, color, Rgba::default(), duration, cycle)
   }
 
   pub fn rotating(mut self, duration: Duration, curve: Curve, cycle: Cycle) -> Self {
@@ -129,7 +135,10 @@ impl LedEffect {
 
   /// Applies accumulation and any animation
   pub fn apply(&mut self, delta: Duration, ctx: &Context) {
-    if self.active {
+    if self.active && self.anim.is_complete() {
+      log::debug!("auto stopping & clearing LedEffect");
+      self.stop(ctx);
+    } else if self.active {
       self.anim.accumulate(delta);
 
       let mut base = self.anim.sample();
@@ -138,8 +147,6 @@ impl LedEffect {
       }
 
       ctx.declare_leds(&self.query, base);
-    } else if self.anim.is_complete() {
-      self.stop(ctx);
     }
   }
 }

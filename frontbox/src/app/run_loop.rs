@@ -283,7 +283,7 @@ fn spawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
-) {
+) {  
   let system_id = system.id();
 
   let was_spawned = if let Some(parent) = groups.get_mut(parent_key) {
@@ -305,6 +305,7 @@ fn spawn_system(
       .systems
       .get_by_id(&system_id)
       .unwrap();
+    log::info!("🌐 Spawned system {} ({})", system.name(), system.id());
 
     let ctx = Context::new(
       base,
@@ -371,6 +372,8 @@ fn despawn_system(
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
 
+    log::info!("🌐 Despawned system {} ({})", system.name(), system.id());
+
     for tracer in tracer_txs {
       let _ = tracer.send(TraceEvent::SystemDespawned {
         id: handle.id,
@@ -397,6 +400,7 @@ fn spawn_system_group(
     return;
   }
   groups.insert(group_name, SystemGroup::new());
+  log::info!("🌐 Spawned system group {}", group_name);
 
   for tracer in tracer_txs {
     let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: group_name });
@@ -452,6 +456,7 @@ fn despawn_system_group(
   }
 
   let _ = groups.remove(group_name);
+  log::info!("🌐 Despawned system group {}", group_name);
 }
 
 fn activate_system_group(
