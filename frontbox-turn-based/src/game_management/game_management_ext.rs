@@ -25,21 +25,21 @@ impl<'a> GameManagementExt for SystemContext<'a> {
   fn add_player(&self) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.add_player(ctx);
+      manager.add_player(ctx.into());
     });
   }
 
   fn add_points(&self, points: u32) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.add_points(points, ctx);
+      manager.add_points(points, ctx.into());
     });
   }
 
   fn advance_turn(&self) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.advance_turn(ctx);
+      manager.advance_turn(ctx.into());
     });
   }
 
@@ -58,7 +58,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
   fn end_game(&self) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.end_game(ctx);
+      manager.end_game(ctx.into());
     });
   }
 

@@ -81,7 +81,7 @@ impl System for BallSaveSystem {
 
     // Feed ball back to player
     if let Some(trough) = ctx.get::<TroughSystem>() {
-      trough.eject(ctx);
+      trough.eject(ctx.into());
     }
 
     InterruptResult::Halt

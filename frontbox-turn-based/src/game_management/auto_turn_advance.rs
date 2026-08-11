@@ -19,7 +19,7 @@ impl System for AutoTurnAdvance {
     if event.is::<PlayerTurnEnding>()
       && let Some(mut game_manager) = ctx.get::<GameManager>()
     {
-      game_manager.advance_turn(ctx);
+      game_manager.advance_turn(ctx.into());
     }
   }
 }

@@ -152,3 +152,9 @@ impl<'a> Into<ServiceContext<'a>> for SystemContext<'a> {
     self.ctx
   }
 }
+
+impl<'a, 'b> Into<&'b ServiceContext<'a>> for &'b SystemContext<'a> {
+  fn into(self) -> &'b ServiceContext<'a> {
+    &self.ctx
+  }
+}

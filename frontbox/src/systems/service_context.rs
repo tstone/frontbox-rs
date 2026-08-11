@@ -11,15 +11,20 @@ use crate::prelude::*;
 ///
 /// ```rust
 /// # use frontbox::prelude::*;
-///
-/// // RIGHT:
-/// fn service_method(&self, ctx: impl Into<&ServiceContext>) {
-///   let ctx = ctx.for_system(self.handle);
+/// // WRONG:
+/// fn service_method(&self, ctx: &SystemContext) {
 ///   // ...
 /// }
 ///
-/// // WRONG:
-/// fn service_method(&self, ctx: &SystemContext) {
+/// // RIGHT:
+/// fn service_method(&self, ctx: &ServiceContext) {
+///   let ctx = &ctx.for_system(self.handle);
+///   // ...
+/// }
+///
+/// // ALSO RIGHT (if you prefer):
+/// fn service_method<'a>(&self, ctx: impl Into<&ServiceContext<'a>>) {
+///   let ctx = &ctx.into().for_system(self.handle);
 ///   // ...
 /// }
 /// ```

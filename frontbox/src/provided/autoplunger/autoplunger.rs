@@ -8,6 +8,7 @@ use crate::provided::PlungeLaneSystem;
 pub struct AutoPlungerSystem {
   coil_name: &'static str,
   do_autoplunge: bool,
+  handle: SystemHandle,
 }
 
 impl AutoPlungerSystem {
@@ -15,6 +16,7 @@ impl AutoPlungerSystem {
     Self {
       do_autoplunge: false,
       coil_name,
+      handle: SystemHandle::default(),
     }
   }
 
@@ -45,11 +47,12 @@ impl AutoPlungerSystem {
   }
 
   /// Fire the autoplunger once the ball is resting in the lane
-  pub fn fire(&mut self, ctx: &SystemContext) {
+  pub fn fire(&mut self, ctx: &ServiceContext) {
+    let ctx = ctx.for_system(self.handle);
     // Check that the ball is present
     let plunge_lane = ctx.expect::<PlungeLaneSystem>();
     if plunge_lane.is_ball_present() {
-      self.activate_coil(ctx);
+      self.activate_coil(&ctx);
     } else {
       // queue it up for when the ball is present
       self.do_autoplunge = true;
@@ -58,6 +61,10 @@ impl AutoPlungerSystem {
 }
 
 impl System for AutoPlungerSystem {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
+    self.handle = *ctx.current_handle();
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<BallEnteredPlungeLane>() {
       if self.do_autoplunge {
@@ -66,7 +73,7 @@ impl System for AutoPlungerSystem {
       } else if event.state == PlungeLaneState::UnexpectedBallPresent {
         log::debug!("Firing auto-plunger due to unexpected ball in plunge lane");
         // Automatically launch if it wasn't an expected ball
-        self.fire(ctx);
+        self.fire(ctx.into());
       }
     }
   }

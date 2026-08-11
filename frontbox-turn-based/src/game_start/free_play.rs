@@ -20,7 +20,7 @@ impl FreePlay {
 
     if let Some(mut game_management) = ctx.get::<GameManager>() {
       if game_management.is_player_addable() {
-        game_management.add_player(ctx);
+        game_management.add_player(ctx.into());
       } else {
         log::debug!("GameManagement system reports player cannot be added, not adding player");
       }

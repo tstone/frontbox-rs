@@ -28,7 +28,7 @@ impl System for ActionButtonEject {
     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
       if self.action_button_switch.matches_switch(&e.switch) {
         if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
-          autoplunger.fire(ctx);
+          autoplunger.fire(ctx.into());
         }
       } else if self.plunge_lane_switch.matches_switch(&e.switch) {
         self.active = true;

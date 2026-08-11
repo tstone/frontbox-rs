@@ -7,6 +7,7 @@ use crate::prelude::*;
 /// - `BallExitedTrough` - Emitted when a ball exits the trough
 /// - `TroughFull` - Emitted when the trough reaches full occupancy
 pub struct TroughSystem {
+  handle: SystemHandle,
   switch_names: Vec<&'static str>,
   eject_coil_name: &'static str,
   expected_occupancy: usize,
@@ -23,6 +24,7 @@ impl TroughSystem {
       eject_coil_name,
       // set on launch
       last_occupancy: 0,
+      handle: SystemHandle::default(),
     }
   }
 
@@ -61,7 +63,7 @@ impl TroughSystem {
   }
 
   fn re_evaluate_occupancy(&mut self, ctx: &SystemContext) {
-    let occupancy = self.get_occupancy(ctx);
+    let occupancy = self.get_occupancy(ctx.into());
     let closed_count = occupancy.iter().filter(|b| **b).count();
 
     log::debug!(
@@ -88,7 +90,8 @@ impl TroughSystem {
     }
   }
 
-  fn get_occupancy(&self, ctx: &SystemContext) -> Vec<bool> {
+  fn get_occupancy(&self, ctx: &ServiceContext) -> Vec<bool> {
+    let ctx = ctx.for_system(self.handle);
     let mut occupancy = Vec::new();
     for (_, switch) in self
       .switch_names
@@ -102,9 +105,10 @@ impl TroughSystem {
     occupancy
   }
 
-  pub fn eject(&self, ctx: &SystemContext) {
-    ctx.activate_driver(self.eject_coil_name, ActivationMode::Tap);
-    ctx.emit(BallExitedTrough::new(self.get_occupancy(ctx)));
+  pub fn eject(&self, ctx: &ServiceContext) {
+    let sctx = ctx.for_system(self.handle);
+    sctx.activate_driver(self.eject_coil_name, ActivationMode::Tap);
+    sctx.emit(BallExitedTrough::new(self.get_occupancy(ctx)));
   }
 
   pub fn ball_added_to_play(&mut self) {
@@ -124,7 +128,12 @@ impl TroughSystem {
 impl System for TroughSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     log::debug!("Trough spawn");
-    self.last_occupancy = self.get_occupancy(ctx).iter().filter(|b| **b).count();
+    self.handle = *ctx.current_handle();
+    self.last_occupancy = self
+      .get_occupancy(ctx.into())
+      .iter()
+      .filter(|b| **b)
+      .count();
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

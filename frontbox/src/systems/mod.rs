@@ -107,9 +107,29 @@
 //!
 //! /// ```rust
 /// # use frontbox::prelude::*;
-/// fn service_method(&self, ctx: impl Into<&ServiceContext>) {
+/// fn service_method(&self, ctx: &ServiceContext) {
 ///   let ctx = ctx.for_system(self.handle);
 ///   // ...
+/// }
+/// ```
+///
+/// A `ServiceContext` does not contain the `SystemHandle` (`self.handle`), so this will need to be captured at some other point, likely on spawn.
+///
+/// ```rust
+/// pub struct ExampleSystem {
+///   handle: SystemHandle
+/// }
+///
+/// impl ExampleSystem {
+///   pub fn new() -> Self {
+///     Self { handle:: SystemHandle::default() }
+///   }
+/// }
+///
+/// impl System for ExampleSystem {
+///   fn on_spawn(&mut self, ctx: &SystemContext) {
+///     self.handle = *ctx.current_handle();
+///   }
 /// }
 /// ```
 mod boot_snapshot;
