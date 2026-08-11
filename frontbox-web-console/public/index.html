@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Frontbox Dev Console</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <h1 class="navbar-brand">Frontbox Dev Console</h1>
+      </div>
+    </header>
+
+    <div class="page-wrapper">
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-deck row-cards">
+
+            <!-- Left: systems tree -->
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Systems</h3>
+                </div>
+                <div class="card-body"
+                     hx-get="/systems"
+                     hx-trigger="load, every 2s"
+                     hx-swap="innerHTML">
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: event log -->
+            <div class="col-lg-7">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">Events</h3>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-vcenter card-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody hx-get="/events"
+                           hx-trigger="load, every 1s"
+                           hx-swap="innerHTML">
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

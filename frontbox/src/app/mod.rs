@@ -58,6 +58,8 @@ mod boot_config;
 mod into_configs;
 pub(crate) mod run_loop;
 pub(crate) mod app_config;
+pub mod app_tracer;
+pub mod event_box;
 
 use std::collections::HashMap;
 
@@ -65,6 +67,7 @@ pub(crate) use into_configs::*;
 pub(crate) use app_config::*;
 pub use app::*;
 pub use boot_config::*;
+pub(crate) use event_box::*;
 
 use crate::prelude::SystemGroup;
 

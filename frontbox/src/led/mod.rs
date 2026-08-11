@@ -123,3 +123,14 @@ pub use led_system_ext::*;
 pub use rgba_color::*;
 
 pub use color_sequence::ColorSequence;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum LedChannels {
+  #[default]
+  RGB,
+  GRB,
+  BRG,
+  RGBW,
+  GRBW,
+  BRGW,
+}

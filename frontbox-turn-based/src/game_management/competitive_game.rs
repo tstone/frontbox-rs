@@ -42,14 +42,21 @@ impl CompetitiveGame {
     }
   }
 
+  fn player_group_name(player: u8) -> &'static str {
+    PLAYER_GROUP_NAMES[player as usize]
+  }
+
   fn start_game(&mut self, ctx: &Context) {
     log::info!("Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
     ctx.emit(GameStarted);
   }
 
-  fn start_turn(&mut self, ctx: &Context) {
+  fn start_turn(&mut self, ctx: &Context) {   
     let game_state = self.game_state.as_mut().unwrap();
+
+    ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
+
     game_state.set_current_player_turn_state(TurnState::Beginning);
     ctx.emit(PlayerTurnBeginning::new(
       game_state.current_player(),
@@ -90,7 +97,7 @@ impl System for CompetitiveGame {
   fn on_despawn(&mut self, ctx: &Context) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {
-        let group_name = PLAYER_GROUP_NAMES[player as usize];
+        let group_name = Self::player_group_name(player);
         ctx.despawn_system_group(group_name);
       }
     }
@@ -150,7 +157,7 @@ impl GameManagement for CompetitiveGame {
     // create copy of systems for new player as a new system group
     let copy = self.systems_template.to_vec();
 
-    let group_name = PLAYER_GROUP_NAMES[game_state.player_count() as usize];
+    let group_name = Self::player_group_name(game_state.player_count() - 1);
     ctx.spawn_system_group(group_name, copy, false);
 
     ctx.emit(PlayerAdded);

@@ -5,10 +5,9 @@ use std::path::Path;
 
 use tokio::sync::mpsc;
 
-use crate::app::app_message::EventBox;
 use crate::operator_config::{ConfigValue, Domain, GeneralizedConfigValue};
-use crate::prelude::System;
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::*;
 
 pub struct OperatorConfig {
   current_values: HashMap<&'static str, Box<dyn Any + Send + Sync>>,
@@ -79,4 +78,5 @@ impl OperatorConfig {
 
 impl System for OperatorConfig {}
 
+#[derive(serde::Serialize, Event)]
 pub struct OperatorConfigChanged(pub &'static str);

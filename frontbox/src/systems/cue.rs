@@ -1,15 +1,15 @@
 //! # Cues
-//! 
+//!
 //! Cues are events that a system can send to itself. There are four primitive types of cues:
-//! 
+//!
 //! 1. **Once** -- Cue happens exactly once, after a given amount of time has elapsed
 //! 2. **Times** -- Cue happens N times, with an interval in between
 //! 3. **Loop** -- Cue happens until canceled, with an interval in between
 //! 4. **Now** -- Cue happens immediately, once
-//! 
+//!
 //! ```rust
 //! struct SomethingImportant(u8);
-//! 
+//!
 //! impl System for Example {
 //!   fn on_startup(&mut self, ctx: &Context) {
 //!     // setup the cue
@@ -18,7 +18,7 @@
 //!       Cue::Times(3, Duration::from_secs(3)),
 //!     )
 //!   }
-//! 
+//!
 //!   fn on_event(&mut self, event: &dyn Signal, ctx: &mut Context) {
 //!     // what to do when the cue happens (in this case, 3 times)
 //!     if let Some(v) = cmd.downcast_ref::<SomethingImportant>() {
@@ -27,21 +27,21 @@
 //!   }
 //! }
 //! ```
-//! 
+//!
 //! ### Handles
-//! 
+//!
 //! Creating a cue returns a handle that can later be used to cancel it.
-//! 
+//!
 //! ```rust
 //! let handle = ctx.cue(SomethingRather, Cue::Forever(Duration::from_secs(1)));
 //! // ...
 //! ctx.cancel_cue(handle);
 //! ```
-//! 
+//!
 //! ### Cycling
-//! 
+//!
 //! Cycling through a set of states is a common occurrence in pinball. For example, flashing is in fact the cycling of two values.
-//! 
+//!
 //! ```rust
 //! // note the use of `events!` here rather than `vec!`
 //! ctx.cue_cycling(
@@ -49,13 +49,13 @@
 //!   Cue::Forever(Duration::from_secs(1))
 //! );
 //! ```
-//! 
+//!
 //! Cycling works by rotating through the list of values each time the cue is complete. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On("example")` would be cued. Another second would elapse and `Off("example")` would be cued. Another second would elapse and `On("example")` would be cued, and so on.
-//! 
+//!
 //! ### Timelines
-//! 
+//!
 //! Sometimes it's easier to express things as a linear timeline. The same example as above could also be expressed as...
-//! 
+//!
 //! ```rust
 //! ctx.cue_timeline(CueTimeline::new()
 //!   .cue_at(Duration::from_secs(3), SomethingImportant(5))
@@ -63,9 +63,9 @@
 //!   .cue_at(Duration::from_secs(9), SomethingImportant(500))
 //! );
 //! ```
-//! 
+//!
 //! Timelines are a way to group a bunch of one-off cues into a sequence. Canceling a timeline cancels all remaining cues within it.
-//! 
+//!
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -249,7 +249,7 @@ impl Accumulator<Duration> for CueAccumulator {
       // in that case either.
       let loops = !matches!(self.cue, CueInternal::Once(_));
       if self.elapsed > self.target() && loops {
-          self.elapsed -= self.target();
+        self.elapsed -= self.target();
       }
 
       result.completed_cycle = true;
@@ -292,16 +292,23 @@ impl Accumulator<Duration> for CueAccumulator {
 mod test {
   use crate::{events, prelude::EventExt};
 
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
+  struct Signal;
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
+  struct Signal2;
+  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
+  struct Signal3;
+
   pub use super::*;
 
   #[test]
   fn now_cue() {
-    let cue = CueAccumulator::new(CueInternal::Now, vec![Box::new("signal")]);
+    let cue = CueAccumulator::new(CueInternal::Now, vec![Box::new(Signal)]);
 
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
   }
 
@@ -309,7 +316,7 @@ mod test {
   fn once_cue() {
     let mut cue = CueAccumulator::new(
       CueInternal::Once(Duration::from_secs(1)),
-      vec![Box::new("signal")],
+      vec![Box::new(Signal)],
     );
 
     assert_eq!(cue.is_complete(), false);
@@ -320,8 +327,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Verify that accumulating more time doesn't change the state
@@ -335,7 +342,7 @@ mod test {
   fn once_over_cue() {
     let mut cue = CueAccumulator::new(
       CueInternal::Once(Duration::from_secs(1)),
-      vec![Box::new("signal")],
+      vec![Box::new(Signal)],
     );
 
     assert_eq!(cue.is_complete(), false);
@@ -346,8 +353,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Verify that accumulating more time doesn't change the state
@@ -360,7 +367,7 @@ mod test {
   fn times_cue() {
     let mut cue = CueAccumulator::new(
       CueInternal::Times(3, Duration::from_secs(1)),
-      vec![Box::new("signal")],
+      vec![Box::new(Signal)],
     );
 
     assert_eq!(cue.is_complete(), false);
@@ -371,8 +378,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -392,7 +399,7 @@ mod test {
   fn loop_cue() {
     let mut cue = CueAccumulator::new(
       CueInternal::Loop(Duration::from_secs(1)),
-      vec![Box::new("signal")],
+      vec![Box::new(Signal)],
     );
 
     assert_eq!(cue.is_complete(), false);
@@ -403,8 +410,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -418,7 +425,7 @@ mod test {
   fn times_cue_with_multiple_signals() {
     let mut cue = CueAccumulator::new(
       CueInternal::Times(3, Duration::from_secs(1)),
-      events!["signal1", "signal2"],
+      events![Signal, Signal2],
     );
 
     // Advance 1 second, should trigger first signal
@@ -427,8 +434,8 @@ mod test {
     let result = cue.accumulate(Duration::from_millis(500));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
@@ -436,8 +443,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal2")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
+      Some(&Signal2)
     );
 
     // Advance another second, should loop back around to the first signal
@@ -445,17 +452,17 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
   }
 
   #[test]
   fn timeline_cue() {
     let mut cue = CueAccumulator::from_points(vec![
-      (Duration::from_secs(1), Box::new("signal1")),
-      (Duration::from_secs(2), Box::new("signal2")),
-      (Duration::from_secs(3), Box::new("signal3")),
+      (Duration::from_secs(1), Box::new(Signal)),
+      (Duration::from_secs(2), Box::new(Signal2)),
+      (Duration::from_secs(3), Box::new(Signal3)),
     ]);
 
     assert_eq!(cue.is_complete(), false);
@@ -465,16 +472,16 @@ mod test {
     let result = cue.accumulate(Duration::from_secs(1));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal1")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
+      Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
     let result = cue.accumulate(Duration::from_secs(1));
     assert_eq!(result.completed_cycle, true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal2")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
+      Some(&Signal2)
     );
 
     // Advance another second, should trigger third signal and complete
@@ -482,8 +489,8 @@ mod test {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<&str>()),
-      Some(&"signal3")
+      cue.signal().and_then(|s| s.downcast_ref::<Signal3>()),
+      Some(&Signal3)
     );
   }
 }

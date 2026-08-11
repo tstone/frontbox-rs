@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::tags::{Cabinet, StartButton};
+use frontbox::tags::Cabinet;
 
 use crate::{GameEnded, GameManagementExt, GameManager, GameStarted};
 
@@ -38,7 +38,6 @@ impl GameStartable {
         ..Default::default()
       })
       .tag(Cabinet)
-      .tag(StartButton)
   }
 
   fn start_btn_on(&self, ctx: &Context) {
@@ -86,11 +85,11 @@ impl System for GameStartable {
       self.start_btn_off(ctx);
     } else if event.is::<GameStarted>() {
       for effect in &mut self.effects {
-        effect.stop_and_clear(ctx);
+        effect.stop(ctx);
       }
     } else if event.is::<GameEnded>() {
       for effect in &mut self.effects {
-        effect.resume();
+        effect.play();
       }
     }
   }
@@ -105,5 +104,7 @@ impl System for GameStartable {
   }
 }
 
+#[derive(serde::Serialize, Event)]
 struct LampOn;
+#[derive(serde::Serialize, Event)]
 struct LampOff;

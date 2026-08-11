@@ -49,4 +49,5 @@ impl System for WatchdogSystem {
   }
 }
 
+#[derive(serde::Serialize, Event)]
 struct WatchdogPing;

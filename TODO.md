@@ -1,8 +1,9 @@
+- Possible BUG: If Cue time is less than system tick time, what happens?
+- Need to be able to specify a z-index on LedEffect
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
 - Animations should be able to be specified as relative to the frame rate
-- Move Extent somewhere more common that makes sense (similar problem as Cycle)
 - Establish (and document) consistent log targets
 - Check why there is an IoBoard and IoBoards
 - Audits: Keep stats on coils fired, etc.
@@ -11,6 +12,7 @@
 - Add `by_location` to hardware lookup implementations + HardwareQuery
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Clean up hardware exports
+- It's only a matter of time before passing around Context results in a system shutting down itself and accidentally shutting down it's caller
 
 Canvas
 
@@ -21,8 +23,6 @@ Canvas
 
 DMD Menu
 
-- Menu up/down navigation doesn't work
-- Need to be able to edit a config
 - Implement all sounds
 - Animate right offset of section arrow when selected
 - Transition left/right ease between sections

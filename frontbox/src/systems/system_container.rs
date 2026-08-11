@@ -5,6 +5,8 @@ use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use crate::animation::Accumulator;
+use crate::app::app_tracer::TraceEvent;
+use crate::app::run_loop::TracerSenders;
 use crate::prelude::Event;
 use crate::systems::*;
 
@@ -51,16 +53,28 @@ impl SystemContainer {
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
-  pub(crate) fn handle_active(&mut self, ctx: &Context) -> bool {
+  pub(crate) fn handle_active(&mut self, ctx: &Context, tracer_txs: &TracerSenders) -> bool {
     let fresh = self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
       if fresh {
         // system just became active
         self.inner.on_reactivate(ctx);
+        for tracer in tracer_txs {
+          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
+            id: self.id,
+            active: true,
+          });
+        }
       } else {
         // system just became inactive
         self.inner.on_deactivate(ctx);
+        for tracer in tracer_txs {
+          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
+            id: self.id,
+            active: false,
+          });
+        }
       }
     }
 
@@ -71,8 +85,10 @@ impl SystemContainer {
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     let mut cues_to_remove = Vec::new();
     for (id, cue) in &mut self.cues {
-      if cue.accumulate(delta).completed_cycle {
+      let result = cue.accumulate(delta);
+      if result.completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
+
         if let Some(signal) = cue.signal() {
           self.inner.on_event(signal, ctx);
         }

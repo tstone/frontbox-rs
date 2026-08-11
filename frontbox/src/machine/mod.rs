@@ -23,6 +23,6 @@ pub(crate) mod serial_interface;
 mod events;
 
 pub use events::*;
-pub use machine::Machine;
+pub use machine::{Machine, MachinePort};
 pub(crate) use machine::MachineImpl;
 pub use machine_ext::*;

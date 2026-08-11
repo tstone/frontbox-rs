@@ -1,4 +1,4 @@
-use std::any::{TypeId, type_name};
+use std::any::TypeId;
 use std::fmt::Display;
 
 use fast_protocol::SwitchState;
@@ -11,7 +11,6 @@ pub enum AppMessage {
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
-  SystemTick,
   Shutdown,
   SingleSwitchState(usize, SwitchState),
   SwitchStates(Vec<SwitchState>),
@@ -42,7 +41,6 @@ impl Display for AppMessage {
         write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
       }
       AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
-      AppMessage::SystemTick => write!(f, "SystemTick"),
       AppMessage::Shutdown => write!(f, "Shutdown"),
       AppMessage::SingleSwitchState(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
@@ -72,18 +70,3 @@ impl Display for AppMessage {
   }
 }
 
-pub struct EventBox {
-  pub event: Box<dyn Event>,
-  pub type_id: TypeId,
-  pub type_name: &'static str,
-}
-
-impl EventBox {
-  pub fn new<E: Event>(event: E) -> Self {
-    EventBox {
-      type_id: event.type_id(),
-      type_name: type_name::<E>(),
-      event: Box::new(event),
-    }
-  }
-}

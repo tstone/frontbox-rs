@@ -33,14 +33,3 @@ impl HardwareDefinition for SingleLedDefinition {
 pub struct LedConfiguration {
   pub channels: LedChannels,
 }
-
-#[derive(Debug, Clone, Copy, Default)]
-pub enum LedChannels {
-  #[default]
-  RGB,
-  GRB,
-  BRG,
-  RGBW,
-  GRBW,
-  BRGW,
-}

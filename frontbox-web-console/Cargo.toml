@@ -1,0 +1,17 @@
+[package]
+name = "frontbox-web-console"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.29"
+frontbox = { path = "../frontbox" }
+axum = { version = "0.8.9", features = ["ws"] }
+tokio = "1.53.1"
+tower-http = { version = "0.7", features = ["fs"] }
+serde_json = "1.0.151"
+serde = "1.0.229"
+askama = { version = "0.16", features = ["serde_json"] }
+
+[dev-dependencies]
+env_logger = "0.11.9"

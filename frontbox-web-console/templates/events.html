@@ -1,0 +1,12 @@
+{% for event in events %}
+<tr>
+  <td>{{ event.type_name }}</td>
+  <td>
+    {% if let Some(data) = event.event %}
+    <pre class="bg-dark text-body p-2 rounded mt-1" style="font-size: 0.75rem;">{{ data|json(2) }}</pre>
+    {% else %}
+    <span class="text-secondary">—</span>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}

@@ -1,4 +1,4 @@
-use frontbox::provided::{TroughSystem, TroughFull};
+use frontbox::provided::{TroughFull, TroughSystem};
 use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
@@ -35,7 +35,7 @@ impl BallSaveSystem {
     self.active = true;
 
     for effect in &mut self.effects {
-      effect.resume();
+      effect.play();
     }
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
@@ -52,7 +52,7 @@ impl BallSaveSystem {
     }
 
     for effect in &mut self.effects {
-      effect.stop_and_clear(ctx);
+      effect.stop(ctx);
     }
 
     log::debug!("🪩 Ball save ended.");
@@ -97,4 +97,5 @@ impl System for BallSaveSystem {
 }
 
 // Cues
+#[derive(serde::Serialize, Event)]
 struct EndBallSave;

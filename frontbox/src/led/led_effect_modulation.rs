@@ -43,9 +43,9 @@ pub struct Rotating {
 }
 
 impl Rotating {
-  pub fn new(duration: Duration, curve: Curve) -> Self {
+  pub fn new(duration: Duration, curve: Curve, cycle: Cycle) -> Self {
     Self {
-      anim: Tween::new(duration, curve, vec![0.0f32, 360.0], Cycle::Forever),
+      anim: Tween::new(duration, curve, vec![0.0f32, 360.0], cycle),
     }
   }
 }

@@ -11,6 +11,7 @@
 //! Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`. If getting errors trying to add a child to a group, make sure to add `#[derive(Clone)]` to the system definition.
 //! 
 //! ```rust
+//! # let ctx = Context
 //! const group_name: &'static str = "example";
 //! 
 //! // Start an entire group of systems
