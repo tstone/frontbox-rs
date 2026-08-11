@@ -40,14 +40,14 @@ impl AutoPlungerSystem {
   }
 
   /// Fire the autoplunger immediately
-  fn activate_coil(&self, ctx: &Context) {
+  fn activate_coil(&self, ctx: &SystemContext) {
     ctx.activate_driver(self.coil_name, ActivationMode::Tap);
   }
 
   /// Fire the autoplunger once the ball is resting in the lane
-  pub fn fire(&mut self, ctx: &Context) {
+  pub fn fire(&mut self, ctx: &SystemContext) {
     // Check that the ball is present
-    let plunge_lane = ctx.systems.expect::<PlungeLaneSystem>();
+    let plunge_lane = ctx.expect::<PlungeLaneSystem>();
     if plunge_lane.is_ball_present() {
       self.activate_coil(ctx);
     } else {
@@ -58,7 +58,7 @@ impl AutoPlungerSystem {
 }
 
 impl System for AutoPlungerSystem {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<BallEnteredPlungeLane>() {
       if self.do_autoplunge {
         self.activate_coil(ctx);

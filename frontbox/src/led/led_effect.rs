@@ -126,7 +126,7 @@ impl LedEffect {
   }
 
   // Halts the animation and clears any LED declarations applied by this effect
-  pub fn stop(&mut self, ctx: &Context) {
+  pub fn stop(&mut self, ctx: &SystemContext) {
     self.active = false;
     self.anim.stop();
     ctx.undeclare_leds(&self.query);
@@ -134,7 +134,7 @@ impl LedEffect {
   }
 
   /// Applies accumulation and any animation
-  pub fn apply(&mut self, delta: Duration, ctx: &Context) {
+  pub fn apply(&mut self, delta: Duration, ctx: &SystemContext) {
     if self.active && self.anim.is_complete() {
       log::debug!("auto stopping & clearing LedEffect");
       self.stop(ctx);

@@ -20,11 +20,11 @@ pub trait GeneralizedConfigValue: Send + Sync {
   // display rendering
   fn text(&self) -> &'static str;
   fn description(&self) -> &'static str;
-  fn current_value(&self, ctx: &Context) -> String;
+  fn current_value(&self, ctx: &SystemContext) -> String;
   /// True if the value is NOT default
-  fn value_modified(&self, ctx: &Context) -> bool;
-  fn increment(&self, ctx: &Context) -> String;
-  fn decrement(&self, ctx: &Context) -> String;
+  fn value_modified(&self, ctx: &SystemContext) -> bool;
+  fn increment(&self, ctx: &SystemContext) -> String;
+  fn decrement(&self, ctx: &SystemContext) -> String;
 }
 
 impl<T, D> HardwareValue<T, D>
@@ -57,26 +57,23 @@ where
     self.desc
   }
 
-  fn current_value(&self, ctx: &Context) -> String {
+  fn current_value(&self, ctx: &SystemContext) -> String {
     let op_config = ctx
-      .systems
       .get::<OperatorConfig>()
       .expect("Operator Config system not running");
     let value = op_config.get(self);
     format!("{}", value.config_display())
   }
 
-  fn value_modified(&self, ctx: &Context) -> bool {
+  fn value_modified(&self, ctx: &SystemContext) -> bool {
     let op_config = ctx
-      .systems
       .get::<OperatorConfig>()
       .expect("Operator Config system not running");
     op_config.get(self) != self.default
   }
 
-  fn decrement(&self, ctx: &Context) -> String {
+  fn decrement(&self, ctx: &SystemContext) -> String {
     let mut op_config = ctx
-      .systems
       .get::<OperatorConfig>()
       .expect("Operator Config system not running");
 
@@ -88,9 +85,8 @@ where
     text
   }
 
-  fn increment(&self, ctx: &Context) -> String {
+  fn increment(&self, ctx: &SystemContext) -> String {
     let mut op_config = ctx
-      .systems
       .get::<OperatorConfig>()
       .expect("Operator Config system not running");
 

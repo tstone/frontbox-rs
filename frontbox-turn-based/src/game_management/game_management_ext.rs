@@ -21,7 +21,7 @@ pub trait GameManagementExt {
   fn clear_multiplier(&self);
 }
 
-impl<'a> GameManagementExt for Context<'a> {
+impl<'a> GameManagementExt for SystemContext<'a> {
   fn add_player(&self) {
     let ctx = self;
     with_game_manager(self, |manager| {
@@ -64,7 +64,6 @@ impl<'a> GameManagementExt for Context<'a> {
 
   fn is_game_started(&self) -> bool {
     self
-      .systems
       .get::<GameManager>()
       .map(|manager| manager.is_game_started())
       .unwrap_or(false)
@@ -72,15 +71,14 @@ impl<'a> GameManagementExt for Context<'a> {
 
   fn is_player_addable(&self) -> bool {
     self
-      .systems
       .get::<GameManager>()
       .map(|manager| manager.is_player_addable())
       .unwrap_or(false)
   }
 }
 
-fn with_game_manager<T>(ctx: &Context, f: impl FnOnce(&mut GameManager) -> T) {
-  if let Some(mut system) = ctx.systems.get::<GameManager>() {
+fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) -> T) {
+  if let Some(mut system) = ctx.get::<GameManager>() {
     f(&mut system);
   } else {
     log::error!("GameManager not running.");

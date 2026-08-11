@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::provided::{BallExitedPlungeLane, TroughSystem, TroughFull};
+use frontbox::provided::{BallExitedPlungeLane, TroughFull, TroughSystem};
 
 use crate::*;
 
@@ -46,13 +46,13 @@ impl CompetitiveGame {
     PLAYER_GROUP_NAMES[player as usize]
   }
 
-  fn start_game(&mut self, ctx: &Context) {
+  fn start_game(&mut self, ctx: &SystemContext) {
     log::info!("Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
     ctx.emit(GameStarted);
   }
 
-  fn start_turn(&mut self, ctx: &Context) {   
+  fn start_turn(&mut self, ctx: &SystemContext) {
     let game_state = self.game_state.as_mut().unwrap();
 
     ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
@@ -63,12 +63,12 @@ impl CompetitiveGame {
       game_state.current_player_turn(),
     ));
 
-    if let Some(trough) = ctx.systems.get::<TroughSystem>() {
+    if let Some(trough) = ctx.get::<TroughSystem>() {
       trough.eject(ctx);
     }
   }
 
-  fn transition_turn_to_active(&mut self, ctx: &Context) {
+  fn transition_turn_to_active(&mut self, ctx: &SystemContext) {
     log::debug!("Transitioning current turn to active");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
@@ -78,7 +78,7 @@ impl CompetitiveGame {
     ));
   }
 
-  fn transition_turn_to_ending(&mut self, ctx: &Context) {
+  fn transition_turn_to_ending(&mut self, ctx: &SystemContext) {
     log::debug!("Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Ending);
@@ -94,7 +94,7 @@ impl System for CompetitiveGame {
     vec![&*configs::TURN_COUNT]
   }
 
-  fn on_despawn(&mut self, ctx: &Context) {
+  fn on_despawn(&mut self, ctx: &SystemContext) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {
         let group_name = Self::player_group_name(player);
@@ -103,7 +103,7 @@ impl System for CompetitiveGame {
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
@@ -115,10 +115,9 @@ impl System for CompetitiveGame {
             self.transition_turn_to_active(ctx);
           }
         }
-        TurnState::Active
-          if event.is::<TroughFull>() => {
-            self.transition_turn_to_ending(ctx);
-          }
+        TurnState::Active if event.is::<TroughFull>() => {
+          self.transition_turn_to_ending(ctx);
+        }
         _ => {}
       }
     }
@@ -126,7 +125,7 @@ impl System for CompetitiveGame {
 }
 
 impl GameManagement for CompetitiveGame {
-  fn add_player(&mut self, ctx: &Context) {
+  fn add_player(&mut self, ctx: &SystemContext) {
     let mut game_started_just_now = false;
     if !self.is_game_started() {
       self.start_game(ctx);
@@ -167,7 +166,7 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn advance_turn(&mut self, ctx: &Context) {
+  fn advance_turn(&mut self, ctx: &SystemContext) {
     let max_turn_count = ctx.operator_config.get(&configs::TURN_COUNT);
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
@@ -195,7 +194,7 @@ impl GameManagement for CompetitiveGame {
     self.start_turn(ctx);
   }
 
-  fn end_game(&mut self, ctx: &Context) {
+  fn end_game(&mut self, ctx: &SystemContext) {
     log::info!("Ending game");
 
     // verify the game is already running
@@ -242,7 +241,7 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn add_points(&mut self, points: u32, ctx: &Context) {
+  fn add_points(&mut self, points: u32, ctx: &SystemContext) {
     if let Some(game_state) = &mut self.game_state {
       let multiplier = game_state.current_player_multiplier();
       let points_received = (points as f32 * multiplier) as u32;

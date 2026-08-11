@@ -13,7 +13,7 @@ pub trait MachineExt {
   );
 }
 
-impl<'a> MachineExt for Context<'a> {
+impl<'a> MachineExt for SystemContext<'a> {
   // TODO: allow DriverDefinition to be passed in directly
   fn configure_driver(&self, driver: &'static str, mode: impl DriverMode + 'static) {
     with_machine(self, |machine| {
@@ -46,8 +46,8 @@ impl<'a> MachineExt for Context<'a> {
   }
 }
 
-fn with_machine<T>(ctx: &Context, f: impl FnOnce(&mut Machine) -> T) {
-  if let Some(mut machine) = ctx.systems.get::<Machine>() {
+fn with_machine<T>(ctx: &SystemContext, f: impl FnOnce(&mut Machine) -> T) {
+  if let Some(mut machine) = ctx.get::<Machine>() {
     f(&mut machine);
   } else {
     log::error!("Machine not running.");

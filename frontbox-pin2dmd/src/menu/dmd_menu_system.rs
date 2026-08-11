@@ -92,13 +92,13 @@ impl DmdMenuSystem {
       .unwrap_or(0)
   }
 
-  fn activate_section(&mut self, section: &'static MenuSection, ctx: &Context) {
+  fn activate_section(&mut self, section: &'static MenuSection, ctx: &SystemContext) {
     self.active_section = section;
     self.selected_row = Self::first_non_header_row(self.active_section);
     self.refresh_display_rows(ctx);
   }
 
-  fn navigate_fwd(&mut self, ctx: &Context) {
+  fn navigate_fwd(&mut self, ctx: &SystemContext) {
     match self.display_rows[self.selected_row] {
       DisplayMenuRow::Section { id, .. } => {
         let section = self.row_lookup.get(&id).unwrap().row.section().unwrap();
@@ -120,7 +120,7 @@ impl DmdMenuSystem {
     }
   }
 
-  fn navigate_back(&mut self, ctx: &Context) {
+  fn navigate_back(&mut self, ctx: &SystemContext) {
     if self.selected_config.is_some() {
       self.selected_config = None;
       self.requires_render = true;
@@ -143,7 +143,7 @@ impl DmdMenuSystem {
     }
   }
 
-  fn navigate_inc(&mut self, ctx: &Context) {
+  fn navigate_inc(&mut self, ctx: &SystemContext) {
     if let Some(row) = &mut self.selected_config {
       if let Some(value) = self
         .display_rows
@@ -185,7 +185,7 @@ impl DmdMenuSystem {
     ctx.play_sfx(INC_SOUND);
   }
 
-  fn navigate_dec(&mut self, ctx: &Context) {
+  fn navigate_dec(&mut self, ctx: &SystemContext) {
     if let Some(row) = &self.selected_config {
       if let Some(value) = self
         .display_rows
@@ -224,7 +224,7 @@ impl DmdMenuSystem {
   }
 
   // Display rows contained memoized values which may change. Upon trigger, re-generate these rows with the latest values
-  fn refresh_display_rows(&mut self, ctx: &Context) {
+  fn refresh_display_rows(&mut self, ctx: &SystemContext) {
     self.display_rows.clear();
 
     for row in &self.active_section.rows {
@@ -476,15 +476,15 @@ impl DmdMenuSystem {
 }
 
 impl System for DmdMenuSystem {
-  fn is_active(&self, ctx: &Context) -> bool {
+  fn is_active(&self, ctx: &SystemContext) -> bool {
     ctx
       .switches
       .is_open(self.switch_names.coin_door)
       .unwrap_or(false)
   }
 
-  fn on_spawn(&mut self, ctx: &Context) {
-    if let Some(mut snd) = ctx.systems.get::<SoundSystem>() {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
+    if let Some(mut snd) = ctx.get::<SoundSystem>() {
       snd.preload_embedded(MENU_BEGIN_SND, menu::sounds::DOOR_OPEN);
       snd.preload_embedded(BACK_SND, menu::sounds::MENU_BACK);
       snd.preload_embedded(SELECT_SND, menu::sounds::MENU_FWD);
@@ -502,33 +502,33 @@ impl System for DmdMenuSystem {
     }
   }
 
-  fn on_reactivate(&mut self, ctx: &Context) {
-    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
+  fn on_reactivate(&mut self, ctx: &SystemContext) {
+    if let Some(mut dmd) = ctx.get::<DmdSystem>() {
       dmd.clear();
       self.requires_row_refresh = true;
     }
     ctx.play_sfx(MENU_BEGIN_SND);
   }
 
-  fn on_deactivate(&mut self, ctx: &Context) {
+  fn on_deactivate(&mut self, ctx: &SystemContext) {
     ctx.play_sfx(MENU_END_SND);
   }
 
-  fn on_tick(&mut self, _delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
     if self.requires_row_refresh {
       self.refresh_display_rows(ctx);
       self.requires_row_refresh = false;
     }
 
     if self.requires_render
-      && let Some(mut dmd) = ctx.systems.get::<DmdSystem>()
+      && let Some(mut dmd) = ctx.get::<DmdSystem>()
     {
       let size = *dmd.size();
       dmd.insert_layer(0, self.draw(&size).default_position());
     }
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       log::debug!("Switch event");
 

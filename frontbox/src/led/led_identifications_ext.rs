@@ -17,7 +17,7 @@ struct IdentificationAtZ {
 }
 
 impl Contextual<LedIdentifications> for IdentificationAtZ {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let ids = self.other.resolve(ctx);
     ids.at_z(self.z)
   }

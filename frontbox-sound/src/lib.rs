@@ -24,7 +24,7 @@
 //! - Can crossfade into each other
 //! 
 //! ```rust
-//! let sound_system = ctx.systems.expect::<SoundSystem>();
+//! let sound_system = ctx.expect::<SoundSystem>();
 //! 
 //! // typically done `on_startup`
 //! sound_system.preload("name", "/game/assets/sfx/example.wav");
