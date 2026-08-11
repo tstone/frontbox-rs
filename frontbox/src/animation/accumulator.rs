@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use dyn_clone::DynClone;
 
 /// Describes something that can move forward in time
@@ -13,6 +15,7 @@ pub trait Accumulator<A>: DynClone + Send + Sync {
 
 dyn_clone::clone_trait_object!(<A> Accumulator<A>);
 
+#[derive(Debug)]
 pub struct AccumulationResult<A> {
   /// Accumulators can perform multiple cycles (loops). This flag indicates if a cycle was completed during this accumulation step. To check if the entire accumulator has completed all of its cycles, use `.is_complete()` flag.
   pub completed_cycle: bool,

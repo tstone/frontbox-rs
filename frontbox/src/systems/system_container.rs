@@ -61,13 +61,19 @@ impl SystemContainer {
         // system just became active
         self.inner.on_reactivate(ctx);
         for tracer in tracer_txs {
-          let _ = tracer.send(TraceEvent::SystemActiveStateChange { id: self.id, active: true });
+          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
+            id: self.id,
+            active: true,
+          });
         }
       } else {
         // system just became inactive
         self.inner.on_deactivate(ctx);
         for tracer in tracer_txs {
-          let _ = tracer.send(TraceEvent::SystemActiveStateChange { id: self.id, active: false });
+          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
+            id: self.id,
+            active: false,
+          });
         }
       }
     }
@@ -79,8 +85,10 @@ impl SystemContainer {
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context) {
     let mut cues_to_remove = Vec::new();
     for (id, cue) in &mut self.cues {
-      if cue.accumulate(delta).completed_cycle {
+      let result = cue.accumulate(delta);
+      if result.completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
+
         if let Some(signal) = cue.signal() {
           self.inner.on_event(signal, ctx);
         }

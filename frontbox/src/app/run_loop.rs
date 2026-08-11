@@ -283,7 +283,7 @@ fn spawn_system(
   base: &ContextBase,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
-) {  
+) {
   let system_id = system.id();
 
   let was_spawned = if let Some(parent) = groups.get_mut(parent_key) {
@@ -570,10 +570,11 @@ fn create_cue(
   if let Some(group) = groups.get(handle.parent_key)
     && let Some(mut system) = group.get_by_id(&handle.id)
   {
+    log::info!("Creating cue for {} ({})", system.name(), handle.id);
     system.create_cue(cue, cue_id, signals);
   } else {
     log::warn!(
-      "No system found with ID {}, cannot create cue {:?}",
+      "Cueing: No system found with ID {}, cannot create cue {:?}",
       handle.id,
       cue
     );
