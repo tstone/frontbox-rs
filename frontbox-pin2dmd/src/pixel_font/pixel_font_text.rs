@@ -33,7 +33,13 @@ impl PixelFontText {
     // starting from the max width, render the right-most characters, offsetting to the left by the width of the char
     let mut offset = canvas.bounds.width as i32;
     for c in self.text.chars().rev() {
-      offset = offset.saturating_sub(self.font.glyph(c).map(|gl| gl.width).unwrap_or(0) as i32);
+      offset = offset.saturating_sub(
+        self
+          .font
+          .glyph_case_indeterminate(&c)
+          .map(|gl| gl.width)
+          .unwrap_or(0) as i32,
+      );
       let mut char_canvas = canvas.child_view(
         // shift origin left as characters are accumulated
         Position::new(offset, 0),
@@ -45,13 +51,17 @@ impl PixelFontText {
   }
 
   pub fn total_width(&self) -> u16 {
-    self
-      .text
-      .chars()
-      .fold(0, |acc, c| match self.font.glyph(c) {
-        Some(glyph) => acc + glyph.width as u16,
-        None => acc,
-      })
+    let char_widths =
+      self
+        .text
+        .chars()
+        .fold(0, |acc, c| match self.font.glyph_case_indeterminate(&c) {
+          Some(glyph) => acc + glyph.width as u16,
+          None => acc,
+        });
+
+    // include spacing in total width
+    char_widths + (self.spacing as u16).saturating_mul(self.text.len().saturating_sub(1) as u16)
   }
 }
 
