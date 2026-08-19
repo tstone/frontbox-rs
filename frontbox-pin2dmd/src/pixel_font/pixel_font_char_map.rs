@@ -77,18 +77,21 @@ impl PixelFontCharacterMap {
     }
   }
 
-  pub fn glyph(&self, c: char) -> Option<&PixelFontGlyph> {
-    self.glyphs.get(&c)
+  pub fn glyph(&self, c: &char) -> Option<&PixelFontGlyph> {
+    self.glyphs.get(c)
   }
 
-  pub fn render_char_image(&self, c: char, color: Rgba<u8>, canvas: &mut CanvasView) -> u8 {
+  pub fn glyph_case_indeterminate(&self, c: &char) -> Option<&PixelFontGlyph> {
     let mut glyph = self.glyphs.get(&c);
-    // check upper case if not found
+    // check upper case if not found since most pixel fonts are only upper case
     if glyph.is_none() {
       glyph = self.glyphs.get(&c.to_ascii_uppercase())
     }
+    glyph
+  }
 
-    if let Some(glyph) = glyph {
+  pub fn render_char_image(&self, c: char, color: Rgba<u8>, canvas: &mut CanvasView) -> u8 {
+    if let Some(glyph) = self.glyph_case_indeterminate(&c) {
       for (i, &on) in glyph.pixels.iter().enumerate() {
         if on {
           let x = (i % glyph.width as usize) as u32;

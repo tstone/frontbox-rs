@@ -11,7 +11,7 @@
 //! ctx.deactivate_driver(driver, mode);
 //! 
 //! // long hand
-//! ctx.systems.expect::<Machine>()
+//! ctx.expect::<Machine>()
 //!   .deactivate_driver(driver, mode, ctx);
 //! ```
 

@@ -3,8 +3,7 @@ use std::ops::Deref;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::*;
 
-// #[derive(Clone)]
-pub struct ContextBase {
+pub struct BootSnapshot {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
   pub leds: LedLookup,
@@ -14,7 +13,7 @@ pub struct ContextBase {
   pub(crate) app_config: AppConfig,
 }
 
-impl Deref for ContextBase {
+impl Deref for BootSnapshot {
   type Target = AppConfig;
 
   fn deref(&self) -> &Self::Target {

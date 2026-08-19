@@ -12,7 +12,7 @@ pub struct PixelFontOverflowText {
 
 impl Layer for PixelFontOverflowText {
   fn render<'a>(&self, canvas: &mut frontbox_canvas::CanvasView<'a>) {
-    let ellipsis_width = self.font.glyph('…').map(|g| g.width).unwrap_or_else(|| 
+    let ellipsis_width = self.font.glyph(&'…').map(|g| g.width).unwrap_or_else(|| 
       panic!(
         "Expected font {} to include ellipsis character '…' but did not.",
         self.font.name
@@ -22,7 +22,7 @@ impl Layer for PixelFontOverflowText {
 
     for c in self.text.chars() {
       // Check if there's not enough space to write this character AND the ellipsis. If not, render ellipsis and quit
-      let glyph_width = self.font.glyph(c).map(|g| g.width).unwrap_or(0) as i32;
+      let glyph_width = self.font.glyph(&c).map(|g| g.width).unwrap_or(0) as i32;
       let out_of_space = (offset + glyph_width + ellipsis_width) >= canvas.bounds.width as i32;
 
       let mut char_canvas = canvas.child_view(

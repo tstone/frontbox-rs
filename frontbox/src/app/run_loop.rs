@@ -13,7 +13,7 @@ use crate::systems::event_interrupts::EventInterruptRegistry;
 pub(crate) type TracerSenders = Vec<mpsc::UnboundedSender<app_tracer::TraceEvent>>;
 
 pub async fn run(
-  mut base: ContextBase,
+  mut base: BootSnapshot,
   initial_systems: Vec<SystemContainer>,
   app_tracers: Vec<Box<dyn AppTracer>>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -143,13 +143,13 @@ pub async fn run(
 fn apply_to_system<F, T>(
   handle: SystemHandle,
   groups: &Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
   mut handler: F,
 ) -> Option<T>
 where
-  F: FnMut(&mut SystemContainer, &mut Context) -> T,
+  F: FnMut(&mut SystemContainer, &mut SystemContext) -> T,
 {
   let mut result: Option<T> = None;
 
@@ -157,7 +157,7 @@ where
     && group.active
     && let Some(mut system) = group.get_by_id(&handle.id)
   {
-    let mut ctx = Context::new(base, handle, groups, app_sender.clone());
+    let mut ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     if system.handle_active(&ctx, tracer_txs) {
       result = Some(handler(&mut system, &mut ctx));
     } else {
@@ -171,18 +171,18 @@ where
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
 fn apply_to_systems<F>(
   groups: &Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
   mut handler: F,
 ) where
-  F: FnMut(&mut SystemContainer, &mut Context),
+  F: FnMut(&mut SystemContainer, &mut SystemContext),
 {
   for (key, group) in groups {
     if group.active {
       for cell in group.values() {
         let mut system = cell.borrow_mut();
-        let mut ctx = Context::new(
+        let mut ctx = SystemContext::new(
           base,
           SystemHandle::new(system.id(), key),
           groups,
@@ -201,7 +201,7 @@ fn apply_to_systems<F>(
 fn emit_event(
   event_box: EventBox,
   groups: &Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -262,7 +262,7 @@ fn emit_event(
 
 async fn handle_system_tick(
   groups: &Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -280,7 +280,7 @@ fn spawn_system(
   system: SystemContainer,
   parent_key: &'static str,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -307,7 +307,7 @@ fn spawn_system(
       .unwrap();
     log::info!("🌐 Spawned system {} ({})", system.name(), system.id());
 
-    let ctx = Context::new(
+    let ctx = SystemContext::new(
       base,
       SystemHandle::new(system_id, parent_key),
       groups,
@@ -332,7 +332,7 @@ fn replace_system(
   old_handle: SystemHandle,
   new_system: SystemContainer,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -359,7 +359,7 @@ fn replace_system(
 fn despawn_system(
   handle: SystemHandle,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -368,7 +368,7 @@ fn despawn_system(
     && let Some(cell) = parent.remove(handle.id)
   {
     let mut system = cell.borrow_mut();
-    let ctx = Context::new(base, handle, groups, app_sender.clone());
+    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
 
@@ -391,7 +391,7 @@ fn spawn_system_group(
   child_systems: Vec<ChildSystemContainer>,
   active: bool,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -425,7 +425,7 @@ fn spawn_system_group(
 fn despawn_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -462,7 +462,7 @@ fn despawn_system_group(
 fn activate_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -489,7 +489,7 @@ fn activate_system_group(
       .systems
       .get_by_id(&id)
       .unwrap();
-    let ctx = Context::new(
+    let ctx = SystemContext::new(
       base,
       SystemHandle::new(id, group_name),
       groups,
@@ -512,7 +512,7 @@ fn activate_system_group(
 fn deactivate_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &ContextBase,
+  base: &BootSnapshot,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -539,7 +539,7 @@ fn deactivate_system_group(
       .systems
       .get_by_id(&id)
       .unwrap();
-    let ctx = Context::new(
+    let ctx = SystemContext::new(
       base,
       SystemHandle::new(id, group_name),
       groups,

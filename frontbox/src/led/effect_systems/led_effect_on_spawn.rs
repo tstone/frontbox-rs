@@ -13,7 +13,7 @@ impl LedEffectOnSpawn {
 }
 
 impl System for LedEffectOnSpawn {
-  fn on_spawn(&mut self, ctx: &Context) {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
     self.effect.apply(Duration::ZERO, ctx)
   }
 }

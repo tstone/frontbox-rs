@@ -31,7 +31,7 @@ impl BallSaveSystem {
     self
   }
 
-  pub fn activate(&mut self, ctx: &Context) {
+  pub fn activate(&mut self, ctx: &SystemContext) {
     self.active = true;
 
     for effect in &mut self.effects {
@@ -43,7 +43,7 @@ impl BallSaveSystem {
     log::debug!("🪩 Ball save started.")
   }
 
-  pub fn deactivate(&mut self, ctx: &Context) {
+  pub fn deactivate(&mut self, ctx: &SystemContext) {
     self.active = false;
     ctx.unregister_interrupt::<TroughFull>();
 
@@ -64,7 +64,7 @@ impl BallSaveSystem {
 }
 
 impl System for BallSaveSystem {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.downcast_ref::<PlayerTurnActive>().is_some() {
       // automatically do ball save at the start of a turn
       self.activate(ctx);
@@ -74,20 +74,20 @@ impl System for BallSaveSystem {
     }
   }
 
-  fn on_interrupt(&mut self, _event: &dyn Event, ctx: &Context) -> InterruptResult {
+  fn on_interrupt(&mut self, _event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
     // while active all TroughFull events are stopped
     log::debug!("Ball save interrupting TroughFull");
     ctx.emit(BallSaved);
 
     // Feed ball back to player
-    if let Some(trough) = ctx.systems.get::<TroughSystem>() {
-      trough.eject(ctx);
+    if let Some(trough) = ctx.get::<TroughSystem>() {
+      trough.eject(ctx.into());
     }
 
     InterruptResult::Halt
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     if self.active {
       for effect in &mut self.effects {
         effect.apply(delta, ctx);

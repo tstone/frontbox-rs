@@ -53,7 +53,7 @@ impl SystemContainer {
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
-  pub(crate) fn handle_active(&mut self, ctx: &Context, tracer_txs: &TracerSenders) -> bool {
+  pub(crate) fn handle_active(&mut self, ctx: &SystemContext, tracer_txs: &TracerSenders) -> bool {
     let fresh = self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
@@ -82,7 +82,7 @@ impl SystemContainer {
     fresh
   }
 
-  pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     let mut cues_to_remove = Vec::new();
     for (id, cue) in &mut self.cues {
       let result = cue.accumulate(delta);

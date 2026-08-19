@@ -84,7 +84,7 @@ impl LedExample {
 }
 
 impl System for LedExample {
-  fn on_spawn(&mut self, ctx: &Context) {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
     // Declare individually
     ctx.declare_leds(&leds::DEMO1.q(), ColorSequence::solid(Rgba::blue()));
     ctx.declare_leds(
@@ -99,7 +99,7 @@ impl System for LedExample {
     );
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // tick animations to update their internal state
     self.flash.accumulate(delta);
     self.seq.accumulate(delta);

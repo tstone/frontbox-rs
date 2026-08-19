@@ -47,7 +47,7 @@ impl PlungeLaneSystem {
 }
 
 impl System for PlungeLaneSystem {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<BallExitedTrough>() {
       self.expect_ball = true;
     } else if event.is::<TimesUpBallsGone>() {
@@ -80,7 +80,7 @@ impl System for PlungeLaneSystem {
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     if self.is_ball_present() {
       for effect in &mut self.ball_present_effects {
         effect.apply(delta, ctx);

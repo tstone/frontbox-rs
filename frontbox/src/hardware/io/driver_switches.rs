@@ -1,13 +1,13 @@
 use crate::prelude::*;
 
-fn switch_id(name: &'static str, ctx: &ContextBase) -> Option<usize> {
+fn switch_id(name: &'static str, ctx: &BootSnapshot) -> Option<usize> {
   ctx.switches.by_name(name).map(|sw| sw.id)
 }
 
 /// Return the switch ID and invert status from trigger mode
 pub fn get_switch_id_and_invert(
   trigger_mode: &DriverTriggerMode,
-  ctx: &ContextBase,
+  ctx: &BootSnapshot,
 ) -> (Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerMode::Disabled => (None, None),
@@ -21,7 +21,7 @@ pub fn get_switch_id_and_invert(
 /// Return both switch IDs and invert statuses from dual trigger mode
 pub fn get_switch_ids_and_inverts(
   trigger_mode: &DriverTriggerDualMode,
-  ctx: &ContextBase,
+  ctx: &BootSnapshot,
 ) -> (Option<usize>, Option<bool>, Option<usize>, Option<bool>) {
   match trigger_mode {
     DriverTriggerDualMode::Disabled => (None, None, None, None),

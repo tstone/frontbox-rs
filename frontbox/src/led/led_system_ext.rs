@@ -17,7 +17,7 @@ pub trait LedSystemExt {
   );
 }
 
-impl<'a> LedSystemExt for Context<'a> {
+impl<'a> LedSystemExt for SystemContext<'a> {
   fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, seq: ColorSequence) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
@@ -77,8 +77,8 @@ impl<'a> LedSystemExt for Context<'a> {
   }
 }
 
-fn with_led_system<T>(ctx: &Context, f: impl FnOnce(&mut LedSystem) -> T) {
-  if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
+fn with_led_system<T>(ctx: &SystemContext, f: impl FnOnce(&mut LedSystem) -> T) {
+  if let Some(mut led_system) = ctx.get::<LedSystem>() {
     f(&mut led_system);
   } else {
     log::error!("LedSystem not running.");

@@ -203,7 +203,7 @@ impl SoundSystem {
 }
 
 impl System for SoundSystem {
-  fn on_tick(&mut self, _delta: Duration, _ctx: &Context) {
+  fn on_tick(&mut self, _delta: Duration, _ctx: &SystemContext) {
     let SoundSystem {
       active_callout,
       music_track,

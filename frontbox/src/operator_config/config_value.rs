@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::operator_config::{Domain, OperatorConfig};
-use crate::prelude::Context;
+use crate::prelude::SystemContext;
 
 #[derive(Debug, Clone)]
 pub struct ConfigValue<T, D: Domain<T>> {
@@ -15,7 +15,7 @@ impl<T, D: Domain<T>> ConfigValue<T, D>
 where
   T: Clone + Send + Sync + 'static,
 {
-  pub fn get(&self, ctx: &Context) -> T {
+  pub fn get(&self, ctx: &SystemContext) -> T {
     ctx.operator_config.get(self)
   }
 
