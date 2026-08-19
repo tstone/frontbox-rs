@@ -226,6 +226,12 @@ impl GameManagement for CompetitiveGame {
     self.game_state.as_ref()
   }
 
+  fn turn_state(&self) -> Option<&TurnState> {
+    self
+      .game_state()
+      .map(|state| state.current_player_turn_state())
+  }
+
   fn clear_multiplier(&mut self) {
     if let Some(game_state) = &mut self.game_state
       && let Some(multiplier) = game_state.current_player_multiplier_mut()
