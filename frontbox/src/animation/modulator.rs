@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::animation::*;
 
-/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedPrograms).
+/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
 ///
 /// ```rust
 /// let modulator = Modulator::new(

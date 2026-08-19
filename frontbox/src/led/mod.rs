@@ -36,7 +36,7 @@
 //! #### 1D
 //! Setting a single LED or a sequence of LEDs (strip, group, etc.). With this form. a specific set of LEDs are referenced, and a specific color sequence is applied. This is the form typically used by game modes to communicate game state to the player.
 //!
-//! 1d rendering is handled by [LedProgram] which accepts a [ColorSequence].
+//! 1d rendering is handled by [LedProgram1d] which accepts a [ColorSequence].
 //!
 //! #### 2D
 //! Setting a group of specially, by giving the framework graphics or effects which are then applied to LEDs that fall within that area. This is sparse canvas rendering and is used for things like attrack mode or reaction effects.
@@ -53,10 +53,10 @@
 //! <div class="warning">`LedSystem` must be spawned in order to use it. The framework does not automatically start this system.</div>
 //!
 //! ## Animating LEDs
-//! LEDs colors can, of course, be animated -- either manually or with [LedPrograms](crate::led::LedProgram).
+//! LEDs colors can, of course, be animated -- either manually or with [LedProgram1ds](crate::led::LedProgram1d).
 //!
 //! ### Manually Animating LEDs
-//! This approach takes more setup and manual wiring, but ends up being more flexible all overall, compared to [LedProgram]. It works by accumulating the animation _and_ re-declaring the LED on the same tick.
+//! This approach takes more setup and manual wiring, but ends up being more flexible all overall, compared to [LedProgram1d]. It works by accumulating the animation _and_ re-declaring the LED on the same tick.
 //!
 //! ```rust
 //! pub struct AnimExample {
@@ -96,9 +96,9 @@
 //! }
 //! ```
 //!
-//! #### Automatic Led Animation (LedProgram)
+//! #### Automatic Led Animation (LedProgram1d)
 //!
-//! A simpler approach is to use an [LedProgram] that accepts a hardware query and animation, and applies it.
+//! A simpler approach is to use an [LedProgram1d] that accepts a hardware query and animation, and applies it.
 
 mod alternate_resolver;
 pub mod color_sequence;
@@ -106,7 +106,7 @@ mod led_declarations;
 mod led_effect_modulation;
 mod led_identifications;
 mod led_identifications_ext;
-mod led_program;
+mod led_program_1d;
 mod led_system;
 mod led_system_ext;
 mod rgba_color;
@@ -116,7 +116,7 @@ pub(crate) use led_declarations::*;
 pub use led_effect_modulation::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
-pub use led_program::*;
+pub use led_program_1d::*;
 pub use led_system::*;
 pub use led_system_ext::*;
 pub use rgba_color::*;

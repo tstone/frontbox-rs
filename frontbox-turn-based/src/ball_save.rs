@@ -7,7 +7,7 @@ use crate::{PlayerTurnActive, PlayerTurnEnding};
 #[derive(Clone)]
 pub struct BallSaveSystem {
   duration: Duration,
-  led_programs: Vec<LedProgram>,
+  led_programs: Vec<LedProgram1d>,
   cue: Option<u64>,
   active: bool,
 }
@@ -26,7 +26,7 @@ impl BallSaveSystem {
     }
   }
 
-  pub fn effect(mut self, effect: LedProgram) -> Self {
+  pub fn effect(mut self, effect: LedProgram1d) -> Self {
     self.led_programs.push(effect);
     self
   }

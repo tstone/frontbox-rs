@@ -11,12 +11,12 @@ use crate::prelude::color_sequence::ColorSequenceAlteration;
 use crate::prelude::{Cycle, Extent};
 
 #[derive(Clone)]
-pub enum LedProgramAlteration {
+pub enum LedProgram1dAlteration {
   Static(ColorSequenceAlteration),
   Rotating(Rotating),
 }
 
-impl LedProgramModulation for LedProgramAlteration {
+impl LedProgram1dModulation for LedProgram1dAlteration {
   fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration {
     match self {
       Self::Static(a) => a.clone(),
@@ -26,13 +26,13 @@ impl LedProgramModulation for LedProgramAlteration {
 
   fn reset(&mut self) {
     match self {
-      LedProgramAlteration::Static(_) => {}
-      LedProgramAlteration::Rotating(r) => r.reset(),
+      LedProgram1dAlteration::Static(_) => {}
+      LedProgram1dAlteration::Rotating(r) => r.reset(),
     }
   }
 }
 
-pub trait LedProgramModulation {
+pub trait LedProgram1dModulation {
   fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration;
   fn reset(&mut self);
 }
@@ -50,7 +50,7 @@ impl Rotating {
   }
 }
 
-impl LedProgramModulation for Rotating {
+impl LedProgram1dModulation for Rotating {
   fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration {
     self.anim.accumulate(delta);
     ColorSequenceAlteration::Rotate(Extent::Relative(self.anim.sample()))
