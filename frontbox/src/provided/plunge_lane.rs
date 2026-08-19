@@ -71,6 +71,7 @@ impl System for PlungeLaneSystem {
         self.state = PlungeLaneState::UnexpectedBallPresent;
       }
 
+      log::info!("Ball entered plunge lane ({:?})", self.state);
       ctx.emit(BallEnteredPlungeLane::new(self.state));
       self.expect_ball = false;
     } else if let Some(event) = event.downcast_ref::<SwitchOpened>()

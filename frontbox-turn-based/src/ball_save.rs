@@ -1,4 +1,4 @@
-use frontbox::provided::{TroughFull, TroughSystem};
+use frontbox::provided::{AutoPlungerSystem, PlungeLaneSystem, TroughFull, TroughSystem};
 use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};
@@ -80,6 +80,9 @@ impl System for BallSaveSystem {
     ctx.emit(BallSaved);
 
     // Feed ball back to player
+    if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
+      autoplunger.eject_next();
+    }
     if let Some(trough) = ctx.get::<TroughSystem>() {
       trough.eject(ctx.into());
     }

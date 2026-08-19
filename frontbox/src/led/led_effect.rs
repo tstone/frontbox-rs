@@ -65,6 +65,19 @@ impl LedEffect {
     }
   }
 
+  pub fn breathe(query: HardwareQuery, color: Rgba<u8>, duration: Duration, cycle: Cycle) -> Self {
+    Self::cycle(
+      query,
+      duration,
+      Curve::Linear,
+      cycle,
+      vec![
+        ColorSequence::solid(color),
+        ColorSequence::solid(color.darken(0.3)),
+      ],
+    )
+  }
+
   /// Flash all LEDs on and off. Duration is a full on/off cycle
   pub fn flash(
     query: HardwareQuery,

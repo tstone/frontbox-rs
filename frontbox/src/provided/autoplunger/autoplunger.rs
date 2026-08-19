@@ -25,7 +25,7 @@ impl AutoPlungerSystem {
       initial_pwm_length: HardwareValue::config(
         "Autoplunger Touch Time",
         "Duration by which the forks are brought into contact with the ball, before full launch",
-        Duration::from_millis(7),
+        Duration::from_millis(5),
         Ranges::duration(0, 100),
       ),
       initial_pwm_power: HardwareValue::fixed(Power::HALF),
@@ -34,7 +34,7 @@ impl AutoPlungerSystem {
       kick_length: HardwareValue::config(
         "Autoplunger Coil Launch Time",
         "Duration that the forks exert full power onto the ball (kick)",
-        Duration::from_millis(24),
+        Duration::from_millis(8),
         Ranges::duration(5, 75),
       ),
       ..Default::default()
@@ -57,6 +57,10 @@ impl AutoPlungerSystem {
       // queue it up for when the ball is present
       self.do_autoplunge = true;
     }
+  }
+
+  pub fn eject_next(&mut self) {
+    self.do_autoplunge = true;
   }
 }
 
