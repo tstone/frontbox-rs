@@ -2,17 +2,17 @@ use crate::animation::*;
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub enum LedProgram {
+pub enum LedProgram1d {
   Fixed {
-    ids: Box<dyn Contextual<LedIdentifications>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
   },
   Animated {
-    ids: Box<dyn Contextual<LedIdentifications>>,
-    anim: Box<dyn Animation<Duration, ColorSequence>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
+    anim: Box<dyn Animation<Duration, ColorSequence> + Send + Sync>,
   },
   Modulated {
-    ids: Box<dyn Contextual<LedIdentifications>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
     modulators: MultiModulator<ColorSequence, Duration>,
   },
@@ -22,18 +22,18 @@ pub enum LedProgram {
   },
 }
 
-impl LedProgram {
+impl LedProgram1d {
   /// Accumulate and declare current LED state
   pub fn apply(&mut self, delta: Duration, ctx: &SystemContext) {
     match self {
-      LedProgram::Fixed { ids, color } => {
+      LedProgram1d::Fixed { ids, color } => {
         ctx.declare_leds(ids, color.clone());
       }
-      LedProgram::Animated { ids, anim } => {
+      LedProgram1d::Animated { ids, anim } => {
         anim.accumulate(delta);
         ctx.declare_leds(ids, anim.sample());
       }
-      LedProgram::Modulated {
+      LedProgram1d::Modulated {
         ids,
         color,
         modulators,
@@ -41,7 +41,7 @@ impl LedProgram {
         modulators.apply(delta, color);
         ctx.declare_leds(ids, color.clone());
       }
-      LedProgram::Timeline { entries, active } => {
+      LedProgram1d::Timeline { entries, active } => {
         if *active {
           for entry in entries {
             if entry.launched {
@@ -58,43 +58,49 @@ impl LedProgram {
 
   pub fn play(&mut self) {
     match self {
-      LedProgram::Animated { anim, .. } => {
+      LedProgram1d::Animated { anim, .. } => {
         anim.play();
       }
-      LedProgram::Modulated { modulators, .. } => {
+      LedProgram1d::Modulated { modulators, .. } => {
         modulators.play();
       }
-      LedProgram::Timeline { active, .. } => *active = true,
+      LedProgram1d::Timeline { active, .. } => *active = true,
       _ => {}
     }
   }
 
+  /// By default LedPrograms are created in a stopped state. This mutates the state to be playing from the start.
+  pub fn playing(mut self) -> Self {
+    self.play();
+    self
+  }
+
   pub fn stop(&mut self, ctx: &SystemContext) {
     match self {
-      LedProgram::Animated { ids, anim, .. } => {
+      LedProgram1d::Animated { ids, anim, .. } => {
         anim.stop();
         ctx.undeclare_leds(ids);
       }
-      LedProgram::Modulated {
+      LedProgram1d::Modulated {
         ids, modulators, ..
       } => {
         modulators.stop();
         ctx.undeclare_leds(ids);
       }
-      LedProgram::Timeline { active, .. } => *active = false,
+      LedProgram1d::Timeline { active, .. } => *active = false,
       _ => {}
     }
   }
 
   pub fn reset(&mut self) {
     match self {
-      LedProgram::Animated { anim, .. } => {
+      LedProgram1d::Animated { anim, .. } => {
         anim.reset();
       }
-      LedProgram::Modulated { modulators, .. } => {
+      LedProgram1d::Modulated { modulators, .. } => {
         modulators.reset();
       }
-      LedProgram::Timeline { entries, .. } => {
+      LedProgram1d::Timeline { entries, .. } => {
         for entry in entries {
           if entry.launched {
             entry.reset();
@@ -107,17 +113,17 @@ impl LedProgram {
 
   pub fn is_complete(&self) -> bool {
     match self {
-      LedProgram::Fixed { .. } => true,
-      LedProgram::Animated { anim, .. } => anim.is_complete(),
-      LedProgram::Modulated { modulators, .. } => modulators.is_complete(),
-      LedProgram::Timeline { entries, .. } => entries.iter().all(|e| e.completed()),
+      LedProgram1d::Fixed { .. } => true,
+      LedProgram1d::Animated { anim, .. } => anim.is_complete(),
+      LedProgram1d::Modulated { modulators, .. } => modulators.is_complete(),
+      LedProgram1d::Timeline { entries, .. } => entries.iter().all(|e| e.completed()),
     }
   }
 
   pub fn color_mut(&mut self) -> Option<&mut ColorSequence> {
     match self {
-      LedProgram::Fixed { color, .. } => Some(color),
-      LedProgram::Modulated { color, .. } => Some(color),
+      LedProgram1d::Fixed { color, .. } => Some(color),
+      LedProgram1d::Modulated { color, .. } => Some(color),
       _ => None,
     }
   }
@@ -125,7 +131,7 @@ impl LedProgram {
   // -- Constructors --
 
   /// Keep targets the exact same ColorSequence
-  pub fn fixed<T: Contextual<LedIdentifications> + 'static>(
+  pub fn fixed<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: ColorSequence,
   ) -> Self {
@@ -136,18 +142,40 @@ impl LedProgram {
   }
 
   /// Apply a ColorSequence animation
-  pub fn animated<T: Contextual<LedIdentifications> + 'static>(
+  pub fn animated<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
-    animation: impl Animation<Duration, ColorSequence> + 'static,
+    mut animation: impl Animation<Duration, ColorSequence> + Send + Sync + 'static,
   ) -> Self {
+    animation.stop();
     Self::Animated {
       ids: Box::new(targets),
       anim: Box::new(animation),
     }
   }
 
-  /// Crossfade between multiple ColorSequences
-  pub fn tween<T: Contextual<LedIdentifications> + 'static>(
+  /// Cycle (tween) through all given ColorSequences, over `duration`.
+  /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
+  ///
+  /// ```rust,ignore
+  /// // fade everything from red to blue
+  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Linear, vec![
+  ///   ColorSequence::solid(Rgba::blue()),
+  ///   ColorSequence::solid(Rgba::red()),
+  /// ])
+  ///
+  /// // fade between all red to striped red
+  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Linear, vec![
+  ///   ColorSequence::solid(Rgba::red()),
+  ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
+  /// ])
+  ///
+  /// // "dancing lights" effect
+  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Steps(2), vec![
+  ///   ColorSequence::tile(vec![Rgba::white(), Rgba::red()]),
+  ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
+  /// ])
+  /// ```
+  pub fn tween<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     duration: Duration,
     curve: Curve,
@@ -158,7 +186,7 @@ impl LedProgram {
   }
 
   /// Typical on/off behavior
-  pub fn flash<T: Contextual<LedIdentifications> + 'static>(
+  pub fn flash<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: ColorSequence,
     cycle: Cycle,
@@ -173,7 +201,7 @@ impl LedProgram {
   }
 
   /// Rhythmic, organic breathing
-  pub fn breathe<T: Contextual<LedIdentifications> + 'static>(
+  pub fn breathe<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: Rgba<u8>,
     cycle: Cycle,
@@ -191,31 +219,33 @@ impl LedProgram {
   }
 
   /// Apply one or more manual mutations to an initial ColorSequence
-  pub fn initial<T: Contextual<LedIdentifications> + 'static>(
+  pub fn initial<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     initial: ColorSequence,
   ) -> Self {
+    let mut modulators = MultiModulator::new(Vec::new(), true);
+    modulators.stop();
     Self::Modulated {
       ids: Box::new(targets),
       color: initial,
-      modulators: MultiModulator::new(Vec::new(), true),
+      modulators,
     }
   }
 
   /// Add an additional mutation onto the modulation
   pub fn modulate<T: Clone + Send + Sync + 'static>(
     mut self,
-    animation: impl Animation<Duration, T> + 'static,
+    animation: impl Animation<Duration, T> + Send + Sync + 'static,
     setter: impl Fn(&mut ColorSequence, T) + Send + Sync + 'static,
   ) -> Self {
-    if let LedProgram::Modulated { modulators, .. } = &mut self {
+    if let LedProgram1d::Modulated { modulators, .. } = &mut self {
       let modulator = Modulator::<ColorSequence, T, Duration>::new(animation, setter);
       modulators.add(modulator);
     }
     self
   }
 
-  pub fn rotating<T: Contextual<LedIdentifications> + 'static>(
+  pub fn rotating<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     initial: ColorSequence,
     duration: Duration,
@@ -239,7 +269,7 @@ impl LedProgram {
 pub struct TimelineAccumulator {
   target: Duration,
   elapsed: Duration,
-  program: LedProgram,
+  program: LedProgram1d,
   launched: bool,
 }
 

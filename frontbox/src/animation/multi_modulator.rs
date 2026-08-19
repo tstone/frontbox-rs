@@ -3,23 +3,23 @@ use crate::animation::*;
 #[derive(Clone, Default)]
 pub struct MultiModulator<S, A> {
   active: bool,
-  modulators: Vec<Box<dyn DynModulation<S, A>>>,
+  modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>,
 }
 
 impl<S, A> MultiModulator<S, A> {
-  pub fn new(modulators: Vec<Box<dyn DynModulation<S, A>>>, active: bool) -> Self {
+  pub fn new(modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>, active: bool) -> Self {
     Self { modulators, active }
   }
 
-  pub fn started(modulators: Vec<Box<dyn DynModulation<S, A>>>) -> Self {
+  pub fn started(modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>) -> Self {
     Self::new(modulators, true)
   }
 
-  pub fn stopped(modulators: Vec<Box<dyn DynModulation<S, A>>>) -> Self {
+  pub fn stopped(modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>) -> Self {
     Self::new(modulators, false)
   }
 
-  pub fn add(&mut self, modulation: impl DynModulation<S, A> + 'static) {
+  pub fn add(&mut self, modulation: impl DynModulation<S, A> + Send + Sync + 'static) {
     self.modulators.push(Box::new(modulation));
   }
 

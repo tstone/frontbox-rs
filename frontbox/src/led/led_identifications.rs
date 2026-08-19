@@ -50,13 +50,13 @@ impl Contextual<LedIdentifications> for LedIdentifications {
   }
 }
 
-impl Contextual<LedIdentifications> for Box<dyn Contextual<LedIdentifications>> {
+impl Contextual<LedIdentifications> for Box<dyn Contextual<LedIdentifications> + Send + Sync> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     (**self).resolve(ctx)
   }
 }
 
-impl Contextual<LedIdentifications> for &Box<dyn Contextual<LedIdentifications>> {
+impl Contextual<LedIdentifications> for &Box<dyn Contextual<LedIdentifications> + Send + Sync> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     (**self).resolve(ctx)
   }

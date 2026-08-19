@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::animation::*;
 
-/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedEffects).
+/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
 ///
 /// ```rust
 /// let modulator = Modulator::new(
@@ -14,18 +14,18 @@ pub trait Modulation<A, S> {
   fn apply(&mut self, delta: A, target: &mut S);
 }
 
-pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + 'static;
+pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + Send + Sync + 'static;
 
 #[derive(Clone)]
 pub struct Modulator<S, T, A> {
   setter: Arc<ModulationSetter<S, T>>,
-  animation: Box<dyn Animation<A, T>>,
+  animation: Box<dyn Animation<A, T> + Send + Sync>,
 }
 
 impl<S, T, A> Modulator<S, T, A> {
   pub fn new(
-    animation: impl Animation<A, T> + 'static,
-    setter: impl Fn(&mut S, T) + 'static,
+    animation: impl Animation<A, T> + Send + Sync + 'static,
+    setter: impl Fn(&mut S, T) + Send + Sync + 'static,
   ) -> Self {
     Modulator {
       setter: Arc::new(setter),
