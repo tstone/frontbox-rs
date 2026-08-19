@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::fmt::Debug;
-use std::ops::{AddAssign, SubAssign};
+use std::ops::{Add, Sub};
 
 use crate::animation::*;
 use crate::cycle::Cycle;
@@ -22,7 +22,15 @@ pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send +
 impl<A, T> Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: Tweenable + Copy + Default + AddAssign + SubAssign + PartialEq + Send + Sync + Debug,
+  A: Tweenable
+    + Copy
+    + Default
+    + Add<Output = A>
+    + Sub<Output = A>
+    + PartialEq
+    + Send
+    + Sync
+    + Debug,
 {
   /// *target* - Accumulated value to get to, e.g. Duration::from_secs(1) = animation lasts for a minute
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Self {
@@ -95,6 +103,10 @@ where
       current_stop_index: self.current_stop_index,
     };
   }
+
+  pub fn remaining(&self) -> A {
+    self.target - self.current
+  }
 }
 
 impl<A, T> Accumulator<A> for Tween<A, T>
@@ -103,8 +115,8 @@ where
   A: Tweenable
     + Copy
     + Default
-    + AddAssign
-    + SubAssign
+    + Add<Output = A>
+    + Sub<Output = A>
     + PartialOrd
     + PartialEq
     + Send
@@ -132,9 +144,9 @@ where
       self.current_stop_index = 0;
     }
 
-    self.current += delta;
+    self.current = self.current + delta;
     if self.current >= self.target {
-      self.current -= self.target;
+      self.current = self.current - self.target;
       self.current_stop_index += 1;
 
       result.completed_cycle = self.current_stop_index >= max(self.stops.len() - 1, 1);
@@ -189,8 +201,8 @@ where
   A: Tweenable
     + Copy
     + Default
-    + AddAssign
-    + SubAssign
+    + Add<Output = A>
+    + Sub<Output = A>
     + PartialEq
     + PartialOrd
     + Send
