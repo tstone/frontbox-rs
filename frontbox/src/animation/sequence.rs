@@ -39,7 +39,9 @@ where
   A: Copy + Default,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
-    if self.active && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index) {
+    if self.active
+      && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index)
+    {
       let result = current_anim.accumulate(delta);
 
       if current_anim.is_complete() {
@@ -95,7 +97,7 @@ where
     self.sequence.get(self.current_anim_index).unwrap().sample()
   }
 
-  fn pause(&mut self) {
+  fn stop(&mut self) {
     self.active = false;
   }
 

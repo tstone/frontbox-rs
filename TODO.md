@@ -1,5 +1,4 @@
 - Possible BUG: If Cue time is less than system tick time, what happens?
-- Need to be able to specify a z-index on LedEffect
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
@@ -11,6 +10,7 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Add `by_location` to hardware lookup implementations + HardwareQuery
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
+- Don't export SystemContainer types in prelude
 - Clean up hardware exports
 - It's only a matter of time before passing around Context results in a system shutting down itself and accidentally shutting down it's caller
 

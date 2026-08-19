@@ -24,10 +24,6 @@ impl LedEffect {
     }
   }
 
-  pub fn initial(query: HardwareQuery, cs: ColorSequence) -> Self {
-    Self::new(query, SingleFrameAnim::new(cs))
-  }
-
   /// Cycle (tween) through all given ColorSequences, over `duration`.
   /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
   ///
@@ -122,7 +118,7 @@ impl LedEffect {
 
   pub fn stopped(mut self) -> Self {
     self.active = false;
-    self.anim.pause();
+    self.anim.stop();
     self
   }
 

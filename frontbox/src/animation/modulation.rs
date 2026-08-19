@@ -2,7 +2,7 @@ use dyn_clone::DynClone;
 
 use crate::animation::{AccumulationResult, Accumulator};
 
-pub trait DynModulation<S, A>: DynClone + Send + Sync {
+pub trait DynModulation<S, A>: DynClone {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A>;
   fn force(&mut self, current: A);
   fn reset(&mut self);

@@ -11,6 +11,7 @@ pub trait LedIdentificationsExt: Contextual<LedIdentifications> + Sized + 'stati
 
 impl<T: Contextual<LedIdentifications> + Sized + 'static> LedIdentificationsExt for T {}
 
+#[derive(Clone)]
 struct IdentificationAtZ {
   other: Box<dyn Contextual<LedIdentifications>>,
   z: i8,

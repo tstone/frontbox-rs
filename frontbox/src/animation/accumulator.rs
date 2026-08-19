@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use dyn_clone::DynClone;
 
 /// Describes something that can move forward in time
-pub trait Accumulator<A>: DynClone + Send + Sync {
+pub trait Accumulator<A>: DynClone {
   /// Returns the remainder, if any
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A>;
   /// Set the accumulator at a specific value (e.g. phase shifting)

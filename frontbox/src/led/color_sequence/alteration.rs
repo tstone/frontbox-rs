@@ -11,6 +11,40 @@ pub enum ColorSequenceAlteration {
   Shuffle(u64),
 }
 
+impl ColorSequenceAlteration {
+  pub fn rotation_mut(&mut self) -> Option<&mut Extent<i16>> {
+    if let ColorSequenceAlteration::Rotate(angle) = self {
+      Some(angle)
+    } else {
+      None
+    }
+  }
+
+  pub fn shuffle_seed_mut(&mut self) -> Option<&mut u64> {
+    if let ColorSequenceAlteration::Shuffle(seed) = self {
+      Some(seed)
+    } else {
+      None
+    }
+  }
+
+  pub fn overwrite_fill_mut(&mut self) -> Option<&mut Fill1d> {
+    if let ColorSequenceAlteration::Overwrite(fill, _) = self {
+      Some(fill)
+    } else {
+      None
+    }
+  }
+
+  pub fn overwrite_fill_area_mut(&mut self) -> Option<&mut Fill1dArea> {
+    if let ColorSequenceAlteration::Overwrite(_, area) = self {
+      Some(area)
+    } else {
+      None
+    }
+  }
+}
+
 pub(crate) fn reverse(seq: &mut Vec<Rgba<u8>>) {
   seq.reverse();
 }

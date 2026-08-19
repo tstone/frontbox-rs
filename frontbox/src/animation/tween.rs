@@ -218,12 +218,12 @@ where
     from.interpolate(to, curve_value)
   }
 
-  fn pause(&mut self) {
-    self.active = false;
-  }
-
   fn play(&mut self) {
     self.active = true;
+  }
+
+  fn stop(&mut self) {
+    self.active = false;
   }
 }
 

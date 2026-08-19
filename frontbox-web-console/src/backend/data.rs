@@ -37,6 +37,7 @@ impl System {
 #[derive(Debug, Clone)]
 pub struct SystemEvent {
   pub type_name: &'static str,
+  #[allow(unused)]
   pub interrupts: Vec<InterruptEvaluation>,
   pub event: Option<serde_json::Value>,
 }

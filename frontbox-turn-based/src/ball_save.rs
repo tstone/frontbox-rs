@@ -1,4 +1,4 @@
-use frontbox::provided::{AutoPlungerSystem, PlungeLaneSystem, TroughFull, TroughSystem};
+use frontbox::provided::{AutoPlungerSystem, TroughFull, TroughSystem};
 use frontbox::{prelude::*, provided::BallSaved};
 
 use crate::{PlayerTurnActive, PlayerTurnEnding};

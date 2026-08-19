@@ -35,7 +35,9 @@
     "Renderable",
     "Rgba",
     "RGBW",
+    "rngs",
     "rusb",
+    "Seedable",
     "SIGI",
     "Spawnable",
     "startable",
@@ -44,7 +46,5 @@
     "unduck",
     "Worley"
   ],
-  "cSpell.ignoreWords": [
-    "sctx"
-  ]
+  "cSpell.ignoreWords": ["sctx"]
 }
