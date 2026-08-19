@@ -47,6 +47,17 @@ impl PlungeLaneSystem {
 }
 
 impl System for PlungeLaneSystem {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
+    if ctx
+      .switches
+      .is_closed(self.plunge_lane_switch_name)
+      .unwrap_or(false)
+    {
+      self.state = PlungeLaneState::UnexpectedBallPresent;
+      ctx.emit(BallEnteredPlungeLane::new(self.state));
+    }
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<BallExitedTrough>() {
       self.expect_ball = true;

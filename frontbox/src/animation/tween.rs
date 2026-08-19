@@ -10,7 +10,7 @@ use crate::cycle::Cycle;
 pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
   // the amount which signals this animation is done
   pub target: A,
-  active: bool,
+  pub active: bool,
   current: A,
   pub curve: Curve,
   pub stops: Vec<T>,
@@ -21,16 +21,18 @@ pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send +
 
 impl<A, T> Tween<A, T>
 where
-  T: Lerp + Clone + Send + Sync,
+  T: Lerp + Clone + Send + Sync + 'static,
   A: Tweenable
     + Copy
     + Default
     + Add<Output = A>
     + Sub<Output = A>
     + PartialEq
+    + PartialOrd
     + Send
     + Sync
-    + Debug,
+    + Debug
+    + 'static,
 {
   /// *target* - Accumulated value to get to, e.g. Duration::from_secs(1) = animation lasts for a minute
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Self {
@@ -39,7 +41,7 @@ where
     Self {
       target: target.div_usize(stops.len() - 1),
       current: A::default(),
-      active: true,
+      active: false,
       curve,
       stops,
       cycle,
@@ -58,6 +60,12 @@ where
 
   pub fn linear(target: A, stops: Vec<T>, cycle: Cycle) -> Self {
     Self::new(target, Curve::Linear, stops, cycle)
+  }
+
+  /// Tween starts stopped by default. Use this to chain it to immediately start
+  pub fn playing(mut self) -> Self {
+    self.play();
+    self
   }
 
   pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Sequence<A, T>
@@ -124,14 +132,14 @@ where
     + Debug,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
+    if !self.active || self.is_complete() {
+      return AccumulationResult::default();
+    }
+
     let mut result = AccumulationResult {
       remainder: A::default(),
       completed_cycle: false,
     };
-
-    if !self.active || self.is_complete() {
-      return AccumulationResult::default();
-    }
 
     // Edge case: In Times & Forever modes the current stop is only reset if the accumulated value overshoots the target
     // This is so that in the case where the accumulation is exactly the target, the `sample()` method will return the
@@ -224,6 +232,10 @@ where
 
   fn stop(&mut self) {
     self.active = false;
+  }
+
+  fn active(&self) -> bool {
+    self.active
   }
 }
 

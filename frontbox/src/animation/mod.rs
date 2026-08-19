@@ -105,6 +105,7 @@ pub trait Animation<Acc, Val>: Accumulator<Acc> {
 
   fn play(&mut self);
   fn stop(&mut self);
+  fn active(&self) -> bool;
 }
 
 dyn_clone::clone_trait_object!(<A, T> Animation<A, T>);

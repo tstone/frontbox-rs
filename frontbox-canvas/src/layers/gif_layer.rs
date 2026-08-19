@@ -79,6 +79,10 @@ impl Animation<Duration, usize> for GifLayer {
   fn stop(&mut self) {
     self.active = false;
   }
+
+  fn active(&self) -> bool {
+    self.active
+  }
 }
 
 impl Modulation<Duration, usize> for GifLayer {

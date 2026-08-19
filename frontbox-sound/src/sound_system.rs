@@ -165,19 +165,32 @@ impl SoundSystem {
     }
   }
 
+  pub fn stop_music(&mut self, fade_down: Duration) {
+    if let Some(old_music) = &mut self.active_music {
+      old_music.stop(Tween {
+        duration: fade_down,
+        ..Default::default()
+      });
+    }
+  }
+
   /// Changes the active music track to the new one, fading out the old one and fading in the new one
-  pub fn crossfade_music(&mut self, path: impl AsRef<Path>) {
-    match StaticSoundData::from_file(path.as_ref()) {
+  pub fn crossfade_music(&mut self, next_path: impl AsRef<Path>, duration: Duration) {
+    match StaticSoundData::from_file(next_path.as_ref()) {
       Ok(sound) => {
         let new_music = self.music_track.play(sound).ok();
         if let Some(mut old_music) = self.active_music.replace(new_music.unwrap()) {
           old_music.stop(Tween {
-            duration: Duration::from_millis(500), // TODO: make this configurable?
+            duration,
             ..Default::default()
           });
         }
       }
-      Err(e) => log::error!("Failed to play music {}: {:?}", path.as_ref().display(), e),
+      Err(e) => log::error!(
+        "Failed to play music {}: {:?}",
+        next_path.as_ref().display(),
+        e
+      ),
     }
   }
 

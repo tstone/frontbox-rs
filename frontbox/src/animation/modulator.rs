@@ -75,4 +75,12 @@ where
   fn apply(&mut self, delta: A, target: &mut S) {
     Modulation::apply(self, delta, target)
   }
+
+  fn play(&mut self) {
+    self.animation.play();
+  }
+
+  fn stop(&mut self) {
+    self.animation.stop();
+  }
 }

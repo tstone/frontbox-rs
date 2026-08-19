@@ -10,14 +10,18 @@ pub struct Sequence<A, T> {
   active: bool,
 }
 
-impl<A, T> Sequence<A, T> {
+impl<A, T> Sequence<A, T>
+where
+  T: Clone,
+  A: Copy + Default,
+{
   pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: Cycle) -> Self {
     Self {
       sequence,
       current_anim_index: 0,
       cycle,
       cycle_count: 0,
-      active: true,
+      active: false,
     }
   }
 
@@ -25,10 +29,17 @@ impl<A, T> Sequence<A, T> {
     Box::new(Self::new(sequence, cycle))
   }
 
+  /// Sequence starts stopped by default. Use this to chain it to immediately start
+  pub fn playing(mut self) -> Self {
+    self.play();
+    self
+  }
+
   /// Reset all child animations
   fn reset_all(&mut self) {
     for anim in &mut self.sequence {
       anim.reset();
+      anim.stop();
     }
   }
 }
@@ -46,6 +57,10 @@ where
 
       if current_anim.is_complete() {
         self.current_anim_index += 1;
+
+        if let Some(next_anim) = self.sequence.get_mut(self.current_anim_index) {
+          next_anim.play();
+        }
 
         if self.current_anim_index >= self.sequence.len() {
           if self.cycle != Cycle::Forever && self.cycle_count < u32::MAX {
@@ -103,5 +118,13 @@ where
 
   fn play(&mut self) {
     self.active = true;
+
+    if let Some(current_anim) = self.sequence.get_mut(self.current_anim_index) {
+      current_anim.play();
+    }
+  }
+
+  fn active(&self) -> bool {
+    self.active
   }
 }

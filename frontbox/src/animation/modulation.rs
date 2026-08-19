@@ -8,6 +8,8 @@ pub trait DynModulation<S, A>: DynClone {
   fn reset(&mut self);
   fn apply(&mut self, delta: A, target: &mut S);
   fn is_complete(&self) -> bool;
+  fn play(&mut self);
+  fn stop(&mut self);
 }
 
 dyn_clone::clone_trait_object!(<S, A> DynModulation<S, A>);

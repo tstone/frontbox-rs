@@ -45,6 +45,8 @@ pub struct Insert;
 #[derive(Tag)]
 pub struct Playfield;
 #[derive(Tag)]
+pub struct Flasher;
+#[derive(Tag)]
 pub struct Cabinet;
 #[derive(Tag)]
 pub struct Lane;

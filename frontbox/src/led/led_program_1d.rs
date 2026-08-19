@@ -30,16 +30,24 @@ impl LedProgram1d {
         ctx.declare_leds(ids, color.clone());
       }
       LedProgram1d::Animated { ids, anim } => {
-        anim.accumulate(delta);
-        ctx.declare_leds(ids, anim.sample());
+        if anim.is_complete() || !anim.active() {
+          ctx.undeclare_leds(ids);
+        } else {
+          anim.accumulate(delta);
+          ctx.declare_leds(ids, anim.sample());
+        }
       }
       LedProgram1d::Modulated {
         ids,
         color,
         modulators,
       } => {
-        modulators.apply(delta, color);
-        ctx.declare_leds(ids, color.clone());
+        if modulators.is_complete() || !modulators.active() {
+          ctx.undeclare_leds(ids);
+        } else {
+          modulators.apply(delta, color);
+          ctx.declare_leds(ids, color.clone());
+        }
       }
       LedProgram1d::Timeline { entries, active } => {
         if *active {
@@ -47,9 +55,15 @@ impl LedProgram1d {
             if entry.launched {
               entry.launch();
               entry.program.apply(delta, ctx);
+            } else if entry.completed() {
+              entry.program.stop(ctx);
             } else if !entry.launched {
               entry.accumulate_launch(delta);
             }
+          }
+        } else {
+          for entry in entries {
+            entry.program.stop(ctx);
           }
         }
       }
@@ -87,8 +101,17 @@ impl LedProgram1d {
         modulators.stop();
         ctx.undeclare_leds(ids);
       }
-      LedProgram1d::Timeline { active, .. } => *active = false,
-      _ => {}
+      LedProgram1d::Timeline {
+        active, entries, ..
+      } => {
+        for entry in entries {
+          entry.program.stop(ctx);
+        }
+        *active = false
+      }
+      LedProgram1d::Fixed { ids, .. } => {
+        ctx.undeclare_leds(ids);
+      }
     }
   }
 
@@ -223,12 +246,10 @@ impl LedProgram1d {
     targets: T,
     initial: ColorSequence,
   ) -> Self {
-    let mut modulators = MultiModulator::new(Vec::new(), true);
-    modulators.stop();
     Self::Modulated {
       ids: Box::new(targets),
       color: initial,
-      modulators,
+      modulators: MultiModulator::stopped(Vec::new()),
     }
   }
 
@@ -258,7 +279,9 @@ impl LedProgram1d {
         if let Some(alt) = colors.alterations.last_mut()
           && let Some(rotation) = alt.rotation_mut()
         {
-          *rotation = Extent::Absolute(angle as i16);
+          *rotation = Extent::Relative(angle);
+        } else {
+          log::warn!("LedProgram1: Unexpectd - there is no rotation alteration");
         }
       },
     )

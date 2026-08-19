@@ -25,10 +25,17 @@ impl<S, A> MultiModulator<S, A> {
 
   pub fn play(&mut self) {
     self.active = true;
+    for modulator in &mut self.modulators {
+      modulator.play();
+    }
   }
 
   pub fn stop(&mut self) {
     self.active = false;
+  }
+
+  pub fn active(&self) -> bool {
+    self.active
   }
 
   pub fn reset(&mut self) {

@@ -3,7 +3,9 @@ use frontbox::prelude::Event;
 #[derive(serde::Serialize, Event)]
 pub struct GameStarted;
 #[derive(serde::Serialize, Event)]
-pub struct GameEnded;
+pub struct GameEnded {
+  pub scores: Vec<(&'static str, u32)>,
+}
 
 /// When the current player's turn starts. This happens at the beginning of each "ball" when the ball has been fed to the plunge lane
 #[derive(serde::Serialize, Event)]

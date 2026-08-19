@@ -3,7 +3,7 @@ use frontbox::provided::{BallExitedPlungeLane, TroughFull, TroughSystem};
 
 use crate::*;
 
-const PLAYER_GROUP_NAMES: [&str; 6] = [
+static PLAYER_GROUP_NAMES: [&str; 6] = [
   "player1", "player2", "player3", "player4", "player5", "player6",
 ];
 
@@ -182,6 +182,8 @@ impl GameManagement for CompetitiveGame {
       return;
     };
 
+    ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+
     // increment the previous player's turn before advancing to next player/turn
     game_state.increment_current_player_turn();
     game_state.advance_turn();
@@ -209,8 +211,20 @@ impl GameManagement for CompetitiveGame {
       return;
     }
 
+    let game_state = self.game_state.as_ref().unwrap();
+    let player_count = game_state.player_count();
+    let scores: Vec<(&'static str, u32)> = match game_state {
+      GameState::Competitive { player_scores, .. } => player_scores
+        .iter()
+        .take(player_count as usize)
+        .enumerate()
+        .map(|(idx, score)| (PLAYER_GROUP_NAMES[idx], *score))
+        .collect(),
+      _ => Vec::new(),
+    };
+
     self.game_state = None;
-    ctx.emit(GameEnded);
+    ctx.emit(GameEnded { scores });
   }
 
   fn is_player_addable(&self) -> bool {
