@@ -29,15 +29,15 @@ impl ActivatePlayfieldSystem {
     self
   }
 
-  fn activate(&self, ctx: &Context) {
-    let machine = ctx.systems.expect::<Machine>();
+  fn activate(&self, ctx: &SystemContext) {
+    let machine = ctx.expect::<Machine>();
 
     for (driver, switch) in &self.driver_table {
       machine.activate_driver(driver, ActivationMode::Automatic(switch), ctx);
     }
   }
 
-  fn deactivate(&self, ctx: &Context) {
+  fn deactivate(&self, ctx: &SystemContext) {
     for driver in self.driver_table.keys() {
       ctx.deactivate_driver(driver, DeactivationMode::Disabled);
     }
@@ -45,7 +45,7 @@ impl ActivatePlayfieldSystem {
 }
 
 impl System for ActivatePlayfieldSystem {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<PlayerTurnBeginning>() {
       log::info!("Activating playfield drivers due to turn start");
       self.activate(ctx);

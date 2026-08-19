@@ -52,21 +52,29 @@ impl<'a> CanvasView<'a> {
 
   /// Carve out a child view at a local offset — no allocation, just narrower coordinates
   pub fn child_view(&mut self, offset: Position, size: Size<u32>) -> CanvasView<'_> {
+    // handle negative offsets: reduce available width and limit sizes to positive values
+    let (clipped_x, available_width) = if offset.x < 0 {
+      (0, self.bounds.width.saturating_sub((-offset.x) as u32))
+    } else {
+      (offset.x, self.bounds.width.saturating_sub(offset.x as u32))
+    };
+    let (clipped_y, available_height) = if offset.y < 0 {
+      (0, self.bounds.height.saturating_sub((-offset.y) as u32))
+    } else {
+      (offset.y, self.bounds.height.saturating_sub(offset.y as u32))
+    };
+
     CanvasView {
       // reborrow the parent's buffer to avoid moving it
       buffer: &mut *self.buffer,
       origin: Position {
-        x: self.origin.x + offset.x,
-        y: self.origin.y + offset.y,
+        x: self.origin.x + clipped_x,
+        y: self.origin.y + clipped_y,
       },
-      // clip to whichever is smaller — child's own size, or what's left of the parent
+      // clip size to whichever is smaller — child's own size, or what's left of the parent
       bounds: Size {
-        width: size
-          .width
-          .min(self.bounds.width.saturating_sub(offset.x as u32)),
-        height: size
-          .height
-          .min(self.bounds.height.saturating_sub(offset.y as u32)),
+        width: size.width.min(available_width),
+        height: size.height.min(available_height),
       },
     }
   }

@@ -220,7 +220,7 @@ impl App {
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     self.operator_config.app_sender = Some(app_sender.clone());
 
-    let context_base = ContextBase {
+    let boot_snapshot = BootSnapshot {
       switches: self.hardware.switches,
       drivers: self.hardware.drivers,
       leds: self.hardware.leds,
@@ -230,15 +230,15 @@ impl App {
       operator_config: self.operator_config,
     };
 
-    Hardware::configure_drivers(&mut self.io_port, &context_base).await;
+    Hardware::configure_drivers(&mut self.io_port, &boot_snapshot).await;
 
     let mut machine: MachineImpl = MachineImpl::new(
       self.io_port,
       self.exp_port,
       app_sender.clone(),
-      context_base.switches.clone(),
-      context_base.io_network.clone(),
-      context_base.app_config.clone(),
+      boot_snapshot.switches.clone(),
+      boot_snapshot.io_network.clone(),
+      boot_snapshot.app_config.clone(),
     );
 
     // These systems need to appear first because other systems expect them to be present on startup
@@ -255,7 +255,7 @@ impl App {
 
     log::debug!("Starting main run loop");
     run_loop::run(
-      context_base,
+      boot_snapshot,
       self.systems,
       self.tracers,
       app_sender,

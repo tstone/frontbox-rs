@@ -6,7 +6,7 @@
 //! 
 //! - **Active state spans the entire group** -- Group can be made active or inactive, which cascades to all children. Like with scoring, this allows all systems for a player to be disabled at once. Each system can also manage their own active state, independent of the group's active state, but the group's active state is always a prerequisite (the logic for active is `group_active && system_active`).
 //! 
-//! - **System lookup also includes siblings** -- By default, performing `ctx.systems.get::<T>` only looks at root systems. When a system is part of a group however, it will _also_ check for all sibling. In the case where the same system is running both within a group and at the root, priority is given to nearness. Siblings are searched first, then global.
+//! - **System lookup also includes siblings** -- By default, performing `ctx.get::<T>` only looks at root systems. When a system is part of a group however, it will _also_ check for all sibling. In the case where the same system is running both within a group and at the root, priority is given to nearness. Siblings are searched first, then global.
 //! 
 //! Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`. If getting errors trying to add a child to a group, make sure to add `#[derive(Clone)]` to the system definition.
 //! 

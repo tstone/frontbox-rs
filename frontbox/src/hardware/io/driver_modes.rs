@@ -12,7 +12,7 @@ use crate::prelude::*;
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Allows use of ..Default::default() since DriverConfig is an enum
 pub trait DriverMode: DynClone + Debug + Send + Sync {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig;
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig;
   fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue>;
 }
 
@@ -46,7 +46,7 @@ impl Default for PulseMode {
 }
 
 impl DriverMode for PulseMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::Pulse {
@@ -104,7 +104,7 @@ impl Default for PulseKickMode {
 }
 
 impl DriverMode for PulseKickMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::PulseKick {
@@ -159,7 +159,7 @@ impl Default for PulseHoldMode {
 }
 
 impl DriverMode for PulseHoldMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::PulseHold {
@@ -212,7 +212,7 @@ impl Default for PulseHoldCancelMode {
 }
 
 impl DriverMode for PulseHoldCancelMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
       get_switch_ids_and_inverts(&self.trigger_mode, ctx);
 
@@ -269,7 +269,7 @@ impl Default for DelayedPulseMode {
 }
 
 impl DriverMode for DelayedPulseMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::DelayedPulse {
@@ -323,7 +323,7 @@ impl Default for PulseCancelMode {
 }
 
 impl DriverMode for PulseCancelMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
       get_switch_ids_and_inverts(&self.trigger_mode, ctx);
 
@@ -379,7 +379,7 @@ impl Default for LongPulseMode {
 }
 
 impl DriverMode for LongPulseMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
 
     DriverConfig::LongPulse {
@@ -434,7 +434,7 @@ impl Default for FlipperMainDirectMode {
 }
 
 impl DriverMode for FlipperMainDirectMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
       button_switch: ctx
         .switches
@@ -490,7 +490,7 @@ impl Default for FlipperHoldDirectMode {
 }
 
 impl DriverMode for FlipperHoldDirectMode {
-  fn to_config(&self, ctx: &ContextBase) -> DriverConfig {
+  fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
       button_switch: ctx
         .switches

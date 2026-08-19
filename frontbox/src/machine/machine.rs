@@ -193,7 +193,7 @@ impl Machine {
       .ok();
   }
 
-  pub fn reset_expansion_network(&self, ctx: &Context) {
+  pub fn reset_expansion_network(&self, ctx: &SystemContext) {
     for board in ctx.exp_network.iter() {
       self
         .machine_sender
@@ -207,7 +207,7 @@ impl Machine {
   }
 
   /// Configure a driver with a specific mode (e.g. enable with certain power level, or set to automatic) (DL)
-  pub fn configure_driver(&self, driver: &str, mode: impl DriverMode + 'static, ctx: &Context) {
+  pub fn configure_driver(&self, driver: &str, mode: impl DriverMode + 'static, ctx: &SystemContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let config = mode.to_config(&ctx);
       self
@@ -222,7 +222,7 @@ impl Machine {
   }
 
   /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
-  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &Context) {
+  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &SystemContext) {
     // remap switch to id
     let switch = mode
       .switch_name()
@@ -239,7 +239,7 @@ impl Machine {
   }
 
   /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
-  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &Context) {
+  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &SystemContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
         DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
@@ -278,7 +278,7 @@ impl Machine {
     inverted: bool,
     debounce_close: Option<Duration>,
     debounce_open: Option<Duration>,
-    ctx: &Context,
+    ctx: &SystemContext,
   ) {
     if let Some(switch) = ctx.switches.get(switch) {
       let reporting = if inverted {
@@ -368,7 +368,7 @@ impl Machine {
 }
 
 impl System for Machine {
-  fn on_despawn(&mut self, ctx: &Context) {
+  fn on_despawn(&mut self, ctx: &SystemContext) {
     // Clear out LEDs, servos, etc.
     self.reset_expansion_network(ctx);
 

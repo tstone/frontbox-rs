@@ -15,10 +15,11 @@ impl AutoTurnAdvance {
 }
 
 impl System for AutoTurnAdvance {
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<PlayerTurnEnding>()
-      && let Some(mut game_manager) = ctx.systems.get::<GameManager>() {
-        game_manager.advance_turn(ctx);
-      }
+      && let Some(mut game_manager) = ctx.get::<GameManager>()
+    {
+      game_manager.advance_turn(ctx.into());
+    }
   }
 }

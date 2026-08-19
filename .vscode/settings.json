@@ -43,5 +43,8 @@
     "undeclaring",
     "unduck",
     "Worley"
+  ],
+  "cSpell.ignoreWords": [
+    "sctx"
   ]
 }

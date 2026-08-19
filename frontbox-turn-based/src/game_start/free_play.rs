@@ -15,12 +15,12 @@ impl FreePlay {
     }
   }
 
-  fn on_start_button_pressed(&mut self, ctx: &Context) {
+  fn on_start_button_pressed(&mut self, ctx: &SystemContext) {
     log::info!("Free play: Start button => add player");
 
-    if let Some(mut game_management) = ctx.systems.get::<GameManager>() {
+    if let Some(mut game_management) = ctx.get::<GameManager>() {
       if game_management.is_player_addable() {
-        game_management.add_player(ctx);
+        game_management.add_player(ctx.into());
       } else {
         log::debug!("GameManagement system reports player cannot be added, not adding player");
       }
@@ -31,16 +31,15 @@ impl FreePlay {
 }
 
 impl System for FreePlay {
-  fn is_active(&self, ctx: &Context) -> bool {
+  fn is_active(&self, ctx: &SystemContext) -> bool {
     // active if players can be added
     ctx
-      .systems
       .get::<GameManager>()
       .map(|gm| gm.is_player_addable())
       .unwrap_or(false)
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(e) = event.downcast_ref::<SwitchClosed>()
       && self.start_button_switch.matches_switch(&e.switch)
     {

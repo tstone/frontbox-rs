@@ -45,7 +45,7 @@ impl Hardware {
     }
   }
 
-  pub async fn configure_drivers(io_port: &mut SerialInterface, ctx: &ContextBase) {
+  pub async fn configure_drivers(io_port: &mut SerialInterface, ctx: &BootSnapshot) {
     for driver in ctx.drivers.values() {
       if let Some(mode) = ctx.drivers.config(driver.name) {
         log::info!("Configuring driver {} with {:?}", driver.name, mode);

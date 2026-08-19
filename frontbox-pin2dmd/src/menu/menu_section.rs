@@ -81,14 +81,14 @@ impl MenuRow {
     }
   }
 
-  pub fn increment(&self, ctx: &Context) -> String {
+  pub fn increment(&self, ctx: &SystemContext) -> String {
     match self {
       Self::Config(_, config) => config.increment(ctx),
       _ => "".to_string(),
     }
   }
 
-  pub fn decrement(&self, ctx: &Context) -> String {
+  pub fn decrement(&self, ctx: &SystemContext) -> String {
     match self {
       Self::Config(_, config) => config.decrement(ctx),
       _ => "".to_string(),

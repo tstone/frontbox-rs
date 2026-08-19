@@ -6,11 +6,11 @@ use crate::{CompetitiveGame, GameState, TurnState};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
-  fn add_player(&mut self, ctx: &Context);
+  fn add_player(&mut self, ctx: &ServiceContext);
   /// Advances the turn to the next player. Typically should only be called once PlayerTurnEnd event has been fired.
-  fn advance_turn(&mut self, ctx: &Context);
+  fn advance_turn(&mut self, ctx: &ServiceContext);
   /// Ends the game. Typically should only be called once GameEnding event has been fired.
-  fn end_game(&mut self, ctx: &Context);
+  fn end_game(&mut self, ctx: &ServiceContext);
 
   fn is_player_addable(&self) -> bool;
   fn is_game_started(&self) -> bool;
@@ -19,7 +19,7 @@ pub trait GameManagement: SpawnableSystem {
   fn turn_state(&self) -> Option<&TurnState>;
 
   /// Add points to the current player/team
-  fn add_points(&mut self, points: u32, ctx: &Context);
+  fn add_points(&mut self, points: u32, ctx: &ServiceContext);
   /// Set points multiplier for current player/team
   fn set_multiplier(&mut self, multiplier: f32);
   /// Clear points multiplier for current player/team

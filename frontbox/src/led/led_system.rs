@@ -9,56 +9,56 @@ use crate::prelude::*;
 const LED_SET_BATCH_SIZE: usize = 24;
 
 /// # LedSystem
-/// 
-/// ### Features 
+///
+/// ### Features
 /// - **Conflict Resolution** -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
 /// - **Layer (z-index) Support** -- It's possible to keep an "under layer" active while playing temporary animations a layer above
 /// - **Alpha Compositing** -- LEDs are rendered in RGBA which supports transparency (under colors show through partially)
 /// - An easy way to de-activate LED declarations when a system is de-activated
 /// - Automatic clearing of unset LEDs per frame
-/// 
+///
 /// ### In Use
-/// 
+///
 /// Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
-/// 
+///
 /// ```rust
 /// // declare LEDs by name...
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(3),
 ///   ColorSequence::solid(Rgba::yellow())
 /// );
-/// 
+///
 /// // ...or by group
 /// ctx.declare_leds(
 ///   vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
 ///   ColorSequence::gradient(vec![Rgba::red(), Rgba::yellow()])
 /// );
 /// ```
-/// 
+///
 /// `declare_leds` takes a `HardwareQuery`, which is the reason for `.q()`. More about this later.
-/// 
+///
 /// Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
-/// 
+///
 /// ```rust
 /// ctx.deactivate_led_declarations();
 /// ```
-/// 
+///
 /// In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
-/// 
+///
 /// ### Layering
-/// 
+///
 /// It is possible to declare multiple layers for the same LED. If higher layers are opaque they will be rendered. If higher layers are transparent, they will render with a degree of "see-through" to layers below them.
-/// 
+///
 /// ```rust
 /// // higher layer declares 50% transparent red
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(1),
 ///   ColorSequence::solid(Rgba::red().with_alpha_f32(0.5))
 /// );
-/// 
+///
 /// // over top of white
 /// ctx.declare_leds(&leds::EXAMPLE.q(), ColorSequence::solid(Rgba::white()));
-/// 
+///
 /// // final color renders as pink [255, 127, 127, 255]
 /// ```
 
@@ -239,22 +239,22 @@ impl LedSystem {
 }
 
 impl System for LedSystem {
-  fn on_spawn(&mut self, ctx: &Context) {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
     // Create a copy of all LEDs addresses to reference during rendering
     self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
   }
 
-  fn on_event(&mut self, event: &dyn Event, _ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
     if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
       self.undeclare_by_system(id);
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, _ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, _ctx: &SystemContext) {
     self.alternate_resolver.accumulate(delta);
   }
 
-  fn on_render(&mut self, ctx: &Context) {
+  fn on_render(&mut self, ctx: &SystemContext) {
     let mut leds_to_set: Vec<(LedAddress, Rgba<u8>)> = Vec::new();
 
     for led in self.all_addresses.iter() {
@@ -318,7 +318,7 @@ impl System for LedSystem {
             acc
           });
 
-      let machine = ctx.systems.expect::<Machine>();
+      let machine = ctx.expect::<Machine>();
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
           machine.set_leds(address.board_address, address.breakout, chunk.to_vec());

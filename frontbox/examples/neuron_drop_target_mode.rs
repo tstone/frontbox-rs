@@ -81,7 +81,7 @@ impl DropTargetDownUp {
     Self { target_switches }
   }
 
-  fn on_switch_closed(&mut self, switch: &Switch, ctx: &Context) {
+  fn on_switch_closed(&mut self, switch: &Switch, ctx: &SystemContext) {
     if self.target_switches.contains(&switch.name) {
       let all_down = self
         .target_switches
@@ -94,18 +94,18 @@ impl DropTargetDownUp {
     }
   }
 
-  pub fn up(&self, _ctx: &Context) {
+  pub fn up(&self, _ctx: &SystemContext) {
     // TODO
   }
 }
 
 impl System for DropTargetDownUp {
-  fn on_spawn(&mut self, ctx: &Context) {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
     // bring up all targets on startup
     ctx.activate_driver(drivers::BANK_COIL.name, ActivationMode::Tap);
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       self.on_switch_closed(&event.switch, ctx);
     } else if event.is::<DropUp>() {

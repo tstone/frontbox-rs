@@ -61,22 +61,22 @@ impl HardwareQuery {
   }
 
   /// Resolve the query into a reference for all matching Switches
-  pub fn get_switches<'c>(&self, ctx: &'c Context) -> Vec<&'c Switch> {
+  pub fn get_switches<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Switch> {
     ctx.switches.query(&self)
   }
 
   /// Resolve the query into a the names of all matching Switches
-  pub fn get_switch_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
+  pub fn get_switch_names<'c>(&self, ctx: &'c SystemContext) -> Vec<&'static str> {
     ctx.switches.query(&self).iter().map(|sw| sw.name).collect()
   }
 
   /// Resolve the query into a reference for all matching Drivers
-  pub fn get_drivers<'c>(&self, ctx: &'c Context) -> Vec<&'c Driver> {
+  pub fn get_drivers<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Driver> {
     ctx.drivers.by_selection(&self)
   }
 
   /// Resolve the query into a the names of all matching Drivers
-  pub fn get_driver_names<'c>(&self, ctx: &'c Context) -> Vec<&'static str> {
+  pub fn get_driver_names<'c>(&self, ctx: &'c SystemContext) -> Vec<&'static str> {
     ctx
       .drivers
       .by_selection(&self)
@@ -86,7 +86,7 @@ impl HardwareQuery {
   }
 
   /// Resolve the query into a reference for all matching LEDs
-  pub fn get_leds<'c>(&self, ctx: &'c Context) -> Vec<&'c LED> {
+  pub fn get_leds<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c LED> {
     ctx
       .leds
       .values()
@@ -95,7 +95,7 @@ impl HardwareQuery {
   }
 
   /// Resolve the query into a the address of all matching LEDs
-  pub fn get_leds_addresses(&self, ctx: &Context) -> Vec<LedAddress> {
+  pub fn get_leds_addresses(&self, ctx: &SystemContext) -> Vec<LedAddress> {
     match self {
       Self::Name(name) => vec![ctx.leds.get(name).unwrap().address.clone()],
       Self::Names(names) => names
@@ -123,27 +123,27 @@ impl HardwareQuery {
 }
 
 pub trait HardwareTagExt {
-  fn get_switches<'a>(&self, ctx: &'a Context) -> Vec<&'a Switch>;
-  fn get_drivers<'a>(&self, ctx: &'a Context) -> Vec<&'a Driver>;
-  fn get_leds<'a>(&self, ctx: &'a Context) -> Vec<&'a LED>;
+  fn get_switches<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a Switch>;
+  fn get_drivers<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a Driver>;
+  fn get_leds<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a LED>;
 }
 
 impl HardwareTagExt for Option<HardwareQuery> {
-  fn get_switches<'c>(&self, ctx: &'c Context) -> Vec<&'c Switch> {
+  fn get_switches<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Switch> {
     self
       .as_ref()
       .map(|q| q.get_switches(ctx))
       .unwrap_or_default()
   }
 
-  fn get_drivers<'c>(&self, ctx: &'c Context) -> Vec<&'c Driver> {
+  fn get_drivers<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Driver> {
     self
       .as_ref()
       .map(|q| q.get_drivers(ctx))
       .unwrap_or_default()
   }
 
-  fn get_leds<'c>(&self, ctx: &'c Context) -> Vec<&'c LED> {
+  fn get_leds<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c LED> {
     self.as_ref().map(|q| q.get_leds(ctx)).unwrap_or_default()
   }
 }

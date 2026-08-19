@@ -40,13 +40,13 @@ impl GameStartable {
       .tag(Cabinet)
   }
 
-  fn start_btn_on(&self, ctx: &Context) {
+  fn start_btn_on(&self, ctx: &SystemContext) {
     if let Some(name) = self.lamp_driver_name {
       ctx.activate_driver(name, ActivationMode::VirtualSwitchOn);
     }
   }
 
-  fn start_btn_off(&self, ctx: &Context) {
+  fn start_btn_off(&self, ctx: &SystemContext) {
     if let Some(name) = self.lamp_driver_name {
       ctx.deactivate_driver(name, DeactivationMode::VirtualSwitchOff);
     }
@@ -60,25 +60,24 @@ impl Default for GameStartable {
 }
 
 impl System for GameStartable {
-  fn is_active(&self, ctx: &Context) -> bool {
+  fn is_active(&self, ctx: &SystemContext) -> bool {
     // active if game is startable or player addable
     ctx
-      .systems
       .get::<GameManager>()
       .map(|gm| gm.is_player_addable())
       .unwrap_or(false)
   }
 
-  fn on_deactivate(&mut self, ctx: &Context) {
+  fn on_deactivate(&mut self, ctx: &SystemContext) {
     // turn off start button to make sure it's not stuck on one the system is disabled
     self.start_btn_off(ctx);
   }
 
-  fn on_spawn(&mut self, ctx: &Context) {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
     ctx.cue_cycling(events![LampOn, LampOff], Cue::Loop(self.flash_duration));
   }
 
-  fn on_event(&mut self, event: &dyn Event, ctx: &Context) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<LampOn>() {
       self.start_btn_on(ctx);
     } else if event.is::<LampOff>() {
@@ -94,7 +93,7 @@ impl System for GameStartable {
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // only apply effects if a game hasn't started
     if !ctx.is_game_started() {
       for effect in &mut self.effects {

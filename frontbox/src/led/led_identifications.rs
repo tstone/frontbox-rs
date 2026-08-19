@@ -18,14 +18,14 @@ impl LedIdentifications {
 }
 
 impl Contextual<LedIdentifications> for HardwareQuery {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self.get_leds_addresses(&ctx);
     LedIdentifications::new(addresses, 0)
   }
 }
 
 impl Contextual<LedIdentifications> for Vec<HardwareQuery> {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()
       .flat_map(|q| q.get_leds_addresses(ctx))
@@ -35,7 +35,7 @@ impl Contextual<LedIdentifications> for Vec<HardwareQuery> {
 }
 
 impl Contextual<LedIdentifications> for Vec<&HardwareQuery> {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()
       .flat_map(|q| q.get_leds_addresses(ctx))
@@ -45,19 +45,19 @@ impl Contextual<LedIdentifications> for Vec<&HardwareQuery> {
 }
 
 impl Contextual<LedIdentifications> for LedIdentifications {
-  fn resolve(&self, _ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, _ctx: &SystemContext) -> LedIdentifications {
     self.clone()
   }
 }
 
 impl Contextual<LedIdentifications> for Box<dyn Contextual<LedIdentifications>> {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     (**self).resolve(ctx)
   }
 }
 
 impl Contextual<LedIdentifications> for &Box<dyn Contextual<LedIdentifications>> {
-  fn resolve(&self, ctx: &Context) -> LedIdentifications {
+  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     (**self).resolve(ctx)
   }
 }

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use frontbox::prelude::Context;
+use frontbox::prelude::SystemContext;
 
 use crate::*;
 
@@ -10,7 +10,7 @@ pub trait SoundSystemExt {
   fn play_callout(&self, key: &'static str);
 }
 
-impl<'a> SoundSystemExt for Context<'a> {
+impl<'a> SoundSystemExt for SystemContext<'a> {
   fn preload_sound(&self, name: &'static str, path: impl AsRef<Path>) {
     with_snd_system(self, |snd_system| {
       snd_system.preload(name, path);
@@ -30,8 +30,8 @@ impl<'a> SoundSystemExt for Context<'a> {
   }
 }
 
-fn with_snd_system<T>(ctx: &Context, f: impl FnOnce(&mut SoundSystem) -> T) {
-  if let Some(mut system) = ctx.systems.get::<SoundSystem>() {
+fn with_snd_system<T>(ctx: &SystemContext, f: impl FnOnce(&mut SoundSystem) -> T) {
+  if let Some(mut system) = ctx.get::<SoundSystem>() {
     f(&mut system);
   } else {
     log::error!("SoundSystem not running.");

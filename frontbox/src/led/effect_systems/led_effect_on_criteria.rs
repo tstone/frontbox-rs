@@ -5,19 +5,22 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct LedEffectOnCriteria {
   effects: Vec<LedEffect>,
-  criteria: Arc<dyn Fn(&Context) -> bool + 'static>,
+  criteria: Arc<dyn Fn(&SystemContext) -> bool + 'static>,
 }
 
 impl LedEffectOnCriteria {
   /// Create a system that applies an effect if the given criteria is met
-  pub fn single<S>(criteria: impl Fn(&Context) -> bool + 'static, effect: LedEffect) -> Self {
+  pub fn single<S>(criteria: impl Fn(&SystemContext) -> bool + 'static, effect: LedEffect) -> Self {
     Self {
       effects: vec![effect],
       criteria: Arc::new(criteria),
     }
   }
 
-  pub fn multi(criteria: impl Fn(&Context) -> bool + 'static, effects: Vec<LedEffect>) -> Self {
+  pub fn multi(
+    criteria: impl Fn(&SystemContext) -> bool + 'static,
+    effects: Vec<LedEffect>,
+  ) -> Self {
     Self {
       effects,
       criteria: Arc::new(criteria),
@@ -26,11 +29,11 @@ impl LedEffectOnCriteria {
 }
 
 impl System for LedEffectOnCriteria {
-  fn is_active(&self, ctx: &Context) -> bool {
+  fn is_active(&self, ctx: &SystemContext) -> bool {
     (self.criteria)(ctx)
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     for effect in &mut self.effects {
       effect.apply(delta, ctx);
     }
