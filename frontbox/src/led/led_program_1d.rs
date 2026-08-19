@@ -4,15 +4,15 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub enum LedProgram1d {
   Fixed {
-    ids: Box<dyn Contextual<LedIdentifications>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
   },
   Animated {
-    ids: Box<dyn Contextual<LedIdentifications>>,
-    anim: Box<dyn Animation<Duration, ColorSequence>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
+    anim: Box<dyn Animation<Duration, ColorSequence> + Send + Sync>,
   },
   Modulated {
-    ids: Box<dyn Contextual<LedIdentifications>>,
+    ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
     modulators: MultiModulator<ColorSequence, Duration>,
   },
@@ -67,6 +67,12 @@ impl LedProgram1d {
       LedProgram1d::Timeline { active, .. } => *active = true,
       _ => {}
     }
+  }
+
+  /// By default LedPrograms are created in a stopped state. This mutates the state to be playing from the start.
+  pub fn playing(mut self) -> Self {
+    self.play();
+    self
   }
 
   pub fn stop(&mut self, ctx: &SystemContext) {
@@ -125,7 +131,7 @@ impl LedProgram1d {
   // -- Constructors --
 
   /// Keep targets the exact same ColorSequence
-  pub fn fixed<T: Contextual<LedIdentifications> + 'static>(
+  pub fn fixed<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: ColorSequence,
   ) -> Self {
@@ -136,10 +142,11 @@ impl LedProgram1d {
   }
 
   /// Apply a ColorSequence animation
-  pub fn animated<T: Contextual<LedIdentifications> + 'static>(
+  pub fn animated<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
-    animation: impl Animation<Duration, ColorSequence> + 'static,
+    mut animation: impl Animation<Duration, ColorSequence> + Send + Sync + 'static,
   ) -> Self {
+    animation.stop();
     Self::Animated {
       ids: Box::new(targets),
       anim: Box::new(animation),
@@ -168,7 +175,7 @@ impl LedProgram1d {
   ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
   /// ])
   /// ```
-  pub fn tween<T: Contextual<LedIdentifications> + 'static>(
+  pub fn tween<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     duration: Duration,
     curve: Curve,
@@ -179,7 +186,7 @@ impl LedProgram1d {
   }
 
   /// Typical on/off behavior
-  pub fn flash<T: Contextual<LedIdentifications> + 'static>(
+  pub fn flash<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: ColorSequence,
     cycle: Cycle,
@@ -194,7 +201,7 @@ impl LedProgram1d {
   }
 
   /// Rhythmic, organic breathing
-  pub fn breathe<T: Contextual<LedIdentifications> + 'static>(
+  pub fn breathe<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: Rgba<u8>,
     cycle: Cycle,
@@ -212,21 +219,23 @@ impl LedProgram1d {
   }
 
   /// Apply one or more manual mutations to an initial ColorSequence
-  pub fn initial<T: Contextual<LedIdentifications> + 'static>(
+  pub fn initial<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     initial: ColorSequence,
   ) -> Self {
+    let mut modulators = MultiModulator::new(Vec::new(), true);
+    modulators.stop();
     Self::Modulated {
       ids: Box::new(targets),
       color: initial,
-      modulators: MultiModulator::new(Vec::new(), true),
+      modulators,
     }
   }
 
   /// Add an additional mutation onto the modulation
   pub fn modulate<T: Clone + Send + Sync + 'static>(
     mut self,
-    animation: impl Animation<Duration, T> + 'static,
+    animation: impl Animation<Duration, T> + Send + Sync + 'static,
     setter: impl Fn(&mut ColorSequence, T) + Send + Sync + 'static,
   ) -> Self {
     if let LedProgram1d::Modulated { modulators, .. } = &mut self {
@@ -236,7 +245,7 @@ impl LedProgram1d {
     self
   }
 
-  pub fn rotating<T: Contextual<LedIdentifications> + 'static>(
+  pub fn rotating<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     initial: ColorSequence,
     duration: Duration,
