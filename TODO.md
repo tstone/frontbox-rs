@@ -1,5 +1,5 @@
 - Possible BUG: If Cue time is less than system tick time, what happens?
-- Redo ActionButtonEject(System) to use plunge lane events + accept LedEffects
+- Redo ActionButtonEject(System) to use plunge lane events + accept LedPrograms
 - There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
   States: attract, door open, in-game
 - Animations should be able to be specified as relative to the frame rate

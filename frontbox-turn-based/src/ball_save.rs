@@ -7,7 +7,7 @@ use crate::{PlayerTurnActive, PlayerTurnEnding};
 #[derive(Clone)]
 pub struct BallSaveSystem {
   duration: Duration,
-  effects: Vec<LedEffect>,
+  led_programs: Vec<LedProgram>,
   cue: Option<u64>,
   active: bool,
 }
@@ -20,21 +20,21 @@ impl BallSaveSystem {
   pub fn new(initial_duration: Duration) -> Self {
     Self {
       duration: initial_duration,
-      effects: Vec::new(),
+      led_programs: Vec::new(),
       cue: None,
       active: false,
     }
   }
 
-  pub fn effect(mut self, effect: LedEffect) -> Self {
-    self.effects.push(effect);
+  pub fn effect(mut self, effect: LedProgram) -> Self {
+    self.led_programs.push(effect);
     self
   }
 
   pub fn activate(&mut self, ctx: &SystemContext) {
     self.active = true;
 
-    for effect in &mut self.effects {
+    for effect in &mut self.led_programs {
       effect.play();
     }
 
@@ -51,7 +51,7 @@ impl BallSaveSystem {
       ctx.cancel_cue(cue_id);
     }
 
-    for effect in &mut self.effects {
+    for effect in &mut self.led_programs {
       effect.stop(ctx);
     }
 
@@ -92,7 +92,7 @@ impl System for BallSaveSystem {
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     if self.active {
-      for effect in &mut self.effects {
+      for effect in &mut self.led_programs {
         effect.apply(delta, ctx);
       }
     }

@@ -6,14 +6,14 @@ use crate::{GameEnded, GameManagementExt, GameManager, GameStarted};
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
   lamp_driver_name: Option<&'static str>,
-  effects: Vec<LedEffect>,
+  led_programs: Vec<LedProgram>,
   flash_duration: Duration,
 }
 
 impl GameStartable {
   pub fn new() -> Self {
     Self {
-      effects: Vec::new(),
+      led_programs: Vec::new(),
       lamp_driver_name: None,
       flash_duration: Duration::from_millis(185),
     }
@@ -24,8 +24,8 @@ impl GameStartable {
     self
   }
 
-  pub fn effect(mut self, effect: LedEffect) -> Self {
-    self.effects.push(effect);
+  pub fn effect(mut self, effect: LedProgram) -> Self {
+    self.led_programs.push(effect);
     self
   }
 
@@ -83,11 +83,11 @@ impl System for GameStartable {
     } else if event.is::<LampOff>() {
       self.start_btn_off(ctx);
     } else if event.is::<GameStarted>() {
-      for effect in &mut self.effects {
+      for effect in &mut self.led_programs {
         effect.stop(ctx);
       }
     } else if event.is::<GameEnded>() {
-      for effect in &mut self.effects {
+      for effect in &mut self.led_programs {
         effect.play();
       }
     }
@@ -96,7 +96,7 @@ impl System for GameStartable {
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // only apply effects if a game hasn't started
     if !ctx.is_game_started() {
-      for effect in &mut self.effects {
+      for effect in &mut self.led_programs {
         effect.apply(delta, ctx);
       }
     }

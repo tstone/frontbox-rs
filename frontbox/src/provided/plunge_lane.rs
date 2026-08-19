@@ -6,7 +6,7 @@ pub struct PlungeLaneSystem {
   re_enter_timeout: Duration,
   state: PlungeLaneState,
   wait_cue_id: Option<u64>,
-  ball_present_effects: Vec<LedEffect>,
+  ball_present_program: Vec<LedProgram>,
 }
 
 impl PlungeLaneSystem {
@@ -17,13 +17,13 @@ impl PlungeLaneSystem {
       re_enter_timeout,
       state: PlungeLaneState::NoBall,
       wait_cue_id: None,
-      ball_present_effects: Vec::new(),
+      ball_present_program: Vec::new(),
     }
   }
 
   /// Add an effect when the ball is present in the plunge lane
-  pub fn ball_present_effect(mut self, effect: LedEffect) -> Self {
-    self.ball_present_effects.push(effect);
+  pub fn ball_present_effect(mut self, effect: LedProgram) -> Self {
+    self.ball_present_program.push(effect);
     self
   }
 
@@ -83,7 +83,7 @@ impl System for PlungeLaneSystem {
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     if self.is_ball_present() {
-      for effect in &mut self.ball_present_effects {
+      for effect in &mut self.ball_present_program {
         effect.apply(delta, ctx);
       }
     }

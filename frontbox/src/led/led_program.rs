@@ -146,7 +146,28 @@ impl LedProgram {
     }
   }
 
-  /// Crossfade between multiple ColorSequences
+  /// Cycle (tween) through all given ColorSequences, over `duration`.
+  /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
+  ///
+  /// ```rust,ignore
+  /// // fade everything from red to blue
+  /// LedProgram::tween(q, Duration::from_secs(1), Curve::Linear, vec![
+  ///   ColorSequence::solid(Rgba::blue()),
+  ///   ColorSequence::solid(Rgba::red()),
+  /// ])
+  ///
+  /// // fade between all red to striped red
+  /// LedProgram::tween(q, Duration::from_secs(1), Curve::Linear, vec![
+  ///   ColorSequence::solid(Rgba::red()),
+  ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
+  /// ])
+  ///
+  /// // "dancing lights" effect
+  /// LedProgram::tween(q, Duration::from_secs(1), Curve::Steps(2), vec![
+  ///   ColorSequence::tile(vec![Rgba::white(), Rgba::red()]),
+  ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
+  /// ])
+  /// ```
   pub fn tween<T: Contextual<LedIdentifications> + 'static>(
     targets: T,
     duration: Duration,
