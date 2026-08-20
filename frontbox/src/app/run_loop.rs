@@ -395,10 +395,6 @@ fn spawn_system_group(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  if groups.contains_key(group_name) {
-    log::warn!("System group '{}' already exists, cannot spawn", group_name);
-    return;
-  }
   groups.insert(group_name, SystemGroup::new());
   log::info!("🌐 Spawned system group {}", group_name);
 
