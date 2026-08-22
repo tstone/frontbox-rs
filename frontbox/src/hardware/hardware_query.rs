@@ -338,4 +338,32 @@ mod tests {
     assert_eq!(leds[0].index, 2);
     assert_eq!(leds[1].index, 3);
   }
+
+  // The goal here is to ensure that using names, even through `any` maintain their order
+  #[test]
+  fn get_leds_addresses_any_name() {
+    let mut context = TestContext::default();
+    context.base.leds.insert(
+      "led2".to_string(),
+      LED {
+        name: "led2".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 2),
+        ..Default::default()
+      },
+    );
+    context.base.leds.insert(
+      "led3".to_string(),
+      LED {
+        name: "led3".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 3),
+        ..Default::default()
+      },
+    );
+
+    let q = Q::any(vec![&Q::name("led2"), &Q::name("led3")]);
+    let leds = q.get_leds_addresses(&context.sys_ctx());
+
+    assert_eq!(leds[0].index, 2);
+    assert_eq!(leds[1].index, 3);
+  }
 }

@@ -320,3 +320,30 @@ impl Lerp for ColorSequence {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn solid() {
+    let cs = ColorSequence::solid(Rgba::red());
+    let colors = cs.generate(3);
+
+    assert_eq!(colors[0], Rgba::red());
+    assert_eq!(colors[1], Rgba::red());
+    assert_eq!(colors[2], Rgba::red());
+  }
+
+  #[test]
+  fn pattern() {
+    let cs = ColorSequence::pattern(vec![Rgba::red(), Rgba::white()], Cycle::Times(2));
+    let colors = cs.generate(5);
+
+    assert_eq!(colors[0], Rgba::red());
+    assert_eq!(colors[1], Rgba::white());
+    assert_eq!(colors[2], Rgba::red());
+    assert_eq!(colors[3], Rgba::white());
+    assert_eq!(colors[4], Rgba::default());
+  }
+}
