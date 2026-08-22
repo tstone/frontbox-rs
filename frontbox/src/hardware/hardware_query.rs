@@ -100,12 +100,14 @@ impl HardwareQuery {
   /// Resolve the query into a the address of all matching LEDs
   pub fn get_leds_addresses(&self, ctx: &SystemContext) -> Vec<LedAddress> {
     let addrs = match self {
+      // maintain order for name/names
       Self::Name(name) => vec![ctx.leds.get(name).unwrap().address.clone()],
       Self::Names(names) => names
         .iter()
         .map(|n| ctx.leds.get(n).unwrap().address.clone())
         .collect(),
       _ => {
+        // for all other queries use the address to maintain consistent ordering
         let mut matches: Vec<LedAddress> = ctx
           .leds
           .values()
@@ -117,7 +119,6 @@ impl HardwareQuery {
             }
           })
           .collect();
-        // maintain consistent order
         matches.sort_by_key(|addr| addr.index);
         matches
       }
@@ -156,13 +157,12 @@ impl HardwareTagExt for Option<HardwareQuery> {
 
 #[cfg(test)]
 mod tests {
-  use crate::tags::Playfield;
-
   use super::*;
+  use crate::tags::Playfield;
 
   #[test]
   fn name_selection() {
-    let selection = Q::name("switch1");
+    let q = Q::name("switch1");
 
     let switch = Switch {
       id: 1,
@@ -175,12 +175,12 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
   }
 
   #[test]
   fn tag_selection() {
-    let selection = Q::tag::<Playfield>();
+    let q = Q::tag::<Playfield>();
 
     let switch = Switch {
       id: 1,
@@ -193,12 +193,12 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
   }
 
   #[test]
   fn and_selection() {
-    let selection = Q::and(Q::name("switch1"), Q::tag::<Playfield>());
+    let q = Q::and(Q::name("switch1"), Q::tag::<Playfield>());
 
     let switch = Switch {
       id: 1,
@@ -211,12 +211,12 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
   }
 
   #[test]
   fn or_selection() {
-    let selection = Q::or(Q::name("switch1"), Q::name("switch2"));
+    let q = Q::or(Q::name("switch1"), Q::name("switch2"));
 
     let switch = Switch {
       id: 1,
@@ -229,12 +229,12 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
   }
 
   #[test]
   fn any_of_selection() {
-    let selection = Q::any_of(vec![&Q::name("switch1"), &Q::name("switch2")]);
+    let q = Q::any_of(vec![&Q::name("switch1"), &Q::name("switch2")]);
 
     let switch = Switch {
       id: 1,
@@ -247,12 +247,12 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
   }
 
   #[test]
   fn all_of_selection() {
-    let selection = Q::all_of(vec![&Q::name("switch1"), &Q::tag::<Playfield>()]);
+    let q = Q::all_of(vec![&Q::name("switch1"), &Q::tag::<Playfield>()]);
 
     let switch = Switch {
       id: 1,
@@ -265,6 +265,77 @@ mod tests {
       location: None,
     };
 
-    assert!(selection.matches_switch(&switch));
+    assert!(q.matches_switch(&switch));
+  }
+
+  #[test]
+  fn get_leds_addresses_name() {
+    let mut context = TestContext::default();
+    context.base.leds.insert(
+      "led1".to_string(),
+      LED {
+        name: "led1".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 1),
+        ..Default::default()
+      },
+    );
+    context.base.leds.insert(
+      "led2".to_string(),
+      LED {
+        name: "led2".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 2),
+        ..Default::default()
+      },
+    );
+
+    let q = Q::name("led1");
+    let leds = q.get_leds_addresses(&context.sys_ctx());
+
+    assert_eq!(leds.len(), 1);
+    assert_eq!(leds[0].index, 1);
+  }
+
+  #[test]
+  fn get_leds_addresses_names() {
+    let mut context = TestContext::default();
+    context.base.leds.insert(
+      "led1".to_string(),
+      LED {
+        name: "led1".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 1),
+        ..Default::default()
+      },
+    );
+    context.base.leds.insert(
+      "led2".to_string(),
+      LED {
+        name: "led2".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 2),
+        ..Default::default()
+      },
+    );
+    context.base.leds.insert(
+      "led3".to_string(),
+      LED {
+        name: "led3".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 3),
+        ..Default::default()
+      },
+    );
+    context.base.leds.insert(
+      "led4".to_string(),
+      LED {
+        name: "led4".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 4),
+        ..Default::default()
+      },
+    );
+
+    let q = Q::names(vec!["led2", "led3"]);
+    let leds = q.get_leds_addresses(&context.sys_ctx());
+
+    assert_eq!(leds.len(), 2);
+    assert_eq!(leds[0].index, 2);
+    assert_eq!(leds[1].index, 3);
   }
 }

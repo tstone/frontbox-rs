@@ -68,7 +68,7 @@ pub struct IoAddressed<T: HardwareDefinition + 'static> {
 // -- Exp --
 
 /// An address on the expansion network
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ExpAddress {
   pub board_address: u8,
   pub breakout: Option<u8>,

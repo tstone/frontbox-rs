@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SwitchLookup {
   by_id: HashMap<usize, Switch>,
   pub(crate) by_name: HashMap<&'static str, Switch>,

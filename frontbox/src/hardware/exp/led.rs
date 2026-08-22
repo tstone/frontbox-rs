@@ -2,7 +2,7 @@ use std::any::TypeId;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LED {
   pub name: String,
   pub address: LedAddress,
@@ -26,13 +26,17 @@ impl LED {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct LedAddress {
   pub exp: ExpAddress,
   pub index: u16,
 }
 
 impl LedAddress {
+  pub fn new(exp: ExpAddress, index: u16) -> Self {
+    Self { exp, index }
+  }
+
   pub fn board(&self) -> u8 {
     self.exp.board_address
   }
