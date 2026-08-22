@@ -1,7 +1,4 @@
-- Possible BUG: If Cue time is less than system tick time, what happens?
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedProgram1ds
-- There needs to be some kind of generic "machine state" system -- maybe machine state is a tag -- that everything else can react to
-  States: attract, door open, in-game
 - Animations should be able to be specified as relative to the frame rate
 - Establish (and document) consistent log targets
 - Check why there is an IoBoard and IoBoards
@@ -13,6 +10,7 @@
 - Don't export SystemContainer types in prelude
 - Clean up hardware exports
 - It's only a matter of time before passing around Context results in a system shutting down itself and accidentally shutting down it's caller
+- Possible BUG: If Cue time is less than system tick time, what happens?
 
 Canvas
 

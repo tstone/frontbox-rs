@@ -83,10 +83,30 @@ impl LedProgram1d {
     }
   }
 
-  /// By default LedPrograms are created in a stopped state. This mutates the state to be playing from the start.
-  pub fn playing(mut self) -> Self {
-    self.play();
+  /// Program starts in a playing state by default. Use this to chain it to prevent that.
+  pub fn stopped(mut self) -> Self {
+    self.stop_in_place();
     self
+  }
+
+  fn stop_in_place(&mut self) {
+    match self {
+      LedProgram1d::Animated { anim, .. } => {
+        anim.stop();
+      }
+      LedProgram1d::Modulated { modulators, .. } => {
+        modulators.stop();
+      }
+      LedProgram1d::Timeline {
+        active, entries, ..
+      } => {
+        for e in entries.iter_mut() {
+          e.program.stop_in_place();
+        }
+        *active = false;
+      }
+      _ => {}
+    }
   }
 
   pub fn stop(&mut self, ctx: &SystemContext) {
@@ -281,7 +301,7 @@ impl LedProgram1d {
         {
           *rotation = Extent::Relative(angle);
         } else {
-          log::warn!("LedProgram1: Unexpectd - there is no rotation alteration");
+          log::warn!("LedProgram1: Unexpected - there is no rotation alteration");
         }
       },
     )

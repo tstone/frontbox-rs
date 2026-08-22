@@ -21,7 +21,7 @@ where
       current_anim_index: 0,
       cycle,
       cycle_count: 0,
-      active: false,
+      active: true,
     }
   }
 
@@ -29,9 +29,9 @@ where
     Box::new(Self::new(sequence, cycle))
   }
 
-  /// Sequence starts stopped by default. Use this to chain it to immediately start
-  pub fn playing(mut self) -> Self {
-    self.play();
+  /// Sequence starts in a playing state by default. Use this to chain it to prevent that.
+  pub fn stopped(mut self) -> Self {
+    self.stop();
     self
   }
 
