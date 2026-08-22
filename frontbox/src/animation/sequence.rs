@@ -49,34 +49,33 @@ where
   T: Clone,
   A: Copy + Default,
 {
-  fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
-    if self.active
-      && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index)
-    {
-      let result = current_anim.accumulate(delta);
+fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
+  if self.active
+    && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index)
+  {
+    let result = current_anim.accumulate(delta);
 
-      if current_anim.is_complete() {
-        self.current_anim_index += 1;
+    if current_anim.is_complete() {
+      self.current_anim_index += 1;
 
-        if let Some(next_anim) = self.sequence.get_mut(self.current_anim_index) {
-          next_anim.play();
+      if self.current_anim_index >= self.sequence.len() {
+        if self.cycle != Cycle::Forever && self.cycle_count < u32::MAX {
+          self.cycle_count += 1;
         }
-
-        if self.current_anim_index >= self.sequence.len() {
-          if self.cycle != Cycle::Forever && self.cycle_count < u32::MAX {
-            self.cycle_count += 1;
-          }
-          self.current_anim_index = 0;
-          self.reset_all();
-        }
-
-        // roll over extra time to next animation, if any
-        return self.accumulate(result.remainder);
+        self.current_anim_index = 0;
+        self.reset_all();
       }
-    }
 
-    AccumulationResult::default()
+      if let Some(next_anim) = self.sequence.get_mut(self.current_anim_index) {
+        next_anim.play();
+      }
+
+      return self.accumulate(result.remainder);
+    }
   }
+
+  AccumulationResult::default()
+}
 
   fn force(&mut self, current: A) {
     // replay the sequence up to the current value

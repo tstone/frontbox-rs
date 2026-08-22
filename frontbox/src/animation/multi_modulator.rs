@@ -11,7 +11,7 @@ impl<S, A> MultiModulator<S, A> {
     Self { modulators, active }
   }
 
-  pub fn started(modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>) -> Self {
+  pub fn playing(modulators: Vec<Box<dyn DynModulation<S, A> + Send + Sync>>) -> Self {
     Self::new(modulators, true)
   }
 

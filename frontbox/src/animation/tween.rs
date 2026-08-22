@@ -70,8 +70,8 @@ where
 
   pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Sequence<A, T>
   where
-    A: PartialOrd + 'static,
-    T: 'static,
+    A: PartialOrd + Send + Sync + 'static,
+    T: Send + Sync + 'static,
   {
     Sequence::new(
       vec![

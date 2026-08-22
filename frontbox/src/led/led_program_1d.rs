@@ -187,9 +187,8 @@ impl LedProgram1d {
   /// Apply a ColorSequence animation
   pub fn animated<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
-    mut animation: impl Animation<Duration, ColorSequence> + Send + Sync + 'static,
+    animation: impl Animation<Duration, ColorSequence> + Send + Sync + 'static,
   ) -> Self {
-    animation.stop();
     Self::Animated {
       ids: Box::new(targets),
       anim: Box::new(animation),
@@ -243,22 +242,37 @@ impl LedProgram1d {
     )
   }
 
-  /// Rhythmic, organic breathing
-  pub fn breathe<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+  /// Like flash, but doesn't go all the way off
+  pub fn pulse<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: Rgba<u8>,
+    duration: Duration,
     cycle: Cycle,
   ) -> Self {
     Self::tween(
       targets,
-      Duration::from_millis(720),
+      duration,
       Curve::EaseInOut,
       cycle,
       vec![
         ColorSequence::solid(color),
-        ColorSequence::solid(color.darken(0.325)),
+        ColorSequence::solid(color.darken(0.3)),
       ],
     )
+  }
+
+    /// Rhythmic, organic breathing
+  pub fn breathe<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+    targets: T,
+    color: Rgba<u8>,
+    duration: Duration,
+    cycle: Cycle,
+  ) -> Self {
+    Self::animated(targets, 
+      Tween::ping_pong(duration, Curve::EaseInOut, vec![
+        ColorSequence::solid(color),
+        ColorSequence::solid(color.darken(0.3)),
+      ], cycle))
   }
 
   /// Apply one or more manual mutations to an initial ColorSequence
@@ -269,7 +283,7 @@ impl LedProgram1d {
     Self::Modulated {
       ids: Box::new(targets),
       color: initial,
-      modulators: MultiModulator::stopped(Vec::new()),
+      modulators: MultiModulator::playing(Vec::new()),
     }
   }
 

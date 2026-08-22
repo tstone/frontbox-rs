@@ -22,6 +22,7 @@ pub mod operator_config;
 pub mod provided;
 mod store;
 pub mod systems;
+mod duration_ext;
 
 pub use hardware::tags;
 
@@ -42,6 +43,7 @@ pub mod prelude {
   pub use crate::store::*;
   pub use crate::systems;
   pub use crate::systems::*;
+  pub use crate::duration_ext::*;
 
   // re-exports
   pub use fast_protocol::driver_config::*;

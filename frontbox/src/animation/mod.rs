@@ -100,7 +100,7 @@ pub use tween::*;
 pub use tweenable::*;
 
 /// Describes any value that can be changed over time. More specifically, an animation is an Accumulator (something which can be marched forward with time) that returns a value.
-pub trait Animation<Acc, Val>: Accumulator<Acc> {
+pub trait Animation<Acc, Val>: Accumulator<Acc> + Send + Sync {
   fn sample(&self) -> Val;
 
   fn play(&mut self);
