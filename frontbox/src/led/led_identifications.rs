@@ -56,8 +56,11 @@ impl Contextual<LedIdentifications> for Box<dyn Contextual<LedIdentifications> +
   }
 }
 
-impl Contextual<LedIdentifications> for &Box<dyn Contextual<LedIdentifications> + Send + Sync> {
-  fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
+impl<C, T> Contextual<T> for &C
+where
+  C: Contextual<T> + ?Sized,
+{
+  fn resolve(&self, ctx: &SystemContext) -> T {
     (**self).resolve(ctx)
   }
 }

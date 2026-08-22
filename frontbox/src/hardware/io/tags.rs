@@ -54,3 +54,5 @@ pub struct Lane;
 pub struct Target;
 #[derive(Tag)]
 pub struct Ramp;
+#[derive(Tag)]
+pub struct Spinner;
