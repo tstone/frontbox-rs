@@ -53,11 +53,11 @@ pub async fn run(
     let _ = tx.send(AppMessage::Shutdown);
   });
 
-  log::info!("⟳ Run loop started.");
+  log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
   loop {
     tokio::select! {
       Some(command) = app_receiver.recv() => {
-        log::trace!("AppMessage queue depth: {}", app_receiver.len());
+        log::trace!(target: "frontbox::run_loop", "AppMessage queue depth: {}", app_receiver.len());
         let start = std::time::Instant::now();
 
         match command {
@@ -80,7 +80,7 @@ pub async fn run(
             base.switches.update_switch_states(switch_states);
           }
           AppMessage::Shutdown => {
-            log::warn!("⏹️ Shutdown command received, shutting down...");
+            log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
             break;
           }
           AppMessage::SpawnSystem(parent_key, system) => {
@@ -115,7 +115,7 @@ pub async fn run(
           }
         }
 
-        log::trace!("Run loop elapsed {}", start.elapsed().as_micros());
+        log::trace!(target: "frontbox::run_loop", "Run loop elapsed {}", start.elapsed().as_micros());
       }
 
       Ok(_) = tick_rx.changed() => {
