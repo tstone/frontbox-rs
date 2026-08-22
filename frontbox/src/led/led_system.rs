@@ -103,7 +103,7 @@ impl LedSystem {
     active: bool,
   ) {
     let declarations: LedDeclarations = declarations.into();
-    log::debug!(target: "frontbox::leds", "LED declarations declared: {:?}", declarations);
+    log::trace!(target: "frontbox::leds", "LED declarations declared: {:?}", declarations);
 
     for (led, color) in declarations.pairings {
       let declaration = StatefulLedDeclaration { active, color };
@@ -296,7 +296,7 @@ impl System for LedSystem {
         }
       }
       self.prior_render.insert(led.clone(), *color);
-      log::trace!(target: "frontbox::leds", "Setting LED at {:?} to {:?}", led, color);
+      log::debug!(target: "frontbox::leds", "Setting LED at {:?} to {:?}", led, color);
       true
     });
 

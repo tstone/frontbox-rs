@@ -87,21 +87,21 @@ impl Q {
 
   /// Creates a selection that matches if both sub-selections match.
   pub fn and<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
-    HardwareQuery::And(Box::new(left), Box::new(right))
+    left.and(right)
   }
 
   /// Creates a selection that matches if either sub-selection matches.
   pub fn or<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
-    HardwareQuery::Or(Box::new(left), Box::new(right))
+    left.or(right)
   }
 
   /// Sums up multiple selections with OR logic. Panics if the input is empty.
-  pub fn any_of(selections: Vec<HardwareQuery>) -> HardwareQuery {
-    selections.into_iter().reduce(Self::or).unwrap()
+  pub fn any_of(qs: Vec<&HardwareQuery>) -> HardwareQuery {
+    HardwareQuery::Or(qs.iter().map(|q| q.clone()).collect())
   }
 
   /// Sums up multiple selections with AND logic. Panics if the input is empty.
-  pub fn all_of(selections: Vec<HardwareQuery>) -> HardwareQuery {
-    selections.into_iter().reduce(Self::and).unwrap()
+  pub fn all_of(qs: Vec<&HardwareQuery>) -> HardwareQuery {
+    HardwareQuery::And(qs.iter().map(|q| Box::new(q.clone())).collect())
   }
 }
