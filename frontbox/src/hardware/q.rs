@@ -70,38 +70,38 @@ use crate::prelude::*;
 pub struct Q;
 
 impl Q {
-  /// Creates a selection that matches any switch/driver with the specified name.
+  /// Query that matches any switch/driver with the specified name.
   pub fn name(name: &'static str) -> HardwareQuery {
     HardwareQuery::Name(name.to_string())
   }
 
-  /// Creates a selection that matches any of the provided names.
+  /// Query that matches any of the provided names.
   pub fn names<S: Into<String>>(names: impl IntoIterator<Item = S>) -> HardwareQuery {
     HardwareQuery::Names(names.into_iter().map(Into::into).collect())
   }
 
-  /// Creates a selection that matches any switch/driver with the specified tag type.
+  /// Query that matches any switch/driver with the specified tag type.
   pub fn tag<'a, T: Tag + 'static>() -> HardwareQuery {
     HardwareQuery::Tag(TypeId::of::<T>())
   }
 
-  /// Creates a selection that matches if both sub-selections match.
+  /// Query that matches if both sub-selections match.
   pub fn and<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
     left.and(right)
   }
 
-  /// Creates a selection that matches if either sub-selection matches.
+  /// Query that matches if either sub-selection matches.
   pub fn or<'a>(left: HardwareQuery, right: HardwareQuery) -> HardwareQuery {
     left.or(right)
   }
 
-  /// Sums up multiple selections with OR logic. Panics if the input is empty.
-  pub fn any_of(qs: Vec<&HardwareQuery>) -> HardwareQuery {
+  /// Any of the given queries are sufficient ("join" operation)
+  pub fn any(qs: Vec<&HardwareQuery>) -> HardwareQuery {
     HardwareQuery::Or(qs.into_iter().map(|q| q.clone()).collect())
   }
 
-  /// Sums up multiple selections with AND logic. Panics if the input is empty.
-  pub fn all_of(qs: Vec<&HardwareQuery>) -> HardwareQuery {
+  /// All of the given queries must be satisfied
+  pub fn all(qs: Vec<&HardwareQuery>) -> HardwareQuery {
     HardwareQuery::And(qs.into_iter().map(|q| q.clone()).collect())
   }
 }

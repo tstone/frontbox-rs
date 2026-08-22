@@ -234,7 +234,7 @@ mod tests {
 
   #[test]
   fn any_of_selection() {
-    let q = Q::any_of(vec![&Q::name("switch1"), &Q::name("switch2")]);
+    let q = Q::any(vec![&Q::name("switch1"), &Q::name("switch2")]);
 
     let switch = Switch {
       id: 1,
@@ -252,7 +252,7 @@ mod tests {
 
   #[test]
   fn all_of_selection() {
-    let q = Q::all_of(vec![&Q::name("switch1"), &Q::tag::<Playfield>()]);
+    let q = Q::all(vec![&Q::name("switch1"), &Q::tag::<Playfield>()]);
 
     let switch = Switch {
       id: 1,
