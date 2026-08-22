@@ -9,6 +9,7 @@ use crate::operator_config::{ConfigValue, Domain, GeneralizedConfigValue};
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
+#[derive(Default)]
 pub struct OperatorConfig {
   current_values: HashMap<&'static str, Box<dyn Any + Send + Sync>>,
   pending_disk: HashMap<String, toml::Value>, // raw until a matching ConfigValue registers

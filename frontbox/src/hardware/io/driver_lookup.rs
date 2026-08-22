@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,

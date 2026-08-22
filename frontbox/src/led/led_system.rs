@@ -82,6 +82,21 @@ impl LedSystem {
     }
   }
 
+  pub(crate) fn declarations_for(&self, addr: &LedAddress) -> Vec<StatefulLedDeclaration> {
+    self
+      .declarations
+      .get(addr)
+      .map(|ds| ds.values().copied().collect())
+      .unwrap_or(Vec::new())
+  }
+
+  pub fn reset(&mut self) {
+    self.declarations.clear();
+    self.prior_render.clear();
+    self.conflict_resolution.clear();
+    self.alternate_resolver.reset();
+  }
+
   /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
   pub fn declare<'a>(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations<'a>>) {
     self.declare_inner(owning_system, declarations, true);
@@ -103,7 +118,7 @@ impl LedSystem {
     active: bool,
   ) {
     let declarations: LedDeclarations = declarations.into();
-    log::debug!(target: "frontbox::leds", "LED declarations declared: {:?}", declarations);
+    log::trace!(target: "frontbox::leds", "LED declarations declared: {:?}", declarations);
 
     for (led, color) in declarations.pairings {
       let declaration = StatefulLedDeclaration { active, color };
@@ -296,7 +311,7 @@ impl System for LedSystem {
         }
       }
       self.prior_render.insert(led.clone(), *color);
-      log::trace!(target: "frontbox::leds", "Setting LED at {:?} to {:?}", led, color);
+      log::debug!(target: "frontbox::leds", "Setting LED at {:?} to {:?}", led, color);
       true
     });
 
@@ -325,16 +340,16 @@ impl System for LedSystem {
   }
 }
 
-#[derive(Debug)]
-struct StatefulLedDeclaration {
-  active: bool,
-  color: Rgba<u8>,
+#[derive(Debug, Clone, Copy)]
+pub struct StatefulLedDeclaration {
+  pub active: bool,
+  pub color: Rgba<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct DeclarationIdentifier {
-  system_id: u64,
-  z_index: i8,
+pub struct DeclarationIdentifier {
+  pub system_id: u64,
+  pub z_index: i8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -144,6 +144,7 @@ mod system_container;
 mod system_context;
 pub mod system_group;
 mod system_handle;
+mod test_context;
 
 pub use boot_snapshot::*;
 pub use contextual::*;
@@ -157,6 +158,7 @@ pub use system_container::*;
 pub use system_context::*;
 pub use system_group::*;
 pub use system_handle::*;
+pub use test_context::*;
 
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LedLookup {
   by_name: HashMap<String, LED>,
   configs: HashMap<String, LedConfiguration>,

@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 impl From<Vec<HardwareQuery>> for HardwareQuery {
   fn from(value: Vec<HardwareQuery>) -> Self {
-    Q::any_of(value)
+    Q::any(value.iter().collect())
   }
 }
 

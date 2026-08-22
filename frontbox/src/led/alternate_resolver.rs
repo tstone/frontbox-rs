@@ -15,6 +15,10 @@ impl AlternateResolver {
     }
   }
 
+  pub fn reset(&mut self) {
+    self.states.clear();
+  }
+
   pub fn accumulate(&mut self, delta: Duration) {
     for (_, entry) in self.states.iter_mut() {
       entry.acc_duration += delta;

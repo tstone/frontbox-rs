@@ -83,10 +83,30 @@ impl LedProgram1d {
     }
   }
 
-  /// By default LedPrograms are created in a stopped state. This mutates the state to be playing from the start.
-  pub fn playing(mut self) -> Self {
-    self.play();
+  /// Program starts in a playing state by default. Use this to chain it to prevent that.
+  pub fn stopped(mut self) -> Self {
+    self.stop_in_place();
     self
+  }
+
+  fn stop_in_place(&mut self) {
+    match self {
+      LedProgram1d::Animated { anim, .. } => {
+        anim.stop();
+      }
+      LedProgram1d::Modulated { modulators, .. } => {
+        modulators.stop();
+      }
+      LedProgram1d::Timeline {
+        active, entries, ..
+      } => {
+        for e in entries.iter_mut() {
+          e.program.stop_in_place();
+        }
+        *active = false;
+      }
+      _ => {}
+    }
   }
 
   pub fn stop(&mut self, ctx: &SystemContext) {
@@ -281,7 +301,7 @@ impl LedProgram1d {
         {
           *rotation = Extent::Relative(angle);
         } else {
-          log::warn!("LedProgram1: Unexpectd - there is no rotation alteration");
+          log::warn!("LedProgram1: Unexpected - there is no rotation alteration");
         }
       },
     )
@@ -319,5 +339,82 @@ impl TimelineAccumulator {
 
   fn completed(&self) -> bool {
     self.ready() && self.program.is_complete()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn solid() {
+    let mut context = TestContext::default();
+    context.insert_system(LedSystem::new());
+    let addr = LedAddress::new(ExpAddress::default(), 5);
+    context.insert_led(LED {
+      name: "led1".to_string(),
+      address: addr.clone(),
+      ..Default::default()
+    });
+
+    let mut program = LedProgram1d::fixed(Q::name("led1"), ColorSequence::solid(Rgba::blue()));
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+
+    let declarations = context
+      .sys_ctx()
+      .expect::<LedSystem>()
+      .declarations_for(&addr);
+
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].active, true);
+    assert_eq!(declarations[0].color, Rgba::blue());
+  }
+
+  #[test]
+  fn tile() {
+    let mut context = TestContext::default();
+    context.insert_system(LedSystem::new());
+    let addr1 = LedAddress::new(ExpAddress::default(), 1);
+    let addr2 = LedAddress::new(ExpAddress::default(), 2);
+    let addr3 = LedAddress::new(ExpAddress::default(), 3);
+    context.insert_led(LED {
+      name: "led1".to_string(),
+      address: addr1.clone(),
+      ..Default::default()
+    });
+    context.insert_led(LED {
+      name: "led2".to_string(),
+      address: addr2.clone(),
+      ..Default::default()
+    });
+    context.insert_led(LED {
+      name: "led3".to_string(),
+      address: addr3.clone(),
+      ..Default::default()
+    });
+
+    let mut program = LedProgram1d::fixed(
+      Q::names(vec!["led1", "led2", "led3"]),
+      ColorSequence::tile(vec![Rgba::blue(), Rgba::red()]),
+    );
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+
+    let declarations = context
+      .sys_ctx()
+      .expect::<LedSystem>()
+      .declarations_for(&addr1);
+    assert_eq!(declarations[0].color, Rgba::blue());
+
+    let declarations = context
+      .sys_ctx()
+      .expect::<LedSystem>()
+      .declarations_for(&addr2);
+    assert_eq!(declarations[0].color, Rgba::red());
+
+    let declarations = context
+      .sys_ctx()
+      .expect::<LedSystem>()
+      .declarations_for(&addr3);
+    assert_eq!(declarations[0].color, Rgba::blue());
   }
 }

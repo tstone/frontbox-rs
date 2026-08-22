@@ -41,7 +41,7 @@ where
     Self {
       target: target.div_usize(stops.len() - 1),
       current: A::default(),
-      active: false,
+      active: true,
       curve,
       stops,
       cycle,
@@ -62,9 +62,9 @@ where
     Self::new(target, Curve::Linear, stops, cycle)
   }
 
-  /// Tween starts stopped by default. Use this to chain it to immediately start
-  pub fn playing(mut self) -> Self {
-    self.play();
+  /// Tween starts in a playing state by default. Use this to chain it to prevent that.
+  pub fn stopped(mut self) -> Self {
+    self.stop();
     self
   }
 

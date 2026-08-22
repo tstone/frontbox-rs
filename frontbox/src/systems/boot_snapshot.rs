@@ -3,6 +3,7 @@ use std::ops::Deref;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::*;
 
+#[derive(Default)]
 pub struct BootSnapshot {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
