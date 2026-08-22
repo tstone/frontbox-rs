@@ -101,13 +101,19 @@ impl HardwareQuery {
   pub fn get_leds_addresses(&self, ctx: &SystemContext) -> Vec<LedAddress> {
     let addrs = match self {
       // maintain order for name/names
-      Self::Name(name) => vec![ctx.leds.get(name).unwrap().address.clone()],
+      Self::Name(name) => match ctx.leds.get(name) {
+        Some(led) => vec![led.address.clone()],
+        None => Vec::new()
+      },
       Self::Names(names) => names
         .iter()
-        .map(|n| ctx.leds.get(n).unwrap().address.clone())
+        .filter_map(|n| ctx.leds.get(n))
+        .map(|led| led.address.clone())
         .collect(),
+      Self::Or(qs) => {
+        qs.iter().flat_map(|q| q.get_leds_addresses(ctx)).collect()
+      }
       _ => {
-        // for all other queries use the address to maintain consistent ordering
         let mut matches: Vec<LedAddress> = ctx
           .leds
           .values()
@@ -119,7 +125,9 @@ impl HardwareQuery {
             }
           })
           .collect();
-        matches.sort_by_key(|addr| addr.index);
+
+        // For other non-ordered results (e.g. by take) sort by hardware addres to maintain consistent order
+        matches.sort_by_key(|addr| ((addr.exp.board_address as u32 * 10) + addr.exp.breakout.unwrap_or(0) as u32) * addr.index as u32);
         matches
       }
     };
@@ -341,13 +349,21 @@ mod tests {
 
   // The goal here is to ensure that using names, even through `any` maintain their order
   #[test]
-  fn get_leds_addresses_any_name() {
+  fn get_leds_addresses_any_names() {
     let mut context = TestContext::default();
+    context.base.leds.insert(
+      "led1".to_string(),
+      LED {
+        name: "led1".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 5),
+        ..Default::default()
+      },
+    );
     context.base.leds.insert(
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 2),
+        address: LedAddress::new(ExpAddress::default(), 8),
         ..Default::default()
       },
     );
@@ -359,11 +375,21 @@ mod tests {
         ..Default::default()
       },
     );
+    context.base.leds.insert(
+      "led4".to_string(),
+      LED {
+        name: "led4".to_string(),
+        address: LedAddress::new(ExpAddress::default(), 4),
+        ..Default::default()
+      },
+    );
 
-    let q = Q::any(vec![&Q::name("led2"), &Q::name("led3")]);
+    let q = Q::any(vec![&Q::names(vec!["led1", "led2"]), &Q::names(vec!["led3", "led4"])]);
     let leds = q.get_leds_addresses(&context.sys_ctx());
 
-    assert_eq!(leds[0].index, 2);
-    assert_eq!(leds[1].index, 3);
+    assert_eq!(leds[0].index, 5);
+    assert_eq!(leds[1].index, 8);
+    assert_eq!(leds[2].index, 3);
+    assert_eq!(leds[3].index, 4);
   }
 }
