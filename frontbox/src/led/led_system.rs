@@ -103,6 +103,8 @@ impl LedSystem {
     active: bool,
   ) {
     let declarations: LedDeclarations = declarations.into();
+    log::debug!(target: "frontbox::leds", "LED declarations declared: {:?}", declarations);
+
     for (led, color) in declarations.pairings {
       let declaration = StatefulLedDeclaration { active, color };
       self
@@ -146,7 +148,7 @@ impl LedSystem {
 
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
-    log::debug!("Deactivating all LED declarations for {}", system_id);
+    log::info!(target: "frontbox::leds", "Deactivating all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       for (id, declaration) in declarations.iter_mut() {
         if id.system_id == system_id {
@@ -198,7 +200,8 @@ impl LedSystem {
         .get(led)
         .unwrap_or(&LedConflictResolution::FirstWins);
 
-      log::trace!(
+      log::debug!(
+        target: "frontbox::leds",
         "Resolving LED declaration conflict on {:?} with {:?}",
         led,
         resolution_strategy
@@ -279,7 +282,7 @@ impl System for LedSystem {
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
-        log::trace!("Turning off LED at {:?}", led);
+        log::trace!(target: "frontbox::leds", "Turning off LED at {:?}", led);
         leds_to_set.push((led.clone(), Rgba::default()));
       }
     }
@@ -289,17 +292,11 @@ impl System for LedSystem {
     leds_to_set.retain(|(led, color)| {
       if let Some(prior_color) = self.prior_render.get(led) {
         if prior_color == color {
-          log::trace!(
-            "Skipping LED at {:?} because no change ({:?} vs {:?})",
-            led,
-            prior_color,
-            color
-          );
           return false;
         }
       }
       self.prior_render.insert(led.clone(), *color);
-      log::trace!("Setting LED at {:?} to {:?}", led, color);
+      log::trace!(target: "frontbox::leds", "Setting LED at {:?} to {:?}", led, color);
       true
     });
 
