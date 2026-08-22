@@ -1,3 +1,4 @@
+- BUG: on game end, LEDs from player-specific systems are not cleared (does LED system not know when a system is removed?)
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedProgram1ds
 - Animations should be able to be specified as relative to the frame rate
 - Establish (and document) consistent log targets
