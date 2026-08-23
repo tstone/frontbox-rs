@@ -207,6 +207,16 @@ impl ColorSequence {
     }
   }
 
+  pub fn fill(mut self, fill: Fill1d) -> Self {
+    self.fill = fill;
+    self
+  }
+
+  pub fn area(mut self, area: Fill1dArea) -> Self {
+    self.fill_area = area;
+    self
+  }
+
   pub fn padded(
     mut self,
     padding_left: impl Into<Extent<u16>>,
