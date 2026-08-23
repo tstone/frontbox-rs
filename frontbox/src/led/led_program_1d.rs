@@ -261,18 +261,25 @@ impl LedProgram1d {
     )
   }
 
-    /// Rhythmic, organic breathing
+  /// Rhythmic, organic breathing
   pub fn breathe<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     color: Rgba<u8>,
     duration: Duration,
     cycle: Cycle,
   ) -> Self {
-    Self::animated(targets, 
-      Tween::ping_pong(duration, Curve::EaseInOut, vec![
-        ColorSequence::solid(color),
-        ColorSequence::solid(color.darken(0.3)),
-      ], cycle))
+    Self::animated(
+      targets,
+      Tween::ping_pong(
+        duration,
+        Curve::EaseInOut,
+        vec![
+          ColorSequence::solid(color),
+          ColorSequence::solid(color.darken(0.3)),
+        ],
+        cycle,
+      ),
+    )
   }
 
   /// Apply one or more manual mutations to an initial ColorSequence
@@ -319,6 +326,28 @@ impl LedProgram1d {
         }
       },
     )
+  }
+
+  pub fn timeline() -> Self {
+    Self::Timeline {
+      active: true,
+      entries: Vec::new(),
+    }
+  }
+
+  pub fn at(mut self, duration: Duration, program: LedProgram1d) -> Self {
+    if let Self::Timeline {
+      ref mut entries, ..
+    } = self
+    {
+      entries.push(TimelineAccumulator {
+        target: duration,
+        elapsed: Duration::ZERO,
+        program,
+        launched: false,
+      });
+    }
+    self
   }
 }
 
