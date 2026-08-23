@@ -81,7 +81,7 @@ impl SerialInterface {
         return self.find_event_in_queue();
       }
       Some(Err(e)) => {
-        log::error!("Serial read error: {}", e);
+        log::error!(target: "frontbox::serial", "Serial read error: {}", e);
       }
       None => {}
     }
@@ -114,6 +114,7 @@ impl SerialInterface {
       let expired = now.duration_since(r.received_at) > self.queue_ttl;
       if expired {
         log::trace!(
+          target: "frontbox::serial", 
           "Expiring unclaimed queue response: {}:{}",
           r.raw.prefix,
           r.raw.payload
@@ -134,10 +135,10 @@ impl SerialInterface {
 
     match &resp {
       Some(Ok(raw)) if raw.prefix == "WD" => {
-        log::trace!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+        log::trace!(target: "frontbox::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
       }
       Some(Ok(raw)) => {
-        log::debug!("👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+        log::debug!(target: "frontbox::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
       }
       _ => {}
     }
@@ -147,16 +148,16 @@ impl SerialInterface {
 
   // Send off a command without concern for a response
   async fn send(&mut self, cmd: &[u8]) {
-    if cmd.starts_with(b"WD:") {
-      log::trace!("🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
+    if cmd.starts_with(b"WD:") || cmd.starts_with(b"R") {
+      log::trace!(target: "frontbox::serial", "🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
     } else {
-      log::debug!("🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
+      log::debug!(target: "frontbox::serial", "🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
     }
 
     match self.writer.write_all(cmd).await {
       Ok(_) => (),
       Err(e) => {
-        log::error!("Failed to send on {}: {:?}", self.port_name, e);
+        log::error!(target: "frontbox::serial", "Failed to send on {}: {:?}", self.port_name, e);
       }
     }
   }
@@ -196,11 +197,11 @@ impl SerialInterface {
             }
           }
           Some(Err(e)) => {
-            log::error!("Error reading response: {:?}", e);
+            log::error!(target: "frontbox::serial", "Error reading response: {:?}", e);
             return Err(FastResponseError::UnknownResponse);
           }
           None => {
-            log::error!("Serial stream ended unexpectedly");
+            log::error!(target: "frontbox::serial", "Serial stream ended unexpectedly");
             return Err(FastResponseError::UnknownResponse);
           }
         }
