@@ -15,14 +15,16 @@ pub enum Fill1d {
 
 impl Fill1d {
   pub fn solid(color: Rgba<u8>) -> Self {
-    Self::Pattern { pattern: vec![color], cycle: Cycle::Forever }
+    Self::Pattern {
+      pattern: vec![color],
+      cycle: Cycle::Forever,
+    }
   }
 
   pub fn fade(from: Rgba<u8>, to: Rgba<u8>) -> Self {
-    Self::Gradient { stops: vec![
-      GradientStop::new(0.0, from),
-      GradientStop::new(1.0, to),
-    ] }
+    Self::Gradient {
+      stops: vec![GradientStop::new(0.0, from), GradientStop::new(1.0, to)],
+    }
   }
 
   pub fn gradient_stops_mut(&mut self) -> Option<&mut Vec<GradientStop>> {
@@ -118,14 +120,18 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
   let starting_len = seq.len() as u16;
 
   // calculate actual fill length based on area setting
-  let fill_len = match area {
+  let mut fill_len = match area {
     Fill1dArea::Full => starting_len,
     Fill1dArea::Padded { left, right } => starting_len
       .saturating_sub(left.to_absolute(starting_len))
       .saturating_sub(right.to_absolute(starting_len)),
     Fill1dArea::Anchored { length: l, .. } => l.to_absolute(starting_len),
   };
-
+  
+  // it's possible for fill_len to be larger if the values input to anchored are larger
+  // so cap it at the starting length
+  fill_len = fill_len.min(starting_len);
+  
   // generate fill
   let fill = match fill {
     Fill1d::Gradient { stops } => gradient::render(stops, fill_len),
@@ -144,6 +150,68 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
   };
 
   for (i, pixel) in fill.iter().enumerate() {
-    seq[i + left as usize] = *pixel;
+    let idx = i + left as usize;
+    seq[idx] = *pixel;
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn full() {
+    let mut seq = vec![Rgba::default(); 3];
+    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::Full);
+
+    assert_eq!(seq.len(), 3);
+    assert_eq!(seq[0], Rgba::blue());
+    assert_eq!(seq[1], Rgba::blue());
+    assert_eq!(seq[2], Rgba::blue());
+  }
+
+  #[test]
+  fn anchored_start() {
+    let mut seq = vec![Rgba::default(); 3];
+    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Start, 2));
+
+    assert_eq!(seq.len(), 3);
+    assert_eq!(seq[0], Rgba::blue());
+    assert_eq!(seq[1], Rgba::blue());
+    assert_eq!(seq[2], Rgba::default());
+  }
+
+  #[test]
+  fn anchored_start_overflow() {
+    let mut seq = vec![Rgba::default(); 3];
+    // anchor length is intentionaly oversized
+    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Start, 6));
+
+    assert_eq!(seq.len(), 3);
+    assert_eq!(seq[0], Rgba::blue());
+    assert_eq!(seq[1], Rgba::blue());
+    assert_eq!(seq[2], Rgba::blue());
+  }
+
+  #[test]
+  fn anchored_end() {
+    let mut seq = vec![Rgba::default(); 3];
+    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::End, 2));
+
+    assert_eq!(seq.len(), 3);
+    assert_eq!(seq[0], Rgba::default());
+    assert_eq!(seq[1], Rgba::blue());
+    assert_eq!(seq[2], Rgba::blue());
+  }
+
+  #[test]
+  fn anchored_center() {
+    let mut seq = vec![Rgba::default(); 3];
+    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Center, 1));
+
+    assert_eq!(seq.len(), 3);
+    assert_eq!(seq[0], Rgba::default());
+    assert_eq!(seq[1], Rgba::blue());
+    assert_eq!(seq[2], Rgba::default());
   }
 }
