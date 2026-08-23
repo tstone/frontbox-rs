@@ -52,7 +52,7 @@ impl LedProgram1d {
       LedProgram1d::Timeline { entries, active } => {
         if *active {
           for entry in entries {
-            if entry.launched {
+            if entry.ready() {
               entry.launch();
               entry.program.apply(delta, ctx);
             } else if entry.completed() {
@@ -78,7 +78,14 @@ impl LedProgram1d {
       LedProgram1d::Modulated { modulators, .. } => {
         modulators.play();
       }
-      LedProgram1d::Timeline { active, .. } => *active = true,
+      LedProgram1d::Timeline {
+        active, entries, ..
+      } => {
+        for e in entries.iter_mut() {
+          e.program.play();
+        }
+        *active = true
+      }
       _ => {}
     }
   }
