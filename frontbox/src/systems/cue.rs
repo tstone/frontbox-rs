@@ -80,7 +80,7 @@ pub enum Cue {
   Now,
   Once(Duration),
   Times(u16, Duration),
-  Loop(Duration),
+  Forever(Duration),
 }
 
 #[derive(Clone)]
@@ -107,7 +107,7 @@ impl CueAccumulator {
       Cue::Now => CueInternal::Now,
       Cue::Once(duration) => CueInternal::Once(duration),
       Cue::Times(t, duration) => CueInternal::Times(t, duration),
-      Cue::Loop(duration) => CueInternal::Loop(duration),
+      Cue::Forever(duration) => CueInternal::Loop(duration),
     };
     Self::new(cue_internal, signals)
   }

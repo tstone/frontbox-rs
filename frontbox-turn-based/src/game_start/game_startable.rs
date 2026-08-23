@@ -74,7 +74,7 @@ impl System for GameStartable {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.cue_cycling(events![LampOn, LampOff], Cue::Loop(self.flash_duration));
+    ctx.cue_cycling(events![LampOn, LampOff], Cue::Forever(self.flash_duration));
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

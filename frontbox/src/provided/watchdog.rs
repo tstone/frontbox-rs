@@ -20,7 +20,7 @@ impl WatchdogSystem {
     let ctx = ctx.for_system(self.handle);
     log::info!("Enabling watchdog with {:?}", ctx.watchdog_interval);
 
-    ctx.cue(WatchdogPing, Cue::Loop(ctx.watchdog_interval));
+    ctx.cue(WatchdogPing, Cue::Forever(ctx.watchdog_interval));
     ctx.expect::<Machine>().ping_watchdog();
   }
 
