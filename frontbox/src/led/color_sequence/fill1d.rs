@@ -144,10 +144,6 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
   };
 
   for (i, pixel) in fill.iter().enumerate() {
-    if i < seq.len() - 1 {
-      seq[i + left as usize] = *pixel;
-    } else {
-      log::error!(target: "frontbox::color", "ColorSequence fill generated more pixels than generation size");
-    }
+    seq[i + left as usize] = *pixel;
   }
 }
