@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::hardware::*;
+use crate::machine::machine::MachineMessage::WatchdogPing;
 use crate::machine::serial_interface::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
@@ -142,13 +143,20 @@ impl MachineImpl {
   // ---
 
   pub async fn send_watchdog_ping(&mut self) {
-    let _ = self
+    match self
       .io_port
       .request(
         &WatchdogCommand::set(self.watchdog_interval),
         Duration::from_millis(200),
       )
-      .await;
+      .await
+    {
+      // try again
+      Ok(WatchdogResponse::Failed) => {
+        let _ = self.machine_sender.send(WatchdogPing);
+      }
+      _ => {}
+    }
   }
 
   /// Primarily used for reporting of unknown switches as native board/switch ids
@@ -207,7 +215,12 @@ impl Machine {
   }
 
   /// Configure a driver with a specific mode (e.g. enable with certain power level, or set to automatic) (DL)
-  pub fn configure_driver(&self, driver: &str, mode: impl DriverMode + 'static, ctx: &SystemContext) {
+  pub fn configure_driver(
+    &self,
+    driver: &str,
+    mode: impl DriverMode + 'static,
+    ctx: &SystemContext,
+  ) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let config = mode.to_config(&ctx);
       self
