@@ -898,6 +898,7 @@ dependencies = [
  "frontbox",
  "kira",
  "log",
+ "tokio",
 ]
 
 [[package]]

@@ -9,3 +9,4 @@ frontbox = { path = "../frontbox" }
 dyn-clone = "1.0.20"
 kira = "0.12.0"
 cpal = "0.17" # must match version kira uses
+tokio = "1.53.1"
