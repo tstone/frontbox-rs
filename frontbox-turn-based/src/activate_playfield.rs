@@ -49,9 +49,13 @@ impl System for ActivatePlayfieldSystem {
     if event.is::<PlayerTurnBeginning>() {
       log::info!("Activating playfield drivers due to turn start");
       self.activate(ctx);
+      ctx.emit(ActivatedPlayfieldDrivers);
     } else if event.is::<PlayerTurnEnding>() {
       log::info!("Deactivating playfield drivers due to turn end");
       self.deactivate(ctx);
     }
   }
 }
+
+#[derive(serde::Serialize, Event)]
+pub struct ActivatedPlayfieldDrivers;
