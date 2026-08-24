@@ -1,5 +1,5 @@
 use std::any::TypeId;
-use std::fmt::Display;
+use std::fmt::Debug;
 
 use fast_protocol::SwitchState;
 
@@ -26,7 +26,7 @@ pub enum AppMessage {
   CancelCue(SystemHandle, u64),
 }
 
-impl Display for AppMessage {
+impl Debug for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       AppMessage::EmitEvent(event) => write!(f, "EmitEvent({})", event.type_name),
@@ -69,4 +69,3 @@ impl Display for AppMessage {
     }
   }
 }
-

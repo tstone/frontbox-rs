@@ -61,7 +61,8 @@ pub async fn run(
   loop {
     tokio::select! {
       Some(command) = app_receiver.recv() => {
-        log::trace!(target: "frontbox::run_loop", "AppMessage queue depth: {}", app_receiver.len());
+        log::trace!(target: "frontbox::run_loop", "Run loop: AppMessage queue depth: {}", app_receiver.len());
+        log::trace!(target: "frontbox::run_loop", "Run loop: Now handling {:?}", command);
         let start = std::time::Instant::now();
 
         match command {
@@ -119,7 +120,12 @@ pub async fn run(
           }
         }
 
-        log::trace!(target: "frontbox::run_loop", "Run loop elapsed {}", start.elapsed().as_micros());
+        let duration = start.elapsed().as_micros();
+        if duration > 200 {
+          log::warn!(target: "frontbox::run_loop", "Run loop Took {}μ to process", duration);
+        } else {
+          log::trace!(target: "frontbox::run_loop", "Run loop: Took {}μ", duration);
+        }
       }
 
       Ok(_) = tick_rx.changed() => {

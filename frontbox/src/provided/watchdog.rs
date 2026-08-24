@@ -18,17 +18,20 @@ impl WatchdogSystem {
 impl WatchdogSystem {
   pub fn enable(&self, ctx: &ServiceContext) {
     let ctx = ctx.for_system(self.handle);
-    log::info!("Enabling watchdog with {:?}", ctx.watchdog_interval);
+    log::info!(target: "frontbox::watchdog", "🐶 Enabling watchdog with {:?}", ctx.watchdog_interval);
 
     // renew watchdog slightly before it expires
-    ctx.cue(WatchdogPing, Cue::Forever(ctx.watchdog_interval - Duration::from_millis(200)));
+    ctx.cue(
+      WatchdogPing,
+      Cue::Forever(ctx.watchdog_interval - Duration::from_millis(200)),
+    );
     ctx.expect::<Machine>().ping_watchdog();
   }
 
   pub fn disable(&self, ctx: &ServiceContext) {
     let ctx = ctx.for_system(self.handle);
 
-    log::info!("Disabling watchdog");
+    log::info!(target: "frontbox::watchdog", "🐶 Disabling watchdog");
     ctx.expect::<Machine>().clear_watchdog();
 
     if let Some(handle) = &self.cue_handle {
@@ -49,7 +52,7 @@ impl System for WatchdogSystem {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<WatchdogPing>() {
-      log::trace!("Watchdog event => Ping");
+      log::trace!(target: "frontbox::watchdog", "🐶 Watchdog event => Ping");
       ctx.expect::<Machine>().ping_watchdog();
     }
   }
