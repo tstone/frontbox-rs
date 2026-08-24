@@ -1,7 +1,10 @@
 use itertools::Itertools;
+use std::any::TypeId;
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Notify, mpsc, watch};
+use tokio::time::Duration;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
@@ -21,6 +24,7 @@ pub async fn run(
 ) {
   let (tick_tx, mut tick_rx) = watch::channel(());
   let tracer_txs: TracerSenders = app_tracers.iter().map(|tracer| tracer.sender()).collect();
+  let resync_notifier = Arc::new(Notify::new());
 
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = HashMap::new();
@@ -41,7 +45,7 @@ pub async fn run(
       &tracer_txs,
     );
   }
-  spawn_system_ticker(base.system_interval, tick_tx);
+  spawn_system_ticker(base.system_interval, tick_tx, resync_notifier.clone());
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -62,7 +66,7 @@ pub async fn run(
 
         match command {
           AppMessage::EmitEvent(event_box) => {
-            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs);
+            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
           AppMessage::RegisterInterrupt(handle, type_id, priority) => {
             interrupt_registry.register(type_id, handle.id, handle.parent_key, priority);
@@ -205,7 +209,12 @@ fn emit_event(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
+  resync_notifier: &Arc<Notify>,
 ) {
+  if event_box.type_id == SYNCHRONIZE_TYPE_ID {
+    resync_notifier.notify_one();
+  }
+
   let mut interrupt_evals = Vec::new();
 
   // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
@@ -612,14 +621,26 @@ fn group_child_ids(groups: &Groups, group_name: &'static str) -> Vec<u64> {
     .unwrap_or(Vec::new())
 }
 
-fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>) {
+fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>, resync: Arc<Notify>) {
   let mut timer_interval = tokio::time::interval(tick);
   timer_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
   tokio::spawn(async move {
     loop {
-      timer_interval.tick().await;
-      let _ = sender.send(());
+      tokio::select! {
+          _ = timer_interval.tick() => {
+              let _ = sender.send(());
+          }
+          _ = resync.notified() => {
+              timer_interval.reset_immediately();
+          }
+      }
     }
   });
 }
+
+/// `Synchronize` is a special event recognized by Frontbox to re-start the internal loop in cadence with receiving this event.
+#[derive(serde::Serialize, Event, PartialEq, Eq)]
+pub struct Synchronize;
+
+static SYNCHRONIZE_TYPE_ID: TypeId = TypeId::of::<Synchronize>();

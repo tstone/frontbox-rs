@@ -201,7 +201,7 @@ impl Machine {
       .ok();
   }
 
-  pub fn reset_expansion_network(&self, ctx: &SystemContext) {
+  pub fn reset_expansion_network(&self, ctx: &ServiceContext) {
     for board in ctx.exp_network.iter() {
       self
         .machine_sender
@@ -219,7 +219,7 @@ impl Machine {
     &self,
     driver: &str,
     mode: impl DriverMode + 'static,
-    ctx: &SystemContext,
+    ctx: &ServiceContext,
   ) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let config = mode.to_config(&ctx);
@@ -235,7 +235,7 @@ impl Machine {
   }
 
   /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
-  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &SystemContext) {
+  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &ServiceContext) {
     // remap switch to id
     let switch = mode
       .switch_name()
@@ -252,7 +252,7 @@ impl Machine {
   }
 
   /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
-  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &SystemContext) {
+  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &ServiceContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
         DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
@@ -291,7 +291,7 @@ impl Machine {
     inverted: bool,
     debounce_close: Option<Duration>,
     debounce_open: Option<Duration>,
-    ctx: &SystemContext,
+    ctx: &ServiceContext,
   ) {
     if let Some(switch) = ctx.switches.get(switch) {
       let reporting = if inverted {
@@ -383,7 +383,7 @@ impl Machine {
 impl System for Machine {
   fn on_despawn(&mut self, ctx: &SystemContext) {
     // Clear out LEDs, servos, etc.
-    self.reset_expansion_network(ctx);
+    self.reset_expansion_network(ctx.into());
 
     // Disable drivers
     for driver in ctx.drivers.values() {

@@ -1,4 +1,3 @@
-- BUG: on game end, LEDs from player-specific systems are not cleared (does LED system not know when a system is removed?)
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedProgram1ds
 - Animations should be able to be specified as relative to the frame rate
 - Establish (and document) consistent log targets
@@ -8,9 +7,7 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Add `by_location` to hardware lookup implementations + HardwareQuery
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
-- Don't export SystemContainer types in prelude
 - Clean up hardware exports
-- It's only a matter of time before passing around Context results in a system shutting down itself and accidentally shutting down it's caller
 - Possible BUG: If Cue time is less than system tick time, what happens?
 
 Canvas

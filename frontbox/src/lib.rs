@@ -13,6 +13,7 @@
 pub mod animation;
 pub mod app;
 mod cycle;
+mod duration_ext;
 pub mod extent;
 pub mod hardware;
 pub mod led;
@@ -22,7 +23,6 @@ pub mod operator_config;
 pub mod provided;
 mod store;
 pub mod systems;
-mod duration_ext;
 
 pub use hardware::tags;
 
@@ -32,6 +32,7 @@ extern crate self as frontbox;
 pub mod prelude {
   pub use crate::app::*;
   pub use crate::cycle::*;
+  pub use crate::duration_ext::*;
   pub use crate::events;
   pub use crate::extent::*;
   pub use crate::hardware::*;
@@ -43,7 +44,6 @@ pub mod prelude {
   pub use crate::store::*;
   pub use crate::systems;
   pub use crate::systems::*;
-  pub use crate::duration_ext::*;
 
   // re-exports
   pub use fast_protocol::driver_config::*;

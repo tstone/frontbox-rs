@@ -69,6 +69,8 @@ impl CompetitiveGame {
     if let Some(trough) = ctx.get::<TroughSystem>() {
       trough.eject(ctx.into());
     }
+
+    ctx.emit(Synchronize);
   }
 
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
@@ -225,6 +227,14 @@ impl GameManagement for CompetitiveGame {
 
     self.game_state = None;
     ctx.emit(GameEnded { scores });
+
+    // Clear everything from game
+    ctx
+      .for_system(self.handle)
+      .expect::<Machine>()
+      .reset_expansion_network(ctx.into());
+
+    ctx.emit(Synchronize);
   }
 
   fn is_player_addable(&self) -> bool {

@@ -33,7 +33,7 @@ impl ActivatePlayfieldSystem {
     let machine = ctx.expect::<Machine>();
 
     for (driver, switch) in &self.driver_table {
-      machine.activate_driver(driver, ActivationMode::Automatic(switch), ctx);
+      machine.activate_driver(driver, ActivationMode::Automatic(switch), ctx.into());
     }
   }
 

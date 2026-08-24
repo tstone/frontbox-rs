@@ -17,19 +17,19 @@ impl<'a> MachineExt for SystemContext<'a> {
   // TODO: allow DriverDefinition to be passed in directly
   fn configure_driver(&self, driver: &'static str, mode: impl DriverMode + 'static) {
     with_machine(self, |machine| {
-      machine.configure_driver(driver, mode, self);
+      machine.configure_driver(driver, mode, self.into());
     });
   }
 
   fn activate_driver(&self, driver: &'static str, mode: ActivationMode) {
     with_machine(self, |machine| {
-      machine.activate_driver(driver, mode, self);
+      machine.activate_driver(driver, mode, self.into());
     });
   }
 
   fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode) {
     with_machine(self, |machine| {
-      machine.deactivate_driver(driver, mode, self);
+      machine.deactivate_driver(driver, mode, self.into());
     });
   }
 
@@ -41,7 +41,7 @@ impl<'a> MachineExt for SystemContext<'a> {
     debounce_open: Option<Duration>,
   ) {
     with_machine(self, |machine| {
-      machine.configure_switch(switch, inverted, debounce_close, debounce_open, self);
+      machine.configure_switch(switch, inverted, debounce_close, debounce_open, self.into());
     });
   }
 }
