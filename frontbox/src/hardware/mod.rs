@@ -101,6 +101,7 @@ mod hardware_query_conversions;
 mod io;
 mod location;
 mod q;
+mod region;
 
 pub use exp::*;
 pub use fast_platform::*;
@@ -112,3 +113,4 @@ pub use hardware_query_conversions::*;
 pub use io::*;
 pub use location::*;
 pub use q::*;
+pub use region::*;

@@ -104,4 +104,14 @@ impl Q {
   pub fn all(qs: Vec<&HardwareQuery>) -> HardwareQuery {
     HardwareQuery::And(qs.into_iter().map(|q| q.clone()).collect())
   }
+
+  /// All matching within the given rectangle, on the given plane
+  pub fn within_rect(plane: &ReferencePlane, top_left: Vec2, bottom_right: Vec2) -> HardwareQuery {
+    HardwareQuery::Location(plane.clone(), Region::Rect { top_left, bottom_right })
+  }
+
+  /// All matching within the given circle, on the given plane
+  pub fn within_radius(plane: &ReferencePlane, center: Vec2, radius: f32) -> HardwareQuery {
+    HardwareQuery::Location(plane.clone(), Region::Circle { center, radius })
+  }
 }

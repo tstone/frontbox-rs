@@ -5,7 +5,6 @@
 - Audits: Keep stats on coils fired, etc.
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Stability: Robust handling for USB disconnects/reconnects
-- Add `by_location` to hardware lookup implementations + HardwareQuery
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Clean up hardware exports
 - Possible BUG: If Cue time is less than system tick time, what happens?

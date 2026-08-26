@@ -4,6 +4,12 @@ use indexmap::IndexSet;
 
 use crate::prelude::*;
 
+pub enum QueryableHardware {
+  Switch,
+  Driver,
+  LED,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum HardwareQuery {
   Name(String),
@@ -11,20 +17,25 @@ pub enum HardwareQuery {
   Tag(TypeId),
   And(Vec<HardwareQuery>),
   Or(Vec<HardwareQuery>),
-  Reverse(Box<HardwareQuery>), // TODO: change this to Order w/ the serpentine methods
+  Location(ReferencePlane, Region),
 }
 
 impl HardwareQuery {
-  pub fn reverse(self) -> HardwareQuery {
-    HardwareQuery::Reverse(Box::new(self))
-  }
-
   pub fn or(self, other: Self) -> Self {
     Self::Or(vec![self, other])
   }
 
   pub fn and(self, other: Self) -> Self {
     Self::And(vec![self, other])
+  }
+
+  /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
+  pub fn precompute(&self, hardware: QueryableHardware, ctx: &ServiceContext) -> Self {
+    match hardware {
+      QueryableHardware::Switch => HardwareQuery::Names(self.get_switch_names(ctx).into_iter().map(Into::into).collect()),
+      QueryableHardware::Driver => HardwareQuery::Names(self.get_driver_names(ctx).into_iter().map(Into::into).collect()),
+      QueryableHardware::LED => HardwareQuery::Names(self.get_led_names(ctx).into_iter().map(Into::into).collect()),
+    }
   }
 
   pub fn matches_switch(&self, switch: &Switch) -> bool {
@@ -34,7 +45,9 @@ impl HardwareQuery {
       Self::Tag(tag) => switch.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_switch(switch)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_switch(switch)),
-      Self::Reverse(q) => q.matches_switch(switch),
+      Self::Location(plane, region) => switch.location.map(|location| {
+        region.within(plane.to_relative(location))
+      }).unwrap_or(false)
     }
   }
 
@@ -45,7 +58,9 @@ impl HardwareQuery {
       Self::Tag(tag) => driver.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_driver(driver)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_driver(driver)),
-      Self::Reverse(q) => q.matches_driver(driver),
+      Self::Location(plane, region) => driver.location.map(|location| {
+        region.within(plane.to_relative(location))
+      }).unwrap_or(false)
     }
   }
 
@@ -56,27 +71,29 @@ impl HardwareQuery {
       Self::Tag(tag) => led.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_led(led)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_led(led)),
-      Self::Reverse(q) => q.matches_led(led),
+      Self::Location(plane, region) => led.location.map(|location| {
+        region.within(plane.to_relative(location))
+      }).unwrap_or(false)
     }
   }
 
   /// Resolve the query into a reference for all matching Switches
-  pub fn get_switches<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Switch> {
+  pub fn get_switches<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Switch> {
     ctx.switches.query(&self)
   }
 
   /// Resolve the query into a the names of all matching Switches
-  pub fn get_switch_names<'c>(&self, ctx: &'c SystemContext) -> Vec<&'static str> {
+  pub fn get_switch_names<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'static str> {
     ctx.switches.query(&self).iter().map(|sw| sw.name).collect()
   }
 
   /// Resolve the query into a reference for all matching Drivers
-  pub fn get_drivers<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Driver> {
+  pub fn get_drivers<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Driver> {
     ctx.drivers.by_selection(&self)
   }
 
   /// Resolve the query into a the names of all matching Drivers
-  pub fn get_driver_names<'c>(&self, ctx: &'c SystemContext) -> Vec<&'static str> {
+  pub fn get_driver_names<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'static str> {
     ctx
       .drivers
       .by_selection(&self)
@@ -86,7 +103,7 @@ impl HardwareQuery {
   }
 
   /// Resolve the query into a reference for all matching LEDs
-  pub fn get_leds<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c LED> {
+  pub fn get_leds<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c LED> {
     let leds = ctx
       .leds
       .values()
@@ -97,8 +114,18 @@ impl HardwareQuery {
     leds
   }
 
+  /// Resolve the query into a the names of all matching LEDs
+  pub fn get_led_names<'c>(&self, ctx: &'c ServiceContext) -> Vec<String> {
+    ctx
+      .leds
+      .query(&self)
+      .iter()
+      .map(|d| d.name.clone())
+      .collect()
+  }
+
   /// Resolve the query into a the address of all matching LEDs
-  pub fn get_leds_addresses(&self, ctx: &SystemContext) -> Vec<LedAddress> {
+  pub fn get_leds_addresses(&self, ctx: &ServiceContext) -> Vec<LedAddress> {
     let addrs = match self {
       // maintain order for name/names
       Self::Name(name) => match ctx.leds.get(name) {
@@ -138,27 +165,27 @@ impl HardwareQuery {
 }
 
 pub trait HardwareTagExt {
-  fn get_switches<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a Switch>;
-  fn get_drivers<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a Driver>;
-  fn get_leds<'a>(&self, ctx: &'a SystemContext) -> Vec<&'a LED>;
+  fn get_switches<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a Switch>;
+  fn get_drivers<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a Driver>;
+  fn get_leds<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a LED>;
 }
 
 impl HardwareTagExt for Option<HardwareQuery> {
-  fn get_switches<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Switch> {
+  fn get_switches<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Switch> {
     self
       .as_ref()
       .map(|q| q.get_switches(ctx))
       .unwrap_or_default()
   }
 
-  fn get_drivers<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c Driver> {
+  fn get_drivers<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Driver> {
     self
       .as_ref()
       .map(|q| q.get_drivers(ctx))
       .unwrap_or_default()
   }
 
-  fn get_leds<'c>(&self, ctx: &'c SystemContext) -> Vec<&'c LED> {
+  fn get_leds<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c LED> {
     self.as_ref().map(|q| q.get_leds(ctx)).unwrap_or_default()
   }
 }
@@ -297,7 +324,7 @@ mod tests {
     );
 
     let q = Q::name("led1");
-    let leds = q.get_leds_addresses(&context.sys_ctx());
+    let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds.len(), 1);
     assert_eq!(leds[0].index, 1);
@@ -340,7 +367,7 @@ mod tests {
     );
 
     let q = Q::names(vec!["led2", "led3"]);
-    let leds = q.get_leds_addresses(&context.sys_ctx());
+    let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds.len(), 2);
     assert_eq!(leds[0].index, 2);
@@ -385,7 +412,7 @@ mod tests {
     );
 
     let q = Q::any(vec![&Q::names(vec!["led1", "led2"]), &Q::names(vec!["led3", "led4"])]);
-    let leds = q.get_leds_addresses(&context.sys_ctx());
+    let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds[0].index, 5);
     assert_eq!(leds[1].index, 8);

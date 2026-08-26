@@ -65,7 +65,7 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 ///   parent: Some(&PLAYFIELD),
 /// };
 /// ```
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ReferencePlane {
   /// Point in space (x,y,z) relative to parent
   pub origin: Vec3,
@@ -90,12 +90,33 @@ impl ReferencePlane {
     }
   }
 
+  /// Map a given point relative to a plane to its absolute existence in the world
   pub fn to_absolute(&self, point: Vec3) -> Vec3 {
     let local = Mat4::from_rotation_translation(self.rotation, self.origin).transform_point3(point);
     match self.parent {
       Some(parent) => parent.to_absolute(local),
       None => local,
     }
+  }
+
+  /// Walk the parent chain to get this plane's origin/rotation in root space.
+  pub fn world_transform(&self) -> (Vec3, Quat) {
+    match self.parent {
+      Some(parent) => {
+        let (parent_origin, parent_rotation) = parent.world_transform();
+        let world_origin = parent_origin + parent_rotation * self.origin;
+        let world_rotation = parent_rotation * self.rotation;
+        (world_origin, world_rotation)
+      }
+      None => (self.origin, self.rotation),
+    }
+  }
+
+  /// Map a given absolute point to its coordinates on this plane
+  pub fn to_relative(&self, point_world: Vec3) -> Vec2 {
+    let (origin, rotation) = self.world_transform();
+    let local = rotation.inverse() * (point_world - origin);
+    Vec2::new(local.x, local.y)
   }
 }
 

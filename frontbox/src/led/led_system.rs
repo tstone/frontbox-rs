@@ -82,6 +82,7 @@ impl LedSystem {
     }
   }
 
+  #[allow(unused)]
   pub(crate) fn declarations_for(&self, addr: &LedAddress) -> Vec<StatefulLedDeclaration> {
     self
       .declarations
