@@ -75,7 +75,6 @@ impl Into<HardwareQuery> for LedDefinition {
   }
 }
 
-
 #[cfg(test)]
 mod tests {
   use super::*;

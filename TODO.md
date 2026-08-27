@@ -9,6 +9,14 @@
 - Clean up hardware exports
 - Possible BUG: If Cue time is less than system tick time, what happens?
 
+HardwareQuery
+
+- Standardize query interface (+iter) among switch/driver/led
+- take -- extent
+- range -- extent
+- shuffle
+- reverse
+
 Canvas
 
 - Modulations should work with canvas
