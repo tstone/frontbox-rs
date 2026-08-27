@@ -44,11 +44,15 @@ impl SoundManager {
     }
   }
 
-  pub fn new(device_name: &'static str, rx: mpsc::UnboundedReceiver<SoundManagerCmds>) -> Result<Self, Error> {
+  pub fn new(
+    device_name: &'static str,
+    rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
+  ) -> Result<Self, Error> {
     let host = cpal::default_host();
     let devices: Vec<_> = host.output_devices().unwrap().collect();
     for device in &devices {
       log::trace!(
+        target: "frontbox::sound",
         "Found audio device: {:?}",
         device.description().unwrap().extended()
       );
@@ -68,6 +72,7 @@ impl SoundManager {
 
     if device.is_none() {
       log::warn!(
+        target: "frontbox::sound",
         "Audio device matching '{}' not found, using system default",
         device_name
       );
@@ -117,12 +122,13 @@ impl SoundManager {
   }
 
   fn preload(&mut self, name: &'static str, path: impl AsRef<Path>) {
-    log::debug!("Preloading sound '{}' at {:?}", name, path.as_ref());
+    log::debug!(target: "frontbox::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
         self.sounds.insert(name, sound);
       }
       Err(e) => log::error!(
+        target: "frontbox::sound",
         "Failed to preload sound {}: {:?}",
         path.as_ref().display(),
         e
@@ -132,6 +138,7 @@ impl SoundManager {
 
   fn preload_embedded(&mut self, name: &'static str, bytes: &'static [u8]) {
     log::debug!(
+      target: "frontbox::sound",
       "Preloading embedded sound '{}' ({} bytes)",
       name,
       bytes.len()
@@ -140,15 +147,18 @@ impl SoundManager {
       Ok(sound) => {
         self.sounds.insert(name, sound);
       }
-      Err(e) => log::error!("Failed to preload embedded sound {}: {:?}", name, e),
+      Err(e) => {
+        log::error!(target: "frontbox::sound", "Failed to preload embedded sound {}: {:?}", name, e)
+      }
     }
   }
 
   fn play_sfx(&mut self, key: &'static str) {
     if let Some(sound) = self.sounds.get(key) {
+      log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
       self.manager.play(sound.clone()).ok();
     } else {
-      log::error!("Sound with key '{}' not found", key);
+      log::error!(target: "frontbox::sound", "🔊 Sound with key '{}' not found", key);
     }
   }
 
@@ -161,7 +171,7 @@ impl SoundManager {
         self.play_callout_sound(sound.clone());
       }
     } else {
-      log::error!("Sound with key '{}' not found", key);
+      log::error!(target: "frontbox::sound", "🗣️ Callout with key '{}' not found", key);
     }
   }
 
@@ -170,13 +180,14 @@ impl SoundManager {
       Ok(handle) => {
         self.active_callout = Some(handle);
       }
-      Err(e) => log::error!("Failed to play callout sound: {:?}", e),
+      Err(e) => log::error!(target: "frontbox::sound", "Failed to play callout sound: {:?}", e),
     }
   }
 
   fn crossfade_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
+        log::info!(target: "frontbox::sound", "🎵 Playing music {}", path.as_ref().display());
         let new_music = self.music_track.play(sound).ok();
         if let Some(mut old_music) = self.active_music.replace(new_music.unwrap()) {
           old_music.stop(Tween {
@@ -185,16 +196,21 @@ impl SoundManager {
           });
         }
       }
-      Err(e) => log::error!("Failed to play music {}: {:?}", path.as_ref().display(), e),
+      Err(e) => {
+        log::error!(target: "frontbox::sound", "🎵 Failed to play music {}: {:?}", path.as_ref().display(), e)
+      }
     }
   }
 
   fn stop_music(&mut self, crossfade: Duration) {
     if let Some(old_music) = &mut self.active_music {
+      log::info!(target: "frontbox::sound", "🎵 Stopping music");
       old_music.stop(Tween {
         duration: crossfade,
         ..Default::default()
       });
+    } else {
+      log::info!(target: "frontbox::sound", "Stop music requested, but no music track was active");
     }
   }
 
@@ -248,5 +264,5 @@ pub enum SoundManagerCmds {
   PlaySfx(&'static str),
   PlayCallout(&'static str),
   PlayMusic(PathBuf, Duration),
-  StopMusic(Duration)
+  StopMusic(Duration),
 }

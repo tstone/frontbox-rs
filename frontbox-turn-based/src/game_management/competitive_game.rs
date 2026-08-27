@@ -228,11 +228,12 @@ impl GameManagement for CompetitiveGame {
     self.game_state = None;
     ctx.emit(GameEnded { scores });
 
-    // Clear everything from game
-    ctx
-      .for_system(self.handle)
-      .expect::<Machine>()
-      .reset_expansion_network(ctx.into());
+    // Clear LEDs
+    let ctx= ctx.for_system(self.handle);
+    let machine = ctx.expect::<Machine>();
+    for board in &ctx.exp_network {
+      machine.set_all_leds(board.address, board.breakout, Rgba::black());
+    }
 
     ctx.emit(Synchronize);
   }
