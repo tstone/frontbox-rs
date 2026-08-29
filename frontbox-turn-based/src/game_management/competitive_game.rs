@@ -230,6 +230,7 @@ impl GameManagement for CompetitiveGame {
 
     // Clear LEDs
     let ctx = ctx.for_system(self.handle);
+    // TODO: this should actually invoke machine.clear_leds() or something, which emits an event for other systems to react to
     let machine = ctx.expect::<Machine>();
     for board in &ctx.exp_network {
       machine.set_all_leds(board.address, board.breakout, Rgba::black());

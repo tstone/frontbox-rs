@@ -321,7 +321,9 @@ fn spawn_system(
       .systems
       .get_by_id(&system_id)
       .unwrap();
-    log::info!("🌐 Spawned system {} ({})", system.name(), system.id());
+    log::info!(
+      target: "frontbox::systems::lifecycle", 
+      "🌐 Spawned system {} ({})", system.name(), system.id());
 
     let ctx = SystemContext::new(
       base,
@@ -388,7 +390,9 @@ fn despawn_system(
     system.on_despawn(&ctx);
     interrupt_registry.unregister_by_system(&handle.id);
 
-    log::info!("🌐 Despawned system {} ({})", system.name(), system.id());
+    log::info!(
+      target: "frontbox::systems::lifecycle", 
+      "🌐 Despawned system {} ({})", system.name(), system.id());
 
     for tracer in tracer_txs {
       let _ = tracer.send(TraceEvent::SystemDespawned {

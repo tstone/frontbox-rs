@@ -118,6 +118,9 @@ impl LedProgram1d {
 
   pub fn stop(&mut self, ctx: &SystemContext) {
     match self {
+      LedProgram1d::Fixed { ids, .. } => {
+        ctx.undeclare_leds(ids);
+      }
       LedProgram1d::Animated { ids, anim, .. } => {
         anim.stop();
         ctx.undeclare_leds(ids);
@@ -135,9 +138,6 @@ impl LedProgram1d {
           entry.program.stop(ctx);
         }
         *active = false
-      }
-      LedProgram1d::Fixed { ids, .. } => {
-        ctx.undeclare_leds(ids);
       }
     }
   }
@@ -158,6 +158,15 @@ impl LedProgram1d {
         }
       }
       _ => {}
+    }
+  }
+
+  pub fn is_active(&self) -> bool {
+    match self {
+      Self::Fixed { .. } => true,
+      Self::Animated { anim, .. } => anim.active(),
+      Self::Modulated { modulators, .. } => modulators.active(),
+      Self::Timeline { active, .. } => *active,
     }
   }
 

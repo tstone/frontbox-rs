@@ -51,6 +51,27 @@ impl SystemContainer {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
+  fn on_deactivate(&mut self, ctx: &SystemContext) {
+    log::debug!(
+      target: "frontbox::systems::lifecycle", 
+      "🌐 System {} ({}) is now inactive", 
+      self.name(), 
+      self.id()
+    );
+    self.inner.on_deactivate(ctx);
+  }
+
+  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
+  fn on_reactivate(&mut self, ctx: &SystemContext) {
+    log::debug!(
+      target: "frontbox::systems::lifecycle", 
+      "🌐 System {} ({}) is now active", 
+      self.name(), 
+      self.id()
+    );
+    self.inner.on_reactivate(ctx);
+  }
+
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
   pub(crate) fn handle_active(&mut self, ctx: &SystemContext, tracer_txs: &TracerSenders) -> bool {
@@ -59,7 +80,7 @@ impl SystemContainer {
     if fresh != self.last_active_state {
       if fresh {
         // system just became active
-        self.inner.on_reactivate(ctx);
+        self.on_reactivate(ctx);
         for tracer in tracer_txs {
           let _ = tracer.send(TraceEvent::SystemActiveStateChange {
             id: self.id,
@@ -68,7 +89,7 @@ impl SystemContainer {
         }
       } else {
         // system just became inactive
-        self.inner.on_deactivate(ctx);
+        self.on_deactivate(ctx);
         for tracer in tracer_txs {
           let _ = tracer.send(TraceEvent::SystemActiveStateChange {
             id: self.id,

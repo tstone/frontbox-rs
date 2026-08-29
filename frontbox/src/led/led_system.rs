@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::i8;
 
 use image::{Pixel, Rgba};
@@ -69,6 +69,7 @@ pub struct LedSystem {
   prior_render: HashMap<LedAddress, Rgba<u8>>,
   conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
+  monitored: HashSet<LedAddress>,
 }
 
 impl LedSystem {
@@ -79,6 +80,7 @@ impl LedSystem {
       prior_render: HashMap::new(),
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
+      monitored: HashSet::new(),
     }
   }
 
@@ -96,6 +98,14 @@ impl LedSystem {
     self.prior_render.clear();
     self.conflict_resolution.clear();
     self.alternate_resolver.reset();
+    self.monitored.clear();
+  }
+
+  /// Log calculations for these LEDs at a higher level (mainly used for debugging)
+  pub fn monitor(&mut self, identifications: impl Into<LedIdentifications>) {
+    identifications.into().leds.iter().for_each(|addr| {
+      self.monitored.insert(addr.clone());
+    });
   }
 
   /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
@@ -123,6 +133,15 @@ impl LedSystem {
 
     for (led, color) in declarations.pairings {
       let declaration = StatefulLedDeclaration { active, color };
+      if self.monitored.contains(led) {
+        log::info!(
+          "Declaration by system {} for monitored LED {:?}: {:?}",
+          owning_system,
+          led,
+          declaration
+        );
+      }
+
       self
         .declarations
         .entry(led.clone())
@@ -146,6 +165,14 @@ impl LedSystem {
     };
 
     for led in identifications.leds {
+      if self.monitored.contains(&led) {
+        log::info!(
+          "Undeclare by system {} of monitored LED {:?}",
+          system_id,
+          led
+        );
+      }
+
       if let Some(declarations) = self.declarations.get_mut(&led) {
         declarations.retain(|id, _| id != &target_id);
         if declarations.is_empty() {
@@ -241,7 +268,6 @@ impl LedSystem {
 
     // if the top color is transparent, composite it with the next highest declaration below it
     if top_color.alpha() < 255 && z_indexes.len() > 1 {
-      // TODO: remove inactive indexes (here or above?)
       z_indexes.pop();
       let next_color = Self::resolve_led_color(
         led,
@@ -278,6 +304,10 @@ impl System for LedSystem {
 
     for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
+        if self.monitored.contains(&led) {
+          log::info!(target: "frontbox::leds", "Current declarations for LED {:?}: {:?}", led, declarations);
+        }
+
         // assemble a list of unique z-indexes which are defined for this LED
         let z_indexes = declarations
           .iter()
@@ -294,6 +324,11 @@ impl System for LedSystem {
           &self.conflict_resolution,
           &mut self.alternate_resolver,
         );
+
+        if self.monitored.contains(&led) {
+          log::info!(target: "frontbox::leds", "Setting led {:?} to {:?}", led, final_color);
+        }
+
         leds_to_set.push((led.clone(), final_color));
       } else {
         // no declarations for this LED = turn it off

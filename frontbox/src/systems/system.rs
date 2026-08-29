@@ -20,6 +20,7 @@ pub trait System: Any {
 
   /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
   fn on_deactivate(&mut self, ctx: &SystemContext) {
+    // TODO: should probably emit a despawned/deactivated event that LedSystem handles instead
     if let Some(mut led_system) = ctx.get::<LedSystem>() {
       led_system.deactivate_by_system(ctx.current_system_id());
     }
