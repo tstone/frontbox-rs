@@ -40,10 +40,6 @@ impl LedQuery {
     Self::Reverse(Box::new(self))
   }
 
-  pub fn shuffle(self, seed: u64) -> Self {
-    Self::Shuffle(Box::new(self), seed)
-  }
-
   /// Query that matches any driver with the specified name.
   pub fn name(n: impl Into<String>) -> Self {
     Self::Name(n.into())
