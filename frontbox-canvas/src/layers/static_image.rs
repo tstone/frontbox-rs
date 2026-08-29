@@ -22,6 +22,12 @@ impl StaticImage {
     Self { image }
   }
 
+  pub fn from_bytes(bytes: &[u8]) -> Self {
+    Self {
+      image: image::load_from_memory(bytes).unwrap().to_rgba8(),
+    }
+  }
+
   pub fn width(&self) -> u32 {
     self.image.width()
   }
