@@ -414,8 +414,7 @@ mod tests {
       ..Default::default()
     });
 
-    let mut program =
-      LedProgram1d::fixed(LedQuery::name("led1"), ColorSequence::solid(Rgba::blue()));
+    let mut program = LedProgram1d::fixed(LedQ::name("led1"), ColorSequence::solid(Rgba::blue()));
     program.apply(Duration::from_millis(50), &context.sys_ctx());
 
     let declarations = context
@@ -452,7 +451,7 @@ mod tests {
     });
 
     let mut program = LedProgram1d::fixed(
-      LedQuery::names(vec!["led1", "led2", "led3"]),
+      LedQ::names(vec!["led1", "led2", "led3"]),
       ColorSequence::tile(vec![Rgba::blue(), Rgba::red()]),
     );
     program.apply(Duration::from_millis(50), &context.sys_ctx());

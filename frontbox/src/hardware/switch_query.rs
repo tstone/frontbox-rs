@@ -5,16 +5,16 @@ use indexmap::IndexSet;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SwitchQuery {
+pub enum SwitchQ {
   Name(&'static str),
   Names(IndexSet<&'static str>),
   Tag(TypeId),
-  And(Vec<SwitchQuery>),
-  Or(Vec<SwitchQuery>),
+  And(Vec<SwitchQ>),
+  Or(Vec<SwitchQ>),
   Location(ReferencePlane, Region),
 }
 
-impl SwitchQuery {
+impl SwitchQ {
   /// Query that matches any driver with the specified name.
   pub fn name(n: &'static str) -> Self {
     Self::Name(n)
@@ -68,7 +68,7 @@ impl SwitchQuery {
 
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
   pub fn precompute(&self, ctx: &ServiceContext) -> Self {
-    SwitchQuery::Names(self.query_names(ctx).into_iter().map(Into::into).collect())
+    SwitchQ::Names(self.query_names(ctx).into_iter().map(Into::into).collect())
   }
 
   pub fn matches(&self, switch: &Switch) -> bool {
@@ -108,7 +108,7 @@ mod tests {
 
   #[test]
   fn name_query() {
-    let q = SwitchQuery::name("switch1");
+    let q = SwitchQ::name("switch1");
 
     let switch = Switch {
       id: 1,
@@ -126,7 +126,7 @@ mod tests {
 
   #[test]
   fn tag_query() {
-    let q = SwitchQuery::tag::<Playfield>();
+    let q = SwitchQ::tag::<Playfield>();
 
     let switch = Switch {
       id: 1,
@@ -144,10 +144,7 @@ mod tests {
 
   #[test]
   fn and_query() {
-    let q = SwitchQuery::and(
-      SwitchQuery::name("switch1"),
-      SwitchQuery::tag::<Playfield>(),
-    );
+    let q = SwitchQ::and(SwitchQ::name("switch1"), SwitchQ::tag::<Playfield>());
 
     let switch = Switch {
       id: 1,
@@ -165,7 +162,7 @@ mod tests {
 
   #[test]
   fn or_query() {
-    let q = SwitchQuery::or(SwitchQuery::name("switch1"), SwitchQuery::name("switch2"));
+    let q = SwitchQ::or(SwitchQ::name("switch1"), SwitchQ::name("switch2"));
 
     let switch = Switch {
       id: 1,
@@ -183,10 +180,7 @@ mod tests {
 
   #[test]
   fn any_of_query() {
-    let q = SwitchQuery::any(vec![
-      &SwitchQuery::name("switch1"),
-      &SwitchQuery::name("switch2"),
-    ]);
+    let q = SwitchQ::any(vec![&SwitchQ::name("switch1"), &SwitchQ::name("switch2")]);
 
     let switch = Switch {
       id: 1,
@@ -204,9 +198,9 @@ mod tests {
 
   #[test]
   fn all_of_query() {
-    let q = SwitchQuery::all(vec![
-      &SwitchQuery::name("switch1"),
-      &SwitchQuery::tag::<Playfield>(),
+    let q = SwitchQ::all(vec![
+      &SwitchQ::name("switch1"),
+      &SwitchQ::tag::<Playfield>(),
     ]);
 
     let switch = Switch {

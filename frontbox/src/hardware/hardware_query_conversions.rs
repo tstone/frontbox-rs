@@ -4,81 +4,81 @@ use indexmap::IndexSet;
 
 use crate::prelude::*;
 
-impl From<Vec<DriverQuery>> for DriverQuery {
-  fn from(value: Vec<DriverQuery>) -> Self {
-    DriverQuery::any(value.iter().collect())
+impl From<Vec<DriverQ>> for DriverQ {
+  fn from(value: Vec<DriverQ>) -> Self {
+    DriverQ::any(value.iter().collect())
   }
 }
 
-impl From<Vec<SwitchQuery>> for SwitchQuery {
-  fn from(value: Vec<SwitchQuery>) -> Self {
-    SwitchQuery::any(value.iter().collect())
+impl From<Vec<SwitchQ>> for SwitchQ {
+  fn from(value: Vec<SwitchQ>) -> Self {
+    SwitchQ::any(value.iter().collect())
   }
 }
 
-impl From<Vec<LedQuery>> for LedQuery {
-  fn from(value: Vec<LedQuery>) -> Self {
-    LedQuery::any(value.iter().collect())
+impl From<Vec<LedQ>> for LedQ {
+  fn from(value: Vec<LedQ>) -> Self {
+    LedQ::any(value.iter().collect())
   }
 }
 
-impl From<LazyLock<SwitchDefinition>> for SwitchQuery {
+impl From<LazyLock<SwitchDefinition>> for SwitchQ {
   fn from(value: LazyLock<SwitchDefinition>) -> Self {
-    SwitchQuery::name(value.name)
+    SwitchQ::name(value.name)
   }
 }
 
-impl From<&LazyLock<SwitchDefinition>> for SwitchQuery {
+impl From<&LazyLock<SwitchDefinition>> for SwitchQ {
   fn from(value: &LazyLock<SwitchDefinition>) -> Self {
-    SwitchQuery::name(value.name)
+    SwitchQ::name(value.name)
   }
 }
 
-impl From<LazyLock<DriverDefinition>> for DriverQuery {
+impl From<LazyLock<DriverDefinition>> for DriverQ {
   fn from(value: LazyLock<DriverDefinition>) -> Self {
-    DriverQuery::name(value.name)
+    DriverQ::name(value.name)
   }
 }
 
-impl From<&LazyLock<DriverDefinition>> for DriverQuery {
+impl From<&LazyLock<DriverDefinition>> for DriverQ {
   fn from(value: &LazyLock<DriverDefinition>) -> Self {
-    DriverQuery::name(value.name)
+    DriverQ::name(value.name)
   }
 }
 
-impl From<LazyLock<LedDefinition>> for LedQuery {
+impl From<LazyLock<LedDefinition>> for LedQ {
   fn from(value: LazyLock<LedDefinition>) -> Self {
-    LedQuery::names(value.names())
+    LedQ::names(value.names())
   }
 }
 
-impl From<&LazyLock<LedDefinition>> for LedQuery {
+impl From<&LazyLock<LedDefinition>> for LedQ {
   fn from(value: &LazyLock<LedDefinition>) -> Self {
-    LedQuery::names(value.names())
+    LedQ::names(value.names())
   }
 }
 
-impl From<Vec<&LazyLock<SwitchDefinition>>> for SwitchQuery {
+impl From<Vec<&LazyLock<SwitchDefinition>>> for SwitchQ {
   fn from(value: Vec<&LazyLock<SwitchDefinition>>) -> Self {
     let names: IndexSet<&'static str> = value.iter().map(|sw| sw.name).collect();
-    SwitchQuery::names(names)
+    SwitchQ::names(names)
   }
 }
 
-impl From<Vec<&LazyLock<DriverDefinition>>> for DriverQuery {
+impl From<Vec<&LazyLock<DriverDefinition>>> for DriverQ {
   fn from(value: Vec<&LazyLock<DriverDefinition>>) -> Self {
     let names: IndexSet<&'static str> = value.iter().map(|dr| dr.name).collect();
-    DriverQuery::names(names)
+    DriverQ::names(names)
   }
 }
 
-impl From<Vec<&LazyLock<LedDefinition>>> for LedQuery {
+impl From<Vec<&LazyLock<LedDefinition>>> for LedQ {
   fn from(value: Vec<&LazyLock<LedDefinition>>) -> Self {
     // defs.names() yields a collection of String references; clone each String
     let names: IndexSet<String> = value
       .iter()
       .flat_map(|defs| defs.names().iter().cloned())
       .collect();
-    LedQuery::names(&names)
+    LedQ::names(&names)
   }
 }

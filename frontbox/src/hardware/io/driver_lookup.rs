@@ -77,7 +77,7 @@ impl DriverLookup {
       .collect()
   }
 
-  pub fn query_iter<'a>(&'a self, query: &DriverQuery) -> impl Iterator<Item = &'a Driver> {
+  pub fn query_iter<'a>(&'a self, query: &DriverQ) -> impl Iterator<Item = &'a Driver> {
     self.by_id.values().filter(|driver| query.matches(driver))
   }
 }

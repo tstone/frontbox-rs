@@ -4,21 +4,22 @@ use indexmap::IndexSet;
 
 use crate::prelude::*;
 
+/// An LED Query
 #[derive(Debug, Clone, PartialEq)]
-pub enum LedQuery {
+pub enum LedQ {
   Every,
   Name(String),
   Names(IndexSet<String>),
   Tag(TypeId),
-  And(Vec<LedQuery>),
-  Or(Vec<LedQuery>),
+  And(Vec<LedQ>),
+  Or(Vec<LedQ>),
   Location(ReferencePlane, Region),
-  Skip(Box<LedQuery>, usize),
-  Take(Box<LedQuery>, usize),
-  Reverse(Box<LedQuery>),
+  Skip(Box<LedQ>, usize),
+  Take(Box<LedQ>, usize),
+  Reverse(Box<LedQ>),
 }
 
-impl LedQuery {
+impl LedQ {
   /// Literally every LED
   pub fn every() -> Self {
     Self::Every
@@ -93,7 +94,7 @@ impl LedQuery {
 
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
   pub fn precompute(&self, ctx: &ServiceContext) -> Self {
-    LedQuery::Names(self.query_iter(ctx).map(|led| led.name.clone()).collect())
+    LedQ::Names(self.query_iter(ctx).map(|led| led.name.clone()).collect())
   }
 
   /// Resolve the query into a reference for all matching LEDs

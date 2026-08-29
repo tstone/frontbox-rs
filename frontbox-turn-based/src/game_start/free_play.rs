@@ -5,11 +5,11 @@ use crate::GameManager;
 /// A simple system to start a game in free play mode
 #[derive(Clone)]
 pub struct FreePlay {
-  start_button_switch: SwitchQuery,
+  start_button_switch: SwitchQ,
 }
 
 impl FreePlay {
-  pub fn new(q: SwitchQuery) -> Self {
+  pub fn new(q: SwitchQ) -> Self {
     Self {
       start_button_switch: q,
     }

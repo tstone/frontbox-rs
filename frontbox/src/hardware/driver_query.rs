@@ -5,16 +5,16 @@ use indexmap::IndexSet;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DriverQuery {
+pub enum DriverQ {
   Name(&'static str),
   Names(IndexSet<&'static str>),
   Tag(TypeId),
-  And(Vec<DriverQuery>),
-  Or(Vec<DriverQuery>),
+  And(Vec<DriverQ>),
+  Or(Vec<DriverQ>),
   Location(ReferencePlane, Region),
 }
 
-impl DriverQuery {
+impl DriverQ {
   /// Query that matches any driver with the specified name.
   pub fn name(n: &'static str) -> Self {
     Self::Name(n)
@@ -108,7 +108,7 @@ mod tests {
 
   #[test]
   fn name_query() {
-    let q = DriverQuery::name("driver1");
+    let q = DriverQ::name("driver1");
 
     let driver = Driver {
       id: 1,
@@ -126,7 +126,7 @@ mod tests {
 
   #[test]
   fn tag_query() {
-    let q = DriverQuery::tag::<Playfield>();
+    let q = DriverQ::tag::<Playfield>();
 
     let driver = Driver {
       id: 1,
@@ -144,10 +144,7 @@ mod tests {
 
   #[test]
   fn and_query() {
-    let q = DriverQuery::and(
-      DriverQuery::name("driver1"),
-      DriverQuery::tag::<Playfield>(),
-    );
+    let q = DriverQ::and(DriverQ::name("driver1"), DriverQ::tag::<Playfield>());
 
     let driver = Driver {
       id: 1,
@@ -165,7 +162,7 @@ mod tests {
 
   #[test]
   fn or_query() {
-    let q = DriverQuery::or(DriverQuery::name("driver1"), DriverQuery::name("driver2"));
+    let q = DriverQ::or(DriverQ::name("driver1"), DriverQ::name("driver2"));
 
     let driver = Driver {
       id: 1,
@@ -183,10 +180,7 @@ mod tests {
 
   #[test]
   fn any_of_query() {
-    let q = DriverQuery::any(vec![
-      &DriverQuery::name("driver1"),
-      &DriverQuery::name("driver2"),
-    ]);
+    let q = DriverQ::any(vec![&DriverQ::name("driver1"), &DriverQ::name("driver2")]);
 
     let driver = Driver {
       id: 1,
@@ -204,9 +198,9 @@ mod tests {
 
   #[test]
   fn all_of_query() {
-    let q = DriverQuery::all(vec![
-      &DriverQuery::name("driver1"),
-      &DriverQuery::tag::<Playfield>(),
+    let q = DriverQ::all(vec![
+      &DriverQ::name("driver1"),
+      &DriverQ::tag::<Playfield>(),
     ]);
 
     let driver = Driver {

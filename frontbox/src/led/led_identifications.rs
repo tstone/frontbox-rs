@@ -17,14 +17,14 @@ impl LedIdentifications {
   }
 }
 
-impl Contextual<LedIdentifications> for LedQuery {
+impl Contextual<LedIdentifications> for LedQ {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self.query_addresses(ctx.into());
     LedIdentifications::new(addresses, 0)
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<LedQuery> {
+impl Contextual<LedIdentifications> for Vec<LedQ> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()
@@ -34,7 +34,7 @@ impl Contextual<LedIdentifications> for Vec<LedQuery> {
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<&LedQuery> {
+impl Contextual<LedIdentifications> for Vec<&LedQ> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()

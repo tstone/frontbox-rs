@@ -24,7 +24,7 @@ pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
-  ball_in_play_switches: SwitchQuery,
+  ball_in_play_switches: SwitchQ,
   game_state: Option<GameState>,
   handle: SystemHandle,
 }
@@ -33,7 +33,7 @@ impl CompetitiveGame {
   pub fn new(
     max_players: u8,
     player_template: Vec<ChildSystemContainer>,
-    ball_in_play_switches: SwitchQuery,
+    ball_in_play_switches: SwitchQ,
   ) -> Self {
     Self {
       systems_template: player_template,

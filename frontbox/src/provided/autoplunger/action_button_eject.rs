@@ -4,13 +4,13 @@ use crate::provided::AutoPlungerSystem;
 /// A system to fire the auto plunger when the action button is pressed
 /// Button can only be pressed when there is a ball in the plunge lane
 pub struct ActionButtonEject {
-  action_button_switch: SwitchQuery,
-  plunge_lane_switch: SwitchQuery,
+  action_button_switch: SwitchQ,
+  plunge_lane_switch: SwitchQ,
   active: bool,
 }
 
 impl ActionButtonEject {
-  pub fn new(action_button_switch: SwitchQuery, plunge_lane_switch: SwitchQuery) -> Self {
+  pub fn new(action_button_switch: SwitchQ, plunge_lane_switch: SwitchQ) -> Self {
     Self {
       action_button_switch,
       plunge_lane_switch,

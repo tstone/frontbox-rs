@@ -105,7 +105,7 @@ impl SwitchLookup {
       .collect()
   }
 
-  pub fn query_iter<'a>(&'a self, query: &SwitchQuery) -> impl Iterator<Item = &'a Switch> {
+  pub fn query_iter<'a>(&'a self, query: &SwitchQ) -> impl Iterator<Item = &'a Switch> {
     self.by_id.values().filter(|switch| query.matches(switch))
   }
 

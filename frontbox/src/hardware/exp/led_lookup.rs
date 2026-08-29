@@ -75,32 +75,32 @@ impl LedLookup {
       .collect()
   }
 
-  fn matches(&self, query: &LedQuery, led: &LED) -> bool {
+  fn matches(&self, query: &LedQ, led: &LED) -> bool {
     match query {
-      LedQuery::Every => true,
-      LedQuery::Name(name) => led.name == *name,
-      LedQuery::Names(names) => names.contains(&led.name),
-      LedQuery::Tag(tag) => led.has_typed_tag(*tag),
-      LedQuery::And(qs) => qs.iter().all(|q| self.matches(q, led)),
-      LedQuery::Or(qs) => qs.iter().any(|q| self.matches(q, led)),
-      LedQuery::Location(plane, region) => led
+      LedQ::Every => true,
+      LedQ::Name(name) => led.name == *name,
+      LedQ::Names(names) => names.contains(&led.name),
+      LedQ::Tag(tag) => led.has_typed_tag(*tag),
+      LedQ::And(qs) => qs.iter().all(|q| self.matches(q, led)),
+      LedQ::Or(qs) => qs.iter().any(|q| self.matches(q, led)),
+      LedQ::Location(plane, region) => led
         .location
         .map(|location| region.within(plane.to_relative(location)))
         .unwrap_or(false),
-      LedQuery::Reverse(other) => self.matches(other, led),
-      LedQuery::Skip(other, _) => self.query_iter(other).contains(led),
-      LedQuery::Take(other, _) => self.query_iter(other).contains(led),
+      LedQ::Reverse(other) => self.matches(other, led),
+      LedQ::Skip(other, _) => self.query_iter(other).contains(led),
+      LedQ::Take(other, _) => self.query_iter(other).contains(led),
     }
   }
 
-  pub fn query_iter<'a>(&'a self, query: &'a LedQuery) -> Box<dyn Iterator<Item = &'a LED> + 'a> {
+  pub fn query_iter<'a>(&'a self, query: &'a LedQ) -> Box<dyn Iterator<Item = &'a LED> + 'a> {
     match query {
-      LedQuery::Name(name) => Box::new(self.by_name.get(name).into_iter()),
-      LedQuery::Names(names) => Box::new(names.iter().filter_map(|n| self.by_name.get(n))),
-      LedQuery::Or(queries) => Box::new(queries.iter().flat_map(|q| self.query_iter(q))),
-      LedQuery::Skip(other, n) => Box::new(self.query_iter(other).skip(*n)),
-      LedQuery::Take(other, n) => Box::new(self.query_iter(other).take(*n)),
-      LedQuery::Reverse(other) => {
+      LedQ::Name(name) => Box::new(self.by_name.get(name).into_iter()),
+      LedQ::Names(names) => Box::new(names.iter().filter_map(|n| self.by_name.get(n))),
+      LedQ::Or(queries) => Box::new(queries.iter().flat_map(|q| self.query_iter(q))),
+      LedQ::Skip(other, n) => Box::new(self.query_iter(other).skip(*n)),
+      LedQ::Take(other, n) => Box::new(self.query_iter(other).take(*n)),
+      LedQ::Reverse(other) => {
         let mut items: Vec<_> = self.query_iter(other).collect();
         items.reverse();
         Box::new(items.into_iter())
