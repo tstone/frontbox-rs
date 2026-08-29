@@ -102,14 +102,14 @@ impl MachineImpl {
         .ok();
 
       if matches!(state, SwitchState::Closed) {
-        log::debug!("🎚️  Switch {} closed", switch.name);
+        log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
         let event = SwitchClosed::new(switch);
         self
           .app_sender
           .send(AppMessage::EmitEvent(EventBox::new(event)))
           .ok();
       } else {
-        log::debug!("🎚️  Switch {} opened", switch.name);
+        log::debug!(target: "frontbox::switches", "🎚️  Switch {} opened", switch.name);
         let event = SwitchOpened::new(switch);
         self
           .app_sender
@@ -121,6 +121,7 @@ impl MachineImpl {
       match self.get_native_switch_id(switch_id) {
         Some((board_id, local_id)) => {
           log::warn!(
+            target: "frontbox::switches",
             "Received event for unknown switch -- board: {}, id: {} -- {:?}",
             board_id,
             local_id,
@@ -130,6 +131,7 @@ impl MachineImpl {
         }
         None => {
           log::warn!(
+            target: "frontbox::switches",
             "Received event for unknown switch on unknown board {} -- {:?}",
             switch_id,
             state
