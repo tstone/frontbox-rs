@@ -1,3 +1,4 @@
+- Need to have a RandSystem that manages seed per game
 - Redo ActionButtonEject(System) to use plunge lane events + accept LedProgram1ds
 - Animations should be able to be specified as relative to the frame rate
 - Establish (and document) consistent log targets

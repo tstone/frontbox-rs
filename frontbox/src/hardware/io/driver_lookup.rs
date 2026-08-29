@@ -77,12 +77,8 @@ impl DriverLookup {
       .collect()
   }
 
-  pub fn by_selection(&self, selection: &HardwareQuery) -> Vec<&Driver> {
-    self
-      .by_id
-      .values()
-      .filter(|driver| selection.matches_driver(driver))
-      .collect()
+  pub fn query_iter<'a>(&'a self, query: &DriverQ) -> impl Iterator<Item = &'a Driver> {
+    self.by_id.values().filter(|driver| query.matches(driver))
   }
 }
 

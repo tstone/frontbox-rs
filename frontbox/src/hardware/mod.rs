@@ -92,25 +92,27 @@
 //! }
 //! ```
 
+mod driver_query;
 mod exp;
 mod fast_platform;
 mod hardware;
 mod hardware_definition;
-mod hardware_query;
 mod hardware_query_conversions;
 mod io;
+mod led_query;
 mod location;
-mod q;
 mod region;
+mod switch_query;
 
+pub use driver_query::*;
 pub use exp::*;
 pub use fast_platform::*;
 pub use hardware::*;
 pub use hardware_definition::*;
-pub use hardware_query::*;
 #[allow(unused)]
 pub use hardware_query_conversions::*;
 pub use io::*;
+pub use led_query::*;
 pub use location::*;
-pub use q::*;
 pub use region::*;
+pub use switch_query::*;

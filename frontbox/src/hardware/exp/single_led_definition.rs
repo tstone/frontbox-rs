@@ -15,6 +15,12 @@ pub struct SingleLedDefinition {
   pub config: Option<LedConfiguration>,
 }
 
+impl SingleLedDefinition {
+  pub fn q(&self) -> LedQ {
+    LedQ::name(self.name.clone())
+  }
+}
+
 impl HardwareDefinition for SingleLedDefinition {
   fn name(&self) -> Cow<'static, str> {
     self.name.clone()

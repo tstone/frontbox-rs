@@ -27,6 +27,10 @@ impl DriverDefinition {
       None => Vec::new(),
     }
   }
+
+  pub fn q(&self) -> DriverQ {
+    DriverQ::name(self.name)
+  }
 }
 
 impl HardwareDefinition for DriverDefinition {

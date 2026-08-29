@@ -105,12 +105,8 @@ impl SwitchLookup {
       .collect()
   }
 
-  pub fn query(&self, query: &HardwareQuery) -> Vec<&Switch> {
-    self
-      .by_id
-      .values()
-      .filter(|switch| query.matches_switch(switch))
-      .collect()
+  pub fn query_iter<'a>(&'a self, query: &SwitchQ) -> impl Iterator<Item = &'a Switch> {
+    self.by_id.values().filter(|switch| query.matches(switch))
   }
 
   /// Used internally to update switch state via switch events

@@ -32,9 +32,27 @@ impl HardwareQuery {
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
   pub fn precompute(&self, hardware: QueryableHardware, ctx: &ServiceContext) -> Self {
     match hardware {
-      QueryableHardware::Switch => HardwareQuery::Names(self.get_switch_names(ctx).into_iter().map(Into::into).collect()),
-      QueryableHardware::Driver => HardwareQuery::Names(self.get_driver_names(ctx).into_iter().map(Into::into).collect()),
-      QueryableHardware::LED => HardwareQuery::Names(self.get_led_names(ctx).into_iter().map(Into::into).collect()),
+      QueryableHardware::Switch => HardwareQuery::Names(
+        self
+          .get_switch_names(ctx)
+          .into_iter()
+          .map(Into::into)
+          .collect(),
+      ),
+      QueryableHardware::Driver => HardwareQuery::Names(
+        self
+          .get_driver_names(ctx)
+          .into_iter()
+          .map(Into::into)
+          .collect(),
+      ),
+      QueryableHardware::LED => HardwareQuery::Names(
+        self
+          .get_led_names(ctx)
+          .into_iter()
+          .map(Into::into)
+          .collect(),
+      ),
     }
   }
 
@@ -45,9 +63,10 @@ impl HardwareQuery {
       Self::Tag(tag) => switch.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_switch(switch)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_switch(switch)),
-      Self::Location(plane, region) => switch.location.map(|location| {
-        region.within(plane.to_relative(location))
-      }).unwrap_or(false)
+      Self::Location(plane, region) => switch
+        .location
+        .map(|location| region.within(plane.to_relative(location)))
+        .unwrap_or(false),
     }
   }
 
@@ -58,9 +77,10 @@ impl HardwareQuery {
       Self::Tag(tag) => driver.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_driver(driver)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_driver(driver)),
-      Self::Location(plane, region) => driver.location.map(|location| {
-        region.within(plane.to_relative(location))
-      }).unwrap_or(false)
+      Self::Location(plane, region) => driver
+        .location
+        .map(|location| region.within(plane.to_relative(location)))
+        .unwrap_or(false),
     }
   }
 
@@ -71,9 +91,10 @@ impl HardwareQuery {
       Self::Tag(tag) => led.has_typed_tag(*tag),
       Self::And(qs) => qs.iter().all(|q| q.matches_led(led)),
       Self::Or(qs) => qs.iter().any(|q| q.matches_led(led)),
-      Self::Location(plane, region) => led.location.map(|location| {
-        region.within(plane.to_relative(location))
-      }).unwrap_or(false)
+      Self::Location(plane, region) => led
+        .location
+        .map(|location| region.within(plane.to_relative(location)))
+        .unwrap_or(false),
     }
   }
 
@@ -130,16 +151,14 @@ impl HardwareQuery {
       // maintain order for name/names
       Self::Name(name) => match ctx.leds.get(name) {
         Some(led) => vec![led.address.clone()],
-        None => Vec::new()
+        None => Vec::new(),
       },
       Self::Names(names) => names
         .iter()
         .filter_map(|n| ctx.leds.get(n))
         .map(|led| led.address.clone())
         .collect(),
-      Self::Or(qs) => {
-        qs.iter().flat_map(|q| q.get_leds_addresses(ctx)).collect()
-      }
+      Self::Or(qs) => qs.iter().flat_map(|q| q.get_leds_addresses(ctx)).collect(),
       _ => {
         let mut matches: Vec<LedAddress> = ctx
           .leds
@@ -154,7 +173,10 @@ impl HardwareQuery {
           .collect();
 
         // For other non-ordered results (e.g. by take) sort by hardware addres to maintain consistent order
-        matches.sort_by_key(|addr| ((addr.exp.board_address as u32 * 10) + addr.exp.breakout.unwrap_or(0) as u32) * addr.index as u32);
+        matches.sort_by_key(|addr| {
+          ((addr.exp.board_address as u32 * 10) + addr.exp.breakout.unwrap_or(0) as u32)
+            * addr.index as u32
+        });
         matches
       }
     };
@@ -411,7 +433,10 @@ mod tests {
       },
     );
 
-    let q = Q::any(vec![&Q::names(vec!["led1", "led2"]), &Q::names(vec!["led3", "led4"])]);
+    let q = Q::any(vec![
+      &Q::names(vec!["led1", "led2"]),
+      &Q::names(vec!["led3", "led4"]),
+    ]);
     let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds[0].index, 5);

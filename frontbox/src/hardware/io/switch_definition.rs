@@ -15,6 +15,10 @@ impl SwitchDefinition {
   pub fn new(name: &'static str) -> SwitchDefinitionBuilder {
     SwitchDefinitionBuilder::new(name)
   }
+
+  pub fn q(&self) -> SwitchQ {
+    SwitchQ::name(self.name)
+  }
 }
 
 impl HardwareDefinition for SwitchDefinition {

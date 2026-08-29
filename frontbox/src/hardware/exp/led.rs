@@ -26,6 +26,14 @@ impl LED {
   }
 }
 
+impl PartialEq for LED {
+  fn eq(&self, other: &Self) -> bool {
+    self.name == other.name
+  }
+}
+
+impl Eq for LED {}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct LedAddress {
   pub exp: ExpAddress,

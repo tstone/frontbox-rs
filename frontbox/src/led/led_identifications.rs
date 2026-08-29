@@ -17,28 +17,28 @@ impl LedIdentifications {
   }
 }
 
-impl Contextual<LedIdentifications> for HardwareQuery {
+impl Contextual<LedIdentifications> for LedQ {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
-    let addresses = self.get_leds_addresses(ctx.into());
+    let addresses = self.query_addresses(ctx.into());
     LedIdentifications::new(addresses, 0)
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<HardwareQuery> {
+impl Contextual<LedIdentifications> for Vec<LedQ> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()
-      .flat_map(|q| q.get_leds_addresses(ctx.into()))
+      .flat_map(|q| q.query_addresses(ctx.into()))
       .collect();
     LedIdentifications::new(addresses, 0)
   }
 }
 
-impl Contextual<LedIdentifications> for Vec<&HardwareQuery> {
+impl Contextual<LedIdentifications> for Vec<&LedQ> {
   fn resolve(&self, ctx: &SystemContext) -> LedIdentifications {
     let addresses = self
       .iter()
-      .flat_map(|q| q.get_leds_addresses(ctx.into()))
+      .flat_map(|q| q.query_addresses(ctx.into()))
       .collect();
     LedIdentifications::new(addresses, 0)
   }

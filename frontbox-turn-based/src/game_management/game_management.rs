@@ -40,7 +40,7 @@ impl GameManager {
   pub fn competitive(
     max_players: u8,
     player_template: Vec<ChildSystemContainer>,
-    ball_in_play_switches: HardwareQuery,
+    ball_in_play_switches: SwitchQ,
   ) -> Self {
     Self {
       inner: Box::new(CompetitiveGame::new(
