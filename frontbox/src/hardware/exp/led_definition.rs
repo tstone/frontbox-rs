@@ -64,13 +64,13 @@ impl LedDefinition {
   }
 
   /// Query for LED(s) in this definition
-  pub fn q(&self) -> HardwareQuery {
-    Q::names(&self.names)
+  pub fn q(&self) -> LedQuery {
+    LedQuery::names(&self.names)
   }
 }
 
-impl Into<HardwareQuery> for LedDefinition {
-  fn into(self) -> HardwareQuery {
+impl Into<LedQuery> for LedDefinition {
+  fn into(self) -> LedQuery {
     self.q()
   }
 }

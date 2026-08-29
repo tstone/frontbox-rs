@@ -24,7 +24,7 @@ pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
-  ball_in_play_switches: HardwareQuery,
+  ball_in_play_switches: SwitchQuery,
   game_state: Option<GameState>,
   handle: SystemHandle,
 }
@@ -33,7 +33,7 @@ impl CompetitiveGame {
   pub fn new(
     max_players: u8,
     player_template: Vec<ChildSystemContainer>,
-    ball_in_play_switches: HardwareQuery,
+    ball_in_play_switches: SwitchQuery,
   ) -> Self {
     Self {
       systems_template: player_template,
@@ -119,7 +119,7 @@ impl System for CompetitiveGame {
           if event.is::<BallExitedPlungeLane>() {
             self.transition_turn_to_active(ctx.into());
           } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
-            && self.ball_in_play_switches.matches_switch(&e.switch)
+            && self.ball_in_play_switches.matches(&e.switch)
           {
             self.transition_turn_to_active(ctx.into());
           }
@@ -229,7 +229,7 @@ impl GameManagement for CompetitiveGame {
     ctx.emit(GameEnded { scores });
 
     // Clear LEDs
-    let ctx= ctx.for_system(self.handle);
+    let ctx = ctx.for_system(self.handle);
     let machine = ctx.expect::<Machine>();
     for board in &ctx.exp_network {
       machine.set_all_leds(board.address, board.breakout, Rgba::black());

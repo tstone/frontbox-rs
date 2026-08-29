@@ -20,11 +20,6 @@ pub trait HardwareDefinition {
   /// Location in 3D space, relative to the bottom left corner of the cabinet
   /// Use the playfield reference plane for easier
   fn location(&self) -> Option<Vec3>;
-
-  /// Query by name
-  fn q(&self) -> HardwareQuery {
-    HardwareQuery::Name(self.name().to_string())
-  }
 }
 
 // -- IO --

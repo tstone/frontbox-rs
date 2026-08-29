@@ -74,12 +74,46 @@ impl LedLookup {
       .collect()
   }
 
-  pub fn query(&self, selection: &HardwareQuery) -> Vec<&LED> {
-    self
-      .by_name
-      .values()
-      .filter(|illum| selection.matches_led(illum))
-      .collect()
+  fn matches(&self, query: &LedQuery, led: &LED) -> bool {
+    match query {
+      LedQuery::Name(name) => led.name == *name,
+      LedQuery::Names(names) => names.contains(&led.name),
+      LedQuery::Tag(tag) => led.has_typed_tag(*tag),
+      LedQuery::And(qs) => qs.iter().all(|q| self.matches(q, led)),
+      LedQuery::Or(qs) => qs.iter().any(|q| self.matches(q, led)),
+      LedQuery::Location(plane, region) => led
+        .location
+        .map(|location| region.within(plane.to_relative(location)))
+        .unwrap_or(false),
+    }
+  }
+
+  pub fn query_iter<'a>(&'a self, query: &'a LedQuery) -> Box<dyn Iterator<Item = &'a LED> + 'a> {
+    match query {
+      LedQuery::Name(name) => Box::new(self.by_name.get(name).into_iter()),
+      LedQuery::Names(names) => Box::new(names.iter().filter_map(|n| self.by_name.get(n))),
+      LedQuery::Or(queries) => Box::new(queries.iter().flat_map(|q| self.query_iter(q))),
+      _ => {
+        let mut matches: Vec<&LED> = self
+          .by_name
+          .values()
+          .filter_map(|led| {
+            if self.matches(query, led) {
+              Some(led)
+            } else {
+              None
+            }
+          })
+          .collect();
+
+        // For other non-ordered results (e.g. by take) sort by hardware address to maintain consistent order
+        matches.sort_by_key(|led| {
+          ((led.address.board() as u32 * 10) + led.address.breakout().unwrap_or(0) as u32)
+            * led.address.index as u32
+        });
+        Box::new(matches.into_iter())
+      }
+    }
   }
 
   pub fn config(&self, name: &'static str) -> Option<&LedConfiguration> {
