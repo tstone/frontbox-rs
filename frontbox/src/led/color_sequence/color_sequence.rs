@@ -331,6 +331,12 @@ impl Lerp for ColorSequence {
   }
 }
 
+impl From<Rgba<u8>> for ColorSequence {
+  fn from(value: Rgba<u8>) -> Self {
+    ColorSequence::solid(value)
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

@@ -234,7 +234,7 @@ impl RgbaColor for Rgba<u8> {
     Rgba([255, 192, 203, 255])
   }
   fn purple() -> Self {
-    Rgba([127, 0, 255, 255])
+    Rgba([127, 0, 225, 255])
   }
   fn cyan() -> Self {
     Rgba([0, 255, 255, 255])

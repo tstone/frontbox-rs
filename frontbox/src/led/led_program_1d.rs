@@ -367,7 +367,7 @@ impl LedProgram1d {
   }
 
   /// Run many programs all at once (this is just a timeline with everything set to the same start time)
-  pub fn many(programs: Vec<LedProgram1d>) -> Self {
+  pub fn multi(programs: Vec<LedProgram1d>) -> Self {
     programs.iter().fold(Self::timeline(), |timeline, program| {
       timeline.at(Duration::ZERO, program.clone())
     })
