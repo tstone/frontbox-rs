@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
@@ -76,6 +77,7 @@ impl LedLookup {
 
   fn matches(&self, query: &LedQuery, led: &LED) -> bool {
     match query {
+      LedQuery::Every => true,
       LedQuery::Name(name) => led.name == *name,
       LedQuery::Names(names) => names.contains(&led.name),
       LedQuery::Tag(tag) => led.has_typed_tag(*tag),
@@ -85,6 +87,9 @@ impl LedLookup {
         .location
         .map(|location| region.within(plane.to_relative(location)))
         .unwrap_or(false),
+      LedQuery::Reverse(other) => self.matches(other, led),
+      LedQuery::Skip(other, _) => self.query_iter(other).contains(led),
+      LedQuery::Take(other, _) => self.query_iter(other).contains(led),
     }
   }
 
@@ -93,6 +98,13 @@ impl LedLookup {
       LedQuery::Name(name) => Box::new(self.by_name.get(name).into_iter()),
       LedQuery::Names(names) => Box::new(names.iter().filter_map(|n| self.by_name.get(n))),
       LedQuery::Or(queries) => Box::new(queries.iter().flat_map(|q| self.query_iter(q))),
+      LedQuery::Skip(other, n) => Box::new(self.query_iter(other).skip(*n)),
+      LedQuery::Take(other, n) => Box::new(self.query_iter(other).take(*n)),
+      LedQuery::Reverse(other) => {
+        let mut items: Vec<_> = self.query_iter(other).collect();
+        items.reverse();
+        Box::new(items.into_iter())
+      }
       _ => {
         let mut matches: Vec<&LED> = self
           .by_name

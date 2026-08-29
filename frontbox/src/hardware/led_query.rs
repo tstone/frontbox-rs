@@ -6,15 +6,44 @@ use crate::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LedQuery {
+  Every,
   Name(String),
   Names(IndexSet<String>),
   Tag(TypeId),
   And(Vec<LedQuery>),
   Or(Vec<LedQuery>),
   Location(ReferencePlane, Region),
+  Skip(Box<LedQuery>, usize),
+  Take(Box<LedQuery>, usize),
+  Reverse(Box<LedQuery>),
 }
 
 impl LedQuery {
+  /// Literally every LED
+  pub fn every() -> Self {
+    Self::Every
+  }
+
+  pub fn range(self, range: std::ops::Range<usize>) -> Self {
+    self.skip(range.start).take(range.end)
+  }
+
+  pub fn skip(self, n: usize) -> Self {
+    Self::Skip(Box::new(self), n)
+  }
+
+  pub fn take(self, n: usize) -> Self {
+    Self::Take(Box::new(self), n)
+  }
+
+  pub fn reverse(self) -> Self {
+    Self::Reverse(Box::new(self))
+  }
+
+  pub fn shuffle(self, seed: u64) -> Self {
+    Self::Shuffle(Box::new(self), seed)
+  }
+
   /// Query that matches any driver with the specified name.
   pub fn name(n: impl Into<String>) -> Self {
     Self::Name(n.into())
