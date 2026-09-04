@@ -31,8 +31,10 @@ mod ball_save;
 pub mod configs;
 mod game_management;
 mod game_start;
+mod high_scores;
 
 pub use activate_playfield::*;
 pub use ball_save::*;
 pub use game_management::*;
 pub use game_start::*;
+pub use high_scores::*;
