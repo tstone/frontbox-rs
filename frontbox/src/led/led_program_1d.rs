@@ -10,15 +10,18 @@ pub enum LedProgram1d {
   Animated {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     anim: Box<dyn Animation<Duration, ColorSequence> + Send + Sync>,
+    undeclared: bool,
   },
   Modulated {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
     modulators: MultiModulator<ColorSequence, Duration>,
+    undeclared: bool,
   },
   Timeline {
     active: bool,
     entries: Vec<TimelineAccumulator>,
+    undeclared: bool,
   },
 }
 
@@ -29,10 +32,16 @@ impl LedProgram1d {
       LedProgram1d::Fixed { ids, color } => {
         ctx.declare_leds(ids, color.clone());
       }
-      LedProgram1d::Animated { ids, anim } => {
-        if anim.is_complete() || !anim.active() {
+      LedProgram1d::Animated {
+        ids,
+        anim,
+        undeclared,
+      } => {
+        if (anim.is_complete() || !anim.active()) && !*undeclared {
           ctx.undeclare_leds(ids);
+          *undeclared = true;
         } else {
+          *undeclared = false;
           anim.accumulate(delta);
           ctx.declare_leds(ids, anim.sample());
         }
@@ -41,16 +50,24 @@ impl LedProgram1d {
         ids,
         color,
         modulators,
+        undeclared,
       } => {
-        if modulators.is_complete() || !modulators.active() {
+        if (modulators.is_complete() || !modulators.active()) && !*undeclared {
           ctx.undeclare_leds(ids);
+          *undeclared = true;
         } else {
+          *undeclared = false;
           modulators.apply(delta, color);
           ctx.declare_leds(ids, color.clone());
         }
       }
-      LedProgram1d::Timeline { entries, active } => {
+      LedProgram1d::Timeline {
+        entries,
+        active,
+        undeclared,
+      } => {
         if *active {
+          *undeclared = false;
           for entry in entries {
             if entry.ready() {
               entry.launch();
@@ -61,10 +78,11 @@ impl LedProgram1d {
               entry.accumulate_launch(delta);
             }
           }
-        } else {
+        } else if !*undeclared {
           for entry in entries {
             entry.program.stop(ctx);
           }
+          *undeclared = true;
         }
       }
     }
@@ -208,6 +226,7 @@ impl LedProgram1d {
     Self::Animated {
       ids: Box::new(targets),
       anim: Box::new(animation),
+      undeclared: false,
     }
   }
 
@@ -307,6 +326,7 @@ impl LedProgram1d {
       ids: Box::new(targets),
       color: initial,
       modulators: MultiModulator::playing(Vec::new()),
+      undeclared: false,
     }
   }
 
@@ -348,6 +368,7 @@ impl LedProgram1d {
     Self::Timeline {
       active: true,
       entries: Vec::new(),
+      undeclared: false,
     }
   }
 
