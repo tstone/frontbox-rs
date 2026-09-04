@@ -8,7 +8,6 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Clean up hardware exports
-- Possible BUG: If Cue time is less than system tick time, what happens?
 
 HardwareQuery
 

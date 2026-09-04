@@ -85,7 +85,6 @@ pub enum Cue {
 
 #[derive(Clone)]
 pub(crate) enum CueInternal {
-  Now,
   Once(Duration),
   Times(u16, Duration),
   Loop(Duration),
@@ -99,12 +98,13 @@ pub struct CueAccumulator {
   signal: Arc<Vec<Box<dyn Event>>>,
   cycle_index: usize,
   loop_count: u16,
+  completed: bool,
 }
 
 impl CueAccumulator {
   pub fn from_cue(cue: Cue, signals: Vec<Box<dyn Event>>) -> Self {
     let cue_internal = match cue {
-      Cue::Now => CueInternal::Now,
+      Cue::Now => CueInternal::Once(Duration::ZERO),
       Cue::Once(duration) => CueInternal::Once(duration),
       Cue::Times(t, duration) => CueInternal::Times(t, duration),
       Cue::Forever(duration) => CueInternal::Loop(duration),
@@ -134,11 +134,8 @@ impl CueAccumulator {
   }
 
   fn new(cue: CueInternal, signals: Vec<Box<dyn Event>>) -> Self {
-    let cycle_index = match cue {
-      CueInternal::Now => 0,
-      // start with index at end of signals so that first increment will roll it over to 0
-      _ => signals.iter().len(),
-    };
+    // start with index at end of signals so that first increment will roll it over to 0
+    let cycle_index = signals.iter().len();
 
     Self {
       cue,
@@ -146,6 +143,7 @@ impl CueAccumulator {
       cycle_index,
       signal: Arc::new(signals),
       loop_count: 0,
+      completed: false,
     }
   }
 
@@ -173,7 +171,6 @@ impl CueAccumulator {
 
   pub fn target(&self) -> Duration {
     match &self.cue {
-      CueInternal::Now => Duration::ZERO,
       CueInternal::Once(duration) => *duration,
       CueInternal::Times(_, duration) => *duration,
       CueInternal::Loop(duration) => *duration,
@@ -203,11 +200,7 @@ impl Accumulator<Duration> for CueAccumulator {
       completed_cycle: false,
     };
 
-    let is_now = match self.cue {
-      CueInternal::Now => true,
-      _ => false,
-    };
-    if is_now || self.is_complete() {
+    if self.is_complete() {
       return result;
     }
 
@@ -256,6 +249,12 @@ impl Accumulator<Duration> for CueAccumulator {
       result.remainder = self.elapsed;
       self.increment_signal_index();
 
+      if matches!(self.cue, CueInternal::Once(_)) {
+        // for Once cues, keep track of if the cue fires
+        // this avoids an edge case of Duration::ZERO never firing
+        self.completed = true;
+      }
+
       match self.cue {
         CueInternal::Times(_, _) => {
           self.loop_count += 1;
@@ -277,8 +276,7 @@ impl Accumulator<Duration> for CueAccumulator {
 
   fn is_complete(&self) -> bool {
     match &self.cue {
-      CueInternal::Now => true,
-      CueInternal::Once(duration) => self.elapsed >= *duration,
+      CueInternal::Once(_) => self.completed,
       CueInternal::Times(t, _) => self.loop_count >= *t,
       CueInternal::Loop(_) => false,
       CueInternal::Timeline(points) => {
@@ -300,17 +298,6 @@ mod test {
   struct Signal3;
 
   pub use super::*;
-
-  #[test]
-  fn now_cue() {
-    let cue = CueAccumulator::new(CueInternal::Now, vec![Box::new(Signal)]);
-
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-  }
 
   #[test]
   fn once_cue() {
