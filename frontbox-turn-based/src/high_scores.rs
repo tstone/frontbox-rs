@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use frontbox::prelude::System;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HighScoresSystem {
   high_scores: Vec<ScoreEntry>,
@@ -53,7 +55,7 @@ impl HighScoresSystem {
   }
 
   /// Check if the given score is a new high score
-  pub fn is_high_score(&mut self, score: u32) -> Option<HighScoreSlot> {
+  pub fn is_high_score(&self, score: u32) -> Option<HighScoreSlot> {
     let scores = (0..4)
       .map(|i| {
         self
@@ -85,6 +87,8 @@ impl HighScoresSystem {
       .and_then(|s| fs::write(&self.path, s).ok());
   }
 }
+
+impl System for HighScoresSystem {}
 
 impl Default for HighScoresSystem {
   fn default() -> Self {

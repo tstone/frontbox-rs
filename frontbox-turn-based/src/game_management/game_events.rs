@@ -2,7 +2,7 @@ use frontbox::prelude::Event;
 
 #[derive(serde::Serialize, Event)]
 pub struct GameStarted;
-#[derive(serde::Serialize, Event)]
+#[derive(serde::Serialize, Event, Clone)]
 pub struct GameEnded {
   pub scores: Vec<(&'static str, u32)>,
 }

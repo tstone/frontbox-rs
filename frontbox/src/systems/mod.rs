@@ -135,6 +135,7 @@
 mod boot_snapshot;
 mod contextual;
 pub mod cue;
+mod cue_ext;
 mod cue_timeline_builder;
 pub mod event;
 pub mod event_interrupts;
@@ -149,6 +150,7 @@ mod test_context;
 pub use boot_snapshot::*;
 pub use contextual::*;
 pub use cue::*;
+pub use cue_ext::*;
 pub use cue_timeline_builder::*;
 pub use event::*;
 pub use event_interrupts::InterruptResult;

@@ -17,13 +17,13 @@ pub struct InitialsEntrySystem {
 impl InitialsEntrySystem {
   /// **title** - The title to display above the initials entry field (e.g. "Player 1")
   pub fn new(
-    title: String,
+    title: impl Into<String>,
     decrement_switches: SwitchQ,
     increment_switches: SwitchQ,
     accept_switches: SwitchQ,
   ) -> Self {
     Self {
-      title,
+      title: title.into(),
       name: "A".to_string(),
       cursor_flash: Tween::new(
         Duration::from_millis(350),
