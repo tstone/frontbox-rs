@@ -38,13 +38,15 @@ impl LedProgram1d {
         anim,
         undeclared,
       } => {
-        if (anim.is_complete() || !anim.active()) && !*undeclared {
-          ctx.undeclare_leds(ids);
-          *undeclared = true;
+        if anim.is_complete() || !anim.active() {
+          if !*undeclared {
+            ctx.undeclare_leds(ids);
+            *undeclared = true;
+          }
         } else {
-          *undeclared = false;
           anim.accumulate(delta);
           ctx.declare_leds(ids, anim.sample());
+          *undeclared = false;
         }
       }
       LedProgram1d::Modulated {
@@ -53,13 +55,15 @@ impl LedProgram1d {
         modulators,
         undeclared,
       } => {
-        if (modulators.is_complete() || !modulators.active()) && !*undeclared {
-          ctx.undeclare_leds(ids);
-          *undeclared = true;
+        if modulators.is_complete() || !modulators.active() {
+          if !*undeclared {
+            ctx.undeclare_leds(ids);
+            *undeclared = true;
+          }
         } else {
-          *undeclared = false;
           modulators.apply(delta, color);
           ctx.declare_leds(ids, color.clone());
+          *undeclared = false;
         }
       }
       LedProgram1d::Timeline {
@@ -91,21 +95,35 @@ impl LedProgram1d {
 
   pub fn play(&mut self) {
     match self {
-      LedProgram1d::Animated { anim, .. } => {
-        anim.play();
+      LedProgram1d::Fixed { undeclared, .. } => {
+        *undeclared = false;
       }
-      LedProgram1d::Modulated { modulators, .. } => {
+      LedProgram1d::Animated {
+        anim, undeclared, ..
+      } => {
+        anim.play();
+        *undeclared = false;
+      }
+      LedProgram1d::Modulated {
+        modulators,
+        undeclared,
+        ..
+      } => {
         modulators.play();
+        *undeclared = false;
       }
       LedProgram1d::Timeline {
-        active, entries, ..
+        active,
+        entries,
+        undeclared,
+        ..
       } => {
         for e in entries.iter_mut() {
           e.program.play();
         }
         *active = true;
-      },
-      _ => {}
+        *undeclared = false;
+      }
     }
   }
 
@@ -117,44 +135,71 @@ impl LedProgram1d {
 
   fn stop_in_place(&mut self) {
     match self {
-      LedProgram1d::Animated { anim, .. } => {
-        anim.stop();
+      LedProgram1d::Fixed { undeclared, .. } => {
+        *undeclared = false;
       }
-      LedProgram1d::Modulated { modulators, .. } => {
+      LedProgram1d::Animated {
+        anim, undeclared, ..
+      } => {
+        anim.stop();
+        *undeclared = false;
+      }
+      LedProgram1d::Modulated {
+        modulators,
+        undeclared,
+        ..
+      } => {
         modulators.stop();
+        *undeclared = false;
       }
       LedProgram1d::Timeline {
-        active, entries, ..
+        active,
+        entries,
+        undeclared,
+        ..
       } => {
         for e in entries.iter_mut() {
           e.program.stop_in_place();
         }
         *active = false;
+        *undeclared = false;
       }
-      _ => {}
     }
   }
 
   pub fn stop(&mut self, ctx: &SystemContext) {
     match self {
-      LedProgram1d::Fixed { ids, undeclared, .. } => {
+      LedProgram1d::Fixed {
+        ids, undeclared, ..
+      } => {
         ctx.undeclare_leds(ids);
         *undeclared = true;
       }
-      LedProgram1d::Animated { ids, anim, undeclared, .. } => {
+      LedProgram1d::Animated {
+        ids,
+        anim,
+        undeclared,
+        ..
+      } => {
         anim.stop();
         ctx.undeclare_leds(ids);
         *undeclared = true;
       }
       LedProgram1d::Modulated {
-        ids, modulators, undeclared, ..
+        ids,
+        modulators,
+        undeclared,
+        ..
       } => {
         modulators.stop();
         ctx.undeclare_leds(ids);
         *undeclared = true;
       }
       LedProgram1d::Timeline {
-        active, entries, undeclared, ..
+        active,
+        entries,
+        undeclared,
+        ..
       } => {
         for entry in entries {
           entry.program.stop(ctx);
@@ -167,25 +212,20 @@ impl LedProgram1d {
 
   pub fn reset(&mut self) {
     match self {
-      LedProgram1d::Fixed { undeclared, .. } => {
-        *undeclared = false;
-      }
-      LedProgram1d::Animated { anim, undeclared, .. } => {
+      LedProgram1d::Animated { anim, .. } => {
         anim.reset();
-        *undeclared = false;
       }
-      LedProgram1d::Modulated { modulators, undeclared, .. } => {
+      LedProgram1d::Modulated { modulators, .. } => {
         modulators.reset();
-        *undeclared = false;
       }
-      LedProgram1d::Timeline { entries, undeclared, .. } => {
+      LedProgram1d::Timeline { entries, .. } => {
         for entry in entries {
           if entry.launched {
             entry.reset();
           }
         }
-        *undeclared = false;
       }
+      _ => {}
     }
   }
 
