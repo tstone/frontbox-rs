@@ -6,6 +6,7 @@ pub enum LedProgram1d {
   Fixed {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
+    undeclared: bool,
   },
   Animated {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
@@ -29,7 +30,7 @@ impl LedProgram1d {
   /// Accumulate and declare current LED state
   pub fn apply(&mut self, delta: Duration, ctx: &SystemContext) {
     match self {
-      LedProgram1d::Fixed { ids, color } => {
+      LedProgram1d::Fixed { ids, color, .. } => {
         ctx.declare_leds(ids, color.clone());
       }
       LedProgram1d::Animated {
@@ -102,8 +103,8 @@ impl LedProgram1d {
         for e in entries.iter_mut() {
           e.program.play();
         }
-        *active = true
-      }
+        *active = true;
+      },
       _ => {}
     }
   }
@@ -136,52 +137,61 @@ impl LedProgram1d {
 
   pub fn stop(&mut self, ctx: &SystemContext) {
     match self {
-      LedProgram1d::Fixed { ids, .. } => {
+      LedProgram1d::Fixed { ids, undeclared, .. } => {
         ctx.undeclare_leds(ids);
+        *undeclared = true;
       }
-      LedProgram1d::Animated { ids, anim, .. } => {
+      LedProgram1d::Animated { ids, anim, undeclared, .. } => {
         anim.stop();
         ctx.undeclare_leds(ids);
+        *undeclared = true;
       }
       LedProgram1d::Modulated {
-        ids, modulators, ..
+        ids, modulators, undeclared, ..
       } => {
         modulators.stop();
         ctx.undeclare_leds(ids);
+        *undeclared = true;
       }
       LedProgram1d::Timeline {
-        active, entries, ..
+        active, entries, undeclared, ..
       } => {
         for entry in entries {
           entry.program.stop(ctx);
         }
-        *active = false
+        *active = false;
+        *undeclared = true;
       }
     }
   }
 
   pub fn reset(&mut self) {
     match self {
-      LedProgram1d::Animated { anim, .. } => {
+      LedProgram1d::Fixed { undeclared, .. } => {
+        *undeclared = false;
+      }
+      LedProgram1d::Animated { anim, undeclared, .. } => {
         anim.reset();
+        *undeclared = false;
       }
-      LedProgram1d::Modulated { modulators, .. } => {
+      LedProgram1d::Modulated { modulators, undeclared, .. } => {
         modulators.reset();
+        *undeclared = false;
       }
-      LedProgram1d::Timeline { entries, .. } => {
+      LedProgram1d::Timeline { entries, undeclared, .. } => {
         for entry in entries {
           if entry.launched {
             entry.reset();
           }
         }
+        *undeclared = false;
       }
-      _ => {}
     }
   }
 
   pub fn is_active(&self) -> bool {
     match self {
-      Self::Fixed { .. } => true,
+      Self::Fixed { undeclared, .. } => *undeclared,
       Self::Animated { anim, .. } => anim.active(),
       Self::Modulated { modulators, .. } => modulators.active(),
       Self::Timeline { active, .. } => *active,
@@ -215,6 +225,7 @@ impl LedProgram1d {
     Self::Fixed {
       ids: Box::new(targets),
       color,
+      undeclared: false,
     }
   }
 
