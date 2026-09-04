@@ -184,6 +184,7 @@ impl LedSystem {
 
   /// Entirely remove all declarations by the given system
   pub fn undeclare_by_system(&mut self, system_id: &u64) {
+    log::debug!(target: "frontbox::leds", "Removing all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       declarations.retain(|id, _| &id.system_id != system_id);
     }
@@ -191,7 +192,7 @@ impl LedSystem {
 
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
-    log::info!(target: "frontbox::leds", "Deactivating all LED declarations for {}", system_id);
+    log::debug!(target: "frontbox::leds", "Deactivating all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       for (id, declaration) in declarations.iter_mut() {
         if id.system_id == system_id {

@@ -227,17 +227,7 @@ impl GameManagement for CompetitiveGame {
 
     self.game_state = None;
     ctx.emit(GameEnded { scores });
-
-    // Clear LEDs
-    let ctx = ctx.for_system(self.handle);
-    // TODO: this should actually invoke machine.clear_leds() or something, which emits an event for other systems to react to
-    let machine = ctx.expect::<Machine>();
-    for board in &ctx.exp_network {
-      machine.set_all_leds(board.address, board.breakout, Rgba::black());
-    }
-
-    ctx.emit(Synchronize);
-  }
+      }
 
   fn is_player_addable(&self) -> bool {
     // if the game is started, then it must be the first player's turn on their first ball
