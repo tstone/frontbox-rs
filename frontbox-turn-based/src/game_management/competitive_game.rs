@@ -213,6 +213,12 @@ impl GameManagement for CompetitiveGame {
       return;
     }
 
+    // spin down all player system groups
+    for i in 0..self.game_state.as_ref().unwrap().player_count() {
+      let group_name = Self::player_group_name(i);
+      ctx.despawn_system_group(group_name);
+    }
+
     let game_state = self.game_state.as_ref().unwrap();
     let player_count = game_state.player_count();
     let scores: Vec<(&'static str, u32)> = match game_state {
@@ -227,7 +233,7 @@ impl GameManagement for CompetitiveGame {
 
     self.game_state = None;
     ctx.emit(GameEnded { scores });
-      }
+  }
 
   fn is_player_addable(&self) -> bool {
     // if the game is started, then it must be the first player's turn on their first ball
