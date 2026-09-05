@@ -154,7 +154,7 @@ pub async fn run(
   tokio::time::sleep(Duration::from_millis(1500)).await;
 
   if shutdown_scope == ShutdownScope::OperatingSystem {
-    if let Err(e) = Command::new("shutdown").args(["-h", "now"]).status() {
+    if let Err(e) = Command::new("sudo").args(["shutdown"]).status() {
       log::error!(target: "frontbox::run_loop", "Failed to invoke OS shutdown: {e}");
     }
   }
