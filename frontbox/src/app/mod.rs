@@ -65,6 +65,7 @@ use std::collections::HashMap;
 
 pub use app::*;
 pub(crate) use app_config::*;
+pub use app_message::ShutdownScope;
 pub use boot_config::*;
 pub(crate) use event_box::*;
 pub(crate) use into_configs::*;

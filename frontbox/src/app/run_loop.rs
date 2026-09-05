@@ -1,6 +1,7 @@
 use itertools::Itertools;
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::process::Command;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, mpsc, watch};
@@ -8,7 +9,7 @@ use tokio::time::Duration;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
-use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::event_interrupts::EventInterruptRegistry;
@@ -54,10 +55,12 @@ pub async fn run(
       .await
       .expect("failed to listen for ctrl-c");
     log::info!("Ctrl+C signal received.");
-    let _ = tx.send(AppMessage::Shutdown);
+    let _ = tx.send(AppMessage::Shutdown(ShutdownScope::Process));
   });
 
   log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
+  let mut shutdown_scope = ShutdownScope::Process;
+
   loop {
     tokio::select! {
       Some(command) = app_receiver.recv() => {
@@ -85,8 +88,9 @@ pub async fn run(
           AppMessage::SwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
           }
-          AppMessage::Shutdown => {
+          AppMessage::Shutdown(scope) => {
             log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
+            shutdown_scope = scope;
             break;
           }
           AppMessage::SpawnSystem(parent_key, system) => {
@@ -147,7 +151,13 @@ pub async fn run(
   );
 
   // wait a sec to allow systems to process shutdown event and clear timers, etc.
-  tokio::time::sleep(Duration::from_millis(1000)).await;
+  tokio::time::sleep(Duration::from_millis(1500)).await;
+
+  if shutdown_scope == ShutdownScope::OperatingSystem {
+    if let Err(e) = Command::new("shutdown").args(["-h", "now"]).status() {
+      log::error!(target: "frontbox::run_loop", "Failed to invoke OS shutdown: {e}");
+    }
+  }
 }
 
 /// Find and apply the closure to the system. Returns None if not found or inactive.

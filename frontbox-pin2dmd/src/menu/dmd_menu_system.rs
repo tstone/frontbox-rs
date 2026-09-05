@@ -116,6 +116,14 @@ impl DmdMenuSystem {
         self.selected_special = Some(name);
         ctx.play_sfx(SELECT_SND);
       }
+      DisplayMenuRow::Action { id, .. } => {
+        if let Some(reference) = self.row_lookup.get(&id) {
+          if let MenuRow::Action(_, _, action) = reference.row {
+            ctx.play_sfx(SELECT_SND);
+            action(ctx);
+          }
+        }
+      }
       _ => {}
     }
   }
@@ -251,6 +259,9 @@ impl DmdMenuSystem {
           });
         }
         MenuRow::Special(_, text) => self.display_rows.push(DisplayMenuRow::Special(text)),
+        MenuRow::Action(id, text, _) => self
+          .display_rows
+          .push(DisplayMenuRow::Action { id: *id, text }),
       }
     }
 
@@ -308,6 +319,7 @@ impl DmdMenuSystem {
         } => self.draw_config_row(name, value.clone(), *is_default, selected),
         DisplayMenuRow::Heading { text, .. } => self.draw_heading(text),
         DisplayMenuRow::Special(name) => self.draw_section(name, selected),
+        DisplayMenuRow::Action { text, .. } => self.draw_section(text, selected),
       };
 
       frame.add(
@@ -563,6 +575,10 @@ enum DisplayMenuRow {
     text: String,
   },
   Special(&'static str),
+  Action {
+    id: u64,
+    text: &'static str,
+  },
 }
 
 impl DisplayMenuRow {
@@ -572,6 +588,7 @@ impl DisplayMenuRow {
       DisplayMenuRow::Section { id, .. } => *id,
       DisplayMenuRow::Heading { id, .. } => *id,
       DisplayMenuRow::Special(_) => 0,
+      DisplayMenuRow::Action { id, .. } => *id,
     }
   }
 

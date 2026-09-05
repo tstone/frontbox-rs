@@ -3,7 +3,7 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
-use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
 
 /// # SystemContext
@@ -136,6 +136,11 @@ impl<'a> SystemContext<'a> {
       handle,
       ctx: self.ctx.clone(),
     }
+  }
+
+  /// Unregisters drivers, clears the EXP network, and halts the framework
+  pub fn shutdown(&self, scope: ShutdownScope) {
+    self.ctx.shutdown(scope);
   }
 }
 

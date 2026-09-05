@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
-use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
@@ -227,6 +227,11 @@ impl<'a> ServiceContext<'a> {
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {
     SystemContext::new(self.base, handle, self.groups, self.app_sender.clone())
+  }
+
+  /// Unregisters drivers, clears the EXP network, and halts the framework
+  pub fn shutdown(&self, scope: ShutdownScope) {
+    let _ = self.app_sender.send(AppMessage::Shutdown(scope));
   }
 }
 

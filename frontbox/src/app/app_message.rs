@@ -11,7 +11,7 @@ pub enum AppMessage {
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
-  Shutdown,
+  Shutdown(ShutdownScope),
   SingleSwitchState(usize, SwitchState),
   SwitchStates(Vec<SwitchState>),
   SpawnSystem(&'static str, SpawnableSystemContainer),
@@ -41,7 +41,7 @@ impl Debug for AppMessage {
         write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
       }
       AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
-      AppMessage::Shutdown => write!(f, "Shutdown"),
+      AppMessage::Shutdown(_) => write!(f, "Shutdown"),
       AppMessage::SingleSwitchState(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
       }
@@ -68,4 +68,12 @@ impl Debug for AppMessage {
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
     }
   }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ShutdownScope {
+  /// Shutdown just the framework process
+  Process,
+  /// Stop the framework and the operating system
+  OperatingSystem,
 }

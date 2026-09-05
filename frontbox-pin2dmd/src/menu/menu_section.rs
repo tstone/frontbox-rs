@@ -43,6 +43,30 @@ impl MenuSection {
     self.rows.push(MenuRow::Heading(id, text.into()));
     self
   }
+
+  pub fn action(
+    mut self,
+    text: &'static str,
+    action: impl Fn(&SystemContext) + Send + Sync + 'static,
+  ) -> Self {
+    let id = MenuRow::next_row_id();
+    self.rows.push(MenuRow::Action(id, text, Arc::new(action)));
+    self
+  }
+
+  /// Add menu item to terminate just the software (useful for development)
+  pub fn terminate(self) -> Self {
+    self.action("Terminate", |ctx| {
+      ctx.shutdown(ShutdownScope::Process);
+    })
+  }
+
+  /// Add menu item to shutdown the whole computer
+  pub fn shutdown(self) -> Self {
+    self.action("Shutdown", |ctx| {
+      ctx.shutdown(ShutdownScope::OperatingSystem);
+    })
+  }
 }
 
 #[derive(Clone)]
@@ -51,6 +75,11 @@ pub enum MenuRow {
   Config(u64, Arc<&'static dyn GeneralizedConfigValue>),
   Heading(u64, String),
   Special(u64, &'static str),
+  Action(
+    u64,
+    &'static str,
+    Arc<dyn Fn(&SystemContext) + Send + Sync + 'static>,
+  ),
 }
 
 impl MenuRow {
@@ -64,6 +93,7 @@ impl MenuRow {
       Self::Config(id, _) => *id,
       Self::Heading(id, _) => *id,
       Self::Special(id, _) => *id,
+      Self::Action(id, ..) => *id,
     }
   }
 
