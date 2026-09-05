@@ -6,7 +6,7 @@ pub struct PlungeLaneSystem {
   re_enter_timeout: Duration,
   state: PlungeLaneState,
   wait_cue_id: Option<u64>,
-  ball_present_program: Vec<LedProgram1d>,
+  ball_present_program: Option<LedProgram1d>,
 }
 
 impl PlungeLaneSystem {
@@ -17,13 +17,13 @@ impl PlungeLaneSystem {
       re_enter_timeout,
       state: PlungeLaneState::NoBall,
       wait_cue_id: None,
-      ball_present_program: Vec::new(),
+      ball_present_program: None,
     }
   }
 
   /// Add an effect when the ball is present in the plunge lane
   pub fn ball_present_effect(mut self, effect: LedProgram1d) -> Self {
-    self.ball_present_program.push(effect);
+    self.ball_present_program = Some(effect);
     self
   }
 
@@ -65,6 +65,10 @@ impl System for PlungeLaneSystem {
       self.wait_cue_id = None;
       ctx.emit(BallExitedPlungeLane);
       self.state = PlungeLaneState::NoBall;
+
+      if let Some(effect) = self.ball_present_program.as_mut() {
+        effect.stop(ctx);
+      }
     } else if let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
@@ -85,6 +89,10 @@ impl System for PlungeLaneSystem {
       log::info!("Ball entered plunge lane ({:?})", self.state);
       ctx.emit(BallEnteredPlungeLane::new(self.state));
       self.expect_ball = false;
+
+      if let Some(effect) = self.ball_present_program.as_mut() {
+        effect.play();
+      }
     } else if let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
@@ -93,10 +101,9 @@ impl System for PlungeLaneSystem {
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    if self.is_ball_present() {
-      for effect in &mut self.ball_present_program {
-        effect.apply(delta, ctx);
-      }
+    let ball_present = self.is_ball_present();
+    if ball_present && let Some(effect) = self.ball_present_program.as_mut() {
+      effect.apply(delta, ctx);
     }
   }
 }
