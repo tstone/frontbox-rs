@@ -1,4 +1,7 @@
-use crate::{prelude::*, provided::BallExitedTrough};
+use crate::{
+  prelude::*,
+  provided::{BallExitedTrough, PlungeLaneState::*},
+};
 
 pub struct PlungeLaneSystem {
   plunge_lane_switch_name: &'static str,
@@ -44,10 +47,47 @@ impl PlungeLaneSystem {
   pub fn is_ball_present(&self) -> bool {
     self.state != PlungeLaneState::NoBall
   }
+
+  fn cancel_cue(&mut self, ctx: &SystemContext) {
+    if let Some(cue_id) = self.wait_cue_id {
+      ctx.cancel_cue(cue_id);
+      self.wait_cue_id = None;
+    }
+  }
+
+  fn on_lane_switch_closed(&mut self, ctx: &SystemContext) {
+    // If a pending wait cue is running, then the ball has re-entered
+    // Cancel it and don't emit any events.
+    if self.wait_cue_id.is_some() {
+      self.cancel_cue(ctx);
+      return;
+    }
+
+    if self.expect_ball {
+      self.state = PlungeLaneState::ExpectedBallPresent;
+    } else {
+      self.state = PlungeLaneState::UnexpectedBallPresent;
+    }
+
+    log::info!("PlungeLane: Ball entered ({:?})", self.state);
+    ctx.emit(BallEnteredPlungeLane::new(self.state));
+    self.expect_ball = false;
+
+    if let Some(effect) = self.ball_present_program.as_mut() {
+      effect.play();
+    }
+  }
+
+  fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
+    log::info!("PlungeLane: Ball exited ({:?})", self.state);
+    self.cancel_cue(ctx);
+    self.wait_cue_id = Some(ctx.cue(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+  }
 }
 
 impl System for PlungeLaneSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
+    // eject if ball is present
     if ctx
       .switches
       .is_closed(self.plunge_lane_switch_name)
@@ -69,34 +109,16 @@ impl System for PlungeLaneSystem {
       if let Some(effect) = self.ball_present_program.as_mut() {
         effect.stop(ctx);
       }
-    } else if let Some(event) = event.downcast_ref::<SwitchClosed>()
+    } else if self.state == NoBall
+      && let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
-      // If a pending wait cue is running, then the ball has re-entered
-      // Cancel it and don't emit any events.
-      if let Some(cue_id) = self.wait_cue_id {
-        ctx.cancel_cue(cue_id);
-        self.wait_cue_id = None;
-        return;
-      }
-
-      if self.expect_ball {
-        self.state = PlungeLaneState::ExpectedBallPresent;
-      } else {
-        self.state = PlungeLaneState::UnexpectedBallPresent;
-      }
-
-      log::info!("Ball entered plunge lane ({:?})", self.state);
-      ctx.emit(BallEnteredPlungeLane::new(self.state));
-      self.expect_ball = false;
-
-      if let Some(effect) = self.ball_present_program.as_mut() {
-        effect.play();
-      }
-    } else if let Some(event) = event.downcast_ref::<SwitchOpened>()
+      self.on_lane_switch_closed(ctx);
+    } else if (self.state == ExpectedBallPresent || self.state == UnexpectedBallPresent)
+      && let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
-      self.wait_cue_id = Some(ctx.cue(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+      self.on_lane_switch_opened(ctx);
     }
   }
 

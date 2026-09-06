@@ -49,7 +49,7 @@ impl CompetitiveGame {
   }
 
   fn start_game(&mut self, ctx: &ServiceContext) {
-    log::info!("Starting game with max players: {}", self.max_players);
+    log::info!(target: "frontbox::game_manager", "Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
     ctx.emit(GameStarted);
   }
@@ -60,6 +60,7 @@ impl CompetitiveGame {
 
     ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
 
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to beginning");
     game_state.set_current_player_turn_state(TurnState::Beginning);
     ctx.emit(PlayerTurnBeginning::new(
       game_state.current_player(),
@@ -74,7 +75,7 @@ impl CompetitiveGame {
   }
 
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
-    log::debug!("Transitioning current turn to active");
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
     ctx.emit(PlayerTurnActive::new(
@@ -84,7 +85,7 @@ impl CompetitiveGame {
   }
 
   fn transition_turn_to_ending(&mut self, ctx: &ServiceContext) {
-    log::debug!("Transitioning current turn to ending");
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Ending);
     ctx.emit(PlayerTurnEnding::new(
@@ -117,10 +118,12 @@ impl System for CompetitiveGame {
       match game_state.current_player_turn_state() {
         TurnState::Beginning => {
           if event.is::<BallExitedPlungeLane>() {
+            log::debug!(target: "frontbox::game_manager", "Active caused by ball exiting plunge lane");
             self.transition_turn_to_active(ctx.into());
           } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
             && self.ball_in_play_switches.matches(&e.switch)
           {
+            log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
             self.transition_turn_to_active(ctx.into());
           }
         }
@@ -144,12 +147,13 @@ impl GameManagement for CompetitiveGame {
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {
-      log::error!("Game state should have been initialized when starting the game");
+      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
     if game_state.player_count() >= game_state.max_players() {
       log::warn!(
+        target: "frontbox::game_manager",
         "Max players reached ({}), cannot add more players",
         game_state.max_players()
       );
@@ -158,6 +162,7 @@ impl GameManagement for CompetitiveGame {
 
     game_state.increment_player_count();
     log::info!(
+      target: "frontbox::game_manager",
       "Adding player to game (current count: {})",
       game_state.player_count()
     );
@@ -180,7 +185,7 @@ impl GameManagement for CompetitiveGame {
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {
-      log::error!("Game state should have been initialized when starting the game");
+      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
@@ -197,6 +202,7 @@ impl GameManagement for CompetitiveGame {
     }
 
     log::info!(
+      target: "frontbox::game_manager",
       "Advancing turn (player: {}, turn: {})",
       game_state.current_player(),
       game_state.current_player_turn()
@@ -206,7 +212,7 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn end_game(&mut self, ctx: &ServiceContext) {
-    log::info!("Ending game");
+    log::info!(target: "frontbox::game_manager", "Ending game");
 
     // verify the game is already running
     if !self.is_game_started() {

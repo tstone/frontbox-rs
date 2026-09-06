@@ -1,15 +1,16 @@
 use frontbox::provided::{AutoPlungerSystem, TroughFull, TroughSystem};
 use frontbox::{prelude::*, provided::BallSaved};
 
-use crate::{PlayerTurnActive, PlayerTurnEnding};
+use crate::ball_save::BallSaveState::*;
+use crate::{GameManager, PlayerTurnActive, PlayerTurnEnding, TurnState};
 
 /// Standard ball save at the start of a ball
 #[derive(Clone)]
 pub struct BallSaveSystem {
   duration: Duration,
-  led_programs: Vec<LedProgram1d>,
+  effect: Option<LedProgram1d>,
   cue: Option<u64>,
-  active: bool,
+  state: BallSaveState,
 }
 
 impl BallSaveSystem {
@@ -20,52 +21,63 @@ impl BallSaveSystem {
   pub fn new(initial_duration: Duration) -> Self {
     Self {
       duration: initial_duration,
-      led_programs: Vec::new(),
+      effect: None,
       cue: None,
-      active: false,
+      state: SaveNotActive,
     }
   }
 
   pub fn effect(mut self, effect: LedProgram1d) -> Self {
-    self.led_programs.push(effect);
+    self.effect = Some(effect.stopped());
     self
   }
 
   pub fn activate(&mut self, ctx: &SystemContext) {
-    self.active = true;
+    self.state = SaveActive;
 
-    for effect in &mut self.led_programs {
+    if let Some(effect) = self.effect.as_mut() {
       effect.play();
     }
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
     ctx.cue(EndBallSave, Cue::Once(self.duration));
-    log::debug!("🪩 Ball save started.")
+    log::info!("BallSave: Started");
   }
 
   pub fn deactivate(&mut self, ctx: &SystemContext) {
-    self.active = false;
+    self.state = SaveNotActive;
     ctx.unregister_interrupt::<TroughFull>();
 
     if let Some(cue_id) = self.cue {
       ctx.cancel_cue(cue_id);
     }
 
-    for effect in &mut self.led_programs {
+    if let Some(effect) = self.effect.as_mut() {
       effect.stop(ctx);
     }
 
-    log::debug!("🪩 Ball save ended.");
-  }
-
-  pub fn duration_mut(&mut self) -> &mut Duration {
-    &mut self.duration
+    log::info!("BallSave: Ended");
   }
 }
 
 impl System for BallSaveSystem {
+  fn is_active(&self, ctx: &SystemContext) -> bool {
+    // Game is started and player state is Active || Ending
+    if let Some(manager) = ctx.get::<GameManager>() {
+      manager
+        .game_state()
+        .map(|game| {
+          *game.current_player_turn_state() == TurnState::Active
+            || *game.current_player_turn_state() == TurnState::Ending
+        })
+        .unwrap_or(false)
+    } else {
+      false
+    }
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.downcast_ref::<PlayerTurnActive>().is_some() {
+    if event.is::<PlayerTurnActive>() {
       // automatically do ball save at the start of a turn
       self.activate(ctx);
     } else if event.is::<PlayerTurnEnding>() || event.is::<EndBallSave>() {
@@ -76,7 +88,7 @@ impl System for BallSaveSystem {
 
   fn on_interrupt(&mut self, _event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
     // while active all TroughFull events are stopped
-    log::debug!("Ball save interrupting TroughFull");
+    log::info!("BallSave: interrupting TroughFull");
     ctx.emit(BallSaved);
 
     // Feed ball back to player
@@ -91,10 +103,11 @@ impl System for BallSaveSystem {
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    if self.active {
-      for effect in &mut self.led_programs {
+    match (&self.state, self.effect.as_mut()) {
+      (SaveActive, Some(effect)) => {
         effect.apply(delta, ctx);
       }
+      _ => {}
     }
   }
 }
@@ -102,3 +115,9 @@ impl System for BallSaveSystem {
 // Cues
 #[derive(serde::Serialize, Event)]
 struct EndBallSave;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BallSaveState {
+  SaveActive,
+  SaveNotActive,
+}

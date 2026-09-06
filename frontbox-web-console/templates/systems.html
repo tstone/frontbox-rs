@@ -13,7 +13,7 @@
         <div class="list-group-item d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center">
             <span class="status-dot {% if system.active %}bg-green{% else %}bg-secondary{% endif %} me-2"></span>
-            {{ system.name }}
+            <span title="{{ system.name }}">{{ system.name }}</span>
           </div>
         </div>
         {% endfor %}
