@@ -542,8 +542,6 @@ impl System for DmdMenuSystem {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
-      log::debug!("Switch event");
-
       if event.switch.name == self.switch_names.back_btn {
         self.navigate_back(ctx);
       } else if event.switch.name == self.switch_names.select_btn {

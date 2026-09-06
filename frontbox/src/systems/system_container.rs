@@ -53,9 +53,9 @@ impl SystemContainer {
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox::systems::lifecycle", 
-      "🌐 System {} ({}) is now inactive", 
-      self.name(), 
+      target: "frontbox::systems::lifecycle",
+      "🌐 System {} ({}) is now inactive",
+      self.name(),
       self.id()
     );
     self.inner.on_deactivate(ctx);
@@ -64,12 +64,18 @@ impl SystemContainer {
   /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
   fn on_reactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox::systems::lifecycle", 
-      "🌐 System {} ({}) is now active", 
-      self.name(), 
+      target: "frontbox::systems::lifecycle",
+      "🌐 System {} ({}) is now active",
+      self.name(),
       self.id()
     );
     self.inner.on_reactivate(ctx);
+  }
+
+  /// Prepare the system to run, and fire initial lifecycle events
+  pub(crate) fn initialize(&mut self, ctx: &SystemContext) {
+    self.last_active_state = self.inner.is_active(&ctx);
+    self.on_spawn(ctx);
   }
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.

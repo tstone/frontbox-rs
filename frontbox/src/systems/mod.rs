@@ -42,10 +42,10 @@
 //!
 //! Systems include four lifecycle handlers:
 //!
-//! - `on_startup`
-//! - `on_deactivate`
-//! - `on_reactivate`
-//! - `on_shutdown`
+//! - `on_spawn` - Runs once, always, when the system is started up. This lifecycle hook does NOT respect active state.
+//! - `on_deactivate` - Runs once when a system was active, but has lots its active state OR its parent group has been deactivated.
+//! - `on_reactivate` - Runs once when a system regains active state. Does not run on_spawn.
+//! - `on_despawn` - Runs once, always, when the system is being stopped. This lifecycle hook does NOT respect active state.
 //!
 //! #### Startup
 //!

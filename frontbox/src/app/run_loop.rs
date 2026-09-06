@@ -341,7 +341,7 @@ fn spawn_system(
       groups,
       app_sender.clone(),
     );
-    system.on_spawn(&ctx);
+    system.initialize(&ctx);
 
     for tracer in tracer_txs {
       let _ = tracer.send(TraceEvent::SystemSpawned {
