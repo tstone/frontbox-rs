@@ -55,9 +55,6 @@ impl<S, A> MultiModulator<S, A> {
   {
     if self.active {
       for m in &mut self.modulators {
-        m.accumulate(delta.clone()); // fan-out; per-modulator remainders discarded
-      }
-      for m in &mut self.modulators {
         m.apply(delta.clone(), target);
       }
     }
