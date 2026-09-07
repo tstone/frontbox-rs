@@ -17,6 +17,7 @@ pub enum LedProgram1d {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     color: ColorSequence,
     modulators: MultiModulator<ColorSequence, Duration>,
+    end_behavior: EndBehavior,
     undeclared: bool,
   },
   Timeline {
@@ -53,9 +54,15 @@ impl LedProgram1d {
         ids,
         color,
         modulators,
+        end_behavior,
         undeclared,
       } => {
-        if modulators.is_complete() || !modulators.active() {
+        if modulators.is_complete() && *end_behavior == EndBehavior::Clear {
+          if !*undeclared {
+            ctx.undeclare_leds(ids);
+            *undeclared = true;
+          }
+        } else if !modulators.active() {
           if !*undeclared {
             ctx.undeclare_leds(ids);
             *undeclared = true;
@@ -372,12 +379,14 @@ impl LedProgram1d {
   pub fn initial<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     initial: ColorSequence,
+    end_behavior: EndBehavior,
   ) -> Self {
     Self::Modulated {
       ids: Box::new(targets),
       color: initial,
       modulators: MultiModulator::playing(Vec::new()),
       undeclared: false,
+      end_behavior,
     }
   }
 
@@ -401,7 +410,7 @@ impl LedProgram1d {
     curve: Curve,
     cycle: Cycle,
   ) -> Self {
-    Self::initial(targets, initial.rotate(0.0)).modulate(
+    Self::initial(targets, initial.rotate(0.0), EndBehavior::Clear).modulate(
       Tween::new(duration, curve, vec![0.0, 360.0], cycle),
       |colors, angle| {
         if let Some(alt) = colors.alterations.last_mut()
@@ -410,6 +419,41 @@ impl LedProgram1d {
           *rotation = Extent::Relative(angle);
         } else {
           log::warn!("LedProgram1: Unexpected - there is no rotation alteration");
+        }
+      },
+    )
+  }
+
+  /// Render a "progress bar" of time remaining
+  pub fn progress_time_remaining<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+    targets: T,
+    initial: ColorSequence,
+    duration: Duration,
+    curve: Curve,
+  ) -> Self {
+    // TODO: shouldn't this be accumulated?
+    Self::initial(targets, initial.padding_right(0.0), EndBehavior::Hold).modulate(
+      Tween::new(duration, curve, vec![0.0f32, 1.0], Cycle::Once),
+      |colors, value| {
+        if let Some(right_padding) = colors.fill_area.right_padding_mut() {
+          *right_padding = Extent::Relative(value);
+        }
+      },
+    )
+  }
+
+  /// Render a "progress bar" of time accumulated
+  pub fn progress_time_accumulated<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+    targets: T,
+    initial: ColorSequence,
+    duration: Duration,
+    curve: Curve,
+  ) -> Self {
+    Self::initial(targets, initial.padding_right(1.0), EndBehavior::Hold).modulate(
+      Tween::new(duration, curve, vec![1.0f32, 0.0], Cycle::Once),
+      |colors, value| {
+        if let Some(right_padding) = colors.fill_area.right_padding_mut() {
+          *right_padding = Extent::Relative(value);
         }
       },
     )
@@ -555,4 +599,13 @@ mod tests {
       .declarations_for(&addr3);
     assert_eq!(declarations[0].color, Rgba::blue());
   }
+}
+
+/// What to do when the program is over
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EndBehavior {
+  /// Remove last state
+  Clear,
+  /// Keep rendering final state
+  Hold,
 }
