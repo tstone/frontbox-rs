@@ -8,14 +8,8 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Clean up hardware exports
-
-HardwareQuery
-
-- Standardize query interface (+iter) among switch/driver/led
-- take -- extent
-- range -- extent
-- shuffle
-- reverse
+- Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension
+- Streamline animation curve choices
 
 Canvas
 
@@ -31,25 +25,23 @@ DMD Menu
 - Transition left/right ease between sections
 - Fancy: the selection box animates between vertical offsets
 
-Nice to Have
+LEDs
 
+- Because of the way LedProgram1d is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
+- Implement binary versions of LED commands
+- Should "timeline" be renamed "keyframe"?
+- LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these are true"
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?
-- Streamline curve choices
-- combine DMD rendering + led canvas rendering
 - LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color modifications
 - Single channel flasher support
 - NeoSeg support
-- System groups can contain groups
+- combine DMD rendering + led canvas rendering
+
+Nice to Have
+
 - frontbox-sound multi-stem music support
 - frontbox-sound loop point support
 
-LEDs
-
-- Implement binary versions of LED commands
-- Keyframe animation -- specify "this value, at this point in time" -- like tween but adjustable time durations between
-- has_tag/has_typed_tag should probably be a trait
-- Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension
-
 DX
 
-- Figure out how to do step debugging on a live machine
+- The web console needs help and probably a real SPA
