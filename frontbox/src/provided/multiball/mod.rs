@@ -31,13 +31,14 @@ impl MultiballSystem {
 
   pub fn add_balls(&mut self, balls: u8, ctx: &ServiceContext) {
     if balls == 0 {
-      log::warn!("Cannot start multiball with 0 additional balls.");
+      log::warn!(target: "frontbox::multiball", "Cannot start multiball with 0 additional balls.");
       return;
     }
 
     let ctx = &ctx.for_system(self.handle);
     match self.state {
       MultiballInactive => {
+        log::info!(target: "frontbox::multiball", "Starting multiball with additional balls: {}", balls);
         ctx.register_interrupt::<TroughFull>(25);
         ctx.register_interrupt::<BallEnteredTrough>(25);
         self.start_launching_balls(balls, balls, ctx);
@@ -46,6 +47,7 @@ impl MultiballSystem {
         addl_ball_count,
         remaining_balls_to_launch: remaining_balls_to_eject,
       } => {
+        log::info!(target: "frontbox::multiball", "Adding additional multiball balls (launching): {}", balls);
         self.state = LaunchingAdditionalBalls {
           addl_ball_count: addl_ball_count + balls,
           remaining_balls_to_launch: remaining_balls_to_eject + balls,
@@ -55,10 +57,12 @@ impl MultiballSystem {
         addl_ball_count,
         cue_id,
       } => {
+        log::info!(target: "frontbox::multiball", "Adding additional multiball balls (ball save): {}", balls);
         ctx.cancel_cue(cue_id);
         self.start_launching_balls(addl_ball_count + balls, balls, ctx);
       }
       MultiballActive { addl_ball_count } => {
+        log::info!(target: "frontbox::multiball", "Adding additional multiball balls (active): {}", balls);
         ctx.register_interrupt::<TroughFull>(25);
         ctx.register_interrupt::<BallEnteredTrough>(25);
         self.start_launching_balls(addl_ball_count + balls, balls, ctx);
@@ -82,10 +86,12 @@ impl MultiballSystem {
   }
 
   fn launch_ball(&self, ctx: &SystemContext) {
+    log::debug!(target: "frontbox::multiball", "Launching additional ball for multiball");
     ctx.expect::<TroughSystem>().eject(ctx.into());
   }
 
   fn start_ball_save(&mut self, addl_ball_count: u8, ctx: &SystemContext) {
+    log::debug!(target: "frontbox::multiball", "Starting multiball ball save");
     self.state = BallSaveActive {
       addl_ball_count,
       cue_id: ctx.cue(EndBallSave, self.ball_save_time.once()),
@@ -93,6 +99,7 @@ impl MultiballSystem {
   }
 
   fn end_ball_save(&mut self, addl_ball_count: u8, ctx: &SystemContext) {
+    log::debug!(target: "frontbox::multiball", "Ending multiball ball save");
     self.effect.stop(ctx);
     self.state = MultiballActive { addl_ball_count };
     ctx.unregister_interrupt::<TroughFull>();
@@ -123,7 +130,10 @@ impl System for MultiballSystem {
       && let MultiballActive { addl_ball_count } = self.state
     {
       let rem = addl_ball_count - 1;
+      log::debug!(target: "frontbox::multiball", "Additional multiball drained. Remaining: {}", rem);
+
       if rem == 0 {
+        log::info!(target: "frontbox::multiball", "Multiball: All additional balls drained. Ending multiball.");
         ctx.emit(MultiballEnded);
         self.state = MultiballInactive;
       } else {
@@ -138,6 +148,7 @@ impl System for MultiballSystem {
     if event.is::<TroughFull>() {
       return InterruptResult::Halt;
     } else if event.is::<BallEnteredTrough>() {
+      log::debug!(target: "frontbox::multiball", "Multiball: Re-launching ball drained during multiball");
       self.launch_ball(ctx);
     }
     InterruptResult::Continue
