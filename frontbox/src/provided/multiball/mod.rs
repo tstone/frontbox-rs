@@ -2,12 +2,12 @@ mod multiball_ext;
 pub use multiball_ext::*;
 
 use frontbox_derive::Event;
-use humantime::Duration;
 
 use crate::prelude::*;
 use crate::provided::multiball::State::*;
 use crate::provided::{BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem};
 
+#[derive(Clone)]
 pub struct MultiballSystem {
   handle: SystemHandle,
   effect: LedProgram1d,
