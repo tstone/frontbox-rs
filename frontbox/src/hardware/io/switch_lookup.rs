@@ -165,7 +165,7 @@ impl DerefMut for SwitchLookup {
 }
 
 /// Represents a hardware switch
-#[derive(serde::Serialize, Event, Debug, Clone)]
+#[derive(serde::Serialize, Event, Debug, Clone, Default)]
 pub struct Switch {
   pub name: &'static str,
   /// The original wiring assignment

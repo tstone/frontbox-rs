@@ -24,7 +24,7 @@ pub trait HardwareDefinition {
 
 // -- IO --
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize)]
 pub struct IoAddress {
   pub board_idx: u8,
   pub pin: u16,

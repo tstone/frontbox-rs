@@ -51,6 +51,13 @@ impl CompetitiveGame {
   fn start_game(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
+
+    // Start a game assuming the number of balls in the trough is how many there should be
+    // this avoids weird cases where a ball search may have abandoned a ball previously
+    if let Some(trough) = ctx.for_system(self.handle).get::<TroughSystem>() {
+      trough.eject(ctx);
+    }
+
     ctx.emit(GameStarted);
   }
 

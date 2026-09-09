@@ -20,4 +20,8 @@ impl EventBox {
   pub fn try_json(&self) -> Option<serde_json::Value> {
     self.event.to_json()
   }
+
+  pub fn short_name(&self) -> String {
+    self.type_name.rsplit("::").take(1).collect()
+  }
 }

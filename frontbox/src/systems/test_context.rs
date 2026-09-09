@@ -9,6 +9,7 @@ pub struct TestContext {
   pub base: BootSnapshot,
   pub groups: Groups,
   tx: mpsc::UnboundedSender<AppMessage>,
+  rx: mpsc::UnboundedReceiver<AppMessage>,
 }
 
 impl TestContext {
@@ -44,11 +45,29 @@ impl TestContext {
       self.tx.clone(),
     )
   }
+
+  fn app_messages(&mut self) -> Vec<AppMessage> {
+    let mut messages = Vec::new();
+    self.rx.blocking_recv_many(&mut messages, 100);
+    messages
+  }
+
+  /// A record of all events which were emitted up to this point
+  pub fn events_emitted<'a>(&'a mut self) -> Vec<EventBox> {
+    let mut events = Vec::new();
+    for msg in self.app_messages() {
+      match msg {
+        AppMessage::EmitEvent(e) => events.push(e),
+        _ => {}
+      }
+    }
+    events
+  }
 }
 
 impl Default for TestContext {
   fn default() -> Self {
-    let (tx, _) = mpsc::unbounded_channel();
+    let (tx, rx) = mpsc::unbounded_channel();
     let mut groups = HashMap::new();
     groups.insert(ROOT_GROUP, SystemGroup::new());
 
@@ -56,6 +75,7 @@ impl Default for TestContext {
       base: BootSnapshot::default(),
       groups,
       tx,
+      rx,
     }
   }
 }
