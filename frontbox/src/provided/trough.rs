@@ -55,7 +55,7 @@ impl TroughSystem {
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(name).debounce_close(Duration::from_millis(250))
+    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(250))
   }
 
   fn on_trough_switch(&mut self, ctx: &SystemContext) {
@@ -87,12 +87,23 @@ impl TroughSystem {
     }
   }
 
-  fn current_occupancy_iter<'a>(&'a self, ctx: &'a ServiceContext) -> Box<dyn Iterator<Item = bool> + 'a> {
-    Box::new(self
-      .switch_names
-      .iter()
-      .take(self.expected_occupancy)
-      .map(|name| ctx.for_system(self.handle).switches.is_closed(*name).unwrap() ))
+  fn current_occupancy_iter<'a>(
+    &'a self,
+    ctx: &'a ServiceContext,
+  ) -> Box<dyn Iterator<Item = bool> + 'a> {
+    Box::new(
+      self
+        .switch_names
+        .iter()
+        .take(self.expected_occupancy)
+        .map(|name| {
+          ctx
+            .for_system(self.handle)
+            .switches
+            .is_closed(*name)
+            .unwrap()
+        }),
+    )
   }
 
   pub fn current_occupancy(&self, ctx: &ServiceContext) -> Vec<bool> {
@@ -122,12 +133,13 @@ impl TroughSystem {
     self.expected_occupancy = (self.expected_occupancy + 1).min(max_occupancy);
   }
 
-  /// When called, the trough will examine current contents and use this to establish the expected amount of balls 
+  /// When called, the trough will examine current contents and use this to establish the expected amount of balls
   /// present, which is the requirement for the `TroughFull` event. The intention is that this would be called at the
   /// beginning of a game, which would account for balls which maybe got stuck during play.
   pub fn establish_ball_occupancy(&mut self, ctx: &ServiceContext) {
     self.expected_occupancy = self.current_occupancy_count(ctx);
     self.last_recorded_occupancy = self.expected_occupancy;
+    log::info!(target: "frontbox::trough", "Establishing ball occupancy: {}", self.expected_occupancy);
   }
 }
 
@@ -181,17 +193,33 @@ impl BallExitedTrough {
 mod tests {
   use fast_protocol::SwitchState;
 
-use super::*;
+  use super::*;
 
   #[test]
   fn current_occupancy() {
     let system = TroughSystem::new("eject", vec!["a", "b", "c"]);
     let mut context = TestContext::default();
-    context.insert_switch(Switch { name: "a", id: 0, ..Default::default() });
-    context.insert_switch(Switch { name: "b", id: 1, ..Default::default() });
-    context.insert_switch(Switch { name: "c", id: 2, ..Default::default() });
-    
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Open]);
+    context.insert_switch(Switch {
+      name: "a",
+      id: 0,
+      ..Default::default()
+    });
+    context.insert_switch(Switch {
+      name: "b",
+      id: 1,
+      ..Default::default()
+    });
+    context.insert_switch(Switch {
+      name: "c",
+      id: 2,
+      ..Default::default()
+    });
+
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Open,
+    ]);
     let occupancy = system.current_occupancy(&context.svc_ctx());
     assert_eq!(occupancy, vec![true, true, false]);
   }
@@ -200,15 +228,35 @@ use super::*;
   fn current_occupancy_count() {
     let system = TroughSystem::new("eject", vec!["a", "b", "c"]);
     let mut context = TestContext::default();
-    context.insert_switch(Switch { name: "a", id: 0, ..Default::default() });
-    context.insert_switch(Switch { name: "b", id: 1, ..Default::default() });
-    context.insert_switch(Switch { name: "c", id: 2, ..Default::default() });
-    
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.insert_switch(Switch {
+      name: "a",
+      id: 0,
+      ..Default::default()
+    });
+    context.insert_switch(Switch {
+      name: "b",
+      id: 1,
+      ..Default::default()
+    });
+    context.insert_switch(Switch {
+      name: "c",
+      id: 2,
+      ..Default::default()
+    });
+
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     let count = system.current_occupancy_count(&context.svc_ctx());
     assert_eq!(count, 3);
 
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Open]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Open,
+    ]);
     let count = system.current_occupancy_count(&context.svc_ctx());
     assert_eq!(count, 2);
   }
@@ -217,16 +265,39 @@ use super::*;
   fn event_trough_switch_opened_closed() {
     let mut system = TroughSystem::new("eject", vec!["a", "b", "c"]);
     let mut context = TestContext::default();
-    let target_switch = Switch { name: "c", id: 2, ..Default::default() };
-    context.insert_switch(Switch { name: "a", id: 0, ..Default::default() });
-    context.insert_switch(Switch { name: "b", id: 1, ..Default::default() });
+    let target_switch = Switch {
+      name: "c",
+      id: 2,
+      ..Default::default()
+    };
+    context.insert_switch(Switch {
+      name: "a",
+      id: 0,
+      ..Default::default()
+    });
+    context.insert_switch(Switch {
+      name: "b",
+      id: 1,
+      ..Default::default()
+    });
     context.insert_switch(target_switch.clone());
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_spawn(&context.sys_ctx());
 
     // opened (ball left)
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Open]);
-    system.on_event(&SwitchOpened::new(target_switch.clone()), &context.sys_ctx());
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Open,
+    ]);
+    system.on_event(
+      &SwitchOpened::new(target_switch.clone()),
+      &context.sys_ctx(),
+    );
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -234,7 +305,11 @@ use super::*;
     assert_eq!(count, 2);
 
     // closed (ball re-entered)
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_event(&SwitchClosed::new(target_switch), &context.sys_ctx());
 
     let events = context.events_emitted();
@@ -249,21 +324,45 @@ use super::*;
   fn establish_ball_occupancy() {
     let mut system = TroughSystem::new("eject", vec!["a", "b", "c"]);
     let mut context = TestContext::default();
-    let switch2 = Switch { name: "b", id: 1, ..Default::default() };
-    let switch3 = Switch { name: "c", id: 2, ..Default::default() };
-    context.insert_switch(Switch { name: "a", id: 0, ..Default::default() });
+    let switch2 = Switch {
+      name: "b",
+      id: 1,
+      ..Default::default()
+    };
+    let switch3 = Switch {
+      name: "c",
+      id: 2,
+      ..Default::default()
+    };
+    context.insert_switch(Switch {
+      name: "a",
+      id: 0,
+      ..Default::default()
+    });
     context.insert_switch(switch2.clone());
     context.insert_switch(switch3.clone());
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_spawn(&context.sys_ctx());
 
     // ball #1 leaves
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Open]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Open,
+    ]);
     system.on_event(&SwitchOpened::new(switch3.clone()), &context.sys_ctx());
     system.establish_ball_occupancy(&context.svc_ctx());
 
     // ball #2 leaves
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Open, SwitchState::Open]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Open,
+      SwitchState::Open,
+    ]);
     system.on_event(&SwitchOpened::new(switch2.clone()), &context.sys_ctx());
 
     let events = context.events_emitted();
@@ -272,7 +371,11 @@ use super::*;
     assert_eq!(count, 1);
 
     // ball #2 re-enters, now full because occupancy established at 2
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_event(&SwitchClosed::new(switch2), &context.sys_ctx());
 
     let events = context.events_emitted();
@@ -287,18 +390,38 @@ use super::*;
   fn ball_added_removed_from_play() {
     let mut system = TroughSystem::new("eject", vec!["a", "b", "c"]);
     let mut context = TestContext::default();
-    let switch2 = Switch { name: "b", id: 1, ..Default::default() };
-    let switch3 = Switch { name: "c", id: 2, ..Default::default() };
-    context.insert_switch(Switch { name: "a", id: 0, ..Default::default() });
+    let switch2 = Switch {
+      name: "b",
+      id: 1,
+      ..Default::default()
+    };
+    let switch3 = Switch {
+      name: "c",
+      id: 2,
+      ..Default::default()
+    };
+    context.insert_switch(Switch {
+      name: "a",
+      id: 0,
+      ..Default::default()
+    });
     context.insert_switch(switch2.clone());
     context.insert_switch(switch3.clone());
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_spawn(&context.sys_ctx());
 
     system.ball_removed_from_play(); // now expecting 2 balls instead of 3
 
     // ball #1 leaves
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Open]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Open,
+    ]);
     system.on_event(&SwitchOpened::new(switch3.clone()), &context.sys_ctx());
 
     let events = context.events_emitted();
@@ -307,7 +430,11 @@ use super::*;
     assert_eq!(count, 2);
 
     // ball #2 leaves
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Open, SwitchState::Open]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Open,
+      SwitchState::Open,
+    ]);
     system.on_event(&SwitchOpened::new(switch2.clone()), &context.sys_ctx());
 
     let events = context.events_emitted();
@@ -316,7 +443,11 @@ use super::*;
     assert_eq!(count, 1);
 
     // ball #2 re-enters, now full because of ball removed from play
-    context.base.switches.update_switch_states(vec![SwitchState::Closed, SwitchState::Closed, SwitchState::Closed]);
+    context.base.switches.update_switch_states(vec![
+      SwitchState::Closed,
+      SwitchState::Closed,
+      SwitchState::Closed,
+    ]);
     system.on_event(&SwitchClosed::new(switch2), &context.sys_ctx());
 
     let events = context.events_emitted();

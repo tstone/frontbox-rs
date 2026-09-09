@@ -5,7 +5,7 @@ use frontbox_derive::Event;
 
 use crate::prelude::*;
 use crate::provided::multiball::State::*;
-use crate::provided::{BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem};
+use crate::provided::{AutoPlungerSystem, BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem};
 
 #[derive(Clone)]
 pub struct MultiballSystem {
@@ -87,6 +87,9 @@ impl MultiballSystem {
 
   fn launch_ball(&self, ctx: &SystemContext) {
     log::debug!(target: "frontbox::multiball", "Launching additional ball for multiball");
+    if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
+      autoplunger.eject_next();
+    }
     ctx.expect::<TroughSystem>().eject(ctx.into());
   }
 
