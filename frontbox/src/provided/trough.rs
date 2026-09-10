@@ -47,7 +47,7 @@ impl TroughSystem {
         kick_length: HardwareValue::config(
           "Eject Time",
           "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(12),
+          Duration::from_millis(14),
           Ranges::duration(5, 75),
         ),
         ..Default::default()
@@ -55,7 +55,7 @@ impl TroughSystem {
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(250))
+    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(25))
   }
 
   fn on_trough_switch(&mut self, ctx: &SystemContext) {

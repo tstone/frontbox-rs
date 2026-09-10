@@ -43,6 +43,7 @@ impl AutoPlungerSystem {
 
   /// Fire the autoplunger immediately
   fn activate_coil(&self, ctx: &SystemContext) {
+    log::info!(target: "frontbox::autoplunger", "Firing auto plunger");
     ctx.activate_driver(self.coil_name, ActivationMode::Tap);
   }
 
@@ -52,8 +53,10 @@ impl AutoPlungerSystem {
     // Check that the ball is present
     let plunge_lane = ctx.expect::<PlungeLaneSystem>();
     if plunge_lane.is_ball_present() {
+      log::debug!(target: "frontbox::autoplunger", "Ball is present in plunge lane. Auto launching.");
       self.activate_coil(&ctx);
     } else {
+      log::debug!(target: "frontbox::autoplunger", "Ball is NOT present in plunge lane. Queueing.");
       // queue it up for when the ball is present
       self.do_autoplunge = true;
     }
