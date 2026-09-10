@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{PlayerTurnBeginning, PlayerTurnEnding};
+use crate::{GameEnded, PlayerTurnBeginning, PlayerTurnEnding};
 use frontbox::prelude::*;
 
 /// Turn drivers on and off in bulk, automatically (manual supported too)
@@ -50,7 +50,7 @@ impl System for ActivatePlayfieldSystem {
       log::info!("Activating playfield drivers due to turn start");
       self.activate(ctx);
       ctx.emit(ActivatedPlayfieldDrivers);
-    } else if event.is::<PlayerTurnEnding>() {
+    } else if event.is::<PlayerTurnEnding>() || event.is::<GameEnded>() {
       log::info!("Deactivating playfield drivers due to turn end");
       self.deactivate(ctx);
     }

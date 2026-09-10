@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::provided::{BallExitedPlungeLane, TroughFull, TroughSystem};
+use frontbox::provided::{BallExitedPlungeLane, QuitGame, TroughFull, TroughSystem};
 
 use crate::*;
 
@@ -122,22 +122,27 @@ impl System for CompetitiveGame {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(game_state) = &mut self.game_state {
-      match game_state.current_player_turn_state() {
-        TurnState::Beginning => {
-          if event.is::<BallExitedPlungeLane>() {
-            log::debug!(target: "frontbox::game_manager", "Active caused by ball exiting plunge lane");
-            self.transition_turn_to_active(ctx.into());
-          } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
-            && self.ball_in_play_switches.matches(&e.switch)
-          {
-            log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
-            self.transition_turn_to_active(ctx.into());
+      if event.is::<QuitGame>() {
+        log::info!(target: "frontbox::game_manager", "Received QuitGame signal. Ending.");
+        self.end_game(ctx.into());
+      } else {
+        match game_state.current_player_turn_state() {
+          TurnState::Beginning => {
+            if event.is::<BallExitedPlungeLane>() {
+              log::debug!(target: "frontbox::game_manager", "Active caused by ball exiting plunge lane");
+              self.transition_turn_to_active(ctx.into());
+            } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
+              && self.ball_in_play_switches.matches(&e.switch)
+            {
+              log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
+              self.transition_turn_to_active(ctx.into());
+            }
           }
+          TurnState::Active if event.is::<TroughFull>() => {
+            self.transition_turn_to_ending(ctx.into());
+          }
+          _ => {}
         }
-        TurnState::Active if event.is::<TroughFull>() => {
-          self.transition_turn_to_ending(ctx.into());
-        }
-        _ => {}
       }
     }
   }

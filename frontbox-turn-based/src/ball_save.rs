@@ -41,7 +41,7 @@ impl BallSaveSystem {
 
     ctx.register_interrupt::<TroughFull>(Self::trough_interrupt_priority());
     ctx.cue(EndBallSave, Cue::Once(self.duration));
-    log::info!("BallSave: Started");
+    log::info!(target: "frontbox::ballsave", "BallSave: Started");
   }
 
   pub fn deactivate(&mut self, ctx: &SystemContext) {
@@ -56,7 +56,7 @@ impl BallSaveSystem {
       effect.stop(ctx);
     }
 
-    log::info!("BallSave: Ended");
+    log::info!(target: "frontbox::ballsave", "BallSave: Ended");
   }
 }
 
@@ -88,7 +88,7 @@ impl System for BallSaveSystem {
 
   fn on_interrupt(&mut self, _event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
     // while active all TroughFull events are stopped
-    log::info!("BallSave: interrupting TroughFull");
+    log::info!(target: "frontbox::ballsave", "BallSave: interrupting TroughFull");
     ctx.emit(BallSaved);
 
     // Feed ball back to player
