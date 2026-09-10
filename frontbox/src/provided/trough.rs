@@ -14,6 +14,7 @@ pub struct TroughSystem {
   expected_occupancy: usize,
   /// The last known amount of balls in the trough (used to compare if it has increased or decreased)
   last_recorded_occupancy: usize,
+  state: State,
 }
 
 impl TroughSystem {
@@ -27,6 +28,7 @@ impl TroughSystem {
       // set on launch
       last_recorded_occupancy: 0,
       handle: SystemHandle::default(),
+      state: State::Pending,
     }
   }
 
@@ -40,14 +42,14 @@ impl TroughSystem {
           Ranges::duration(0, 50),
         ),
         initial_pwm_power: HardwareValue::fixed(
-          Power::HALF,
+          Power::THREE_QUARTERS,
         ),
         secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
         secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
         kick_length: HardwareValue::config(
           "Eject Time",
           "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(14),
+          Duration::from_millis(13),
           Ranges::duration(5, 75),
         ),
         ..Default::default()
@@ -55,7 +57,7 @@ impl TroughSystem {
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(25))
+    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(50))
   }
 
   fn on_trough_switch(&mut self, ctx: &SystemContext) {
@@ -141,6 +143,11 @@ impl TroughSystem {
     self.last_recorded_occupancy = self.expected_occupancy;
     log::info!(target: "frontbox::trough", "Establishing ball occupancy: {}", self.expected_occupancy);
   }
+
+  fn start_cooloff(&mut self, ctx: &SystemContext) {
+    self.state = State::CoolingOff;
+    ctx.cue(Resume, Duration::from_millis(400).once());
+  }
 }
 
 impl System for TroughSystem {
@@ -150,14 +157,19 @@ impl System for TroughSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-      if self.switch_names.contains(&e.switch.name) {
-        self.on_trough_switch(ctx);
-      }
-    } else if let Some(e) = event.downcast_ref::<SwitchOpened>() {
-      if self.switch_names.contains(&e.switch.name) {
-        self.on_trough_switch(ctx);
-      }
+    if event.is::<Resume>() {
+      self.state = State::Pending;
+      self.on_trough_switch(ctx);
+    } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
+      && self.state == State::Pending
+      && self.switch_names.contains(&e.switch.name)
+    {
+      self.start_cooloff(ctx);
+    } else if let Some(e) = event.downcast_ref::<SwitchOpened>()
+      && self.state == State::Pending
+      && self.switch_names.contains(&e.switch.name)
+    {
+      self.start_cooloff(ctx);
     }
   }
 }
@@ -188,6 +200,15 @@ impl BallExitedTrough {
     Self { occupancy }
   }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum State {
+  Pending,
+  CoolingOff,
+}
+
+#[derive(serde::Serialize, Event)]
+struct Resume;
 
 #[cfg(test)]
 mod tests {

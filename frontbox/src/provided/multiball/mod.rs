@@ -5,7 +5,9 @@ use frontbox_derive::Event;
 
 use crate::prelude::*;
 use crate::provided::multiball::State::*;
-use crate::provided::{AutoPlungerSystem, BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem};
+use crate::provided::{
+  AutoPlungerSystem, BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem,
+};
 
 #[derive(Clone)]
 pub struct MultiballSystem {
