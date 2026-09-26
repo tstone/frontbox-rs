@@ -1,3 +1,4 @@
+use fast_protocol::SwitchState;
 use itertools::Itertools;
 use std::any::TypeId;
 use std::collections::HashMap;
@@ -83,7 +84,7 @@ pub async fn run(
             unregister_all_by_system(&system_id, &mut interrupt_registry);
           }
           AppMessage::SwitchStateChange(id, state) => {
-            base.switches.update_switch_state(id, state);
+            switch_state_changed(id, state, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
           AppMessage::SyncSwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
@@ -284,6 +285,82 @@ fn emit_event(
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     system.on_event(event_box.event.as_ref(), ctx);
   });
+}
+
+fn switch_state_changed(
+  switch_id: usize,
+  state: SwitchState,
+  groups: &Groups,
+  base: &mut BootSnapshot,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  interrupt_registry: &EventInterruptRegistry,
+  tracer_txs: &TracerSenders,
+  resync_notifier: &Arc<Notify>,
+) {
+  base.switches.switch_state_changed(switch_id, state);
+
+  match (base.switches.by_id(&switch_id), state) {
+    (Some(switch), SwitchState::Closed) => {
+      log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
+      emit_event(
+        EventBox::new(SwitchClosed::new(switch.clone())),
+        groups,
+        base,
+        app_sender,
+        interrupt_registry,
+        tracer_txs,
+        resync_notifier,
+      );
+    }
+    (Some(switch), SwitchState::Open) => {
+      log::debug!(target: "frontbox::switches", "🎚️  Switch {} opened", switch.name);
+      emit_event(
+        EventBox::new(SwitchOpened::new(switch.clone())),
+        groups,
+        base,
+        app_sender,
+        interrupt_registry,
+        tracer_txs,
+        resync_notifier,
+      );
+    }
+    (None, _) => {
+      // Report as native board/switch id since this is the easiest way to figure out current switch wiring
+      match get_native_switch_id(&switch_id, base) {
+        Some((board_id, local_id)) => {
+          log::warn!(
+            target: "frontbox::switches",
+            "Received event for unknown switch -- board: {}, id: {} -- {:?}",
+            board_id,
+            local_id,
+            state
+          );
+          return;
+        }
+        None => {
+          log::warn!(
+            target: "frontbox::switches",
+            "Received event for unknown switch on unknown board {} -- {:?}",
+            switch_id,
+            state
+          );
+        }
+      }
+    }
+  }
+  // TODO: this needs to do all the event sending and such that Machine previously did
+}
+
+fn get_native_switch_id(switch_id: &usize, base: &BootSnapshot) -> Option<(usize, usize)> {
+  let mut offset: usize = 0;
+  for (index, board) in base.io_network.iter().enumerate() {
+    if *switch_id < (board.switch_count as usize) + offset {
+      let native_switch_id = switch_id - offset;
+      return Some((index, native_switch_id));
+    }
+    offset += board.switch_count as usize;
+  }
+  None
 }
 
 async fn handle_system_tick(

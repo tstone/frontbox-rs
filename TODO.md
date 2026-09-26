@@ -1,3 +1,8 @@
+Virtual Machine
+
+- App should probably just keep track of switches (supported), drivers, and LED state (currently LedSystem)
+- App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
+
 - So much is built on LedSystem that the framework should probably just start it up automatically.
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
