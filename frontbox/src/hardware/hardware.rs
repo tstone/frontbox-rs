@@ -177,9 +177,7 @@ impl Hardware {
   }
 
   /// Take the user-defined expansion board configurations and resolve actual hardware indexes/addresses
-  pub fn resolve_expansion_boards(
-    expansion_boards: &Vec<ExpBoard>,
-  ) -> Vec<ResolvedExpansionBoard> {
+  pub fn resolve_expansion_boards(expansion_boards: &Vec<ExpBoard>) -> Vec<ResolvedExpansionBoard> {
     let mut resolved_boards = Vec::new();
     for board in expansion_boards {
       if board.model == FastExpansionBoardModels::Neuron {

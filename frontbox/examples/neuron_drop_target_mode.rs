@@ -51,11 +51,10 @@ async fn main() {
       .wire_driver(3, &drivers::BANK_COIL),
   ]);
 
-  App::boot(BootConfig {
+  App::new(BootConfig {
     io_network,
     ..Default::default()
   })
-  .await
   .configure(|app| {
     app.system(DropTargetDownUp::new([
       TARGET_1.name,

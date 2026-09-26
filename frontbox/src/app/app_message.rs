@@ -12,8 +12,8 @@ pub enum AppMessage {
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
   Shutdown(ShutdownScope),
-  SingleSwitchState(usize, SwitchState),
-  SwitchStates(Vec<SwitchState>),
+  SwitchStateChange(usize, SwitchState),
+  SyncSwitchStates(Vec<SwitchState>),
   SpawnSystem(&'static str, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
@@ -42,10 +42,10 @@ impl Debug for AppMessage {
       }
       AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
       AppMessage::Shutdown(_) => write!(f, "Shutdown"),
-      AppMessage::SingleSwitchState(index, state) => {
+      AppMessage::SwitchStateChange(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
       }
-      AppMessage::SwitchStates(states) => write!(f, "SwitchStates({:?})", states),
+      AppMessage::SyncSwitchStates(states) => write!(f, "SwitchStates({:?})", states),
       AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
       AppMessage::ReplaceSystem(handle, _) => {
         write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)

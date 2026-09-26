@@ -17,14 +17,6 @@ pub struct OperatorConfig {
 }
 
 impl OperatorConfig {
-  pub fn new() -> Self {
-    Self {
-      current_values: HashMap::new(),
-      pending_disk: HashMap::new(),
-      app_sender: None,
-    }
-  }
-
   /// Reads values from disk into a temporary buffer, but waits until a config value is registered before assignment
   pub fn load_from_disk(path: impl AsRef<Path>) -> Self {
     let pending_disk = fs::read_to_string(path)

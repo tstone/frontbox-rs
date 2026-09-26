@@ -367,7 +367,7 @@ impl System for LedSystem {
             acc
           });
 
-      let machine = ctx.expect::<Machine>();
+      let machine = ctx.expect::<MachineSystem>();
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
           machine.set_leds(address.board_address, address.breakout, chunk.to_vec());

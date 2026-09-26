@@ -82,10 +82,10 @@ pub async fn run(
           AppMessage::UnregisterAllBySystem(system_id) => {
             unregister_all_by_system(&system_id, &mut interrupt_registry);
           }
-          AppMessage::SingleSwitchState(id, state) => {
+          AppMessage::SwitchStateChange(id, state) => {
             base.switches.update_switch_state(id, state);
           }
-          AppMessage::SwitchStates(switch_states) => {
+          AppMessage::SyncSwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
           }
           AppMessage::Shutdown(scope) => {

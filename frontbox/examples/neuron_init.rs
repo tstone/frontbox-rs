@@ -7,7 +7,7 @@ async fn main() {
     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
     .init();
 
-  App::boot(BootConfig {
+  App::new(BootConfig {
     io_net_port_path: "/dev/ttyACM0",
     exp_port_path: "/dev/ttyACM1",
     io_network: IoNetwork::empty(),
@@ -16,7 +16,6 @@ async fn main() {
     watchdog_interval: Duration::from_secs(1),
     ..Default::default()
   })
-  .await
   .run()
   .await;
 }
