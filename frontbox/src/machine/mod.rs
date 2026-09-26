@@ -22,6 +22,7 @@ mod machine_ext;
 mod machine_system;
 pub mod neuron;
 pub(crate) mod serial_interface;
+pub mod vm; // virtual
 
 use fast_protocol::{FastAnyRequestCommand, FastBinaryCommand};
 use std::time::Duration;

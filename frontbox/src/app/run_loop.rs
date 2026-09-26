@@ -297,7 +297,8 @@ fn switch_state_changed(
   tracer_txs: &TracerSenders,
   resync_notifier: &Arc<Notify>,
 ) {
-  base.switches.switch_state_changed(switch_id, state);
+  // Update this first so that handled events see the latest state in Context
+  base.switches.update_switch_state(switch_id, state);
 
   match (base.switches.by_id(&switch_id), state) {
     (Some(switch), SwitchState::Closed) => {

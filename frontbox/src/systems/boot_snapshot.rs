@@ -34,6 +34,22 @@ impl BootSnapshot {
       app_config,
     }
   }
+
+  pub fn from_hardware(
+    hardware: Hardware,
+    operator_config: OperatorConfig,
+    app_config: AppConfig,
+  ) -> Self {
+    Self {
+      switches: hardware.switches,
+      drivers: hardware.drivers,
+      leds: hardware.leds,
+      io_network: hardware.io_network,
+      exp_network: hardware.exp_network,
+      app_config,
+      operator_config,
+    }
+  }
 }
 
 impl Deref for BootSnapshot {

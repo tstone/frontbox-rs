@@ -50,52 +50,6 @@ impl Neuron {
       .app_sender
       .send(AppMessage::SwitchStateChange(switch_id, state))
       .ok();
-
-    // let switch = self.switches.by_id(&switch_id).cloned();
-
-    // if let Some(switch) = switch {
-    //   // App needs to update switch state in the store before sending out the event
-
-    //   if matches!(state, SwitchState::Closed) {
-    //     log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
-    //     let event = SwitchClosed::new(switch);
-    //     self
-    //       .app_sender
-    //       .send(AppMessage::EmitEvent(EventBox::new(event)))
-    //       .ok();
-    //   } else {
-    //     log::debug!(target: "frontbox::switches", "🎚️  Switch {} opened", switch.name);
-    //     let event = SwitchOpened::new(switch);
-    //     self
-    //       .app_sender
-    //       .send(AppMessage::EmitEvent(EventBox::new(event)))
-    //       .ok();
-    //   }
-    // } else {
-    //   // TODO: Move this handling into the app run loop
-    //   // Report as native board/switch id since this is the easiest way to figure out current switch wiring
-    //   match self.get_native_switch_id(switch_id) {
-    //     Some((board_id, local_id)) => {
-    //       log::warn!(
-    //         target: "frontbox::switches",
-    //         "Received event for unknown switch -- board: {}, id: {} -- {:?}",
-    //         board_id,
-    //         local_id,
-    //         state
-    //       );
-    //       return;
-    //     }
-    //     None => {
-    //       log::warn!(
-    //         target: "frontbox::switches",
-    //         "Received event for unknown switch on unknown board {} -- {:?}",
-    //         switch_id,
-    //         state
-    //       );
-    //     }
-    //   }
-    //   return;
-    // }
   }
 
   pub async fn send_watchdog_ping(&mut self) {
@@ -114,18 +68,6 @@ impl Neuron {
       _ => {}
     }
   }
-
-  //   fn get_native_switch_id(&self, switch_id: usize) -> Option<(usize, usize)> {
-  //     let mut offset: usize = 0;
-  //     for (index, board) in self.io_network.iter().enumerate() {
-  //       if switch_id < (board.switch_count as usize) + offset {
-  //         let native_switch_id = switch_id - offset;
-  //         return Some((index, native_switch_id));
-  //       }
-  //       offset += board.switch_count as usize;
-  //     }
-  //     None
-  //   }
 }
 
 impl Machine for Neuron {
@@ -134,7 +76,7 @@ impl Machine for Neuron {
   }
 
   async fn on_pre_run(&mut self, snapshot: &BootSnapshot) {
-    Hardware::configure_drivers(&mut self.io_port, &snapshot).await;
+    boot::configure_drivers(&mut self.io_port, &snapshot).await;
   }
 
   async fn run(&mut self) {
@@ -173,17 +115,17 @@ impl MachineBoot for Neuron {
       .expect("Failed to open IO NET port");
     log::info!("🥾 Opened IO NET port at {}", boot_config.io_net_port_path);
 
-    boot::run(&mut io_port).await;
+    boot::handshake(&mut io_port).await;
 
     // Verify user-configuration and load firmware/board versions
     let io_network = boot_config.io_network;
-    let resolved_io_network = Hardware::resolve_io_network(&mut io_port, &io_network).await;
+    let resolved_io_network = boot::resolve_io_network(&mut io_port, &io_network).await;
 
     boot::verify_watchdog(&mut io_port).await;
     boot::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
-    let initial_switch_state = Hardware::get_initial_switch_states(&mut io_port).await;
+    let initial_switch_state = boot::get_initial_switch_states(&mut io_port).await;
     let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
 
     // open EXP port
@@ -193,8 +135,8 @@ impl MachineBoot for Neuron {
     log::info!("🥾 Opened EXP port at {}", boot_config.exp_port_path);
 
     let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
-    Hardware::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
-    Hardware::configure_led_ports(&mut exp_port, &expansion_boards).await;
+    boot::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
+    boot::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     // Insert hardware definitions into store for systems to reference
     log::debug!("Initializing Store with hardware definitions");

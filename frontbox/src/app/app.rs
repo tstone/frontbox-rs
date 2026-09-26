@@ -69,33 +69,41 @@ impl App {
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     self.operator_config.app_sender = Some(app_sender.clone());
 
-    let (mut machine, hardware) = match self.boot_config.platform {
-      Platform::Neuron => neuron::Neuron::boot(self.boot_config, app_sender.clone()).await,
-      Platform::Virtual => todo!(),
-    };
+    let (boot_snapshot, machine_sender) = match self.boot_config.platform {
+      Platform::Neuron => {
+        let (mut machine, hardware) =
+          neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
+        let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
+        machine.on_pre_run(&snapshot).await;
 
-    let boot_snapshot = BootSnapshot {
-      switches: hardware.switches,
-      drivers: hardware.drivers,
-      leds: hardware.leds,
-      io_network: hardware.io_network,
-      exp_network: hardware.exp_network,
-      app_config,
-      operator_config: self.operator_config,
+        let machine_sender = machine.sender();
+        tokio::spawn(async move {
+          machine.run().await;
+        });
+
+        (snapshot, machine_sender)
+      }
+      Platform::Virtual => {
+        let (mut machine, hardware) =
+          vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
+        let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
+        machine.on_pre_run(&snapshot).await;
+
+        let machine_sender = machine.sender();
+        tokio::spawn(async move {
+          machine.run().await;
+        });
+
+        (snapshot, machine_sender)
+      }
     };
-    machine.on_pre_run(&boot_snapshot).await;
 
     // These systems need to appear first because other systems expect them to be present on startup
-    let bridge = MachineSystem::new(machine.sender());
+    let bridge = MachineSystem::new(machine_sender);
     self.systems.insert(0, SystemContainer::new(bridge));
     self
       .systems
       .push(SystemContainer::new(WatchdogSystem::new()));
-
-    // Start machine task
-    tokio::spawn(async move {
-      machine.run().await;
-    });
 
     log::debug!("Starting main run loop");
     run_loop::run(
