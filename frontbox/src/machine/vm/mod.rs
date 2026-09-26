@@ -1,12 +1,26 @@
 use tokio::sync::mpsc;
 
-use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
 pub struct VirtualMachine {
-  app_sender: mpsc::UnboundedSender<AppMessage>,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
+}
+
+impl VirtualMachine {
+  async fn process_messages(&mut self, msg: MachineMessage) {
+    match msg {
+      MachineMessage::WatchdogPing => {
+        log::trace!("VM: 🐶 Watchdog ping");
+      }
+      MachineMessage::Dispatch { port, command } => {
+        log::info!("VM: Dispatch on {:?} => {:?}", port, command);
+      }
+      MachineMessage::Request { port, command, .. } => {
+        log::info!("VM: Request on {:?} => {:?}", port, command);
+      }
+    }
+  }
 }
 
 impl MachineBoot for VirtualMachine {
@@ -14,7 +28,7 @@ impl MachineBoot for VirtualMachine {
 
   async fn boot(
     boot_config: BootConfig,
-    app_sender: mpsc::UnboundedSender<app_message::AppMessage>,
+    _app_sender: mpsc::UnboundedSender<app_message::AppMessage>,
   ) -> (Self::Machine, Hardware) {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
 
@@ -46,7 +60,6 @@ impl MachineBoot for VirtualMachine {
 
     (
       Self {
-        app_sender,
         machine_receiver,
         machine_sender,
       },
@@ -62,5 +75,13 @@ impl Machine for VirtualMachine {
 
   async fn on_pre_run(&mut self, _snapshot: &BootSnapshot) {}
 
-  async fn run<'a>(&'a mut self) {}
+  async fn run(&mut self) {
+    loop {
+      tokio::select! {
+        Some(msg) = self.machine_receiver.recv() => {
+          self.process_messages(msg).await;
+        }
+      }
+    }
+  }
 }

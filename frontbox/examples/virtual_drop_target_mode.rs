@@ -53,6 +53,7 @@ async fn main() {
 
   App::new(BootConfig {
     io_network,
+    platform: Platform::Virtual,
     ..Default::default()
   })
   .configure(|app| {

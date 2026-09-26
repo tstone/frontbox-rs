@@ -32,6 +32,7 @@ pub use machine::*;
 pub use machine_ext::*;
 pub use machine_system::*;
 
+#[derive(Debug)]
 pub enum MachinePort {
   Io,
   Exp,
