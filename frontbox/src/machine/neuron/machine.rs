@@ -133,6 +133,10 @@ impl Machine for Neuron {
     self.machine_sender.clone()
   }
 
+  async fn on_pre_run(&mut self, snapshot: &BootSnapshot) {
+    Hardware::configure_drivers(&mut self.io_port, &snapshot).await;
+  }
+
   async fn run(&mut self) {
     loop {
       tokio::select! {
@@ -212,9 +216,6 @@ impl MachineBoot for Neuron {
       resolved_io_network.boards,
       expansion_boards,
     );
-
-    // TODO: what if I didn't do this? should this really be done on start-up?
-    // Hardware::configure_drivers(&mut io_port, &boot_snapshot).await;
 
     (neuron, hardware)
   }

@@ -83,6 +83,7 @@ impl App {
       app_config,
       operator_config: self.operator_config,
     };
+    machine.on_pre_run(&boot_snapshot).await;
 
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = MachineSystem::new(machine.sender());
