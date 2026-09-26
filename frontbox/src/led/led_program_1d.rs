@@ -11,6 +11,7 @@ pub enum LedProgram1d {
   Animated {
     ids: Box<dyn Contextual<LedIdentifications> + Send + Sync>,
     anim: Box<dyn Animation<Duration, ColorSequence> + Send + Sync>,
+    end_behavior: EndBehavior,
     undeclared: bool,
   },
   Modulated {
@@ -37,9 +38,10 @@ impl LedProgram1d {
       LedProgram1d::Animated {
         ids,
         anim,
+        end_behavior,
         undeclared,
       } => {
-        if anim.is_complete() || !anim.active() {
+        if (anim.is_complete() && *end_behavior == EndBehavior::Clear) || !anim.active() {
           if !*undeclared {
             ctx.undeclare_leds(ids);
             *undeclared = true;
@@ -57,12 +59,7 @@ impl LedProgram1d {
         end_behavior,
         undeclared,
       } => {
-        if modulators.is_complete() && *end_behavior == EndBehavior::Clear {
-          if !*undeclared {
-            ctx.undeclare_leds(ids);
-            *undeclared = true;
-          }
-        } else if !modulators.active() {
+        if (modulators.is_complete() && *end_behavior == EndBehavior::Clear) || !modulators.active() {
           if !*undeclared {
             ctx.undeclare_leds(ids);
             *undeclared = true;
@@ -280,10 +277,12 @@ impl LedProgram1d {
   pub fn animated<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     animation: impl Animation<Duration, ColorSequence> + Send + Sync + 'static,
+    end_behavior: EndBehavior,
   ) -> Self {
     Self::Animated {
       ids: Box::new(targets),
       anim: Box::new(animation),
+      end_behavior,
       undeclared: false,
     }
   }
@@ -316,8 +315,18 @@ impl LedProgram1d {
     curve: Curve,
     cycle: Cycle,
     colors: Vec<ColorSequence>,
+    end_behavior: EndBehavior
   ) -> Self {
-    Self::animated(targets, Tween::new(duration, curve, colors, cycle))
+    Self::animated(targets, Tween::new(duration, curve, colors, cycle), end_behavior)
+  }
+
+  pub fn tween_oneshot<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+    targets: T,
+    duration: Duration,
+    curve: Curve,
+    colors: Vec<ColorSequence>,
+  ) -> Self {
+    Self::animated(targets, Tween::new(duration, curve, colors, Cycle::Once), EndBehavior::Clear)
   }
 
   /// Typical on/off behavior
@@ -332,6 +341,7 @@ impl LedProgram1d {
       Curve::EaseInOut,
       cycle,
       vec![color, ColorSequence::solid(Rgba::default())],
+      EndBehavior::Clear
     )
   }
 
@@ -351,6 +361,7 @@ impl LedProgram1d {
         ColorSequence::solid(color),
         ColorSequence::solid(color.darken(0.3)),
       ],
+      EndBehavior::Clear
     )
   }
 
@@ -372,6 +383,7 @@ impl LedProgram1d {
         ],
         cycle,
       ),
+      EndBehavior::Clear
     )
   }
 

@@ -4,6 +4,32 @@ use palette::{FromColor, Hsl, IntoColor, Srgb};
 
 use crate::prelude::LedChannels;
 
+/// ### Color (Rgba)
+///
+/// Frontbox standardizes on the the [image crate](https://crates.io/crates/image) `Rgba<u8>` color type. This color accounts for four channel colors: red, green, blue, and alpha. All rendering functions within Frontbox account for alpha channel blending.
+///
+/// Colors can be created manually.
+///
+/// ```rust
+/// let red = Rgba([255, 0, 0, 255]);
+/// ```
+///
+/// Or by using a handful of named colors.
+///
+/// ```rust
+/// let red = Rgba::red();
+/// let cyan = Rgba::cyan();
+/// ```
+///
+/// Colors can also be modified by lightness, saturation, or hue shifted.
+///
+/// ```rust
+/// let c = Rgba::red()
+///   .lighten(0.4)
+///   .desaturate(0.1)
+///   .hue_shift(-15.0)
+///   .inverted();
+/// ```
 pub trait RgbaColor {
   fn red() -> Self;
   fn yellow() -> Self;
