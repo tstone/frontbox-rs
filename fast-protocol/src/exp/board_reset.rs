@@ -11,25 +11,15 @@ impl BoardResetCommand {
   }
 }
 
-impl FastStringCommand for BoardResetCommand {
+impl FastStringDispatch for BoardResetCommand {
   fn to_string(&self) -> String {
     format!("BR@{:X}:\r", self.address)
   }
 }
 
-impl FastRequestCommand for BoardResetCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
+impl FastCommand for BoardResetCommand {
+  fn prefix(&self) -> &'static str {
     "br"
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    if raw.payload.to_lowercase() == "p" {
-      Ok(ProcessedResponse::Processed)
-    } else {
-      Err(FastResponseError::InvalidFormat)
-    }
   }
 }
 

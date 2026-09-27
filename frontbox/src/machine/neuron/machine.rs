@@ -28,39 +28,56 @@ impl Neuron {
   async fn process_messages(&mut self, msg: MachineMessage) {
     match msg {
       MachineMessage::WatchdogPing => {
-        self.send_watchdog_ping().await;
+        self
+          .send_watchdog(WatchdogCommand::set(self.watchdog_interval))
+          .await;
       }
+      MachineMessage::WatchdogClear => {
+        self.send_watchdog(WatchdogCommand::disable()).await;
+      }
+      MachineMessage::RefreshSwitchState => {}
       MachineMessage::Dispatch { port, command } => {
         let port = self.port_for(port);
         port.dispatch(&*command).await;
       }
-      MachineMessage::Request {
+      MachineMessage::Command {
         port,
         command,
         timeout,
       } => {
         let port = self.port_for(port);
-        port.request_any(&*command, timeout).await.ok();
+        port.command(&*command, timeout).await.ok();
       }
     }
   }
 
-  pub fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
+  fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
     self
       .app_sender
       .send(AppMessage::SwitchStateChange(switch_id, state))
       .ok();
   }
 
-  pub async fn send_watchdog_ping(&mut self) {
+  async fn refresh_switch_state(&mut self) {
     match self
       .io_port
-      .request(
-        &WatchdogCommand::set(self.watchdog_interval),
-        Duration::from_millis(200),
-      )
+      .query(&ReportSwitchesCommand, Duration::from_secs(1))
       .await
     {
+      Ok(resp) => {
+        if let SwitchReportResponse::SwitchReport { switches } = resp {
+          self
+            .app_sender
+            .send(AppMessage::SyncSwitchStates(switches))
+            .ok();
+        }
+      }
+      _ => {}
+    }
+  }
+
+  async fn send_watchdog(&mut self, cmd: WatchdogCommand) {
+    match self.io_port.query(&cmd, Duration::from_millis(200)).await {
       // try again
       Ok(WatchdogResponse::Failed) => {
         let _ = self.machine_sender.send(MachineMessage::WatchdogPing);

@@ -24,7 +24,7 @@ impl IdCommand {
   }
 }
 
-impl FastStringCommand for IdCommand {
+impl FastStringDispatch for IdCommand {
   fn to_string(&self) -> String {
     match self.address {
       Some(FastAddress::Io(id)) => format!("ID@{}:\r", id),
@@ -36,10 +36,10 @@ impl FastStringCommand for IdCommand {
   }
 }
 
-impl FastRequestCommand for IdCommand {
+impl FastQuery for IdCommand {
   type Response = IdResponse;
 
-  fn prefix() -> &'static str {
+  fn prefix(&self) -> &'static str {
     "id"
   }
 

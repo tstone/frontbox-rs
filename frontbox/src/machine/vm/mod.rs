@@ -10,15 +10,16 @@ pub struct VirtualMachine {
 impl VirtualMachine {
   async fn process_messages(&mut self, msg: MachineMessage) {
     match msg {
-      MachineMessage::WatchdogPing => {
-        log::trace!("VM: 🐶 Watchdog ping");
-      }
       MachineMessage::Dispatch { port, command } => {
         log::info!("VM: Dispatch on {:?} => {:?}", port, command);
       }
-      MachineMessage::Request { port, command, .. } => {
+      MachineMessage::Command { port, command, .. } => {
         log::info!("VM: Request on {:?} => {:?}", port, command);
       }
+      MachineMessage::RefreshSwitchState => {
+        todo!()
+      }
+      _ => {} // watchdog, etc.
     }
   }
 }

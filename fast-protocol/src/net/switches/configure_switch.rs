@@ -25,7 +25,7 @@ impl ConfigureSwitchCommand {
   }
 }
 
-impl FastStringCommand for ConfigureSwitchCommand {
+impl FastStringDispatch for ConfigureSwitchCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/sl/
     format!(
@@ -44,21 +44,9 @@ impl FastStringCommand for ConfigureSwitchCommand {
   }
 }
 
-impl FastRequestCommand for ConfigureSwitchCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
+impl FastCommand for ConfigureSwitchCommand {
+  fn prefix(&self) -> &'static str {
     "sl"
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    if raw.payload.to_lowercase() == "p" {
-      Ok(ProcessedResponse::Processed)
-    } else if raw.payload.to_lowercase() == "f" {
-      Ok(ProcessedResponse::Failed)
-    } else {
-      Err(FastResponseError::InvalidFormat)
-    }
   }
 }
 

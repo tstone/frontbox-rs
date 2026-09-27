@@ -29,7 +29,7 @@ pub fn fast_unit_ms_byte(duration: Duration, unit: u8) -> String {
   format!("{:02X}", ticks)
 }
 
-impl FastStringCommand for ConfigureDriverCommand {
+impl FastStringDispatch for ConfigureDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/dl/
     match self.config {
@@ -229,21 +229,9 @@ impl FastStringCommand for ConfigureDriverCommand {
   }
 }
 
-impl FastRequestCommand for ConfigureDriverCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
+impl FastCommand for ConfigureDriverCommand {
+  fn prefix(&self) -> &'static str {
     "dl"
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    if raw.payload.to_lowercase() == "p" {
-      Ok(ProcessedResponse::Processed)
-    } else if raw.payload.to_lowercase() == "f" {
-      Ok(ProcessedResponse::Failed)
-    } else {
-      Err(FastResponseError::InvalidFormat)
-    }
   }
 }
 

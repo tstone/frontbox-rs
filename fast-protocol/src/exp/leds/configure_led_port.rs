@@ -1,8 +1,6 @@
 use super::LedType;
-use crate::common::{ProcessedResponse, expansion_addr};
-use crate::error::FastResponseError;
-use crate::raw_response::RawResponse;
-use crate::{FastRequestCommand, FastStringCommand};
+use crate::common::expansion_addr;
+use crate::{FastCommand, FastStringDispatch};
 
 #[derive(Debug, Clone)]
 pub struct ConfigureLedPortCommand {
@@ -34,7 +32,7 @@ impl ConfigureLedPortCommand {
   }
 }
 
-impl FastStringCommand for ConfigureLedPortCommand {
+impl FastStringDispatch for ConfigureLedPortCommand {
   fn to_string(&self) -> String {
     let address = expansion_addr(self.expansion_board, self.breakout);
     format!(
@@ -48,15 +46,9 @@ impl FastStringCommand for ConfigureLedPortCommand {
   }
 }
 
-impl FastRequestCommand for ConfigureLedPortCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
+impl FastCommand for ConfigureLedPortCommand {
+  fn prefix(&self) -> &'static str {
     "er"
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    ProcessedResponse::parse(raw)
   }
 }
 

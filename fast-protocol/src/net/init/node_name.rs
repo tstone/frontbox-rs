@@ -11,16 +11,16 @@ impl NodeNameCommand {
   }
 }
 
-impl FastStringCommand for NodeNameCommand {
+impl FastStringDispatch for NodeNameCommand {
   fn to_string(&self) -> String {
     format!("NN:{:X}\r", self.id)
   }
 }
 
-impl FastRequestCommand for NodeNameCommand {
+impl FastQuery for NodeNameCommand {
   type Response = NodeInfo;
 
-  fn prefix() -> &'static str {
+  fn prefix(&self) -> &'static str {
     "nn"
   }
 

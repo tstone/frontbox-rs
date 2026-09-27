@@ -1,46 +1,40 @@
-use std::any::Any;
+//! ## Dispatch vs Command vs Query
+//!
+//!
+
 use std::fmt::Debug;
 
-use crate::FastResponseError;
 use crate::raw_response::RawResponse;
+use crate::{FastResponseError, ProcessedResponse};
 
-pub trait FastStringCommand: Debug + Send + Sync {
+/// An instruction sent to the FAST hardware as fire and forget (e.g. set LED color)
+pub trait FastStringDispatch: Debug + Send + Sync {
   fn to_string(&self) -> String;
 }
 
-pub trait FastBinaryCommand: Debug + Send + Sync {
+/// An instruction sent to the FAST hardware as fire and forget (e.g. set LED color)
+pub trait FastBinaryDispatch: Debug + Send + Sync {
   fn to_bytes(&self) -> Vec<u8>;
 }
 
-impl<T: FastStringCommand> FastBinaryCommand for T {
+impl<T: FastStringDispatch> FastBinaryDispatch for T {
   fn to_bytes(&self) -> Vec<u8> {
     self.to_string().as_bytes().to_vec()
   }
 }
 
-pub trait FastRequestCommand: FastBinaryCommand {
+/// An instruction sent to the FAST hardware which awaits a success/fail acknowledgement (e.g. activate driver)
+pub trait FastCommand: FastBinaryDispatch {
+  fn prefix(&self) -> &'static str;
+
+  fn parse(&self, raw: RawResponse) -> Result<ProcessedResponse, FastResponseError> {
+    ProcessedResponse::parse(raw)
+  }
+}
+
+/// An instruction sent to the FAST hardware which gets back a specific data response (e.g. "get switch state")
+pub trait FastQuery: FastBinaryDispatch {
   type Response: Send + Sync;
-  fn prefix() -> &'static str;
+  fn prefix(&self) -> &'static str;
   fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError>;
-}
-
-pub trait FastAnyRequestCommand: FastBinaryCommand {
-  fn cmd_prefix(&self) -> &'static str;
-  fn parse_any(&self, raw: RawResponse) -> Result<Box<dyn Any + Send + Sync>, FastResponseError>;
-}
-
-impl<T: FastRequestCommand> FastAnyRequestCommand for T
-where
-  T: Send + Sync,
-  T::Response: Send + Sync + 'static,
-{
-  fn cmd_prefix(&self) -> &'static str {
-    Self::prefix()
-  }
-
-  fn parse_any(&self, raw: RawResponse) -> Result<Box<dyn Any + Send + Sync>, FastResponseError> {
-    self
-      .parse(raw)
-      .map(|resp| Box::new(resp) as Box<dyn Any + Send + Sync>)
-  }
 }

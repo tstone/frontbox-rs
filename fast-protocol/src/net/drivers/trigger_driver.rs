@@ -21,7 +21,7 @@ impl TriggerDriverCommand {
   }
 }
 
-impl FastStringCommand for TriggerDriverCommand {
+impl FastStringDispatch for TriggerDriverCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/net/tl/
     format!(

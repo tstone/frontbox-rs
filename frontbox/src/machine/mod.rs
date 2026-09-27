@@ -24,7 +24,7 @@ pub mod neuron;
 pub(crate) mod serial_interface;
 pub mod vm; // virtual
 
-use fast_protocol::{FastAnyRequestCommand, FastBinaryCommand};
+use fast_protocol::{FastBinaryDispatch, FastCommand};
 use std::time::Duration;
 
 pub use events::*;
@@ -40,13 +40,15 @@ pub enum MachinePort {
 
 pub enum MachineMessage {
   WatchdogPing,
+  WatchdogClear,
+  RefreshSwitchState,
   Dispatch {
     port: MachinePort,
-    command: Box<dyn FastBinaryCommand>,
+    command: Box<dyn FastBinaryDispatch>,
   },
-  Request {
+  Command {
     port: MachinePort,
-    command: Box<dyn FastAnyRequestCommand>,
+    command: Box<dyn FastCommand>,
     timeout: Duration,
   },
 }

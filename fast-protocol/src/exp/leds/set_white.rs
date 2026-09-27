@@ -20,7 +20,7 @@ impl SetWhiteCommand {
   }
 }
 
-impl FastStringCommand for SetWhiteCommand {
+impl FastStringDispatch for SetWhiteCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/exp/rw/
     let address = expansion_addr(self.expansion_board, self.breakout);

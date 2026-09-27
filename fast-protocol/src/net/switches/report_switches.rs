@@ -3,16 +3,16 @@ use crate::*;
 #[derive(Debug, Clone)]
 pub struct ReportSwitchesCommand;
 
-impl FastStringCommand for ReportSwitchesCommand {
+impl FastStringDispatch for ReportSwitchesCommand {
   fn to_string(&self) -> String {
     "SA:\r".to_string()
   }
 }
 
-impl FastRequestCommand for ReportSwitchesCommand {
+impl FastQuery for ReportSwitchesCommand {
   type Response = SwitchReportResponse;
 
-  fn prefix() -> &'static str {
+  fn prefix(&self) -> &'static str {
     "sa"
   }
 

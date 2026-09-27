@@ -16,17 +16,17 @@ impl IdentifyHardwareCommand {
   }
 }
 
-impl FastStringCommand for IdentifyHardwareCommand {
+impl FastStringDispatch for IdentifyHardwareCommand {
   fn to_string(&self) -> String {
     let address = expansion_addr(self.expansion_board, Some(self.breakout));
     format!("IH@{}:\r", address)
   }
 }
 
-impl FastRequestCommand for IdentifyHardwareCommand {
+impl FastQuery for IdentifyHardwareCommand {
   type Response = ExpansionBreakoutInfo;
 
-  fn prefix() -> &'static str {
+  fn prefix(&self) -> &'static str {
     "ih"
   }
 

@@ -19,7 +19,7 @@ impl SetLedsCommand {
   }
 }
 
-impl FastStringCommand for SetLedsCommand {
+impl FastStringDispatch for SetLedsCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/exp/rs/
     let address = expansion_addr(self.expansion_board, self.breakout);

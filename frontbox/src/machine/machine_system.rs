@@ -23,21 +23,14 @@ impl MachineSystem {
 
   /// Immediately expire the watchdog (WD:0)
   pub fn clear_watchdog(&self) {
-    self
-      .machine_sender
-      .send(MachineMessage::Request {
-        port: MachinePort::Io,
-        command: Box::new(WatchdogCommand::disable()),
-        timeout: Duration::from_millis(200),
-      })
-      .ok();
+    self.machine_sender.send(MachineMessage::WatchdogClear).ok();
   }
 
   pub fn reset_expansion_network(&self, ctx: &ServiceContext) {
     for board in ctx.exp_network.iter() {
       self
         .machine_sender
-        .send(MachineMessage::Request {
+        .send(MachineMessage::Command {
           port: MachinePort::Exp,
           command: Box::new(BoardResetCommand::new(board.address)),
           timeout: Duration::from_millis(200),
@@ -57,7 +50,7 @@ impl MachineSystem {
       let config = mode.to_config(&ctx);
       self
         .machine_sender
-        .send(MachineMessage::Request {
+        .send(MachineMessage::Command {
           port: MachinePort::Io,
           command: Box::new(ConfigureDriverCommand::new(driver.id, config)),
           timeout: Duration::from_millis(200),
@@ -108,11 +101,7 @@ impl MachineSystem {
   pub fn refresh_switch_state(&self) {
     self
       .machine_sender
-      .send(MachineMessage::Request {
-        port: MachinePort::Io,
-        command: Box::new(ReportSwitchesCommand),
-        timeout: Duration::from_secs(2),
-      })
+      .send(MachineMessage::RefreshSwitchState)
       .ok();
   }
 
@@ -133,7 +122,7 @@ impl MachineSystem {
       };
       self
         .machine_sender
-        .send(MachineMessage::Request {
+        .send(MachineMessage::Command {
           port: MachinePort::Io,
           command: Box::new(ConfigureSwitchCommand::new(
             switch.id,
@@ -221,7 +210,7 @@ impl System for MachineSystem {
     for driver in ctx.drivers.values() {
       self
         .machine_sender
-        .send(MachineMessage::Request {
+        .send(MachineMessage::Command {
           port: MachinePort::Io,
           command: Box::new(ConfigureDriverCommand::new(
             driver.id,

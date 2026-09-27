@@ -11,13 +11,13 @@ use crate::prelude::*;
 pub async fn handshake(io_port: &mut SerialInterface) -> String {
   loop {
     match io_port
-      .request(&IdCommand::new(), Duration::from_millis(500))
+      .query(&IdCommand::new(), Duration::from_millis(500))
       .await
     {
       Ok(IdResponse::Report { mainboard_name, .. }) => {
         // Initialize the mainboard with the right firmware
         let _ = io_port
-          .request(
+          .command(
             &ConfigureHardwareCommand::new(
               FastPlatform::Neuron.into(),
               Some(SwitchReporting::Verbose),
@@ -41,7 +41,7 @@ pub async fn handshake(io_port: &mut SerialInterface) -> String {
 pub async fn verify_watchdog(io_port: &mut SerialInterface) {
   loop {
     match io_port
-      .request(
+      .query(
         &WatchdogCommand::set(Duration::from_millis(1250)),
         Duration::from_secs(1),
       )
@@ -75,7 +75,7 @@ pub async fn configure_switches(
         config
       );
       let _ = io_port
-        .request(
+        .command(
           &ConfigureSwitchCommand::new(
             switch.id,
             reporting,
@@ -94,7 +94,7 @@ pub async fn configure_drivers(io_port: &mut SerialInterface, ctx: &BootSnapshot
     if let Some(mode) = ctx.drivers.config(driver.name) {
       log::info!("Configuring driver {} with {:?}", driver.name, mode);
       match io_port
-        .request(
+        .command(
           &ConfigureDriverCommand::new(driver.id, mode.to_config(ctx)),
           Duration::from_millis(500),
         )
@@ -117,7 +117,7 @@ pub async fn configure_drivers(io_port: &mut SerialInterface, ctx: &BootSnapshot
 /// Read the hardware state of all switches at startup to initialize the switch context
 pub async fn get_initial_switch_states(io_port: &mut SerialInterface) -> Vec<SwitchState> {
   match io_port
-    .request(&ReportSwitchesCommand, Duration::from_millis(2000))
+    .query(&ReportSwitchesCommand, Duration::from_millis(2000))
     .await
     .unwrap()
   {
@@ -142,7 +142,7 @@ pub async fn reset_expansion_board(exp_port: &mut SerialInterface, board: &Resol
   if board.breakout.is_none() {
     log::info!("Resetting expansion board at address {:X}", board.address);
     match exp_port
-      .request(
+      .command(
         &BoardResetCommand::new(board.address),
         Duration::from_millis(2000),
       )
@@ -176,7 +176,7 @@ pub async fn resolve_io_network(
   for (id, board) in io_network.boards.iter().enumerate() {
     // query each board for its actual hardware configuration (switch/driver counts, version, etc)
     let response = io_port
-      .request(&NodeNameCommand::new(id as u8), Duration::from_millis(500))
+      .query(&NodeNameCommand::new(id as u8), Duration::from_millis(500))
       .await;
     match response {
       Ok(NodeInfo::Success {
@@ -259,5 +259,5 @@ pub async fn configure_led_port(
     led_port.length,
   );
   // configure port/block
-  let _ = exp_port.request(&cmd, Duration::from_millis(250)).await;
+  let _ = exp_port.command(&cmd, Duration::from_millis(250)).await;
 }
