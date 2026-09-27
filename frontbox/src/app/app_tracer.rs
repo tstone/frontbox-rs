@@ -1,8 +1,10 @@
+use fast_protocol::SwitchState;
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
 
 pub trait AppTracer {
+  fn init(&mut self, hardware: Hardware);
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 
@@ -36,6 +38,14 @@ pub enum TraceEvent {
     key: &'static str,
     active: bool,
   },
+  DriverStateChange {
+    driver_id: usize,
+    state: DriverState,
+  },
+  SwitchStateChange {
+    switch_id: usize,
+    state: SwitchState,
+  },
   // TODO: some kind of game-specific state push that is JSON encodable
 }
 
@@ -43,4 +53,27 @@ pub enum TraceEvent {
 pub struct InterruptEvaluation {
   pub interrupter: u64,
   pub result: InterruptResult,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum DriverState {
+  Fired,
+  On,
+  Off,
+}
+
+pub(crate) struct TracerSenders {
+  txs: Vec<mpsc::UnboundedSender<TraceEvent>>,
+}
+
+impl TracerSenders {
+  pub fn new(txs: Vec<mpsc::UnboundedSender<TraceEvent>>) -> Self {
+    Self { txs }
+  }
+
+  pub fn send(&self, event: TraceEvent) {
+    for tracer in &self.txs {
+      tracer.send(event.clone()).ok();
+    }
+  }
 }

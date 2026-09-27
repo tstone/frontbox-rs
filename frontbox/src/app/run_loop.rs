@@ -11,11 +11,10 @@ use tokio::time::Duration;
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
+use crate::prelude::app_tracer::TracerSenders;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::event_interrupts::EventInterruptRegistry;
-
-pub(crate) type TracerSenders = Vec<mpsc::UnboundedSender<app_tracer::TraceEvent>>;
 
 pub async fn run(
   mut base: BootSnapshot,
@@ -25,16 +24,14 @@ pub async fn run(
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
 ) {
   let (tick_tx, mut tick_rx) = watch::channel(());
-  let tracer_txs: TracerSenders = app_tracers.iter().map(|tracer| tracer.sender()).collect();
+  let tracer_txs = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
   let resync_notifier = Arc::new(Notify::new());
 
   let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = HashMap::new();
 
   groups.insert(ROOT_GROUP, SystemGroup::new());
-  for tracer in &tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: ROOT_GROUP });
-  }
+  tracer_txs.send(TraceEvent::SystemGroupSpawned { key: ROOT_GROUP });
 
   // initialize root systems
   for system in initial_systems {
@@ -123,6 +120,9 @@ pub async fn run(
           }
           AppMessage::CancelCue(handle, cue_id) => {
             cancel_cue(handle, cue_id, &groups);
+          }
+          AppMessage::TracerEvent(event) => {
+            tracer_txs.send(event);
           }
         }
 
@@ -273,13 +273,11 @@ fn emit_event(
   }
 
   // notify any monitoring tracers
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::Event {
-      type_name: event_box.type_name,
-      interrupts: interrupt_evals.clone(),
-      event: event_box.try_json(),
-    });
-  }
+  tracer_txs.send(TraceEvent::Event {
+    type_name: event_box.type_name,
+    interrupts: interrupt_evals.clone(),
+    event: event_box.try_json(),
+  });
 
   // event is broadcast to systems if no interrupt halted it
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
@@ -300,30 +298,14 @@ fn switch_state_changed(
   // Update this first so that handled events see the latest state in Context
   base.switches.update_switch_state(switch_id, state);
 
-  match (base.switches.by_id(&switch_id), state) {
+  let outgoing_event = match (base.switches.by_id(&switch_id), state) {
     (Some(switch), SwitchState::Closed) => {
       log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
-      emit_event(
-        EventBox::new(SwitchClosed::new(switch.clone())),
-        groups,
-        base,
-        app_sender,
-        interrupt_registry,
-        tracer_txs,
-        resync_notifier,
-      );
+      Some(EventBox::new(SwitchClosed::new(switch.clone())))
     }
     (Some(switch), SwitchState::Open) => {
       log::debug!(target: "frontbox::switches", "🎚️  Switch {} opened", switch.name);
-      emit_event(
-        EventBox::new(SwitchOpened::new(switch.clone())),
-        groups,
-        base,
-        app_sender,
-        interrupt_registry,
-        tracer_txs,
-        resync_notifier,
-      );
+      Some(EventBox::new(SwitchOpened::new(switch.clone())))
     }
     (None, _) => {
       // Report as native board/switch id since this is the easiest way to figure out current switch wiring
@@ -347,9 +329,22 @@ fn switch_state_changed(
           );
         }
       }
+      None
     }
+  };
+
+  if let Some(event) = outgoing_event {
+    emit_event(
+      event,
+      groups,
+      base,
+      app_sender,
+      interrupt_registry,
+      tracer_txs,
+      resync_notifier,
+    );
+    tracer_txs.send(TraceEvent::SwitchStateChange { switch_id, state });
   }
-  // TODO: this needs to do all the event sending and such that Machine previously did
 }
 
 fn get_native_switch_id(switch_id: &usize, base: &BootSnapshot) -> Option<(usize, usize)> {
@@ -421,13 +416,11 @@ fn spawn_system(
     );
     system.initialize(&ctx);
 
-    for tracer in tracer_txs {
-      let _ = tracer.send(TraceEvent::SystemSpawned {
-        id: system_id,
-        name: system.name(),
-        parent_key,
-      });
-    }
+    tracer_txs.send(TraceEvent::SystemSpawned {
+      id: system_id,
+      name: system.name(),
+      parent_key,
+    });
 
     let event = SystemSpawned::new(system_id, parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
@@ -482,12 +475,10 @@ fn despawn_system(
       target: "frontbox::systems::lifecycle", 
       "🌐 Despawned system {} ({})", system.name(), system.id());
 
-    for tracer in tracer_txs {
-      let _ = tracer.send(TraceEvent::SystemDespawned {
-        id: handle.id,
-        parent_key: handle.parent_key,
-      });
-    }
+    tracer_txs.send(TraceEvent::SystemDespawned {
+      id: handle.id,
+      parent_key: handle.parent_key,
+    });
 
     let event = SystemDespawned::new(handle.id, handle.parent_key);
     let _ = app_sender.send(EmitEvent(EventBox::new(event)));
@@ -506,9 +497,7 @@ fn spawn_system_group(
   groups.insert(group_name, SystemGroup::new());
   log::info!("🌐 Spawned system group {}", group_name);
 
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupSpawned { key: group_name });
-  }
+  tracer_txs.send(TraceEvent::SystemGroupSpawned { key: group_name });
 
   for child in child_systems {
     spawn_system(
@@ -555,9 +544,7 @@ fn despawn_system_group(
     );
   }
 
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupDespawned { key: group_name });
-  }
+  tracer_txs.send(TraceEvent::SystemGroupDespawned { key: group_name });
 
   let _ = groups.remove(group_name);
   log::info!("🌐 Despawned system group {}", group_name);
@@ -605,12 +592,10 @@ fn activate_system_group(
     }
   }
 
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange {
-      key: group_name,
-      active: true,
-    });
-  }
+  tracer_txs.send(TraceEvent::SystemGroupActiveStateChange {
+    key: group_name,
+    active: true,
+  });
 }
 
 fn deactivate_system_group(
@@ -652,12 +637,10 @@ fn deactivate_system_group(
     system.on_deactivate(&ctx);
   }
 
-  for tracer in tracer_txs {
-    let _ = tracer.send(TraceEvent::SystemGroupActiveStateChange {
-      key: group_name,
-      active: false,
-    });
-  }
+  tracer_txs.send(TraceEvent::SystemGroupActiveStateChange {
+    key: group_name,
+    active: false,
+  });
 }
 
 fn unregister_all_by_system(system_id: &u64, interrupt_registry: &mut EventInterruptRegistry) {

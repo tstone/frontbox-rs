@@ -85,6 +85,8 @@ impl WebInterface {
             }
             events.push_front(SystemEvent::new(type_name, interrupts, event));
           }
+          // TODO
+          _ => {}
         }
       }
       log::info!("trace event channel closed, stopping log writer");

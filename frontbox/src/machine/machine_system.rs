@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use crate::hardware::*;
+use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_tracer::{DriverState, TraceEvent};
 use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
@@ -8,12 +10,19 @@ use tokio::sync::mpsc;
 /// Primary interface for interaction with FAST hardware
 pub struct MachineSystem {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
 #[allow(unused)]
 impl MachineSystem {
-  pub(crate) fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>) -> Self {
-    Self { machine_sender }
+  pub(crate) fn new(
+    machine_sender: mpsc::UnboundedSender<MachineMessage>,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
+  ) -> Self {
+    Self {
+      machine_sender,
+      app_sender,
+    }
   }
 
   /// Ping the watchdog to prevent it from triggering a reset (WD)
@@ -88,6 +97,13 @@ impl MachineSystem {
   }
 
   fn trigger_driver(&self, driver: usize, mode: DriverTriggerControlMode, switch: Option<usize>) {
+    let driver_state = match &mode {
+      DriverTriggerControlMode::On => Some(DriverState::On),
+      DriverTriggerControlMode::Off => Some(DriverState::Off),
+      DriverTriggerControlMode::Manual => Some(DriverState::Fired),
+      _ => None,
+    };
+
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
@@ -95,6 +111,16 @@ impl MachineSystem {
         command: Box::new(TriggerDriverCommand::new(driver, mode, switch)),
       })
       .ok();
+
+    if let Some(state) = driver_state {
+      self
+        .app_sender
+        .send(AppMessage::TracerEvent(TraceEvent::DriverStateChange {
+          driver_id: driver,
+          state,
+        }))
+        .ok();
+    }
   }
 
   /// Request the current state of all switches (SA). This will also automatically update Context with the latest switch states.

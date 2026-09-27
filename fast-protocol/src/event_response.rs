@@ -8,7 +8,7 @@ pub enum EventResponse {
   },
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, serde::Serialize)]
 pub enum SwitchState {
   Open,
   Closed,

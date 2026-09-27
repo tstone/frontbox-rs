@@ -3,6 +3,7 @@ use std::fmt::Debug;
 
 use fast_protocol::SwitchState;
 
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 pub enum AppMessage {
@@ -24,6 +25,7 @@ pub enum AppMessage {
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
+  TracerEvent(TraceEvent),
 }
 
 impl Debug for AppMessage {
@@ -66,6 +68,7 @@ impl Debug for AppMessage {
         write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
+      AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }
 }

@@ -99,7 +99,7 @@ impl App {
     };
 
     // These systems need to appear first because other systems expect them to be present on startup
-    let bridge = MachineSystem::new(machine_sender);
+    let bridge = MachineSystem::new(machine_sender, app_sender.clone());
     self.systems.insert(0, SystemContainer::new(bridge));
     self
       .systems

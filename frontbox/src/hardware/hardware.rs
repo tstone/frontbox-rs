@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+#[derive(Clone)]
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
