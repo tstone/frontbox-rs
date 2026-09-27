@@ -2,6 +2,7 @@
 //!
 //!
 
+use std::any::Any;
 use std::fmt::Debug;
 
 use crate::raw_response::RawResponse;
@@ -15,11 +16,22 @@ pub trait FastStringDispatch: Debug + Send + Sync {
 /// An instruction sent to the FAST hardware as fire and forget (e.g. set LED color)
 pub trait FastBinaryDispatch: Debug + Send + Sync {
   fn to_bytes(&self) -> Vec<u8>;
+  fn as_any(&self) -> &dyn Any;
 }
 
-impl<T: FastStringDispatch> FastBinaryDispatch for T {
+impl dyn FastBinaryDispatch {
+  pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
+    self.as_any().downcast_ref::<T>()
+  }
+}
+
+impl<T: FastStringDispatch + 'static> FastBinaryDispatch for T {
   fn to_bytes(&self) -> Vec<u8> {
     self.to_string().as_bytes().to_vec()
+  }
+
+  fn as_any(&self) -> &dyn Any {
+    self
   }
 }
 
