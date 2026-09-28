@@ -39,7 +39,7 @@ impl ActivatePlayfieldSystem {
 
   fn deactivate(&self, ctx: &SystemContext) {
     for driver in self.driver_table.keys() {
-      ctx.deactivate_driver(driver, DeactivationMode::Disabled);
+      ctx.deactivate_driver(*driver, DeactivationMode::Disabled);
     }
   }
 }
