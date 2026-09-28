@@ -82,7 +82,8 @@ impl EventInterruptRegistry {
   }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum InterruptResult {
   /// Event is broadcast to all systems (default operation)
   Continue,

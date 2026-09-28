@@ -6,6 +6,7 @@ pub struct WebTracer {
 }
 
 impl WebTracer {
+  // TODO: accept config: playfield image
   pub fn new() -> Self {
     let (tx, rx) = mpsc::unbounded_channel::<TraceEvent>();
     tokio::spawn(async move { /* WebInterface::new().run(rx).await */ });
@@ -15,7 +16,7 @@ impl WebTracer {
 
 impl AppTracer for WebTracer {
   fn init(&mut self, _hardware: &Hardware) {
-    // TODO store this somewhere to render
+    // TODO pass this to the web interface
   }
 
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent> {

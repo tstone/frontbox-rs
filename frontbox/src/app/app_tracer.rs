@@ -8,11 +8,13 @@ pub trait AppTracer {
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum TraceEvent {
   Event {
     type_name: &'static str,
     interrupts: Vec<InterruptEvaluation>,
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     event: Option<serde_json::Value>,
   },
   SystemSpawned {
@@ -49,13 +51,15 @@ pub enum TraceEvent {
   // TODO: some kind of game-specific state push that is JSON encodable
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InterruptEvaluation {
   pub interrupter: u64,
   pub result: InterruptResult,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DriverState {
   Fired,
   On,
