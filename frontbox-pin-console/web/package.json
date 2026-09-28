@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "gen:types": "cargo run --example export_types",
+    "predev": "npm run gen:types",
+    "prebuild": "npm run gen:types",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
