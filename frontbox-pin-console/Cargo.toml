@@ -1,5 +1,5 @@
 [package]
-name = "frontbox-pinball-web-console"
+name = "frontbox-pin-console"
 version = "0.1.0"
 edition = "2024"
 include = ["src/**", "build.rs", "web/dist/**", "Cargo.toml"]

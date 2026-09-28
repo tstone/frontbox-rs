@@ -1006,22 +1006,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-pin2dmd"
-version = "0.1.0"
-dependencies = [
- "frontbox",
- "frontbox-canvas",
- "frontbox-sound",
- "image",
- "log",
- "rand 0.10.0",
- "rusb",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "frontbox-pinball-web-console"
+name = "frontbox-pin-console"
 version = "0.1.0"
 dependencies = [
  "askama",
@@ -1035,6 +1020,21 @@ dependencies = [
  "tokio",
  "tower-http",
  "ts-rs",
+]
+
+[[package]]
+name = "frontbox-pin2dmd"
+version = "0.1.0"
+dependencies = [
+ "frontbox",
+ "frontbox-canvas",
+ "frontbox-sound",
+ "image",
+ "log",
+ "rand 0.10.0",
+ "rusb",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
