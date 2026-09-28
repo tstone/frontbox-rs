@@ -1,5 +1,5 @@
 [package]
-name = "frontbox-web-console"
+name = "frontbox-pinball-web-console"
 version = "0.1.0"
 edition = "2024"
 
