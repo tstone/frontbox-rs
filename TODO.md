@@ -20,6 +20,7 @@ Virtual Machine
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Stability: Robust handling for USB disconnects/reconnects
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?)
+- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 
 Canvas
 

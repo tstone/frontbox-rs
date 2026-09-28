@@ -57,7 +57,7 @@ pub async fn run(
   });
 
   log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
-  let mut shutdown_scope = ShutdownScope::Process;
+  let shutdown_scope;
 
   loop {
     tokio::select! {

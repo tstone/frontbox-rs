@@ -8,7 +8,7 @@ pub struct WebTracer {
 impl WebTracer {
   // TODO: accept config: playfield image
   pub fn new() -> Self {
-    let (tx, rx) = mpsc::unbounded_channel::<TraceEvent>();
+    let (tx, _rx) = mpsc::unbounded_channel::<TraceEvent>();
     tokio::spawn(async move { /* WebInterface::new().run(rx).await */ });
     Self { tx }
   }
