@@ -1,9 +1,9 @@
 use crate::prelude::*;
 
 pub trait MachineExt {
-  fn configure_driver(&self, driver: &'static str, mode: DriverMode);
-  fn activate_driver(&self, driver: &'static str, mode: ActivationMode);
-  fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode);
+  fn configure_driver(&self, driver: impl Into<&'static str>, mode: DriverMode);
+  fn activate_driver(&self, driver: impl Into<&'static str>, mode: ActivationMode);
+  fn deactivate_driver(&self, driver: impl Into<&'static str>, mode: DeactivationMode);
   fn configure_switch(
     &self,
     switch: &'static str,
@@ -14,22 +14,21 @@ pub trait MachineExt {
 }
 
 impl<'a> MachineExt for SystemContext<'a> {
-  // TODO: allow DriverDefinition to be passed in directly
-  fn configure_driver(&self, driver: &'static str, mode: DriverMode) {
+  fn configure_driver(&self, driver: impl Into<&'static str>, mode: DriverMode) {
     with_machine(self, |machine| {
-      machine.configure_driver(driver, mode, self.into());
+      machine.configure_driver(driver.into(), mode, self.into());
     });
   }
 
-  fn activate_driver(&self, driver: &'static str, mode: ActivationMode) {
+  fn activate_driver(&self, driver: impl Into<&'static str>, mode: ActivationMode) {
     with_machine(self, |machine| {
-      machine.activate_driver(driver, mode, self.into());
+      machine.activate_driver(driver.into(), mode, self.into());
     });
   }
 
-  fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode) {
+  fn deactivate_driver(&self, driver: impl Into<&'static str>, mode: DeactivationMode) {
     with_machine(self, |machine| {
-      machine.deactivate_driver(driver, mode, self.into());
+      machine.deactivate_driver(driver.into(), mode, self.into());
     });
   }
 

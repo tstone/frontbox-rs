@@ -1,8 +1,3 @@
-// TODO: migrate LED to using HardwareDefinition
-// TODO: there needs to be an underlying type here that actually produces Vec<HardwareDefinition>
-// things that contain multiple LEDs should maybe generate unique names for them, which are later referenceable
-// e.g. MultiLedDefinition.child(2).name
-
 use std::borrow::Cow;
 
 use crate::prelude::*;

@@ -52,6 +52,12 @@ impl Into<&'static str> for DriverDefinition {
   }
 }
 
+impl From<&DriverDefinition> for &'static str {
+  fn from(value: &DriverDefinition) -> Self {
+    value.name
+  }
+}
+
 pub struct DriverDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
