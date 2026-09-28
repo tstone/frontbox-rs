@@ -1,3 +1,4 @@
+use crate::machine::*;
 use crate::prelude::*;
 
 pub trait MachineExt {

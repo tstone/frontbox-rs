@@ -1,3 +1,4 @@
+use crate::machine::*;
 use crate::prelude::*;
 
 /// A system which continually pings the FAST hardware to keep 48v active. This is required to use drivers.

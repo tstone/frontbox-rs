@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::hardware::*;
+use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::{DriverState, TraceEvent};
 use crate::prelude::*;
@@ -49,12 +50,7 @@ impl MachineSystem {
   }
 
   /// Configure a driver with a specific mode (e.g. enable with certain power level, or set to automatic) (DL)
-  pub fn configure_driver(
-    &self,
-    driver: &str,
-    mode: DriverMode,
-    ctx: &ServiceContext,
-  ) {
+  pub fn configure_driver(&self, driver: &str, mode: DriverMode, ctx: &ServiceContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let config = mode.to_config(&ctx);
       self

@@ -39,7 +39,7 @@ pub mod prelude {
   pub use crate::hardware_defs;
   pub use crate::led::color_sequence::GradientStop;
   pub use crate::led::*;
-  pub use crate::machine::*;
+  pub use crate::machine::{MachineExt, MachineSystem, SwitchClosed, SwitchOpened};
   pub use crate::operator_config::*;
   pub use crate::store::*;
   pub use crate::systems;

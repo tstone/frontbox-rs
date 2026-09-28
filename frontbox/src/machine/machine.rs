@@ -1,5 +1,6 @@
 use tokio::sync::mpsc;
 
+use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 

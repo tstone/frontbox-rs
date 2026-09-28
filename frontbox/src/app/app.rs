@@ -1,6 +1,7 @@
 use crate::app::app_tracer::AppTracer;
 use crate::app::run_loop;
 use crate::hardware::*;
+use crate::machine::*;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;

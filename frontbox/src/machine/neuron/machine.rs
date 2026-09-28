@@ -1,14 +1,15 @@
 use std::time::Duration;
 
-use crate::machine::serial_interface::*;
+use crate::machine::neuron::boot;
+use crate::machine::serial_interface::SerialInterface;
+use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
-use crate::prelude::neuron::boot;
 use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
 /// Handles serial port communication in an lightweight task
-pub(crate) struct Neuron {
+pub struct Neuron {
   io_port: SerialInterface,
   exp_port: SerialInterface,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -35,7 +36,9 @@ impl Neuron {
       MachineMessage::WatchdogClear => {
         self.send_watchdog(WatchdogCommand::disable()).await;
       }
-      MachineMessage::RefreshSwitchState => {}
+      MachineMessage::RefreshSwitchState => {
+        self.refresh_switch_state().await;
+      }
       MachineMessage::Dispatch { port, command } => {
         let port = self.port_for(port);
         port.dispatch(&*command).await;

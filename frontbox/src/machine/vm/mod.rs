@@ -1,5 +1,6 @@
 use tokio::sync::mpsc;
 
+use crate::machine::*;
 use crate::prelude::*;
 
 pub struct VirtualMachine {

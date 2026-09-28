@@ -4,7 +4,7 @@ use fast_protocol::exp::prelude::*;
 use fast_protocol::net::prelude::*;
 use fast_protocol::{ProcessedResponse, SwitchState};
 
-use crate::prelude::serial_interface::SerialInterface;
+use crate::machine::serial_interface::SerialInterface;
 use crate::prelude::*;
 
 /// wait for the mainboard to be ready to respond
