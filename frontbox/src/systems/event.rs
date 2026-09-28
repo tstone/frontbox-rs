@@ -3,19 +3,23 @@
 //! Frontbox systems receive events through the `on_event` handler.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # struct Example;
 //! impl System for Example {
-//!   fn on_event(&mut self, event: &dyn Signal, ctx: &Context) { }
+//!   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) { }
 //! }
 //! ```
 //!
 //! Events are typically handled by attempting a downcast into the expected type.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # struct Example;
 //! impl System for Example {
-//!   fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
+//!   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
 //!     // detect if the event is of type `SwitchClosed`
 //!     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-//!       log::debug!("Switch {} was closed!", e.name);
+//!       log::debug!("Switch {} was closed!", e.switch.name);
 //!     }
 //!
 //!     // simple tests are also possible:
@@ -24,17 +28,22 @@
 //! }
 //! ```
 //!
-//! Events are both something that the framework provides (e.g. switch open/closed) and something that can be defined by the end user. The only requirement is that values be thread safe (`Send + Sync`).
+//! Events are both something that the framework provides (e.g. switch open/closed) and something that can be defined by the end user. Values must be thread safe (`Send + Sync`) and implement both `Event` and `serde::Serialize` (both derivable).
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
 //! // Events can simply be a body-less struct representing a typed thing
+//! #[derive(Serialize, Event)]
 //! pub struct MyCustomThing;
 //!
 //! // Events can also contain data
+//! #[derive(Serialize, Event)]
 //! pub struct MyCustomThing2 {
 //!   pub prop1: u8,
 //!   pub prop2: String,
 //! }
+//!
+//! #[derive(Serialize, Event)]
 //! pub struct MyTupleLikeThing(i8, i8);
 //! ```
 //!
@@ -43,12 +52,18 @@
 //! Events are broadcast to to all systems. While it's technically possible for every system to emit every event, in practice typically only a small handle of systems emit a particular event.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # #[derive(Serialize, Event)]
+//! # pub struct MyCustomThing2 { pub prop1: u8, pub prop2: String }
+//! # struct Example;
+//! # fn example(ctx: &SystemContext) {
 //! ctx.emit(MyCustomThing2 { prop1: 4, prop2: "example".to_string() });
+//! # }
 //!
 //! // ...
 //!
 //! impl System for Example {
-//!   fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
+//!   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
 //!     if let Some(custom) = event.downcast_ref::<MyCustomThing2>() {
 //!       log::debug!("Custom thing happened with {}, {}", custom.prop1, custom.prop2);
 //!     }
@@ -78,11 +93,12 @@ use std::any::Any;
 /// # Examples
 ///
 /// ```rust
-//// #[derive(serde::Serialize, Event)]
+/// # use frontbox::prelude::*;
+/// #[derive(serde::Serialize, Event)]
 /// pub struct ExampleEvent1;
 ///
 /// #[derive(serde::Serialize, Event)]
-/// pub struct ExampleEvent2(pub id: u64);
+/// pub struct ExampleEvent2(pub u64);
 ///
 /// #[derive(serde::Serialize, Event)]
 /// pub struct ExampleEvent3 {
@@ -98,19 +114,25 @@ pub trait EventExt {
   /// Returns true if the event is of the given type `T`
   ///
   /// ```rust
+  /// # use frontbox::prelude::*;
+  /// # #[derive(Serialize, Event)]
   /// # struct ExampleEvent1;
+  /// # #[derive(Serialize, Event)]
   /// # struct ExampleEvent2;
+  /// let event: &dyn Event = &ExampleEvent1;
   ///
-  /// assert_true!(ExampleEvent1.is::<ExampleEvent1>());
-  /// assert_false!(ExampleEvent1.is::<ExampleEvent2>());
+  /// assert!(event.is::<ExampleEvent1>());
+  /// assert!(!event.is::<ExampleEvent2>());
   /// ```
   fn is<T: Any>(&self) -> bool;
 
   /// Returns a casted reference to `T`, if value is of type `T`. Otherwise returns `None`.
   ///
   /// ```rust
-  /// # struct ExampleEvent
-  /// # let event: Any = ExampleEvent;
+  /// # use frontbox::prelude::*;
+  /// # #[derive(Serialize, Event)]
+  /// # struct ExampleEvent;
+  /// # let event: &dyn Event = &ExampleEvent;
   /// if let Some(event) = event.downcast_ref::<ExampleEvent>() {
   ///   // do something with event
   /// }

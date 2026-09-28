@@ -1,16 +1,16 @@
-use std::any::Any;
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use fast_protocol::FastAnyRequestCommand;
-use fast_protocol::FastBinaryCommand;
+use fast_protocol::FastBinaryDispatch;
+use fast_protocol::FastQuery;
+use fast_protocol::ProcessedResponse;
 use futures_util::StreamExt;
 use tokio::io::{AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio_serial::{DataBits, FlowControl, Parity, SerialStream, StopBits};
 use tokio_util::codec::FramedRead;
 
 use crate::machine::fast_codec::FastRawCodec;
-use fast_protocol::FastRequestCommand;
+use fast_protocol::FastCommand;
 use fast_protocol::RawResponse;
 use fast_protocol::{EventResponse, FastResponseError};
 
@@ -114,7 +114,7 @@ impl SerialInterface {
       let expired = now.duration_since(r.received_at) > self.queue_ttl;
       if expired {
         log::trace!(
-          target: "frontbox::serial", 
+          target: "frontbox::serial",
           "Expiring unclaimed queue response: {}:{}",
           r.raw.prefix,
           r.raw.payload
@@ -162,11 +162,11 @@ impl SerialInterface {
     }
   }
 
-  pub async fn dispatch<C: FastBinaryCommand + ?Sized>(&mut self, cmd: &C) {
+  pub async fn dispatch<C: FastBinaryDispatch + ?Sized>(&mut self, cmd: &C) {
     self.send(&cmd.to_bytes()).await
   }
 
-  async fn request_inner<R>(
+  async fn query_inner<R>(
     &mut self,
     prefix: &str,
     timeout: Duration,
@@ -212,26 +212,25 @@ impl SerialInterface {
   }
 
   /// Dispatch a command and wait for a response
-  pub async fn request<C: FastRequestCommand>(
+  pub async fn query<C: FastQuery>(
     &mut self,
     cmd: &C,
     timeout: Duration,
   ) -> Result<C::Response, FastResponseError> {
     self.dispatch(cmd).await;
     self
-      .request_inner(C::prefix(), timeout, |raw| cmd.parse(raw))
+      .query_inner(cmd.prefix(), timeout, |raw| cmd.parse(raw))
       .await
   }
 
-  /// Dispatch a command and wait for a response, but the caller doesn't know the type of the response at compile time
-  pub async fn request_any<C: FastAnyRequestCommand + ?Sized>(
+  pub async fn command<C: FastCommand + ?Sized>(
     &mut self,
     cmd: &C,
     timeout: Duration,
-  ) -> Result<Box<dyn Any + Send + Sync>, FastResponseError> {
+  ) -> Result<ProcessedResponse, FastResponseError> {
     self.dispatch(cmd).await;
     self
-      .request_inner(cmd.cmd_prefix(), timeout, |raw| cmd.parse_any(raw))
+      .query_inner(cmd.prefix(), timeout, |raw| cmd.parse(raw))
       .await
   }
 }

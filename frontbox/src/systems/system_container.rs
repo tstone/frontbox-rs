@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use crate::animation::Accumulator;
 use crate::app::app_tracer::TraceEvent;
-use crate::app::run_loop::TracerSenders;
 use crate::prelude::Event;
+use crate::prelude::app_tracer::TracerSenders;
 use crate::systems::*;
 
 static INCR_ID: AtomicU64 = AtomicU64::new(0);
@@ -87,21 +87,17 @@ impl SystemContainer {
       if fresh {
         // system just became active
         self.on_reactivate(ctx);
-        for tracer in tracer_txs {
-          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
-            id: self.id,
-            active: true,
-          });
-        }
+        tracer_txs.send(TraceEvent::SystemActiveStateChange {
+          id: self.id,
+          active: true,
+        });
       } else {
         // system just became inactive
         self.on_deactivate(ctx);
-        for tracer in tracer_txs {
-          let _ = tracer.send(TraceEvent::SystemActiveStateChange {
-            id: self.id,
-            active: false,
-          });
-        }
+        tracer_txs.send(TraceEvent::SystemActiveStateChange {
+          id: self.id,
+          active: false,
+        });
       }
     }
 

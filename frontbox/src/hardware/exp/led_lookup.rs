@@ -4,7 +4,8 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedLookup {
   by_name: HashMap<String, LED>,
   configs: HashMap<String, LedConfiguration>,

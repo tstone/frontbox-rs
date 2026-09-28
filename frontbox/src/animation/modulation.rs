@@ -1,12 +1,12 @@
 use dyn_clone::DynClone;
 
-use crate::animation::{AccumulationResult, Accumulator};
+use crate::animation::{AccumulationResult, Accumulator, Modulation};
 
-pub trait DynModulation<S, A>: DynClone {
+/// Object-safe, cloneable extension of [`Modulation`], allowing modulations to be stored as `Box<dyn DynModulation>`.
+pub trait DynModulation<S, A>: Modulation<S, A> + DynClone {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A>;
   fn force(&mut self, current: A);
   fn reset(&mut self);
-  fn apply(&mut self, delta: A, target: &mut S);
   fn is_complete(&self) -> bool;
   fn play(&mut self);
   fn stop(&mut self);

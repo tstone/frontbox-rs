@@ -7,14 +7,19 @@
 //! Event interrupts can be applied to any event within the system.
 //!
 //! ```rust
-//! fn on_spawn(&mut self, ctx: &Context) {
+//! # use frontbox::prelude::*;
+//! # use frontbox::provided::TroughFull;
+//! # struct Example;
+//! # impl System for Example {
+//! fn on_spawn(&mut self, ctx: &SystemContext) {
 //!   ctx.register_interrupt::<TroughFull>(100); // 100 is the priority
 //! }
 //!
-//! fn on_interrupt(&mut self, event: &dyn Signal, ctx: &mut Context) -> InterruptResult {
+//! fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
 //!   // interrupt handlers must return a result
 //!   InterruptResult::Continue // or InterruptResult::Halt
 //! }
+//! # }
 //! ```
 
 use std::any::TypeId;
@@ -82,7 +87,8 @@ impl EventInterruptRegistry {
   }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum InterruptResult {
   /// Event is broadcast to all systems (default operation)
   Continue,

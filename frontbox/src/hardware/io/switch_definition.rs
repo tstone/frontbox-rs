@@ -115,10 +115,16 @@ impl SwitchDefinitionBuilder {
   }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde_with::serde_as]
 pub struct SwitchConfig {
   pub inverted: bool,
+  #[serde_as(as = "Option<serde_with::DurationMilliSeconds<u64>>")]
+  #[cfg_attr(feature = "ts", ts(type = "number | null"))]
   pub debounce_close: Option<Duration>,
+  #[serde_as(as = "Option<serde_with::DurationMilliSeconds<u64>>")]
+  #[cfg_attr(feature = "ts", ts(type = "number | null"))]
   pub debounce_open: Option<Duration>,
 }
 

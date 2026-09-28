@@ -1,3 +1,10 @@
+Virtual Machine
+
+- App should probably just keep track of switches (supported), drivers, and LED state (currently LedSystem)
+- App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
+- Update the trough to periodically re-check the state of the switches and self recover if it is actually full
+
+- ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
 - So much is built on LedSystem that the framework should probably just start it up automatically.
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
@@ -13,6 +20,7 @@
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Stability: Robust handling for USB disconnects/reconnects
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?)
+- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 
 Canvas
 

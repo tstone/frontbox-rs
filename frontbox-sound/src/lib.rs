@@ -24,16 +24,21 @@
 //! - Can crossfade into each other
 //! 
 //! ```rust
-//! let sound_system = ctx.expect::<SoundSystem>();
-//! 
-//! // typically done `on_startup`
+//! # use frontbox::prelude::*;
+//! # use frontbox_sound::*;
+//! # fn example(ctx: &SystemContext) {
+//! let mut sound_system = ctx.expect::<SoundSystem>();
+//!
+//! // typically done `on_spawn`
 //! sound_system.preload("name", "/game/assets/sfx/example.wav");
 //! sound_system.preload("multiball", "/game/assets/callouts/multiball.wav");
-//! 
+//!
 //! sound_system.play_sfx("name");
 //! sound_system.play_callout("multiball");
-//! sound_system.play_music("/game/assets/music/track1.mp3");
-//! sound_system.crossfade_music("/game/assets/music/track2.mp3");
+//! sound_system.play_music("/game/assets/music/track1.mp3", Duration::ZERO);
+//! // crossfade into the next track
+//! sound_system.play_music("/game/assets/music/track2.mp3", Duration::from_secs(2));
+//! # }
 //! ```
 
 mod sound_system;

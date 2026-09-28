@@ -7,7 +7,9 @@
 //! Animations describe "how does this value change over an accumulated amount?" Usually the thing being accumulated is time.
 //!
 //! ```rust
-//! let anim = Tween::new(
+//! # use frontbox::prelude::*;
+//! # use frontbox::animation::*;
+//! let mut anim = Tween::new(
 //!   Duration::from_secs(1),
 //!   Curve::Linear,
 //!   vec![0, 100],
@@ -22,13 +24,16 @@
 //! // => "50"
 //! ```
 //!
-//! This example describes how a value will start at `0` and end up at `100` over the duration of 1 second. The current value of the animation can be read by sampling it (`.sample()`). Calling `tick` causes time to march forward. Sampling the value of changed time will yield a new value.
+//! This example describes how a value will start at `0` and end up at `100` over the duration of 1 second. The current value of the animation can be read by sampling it (`.sample()`). Calling `accumulate` causes time to march forward. Sampling the value of changed time will yield a new value.
 //!
 //! #### Ticking Forward
 //!
 //! Animations are actually built on a lower level trait called a `Accumulator`. Accumulator are, as the name implies, accumulators of values. When used with `Duration` they accumulate time.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # use frontbox::animation::*;
+//! # let mut acc = Tween::new(Duration::from_secs(1), Curve::Linear, vec![0, 100], Cycle::Once);
 //! acc.accumulate(Duration::from_millis(100));
 //! log::debug!("Is complete? {}", acc.is_complete());
 //!
@@ -38,9 +43,12 @@
 //! Systems have an `on_tick` handler, invoked by the framework, that marches forward based on the framework frequency much like all game frameworks. This internal tick is separate from hardware event handling, which is done in real time. Inactive systems do not tick forward (see "Active" section).
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # use frontbox::animation::*;
+//! # struct Example { anim: Tween<Duration, i32> }
 //! impl System for Example {
-//!   fn on_tick(&mut self, delta: Duration, ctx: &mut Context) {
-//!     self.anim.tick(delta);
+//!   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
+//!     self.anim.accumulate(delta);
 //!   }
 //! }
 //! ```
@@ -52,31 +60,38 @@
 //! This means that animations work, not just on time, by for integers that represent hit counts or switch counts. For example, to change the color of LED based on how many time a spinner has spun, an animation can be used for this.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # use frontbox::animation::*;
+//! # hardware_defs! {
+//! #   SPINNER: SwitchDefinition = SwitchDefinition::new("spinner");
+//! # }
+//! # struct SpinnerSystem { anim: Tween<u32, Rgba<u8>> }
 //! // Require 100 hits, animating a from yellow to red
-//! self.anim = Tween::new(
+//! let anim = Tween::new(
 //!   100, // target
 //!   Curve::Linear,
 //!   vec![Rgba::yellow(), Rgba::red()],
 //!   Cycle::Once
 //! );
 //!
-//!
-//! fn on_event(&mut self, event: &dyn Signal, ctx: &Context) {
-//!   if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-//!     match e.name {
-//!       switches::SPINNER => {
+//! impl System for SpinnerSystem {
+//!   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+//!     if let Some(e) = event.downcast_ref::<SwitchClosed>() {
+//!       if e.switch.name == SPINNER.name {
 //!         let result = self.anim.accumulate(1);
-//!         if result.completed_just_now {
+//!         if result.completed_cycle {
 //!           // do something
 //!         }
 //!       }
 //!     }
 //!   }
+//!
+//!   fn on_render(&mut self, ctx: &SystemContext) {
+//!     // elsewhere the animation value can be used to set the LED color (see below)
+//!     let color = self.anim.sample();
+//!   }
 //! }
-//!
-//!
-//! // elsewhere the animation value can be used to set the LED color (see below)
-//! self.anim.sample()
+//! # let _ = SpinnerSystem { anim };
 //! ```
 
 mod accumulator;

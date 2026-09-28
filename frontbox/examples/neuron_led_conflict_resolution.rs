@@ -25,11 +25,10 @@ async fn main() {
     ExpBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1])),
   ]);
 
-  App::boot(BootConfig {
+  App::new(BootConfig {
     exp_network,
     ..Default::default()
   })
-  .await
   .configure(|app| {
     app.system(LedSystem::new());
     app.system(System1);

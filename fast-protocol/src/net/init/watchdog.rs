@@ -27,7 +27,7 @@ impl WatchdogCommand {
   }
 }
 
-impl FastStringCommand for WatchdogCommand {
+impl FastStringDispatch for WatchdogCommand {
   fn to_string(&self) -> String {
     match self.duration {
       // Convert decimal to hex string for milliseconds
@@ -37,10 +37,10 @@ impl FastStringCommand for WatchdogCommand {
   }
 }
 
-impl FastRequestCommand for WatchdogCommand {
+impl FastQuery for WatchdogCommand {
   type Response = WatchdogResponse;
 
-  fn prefix() -> &'static str {
+  fn prefix(&self) -> &'static str {
     "wd"
   }
 

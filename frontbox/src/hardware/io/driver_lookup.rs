@@ -4,11 +4,13 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
-  configs: HashMap<usize, &'static Box<dyn DriverMode>>,
+  #[serde(skip)]
+  configs: HashMap<usize, DriverMode>,
 }
 
 impl DriverLookup {
@@ -30,7 +32,7 @@ impl DriverLookup {
       by_name.insert(addressed.definition.name, driver);
 
       if let Some(config) = &addressed.definition.mode {
-        configs.insert(addressed.id, config);
+        configs.insert(addressed.id, config.clone());
       }
     }
 
@@ -57,11 +59,11 @@ impl DriverLookup {
     self.by_name.get_mut(driver_name)
   }
 
-  pub fn config(&self, name: &str) -> Option<&'static Box<dyn DriverMode>> {
+  pub fn config(&self, name: &str) -> Option<&DriverMode> {
     self
       .by_name
       .get(name)
-      .and_then(|driver| self.configs.get(&driver.id).map(|b| *b))
+      .and_then(|driver| self.configs.get(&driver.id))
   }
 
   pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Driver> {
@@ -95,12 +97,15 @@ impl DerefMut for DriverLookup {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Driver {
   pub id: usize,
   pub name: &'static str,
   pub assignment: IoAddress,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
 }
 

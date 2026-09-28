@@ -30,7 +30,7 @@ impl ActivatePlayfieldSystem {
   }
 
   fn activate(&self, ctx: &SystemContext) {
-    let machine = ctx.expect::<Machine>();
+    let machine = ctx.expect::<MachineSystem>();
 
     for (driver, switch) in &self.driver_table {
       machine.activate_driver(driver, ActivationMode::Automatic(switch), ctx.into());
@@ -39,7 +39,7 @@ impl ActivatePlayfieldSystem {
 
   fn deactivate(&self, ctx: &SystemContext) {
     for driver in self.driver_table.keys() {
-      ctx.deactivate_driver(driver, DeactivationMode::Disabled);
+      ctx.deactivate_driver(*driver, DeactivationMode::Disabled);
     }
   }
 }

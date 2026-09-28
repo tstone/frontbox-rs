@@ -2,15 +2,16 @@
 //!
 //! <div class="warning">Stability Level: High</div>
 //!
-//! The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through events. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_startup` and `on_shutdown` handlers.
+//! The heart of Frontbox is a `System`. Almost everything is a System: game modes, credit modes, sound mixer, even the display. Systems interact with the world through events. Systems are just Rust structs, which can manage their own state and be extended with private functions. They have a handful of callback type methods, including general lifecycle `on_spawn` and `on_despawn` handlers.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
 //! struct ExampleSystem {
 //!   private_data: u64,
 //! }
 //!
 //! impl System for ExampleSystem {
-//!   fn on_startup(&mut self, ctx: &Context) {
+//!   fn on_spawn(&mut self, ctx: &SystemContext) {
 //!     // <do cool stuff here>
 //!   }
 //! }
@@ -52,6 +53,11 @@
 //! Systems can be given on startup, and will be started automatically, or dynamically spawned at runtime. Likewise, running systems can be despawned or replaced.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # struct ExampleSystem;
+//! # impl ExampleSystem { fn new() -> Self { Self } }
+//! # impl System for ExampleSystem {}
+//! # fn example(ctx: &SystemContext) {
 //! // Start a new system
 //! ctx.spawn_system(ExampleSystem::new());
 //!
@@ -60,18 +66,24 @@
 //!
 //! // Just stop the current system
 //! ctx.despawn_self();
+//! # }
 //! ```
 //!
 //! ### Active
 //!
 //! By default, all systems spawned are active. Systems can be despawned, which removes them entirely, but sometimes it's necessary to keep a system around, having it automatically become active in certain situations. Frontbox supports this feature by way of the `is_active() -> bool` handler.
 //!
-//! If `is_active` returns `false`, the framework will by skip all other handlers (the ones starting with `on_*`). Within `is_active`, only read access to `self` and `Context` is provided.
+//! If `is_active` returns `false`, the framework will by skip all other handlers (the ones starting with `on_*`). Within `is_active`, only read access to `self` and `SystemContext` is provided.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # struct ExampleSystem;
+//! # // stand-in for `GameManagementExt` from frontbox-turn-based
+//! # trait GameExt { fn is_game_started(&self) -> bool; }
+//! # impl GameExt for SystemContext<'_> { fn is_game_started(&self) -> bool { true } }
 //! // Example system is only active during a game
 //! impl System for ExampleSystem {
-//!   fn is_active(&self, ctx: &Context) -> bool {
+//!   fn is_active(&self, ctx: &SystemContext) -> bool {
 //!     ctx.is_game_started()
 //!   }
 //! }
@@ -92,46 +104,56 @@
 //! 2. `expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
+//! # struct TroughSystem;
+//! # impl TroughSystem { fn eject(&mut self) {} }
+//! # impl System for TroughSystem {}
+//! # fn example(ctx: &SystemContext) {
 //! // safe but verbose
-//! if let Some(trough) = ctx.get::<TroughSystem() {
+//! if let Some(mut trough) = ctx.get::<TroughSystem>() {
 //!   trough.eject()
 //! }
 //!
 //! // unsafe when you absolutely know it is present
 //! ctx.expect::<TroughSystem>().eject();
+//! # }
 //! ```
 //!
 //! #### Service Methods
 //!
 //! When implementing methods called by another service, do not accept a `SystemContext`, but instead a `ServiceContext`. Using `SystemContext` can incorrectly perform operations as the calling System instead of the service. For convenience, accepting an `impl Into<ServiceContext>` means that a SystemContext could be passed in, but will be resolved to a ServiceContext as it does.
 //!
-//! /// ```rust
-/// # use frontbox::prelude::*;
-/// fn service_method(&self, ctx: &ServiceContext) {
-///   let ctx = ctx.for_system(self.handle);
-///   // ...
-/// }
-/// ```
-///
-/// A `ServiceContext` does not contain the `SystemHandle` (`self.handle`), so this will need to be captured at some other point, likely on spawn.
-///
-/// ```rust
-/// pub struct ExampleSystem {
-///   handle: SystemHandle
-/// }
-///
-/// impl ExampleSystem {
-///   pub fn new() -> Self {
-///     Self { handle:: SystemHandle::default() }
-///   }
-/// }
-///
-/// impl System for ExampleSystem {
-///   fn on_spawn(&mut self, ctx: &SystemContext) {
-///     self.handle = *ctx.current_handle();
-///   }
-/// }
-/// ```
+//! ```rust
+//! # use frontbox::prelude::*;
+//! # struct ExampleSystem { handle: SystemHandle }
+//! # impl ExampleSystem {
+//! fn service_method(&self, ctx: &ServiceContext) {
+//!   let ctx = ctx.for_system(self.handle);
+//!   // ...
+//! }
+//! # }
+//! ```
+//!
+//! A `ServiceContext` does not contain the `SystemHandle` (`self.handle`), so this will need to be captured at some other point, likely on spawn.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! pub struct ExampleSystem {
+//!   handle: SystemHandle
+//! }
+//!
+//! impl ExampleSystem {
+//!   pub fn new() -> Self {
+//!     Self { handle: SystemHandle::default() }
+//!   }
+//! }
+//!
+//! impl System for ExampleSystem {
+//!   fn on_spawn(&mut self, ctx: &SystemContext) {
+//!     self.handle = *ctx.current_handle();
+//!   }
+//! }
+//! ```
 mod boot_snapshot;
 mod contextual;
 pub mod cue;

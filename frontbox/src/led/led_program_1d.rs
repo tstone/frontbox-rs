@@ -290,24 +290,27 @@ impl LedProgram1d {
   /// Cycle (tween) through all given ColorSequences, over `duration`.
   /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
   ///
-  /// ```rust,ignore
+  /// ```rust
+  /// # use frontbox::prelude::*;
+  /// # use frontbox::animation::Curve;
+  /// # let q = LedQ::every();
   /// // fade everything from red to blue
-  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Linear, vec![
-  ///   ColorSequence::solid(Rgba::blue()),
+  /// LedProgram1d::tween(q.clone(), Duration::from_secs(1), Curve::Linear, Cycle::Once, vec![
   ///   ColorSequence::solid(Rgba::red()),
-  /// ])
+  ///   ColorSequence::solid(Rgba::blue()),
+  /// ], EndBehavior::Hold);
   ///
   /// // fade between all red to striped red
-  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Linear, vec![
+  /// LedProgram1d::tween(q.clone(), Duration::from_secs(1), Curve::Linear, Cycle::Once, vec![
   ///   ColorSequence::solid(Rgba::red()),
   ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
-  /// ])
+  /// ], EndBehavior::Hold);
   ///
   /// // "dancing lights" effect
-  /// LedProgram1d::tween(q, Duration::from_secs(1), Curve::Steps(2), vec![
+  /// LedProgram1d::tween(q.clone(), Duration::from_secs(1), Curve::Steps(2), Cycle::Forever, vec![
   ///   ColorSequence::tile(vec![Rgba::white(), Rgba::red()]),
   ///   ColorSequence::tile(vec![Rgba::red(), Rgba::white()]),
-  /// ])
+  /// ], EndBehavior::Clear);
   /// ```
   pub fn tween<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,

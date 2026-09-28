@@ -1,3 +1,4 @@
+use crate::machine::*;
 use crate::prelude::*;
 
 /// A system which continually pings the FAST hardware to keep 48v active. This is required to use drivers.
@@ -23,16 +24,18 @@ impl WatchdogSystem {
     // renew watchdog slightly before it expires
     ctx.cue(
       WatchdogPing,
-      Cue::Forever(ctx.watchdog_interval - Duration::from_millis(200)),
+      Cue::Forever(
+        ctx.watchdog_interval.unwrap_or(Duration::from_millis(1500)) - Duration::from_millis(200),
+      ),
     );
-    ctx.expect::<Machine>().ping_watchdog();
+    ctx.expect::<MachineSystem>().ping_watchdog();
   }
 
   pub fn disable(&self, ctx: &ServiceContext) {
     let ctx = ctx.for_system(self.handle);
 
     log::info!(target: "frontbox::watchdog", "🐶 Disabling watchdog");
-    ctx.expect::<Machine>().clear_watchdog();
+    ctx.expect::<MachineSystem>().clear_watchdog();
 
     if let Some(handle) = &self.cue_handle {
       ctx.cancel_cue(*handle);
@@ -53,7 +56,7 @@ impl System for WatchdogSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<WatchdogPing>() {
       log::trace!(target: "frontbox::watchdog", "🐶 Watchdog event => Ping");
-      ctx.expect::<Machine>().ping_watchdog();
+      ctx.expect::<MachineSystem>().ping_watchdog();
     }
   }
 

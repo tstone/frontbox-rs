@@ -1,18 +1,16 @@
-// TODO: migrate LED to using HardwareDefinition
-// TODO: there needs to be an underlying type here that actually produces Vec<HardwareDefinition>
-// things that contain multiple LEDs should maybe generate unique names for them, which are later referenceable
-// e.g. MultiLedDefinition.child(2).name
-
 use std::borrow::Cow;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SingleLedDefinition {
   pub name: Cow<'static, str>,
-  pub tags: Vec<Box<dyn Tag>>,
-  pub location: Option<Vec3>,
   pub config: Option<LedConfiguration>,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
+  pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
+  pub location: Option<Vec3>,
 }
 
 impl SingleLedDefinition {
@@ -35,7 +33,8 @@ impl HardwareDefinition for SingleLedDefinition {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedConfiguration {
   pub channels: LedChannels,
 }

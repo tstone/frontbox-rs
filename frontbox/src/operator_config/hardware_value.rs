@@ -48,3 +48,10 @@ where
     }
   }
 }
+
+/// Allows plain values to be used anywhere a fixed HardwareValue is accepted
+impl<T: Clone, D: Domain<T>> From<T> for HardwareValue<T, D> {
+  fn from(value: T) -> Self {
+    Self::Fixed(value)
+  }
+}

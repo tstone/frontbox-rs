@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum FastExpansionBoardModels {
   Neuron,
   FpExp0051,
@@ -24,7 +25,8 @@ pub struct ExpBoard {
   pub model: FastExpansionBoardModels,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResolvedExpansionBoard {
   pub address: u8,
   pub breakout: Option<u8>,

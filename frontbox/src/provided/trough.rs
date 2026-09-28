@@ -34,26 +34,23 @@ impl TroughSystem {
 
   pub fn eject_coil_definition(name: &'static str) -> DriverDefinitionBuilder {
     DriverDefinitionBuilder::new(name)
-      .mode(PulseKickMode {
-        initial_pwm_length: HardwareValue::config(
-          "Plunger Touch Time",
-          "Duration by which the eject plunger is brought into contact with the ball, before full eject",
-          Duration::from_millis(5),
-          Ranges::duration(0, 50),
-        ),
-        initial_pwm_power: HardwareValue::fixed(
-          Power::THREE_QUARTERS,
-        ),
-        secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
-        secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
-        kick_length: HardwareValue::config(
-          "Eject Time",
-          "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(13),
-          Ranges::duration(5, 75),
-        ),
-        ..Default::default()
-      })
+      .mode(
+        DriverMode::pulse_kick()
+          .initial_pwm_length(HardwareValue::config(
+            "Plunger Touch Time",
+            "Duration by which the eject plunger is brought into contact with the ball, before full eject",
+            Duration::from_millis(5),
+            Ranges::duration(0, 50),
+          ))
+          .initial_pwm_power(Power::THREE_QUARTERS)
+          .kick_length(HardwareValue::config(
+            "Eject Time",
+            "Duration that the plunger exert full power onto the ball (kick)",
+            Duration::from_millis(13),
+            Ranges::duration(5, 75),
+          ))
+          .build(),
+      )
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
@@ -216,6 +213,12 @@ mod tests {
 
   use super::*;
 
+  /// Deliver a switch event, then simulate the cool-off cue firing so occupancy is re-evaluated
+  fn switch_event(system: &mut TroughSystem, context: &TestContext, event: &dyn Event) {
+    system.on_event(event, &context.sys_ctx());
+    system.on_event(&Resume, &context.sys_ctx());
+  }
+
   #[test]
   fn current_occupancy() {
     let system = TroughSystem::new("eject", vec!["a", "b", "c"]);
@@ -315,10 +318,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Open,
     ]);
-    system.on_event(
-      &SwitchOpened::new(target_switch.clone()),
-      &context.sys_ctx(),
-    );
+    switch_event(&mut system, &context, &SwitchOpened::new(target_switch.clone()));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -331,7 +331,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Closed,
     ]);
-    system.on_event(&SwitchClosed::new(target_switch), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchClosed::new(target_switch));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallEnteredTrough");
@@ -375,7 +375,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Open,
     ]);
-    system.on_event(&SwitchOpened::new(switch3.clone()), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchOpened::new(switch3.clone()));
     system.establish_ball_occupancy(&context.svc_ctx());
 
     // ball #2 leaves
@@ -384,7 +384,7 @@ mod tests {
       SwitchState::Open,
       SwitchState::Open,
     ]);
-    system.on_event(&SwitchOpened::new(switch2.clone()), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchOpened::new(switch2.clone()));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -397,7 +397,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Closed,
     ]);
-    system.on_event(&SwitchClosed::new(switch2), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchClosed::new(switch2));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallEnteredTrough");
@@ -443,7 +443,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Open,
     ]);
-    system.on_event(&SwitchOpened::new(switch3.clone()), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchOpened::new(switch3.clone()));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -456,7 +456,7 @@ mod tests {
       SwitchState::Open,
       SwitchState::Open,
     ]);
-    system.on_event(&SwitchOpened::new(switch2.clone()), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchOpened::new(switch2.clone()));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -469,7 +469,7 @@ mod tests {
       SwitchState::Closed,
       SwitchState::Closed,
     ]);
-    system.on_event(&SwitchClosed::new(switch2), &context.sys_ctx());
+    switch_event(&mut system, &context, &SwitchClosed::new(switch2));
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallEnteredTrough");

@@ -5,10 +5,9 @@
 //! App is the runnable root of a Frontbox project. Every machine runs exactly one app. Apps provide a place to
 //! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems.
 //!
-//! An app has three distinct phases:
-//!   1. **Booting** - The mainboard and key hardware is initialized
-//!   2. **Configuration** - Defining initial systems and registering custom operator configs
-//!   3. **Running** -  The main event loop processes events and systems
+//! An app has two distinct phases:
+//!   1. **Configuration** - Defining initial systems and registering custom operator configs
+//!   2. **Boot & Run** -  The main event loop processes events and systems
 //!
 //! - See [BootConfig] for details on what is configurable.
 //! - See [mod@crate::hardware] for details on setting up I/O and expansion networks.
@@ -22,6 +21,17 @@
 //! ```rust,no_run
 //! use frontbox::prelude::*;
 //! use std::io::Write;
+//! # use std::sync::LazyLock;
+//! # struct MySystem;
+//! # impl MySystem { fn new() -> Self { Self } }
+//! # impl System for MySystem {}
+//! # struct MySystem2;
+//! # impl MySystem2 { fn new() -> Self { Self } }
+//! # impl System for MySystem2 {}
+//! # static MY_CONFIG1: LazyLock<ConfigValue<u8, Range<u8>>> =
+//! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
+//! # static MY_CONFIG2: LazyLock<ConfigValue<u8, Range<u8>>> =
+//! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -29,24 +39,27 @@
 //!   env_logger::Builder::from_default_env()
 //!     .format(|buf, record| writeln!(buf, "[{}] {}\r", record.level(), record.args()))
 //!     .init();
-//!   
-//!   // Booting the app initializes hardware
-//!   App::boot(BootConfig {
-//!       io_net_port_path: "/dev/ttyACM0",
+//!
+//!   App::new(BootConfig {
+//!       platform: Platform::Neuron {
+//!         io_net_port_path: "/dev/ttyACM0",
+//!         exp_port_path: "/dev/ttyACM1",
+//!         watchdog_interval: Duration::from_millis(1500),
+//!       },
 //!       // see section on hardware for how these are configured
 //!       io_network: IoNetwork::empty(),
 //!       ..Default::default()
 //!     })
-//!     .await
 //!     .configure(|app| {
 //!       // add initial system(s) that will start on `.run()`
-//!       app.system(MySystem::new())
-//!       app.system(MySystem2::new())
+//!       app.system(MySystem::new());
+//!       app.system(MySystem2::new());
 //!
 //!       // register custom operator configs
-//!       app.register_configs(vec![MY_CONFIG1, MY_CONFIG2])
+//!       let configs: Vec<&'static dyn GeneralizedConfigValue> = vec![&*MY_CONFIG1, &*MY_CONFIG2];
+//!       app.register_configs(configs);
 //!     })
-//!     // Running the app starts the game
+//!     // Running the app boots the hardware and starts the game
 //!     .run()
 //!     .await;
 //! }

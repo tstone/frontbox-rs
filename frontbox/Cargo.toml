@@ -26,6 +26,12 @@ humantime = "2.4.0"
 palette = { version = "0.7.6", features = ["serializing", "random"] }
 num-traits = "0.2.19"
 smallvec = "1.15.2"
+ts-rs = { version = "12.0.1", optional = true, features = ["serde-json-impl"] }
+serde_with = "3.24.0"
+erased-serde = "0.4.10"
 
 [dev-dependencies]
 env_logger = "0.11.9"
+
+[features]
+ts = ["dep:ts-rs", "fast-protocol/ts"]

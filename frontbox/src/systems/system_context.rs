@@ -15,10 +15,13 @@ use crate::prelude::*;
 /// - Access hardware configuration and state
 ///
 /// ```rust
-/// ctx.switches
-/// ctx.drivers
-/// ctx.io_network
-/// ctx.exp_network
+/// # use frontbox::prelude::*;
+/// # fn example(ctx: &SystemContext) {
+/// let switches = &ctx.switches;
+/// let drivers = &ctx.drivers;
+/// let io_network = &ctx.io_network;
+/// let exp_network = &ctx.exp_network;
+/// # }
 /// ```
 ///
 /// **Important**: SystemContext is specific to the system it was given, and should not be shared to other systems.

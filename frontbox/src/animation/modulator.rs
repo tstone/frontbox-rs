@@ -2,20 +2,27 @@ use std::sync::Arc;
 
 use crate::animation::*;
 
-/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
-///
-/// ```rust
-/// let modulator = Modulator::new(
-///   self.anim,
-///   |value| {  }
-/// )
-/// ```
-pub trait Modulation<A, S> {
+/// Something which advances by `delta` (type `A`) and applies the result to a target (type `S`)
+pub trait Modulation<S, A> {
   fn apply(&mut self, delta: A, target: &mut S);
 }
 
 pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + Send + Sync + 'static;
 
+/// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
+///
+/// ```rust
+/// # use frontbox::prelude::*;
+/// # use frontbox::animation::*;
+/// # let anim = Tween::new(Duration::from_secs(1), Curve::Linear, vec![0u8, 255], Cycle::Once);
+/// let mut modulator = Modulator::new(
+///   anim,
+///   |target: &mut Rgba<u8>, alpha| *target = target.with_alpha(alpha)
+/// );
+///
+/// let mut color = Rgba::red();
+/// modulator.apply(Duration::from_millis(500), &mut color);
+/// ```
 #[derive(Clone)]
 pub struct Modulator<S, T, A> {
   setter: Arc<ModulationSetter<S, T>>,
@@ -42,7 +49,7 @@ impl<S, T, A> Modulator<S, T, A> {
   }
 }
 
-impl<S, T, A> Modulation<A, S> for Modulator<S, T, A> {
+impl<S, T, A> Modulation<S, A> for Modulator<S, T, A> {
   /// Accumulates delta and applies to target
   fn apply(&mut self, delta: A, target: &mut S) {
     self.animation.accumulate(delta);
@@ -70,10 +77,6 @@ where
 
   fn is_complete(&self) -> bool {
     self.animation.is_complete()
-  }
-
-  fn apply(&mut self, delta: A, target: &mut S) {
-    Modulation::apply(self, delta, target)
   }
 
   fn play(&mut self) {

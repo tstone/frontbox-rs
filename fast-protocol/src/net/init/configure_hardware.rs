@@ -15,7 +15,7 @@ impl ConfigureHardwareCommand {
   }
 }
 
-impl FastStringCommand for ConfigureHardwareCommand {
+impl FastStringDispatch for ConfigureHardwareCommand {
   fn to_string(&self) -> String {
     format!(
       "CH:{:04},{}\r",
@@ -28,15 +28,9 @@ impl FastStringCommand for ConfigureHardwareCommand {
   }
 }
 
-impl FastRequestCommand for ConfigureHardwareCommand {
-  type Response = ProcessedResponse;
-
-  fn prefix() -> &'static str {
+impl FastCommand for ConfigureHardwareCommand {
+  fn prefix(&self) -> &'static str {
     "ch"
-  }
-
-  fn parse(&self, raw: RawResponse) -> Result<Self::Response, FastResponseError> {
-    ProcessedResponse::parse(raw)
   }
 }
 

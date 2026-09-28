@@ -11,18 +11,20 @@
 //! Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`. If getting errors trying to add a child to a group, make sure to add `#[derive(Clone)]` to the system definition.
 //! 
 //! ```rust
-//! # let ctx = Context
-//! const group_name: &'static str = "example";
-//! 
-//! // Start an entire group of systems
-//! ctx.spawn_system_group(group_name, vec![/* list of systems */]);
-//! 
-//! // Groups start deactivated by default
-//! ctx.activate_system_group(group_name);
-//! ctx.deactivate_system_group(group_name);
-//! 
-//! // The entire group can be despawned. All `on_shutdown` handlers will be invoked for child systems
-//! ctx.despawn_system_group(group_name);
+//! # use frontbox::prelude::*;
+//! # fn example(ctx: &SystemContext) {
+//! const GROUP_NAME: &'static str = "example";
+//!
+//! // Start an entire group of systems, initially inactive
+//! ctx.spawn_system_group(GROUP_NAME, vec![/* list of systems */], false);
+//!
+//! // Groups can be activated and deactivated at any time
+//! ctx.activate_system_group(GROUP_NAME);
+//! ctx.deactivate_system_group(GROUP_NAME);
+//!
+//! // The entire group can be despawned. All `on_despawn` handlers will be invoked for child systems
+//! ctx.despawn_system_group(GROUP_NAME);
+//! # }
 //! ```
 
 use std::cell::RefMut;

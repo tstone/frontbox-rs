@@ -11,22 +11,31 @@ use crate::prelude::*;
 ///
 /// ```rust
 /// # use frontbox::prelude::*;
+/// # struct Wrong { handle: SystemHandle }
+/// # impl Wrong {
 /// // WRONG:
 /// fn service_method(&self, ctx: &SystemContext) {
 ///   // ...
 /// }
+/// # }
+/// # struct Right { handle: SystemHandle }
+/// # impl Right {
 ///
 /// // RIGHT:
 /// fn service_method(&self, ctx: &ServiceContext) {
 ///   let ctx = &ctx.for_system(self.handle);
 ///   // ...
 /// }
+/// # }
+/// # struct AlsoRight { handle: SystemHandle }
+/// # impl AlsoRight {
 ///
 /// // ALSO RIGHT (if you prefer):
-/// fn service_method<'a>(&self, ctx: impl Into<&ServiceContext<'a>>) {
+/// fn service_method<'a: 'b, 'b>(&self, ctx: impl Into<&'b ServiceContext<'a>>) {
 ///   let ctx = &ctx.into().for_system(self.handle);
 ///   // ...
 /// }
+/// # }
 /// ```
 #[derive(Clone)]
 pub struct ServiceContext<'a> {

@@ -1,3 +1,4 @@
+#[repr(u16)]
 #[derive(Debug, Clone)]
 pub enum FastPlatform {
   Neuron = 2000,
@@ -20,5 +21,11 @@ impl FastPlatform {
     } else {
       None
     }
+  }
+}
+
+impl From<FastPlatform> for u16 {
+  fn from(platform: FastPlatform) -> Self {
+    platform as u16
   }
 }

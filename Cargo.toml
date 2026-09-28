@@ -4,10 +4,10 @@ members = [
     "frontbox",
     "frontbox-canvas",
     "frontbox-derive",
+    "frontbox-pin-console",
     "frontbox-pin2dmd",
     "frontbox-sound",
     "frontbox-turn-based",
-    "frontbox-web-console",
 ]
 resolver = "2"
 
