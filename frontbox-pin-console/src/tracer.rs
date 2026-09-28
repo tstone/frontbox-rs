@@ -1,8 +1,6 @@
 use frontbox::prelude::{Hardware, app_tracer::*};
 use tokio::sync::mpsc;
 
-use crate::backend::WebInterface;
-
 pub struct WebTracer {
   tx: mpsc::UnboundedSender<TraceEvent>,
 }
@@ -10,7 +8,7 @@ pub struct WebTracer {
 impl WebTracer {
   pub fn new() -> Self {
     let (tx, rx) = mpsc::unbounded_channel::<TraceEvent>();
-    tokio::spawn(async move { WebInterface::new().run(rx).await });
+    tokio::spawn(async move { /* WebInterface::new().run(rx).await */ });
     Self { tx }
   }
 }
