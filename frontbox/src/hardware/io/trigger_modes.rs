@@ -1,5 +1,6 @@
 /// DriverTriggerMode answers: What causes the driver to fire?
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DriverTriggerMode {
   #[default]
   Disabled,
@@ -15,7 +16,8 @@ pub enum DriverTriggerMode {
 
 /// DriverTriggerDualMode answers: What causes the driver to fire when two switches are involved?
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DriverTriggerDualMode {
   #[default]
   Disabled,

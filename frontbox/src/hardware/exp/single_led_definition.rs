@@ -7,12 +7,15 @@ use std::borrow::Cow;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SingleLedDefinition {
   pub name: Cow<'static, str>,
-  pub tags: Vec<Box<dyn Tag>>,
-  pub location: Option<Vec3>,
   pub config: Option<LedConfiguration>,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
+  pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
+  pub location: Option<Vec3>,
 }
 
 impl SingleLedDefinition {
@@ -35,7 +38,8 @@ impl HardwareDefinition for SingleLedDefinition {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedConfiguration {
   pub channels: LedChannels,
 }

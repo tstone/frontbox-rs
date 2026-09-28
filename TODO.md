@@ -4,6 +4,7 @@ Virtual Machine
 - App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
 - Update the trough to periodically re-check the state of the switches and self recover if it is actually full
 
+- ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
 - So much is built on LedSystem that the framework should probably just start it up automatically.
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?

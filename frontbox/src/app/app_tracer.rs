@@ -14,7 +14,6 @@ pub enum TraceEvent {
   Event {
     type_name: &'static str,
     interrupts: Vec<InterruptEvaluation>,
-    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     event: Option<serde_json::Value>,
   },
   SystemSpawned {

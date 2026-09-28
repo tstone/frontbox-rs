@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,

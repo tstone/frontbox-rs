@@ -2,11 +2,14 @@ use std::any::TypeId;
 
 use crate::prelude::*;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LED {
   pub name: String,
   pub address: LedAddress,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
 }
 
@@ -34,7 +37,8 @@ impl PartialEq for LED {
 
 impl Eq for LED {}
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedAddress {
   pub exp: ExpAddress,
   pub index: u16,

@@ -5,7 +5,8 @@ use std::ops::{Deref, DerefMut};
 use crate::prelude::*;
 use fast_protocol::SwitchState;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SwitchLookup {
   by_id: HashMap<usize, Switch>,
   pub(crate) by_name: HashMap<&'static str, Switch>,
@@ -166,13 +167,16 @@ impl DerefMut for SwitchLookup {
 
 /// Represents a hardware switch
 #[derive(serde::Serialize, Event, Debug, Clone, Default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Switch {
   pub name: &'static str,
   /// The original wiring assignment
   pub assignment: IoAddress,
   /// The resolve I/O network address
   pub id: usize,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
 }
 

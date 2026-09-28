@@ -24,7 +24,8 @@ pub trait HardwareDefinition {
 
 // -- IO --
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct IoAddress {
   pub board_idx: u8,
   pub pin: u16,
@@ -63,7 +64,8 @@ pub struct IoAddressed<T: HardwareDefinition + 'static> {
 // -- Exp --
 
 /// An address on the expansion network
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExpAddress {
   pub board_address: u8,
   pub breakout: Option<u8>,
@@ -98,7 +100,10 @@ where
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(concrete(T = LedDefinition)))]
+#[cfg_attr(feature = "ts", ts(concrete(T = SingleLedDefinition)))]
 pub struct ExpAddressed<T: HardwareDefinition> {
   pub definition: T,
   pub assignment: ExpAddress,

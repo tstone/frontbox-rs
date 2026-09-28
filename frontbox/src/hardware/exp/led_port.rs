@@ -35,7 +35,8 @@ impl LedPort {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResolvedLedPort {
   pub led_type: LedType,
   pub leds: Vec<ExpAddressed<SingleLedDefinition>>,

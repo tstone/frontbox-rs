@@ -20,7 +20,8 @@ dyn_clone::clone_trait_object!(DriverMode);
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
@@ -78,7 +79,8 @@ impl DriverMode for PulseMode {
 /// moving a coil and then kicking it the rest of the way, e.g. VUK or trough eject. Reduces force applied
 /// to ball by ensuring a plunger has full contact with the ball before a full kick occurs.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseKickMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
@@ -135,7 +137,8 @@ impl DriverMode for PulseKickMode {
 /// Mode 18 - Holds a driver in the on state as long as the trigger is active. An initial PWM can be configured
 /// before the long hold.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseHoldMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
@@ -188,7 +191,8 @@ impl DriverMode for PulseHoldMode {
 /// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
 /// switch (flop) is activated.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseHoldCancelMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,
@@ -243,7 +247,8 @@ impl DriverMode for PulseHoldCancelMode {
 /// Mode 30 - Insert a delay between when the switch is triggered and the driver fires.
 /// Useful for things kickbacks where a bit of delay needs to be added into the automatic flow.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/30/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DelayedPulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
@@ -299,7 +304,8 @@ impl DriverMode for DelayedPulseMode {
 /// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
 /// switch (flop) is activated.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/20/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseCancelMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,
@@ -353,7 +359,8 @@ impl DriverMode for PulseCancelMode {
 
 /// Mode 70 - Pulse the driver for an initial time (up to 255ms), then hold it for a secondary time (up to 25s).
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/70/>
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LongPulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,
@@ -408,7 +415,8 @@ impl DriverMode for LongPulseMode {
 }
 
 /// Mode 80 - Premium flipper driver for main coil. Driver is active when button switch is closed.
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlipperMainDirectMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,
@@ -468,7 +476,8 @@ impl DriverMode for FlipperMainDirectMode {
 }
 
 /// Mode 81 - Premium flipper driver for hold coil
-#[derive(Debug, Clone)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlipperHoldDirectMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,

@@ -12,6 +12,7 @@ pub use set_white::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum LedType {
   WS2812 = 0,
   SK6812 = 1,

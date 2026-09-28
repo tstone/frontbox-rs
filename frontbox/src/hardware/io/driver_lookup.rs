@@ -4,7 +4,8 @@ use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
@@ -95,12 +96,15 @@ impl DerefMut for DriverLookup {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Driver {
   pub id: usize,
   pub name: &'static str,
   pub assignment: IoAddress,
+  #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
+  #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
 }
 
