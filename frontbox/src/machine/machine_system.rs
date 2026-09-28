@@ -52,7 +52,7 @@ impl MachineSystem {
   pub fn configure_driver(
     &self,
     driver: &str,
-    mode: impl DriverMode + 'static,
+    mode: DriverMode,
     ctx: &ServiceContext,
   ) {
     if let Some(driver) = ctx.drivers.get(driver) {

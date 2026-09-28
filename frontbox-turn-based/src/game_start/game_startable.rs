@@ -31,12 +31,13 @@ impl GameStartable {
 
   pub fn lamp_driver(name: &'static str) -> DriverDefinitionBuilder {
     DriverDefinitionBuilder::new(name)
-      .mode(PulseHoldMode {
-        trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-        initial_pwm_power: HardwareValue::fixed(Power::ZERO),
-        secondary_pwm_power: HardwareValue::fixed(Power::FULL),
-        ..Default::default()
-      })
+      .mode(
+        DriverMode::pulse_hold()
+          .trigger_mode(DriverTriggerMode::VirtualSwitchTrue)
+          .initial_pwm_power(Power::ZERO)
+          .secondary_pwm_power(Power::FULL)
+          .build(),
+      )
       .tag(Cabinet)
   }
 

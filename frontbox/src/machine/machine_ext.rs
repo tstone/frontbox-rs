@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 pub trait MachineExt {
-  fn configure_driver(&self, driver: &'static str, mode: impl DriverMode + 'static);
+  fn configure_driver(&self, driver: &'static str, mode: DriverMode);
   fn activate_driver(&self, driver: &'static str, mode: ActivationMode);
   fn deactivate_driver(&self, driver: &'static str, mode: DeactivationMode);
   fn configure_switch(
@@ -15,7 +15,7 @@ pub trait MachineExt {
 
 impl<'a> MachineExt for SystemContext<'a> {
   // TODO: allow DriverDefinition to be passed in directly
-  fn configure_driver(&self, driver: &'static str, mode: impl DriverMode + 'static) {
+  fn configure_driver(&self, driver: &'static str, mode: DriverMode) {
     with_machine(self, |machine| {
       machine.configure_driver(driver, mode, self.into());
     });

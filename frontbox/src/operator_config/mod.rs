@@ -9,18 +9,19 @@
 //! ```rust
 //! hardware_defs! {
 //!   pub MY_COIL: DriverDefinition = DriverDefinition::new("my_coil")
-//!     .mode(PulseMode {
-//!       trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-//!       // static value for the life of the program
-//!       initial_pwm_length: HardwareValue::fixed(Duration::from_millis(250)),
-//!       // configurable value that can be adjusted via operator config
-//!       initial_pwm_power: HardwareValue::config(
-//!         "coil_power",  // name
-//!         Power::THREE_QUARTERS // default
-//!         Ranges::power(0.5, 1.0), // domain
-//!       ),
-//!       ..Default::default()
-//!     });
+//!     .mode(
+//!       DriverMode::pulse()
+//!         .trigger_mode(DriverTriggerMode::VirtualSwitchTrue)
+//!         // static value for the life of the program (plain values convert to `HardwareValue::fixed`)
+//!         .initial_pwm_length(Duration::from_millis(250))
+//!         // configurable value that can be adjusted via operator config
+//!         .initial_pwm_power(HardwareValue::config(
+//!           "coil_power",  // name
+//!           Power::THREE_QUARTERS // default
+//!           Ranges::power(0.5, 1.0), // domain
+//!         ))
+//!         .build(),
+//!     );
 //! }
 //! ```
 //! 

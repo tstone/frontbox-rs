@@ -11,12 +11,13 @@ pub mod drivers {
 
   hardware_defs! {
     pub BANK_COIL: DriverDefinition = DriverDefinition::new("drop_coil")
-      .mode(PulseMode {
-        trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-        initial_pwm_length: HardwareValue::fixed(Duration::from_millis(250)),
-        initial_pwm_power: HardwareValue::fixed(Power::FULL),
-        ..Default::default()
-      });
+      .mode(
+        DriverMode::pulse()
+          .trigger_mode(DriverTriggerMode::VirtualSwitchTrue)
+          .initial_pwm_length(Duration::from_millis(250))
+          .initial_pwm_power(Power::FULL)
+          .build(),
+      );
 
     pub TARGET_1: SwitchDefinition = SwitchDefinition::new("drop_target1")
       .tag(Playfield)

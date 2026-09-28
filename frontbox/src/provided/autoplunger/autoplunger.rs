@@ -21,24 +21,23 @@ impl AutoPlungerSystem {
   }
 
   pub fn coil_definition(name: &'static str) -> DriverDefinitionBuilder {
-    DriverDefinitionBuilder::new(name).mode(PulseKickMode {
-      initial_pwm_length: HardwareValue::config(
-        "Autoplunger Touch Time",
-        "Duration by which the forks are brought into contact with the ball, before full launch",
-        Duration::from_millis(5),
-        Ranges::duration(0, 100),
-      ),
-      initial_pwm_power: HardwareValue::fixed(Power::HALF),
-      secondary_pwm_power: HardwareValue::Fixed(Power::ZERO),
-      secondary_pwm_length: HardwareValue::Fixed(Duration::ZERO),
-      kick_length: HardwareValue::config(
-        "Autoplunger Coil Launch Time",
-        "Duration that the forks exert full power onto the ball (kick)",
-        Duration::from_millis(8),
-        Ranges::duration(5, 75),
-      ),
-      ..Default::default()
-    })
+    DriverDefinitionBuilder::new(name).mode(
+      DriverMode::pulse_kick()
+        .initial_pwm_length(HardwareValue::config(
+          "Autoplunger Touch Time",
+          "Duration by which the forks are brought into contact with the ball, before full launch",
+          Duration::from_millis(5),
+          Ranges::duration(0, 100),
+        ))
+        .initial_pwm_power(Power::HALF)
+        .kick_length(HardwareValue::config(
+          "Autoplunger Coil Launch Time",
+          "Duration that the forks exert full power onto the ball (kick)",
+          Duration::from_millis(8),
+          Ranges::duration(5, 75),
+        ))
+        .build(),
+    )
   }
 
   /// Fire the autoplunger immediately

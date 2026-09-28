@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use crate::operator_config::HardwareValue;
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -8,7 +7,7 @@ pub struct DriverDefinition {
   pub name: &'static str,
   pub tags: Vec<Box<dyn Tag>>,
   pub location: Option<Vec3>,
-  pub mode: Option<Box<dyn DriverMode>>,
+  pub mode: Option<DriverMode>,
 }
 
 impl DriverDefinition {
@@ -57,7 +56,7 @@ pub struct DriverDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
   location: Option<Vec3>,
-  mode: Option<Box<dyn DriverMode>>,
+  mode: Option<DriverMode>,
 }
 
 impl DriverDefinitionBuilder {
@@ -85,8 +84,8 @@ impl DriverDefinitionBuilder {
     self
   }
 
-  pub fn mode(mut self, mode: impl DriverMode + 'static) -> Self {
-    self.mode = Some(Box::new(mode));
+  pub fn mode(mut self, mode: DriverMode) -> Self {
+    self.mode = Some(mode);
     self
   }
 
@@ -135,12 +134,13 @@ impl LampDefinitionBuilder {
       name: self.name,
       tags: self.tags,
       location: self.location,
-      mode: Some(Box::new(PulseHoldMode {
-        trigger_mode: DriverTriggerMode::VirtualSwitchTrue,
-        initial_pwm_power: HardwareValue::Fixed(Power::ZERO),
-        secondary_pwm_power: HardwareValue::Fixed(Power::FULL),
-        ..Default::default()
-      })),
+      mode: Some(
+        DriverMode::pulse_hold()
+          .trigger_mode(DriverTriggerMode::VirtualSwitchTrue)
+          .initial_pwm_power(Power::ZERO)
+          .secondary_pwm_power(Power::FULL)
+          .build(),
+      ),
     }
   }
 }

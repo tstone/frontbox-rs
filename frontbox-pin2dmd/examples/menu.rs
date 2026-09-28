@@ -6,15 +6,16 @@ use frontbox_pin2dmd::menu::*;
 fn main() {
   hardware_defs! {
     pub DROP_COIL: DriverDefinition = DriverDefinition::new("example")
-      .mode(PulseMode {
-        initial_pwm_length: HardwareValue::config(
-          "Drop Target Reset Duration",
-          "Amount of time fire the coil to reset the bank",
-          Duration::from_millis(35),
-          Ranges::duration(5, 100),
-        ),
-        ..Default::default()
-      });
+      .mode(
+        DriverMode::pulse()
+          .initial_pwm_length(HardwareValue::config(
+            "Drop Target Reset Duration",
+            "Amount of time fire the coil to reset the bank",
+            Duration::from_millis(35),
+            Ranges::duration(5, 100),
+          ))
+          .build(),
+      );
   }
 
   let _menu = MenuSection::root()
