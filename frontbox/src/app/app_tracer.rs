@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use crate::prelude::*;
 
 pub trait AppTracer {
-  fn init(&mut self, hardware: Hardware);
+  fn init(&mut self, hardware: &Hardware);
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 

@@ -125,12 +125,23 @@ impl MachineBoot for Neuron {
   where
     Self: Sized,
   {
+    let (io_net_port_path, exp_port_path) = match boot_config.platform {
+      Platform::Neuron {
+        io_net_port_path,
+        exp_port_path,
+        ..
+      } => (io_net_port_path, exp_port_path),
+      _ => panic!(
+        "Neuron machine being launched, but not configured to run as Neuron (should be impossible)!"
+      ),
+    };
+
     let app_config = AppConfig::from_boot_config(&boot_config);
 
-    let mut io_port = SerialInterface::new(boot_config.io_net_port_path)
+    let mut io_port = SerialInterface::new(io_net_port_path)
       .await
       .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", boot_config.io_net_port_path);
+    log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
 
     boot::handshake(&mut io_port).await;
 
@@ -146,10 +157,10 @@ impl MachineBoot for Neuron {
     let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
 
     // open EXP port
-    let mut exp_port = SerialInterface::new(boot_config.exp_port_path)
+    let mut exp_port = SerialInterface::new(exp_port_path)
       .await
       .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", boot_config.exp_port_path);
+    log::info!("🥾 Opened EXP port at {}", exp_port_path);
 
     let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
     boot::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
@@ -165,7 +176,7 @@ impl MachineBoot for Neuron {
       app_sender,
       machine_sender,
       machine_receiver,
-      watchdog_interval: app_config.watchdog_interval + Duration::from_millis(250), // add some buffer to account for latency in sending
+      watchdog_interval: app_config.watchdog_interval.unwrap() + Duration::from_millis(250), // add some buffer to account for latency in sending
     };
 
     let hardware = Hardware::new(

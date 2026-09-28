@@ -70,9 +70,11 @@ impl App {
     self.operator_config.app_sender = Some(app_sender.clone());
 
     let (boot_snapshot, machine_sender) = match self.boot_config.platform {
-      Platform::Neuron => {
+      Platform::Neuron { .. } => {
         let (mut machine, hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
+
+        self.tracers.iter_mut().for_each(|tr| tr.init(&hardware));
         let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
         machine.on_pre_run(&snapshot).await;
 
@@ -86,6 +88,8 @@ impl App {
       Platform::Virtual => {
         let (mut machine, hardware) =
           vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
+
+        self.tracers.iter_mut().for_each(|tr| tr.init(&hardware));
         let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
         machine.on_pre_run(&snapshot).await;
 

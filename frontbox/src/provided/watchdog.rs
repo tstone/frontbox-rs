@@ -23,7 +23,9 @@ impl WatchdogSystem {
     // renew watchdog slightly before it expires
     ctx.cue(
       WatchdogPing,
-      Cue::Forever(ctx.watchdog_interval - Duration::from_millis(200)),
+      Cue::Forever(
+        ctx.watchdog_interval.unwrap_or(Duration::from_millis(1500)) - Duration::from_millis(200),
+      ),
     );
     ctx.expect::<MachineSystem>().ping_watchdog();
   }

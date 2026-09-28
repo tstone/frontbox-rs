@@ -1,4 +1,4 @@
-use frontbox::prelude::app_tracer::*;
+use frontbox::prelude::{Hardware, app_tracer::*};
 use tokio::sync::mpsc;
 
 use crate::backend::WebInterface;
@@ -16,7 +16,7 @@ impl WebTracer {
 }
 
 impl AppTracer for WebTracer {
-  fn init(&mut self, _hardware: frontbox::prelude::Hardware) {}
+  fn init(&mut self, _hardware: &Hardware) {}
 
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent> {
     self.tx.clone()
