@@ -16,7 +16,9 @@ impl WebTracer {
 }
 
 impl AppTracer for WebTracer {
-  fn init(&mut self, _hardware: &Hardware) {}
+  fn init(&mut self, _hardware: &Hardware) {
+    // TODO store this somewhere to render
+  }
 
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent> {
     self.tx.clone()
