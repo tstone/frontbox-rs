@@ -18,18 +18,19 @@
 //! A mode or system may need to specifically set LEDs to a particular state in order to communicate with the player
 //! about game state, for example, signaling "hit this shot" or "extra ball available". In this case, the communicating system
 //! owns and applies the effect. This is done by the system keeping the effect as an instance value of the system, applying it
-//! `on_tick`, then using `start` and `stop` to control the effect.
+//! `on_tick`, then using `play` and `stop` to control the effect.
 //!
 //! This also causes the owning system to owns all the declarations (see below), such that when the owning system goes inactive, the
 //! corresponding LEDs can lose that effect automatically.
 //!
 //! ```rust
+//! # use frontbox::prelude::*;
 //! pub struct Example {
-//!   effect: LedEffect1d
+//!   effect: LedProgram1d
 //! }
 //!
 //! impl System for Example {
-//!   fn on_tick(&mut self, delta: Duration, ctx: &Context) {
+//!   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
 //!     self.effect.apply(delta, ctx);
 //!   }
 //! }
@@ -44,7 +45,8 @@
 //! These are run through an `EffectPlayer`. The advantage of using EffectPlayer is that the effect can continue to play despite what the owning
 //! system is doing or even if it is running.
 //!
-//! ```rust
+//! ```rust,ignore
+//! // TODO: EffectPlayer / play_effect_1d
 //! let effect: LedEffect1d = Rgba::red().into();
 //! // fire and forget
 //! ctx.play_effect_1d(effect);
@@ -55,7 +57,7 @@
 //! Frontbox presents LED interactions based around dimensionality.
 //!
 //! ### LedEffect1d
-//! `LedEffect1d` describes one or more LEDs in a sequence (list), typically by name, tage, or definition. These can be used for a variety of
+//! `LedEffect1d` describes one or more LEDs in a sequence (list), typically by name, tag, or definition. These can be used for a variety of
 //! purposes including turn on lane states, flashing, breathing, pulsing, progress bars, rotational animations, and the like.
 //!
 //! ### LedEffect2d

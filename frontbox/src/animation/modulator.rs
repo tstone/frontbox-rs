@@ -5,10 +5,13 @@ use crate::animation::*;
 /// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # use frontbox::animation::*;
+/// # let anim = Tween::new(Duration::from_secs(1), Curve::Linear, vec![0u8, 255], Cycle::Once);
 /// let modulator = Modulator::new(
-///   self.anim,
-///   |value| {  }
-/// )
+///   anim,
+///   |target: &mut Rgba<u8>, alpha| *target = target.with_alpha(alpha)
+/// );
 /// ```
 pub trait Modulation<A, S> {
   fn apply(&mut self, delta: A, target: &mut S);

@@ -6,6 +6,7 @@ use crate::prelude::*;
 ///
 /// A color sequence is a way to describe a series of colors without knowing exactly how many colors you need in total. For example "fade from red to blue" is a color sequence. A color sequence can be resolved into a specific set of colors by being given a concrete quantity.
 /// ```rust
+/// # use frontbox::prelude::*;
 /// let seq = ColorSequence::fade(Rgba::red(), Rgba::blue());
 ///
 /// // generates 6 colors, linearly interpolated from red to blue
@@ -20,26 +21,27 @@ use crate::prelude::*;
 /// - **Gradient** - Defines a linear fade between N colors
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// // everything is red
-/// ColorSequence::solid(Rgba::red())
+/// ColorSequence::solid(Rgba::red());
 ///
 /// // 2 point gradient
-/// ColorSequence::fade(Rgba::red(), Rgba::blue())
+/// ColorSequence::fade(Rgba::red(), Rgba::blue());
 ///
 /// // Three point gradient with given color as the center point, and hue arc of the given degrees
 /// // This produces a red to orange to yellow gradient
-/// ColorSequence::analogous(Rgba::orange(), 60.0)
+/// ColorSequence::analogous(Rgba::orange(), 60.0);
 ///
 /// // Three point gradient with the given lightness range, with the given color as the center point
 /// // This produces a pink to red to dark red gradient
-/// ColorSequence::monochromatic(Rgba::red(), 0.8)
+/// ColorSequence::monochromatic(Rgba::red(), 0.8);
 ///
 /// // Complex multi-stop gradient
 /// ColorSequence::gradient(vec![
-///   GradientStop::new(Rgba::red(), Extent::zero()),
-///   GradientStop::new(Rgba::magenta(), Extent::relative(0.35)),
-///   GradientStop::new(Rgba::blue(), Extent::full()),
-/// ])
+///   GradientStop::new(Extent::zero(), Rgba::red()),
+///   GradientStop::new(Extent::Relative(0.35), Rgba::magenta()),
+///   GradientStop::new(Extent::full(), Rgba::blue()),
+/// ]);
 ///
 /// // red, white, and blue, exactly three times
 /// ColorSequence::pattern(
@@ -48,7 +50,7 @@ use crate::prelude::*;
 /// );
 ///
 /// // Forever repeating pattern
-/// ColorSequence::tile(vec![Rgba::red(), Rgba::white()])
+/// ColorSequence::tile(vec![Rgba::red(), Rgba::white()]);
 /// ```
 ///
 /// ### Fill Area
@@ -56,25 +58,32 @@ use crate::prelude::*;
 /// Color sequence fills can also be offset or length-constrained and aligned.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # use frontbox::led::color_sequence::Anchor1d;
 /// // skip the outer 2 pixels
 /// let seq = ColorSequence::solid(Rgba::red())
-///   .padded(Extent::absolute(1), Extent:: absolute(1));
+///   .padded(Extent::Absolute(1), Extent::Absolute(1));
 /// let colors = seq.generate(3);
-/// // Result: vec![Rgba::default(), Rgba::red(), Rgba::default()]
+/// // Result: vec![Rgba::transparent(), Rgba::red(), Rgba::transparent()]
+/// # assert_eq!(colors, vec![Rgba::transparent(), Rgba::red(), Rgba::transparent()]);
 ///
 /// // render only half of the total length, center-aligned
 /// let seq = ColorSequence::solid(Rgba::red())
-///   .anchored(Anchor::Center, Extent::relative(0.5));
+///   .anchored(Anchor1d::Center, Extent::Relative(0.5));
 /// let colors = seq.generate(4);
-/// // Result: vec![Rgba::default(), Rgba::red(), Rgba::red(), Rgba::default()]
+/// // Result: vec![Rgba::transparent(), Rgba::red(), Rgba::red(), Rgba::transparent()]
+/// # assert_eq!(colors, vec![Rgba::transparent(), Rgba::red(), Rgba::red(), Rgba::transparent()]);
 /// ```
 ///
 /// Modifying the fill area is useful for creating progress bar-like effects.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # use frontbox::led::color_sequence::Anchor1d;
+/// # let percent_complete = 0.5;
 /// // red to blue gradient progress bar, left aligned
 /// let seq = ColorSequence::fade(Rgba::red(), Rgba::blue())
-///   .anchored(Anchor::Left, Extent::relative(percent_complete));
+///   .anchored(Anchor1d::Start, Extent::Relative(percent_complete));
 /// ```
 ///
 /// ### Alterations
@@ -82,6 +91,7 @@ use crate::prelude::*;
 /// Alterations are chained onto a ColorSequence by way of `alter`. More than one alteration can be applied to a color sequence.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// let seq = ColorSequence::fade(Rgba::purple(), Rgba::white())
 ///   .rotate(180.0)
 ///   .reverse();

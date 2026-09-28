@@ -6,6 +6,7 @@ use std::fmt::Debug;
 /// Targets are a data-less struct that acts as a typed classifier. Tags must always implement `Tag` (derivable).
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// #[derive(Tag)]
 /// pub struct Example;
 ///

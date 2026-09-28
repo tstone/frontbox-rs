@@ -15,6 +15,7 @@ pub use single_led_definition::*;
 pub use led_lookup::*;
 pub use led_port::*;
 pub use led_definition::*;
+pub use led_strip_builder::*;
 pub use multi_led_definition_builder::*;
 pub use single_led_definition_builder::*;
 pub use exp_network::*;

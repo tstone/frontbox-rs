@@ -11,12 +11,14 @@ use crate::prelude::LedChannels;
 /// Colors can be created manually.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// let red = Rgba([255, 0, 0, 255]);
 /// ```
 ///
 /// Or by using a handful of named colors.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// let red = Rgba::red();
 /// let cyan = Rgba::cyan();
 /// ```
@@ -24,6 +26,7 @@ use crate::prelude::LedChannels;
 /// Colors can also be modified by lightness, saturation, or hue shifted.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
 /// let c = Rgba::red()
 ///   .lighten(0.4)
 ///   .desaturate(0.1)

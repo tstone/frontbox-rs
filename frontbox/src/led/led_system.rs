@@ -22,6 +22,17 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # mod leds {
+/// #   use frontbox::prelude::*;
+/// #   hardware_defs! {
+/// #     pub EXAMPLE: LedDefinition = LedDefinition::single("example");
+/// #     pub EX1: LedDefinition = LedDefinition::single("ex1");
+/// #     pub EX2: LedDefinition = LedDefinition::single("ex2");
+/// #     pub EX3: LedDefinition = LedDefinition::single("ex3");
+/// #   }
+/// # }
+/// # fn example(ctx: &SystemContext) {
 /// // declare LEDs by name...
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(3),
@@ -30,17 +41,21 @@ const LED_SET_BATCH_SIZE: usize = 24;
 ///
 /// // ...or by group
 /// ctx.declare_leds(
-///   vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
-///   ColorSequence::gradient(vec![Rgba::red(), Rgba::yellow()])
+///   &vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
+///   ColorSequence::fade(Rgba::red(), Rgba::yellow())
 /// );
+/// # }
 /// ```
 ///
-/// `declare_leds` takes a `HardwareQuery`, which is the reason for `.q()`. More about this later.
+/// `declare_leds` takes an `LedQ` (or anything else that resolves to a set of LEDs), which is the reason for `.q()`. More about this later.
 ///
 /// Later on if these declarations need to be temporarily suspended because the System is going inactive, they can be temporarily disabled:
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # fn example(ctx: &SystemContext) {
 /// ctx.deactivate_led_declarations();
+/// # }
 /// ```
 ///
 /// In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
@@ -50,6 +65,14 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// It is possible to declare multiple layers for the same LED. If higher layers are opaque they will be rendered. If higher layers are transparent, they will render with a degree of "see-through" to layers below them.
 ///
 /// ```rust
+/// # use frontbox::prelude::*;
+/// # mod leds {
+/// #   use frontbox::prelude::*;
+/// #   hardware_defs! {
+/// #     pub EXAMPLE: LedDefinition = LedDefinition::single("example");
+/// #   }
+/// # }
+/// # fn example(ctx: &SystemContext) {
 /// // higher layer declares 50% transparent red
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(1),
@@ -60,6 +83,7 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// ctx.declare_leds(&leds::EXAMPLE.q(), ColorSequence::solid(Rgba::white()));
 ///
 /// // final color renders as pink [255, 127, 127, 255]
+/// # }
 /// ```
 
 pub struct LedSystem {

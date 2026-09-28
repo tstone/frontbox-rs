@@ -6,8 +6,9 @@ use crate::animation::Lerp;
 /// Extents are used by the framework in places where the actual value is later determined at some future computational point.
 /// 
 /// ```rust
-/// Extent::relative(0.5) // half way, 50%
-/// Extent::absolute(2) // concretely at 2
+/// # use frontbox::prelude::*;
+/// let half: Extent<u16> = Extent::Relative(0.5); // half way, 50%
+/// let two: Extent<u16> = Extent::Absolute(2); // concretely at 2
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub enum Extent<T: Copy> {

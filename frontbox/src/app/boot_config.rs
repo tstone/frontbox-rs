@@ -7,7 +7,9 @@ use crate::hardware::{ExpNetwork, IoNetwork};
 /// # Examples
 ///
 /// ```rust,no_run
-/// let app = App::boot(BootConfig {
+/// # use frontbox::prelude::*;
+/// # use std::path::PathBuf;
+/// let app = App::new(BootConfig {
 ///   platform: Platform::Neuron {
 ///     io_net_port_path: "/dev/ttyACM0",
 ///     exp_port_path: "/dev/ttyACM1",
@@ -15,10 +17,9 @@ use crate::hardware::{ExpNetwork, IoNetwork};
 ///   },
 ///   io_network: IoNetwork::new(vec![ /* boards defined here */ ]),
 ///   system_interval: Duration::from_millis(83),
-///   config_path: PathBuf::from("/game/operator_config.toml"),
+///   config_path: Some(PathBuf::from("/game/operator_config.toml")),
 ///   ..Default::default()
-/// })
-/// .await;
+/// });
 /// ```
 pub struct BootConfig {
   pub platform: Platform,
