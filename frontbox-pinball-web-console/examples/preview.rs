@@ -3,7 +3,7 @@ use std::io::Write;
 use frontbox::prelude::Event;
 use frontbox::prelude::app_tracer::{AppTracer, TraceEvent};
 use frontbox::prelude::event_box::EventBox;
-use frontbox_web_console::WebTracer;
+use frontbox_pinball_web_console::WebTracer;
 
 #[tokio::main]
 async fn main() {

@@ -892,6 +892,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontbox-pinball-web-console"
+version = "0.1.0"
+dependencies = [
+ "askama",
+ "axum",
+ "env_logger",
+ "frontbox",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+]
+
+[[package]]
 name = "frontbox-sound"
 version = "0.1.0"
 dependencies = [
@@ -914,21 +929,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
-]
-
-[[package]]
-name = "frontbox-web-console"
-version = "0.1.0"
-dependencies = [
- "askama",
- "axum",
- "env_logger",
- "frontbox",
- "log",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
 ]
 
 [[package]]
