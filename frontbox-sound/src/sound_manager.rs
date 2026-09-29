@@ -44,6 +44,19 @@ impl SoundManager {
     }
   }
 
+  pub fn default(rx: mpsc::UnboundedReceiver<SoundManagerCmds>) -> Result<Self, Error> {
+    let device = cpal::default_host().default_output_device();
+    let manager = AudioManager::<CpalBackend>::new(AudioManagerSettings {
+      backend_settings: CpalBackendSettings {
+        device,
+        ..Default::default()
+      },
+      ..Default::default()
+    })?;
+
+    Ok(Self::raw(manager, rx))
+  }
+
   pub fn new(
     device_name: &'static str,
     rx: mpsc::UnboundedReceiver<SoundManagerCmds>,

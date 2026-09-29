@@ -8,7 +8,7 @@ use crate::sound_manager::SoundManagerCmds::*;
 use crate::sound_manager::{SoundManager, SoundManagerCmds};
 
 pub struct SoundSystem {
-  tx: mpsc::UnboundedSender<SoundManagerCmds>
+  tx: mpsc::UnboundedSender<SoundManagerCmds>,
 }
 
 impl SoundSystem {
@@ -20,8 +20,28 @@ impl SoundSystem {
           manager.run().await;
         });
         Ok(Self { tx })
-      },
-      Err(err) => Err(err)
+      }
+      Err(err) => Err(err),
+    }
+  }
+
+  pub fn default() -> Result<Self, Error> {
+    let (tx, rx) = mpsc::unbounded_channel::<SoundManagerCmds>();
+    match SoundManager::default(rx) {
+      Ok(mut manager) => {
+        tokio::spawn(async move {
+          manager.run().await;
+        });
+        Ok(Self { tx })
+      }
+      Err(err) => Err(err),
+    }
+  }
+
+  pub fn by_name_or_default(device_name: &'static str) -> Self {
+    match Self::by_name(device_name) {
+      Ok(system) => system,
+      Err(_) => Self::default().expect("Could not initialize SoundSystem"),
     }
   }
 
@@ -44,7 +64,9 @@ impl SoundSystem {
   }
 
   pub fn play_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
-    let _ = self.tx.send(PlayMusic(path.as_ref().to_path_buf(), crossfade));
+    let _ = self
+      .tx
+      .send(PlayMusic(path.as_ref().to_path_buf(), crossfade));
   }
 
   pub fn stop_music(&mut self, crossfade: Duration) {

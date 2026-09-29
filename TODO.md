@@ -53,10 +53,11 @@ LEDs
 - Expand named color library
 - Maybe: Declare library colors with FAST and reference by ID
 
-Nice to Have
+Sound
 
 - frontbox-sound multi-stem music support
 - frontbox-sound loop point support
+- legacy hardware emulation? e.g. YM2610 FM
 
 DX
 
