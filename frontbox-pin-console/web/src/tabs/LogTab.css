@@ -1,0 +1,26 @@
+.log-tab table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+
+.log-tab td {
+  padding: 0.25rem 0.75rem 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.log-tab .time,
+.log-tab .kind {
+  white-space: nowrap;
+}
+
+.log-tab .time {
+  color: var(--muted);
+  text-align: right;
+}
+
+.log-tab .detail {
+  word-break: break-all;
+}

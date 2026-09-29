@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use frontbox::prelude::Event;
+use frontbox::prelude::{Event, SwitchState};
 use frontbox::prelude::app_tracer::{AppTracer, TraceEvent};
 use frontbox::prelude::event_box::EventBox;
 use frontbox_pin_console::WebTracer;
@@ -67,8 +67,15 @@ async fn main() {
     event: event.try_json(),
   });
 
-  // keep web interface running
-  loop {}
+  // keep something happening so the console has a live stream to show
+  let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+  let mut closed = false;
+  loop {
+    interval.tick().await;
+    closed = !closed;
+    let state = if closed { SwitchState::Closed } else { SwitchState::Open };
+    let _ = sender.send(TraceEvent::SwitchStateChange { switch_id: 0, state });
+  }
 }
 
 #[derive(serde::Serialize, Event)]
