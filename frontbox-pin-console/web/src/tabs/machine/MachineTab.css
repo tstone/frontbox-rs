@@ -106,3 +106,7 @@
 .hardware-list tr.active td.state .dot {
   background: var(--ok);
 }
+
+.hardware-list td.state .detail {
+  font-size: 0.75rem;
+}

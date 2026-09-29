@@ -27,7 +27,8 @@ use crate::prelude::*;
 /// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
 /// 2. Sensible defaults for every mode, overridable via builders (e.g. `DriverMode::pulse().rest(...).build()`)
 /// 3. Hardware values that can be exposed through operator config
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DriverMode {
   Pulse(PulseMode),
   PulseKick(PulseKickMode),

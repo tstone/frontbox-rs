@@ -1,5 +1,6 @@
 import { ToggleGroup } from '@ark-ui/solid/toggle-group'
 import { type Accessor, createMemo, createSignal, For, Show } from 'solid-js'
+import InfoTip from '../../components/InfoTip'
 import { machine } from '../../state/console'
 import { defaultHardwareKinds, type HardwareKind, hardwareKinds, type HardwareRow, hardwareRows } from './hardware'
 
@@ -31,7 +32,10 @@ export default function HardwareList() {
             const rows = rowsByKind[info.kind]
             return (
               <section>
-                <h2 class="pane-title">{info.label}</h2>
+                <h2 class="pane-title">
+                  {info.label}
+                  <Show when={info.note}>{(note) => <InfoTip text={note()} />}</Show>
+                </h2>
                 <Show when={rows().length > 0} fallback={<p class="empty">{info.empty}</p>}>
                   <table>
                     <tbody>
@@ -44,7 +48,7 @@ export default function HardwareList() {
                             </td>
                             <td class="address mono">{row.address}</td>
                             <td class="state">
-                              <Show when={row.state()}>
+                              <Show when={row.state()} fallback={<span class="detail">{row.detail}</span>}>
                                 <span class="dot" />
                                 {row.state()}
                               </Show>

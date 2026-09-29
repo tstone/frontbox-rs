@@ -14,9 +14,25 @@
   font-size: 0.75rem;
 }
 
-.systems-tab [data-scope='tree-view'] .inactive > [data-part='branch-control'],
-.systems-tab [data-scope='tree-view'][data-part='item'].inactive {
-  opacity: 0.45;
+/* inactive nodes, and everything in an inactive group, are muted but still selectable */
+.systems-tab [data-part='branch'].inactive > [data-part='branch-control'],
+.systems-tab [data-part='branch'].inactive [data-part='item'],
+.systems-tab [data-part='item'].inactive {
+  color: var(--muted);
+}
+
+.systems-tab .inactive-tag {
+  margin-left: auto;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.1rem;
+}
+
+.systems-tab .inactive-tag + .count {
+  margin-left: 0.5rem;
 }
 
 .systems-tab [data-scope='tree-view'][data-part='item-text'],

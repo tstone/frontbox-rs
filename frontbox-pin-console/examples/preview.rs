@@ -18,11 +18,18 @@ mod hardware {
     pub START_BUTTON: SwitchDefinition = SwitchDefinition::new("start_button");
     pub LEFT_FLIPPER_BUTTON: SwitchDefinition = SwitchDefinition::new("left_flipper_button");
     pub TROUGH_1: SwitchDefinition = SwitchDefinition::new("trough_1");
+    pub LEFT_FLIPPER_EOS: SwitchDefinition = SwitchDefinition::new("left_flipper_eos");
     pub LEFT_SLING: SwitchDefinition = SwitchDefinition::new("left_sling");
 
-    pub LEFT_FLIPPER: DriverDefinition = DriverDefinition::new("left_flipper");
+    // automatic: fired by the hardware from a switch
+    pub LEFT_FLIPPER: DriverDefinition = DriverDefinition::new("left_flipper")
+      .mode(DriverMode::flipper_main_direct(LEFT_FLIPPER_BUTTON.name, LEFT_FLIPPER_EOS.name).build());
+    pub LEFT_SLING_COIL: DriverDefinition = DriverDefinition::new("left_sling_coil")
+      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch(LEFT_SLING.name)).build());
+
+    // commanded by software
     pub TROUGH_EJECT: DriverDefinition = DriverDefinition::new("trough_eject");
-    pub LEFT_SLING_COIL: DriverDefinition = DriverDefinition::new("left_sling_coil");
+    pub SCOOP_EJECT: DriverDefinition = DriverDefinition::new("scoop_eject");
   }
 }
 
@@ -37,10 +44,12 @@ async fn main() {
       .wire_switch(0, &START_BUTTON)
       .wire_switch(1, &LEFT_FLIPPER_BUTTON)
       .wire_switch(2, &TROUGH_1)
-      .wire_switch(3, &LEFT_SLING)
+      .wire_switch(3, &LEFT_FLIPPER_EOS)
+      .wire_switch(4, &LEFT_SLING)
       .wire_driver(0, &LEFT_FLIPPER)
-      .wire_driver(1, &TROUGH_EJECT)
-      .wire_driver(2, &LEFT_SLING_COIL),
+      .wire_driver(1, &LEFT_SLING_COIL)
+      .wire_driver(2, &TROUGH_EJECT)
+      .wire_driver(3, &SCOOP_EJECT),
   ]);
 
   App::new(BootConfig {
@@ -90,21 +99,37 @@ impl System for FakeGame {
 
     if beat == 0 {
       ctx.emit(GameStarted);
+      // like a turn-based game, each player gets a group that's only active during their turn
+      for group in PLAYER_GROUPS {
+        ctx.spawn_system_group(group, vec![PlayerModes.into(), BallSave.into()], false);
+      }
     } else if beat < game_length && (beat - 1) % BEATS_PER_TURN == 0 {
       let turn_index = (beat - 1) / BEATS_PER_TURN;
       let player = (turn_index % PLAYERS as u32) as u8;
       let turn = (turn_index / PLAYERS as u32) as u8 + 1;
+      for (index, group) in PLAYER_GROUPS.iter().enumerate() {
+        if index == player as usize {
+          ctx.activate_system_group(group);
+        } else {
+          ctx.deactivate_system_group(group);
+        }
+      }
       ctx.emit(PlayerTurnBeginning::new(player, turn));
       ctx.activate_driver(TROUGH_EJECT.name, ActivationMode::Tap);
     } else if beat < game_length {
-      ctx.activate_driver(LEFT_SLING_COIL.name, ActivationMode::Tap);
+      ctx.activate_driver(SCOOP_EJECT.name, ActivationMode::Tap);
     } else if beat == game_length {
       ctx.emit(GameEnded {
         scores: vec![("Player 1", 125_000), ("Player 2", 98_500)],
       });
+      for group in PLAYER_GROUPS {
+        ctx.despawn_system_group(group);
+      }
     }
   }
 }
+
+const PLAYER_GROUPS: [&str; PLAYERS as usize] = ["player_1", "player_2"];
 
 /// Placeholders so the systems tree has more than one entry
 struct Attract;
@@ -112,3 +137,11 @@ impl System for Attract {}
 
 struct ScoreKeeper;
 impl System for ScoreKeeper {}
+
+#[derive(Clone)]
+struct PlayerModes;
+impl System for PlayerModes {}
+
+#[derive(Clone)]
+struct BallSave;
+impl System for BallSave {}

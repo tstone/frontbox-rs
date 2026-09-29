@@ -6,7 +6,18 @@ import { connect, type ConnectionStatus } from './socket'
 
 const LOG_CAPACITY = 1000
 
-export type ConsoleState = Snapshot & { connection: ConnectionStatus }
+export type ConsoleState = Snapshot & {
+  connection: ConnectionStatus
+  /** Drivers that were fired within the last `FIRED_DISPLAY_MS`, by id */
+  firing: Record<number, boolean>
+}
+
+/**
+ * How long a driver shows as fired. Tracers only hear that a pulse started, not when it ended, so
+ * this is an approximation that's plenty for a console.
+ */
+const FIRED_DISPLAY_MS = 750
+const firedTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
 const [state, setState] = createStore<ConsoleState>({
   connection: 'connecting',
@@ -16,6 +27,7 @@ const [state, setState] = createStore<ConsoleState>({
   drivers: {},
   game: null,
   log: [],
+  firing: {},
 })
 
 /**
@@ -38,8 +50,29 @@ function handleMessage(message: ServerMessage) {
     }
     case 'Trace':
       setState(produce((s) => applyTrace(s, message)))
+      if ('DriverStateChange' in message.event && message.event.DriverStateChange.state === 'Fired') {
+        markFired(message.event.DriverStateChange.driver_id)
+      }
       break
   }
+}
+
+/** What a driver should display as, with "Fired" lasting only briefly */
+export function driverState(id: number): 'Fired' | 'On' | 'Off' {
+  if (state.firing[id]) return 'Fired'
+  return state.drivers[id] === 'On' ? 'On' : 'Off'
+}
+
+function markFired(id: number) {
+  clearTimeout(firedTimers.get(id))
+  setState('firing', id, true)
+  firedTimers.set(
+    id,
+    setTimeout(() => {
+      setState('firing', id, false)
+      firedTimers.delete(id)
+    }, FIRED_DISPLAY_MS),
+  )
 }
 
 /**

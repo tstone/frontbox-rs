@@ -10,7 +10,8 @@ use crate::prelude::*;
 /// moving a coil and then kicking it the rest of the way, e.g. VUK or trough eject. Reduces force applied
 /// to ball by ensuring a plunger has full contact with the ball before a full kick occurs.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/12/>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseKickMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,

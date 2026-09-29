@@ -88,6 +88,9 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
         <TreeView.BranchControl>
           <TreeView.BranchIndicator>›</TreeView.BranchIndicator>
           <TreeView.BranchText>{props.node.label}</TreeView.BranchText>
+          <Show when={!props.node.group.active}>
+            <span class="inactive-tag">inactive</span>
+          </Show>
           <span class="count">{props.node.children.length}</span>
         </TreeView.BranchControl>
         <TreeView.BranchContent>
@@ -97,6 +100,9 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
               <TreeView.NodeProvider node={child} indexPath={[...props.indexPath, index()]}>
                 <TreeView.Item classList={{ inactive: !child.system.active }} title={child.system.name}>
                   <TreeView.ItemText>{child.label}</TreeView.ItemText>
+                  <Show when={!child.system.active}>
+                    <span class="inactive-tag">inactive</span>
+                  </Show>
                 </TreeView.Item>
               </TreeView.NodeProvider>
             )}
