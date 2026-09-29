@@ -115,9 +115,10 @@ impl SwitchDefinitionBuilder {
   }
 }
 
+// serde_as must come before the derive, or the Duration fields serialize as { secs, nanos }
+#[serde_with::serde_as]
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde_with::serde_as]
 pub struct SwitchConfig {
   pub inverted: bool,
   #[serde_as(as = "Option<serde_with::DurationMilliSeconds<u64>>")]
@@ -135,5 +136,23 @@ impl Default for SwitchConfig {
       debounce_close: None,
       debounce_open: None,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn switch_config_serializes_debounce_as_milliseconds() {
+    let config = SwitchConfig {
+      inverted: false,
+      debounce_close: Some(Duration::from_millis(10)),
+      debounce_open: None,
+    };
+
+    let json = serde_json::to_value(&config).unwrap();
+    assert_eq!(json["debounce_close"], serde_json::json!(10));
+    assert_eq!(json["debounce_open"], serde_json::Value::Null);
   }
 }

@@ -1,67 +1,74 @@
-import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createMemo, createSignal, For, Show } from 'solid-js'
 import FilterList, { type FilterOption } from '../../components/FilterList'
-import {
-  formatElapsed,
-  groupLabel,
-  playerLabel,
-  shortName,
-  traceBody,
-  traceCategory,
-  traceType,
-  type TraceCategory,
-} from '../../lib/format'
-import { machine } from '../../state/console'
+import TraceRow, { categoryColor, traceSender } from '../../components/TraceRow'
+import { playerLabel, traceCategory, traceType } from '../../lib/format'
+import { machine, systemName } from '../../state/console'
 import type { TraceRecord } from '../../types/generated/TraceRecord'
 import './LogTab.css'
-
-const categoryColor = (category: TraceCategory) => `var(--cat-${category})`
 
 /** Filter key for the player a record belongs to */
 const playerKey = (record: TraceRecord) => String(record.game?.player ?? 'none')
 
+/** Filter key for the system that sent a record */
+const senderKey = (record: TraceRecord) => String(traceSender(record) ?? 'none')
+
+/** Counts records into filter options, `describe` supplying the rest of a new option */
+function countOptions(key: (record: TraceRecord) => string, describe: (record: TraceRecord) => Omit<FilterOption, 'value' | 'count'>) {
+  const options = new Map<string, FilterOption>()
+  for (const record of machine.log) {
+    const value = key(record)
+    const option = options.get(value)
+    if (option) option.count! += 1
+    else options.set(value, { value, count: 1, ...describe(record) })
+  }
+  return [...options.values()]
+}
+
+/** Sorts the "none" option first, then by `by` */
+const noneFirst = (by: (a: FilterOption, b: FilterOption) => number) => (a: FilterOption, b: FilterOption) =>
+  a.value === 'none' ? -1 : b.value === 'none' ? 1 : by(a, b)
+
 export default function LogTab() {
-  // Filters hold what's hidden, so types and players that show up later are visible by default
+  // Filters hold what's hidden, so values that show up later are visible by default
   const [hiddenTypes, setHiddenTypes] = createSignal<string[]>([])
   const [hiddenPlayers, setHiddenPlayers] = createSignal<string[]>([])
-  const [expanded, setExpanded] = createSignal<number[]>([])
+  const [hiddenSenders, setHiddenSenders] = createSignal<string[]>([])
 
   const toggle = (list: string[], value: string, visible: boolean) =>
     visible ? list.filter((v) => v !== value) : [...list, value]
-  const toggleExpanded = (seq: number) =>
-    setExpanded((seqs) => (seqs.includes(seq) ? seqs.filter((s) => s !== seq) : [...seqs, seq]))
 
-  const typeOptions = createMemo<FilterOption[]>(() => {
-    const types = new Map<string, FilterOption>()
-    for (const record of machine.log) {
-      const type = traceType(record)
-      const option = types.get(type)
-      if (option) option.count! += 1
-      else types.set(type, { value: type, label: type, count: 1, color: categoryColor(traceCategory(record)) })
-    }
-    return [...types.values()].sort((a, b) => a.label.localeCompare(b.label))
-  })
+  const typeOptions = createMemo(() =>
+    countOptions(traceType, (record) => ({
+      label: traceType(record),
+      color: categoryColor(traceCategory(record)),
+    })).sort((a, b) => a.label.localeCompare(b.label)),
+  )
 
-  const playerOptions = createMemo<FilterOption[]>(() => {
-    const players = new Map<string, FilterOption>()
-    for (const record of machine.log) {
-      const key = playerKey(record)
-      const option = players.get(key)
-      if (option) option.count! += 1
-      else players.set(key, { value: key, label: playerLabel(record.game?.player ?? null), count: 1 })
-    }
-    // "No player" first, then players in order
-    return [...players.values()].sort((a, b) => (a.value === 'none' ? -1 : b.value === 'none' ? 1 : +a.value - +b.value))
-  })
+  const playerOptions = createMemo(() =>
+    countOptions(playerKey, (record) => ({ label: playerLabel(record.game?.player ?? null) })).sort(
+      noneFirst((a, b) => +a.value - +b.value),
+    ),
+  )
+
+  const senderOptions = createMemo(() =>
+    countOptions(senderKey, (record) => {
+      const sender = traceSender(record)
+      return { label: sender === null ? 'No sender' : systemName(sender) }
+    }).sort(noneFirst((a, b) => a.label.localeCompare(b.label))),
+  )
 
   // newest first
   const visible = createMemo(() => {
     const types = hiddenTypes()
     const players = hiddenPlayers()
+    const senders = hiddenSenders()
     const out: TraceRecord[] = []
     for (let i = machine.log.length - 1; i >= 0; i--) {
       const record = machine.log[i]
-      if (!types.includes(traceType(record)) && !players.includes(playerKey(record))) out.push(record)
+      if (types.includes(traceType(record))) continue
+      if (players.includes(playerKey(record))) continue
+      if (senders.includes(senderKey(record))) continue
+      out.push(record)
     }
     return out
   })
@@ -74,36 +81,7 @@ export default function LogTab() {
           fallback={<p class="empty">{machine.log.length > 0 ? 'Everything is filtered out.' : 'Nothing traced yet.'}</p>}
         >
           <ol>
-            <For each={visible()}>
-              {(record) => {
-                const isExpanded = () => expanded().includes(record.seq)
-                return (
-                  <li classList={{ expanded: isExpanded() }}>
-                    <button type="button" class="row" aria-expanded={isExpanded()} onClick={() => toggleExpanded(record.seq)}>
-                      <span class="dot" style={{ background: categoryColor(traceCategory(record)) }} />
-                      <span class="time mono">{formatElapsed(record.at_ms)}</span>
-                      <span class="type">{traceType(record)}</span>
-                      <span class="summary">{summary(record)}</span>
-                      <Show when={record.game?.player != null}>
-                        <span class="badge">P{record.game!.player! + 1}</span>
-                      </Show>
-                    </button>
-                    <Show when={isExpanded()}>
-                      <div class="detail">
-                        <Show when={'Event' in record.event && record.event.Event.type_name}>
-                          {(typeName) => <p class="type-name mono">{typeName()}</p>}
-                        </Show>
-                        <Show when={traceBody(record) != null} fallback={<p class="empty">No data</p>}>
-                          <JsonTreeView.Root data={traceBody(record)} defaultExpandedDepth={3}>
-                            <JsonTreeView.Tree arrow={<span>›</span>} />
-                          </JsonTreeView.Root>
-                        </Show>
-                      </div>
-                    </Show>
-                  </li>
-                )
-              }}
-            </For>
+            <For each={visible()}>{(record) => <TraceRow record={record} />}</For>
           </ol>
         </Show>
       </div>
@@ -136,35 +114,13 @@ export default function LogTab() {
           isChecked={(player) => !hiddenPlayers().includes(player)}
           onChange={(player, checked) => setHiddenPlayers((hidden) => toggle(hidden, player, checked))}
         />
+        <FilterList
+          title="Sent by"
+          options={senderOptions()}
+          isChecked={(sender) => !hiddenSenders().includes(sender)}
+          onChange={(sender, checked) => setHiddenSenders((hidden) => toggle(hidden, sender, checked))}
+        />
       </aside>
     </div>
   )
-}
-
-/** A one-line description, using hardware names where the console knows them */
-function summary(record: TraceRecord): string {
-  const event = record.event
-  const hw = machine.hardware
-  if ('SwitchStateChange' in event) {
-    const { switch_id, state } = event.SwitchStateChange
-    return `${hw?.switches.by_id[switch_id]?.name ?? `Switch ${switch_id}`} ${state.toLowerCase()}`
-  }
-  if ('DriverStateChange' in event) {
-    const { driver_id, state } = event.DriverStateChange
-    return `${hw?.drivers.by_id[driver_id]?.name ?? `Driver ${driver_id}`} ${state.toLowerCase()}`
-  }
-  if ('SystemSpawned' in event) return shortName(event.SystemSpawned.name)
-  if ('SystemDespawned' in event) return `#${event.SystemDespawned.id}`
-  if ('SystemActiveStateChange' in event) {
-    const { id, active } = event.SystemActiveStateChange
-    return `#${id} ${active ? 'activated' : 'deactivated'}`
-  }
-  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.key)
-  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.key)
-  if ('SystemGroupActiveStateChange' in event) {
-    const { key, active } = event.SystemGroupActiveStateChange
-    return `${groupLabel(key)} ${active ? 'activated' : 'deactivated'}`
-  }
-  const body = event.Event.event
-  return body == null ? '' : JSON.stringify(body)
 }

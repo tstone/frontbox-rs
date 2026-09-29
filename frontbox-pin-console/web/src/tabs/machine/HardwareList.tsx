@@ -1,8 +1,11 @@
+import { Accordion } from '@ark-ui/solid/accordion'
 import { ToggleGroup } from '@ark-ui/solid/toggle-group'
 import { type Accessor, createMemo, createSignal, For, Show } from 'solid-js'
 import InfoTip from '../../components/InfoTip'
+import Tip from '../../components/Tip'
 import { machine } from '../../state/console'
 import { defaultHardwareKinds, type HardwareKind, hardwareKinds, type HardwareRow, hardwareRows } from './hardware'
+import HardwareDetail from './HardwareDetail'
 
 export default function HardwareList() {
   const [kinds, setKinds] = createSignal<HardwareKind[]>(defaultHardwareKinds)
@@ -37,27 +40,10 @@ export default function HardwareList() {
                   <Show when={info.note}>{(note) => <InfoTip text={note()} />}</Show>
                 </h2>
                 <Show when={rows().length > 0} fallback={<p class="empty">{info.empty}</p>}>
-                  <table>
-                    <tbody>
-                      <For each={rows()}>
-                        {(row) => (
-                          <tr classList={{ active: row.active() }}>
-                            <td class="name">{row.name}</td>
-                            <td class="tags">
-                              <For each={row.tags}>{(tag) => <span class="badge">{tag}</span>}</For>
-                            </td>
-                            <td class="address mono">{row.address}</td>
-                            <td class="state">
-                              <Show when={row.state()} fallback={<span class="detail">{row.detail}</span>}>
-                                <span class="dot" />
-                                {row.state()}
-                              </Show>
-                            </td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
+                  {/* details only render while open */}
+                  <Accordion.Root multiple collapsible lazyMount unmountOnExit>
+                    <For each={rows()}>{(row) => <HardwareItem row={row} />}</For>
+                  </Accordion.Root>
                 </Show>
               </section>
             )
@@ -65,5 +51,34 @@ export default function HardwareList() {
         </For>
       </Show>
     </div>
+  )
+}
+
+function HardwareItem(props: { row: HardwareRow }) {
+  const row = props.row
+  return (
+    <Accordion.Item value={row.key} classList={{ active: row.active() }}>
+      <Accordion.ItemTrigger>
+        <Accordion.ItemIndicator>›</Accordion.ItemIndicator>
+        <span class="name">{row.name}</span>
+        <span class="tags">
+          <For each={row.tags}>{(tag) => <span class="badge">{tag}</span>}</For>
+        </span>
+        <span class="address mono">
+          <Show when={row.addressTip} fallback={row.address}>
+            {(tip) => <Tip text={tip()}>{row.address}</Tip>}
+          </Show>
+        </span>
+        <span class="state">
+          <Show when={row.state()} fallback={<span class="detail">{row.detail}</span>}>
+            <span class="dot" />
+            {row.state()}
+          </Show>
+        </span>
+      </Accordion.ItemTrigger>
+      <Accordion.ItemContent>
+        <HardwareDetail item={row.ref} />
+      </Accordion.ItemContent>
+    </Accordion.Item>
   )
 }

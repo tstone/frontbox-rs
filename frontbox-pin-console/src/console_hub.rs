@@ -1,8 +1,9 @@
 use axum::extract::ws::Utf8Bytes;
-use frontbox::prelude::Hardware;
+use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
 use frontbox::prelude::app_tracer::TraceEvent;
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
@@ -10,6 +11,8 @@ use tokio::sync::broadcast;
 use crate::protocol::*;
 
 const LOG_CAPACITY: usize = 1000;
+/// How many emitted events each system keeps for the systems view
+const RECENT_EVENTS_PER_SYSTEM: usize = 10;
 const BROADCAST_CAPACITY: usize = 1024;
 
 /// Singleton tracking data coming out of AppTracer, providing to multiple console connection
@@ -55,6 +58,10 @@ impl ConsoleHub {
   }
 
   pub fn ingest(&self, event: TraceEvent) {
+    if is_redundant(&event) {
+      return;
+    }
+
     let mut state = self.state.lock().unwrap();
     let transition = GameTransition::from_event(&event);
     let game = &mut state.snapshot.game;
@@ -100,6 +107,17 @@ impl ConsoleHub {
       // no receivers is fine; nobody has the page open
       let _ = self.tx.send(message);
     }
+  }
+}
+
+/// The framework also emits spawn/despawn events for systems to react to. The trace variants for
+/// the same thing carry more (the system name), so the bus copies would only duplicate log rows.
+fn is_redundant(event: &TraceEvent) -> bool {
+  match event {
+    TraceEvent::Event { type_name: name, .. } => {
+      *name == type_name::<SystemSpawned>() || *name == type_name::<SystemDespawned>()
+    }
+    _ => false,
   }
 }
 
@@ -173,6 +191,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
           id: *id,
           name,
           active: true,
+          recent_events: VecDeque::new(),
         });
       }
     }
@@ -195,6 +214,21 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
     }
     TraceEvent::DriverStateChange { driver_id, state } => {
       snapshot.drivers.insert(*driver_id, state.clone());
+    }
+    TraceEvent::Event {
+      sender: Some(sender),
+      ..
+    } => {
+      if let Some(system) = groups
+        .iter_mut()
+        .flat_map(|g| g.systems.iter_mut())
+        .find(|s| s.id == *sender)
+      {
+        if system.recent_events.len() >= RECENT_EVENTS_PER_SYSTEM {
+          system.recent_events.pop_front();
+        }
+        system.recent_events.push_back(record.clone());
+      }
     }
     TraceEvent::Event { .. } => {}
   }

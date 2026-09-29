@@ -7,7 +7,7 @@ use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 pub enum AppMessage {
-  EmitEvent(EventBox),
+  EmitEvent(Option<u64>, EventBox),
   RegisterInterrupt(SystemHandle, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
   /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
@@ -31,7 +31,9 @@ pub enum AppMessage {
 impl Debug for AppMessage {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      AppMessage::EmitEvent(event) => write!(f, "EmitEvent({})", event.type_name),
+      AppMessage::EmitEvent(sender, event) => {
+        write!(f, "EmitEvent({:?}, {})", sender, event.type_name)
+      }
       AppMessage::RegisterInterrupt(handle, type_id, priority) => {
         write!(
           f,

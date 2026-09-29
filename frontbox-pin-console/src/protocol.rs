@@ -60,4 +60,7 @@ pub struct System {
   pub id: u64,
   pub name: &'static str,
   pub active: bool,
+  /// The most recent events this system emitted, oldest first
+  #[ts(as = "Vec<TraceRecord>")]
+  pub recent_events: VecDeque<TraceRecord>,
 }

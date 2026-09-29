@@ -68,8 +68,8 @@ pub async fn run(
         let start = std::time::Instant::now();
 
         match command {
-          AppMessage::EmitEvent(event_box) => {
-            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+          AppMessage::EmitEvent(sender, event_box) => {
+            emit_event(sender, event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
           AppMessage::RegisterInterrupt(handle, type_id, priority) => {
             interrupt_registry.register(type_id, handle.id, handle.parent_key, priority);
@@ -221,6 +221,7 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
+  sender: Option<u64>,
   event_box: EventBox,
   groups: &Groups,
   base: &BootSnapshot,
@@ -277,6 +278,7 @@ fn emit_event(
     type_name: event_box.type_name,
     interrupts: interrupt_evals.clone(),
     event: event_box.try_json(),
+    sender,
   });
 
   // event is broadcast to systems if no interrupt halted it
@@ -335,6 +337,7 @@ fn switch_state_changed(
 
   if let Some(event) = outgoing_event {
     emit_event(
+      None,
       event,
       groups,
       base,
@@ -423,7 +426,7 @@ fn spawn_system(
     });
 
     let event = SystemSpawned::new(system_id, parent_key);
-    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
+    let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
 }
 
@@ -481,7 +484,7 @@ fn despawn_system(
     });
 
     let event = SystemDespawned::new(handle.id, handle.parent_key);
-    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
+    let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
 }
 

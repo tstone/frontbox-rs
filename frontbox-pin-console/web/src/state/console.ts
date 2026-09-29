@@ -2,9 +2,12 @@ import { createStore, produce } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
+import { shortName } from '../lib/format'
 import { connect, type ConnectionStatus } from './socket'
 
 const LOG_CAPACITY = 1000
+/** How many emitted events each system keeps for the systems view */
+const RECENT_EVENTS_PER_SYSTEM = 10
 
 export type ConsoleState = Snapshot & {
   connection: ConnectionStatus
@@ -95,7 +98,7 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     if (g) g.active = active
   } else if ('SystemSpawned' in event) {
     const { id, name, parent_key } = event.SystemSpawned
-    group(parent_key)?.systems.push({ id, name, active: true })
+    group(parent_key)?.systems.push({ id, name, active: true, recent_events: [] })
   } else if ('SystemDespawned' in event) {
     const { id, parent_key } = event.SystemDespawned
     const g = group(parent_key)
@@ -110,9 +113,30 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverStateChange' in event) {
     const { driver_id, state } = event.DriverStateChange
     s.drivers[driver_id] = state
+  } else if (event.Event.sender !== null) {
+    const sender = event.Event.sender
+    const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === sender)
+    if (sys) {
+      sys.recent_events.push(record)
+      if (sys.recent_events.length > RECENT_EVENTS_PER_SYSTEM) sys.recent_events.shift()
+    }
   }
 
   s.game = record.game
   s.log.push(record)
   if (s.log.length > LOG_CAPACITY) s.log.splice(0, s.log.length - LOG_CAPACITY)
+}
+
+/**
+ * A system's short name by id: from the running systems, or, for one that has since despawned,
+ * from its spawn record in the log.
+ */
+export function systemName(id: number): string {
+  for (const group of state.groups) {
+    const system = group.systems.find((s) => s.id === id)
+    if (system) return shortName(system.name)
+  }
+  const spawned = state.log.find((r) => 'SystemSpawned' in r.event && r.event.SystemSpawned.id === id)
+  if (spawned && 'SystemSpawned' in spawned.event) return shortName(spawned.event.SystemSpawned.name)
+  return `System #${id}`
 }

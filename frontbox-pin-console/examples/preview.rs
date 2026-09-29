@@ -2,6 +2,7 @@
 //! live stream of events to show without any real hardware attached.
 //!
 //! `cargo run --example preview`, then open http://localhost:3000 (or run `npm run dev` in `web/`).
+//! Set `CONSOLE_PORT` to serve somewhere other than 3000.
 
 use frontbox::prelude::*;
 use frontbox_pin_console::WebTracer;
@@ -19,7 +20,9 @@ mod hardware {
     pub LEFT_FLIPPER_BUTTON: SwitchDefinition = SwitchDefinition::new("left_flipper_button");
     pub TROUGH_1: SwitchDefinition = SwitchDefinition::new("trough_1");
     pub LEFT_FLIPPER_EOS: SwitchDefinition = SwitchDefinition::new("left_flipper_eos");
-    pub LEFT_SLING: SwitchDefinition = SwitchDefinition::new("left_sling");
+    pub LEFT_SLING: SwitchDefinition = SwitchDefinition::new("left_sling")
+      .debounce_close(Duration::from_millis(2))
+      .debounce_open(Duration::from_millis(10));
 
     // automatic: fired by the hardware from a switch
     pub LEFT_FLIPPER: DriverDefinition = DriverDefinition::new("left_flipper")
@@ -30,6 +33,11 @@ mod hardware {
     // commanded by software
     pub TROUGH_EJECT: DriverDefinition = DriverDefinition::new("trough_eject");
     pub SCOOP_EJECT: DriverDefinition = DriverDefinition::new("scoop_eject");
+
+    pub SHOOT_AGAIN: LedDefinition = LedDefinition::single("shoot_again");
+    pub LANE_1: LedDefinition = LedDefinition::single("lane_1");
+    pub LANE_2: LedDefinition = LedDefinition::single("lane_2");
+    pub SCOOP_ARROW: LedDefinition = LedDefinition::single("scoop_arrow");
   }
 }
 
@@ -52,14 +60,29 @@ async fn main() {
       .wire_driver(3, &SCOOP_EJECT),
   ]);
 
+  let exp_network = ExpNetwork::new(vec![
+    ExpBoard::neuron().wire_led_port(1, LedPort::ws2812().leds(vec![&SHOOT_AGAIN])),
+    ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open).wire_led_port(
+      1,
+      LedPort::ws2812().leds(vec![&LANE_1, &LANE_2, &SCOOP_ARROW]),
+    ),
+  ]);
+
+  // CONSOLE_PORT lets the preview run alongside a game that already has the console on :3000
+  let tracer = match std::env::var("CONSOLE_PORT") {
+    Ok(port) => WebTracer::at_addr(([0, 0, 0, 0], port.parse().expect("CONSOLE_PORT must be a port number")).into()),
+    Err(_) => WebTracer::new(),
+  };
+
   App::new(BootConfig {
     io_network,
+    exp_network,
     platform: Platform::Virtual,
     ..Default::default()
   })
   .configure(|app| {
     app
-      .tracer(WebTracer::new())
+      .tracer(tracer)
       .system(FakeGame::default())
       .system(Attract)
       .system(ScoreKeeper);

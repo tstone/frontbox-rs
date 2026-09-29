@@ -59,3 +59,12 @@ const ROOT_GROUP = '__root'
 export function groupLabel(key: string): string {
   return key === ROOT_GROUP ? 'Root' : key
 }
+
+/**
+ * LED definitions are split into child LEDs named `___child::{name}::{index}` by the framework.
+ * `___child::lane_1::0` becomes `lane_1[0]`; other names pass through.
+ */
+export function ledName(name: string): string {
+  const match = /^___child::(.+)::(\d+)$/.exec(name)
+  return match ? `${match[1]}[${match[2]}]` : name
+}

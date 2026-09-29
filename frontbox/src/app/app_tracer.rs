@@ -15,6 +15,7 @@ pub enum TraceEvent {
     type_name: &'static str,
     interrupts: Vec<InterruptEvaluation>,
     event: Option<serde_json::Value>,
+    sender: Option<u64>,
   },
   SystemSpawned {
     id: u64,
