@@ -22,6 +22,8 @@ pub struct Snapshot {
   pub groups: Vec<SystemGroup>,
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
+  /// The game in progress, if any
+  pub game: Option<GameState>,
   /// Most recent trace records, oldest first
   #[ts(as = "Vec<TraceRecord>")]
   pub log: VecDeque<TraceRecord>,
@@ -33,7 +35,17 @@ pub struct TraceRecord {
   pub seq: u64,
   /// Milliseconds since the console server started
   pub at_ms: u64,
+  /// The game in progress when this was traced, if any
+  pub game: Option<GameState>,
   pub event: TraceEvent,
+}
+
+/// Game context, tracked from the turn-based game events
+#[derive(Clone, Default, serde::Serialize, TS)]
+pub struct GameState {
+  /// Zero-based index of the player whose turn it is. `None` until the first turn begins.
+  pub player: Option<u8>,
+  pub turn: Option<u8>,
 }
 
 #[derive(Clone, serde::Serialize, TS)]

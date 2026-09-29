@@ -1,6 +1,8 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::Hardware;
 use frontbox::prelude::app_tracer::TraceEvent;
+use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
+use std::any::type_name;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
@@ -54,22 +56,95 @@ impl ConsoleHub {
 
   pub fn ingest(&self, event: TraceEvent) {
     let mut state = self.state.lock().unwrap();
+    let transition = GameTransition::from_event(&event);
+    let game = &mut state.snapshot.game;
+    match transition {
+      Some(GameTransition::Started) => *game = Some(GameState::default()),
+      Some(GameTransition::TurnBeginning { player, turn }) => {
+        let game = game.get_or_insert_default();
+        game.player = Some(player);
+        game.turn = Some(turn);
+      }
+      Some(GameTransition::Ended) | None => {}
+    }
+
     let record = TraceRecord {
       seq: state.next_seq,
       at_ms: state.started.elapsed().as_millis() as u64,
+      // GameEnded is still tagged with the game it ended
+      game: state.snapshot.game.clone(),
       event,
     };
     state.next_seq += 1;
-    apply(&mut state.snapshot, &record);
 
-    if let Some(trace) = serialize(&ServerMessage::Trace(record)) {
+    // Game starts and ends reset clients with a fresh `Init` so that game tracking only has to
+    // live here. The console only shows the current game, so a start also drops the log.
+    let message = match transition {
+      Some(GameTransition::Started) => {
+        state.snapshot.log.clear();
+        apply(&mut state.snapshot, &record);
+        ServerMessage::Init(state.snapshot.clone())
+      }
+      Some(GameTransition::Ended) => {
+        apply(&mut state.snapshot, &record);
+        state.snapshot.game = None;
+        ServerMessage::Init(state.snapshot.clone())
+      }
+      _ => {
+        apply(&mut state.snapshot, &record);
+        ServerMessage::Trace(record)
+      }
+    };
+
+    if let Some(message) = serialize(&message) {
       // no receivers is fine; nobody has the page open
-      let _ = self.tx.send(trace);
+      let _ = self.tx.send(message);
     }
   }
 }
 
-/// Mirror of the reducer in `web/src/state/console.ts`
+/// Changes to the game in progress, recognized from `frontbox-turn-based` events
+#[derive(Clone, Copy)]
+enum GameTransition {
+  Started,
+  TurnBeginning { player: u8, turn: u8 },
+  Ended,
+}
+
+impl GameTransition {
+  fn from_event(event: &TraceEvent) -> Option<Self> {
+    let TraceEvent::Event {
+      type_name: name,
+      event,
+      ..
+    } = event
+    else {
+      return None;
+    };
+
+    if *name == type_name::<GameStarted>() {
+      Some(Self::Started)
+    } else if *name == type_name::<GameEnded>() {
+      Some(Self::Ended)
+    } else if *name == type_name::<PlayerTurnBeginning>() {
+      let field = |name: &str| {
+        event
+          .as_ref()
+          .and_then(|body| body.get(name))
+          .and_then(|value| value.as_u64())
+          .map(|value| value as u8)
+      };
+      Some(Self::TurnBeginning {
+        player: field("current_player")?,
+        turn: field("turn")?,
+      })
+    } else {
+      None
+    }
+  }
+}
+
+/// Mirror of the reducer in `web/src/state/console.ts`. Game tracking is not mirrored; see `ingest`.
 fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
   let groups = &mut snapshot.groups;
   match &record.event {

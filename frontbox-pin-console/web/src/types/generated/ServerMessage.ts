@@ -3,6 +3,6 @@ import type { Snapshot } from "./Snapshot";
 import type { TraceRecord } from "./TraceRecord";
 
 /**
- * Messages pushed from the console server to the web app over the websocket.
+ * Messages pushed from the console server to the web app over websockets
  */
 export type ServerMessage = { "type": "Init" } & Snapshot | { "type": "Trace" } & TraceRecord;

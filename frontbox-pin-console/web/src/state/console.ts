@@ -14,6 +14,7 @@ const [state, setState] = createStore<ConsoleState>({
   groups: [],
   switches: {},
   drivers: {},
+  game: null,
   log: [],
 })
 
@@ -31,8 +32,8 @@ export function startConsole(): () => void {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, log } = message
-      setState({ hardware, groups, switches, drivers, log })
+      const { hardware, groups, switches, drivers, game, log } = message
+      setState({ hardware, groups, switches, drivers, game, log })
       break
     }
     case 'Trace':
@@ -41,7 +42,10 @@ function handleMessage(message: ServerMessage) {
   }
 }
 
-/** Mirror of `apply` in `src/hub.rs` */
+/**
+ * Mirror of `apply` in `src/console_hub.rs`. Game tracking is not mirrored: the hub tags each
+ * record with the game in progress, and sends a fresh `Init` when a game starts or ends.
+ */
 function applyTrace(s: ConsoleState, record: TraceRecord) {
   const event = record.event
   const group = (key: string) => s.groups.find((g) => g.key === key)
@@ -75,6 +79,7 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     s.drivers[driver_id] = state
   }
 
+  s.game = record.game
   s.log.push(record)
   if (s.log.length > LOG_CAPACITY) s.log.splice(0, s.log.length - LOG_CAPACITY)
 }

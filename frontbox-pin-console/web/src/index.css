@@ -1,30 +1,53 @@
 :root {
-  --bg: #fff;
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-hover: #f0eff3;
+  --surface-selected: #ece4fb;
   --text: #16141a;
   --muted: #6b6375;
-  --border: #e5e4e7;
-  --accent: #aa3bff;
+  --border: #e3e1e8;
+  --accent: #8b3bff;
   --ok: #1a7f37;
   --warn: #b35900;
+  --danger: #c62828;
+
+  /* log categories */
+  --cat-event: #8b3bff;
+  --cat-switch: #1f6feb;
+  --cat-driver: #d9480f;
+  --cat-system: #7a7585;
+
+  --radius: 8px;
+  --radius-sm: 4px;
+  --header-height: 3rem;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
 
   color-scheme: light dark;
-  font: 15px/1.45 var(--sans);
+  font: 14px/1.45 var(--sans);
   color: var(--text);
   background: var(--bg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #16141a;
+    --bg: #111014;
+    --surface: #18171c;
+    --surface-hover: #221f28;
+    --surface-selected: #2d2240;
     --text: #ecebef;
-    --muted: #9a93a5;
-    --border: #2e2b35;
-    --accent: #c07bff;
+    --muted: #938ca0;
+    --border: #2a2731;
+    --accent: #b27bff;
     --ok: #4ac26b;
     --warn: #e0a040;
+    --danger: #ff6b6b;
+
+    --cat-event: #b27bff;
+    --cat-switch: #58a6ff;
+    --cat-driver: #ff8a4c;
+    --cat-system: #938ca0;
   }
 }
 
@@ -34,7 +57,64 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  color: var(--ok);
+}
+
+.badge.warn {
+  color: var(--warn);
+}
+
+/* a scrolling column inside a full-height layout */
+.pane {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pane-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }

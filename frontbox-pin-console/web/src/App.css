@@ -1,56 +1,89 @@
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
 }
 
-header {
+.app-header {
   display: flex;
+  flex: none;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 2rem;
+  height: var(--header-height);
   padding: 0 1rem;
   border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
-nav {
-  display: flex;
-  overflow-x: auto;
-}
-
-nav a {
-  padding: 0.75rem 1rem;
-  color: var(--muted);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
+.app-header h1 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
-nav a.active {
+.app-header [data-scope='tabs'][data-part='list'] {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  overflow-x: auto;
+}
+
+.app-header [data-scope='tabs'][data-part='trigger'] {
+  padding: 0 1rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-header [data-scope='tabs'][data-part='trigger']:hover,
+.app-header [data-scope='tabs'][data-part='trigger'][data-selected] {
   color: var(--text);
-  border-bottom-color: var(--accent);
+}
+
+.app-header [data-scope='tabs'][data-part='trigger'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+}
+
+/* Ark measures the selected trigger into these variables and animates between them */
+.app-header [data-scope='tabs'][data-part='indicator'] {
+  bottom: 0;
+  left: var(--left);
+  width: var(--width);
+  height: 2px;
+  background: var(--accent);
 }
 
 .connection {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.connection.open {
-  color: var(--ok);
-}
-
-.connection.connecting,
-.connection.closed {
-  color: var(--warn);
-}
-
-main {
-  flex: 1;
-  padding: 1rem;
-}
-
-.empty {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
   color: var(--muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.connection[data-status='connected'] .dot {
+  background: var(--ok);
+}
+
+.connection[data-status='connecting'] .dot {
+  background: var(--warn);
+}
+
+.connection[data-status='disconnected'] .dot {
+  background: var(--danger);
+}
+
+.app > [data-scope='tabs'][data-part='content'] {
+  flex: 1;
+  min-height: 0;
+}
+
+.app > [data-scope='tabs'][data-part='content'][hidden] {
+  display: none;
 }

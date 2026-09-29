@@ -1,0 +1,108 @@
+.machine-tab .playfield {
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+.hardware-list {
+  padding: 1rem;
+  background: var(--surface);
+}
+
+.hardware-list section {
+  margin-top: 1.5rem;
+}
+
+/* ---- type filter ---- */
+
+.hardware-list [data-scope='toggle-group'][data-part='root'] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.hardware-list [data-scope='toggle-group'][data-part='item'] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.hardware-list [data-scope='toggle-group'][data-part='item']:hover {
+  background: var(--surface-hover);
+}
+
+.hardware-list [data-scope='toggle-group'][data-part='item'][data-state='on'] {
+  border-color: var(--accent);
+  background: var(--surface-selected);
+  color: var(--text);
+}
+
+.hardware-list [data-scope='toggle-group'][data-part='item'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hardware-list .count {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ---- rows ---- */
+
+.hardware-list table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.hardware-list td {
+  padding: 0.375rem 0.75rem 0.375rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.hardware-list td.name {
+  width: 100%;
+}
+
+.hardware-list td.tags {
+  white-space: nowrap;
+}
+
+.hardware-list td.tags .badge + .badge {
+  margin-left: 0.25rem;
+}
+
+.hardware-list td.address {
+  color: var(--muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.hardware-list td.state {
+  min-width: 5.5rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.hardware-list td.state .dot {
+  margin-right: 0.375rem;
+  background: var(--border);
+}
+
+.hardware-list tr.active td.state {
+  color: var(--text);
+}
+
+.hardware-list tr.active td.state .dot {
+  background: var(--ok);
+}

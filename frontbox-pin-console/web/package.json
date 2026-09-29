@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ark-ui/solid": "^5.39.2",
     "solid-js": "^1.9.15"
   },
   "devDependencies": {

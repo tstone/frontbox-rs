@@ -1,6 +1,6 @@
 import type { ServerMessage } from '../types/generated/ServerMessage'
 
-export type ConnectionStatus = 'connecting' | 'open' | 'closed'
+export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected'
 
 const MAX_RETRY_DELAY_MS = 5000
 
@@ -23,11 +23,11 @@ export function connect(
     socket = new WebSocket(url)
     socket.onopen = () => {
       retries = 0
-      onStatus('open')
+      onStatus('connected')
     }
     socket.onmessage = (e) => onMessage(JSON.parse(e.data))
     socket.onclose = () => {
-      onStatus('closed')
+      onStatus('disconnected')
       if (!stopped) {
         setTimeout(open, Math.min(MAX_RETRY_DELAY_MS, 250 * 2 ** retries++))
       }

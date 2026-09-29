@@ -14,7 +14,7 @@ npm run build
 
 ## Develop
 
-Run a machine (or the preview example, which streams fake trace data) alongside the Vite dev server:
+Run a machine (or the preview example, a virtual machine that plays a scripted game on a loop) alongside the Vite dev server:
 
 ```bash
 cargo run --example preview   # console server on :3000
