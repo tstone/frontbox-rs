@@ -5,7 +5,7 @@ use fast_protocol::{DriverConfig, Power};
 use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
 use crate::prelude::*;
 
-/// Mode 80 - Premium flipper driver for main coil. Driver is active when button switch is closed.
+/// Premium flipper driver for main coil. Driver is active when button switch is closed.
 #[derive(Clone, Debug)]
 pub struct FlipperMainDirectMode {
   pub button_switch: &'static str,

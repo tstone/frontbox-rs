@@ -12,7 +12,7 @@ Virtual Machine
 - Establish (and document) consistent log targets
 - Check why there is an IoBoard and IoBoards
 - Audits: Keep stats on coils fired, etc.
-- Add driver configure support for 75 Pulse w/ Cancel, 78 Pulse Hold Extension
+- Add driver configure support for 78 Pulse Hold Extension
 - High scores are janky and require too much system switching (but how else to support multiple input methods?)
 - Clean up hardware exports
 - Streamline animation curve choices
