@@ -6,7 +6,7 @@
 //! those planes.
 
 use frontbox::prelude::*;
-use frontbox_pin_console::{ConsolePlane, WebTracer};
+use frontbox_pin_console::{ConsolePlane, WebTracer, console_plane};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::io::Write;
 use std::time::Duration;
@@ -137,20 +137,29 @@ async fn main() {
       .wire_led_port(2, LedPort::ws2812().leds(vec![&CABINET_LEFT_STRIP]))
       .wire_led_port(3, LedPort::ws2812().leds(vec![&CABINET_RIGHT_STRIP])),
     ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open)
-      .wire_led_port(1, LedPort::ws2812().leds(vec![&LANE_1, &LANE_2, &SCOOP_ARROW]))
+      .wire_led_port(
+        1,
+        LedPort::ws2812().leds(vec![&LANE_1, &LANE_2, &SCOOP_ARROW]),
+      )
       .wire_led_port(2, LedPort::ws2812().leds(vec![&BACKBOX_GI])),
   ]);
 
   // PLAYFIELD_IMAGE / BACKBOX_IMAGE: optional art to lay over those planes
-  let image_plane = |name, plane, env: &str| match std::env::var(env) {
-    Ok(path) => ConsolePlane::new(name, plane).image(path),
-    Err(_) => ConsolePlane::new(name, plane),
+  let image_plane = |plane: ConsolePlane, env: &str| match std::env::var(env) {
+    Ok(path) => plane.image(path),
+    Err(_) => plane,
   };
   let mut tracer = WebTracer::new()
-    .plane(image_plane("Playfield", &planes::PLAYFIELD, "PLAYFIELD_IMAGE"))
-    .plane(image_plane("Backbox", &planes::BACKBOX, "BACKBOX_IMAGE"))
-    .plane(ConsolePlane::new("Cabinet left", &planes::CABINET_LEFT))
-    .plane(ConsolePlane::new("Cabinet right", &planes::CABINET_RIGHT));
+    .plane(image_plane(
+      console_plane!("Playfield", planes::PLAYFIELD),
+      "PLAYFIELD_IMAGE",
+    ))
+    .plane(image_plane(
+      console_plane!("Backbox", planes::BACKBOX),
+      "BACKBOX_IMAGE",
+    ))
+    .plane(console_plane!("Cabinet left", planes::CABINET_LEFT))
+    .plane(console_plane!("Cabinet right", planes::CABINET_RIGHT));
   // CONSOLE_PORT lets the preview run alongside a game that already has the console on :3000
   if let Ok(port) = std::env::var("CONSOLE_PORT") {
     tracer = tracer.port(port.parse().expect("CONSOLE_PORT must be a port number"));

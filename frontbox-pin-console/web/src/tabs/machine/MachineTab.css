@@ -11,6 +11,29 @@
   margin-top: 1.5rem;
 }
 
+/* ---- name filter ---- */
+
+.hardware-list .filter-input {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.4rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.hardware-list .filter-input::placeholder {
+  color: var(--muted);
+}
+
+.hardware-list .filter-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 /* ---- type filter ---- */
 
 .hardware-list [data-scope='toggle-group'][data-part='root'] {
@@ -188,4 +211,39 @@
 .hardware-detail .pin-list li.unassigned {
   color: var(--muted);
   opacity: 0.6;
+}
+
+/* ---- positioning ---- */
+
+.position-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem 0.875rem 1.75rem;
+  font-size: 0.8125rem;
+}
+
+.position-control .action {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.position-control .action:hover {
+  border-color: var(--accent);
+}
+
+.position-control .action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.position-control .note {
+  color: var(--muted);
+  font-size: 0.75rem;
 }

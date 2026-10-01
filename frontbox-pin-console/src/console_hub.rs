@@ -70,6 +70,7 @@ impl ConsoleHub {
             .image
             .as_ref()
             .map(|_| format!("/planes/{index}/image")),
+          code: console_plane.code.clone(),
         }
       })
       .collect();

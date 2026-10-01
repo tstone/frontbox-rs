@@ -79,4 +79,6 @@ pub struct PlaneView {
   pub extent: [f32; 2],
   /// Where to fetch the plane's image, if it has one. Its top-left corner sits at the plane's local origin.
   pub image: Option<String>,
+  /// How the plane is referred to in the machine's code, e.g. `planes::PLAYFIELD`, for copying positions as code
+  pub code: Option<String>,
 }
