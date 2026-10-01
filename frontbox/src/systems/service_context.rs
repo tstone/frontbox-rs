@@ -58,7 +58,7 @@ impl<'a> ServiceContext<'a> {
   }
 
   /// Dispatch an event to all other active systems
-  pub fn emit<E: Event>(&self, event: E) {
+  pub fn emit<E: Event>(&self, sender: u64, event: E) {
     log::debug!(
       "📨 Emitting event {} {:?}",
       type_name::<E>(),
@@ -66,7 +66,7 @@ impl<'a> ServiceContext<'a> {
     );
     self
       .app_sender
-      .send(AppMessage::EmitEvent(EventBox::new(event)))
+      .send(AppMessage::EmitEvent(Some(sender), EventBox::new(event)))
       .ok();
   }
 

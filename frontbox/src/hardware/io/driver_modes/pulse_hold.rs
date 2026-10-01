@@ -9,7 +9,8 @@ use crate::prelude::*;
 /// Mode 18 - Holds a driver in the on state as long as the trigger is active. An initial PWM can be configured
 /// before the long hold.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/18/>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseHoldMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,

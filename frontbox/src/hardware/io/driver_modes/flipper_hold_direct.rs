@@ -6,7 +6,8 @@ use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 81 - Premium flipper driver for hold coil
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlipperHoldDirectMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,

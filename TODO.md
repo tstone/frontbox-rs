@@ -36,6 +36,7 @@ DMD
 - Animate right offset of section arrow when selected
 - Transition left/right ease between sections
 - Fancy: the selection box animates between vertical offsets
+- Support a virtual DMD that renders to the console (maybe?)
 
 LEDs
 
