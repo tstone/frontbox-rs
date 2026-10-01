@@ -44,8 +44,8 @@ async fn main() {
     .init();
 
   let io_network = IoNetwork::new(vec![
-    IoBoards::io_3208(),
-    IoBoards::io_1616()
+    IoBoard::io_3208(),
+    IoBoard::io_1616()
       .wire_switch(5, &TARGET_1)
       .wire_switch(6, &TARGET_2)
       .wire_switch(7, &TARGET_3)

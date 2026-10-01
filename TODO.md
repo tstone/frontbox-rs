@@ -10,7 +10,6 @@ Virtual Machine
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Trough needs to properly utilize jam sensor
 - Establish (and document) consistent log targets
-- Check why there is an IoBoard and IoBoards
 - Audits: Keep stats on coils fired, etc.
 - Add driver configure support for 78 Pulse Hold Extension
 - High scores are janky and require too much system switching (but how else to support multiple input methods?)
