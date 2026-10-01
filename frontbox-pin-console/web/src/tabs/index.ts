@@ -1,7 +1,7 @@
 import type { Component } from 'solid-js'
 import MachineTab from './machine/MachineTab'
 import SystemsTab from './systems/SystemsTab'
-import LogTab from './log/LogTab'
+import EventsTab from './events/EventsTab'
 
 export type TabDefinition = {
   /** Used in the URL hash, so keep it stable */
@@ -14,5 +14,5 @@ export type TabDefinition = {
 export const tabs: TabDefinition[] = [
   { id: 'machine', label: 'Machine', component: MachineTab },
   { id: 'systems', label: 'Systems', component: SystemsTab },
-  { id: 'log', label: 'Log', component: LogTab },
+  { id: 'events', label: 'Events', component: EventsTab },
 ]

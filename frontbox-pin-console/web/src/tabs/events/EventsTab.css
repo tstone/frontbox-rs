@@ -1,4 +1,4 @@
-.log-tab {
+.events-tab {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 16rem;
   height: 100%;
@@ -6,21 +6,21 @@
 
 /* ---- list ---- */
 
-.log-list {
+.events-list {
   padding: 0.5rem 0;
 }
 
-.log-list > .empty {
+.events-list > .empty {
   padding: 0 1rem;
 }
 
-.log-list ol {
+.events-list ol {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.log-list .trace-row {
+.events-list .trace-row {
   /* let the browser skip layout and paint for rows that are off screen */
   content-visibility: auto;
   contain-intrinsic-size: auto 2.25rem;
@@ -28,7 +28,7 @@
 
 /* ---- sidebar ---- */
 
-.log-sidebar {
+.events-sidebar {
   padding: 1rem;
   border-left: 1px solid var(--border);
   background: var(--surface);
