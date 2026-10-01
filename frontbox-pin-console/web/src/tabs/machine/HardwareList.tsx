@@ -108,7 +108,7 @@ function HardwareItem(props: { row: HardwareRow }) {
         </span>
         <span class="state">
           <Show when={row.state()} fallback={<span class="detail">{row.detail}</span>}>
-            <span class="dot" />
+            <span class="dot" style={{ background: row.color?.() ?? undefined }} />
             {row.state()}
           </Show>
         </span>

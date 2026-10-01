@@ -1,5 +1,6 @@
 use frontbox::prelude::{Hardware, app_tracer::*};
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::console_hub::ConsoleHub;
@@ -7,6 +8,9 @@ use crate::console_plane::ConsolePlane;
 use crate::server;
 
 pub const DEFAULT_ADDR: ([u8; 4], u16) = ([0, 0, 0, 0], 3000);
+
+/// How often changed LED colors are sent to the console (20 times a second)
+const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Web-based dashboard for visualizing Frontbox state.
 ///
@@ -80,6 +84,17 @@ impl WebTracer {
     });
     // And a second to handle web interactions
     tokio::spawn(server::serve(self.hub.clone(), self.addr));
+
+    // LED colors go out together at a steady rate rather than as each batch arrives
+    let led_hub = self.hub.clone();
+    tokio::spawn(async move {
+      let mut interval = tokio::time::interval(LED_FLUSH_INTERVAL);
+      interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+      loop {
+        interval.tick().await;
+        led_hub.flush_leds();
+      }
+    });
   }
 }
 

@@ -1,11 +1,13 @@
-import { createStore, produce } from 'solid-js/store'
+import { batch } from 'solid-js'
+import { createStore, produce, reconcile } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import { shortName } from '../lib/format'
 import { connect, type ConnectionStatus } from './socket'
 
-const LOG_CAPACITY = 1000
+/** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
+const LOG_CAPACITY = 2500
 /** How many emitted events each system keeps for the systems view */
 const RECENT_EVENTS_PER_SYSTEM = 10
 
@@ -30,6 +32,7 @@ const [state, setState] = createStore<ConsoleState>({
   drivers: {},
   game: null,
   planes: [],
+  led_colors: {},
   log: [],
   firing: {},
 })
@@ -48,8 +51,15 @@ export function startConsole(): () => void {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, game, planes, log } = message
-      setState({ hardware, groups, switches, drivers, game, planes, log })
+      const { hardware, groups, switches, drivers, game, planes, led_colors, log } = message
+      // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
+      // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
+      // would rebuild everything that reads them.
+      batch(() => {
+        setState('hardware', reconcile(hardware))
+        setState('led_colors', reconcile(led_colors))
+        setState({ groups, switches, drivers, game, planes, log })
+      })
       break
     }
     case 'Trace':
@@ -57,6 +67,13 @@ function handleMessage(message: ServerMessage) {
       if ('DriverStateChange' in message.event && message.event.DriverStateChange.state === 'Fired') {
         markFired(message.event.DriverStateChange.driver_id)
       }
+      break
+    case 'Leds':
+      setState(
+        produce((s) => {
+          for (const [name, color] of Object.entries(message.colors)) s.led_colors[name] = color
+        }),
+      )
       break
   }
 }
@@ -114,6 +131,9 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverStateChange' in event) {
     const { driver_id, state } = event.DriverStateChange
     s.drivers[driver_id] = state
+  } else if ('LedsRGBChange' in event) {
+    // never sent as a trace: the hub collects LED changes and sends them as `Leds`
+    return
   } else if (event.Event.sender !== null) {
     const sender = event.Event.sender
     const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === sender)
@@ -141,3 +161,4 @@ export function systemName(id: number): string {
   if (spawned && 'SystemSpawned' in spawned.event) return shortName(spawned.event.SystemSpawned.name)
   return `System #${id}`
 }
+

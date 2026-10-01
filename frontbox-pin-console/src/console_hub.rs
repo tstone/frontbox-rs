@@ -1,9 +1,9 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
-use frontbox::prelude::app_tracer::TraceEvent;
+use frontbox::prelude::app_tracer::{Color, TraceEvent};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -12,16 +12,31 @@ use tokio::sync::broadcast;
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
 
-const LOG_CAPACITY: usize = 1000;
+/// How many trace records the log keeps. LED color changes aren't logged (see `apply`), but drivers and switches
+/// can still be bursty.
+const LOG_CAPACITY: usize = 2500;
 /// How many emitted events each system keeps for the systems view
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
+/// Messages buffered per client for events and other state. A client further behind than this gets everything again.
 const BROADCAST_CAPACITY: usize = 1024;
+/// LED updates buffered per client. LEDs are display-only and change constantly, so a client that falls behind skips
+/// them (and is sent the current colors) rather than holding up anything else.
+const LED_BROADCAST_CAPACITY: usize = 4;
+
+/// What a client gets when it connects: the full state, then what happens after it
+pub(crate) struct Subscription {
+  pub init: Utf8Bytes,
+  pub events: broadcast::Receiver<Utf8Bytes>,
+  pub leds: broadcast::Receiver<Utf8Bytes>,
+}
 
 /// Singleton tracking data coming out of AppTracer, providing to multiple console connection
 #[derive(Clone)]
 pub(crate) struct ConsoleHub {
   state: Arc<Mutex<HubState>>,
   tx: broadcast::Sender<Utf8Bytes>,
+  /// LED color updates, separate from `tx` so they never count against a client's place in the event stream
+  leds_tx: broadcast::Sender<Utf8Bytes>,
 }
 
 struct HubState {
@@ -30,27 +45,50 @@ struct HubState {
   next_seq: u64,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
+  /// LED names by the address `LedsRGBChange` reports them with
+  led_names: LedNames,
+  /// LED colors changed since the last `flush_leds`
+  pending_leds: BTreeMap<String, Color>,
 }
+
+/// (expansion board address, breakout, index) to LED name
+type LedNames = HashMap<(u8, Option<u8>, u16), String>;
 
 impl ConsoleHub {
   pub fn new() -> Self {
     let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
+    let (leds_tx, _) = broadcast::channel(LED_BROADCAST_CAPACITY);
     Self {
       state: Arc::new(Mutex::new(HubState {
         snapshot: Snapshot::default(),
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
+        led_names: HashMap::new(),
+        pending_leds: BTreeMap::new(),
       })),
       tx,
+      leds_tx,
     }
   }
 
-  /// Returns the current `Init` message along with a receiver for everything after it
-  pub fn subscribe(&self) -> Option<(Utf8Bytes, broadcast::Receiver<Utf8Bytes>)> {
+  /// The current `Init` message, plus receivers for everything after it
+  pub fn subscribe(&self) -> Option<Subscription> {
     let state = self.state.lock().unwrap();
     let init = serialize(&ServerMessage::Init(state.snapshot.clone()))?;
-    Some((init, self.tx.subscribe()))
+    Some(Subscription {
+      init,
+      events: self.tx.subscribe(),
+      leds: self.leds_tx.subscribe(),
+    })
+  }
+
+  /// Every LED's current color, for a client that skipped LED updates
+  pub fn all_leds(&self) -> Option<Utf8Bytes> {
+    let state = self.state.lock().unwrap();
+    serialize(&ServerMessage::Leds(LedColors {
+      colors: state.snapshot.led_colors.clone(),
+    }))
   }
 
   /// Planes come from the tracer's configuration, before any client connects
@@ -84,10 +122,31 @@ impl ConsoleHub {
 
   pub fn set_hardware(&self, hardware: Hardware) {
     let mut state = self.state.lock().unwrap();
+    state.led_names = hardware
+      .leds
+      .values()
+      .map(|led| {
+        let exp = &led.address.exp;
+        ((exp.board_address, exp.breakout, led.address.index), led.name.clone())
+      })
+      .collect();
     state.snapshot.hardware = Some(hardware);
     // hardware only arrives once at boot, so just have clients start over
     if let Some(init) = serialize(&ServerMessage::Init(state.snapshot.clone())) {
       let _ = self.tx.send(init);
+    }
+  }
+
+  /// Send the LED colors that changed since the last flush, if any. Called at a steady rate by the tracer.
+  pub fn flush_leds(&self) {
+    let mut state = self.state.lock().unwrap();
+    if state.pending_leds.is_empty() {
+      return;
+    }
+    let colors = std::mem::take(&mut state.pending_leds);
+    if let Some(message) = serialize(&ServerMessage::Leds(LedColors { colors })) {
+      // no receivers is fine: LED updates are only for clients connected right now
+      let _ = self.leds_tx.send(message);
     }
   }
 
@@ -96,7 +155,27 @@ impl ConsoleHub {
       return;
     }
 
-    let mut state = self.state.lock().unwrap();
+    let mut guard = self.state.lock().unwrap();
+    // reborrow so fields of the state can be borrowed separately
+    let state = &mut *guard;
+
+    // LEDs change many times a second, in batches. They're current state, not history: keep the latest color and
+    // let `flush_leds` send what changed at a steady rate, rather than logging and broadcasting every batch.
+    if let TraceEvent::LedsRGBChange {
+      expansion,
+      breakout,
+      states,
+    } = &event
+    {
+      for (index, color) in states {
+        if let Some(name) = state.led_names.get(&(*expansion, *breakout, *index)) {
+          state.snapshot.led_colors.insert(name.clone(), *color);
+          state.pending_leds.insert(name.clone(), *color);
+        }
+      }
+      return;
+    }
+
     let transition = GameTransition::from_event(&event);
     let game = &mut state.snapshot.game;
     match transition {
@@ -265,6 +344,8 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       }
     }
     TraceEvent::Event { .. } => {}
+    // handled by `ingest`, never logged
+    TraceEvent::LedsRGBChange { .. } => return,
   }
 
   if snapshot.log.len() >= LOG_CAPACITY {

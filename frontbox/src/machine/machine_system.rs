@@ -165,6 +165,17 @@ impl MachineSystem {
       .map(|(index, color)| (*index, color.to_color()))
       .collect::<Vec<_>>();
 
+    if cfg!(debug_assertions) {
+      self
+        .app_sender
+        .send(AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
+          expansion: expansion_id,
+          breakout,
+          states: led_states.clone(),
+        }))
+        .ok();
+    }
+
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
@@ -182,6 +193,21 @@ impl MachineSystem {
     rgba: Rgba<u8>,
     indexes: Vec<u16>,
   ) {
+    if cfg!(debug_assertions) {
+      self
+        .app_sender
+        .send(AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
+          expansion: expansion_id,
+          breakout,
+          states: indexes
+            .clone()
+            .into_iter()
+            .map(|index| (index, rgba.to_color()))
+            .collect(),
+        }))
+        .ok();
+    }
+
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
@@ -198,6 +224,8 @@ impl MachineSystem {
 
   /// Set all LEDs on a port/breakout to the same color (RA)
   pub fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
+    // TODO: tracer support
+
     self
       .machine_sender
       .send(MachineMessage::Dispatch {

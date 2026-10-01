@@ -1,7 +1,8 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from 'solid-js'
+import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
+import { ledColor } from '../../lib/leds'
 import { type ConsoleState, machine } from '../../state/console'
 import { cancelPlacing, movedPositions, place, placing, type Position } from '../../state/placement'
 import type { PlaneView } from '../../types/generated/PlaneView'
@@ -135,7 +136,17 @@ export default function PlayfieldView() {
     camera.up.set(0, 0, 1)
     const controls = new OrbitControls(camera, renderer.domElement)
 
-    const render = () => renderer.render(scene, camera)
+    // Draw at most once per screen refresh. Changes can arrive many times a frame (LED colors come in batches of
+    // 24, so one LED frame is several messages); redrawing for each would queue up GPU work and fall behind.
+    let frameRequested = false
+    const render = () => {
+      if (frameRequested) return
+      frameRequested = true
+      requestAnimationFrame(() => {
+        frameRequested = false
+        renderer.render(scene, camera)
+      })
+    }
     controls.addEventListener('change', render)
 
     // everything drawn for the current data, so it can be torn down on a rebuild
@@ -146,14 +157,15 @@ export default function PlayfieldView() {
     const textures = new Map<string, THREE.Texture>()
     const textureLoader = new THREE.TextureLoader()
     const dotGeometry = new THREE.SphereGeometry(DOT_SIZE / 2, 16, 12)
-    const dotMaterial = new THREE.MeshBasicMaterial()
-    const movedMaterial = new THREE.MeshBasicMaterial()
-    const hoverMaterial = new THREE.MeshBasicMaterial()
     const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8 })
+    // theme colors, read once per theme change rather than per dot
+    const palette = { dot: '', moved: '', hover: '' }
     const planeMaterials: THREE.MeshBasicMaterial[] = []
     const lineMaterials: THREE.LineBasicMaterial[] = []
     let fitted = false
     let hoveredDot: THREE.Mesh | null = null
+    // the per-LED color effects for the current dots, torn down on a rebuild
+    let disposeLedEffects: (() => void) | undefined
 
     // the dot following the cursor while placing hardware
     const ghost = new THREE.Mesh(dotGeometry, ghostMaterial)
@@ -161,7 +173,21 @@ export default function PlayfieldView() {
     ghost.visible = false
     let ghostPosition: Position | null = null
 
-    const restingMaterial = (dot: THREE.Object3D) => (dots.get(dot)?.moved ? movedMaterial : dotMaterial)
+    /**
+     * Each dot has its own material so LEDs can show their own colors. Hovered wins, then moved (not yet in the
+     * machine's code), then an LED's live color, then the default gray.
+     */
+    function paint(dot: THREE.Mesh) {
+      const point = dots.get(dot)
+      if (!point) return
+      const color =
+        dot === hoveredDot
+          ? palette.hover
+          : point.moved
+            ? palette.moved
+            : ((point.kind === 'LED' && ledColor(point.key.slice('led:'.length))) || palette.dot)
+      ;(dot.material as THREE.MeshBasicMaterial).color.set(color)
+    }
 
     function texture(url: string) {
       let tex = textures.get(url)
@@ -179,11 +205,11 @@ export default function PlayfieldView() {
       scene.background = new THREE.Color(css('--bg'))
       planeMaterials.forEach((m) => !m.map && m.color.set(css('--plane')))
       lineMaterials.forEach((m) => m.color.set(css('--plane')))
-      dotMaterial.color.set(css('--hw-dot'))
-      // moved but not yet in the machine's code
-      movedMaterial.color.set(css('--warn'))
-      hoverMaterial.color.set(css('--accent'))
+      palette.dot = css('--hw-dot')
+      palette.moved = css('--warn')
+      palette.hover = css('--accent')
       ghostMaterial.color.set(css('--accent'))
+      untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
       render()
     }
 
@@ -196,6 +222,7 @@ export default function PlayfieldView() {
       })
       planeMaterials.forEach((m) => m.dispose())
       lineMaterials.forEach((m) => m.dispose())
+      dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
       planeMaterials.length = 0
       lineMaterials.length = 0
       planeMeshes.length = 0
@@ -227,12 +254,25 @@ export default function PlayfieldView() {
       }
 
       for (const point of points) {
-        const dot = new THREE.Mesh(dotGeometry, point.moved ? movedMaterial : dotMaterial)
+        const dot = new THREE.Mesh(dotGeometry, new THREE.MeshBasicMaterial())
         dot.position.set(...point.location)
         dot.renderOrder = 1
         dots.set(dot, point)
         content.add(dot)
       }
+
+      // one small effect per LED dot, so a color change recolors only that dot
+      disposeLedEffects?.()
+      disposeLedEffects = createRoot((dispose) => {
+        dots.forEach((point, dot) => {
+          if (point.kind !== 'LED') return
+          createEffect(() => {
+            paint(dot as THREE.Mesh)
+            render()
+          })
+        })
+        return dispose
+      })
 
       content.add(ghost)
       scene.add(content)
@@ -279,9 +319,12 @@ export default function PlayfieldView() {
 
     function setHoveredDot(dot: THREE.Mesh | null) {
       if (dot === hoveredDot) return
-      if (hoveredDot) hoveredDot.material = restingMaterial(hoveredDot)
-      if (dot) dot.material = hoverMaterial
+      const previous = hoveredDot
       hoveredDot = dot
+      untrack(() => {
+        if (previous) paint(previous)
+        if (dot) paint(dot)
+      })
       render()
     }
 
@@ -374,13 +417,15 @@ export default function PlayfieldView() {
 
     onCleanup(() => {
       window.removeEventListener('keydown', onKeyDown)
+      disposeLedEffects?.()
       resizeObserver.disconnect()
       themeObserver.disconnect()
       darkQuery.removeEventListener('change', applyTheme)
       controls.dispose()
       textures.forEach((t) => t.dispose())
       dotGeometry.dispose()
-      for (const m of [dotMaterial, movedMaterial, hoverMaterial, ghostMaterial]) m.dispose()
+      dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
+      ghostMaterial.dispose()
       renderer.dispose()
       clearTimeout(toastTimer)
     })

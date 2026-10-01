@@ -1,6 +1,7 @@
 import { triggerSwitches } from '../../lib/drivers'
 import { ledName } from '../../lib/format'
 import { hexAddress } from '../../lib/hardwareConfig'
+import { ledColor, ledColorKnown } from '../../lib/leds'
 import { type ConsoleState, driverState } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { Hardware } from '../../types/generated/Hardware'
@@ -81,6 +82,8 @@ export type HardwareRow = {
   state: () => string | null
   /** Whether `state` means energized/closed, for highlighting */
   active: () => boolean
+  /** The color to show in the state dot, for LEDs; otherwise the dot follows `active` */
+  color?: () => string | null
   ref: HardwareRef
 }
 
@@ -141,8 +144,9 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
             address: `${hexAddress(exp.board_address)}-${exp.port + 1}-${index}`,
             tags: led.tags,
             detail: null,
-            state: () => null,
-            active: () => false,
+            state: () => (ledColorKnown(led.name) ? (ledColor(led.name) ?? 'Off') : null),
+            active: () => ledColor(led.name) !== null,
+            color: () => ledColor(led.name),
             ref: { kind: 'led', led },
           }
         })

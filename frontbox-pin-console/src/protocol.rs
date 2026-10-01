@@ -1,6 +1,6 @@
 use frontbox::prelude::Hardware;
 use frontbox::prelude::SwitchState;
-use frontbox::prelude::app_tracer::{DriverState, TraceEvent};
+use frontbox::prelude::app_tracer::{Color, DriverState, TraceEvent};
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
 
@@ -12,6 +12,9 @@ pub enum ServerMessage {
   Init(Snapshot),
   /// Individual events, as they happen
   Trace(TraceRecord),
+  /// LED colors that changed since the last `Leds`. Sent at a steady rate rather than as they happen: LEDs change
+  /// many times a second, in batches, and sending each would swamp slower clients.
+  Leds(LedColors),
 }
 
 /// Everything the web app needs to render from scratch.
@@ -24,6 +27,9 @@ pub struct Snapshot {
   pub drivers: BTreeMap<usize, DriverState>,
   /// The game in progress, if any
   pub game: Option<GameState>,
+  /// The last color sent to each LED, by LED name. Colors are in the order sent on the wire, so an LED configured as
+  /// GRB has green first.
+  pub led_colors: BTreeMap<String, Color>,
   /// Surfaces of the machine to draw, from `WebTracer::plane`
   pub planes: Vec<PlaneView>,
   /// Most recent trace records, oldest first
@@ -81,4 +87,10 @@ pub struct PlaneView {
   pub image: Option<String>,
   /// How the plane is referred to in the machine's code, e.g. `planes::PLAYFIELD`, for copying positions as code
   pub code: Option<String>,
+}
+
+#[derive(Clone, serde::Serialize, TS)]
+pub struct LedColors {
+  /// By LED name, in the order sent on the wire (see `Snapshot::led_colors`)
+  pub colors: BTreeMap<String, Color>,
 }

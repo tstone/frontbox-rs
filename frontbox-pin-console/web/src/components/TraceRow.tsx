@@ -1,6 +1,7 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createSignal, Show } from 'solid-js'
 import { formatElapsed, groupLabel, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
+import { hexAddress } from '../lib/hardwareConfig'
 import { machine, systemName } from '../state/console'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import './TraceRow.css'
@@ -78,6 +79,10 @@ function summary(record: TraceRecord): string {
   if ('SystemGroupActiveStateChange' in event) {
     const { key, active } = event.SystemGroupActiveStateChange
     return `${groupLabel(key)} ${active ? 'activated' : 'deactivated'}`
+  }
+  if ('LedsRGBChange' in event) {
+    const { expansion, states } = event.LedsRGBChange
+    return `${states.length} LED${states.length === 1 ? '' : 's'} on ${hexAddress(expansion)}`
   }
   const body = event.Event.event
   return body == null ? '' : JSON.stringify(body)

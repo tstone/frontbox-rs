@@ -8,7 +8,7 @@ use rust_embed::RustEmbed;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
-use crate::console_hub::ConsoleHub;
+use crate::console_hub::{ConsoleHub, Subscription};
 
 /// The built SolidJS app. In debug builds rust-embed reads from disk, so `npm run build` is picked
 /// up without recompiling. In release builds it's baked into the binary.
@@ -43,7 +43,12 @@ async fn ws_handler(ws: WebSocketUpgrade, State(hub): State<ConsoleHub>) -> Resp
 
 async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
   'resync: loop {
-    let Some((init, mut rx)) = hub.subscribe() else {
+    let Some(Subscription {
+      init,
+      events: mut rx,
+      mut leds,
+    }) = hub.subscribe()
+    else {
       return;
     };
     if socket.send(Message::Text(init)).await.is_err() {
@@ -59,9 +64,28 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
             }
           }
           // client fell too far behind; start it over from a fresh snapshot
-          Err(RecvError::Lagged(_)) => continue 'resync,
+          Err(RecvError::Lagged(missed)) => {
+            log::warn!(
+              target: "frontbox_pin_console",
+              "A console client fell {missed} messages behind; sending it everything again"
+            );
+            continue 'resync;
+          }
           Err(RecvError::Closed) => return,
         },
+        led_update = leds.recv() => {
+          let text = match led_update {
+            Ok(text) => Some(text),
+            // LED updates only carry what changed, so after skipping some, send every LED's current color
+            Err(RecvError::Lagged(_)) => hub.all_leds(),
+            Err(RecvError::Closed) => return,
+          };
+          if let Some(text) = text
+            && socket.send(Message::Text(text)).await.is_err()
+          {
+            return;
+          }
+        }
         // nothing is expected from the client yet (future home of console -> machine
         // commands), but reading is how we notice it went away
         incoming = socket.recv() => match incoming {

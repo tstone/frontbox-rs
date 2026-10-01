@@ -3,8 +3,9 @@
 //!
 //! `cargo run --example preview`, then open http://localhost:3000 (or run `npm run dev` in `web/`).
 //! Set `CONSOLE_PORT` to serve somewhere other than 3000, and `PLAYFIELD_IMAGE` / `BACKBOX_IMAGE` to lay art over
-//! those planes.
+//! those planes. `CONSOLE_STRESS` fires every driver every tick, to load the console with traffic.
 
+use frontbox::animation::*;
 use frontbox::prelude::*;
 use frontbox_pin_console::{ConsolePlane, WebTracer, console_plane};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
@@ -97,6 +98,8 @@ mod hardware {
     pub SHOOT_AGAIN: LedDefinition = LedDefinition::single("shoot_again")
       .location(Vec2::new(10.1, 39.4).relative_to(&PLAYFIELD));
     pub LANE_1: LedDefinition = LedDefinition::single("lane_1")
+      // wired GRB, so the console has to undo the channel order to show it red
+      .channels(LedChannels::GRB)
       .location(Vec2::new(8.0, 5.0).relative_to(&PLAYFIELD));
     pub LANE_2: LedDefinition = LedDefinition::single("lane_2")
       .location(Vec2::new(12.0, 5.0).relative_to(&PLAYFIELD));
@@ -174,9 +177,17 @@ async fn main() {
   .configure(|app| {
     app
       .tracer(tracer)
-      .system(FakeGame::default())
+      .system(LedSystem::new())
+      .system(LightShow::new())
       .system(Attract)
       .system(ScoreKeeper);
+    // CONSOLE_STRESS: fire every driver every tick, to see how the console holds up under heavy traffic. The fake
+    // game is left out, like a machine sitting in attract mode, since each game start clears the console's log.
+    if std::env::var("CONSOLE_STRESS").is_ok() {
+      app.system(DriverStress);
+    } else {
+      app.system(FakeGame::default());
+    }
   })
   .run()
   .await;
@@ -259,3 +270,54 @@ impl System for PlayerModes {}
 #[derive(Clone)]
 struct BallSave;
 impl System for BallSave {}
+
+/// Gives the console LED colors to show: fixed colors on the playfield, and a pulse on the shoot again insert, cabinet
+/// strips and backbox
+struct LightShow {
+  pulse: Box<dyn Animation<Duration, Rgba<u8>>>,
+}
+
+impl LightShow {
+  fn new() -> Self {
+    Self {
+      pulse: Tween::boxed(
+        Duration::from_millis(900),
+        Curve::Sinusoid,
+        vec![Rgba::black(), Rgba::purple()],
+        Cycle::Forever,
+      ),
+    }
+  }
+}
+
+impl System for LightShow {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
+    ctx.declare_leds(&LANE_1.q(), ColorSequence::solid(Rgba::red()));
+    ctx.declare_leds(&LANE_2.q(), ColorSequence::solid(Rgba::blue()));
+    ctx.declare_leds(&INSERTS.q(), ColorSequence::fade(Rgba::yellow(), Rgba::red()));
+    ctx.declare_leds(&CABINET_LEFT_STRIP.q(), ColorSequence::fade(Rgba::blue(), Rgba::purple()));
+    ctx.declare_leds(&CABINET_RIGHT_STRIP.q(), ColorSequence::fade(Rgba::purple(), Rgba::blue()));
+    ctx.declare_leds(&BACKBOX_GI.q(), ColorSequence::solid(Rgba::white()));
+  }
+
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
+    self.pulse.accumulate(delta);
+    let color = self.pulse.sample();
+    ctx.declare_leds(&SHOOT_AGAIN.q(), ColorSequence::solid(color));
+    // enough LEDs changing every tick that one LED frame spans several batches, like a real machine
+    ctx.declare_leds(&CABINET_LEFT_STRIP.q().at_z(1), ColorSequence::solid(color));
+    ctx.declare_leds(&CABINET_RIGHT_STRIP.q().at_z(1), ColorSequence::solid(color));
+    ctx.declare_leds(&BACKBOX_GI.q().at_z(1), ColorSequence::solid(color));
+  }
+}
+
+/// Taps every driver every tick, for `CONSOLE_STRESS`
+struct DriverStress;
+
+impl System for DriverStress {
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    for driver in [&LEFT_FLIPPER, &LEFT_SLING_COIL, &TROUGH_EJECT, &SCOOP_EJECT] {
+      ctx.activate_driver(driver.name, ActivationMode::Tap);
+    }
+  }
+}
