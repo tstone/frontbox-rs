@@ -69,10 +69,10 @@ async fn main() {
   ]);
 
   // CONSOLE_PORT lets the preview run alongside a game that already has the console on :3000
-  let tracer = match std::env::var("CONSOLE_PORT") {
-    Ok(port) => WebTracer::at_addr(([0, 0, 0, 0], port.parse().expect("CONSOLE_PORT must be a port number")).into()),
-    Err(_) => WebTracer::new(),
-  };
+  let mut tracer = WebTracer::new();
+  if let Ok(port) = std::env::var("CONSOLE_PORT") {
+    tracer = tracer.port(port.parse().expect("CONSOLE_PORT must be a port number"));
+  }
 
   App::new(BootConfig {
     io_network,
