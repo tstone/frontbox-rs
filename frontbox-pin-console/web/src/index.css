@@ -17,6 +17,10 @@
   --cat-driver: #d9480f;
   --cat-system: #7a7585;
 
+  /* 3D view */
+  --plane: #8e879c;
+  --hw-dot: #8f8a99;
+
   --radius: 8px;
   --radius-sm: 4px;
   --header-height: 3rem;
@@ -48,6 +52,9 @@
     --cat-switch: #58a6ff;
     --cat-driver: #ff8a4c;
     --cat-system: #938ca0;
+
+    --plane: #6d6679;
+    --hw-dot: #d4d1da;
   }
 }
 

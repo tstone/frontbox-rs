@@ -5,6 +5,7 @@ import { type ConsoleState, driverState } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { Hardware } from '../../types/generated/Hardware'
 import type { LED } from '../../types/generated/LED'
+import type { PlaneView } from '../../types/generated/PlaneView'
 import type { ResolvedExpansionBoard } from '../../types/generated/ResolvedExpansionBoard'
 import type { ResolvedIoBoard } from '../../types/generated/ResolvedIoBoard'
 import type { Switch } from '../../types/generated/Switch'
@@ -17,6 +18,7 @@ export type HardwareKind =
   | 'leds'
   | 'io-boards'
   | 'exp-boards'
+  | 'planes'
 
 export type HardwareKindInfo = {
   kind: HardwareKind
@@ -43,6 +45,12 @@ export const hardwareKinds: HardwareKindInfo[] = [
   { kind: 'leds', label: 'LEDs', empty: 'No LEDs configured' },
   { kind: 'io-boards', label: 'I/O Boards', empty: 'No I/O boards configured' },
   { kind: 'exp-boards', label: 'Expansion Boards', empty: 'No expansion boards configured' },
+  {
+    kind: 'planes',
+    label: 'Planes',
+    empty: 'No planes configured',
+    note: 'Surfaces of the machine drawn in the 3D view. Add them with WebTracer::plane.',
+  },
 ]
 
 /** Switches and LEDs will be shown on the playfield, so the list starts without them */
@@ -55,6 +63,7 @@ export type HardwareRef =
   | { kind: 'led'; led: LED }
   | { kind: 'io-board'; board: ResolvedIoBoard; index: number }
   | { kind: 'exp-board'; board: ResolvedExpansionBoard }
+  | { kind: 'plane'; plane: PlaneView }
 
 export type HardwareRow = {
   key: string
@@ -76,6 +85,20 @@ export type HardwareRow = {
 }
 
 export function hardwareRows(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
+  // planes come from the console's configuration, not the machine's hardware
+  if (kind === 'planes') {
+    return machine.planes.map((plane, index) => ({
+      key: `plane:${index}`,
+      name: plane.name,
+      address: `${plane.extent[0]} × ${plane.extent[1]} in`,
+      tags: [],
+      detail: null,
+      state: () => null,
+      active: () => false,
+      ref: { kind: 'plane', plane },
+    }))
+  }
+
   const hw = machine.hardware
   if (!hw) return []
 

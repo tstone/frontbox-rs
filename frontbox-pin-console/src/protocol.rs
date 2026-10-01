@@ -24,6 +24,8 @@ pub struct Snapshot {
   pub drivers: BTreeMap<usize, DriverState>,
   /// The game in progress, if any
   pub game: Option<GameState>,
+  /// Surfaces of the machine to draw, from `WebTracer::plane`
+  pub planes: Vec<PlaneView>,
   /// Most recent trace records, oldest first
   #[ts(as = "Vec<TraceRecord>")]
   pub log: VecDeque<TraceRecord>,
@@ -63,4 +65,18 @@ pub struct System {
   /// The most recent events this system emitted, oldest first
   #[ts(as = "Vec<TraceRecord>")]
   pub recent_events: VecDeque<TraceRecord>,
+}
+
+/// A surface of the machine to draw, in world space (the cabinet's coordinates, in inches)
+#[derive(Clone, serde::Serialize, TS)]
+pub struct PlaneView {
+  pub name: String,
+  /// World position of the plane's local origin
+  pub origin: [f32; 3],
+  /// World rotation, as a quaternion (x, y, z, w)
+  pub rotation: [f32; 4],
+  /// Width (local x) and height (local y)
+  pub extent: [f32; 2],
+  /// Where to fetch the plane's image, if it has one. Its top-left corner sits at the plane's local origin.
+  pub image: Option<String>,
 }

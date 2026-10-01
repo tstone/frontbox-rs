@@ -3,6 +3,7 @@ import { describeDriverMode, describeSwitchConfig, hexAddress } from '../../lib/
 import { machine } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { LED } from '../../types/generated/LED'
+import type { PlaneView } from '../../types/generated/PlaneView'
 import type { ResolvedExpansionBoard } from '../../types/generated/ResolvedExpansionBoard'
 import type { ResolvedIoBoard } from '../../types/generated/ResolvedIoBoard'
 import type { Switch } from '../../types/generated/Switch'
@@ -23,6 +24,8 @@ export default function HardwareDetail(props: { item: HardwareRef }) {
       return <IoBoardDetail board={item.board} index={item.index} />
     case 'exp-board':
       return <ExpBoardDetail board={item.board} />
+    case 'plane':
+      return <PlaneDetail plane={item.plane} />
   }
 }
 
@@ -96,6 +99,17 @@ function IoBoardDetail(props: { board: ResolvedIoBoard; index: number }) {
       <Field label="Drivers">
         {drivers().length} of {props.board.driver_count} connected
         <PinList count={props.board.driver_count} items={drivers()} />
+      </Field>
+    </Fields>
+  )
+}
+
+function PlaneDetail(props: { plane: PlaneView }) {
+  return (
+    <Fields>
+      <Field label="Name">{props.plane.name}</Field>
+      <Field label="Size">
+        {props.plane.extent[0]} × {props.plane.extent[1]} in
       </Field>
     </Fields>
   )

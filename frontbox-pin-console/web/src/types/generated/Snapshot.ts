@@ -2,6 +2,7 @@
 import type { DriverState } from "./DriverState";
 import type { GameState } from "./GameState";
 import type { Hardware } from "./Hardware";
+import type { PlaneView } from "./PlaneView";
 import type { SwitchState } from "./SwitchState";
 import type { SystemGroup } from "./SystemGroup";
 import type { TraceRecord } from "./TraceRecord";
@@ -18,6 +19,10 @@ hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in numbe
  * The game in progress, if any
  */
 game: GameState | null, 
+/**
+ * Surfaces of the machine to draw, from `WebTracer::plane`
+ */
+planes: Array<PlaneView>, 
 /**
  * Most recent trace records, oldest first
  */

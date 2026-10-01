@@ -4,10 +4,12 @@ use frontbox::prelude::app_tracer::TraceEvent;
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
 
+use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
 
 const LOG_CAPACITY: usize = 1000;
@@ -26,6 +28,8 @@ struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
+  /// Image files for `snapshot.planes`, by the same index
+  plane_images: Vec<Option<PathBuf>>,
 }
 
 impl ConsoleHub {
@@ -36,6 +40,7 @@ impl ConsoleHub {
         snapshot: Snapshot::default(),
         started: Instant::now(),
         next_seq: 0,
+        plane_images: Vec::new(),
       })),
       tx,
     }
@@ -46,6 +51,34 @@ impl ConsoleHub {
     let state = self.state.lock().unwrap();
     let init = serialize(&ServerMessage::Init(state.snapshot.clone()))?;
     Some((init, self.tx.subscribe()))
+  }
+
+  /// Planes come from the tracer's configuration, before any client connects
+  pub fn set_planes(&self, planes: &[ConsolePlane]) {
+    let mut state = self.state.lock().unwrap();
+    state.snapshot.planes = planes
+      .iter()
+      .enumerate()
+      .map(|(index, console_plane)| {
+        let (origin, rotation) = console_plane.plane.world_transform();
+        PlaneView {
+          name: console_plane.name.clone(),
+          origin: origin.to_array(),
+          rotation: rotation.to_array(),
+          extent: console_plane.plane.extent.to_array(),
+          image: console_plane
+            .image
+            .as_ref()
+            .map(|_| format!("/planes/{index}/image")),
+        }
+      })
+      .collect();
+    state.plane_images = planes.iter().map(|p| p.image.clone()).collect();
+  }
+
+  pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
+    let state = self.state.lock().unwrap();
+    state.plane_images.get(index).cloned().flatten()
   }
 
   pub fn set_hardware(&self, hardware: Hardware) {

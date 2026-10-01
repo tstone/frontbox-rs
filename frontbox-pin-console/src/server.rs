@@ -1,5 +1,5 @@
 use axum::Router;
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
@@ -20,6 +20,7 @@ struct Assets;
 pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
   let app = Router::new()
     .route("/ws", get(ws_handler))
+    .route("/planes/{index}/image", get(plane_image))
     .fallback(static_handler)
     .with_state(hub);
 
@@ -68,6 +69,23 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           _ => return,
         },
       }
+    }
+  }
+}
+
+/// A plane's image, read from disk on each request so it can be edited while the machine runs
+async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(path) = hub.plane_image(index) else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match tokio::fs::read(&path).await {
+    Ok(bytes) => {
+      let mime = mime_guess::from_path(&path).first_or_octet_stream();
+      ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+    }
+    Err(err) => {
+      log::warn!(target: "frontbox_pin_console", "Unable to read plane image {}: {err}", path.display());
+      StatusCode::NOT_FOUND.into_response()
     }
   }
 }

@@ -29,6 +29,7 @@ const [state, setState] = createStore<ConsoleState>({
   switches: {},
   drivers: {},
   game: null,
+  planes: [],
   log: [],
   firing: {},
 })
@@ -47,8 +48,8 @@ export function startConsole(): () => void {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, game, log } = message
-      setState({ hardware, groups, switches, drivers, game, log })
+      const { hardware, groups, switches, drivers, game, planes, log } = message
+      setState({ hardware, groups, switches, drivers, game, planes, log })
       break
     }
     case 'Trace':

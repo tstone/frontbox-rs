@@ -952,6 +952,7 @@ dependencies = [
  "frontbox",
  "frontbox-turn-based",
  "log",
+ "mime_guess",
  "rust-embed",
  "serde",
  "serde_json",

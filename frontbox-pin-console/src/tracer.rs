@@ -67,6 +67,7 @@ impl WebTracer {
     let Some(mut rx) = self.rx.take() else {
       return;
     };
+    self.hub.set_planes(&self.planes);
 
     // ConsoleHub is mainly just a handle to the Arc of Hub state
     // Create two copies, one to receive incoming events from Frontbox

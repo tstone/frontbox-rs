@@ -1,6 +1,4 @@
 .machine-tab .playfield {
-  display: grid;
-  place-items: center;
   background: var(--bg);
 }
 
