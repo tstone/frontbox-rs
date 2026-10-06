@@ -7,7 +7,7 @@
 
 use frontbox::animation::*;
 use frontbox::prelude::*;
-use frontbox_pin_console::{WebTracer, plane_path};
+use frontbox_pin_console::WebTracer;
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::io::Write;
 use std::time::Duration;
@@ -161,10 +161,10 @@ async fn main() {
   ]);
 
   let mut tracer = WebTracer::new()
-    .plane(plane_path!(planes::PLAYFIELD))
-    .plane(plane_path!(planes::BACKBOX))
-    .plane(plane_path!(planes::CABINET_LEFT))
-    .plane(plane_path!(planes::CABINET_RIGHT));
+    .plane(&planes::PLAYFIELD)
+    .plane(&planes::BACKBOX)
+    .plane(&planes::CABINET_LEFT)
+    .plane(&planes::CABINET_RIGHT);
   // CONSOLE_PORT lets the preview run alongside a game that already has the console on :3000
   if let Ok(port) = std::env::var("CONSOLE_PORT") {
     tracer = tracer.port(port.parse().expect("CONSOLE_PORT must be a port number"));

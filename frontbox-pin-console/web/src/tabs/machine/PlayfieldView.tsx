@@ -83,13 +83,9 @@ function relativeTo(plane: PlaneView, position: Position): Position {
   return [local.x, local.y, local.z]
 }
 
-/**
- * A position on a plane as code for the machine: `planes::PLAYFIELD.to_absolute(Vec3::new(..))` when the plane was
- * added with `console_plane!` (which knows its path), otherwise just the `Vec3::new(..)`.
- */
+/** A position on a plane as code for the machine: the `Vec3::new(..)` relative to that plane */
 function relativeCode(plane: PlaneView, position: Position): string {
-  const vec = rustVec3(relativeTo(plane, position))
-  return plane.code ? `${plane.code}.to_absolute(${vec})` : vec
+  return rustVec3(relativeTo(plane, position))
 }
 
 type Menu = { x: number; y: number; point: Point }

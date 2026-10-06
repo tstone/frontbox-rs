@@ -4,7 +4,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::console_hub::ConsoleHub;
-use crate::planes::IntoTracedPlane;
 use crate::server;
 
 pub const DEFAULT_ADDR: ([u8; 4], u16) = ([0, 0, 0, 0], 3000);
@@ -19,7 +18,7 @@ const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 ///   WebTracer::new()
 ///     .port(3100)
 ///     .plane(&planes::PLAYFIELD)
-///     .plane(plane_path!(planes::BACKBOX)),
+///     .plane(&planes::BACKBOX),
 /// );
 /// ```
 ///
@@ -30,8 +29,7 @@ pub struct WebTracer {
   rx: Option<mpsc::UnboundedReceiver<TraceEvent>>,
   hub: ConsoleHub,
   addr: SocketAddr,
-  /// Each plane, and how the machine's code refers to it
-  planes: Vec<(&'static ReferencePlane, Option<&'static str>)>,
+  planes: Vec<&'static ReferencePlane>,
 }
 
 impl WebTracer {
@@ -58,15 +56,13 @@ impl WebTracer {
     self
   }
 
-  /// Add a surface of the machine for the console to draw, with its image if it has one. Pass
-  /// [`plane_path!`](crate::plane_path)`(planes::PLAYFIELD)` instead of `&planes::PLAYFIELD` to let the console copy
-  /// positions on it as code.
-  pub fn plane(mut self, plane: impl IntoTracedPlane) -> Self {
-    self.planes.push(plane.into_traced_plane());
+  /// Add a surface of the machine for the console to draw, with its image if it has one
+  pub fn plane(mut self, plane: &'static ReferencePlane) -> Self {
+    self.planes.push(plane);
     self
   }
 
-  pub fn planes(&self) -> &[(&'static ReferencePlane, Option<&'static str>)] {
+  pub fn planes(&self) -> &[&'static ReferencePlane] {
     &self.planes
   }
 
@@ -84,7 +80,7 @@ impl WebTracer {
       while let Some(event) = rx.recv().await {
         recv_hub.ingest(event);
       }
-      log::info!(target: "frontbox_pin_console", "Trace event channel closed");
+      log::info!(target: "frontbox::console", "Trace event channel closed");
     });
     // And a second to handle web interactions
     tokio::spawn(server::serve(self.hub.clone(), self.addr));

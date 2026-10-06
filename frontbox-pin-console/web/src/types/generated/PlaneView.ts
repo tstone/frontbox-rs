@@ -19,8 +19,4 @@ extent: [number, number],
 /**
  * Where to fetch the plane's image, if it has one. Its top-left corner sits at the plane's local origin.
  */
-image: string | null, 
-/**
- * How the plane is referred to in the machine's code, e.g. `planes::PLAYFIELD`, for copying positions as code
- */
-code: string | null, };
+image: string | null, };

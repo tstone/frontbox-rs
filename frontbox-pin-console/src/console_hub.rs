@@ -64,24 +64,26 @@ impl ConsoleHub {
   }
 
   /// Planes come from the tracer's configuration, before any client connects
-  pub fn set_planes(&self, planes: &[(&'static ReferencePlane, Option<&'static str>)]) {
+  pub fn set_planes(&self, planes: &[&'static ReferencePlane]) {
     let mut state = self.state.lock().unwrap();
     state.snapshot.planes = planes
       .iter()
       .enumerate()
-      .map(|(index, (plane, code))| {
+      .map(|(index, plane)| {
         let (origin, rotation) = plane.world_transform();
         PlaneView {
           name: plane.name.to_string(),
           origin: origin.to_array(),
           rotation: rotation.to_array(),
           extent: plane.extent.to_array(),
-          image: plane.image.as_ref().map(|_| format!("/planes/{index}/image")),
-          code: code.map(str::to_string),
+          image: plane
+            .image
+            .as_ref()
+            .map(|_| format!("/planes/{index}/image")),
         }
       })
       .collect();
-    state.plane_images = planes.iter().map(|(plane, _)| plane.image.clone()).collect();
+    state.plane_images = planes.iter().map(|plane| plane.image.clone()).collect();
   }
 
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
@@ -330,7 +332,7 @@ fn serialize(message: &ServerMessage) -> Option<Utf8Bytes> {
   match serde_json::to_string(message) {
     Ok(json) => Some(json.into()),
     Err(err) => {
-      log::error!(target: "frontbox_pin_console", "Unable to serialize console message: {err}");
+      log::error!(target: "frontbox::console", "Unable to serialize console message: {err}");
       None
     }
   }

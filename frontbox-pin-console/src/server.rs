@@ -26,13 +26,13 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
   let listener = match tokio::net::TcpListener::bind(addr).await {
     Ok(listener) => listener,
     Err(err) => {
-      log::error!(target: "frontbox_pin_console", "Unable to bind web console to {addr}: {err}");
+      log::error!(target: "frontbox::console", "Unable to bind web console to {addr}: {err}");
       return;
     }
   };
-  log::info!(target: "frontbox_pin_console", "Web console listening on http://{addr}");
+  log::info!(target: "frontbox::console", "Web console listening on http://{addr}");
   if let Err(err) = axum::serve(listener, app).await {
-    log::error!(target: "frontbox_pin_console", "Web console stopped: {err}");
+    log::error!(target: "frontbox::console", "Web console stopped: {err}");
   }
 }
 
@@ -65,7 +65,7 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           // client fell too far behind; start it over from a fresh snapshot
           Err(RecvError::Lagged(missed)) => {
             log::warn!(
-              target: "frontbox_pin_console",
+              target: "frontbox::console",
               "A console client fell {missed} messages behind; sending it everything again"
             );
             continue 'resync;
@@ -108,7 +108,7 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
       ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
     }
     Err(err) => {
-      log::warn!(target: "frontbox_pin_console", "Unable to read plane image {}: {err}", path.display());
+      log::warn!(target: "frontbox::console", "Unable to read plane image {}: {err}", path.display());
       StatusCode::NOT_FOUND.into_response()
     }
   }
