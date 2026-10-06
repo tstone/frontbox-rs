@@ -66,6 +66,77 @@ function cabinetGroup() {
   return group
 }
 
+/** Things the 3D view can show or hide */
+type Layer = 'axes' | 'planes' | 'switches' | 'leds' | 'drivers'
+
+const LAYERS: { layer: Layer; label: string; title: string }[] = [
+  { layer: 'axes', label: 'Axes', title: "The X/Y/Z axes at the cabinet's origin (0, 0, 0)" },
+  { layer: 'planes', label: 'Planes', title: "The machine's surfaces and their images" },
+  { layer: 'switches', label: 'Switches', title: 'Switch dots' },
+  { layer: 'leds', label: 'LEDs', title: 'LED dots' },
+  { layer: 'drivers', label: 'Drivers', title: 'Driver dots' },
+]
+
+const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
+
+// which layers are shown, remembered per browser
+const LAYERS_KEY = 'frontbox-console.layers'
+function readLayers(): Record<Layer, boolean> {
+  const shown = { axes: true, planes: true, switches: true, leds: true, drivers: true }
+  try {
+    return { ...shown, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? '{}') }
+  } catch {
+    return shown
+  }
+}
+function writeLayers(shown: Record<Layer, boolean>) {
+  try {
+    localStorage.setItem(LAYERS_KEY, JSON.stringify(shown))
+  } catch {
+    // storage can be unavailable (private windows); the toggles still work for this session
+  }
+}
+
+/** Length of each origin gizmo axis, in inches */
+const GIZMO_LENGTH = 8
+
+/**
+ * X/Y/Z axes at the cabinet's origin (0, 0, 0), pointing along +x (red), +y (green) and +z (blue), labelled at their
+ * ends. Drawn in cabinet coordinates and on top of everything, so it's never hidden behind a plane.
+ */
+function originGizmo() {
+  const group = cabinetGroup()
+  const axes = new THREE.AxesHelper(GIZMO_LENGTH)
+  const axesMaterial = axes.material as THREE.LineBasicMaterial
+  axesMaterial.depthTest = false
+  axes.renderOrder = 3
+  group.add(axes)
+
+  const label = (text: string, color: string, position: THREE.Vector3) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 64
+    const ctx = canvas.getContext('2d')!
+    ctx.font = 'bold 44px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = color
+    ctx.fillText(text, 32, 34)
+    const sprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }),
+    )
+    sprite.position.copy(position)
+    // the group mirrors x; mirror the label back so it reads the right way round
+    sprite.scale.set(-2.4, 2.4, 1)
+    sprite.renderOrder = 3
+    group.add(sprite)
+  }
+  const tip = GIZMO_LENGTH + 1
+  label('X', '#ff5a5a', new THREE.Vector3(tip, 0, 0))
+  label('Y', '#5adf5a', new THREE.Vector3(0, tip, 0))
+  label('Z', '#5a9cff', new THREE.Vector3(0, 0, tip))
+  return group
+}
+
 /** A coordinate as a Rust f32 literal, to the thousandth of an inch: `32.1`, `0.0`, `-1.145` */
 function rustFloat(n: number): string {
   const rounded = Math.round(n * 1000) / 1000 || 0 // `|| 0` folds -0 into 0
@@ -97,6 +168,8 @@ export default function PlayfieldView() {
   const [hovered, setHovered] = createSignal<{ name: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = createSignal<Menu | null>(null)
   const [toast, setToast] = createSignal<string | null>(null)
+  const [layers, setLayers] = createSignal(readLayers())
+  const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
     const key = placing()
     return key ? (data().items.get(key)?.name ?? key) : null
@@ -145,11 +218,18 @@ export default function PlayfieldView() {
     }
     controls.addEventListener('change', render)
 
+    // the cabinet's origin, so positions can be checked against the code. Kept out of `content` so it isn't rebuilt
+    // or counted when framing the camera.
+    const origin = originGizmo()
+    scene.add(origin)
+
     // everything drawn for the current data, so it can be torn down on a rebuild
     let content = cabinetGroup()
     scene.add(content)
     const dots = new Map<THREE.Object3D, Point>()
     const planeMeshes: THREE.Mesh[] = []
+    // planes' meshes and outlines, to show or hide together
+    const planeObjects: THREE.Object3D[] = []
     const textures = new Map<string, THREE.Texture>()
     const textureLoader = new THREE.TextureLoader()
     const dotGeometry = new THREE.SphereGeometry(DOT_SIZE / 2, 16, 12)
@@ -222,6 +302,7 @@ export default function PlayfieldView() {
       planeMaterials.length = 0
       lineMaterials.length = 0
       planeMeshes.length = 0
+      planeObjects.length = 0
       dots.clear()
       hoveredDot = null
       content = cabinetGroup()
@@ -243,6 +324,7 @@ export default function PlayfieldView() {
         const mesh = new THREE.Mesh(geometry, material)
         planeMeshes.push(mesh)
         for (const obj of [mesh, new THREE.LineSegments(new THREE.EdgesGeometry(geometry), line)]) {
+          planeObjects.push(obj)
           obj.position.set(...plane.origin)
           obj.quaternion.set(...plane.rotation)
           content.add(obj)
@@ -271,6 +353,7 @@ export default function PlayfieldView() {
       })
 
       content.add(ghost)
+      applyLayers()
       scene.add(content)
       // frame the machine the first time there's something to show, then leave the camera to the user
       if (!fitted && (planes.length > 0 || points.length > 0)) {
@@ -278,6 +361,15 @@ export default function PlayfieldView() {
         fitted = true
       }
       applyTheme()
+    }
+
+    /** Show or hide each layer to match the toggles */
+    function applyLayers() {
+      const shown = untrack(layers)
+      origin.visible = shown.axes
+      planeObjects.forEach((obj) => (obj.visible = shown.planes))
+      dots.forEach((point, dot) => (dot.visible = shown[layerOf(point.kind)]))
+      render()
     }
 
     function fitCamera() {
@@ -310,7 +402,9 @@ export default function PlayfieldView() {
     }
     const dotUnder = (e: MouseEvent) => {
       aim(e)
-      return raycaster.intersectObjects([...dots.keys()])[0]?.object as THREE.Mesh | undefined
+      // hidden dots can't be hovered or right-clicked
+      const shown = [...dots.keys()].filter((dot) => dot.visible)
+      return raycaster.intersectObjects(shown)[0]?.object as THREE.Mesh | undefined
     }
 
     function setHoveredDot(dot: THREE.Mesh | null) {
@@ -328,7 +422,7 @@ export default function PlayfieldView() {
       if (placing()) {
         // slide the ghost across whichever plane is under the cursor
         aim(e)
-        const hit = raycaster.intersectObjects(planeMeshes)[0]
+        const hit = raycaster.intersectObjects(planeMeshes.filter((mesh) => mesh.visible))[0]
         ghost.visible = hit !== undefined
         if (hit) {
           const local = content.worldToLocal(hit.point.clone())
@@ -409,9 +503,21 @@ export default function PlayfieldView() {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     createEffect(() => build(data()))
+    createEffect(() => {
+      writeLayers(layers())
+      applyLayers()
+    })
     resize()
 
     onCleanup(() => {
+      origin.traverse((obj) => {
+        if (obj instanceof THREE.LineSegments || obj instanceof THREE.Sprite) {
+          obj.geometry.dispose()
+          const material = obj.material as THREE.Material & { map?: THREE.Texture | null }
+          material.map?.dispose()
+          material.dispose()
+        }
+      })
       window.removeEventListener('keydown', onKeyDown)
       disposeLedEffects?.()
       resizeObserver.disconnect()
@@ -429,6 +535,15 @@ export default function PlayfieldView() {
 
   return (
     <div class="playfield-view" ref={container}>
+      <div class="view-toggles" role="group" aria-label="Show in the 3D view">
+        <For each={LAYERS}>
+          {({ layer, label, title }) => (
+            <button type="button" class="view-toggle" aria-pressed={layers()[layer]} title={title} onClick={() => toggleLayer(layer)}>
+              {label}
+            </button>
+          )}
+        </For>
+      </div>
       <Show when={data().planes.length === 0 && data().points.length === 0}>
         <p class="notice empty">
           Nothing to draw yet. Give hardware a <code>location</code>, or add planes with <code>WebTracer::plane</code>.

@@ -115,3 +115,40 @@
   transform: translateX(-50%);
   pointer-events: none;
 }
+
+/* toggles in the top right of the 3D view */
+.playfield-view .view-toggles {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.playfield-view .view-toggle {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.playfield-view .view-toggle:hover {
+  color: var(--text);
+}
+
+.playfield-view .view-toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.playfield-view .view-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
