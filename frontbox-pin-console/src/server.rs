@@ -87,7 +87,7 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           }
         }
 
-        // nothing is expected from the client yet (soon)
+        // clients don't send anything yet; reading is how a disconnect is noticed
         incoming = socket.recv() => match incoming {
           Some(Ok(_)) => {}
           _ => return,

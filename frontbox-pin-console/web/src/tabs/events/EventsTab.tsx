@@ -6,10 +6,9 @@ import { machine, systemName } from '../../state/console'
 import type { TraceRecord } from '../../types/generated/TraceRecord'
 import './EventsTab.css'
 
-/** Filter key for the player a record belongs to */
 const playerKey = (record: TraceRecord) => String(record.game?.player ?? 'none')
 
-/** Filter key for the system that sent a record; "none" for events emitted by the framework */
+/** "none" for events emitted by the framework */
 const senderKey = (record: TraceRecord) => String(traceSender(record) ?? 'none')
 
 /** Counts records into filter options, `describe` supplying the rest of a new option */
@@ -27,7 +26,6 @@ function countOptions(
   return [...options.values()]
 }
 
-/** Sorts the "none" option first, then by `by` */
 const noneFirst = (by: (a: FilterOption, b: FilterOption) => number) => (a: FilterOption, b: FilterOption) =>
   a.value === 'none' ? -1 : b.value === 'none' ? 1 : by(a, b)
 

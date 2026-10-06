@@ -18,8 +18,7 @@ export default function HardwareList() {
     hardwareKinds.map((info) => [info.kind, createMemo(() => hardwareRows(machine, info.kind))]),
   ) as Record<HardwareKind, Accessor<HardwareRow[]>>
 
-  // rows whose name contains the filter text, anywhere, ignoring case. Filtering keeps the same row objects, so
-  // matching rows keep their open/closed state as the filter changes.
+  // Filtering keeps the same row objects, so matching rows keep their open/closed state as the filter changes
   const matchesByKind = Object.fromEntries(
     hardwareKinds.map((info) => [
       info.kind,
@@ -123,7 +122,6 @@ function HardwareItem(props: { row: HardwareRow }) {
   )
 }
 
-/** Place this hardware by clicking in the 3D view, to find its coordinates */
 function PositionControl(props: { hwKey: string }) {
   const isPlacing = () => placing() === props.hwKey
   const moved = () => movedPositions[props.hwKey] !== undefined

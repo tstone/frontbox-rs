@@ -9,7 +9,6 @@ import type { ResolvedIoBoard } from '../../types/generated/ResolvedIoBoard'
 import type { Switch } from '../../types/generated/Switch'
 import type { HardwareRef } from './hardware'
 
-/** The expanded view of a hardware row */
 export default function HardwareDetail(props: { item: HardwareRef }) {
   // a row's hardware never changes, so this only needs to pick once
   const item = props.item
@@ -128,7 +127,6 @@ function ExpBoardDetail(props: { board: ResolvedExpansionBoard }) {
   )
 }
 
-/** Board and pin, spelled out */
 function IoAssignment(props: { assignment: { board_idx: number; pin: number } }) {
   const board = () => machine.hardware?.io_network[props.assignment.board_idx]
   return (

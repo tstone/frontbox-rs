@@ -4,14 +4,6 @@ import type { TraceEvent } from "./TraceEvent";
 
 export type TraceRecord = { 
 /**
- * Monotonic sequence number, unique per console server
+ * Message number, unique per console server
  */
-seq: number, 
-/**
- * Milliseconds since the console server started
- */
-at_ms: number, 
-/**
- * The game in progress when this was traced, if any
- */
-game: GameState | null, event: TraceEvent, };
+seq: number, at_ms: number, game: GameState | null, event: TraceEvent, };

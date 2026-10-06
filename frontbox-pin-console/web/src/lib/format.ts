@@ -55,7 +55,7 @@ export function formatElapsed(ms: number): string {
 
 const ROOT_GROUP = '__root'
 
-/** System group keys, with the framework's root group given a friendlier name */
+/** The framework's root group shows as "Root" */
 export function groupLabel(key: string): string {
   return key === ROOT_GROUP ? 'Root' : key
 }

@@ -1,6 +1,6 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, TraceEvent};
-use frontbox::prelude::{Hardware, ReferencePlane, SystemDespawned, SystemSpawned};
+use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
 
+use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
 
 const LOG_CAPACITY: usize = 2500;
@@ -24,7 +25,6 @@ const LED_BROADCAST_CAPACITY: usize = 4;
 pub(crate) struct ConsoleHub {
   state: Arc<Mutex<HubState>>,
   tx: broadcast::Sender<Utf8Bytes>,
-  /// LED color updates; separate from `tx` so they never count against a client's place in the event stream
   leds_tx: broadcast::Sender<Utf8Bytes>,
 }
 
@@ -63,13 +63,13 @@ impl ConsoleHub {
     }))
   }
 
-  /// Planes come from the tracer's configuration, before any client connects
-  pub fn set_planes(&self, planes: &[&'static ReferencePlane]) {
+  /// Called before any client connects, so nothing is broadcast
+  pub fn set_planes(&self, planes: &[ConsolePlane]) {
     let mut state = self.state.lock().unwrap();
     state.snapshot.planes = planes
       .iter()
       .enumerate()
-      .map(|(index, plane)| {
+      .map(|(index, ConsolePlane { plane, code })| {
         let (origin, rotation) = plane.world_transform();
         PlaneView {
           name: plane.name.to_string(),
@@ -80,10 +80,11 @@ impl ConsoleHub {
             .image
             .as_ref()
             .map(|_| format!("/planes/{index}/image")),
+          code: code.map(str::to_string),
         }
       })
       .collect();
-    state.plane_images = planes.iter().map(|plane| plane.image.clone()).collect();
+    state.plane_images = planes.iter().map(|p| p.plane.image.clone()).collect();
   }
 
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
@@ -111,7 +112,7 @@ impl ConsoleHub {
     }
   }
 
-  /// Send the LED colors that changed since the last flush, if any. Called at a steady rate by the tracer.
+  /// Called on a timer by the tracer
   pub fn flush_leds(&self) {
     let mut state = self.state.lock().unwrap();
     if state.pending_leds.is_empty() {
@@ -351,7 +352,6 @@ struct HubState {
   next_seq: u64,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
-  /// LED names by the address `LedsRGBChange` reports them with
   led_names: LedNames,
   /// LED colors changed since the last `flush_leds`
   pending_leds: BTreeMap<String, Color>,

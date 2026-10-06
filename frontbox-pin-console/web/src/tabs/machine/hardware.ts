@@ -179,7 +179,6 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
   }
 }
 
-/** Compact `board-pin` address, plus the spelled-out version */
 function ioAddress(hw: Hardware, assignment: { board_idx: number; pin: number }) {
   const board = hw.io_network[assignment.board_idx]
   return {

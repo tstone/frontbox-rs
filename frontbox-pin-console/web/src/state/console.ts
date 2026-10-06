@@ -8,7 +8,6 @@ import { connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
 const LOG_CAPACITY = 2500
-/** How many emitted events each system keeps for the systems view */
 const RECENT_EVENTS_PER_SYSTEM = 10
 
 export type ConsoleState = Snapshot & {
@@ -37,13 +36,10 @@ const [state, setState] = createStore<ConsoleState>({
   firing: {},
 })
 
-/**
- * Read-only, reactive view of the machine. Any component that reads a field of this inside JSX
- * (or an effect/memo) re-renders just that part when the field changes.
- */
+/** Read-only: it only changes from server messages */
 export const machine = state
 
-/** Connects to the console server. Returns a cleanup function. */
+/** Returns a cleanup function */
 export function startConsole(): () => void {
   return connect(handleMessage, (connection) => setState('connection', connection))
 }

@@ -4,7 +4,6 @@ import { groupLabel, shortName } from '../../lib/format'
 import type { System } from '../../types/generated/System'
 import type { SystemGroup } from '../../types/generated/SystemGroup'
 
-/** Everything the console knows about one system. This is the place to grow system details. */
 export default function SystemDetail(props: { system: System; group: SystemGroup }) {
   // newest first
   const recentEvents = () => [...props.system.recent_events].reverse()

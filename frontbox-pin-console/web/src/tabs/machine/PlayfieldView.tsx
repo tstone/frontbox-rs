@@ -16,15 +16,13 @@ type SceneData = {
   points: Point[]
   /** Every switch, driver and LED, located or not, by key */
   items: Map<string, Item>
-  /** How much hardware has no location, so isn't drawn */
   unlocated: number
   /** Changes only when something drawn changes, so a fresh `Init` (e.g. on game start) doesn't rebuild the scene */
   signature: string
 }
 
-/** Diameter of a hardware dot, in inches */
+/** Diameter, in inches */
 const DOT_SIZE = 0.8
-/** Opacity of planes without and with an image */
 const PLANE_OPACITY = 0.14
 const IMAGE_OPACITY = 0.92
 /** How far the pointer can move between press and release and still count as a click, in pixels */
@@ -66,7 +64,6 @@ function cabinetGroup() {
   return group
 }
 
-/** Things the 3D view can show or hide */
 type Layer = 'axes' | 'planes' | 'switches' | 'leds' | 'drivers'
 
 const LAYERS: { layer: Layer; label: string; title: string }[] = [
@@ -97,13 +94,10 @@ function writeLayers(shown: Record<Layer, boolean>) {
   }
 }
 
-/** Length of each origin gizmo axis, in inches */
+/** In inches */
 const GIZMO_LENGTH = 8
 
-/**
- * X/Y/Z axes at the cabinet's origin (0, 0, 0), pointing along +x (red), +y (green) and +z (blue), labelled at their
- * ends. Drawn in cabinet coordinates and on top of everything, so it's never hidden behind a plane.
- */
+/** Axes at the cabinet's origin: +x red, +y green, +z blue. Drawn on top so planes never hide it. */
 function originGizmo() {
   const group = cabinetGroup()
   const axes = new THREE.AxesHelper(GIZMO_LENGTH)
@@ -154,14 +148,17 @@ function relativeTo(plane: PlaneView, position: Position): Position {
   return [local.x, local.y, local.z]
 }
 
-/** A position on a plane as code for the machine: the `Vec3::new(..)` relative to that plane */
+/**
+ * A position on a plane as code for the machine: `Vec3::new(..).relative_to(&planes::PLAYFIELD)` when the plane was
+ * added with `console_plane!` (which knows its path), otherwise just the `Vec3::new(..)`.
+ */
 function relativeCode(plane: PlaneView, position: Position): string {
-  return rustVec3(relativeTo(plane, position))
+  const vec = rustVec3(relativeTo(plane, position))
+  return plane.code ? `${vec}.relative_to(&${plane.code})` : vec
 }
 
 type Menu = { x: number; y: number; point: Point }
 
-/** The machine in 3D: its planes (with any images) and every located piece of hardware as a dot */
 export default function PlayfieldView() {
   let container!: HTMLDivElement
   const data = createMemo(() => sceneData(machine), undefined, { equals: (a, b) => a.signature === b.signature })
@@ -363,7 +360,6 @@ export default function PlayfieldView() {
       applyTheme()
     }
 
-    /** Show or hide each layer to match the toggles */
     function applyLayers() {
       const shown = untrack(layers)
       origin.visible = shown.axes

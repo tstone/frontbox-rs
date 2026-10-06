@@ -3,7 +3,6 @@ import type { SwitchConfig } from '../types/generated/SwitchConfig'
 
 export type ConfigField = { label: string; value: string }
 
-/** Driver mode name and its settings, readable */
 export function describeDriverMode(mode: DriverMode): { mode: string; fields: ConfigField[] } {
   const [name, body] = Object.entries(mode)[0] as [string, Record<string, unknown>]
   const fields = Object.entries(body)
@@ -29,7 +28,6 @@ export function describePower(power: number): string {
   return `${Math.round((on / 8) * 100)}% (${bits.slice(0, 4)} ${bits.slice(4)})`
 }
 
-/** Expansion board addresses are conventionally written in hex */
 export function hexAddress(address: number): string {
   return `0x${address.toString(16).toUpperCase().padStart(2, '0')}`
 }

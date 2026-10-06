@@ -13,11 +13,9 @@ export const traceSender = (record: TraceRecord) => ('Event' in record.event ? r
 
 type Props = {
   record: TraceRecord
-  /** Leave out "by <system>", e.g. when already looking at that system */
   hideSender?: boolean
 }
 
-/** One trace as a list item: dot, time, type and summary, expanding to its full data */
 export default function TraceRow(props: Props) {
   const [expanded, setExpanded] = createSignal(false)
   const record = props.record
@@ -56,7 +54,6 @@ export default function TraceRow(props: Props) {
   )
 }
 
-/** A one-line description, using hardware and system names where the console knows them */
 function summary(record: TraceRecord): string {
   const event = record.event
   const hw = machine.hardware

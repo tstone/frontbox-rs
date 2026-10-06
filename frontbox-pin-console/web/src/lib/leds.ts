@@ -23,7 +23,6 @@ const hex = (n: number) => n.toString(16).padStart(2, '0')
 
 /**
  * The color an LED is showing, as CSS (`#rrggbb`), or `null` if the console hasn't seen one yet or it's off.
- * Reactive: reading it in JSX or an effect updates when the LED changes.
  */
 export function ledColor(name: string): string | null {
   const wire = machine.led_colors[name]

@@ -21,7 +21,7 @@ pub struct Snapshot {
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
   pub game: Option<GameState>,
-  /// The last color each LED is set to
+  /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Color>,
   pub planes: Vec<PlaneView>,
   #[ts(as = "Vec<TraceRecord>")]
@@ -66,6 +66,8 @@ pub struct PlaneView {
   pub rotation: [f32; 4],
   pub extent: [f32; 2],
   pub image: Option<String>,
+  /// e.g. `planes::PLAYFIELD`, when added with `console_plane!`
+  pub code: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize, TS)]

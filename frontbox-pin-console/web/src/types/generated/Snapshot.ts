@@ -8,28 +8,12 @@ import type { SwitchState } from "./SwitchState";
 import type { SystemGroup } from "./SystemGroup";
 import type { TraceRecord } from "./TraceRecord";
 
-/**
- * Everything the web app needs to render from scratch.
- */
 export type Snapshot = { 
 /**
  * `None` until `AppTracer::init` has been called
  */
-hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in number]: SwitchState }, drivers: { [key in number]: DriverState }, 
+hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in number]: SwitchState }, drivers: { [key in number]: DriverState }, game: GameState | null, 
 /**
- * The game in progress, if any
+ * The last color each LED is set to
  */
-game: GameState | null, 
-/**
- * The last color sent to each LED, by LED name. Colors are in the order sent on the wire, so an LED configured as
- * GRB has green first.
- */
-led_colors: { [key in string]: Color }, 
-/**
- * Surfaces of the machine to draw, from `WebTracer::plane`
- */
-planes: Array<PlaneView>, 
-/**
- * Most recent trace records, oldest first
- */
-log: Array<TraceRecord>, };
+led_colors: { [key in string]: Color }, planes: Array<PlaneView>, log: Array<TraceRecord>, };

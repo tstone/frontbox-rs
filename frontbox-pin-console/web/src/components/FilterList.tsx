@@ -17,7 +17,6 @@ type Props = {
   onChange: (value: string, checked: boolean) => void
 }
 
-/** A titled list of checkboxes, with shortcuts to check or clear all of them */
 export default function FilterList(props: Props) {
   const setAll = (checked: boolean) => props.options.forEach((o) => props.onChange(o.value, checked))
 

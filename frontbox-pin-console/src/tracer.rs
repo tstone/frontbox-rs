@@ -1,14 +1,14 @@
-use frontbox::prelude::{Hardware, ReferencePlane, app_tracer::*};
+use frontbox::prelude::{Hardware, app_tracer::*};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::console_hub::ConsoleHub;
+use crate::console_plane::ConsolePlane;
 use crate::server;
 
 pub const DEFAULT_ADDR: ([u8; 4], u16) = ([0, 0, 0, 0], 3000);
 
-/// How often changed LED colors are sent to the console (20 times a second)
 const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Web-based dashboard for visualizing Frontbox state.
@@ -17,8 +17,8 @@ const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 /// app.tracer(
 ///   WebTracer::new()
 ///     .port(3100)
-///     .plane(&planes::PLAYFIELD)
-///     .plane(&planes::BACKBOX),
+///     .plane(console_plane!(planes::PLAYFIELD))
+///     .plane(console_plane!(planes::BACKBOX)),
 /// );
 /// ```
 ///
@@ -29,7 +29,7 @@ pub struct WebTracer {
   rx: Option<mpsc::UnboundedReceiver<TraceEvent>>,
   hub: ConsoleHub,
   addr: SocketAddr,
-  planes: Vec<&'static ReferencePlane>,
+  planes: Vec<ConsolePlane>,
 }
 
 impl WebTracer {
@@ -56,25 +56,24 @@ impl WebTracer {
     self
   }
 
-  /// Add a surface of the machine for the console to draw, with its image if it has one
-  pub fn plane(mut self, plane: &'static ReferencePlane) -> Self {
-    self.planes.push(plane);
+  /// Add a surface of the machine for the console to draw, with its image if it has one. Pass the plane, or
+  /// `console_plane!(planes::PLAYFIELD)` so positions on it can be copied as code.
+  pub fn plane(mut self, plane: impl Into<ConsolePlane>) -> Self {
+    self.planes.push(plane.into());
     self
   }
 
-  pub fn planes(&self) -> &[&'static ReferencePlane] {
+  pub fn planes(&self) -> &[ConsolePlane] {
     &self.planes
   }
 
-  /// Start receiving trace events and serving the console
   fn start(&mut self) {
     let Some(mut rx) = self.rx.take() else {
       return;
     };
     self.hub.set_planes(&self.planes);
 
-    // ConsoleHub is mainly just a handle to the Arc of Hub state
-    // Create two copies, one to receive incoming events from Frontbox
+    // ConsoleHub is a cheap handle to shared state; each task gets its own clone
     let recv_hub = self.hub.clone();
     tokio::spawn(async move {
       while let Some(event) = rx.recv().await {
@@ -82,7 +81,6 @@ impl WebTracer {
       }
       log::info!(target: "frontbox::console", "Trace event channel closed");
     });
-    // And a second to handle web interactions
     tokio::spawn(server::serve(self.hub.clone(), self.addr));
 
     // LED colors go out together at a steady rate rather than as each batch arrives
