@@ -1,10 +1,10 @@
-use frontbox::prelude::{Hardware, app_tracer::*};
+use frontbox::prelude::{Hardware, ReferencePlane, app_tracer::*};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::console_hub::ConsoleHub;
-use crate::console_plane::ConsolePlane;
+use crate::planes::IntoTracedPlane;
 use crate::server;
 
 pub const DEFAULT_ADDR: ([u8; 4], u16) = ([0, 0, 0, 0], 3000);
@@ -18,7 +18,8 @@ const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
 /// app.tracer(
 ///   WebTracer::new()
 ///     .port(3100)
-///     .plane(ConsolePlane::new("Playfield", &PLAYFIELD).image("art/playfield.png")),
+///     .plane(&planes::PLAYFIELD)
+///     .plane(plane_path!(planes::BACKBOX)),
 /// );
 /// ```
 ///
@@ -29,7 +30,8 @@ pub struct WebTracer {
   rx: Option<mpsc::UnboundedReceiver<TraceEvent>>,
   hub: ConsoleHub,
   addr: SocketAddr,
-  planes: Vec<ConsolePlane>,
+  /// Each plane, and how the machine's code refers to it
+  planes: Vec<(&'static ReferencePlane, Option<&'static str>)>,
 }
 
 impl WebTracer {
@@ -56,13 +58,15 @@ impl WebTracer {
     self
   }
 
-  /// Add a surface of the machine for the console to draw
-  pub fn plane(mut self, plane: ConsolePlane) -> Self {
-    self.planes.push(plane);
+  /// Add a surface of the machine for the console to draw, with its image if it has one. Pass
+  /// [`plane_path!`](crate::plane_path)`(planes::PLAYFIELD)` instead of `&planes::PLAYFIELD` to let the console copy
+  /// positions on it as code.
+  pub fn plane(mut self, plane: impl IntoTracedPlane) -> Self {
+    self.planes.push(plane.into_traced_plane());
     self
   }
 
-  pub fn planes(&self) -> &[ConsolePlane] {
+  pub fn planes(&self) -> &[(&'static ReferencePlane, Option<&'static str>)] {
     &self.planes
   }
 

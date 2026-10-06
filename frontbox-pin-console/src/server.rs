@@ -1,6 +1,6 @@
 use axum::Router;
-use axum::extract::{Path, State};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{Path, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -10,8 +10,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
 
-/// The built SolidJS app. In debug builds rust-embed reads from disk, so `npm run build` is picked
-/// up without recompiling. In release builds it's baked into the binary.
+/// The built SolidJS app
 #[derive(RustEmbed)]
 #[folder = "web/dist"]
 #[allow_missing = true]
@@ -73,6 +72,7 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           }
           Err(RecvError::Closed) => return,
         },
+
         led_update = leds.recv() => {
           let text = match led_update {
             Ok(text) => Some(text),
@@ -86,8 +86,8 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
             return;
           }
         }
-        // nothing is expected from the client yet (future home of console -> machine
-        // commands), but reading is how we notice it went away
+
+        // nothing is expected from the client yet (soon)
         incoming = socket.recv() => match incoming {
           Some(Ok(_)) => {}
           _ => return,

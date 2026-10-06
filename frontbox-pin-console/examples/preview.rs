@@ -7,7 +7,7 @@
 
 use frontbox::animation::*;
 use frontbox::prelude::*;
-use frontbox_pin_console::{ConsolePlane, WebTracer, console_plane};
+use frontbox_pin_console::{WebTracer, plane_path};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::io::Write;
 use std::time::Duration;
@@ -18,6 +18,7 @@ use crate::hardware::*;
 mod planes {
   use super::*;
   use std::f32::consts::FRAC_1_SQRT_2;
+  use std::sync::LazyLock;
 
   // rotations as (x, y, z, w) quaternions, so the planes can be plain statics
   /// 90° about x: the plane stands upright, local y pointing up
@@ -25,33 +26,45 @@ mod planes {
   /// Along a side wall: local x toward the front, local y up
   const ALONG_SIDE: Quat = Quat::from_xyzw(0.5, 0.5, 0.5, 0.5);
 
-  pub static PLAYFIELD: ReferencePlane = ReferencePlane {
-    origin: Vec3::new(1.0, 3.25, 12.0),
-    extent: Vec2::new(20.25, 45.0),
-    rotation: Quat::IDENTITY,
-    parent: None,
-  };
+  pub static PLAYFIELD: LazyLock<ReferencePlane> = LazyLock::new(|| {
+    with_image(
+      ReferencePlane::new("Playfield")
+        .origin(Vec3::new(1.0, 3.25, 12.0))
+        .extent(Vec2::new(20.25, 45.0)),
+      "PLAYFIELD_IMAGE",
+    )
+  });
 
-  pub static BACKBOX: ReferencePlane = ReferencePlane {
-    origin: Vec3::new(-1.5, -3.25, 22.0),
-    extent: Vec2::new(23.25, 30.0),
-    rotation: UPRIGHT,
-    parent: Some(&PLAYFIELD),
-  };
+  pub static BACKBOX: LazyLock<ReferencePlane> = LazyLock::new(|| {
+    with_image(
+      ReferencePlane::new("Backbox")
+        .parent(&PLAYFIELD)
+        .origin(Vec3::new(-1.5, -3.25, 22.0))
+        .extent(Vec2::new(23.25, 30.0))
+        .rotation(UPRIGHT),
+      "BACKBOX_IMAGE",
+    )
+  });
 
-  pub static CABINET_LEFT: ReferencePlane = ReferencePlane {
-    origin: Vec3::new(0.0, 0.0, 12.0),
-    extent: Vec2::new(50.0, 6.0),
-    rotation: ALONG_SIDE,
-    parent: None,
-  };
+  pub static CABINET_LEFT: ReferencePlane = ReferencePlane::new("Cabinet left")
+    .origin(Vec3::new(0.0, 0.0, 12.0))
+    .extent(Vec2::new(50.0, 6.0))
+    .rotation(ALONG_SIDE)
+    .build();
 
-  pub static CABINET_RIGHT: ReferencePlane = ReferencePlane {
-    origin: Vec3::new(22.25, 0.0, 12.0),
-    extent: Vec2::new(50.0, 6.0),
-    rotation: ALONG_SIDE,
-    parent: None,
-  };
+  pub static CABINET_RIGHT: ReferencePlane = ReferencePlane::new("Cabinet right")
+    .origin(Vec3::new(22.25, 0.0, 12.0))
+    .extent(Vec2::new(50.0, 6.0))
+    .rotation(ALONG_SIDE)
+    .build();
+
+  /// PLAYFIELD_IMAGE / BACKBOX_IMAGE: optional art to lay over those planes
+  fn with_image(plane: ReferencePlaneBuilder, env: &str) -> ReferencePlane {
+    match std::env::var(env) {
+      Ok(path) => plane.image(path).build(),
+      Err(_) => plane.build(),
+    }
+  }
 
   /// Evenly spaced points along a plane, at height `y`
   pub fn row(plane: &'static ReferencePlane, count: u16, y: f32) -> Vec<Vec3> {
@@ -147,22 +160,11 @@ async fn main() {
       .wire_led_port(2, LedPort::ws2812().leds(vec![&BACKBOX_GI])),
   ]);
 
-  // PLAYFIELD_IMAGE / BACKBOX_IMAGE: optional art to lay over those planes
-  let image_plane = |plane: ConsolePlane, env: &str| match std::env::var(env) {
-    Ok(path) => plane.image(path),
-    Err(_) => plane,
-  };
   let mut tracer = WebTracer::new()
-    .plane(image_plane(
-      console_plane!("Playfield", planes::PLAYFIELD),
-      "PLAYFIELD_IMAGE",
-    ))
-    .plane(image_plane(
-      console_plane!("Backbox", planes::BACKBOX),
-      "BACKBOX_IMAGE",
-    ))
-    .plane(console_plane!("Cabinet left", planes::CABINET_LEFT))
-    .plane(console_plane!("Cabinet right", planes::CABINET_RIGHT));
+    .plane(plane_path!(planes::PLAYFIELD))
+    .plane(plane_path!(planes::BACKBOX))
+    .plane(plane_path!(planes::CABINET_LEFT))
+    .plane(plane_path!(planes::CABINET_RIGHT));
   // CONSOLE_PORT lets the preview run alongside a game that already has the console on :3000
   if let Ok(port) = std::env::var("CONSOLE_PORT") {
     tracer = tracer.port(port.parse().expect("CONSOLE_PORT must be a port number"));

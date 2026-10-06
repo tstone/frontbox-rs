@@ -1,4 +1,8 @@
+use std::path::PathBuf;
+
 use glam::{Mat4, Quat, Vec2, Vec3};
+
+use crate::prelude::ReferencePlaneBuilder;
 
 /// When specifying a location for hardware, it needs to be defined in 3d space (X,Y,Z)
 /// However this can be complex and tricky to measure. In many cases it's easier to just define
@@ -7,17 +11,15 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 ///
 /// ```rust
 /// use frontbox::prelude::*;
-/// 
-/// let playfield: ReferencePlane = ReferencePlane {
+///
+/// static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
 ///   // Origin is relative to the bottom left corner of the cabinet. Here the back left corner of the playfield
 ///   // is offset 1" from the left wall, 3.25" from the back wall, and 12" off the bottom fo the cabinet
-///   origin: Vec3::new(1.0, 3.25, 12.0),
+///   .origin(Vec3::new(1.0, 3.25, 12.0))
 ///   // playfield dimensions
-///   extent: Vec2::new(20.25, 45.0),
-///   // playfield is already relative to the bottom of the cabinet
-///   rotation: Quat::IDENTITY,
-///   parent: None,
-/// };
+///   .extent(Vec2::new(20.25, 45.0))
+///   // playfield is already relative to the bottom of the cabinet, so no rotation
+///   .build();
 /// ```
 ///
 /// In some cases it's useful to express a reference plane relative to an existing plane. For example, an upper playfield
@@ -26,68 +28,60 @@ use glam::{Mat4, Quat, Vec2, Vec3};
 ///
 /// ```rust
 /// use frontbox::prelude::*;
-/// # use std::sync::LazyLock;
-/// # static PLAYFIELD: LazyLock<ReferencePlane> = LazyLock::new(|| { ReferencePlane {
-///   origin: Vec3::new(1.0, 3.25, 12.0),
-///   extent: Vec2::new(20.25, 45.0),
-///   rotation: Quat::IDENTITY,
-///   parent: None,
-/// }});
-/// 
-/// let upper_playfield: ReferencePlane = ReferencePlane {
-///   parent: Some(&PLAYFIELD),
-///   origin: Vec3::new(14.25, 0.0, 4.0),
-///   extent: Vec2::new(6.0, 6.0),
-///   rotation: Quat::IDENTITY, // no rotation
-/// };
+/// # static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
+/// #   .origin(Vec3::new(1.0, 3.25, 12.0))
+/// #   .extent(Vec2::new(20.25, 45.0))
+/// #   .build();
+///
+/// static UPPER_PLAYFIELD: ReferencePlane = ReferencePlane::new("Upper playfield")
+///   .parent(&PLAYFIELD)
+///   .origin(Vec3::new(14.25, 0.0, 4.0))
+///   .extent(Vec2::new(6.0, 6.0))
+///   .build();
 /// ```
 ///
 /// Rotation can also be specified for planes that are not parallel to the bottom of the cabinet. For example, the speaker
-/// LEDs in the backbox might be defined on the plane that is the face of the backbox.
+/// LEDs in the backbox might be defined on the plane that is the face of the backbox. Planes that need runtime values,
+/// like a computed rotation or an image, can be declared in a `LazyLock`.
 ///
 /// ```rust
 /// use frontbox::prelude::*;
-/// # use std::sync::LazyLock;
-/// # static PLAYFIELD: LazyLock<ReferencePlane> = LazyLock::new(|| { ReferencePlane {
-///   origin: Vec3::new(1.0, 3.25, 12.0),
-///   extent: Vec2::new(20.25, 45.0),
-///   rotation: Quat::IDENTITY,
-///   parent: None,
-/// }});
-/// 
-/// let backbox: ReferencePlane = ReferencePlane {
-///   // specifying the top left of the backbox plane relative to the playfield. Making it relative to the playfield here
-///   // so that this can be plane stitched later
-///   origin: Vec3::new(0.0, 0.0, 32.0),
-///   extent: Vec2::new(30.0, 32.0),
-///   // Describe the backbox plane as perpendicular to the cabinet bottom
-///   rotation: Quat::from_axis_angle(Vec3::X, 90f32.to_radians()),
-///   parent: Some(&PLAYFIELD),
-/// };
+/// use std::sync::LazyLock;
+/// # static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
+/// #   .origin(Vec3::new(1.0, 3.25, 12.0))
+/// #   .extent(Vec2::new(20.25, 45.0))
+/// #   .build();
+///
+/// static BACKBOX: LazyLock<ReferencePlane> = LazyLock::new(|| {
+///   ReferencePlane::new("Backbox")
+///     // specifying the top left of the backbox plane relative to the playfield. Making it relative to the playfield
+///     // here so that this can be plane stitched later
+///     .parent(&PLAYFIELD)
+///     .origin(Vec3::new(0.0, 0.0, 32.0))
+///     .extent(Vec2::new(30.0, 32.0))
+///     // Describe the backbox plane as perpendicular to the cabinet bottom
+///     .rotation(Quat::from_axis_angle(Vec3::X, 90f32.to_radians()))
+///     // e.g. backglass art, drawn over the plane by tools such as the pin console
+///     .image("art/backglass.png")
+///     .build()
+/// });
 /// ```
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReferencePlane {
+  /// Shown wherever the plane is displayed, e.g. in the pin console
+  pub name: &'static str,
   /// Point in space (x,y,z) relative to parent
   pub origin: Vec3,
-  /// width (x), height (y)
+  /// Fixed size of the plane: width (x), height (y)
   pub extent: Vec2,
   pub rotation: Quat,
   pub parent: Option<&'static ReferencePlane>,
+  pub image: Option<PathBuf>,
 }
 
 impl ReferencePlane {
-  pub fn new(
-    origin: Vec3,
-    extent: Vec2,
-    rotation: Quat,
-    parent: Option<&'static ReferencePlane>,
-  ) -> Self {
-    Self {
-      origin,
-      extent,
-      rotation,
-      parent,
-    }
+  pub const fn new(name: &'static str) -> ReferencePlaneBuilder {
+    ReferencePlaneBuilder::new(name)
   }
 
   /// Map a given point relative to a plane to its absolute existence in the world

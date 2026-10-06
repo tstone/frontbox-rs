@@ -1,6 +1,6 @@
 use axum::extract::ws::Utf8Bytes;
-use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
 use frontbox::prelude::app_tracer::{Color, TraceEvent};
+use frontbox::prelude::{Hardware, ReferencePlane, SystemDespawned, SystemSpawned};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -9,50 +9,24 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::broadcast;
 
-use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
 
-/// How many trace records the log keeps. LED color changes aren't logged (see `apply`), but drivers and switches
-/// can still be bursty.
 const LOG_CAPACITY: usize = 2500;
-/// How many emitted events each system keeps for the systems view
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
+
 /// Messages buffered per client for events and other state. A client further behind than this gets everything again.
 const BROADCAST_CAPACITY: usize = 1024;
 /// LED updates buffered per client. LEDs are display-only and change constantly, so a client that falls behind skips
 /// them (and is sent the current colors) rather than holding up anything else.
 const LED_BROADCAST_CAPACITY: usize = 4;
 
-/// What a client gets when it connects: the full state, then what happens after it
-pub(crate) struct Subscription {
-  pub init: Utf8Bytes,
-  pub events: broadcast::Receiver<Utf8Bytes>,
-  pub leds: broadcast::Receiver<Utf8Bytes>,
-}
-
-/// Singleton tracking data coming out of AppTracer, providing to multiple console connection
 #[derive(Clone)]
 pub(crate) struct ConsoleHub {
   state: Arc<Mutex<HubState>>,
   tx: broadcast::Sender<Utf8Bytes>,
-  /// LED color updates, separate from `tx` so they never count against a client's place in the event stream
+  /// LED color updates; separate from `tx` so they never count against a client's place in the event stream
   leds_tx: broadcast::Sender<Utf8Bytes>,
 }
-
-struct HubState {
-  snapshot: Snapshot,
-  started: Instant,
-  next_seq: u64,
-  /// Image files for `snapshot.planes`, by the same index
-  plane_images: Vec<Option<PathBuf>>,
-  /// LED names by the address `LedsRGBChange` reports them with
-  led_names: LedNames,
-  /// LED colors changed since the last `flush_leds`
-  pending_leds: BTreeMap<String, Color>,
-}
-
-/// (expansion board address, breakout, index) to LED name
-type LedNames = HashMap<(u8, Option<u8>, u16), String>;
 
 impl ConsoleHub {
   pub fn new() -> Self {
@@ -72,7 +46,6 @@ impl ConsoleHub {
     }
   }
 
-  /// The current `Init` message, plus receivers for everything after it
   pub fn subscribe(&self) -> Option<Subscription> {
     let state = self.state.lock().unwrap();
     let init = serialize(&ServerMessage::Init(state.snapshot.clone()))?;
@@ -83,7 +56,6 @@ impl ConsoleHub {
     })
   }
 
-  /// Every LED's current color, for a client that skipped LED updates
   pub fn all_leds(&self) -> Option<Utf8Bytes> {
     let state = self.state.lock().unwrap();
     serialize(&ServerMessage::Leds(LedColors {
@@ -92,27 +64,24 @@ impl ConsoleHub {
   }
 
   /// Planes come from the tracer's configuration, before any client connects
-  pub fn set_planes(&self, planes: &[ConsolePlane]) {
+  pub fn set_planes(&self, planes: &[(&'static ReferencePlane, Option<&'static str>)]) {
     let mut state = self.state.lock().unwrap();
     state.snapshot.planes = planes
       .iter()
       .enumerate()
-      .map(|(index, console_plane)| {
-        let (origin, rotation) = console_plane.plane.world_transform();
+      .map(|(index, (plane, code))| {
+        let (origin, rotation) = plane.world_transform();
         PlaneView {
-          name: console_plane.name.clone(),
+          name: plane.name.to_string(),
           origin: origin.to_array(),
           rotation: rotation.to_array(),
-          extent: console_plane.plane.extent.to_array(),
-          image: console_plane
-            .image
-            .as_ref()
-            .map(|_| format!("/planes/{index}/image")),
-          code: console_plane.code.clone(),
+          extent: plane.extent.to_array(),
+          image: plane.image.as_ref().map(|_| format!("/planes/{index}/image")),
+          code: code.map(str::to_string),
         }
       })
       .collect();
-    state.plane_images = planes.iter().map(|p| p.image.clone()).collect();
+    state.plane_images = planes.iter().map(|(plane, _)| plane.image.clone()).collect();
   }
 
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
@@ -127,7 +96,10 @@ impl ConsoleHub {
       .values()
       .map(|led| {
         let exp = &led.address.exp;
-        ((exp.board_address, exp.breakout, led.address.index), led.name.clone())
+        (
+          (exp.board_address, exp.breakout, led.address.index),
+          led.name.clone(),
+        )
       })
       .collect();
     state.snapshot.hardware = Some(hardware);
@@ -227,9 +199,9 @@ impl ConsoleHub {
 /// the same thing carry more (the system name), so the bus copies would only duplicate log rows.
 fn is_redundant(event: &TraceEvent) -> bool {
   match event {
-    TraceEvent::Event { type_name: name, .. } => {
-      *name == type_name::<SystemSpawned>() || *name == type_name::<SystemDespawned>()
-    }
+    TraceEvent::Event {
+      type_name: name, ..
+    } => *name == type_name::<SystemSpawned>() || *name == type_name::<SystemDespawned>(),
     _ => false,
   }
 }
@@ -363,3 +335,25 @@ fn serialize(message: &ServerMessage) -> Option<Utf8Bytes> {
     }
   }
 }
+
+/// What a client gets when it first connects
+pub(crate) struct Subscription {
+  pub init: Utf8Bytes,
+  pub events: broadcast::Receiver<Utf8Bytes>,
+  pub leds: broadcast::Receiver<Utf8Bytes>,
+}
+
+struct HubState {
+  snapshot: Snapshot,
+  started: Instant,
+  next_seq: u64,
+  /// Image files for `snapshot.planes`, by the same index
+  plane_images: Vec<Option<PathBuf>>,
+  /// LED names by the address `LedsRGBChange` reports them with
+  led_names: LedNames,
+  /// LED colors changed since the last `flush_leds`
+  pending_leds: BTreeMap<String, Color>,
+}
+
+/// (expansion board address, breakout, index) to LED name
+type LedNames = HashMap<(u8, Option<u8>, u16), String>;

@@ -1,8 +1,8 @@
 mod console_hub;
-mod console_plane;
+mod planes;
 pub mod protocol;
 mod server;
 mod tracer;
 
-pub use console_plane::*;
+pub use planes::*;
 pub use tracer::*;

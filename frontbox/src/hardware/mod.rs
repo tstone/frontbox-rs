@@ -126,7 +126,6 @@ mod hardware_definition;
 mod hardware_query_conversions;
 mod io;
 mod led_query;
-mod location;
 mod region;
 mod switch_query;
 
@@ -139,6 +138,5 @@ pub use hardware_definition::*;
 pub use hardware_query_conversions::*;
 pub use io::*;
 pub use led_query::*;
-pub use location::*;
 pub use region::*;
 pub use switch_query::*;
