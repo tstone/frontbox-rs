@@ -54,8 +54,18 @@ impl ExpBoard {
     Self::new("48", Some(4), None, FastExpansionBoardModels::Neuron)
   }
 
-  // TODO: fp_exp0051
-  /// 2 DC motors, 127 LEDs
+  /// 2 DC motors, 128 LEDs
+  pub fn fp_exp0051(jumper_0: JumperState, jumper_1: JumperState) -> Self {
+    let address = match (jumper_0, jumper_1) {
+      // TODO: confirm
+      (JumperState::Open, JumperState::Open) => "D0",
+      (JumperState::Closed, JumperState::Open) => "D1",
+      (JumperState::Open, JumperState::Closed) => "D2",
+      (JumperState::Closed, JumperState::Closed) => "D3",
+    };
+
+    Self::new(address, Some(4), None, FastExpansionBoardModels::FpExp0061)
+  }
 
   /// 2 stepper, 128 LEDs
   pub fn fp_exp0061(jumper_0: JumperState, jumper_1: JumperState) -> Self {

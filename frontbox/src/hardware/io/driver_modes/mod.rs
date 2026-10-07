@@ -1,5 +1,6 @@
 mod delayed_pulse;
 mod flipper_hold_direct;
+mod flipper_main_3try;
 mod flipper_main_direct;
 mod long_pulse;
 mod pulse;
@@ -10,6 +11,7 @@ mod pulse_kick;
 
 pub use delayed_pulse::*;
 pub use flipper_hold_direct::*;
+pub use flipper_main_3try::*;
 pub use flipper_main_direct::*;
 pub use long_pulse::*;
 pub use pulse::*;
@@ -24,7 +26,7 @@ use crate::operator_config::GeneralizedConfigValue;
 use crate::prelude::*;
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
-/// 1. Referencing switches by name instead of index, which avoids having to calculate ID offsets
+/// 1. Referencing switches by name instead of index (delay calculating ID until flatted into the IO network)
 /// 2. Sensible defaults for every mode, overridable via builders (e.g. `DriverMode::pulse().rest(...).build()`)
 /// 3. Hardware values that can be exposed through operator config
 #[derive(Clone, Debug, serde::Serialize)]
@@ -39,6 +41,7 @@ pub enum DriverMode {
   LongPulse(LongPulseMode),
   FlipperMainDirect(FlipperMainDirectMode),
   FlipperHoldDirect(FlipperHoldDirectMode),
+  FlipperMain3Try(FlipperMain3TryMode),
 }
 
 impl DriverMode {
@@ -67,17 +70,22 @@ impl DriverMode {
     DelayedPulseModeBuilder::default()
   }
 
-  /// Mode 75 - Pulse until the trigger (flip) is deactivated or the cancel switch (flop) is activated.
-  pub fn pulse_cancel() -> PulseCancelModeBuilder {
-    PulseCancelModeBuilder::default()
-  }
-
   /// Mode 70 - Pulse for an initial time (up to 255ms), then hold for a secondary time (up to 25s).
   pub fn long_pulse() -> LongPulseModeBuilder {
     LongPulseModeBuilder::default()
   }
 
-  /// Mode 80 - Premium flipper driver for main coil.
+  /// Mode 75 - Pulse until the trigger (flip) is deactivated or the cancel switch (flop) is activated.
+  pub fn pulse_cancel() -> PulseCancelModeBuilder {
+    PulseCancelModeBuilder::default()
+  }
+
+  /// Mode 93 - Premium flipper driver for hold coil.
+  pub fn flipper_hold_direct(button_switch: &'static str) -> FlipperHoldDirectModeBuilder {
+    FlipperHoldDirectModeBuilder::new(button_switch)
+  }
+
+  /// Mode 94 - Premium flipper driver for main coil.
   pub fn flipper_main_direct(
     button_switch: &'static str,
     eos_switch: &'static str,
@@ -85,9 +93,12 @@ impl DriverMode {
     FlipperMainDirectModeBuilder::new(button_switch, eos_switch)
   }
 
-  /// Mode 81 - Premium flipper driver for hold coil.
-  pub fn flipper_hold_direct(button_switch: &'static str) -> FlipperHoldDirectModeBuilder {
-    FlipperHoldDirectModeBuilder::new(button_switch)
+  /// Mode 95 - Single coil flipper mode
+  pub fn flipper_main_3try(
+    button_switch: &'static str,
+    eos_switch: &'static str,
+  ) -> FlipperMain3TryModeBuilder {
+    FlipperMain3TryModeBuilder::new(button_switch, eos_switch)
   }
 
   pub fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
@@ -101,6 +112,7 @@ impl DriverMode {
       Self::LongPulse(m) => m.to_config(ctx),
       Self::FlipperMainDirect(m) => m.to_config(ctx),
       Self::FlipperHoldDirect(m) => m.to_config(ctx),
+      Self::FlipperMain3Try(m) => m.to_config(ctx),
     }
   }
 
@@ -115,6 +127,7 @@ impl DriverMode {
       Self::LongPulse(m) => m.generalized_config_values(),
       Self::FlipperMainDirect(m) => m.generalized_config_values(),
       Self::FlipperHoldDirect(m) => m.generalized_config_values(),
+      Self::FlipperMain3Try(m) => m.generalized_config_values(),
     }
   }
 }

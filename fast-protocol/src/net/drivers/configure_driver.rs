@@ -225,6 +225,27 @@ impl FastStringDispatch for ConfigureDriverCommand {
           secondary_pwm_power,
         )
       }
+      DriverConfig::FlipperMain3Try { 
+        button_switch, 
+        invert_button_switch, 
+        eos_switch, 
+        max_on_time, 
+        eos_hold_pwm_power, 
+        rest 
+      } => {
+        format!(
+          "DL:{:X},{:X},{:X},5F,{:X},{},{:X},{},\r",
+          self.driver_id,
+          DriverTriggerBuilder::new()
+            .invert_switch1(invert_button_switch)
+            .bits(),
+          button_switch,
+          eos_switch,
+          fast_ms_byte(max_on_time),
+          eos_hold_pwm_power,
+          fast_ms_byte(rest)
+        )
+      }
     }
   }
 }

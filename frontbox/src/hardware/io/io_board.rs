@@ -1,9 +1,13 @@
 use crate::prelude::*;
 
-/// Pre-built definitions of FAST IO board configurations
-pub struct IoBoards;
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct IoBoard {
+  pub description: &'static str,
+  pub switch_count: u16,
+  pub driver_count: u16,
+}
 
-impl IoBoards {
+impl IoBoard {
   pub fn custom(switch_count: u16, driver_count: u16) -> IoBoardBuilder {
     IoBoardBuilder {
       description: Box::leak(

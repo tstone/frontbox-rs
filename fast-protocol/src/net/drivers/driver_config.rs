@@ -86,6 +86,14 @@ pub enum DriverConfig {
     initial_pwm_power: Power,
     secondary_pwm_power: Power,
   },
+  FlipperMain3Try {
+    button_switch: usize,
+    invert_button_switch: Option<bool>,
+    eos_switch: usize,
+    max_on_time: Duration,
+    eos_hold_pwm_power: Power,
+    rest: Duration
+  }
 }
 
 impl DriverConfig {
@@ -101,6 +109,7 @@ impl DriverConfig {
       DriverConfig::PulseCancel { switch, .. } => *switch,
       DriverConfig::FlipperMainDirect { button_switch, .. } => Some(*button_switch),
       DriverConfig::FlipperHoldDirect { button_switch, .. } => Some(*button_switch),
+      DriverConfig::FlipperMain3Try { button_switch, .. } => Some(*button_switch),
     }
   }
 }

@@ -29,13 +29,6 @@ pub struct ResolvedIoNetwork {
   pub boards: Vec<ResolvedIoBoard>,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct IoBoard {
-  pub description: &'static str,
-  pub switch_count: u16,
-  pub driver_count: u16,
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ResolvedIoBoard {
