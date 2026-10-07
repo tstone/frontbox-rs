@@ -1,6 +1,5 @@
 Virtual Machine
 
-- App should probably just keep track of switches (supported), drivers, and LED state (currently LedSystem)
 - App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
 - Update the trough to periodically re-check the state of the switches and self recover if it is actually full
 
@@ -59,9 +58,10 @@ Sound
 - frontbox-sound loop point support
 - legacy hardware emulation? e.g. YM2610 FM
 
-DX
+Console
 
+- Initial state: configure switches to be latched by default (e.g. trough, captive ball)
+- Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well
-- The web console needs help and probably a real SPA
 - LedEffect1d web based designer: uses an API to render actual colors
 - LedEffect2d web based designer: same as above, but also uses LED config
