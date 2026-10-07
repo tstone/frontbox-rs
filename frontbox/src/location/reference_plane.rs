@@ -115,17 +115,28 @@ impl ReferencePlane {
 }
 
 pub trait LocationRelativeTo {
-  fn relative_to(&self, frame: &ReferencePlane) -> Vec3;
+  type Output;
+  fn relative_to(&self, frame: &ReferencePlane) -> Self::Output;
 }
 
 impl LocationRelativeTo for Vec2 {
+  type Output = Vec3;
   fn relative_to(&self, frame: &ReferencePlane) -> Vec3 {
     frame.to_absolute(Vec3::new(self.x, self.y, 0.0))
   }
 }
 
 impl LocationRelativeTo for Vec3 {
+  type Output = Vec3;
   fn relative_to(&self, frame: &ReferencePlane) -> Vec3 {
     frame.to_absolute(*self)
+  }
+}
+
+/// A set of points on a plane, e.g. from `LedLayout`, so the whole layout follows the plane's rotation
+impl LocationRelativeTo for Vec<Vec3> {
+  type Output = Vec<Vec3>;
+  fn relative_to(&self, frame: &ReferencePlane) -> Vec<Vec3> {
+    self.iter().map(|point| frame.to_absolute(*point)).collect()
   }
 }

@@ -27,9 +27,9 @@ use crate::hardware::ExpBoard;
 ///       .location(Vec2::new(2.125, 32.5).relative_to(&PLAYFIELD));
 /// 
 ///     // Cabinet lighting along the left art blade area
-///     pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::strip("lcab", 32)
+///     pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::multi("lcab")
 ///       .tag(Cabinet)
-///       .locations(&CABINET_LEFT, LedStripDirection::Forwards);
+///       .locations(LedLayout::strip(32, Vec3::new(0.5, 1.5, 0.0), 0.0, 1.5).relative_to(&CABINET_LEFT));
 ///   }
 /// }
 /// 

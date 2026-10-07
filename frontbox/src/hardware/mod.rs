@@ -88,7 +88,7 @@
 //! # use frontbox::prelude::*;
 //! hardware_defs! {
 //!   pub SWITCH: SwitchDefinition = SwitchDefinition::new("example");
-//!   pub LED_STRIP: LedDefinition = LedDefinition::multi("example", 12);
+//!   pub LED_STRIP: LedDefinition = LedDefinition::multi("example").count(12);
 //! }
 //! ```
 //!

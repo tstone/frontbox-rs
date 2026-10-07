@@ -118,12 +118,12 @@ mod hardware {
       .location(Vec2::new(12.0, 5.0).relative_to(&PLAYFIELD));
     pub SCOOP_ARROW: LedDefinition = LedDefinition::single("scoop_arrow")
       .location(Vec2::new(3.5, 13.0).relative_to(&PLAYFIELD));
-    pub INSERTS: LedDefinition = LedDefinition::multi("inserts", 5)
+    pub INSERTS: LedDefinition = LedDefinition::multi("inserts")
       .locations((0..5).map(|i| Vec2::new(10.1, 25.5 + i as f32 * 2.1).relative_to(&PLAYFIELD)));
-    pub BACKBOX_GI: LedDefinition = LedDefinition::multi("backbox_gi", 8).locations(row(&BACKBOX, 8, 27.5));
-    pub CABINET_LEFT_STRIP: LedDefinition = LedDefinition::multi("cabinet_left_strip", 14)
+    pub BACKBOX_GI: LedDefinition = LedDefinition::multi("backbox_gi").locations(row(&BACKBOX, 8, 27.5));
+    pub CABINET_LEFT_STRIP: LedDefinition = LedDefinition::multi("cabinet_left_strip")
       .locations(row(&CABINET_LEFT, 14, 3.0));
-    pub CABINET_RIGHT_STRIP: LedDefinition = LedDefinition::multi("cabinet_right_strip", 14)
+    pub CABINET_RIGHT_STRIP: LedDefinition = LedDefinition::multi("cabinet_right_strip")
       .locations(row(&CABINET_RIGHT, 14, 3.0));
   }
 }
