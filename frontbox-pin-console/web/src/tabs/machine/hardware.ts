@@ -1,7 +1,7 @@
 import { triggerSwitches } from '../../lib/drivers'
 import { ledName } from '../../lib/format'
 import { hexAddress } from '../../lib/hardwareConfig'
-import { ledColor, ledColorKnown } from '../../lib/leds'
+import { LED_OFF, ledColor, ledColorKnown } from '../../lib/leds'
 import { type ConsoleState, driverState } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { Hardware } from '../../types/generated/Hardware'
@@ -146,7 +146,7 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
             detail: null,
             state: () => (ledColorKnown(led.name) ? (ledColor(led.name) ?? 'Off') : null),
             active: () => ledColor(led.name) !== null,
-            color: () => ledColor(led.name),
+            color: () => ledColor(led.name) ?? (ledColorKnown(led.name) ? LED_OFF : null),
             ref: { kind: 'led', led },
           }
         })

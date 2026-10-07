@@ -4,7 +4,8 @@ import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import { shortName } from '../lib/format'
-import { connect, type ConnectionStatus } from './socket'
+import type { ClientMessage } from '../types/generated/ClientMessage'
+import { type Connection, connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
 const LOG_CAPACITY = 2500
@@ -39,9 +40,19 @@ const [state, setState] = createStore<ConsoleState>({
 /** Read-only: it only changes from server messages */
 export const machine = state
 
+let connection: Connection | null = null
+
 /** Returns a cleanup function */
 export function startConsole(): () => void {
-  return connect(handleMessage, (connection) => setState('connection', connection))
+  connection = connect(handleMessage, (status) => setState('connection', status))
+  return () => {
+    connection?.close()
+    connection = null
+  }
+}
+
+export function sendToMachine(message: ClientMessage) {
+  connection?.send(message)
 }
 
 function handleMessage(message: ServerMessage) {

@@ -2,9 +2,10 @@ import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onM
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
-import { ledColor } from '../../lib/leds'
+import { LED_OFF, ledColor } from '../../lib/leds'
 import { type ConsoleState, machine } from '../../state/console'
 import { cancelPlacing, movedPositions, place, placing, type Position } from '../../state/placement'
+import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
 
@@ -158,12 +159,30 @@ function relativeCode(plane: PlaneView, position: Position): string {
 }
 
 type Menu = { x: number; y: number; point: Point }
+/** Overlapping switches to choose between, at the pointer */
+type Chooser = { x: number; y: number; switches: Point[] }
+
+/** How much larger a switch held from this browser is drawn */
+const HELD_SCALE = 1.4
+
+const switchId = (point: Point): number | null => (point.kind === 'Switch' ? Number(point.key.slice('switch:'.length)) : null)
+
+/** A dot's hover label, including what a left click does to it */
+function describe(point: Point): string {
+  const id = switchId(point)
+  if (id === null) return `${point.name} (${point.kind})`
+  const action = latched[id] ? 'click to open' : 'hold to close, shift-click to latch'
+  return `${point.name} (Switch): ${action}`
+}
 
 export default function PlayfieldView() {
   let container!: HTMLDivElement
   const data = createMemo(() => sceneData(machine), undefined, { equals: (a, b) => a.signature === b.signature })
   const [hovered, setHovered] = createSignal<{ name: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = createSignal<Menu | null>(null)
+  const [chooser, setChooser] = createSignal<Chooser | null>(null)
+  // set once the scene is up; used by the chooser
+  let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
   const [layers, setLayers] = createSignal(readLayers())
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
@@ -195,6 +214,7 @@ export default function PlayfieldView() {
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.setPixelRatio(window.devicePixelRatio)
     container.prepend(renderer.domElement)
+    const canvas = renderer.domElement
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 2000)
@@ -232,13 +252,13 @@ export default function PlayfieldView() {
     const dotGeometry = new THREE.SphereGeometry(DOT_SIZE / 2, 16, 12)
     const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8 })
     // theme colors, read once per theme change rather than per dot
-    const palette = { dot: '', moved: '', hover: '' }
+    const palette = { dot: '', moved: '', hover: '', closed: '' }
     const planeMaterials: THREE.MeshBasicMaterial[] = []
     const lineMaterials: THREE.LineBasicMaterial[] = []
     let fitted = false
     let hoveredDot: THREE.Mesh | null = null
     // the per-LED color effects for the current dots, torn down on a rebuild
-    let disposeLedEffects: (() => void) | undefined
+    let disposeDotEffects: (() => void) | undefined
 
     // the dot following the cursor while placing hardware
     const ghost = new THREE.Mesh(dotGeometry, ghostMaterial)
@@ -247,19 +267,21 @@ export default function PlayfieldView() {
     let ghostPosition: Position | null = null
 
     /**
-     * Each dot has its own material so LEDs can show their own colors. Hovered wins, then moved (not yet in the
-     * machine's code), then an LED's live color, then the default gray.
+     * Each dot has its own material so LEDs and switches can show their own state. Hovered wins, then moved (not yet
+     * in the machine's code), then a closed switch or an LED's live color (black when it has none), then the default
+     * gray. A switch held from this browser is drawn larger, so a press shows before the machine confirms it.
      */
     function paint(dot: THREE.Mesh) {
       const point = dots.get(dot)
       if (!point) return
-      const color =
-        dot === hoveredDot
-          ? palette.hover
-          : point.moved
-            ? palette.moved
-            : ((point.kind === 'LED' && ledColor(point.key.slice('led:'.length))) || palette.dot)
+      const id = switchId(point)
+      const live =
+        id !== null
+          ? isSwitchClosed(id) && palette.closed
+          : point.kind === 'LED' && (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+      const color = dot === hoveredDot ? palette.hover : point.moved ? palette.moved : live || palette.dot
       ;(dot.material as THREE.MeshBasicMaterial).color.set(color)
+      dot.scale.setScalar(id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
     }
 
     function texture(url: string) {
@@ -281,6 +303,7 @@ export default function PlayfieldView() {
       palette.dot = css('--hw-dot')
       palette.moved = css('--warn')
       palette.hover = css('--accent')
+      palette.closed = css('--ok')
       ghostMaterial.color.set(css('--accent'))
       untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
       render()
@@ -336,11 +359,11 @@ export default function PlayfieldView() {
         content.add(dot)
       }
 
-      // one small effect per LED dot, so a color change recolors only that dot
-      disposeLedEffects?.()
-      disposeLedEffects = createRoot((dispose) => {
+      // one small effect per LED and switch dot, so a change repaints only that dot
+      disposeDotEffects?.()
+      disposeDotEffects = createRoot((dispose) => {
         dots.forEach((point, dot) => {
-          if (point.kind !== 'LED') return
+          if (point.kind === 'Driver') return
           createEffect(() => {
             paint(dot as THREE.Mesh)
             render()
@@ -396,12 +419,18 @@ export default function PlayfieldView() {
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, camera)
     }
-    const dotUnder = (e: MouseEvent) => {
+    /** Every shown dot under the pointer, nearest first. Hidden dots can't be hovered or clicked. */
+    const dotsUnder = (e: MouseEvent) => {
       aim(e)
-      // hidden dots can't be hovered or right-clicked
       const shown = [...dots.keys()].filter((dot) => dot.visible)
-      return raycaster.intersectObjects(shown)[0]?.object as THREE.Mesh | undefined
+      return raycaster.intersectObjects(shown).map((hit) => hit.object as THREE.Mesh)
     }
+    const dotUnder = (e: MouseEvent) => dotsUnder(e)[0]
+    /** The switches under the pointer: the only dots a left click acts on */
+    const switchesUnder = (e: MouseEvent) =>
+      dotsUnder(e)
+        .map((dot) => dots.get(dot)!)
+        .filter((point) => switchId(point) !== null)
 
     function setHoveredDot(dot: THREE.Mesh | null) {
       if (dot === hoveredDot) return
@@ -430,10 +459,32 @@ export default function PlayfieldView() {
         render()
         return
       }
-      const hit = dotUnder(e)
-      setHoveredDot(hit ?? null)
-      const point = hit && dots.get(hit)
-      setHovered(point ? { name: `${point.name} (${point.kind})`, x: e.clientX, y: e.clientY } : null)
+      // everything under the pointer is listed, so overlapping hardware is visible before clicking
+      const hits = dotsUnder(e)
+      setHoveredDot(hits[0] ?? null)
+      const label = hits.map((dot) => describe(dots.get(dot)!)).join(' · ')
+      setHovered(hits.length > 0 ? { name: label, x: e.clientX, y: e.clientY } : null)
+      canvas.style.cursor = hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
+    }
+
+    /**
+     * A left press on a switch closes it until the press ends; with shift it latches closed (or opens, if latched).
+     * Listened for on the container before it reaches the canvas, so a press on a switch never starts an orbit.
+     * When switches overlap, a chooser opens instead.
+     */
+    function onPressStart(e: PointerEvent) {
+      if (e.target !== canvas || e.button !== 0 || placing()) return
+      const switches = switchesUnder(e)
+      if (switches.length === 0) return
+      e.stopPropagation()
+      setMenu(null)
+      if (switches.length > 1) {
+        const rect = container.getBoundingClientRect()
+        setHovered(null)
+        setChooser({ x: e.clientX - rect.left, y: e.clientY - rect.top, switches })
+        return
+      }
+      startPress(switchId(switches[0])!, e.shiftKey)
     }
 
     function onPointerLeave() {
@@ -447,6 +498,7 @@ export default function PlayfieldView() {
     function onPointerDown(e: PointerEvent) {
       pressedAt = { x: e.clientX, y: e.clientY }
       setMenu(null)
+      setChooser(null)
     }
     function onPointerUp(e: PointerEvent) {
       const key = placing()
@@ -467,13 +519,33 @@ export default function PlayfieldView() {
       setMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, point })
     }
 
+    // A press is released on pointer-up anywhere, a cancelled pointer, or the window losing focus
+    const endPress = () => {
+      release()
+      window.removeEventListener('pointerup', endPress)
+      window.removeEventListener('pointercancel', endPress)
+      window.removeEventListener('blur', endPress)
+    }
+    startPress = (id, latch) => {
+      // any click on a latched switch opens it
+      if (latch || latched[id]) {
+        toggleLatch(id)
+        return
+      }
+      pressSwitch(id)
+      window.addEventListener('pointerup', endPress)
+      window.addEventListener('pointercancel', endPress)
+      window.addEventListener('blur', endPress)
+    }
+
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       if (placing()) cancelPlacing()
       setMenu(null)
+      setChooser(null)
     }
 
-    const canvas = renderer.domElement
+    container.addEventListener('pointerdown', onPressStart, { capture: true })
     canvas.addEventListener('pointermove', onPointerMove)
     canvas.addEventListener('pointerleave', onPointerLeave)
     canvas.addEventListener('pointerdown', onPointerDown)
@@ -515,7 +587,9 @@ export default function PlayfieldView() {
         }
       })
       window.removeEventListener('keydown', onKeyDown)
-      disposeLedEffects?.()
+      container.removeEventListener('pointerdown', onPressStart, { capture: true })
+      endPress()
+      disposeDotEffects?.()
       resizeObserver.disconnect()
       themeObserver.disconnect()
       darkQuery.removeEventListener('change', applyTheme)
@@ -568,13 +642,49 @@ export default function PlayfieldView() {
             <p class="dot-menu-title">
               {m().point.name} ({m().point.kind})
             </p>
+            {/* switch ids start at 0, so the id can't be the `when` itself */}
+            <Show when={switchId(m().point) !== null}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const id = switchId(m().point)!
+                  setSwitchClosed(id, !isSwitchClosed(id))
+                  setMenu(null)
+                }}
+              >
+                {isSwitchClosed(switchId(m().point)!) ? 'Open switch' : 'Close switch'}
+              </button>
+            </Show>
             <button type="button" role="menuitem" onClick={() => copy(rustVec3(m().point.location))}>
               Copy Vec3
             </button>
             <For each={data().planes}>
               {(plane) => (
                 <button type="button" role="menuitem" onClick={() => copy(relativeCode(plane, m().point.location))}>
-                  Copy relative to {plane.name}
+                  Copy Vec3 relative to {plane.name}
+                </button>
+              )}
+            </For>
+          </div>
+        )}
+      </Show>
+      <Show when={chooser()}>
+        {(c) => (
+          <div class="dot-menu" role="menu" aria-label="Choose a switch" style={{ left: `${c().x}px`, top: `${c().y}px` }}>
+            <p class="dot-menu-title">Switches here</p>
+            <For each={c().switches}>
+              {(point) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  // pressing here acts like pressing the dot: held until release, shift to latch
+                  onPointerDown={(e) => {
+                    startPress(switchId(point)!, e.shiftKey)
+                    setChooser(null)
+                  }}
+                >
+                  {point.name}
                 </button>
               )}
             </For>

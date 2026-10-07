@@ -103,8 +103,9 @@ impl Default for WebTracer {
 }
 
 impl AppTracer for WebTracer {
-  fn init(&mut self, hardware: &Hardware) {
+  fn init(&mut self, hardware: &Hardware, control: mpsc::UnboundedSender<TracerControlEvent>) {
     // the app calls this at boot, inside its runtime
+    self.hub.set_control(control);
     self.start();
     self.hub.set_hardware(hardware.clone());
   }

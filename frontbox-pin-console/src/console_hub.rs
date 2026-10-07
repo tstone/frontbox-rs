@@ -1,5 +1,5 @@
 use axum::extract::ws::Utf8Bytes;
-use frontbox::prelude::app_tracer::{Color, TraceEvent};
+use frontbox::prelude::app_tracer::{Color, TraceEvent, TracerControlEvent};
 use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
 use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
@@ -38,6 +38,7 @@ impl ConsoleHub {
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
+        control: None,
         led_names: HashMap::new(),
         pending_leds: BTreeMap::new(),
       })),
@@ -85,6 +86,29 @@ impl ConsoleHub {
       })
       .collect();
     state.plane_images = planes.iter().map(|p| p.plane.image.clone()).collect();
+  }
+
+  pub fn set_control(&self, control: mpsc::UnboundedSender<TracerControlEvent>) {
+    self.state.lock().unwrap().control = Some(control);
+  }
+
+  /// Close or open a switch in the app, as if it were pressed on the machine. The change shows up for clients when the
+  /// app traces it back, like any other switch change.
+  pub fn set_switch(&self, switch_id: usize, closed: bool) {
+    let state = self.state.lock().unwrap();
+    let known = state
+      .snapshot
+      .hardware
+      .as_ref()
+      .is_some_and(|hw| hw.switches.by_id(&switch_id).is_some());
+    if !known {
+      log::warn!(target: "frontbox::console", "Ignoring a request to set unknown switch {switch_id}");
+      return;
+    }
+    let Some(control) = &state.control else {
+      return;
+    };
+    let _ = control.send(switch_control(switch_id, closed));
   }
 
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
@@ -352,6 +376,8 @@ struct HubState {
   next_seq: u64,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
+  /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.
+  control: Option<mpsc::UnboundedSender<TracerControlEvent>>,
   led_names: LedNames,
   /// LED colors changed since the last `flush_leds`
   pending_leds: BTreeMap<String, Color>,
@@ -359,3 +385,12 @@ struct HubState {
 
 /// (expansion board address, breakout, index) to LED name
 type LedNames = HashMap<(u8, Option<u8>, u16), String>;
+
+/// The app's control event for setting a switch from the console
+fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
+  if closed {
+    TracerControlEvent::CloseSwitch { switch_id }
+  } else {
+    TracerControlEvent::OpenSwitch { switch_id }
+  }
+}

@@ -4,6 +4,7 @@ use crate::hardware::*;
 use crate::machine::*;
 use crate::operator_config::OperatorConfig;
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_tracer::TracerControlEvent;
 use crate::prelude::*;
 use crate::provided::WatchdogSystem;
 use tokio::sync::mpsc;
@@ -68,6 +69,7 @@ impl App {
   pub async fn run(mut self) {
     let app_config = AppConfig::from_boot_config(&self.boot_config);
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
+    let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
     self.operator_config.app_sender = Some(app_sender.clone());
 
     let (boot_snapshot, machine_sender) = match self.boot_config.platform {
@@ -75,7 +77,10 @@ impl App {
         let (mut machine, hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
 
-        self.tracers.iter_mut().for_each(|tr| tr.init(&hardware));
+        self
+          .tracers
+          .iter_mut()
+          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
         let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
         machine.on_pre_run(&snapshot).await;
 
@@ -90,7 +95,10 @@ impl App {
         let (mut machine, hardware) =
           vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
 
-        self.tracers.iter_mut().for_each(|tr| tr.init(&hardware));
+        self
+          .tracers
+          .iter_mut()
+          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
         let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
         machine.on_pre_run(&snapshot).await;
 
@@ -104,8 +112,9 @@ impl App {
     };
 
     // These systems need to appear first because other systems expect them to be present on startup
-    let bridge = MachineSystem::new(machine_sender, app_sender.clone());
-    self.systems.insert(0, SystemContainer::new(bridge));
+    let bridge = SystemContainer::new(MachineSystem::new(machine_sender, app_sender.clone()));
+    let machine_system_id = bridge.id();
+    self.systems.insert(0, bridge);
     self
       .systems
       .push(SystemContainer::new(WatchdogSystem::new()));
@@ -117,6 +126,8 @@ impl App {
       self.tracers,
       app_sender,
       app_receiver,
+      tracer_ctl_receiver,
+      machine_system_id,
     )
     .await;
   }

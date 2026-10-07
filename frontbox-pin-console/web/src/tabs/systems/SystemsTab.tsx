@@ -20,7 +20,8 @@ export default function SystemsTab() {
       kind: 'group',
       group,
       children: group.systems.map((system) => ({
-        id: `system:${system.id}`,
+        // include the group: systems spawned into several groups (e.g. one per player) can share an id
+        id: `system:${group.key}:${system.id}`,
         label: shortName(system.name),
         kind: 'system',
         group,
@@ -50,32 +51,37 @@ export default function SystemsTab() {
 
   return (
     <Splitter.Root class="systems-tab" panels={[{ id: 'tree', minSize: 15 }, { id: 'detail' }]} defaultSize={[30, 70]}>
-      <Splitter.Panel id="tree" class="tree-panel pane">
-        <Show when={groups().length > 0} fallback={<p class="empty">No systems yet.</p>}>
-          <TreeView.Root
-            collection={collection()}
-            selectionMode="single"
-            selectedValue={selected() ? [selected()!] : []}
-            onSelectionChange={(details) => setSelected(details.selectedValue[0] ?? null)}
-            expandedValue={expanded()}
-            onExpandedChange={(details) =>
-              setCollapsed(groupIds().filter((id) => !details.expandedValue.includes(id)))
-            }
-          >
-            <TreeView.Tree>
-              <For each={groups()}>{(group, index) => <GroupBranch node={group} indexPath={[index()]} />}</For>
-            </TreeView.Tree>
-          </TreeView.Root>
-        </Show>
+      {/* Ark sets overflow: hidden inline on panels, so each scrolls an inner element instead */}
+      <Splitter.Panel id="tree">
+        <div class="tree-panel pane">
+          <Show when={groups().length > 0} fallback={<p class="empty">No systems yet.</p>}>
+            <TreeView.Root
+              collection={collection()}
+              selectionMode="single"
+              selectedValue={selected() ? [selected()!] : []}
+              onSelectionChange={(details) => setSelected(details.selectedValue[0] ?? null)}
+              expandedValue={expanded()}
+              onExpandedChange={(details) =>
+                setCollapsed(groupIds().filter((id) => !details.expandedValue.includes(id)))
+              }
+            >
+              <TreeView.Tree>
+                <For each={groups()}>{(group, index) => <GroupBranch node={group} indexPath={[index()]} />}</For>
+              </TreeView.Tree>
+            </TreeView.Root>
+          </Show>
+        </div>
       </Splitter.Panel>
       <Splitter.ResizeTrigger id="tree:detail" aria-label="Resize system tree" />
-      <Splitter.Panel id="detail" class="detail-panel pane">
-        {/* keyed, so the detail re-renders when the selection moves to a different node */}
-        <Show when={selectedNode()} keyed fallback={<p class="empty">Select a system to see more about it.</p>}>
-          {(node) =>
-            node.kind === 'system' ? <SystemDetail system={node.system} group={node.group} /> : <GroupDetail group={node.group} />
-          }
-        </Show>
+      <Splitter.Panel id="detail">
+        <div class="detail-panel pane">
+          {/* keyed, so the detail re-renders when the selection moves to a different node */}
+          <Show when={selectedNode()} keyed fallback={<p class="empty">Select a system to see more about it.</p>}>
+            {(node) =>
+              node.kind === 'system' ? <SystemDetail system={node.system} group={node.group} /> : <GroupDetail group={node.group} />
+            }
+          </Show>
+        </div>
       </Splitter.Panel>
     </Splitter.Root>
   )

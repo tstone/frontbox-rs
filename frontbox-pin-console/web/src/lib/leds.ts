@@ -35,3 +35,6 @@ export function ledColor(name: string): string | null {
 
 /** Whether the console has seen a color for this LED, so "off" can be told apart from "unknown" */
 export const ledColorKnown = (name: string) => machine.led_colors[name] !== undefined
+
+/** How an LED with no color (off, or not seen yet) is drawn */
+export const LED_OFF = '#000000'

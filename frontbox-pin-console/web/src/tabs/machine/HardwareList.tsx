@@ -5,6 +5,7 @@ import InfoTip from '../../components/InfoTip'
 import Tip from '../../components/Tip'
 import { machine } from '../../state/console'
 import { cancelPlacing, movedPositions, placing, resetPosition, startPlacing } from '../../state/placement'
+import { isSwitchClosed, setSwitchClosed } from '../../state/switchControl'
 import { defaultHardwareKinds, type HardwareKind, hardwareKinds, type HardwareRow, hardwareRows } from './hardware'
 import HardwareDetail from './HardwareDetail'
 
@@ -114,6 +115,9 @@ function HardwareItem(props: { row: HardwareRow }) {
       </Accordion.ItemTrigger>
       <Accordion.ItemContent>
         <HardwareDetail item={row.ref} />
+        <Show when={row.ref.kind === 'switch' ? row.ref.switch : null}>
+          {(sw) => <SwitchControl id={sw().id} />}
+        </Show>
         <Show when={['driver', 'switch', 'led'].includes(row.ref.kind)}>
           <PositionControl hwKey={row.key} />
         </Show>
@@ -142,6 +146,17 @@ function PositionControl(props: { hwKey: string }) {
             ? 'Moved here only. Right-click its dot to copy the coordinates into your code.'
             : ''}
       </span>
+    </div>
+  )
+}
+
+/** Closes (latched) or opens a switch on the machine, like the 3D view's right-click menu */
+function SwitchControl(props: { id: number }) {
+  return (
+    <div class="position-control">
+      <button type="button" class="action" onClick={() => setSwitchClosed(props.id, !isSwitchClosed(props.id))}>
+        {isSwitchClosed(props.id) ? 'Open switch' : 'Close switch'}
+      </button>
     </div>
   )
 }

@@ -5,10 +5,12 @@ use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use rust_embed::RustEmbed;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
+use crate::protocol::ClientMessage;
 
 /// The built SolidJS app
 #[derive(RustEmbed)]
@@ -41,6 +43,8 @@ async fn ws_handler(ws: WebSocketUpgrade, State(hub): State<ConsoleHub>) -> Resp
 }
 
 async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
+  // outlives resyncs; dropped when the session ends for any reason
+  let mut held = HeldSwitches::new(hub.clone());
   'resync: loop {
     let Some(Subscription {
       init,
@@ -87,8 +91,8 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           }
         }
 
-        // clients don't send anything yet; reading is how a disconnect is noticed
         incoming = socket.recv() => match incoming {
+          Some(Ok(Message::Text(text))) => held.handle(&text),
           Some(Ok(_)) => {}
           _ => return,
         },
@@ -129,5 +133,43 @@ async fn static_handler(uri: Uri) -> Response {
       "Web console has not been built. Run `npm run build` in frontbox-pin-console/web.",
     )
       .into_response(),
+  }
+}
+
+/// Switches a client has closed. When its session ends they're opened again, so a closed tab can't leave a switch
+/// held closed in the game.
+struct HeldSwitches {
+  hub: ConsoleHub,
+  closed: HashSet<usize>,
+}
+
+impl HeldSwitches {
+  fn new(hub: ConsoleHub) -> Self {
+    Self {
+      hub,
+      closed: HashSet::new(),
+    }
+  }
+
+  fn handle(&mut self, text: &str) {
+    match serde_json::from_str::<ClientMessage>(text) {
+      Ok(ClientMessage::SetSwitch { switch_id, closed }) => {
+        if closed {
+          self.closed.insert(switch_id);
+        } else {
+          self.closed.remove(&switch_id);
+        }
+        self.hub.set_switch(switch_id, closed);
+      }
+      Err(err) => log::warn!(target: "frontbox::console", "Ignoring a message from a console client: {err}"),
+    }
+  }
+}
+
+impl Drop for HeldSwitches {
+  fn drop(&mut self) {
+    for switch_id in self.closed.drain() {
+      self.hub.set_switch(switch_id, false);
+    }
   }
 }

@@ -74,3 +74,11 @@ pub struct PlaneView {
 pub struct LedColors {
   pub colors: BTreeMap<String, Color>,
 }
+
+/// Messages from the web app to the console server
+#[derive(Clone, serde::Deserialize, TS)]
+#[serde(tag = "type")]
+pub enum ClientMessage {
+  /// Hold a switch closed, or let it open, as if it were pressed on the machine
+  SetSwitch { switch_id: usize, closed: bool },
+}

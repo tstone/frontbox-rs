@@ -1,6 +1,6 @@
 use frontbox::prelude::Hardware;
 use frontbox::prelude::app_tracer::TraceEvent;
-use frontbox_pin_console::protocol::ServerMessage;
+use frontbox_pin_console::protocol::{ClientMessage, ServerMessage};
 use ts_rs::{Config, TS};
 
 fn main() {
@@ -11,4 +11,5 @@ fn main() {
   TraceEvent::export_all(&cfg).unwrap();
   Hardware::export_all(&cfg).unwrap();
   ServerMessage::export_all(&cfg).unwrap();
+  ClientMessage::export_all(&cfg).unwrap();
 }

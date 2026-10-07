@@ -1,14 +1,12 @@
 import type { TraceRecord } from '../types/generated/TraceRecord'
 
 /**
- * The last path segment of a Rust type name, keeping any generics.
- * `lotko::hardware::captive_ball::CaptiveBallSystem` becomes `CaptiveBallSystem`.
+ * A Rust type name with every module path dropped, generics included.
+ * `lotko::modes::ExclusiveModeQualification<lotko::modes::ApexTerraces>` becomes
+ * `ExclusiveModeQualification<ApexTerraces>`.
  */
 export function shortName(typeName: string): string {
-  const generics = typeName.indexOf('<')
-  const path = generics === -1 ? typeName : typeName.slice(0, generics)
-  const short = path.slice(path.lastIndexOf('::') + 2)
-  return generics === -1 ? short : `${short}<…>`
+  return typeName.replace(/(?:[A-Za-z_][A-Za-z0-9_]*::)+/g, '')
 }
 
 export type TraceCategory = 'event' | 'switch' | 'driver' | 'system'
