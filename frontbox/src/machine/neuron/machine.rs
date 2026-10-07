@@ -54,11 +54,20 @@ impl Neuron {
     }
   }
 
-  fn handle_switch_event(&mut self, switch_id: usize, state: SwitchState) {
-    self
-      .app_sender
-      .send(AppMessage::SwitchStateChange(switch_id, state))
-      .ok();
+  fn handle_event(app_sender: &mpsc::UnboundedSender<AppMessage>, event: EventResponse) {
+    match event {
+      EventResponse::Switch { switch_id, state } => {
+        app_sender
+          .send(AppMessage::SwitchStateChange(switch_id, state))
+          .ok();
+      }
+    }
+  }
+
+  fn flush_queued_events(&mut self) {
+    for event in self.io_port.take_queued_events() {
+      Self::handle_event(&self.app_sender, event);
+    }
   }
 
   async fn refresh_switch_state(&mut self) {
@@ -69,6 +78,8 @@ impl Neuron {
     {
       Ok(resp) => {
         if let SwitchReportResponse::SwitchReport { switches } = resp {
+          // Make sure all switch events are queued with the app run loop before sending the switch state report
+          self.flush_queued_events();
           self
             .app_sender
             .send(AppMessage::SyncSwitchStates(switches))
@@ -103,15 +114,12 @@ impl Machine for Neuron {
     loop {
       tokio::select! {
         Some(event) = self.io_port.read_event() => {
-          match event {
-            EventResponse::Switch { switch_id, state } => {
-              self.handle_switch_event(switch_id, state);
-            }
-          }
+          Self::handle_event(&self.app_sender, event);
         }
 
         Some(msg) = self.machine_receiver.recv() => {
           self.process_messages(msg).await;
+          self.flush_queued_events();
         }
       }
     }

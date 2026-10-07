@@ -20,8 +20,11 @@ pub struct SerialInterface {
   port_name: String,
   reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
   writer: WriteHalf<SerialStream>,
+  // if events are encountered while attempting to read a response, they are queued here for later retrieval
+  event_queue: VecDeque<EventResponse>,
+  // if a response is encountered that is not the expected response, it is queued here for later retrieval
   response_queue: VecDeque<QueuedResponse>,
-  queue_ttl: Duration,
+  response_ttl: Duration,
 }
 
 impl SerialInterface {
@@ -58,60 +61,56 @@ impl SerialInterface {
       reader: framed_reader,
       writer,
       response_queue: VecDeque::new(),
-      queue_ttl: Duration::from_secs(2), // after this time unclaimed messages fall out of the queue
+      event_queue: VecDeque::new(),
+      response_ttl: Duration::from_secs(4), // after this time unclaimed messages fall out of the queue
     })
   }
 
   pub async fn read_event(&mut self) -> Option<EventResponse> {
-    // Attempt to find the first seen event which parses as an EventResponse
-    // This could have been seen by the dispatch or request methods
-    if let Some(event) = self.find_event_in_queue() {
+    // First check if there is an event already in the queue. This may have happened by a prior call to
+    // query or command that attempted to get a response but actually received an event
+    if let Some(event) = self.event_queue.pop_front() {
       return Some(event);
     }
 
-    // next poll the serial port for events until we find one that parses successfully
-    // if data is read push it onto the queue. It might be an event or response to command
-    // the next call to read_event will parse it if so
-    match self.read_from_port().await {
-      Some(Ok(raw)) => {
-        self.response_queue.push_back(QueuedResponse {
-          raw,
-          received_at: std::time::Instant::now(),
-        });
-        return self.find_event_in_queue();
+    // If none queued, read from the serial port until an event arrives
+    loop {
+      match self.read_from_port().await {
+        Some(Ok(raw)) => {
+          if let Some(event) = EventResponse::parse(&raw).ok() {
+            return Some(event);
+          } else {
+            self.response_queue.push_back(QueuedResponse {
+              raw,
+              received_at: std::time::Instant::now(),
+            });
+          }
+        }
+        Some(Err(e)) => {
+          log::error!(target: "frontbox::serial", "Serial read error: {}", e);
+          return None;
+        }
+        None => return None,
       }
-      Some(Err(e)) => {
-        log::error!(target: "frontbox::serial", "Serial read error: {}", e);
-      }
-      None => {}
     }
-
-    None
   }
 
-  fn find_event_in_queue(&mut self) -> Option<EventResponse> {
-    self.prune_queue();
-
-    // Not every message in the queue will be an event. It could be a response waiting for a request to parse it.
-    // Search the queue for what validly parses
-    if let Some(pos) = self
-      .response_queue
-      .iter()
-      .position(|r| EventResponse::parse(&r.raw).is_ok())
-    {
-      let entry = self.response_queue.remove(pos).unwrap();
-      return EventResponse::parse(&entry.raw).ok();
-    }
-    None
+  pub fn take_queued_events(&mut self) -> impl Iterator<Item = EventResponse> + '_ {
+    self.event_queue.drain(..)
   }
 
   /// Responses in the queue can be one of three things: (a) an event from hardware, e.g. switch hit, (b) a response to a command that was waiting for a response,
   /// or (c) some part of a response that is neither. Items of C fill up the queue over time. If a prefix shows up frequently here, it might need to be sent as
   /// request instead of dispatch.
-  fn prune_queue(&mut self) {
+  fn prune_queue(&mut self, prefix: &str) {
     let now = std::time::Instant::now();
     self.response_queue.retain(|r| {
-      let expired = now.duration_since(r.received_at) > self.queue_ttl;
+      // drop any responses that match the prefix, since they are now being claimed
+      if r.raw.prefix.to_lowercase() == prefix {
+        return false;
+      }
+
+      let expired = now.duration_since(r.received_at) > self.response_ttl;
       if expired {
         log::trace!(
           target: "frontbox::serial",
@@ -173,6 +172,7 @@ impl SerialInterface {
     parse: impl Fn(RawResponse) -> Result<R, FastResponseError>,
   ) -> Result<R, FastResponseError> {
     let prefix = prefix.to_lowercase();
+    self.prune_queue(&prefix);
 
     if let Some(pos) = self
       .response_queue
@@ -189,6 +189,8 @@ impl SerialInterface {
           Some(Ok(response)) => {
             if response.prefix.to_lowercase() == prefix {
               return parse(response);
+            } else if let Some(event) = EventResponse::parse(&response).ok() {
+              self.event_queue.push_back(event);
             } else {
               self.response_queue.push_back(QueuedResponse {
                 raw: response,

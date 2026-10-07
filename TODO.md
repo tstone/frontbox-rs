@@ -1,5 +1,3 @@
-Virtual Machine
-
 - App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
 - Update the trough to periodically re-check the state of the switches and self recover if it is actually full
 
