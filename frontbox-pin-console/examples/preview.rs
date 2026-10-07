@@ -135,7 +135,7 @@ async fn main() {
     .init();
 
   let io_network = IoNetwork::new(vec![
-    IoBoards::io_3208()
+    IoBoard::io_3208()
       .wire_switch(0, &START_BUTTON)
       .wire_switch(1, &LEFT_FLIPPER_BUTTON)
       .wire_switch(2, &TROUGH_1)
@@ -296,9 +296,18 @@ impl System for LightShow {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     ctx.declare_leds(&LANE_1.q(), ColorSequence::solid(Rgba::red()));
     ctx.declare_leds(&LANE_2.q(), ColorSequence::solid(Rgba::blue()));
-    ctx.declare_leds(&INSERTS.q(), ColorSequence::fade(Rgba::yellow(), Rgba::red()));
-    ctx.declare_leds(&CABINET_LEFT_STRIP.q(), ColorSequence::fade(Rgba::blue(), Rgba::purple()));
-    ctx.declare_leds(&CABINET_RIGHT_STRIP.q(), ColorSequence::fade(Rgba::purple(), Rgba::blue()));
+    ctx.declare_leds(
+      &INSERTS.q(),
+      ColorSequence::fade(Rgba::yellow(), Rgba::red()),
+    );
+    ctx.declare_leds(
+      &CABINET_LEFT_STRIP.q(),
+      ColorSequence::fade(Rgba::blue(), Rgba::purple()),
+    );
+    ctx.declare_leds(
+      &CABINET_RIGHT_STRIP.q(),
+      ColorSequence::fade(Rgba::purple(), Rgba::blue()),
+    );
     ctx.declare_leds(&BACKBOX_GI.q(), ColorSequence::solid(Rgba::white()));
   }
 
@@ -308,7 +317,10 @@ impl System for LightShow {
     ctx.declare_leds(&SHOOT_AGAIN.q(), ColorSequence::solid(color));
     // enough LEDs changing every tick that one LED frame spans several batches, like a real machine
     ctx.declare_leds(&CABINET_LEFT_STRIP.q().at_z(1), ColorSequence::solid(color));
-    ctx.declare_leds(&CABINET_RIGHT_STRIP.q().at_z(1), ColorSequence::solid(color));
+    ctx.declare_leds(
+      &CABINET_RIGHT_STRIP.q().at_z(1),
+      ColorSequence::solid(color),
+    );
     ctx.declare_leds(&BACKBOX_GI.q().at_z(1), ColorSequence::solid(color));
   }
 }

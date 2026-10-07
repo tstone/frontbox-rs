@@ -53,7 +53,7 @@
 //! #   .build()
 //! # });
 //! let io_network = IoNetwork::new(vec![
-//!     IoBoards::io_3208()
+//!     IoBoard::io_3208()
 //!      .wire_switch(0, &EXAMPLE)
 //! ]);
 //! ```
