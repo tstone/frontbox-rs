@@ -55,7 +55,7 @@ export const hardwareKinds: HardwareKindInfo[] = [
 ]
 
 /** Switches and LEDs will be shown on the playfield, so the list starts without them */
-export const defaultHardwareKinds: HardwareKind[] = ['manual-drivers', 'automatic-drivers', 'motors']
+export const defaultHardwareKinds: HardwareKind[] = ['manual-drivers', 'automatic-drivers']
 
 /** The hardware a row describes, for its expanded details */
 export type HardwareRef =

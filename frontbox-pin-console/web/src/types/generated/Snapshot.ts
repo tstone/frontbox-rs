@@ -14,6 +14,6 @@ export type Snapshot = {
  */
 hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in number]: SwitchState }, drivers: { [key in number]: DriverState }, game: GameState | null, 
 /**
- * The last color each LED is set to
+ * The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
  */
 led_colors: { [key in string]: Color }, planes: Array<PlaneView>, log: Array<TraceRecord>, };

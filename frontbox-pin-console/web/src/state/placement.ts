@@ -31,3 +31,7 @@ export function place(key: string, position: Position) {
 export function resetPosition(key: string) {
   setMoved(key, undefined)
 }
+
+/** The hardware being pointed at in the hardware list, outlined in the 3D view so it's easy to find */
+const [highlighted, setHighlighted] = createSignal<string | null>(null)
+export { highlighted, setHighlighted }

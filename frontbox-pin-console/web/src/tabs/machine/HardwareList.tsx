@@ -1,16 +1,36 @@
 import { Accordion } from '@ark-ui/solid/accordion'
 import { ToggleGroup } from '@ark-ui/solid/toggle-group'
-import { type Accessor, createMemo, createSignal, For, Show } from 'solid-js'
+import { type Accessor, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import InfoTip from '../../components/InfoTip'
 import Tip from '../../components/Tip'
 import { machine } from '../../state/console'
-import { cancelPlacing, movedPositions, placing, resetPosition, startPlacing } from '../../state/placement'
+import { cancelPlacing, highlighted, movedPositions, placing, resetPosition, setHighlighted, startPlacing } from '../../state/placement'
 import { isSwitchClosed, setSwitchClosed } from '../../state/switchControl'
 import { defaultHardwareKinds, type HardwareKind, hardwareKinds, type HardwareRow, hardwareRows } from './hardware'
 import HardwareDetail from './HardwareDetail'
 
+// which hardware kinds are shown, remembered per browser
+const KINDS_KEY = 'frontbox-console.hardware-kinds'
+function readKinds(): HardwareKind[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(KINDS_KEY) ?? 'null')
+    if (!Array.isArray(stored)) return defaultHardwareKinds
+    // kinds can be renamed or removed between versions
+    return hardwareKinds.map((info) => info.kind).filter((kind) => stored.includes(kind))
+  } catch {
+    return defaultHardwareKinds
+  }
+}
+function writeKinds(kinds: HardwareKind[]) {
+  try {
+    localStorage.setItem(KINDS_KEY, JSON.stringify(kinds))
+  } catch {
+    // storage can be unavailable (private windows); the filters still work for this session
+  }
+}
+
 export default function HardwareList() {
-  const [kinds, setKinds] = createSignal<HardwareKind[]>(defaultHardwareKinds)
+  const [kinds, setKinds] = createSignal<HardwareKind[]>(readKinds())
   const [filter, setFilter] = createSignal('')
   const query = () => filter().trim().toLowerCase()
 
@@ -49,7 +69,11 @@ export default function HardwareList() {
         onInput={(e) => setFilter(e.currentTarget.value)}
       />
 
-      <ToggleGroup.Root multiple value={kinds()} onValueChange={(details) => setKinds(details.value as HardwareKind[])}>
+      <ToggleGroup.Root multiple value={kinds()} onValueChange={(details) => {
+          setKinds(details.value as HardwareKind[])
+          writeKinds(kinds())
+        }}
+      >
         <For each={hardwareKinds}>
           {(info) => (
             <ToggleGroup.Item value={info.kind}>
@@ -90,8 +114,15 @@ export default function HardwareList() {
 
 function HardwareItem(props: { row: HardwareRow }) {
   const row = props.row
+  // a row filtered away under the pointer gets no mouseleave
+  onCleanup(() => highlighted() === row.key && setHighlighted(null))
   return (
-    <Accordion.Item value={row.key} classList={{ active: row.active() }}>
+    <Accordion.Item
+      value={row.key}
+      classList={{ active: row.active() }}
+      onMouseEnter={() => setHighlighted(row.key)}
+      onMouseLeave={() => setHighlighted(null)}
+    >
       <Accordion.ItemTrigger>
         <Accordion.ItemIndicator>›</Accordion.ItemIndicator>
         <span class="name">{row.name}</span>

@@ -21,6 +21,7 @@
   --plane: #8e879c;
   --hw-dot: #8f8a99;
   --hw-outline: #1b1920;
+  --hw-highlight: #f76707;
 
   --radius: 8px;
   --radius-sm: 4px;
@@ -57,6 +58,7 @@
     --plane: #6d6679;
     --hw-dot: #d4d1da;
     --hw-outline: #000000;
+    --hw-highlight: #ff922b;
   }
 }
 

@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
 import { LED_OFF, ledColor } from '../../lib/leds'
 import { type ConsoleState, driverState, machine } from '../../state/console'
-import { cancelPlacing, movedPositions, place, placing, type Position } from '../../state/placement'
+import { cancelPlacing, highlighted, movedPositions, place, placing, type Position } from '../../state/placement'
 import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
@@ -39,7 +39,9 @@ const PLANE_OPACITY = 0.14
 // see-through enough that hardware on the plane stays easy to spot
 const IMAGE_OPACITY = 0.5
 /** How much larger than its shape a switch, driver or motor's outline is */
-const OUTLINE_SCALE = 1.35
+const OUTLINE_SCALE = 1.2
+/** How much larger than its shape the outline of hardware pointed at in the hardware list is */
+const HIGHLIGHT_SCALE = 1.5
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
 
@@ -79,11 +81,12 @@ function cabinetGroup() {
   return group
 }
 
-type Layer = 'axes' | 'planes' | 'switches' | 'leds' | 'drivers'
+type Layer = 'axes' | 'planes' | 'artwork' | 'switches' | 'leds' | 'drivers'
 
 const LAYERS: { layer: Layer; label: string; title: string }[] = [
   { layer: 'axes', label: 'Axes', title: "The X/Y/Z axes at the cabinet's origin (0, 0, 0)" },
-  { layer: 'planes', label: 'Planes', title: "The machine's surfaces and their images" },
+  { layer: 'planes', label: 'Planes', title: "The machine's surfaces and their outlines" },
+  { layer: 'artwork', label: 'Artwork', title: 'Images drawn over the planes, e.g. playfield art' },
   { layer: 'switches', label: 'Switches', title: 'Switch dots' },
   { layer: 'leds', label: 'LEDs', title: 'LED dots' },
   { layer: 'drivers', label: 'Drivers', title: 'Driver dots' },
@@ -94,7 +97,7 @@ const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' :
 // which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
 function readLayers(): Record<Layer, boolean> {
-  const shown = { axes: true, planes: true, switches: true, leds: true, drivers: true }
+  const shown = { axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }
   try {
     return { ...shown, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? '{}') }
   } catch {
@@ -259,8 +262,9 @@ export default function PlayfieldView() {
     scene.add(content)
     const dots = new Map<THREE.Object3D, Point>()
     const planeMeshes: THREE.Mesh[] = []
-    // planes' meshes and outlines, to show or hide together
-    const planeObjects: THREE.Object3D[] = []
+    // A plane's surface shows its image while the artwork layer is on, or is drawn empty while the planes layer is
+    // on. Its outline belongs to the planes layer.
+    const planeViews: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; edges: THREE.LineSegments; image: THREE.Texture | null }[] = []
     const textures = new Map<string, THREE.Texture>()
     const textureLoader = new THREE.TextureLoader()
     const shapes = hardwareShapes()
@@ -268,8 +272,14 @@ export default function PlayfieldView() {
     const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8 })
     // drawn on the back faces of a slightly larger copy of a shape, so it shows as a rim around it
     const outlineMaterial = new THREE.MeshBasicMaterial({ side: THREE.BackSide })
+    // Drawn before the dots and through everything, so the highlight shows as a rim even behind a plane
+    const highlightMaterial = new THREE.MeshBasicMaterial({ side: THREE.BackSide, depthTest: false, depthWrite: false })
+    const highlight = new THREE.Mesh(shapes.LED, highlightMaterial)
+    highlight.renderOrder = 0
+    highlight.raycast = () => {}
+    highlight.visible = false
     // theme colors, read once per theme change rather than per dot
-    const palette = { dot: '', moved: '', hover: '', active: '' }
+    const palette = { dot: '', moved: '', hover: '', active: '', plane: '' }
     const planeMaterials: THREE.MeshBasicMaterial[] = []
     const lineMaterials: THREE.LineBasicMaterial[] = []
     let fitted = false
@@ -318,15 +328,45 @@ export default function PlayfieldView() {
 
     function applyTheme() {
       scene.background = new THREE.Color(css('--bg'))
-      planeMaterials.forEach((m) => !m.map && m.color.set(css('--plane')))
       lineMaterials.forEach((m) => m.color.set(css('--plane')))
       palette.dot = css('--hw-dot')
       palette.moved = css('--warn')
       palette.hover = css('--accent')
       palette.active = css('--ok')
+      palette.plane = css('--plane')
       outlineMaterial.color.set(css('--hw-outline'))
+      highlightMaterial.color.set(css('--hw-highlight'))
       ghostMaterial.color.set(css('--accent'))
       untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
+      stylePlanes()
+      render()
+    }
+
+    function stylePlanes() {
+      const shown = untrack(layers)
+      for (const { mesh, material, edges, image } of planeViews) {
+        const art = shown.artwork ? image : null
+        mesh.visible = art !== null || shown.planes
+        edges.visible = shown.planes
+        if (material.map !== art) {
+          material.map = art
+          material.needsUpdate = true
+        }
+        material.opacity = art ? IMAGE_OPACITY : PLANE_OPACITY
+        material.color.set(art ? 0xffffff : palette.plane)
+      }
+    }
+
+    /** Outline the hardware pointed at in the hardware list, when its dot is shown */
+    function applyHighlight() {
+      const key = untrack(highlighted)
+      const dot = key ? [...dots].find(([dot, point]) => point.key === key && dot.visible)?.[0] : undefined
+      highlight.visible = dot !== undefined
+      if (dot) {
+        highlight.geometry = (dot as THREE.Mesh).geometry
+        highlight.position.copy(dot.position)
+        highlight.scale.setScalar(dot.scale.x * HIGHLIGHT_SCALE)
+      }
       render()
     }
 
@@ -343,7 +383,7 @@ export default function PlayfieldView() {
       planeMaterials.length = 0
       lineMaterials.length = 0
       planeMeshes.length = 0
-      planeObjects.length = 0
+      planeViews.length = 0
       dots.clear()
       hoveredDot = null
       content = cabinetGroup()
@@ -351,21 +391,21 @@ export default function PlayfieldView() {
       for (const plane of planes) {
         const [w, h] = plane.extent
         const geometry = new THREE.PlaneGeometry(w, h).translate(w / 2, h / 2, 0)
+        // map, opacity and color are set by `stylePlanes`, as they depend on the layers shown
         const material = new THREE.MeshBasicMaterial({
           transparent: true,
-          opacity: plane.image ? IMAGE_OPACITY : PLANE_OPACITY,
           side: THREE.DoubleSide,
           // planes never hide the dots
           depthWrite: false,
-          map: plane.image ? texture(plane.image) : null,
         })
         const line = new THREE.LineBasicMaterial()
         planeMaterials.push(material)
         lineMaterials.push(line)
         const mesh = new THREE.Mesh(geometry, material)
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), line)
         planeMeshes.push(mesh)
-        for (const obj of [mesh, new THREE.LineSegments(new THREE.EdgesGeometry(geometry), line)]) {
-          planeObjects.push(obj)
+        planeViews.push({ mesh, material, edges, image: plane.image ? texture(plane.image) : null })
+        for (const obj of [mesh, edges]) {
           obj.position.set(...plane.origin)
           obj.quaternion.set(...plane.rotation)
           content.add(obj)
@@ -402,6 +442,7 @@ export default function PlayfieldView() {
       })
 
       content.add(ghost)
+      content.add(highlight)
       applyLayers()
       scene.add(content)
       // frame the machine the first time there's something to show, then leave the camera to the user
@@ -415,9 +456,9 @@ export default function PlayfieldView() {
     function applyLayers() {
       const shown = untrack(layers)
       origin.visible = shown.axes
-      planeObjects.forEach((obj) => (obj.visible = shown.planes))
+      stylePlanes()
       dots.forEach((point, dot) => (dot.visible = shown[layerOf(point.kind)]))
-      render()
+      applyHighlight()
     }
 
     function fitCamera() {
@@ -607,6 +648,10 @@ export default function PlayfieldView() {
       writeLayers(layers())
       applyLayers()
     })
+    createEffect(() => {
+      highlighted()
+      applyHighlight()
+    })
     resize()
 
     onCleanup(() => {
@@ -631,6 +676,7 @@ export default function PlayfieldView() {
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
       ghostMaterial.dispose()
       outlineMaterial.dispose()
+      highlightMaterial.dispose()
       renderer.dispose()
       clearTimeout(toastTimer)
     })
