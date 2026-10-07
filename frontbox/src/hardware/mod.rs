@@ -53,7 +53,7 @@
 //! #   .build()
 //! # });
 //! let io_network = IoNetwork::new(vec![
-//!     IoBoards::io_3208()
+//!     IoBoard::io_3208()
 //!      .wire_switch(0, &EXAMPLE)
 //! ]);
 //! ```
@@ -88,7 +88,7 @@
 //! # use frontbox::prelude::*;
 //! hardware_defs! {
 //!   pub SWITCH: SwitchDefinition = SwitchDefinition::new("example");
-//!   pub LED_STRIP: LedDefinition = LedDefinition::multi("example", 12);
+//!   pub LED_STRIP: LedDefinition = LedDefinition::multi("example").count(12);
 //! }
 //! ```
 //!
@@ -126,7 +126,6 @@ mod hardware_definition;
 mod hardware_query_conversions;
 mod io;
 mod led_query;
-mod location;
 mod region;
 mod switch_query;
 
@@ -139,6 +138,5 @@ pub use hardware_definition::*;
 pub use hardware_query_conversions::*;
 pub use io::*;
 pub use led_query::*;
-pub use location::*;
 pub use region::*;
 pub use switch_query::*;

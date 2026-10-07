@@ -1,0 +1,44 @@
+.events-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  height: 100%;
+}
+
+/* ---- list ---- */
+
+.events-list {
+  padding: 0.5rem 0;
+}
+
+.events-list > .empty {
+  padding: 0 1rem;
+}
+
+.events-list ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.events-list .trace-row {
+  /* let the browser skip layout and paint for rows that are off screen */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 2.25rem;
+}
+
+/* ---- sidebar ---- */
+
+.events-sidebar {
+  padding: 1rem;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.game-status {
+  margin-bottom: 1.5rem;
+}
+
+.game-status p {
+  margin: 0;
+  font-size: 0.8125rem;
+}

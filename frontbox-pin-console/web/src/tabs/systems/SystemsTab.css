@@ -1,0 +1,86 @@
+.systems-tab .tree-panel {
+  padding: 0.5rem;
+  background: var(--surface);
+}
+
+.systems-tab .detail-panel {
+  padding: 1.5rem 2rem;
+}
+
+.systems-tab [data-scope='tree-view'] .count {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+/* inactive nodes, and everything in an inactive group, are muted but still selectable */
+.systems-tab [data-part='branch'].inactive > [data-part='branch-control'],
+.systems-tab [data-part='branch'].inactive [data-part='item'],
+.systems-tab [data-part='item'].inactive {
+  color: var(--muted);
+}
+
+.systems-tab .inactive-tag {
+  margin-left: auto;
+  padding: 0 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  line-height: 1.1rem;
+}
+
+.systems-tab .inactive-tag + .count {
+  margin-left: 0.5rem;
+}
+
+.systems-tab [data-scope='tree-view'][data-part='item-text'],
+.systems-tab [data-scope='tree-view'][data-part='branch-text'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- detail ---- */
+
+.detail h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.detail dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1.5rem;
+  margin: 0;
+}
+
+.detail dt {
+  color: var(--muted);
+}
+
+.detail dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.detail .recent-events {
+  margin-top: 2rem;
+}
+
+.detail .recent-events ol {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+
+.detail .recent-events .trace-row .row {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}

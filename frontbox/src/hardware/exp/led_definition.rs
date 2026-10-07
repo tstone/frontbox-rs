@@ -1,7 +1,6 @@
 use indexmap::IndexSet;
 use std::borrow::Cow;
 
-use crate::hardware::exp::led_strip_builder::LedStripBuilder;
 use crate::prelude::*;
 
 #[derive(Debug)]
@@ -39,12 +38,8 @@ impl LedDefinition {
     SingleLedDefinitionBuilder::new(name)
   }
 
-  pub fn multi(name: &'static str, count: u16) -> MultiLedDefinitionBuilder {
-    MultiLedDefinitionBuilder::new(name, count)
-  }
-
-  pub fn strip(name: &'static str, count: u16) -> LedStripBuilder {
-    LedStripBuilder::new(name, count)
+  pub fn multi(name: &'static str) -> MultiLedDefinitionBuilder {
+    MultiLedDefinitionBuilder::new(name)
   }
 
   pub(crate) fn child_name(name: &'static str, index: u16) -> Cow<'static, str> {
@@ -81,13 +76,13 @@ mod tests {
 
   #[test]
   fn test_children() {
-    let def = LedDefinition::strip("test", 6);
+    let def = LedDefinition::multi("test").count(6);
     assert_eq!(def.build().children().len(), 6);
   }
 
   #[test]
   fn test_names() {
-    let def = LedDefinition::strip("test", 8);
+    let def = LedDefinition::multi("test").count(8);
     assert_eq!(def.build().names().len(), 8);
   }
 }

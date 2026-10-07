@@ -1,20 +1,23 @@
+/// The color type in `TraceEvent::LedsRGBChange`, re-exported so tracers can name it
+pub use fast_protocol::Color;
 use fast_protocol::SwitchState;
 use tokio::sync::mpsc;
 
 use crate::prelude::*;
 
 pub trait AppTracer {
-  fn init(&mut self, hardware: &Hardware);
+  fn init(&mut self, hardware: &Hardware, tx: mpsc::UnboundedSender<TracerControlEvent>);
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum TraceEvent {
   Event {
     type_name: &'static str,
     interrupts: Vec<InterruptEvaluation>,
     event: Option<serde_json::Value>,
+    sender: Option<u64>,
   },
   SystemSpawned {
     id: u64,
@@ -46,6 +49,11 @@ pub enum TraceEvent {
   SwitchStateChange {
     switch_id: usize,
     state: SwitchState,
+  },
+  LedsRGBChange {
+    expansion: u8,
+    breakout: Option<u8>,
+    states: Vec<(u16, Color)>,
   },
   // TODO: some kind of game-specific state push that is JSON encodable
 }
@@ -79,4 +87,12 @@ impl TracerSenders {
       tracer.send(event.clone()).ok();
     }
   }
+}
+
+/// Events (commands, really) which are sent from Tracer clients to the main application
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum TracerControlEvent {
+  CloseSwitch { switch_id: usize },
+  OpenSwitch { switch_id: usize },
 }

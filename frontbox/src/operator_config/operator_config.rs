@@ -64,7 +64,7 @@ impl OperatorConfig {
 
     if let Some(app_sender) = &self.app_sender {
       let event = OperatorConfigChanged(config.name);
-      let _ = app_sender.send(AppMessage::EmitEvent(EventBox::new(event)));
+      let _ = app_sender.send(AppMessage::EmitEvent(None, EventBox::new(event)));
     }
   }
 }

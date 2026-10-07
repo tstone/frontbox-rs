@@ -8,7 +8,8 @@ use crate::prelude::*;
 
 /// Mode 75 - Pulse the driver until the trigger (flip) is deactivated -OR- the cancel switch (flop) is activated.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/75/>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseCancelMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerDualMode,

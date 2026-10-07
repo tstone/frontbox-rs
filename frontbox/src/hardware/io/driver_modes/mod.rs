@@ -1,7 +1,7 @@
 mod delayed_pulse;
 mod flipper_hold_direct;
-mod flipper_main_direct;
 mod flipper_main_3try;
+mod flipper_main_direct;
 mod long_pulse;
 mod pulse;
 mod pulse_cancel;
@@ -11,6 +11,7 @@ mod pulse_kick;
 
 pub use delayed_pulse::*;
 pub use flipper_hold_direct::*;
+pub use flipper_main_3try::*;
 pub use flipper_main_direct::*;
 pub use long_pulse::*;
 pub use pulse::*;
@@ -18,7 +19,6 @@ pub use pulse_cancel::*;
 pub use pulse_hold::*;
 pub use pulse_hold_cancel::*;
 pub use pulse_kick::*;
-pub use flipper_main_3try::*;
 
 use fast_protocol::DriverConfig;
 
@@ -28,7 +28,9 @@ use crate::prelude::*;
 /// DriverMode is a wrapper around DriverConfig that allows these features:
 /// 1. Referencing switches by name instead of index (delay calculating ID until flatted into the IO network)
 /// 2. Sensible defaults for every mode, overridable via builders (e.g. `DriverMode::pulse().rest(...).build()`)
-#[derive(Clone, Debug)]
+/// 3. Hardware values that can be exposed through operator config
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum DriverMode {
   Pulse(PulseMode),
   PulseKick(PulseKickMode),

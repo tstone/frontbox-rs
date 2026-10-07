@@ -9,7 +9,8 @@ use crate::prelude::*;
 /// Mode 30 - Insert a delay between when the switch is triggered and the driver fires.
 /// Useful for things kickbacks where a bit of delay needs to be added into the automatic flow.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/30/>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DelayedPulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,

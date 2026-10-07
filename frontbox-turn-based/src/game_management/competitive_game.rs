@@ -49,16 +49,17 @@ impl CompetitiveGame {
   }
 
   fn start_game(&mut self, ctx: &ServiceContext) {
+    let sys_ctx = ctx.for_system(self.handle);
     log::info!(target: "frontbox::game_manager", "Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
 
     // Start a game assuming the number of balls in the trough is how many there should be
     // this avoids weird cases where a ball search may have abandoned a ball previously
-    if let Some(trough) = ctx.for_system(self.handle).get::<TroughSystem>() {
+    if let Some(trough) = sys_ctx.get::<TroughSystem>() {
       trough.eject(ctx);
     }
 
-    ctx.emit(GameStarted);
+    sys_ctx.emit(GameStarted);
   }
 
   fn start_turn(&mut self, ctx: &ServiceContext) {
@@ -85,7 +86,7 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
-    ctx.emit(PlayerTurnActive::new(
+    ctx.for_system(self.handle).emit(PlayerTurnActive::new(
       game_state.current_player(),
       game_state.current_player_turn(),
     ));
@@ -95,7 +96,7 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Ending);
-    ctx.emit(PlayerTurnEnding::new(
+    ctx.for_system(self.handle).emit(PlayerTurnEnding::new(
       game_state.current_player(),
       game_state.current_player_turn(),
     ));
@@ -181,11 +182,11 @@ impl GameManagement for CompetitiveGame {
 
     // create copy of systems for new player as a new system group
     let copy = self.systems_template.to_vec();
-
     let group_name = Self::player_group_name(game_state.player_count() - 1);
-    ctx.spawn_system_group(group_name, copy, false);
 
-    ctx.emit(PlayerAdded);
+    let svc_ctx = ctx.for_system(self.handle);
+    svc_ctx.spawn_system_group(group_name, copy, false);
+    svc_ctx.emit(PlayerAdded);
 
     if game_started_just_now {
       self.start_turn(ctx);
@@ -250,7 +251,7 @@ impl GameManagement for CompetitiveGame {
     };
 
     self.game_state = None;
-    ctx.emit(GameEnded { scores });
+    ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 
   fn is_player_addable(&self) -> bool {
@@ -303,7 +304,7 @@ impl GameManagement for CompetitiveGame {
         let total_points = *score;
 
         // Emit event with points added information
-        ctx.emit(PointsAdded::new(
+        ctx.for_system(self.handle).emit(PointsAdded::new(
           game_state.current_player(),
           points_received,
           total_points,

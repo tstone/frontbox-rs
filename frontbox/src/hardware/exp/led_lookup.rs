@@ -9,6 +9,7 @@ use crate::prelude::*;
 pub struct LedLookup {
   by_name: HashMap<String, LED>,
   configs: HashMap<String, LedConfiguration>,
+  #[serde(skip)] // redundant with by_name for web console
   channel_by_address: HashMap<LedAddress, LedChannels>,
 }
 

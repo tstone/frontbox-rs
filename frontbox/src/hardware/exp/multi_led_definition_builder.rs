@@ -3,16 +3,16 @@ use crate::prelude::*;
 pub struct MultiLedDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
-  count: u16,
+  count: Option<u16>,
   locations: Vec<Vec3>,
   config: Option<LedConfiguration>,
 }
 
 impl MultiLedDefinitionBuilder {
-  pub fn new(name: &'static str, count: u16) -> Self {
+  pub fn new(name: &'static str) -> Self {
     Self {
       name,
-      count,
+      count: None,
       tags: Vec::new(),
       locations: Vec::new(),
       config: None,
@@ -29,11 +29,13 @@ impl MultiLedDefinitionBuilder {
     self
   }
 
-  pub fn location(mut self, location: Vec3) -> Self {
-    self.locations.push(location);
+  /// Number of LEDs, only needed when no locations are given -- otherwise there is one LED per location
+  pub fn count(mut self, count: u16) -> Self {
+    self.count = Some(count);
     self
   }
 
+  /// One LED per location, e.g. from [`LedLayout`]
   pub fn locations(mut self, locations: impl IntoIterator<Item = Vec3>) -> Self {
     self.locations.extend(locations);
     self
@@ -54,10 +56,19 @@ impl MultiLedDefinitionBuilder {
   }
 
   pub fn build(self) -> LedDefinition {
-    let count = if self.count == 0 {
-      self.locations.len() as u16
-    } else {
-      self.count
+    let located = self.locations.len() as u16;
+    let count = match self.count {
+      Some(count) if located > 0 && count != located => {
+        log::warn!(
+          "LED definition \"{}\" has a count of {} but {} locations",
+          self.name,
+          count,
+          located
+        );
+        count
+      }
+      Some(count) => count,
+      None => located,
     };
     LedDefinition::new(self.name, self.tags, count, self.locations, self.config)
   }

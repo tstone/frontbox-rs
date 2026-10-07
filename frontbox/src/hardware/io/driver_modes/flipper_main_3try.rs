@@ -5,7 +5,8 @@ use fast_protocol::{DriverConfig, Power};
 use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
 use crate::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FlipperMain3TryMode {
   pub button_switch: &'static str,
   pub invert_button_switch: Option<bool>,
@@ -23,7 +24,7 @@ impl FlipperMain3TryMode {
       eos_switch,
       max_on_time: HardwareValue::Fixed(Duration::from_millis(150)),
       eos_hold_pwm_power: HardwareValue::Fixed(Power::QUARTER),
-      rest: HardwareValue::Fixed(Duration::from_millis(50))
+      rest: HardwareValue::Fixed(Duration::from_millis(50)),
     }
   }
 

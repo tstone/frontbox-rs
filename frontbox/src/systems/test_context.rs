@@ -57,7 +57,7 @@ impl TestContext {
     let mut events = Vec::new();
     for msg in self.app_messages() {
       match msg {
-        AppMessage::EmitEvent(e) => events.push(e),
+        AppMessage::EmitEvent(_, e) => events.push(e),
         _ => {}
       }
     }

@@ -5,18 +5,14 @@ use crate::hardware::ExpBoard;
 /// ```rust
 /// # use frontbox::prelude::*;
 /// # use frontbox::tags::*;
-/// # static PLAYFIELD: ReferencePlane = ReferencePlane {
-/// #   origin: Vec3::new(1.0, 3.25, 12.0),
-/// #   extent: Vec2::new(20.25, 45.0),
-/// #   rotation: Quat::IDENTITY,
-/// #   parent: None,
-/// # };
-/// # static CABINET_LEFT: ReferencePlane = ReferencePlane {
-/// #   origin: Vec3::new(10.25, 0.0, 0.0),
-/// #   extent: Vec2::new(48.5, 3.0),
-/// #   rotation: Quat::IDENTITY,
-/// #   parent: None,
-/// # };
+/// # static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
+/// #   .origin(Vec3::new(1.0, 3.25, 12.0))
+/// #   .extent(Vec2::new(20.25, 45.0))
+/// #   .build();
+/// # static CABINET_LEFT: ReferencePlane = ReferencePlane::new("Cabinet left")
+/// #   .origin(Vec3::new(10.25, 0.0, 0.0))
+/// #   .extent(Vec2::new(48.5, 3.0))
+/// #   .build();
 /// // Step 1. Define exp devices
 /// 
 /// pub mod leds {
@@ -31,9 +27,9 @@ use crate::hardware::ExpBoard;
 ///       .location(Vec2::new(2.125, 32.5).relative_to(&PLAYFIELD));
 /// 
 ///     // Cabinet lighting along the left art blade area
-///     pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::strip("lcab", 32)
+///     pub LEFT_CAB_STRIP: LedDefinition = LedDefinition::multi("lcab")
 ///       .tag(Cabinet)
-///       .locations(&CABINET_LEFT, LedStripDirection::Forwards);
+///       .locations(LedLayout::strip(32, Vec3::new(0.5, 1.5, 0.0), 0.0, 1.5).relative_to(&CABINET_LEFT));
 ///   }
 /// }
 /// 

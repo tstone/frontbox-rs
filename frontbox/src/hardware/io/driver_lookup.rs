@@ -9,7 +9,6 @@ use crate::prelude::*;
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
-  #[serde(skip)]
   configs: HashMap<usize, DriverMode>,
 }
 

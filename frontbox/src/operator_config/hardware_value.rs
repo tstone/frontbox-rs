@@ -55,3 +55,93 @@ impl<T: Clone, D: Domain<T>> From<T> for HardwareValue<T, D> {
     Self::Fixed(value)
   }
 }
+
+/// How the value inside a [`HardwareValue`] is serialized, e.g. for tracers. Durations are
+/// milliseconds, matching `SwitchConfig`.
+pub trait HardwareValueRepr {
+  fn serialize_repr<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
+
+  /// TypeScript type of the serialized value
+  #[cfg(feature = "ts")]
+  fn ts_repr() -> &'static str;
+}
+
+impl HardwareValueRepr for std::time::Duration {
+  fn serialize_repr<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u64(self.as_millis() as u64)
+  }
+
+  #[cfg(feature = "ts")]
+  fn ts_repr() -> &'static str {
+    "number"
+  }
+}
+
+impl HardwareValueRepr for fast_protocol::Power {
+  fn serialize_repr<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    self.serialize(serializer)
+  }
+
+  #[cfg(feature = "ts")]
+  fn ts_repr() -> &'static str {
+    "{ power: number }"
+  }
+}
+
+struct Repr<'a, T>(&'a T);
+
+impl<T: HardwareValueRepr> Serialize for Repr<'_, T> {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    self.0.serialize_repr(serializer)
+  }
+}
+
+/// The operator config backing a value; the domain is left out
+#[derive(Serialize)]
+#[serde(bound = "T: HardwareValueRepr")]
+struct ConfigRepr<'a, T: HardwareValueRepr> {
+  name: &'static str,
+  desc: &'static str,
+  default: Repr<'a, T>,
+}
+
+impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, D> {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    match self {
+      Self::Config(cv) => serializer.serialize_newtype_variant(
+        "HardwareValue",
+        0,
+        "Config",
+        &ConfigRepr {
+          name: cv.name,
+          desc: cv.desc,
+          default: Repr(&cv.default),
+        },
+      ),
+      Self::Fixed(value) => {
+        serializer.serialize_newtype_variant("HardwareValue", 1, "Fixed", &Repr(value))
+      }
+    }
+  }
+}
+
+#[cfg(feature = "ts")]
+impl<T, D> ts_rs::TS for HardwareValue<T, D>
+where
+  T: Clone + HardwareValueRepr + 'static,
+  D: Domain<T> + 'static,
+{
+  type WithoutGenerics = Self;
+  type OptionInnerType = Self;
+
+  fn name(_: &ts_rs::Config) -> String {
+    let value = T::ts_repr();
+    format!(
+      "{{ \"Config\": {{ name: string, desc: string, default: {value} }} }} | {{ \"Fixed\": {value} }}"
+    )
+  }
+
+  fn inline(cfg: &ts_rs::Config) -> String {
+    Self::name(cfg)
+  }
+}

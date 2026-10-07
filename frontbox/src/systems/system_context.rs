@@ -55,9 +55,8 @@ impl<'a> SystemContext<'a> {
 
   /// Dispatch an event to all other active systems
   pub fn emit<E: Event>(&self, event: E) {
-    self.ctx.emit(event);
+    self.ctx.emit(self.current_system_id(), event);
   }
-
   // -- event interrupts --
 
   /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.

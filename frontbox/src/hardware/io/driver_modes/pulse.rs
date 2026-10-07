@@ -8,7 +8,8 @@ use crate::prelude::*;
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
 /// <https://fastpinball.com/fast-serial-protocol/net/driver-mode/10/>
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PulseMode {
   /// What causes the driver to fire (be triggered)
   pub trigger_mode: DriverTriggerMode,

@@ -10,8 +10,8 @@ use tokio::time::Duration;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
-use crate::prelude::app_message::{AppMessage, ShutdownScope};
-use crate::prelude::app_tracer::TracerSenders;
+use crate::prelude::app_message::*;
+use crate::prelude::app_tracer::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::event_interrupts::EventInterruptRegistry;
@@ -22,6 +22,8 @@ pub async fn run(
   app_tracers: Vec<Box<dyn AppTracer>>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
+  mut tracer_ctl_receiver: mpsc::UnboundedReceiver<TracerControlEvent>,
+  machine_system_id: u64,
 ) {
   let (tick_tx, mut tick_rx) = watch::channel(());
   let tracer_txs = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
@@ -68,8 +70,8 @@ pub async fn run(
         let start = std::time::Instant::now();
 
         match command {
-          AppMessage::EmitEvent(event_box) => {
-            emit_event(event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+          AppMessage::EmitEvent(sender, event_box) => {
+            emit_event(sender, event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
           AppMessage::RegisterInterrupt(handle, type_id, priority) => {
             interrupt_registry.register(type_id, handle.id, handle.parent_key, priority);
@@ -81,7 +83,7 @@ pub async fn run(
             unregister_all_by_system(&system_id, &mut interrupt_registry);
           }
           AppMessage::SwitchStateChange(id, state) => {
-            switch_state_changed(id, state, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            switch_state_changed(Some(machine_system_id), id, state, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
           AppMessage::SyncSwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
@@ -136,6 +138,23 @@ pub async fn run(
 
       Ok(_) = tick_rx.changed() => {
         handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
+      }
+
+      Some(tracer_command) = tracer_ctl_receiver.recv() => {
+        match tracer_command {
+          TracerControlEvent::OpenSwitch { switch_id } => {
+            if base.switches.is_closed_by_id(switch_id).unwrap_or(false) {
+              log::warn!(target: "frontbox::run_loop", "Tracer forcibly opening switch {switch_id}...");
+              switch_state_changed(None, switch_id, SwitchState::Open, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            }
+          }
+          TracerControlEvent::CloseSwitch { switch_id } => {
+            if base.switches.is_open_by_id(switch_id).unwrap_or(false) {
+              log::warn!(target: "frontbox::run_loop", "Tracer forcibly closing switch {switch_id}...");
+              switch_state_changed(None, switch_id, SwitchState::Closed, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            }
+          }
+        }
       }
     }
   }
@@ -221,6 +240,7 @@ fn apply_to_systems<F>(
 }
 
 fn emit_event(
+  sender: Option<u64>,
   event_box: EventBox,
   groups: &Groups,
   base: &BootSnapshot,
@@ -277,6 +297,7 @@ fn emit_event(
     type_name: event_box.type_name,
     interrupts: interrupt_evals.clone(),
     event: event_box.try_json(),
+    sender,
   });
 
   // event is broadcast to systems if no interrupt halted it
@@ -286,6 +307,7 @@ fn emit_event(
 }
 
 fn switch_state_changed(
+  sender: Option<u64>,
   switch_id: usize,
   state: SwitchState,
   groups: &Groups,
@@ -335,6 +357,7 @@ fn switch_state_changed(
 
   if let Some(event) = outgoing_event {
     emit_event(
+      sender,
       event,
       groups,
       base,
@@ -423,7 +446,7 @@ fn spawn_system(
     });
 
     let event = SystemSpawned::new(system_id, parent_key);
-    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
+    let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
 }
 
@@ -481,7 +504,7 @@ fn despawn_system(
     });
 
     let event = SystemDespawned::new(handle.id, handle.parent_key);
-    let _ = app_sender.send(EmitEvent(EventBox::new(event)));
+    let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
 }
 

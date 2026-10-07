@@ -1,0 +1,33 @@
+.info-tip {
+  display: inline-grid;
+  place-items: center;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-left: 0.375rem;
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font: italic 600 0.625rem/1 Georgia, serif;
+  text-transform: none;
+  vertical-align: 0.05em;
+  cursor: help;
+}
+
+.info-tip:hover,
+.info-tip[data-state='open'] {
+  color: var(--text);
+}
+
+.info-tip-content {
+  max-width: 18rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
