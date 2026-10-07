@@ -7,7 +7,7 @@ members = [
     "frontbox-pin-console",
     "frontbox-pin2dmd",
     "frontbox-sound",
-    "frontbox-turn-based",
+    "frontbox-pinball",
 ]
 resolver = "2"
 

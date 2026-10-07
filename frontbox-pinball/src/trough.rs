@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use frontbox::prelude::*;
 
 /// This system will monitor the specified switches to track the occupancy of the trough, and fire the eject coil when the trough is full and a new ball enters.
 ///
@@ -209,8 +209,6 @@ struct Resume;
 
 #[cfg(test)]
 mod tests {
-  use fast_protocol::SwitchState;
-
   use super::*;
 
   /// Deliver a switch event, then simulate the cool-off cue firing so occupancy is re-evaluated
@@ -239,7 +237,7 @@ mod tests {
       ..Default::default()
     });
 
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Open,
@@ -268,7 +266,7 @@ mod tests {
       ..Default::default()
     });
 
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -276,7 +274,7 @@ mod tests {
     let count = system.current_occupancy_count(&context.svc_ctx());
     assert_eq!(count, 3);
 
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Open,
@@ -305,7 +303,7 @@ mod tests {
       ..Default::default()
     });
     context.insert_switch(target_switch.clone());
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -313,12 +311,16 @@ mod tests {
     system.on_spawn(&context.sys_ctx());
 
     // opened (ball left)
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Open,
     ]);
-    switch_event(&mut system, &context, &SwitchOpened::new(target_switch.clone()));
+    switch_event(
+      &mut system,
+      &context,
+      &SwitchOpened::new(target_switch.clone()),
+    );
 
     let events = context.events_emitted();
     assert_eq!(events[0].short_name(), "BallExitedTrough");
@@ -326,7 +328,7 @@ mod tests {
     assert_eq!(count, 2);
 
     // closed (ball re-entered)
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -362,7 +364,7 @@ mod tests {
     });
     context.insert_switch(switch2.clone());
     context.insert_switch(switch3.clone());
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -370,7 +372,7 @@ mod tests {
     system.on_spawn(&context.sys_ctx());
 
     // ball #1 leaves
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Open,
@@ -379,7 +381,7 @@ mod tests {
     system.establish_ball_occupancy(&context.svc_ctx());
 
     // ball #2 leaves
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Open,
       SwitchState::Open,
@@ -392,7 +394,7 @@ mod tests {
     assert_eq!(count, 1);
 
     // ball #2 re-enters, now full because occupancy established at 2
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -428,7 +430,7 @@ mod tests {
     });
     context.insert_switch(switch2.clone());
     context.insert_switch(switch3.clone());
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,
@@ -438,7 +440,7 @@ mod tests {
     system.ball_removed_from_play(); // now expecting 2 balls instead of 3
 
     // ball #1 leaves
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Open,
@@ -451,7 +453,7 @@ mod tests {
     assert_eq!(count, 2);
 
     // ball #2 leaves
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Open,
       SwitchState::Open,
@@ -464,7 +466,7 @@ mod tests {
     assert_eq!(count, 1);
 
     // ball #2 re-enters, now full because of ball removed from play
-    context.base.switches.update_switch_states(vec![
+    context.update_switch_states(vec![
       SwitchState::Closed,
       SwitchState::Closed,
       SwitchState::Closed,

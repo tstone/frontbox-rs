@@ -27,14 +27,26 @@
 //! For mechanics that can extend a player's turn, such as ball saves or extra balls, this can be implemented by registering an event interrupt on `TroughFull`. Halting the broadcast of that command will also prevent the player/team system from transitioning to PlayerTurnEnding.
 
 mod activate_playfield;
+pub mod autoplunger;
 mod ball_save;
+mod ball_search;
 pub mod configs;
+mod double_flip;
 mod game_management;
 mod game_start;
 mod high_scores;
+mod multiball;
+mod plunge_lane;
+mod trough;
 
 pub use activate_playfield::*;
+pub use autoplunger::*;
 pub use ball_save::*;
+pub use ball_search::*;
+pub use double_flip::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
+pub use multiball::*;
+pub use plunge_lane::*;
+pub use trough::*;

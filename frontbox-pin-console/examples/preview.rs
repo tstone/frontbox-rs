@@ -8,7 +8,7 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
 use frontbox_pin_console::{WebTracer, console_plane};
-use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
+use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::io::Write;
 use std::time::Duration;
 

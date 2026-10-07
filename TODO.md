@@ -1,8 +1,10 @@
-- App should periodically re-ping the hardware to get the state of things (maybe?) -- this might already happen for switches
 - Update the trough to periodically re-check the state of the switches and self recover if it is actually full
 
+- Refactor QuitGameSystem + double flip system to instead by switch combo system that take a list of switches and emit an event if all are pressed
+- With fb-pin centralized, maybe events should be centralized too
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
-- So much is built on LedSystem that the framework should probably just start it up automatically.
+- So much is built on LedSystem that the framework should probably just start it up automatically. (watchdog, ledsystem, machine, etc. need to be configurable/swappable -- possible means they need interfaces)
+- Better identify which systems need interfaces
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - Trough needs to properly utilize jam sensor

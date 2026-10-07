@@ -950,7 +950,7 @@ dependencies = [
  "axum",
  "env_logger",
  "frontbox",
- "frontbox-turn-based",
+ "frontbox-pinball",
  "log",
  "mime_guess",
  "rust-embed",
@@ -976,19 +976,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-sound"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "dyn-clone",
- "frontbox",
- "kira",
- "log",
- "tokio",
-]
-
-[[package]]
-name = "frontbox-turn-based"
+name = "frontbox-pinball"
 version = "0.1.0"
 dependencies = [
  "dyn-clone",
@@ -998,6 +986,18 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "frontbox-sound"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "dyn-clone",
+ "frontbox",
+ "kira",
+ "log",
+ "tokio",
 ]
 
 [[package]]

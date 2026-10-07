@@ -78,7 +78,7 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # struct ExampleSystem;
-//! # // stand-in for `GameManagementExt` from frontbox-turn-based
+//! # // stand-in for `GameManagementExt` from frontbox-pinball
 //! # trait GameExt { fn is_game_started(&self) -> bool; }
 //! # impl GameExt for SystemContext<'_> { fn is_game_started(&self) -> bool { true } }
 //! // Example system is only active during a game

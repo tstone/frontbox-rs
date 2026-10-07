@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox::provided::{BallExitedPlungeLane, QuitGame, TroughFull, TroughSystem};
+use frontbox::provided::QuitGame;
 
 use crate::*;
 

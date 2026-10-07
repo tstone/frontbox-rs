@@ -1,7 +1,6 @@
 use std::time::Duration;
 
-use crate::prelude::*;
-
+use frontbox::prelude::*;
 
 pub struct BallSearchSystem {
   cue_id: Option<u64>,
@@ -33,7 +32,7 @@ impl BallSearchSystem {
 }
 
 impl System for BallSearchSystem {
-  fn on_event(&mut self, event: &dyn crate::prelude::Event, ctx: &crate::prelude::SystemContext) {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<SwitchClosed>() {
       self.reset(ctx.into());
     } else if event.is::<StartBallSearch>() {

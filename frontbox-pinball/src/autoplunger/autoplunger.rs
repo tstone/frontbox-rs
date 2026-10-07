@@ -1,8 +1,6 @@
-use crate::operator_config::*;
-use crate::prelude::*;
-use crate::provided::BallEnteredPlungeLane;
-use crate::provided::PlungeLaneState;
-use crate::provided::PlungeLaneSystem;
+use frontbox::prelude::*;
+
+use crate::{BallEnteredPlungeLane, PlungeLaneState, PlungeLaneSystem};
 
 /// Simple system to manage firing the plunger eject coil
 pub struct AutoPlungerSystem {

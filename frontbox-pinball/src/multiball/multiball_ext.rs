@@ -1,5 +1,6 @@
-use crate::prelude::*;
-use crate::provided::MultiballSystem;
+use frontbox::prelude::*;
+
+use crate::MultiballSystem;
 
 pub trait MultiballExt {
   fn multiball_add_balls(&self, additional_ball_count: u8);

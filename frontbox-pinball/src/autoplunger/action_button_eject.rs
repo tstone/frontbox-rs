@@ -1,6 +1,7 @@
-use crate::prelude::*;
-use crate::provided::autoplunger::action_button_eject::State::*;
-use crate::provided::{AutoPlungerSystem, BallEnteredPlungeLane, BallExitedPlungeLane};
+use frontbox::prelude::*;
+
+use crate::autoplunger::action_button_eject::State::*;
+use crate::{AutoPlungerSystem, BallEnteredPlungeLane, BallExitedPlungeLane};
 
 /// A system to fire the auto plunger when the action button is pressed
 /// Button can only be pressed when there is a ball in the plunge lane

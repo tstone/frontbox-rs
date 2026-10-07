@@ -33,6 +33,11 @@ impl TestContext {
     self.base.leds.insert(led.name.to_string(), led);
   }
 
+  /// Manually set the current state of all switches for test setup
+  pub fn update_switch_states(&mut self, states: Vec<SwitchState>) {
+    self.base.switches.update_switch_states(states);
+  }
+
   pub fn svc_ctx(&self) -> ServiceContext<'_> {
     ServiceContext::new(&self.base, &self.groups, self.tx.clone())
   }

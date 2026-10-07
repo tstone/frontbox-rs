@@ -1,7 +1,6 @@
-use crate::{
-  prelude::*,
-  provided::{BallExitedTrough, PlungeLaneState::*},
-};
+use frontbox::prelude::*;
+
+use crate::BallExitedTrough;
 
 pub struct PlungeLaneSystem {
   plunge_lane_switch_name: &'static str,
@@ -109,12 +108,13 @@ impl System for PlungeLaneSystem {
       if let Some(effect) = self.ball_present_program.as_mut() {
         effect.stop(ctx);
       }
-    } else if self.state == NoBall
+    } else if self.state == PlungeLaneState::NoBall
       && let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
       self.on_lane_switch_closed(ctx);
-    } else if (self.state == ExpectedBallPresent || self.state == UnexpectedBallPresent)
+    } else if (self.state == PlungeLaneState::ExpectedBallPresent
+      || self.state == PlungeLaneState::UnexpectedBallPresent)
       && let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {

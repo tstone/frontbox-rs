@@ -8,7 +8,8 @@
 //!
 //! ```rust
 //! # use frontbox::prelude::*;
-//! # use frontbox::provided::TroughFull;
+//! # #[derive(serde::Serialize, Event)]
+//! # struct TroughFull;
 //! # struct Example;
 //! # impl System for Example {
 //! fn on_spawn(&mut self, ctx: &SystemContext) {

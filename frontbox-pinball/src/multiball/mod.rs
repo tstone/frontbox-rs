@@ -1,13 +1,10 @@
 mod multiball_ext;
 pub use multiball_ext::*;
 
-use frontbox_derive::Event;
+use frontbox::prelude::*;
 
-use crate::prelude::*;
-use crate::provided::multiball::State::*;
-use crate::provided::{
-  AutoPlungerSystem, BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem,
-};
+use crate::multiball::State::*;
+use crate::{AutoPlungerSystem, BallEnteredTrough, BallExitedPlungeLane, TroughFull, TroughSystem};
 
 #[derive(Clone)]
 pub struct MultiballSystem {

@@ -1,7 +1,7 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, TraceEvent, TracerControlEvent};
 use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
-use frontbox_turn_based::{GameEnded, GameStarted, PlayerTurnBeginning};
+use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -233,7 +233,7 @@ fn is_redundant(event: &TraceEvent) -> bool {
   }
 }
 
-/// Changes to the game in progress, recognized from `frontbox-turn-based` events
+/// Changes to the game in progress, recognized from `frontbox-pinball` events
 #[derive(Clone, Copy)]
 enum GameTransition {
   Started,

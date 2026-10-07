@@ -1,5 +1,5 @@
 [package]
-name = "frontbox-turn-based"
+name = "frontbox-pinball"
 version = "0.1.0"
 edition = "2024"
 

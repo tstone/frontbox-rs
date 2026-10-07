@@ -1,8 +1,10 @@
-use frontbox::provided::{AutoPlungerSystem, TroughFull, TroughSystem};
-use frontbox::{prelude::*, provided::BallSaved};
+use frontbox::prelude::*;
 
 use crate::ball_save::BallSaveState::*;
-use crate::{GameManager, PlayerTurnActive, PlayerTurnEnding, TurnState};
+use crate::{
+  AutoPlungerSystem, BallSaved, GameManager, PlayerTurnActive, PlayerTurnEnding, TroughFull,
+  TroughSystem, TurnState,
+};
 
 /// Standard ball save at the start of a ball
 #[derive(Clone)]

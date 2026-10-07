@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use frontbox::prelude::*;
 
 /// A system that emits a DoubleFlip event when the left and right flippers are pressed at about the same time.
 pub struct DoubleFlipSystem {
