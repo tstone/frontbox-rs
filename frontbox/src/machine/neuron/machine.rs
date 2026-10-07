@@ -73,7 +73,7 @@ impl Neuron {
   async fn refresh_switch_state(&mut self) {
     match self
       .io_port
-      .query(&ReportSwitchesCommand, Duration::from_secs(1))
+      .query(&ReportSwitchesCommand, Duration::from_millis(125))
       .await
     {
       Ok(resp) => {
@@ -91,9 +91,9 @@ impl Neuron {
   }
 
   async fn send_watchdog(&mut self, cmd: WatchdogCommand) {
-    match self.io_port.query(&cmd, Duration::from_millis(200)).await {
-      // try again
-      Ok(WatchdogResponse::Failed) => {
+    match self.io_port.query(&cmd, Duration::from_millis(100)).await {
+      // retry if failed or timed out (watchdog is critical to keeping the machine running)
+      Ok(WatchdogResponse::Failed) | Err(_) => {
         let _ = self.machine_sender.send(MachineMessage::WatchdogPing);
       }
       _ => {}
@@ -187,7 +187,7 @@ impl MachineBoot for Neuron {
       app_sender,
       machine_sender,
       machine_receiver,
-      watchdog_interval: app_config.watchdog_interval.unwrap() + Duration::from_millis(250), // add some buffer to account for latency in sending
+      watchdog_interval: app_config.watchdog_interval.unwrap(),
     };
 
     let hardware = Hardware::new(

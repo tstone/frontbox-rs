@@ -8,6 +8,8 @@ use crate::prelude::*;
 use fast_protocol::*;
 use tokio::sync::mpsc;
 
+const COMMAND_TIMEOUT: Duration = Duration::from_millis(100);
+
 /// Primary interface for interaction with FAST hardware
 pub struct MachineSystem {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
@@ -43,7 +45,7 @@ impl MachineSystem {
         .send(MachineMessage::Command {
           port: MachinePort::Exp,
           command: Box::new(BoardResetCommand::new(board.address)),
-          timeout: Duration::from_millis(200),
+          timeout: COMMAND_TIMEOUT,
         })
         .ok();
     }
@@ -58,7 +60,7 @@ impl MachineSystem {
         .send(MachineMessage::Command {
           port: MachinePort::Io,
           command: Box::new(ConfigureDriverCommand::new(driver.id, config)),
-          timeout: Duration::from_millis(200),
+          timeout: COMMAND_TIMEOUT,
         })
         .ok();
     }
@@ -152,7 +154,7 @@ impl MachineSystem {
             debounce_close,
             debounce_open,
           )),
-          timeout: Duration::from_millis(200),
+          timeout: COMMAND_TIMEOUT,
         })
         .ok();
     }
@@ -266,7 +268,7 @@ impl System for MachineSystem {
             driver.id,
             DriverConfig::Disabled,
           )),
-          timeout: Duration::from_millis(200),
+          timeout: COMMAND_TIMEOUT,
         })
         .ok();
     }
