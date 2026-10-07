@@ -87,7 +87,14 @@ export type HardwareRow = {
   ref: HardwareRef
 }
 
+/** Rows for one kind of hardware, alphabetical by name; numbers in names sort by value (`lane_2` before `lane_10`) */
 export function hardwareRows(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
+  return rowsOf(machine, kind).sort((a, b) => byName.compare(a.name, b.name))
+}
+
+const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
   // planes come from the console's configuration, not the machine's hardware
   if (kind === 'planes') {
     return machine.planes.map((plane, index) => ({
@@ -110,14 +117,12 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
     case 'automatic-drivers': {
       const automatic = kind === 'automatic-drivers'
       return Object.values(hw.drivers.by_id)
-        .sort((a, b) => a.id - b.id)
         .map((driver) => ({ driver, triggers: triggerSwitches(hw.drivers.configs[driver.id]) }))
         .filter(({ triggers }) => triggers.length > 0 === automatic)
         .map(({ driver, triggers }) => driverRow(hw, driver, triggers, automatic))
     }
     case 'switches':
       return Object.values(hw.switches.by_id)
-        .sort((a, b) => a.id - b.id)
         .map((sw) => {
           const state = () =>
             machine.switches[sw.id] ?? (hw.switches.is_closed[sw.id] ? 'Closed' : 'Open')
@@ -134,7 +139,6 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
         })
     case 'leds':
       return Object.values(hw.leds.by_name)
-        .sort((a, b) => ledOrder(a) - ledOrder(b))
         .map((led) => {
           const { exp, index } = led.address
           return {
@@ -202,10 +206,4 @@ function driverRow(hw: Hardware, driver: Driver, triggers: string[], automatic: 
     active: () => driverState(driver.id) !== 'Off',
     ref: { kind: 'driver', driver },
   }
-}
-
-/** Sort key for LEDs: board, then port, then position on the port */
-function ledOrder(led: LED): number {
-  const { exp, index } = led.address
-  return (exp.board_address * 256 + exp.port) * 65536 + index
 }

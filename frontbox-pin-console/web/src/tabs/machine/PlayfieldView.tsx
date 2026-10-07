@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
 import { LED_OFF, ledColor } from '../../lib/leds'
-import { type ConsoleState, machine } from '../../state/console'
+import { type ConsoleState, driverState, machine } from '../../state/console'
 import { cancelPlacing, movedPositions, place, placing, type Position } from '../../state/placement'
 import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { PlaneView } from '../../types/generated/PlaneView'
@@ -22,10 +22,24 @@ type SceneData = {
   signature: string
 }
 
-/** Diameter, in inches */
-const DOT_SIZE = 0.8
+/**
+ * A shape per kind of hardware, so they can be told apart from any angle (sizes in inches). The driver ring lies flat
+ * and is open in the middle, so a switch under a coil stays visible and clickable.
+ */
+function hardwareShapes(): Record<Item['kind'] | 'Motor', THREE.BufferGeometry> {
+  return {
+    LED: new THREE.SphereGeometry(0.3, 16, 12),
+    Switch: new THREE.BoxGeometry(0.45, 0.45, 0.45),
+    Driver: new THREE.TorusGeometry(0.38, 0.09, 8, 24),
+    // not in the hardware definition yet; a motor can, standing upright
+    Motor: new THREE.CylinderGeometry(0.26, 0.26, 0.4, 16).rotateX(Math.PI / 2),
+  }
+}
 const PLANE_OPACITY = 0.14
-const IMAGE_OPACITY = 0.92
+// see-through enough that hardware on the plane stays easy to spot
+const IMAGE_OPACITY = 0.5
+/** How much larger than its shape a switch, driver or motor's outline is */
+const OUTLINE_SCALE = 1.35
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
 
@@ -249,10 +263,13 @@ export default function PlayfieldView() {
     const planeObjects: THREE.Object3D[] = []
     const textures = new Map<string, THREE.Texture>()
     const textureLoader = new THREE.TextureLoader()
-    const dotGeometry = new THREE.SphereGeometry(DOT_SIZE / 2, 16, 12)
+    const shapes = hardwareShapes()
+    const shapeGeometries = new Set<THREE.BufferGeometry>(Object.values(shapes))
     const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8 })
+    // drawn on the back faces of a slightly larger copy of a shape, so it shows as a rim around it
+    const outlineMaterial = new THREE.MeshBasicMaterial({ side: THREE.BackSide })
     // theme colors, read once per theme change rather than per dot
-    const palette = { dot: '', moved: '', hover: '', closed: '' }
+    const palette = { dot: '', moved: '', hover: '', active: '' }
     const planeMaterials: THREE.MeshBasicMaterial[] = []
     const lineMaterials: THREE.LineBasicMaterial[] = []
     let fitted = false
@@ -261,15 +278,16 @@ export default function PlayfieldView() {
     let disposeDotEffects: (() => void) | undefined
 
     // the dot following the cursor while placing hardware
-    const ghost = new THREE.Mesh(dotGeometry, ghostMaterial)
+    const ghost = new THREE.Mesh(shapes.LED, ghostMaterial)
     ghost.renderOrder = 2
     ghost.visible = false
     let ghostPosition: Position | null = null
 
     /**
-     * Each dot has its own material so LEDs and switches can show their own state. Hovered wins, then moved (not yet
-     * in the machine's code), then a closed switch or an LED's live color (black when it has none), then the default
-     * gray. A switch held from this browser is drawn larger, so a press shows before the machine confirms it.
+     * Each dot has its own material so it can show its own state. Hovered wins, then moved (not yet in the machine's
+     * code), then live state: green for a closed switch or an active driver (on, or just fired), an LED's color (black
+     * when it has none). Otherwise the default gray. A switch held from this browser is drawn larger, so a press shows
+     * before the machine confirms it.
      */
     function paint(dot: THREE.Mesh) {
       const point = dots.get(dot)
@@ -277,8 +295,10 @@ export default function PlayfieldView() {
       const id = switchId(point)
       const live =
         id !== null
-          ? isSwitchClosed(id) && palette.closed
-          : point.kind === 'LED' && (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+          ? isSwitchClosed(id) && palette.active
+          : point.kind === 'Driver'
+            ? driverState(Number(point.key.slice('driver:'.length))) !== 'Off' && palette.active
+            : point.kind === 'LED' && (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
       const color = dot === hoveredDot ? palette.hover : point.moved ? palette.moved : live || palette.dot
       ;(dot.material as THREE.MeshBasicMaterial).color.set(color)
       dot.scale.setScalar(id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
@@ -303,7 +323,8 @@ export default function PlayfieldView() {
       palette.dot = css('--hw-dot')
       palette.moved = css('--warn')
       palette.hover = css('--accent')
-      palette.closed = css('--ok')
+      palette.active = css('--ok')
+      outlineMaterial.color.set(css('--hw-outline'))
       ghostMaterial.color.set(css('--accent'))
       untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
       render()
@@ -313,7 +334,7 @@ export default function PlayfieldView() {
       scene.remove(content)
       content.traverse((obj) => {
         if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
-          if (obj.geometry !== dotGeometry) obj.geometry.dispose()
+          if (!shapeGeometries.has(obj.geometry)) obj.geometry.dispose()
         }
       })
       planeMaterials.forEach((m) => m.dispose())
@@ -352,18 +373,26 @@ export default function PlayfieldView() {
       }
 
       for (const point of points) {
-        const dot = new THREE.Mesh(dotGeometry, new THREE.MeshBasicMaterial())
+        const dot = new THREE.Mesh(shapes[point.kind], new THREE.MeshBasicMaterial())
         dot.position.set(...point.location)
         dot.renderOrder = 1
+        // LEDs are sphere-shaped and lit up, so they stand out without one
+        if (point.kind !== 'LED') {
+          const outline = new THREE.Mesh(shapes[point.kind], outlineMaterial)
+          outline.scale.setScalar(OUTLINE_SCALE)
+          outline.renderOrder = 1
+          // part of the dot for looks only: hovering and clicking still find the dot itself
+          outline.raycast = () => {}
+          dot.add(outline)
+        }
         dots.set(dot, point)
         content.add(dot)
       }
 
-      // one small effect per LED and switch dot, so a change repaints only that dot
+      // one small effect per dot, so a change repaints only that dot
       disposeDotEffects?.()
       disposeDotEffects = createRoot((dispose) => {
-        dots.forEach((point, dot) => {
-          if (point.kind === 'Driver') return
+        dots.forEach((_, dot) => {
           createEffect(() => {
             paint(dot as THREE.Mesh)
             render()
@@ -556,6 +585,9 @@ export default function PlayfieldView() {
     // entering and leaving placement
     createEffect(() => {
       const key = placing()
+      // the ghost takes the shape of what's being placed
+      const kind = key ? untrack(data).items.get(key)?.kind : undefined
+      ghost.geometry = shapes[kind ?? 'LED']
       setHoveredDot(null)
       setHovered(null)
       ghost.visible = false
@@ -595,9 +627,10 @@ export default function PlayfieldView() {
       darkQuery.removeEventListener('change', applyTheme)
       controls.dispose()
       textures.forEach((t) => t.dispose())
-      dotGeometry.dispose()
+      shapeGeometries.forEach((geometry) => geometry.dispose())
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
       ghostMaterial.dispose()
+      outlineMaterial.dispose()
       renderer.dispose()
       clearTimeout(toastTimer)
     })

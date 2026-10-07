@@ -20,6 +20,7 @@
   /* 3D view */
   --plane: #8e879c;
   --hw-dot: #8f8a99;
+  --hw-outline: #1b1920;
 
   --radius: 8px;
   --radius-sm: 4px;
@@ -55,6 +56,7 @@
 
     --plane: #6d6679;
     --hw-dot: #d4d1da;
+    --hw-outline: #000000;
   }
 }
 
