@@ -7,7 +7,9 @@
 - Better identify which systems need interfaces
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
-- Trough needs to properly utilize jam sensor
+- System groups need to be able to contain other system groups (recursive parent lookup)
+- Need to be able to spawn an entire group without specifying, e.g. "pinball manager" group, maybe that lets you swap specific systems
+- Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play)
 - Establish (and document) consistent log targets
 - Audits: Keep stats on coils fired, etc.
 - Add driver configure support for 78 Pulse Hold Extension
