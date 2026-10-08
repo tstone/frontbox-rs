@@ -28,6 +28,7 @@
 
 mod activate_playfield;
 pub mod autoplunger;
+mod ball_management;
 mod ball_save;
 mod ball_search;
 pub mod configs;
