@@ -1,51 +1,29 @@
 use frontbox::prelude::*;
+
+use crate::ball_management::ball_management_config::BallManagementConfig;
 pub struct TroughSystem {
+  config: BallManagementConfig,
   handle: SystemHandle,
-  switch_names: Vec<&'static str>,
-  jam_switch_name: Option<&'static str>,
-  eject_coil_name: &'static str,
   eject_state: EjectState,
-  eject_verification_time: Duration,
-  eject_verification_switches: Option<SwitchQ>,
   eject_queue: u8,
   eject_retries: u8,
-  max_retries: u8,
   occupancy_state: OccupancyState,
-  occupancy_settling_time: Duration,
-  max_settling_time: Duration,
   last_occupancy: u8,
+  /// Ejects verified since occupancy was last reported, used to separate exits from entries
+  exits_since_report: u8,
 }
 
 impl TroughSystem {
-  pub fn new(
-    eject_coil_name: &'static str,
-    // ordered nearest the eject to farthest
-    switch_names: Vec<&'static str>,
-    // TODO: this should probably get turned into a builder that also has configurability for some of the wait times and such
-    // If given, detects a ball stuck on top of the eject position after a failed eject. It is not counted in occupancy,
-    // but while closed an eject is considered to have failed and will be retried (which typically knocks the ball loose).
-    jam_switch_name: Option<&'static str>,
-    // If given, will be used to verify the ball has exited the trough (e.g. the plunge lane switch)
-    // Do not set to anything that a ball other than the ejected ball would be hitting in the case of a multiball
-    // Do not set if the game design allows the ball to intentionally re-enter the plunge lane
-    // If not given, it will be ambiguous for the trough if an eject failed or if a ball re-entered. If not set, consider lowering eject verification time.
-    eject_verification_switches: Option<SwitchQ>,
-  ) -> Self {
+  pub fn new(config: BallManagementConfig) -> Self {
     Self {
+      config,
       handle: SystemHandle::default(),
-      switch_names,
-      jam_switch_name,
-      eject_coil_name,
       eject_state: EjectState::Pending,
-      eject_verification_time: Duration::from_millis(1200),
-      eject_verification_switches,
       eject_queue: 0,
       eject_retries: 0,
-      max_retries: 5, // TODO make this configurable
       occupancy_state: OccupancyState::Ready,
-      occupancy_settling_time: Duration::from_millis(300),
-      max_settling_time: Duration::from_millis(1500),
       last_occupancy: 0, // set on spawn
+      exits_since_report: 0,
     }
   }
 
@@ -78,6 +56,7 @@ impl TroughSystem {
   /// True if the jam switch is configured and currently closed
   pub fn is_jammed(&self, ctx: &SystemContext) -> bool {
     self
+      .config
       .jam_switch_name
       .map(|name| ctx.switches.is_closed(name).unwrap_or(false))
       .unwrap_or(false)
@@ -89,13 +68,13 @@ impl TroughSystem {
   }
 
   fn retry_eject(&mut self, ctx: &SystemContext) {
-    if self.eject_retries >= self.max_retries {
+    if self.eject_retries >= self.config.eject_retries_max {
       log::warn!(target: "frontbox::trough", "Eject failed after {} retries", self.eject_retries);
       ctx.emit(TroughEjectFailed);
       self.eject_ready(ctx);
     } else {
       self.eject_retries += 1;
-      log::info!(target: "frontbox::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, self.max_retries);
+      log::info!(target: "frontbox::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, self.config.eject_retries_max);
 
       if matches!(self.occupancy_state, OccupancyState::Settling { .. }) {
         // Balls are still moving; defer the retry until settled. Ready (without resetting retries) lets the queue run it.
@@ -110,14 +89,15 @@ impl TroughSystem {
   fn eject_inner(&mut self, ctx: &SystemContext) {
     self.eject_state = EjectState::Verifying {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
-      cue_id: ctx.cue(VerifyEject, self.eject_verification_time.once()),
+      cue_id: ctx.cue(VerifyEject, self.config.eject_verification_time.once()),
     };
-    ctx.activate_driver(self.eject_coil_name, ActivationMode::Tap);
+    ctx.activate_driver(self.config.eject_coil_name, ActivationMode::Tap);
   }
 
   fn read_switch_occupancy(&self, ctx: &SystemContext) -> u8 {
     self
-      .switch_names
+      .config
+      .trough_switch_names
       .iter()
       .filter(|name| ctx.switches.is_closed(**name).unwrap())
       .count() as u8
@@ -126,6 +106,7 @@ impl TroughSystem {
   fn verify_eject_switch(&mut self, ctx: &SystemContext) {
     if let EjectState::Verifying { cue_id, .. } = self.eject_state {
       ctx.cancel_cue(cue_id);
+      self.exits_since_report += 1;
       self.eject_ready(ctx);
     }
   }
@@ -139,6 +120,7 @@ impl TroughSystem {
     {
       // A closed jam switch means the ball didn't leave, even if it no longer registers in occupancy
       if !self.is_jammed(ctx) && self.read_switch_occupancy(ctx.into()) <= target_occupancy {
+        self.exits_since_report += 1;
         self.eject_ready(ctx);
       } else {
         self.retry_eject(ctx);
@@ -149,6 +131,12 @@ impl TroughSystem {
   fn eject_ready(&mut self, ctx: &SystemContext) {
     self.eject_retries = 0;
     self.eject_state = EjectState::Ready;
+
+    // A report held while this eject was verifying can go out now. If still settling, the settle will report instead.
+    // This must happen before the next queued eject starts verifying and holds reporting again.
+    if self.occupancy_state == OccupancyState::Ready {
+      self.report_occupancy(ctx);
+    }
     self.process_queued_ejects(ctx);
   }
 
@@ -168,12 +156,12 @@ impl TroughSystem {
         ctx.cancel_cue(cue_id);
         max_cue_id
       }
-      OccupancyState::Ready => ctx.cue(MaxSettle, self.max_settling_time.once()),
+      OccupancyState::Ready => ctx.cue(MaxSettle, self.config.occupancy_settling_max.once()),
     };
 
     self.occupancy_state = OccupancyState::Settling {
       max_cue_id,
-      settling_cue_id: ctx.cue(VerifyOccupancy, self.occupancy_settling_time.once()),
+      settling_cue_id: ctx.cue(VerifyOccupancy, self.config.occupancy_settling_time.once()),
     }
   }
 
@@ -190,19 +178,36 @@ impl TroughSystem {
     };
     ctx.cancel_cue(settling_cue_id);
     ctx.cancel_cue(max_cue_id);
+    self.occupancy_state = OccupancyState::Ready;
 
+    // While an eject is verifying, whether the ball has exited isn't known yet. Hold the report until the eject
+    // completes so the exit is counted rather than mistaken for (or cancelling out) an entry.
+    if !matches!(self.eject_state, EjectState::Verifying { .. }) {
+      self.report_occupancy(ctx);
+    }
+    self.process_queued_ejects(ctx);
+  }
+
+  /// Emits the change in occupancy since the last report, separated into entries and exits
+  fn report_occupancy(&mut self, ctx: &SystemContext) {
     let current_occupancy = self.read_switch_occupancy(ctx);
-    if self.last_occupancy != current_occupancy {
+    let delta = current_occupancy as i8 - self.last_occupancy as i8;
+
+    // Exits are known from verified ejects; anything beyond that in the net change is an entry. Clamping keeps
+    // entered - exited == delta even if a ball vanished without an eject (e.g. a switch fault).
+    let entered = (delta + self.exits_since_report as i8).max(0) as u8;
+    let exited = (entered as i8 - delta) as u8;
+
+    if entered > 0 || exited > 0 {
       ctx.emit(TroughOccupancyChanged {
         current_occupancy,
-        delta: current_occupancy as i8 - self.last_occupancy as i8,
+        entered,
+        exited,
       });
     }
 
-    // reset
     self.last_occupancy = current_occupancy;
-    self.occupancy_state = OccupancyState::Ready;
-    self.process_queued_ejects(ctx);
+    self.exits_since_report = 0;
   }
 }
 
@@ -219,15 +224,15 @@ impl System for TroughSystem {
     } else if event.is::<VerifyOccupancy>() || event.is::<MaxSettle>() {
       self.verify_occupancy(ctx);
     } else if let Some(e) = event.downcast_ref::<SwitchClosed>() {
-      if self.switch_names.contains(&e.switch.name) {
+      if self.config.trough_switch_names.contains(&e.switch.name) {
         self.queue_occupancy_settling(ctx);
-      } else if let Some(q) = &self.eject_verification_switches
+      } else if let Some(q) = &self.config.eject_verification_switches
         && q.matches(&e.switch)
       {
         self.verify_eject_switch(ctx);
       }
     } else if let Some(e) = event.downcast_ref::<SwitchOpened>()
-      && self.switch_names.contains(&e.switch.name)
+      && self.config.trough_switch_names.contains(&e.switch.name)
     {
       self.queue_occupancy_settling(ctx);
     }
@@ -265,10 +270,22 @@ struct MaxSettle;
 
 // -- Events --
 
+/// Emitted once the trough has settled. Balls that entered and exited within the same settling period are both
+/// counted, rather than cancelling out.
 #[derive(serde::Serialize, Event)]
 pub struct TroughOccupancyChanged {
   pub current_occupancy: u8,
-  pub delta: i8,
+  /// Balls which entered the trough (e.g. drained)
+  pub entered: u8,
+  /// Balls which exited the trough (verified ejects)
+  pub exited: u8,
+}
+
+impl TroughOccupancyChanged {
+  /// Net change in occupancy
+  pub fn delta(&self) -> i8 {
+    self.entered as i8 - self.exited as i8
+  }
 }
 
 #[derive(serde::Serialize, Event)]
@@ -313,12 +330,13 @@ mod tests {
         });
       }
 
-      let trough = TroughSystem::new(
-        "eject",
-        TROUGH.to_vec(),
-        with_jam.then_some(JAM),
-        with_verify.then(|| SwitchQ::name(PLUNGE)),
-      );
+      let trough = TroughSystem::new(BallManagementConfig {
+        trough_switch_names: TROUGH.to_vec(),
+        jam_switch_name: with_jam.then_some(JAM),
+        eject_coil_name: "eject",
+        eject_verification_switches: with_verify.then(|| SwitchQ::name(PLUNGE)),
+        ..Default::default()
+      });
 
       let mut fixture = Self {
         trough,
@@ -338,9 +356,7 @@ mod tests {
 
     /// Write the fixture's switch state into the context's switch cache
     fn apply(&mut self) {
-      let mut states: Vec<SwitchState> = (0..TROUGH.len())
-        .map(|i| state(i < self.balls))
-        .collect();
+      let mut states: Vec<SwitchState> = (0..TROUGH.len()).map(|i| state(i < self.balls)).collect();
       states.push(state(self.jam));
       states.push(state(self.plunge));
       self.ctx.update_switch_states(states);
@@ -414,14 +430,14 @@ mod tests {
         .collect()
     }
 
-    /// (current_occupancy, delta) of all occupancy events emitted since the last call
-    fn occupancy_events(&mut self) -> Vec<(u8, i8)> {
+    /// (current_occupancy, entered, exited) of all occupancy events emitted since the last call
+    fn occupancy_events(&mut self) -> Vec<(u8, u8, u8)> {
       self
         .ctx
         .events_emitted()
         .iter()
         .filter_map(|e| e.event.downcast_ref::<TroughOccupancyChanged>())
-        .map(|e| (e.current_occupancy, e.delta))
+        .map(|e| (e.current_occupancy, e.entered, e.exited))
         .collect()
     }
 
@@ -470,38 +486,43 @@ mod tests {
     f.set_balls(4);
     assert!(f.is_settling());
     assert!(f.events().is_empty());
-    assert_eq!(f.trough.occupancy(), 3, "occupancy is not updated until settled");
+    assert_eq!(
+      f.trough.occupancy(),
+      3,
+      "occupancy is not updated until settled"
+    );
   }
 
   #[test]
-  fn occupancy_settled_after_ball_enters_emits_positive_delta() {
+  fn occupancy_settled_after_ball_enters_reports_one_entered() {
     let mut f = Fixture::spawn(3, false, false);
     f.set_balls(4);
     f.settle();
-    assert_eq!(f.occupancy_events(), vec![(4, 1)]);
+    assert_eq!(f.occupancy_events(), vec![(4, 1, 0)]);
     assert_eq!(f.trough.occupancy(), 4);
     assert!(!f.is_settling());
   }
 
   #[test]
-  fn occupancy_settled_after_ball_leaves_emits_negative_delta() {
+  fn occupancy_settled_after_ball_leaves_without_eject_reports_one_exited() {
     let mut f = Fixture::spawn(3, false, false);
     f.set_balls(2);
     f.settle();
-    assert_eq!(f.occupancy_events(), vec![(2, -1)]);
+    assert_eq!(f.occupancy_events(), vec![(2, 0, 1)]);
   }
 
   #[test]
-  fn occupancy_two_balls_entering_while_settling_emit_single_event_with_delta_two() {
+  fn occupancy_two_balls_entering_while_settling_report_single_event_with_two_entered() {
     let mut f = Fixture::spawn(2, false, false);
     f.set_balls(3);
     f.set_balls(4);
     f.settle();
-    assert_eq!(f.occupancy_events(), vec![(4, 2)]);
+    assert_eq!(f.occupancy_events(), vec![(4, 2, 0)]);
   }
 
   #[test]
-  fn occupancy_ball_leaving_and_entering_while_settling_with_no_net_change_emits_nothing_and_returns_ready() {
+  fn occupancy_ball_leaving_and_entering_while_settling_with_no_net_change_emits_nothing_and_returns_ready()
+   {
     let mut f = Fixture::spawn(3, false, false);
     f.set_balls(2);
     f.set_balls(3);
@@ -532,7 +553,10 @@ mod tests {
       panic!("expected settling");
     };
 
-    assert_ne!(first_settle, second_settle, "settle cue restarts on every change");
+    assert_ne!(
+      first_settle, second_settle,
+      "settle cue restarts on every change"
+    );
     assert_eq!(first_max, second_max, "max settle cue is not restarted");
   }
 
@@ -543,7 +567,7 @@ mod tests {
     f.set_balls(3);
     f.set_balls(4);
     f.deliver(&MaxSettle);
-    assert_eq!(f.occupancy_events(), vec![(4, 1)]);
+    assert_eq!(f.occupancy_events(), vec![(4, 1, 0)]);
     assert!(!f.is_settling());
   }
 
@@ -630,8 +654,11 @@ mod tests {
     assert_eq!(f.events(), vec!["TroughEjecting"]);
     assert_eq!(f.trough.eject_queue, 1);
 
+    f.set_balls(2); // ejected ball leaves
+    f.settle();
     f.close_plunge();
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    // the held exit is reported before the queued eject starts
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
     assert_eq!(f.trough.eject_queue, 0);
     assert!(f.is_verifying());
   }
@@ -757,7 +784,10 @@ mod tests {
     f.verify_timeout();
     assert_eq!(f.trough.eject_state, EjectState::Ready);
     assert_eq!(f.trough.eject_queue, 1);
-    assert_eq!(f.trough.eject_retries, 1, "deferred retry keeps its retry count");
+    assert_eq!(
+      f.trough.eject_retries, 1,
+      "deferred retry keeps its retry count"
+    );
 
     f.settle();
     assert!(f.is_verifying());
@@ -770,11 +800,11 @@ mod tests {
   fn verify_timeout_at_max_retries_emits_failed_and_returns_to_ready() {
     let mut f = Fixture::spawn(3, false, false);
     f.eject();
-    for _ in 0..f.trough.max_retries {
+    for _ in 0..f.trough.config.eject_retries_max {
       f.verify_timeout();
     }
     assert!(f.is_verifying());
-    assert_eq!(f.trough.eject_retries, f.trough.max_retries);
+    assert_eq!(f.trough.eject_retries, f.trough.config.eject_retries_max);
     f.events();
 
     f.verify_timeout();
@@ -787,7 +817,7 @@ mod tests {
   fn verify_timeout_at_max_retries_continues_with_next_queued_eject() {
     let mut f = Fixture::spawn(3, false, false);
     f.eject_many(2);
-    for _ in 0..f.trough.max_retries {
+    for _ in 0..f.trough.config.eject_retries_max {
       f.verify_timeout();
     }
     f.events();
@@ -808,7 +838,8 @@ mod tests {
   }
 
   #[test]
-  fn verify_timeout_without_verification_switch_cannot_distinguish_drain_during_eject_and_retries() {
+  fn verify_timeout_without_verification_switch_cannot_distinguish_drain_during_eject_and_retries()
+  {
     // Known limitation: without a verification switch, a ball draining during the eject looks like a failed eject
     let mut f = Fixture::spawn(3, false, false);
     f.eject();
@@ -831,5 +862,110 @@ mod tests {
     f.close_plunge();
     assert_eq!(f.trough.eject_state, EjectState::Ready);
     assert_eq!(f.trough.eject_retries, 0);
+  }
+
+  // -- Entries and exits --
+
+  #[test]
+  fn occupancy_settled_while_eject_verifying_holds_report_until_eject_verified() {
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.events();
+    f.set_balls(2); // ejected ball leaves
+    f.settle();
+    assert!(f.events().is_empty(), "report is held while the eject is verifying");
+    assert_eq!(f.trough.occupancy(), 3);
+
+    f.close_plunge();
+    assert_eq!(f.occupancy_events(), vec![(2, 0, 1)]);
+    assert_eq!(f.trough.occupancy(), 2);
+  }
+
+  #[test]
+  fn eject_verified_while_settling_reports_exit_when_settled() {
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.events();
+    f.set_balls(2); // ejected ball leaves, trough starts settling
+    f.close_plunge();
+    assert!(f.events().is_empty(), "nothing reported until settled");
+
+    f.settle();
+    assert_eq!(f.occupancy_events(), vec![(2, 0, 1)]);
+  }
+
+  #[test]
+  fn eject_verified_by_timeout_reports_exit() {
+    let mut f = Fixture::spawn(3, false, false);
+    f.eject();
+    f.events();
+    f.set_balls(2);
+    f.settle();
+    assert!(f.events().is_empty());
+
+    f.verify_timeout();
+    assert_eq!(f.occupancy_events(), vec![(2, 0, 1)]);
+  }
+
+  #[test]
+  fn eject_and_drain_in_same_settle_report_one_entered_and_one_exited() {
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.events();
+    f.set_balls(2); // ejected ball leaves
+    f.set_balls(3); // another ball drains in before the trough settles
+    f.settle();
+    f.close_plunge();
+    assert_eq!(f.occupancy_events(), vec![(3, 1, 1)]);
+  }
+
+  #[test]
+  fn eject_retry_does_not_count_failed_attempt_as_exit() {
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.events();
+    f.verify_timeout(); // first attempt failed, ball still present
+    assert!(f.events().is_empty());
+
+    f.set_balls(2); // retry succeeds
+    f.settle();
+    f.close_plunge();
+    assert_eq!(f.occupancy_events(), vec![(2, 0, 1)]);
+  }
+
+  #[test]
+  fn eject_failed_after_max_retries_releases_held_report_without_exit() {
+    let mut f = Fixture::spawn(3, false, false);
+    f.eject();
+    f.set_balls(4); // a ball drains during the eject; report held
+    f.settle();
+    f.events();
+
+    for _ in 0..=f.trough.config.eject_retries_max {
+      f.verify_timeout();
+    }
+    assert_eq!(f.events(), vec!["TroughEjectFailed", "TroughOccupancyChanged"]);
+    assert_eq!(f.trough.occupancy(), 4);
+  }
+
+  #[test]
+  fn verify_switch_without_ball_leaving_reports_phantom_entry_and_exit() {
+    // Known limitation: a verification switch hit by a ball that didn't come from the trough (e.g. re-entering the
+    // plunge lane) is counted as an exit, so the unchanged occupancy looks like one ball in and one ball out
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.events();
+    f.close_plunge();
+    assert_eq!(f.occupancy_events(), vec![(3, 1, 1)]);
+  }
+
+  #[test]
+  fn occupancy_event_delta_is_entered_minus_exited() {
+    let event = TroughOccupancyChanged {
+      current_occupancy: 3,
+      entered: 1,
+      exited: 2,
+    };
+    assert_eq!(event.delta(), -1);
   }
 }
