@@ -11,6 +11,9 @@ pub struct PlungeLaneConfig {
   /// How long the lane switch must stay open before the ball is considered gone, as a weak plunge can roll back
   pub(super) re_enter_timeout: Duration,
   pub(super) ball_present_effect: Option<LedProgram1d>,
+  /// How long ball management waits for an ejected ball to reach the lane, before trying to knock it loose and then
+  /// giving up on it
+  pub(super) arrival_timeout: Duration,
 }
 
 impl PlungeLaneConfig {
@@ -19,6 +22,7 @@ impl PlungeLaneConfig {
       switch_name,
       re_enter_timeout: Duration::from_millis(1000),
       ball_present_effect: None,
+      arrival_timeout: Duration::from_millis(5000),
     }
   }
 }

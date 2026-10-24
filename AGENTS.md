@@ -24,6 +24,9 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 
 - Cues a system sends to itself are private and live in the same file as the system.
 - Public events for a module are centralized in that module's `mod.rs`, not spread across system files.
+- Only halt an event with an interrupt when there is a specific reason it must not reach other systems. A halted event
+  is invisible to everything downstream, including systems that are hard to anticipate (audits, switch hit counts, the
+  console), so the default is to let it through.
 
 ## Ball Management (`frontbox-pinball/src/ball_management`)
 

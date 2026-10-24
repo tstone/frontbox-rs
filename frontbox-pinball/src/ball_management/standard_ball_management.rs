@@ -25,11 +25,19 @@ pub struct StandardBallManagement {
   incoming: Option<Launch>,
   /// The ball in the plunge lane, from arriving until it is gone for good
   lane_ball: Option<LaneBall>,
+  /// Waiting on an incoming ball the trough has finished ejecting, but the plunge lane hasn't seen
+  arrival_wait: Option<ArrivalWait>,
 }
 
 struct LaneBall {
   launch: Launch,
   launched_by: Option<LaunchMethod>,
+}
+
+struct ArrivalWait {
+  cue_id: u64,
+  /// The autoplunger has already been fired once to knock the ball loose
+  kicked: bool,
 }
 
 impl StandardBallManagement {
@@ -43,6 +51,7 @@ impl StandardBallManagement {
       trough_busy: false,
       incoming: None,
       lane_ball: None,
+      arrival_wait: None,
     }
   }
 
@@ -134,19 +143,73 @@ impl StandardBallManagement {
       ctx.emit(BallLaunched {
         method: LaunchMethod::Auto,
       });
+    } else if self.incoming.is_some() {
+      // The trough is done, so the ball should reach the plunge lane shortly
+      self.start_arrival_wait(false, ctx);
     }
     self.process_queue(ctx);
   }
 
   fn on_trough_eject_failed(&mut self, ctx: &SystemContext) {
-    // TODO: who recovers from a failed eject is still open (re-queue, ball search, operator alert)
+    // TODO: re-queue with backoff and report it to the game, rather than dropping the ball (see TODO.md)
     log::warn!(target: "frontbox::ball_management", "Trough eject failed, abandoning the ball");
     self.trough_busy = false;
     self.incoming = None;
+    self.cancel_arrival_wait(ctx);
+    self.process_queue(ctx);
+  }
+
+  fn start_arrival_wait(&mut self, kicked: bool, ctx: &SystemContext) {
+    let Some(timeout) = self.config.plunge_lane().map(|lane| lane.arrival_timeout) else {
+      return;
+    };
+    self.cancel_arrival_wait(ctx);
+    self.arrival_wait = Some(ArrivalWait {
+      cue_id: ctx.cue(LaneArrivalTimedOut, timeout.once()),
+      kicked,
+    });
+  }
+
+  fn cancel_arrival_wait(&mut self, ctx: &SystemContext) {
+    if let Some(wait) = self.arrival_wait.take() {
+      ctx.cancel_cue(wait.cue_id);
+    }
+  }
+
+  /// The trough ejected a ball, but the plunge lane never saw it arrive (e.g. it stopped short of the lane switch, or
+  /// the switch is faulty). First try knocking it loose with the autoplunger, then stop waiting so the queue doesn't
+  /// stall. Ball counts come from the trough, so giving up doesn't throw them off.
+  fn on_lane_arrival_timed_out(&mut self, ctx: &SystemContext) {
+    let Some(wait) = self.arrival_wait.take() else {
+      return;
+    };
+    if self.incoming.is_none() {
+      return;
+    }
+
+    if !wait.kicked
+      && let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>()
+    {
+      log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
+      autoplunger.launch(ctx.into());
+      self.start_arrival_wait(true, ctx);
+      return;
+    }
+
+    log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
+    self.incoming = None;
+    ctx.emit(BallLaunched {
+      method: if wait.kicked {
+        LaunchMethod::Auto
+      } else {
+        LaunchMethod::Manual
+      },
+    });
     self.process_queue(ctx);
   }
 
   fn on_ball_entered_lane(&mut self, ctx: &SystemContext) {
+    self.cancel_arrival_wait(ctx);
     // A ball that wasn't ejected (e.g. one already there at spawn) is launched automatically
     let launch = self.incoming.take().unwrap_or(Launch::Auto);
     self.lane_ball = Some(LaneBall {
@@ -297,9 +360,16 @@ impl System for StandardBallManagement {
       ball.launched_by = Some(*method);
     } else if event.is::<BallExitedPlungeLane>() {
       self.on_ball_exited_lane(ctx);
+    } else if event.is::<LaneArrivalTimedOut>() {
+      self.on_lane_arrival_timed_out(ctx);
     }
   }
 }
+
+// -- Cues --
+
+#[derive(serde::Serialize, Event)]
+struct LaneArrivalTimedOut;
 
 #[cfg(test)]
 mod tests {
@@ -821,6 +891,70 @@ mod tests {
 
     f.deliver(&BallReenteredPlungeLane);
     assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+  }
+
+  // -- Ball never reaching the plunge lane --
+
+  #[test]
+  fn ball_reaching_lane_before_trough_finishes_starts_no_arrival_wait() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(1, Launch::Auto);
+    f.lane_entered();
+    f.trough_ejected();
+    assert!(f.system.arrival_wait.is_none());
+  }
+
+  #[test]
+  fn ball_not_reaching_lane_is_kicked_then_given_up_on() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(2, Launch::Player);
+    f.trough_ejected();
+    assert!(f.system.arrival_wait.is_some());
+
+    f.deliver(&LaneArrivalTimedOut);
+    assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+    assert!(f.system.incoming.is_some(), "still waiting after the kick");
+    assert!(f.launched_events().is_empty());
+
+    f.deliver(&LaneArrivalTimedOut);
+    assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
+    assert!(
+      f.system.incoming.is_some(),
+      "the second ball is now incoming"
+    );
+    assert!(f.system.trough_busy);
+    assert!(f.system.queue.is_empty());
+  }
+
+  #[test]
+  fn ball_not_reaching_lane_without_autoplunger_is_given_up_on_at_first_timeout() {
+    let mut f = Fixture::with_lane(5, false, false);
+    f.eject_many(1, Launch::Player);
+    f.trough_ejected();
+
+    f.deliver(&LaneArrivalTimedOut);
+    assert_eq!(f.launched_events(), vec![LaunchMethod::Manual]);
+    assert!(f.system.incoming.is_none());
+    assert!(f.system.arrival_wait.is_none());
+  }
+
+  #[test]
+  fn ball_knocked_loose_by_kick_continues_normally() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(1, Launch::Auto);
+    f.trough_ejected();
+    f.deliver(&LaneArrivalTimedOut);
+    f.forward_autoplunger_fires();
+
+    // the kicked ball rolls over the lane switch on its way out
+    f.lane_entered();
+    assert!(f.system.arrival_wait.is_none(), "wait cancelled");
+    f.forward_autoplunger_fires();
+    f.lane_exited();
+    assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
+
+    f.deliver(&LaneArrivalTimedOut); // a stale cue is ignored
+    assert!(f.launched_events().is_empty());
   }
 
   #[test]

@@ -200,6 +200,13 @@ macro_rules! plunge_lane_settings {
         self.lane.ball_present_effect = Some(effect);
         self
       }
+
+      /// How long to wait for an ejected ball to reach the plunge lane before trying to knock it loose with the
+      /// autoplunger (if there is one), and again before giving up and assuming it went into play
+      pub fn arrival_timeout(mut self, timeout: Duration) -> Self {
+        self.lane.arrival_timeout = timeout;
+        self
+      }
     }
   )*};
 }
