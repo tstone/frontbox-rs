@@ -1,10 +1,10 @@
 use frontbox::prelude::*;
 
-use crate::ball_management::ball_management_config::BallManagementConfig;
+use crate::ball_management::trough_management_config::TroughManagementConfig;
 use crate::ball_management::{TroughEjectFailed, TroughEjecting, TroughOccupancyChanged};
 
 pub struct TroughSystem {
-  config: BallManagementConfig,
+  config: TroughManagementConfig,
   handle: SystemHandle,
   eject_state: EjectState,
   eject_queue: u8,
@@ -16,7 +16,7 @@ pub struct TroughSystem {
 }
 
 impl TroughSystem {
-  pub fn new(config: BallManagementConfig) -> Self {
+  pub fn new(config: TroughManagementConfig) -> Self {
     Self {
       config,
       handle: SystemHandle::default(),
@@ -333,7 +333,7 @@ mod tests {
         });
       }
 
-      let trough = TroughSystem::new(BallManagementConfig {
+      let trough = TroughSystem::new(TroughManagementConfig {
         trough_switch_names: TROUGH.to_vec(),
         jam_switch_name: with_jam.then_some(JAM),
         eject_coil_name: "eject",
@@ -876,7 +876,10 @@ mod tests {
     f.events();
     f.set_balls(2); // ejected ball leaves
     f.settle();
-    assert!(f.events().is_empty(), "report is held while the eject is verifying");
+    assert!(
+      f.events().is_empty(),
+      "report is held while the eject is verifying"
+    );
     assert_eq!(f.trough.occupancy(), 3);
 
     f.close_plunge();
@@ -947,7 +950,10 @@ mod tests {
     for _ in 0..=f.trough.config.eject_retries_max {
       f.verify_timeout();
     }
-    assert_eq!(f.events(), vec!["TroughEjectFailed", "TroughOccupancyChanged"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughEjectFailed", "TroughOccupancyChanged"]
+    );
     assert_eq!(f.trough.occupancy(), 4);
   }
 
@@ -960,15 +966,5 @@ mod tests {
     f.events();
     f.close_plunge();
     assert_eq!(f.occupancy_events(), vec![(3, 1, 1)]);
-  }
-
-  #[test]
-  fn occupancy_event_delta_is_entered_minus_exited() {
-    let event = TroughOccupancyChanged {
-      current_occupancy: 3,
-      entered: 1,
-      exited: 2,
-    };
-    assert_eq!(event.delta(), -1);
   }
 }

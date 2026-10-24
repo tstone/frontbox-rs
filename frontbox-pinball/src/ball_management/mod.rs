@@ -1,12 +1,16 @@
-mod ball_management_config;
-mod ball_management_system;
+mod ball_management;
+mod ball_management_ext;
 mod ball_search;
 mod trough;
+mod trough_ball_management;
+mod trough_management_config;
 
-pub use ball_management_config::*;
-pub use ball_management_system::*;
+pub use ball_management::*;
+pub use ball_management_ext::*;
 pub use ball_search::*;
 pub use trough::*;
+pub use trough_ball_management::*;
+pub use trough_management_config::*;
 
 use frontbox::prelude::*;
 
@@ -25,11 +29,12 @@ pub struct BallsDrained {
 }
 
 // -- Trough Events --
+// Occupancy and ejecting are internal to ball management; consumers use the ball management events above
 
 /// Emitted once the trough has settled. Balls that entered and exited within the same settling period are both
 /// counted, rather than cancelling out.
 #[derive(serde::Serialize, Event)]
-pub struct TroughOccupancyChanged {
+struct TroughOccupancyChanged {
   pub current_occupancy: u8,
   /// Balls which entered the trough (e.g. drained)
   pub entered: u8,
@@ -37,15 +42,8 @@ pub struct TroughOccupancyChanged {
   pub exited: u8,
 }
 
-impl TroughOccupancyChanged {
-  /// Net change in occupancy
-  pub fn delta(&self) -> i8 {
-    self.entered as i8 - self.exited as i8
-  }
-}
-
 #[derive(serde::Serialize, Event)]
-pub struct TroughEjecting;
+struct TroughEjecting;
 
 #[derive(serde::Serialize, Event)]
 pub struct TroughEjectFailed;

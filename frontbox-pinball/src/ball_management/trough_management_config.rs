@@ -6,7 +6,7 @@ use frontbox::prelude::*;
 // TODO: this should probably get turned into a builder that also has configurability for some of the wait times and such
 
 #[derive(Debug, Clone)]
-pub struct BallManagementConfig {
+pub struct TroughManagementConfig {
   // ordered nearest the eject to farthest
   pub trough_switch_names: Vec<&'static str>,
   // If given, detects a ball stuck on top of the eject position after a failed eject. It is not counted in occupancy,
@@ -24,7 +24,7 @@ pub struct BallManagementConfig {
   pub occupancy_settling_max: Duration,
 }
 
-impl Default for BallManagementConfig {
+impl Default for TroughManagementConfig {
   fn default() -> Self {
     Self {
       trough_switch_names: Vec::new(),

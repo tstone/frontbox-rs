@@ -5,7 +5,7 @@ use frontbox::prelude::*;
 use crate::ball_management::PerformBallSearch;
 
 /// The way this will work is a hybrid of tagging + event handling
-/// 
+///
 pub struct BallSearchSystem {
   cue_id: Option<u64>,
   handle: SystemHandle,

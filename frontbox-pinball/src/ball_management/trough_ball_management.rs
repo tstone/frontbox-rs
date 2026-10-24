@@ -1,20 +1,22 @@
 use frontbox::prelude::*;
 
-use crate::GameStarted;
-use crate::ball_management::ball_management_config::BallManagementConfig;
 use crate::ball_management::trough::TroughSystem;
-use crate::ball_management::{BallsDrained, MaxBallsInPlayChanged, TroughOccupancyChanged};
+use crate::ball_management::trough_management_config::TroughManagementConfig;
+use crate::ball_management::{
+  BallManagement, BallsDrained, MaxBallsInPlayChanged, TroughOccupancyChanged,
+};
 
-pub struct BallManagementSystem {
+/// Ball management for machines where every ball not in play comes to rest in a trough
+pub struct TroughBallManagement {
   handle: SystemHandle,
-  config: BallManagementConfig,
+  config: TroughManagementConfig,
   max_balls_in_play: u8,
   locked_balls: u8,
 }
 
-impl BallManagementSystem {
-  pub fn new(config: BallManagementConfig) -> Self {
-    BallManagementSystem {
+impl TroughBallManagement {
+  pub fn new(config: TroughManagementConfig) -> Self {
+    TroughBallManagement {
       handle: SystemHandle::default(),
       max_balls_in_play: 0, // set on spawn
       config,
@@ -22,55 +24,11 @@ impl BallManagementSystem {
     }
   }
 
-  pub fn eject(&mut self, ctx: &ServiceContext) {
-    ctx.expect::<TroughSystem>(self.handle).eject(ctx);
-  }
-
-  pub fn eject_many(&mut self, count: u8, ctx: &ServiceContext) {
-    ctx
-      .expect::<TroughSystem>(self.handle)
-      .eject_many(count, ctx);
-  }
-
-  pub fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
-    self.in_play(ctx.expect::<TroughSystem>(self.handle).occupancy())
-  }
-
   fn in_play(&self, occupancy: u8) -> u8 {
     self
       .max_balls_in_play
       .saturating_sub(occupancy)
       .saturating_sub(self.locked_balls)
-  }
-
-  /// When a ball is locked, held, or otherwise should no longer be expected in the trough
-  pub fn ball_temporarily_removed_from_play(&mut self, ctx: &ServiceContext) {
-    let prior = self.locked_balls.clone();
-    self.locked_balls = self.locked_balls.saturating_add(1);
-
-    if self.locked_balls > prior {
-      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
-        max_in_play: self.max_in_play(),
-        delta: -1,
-      });
-    }
-  }
-
-  /// When a ball is unlocked, released, or otherwise should now be expected in the trough
-  pub fn ball_returned_to_play(&mut self, ctx: &ServiceContext) {
-    let prior = self.locked_balls.clone();
-    self.locked_balls = self.locked_balls.saturating_sub(1);
-
-    if prior > self.locked_balls {
-      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
-        max_in_play: self.max_in_play(),
-        delta: 1,
-      });
-    }
-  }
-
-  fn establish_drained_occupancy(&mut self, ctx: &SystemContext) {
-    self.max_balls_in_play = ctx.expect::<TroughSystem>().occupancy();
   }
 
   fn max_in_play(&self) -> u8 {
@@ -104,21 +62,62 @@ impl BallManagementSystem {
   }
 }
 
-impl System for BallManagementSystem {
+impl BallManagement for TroughBallManagement {
+  fn eject(&mut self, ctx: &ServiceContext) {
+    ctx.expect::<TroughSystem>(self.handle).eject(ctx);
+  }
+
+  fn eject_many(&mut self, count: u8, ctx: &ServiceContext) {
+    ctx
+      .expect::<TroughSystem>(self.handle)
+      .eject_many(count, ctx);
+  }
+
+  fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
+    self.in_play(ctx.expect::<TroughSystem>(self.handle).occupancy())
+  }
+
+  fn establish_ball_count(&mut self, ctx: &ServiceContext) {
+    self.max_balls_in_play = ctx.expect::<TroughSystem>(self.handle).occupancy();
+    self.locked_balls = 0;
+  }
+
+  fn ball_temporarily_removed_from_play(&mut self, ctx: &ServiceContext) {
+    let prior = self.locked_balls.clone();
+    self.locked_balls = self.locked_balls.saturating_add(1);
+
+    if self.locked_balls > prior {
+      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
+        max_in_play: self.max_in_play(),
+        delta: -1,
+      });
+    }
+  }
+
+  fn ball_returned_to_play(&mut self, ctx: &ServiceContext) {
+    let prior = self.locked_balls.clone();
+    self.locked_balls = self.locked_balls.saturating_sub(1);
+
+    if prior > self.locked_balls {
+      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
+        max_in_play: self.max_in_play(),
+        delta: 1,
+      });
+    }
+  }
+}
+
+impl System for TroughBallManagement {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = *ctx.current_handle();
     let trough = TroughSystem::new(self.config.clone());
-    // Until a game starts and establishes it, assume the balls in the trough now are all the balls there are
+    // Until the ball count is established (e.g. at game start), assume the balls in the trough now are all the balls there are
     self.max_balls_in_play = trough.read_switch_occupancy(ctx.into());
     ctx.spawn_system(trough);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<GameStarted>() {
-      // at the start of a game, use the actual amount of balls present as the target
-      self.establish_drained_occupancy(ctx);
-      self.locked_balls = 0;
-    } else if let Some(TroughOccupancyChanged {
+    if let Some(TroughOccupancyChanged {
       current_occupancy,
       entered,
       ..
@@ -151,7 +150,7 @@ mod tests {
   const TROUGH: [&str; 5] = ["t1", "t2", "t3", "t4", "t5"];
 
   struct Fixture {
-    system: BallManagementSystem,
+    system: TroughBallManagement,
     ctx: TestContext,
   }
 
@@ -168,7 +167,7 @@ mod tests {
       }
       ctx.update_switch_states((0..TROUGH.len()).map(|i| state(i < balls)).collect());
 
-      let config = BallManagementConfig {
+      let config = TroughManagementConfig {
         trough_switch_names: TROUGH.to_vec(),
         eject_coil_name: "eject",
         ..Default::default()
@@ -178,7 +177,7 @@ mod tests {
       trough.on_spawn(&ctx.sys_ctx());
       ctx.insert_system(trough);
 
-      let mut system = BallManagementSystem::new(config);
+      let mut system = TroughBallManagement::new(config);
       system.on_spawn(&ctx.sys_ctx());
 
       let mut fixture = Self { system, ctx };
@@ -394,16 +393,16 @@ mod tests {
     assert_eq!(max_changed, vec![(5, 1)]);
   }
 
-  // -- Game start --
+  // -- Establishing ball count --
 
   #[test]
-  fn game_started_reestablishes_max_from_trough_and_clears_locks() {
+  fn establish_ball_count_resets_max_from_trough_and_clears_locks() {
     let mut f = Fixture::spawn(5);
     f.lock();
     f.system.max_balls_in_play = 6; // drifted during the previous game
     f.events();
 
-    f.deliver(&GameStarted);
+    f.system.establish_ball_count(&f.ctx.svc_ctx());
     assert_eq!(f.system.max_balls_in_play, 5);
     assert_eq!(f.system.locked_balls, 0);
     assert_eq!(f.balls_in_play(), 0);
@@ -421,6 +420,10 @@ mod tests {
     f.lock();
     f.trough_changed(2, 0, 2); // 2 balls in play
     f.trough_changed(3, 1, 0); // the locked ball comes loose and drains
-    assert_eq!(f.drained_events(), vec![(1, 1)], "2 are actually still in play");
+    assert_eq!(
+      f.drained_events(),
+      vec![(1, 1)],
+      "2 are actually still in play"
+    );
   }
 }
