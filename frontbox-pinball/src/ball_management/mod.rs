@@ -28,16 +28,26 @@ pub struct MaxBallsInPlayChanged {
   pub delta: i8,
 }
 
+/// Emitted when one or more balls leave play (e.g. drain). A ball save halts the drains it saves, so listeners only see
+/// drains that actually happened.
 #[derive(serde::Serialize, Event)]
-pub struct BallsDrained {
-  pub still_in_play: u8,
+pub struct BallsExitedPlay {
+  /// Balls that left play
   pub count: u8,
+  /// Balls still in play afterwards. Balls are in play once they have left the trough and aren't locked, which
+  /// includes a ball waiting in the plunge lane.
+  pub in_play: u8,
 }
 
-/// Emitted once a ball has gone into play, which can be well after it was ejected (e.g. a player waiting to plunge)
+/// Emitted once a ball has gone into play, which can be well after it was ejected (e.g. a player waiting to plunge).
+///
+/// A ball that rolls back into the plunge lane after it was considered gone is launched again, and emits this a second
+/// time. Listeners should treat it as "a ball is in play", not count it.
 #[derive(serde::Serialize, Event)]
-pub struct BallLaunched {
+pub struct BallEnteredPlay {
   pub method: LaunchMethod,
+  /// Balls in play, including this one
+  pub in_play: u8,
 }
 
 // -- Plunge Lane Events --

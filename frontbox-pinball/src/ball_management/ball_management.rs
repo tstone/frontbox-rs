@@ -13,13 +13,13 @@ use crate::ball_management::StandardBuilder;
 ///   locked). Counts are derived from what the hardware reports, not from running counters, so that a halted event,
 ///   failed eject, or missed drain can't make them drift. Balls that appear unexpectedly are reconciled, not reported
 ///   as drains.
-/// - **Reporting drains.** Emits `BallsDrained` with how many balls are still in play. It does not decide what a drain
+/// - **Reporting drains.** Emits `BallsExitedPlay` with how many balls are still in play. It does not decide what a drain
 ///   means: ending a turn, saving a ball, or ending a multiball belong to the systems listening. Halting a
-///   `BallsDrained` event must not affect ball management's own state.
+///   `BallsExitedPlay` event must not affect ball management's own state.
 /// - **Putting balls into play.** Owns the queue of balls requested. Balls are launched one at a time, spaced so the
 ///   hardware can receive each (e.g. waiting for the plunge lane to clear). Callers state intent with `Launch`, and the
 ///   implementation adapts it to the hardware, so callers never need to know what the machine has.
-/// - **Reporting launches.** Emits `BallLaunched` once a ball has actually gone into play, which can be well after it
+/// - **Reporting launches.** Emits `BallEnteredPlay` once a ball has actually gone into play, which can be well after it
 ///   was requested (e.g. a player waiting to plunge). Anything timed from a ball entering play should start here.
 /// - **Establishing the ball count on request.** `establish_ball_count` takes the balls present as all there are. It
 ///   is called explicitly (e.g. at game start) rather than ball management listening for game events, so it does
@@ -31,8 +31,8 @@ use crate::ball_management::StandardBuilder;
 ///   `ball_temporarily_removed_from_play` and `ball_returned_to_play`.
 ///
 /// ## Events
-/// - `BallsDrained` - Emitted when one or more balls leave play
-/// - `BallLaunched` - Emitted when a ball has been launched into play
+/// - `BallsExitedPlay` - Emitted when one or more balls leave play
+/// - `BallEnteredPlay` - Emitted when a ball has been launched into play
 /// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked)
 pub trait BallManagement: SpawnableSystem {
   /// Puts a ball into play. Balls are queued and launched one at a time.

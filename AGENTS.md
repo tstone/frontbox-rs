@@ -33,5 +33,7 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 - `TroughSystem` is the only system that reads trough switches. Other systems ask it (`occupancy()`,
   `read_switch_occupancy()`) and never read those switches themselves.
 - Ball counts are derived from the trough's reported occupancy, not kept as running counters that drift when an event
-  is halted, an eject fails, or a drain is missed. Consumers read `BallsDrained.still_in_play` rather than keeping their
+  is halted, an eject fails, or a drain is missed. Consumers read `BallsExitedPlay.in_play` rather than keeping their
   own counts.
+- Ball save is a deliberate exception to letting events through: while active it halts the `BallsExitedPlay` events it
+  saves, since a saved drain is treated as not having happened. It emits `BallSaved` for anything that needs to know.

@@ -155,5 +155,3 @@ impl BallEnteredPlungeLane {
 
 #[derive(serde::Serialize, Event)]
 pub struct BallExitedPlungeLane;
-#[derive(serde::Serialize, Event)]
-pub struct BallSaved; // TODO: set state as unexpected if ball was saved

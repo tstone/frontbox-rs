@@ -4,10 +4,10 @@ use frontbox::prelude::*;
 
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
-  AutoPlungerFired, AutoPlungerSystem, BallEnteredPlungeLane, BallExitedPlungeLane, BallLaunched,
-  BallManagement, BallReenteredPlungeLane, BallsDrained, Launch, LaunchMethod, Launcher,
-  MaxBallsInPlayChanged, PlungeLaneSystem, StandardBallManagementConfig, TroughEjectFailed,
-  TroughOccupancyChanged,
+  AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
+  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, Launch,
+  LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem, StandardBallManagementConfig,
+  TroughEjectFailed, TroughOccupancyChanged,
 };
 
 /// Ball management for machines where every ball not in play comes to rest in a single trough, optionally ejecting
@@ -31,6 +31,8 @@ pub struct StandardBallManagement {
 
 struct LaneBall {
   launch: Launch,
+  /// Requested with `eject`, as opposed to a ball nobody asked for (e.g. one left in the lane at boot)
+  claimed: bool,
   launched_by: Option<LaunchMethod>,
 }
 
@@ -60,6 +62,10 @@ impl StandardBallManagement {
       .max_balls_in_play
       .saturating_sub(occupancy)
       .saturating_sub(self.locked_balls)
+  }
+
+  fn current_in_play(&self, ctx: &SystemContext) -> u8 {
+    self.in_play(ctx.expect::<TroughSystem>().occupancy())
   }
 
   fn max_in_play(&self) -> u8 {
@@ -103,9 +109,9 @@ impl StandardBallManagement {
 
     let drained = entered - excess;
     if drained > 0 {
-      ctx.emit(BallsDrained {
+      ctx.emit(BallsExitedPlay {
         count: drained,
-        still_in_play: self.in_play(current_occupancy), // after reconcile
+        in_play: self.in_play(current_occupancy), // after reconcile
       });
     }
   }
@@ -114,6 +120,19 @@ impl StandardBallManagement {
 
   /// Ejects the next queued ball once the trough is free and the plunge lane (if any) is clear
   fn process_queue(&mut self, ctx: &SystemContext) {
+    // A ball nobody asked for that is waiting in the lane for the player serves the next request, rather than a second
+    // ball being ejected alongside it. With an autoplunger, such a ball has already been launched.
+    if self.config.autoplunger().is_none()
+      && let Some(ball) = self.lane_ball.as_mut()
+      && !ball.claimed
+      && let Some(launch) = self.queue.pop_front()
+    {
+      ball.launch = launch;
+      ball.claimed = true;
+      self.launch_from_lane(ctx);
+      return;
+    }
+
     // incoming and lane_ball are only ever set when there is a plunge lane
     let lane_occupied = self.incoming.is_some() || self.lane_ball.is_some();
     if self.trough_busy || lane_occupied {
@@ -140,8 +159,9 @@ impl StandardBallManagement {
     }
     self.trough_busy = false;
     if self.config.plunge_lane().is_none() {
-      ctx.emit(BallLaunched {
+      ctx.emit(BallEnteredPlay {
         method: LaunchMethod::Auto,
+        in_play: self.current_in_play(ctx),
       });
     } else if self.incoming.is_some() {
       // The trough is done, so the ball should reach the plunge lane shortly
@@ -198,12 +218,13 @@ impl StandardBallManagement {
 
     log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
     self.incoming = None;
-    ctx.emit(BallLaunched {
+    ctx.emit(BallEnteredPlay {
       method: if wait.kicked {
         LaunchMethod::Auto
       } else {
         LaunchMethod::Manual
       },
+      in_play: self.current_in_play(ctx),
     });
     self.process_queue(ctx);
   }
@@ -211,9 +232,11 @@ impl StandardBallManagement {
   fn on_ball_entered_lane(&mut self, ctx: &SystemContext) {
     self.cancel_arrival_wait(ctx);
     // A ball that wasn't ejected (e.g. one already there at spawn) is launched automatically
+    let claimed = self.incoming.is_some();
     let launch = self.incoming.take().unwrap_or(Launch::Auto);
     self.lane_ball = Some(LaneBall {
       launch,
+      claimed,
       launched_by: None,
     });
     self.launch_from_lane(ctx);
@@ -247,8 +270,9 @@ impl StandardBallManagement {
       if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
         autoplunger.disarm_launch_button(ctx.into());
       }
-      ctx.emit(BallLaunched {
+      ctx.emit(BallEnteredPlay {
         method: ball.launched_by.unwrap_or(LaunchMethod::Manual),
+        in_play: self.current_in_play(ctx),
       });
     }
     self.process_queue(ctx);
@@ -514,7 +538,7 @@ mod tests {
         .ctx
         .events_emitted()
         .iter()
-        .filter_map(|e| e.event.downcast_ref::<BallLaunched>())
+        .filter_map(|e| e.event.downcast_ref::<BallEnteredPlay>())
         .map(|e| e.method)
         .collect()
     }
@@ -552,14 +576,14 @@ mod tests {
         .collect()
     }
 
-    /// (count, still_in_play) of all drain events emitted since the last call
+    /// (count, in_play) of all drain events emitted since the last call
     fn drained_events(&mut self) -> Vec<(u8, u8)> {
       self
         .ctx
         .events_emitted()
         .iter()
-        .filter_map(|e| e.event.downcast_ref::<BallsDrained>())
-        .map(|e| (e.count, e.still_in_play))
+        .filter_map(|e| e.event.downcast_ref::<BallsExitedPlay>())
+        .map(|e| (e.count, e.in_play))
         .collect()
     }
 
@@ -606,7 +630,7 @@ mod tests {
   }
 
   #[test]
-  fn last_ball_draining_reports_none_still_in_play() {
+  fn last_ball_draining_reports_none_in_play() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
     f.trough_changed(5, 1, 0);
@@ -614,7 +638,7 @@ mod tests {
   }
 
   #[test]
-  fn drain_during_multiball_reports_balls_still_in_play() {
+  fn drain_during_multiball_reports_balls_in_play() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(2, 0, 3);
     f.trough_changed(3, 1, 0);
@@ -664,7 +688,7 @@ mod tests {
   }
 
   #[test]
-  fn locked_ball_is_not_counted_as_still_in_play() {
+  fn locked_ball_is_not_counted_as_in_play() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
     f.lock(); // ball in play goes into the lock
@@ -711,8 +735,8 @@ mod tests {
     let events = f.ctx.events_emitted();
     let drained: Vec<(u8, u8)> = events
       .iter()
-      .filter_map(|e| e.event.downcast_ref::<BallsDrained>())
-      .map(|e| (e.count, e.still_in_play))
+      .filter_map(|e| e.event.downcast_ref::<BallsExitedPlay>())
+      .map(|e| (e.count, e.in_play))
       .collect();
     let max_changed: Vec<(u8, i8)> = events
       .iter()
@@ -883,6 +907,31 @@ mod tests {
   }
 
   #[test]
+  fn request_takes_unclaimed_ball_waiting_in_lane_instead_of_ejecting_another() {
+    let mut f = Fixture::with_lane(5, false, false);
+    f.lane_entered(); // e.g. left in the lane at boot
+    f.eject_many(1, Launch::Player);
+    assert!(!f.system.trough_busy, "no second ball ejected");
+    assert!(f.system.queue.is_empty());
+
+    f.lane_exited();
+    assert_eq!(f.launched_events(), vec![LaunchMethod::Manual]);
+    assert!(!f.system.trough_busy, "still no second ball once it's gone");
+  }
+
+  #[test]
+  fn with_autoplunger_unclaimed_lane_ball_is_launched_and_request_waits_for_its_own_ball() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.lane_entered();
+    assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+    f.eject_many(1, Launch::Player);
+    assert_eq!(f.system.queue.len(), 1, "waits for the lane to clear");
+
+    f.lane_exited();
+    assert!(f.system.trough_busy, "its own ball is now ejecting");
+  }
+
+  #[test]
   fn ball_rolling_back_after_autoplunge_is_launched_again() {
     let mut f = Fixture::with_lane(5, true, false);
     f.eject_many(1, Launch::Auto);
@@ -970,7 +1019,7 @@ mod tests {
   // -- Known limitations --
 
   #[test]
-  fn locked_ball_draining_unannounced_during_multiball_undercounts_still_in_play() {
+  fn locked_ball_draining_unannounced_during_multiball_undercounts_in_play() {
     // Known limitation: without lock switches, a locked ball that comes loose looks like an ordinary drain until the
     // trough holds more balls than expected
     let mut f = Fixture::spawn(5);

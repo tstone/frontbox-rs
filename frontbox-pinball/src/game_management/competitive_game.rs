@@ -1,6 +1,7 @@
 use frontbox::prelude::*;
 use frontbox::provided::QuitGame;
 
+use crate::ball_management::{BallEnteredPlay, BallManager, BallsExitedPlay, Launch};
 use crate::*;
 
 static PLAYER_GROUP_NAMES: [&str; 6] = [
@@ -15,11 +16,16 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///
 /// ## Outputs
 /// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
-/// - Event: `PlayerTurnActive` - Emitted when the ball becomes in play.
-/// - Event: `PlayerTurnEnding` - Emitted when the ball goes out of play and is in the trough.
+/// - Event: `PlayerTurnActive` - Emitted when the ball enters play (`BallEnteredPlay`), or on the first ball in play
+///   switch hit, whichever comes first.
+/// - Event: `PlayerTurnEnding` - Emitted when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
 ///
 /// ## Interrupts
-/// - `TroughFull` - Interrupting this event will prevent the player turn from ending. This can be used to implement mechanics like ball saves or extra balls.
+/// - `BallsExitedPlay` - Interrupting this event will prevent the player turn from ending. This is how mechanics like
+///   ball save or extra balls work.
+///
+/// ## Requires
+/// - `BallManager` at the root
 pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
@@ -55,8 +61,8 @@ impl CompetitiveGame {
 
     // Start a game assuming the number of balls in the trough is how many there should be
     // this avoids weird cases where a ball search may have abandoned a ball previously
-    if let Some(trough) = sys_ctx.get::<TroughSystem>() {
-      trough.eject(ctx);
+    if let Some(mut ball_manager) = sys_ctx.get::<BallManager>() {
+      ball_manager.establish_ball_count(ctx);
     }
 
     sys_ctx.emit(GameStarted);
@@ -75,8 +81,8 @@ impl CompetitiveGame {
       game_state.current_player_turn(),
     ));
 
-    if let Some(trough) = ctx.get::<TroughSystem>() {
-      trough.eject(ctx.into());
+    if let Some(mut ball_manager) = ctx.get::<BallManager>() {
+      ball_manager.eject(Launch::Player, ctx.into());
     }
 
     ctx.emit(Synchronize);
@@ -129,8 +135,8 @@ impl System for CompetitiveGame {
       } else {
         match game_state.current_player_turn_state() {
           TurnState::Beginning => {
-            if event.is::<BallExitedPlungeLane>() {
-              log::debug!(target: "frontbox::game_manager", "Active caused by ball exiting plunge lane");
+            if event.is::<BallEnteredPlay>() {
+              log::debug!(target: "frontbox::game_manager", "Active caused by ball entering play");
               self.transition_turn_to_active(ctx.into());
             } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
               && self.ball_in_play_switches.matches(&e.switch)
@@ -139,8 +145,12 @@ impl System for CompetitiveGame {
               self.transition_turn_to_active(ctx.into());
             }
           }
-          TurnState::Active if event.is::<TroughFull>() => {
-            self.transition_turn_to_ending(ctx.into());
+          TurnState::Active => {
+            if let Some(BallsExitedPlay { in_play: 0, .. }) =
+              event.downcast_ref::<BallsExitedPlay>()
+            {
+              self.transition_turn_to_ending(ctx.into());
+            }
           }
           _ => {}
         }
