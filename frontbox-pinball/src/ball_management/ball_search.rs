@@ -2,6 +2,10 @@ use std::time::Duration;
 
 use frontbox::prelude::*;
 
+use crate::ball_management::PerformBallSearch;
+
+/// The way this will work is a hybrid of tagging + event handling
+/// 
 pub struct BallSearchSystem {
   cue_id: Option<u64>,
   handle: SystemHandle,
@@ -51,8 +55,7 @@ impl System for BallSearchSystem {
   }
 }
 
-#[derive(serde::Serialize, Event)]
-pub struct StartBallSearch;
+// -- Cues --
 
 #[derive(serde::Serialize, Event)]
-pub struct PerformBallSearch;
+struct StartBallSearch;

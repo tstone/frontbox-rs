@@ -19,6 +19,14 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?)
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
+- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console
+- Implement the remainder of FAST protocol
+
+Motors
+
+- New MotorDefinition
+- FAST protocol
+- Update Machine to support motor commands
 
 Canvas
 
@@ -63,5 +71,5 @@ Console
 - Initial state: configure switches to be latched by default (e.g. trough, captive ball)
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well
-- LedEffect1d web based designer: uses an API to render actual colors
+- LedEffect1d web based designer: uses an API to render actual colors (probably requires some kind of 'load from JSON' implementation so that they are editable)
 - LedEffect2d web based designer: same as above, but also uses LED config

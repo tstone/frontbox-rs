@@ -33,28 +33,11 @@ impl TroughSystem {
   }
 
   pub fn eject_coil_definition(name: &'static str) -> DriverDefinitionBuilder {
-    DriverDefinitionBuilder::new(name)
-      .mode(
-        DriverMode::pulse_kick()
-          .initial_pwm_length(HardwareValue::config(
-            "Plunger Touch Time",
-            "Duration by which the eject plunger is brought into contact with the ball, before full eject",
-            Duration::from_millis(5),
-            Ranges::duration(0, 50),
-          ))
-          .initial_pwm_power(Power::THREE_QUARTERS)
-          .kick_length(HardwareValue::config(
-            "Eject Time",
-            "Duration that the plunger exert full power onto the ball (kick)",
-            Duration::from_millis(13),
-            Ranges::duration(5, 75),
-          ))
-          .build(),
-      )
+    crate::ball_management::TroughSystem::eject_coil_definition(name)
   }
 
   pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
-    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(50))
+    crate::ball_management::TroughSystem::switch_definition(name)
   }
 
   fn on_trough_switch(&mut self, ctx: &SystemContext) {

@@ -28,7 +28,8 @@
 
 mod activate_playfield;
 pub mod autoplunger;
-mod ball_management;
+// Not re-exported at the root until the old trough is removed, as both define TroughSystem
+pub mod ball_management;
 mod ball_save;
 pub mod configs;
 mod double_flip;

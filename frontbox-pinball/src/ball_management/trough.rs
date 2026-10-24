@@ -1,6 +1,8 @@
 use frontbox::prelude::*;
 
 use crate::ball_management::ball_management_config::BallManagementConfig;
+use crate::ball_management::{TroughEjectFailed, TroughEjecting, TroughOccupancyChanged};
+
 pub struct TroughSystem {
   config: BallManagementConfig,
   handle: SystemHandle,
@@ -27,12 +29,36 @@ impl TroughSystem {
     }
   }
 
+  pub fn eject_coil_definition(name: &'static str) -> DriverDefinitionBuilder {
+    DriverDefinitionBuilder::new(name).mode(
+      DriverMode::pulse_kick()
+        .initial_pwm_length(HardwareValue::config(
+          "Plunger Touch Time",
+          "Duration by which the eject plunger is brought into contact with the ball, before full eject",
+          Duration::from_millis(5),
+          Ranges::duration(0, 50),
+        ))
+        .initial_pwm_power(Power::THREE_QUARTERS)
+        .kick_length(HardwareValue::config(
+          "Eject Time",
+          "Duration that the plunger exert full power onto the ball (kick)",
+          Duration::from_millis(13),
+          Ranges::duration(5, 75),
+        ))
+        .build(),
+    )
+  }
+
+  pub fn switch_definition(name: &'static str) -> SwitchDefinitionBuilder {
+    SwitchDefinitionBuilder::new(name).debounce(Duration::from_millis(50))
+  }
+
   pub fn eject(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
 
     // Wait for balls to stop moving, and for a ball to be present (a jammed ball can still be ejected)
     let settling = matches!(self.occupancy_state, OccupancyState::Settling { .. });
-    let empty = self.last_occupancy == 0 && !self.is_jammed(ctx);
+    let empty = self.last_occupancy == 0 && !self.is_jammed(ctx.into());
     if settling || empty || self.eject_state != EjectState::Ready {
       self.eject_queue += 1;
       return;
@@ -54,7 +80,8 @@ impl TroughSystem {
   }
 
   /// True if the jam switch is configured and currently closed
-  pub fn is_jammed(&self, ctx: &SystemContext) -> bool {
+  pub fn is_jammed(&self, ctx: &ServiceContext) -> bool {
+    let ctx = &ctx.for_system(self.handle);
     self
       .config
       .jam_switch_name
@@ -94,7 +121,9 @@ impl TroughSystem {
     ctx.activate_driver(self.config.eject_coil_name, ActivationMode::Tap);
   }
 
-  fn read_switch_occupancy(&self, ctx: &SystemContext) -> u8 {
+  /// Number of balls in the trough according to the switches right now, settled or not
+  pub fn read_switch_occupancy(&self, ctx: &ServiceContext) -> u8 {
+    let ctx = &ctx.for_system(self.handle);
     self
       .config
       .trough_switch_names
@@ -119,7 +148,7 @@ impl TroughSystem {
     } = self.eject_state
     {
       // A closed jam switch means the ball didn't leave, even if it no longer registers in occupancy
-      if !self.is_jammed(ctx) && self.read_switch_occupancy(ctx.into()) <= target_occupancy {
+      if !self.is_jammed(ctx.into()) && self.read_switch_occupancy(ctx.into()) <= target_occupancy {
         self.exits_since_report += 1;
         self.eject_ready(ctx);
       } else {
@@ -190,7 +219,7 @@ impl TroughSystem {
 
   /// Emits the change in occupancy since the last report, separated into entries and exits
   fn report_occupancy(&mut self, ctx: &SystemContext) {
-    let current_occupancy = self.read_switch_occupancy(ctx);
+    let current_occupancy = self.read_switch_occupancy(ctx.into());
     let delta = current_occupancy as i8 - self.last_occupancy as i8;
 
     // Exits are known from verified ejects; anything beyond that in the net change is an entry. Clamping keeps
@@ -214,7 +243,7 @@ impl TroughSystem {
 impl System for TroughSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = *ctx.current_handle();
-    self.last_occupancy = self.read_switch_occupancy(ctx);
+    self.last_occupancy = self.read_switch_occupancy(ctx.into());
     self.eject_ready(ctx);
   }
 
@@ -267,32 +296,6 @@ struct VerifyOccupancy;
 
 #[derive(serde::Serialize, Event)]
 struct MaxSettle;
-
-// -- Events --
-
-/// Emitted once the trough has settled. Balls that entered and exited within the same settling period are both
-/// counted, rather than cancelling out.
-#[derive(serde::Serialize, Event)]
-pub struct TroughOccupancyChanged {
-  pub current_occupancy: u8,
-  /// Balls which entered the trough (e.g. drained)
-  pub entered: u8,
-  /// Balls which exited the trough (verified ejects)
-  pub exited: u8,
-}
-
-impl TroughOccupancyChanged {
-  /// Net change in occupancy
-  pub fn delta(&self) -> i8 {
-    self.entered as i8 - self.exited as i8
-  }
-}
-
-#[derive(serde::Serialize, Event)]
-pub struct TroughEjecting;
-
-#[derive(serde::Serialize, Event)]
-pub struct TroughEjectFailed;
 
 #[cfg(test)]
 mod tests {
@@ -475,7 +478,7 @@ mod tests {
     f.apply();
     f.spawn_now();
     assert_eq!(f.trough.occupancy(), 2);
-    assert!(f.trough.is_jammed(&f.ctx.sys_ctx()));
+    assert!(f.trough.is_jammed(&f.ctx.svc_ctx()));
   }
 
   // -- Occupancy settling --
