@@ -1,14 +1,12 @@
-- Update the trough to periodically re-check the state of the switches and self recover if it is actually full
-
 - Refactor QuitGameSystem + double flip system to instead by switch combo system that take a list of switches and emit an event if all are pressed
 - With fb-pin centralized, maybe events should be centralized too
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
 - So much is built on LedSystem that the framework should probably just start it up automatically. (watchdog, ledsystem, machine, etc. need to be configurable/swappable -- possible means they need interfaces)
-- Better identify which systems need interfaces
+- Better identify which systems need interfaces (ball management, game management, rand system)
+- Need to be able to spawn an entire group without specifying, e.g. "pinball manager" group, maybe that lets you swap specific systems
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
 - System groups need to be able to contain other system groups (recursive parent lookup)
-- Need to be able to spawn an entire group without specifying, e.g. "pinball manager" group, maybe that lets you swap specific systems
 - Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play)
 - Establish (and document) consistent log targets
 - Audits: Keep stats on coils fired, etc.

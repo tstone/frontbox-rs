@@ -6,19 +6,26 @@ pub struct BallSearchSystem {
   cue_id: Option<u64>,
   handle: SystemHandle,
   time_until_search: Duration,
+  ball_present_q: SwitchQ,
+  ball_searchable_q: DriverQ,
 }
 
 impl BallSearchSystem {
-  pub fn new(time_until_search: Duration) -> Self {
+  pub fn new(
+    ball_present_q: SwitchQ,
+    ball_searchable_q: DriverQ,
+    time_until_search: Duration,
+  ) -> Self {
     Self {
       cue_id: None,
       handle: SystemHandle::default(),
       time_until_search,
+      ball_present_q,
+      ball_searchable_q,
     }
   }
 
-  pub fn reset(&mut self, ctx: &ServiceContext) {
-    let ctx = ctx.for_system(self.handle);
+  fn reset(&mut self, ctx: &SystemContext) {
     self.clear_cue(&ctx);
     self.cue_id = Some(ctx.cue(StartBallSearch, self.time_until_search.once()));
   }
@@ -33,10 +40,13 @@ impl BallSearchSystem {
 
 impl System for BallSearchSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<SwitchClosed>() {
+    if let Some(event) = event.downcast_ref::<SwitchClosed>()
+      && self.ball_present_q.matches(&event.switch)
+    {
       self.reset(ctx.into());
     } else if event.is::<StartBallSearch>() {
-      ctx.emit(BallSearch);
+      log::info!(target: "frontbox::ball_search", "Starting ball search.");
+      ctx.emit(PerformBallSearch);
     }
   }
 }
@@ -45,4 +55,4 @@ impl System for BallSearchSystem {
 pub struct StartBallSearch;
 
 #[derive(serde::Serialize, Event)]
-pub struct BallSearch;
+pub struct PerformBallSearch;
