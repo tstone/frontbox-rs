@@ -1,15 +1,21 @@
+mod autoplunger;
 mod ball_management;
 mod ball_management_ext;
 mod ball_search;
+mod plunge_lane;
+mod standard_ball_management;
+mod standard_ball_management_config;
 mod trough;
-mod trough_ball_management;
 mod trough_management_config;
 
+pub use autoplunger::*;
 pub use ball_management::*;
 pub use ball_management_ext::*;
 pub use ball_search::*;
+pub use plunge_lane::*;
+pub use standard_ball_management::*;
+pub use standard_ball_management_config::*;
 pub use trough::*;
-pub use trough_ball_management::*;
 pub use trough_management_config::*;
 
 use frontbox::prelude::*;
@@ -26,6 +32,40 @@ pub struct MaxBallsInPlayChanged {
 pub struct BallsDrained {
   pub still_in_play: u8,
   pub count: u8,
+}
+
+/// Emitted once a ball has gone into play, which can be well after it was ejected (e.g. a player waiting to plunge)
+#[derive(serde::Serialize, Event)]
+pub struct BallLaunched {
+  pub method: LaunchMethod,
+}
+
+// -- Plunge Lane Events --
+
+#[derive(serde::Serialize, Event)]
+pub struct BallEnteredPlungeLane {
+  pub state: PlungeLaneState,
+}
+
+impl BallEnteredPlungeLane {
+  pub fn new(state: PlungeLaneState) -> Self {
+    Self { state }
+  }
+}
+
+/// Emitted once the ball has been gone from the plunge lane for the re-enter timeout
+#[derive(serde::Serialize, Event)]
+pub struct BallExitedPlungeLane;
+
+/// A ball that left the plunge lane rolled back in before the re-enter timeout
+#[derive(serde::Serialize, Event)]
+struct BallReenteredPlungeLane;
+
+// -- Autoplunger Events --
+
+#[derive(serde::Serialize, Event)]
+struct AutoPlungerFired {
+  method: LaunchMethod,
 }
 
 // -- Trough Events --
