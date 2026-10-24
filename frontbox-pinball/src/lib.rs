@@ -31,8 +31,6 @@
 //! interrupt on `BallsExitedPlay`; halting it prevents the transition to `PlayerTurnEnding`.
 
 mod activate_playfield;
-pub mod autoplunger;
-// Not re-exported at the root until the old trough is removed, as both define TroughSystem
 pub mod ball_management;
 mod ball_save;
 pub mod configs;
@@ -40,15 +38,11 @@ mod double_flip;
 mod game_management;
 mod game_start;
 mod high_scores;
-mod plunge_lane;
-mod trough;
 
 pub use activate_playfield::*;
-pub use autoplunger::*;
+pub use ball_management::*;
 pub use ball_save::*;
 pub use double_flip::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
-pub use plunge_lane::*;
-pub use trough::*;

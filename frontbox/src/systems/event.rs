@@ -78,8 +78,9 @@
 //! For example...
 //!
 //! - The framework might emit a `SwitchClosed` event
-//! - The `Trough` system interprets this and emits `TroughOccupancyChanged` and possibly `TroughFull`
-//! - These trough level events are received by a game manager that may emit `PlayerTurnEnding`.
+//! - The `Trough` system interprets this and emits `TroughOccupancyChanged`
+//! - Ball management interprets that and may emit `BallsExitedPlay`
+//! - These ball level events are received by a game manager that may emit `PlayerTurnEnding`.
 
 use crate::prelude::*;
 use std::any::Any;
