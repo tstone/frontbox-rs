@@ -11,42 +11,38 @@
 //!
 //! # Overview: Turn Flow
 //! Regardless of competitive or cooperative play, the turn flow is as follows:
-//! 1. A player's turn begins with the `PlayerTurnBeginning` event. This is a good time to trigger any "start of turn" mechanics, like loading the ball into the plunge lane, from the trough.
-//! 2. When the ball becomes in play, the `PlayerTurnActive` must be emitted (detected through `ball_in_play_switches` set on `PlayerSystem`)
-//! 3. Both player and team systems listen for a `TroughFull` event, which indicates that the ball has gone out of play. When this happens, the `PlayerTurnEnding` event is emitted, signaling the end of the current player's turn. This is a good time to trigger any "end of turn" mechanics, such as tallying bonus, displaying to the player, etc.
+//! 1. A player's turn begins with the `PlayerTurnBeginning` event, and the game manager asks the `BallManager` for a ball. This is a good time to trigger any "start of turn" mechanics, like music and the display.
+//! 2. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `PlayerTurnActive` is emitted.
+//! 3. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the `PlayerTurnEnding` event is emitted, signaling the end of the current player's turn. This is a good time to trigger any "end of turn" mechanics, such as tallying bonus, displaying to the player, etc.
 //!
 //! The next turn is not automatically advanced. Instead, a custom system must call the `AdvanceTurn` command when the game is ready. This allows all of the end-of-ball display, animations, etc. to complete before continuing.
 //!
 //! ## Required Systems
 //!
-//! To receive the benefits of this crate, one of these two systems must be added to the root of the app:
+//! To receive the benefits of this crate, these systems must be added to the root of the app:
 //! - `GameManager` - Either competitive or cooperative
+//! - `BallManager` - e.g. `BallManager::standard`
 //! - Game Start -- `FreePlay` or `CreditsPlay`
 //!
-//! ## Ball Save, Extra Balls, and Similar Mechanics
-//! For mechanics that can extend a player's turn, such as ball saves or extra balls, this can be implemented by registering an event interrupt on `TroughFull`. Halting the broadcast of that command will also prevent the player/team system from transitioning to PlayerTurnEnding.
+//! ## Ball Save, Multiball, Extra Balls, and Similar Mechanics
+//! `BallSaveSystem` (in the player template) saves drained balls while any system has requested a ball save. A multiball
+//! is a mode asking the `BallManager` for more balls, usually with a ball save request alongside, and checking
+//! `BallsExitedPlay.in_play` to know when it's over. Other mechanics that extend a player's turn can register an event
+//! interrupt on `BallsExitedPlay`; halting it prevents the transition to `PlayerTurnEnding`.
 
 mod activate_playfield;
-pub mod autoplunger;
+pub mod ball_management;
 mod ball_save;
-mod ball_search;
 pub mod configs;
 mod double_flip;
 mod game_management;
 mod game_start;
 mod high_scores;
-mod multiball;
-mod plunge_lane;
-mod trough;
 
 pub use activate_playfield::*;
-pub use autoplunger::*;
+pub use ball_management::*;
 pub use ball_save::*;
-pub use ball_search::*;
 pub use double_flip::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
-pub use multiball::*;
-pub use plunge_lane::*;
-pub use trough::*;

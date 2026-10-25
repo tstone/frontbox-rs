@@ -52,8 +52,11 @@ impl TestContext {
   }
 
   fn app_messages(&mut self) -> Vec<AppMessage> {
+    // Non-blocking so that asserting "nothing was emitted" doesn't hang on an empty channel
     let mut messages = Vec::new();
-    self.rx.blocking_recv_many(&mut messages, 100);
+    while let Ok(msg) = self.rx.try_recv() {
+      messages.push(msg);
+    }
     messages
   }
 

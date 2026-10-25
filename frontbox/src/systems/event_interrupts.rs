@@ -9,11 +9,11 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # #[derive(serde::Serialize, Event)]
-//! # struct TroughFull;
+//! # struct BallsExitedPlay;
 //! # struct Example;
 //! # impl System for Example {
 //! fn on_spawn(&mut self, ctx: &SystemContext) {
-//!   ctx.register_interrupt::<TroughFull>(100); // 100 is the priority
+//!   ctx.register_interrupt::<BallsExitedPlay>(100); // 100 is the priority
 //! }
 //!
 //! fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {

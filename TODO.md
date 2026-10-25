@@ -1,13 +1,13 @@
-- Update the trough to periodically re-check the state of the switches and self recover if it is actually full
-
 - Refactor QuitGameSystem + double flip system to instead by switch combo system that take a list of switches and emit an event if all are pressed
 - With fb-pin centralized, maybe events should be centralized too
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
 - So much is built on LedSystem that the framework should probably just start it up automatically. (watchdog, ledsystem, machine, etc. need to be configurable/swappable -- possible means they need interfaces)
-- Better identify which systems need interfaces
+- Better identify which systems need interfaces (ball management, game management, rand system)
+- Need to be able to spawn an entire group without specifying, e.g. "pinball manager" group, maybe that lets you swap specific systems
 - Need to have a RandSystem that manages seed per game
 - Operator config changes should update HardwareValues automatically -- is this a system that listens to config change events?
-- Trough needs to properly utilize jam sensor
+- System groups need to be able to contain other system groups (recursive parent lookup)
+- Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play)
 - Establish (and document) consistent log targets
 - Audits: Keep stats on coils fired, etc.
 - Add driver configure support for 78 Pulse Hold Extension
@@ -19,6 +19,16 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?)
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
+- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console
+- Implement the remainder of FAST protocol
+- Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
+- Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Needs audits/metrics; escalating the kick strength needs runtime driver config changes. Open questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than `Launch::Player`
+
+Motors
+
+- New MotorDefinition
+- FAST protocol
+- Update Machine to support motor commands
 
 Canvas
 
@@ -63,5 +73,5 @@ Console
 - Initial state: configure switches to be latched by default (e.g. trough, captive ball)
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well
-- LedEffect1d web based designer: uses an API to render actual colors
+- LedEffect1d web based designer: uses an API to render actual colors (probably requires some kind of 'load from JSON' implementation so that they are editable)
 - LedEffect2d web based designer: same as above, but also uses LED config
