@@ -22,7 +22,7 @@ impl Hardware {
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
     // verify switches associated with driver configs actually exist
-    let unknown = unknown_switch_references(&drivers, &switches);
+    let unknown = Self::unknown_switch_references(&drivers, &switches);
     if !unknown.is_empty() {
       let list = unknown
         .iter()
@@ -54,6 +54,12 @@ impl Hardware {
         );
       }
 
+      // Known bug: Older versions of the Neuron have an internal Exp board which does not respect ER:
+      let port_count_override = match board.model {
+        FastExpansionBoardModels::Neuron => Some(32),
+        _ => None,
+      };
+
       // sum up actual LEDs present and calculate index offsets
       let mut offset: u8 = 0;
       let mut resolved_ports = Vec::new();
@@ -64,17 +70,15 @@ impl Hardware {
         }
 
         let port = if let Some(port) = board.led_ports.get(&port_idx) {
-          let port_count_override = match board.model {
-            // Known bug: Older versions of the Neuron have an internal Exp board which does not respect ER:
-            FastExpansionBoardModels::Neuron => Some(32),
-            _ => None,
-          };
-
           Self::resolve_led_port(board, port, port_idx, offset, port_count_override)
         } else {
-          // no port defined = assume the default (32 LEDs), or whatever room is left on the breakout
+          // No port defined. The Neuron's EXP LED ports stay at their fixed length, so take that or whatever room is left on the breakout.
+          let length = match port_count_override {
+            Some(length) => (MAX_LEDS_PER_BREAKOUT - offset as usize).min(length as usize) as u8,
+            None => 0,
+          };
           ResolvedLedPort {
-            length: (MAX_LEDS_PER_BREAKOUT - offset as usize).min(32) as u8,
+            length,
             ..ResolvedLedPort::default(offset)
           }
         };
@@ -162,25 +166,25 @@ impl Hardware {
       leds: addressed_leds,
     }
   }
-}
 
-/// (driver name, switch name) for every switch a driver mode references that isn't in `switches`
-fn unknown_switch_references(
-  drivers: &DriverLookup,
-  switches: &SwitchLookup,
-) -> Vec<(&'static str, &'static str)> {
-  let mut unknown = Vec::new();
-  for driver in drivers.values() {
-    if let Some(mode) = drivers.config(driver.name) {
-      for switch in mode.switch_names() {
-        if switches.by_name(switch).is_none() {
-          unknown.push((driver.name, switch));
+  /// (driver name, switch name) for every switch a driver mode references that isn't in `switches`
+  fn unknown_switch_references(
+    drivers: &DriverLookup,
+    switches: &SwitchLookup,
+  ) -> Vec<(&'static str, &'static str)> {
+    let mut unknown = Vec::new();
+    for driver in drivers.values() {
+      if let Some(mode) = drivers.config(driver.name) {
+        for switch in mode.switch_names() {
+          if switches.by_name(switch).is_none() {
+            unknown.push((driver.name, switch));
+          }
         }
       }
     }
+    unknown.sort();
+    unknown
   }
-  unknown.sort();
-  unknown
 }
 
 #[cfg(test)]
@@ -189,15 +193,24 @@ mod tests {
 
   use super::*;
 
-  static SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("real").build());
+  static SWITCH: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("real").build());
   static GOOD: LazyLock<DriverDefinition> = LazyLock::new(|| {
     DriverDefinition::new("good")
-      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("real")).build())
+      .mode(
+        DriverMode::pulse()
+          .trigger_mode(DriverTriggerMode::Switch("real"))
+          .build(),
+      )
       .build()
   });
   static TYPO: LazyLock<DriverDefinition> = LazyLock::new(|| {
     DriverDefinition::new("typo")
-      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("reel")).build())
+      .mode(
+        DriverMode::pulse()
+          .trigger_mode(DriverTriggerMode::Switch("reel"))
+          .build(),
+      )
       .build()
   });
   static FLIPPER: LazyLock<DriverDefinition> = LazyLock::new(|| {
@@ -229,7 +242,7 @@ mod tests {
     let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]));
 
     assert_eq!(
-      unknown_switch_references(&drivers, &switches),
+      Hardware::unknown_switch_references(&drivers, &switches),
       vec![("flipper", "missing_eos"), ("typo", "reel")]
     );
   }
@@ -238,22 +251,51 @@ mod tests {
     LazyLock::new(|| LedDefinition::multi("strip_64").count(64).build());
   static STRIP_65: LazyLock<LedDefinition> =
     LazyLock::new(|| LedDefinition::multi("strip_65").count(65).build());
+  static STRIP_32: LazyLock<LedDefinition> =
+    LazyLock::new(|| LedDefinition::multi("strip_32").count(32).build());
 
   fn exp_board() -> ExpBoard {
     ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open)
   }
 
-  #[test]
-  fn undefined_ports_shrink_to_fit_the_breakout() {
-    let board = exp_board()
-      .wire_led_port(1, LedPort::ws2812().leds(vec![&*STRIP_64]))
-      .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_64]));
+  fn layout(board: ExpBoard) -> Vec<(u8, u8)> {
+    Hardware::resolve_expansion_boards(&vec![board])[0]
+      .led_ports
+      .iter()
+      .map(|p| (p.offset, p.length))
+      .collect()
+  }
 
-    let resolved = Hardware::resolve_expansion_boards(&vec![board]);
-    let ports = &resolved[0].led_ports;
-    let layout: Vec<(u8, u8)> = ports.iter().map(|p| (p.offset, p.length)).collect();
-    assert_eq!(layout, vec![(0, 64), (64, 64), (128, 0), (128, 0)]);
-    assert_eq!(ports[1].leds.last().unwrap().id, 127);
+  #[test]
+  fn undefined_ports_take_no_leds() {
+    // An 8 port board is two breakouts, each indexed from 0. Without the unwired port 1 reserving 32 LEDs, ports
+    // 2-4 fit in the first breakout.
+    let board = ExpBoard::fp_exp0081(JumperState::Open, JumperState::Open)
+      .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_64]))
+      .wire_led_port(3, LedPort::ws2812().leds(vec![&*STRIP_32]))
+      .wire_led_port(4, LedPort::ws2812().leds(vec![&*STRIP_32]))
+      .wire_led_port(6, LedPort::ws2812().leds(vec![&*STRIP_32]));
+
+    assert_eq!(
+      layout(board),
+      vec![
+        (0, 0),
+        (0, 64),
+        (64, 32),
+        (96, 32),
+        (0, 0),
+        (0, 32),
+        (32, 0),
+        (32, 0)
+      ]
+    );
+  }
+
+  #[test]
+  fn undefined_neuron_ports_keep_fixed_length() {
+    let board = ExpBoard::neuron().wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_32]));
+
+    assert_eq!(layout(board), vec![(0, 32), (32, 32), (64, 32), (96, 32)]);
   }
 
   #[test]
