@@ -69,10 +69,17 @@ impl MachineSystem {
   /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
   pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &ServiceContext) {
     // remap switch to id
-    let switch = mode
-      .switch_name()
-      .and_then(|sw| ctx.switches.by_name(sw))
-      .map(|sw| sw.id);
+    let switch = mode.switch_name().and_then(|name| {
+      let switch = ctx.switches.by_name(name).map(|sw| sw.id);
+      if switch.is_none() {
+        log::error!(
+          "Activating driver \"{}\" with unknown switch \"{}\", keeping its configured switch",
+          driver,
+          name
+        );
+      }
+      switch
+    });
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
         ActivationMode::Automatic(_) => DriverTriggerControlMode::Automatic,

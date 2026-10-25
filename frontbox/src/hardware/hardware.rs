@@ -18,6 +18,18 @@ impl Hardware {
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
+    // An unresolved switch would otherwise be sent to the hardware as switch 0, wiring the driver to whatever
+    // switch 0 actually is
+    let unknown = drivers.unknown_switch_references(&switches);
+    if !unknown.is_empty() {
+      let list = unknown
+        .iter()
+        .map(|(driver, switch)| format!("  driver \"{}\" -> switch \"{}\"", driver, switch))
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!("Driver modes reference switches that don't exist:\n{}", list);
+    }
+
     Self {
       switches,
       drivers,

@@ -14,6 +14,16 @@ pub enum DriverTriggerMode {
   VirtualSwitchFalse,
 }
 
+impl DriverTriggerMode {
+  /// Names of the physical switches this trigger references
+  pub fn switch_names(&self) -> Vec<&'static str> {
+    match self {
+      Self::Switch(name) | Self::InvertedSwitch(name) => vec![name],
+      Self::Disabled | Self::VirtualSwitchTrue | Self::VirtualSwitchFalse => vec![],
+    }
+  }
+}
+
 /// DriverTriggerDualMode answers: What causes the driver to fire when two switches are involved?
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Default, serde::Serialize)]
@@ -49,4 +59,33 @@ pub enum DriverTriggerDualMode {
   FlipSwitchTrue_VirtualFlop(&'static str),
   /// Driver is active when flip switch is open and virtual switch (manually triggered) is true/on
   FlipSwitchFalse_VirtualFlop(&'static str),
+}
+
+impl DriverTriggerDualMode {
+  /// Names of the physical switches this trigger references
+  pub fn switch_names(&self) -> Vec<&'static str> {
+    match self {
+      Self::Disabled => vec![],
+      Self::FlipSwitchTrue_FlopSwitchTrue {
+        flip_switch,
+        flop_switch,
+      }
+      | Self::FlipSwitchFalse_FlopSwitchTrue {
+        flip_switch,
+        flop_switch,
+      }
+      | Self::FlipSwitchTrue_FlopSwitchFalse {
+        flip_switch,
+        flop_switch,
+      }
+      | Self::FlipSwitchFalse_FlopSwitchFalse {
+        flip_switch,
+        flop_switch,
+      } => vec![flip_switch, flop_switch],
+      Self::VirtualFlip_FlopSwitchTrue(name)
+      | Self::VirtualFlip_FlopSwitchFalse(name)
+      | Self::FlipSwitchTrue_VirtualFlop(name)
+      | Self::FlipSwitchFalse_VirtualFlop(name) => vec![name],
+    }
+  }
 }

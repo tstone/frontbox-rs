@@ -140,4 +140,21 @@ impl DriverMode {
       Self::FlipperMain3Try(m) => m.generalized_config_values(),
     }
   }
+
+  /// Names of the physical switches this mode references
+  pub fn switch_names(&self) -> Vec<&'static str> {
+    match self {
+      Self::Pulse(m) => m.trigger_mode.switch_names(),
+      Self::PulseKick(m) => m.trigger_mode.switch_names(),
+      Self::PulseHold(m) => m.trigger_mode.switch_names(),
+      Self::PulseHoldCancel(m) => m.trigger_mode.switch_names(),
+      Self::DelayedPulse(m) => m.trigger_mode.switch_names(),
+      Self::PulseCancel(m) => m.trigger_mode.switch_names(),
+      Self::LongPulse(m) => m.trigger_mode.switch_names(),
+      Self::PulseHoldExtension(m) => m.trigger_mode.switch_names(),
+      Self::FlipperMainDirect(m) => vec![m.button_switch, m.eos_switch],
+      Self::FlipperHoldDirect(m) => vec![m.button_switch],
+      Self::FlipperMain3Try(m) => vec![m.button_switch, m.eos_switch],
+    }
+  }
 }
