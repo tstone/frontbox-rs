@@ -238,6 +238,10 @@ pub async fn configure_led_ports(
 ) {
   for board in expansion_boards {
     for (port_index, led_port) in board.led_ports.iter().enumerate() {
+      // a port with no room left on its breakout has nothing to configure
+      if led_port.length == 0 {
+        continue;
+      }
       configure_led_port(exp_port, board, port_index as u8, led_port.offset, led_port).await;
     }
   }

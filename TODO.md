@@ -18,7 +18,6 @@
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?)
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console
-- Implement the remainder of FAST protocol
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Needs audits/metrics; escalating the kick strength needs runtime driver config changes. Open questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than `Launch::Player`
 

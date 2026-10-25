@@ -22,7 +22,7 @@ async fn main() {
     .init();
 
   let exp_network = ExpNetwork::new(vec![
-    ExpBoard::neuron().wire_led_port(0, LedPort::ws2812().leds(vec![&leds::DEMO1])),
+    ExpBoard::neuron().wire_led_port(1, LedPort::ws2812().leds(vec![&leds::DEMO1])),
   ]);
 
   App::new(BootConfig {

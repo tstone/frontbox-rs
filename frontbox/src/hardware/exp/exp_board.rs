@@ -126,29 +126,33 @@ impl ExpBoard {
     Self::new(address, None, None, FastExpansionBoardModels::FpExp1313)
   }
 
-  /// * `port_name` reflects the port printed on the PCB. e.g. "PORT 1" on the PCB is specified as `1` here
+  /// * `port_num` reflects the port printed on the PCB. e.g. "PORT 1" on the PCB is specified as `1` here
   pub fn wire_led_port(mut self, port_num: u8, port: LedPort) -> Self {
     // Verify this port is valid
-    if self.hardware_led_port_count.is_none() {
+    let Some(port_count) = self.hardware_led_port_count else {
       panic!(
         "Cannot add LED port to board {:X} because it does not support LED ports",
         self.address
       );
-    } else if port_num > self.hardware_led_port_count.unwrap() {
+    };
+
+    if port_num == 0 || port_num > port_count {
       panic!(
-        "LED port index {} exceeds hardware limit of {} for board {:X}",
-        port_num,
-        self.hardware_led_port_count.unwrap(),
-        self.address
+        "LED port {} is not on board {:X}, which has ports 1-{} (port numbers match the PCB, starting at 1)",
+        port_num, self.address, port_count
       );
-    } else if self.led_ports.contains_key(&port_num) {
+    }
+
+    // ports are stored 0-based
+    let port_idx = port_num - 1;
+    if self.led_ports.contains_key(&port_idx) {
       panic!(
-        "LED port index {} is already occupied on board {:X}",
+        "LED port {} is already occupied on board {:X}",
         port_num, self.address
       );
     }
 
-    self.led_ports.insert(port_num - 1, port);
+    self.led_ports.insert(port_idx, port);
     self
   }
 }
@@ -157,4 +161,38 @@ impl ExpBoard {
 pub enum JumperState {
   Open,
   Closed,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn ports_are_stored_zero_based() {
+    let board = ExpBoard::neuron()
+      .wire_led_port(2, LedPort::ws2812())
+      .wire_led_port(1, LedPort::ws2812());
+    assert!(board.led_ports.contains_key(&0));
+    assert!(board.led_ports.contains_key(&1));
+  }
+
+  #[test]
+  #[should_panic(expected = "already occupied")]
+  fn panics_on_duplicate_port() {
+    ExpBoard::neuron()
+      .wire_led_port(1, LedPort::ws2812())
+      .wire_led_port(1, LedPort::ws2812());
+  }
+
+  #[test]
+  #[should_panic(expected = "starting at 1")]
+  fn panics_on_port_zero() {
+    ExpBoard::neuron().wire_led_port(0, LedPort::ws2812());
+  }
+
+  #[test]
+  #[should_panic(expected = "has ports 1-4")]
+  fn panics_on_port_past_hardware_count() {
+    ExpBoard::neuron().wire_led_port(5, LedPort::ws2812());
+  }
 }
