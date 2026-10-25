@@ -22,7 +22,6 @@ pub mod machine;
 mod macros;
 pub mod operator_config;
 pub mod provided;
-mod store;
 pub mod systems;
 
 pub use hardware::tags;
@@ -43,7 +42,6 @@ pub mod prelude {
   pub use crate::location::*;
   pub use crate::machine::{MachineExt, MachineSystem, SwitchClosed, SwitchOpened};
   pub use crate::operator_config::*;
-  pub use crate::store::*;
   pub use crate::systems;
   pub use crate::systems::*;
 
