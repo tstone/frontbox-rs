@@ -5,7 +5,7 @@ use frontbox::prelude::*;
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, Launch,
+  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, EjectCompleted, Launch,
   LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem, StandardBallManagementConfig,
   TroughEjectFailed, TroughOccupancyChanged,
 };
@@ -18,12 +18,30 @@ pub struct StandardBallManagement {
   max_balls_in_play: u8,
   locked_balls: u8,
   /// Balls requested but not yet ejected from the trough
-  queue: VecDeque<Launch>,
-  /// The trough is ejecting a ball and hasn't reported it gone yet. This can overlap with the eject state, as the
-  /// trough's report can arrive after the ball has reached the plunge lane.
-  trough_busy: bool,
+  queue: VecDeque<QueuedBall>,
+  /// Requests with balls not yet in play or given up on
+  requests: Vec<EjectRequest>,
+  last_eject_id: u64,
+  /// The request of the ball the trough is ejecting, until it reports the ball gone. This can overlap with the eject
+  /// state, as the trough's report can arrive after the ball has reached the plunge lane.
+  trough_ejecting: Option<u64>,
   /// Where the ball being ejected is on its way into play. Only one ball at a time.
   eject_state: EjectState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QueuedBall {
+  launch: Launch,
+  eject_id: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EjectRequest {
+  id: u64,
+  requested: u8,
+  /// Balls in play or given up on
+  finished: u8,
+  launched: u8,
 }
 
 /// Where the ball being ejected is between the trough and play. Only used when configured with a plunge lane.
@@ -33,6 +51,7 @@ enum EjectState {
   /// Ejected from the trough, on its way to the plunge lane
   EnRoute {
     launch_type: Launch,
+    eject_id: u64,
     /// Set once the trough has finished ejecting, while waiting for the plunge lane to see the ball
     arrival_cue_id: Option<u64>,
     /// The autoplunger has already been fired once to knock the ball loose
@@ -41,8 +60,8 @@ enum EjectState {
   /// In the plunge lane, from arriving until it is gone for good
   InLane {
     launch_type: Launch,
-    /// Requested with `eject`, as opposed to a ball nobody asked for (e.g. one left in the lane at boot)
-    claimed: bool,
+    /// The request it serves, or `None` for a ball nobody asked for (e.g. one left in the lane at boot)
+    eject_id: Option<u64>,
     launched_by: Option<LaunchMethod>,
   },
 }
@@ -55,7 +74,9 @@ impl StandardBallManagement {
       config,
       locked_balls: 0,
       queue: VecDeque::new(),
-      trough_busy: false,
+      requests: Vec::new(),
+      last_eject_id: 0,
+      trough_ejecting: None,
       eject_state: EjectState::Idle,
     }
   }
@@ -121,34 +142,56 @@ impl StandardBallManagement {
 
   // -- Launching --
 
+  /// A ball from a request has gone into play, or been given up on. The request completes with its last ball.
+  fn finish_ball(&mut self, eject_id: Option<u64>, launched: bool, ctx: &SystemContext) {
+    let Some(index) = eject_id.and_then(|id| self.requests.iter().position(|r| r.id == id)) else {
+      return;
+    };
+    let request = &mut self.requests[index];
+    request.finished += 1;
+    if launched {
+      request.launched += 1;
+    }
+    if request.finished >= request.requested {
+      let request = self.requests.remove(index);
+      ctx.emit(EjectCompleted {
+        id: request.id,
+        requested: request.requested,
+        launched: request.launched,
+      });
+    }
+  }
+
   /// Ejects the next queued ball once the trough is free and the plunge lane (if any) is clear
   fn process_queue(&mut self, ctx: &SystemContext) {
     // A ball nobody asked for that is waiting in the lane for the player serves the next request, rather than a second
     // ball being ejected alongside it. With an autoplunger, such a ball has already been launched.
     if self.config.autoplunger().is_none()
       && let EjectState::InLane {
-        launch_type: launch, claimed, ..
+        launch_type: launch,
+        eject_id: eject_id @ None,
+        ..
       } = &mut self.eject_state
-      && !*claimed
       && let Some(next) = self.queue.pop_front()
     {
-      *launch = next;
-      *claimed = true;
+      *launch = next.launch;
+      *eject_id = Some(next.eject_id);
       self.launch_from_lane(ctx);
       return;
     }
 
-    if self.trough_busy || self.eject_state != EjectState::Idle {
+    if self.trough_ejecting.is_some() || self.eject_state != EjectState::Idle {
       return;
     }
-    let Some(launch) = self.queue.pop_front() else {
+    let Some(next) = self.queue.pop_front() else {
       return;
     };
 
-    self.trough_busy = true;
+    self.trough_ejecting = Some(next.eject_id);
     if self.config.plunge_lane().is_some() {
       self.eject_state = EjectState::EnRoute {
-        launch_type: launch,
+        launch_type: next.launch,
+        eject_id: next.eject_id,
         arrival_cue_id: None,
         kicked: false,
       };
@@ -161,15 +204,15 @@ impl StandardBallManagement {
 
   fn on_trough_ejected(&mut self, ctx: &SystemContext) {
     // Only ejects requested here are counted as exits by the trough, but guard against one we didn't ask for
-    if !self.trough_busy {
+    let Some(eject_id) = self.trough_ejecting.take() else {
       return;
-    }
-    self.trough_busy = false;
+    };
     if self.config.plunge_lane().is_none() {
       ctx.emit(BallEnteredPlay {
         method: LaunchMethod::Auto,
         in_play: self.current_in_play(ctx),
       });
+      self.finish_ball(Some(eject_id), true, ctx);
     } else if matches!(self.eject_state, EjectState::EnRoute { .. }) {
       // The trough is done, so the ball should reach the plunge lane shortly
       self.start_arrival_wait(false, ctx);
@@ -180,8 +223,14 @@ impl StandardBallManagement {
   fn on_trough_eject_failed(&mut self, ctx: &SystemContext) {
     // TODO: re-queue with backoff and report it to the game, rather than dropping the ball (see TODO.md)
     log::warn!(target: "frontbox::ball_management", "Trough eject failed, abandoning the ball");
-    self.trough_busy = false;
-    self.end_en_route(ctx);
+    let trough_eject_id = self.trough_ejecting.take();
+    let en_route = self.end_en_route(ctx);
+    // With a plunge lane, a ball that already reached it isn't abandoned
+    let abandoned = match self.config.plunge_lane() {
+      Some(_) => en_route.map(|(_, eject_id)| eject_id),
+      None => trough_eject_id,
+    };
+    self.finish_ball(abandoned, false, ctx);
     self.process_queue(ctx);
   }
 
@@ -204,10 +253,11 @@ impl StandardBallManagement {
     }
   }
 
-  /// Ends the en route stage, if that's where the eject is, returning its launch intent
-  fn end_en_route(&mut self, ctx: &SystemContext) -> Option<Launch> {
+  /// Ends the en route stage, if that's where the eject is, returning its launch intent and request
+  fn end_en_route(&mut self, ctx: &SystemContext) -> Option<(Launch, u64)> {
     let EjectState::EnRoute {
       launch_type: launch,
+      eject_id,
       arrival_cue_id,
       ..
     } = self.eject_state
@@ -218,7 +268,7 @@ impl StandardBallManagement {
       ctx.cancel_cue(cue_id);
     }
     self.eject_state = EjectState::Idle;
-    Some(launch)
+    Some((launch, eject_id))
   }
 
   /// The trough ejected a ball, but the plunge lane never saw it arrive (e.g. it stopped short of the lane switch, or
@@ -247,7 +297,7 @@ impl StandardBallManagement {
     }
 
     log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
-    self.end_en_route(ctx);
+    let en_route = self.end_en_route(ctx);
     ctx.emit(BallEnteredPlay {
       method: if kicked {
         LaunchMethod::Auto
@@ -256,6 +306,7 @@ impl StandardBallManagement {
       },
       in_play: self.current_in_play(ctx),
     });
+    self.finish_ball(en_route.map(|(_, eject_id)| eject_id), true, ctx);
     self.process_queue(ctx);
   }
 
@@ -263,8 +314,8 @@ impl StandardBallManagement {
     // A ball that wasn't ejected (e.g. one already there at spawn) is launched automatically
     let requested = self.end_en_route(ctx);
     self.eject_state = EjectState::InLane {
-      launch_type: requested.unwrap_or(Launch::Auto),
-      claimed: requested.is_some(),
+      launch_type: requested.map_or(Launch::Auto, |(launch, _)| launch),
+      eject_id: requested.map(|(_, eject_id)| eject_id),
       launched_by: None,
     };
     self.launch_from_lane(ctx);
@@ -294,7 +345,12 @@ impl StandardBallManagement {
   }
 
   fn on_ball_exited_lane(&mut self, ctx: &SystemContext) {
-    if let EjectState::InLane { launched_by, .. } = self.eject_state {
+    if let EjectState::InLane {
+      launched_by,
+      eject_id,
+      ..
+    } = self.eject_state
+    {
       self.eject_state = EjectState::Idle;
       if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
         autoplunger.disarm_launch_button(ctx.into());
@@ -303,21 +359,42 @@ impl StandardBallManagement {
         method: launched_by.unwrap_or(LaunchMethod::Manual),
         in_play: self.current_in_play(ctx),
       });
+      self.finish_ball(eject_id, true, ctx);
     }
     self.process_queue(ctx);
   }
 }
 
 impl BallManagement for StandardBallManagement {
-  fn eject(&mut self, launch: Launch, ctx: &ServiceContext) {
-    self.eject_many(1, launch, ctx);
+  fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64 {
+    self.eject_many(1, launch, ctx)
   }
 
-  fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext) {
-    for _ in 0..count {
-      self.queue.push_back(launch);
+  fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext) -> u64 {
+    let ctx = &ctx.for_system(self.handle);
+    self.last_eject_id += 1;
+    let eject_id = self.last_eject_id;
+
+    if count == 0 {
+      ctx.emit(EjectCompleted {
+        id: eject_id,
+        requested: 0,
+        launched: 0,
+      });
+      return eject_id;
     }
-    self.process_queue(&ctx.for_system(self.handle));
+
+    self.requests.push(EjectRequest {
+      id: eject_id,
+      requested: count,
+      finished: 0,
+      launched: 0,
+    });
+    for _ in 0..count {
+      self.queue.push_back(QueuedBall { launch, eject_id });
+    }
+    self.process_queue(ctx);
+    eject_id
   }
 
   fn can_auto_launch(&self) -> bool {
@@ -511,8 +588,19 @@ mod tests {
       self.ctx.update_switch_states(states);
     }
 
-    fn eject_many(&mut self, count: u8, launch: Launch) {
-      self.system.eject_many(count, launch, &self.ctx.svc_ctx());
+    fn eject_many(&mut self, count: u8, launch: Launch) -> u64 {
+      self.system.eject_many(count, launch, &self.ctx.svc_ctx())
+    }
+
+    /// (id, requested, launched) of all eject completed events emitted since the last call
+    fn completed_events(&mut self) -> Vec<(u64, u8, u8)> {
+      self
+        .ctx
+        .events_emitted()
+        .iter()
+        .filter_map(|e| e.event.downcast_ref::<EjectCompleted>())
+        .map(|e| (e.id, e.requested, e.launched))
+        .collect()
     }
 
     /// Simulate the trough reporting that the ball it was ejecting has left
@@ -816,12 +904,12 @@ mod tests {
   fn without_lane_next_ball_waits_for_trough_to_finish_eject() {
     let mut f = Fixture::spawn(5);
     f.eject_many(2, Launch::Auto);
-    assert!(f.system.trough_busy);
+    assert!(f.system.trough_ejecting.is_some());
     assert_eq!(f.system.queue.len(), 1);
 
     f.trough_ejected();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
-    assert!(f.system.trough_busy, "second ball is now ejecting");
+    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
     assert!(f.system.queue.is_empty());
   }
 
@@ -837,7 +925,7 @@ mod tests {
     let mut f = Fixture::with_lane(5, false, false);
     f.eject_many(2, Launch::Auto);
     f.deliver(&TroughEjectFailed);
-    assert!(f.system.trough_busy, "second ball is now ejecting");
+    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
     assert!(f.system.queue.is_empty());
     assert_eq!(f.en_route(), Some(Launch::Auto));
   }
@@ -850,7 +938,7 @@ mod tests {
     f.eject_many(2, Launch::Auto);
     f.trough_ejected();
     assert!(
-      !f.system.trough_busy,
+      !f.system.trough_ejecting.is_some(),
       "trough is free but the lane isn't clear"
     );
     assert_eq!(f.system.queue.len(), 1);
@@ -861,7 +949,7 @@ mod tests {
 
     f.lane_exited();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
-    assert!(f.system.trough_busy, "second ball is now ejecting");
+    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
     assert!(f.system.queue.is_empty());
   }
 
@@ -958,12 +1046,12 @@ mod tests {
     let mut f = Fixture::with_lane(5, false, false);
     f.lane_entered(); // e.g. left in the lane at boot
     f.eject_many(1, Launch::Player);
-    assert!(!f.system.trough_busy, "no second ball ejected");
+    assert!(!f.system.trough_ejecting.is_some(), "no second ball ejected");
     assert!(f.system.queue.is_empty());
 
     f.lane_exited();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Manual]);
-    assert!(!f.system.trough_busy, "still no second ball once it's gone");
+    assert!(!f.system.trough_ejecting.is_some(), "still no second ball once it's gone");
   }
 
   #[test]
@@ -975,7 +1063,7 @@ mod tests {
     assert_eq!(f.system.queue.len(), 1, "waits for the lane to clear");
 
     f.lane_exited();
-    assert!(f.system.trough_busy, "its own ball is now ejecting");
+    assert!(f.system.trough_ejecting.is_some(), "its own ball is now ejecting");
   }
 
   #[test]
@@ -1015,7 +1103,7 @@ mod tests {
     f.deliver(&LaneArrivalTimedOut);
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
     assert!(f.en_route().is_some(), "the second ball is now en route");
-    assert!(f.system.trough_busy);
+    assert!(f.system.trough_ejecting.is_some());
     assert!(f.system.queue.is_empty());
   }
 
@@ -1048,6 +1136,92 @@ mod tests {
 
     f.deliver(&LaneArrivalTimedOut); // a stale cue is ignored
     assert!(f.launched_events().is_empty());
+  }
+
+  // -- Eject completion --
+
+  #[test]
+  fn without_lane_request_completes_once_its_last_ball_is_ejected() {
+    let mut f = Fixture::spawn(5);
+    let id = f.eject_many(2, Launch::Auto);
+    f.trough_ejected();
+    assert!(f.completed_events().is_empty());
+
+    f.trough_ejected();
+    assert_eq!(f.completed_events(), vec![(id, 2, 2)]);
+  }
+
+  #[test]
+  fn with_lane_request_completes_once_its_last_ball_leaves_the_lane() {
+    let mut f = Fixture::with_lane(5, true, false);
+    let id = f.eject_many(2, Launch::Auto);
+    f.trough_ejected();
+    f.lane_entered();
+    f.lane_exited();
+    assert!(f.completed_events().is_empty());
+
+    f.trough_ejected();
+    f.lane_entered();
+    f.lane_exited();
+    assert_eq!(f.completed_events(), vec![(id, 2, 2)]);
+  }
+
+  #[test]
+  fn requests_complete_separately() {
+    let mut f = Fixture::spawn(5);
+    let first = f.eject_many(1, Launch::Auto);
+    let second = f.eject_many(2, Launch::Auto);
+    assert_ne!(first, second);
+
+    f.trough_ejected();
+    assert_eq!(f.completed_events(), vec![(first, 1, 1)]);
+    f.trough_ejected();
+    f.trough_ejected();
+    assert_eq!(f.completed_events(), vec![(second, 2, 2)]);
+  }
+
+  #[test]
+  fn failed_eject_still_completes_the_request() {
+    let mut f = Fixture::with_lane(5, true, false);
+    let id = f.eject_many(2, Launch::Auto);
+    f.deliver(&TroughEjectFailed);
+    f.trough_ejected();
+    f.lane_entered();
+    f.lane_exited();
+    assert_eq!(f.completed_events(), vec![(id, 2, 1)]);
+  }
+
+  #[test]
+  fn ball_given_up_on_reaching_the_lane_counts_as_launched() {
+    let mut f = Fixture::with_lane(5, false, false);
+    let id = f.eject_many(1, Launch::Player);
+    f.trough_ejected();
+    f.deliver(&LaneArrivalTimedOut);
+    assert_eq!(f.completed_events(), vec![(id, 1, 1)]);
+  }
+
+  #[test]
+  fn unclaimed_lane_ball_completes_the_request_it_serves() {
+    let mut f = Fixture::with_lane(5, false, false);
+    f.lane_entered();
+    let id = f.eject_many(1, Launch::Player);
+    f.lane_exited();
+    assert_eq!(f.completed_events(), vec![(id, 1, 1)]);
+  }
+
+  #[test]
+  fn ball_nobody_asked_for_completes_nothing() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.lane_entered();
+    f.lane_exited();
+    assert!(f.completed_events().is_empty());
+  }
+
+  #[test]
+  fn request_for_no_balls_completes_immediately() {
+    let mut f = Fixture::spawn(5);
+    let id = f.eject_many(0, Launch::Auto);
+    assert_eq!(f.completed_events(), vec![(id, 0, 0)]);
   }
 
   #[test]

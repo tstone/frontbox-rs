@@ -18,7 +18,8 @@ use crate::ball_management::StandardBuilder;
 ///   `BallsExitedPlay` event must not affect ball management's own state.
 /// - **Putting balls into play.** Owns the queue of balls requested. Balls are launched one at a time, spaced so the
 ///   hardware can receive each (e.g. waiting for the plunge lane to clear). Callers state intent with `Launch`, and the
-///   implementation adapts it to the hardware, so callers never need to know what the machine has.
+///   implementation adapts it to the hardware, so callers never need to know what the machine has. Each request
+///   returns an id, and `EjectCompleted` carries it once all of that request's balls are in play.
 /// - **Reporting launches.** Emits `BallEnteredPlay` once a ball has actually gone into play, which can be well after it
 ///   was requested (e.g. a player waiting to plunge). Anything timed from a ball entering play should start here.
 /// - **Establishing the ball count on request.** `establish_ball_count` takes the balls present as all there are. It
@@ -33,12 +34,13 @@ use crate::ball_management::StandardBuilder;
 /// ## Events
 /// - `BallsExitedPlay` - Emitted when one or more balls leave play
 /// - `BallEnteredPlay` - Emitted when a ball has been launched into play
+/// - `EjectCompleted` - Emitted when every ball from an `eject` or `eject_many` request is in play or given up on
 /// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked)
 pub trait BallManagement: SpawnableSystem {
-  /// Puts a ball into play. Balls are queued and launched one at a time.
-  fn eject(&mut self, launch: Launch, ctx: &ServiceContext);
-  /// Puts `count` balls into play
-  fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext);
+  /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry.
+  fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64;
+  /// Puts `count` balls into play. Returns the id `EjectCompleted` will carry once they all are.
+  fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext) -> u64;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
 

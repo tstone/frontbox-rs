@@ -50,6 +50,18 @@ pub struct BallEnteredPlay {
   pub in_play: u8,
 }
 
+/// Emitted once every ball from an `eject` or `eject_many` request has gone into play or been given up on (e.g. a
+/// failed eject). `id` is the one the request returned, so a caller can tell its own request from others.
+///
+/// A request for more balls than the trough holds waits for balls to drain, so this can be well after the request.
+#[derive(serde::Serialize, Event)]
+pub struct EjectCompleted {
+  pub id: u64,
+  pub requested: u8,
+  /// Balls that went into play. Less than `requested` if any were given up on.
+  pub launched: u8,
+}
+
 // -- Plunge Lane Events --
 
 #[derive(serde::Serialize, Event)]

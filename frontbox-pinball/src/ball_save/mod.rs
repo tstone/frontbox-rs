@@ -25,13 +25,27 @@ use crate::{GameManager, PlayerTurnActive, TurnState};
 /// Requests are usually made through `BallSaveExt` on `SystemContext`, which passes the system id automatically:
 ///
 /// ```rust,ignore
-/// // e.g. a mode starting a multiball
-/// ctx.eject_balls(2, Launch::Auto);
+/// // for a while
 /// ctx.request_ball_save(Duration::from_secs(12));
 ///
-/// // or, for as long as the mode wants
+/// // or, for as long as the system wants
 /// ctx.request_ball_save_until_released();
 /// ctx.release_ball_save();
+/// ```
+///
+/// A multiball usually wants the save timed from when its balls are in play rather than when they were asked for, as
+/// launching them takes a while. Save until released, then time it once its eject completes:
+///
+/// ```rust,ignore
+/// self.eject_id = ctx.eject_balls(2, Launch::Auto);
+/// ctx.request_ball_save_until_released();
+///
+/// // in on_event
+/// if let Some(done) = event.downcast_ref::<EjectCompleted>()
+///   && Some(done.id) == self.eject_id
+/// {
+///   ctx.request_ball_save(Duration::from_secs(12));
+/// }
 /// ```
 ///
 /// ## Saving
@@ -46,17 +60,17 @@ use crate::{GameManager, PlayerTurnActive, TurnState};
 /// BallSaveSystem::new()
 ///   .on_turn_start(Duration::from_secs(8))
 ///   .grace_period(Duration::from_secs(2))
-///   .effect(ball_save_effect)
+///   .led_effect(ball_save_effect)
 /// ```
 #[derive(Clone)]
 pub struct BallSaveSystem {
   handle: SystemHandle,
   on_turn_start: Option<Duration>,
-  grace_period: Duration,
   effect: Option<LedProgram1d>,
   effect_playing: bool,
   /// Time remaining per requesting system, or `None` for until released
   requests: HashMap<u64, Option<Duration>>,
+  grace_period: Duration,
   grace_remaining: Duration,
   interrupt_registered: bool,
 }
@@ -92,7 +106,7 @@ impl BallSaveSystem {
   }
 
   /// An effect to play while there are requests
-  pub fn effect(mut self, effect: LedProgram1d) -> Self {
+  pub fn led_effect(mut self, effect: LedProgram1d) -> Self {
     self.effect = Some(effect.stopped());
     self
   }
@@ -268,11 +282,13 @@ mod tests {
   impl System for FakeBallManagement {}
 
   impl BallManagement for FakeBallManagement {
-    fn eject(&mut self, launch: Launch, _ctx: &ServiceContext) {
-      self.ejects.lock().unwrap().push((1, launch));
+    fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64 {
+      self.eject_many(1, launch, ctx)
     }
-    fn eject_many(&mut self, count: u8, launch: Launch, _ctx: &ServiceContext) {
-      self.ejects.lock().unwrap().push((count, launch));
+    fn eject_many(&mut self, count: u8, launch: Launch, _ctx: &ServiceContext) -> u64 {
+      let mut ejects = self.ejects.lock().unwrap();
+      ejects.push((count, launch));
+      ejects.len() as u64
     }
     fn can_auto_launch(&self) -> bool {
       true

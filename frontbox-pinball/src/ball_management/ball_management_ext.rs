@@ -3,10 +3,12 @@ use frontbox::prelude::*;
 use crate::ball_management::{BallManager, Launch};
 
 pub trait BallManagementExt {
-  /// Puts a ball into play. Balls are queued and launched one at a time.
-  fn eject_ball(&self, launch: Launch);
-  /// Puts `count` balls into play
-  fn eject_balls(&self, count: u8, launch: Launch);
+  /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry,
+  /// or `None` if ball management isn't running.
+  fn eject_ball(&self, launch: Launch) -> Option<u64>;
+  /// Puts `count` balls into play. Returns the id `EjectCompleted` will carry once they all are, or `None` if ball
+  /// management isn't running.
+  fn eject_balls(&self, count: u8, launch: Launch) -> Option<u64>;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
 
@@ -22,18 +24,16 @@ pub trait BallManagementExt {
 }
 
 impl<'a> BallManagementExt for SystemContext<'a> {
-  fn eject_ball(&self, launch: Launch) {
+  fn eject_ball(&self, launch: Launch) -> Option<u64> {
     let ctx = self;
-    with_ball_manager(self, |manager| {
-      manager.eject(launch, ctx.into());
-    });
+    with_ball_manager(self, |manager| manager.eject(launch, ctx.into()))
   }
 
-  fn eject_balls(&self, count: u8, launch: Launch) {
+  fn eject_balls(&self, count: u8, launch: Launch) -> Option<u64> {
     let ctx = self;
     with_ball_manager(self, |manager| {
-      manager.eject_many(count, launch, ctx.into());
-    });
+      manager.eject_many(count, launch, ctx.into())
+    })
   }
 
   fn can_auto_launch(&self) -> bool {
@@ -72,10 +72,11 @@ impl<'a> BallManagementExt for SystemContext<'a> {
   }
 }
 
-fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) -> T) {
+fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) -> T) -> Option<T> {
   if let Some(mut system) = ctx.get::<BallManager>() {
-    f(&mut system);
+    Some(f(&mut system))
   } else {
     log::error!("BallManager not running.");
+    None
   }
 }
