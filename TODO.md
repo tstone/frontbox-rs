@@ -1,11 +1,13 @@
 ## Foundations
 
 - Operator config, in order:
-  1. One live instance. Today there are two: the boot copy (loaded from disk, moved into the read-only `BootSnapshot`,
-     read by `ctx.operator_config` and driver setup) and a separate `OperatorConfig::default()` the game spawns as a
-     system, which the menu edits via `ctx.get::<OperatorConfig>()`. Menu edits never reach anything, and its
-     `app_sender` is `None` so `OperatorConfigChanged` is never emitted. The framework should start the one instance as
-     a system (like `MachineSystem`/`WatchdogSystem`) and `ctx.operator_config` should read from it. On its own this
+  1. One live instance. `App` loads operator config from disk and moves it into the read-only `BootSnapshot`
+     (`ctx.operator_config`, read by systems and driver setup), but the menu methods on `GeneralizedConfigValue` look it
+     up as a system with `ctx.get::<OperatorConfig>()` and panic if none is running. Frontbox never starts one, so a
+     game has to spawn its own `OperatorConfig::default()`: empty, not loaded from disk, and with no `app_sender`, so
+     `OperatorConfigChanged` is never emitted. The menu edits that copy and nothing else ever sees it. Frontbox should
+     start the `App`'s instance as a system (like `MachineSystem`/`WatchdogSystem`) and have `ctx.operator_config` and
+     the menu methods both use it; games then drop their own `app.system(OperatorConfig::default())`. On its own this
      makes system-managed configs work, since they're read when used.
   2. Separate the saved key from the menu label. `name` is both, so renaming a label loses the saved value and two
      values with the same name silently share an entry (`register` ignores duplicates). Panic on a duplicate key.
@@ -34,8 +36,11 @@
   above, so it can still be swapped.
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
-- Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play). Needs: recursive
-  system groups.
+- Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit
+  play). A small provided system activates the chosen group at boot and swaps groups on `OperatorConfigChanged` for
+  that key, using the existing `activate_system_group`/`deactivate_system_group`. Choices need a saved key separate
+  from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles
+  that matter mid-game (difficulty, rules variants)? Needs: choice configs and operator config step 1.
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD

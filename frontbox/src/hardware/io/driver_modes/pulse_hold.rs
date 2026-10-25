@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDisplay, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 18 - Holds a driver in the on state as long as the trigger is active. An initial PWM can be configured
@@ -47,12 +47,12 @@ impl PulseHoldMode {
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
     [
-      self.initial_pwm_length.generalized_config_value(),
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.rest.generalized_config_value(),
+      self.initial_pwm_length.config_display(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.rest.config_display(),
     ]
     .into_iter()
     .flatten()

@@ -113,8 +113,8 @@ impl System for CompetitiveGame {
     self.handle = *ctx.current_handle();
   }
 
-  fn config_values(&self) -> Vec<&'static dyn GeneralizedConfigValue> {
-    vec![&*configs::TURN_COUNT]
+  fn configs(&self) -> Vec<&'static ConfigDisplay> {
+    vec![configs::TURN_COUNT.display()]
   }
 
   fn on_despawn(&mut self, ctx: &SystemContext) {
@@ -141,8 +141,7 @@ impl System for CompetitiveGame {
           }
         }
         TurnState::Active => {
-          if let Some(BallsExitedPlay { in_play: 0, .. }) =
-            event.downcast_ref::<BallsExitedPlay>()
+          if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>()
           {
             self.transition_turn_to_ending(ctx.into());
           }

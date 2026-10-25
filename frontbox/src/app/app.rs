@@ -39,7 +39,7 @@ impl App {
   pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
     let sys = system.into();
     // auto-register startup systems
-    for cv in sys.config_values() {
+    for cv in sys.configs() {
       self.operator_config.register(cv);
     }
 
@@ -139,7 +139,7 @@ impl App {
   ) {
     for driver in drivers {
       if let Some(mode) = &driver.definition.mode {
-        for cv in mode.generalized_config_values() {
+        for cv in mode.configs() {
           operator_config.register(cv);
         }
       }

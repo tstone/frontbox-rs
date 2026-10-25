@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDisplay, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 78 - Pulse, then hold for a timed period. Re-triggering the driver while it is holding (e.g. an
@@ -54,13 +54,13 @@ impl PulseHoldExtensionMode {
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
     [
-      self.initial_pwm_length.generalized_config_value(),
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_length.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.rest.generalized_config_value(),
+      self.initial_pwm_length.config_display(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_length.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.rest.config_display(),
     ]
     .into_iter()
     .flatten()

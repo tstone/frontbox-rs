@@ -24,7 +24,7 @@ pub use pulse_kick::*;
 
 use fast_protocol::DriverConfig;
 
-use crate::operator_config::GeneralizedConfigValue;
+use crate::operator_config::ConfigDisplay;
 use crate::prelude::*;
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
@@ -125,19 +125,19 @@ impl DriverMode {
     }
   }
 
-  pub fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub fn configs(&self) -> Vec<&ConfigDisplay> {
     match self {
-      Self::Pulse(m) => m.generalized_config_values(),
-      Self::PulseKick(m) => m.generalized_config_values(),
-      Self::PulseHold(m) => m.generalized_config_values(),
-      Self::PulseHoldCancel(m) => m.generalized_config_values(),
-      Self::DelayedPulse(m) => m.generalized_config_values(),
-      Self::PulseCancel(m) => m.generalized_config_values(),
-      Self::LongPulse(m) => m.generalized_config_values(),
-      Self::PulseHoldExtension(m) => m.generalized_config_values(),
-      Self::FlipperMainDirect(m) => m.generalized_config_values(),
-      Self::FlipperHoldDirect(m) => m.generalized_config_values(),
-      Self::FlipperMain3Try(m) => m.generalized_config_values(),
+      Self::Pulse(m) => m.configs(),
+      Self::PulseKick(m) => m.configs(),
+      Self::PulseHold(m) => m.configs(),
+      Self::PulseHoldCancel(m) => m.configs(),
+      Self::DelayedPulse(m) => m.configs(),
+      Self::PulseCancel(m) => m.configs(),
+      Self::LongPulse(m) => m.configs(),
+      Self::PulseHoldExtension(m) => m.configs(),
+      Self::FlipperMainDirect(m) => m.configs(),
+      Self::FlipperHoldDirect(m) => m.configs(),
+      Self::FlipperMain3Try(m) => m.configs(),
     }
   }
 

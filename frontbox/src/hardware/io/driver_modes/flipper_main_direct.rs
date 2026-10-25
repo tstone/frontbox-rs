@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use fast_protocol::{DriverConfig, Power};
 
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDisplay, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 80 - Premium flipper driver for main coil. Driver is active when button switch is closed.
@@ -51,12 +51,12 @@ impl FlipperMainDirectMode {
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
     [
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.max_eos_time.generalized_config_value(),
-      self.next_flip_refresh.generalized_config_value(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.max_eos_time.config_display(),
+      self.next_flip_refresh.config_display(),
     ]
     .into_iter()
     .flatten()

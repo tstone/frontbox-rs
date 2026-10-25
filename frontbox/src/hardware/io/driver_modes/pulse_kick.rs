@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDisplay, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 12 - Sends up to 2 variable PWM times, then kicks (full power) at the end of the cycle. Useful for gently
@@ -51,13 +51,13 @@ impl PulseKickMode {
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
     [
-      self.initial_pwm_length.generalized_config_value(),
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_length.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.kick_length.generalized_config_value(),
+      self.initial_pwm_length.config_display(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_length.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.kick_length.config_display(),
     ]
     .into_iter()
     .flatten()

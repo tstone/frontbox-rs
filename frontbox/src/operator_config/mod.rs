@@ -35,7 +35,7 @@
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
 //! # struct Example;
-//! pub static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8, Range<u8>>> = LazyLock::new(|| {
+//! pub static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8>> = LazyLock::new(|| {
 //!   ConfigValue::new(
 //!     "Max Extra Balls", // name
 //!     "The most extra balls a player can have per game", // description
@@ -45,8 +45,8 @@
 //! });
 //! 
 //! impl System for Example {
-//!   fn config_values(&self) -> Vec<&'static dyn GeneralizedConfigValue> {
-//!     vec![&*MAX_EXTRA_BALLS]
+//!   fn config_values(&self) -> Vec<&'static ConfigDisplay> {
+//!     vec![MAX_EXTRA_BALLS.display()]
 //!   }
 //! }
 //! ```
@@ -63,9 +63,9 @@
 //! # impl MySystem { fn new() -> Self { Self } }
 //! # impl System for MySystem {}
 //! # let some_system = MySystem::new();
-//! # static MY_CONFIG1: LazyLock<ConfigValue<u8, Range<u8>>> =
+//! # static MY_CONFIG1: LazyLock<ConfigValue<u8>> =
 //! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<ConfigValue<u8, Range<u8>>> =
+//! # static MY_CONFIG2: LazyLock<ConfigValue<u8>> =
 //! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
 //! App::new(BootConfig::default())
 //!   .configure(|app| {
@@ -76,7 +76,7 @@
 //!     app.register_configs(&some_system);
 //! 
 //!     // or manually register explicit configs
-//!     let configs: Vec<&'static dyn GeneralizedConfigValue> = vec![&*MY_CONFIG1, &*MY_CONFIG2];
+//!     let configs: Vec<&'static ConfigDisplay> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
 //!     app.register_configs(configs);
 //!   });
 //! ```
@@ -86,7 +86,7 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
-//! # static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8, Range<u8>>> =
+//! # static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8>> =
 //! #   LazyLock::new(|| ConfigValue::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
 //! # fn example(ctx: &SystemContext) {
 //! // The value is always present since a default is provided
@@ -94,18 +94,20 @@
 //! # }
 //! ```
 
+mod choices;
 mod config_display;
+mod config_domain;
+mod config_type;
 mod config_value;
-mod domain;
-mod generalized_config_value;
 mod hardware_value;
 mod operator_config;
 mod range;
 
+pub use choices::*;
 pub use config_display::*;
+pub use config_domain::*;
+pub use config_type::*;
 pub use config_value::*;
-pub use domain::*;
-pub use generalized_config_value::*;
 pub use hardware_value::*;
 pub use operator_config::*;
 pub use range::*;

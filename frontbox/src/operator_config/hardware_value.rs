@@ -1,31 +1,26 @@
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 
-use crate::operator_config::generalized_config_value::GeneralizedConfigValue;
 use crate::operator_config::*;
 
 /// A value that can be assigned to configure a piece of hardware, either with a fixed value or using operator config
 #[derive(Clone, Debug)]
-pub enum HardwareValue<T: Clone, D: Domain<T> = Range<T>> {
-  Config(ConfigValue<T, D>),
+pub enum HardwareValue<T: Clone> {
+  Config(ConfigValue<T>),
   Fixed(T),
 }
 
-impl<T, D: Domain<T>> HardwareValue<T, D>
-where
-  T: Clone + Send + Sync + 'static,
-{
+impl<T: Clone + ConfigType> HardwareValue<T> {
   pub fn fixed(value: T) -> Self {
     Self::Fixed(value)
   }
 
-  pub fn config(name: &'static str, desc: &'static str, default: T, domain: D) -> Self {
-    Self::Config(ConfigValue {
-      name,
-      desc,
-      default,
-      domain,
-    })
+  pub fn config(
+    name: &'static str,
+    desc: &'static str,
+    default: T,
+    domain: impl IntoConfigDomain<T>,
+  ) -> Self {
+    Self::Config(ConfigValue::new(name, desc, default, domain))
   }
 
   /// Get the actual usable value given a working environment
@@ -36,21 +31,17 @@ where
     }
   }
 
-  /// Typed version for TOML read/write
-  pub fn generalized_config_value(&self) -> Option<&dyn GeneralizedConfigValue>
-  where
-    T: PartialEq + ConfigDisplay + Serialize + DeserializeOwned + Send + Sync,
-    D: Send + Sync,
-  {
+  /// The config declaration, if this value is configurable
+  pub fn config_display(&self) -> Option<&ConfigDisplay> {
     match self {
-      Self::Config(cv) => Some(cv),
+      Self::Config(cv) => Some(cv.display()),
       Self::Fixed(_) => None,
     }
   }
 }
 
 /// Allows plain values to be used anywhere a fixed HardwareValue is accepted
-impl<T: Clone, D: Domain<T>> From<T> for HardwareValue<T, D> {
+impl<T: Clone> From<T> for HardwareValue<T> {
   fn from(value: T) -> Self {
     Self::Fixed(value)
   }
@@ -105,7 +96,7 @@ struct ConfigRepr<'a, T: HardwareValueRepr> {
   default: Repr<'a, T>,
 }
 
-impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, D> {
+impl<T: Clone + ConfigType + HardwareValueRepr> Serialize for HardwareValue<T> {
   fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     match self {
       Self::Config(cv) => serializer.serialize_newtype_variant(
@@ -113,9 +104,9 @@ impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, 
         0,
         "Config",
         &ConfigRepr {
-          name: cv.name,
-          desc: cv.desc,
-          default: Repr(&cv.default),
+          name: cv.display().name,
+          desc: cv.display().desc,
+          default: Repr(&cv.default()),
         },
       ),
       Self::Fixed(value) => {
@@ -126,10 +117,9 @@ impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, 
 }
 
 #[cfg(feature = "ts")]
-impl<T, D> ts_rs::TS for HardwareValue<T, D>
+impl<T> ts_rs::TS for HardwareValue<T>
 where
   T: Clone + HardwareValueRepr + 'static,
-  D: Domain<T> + 'static,
 {
   type WithoutGenerics = Self;
   type OptionInnerType = Self;

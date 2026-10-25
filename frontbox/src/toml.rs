@@ -5,16 +5,16 @@
 //! being overwritten by the next save.
 //!
 //! ```rust,no_run
-//! # use frontbox::toml_file;
+//! use frontbox::toml;
 //! #[derive(Default, serde::Serialize, serde::Deserialize)]
 //! #[serde(default)] // fields added later fall back to their default instead of failing the whole file
 //! struct Scores {
 //!   best: u32,
 //! }
 //!
-//! let mut scores: Scores = toml_file::load("scores.toml").unwrap_or_default();
+//! let mut scores: Scores = toml::load("scores.toml").unwrap_or_default();
 //! scores.best = 100;
-//! toml_file::save("scores.toml", &scores).unwrap();
+//! toml::save("scores.toml", &scores).unwrap();
 //! ```
 
 use std::ffi::OsString;

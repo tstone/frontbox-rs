@@ -1,20 +1,45 @@
-use std::fmt::Debug;
+use std::marker::PhantomData;
 
-use crate::operator_config::{Domain, OperatorConfig};
+use crate::operator_config::{
+  ConfigDisplay, ConfigType, IntoConfigDomain, OperatorConfig, RawConfigValue,
+};
 use crate::prelude::SystemContext;
 
-#[derive(Debug, Clone)]
-pub struct ConfigValue<T, D: Domain<T>> {
-  pub name: &'static str,
-  pub desc: &'static str,
-  pub default: T,
-  pub domain: D,
+/// A config value declaration: its [`ConfigDisplay`] plus the Rust type it's read as
+#[derive(Clone, Debug)]
+pub struct ConfigValue<T> {
+  display: ConfigDisplay,
+  _type: PhantomData<fn() -> T>,
 }
 
-impl<T, D: Domain<T>> ConfigValue<T, D>
-where
-  T: Clone + Send + Sync + 'static,
-{
+impl<T: ConfigType> ConfigValue<T> {
+  pub fn new(
+    name: &'static str,
+    desc: &'static str,
+    default: T,
+    domain: impl IntoConfigDomain<T>,
+  ) -> Self {
+    Self {
+      display: ConfigDisplay {
+        name,
+        desc,
+        domain: domain.into_domain(),
+        default: default.to_raw(),
+        formatter: format_raw::<T>,
+      },
+      _type: PhantomData,
+    }
+  }
+
+  /// The untyped declaration, for listing alongside configs of other types
+  pub fn display(&self) -> &ConfigDisplay {
+    &self.display
+  }
+
+  pub fn default(&self) -> T {
+    T::from_raw(self.display.default)
+  }
+
   pub fn get(&self, ctx: &SystemContext) -> T {
     ctx.operator_config.get(self)
   }
@@ -24,13 +49,6 @@ where
   }
 }
 
-impl<T, D: Domain<T>> ConfigValue<T, D> {
-  pub fn new(name: &'static str, desc: &'static str, default: T, domain: D) -> Self {
-    ConfigValue {
-      name,
-      desc,
-      default,
-      domain,
-    }
-  }
+fn format_raw<T: ConfigType>(raw: RawConfigValue) -> String {
+  T::from_raw(raw).display()
 }

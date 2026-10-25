@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDisplay, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 75 - Pulse the driver until the trigger (flip) is deactivated -OR- the cancel switch (flop) is activated.
@@ -49,12 +49,12 @@ impl PulseCancelMode {
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
     [
-      self.initial_full_power_length.generalized_config_value(),
-      self.secondary_power_length.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.rest.generalized_config_value(),
+      self.initial_full_power_length.config_display(),
+      self.secondary_power_length.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.rest.config_display(),
     ]
     .into_iter()
     .flatten()

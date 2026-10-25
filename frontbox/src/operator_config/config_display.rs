@@ -1,43 +1,23 @@
-use std::time::Duration;
+use crate::operator_config::{ConfigDomain, RawConfigValue};
 
-use fast_protocol::net::prelude::Power;
-
-pub trait ConfigDisplay {
-  fn config_display(&self) -> String;
+/// Everything about a config value except its Rust type, so configs of different types can be listed together (for
+/// registration, menus, persistence). Built by [`ConfigValue::new`](crate::operator_config::ConfigValue::new).
+#[derive(Clone, Debug)]
+pub struct ConfigDisplay {
+  pub name: &'static str,
+  pub desc: &'static str,
+  pub domain: ConfigDomain,
+  pub default: RawConfigValue,
+  pub(crate) formatter: fn(RawConfigValue) -> String,
 }
 
-impl ConfigDisplay for Duration {
-  fn config_display(&self) -> String {
-    humantime::format_duration(*self).to_string()
+impl ConfigDisplay {
+  /// How a value is shown to the operator
+  pub fn format(&self, value: RawConfigValue) -> String {
+    (self.formatter)(value)
   }
-}
 
-impl ConfigDisplay for Power {
-  fn config_display(&self) -> String {
-    format!("{}%", ((self.power as f32 / 255.0) * 100.0) as u8)
-  }
-}
-
-impl ConfigDisplay for u8 {
-  fn config_display(&self) -> String {
-    format!("{}", self)
-  }
-}
-
-impl ConfigDisplay for i8 {
-  fn config_display(&self) -> String {
-    format!("{}", self)
-  }
-}
-
-impl ConfigDisplay for u16 {
-  fn config_display(&self) -> String {
-    format!("{}", self)
-  }
-}
-
-impl ConfigDisplay for i16 {
-  fn config_display(&self) -> String {
-    format!("{}", self)
+  pub fn is_default(&self, value: RawConfigValue) -> bool {
+    value == self.default
   }
 }

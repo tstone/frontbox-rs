@@ -1,7 +1,6 @@
 use fast_protocol::net::prelude::Power;
 
-use crate::operator_config::Domain;
-use std::ops::{Add, Sub};
+use crate::operator_config::{ConfigDomain, ConfigType, IntoConfigDomain, RawConfigValue};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -12,18 +11,17 @@ pub struct Range<T> {
   step: T,
 }
 
-impl<T> Domain<T> for Range<T>
-where
-  T: Add<Output = T> + Sub<Output = T> + PartialOrd + PartialEq + Copy,
-{
-  fn inc(&self, value: &T) -> T {
-    let v = *value + self.step;
-    if v > self.max { self.max } else { v }
-  }
-
-  fn dec(&self, value: &T) -> T {
-    let v = *value - self.step;
-    if v < self.min { self.min } else { v }
+impl<T: ConfigType> IntoConfigDomain<T> for Range<T> {
+  fn into_domain(self) -> ConfigDomain {
+    let int = |v: &T| match v.to_raw() {
+      RawConfigValue::Int(v) => v,
+      other => panic!("Range bounds must be ints, got {other:?}"),
+    };
+    ConfigDomain::Int {
+      min: int(&self.min),
+      max: int(&self.max),
+      step: int(&self.step),
+    }
   }
 }
 
