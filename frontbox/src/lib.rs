@@ -23,6 +23,7 @@ mod macros;
 pub mod operator_config;
 pub mod provided;
 pub mod systems;
+pub mod toml;
 
 pub use hardware::tags;
 

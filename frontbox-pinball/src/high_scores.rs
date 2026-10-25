@@ -1,24 +1,22 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use frontbox::prelude::System;
+use frontbox::toml;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct HighScoresSystem {
   high_scores: Vec<ScoreEntry>,
   custom_scores: HashMap<String, ScoreEntry>,
-  #[serde(skip_serializing)]
+  #[serde(skip)]
   path: String,
 }
 
 impl HighScoresSystem {
   pub fn new(path: impl AsRef<Path>) -> Self {
     let path = path.as_ref();
-    let scores = fs::read_to_string(path)
-      .ok()
-      .and_then(|s| toml::from_str::<HighScoresSystem>(&s).ok())
-      .unwrap_or_default();
+    let scores: HighScoresSystem = toml::load(path).unwrap_or_default();
 
     Self {
       high_scores: scores.high_scores,
@@ -82,9 +80,9 @@ impl HighScoresSystem {
   }
 
   fn write(&self) {
-    toml::to_string_pretty(self)
-      .ok()
-      .and_then(|s| fs::write(&self.path, s).ok());
+    if let Err(e) = toml::save(&self.path, self) {
+      log::error!("Failed to save high scores to {}: {e}", self.path);
+    }
   }
 }
 
@@ -133,4 +131,26 @@ pub enum HighScoreSlot {
 pub struct ScoreEntry {
   pub name: String,
   pub score: u32,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn saved_scores_load_back() {
+    let dir = std::env::temp_dir().join(format!("frontbox-high-scores-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("high_scores.toml");
+
+    let mut scores = HighScoresSystem::new(&path);
+    scores.set_high_score(HighScoreSlot::GrandChampion, "ZZZ".to_string(), 99_000_000);
+    scores.set_custom_score("loops", "LLL".to_string(), 12);
+
+    let loaded = HighScoresSystem::new(&path);
+    assert_eq!(loaded.get_high_scores()[0].name, "ZZZ");
+    assert_eq!(loaded.get_high_scores()[1].name, "BBB");
+    assert_eq!(loaded.get_custom_scores()["loops"].score, 12);
+  }
 }
