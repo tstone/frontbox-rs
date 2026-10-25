@@ -59,7 +59,7 @@ impl LedExample {
         vec![
           Tween::boxed(
             Duration::from_millis(1500),
-            Curve::QuadraticInOut,
+            Curve::EaseInOut,
             vec![Rgba::black(), Rgba::red()],
             Cycle::Once,
           ),

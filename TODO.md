@@ -11,7 +11,6 @@
 - Audits: Keep stats on coils fired, etc.
 - High scores are janky and require too much system switching (but how else to support multiple input methods?)
 - Clean up hardware exports
-- Streamline animation curve choices
 - Animations should be able to be specified as relative to the frame rate
 - Some kind of persistable storage (re-use Store, but add Deserialize requirement)
 - Stability: Robust handling for USB disconnects/reconnects

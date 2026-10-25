@@ -18,7 +18,6 @@ priority-queue = "2.7.0"
 itertools = "0.14.0"
 image = { version = "0.25.9" }
 rand = { version = "0.10.0" }
-noise = "0.9.0"
 glam = { version = "0.33.2", features = ["serde"] }
 indexmap = "2.14.0"
 toml = "1.1.3"
