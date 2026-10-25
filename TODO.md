@@ -49,7 +49,6 @@ LEDs
 - While LedProgram makes things feel normal, it's still a little weird how sometimes things are still manually declared. Feels like there needs to be a unified API.
 - Because of the way LedProgram1d is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
 - Really should revert name back to "effect" which is so much more natural LedEffect1d, LedEffect2d
-- Implement binary versions of LED commands
 - Should "timeline" be renamed "keyframe"?
 - LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these are true"
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?

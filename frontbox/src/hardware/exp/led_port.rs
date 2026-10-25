@@ -40,12 +40,12 @@ impl LedPort {
 pub struct ResolvedLedPort {
   pub led_type: LedType,
   pub leds: Vec<ExpAddressed<SingleLedDefinition>>,
-  pub offset: u16,
+  pub offset: u8,
   pub length: u8,
 }
 
 impl ResolvedLedPort {
-  pub fn default(offset: u16) -> Self {
+  pub fn default(offset: u8) -> Self {
     Self {
       led_type: LedType::WS2812,
       leds: Vec::new(),

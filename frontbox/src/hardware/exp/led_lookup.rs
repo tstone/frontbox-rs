@@ -24,7 +24,7 @@ impl LedLookup {
         for led in &port.leds {
           let address = LedAddress {
             exp: led.assignment.clone(),
-            index: led.id as u16,
+            index: led.id as u8,
           };
 
           let channel = if let Some(config) = &led.definition.config {

@@ -378,7 +378,7 @@ impl System for LedSystem {
 
     if leds_to_set.len() > 0 {
       // group by address to send to machine
-      let outgoing: HashMap<ExpAddress, Vec<(u16, Rgba<u8>)>> =
+      let outgoing: HashMap<ExpAddress, Vec<(u8, Rgba<u8>)>> =
         leds_to_set
           .into_iter()
           .fold(HashMap::new(), |mut acc, (addr, color)| {

@@ -53,7 +53,7 @@ pub enum TraceEvent {
   LedsRGBChange {
     expansion: u8,
     breakout: Option<u8>,
-    states: Vec<(u16, Color)>,
+    states: Vec<(u8, Color)>,
   },
   // TODO: some kind of game-specific state push that is JSON encodable
 }

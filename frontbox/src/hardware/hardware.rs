@@ -1,5 +1,8 @@
 use crate::prelude::*;
 
+/// FAST EXP boards address LEDs per breakout in a single byte, `0x00`-`0x7F`
+const MAX_LEDS_PER_BREAKOUT: usize = 128;
+
 #[derive(Clone, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Hardware {
@@ -52,7 +55,7 @@ impl Hardware {
       }
 
       // sum up actual LEDs present and calculate index offsets
-      let mut offset = 0;
+      let mut offset: u8 = 0;
       let mut resolved_ports = Vec::new();
       for port_idx in 0..board.hardware_led_port_count.unwrap_or(0) {
         // For EXP boards which have multiple LED port banks, the offset needs to be reset every 5th port
@@ -60,22 +63,34 @@ impl Hardware {
           offset = 0;
         }
 
-        if let Some(port) = board.led_ports.get(&port_idx) {
+        let port = if let Some(port) = board.led_ports.get(&port_idx) {
           let port_count_override = match board.model {
             // Known bug: Older versions of the Neuron have an internal Exp board which does not respect ER:
             FastExpansionBoardModels::Neuron => Some(32),
             _ => None,
           };
 
-          let port =
-            Self::resolve_led_port(board, port, port_idx as u8, offset, port_count_override);
-          offset += port.length as u16;
-          resolved_ports.push(port);
+          Self::resolve_led_port(board, port, port_idx, offset, port_count_override)
         } else {
-          // no port defined = assume the default (32 LEDs)
-          resolved_ports.push(ResolvedLedPort::default(offset));
-          offset += 32;
+          // no port defined = assume the default (32 LEDs), or whatever room is left on the breakout
+          ResolvedLedPort {
+            length: (MAX_LEDS_PER_BREAKOUT - offset as usize).min(32) as u8,
+            ..ResolvedLedPort::default(offset)
+          }
+        };
+
+        let breakout_end = offset as usize + port.length as usize;
+        if breakout_end > MAX_LEDS_PER_BREAKOUT {
+          panic!(
+            "LED port {} on board {:X} ends at LED {}, but a breakout only has {} LEDs",
+            port_idx + 1,
+            board.address,
+            breakout_end,
+            MAX_LEDS_PER_BREAKOUT
+          );
         }
+        offset = breakout_end as u8;
+        resolved_ports.push(port);
       }
 
       resolved_boards.push(ResolvedExpansionBoard {
@@ -92,10 +107,10 @@ impl Hardware {
     board: &ExpBoard,
     port: &LedPort,
     port_idx: u8,
-    offset: u16,
+    offset: u8,
     port_count_override: Option<u8>,
   ) -> ResolvedLedPort {
-    let mut port_led_total_count: u8 = 0;
+    let mut port_led_total_count: usize = 0;
     let mut addressed_leds = Vec::new();
     for multi_def in &port.leds {
       multi_def
@@ -110,19 +125,40 @@ impl Hardware {
               breakout: Some(port_idx / 4),
               port: port_idx as u8,
             },
-            id: i + port_led_total_count as usize + offset as usize,
+            id: i + port_led_total_count + offset as usize,
           });
         });
 
-      port_led_total_count = port_led_total_count.saturating_add(multi_def.children().len() as u8);
+      port_led_total_count += multi_def.children().len();
     }
 
     log::trace!("Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
 
+    // only ports too long for a u8 are caught here; resolve_expansion_boards checks the port fits on its breakout
+    let length = match port_count_override {
+      Some(length) if port_led_total_count > length as usize => panic!(
+        "LED port {} on board {:X} has {} LEDs, but only supports {}",
+        port_idx + 1,
+        board.address,
+        port_led_total_count,
+        length
+      ),
+      Some(length) => length,
+      None => u8::try_from(port_led_total_count).unwrap_or_else(|_| {
+        panic!(
+          "LED port {} on board {:X} has {} LEDs, but a breakout only has {} LEDs",
+          port_idx + 1,
+          board.address,
+          port_led_total_count,
+          MAX_LEDS_PER_BREAKOUT
+        )
+      }),
+    };
+
     ResolvedLedPort {
       led_type: port.led_type.clone(),
       offset,
-      length: port_count_override.unwrap_or(port_led_total_count),
+      length,
       leds: addressed_leds,
     }
   }
@@ -196,5 +232,45 @@ mod tests {
       unknown_switch_references(&drivers, &switches),
       vec![("flipper", "missing_eos"), ("typo", "reel")]
     );
+  }
+
+  static STRIP_64: LazyLock<LedDefinition> =
+    LazyLock::new(|| LedDefinition::multi("strip_64").count(64).build());
+  static STRIP_65: LazyLock<LedDefinition> =
+    LazyLock::new(|| LedDefinition::multi("strip_65").count(65).build());
+
+  fn exp_board() -> ExpBoard {
+    ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open)
+  }
+
+  #[test]
+  fn undefined_ports_shrink_to_fit_the_breakout() {
+    let board = exp_board()
+      .wire_led_port(1, LedPort::ws2812().leds(vec![&*STRIP_64]))
+      .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_64]));
+
+    let resolved = Hardware::resolve_expansion_boards(&vec![board]);
+    let ports = &resolved[0].led_ports;
+    let layout: Vec<(u8, u8)> = ports.iter().map(|p| (p.offset, p.length)).collect();
+    assert_eq!(layout, vec![(0, 64), (64, 64), (128, 0), (128, 0)]);
+    assert_eq!(ports[1].leds.last().unwrap().id, 127);
+  }
+
+  #[test]
+  #[should_panic(expected = "a breakout only has 128 LEDs")]
+  fn panics_when_ports_overflow_the_breakout() {
+    let board = exp_board()
+      .wire_led_port(1, LedPort::ws2812().leds(vec![&*STRIP_64]))
+      .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_65]));
+
+    Hardware::resolve_expansion_boards(&vec![board]);
+  }
+
+  #[test]
+  #[should_panic(expected = "only supports 32")]
+  fn panics_when_neuron_port_exceeds_fixed_length() {
+    let board = ExpBoard::neuron().wire_led_port(1, LedPort::ws2812().leds(vec![&*STRIP_64]));
+
+    Hardware::resolve_expansion_boards(&vec![board]);
   }
 }

@@ -167,8 +167,8 @@ impl MachineSystem {
     }
   }
 
-  /// Set the color of multiple LEDs in a single command (RS)
-  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, Rgba<u8>)>) {
+  /// Set the color of multiple LEDs in a single command (RD)
+  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, Rgba<u8>)>) {
     let led_states = led_states
       .iter()
       .map(|(index, color)| (*index, color.to_color()))
@@ -189,18 +189,22 @@ impl MachineSystem {
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetLedsCommand::new(expansion_id, breakout, led_states)),
+        command: Box::new(SetLedsBinaryCommand::new(
+          expansion_id,
+          breakout,
+          led_states,
+        )),
       })
       .ok();
   }
 
-  /// Set all LEDs on a port/breakout to the same color (RP)
+  /// Set multiple LEDs on a port/breakout to the same color (RB)
   pub fn set_multiple_leds(
     &self,
     expansion_id: u8,
     breakout: Option<u8>,
     rgba: Rgba<u8>,
-    indexes: Vec<u16>,
+    indexes: Vec<u8>,
   ) {
     if cfg!(debug_assertions) {
       self
@@ -221,7 +225,7 @@ impl MachineSystem {
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetMultipleLedsCommand::new(
+        command: Box::new(SetMultipleLedsBinaryCommand::new(
           expansion_id,
           breakout,
           rgba.to_color(),
@@ -248,13 +252,17 @@ impl MachineSystem {
       .ok();
   }
 
-  /// Set the white channel of multiple LEDs in a single command (RW)
-  pub fn set_leds_white(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u16, u8)>) {
+  /// Set the white channel of multiple LEDs in a single command (RZ)
+  pub fn set_leds_white(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, u8)>) {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetWhiteCommand::new(expansion_id, breakout, led_states)),
+        command: Box::new(SetWhiteBinaryCommand::new(
+          expansion_id,
+          breakout,
+          led_states,
+        )),
       })
       .ok();
   }

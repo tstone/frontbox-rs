@@ -384,7 +384,7 @@ struct HubState {
 }
 
 /// (expansion board address, breakout, index) to LED name
-type LedNames = HashMap<(u8, Option<u8>, u16), String>;
+type LedNames = HashMap<(u8, Option<u8>, u8), String>;
 
 /// The app's control event for setting a switch from the console
 fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {

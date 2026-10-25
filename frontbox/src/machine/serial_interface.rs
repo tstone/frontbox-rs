@@ -147,12 +147,6 @@ impl SerialInterface {
 
   // Send off a command without concern for a response
   async fn send(&mut self, cmd: &[u8]) {
-    if cmd.starts_with(b"WD:") || cmd.starts_with(b"R") {
-      log::trace!(target: "frontbox::serial", "🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
-    } else {
-      log::debug!(target: "frontbox::serial", "🖥️ -> 👾 : {}", String::from_utf8_lossy(cmd));
-    }
-
     match self.writer.write_all(cmd).await {
       Ok(_) => (),
       Err(e) => {
@@ -162,7 +156,15 @@ impl SerialInterface {
   }
 
   pub async fn dispatch<C: FastBinaryDispatch + ?Sized>(&mut self, cmd: &C) {
-    self.send(&cmd.to_bytes()).await
+    let bytes = cmd.to_bytes();
+    // Logged via describe() since binary commands don't print; the log macros only evaluate it when enabled
+    if bytes.starts_with(b"WD:") || bytes.starts_with(b"R") {
+      log::trace!(target: "frontbox::serial", "🖥️ -> 👾 : {}", cmd.describe());
+    } else {
+      log::debug!(target: "frontbox::serial", "🖥️ -> 👾 : {}", cmd.describe());
+    }
+
+    self.send(&bytes).await
   }
 
   async fn query_inner<R>(

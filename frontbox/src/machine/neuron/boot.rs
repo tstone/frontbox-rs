@@ -247,7 +247,7 @@ pub async fn configure_led_port(
   exp_port: &mut SerialInterface,
   board: &ResolvedExpansionBoard,
   port_index: u8,
-  led_index_offset: u16,
+  led_index_offset: u8,
   led_port: &ResolvedLedPort,
 ) {
   let cmd = ConfigureLedPortCommand::new(

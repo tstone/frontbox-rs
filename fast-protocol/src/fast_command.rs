@@ -17,6 +17,8 @@ pub trait FastStringDispatch: Debug + Send + Sync {
 pub trait FastBinaryDispatch: Debug + Send + Sync {
   fn to_bytes(&self) -> Vec<u8>;
   fn as_any(&self) -> &dyn Any;
+  /// A human readable form of the command for logging
+  fn describe(&self) -> String;
 }
 
 impl dyn FastBinaryDispatch {
@@ -32,6 +34,10 @@ impl<T: FastStringDispatch + 'static> FastBinaryDispatch for T {
 
   fn as_any(&self) -> &dyn Any {
     self
+  }
+
+  fn describe(&self) -> String {
+    self.to_string()
   }
 }
 

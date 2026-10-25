@@ -41,11 +41,11 @@ impl Eq for LED {}
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedAddress {
   pub exp: ExpAddress,
-  pub index: u16,
+  pub index: u8,
 }
 
 impl LedAddress {
-  pub fn new(exp: ExpAddress, index: u16) -> Self {
+  pub fn new(exp: ExpAddress, index: u8) -> Self {
     Self { exp, index }
   }
 
