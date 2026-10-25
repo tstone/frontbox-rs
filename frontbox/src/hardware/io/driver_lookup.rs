@@ -65,24 +65,6 @@ impl DriverLookup {
       .and_then(|driver| self.configs.get(&driver.id))
   }
 
-  /// (driver name, switch name) for every switch a driver mode references that isn't in `switches`
-  pub fn unknown_switch_references(
-    &self,
-    switches: &SwitchLookup,
-  ) -> Vec<(&'static str, &'static str)> {
-    let mut unknown = Vec::new();
-    for (id, mode) in &self.configs {
-      let driver = self.by_id[id].name;
-      for switch in mode.switch_names() {
-        if switches.by_name(switch).is_none() {
-          unknown.push((driver, switch));
-        }
-      }
-    }
-    unknown.sort();
-    unknown
-  }
-
   pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Driver> {
     self
       .by_id
@@ -142,54 +124,3 @@ impl Driver {
   }
 }
 
-#[cfg(test)]
-mod tests {
-  use std::sync::LazyLock;
-
-  use super::*;
-
-  static SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("real").build());
-  static GOOD: LazyLock<DriverDefinition> = LazyLock::new(|| {
-    DriverDefinition::new("good")
-      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("real")).build())
-      .build()
-  });
-  static TYPO: LazyLock<DriverDefinition> = LazyLock::new(|| {
-    DriverDefinition::new("typo")
-      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("reel")).build())
-      .build()
-  });
-  static FLIPPER: LazyLock<DriverDefinition> = LazyLock::new(|| {
-    DriverDefinition::new("flipper")
-      .mode(DriverMode::flipper_main_direct("real", "missing_eos").build())
-      .build()
-  });
-  static VIRTUAL: LazyLock<DriverDefinition> = LazyLock::new(|| {
-    DriverDefinition::new("virtual")
-      .mode(DriverMode::pulse().build())
-      .build()
-  });
-
-  fn addressed<T: HardwareDefinition>(defs: Vec<&'static T>) -> Vec<IoAddressed<T>> {
-    defs
-      .into_iter()
-      .enumerate()
-      .map(|(id, definition)| IoAddressed {
-        definition,
-        assignment: IoAddress::new(0, id as u16),
-        id,
-      })
-      .collect()
-  }
-
-  #[test]
-  fn unknown_switch_references() {
-    let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]));
-
-    assert_eq!(
-      drivers.unknown_switch_references(&switches),
-      vec![("flipper", "missing_eos"), ("typo", "reel")]
-    );
-  }
-}

@@ -18,16 +18,18 @@ impl Hardware {
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
-    // An unresolved switch would otherwise be sent to the hardware as switch 0, wiring the driver to whatever
-    // switch 0 actually is
-    let unknown = drivers.unknown_switch_references(&switches);
+    // verify switches associated with driver configs actually exist
+    let unknown = unknown_switch_references(&drivers, &switches);
     if !unknown.is_empty() {
       let list = unknown
         .iter()
         .map(|(driver, switch)| format!("  driver \"{}\" -> switch \"{}\"", driver, switch))
         .collect::<Vec<_>>()
         .join("\n");
-      panic!("Driver modes reference switches that don't exist:\n{}", list);
+      panic!(
+        "Driver modes reference switches that don't exist:\n{}",
+        list
+      );
     }
 
     Self {
@@ -123,5 +125,76 @@ impl Hardware {
       length: port_count_override.unwrap_or(port_led_total_count),
       leds: addressed_leds,
     }
+  }
+}
+
+/// (driver name, switch name) for every switch a driver mode references that isn't in `switches`
+fn unknown_switch_references(
+  drivers: &DriverLookup,
+  switches: &SwitchLookup,
+) -> Vec<(&'static str, &'static str)> {
+  let mut unknown = Vec::new();
+  for driver in drivers.values() {
+    if let Some(mode) = drivers.config(driver.name) {
+      for switch in mode.switch_names() {
+        if switches.by_name(switch).is_none() {
+          unknown.push((driver.name, switch));
+        }
+      }
+    }
+  }
+  unknown.sort();
+  unknown
+}
+
+#[cfg(test)]
+mod tests {
+  use std::sync::LazyLock;
+
+  use super::*;
+
+  static SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("real").build());
+  static GOOD: LazyLock<DriverDefinition> = LazyLock::new(|| {
+    DriverDefinition::new("good")
+      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("real")).build())
+      .build()
+  });
+  static TYPO: LazyLock<DriverDefinition> = LazyLock::new(|| {
+    DriverDefinition::new("typo")
+      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch("reel")).build())
+      .build()
+  });
+  static FLIPPER: LazyLock<DriverDefinition> = LazyLock::new(|| {
+    DriverDefinition::new("flipper")
+      .mode(DriverMode::flipper_main_direct("real", "missing_eos").build())
+      .build()
+  });
+  static VIRTUAL: LazyLock<DriverDefinition> = LazyLock::new(|| {
+    DriverDefinition::new("virtual")
+      .mode(DriverMode::pulse().build())
+      .build()
+  });
+
+  fn addressed<T: HardwareDefinition>(defs: Vec<&'static T>) -> Vec<IoAddressed<T>> {
+    defs
+      .into_iter()
+      .enumerate()
+      .map(|(id, definition)| IoAddressed {
+        definition,
+        assignment: IoAddress::new(0, id as u16),
+        id,
+      })
+      .collect()
+  }
+
+  #[test]
+  fn finds_unknown_switch_references() {
+    let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
+    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]));
+
+    assert_eq!(
+      unknown_switch_references(&drivers, &switches),
+      vec![("flipper", "missing_eos"), ("typo", "reel")]
+    );
   }
 }
