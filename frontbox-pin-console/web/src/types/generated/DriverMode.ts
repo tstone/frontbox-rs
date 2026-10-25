@@ -6,6 +6,7 @@ import type { FlipperMainDirectMode } from "./FlipperMainDirectMode";
 import type { LongPulseMode } from "./LongPulseMode";
 import type { PulseCancelMode } from "./PulseCancelMode";
 import type { PulseHoldCancelMode } from "./PulseHoldCancelMode";
+import type { PulseHoldExtensionMode } from "./PulseHoldExtensionMode";
 import type { PulseHoldMode } from "./PulseHoldMode";
 import type { PulseKickMode } from "./PulseKickMode";
 import type { PulseMode } from "./PulseMode";
@@ -16,4 +17,4 @@ import type { PulseMode } from "./PulseMode";
  * 2. Sensible defaults for every mode, overridable via builders (e.g. `DriverMode::pulse().rest(...).build()`)
  * 3. Hardware values that can be exposed through operator config
  */
-export type DriverMode = { "Pulse": PulseMode } | { "PulseKick": PulseKickMode } | { "PulseHold": PulseHoldMode } | { "PulseHoldCancel": PulseHoldCancelMode } | { "DelayedPulse": DelayedPulseMode } | { "PulseCancel": PulseCancelMode } | { "LongPulse": LongPulseMode } | { "FlipperMainDirect": FlipperMainDirectMode } | { "FlipperHoldDirect": FlipperHoldDirectMode } | { "FlipperMain3Try": FlipperMain3TryMode };
+export type DriverMode = { "Pulse": PulseMode } | { "PulseKick": PulseKickMode } | { "PulseHold": PulseHoldMode } | { "PulseHoldCancel": PulseHoldCancelMode } | { "DelayedPulse": DelayedPulseMode } | { "PulseCancel": PulseCancelMode } | { "LongPulse": LongPulseMode } | { "PulseHoldExtension": PulseHoldExtensionMode } | { "FlipperMainDirect": FlipperMainDirectMode } | { "FlipperHoldDirect": FlipperHoldDirectMode } | { "FlipperMain3Try": FlipperMain3TryMode };

@@ -183,6 +183,27 @@ impl FastStringDispatch for ConfigureDriverCommand {
         secondary_pwm_power,
         fast_ms_byte(rest)
       ),
+      DriverConfig::PulseHoldExtension {
+        switch,
+        invert_switch,
+        initial_pwm_length,
+        initial_pwm_power,
+        secondary_pwm_length,
+        secondary_pwm_power,
+        rest,
+      } => format!(
+        "DL:{:X},{:X},{:X},78,{},{:X},{},{:X},{}\r",
+        self.driver_id,
+        DriverTriggerBuilder::new()
+          .invert_switch1(invert_switch)
+          .bits(),
+        switch.unwrap_or(0),
+        fast_ms_byte(initial_pwm_length),
+        initial_pwm_power,
+        fast_unit_ms_byte(secondary_pwm_length, 10),
+        secondary_pwm_power,
+        fast_ms_byte(rest)
+      ),
       DriverConfig::FlipperMainDirect {
         button_switch,
         invert_button_switch,
@@ -275,5 +296,102 @@ mod tests {
     };
     let request_str = ConfigureDriverCommand::new(10, config).to_string();
     assert_eq!(request_str, "DL:A,91,5,10,64,FF,32,AA,FF\r");
+  }
+
+  #[test]
+  fn test_pulse_hold_extension_driver() {
+    let config = DriverConfig::PulseHoldExtension {
+      switch: Some(0x12),
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_length: Duration::from_millis(1500),
+      secondary_pwm_power: Power::QUARTER,
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(3, config).to_string();
+    // <driver>,<trigger>,<switch>,78,<initial ms>,<initial pwm>,<hold x10ms>,<hold pwm>,<rest ms>
+    assert_eq!(request_str, "DL:3,81,12,78,1E,FF,96,44,10\r");
+  }
+
+  #[test]
+  fn test_pulse_hold_driver() {
+    let config = DriverConfig::PulseHold {
+      switch: Some(2),
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_power: Power::QUARTER,
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(1, config).to_string();
+    // <driver>,<trigger>,<switch>,18,<pwm1 ms>,<pwm1>,<pwm2>,<rest ms>,<n/a>
+    assert_eq!(request_str, "DL:1,81,2,18,1E,FF,44,10,\r");
+  }
+
+  #[test]
+  fn test_pulse_hold_cancel_driver() {
+    let config = DriverConfig::PulseHoldCancel {
+      switch: Some(2),
+      invert_switch: None,
+      off_switch: Some(3),
+      invert_off_switch: Some(true),
+      initial_max_on_time: Duration::from_millis(30),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_power: Power::QUARTER,
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(1, config).to_string();
+    // <driver>,<trigger>,<on switch>,20,<off switch>,<pwm1 ms>,<pwm1>,<pwm2>,<rest ms>
+    assert_eq!(request_str, "DL:1,A1,2,20,3,1E,FF,44,10\r");
+  }
+
+  #[test]
+  fn test_delayed_pulse_driver() {
+    let config = DriverConfig::DelayedPulse {
+      switch: Some(2),
+      invert_switch: None,
+      delay_length: Duration::from_millis(50),
+      initial_full_power_length: Duration::from_millis(20),
+      secondary_pwm_power: Power::HALF,
+      secondary_pwm_length: Duration::from_millis(10),
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(1, config).to_string();
+    // <driver>,<trigger>,<switch>,30,<delay x10ms>,<full power ms>,<pwm1 ms>,<pwm1>,<rest ms>
+    assert_eq!(request_str, "DL:1,81,2,30,05,14,0A,AA,10\r");
+  }
+
+  #[test]
+  fn test_long_pulse_driver() {
+    let config = DriverConfig::LongPulse {
+      switch: None,
+      invert_switch: None,
+      initial_pwm_length: Duration::from_millis(30),
+      initial_pwm_power: Power::FULL,
+      secondary_pwm_length: Duration::from_millis(2000),
+      secondary_pwm_power: Power::QUARTER,
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(1, config).to_string();
+    // <driver>,<trigger>,<switch>,70,<pwm1 ms>,<pwm1>,<pwm2 x100ms>,<pwm2>,<rest ms>
+    assert_eq!(request_str, "DL:1,81,0,70,1E,FF,14,44,10\r");
+  }
+
+  #[test]
+  fn test_pulse_cancel_driver() {
+    let config = DriverConfig::PulseCancel {
+      switch: Some(2),
+      invert_switch: Some(true),
+      off_switch: Some(3),
+      invert_off_switch: None,
+      initial_full_power_length: Duration::from_millis(30),
+      secondary_power_length: Duration::from_millis(2000),
+      secondary_pwm_power: Power::QUARTER,
+      rest: Duration::from_millis(16),
+    };
+    let request_str = ConfigureDriverCommand::new(1, config).to_string();
+    // <driver>,<trigger>,<on switch>,75,<off switch>,<full power ms>,<pwm2 x100ms>,<pwm2>,<rest ms>
+    assert_eq!(request_str, "DL:1,91,2,75,3,1E,14,44,10\r");
   }
 }

@@ -70,6 +70,15 @@ pub enum DriverConfig {
     secondary_pwm_power: Power,
     rest: Duration,
   },
+  PulseHoldExtension {
+    switch: Option<usize>,
+    invert_switch: Option<bool>,
+    initial_pwm_length: Duration,
+    initial_pwm_power: Power,
+    secondary_pwm_length: Duration,
+    secondary_pwm_power: Power,
+    rest: Duration,
+  },
   FlipperMainDirect {
     button_switch: usize,
     invert_button_switch: Option<bool>,
@@ -92,8 +101,8 @@ pub enum DriverConfig {
     eos_switch: usize,
     max_on_time: Duration,
     eos_hold_pwm_power: Power,
-    rest: Duration
-  }
+    rest: Duration,
+  },
 }
 
 impl DriverConfig {
@@ -107,6 +116,7 @@ impl DriverConfig {
       DriverConfig::DelayedPulse { switch, .. } => *switch,
       DriverConfig::LongPulse { switch, .. } => *switch,
       DriverConfig::PulseCancel { switch, .. } => *switch,
+      DriverConfig::PulseHoldExtension { switch, .. } => *switch,
       DriverConfig::FlipperMainDirect { button_switch, .. } => Some(*button_switch),
       DriverConfig::FlipperHoldDirect { button_switch, .. } => Some(*button_switch),
       DriverConfig::FlipperMain3Try { button_switch, .. } => Some(*button_switch),

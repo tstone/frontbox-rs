@@ -87,7 +87,7 @@ impl MachineSystem {
   pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &ServiceContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
-        DeactivationMode::Disabled => DriverTriggerControlMode::Automatic,
+        DeactivationMode::Disabled => DriverTriggerControlMode::Off,
         DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
       };
       self.trigger_driver(driver.id, control_mode, None);
@@ -272,5 +272,72 @@ impl System for MachineSystem {
         })
         .ok();
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  const COIL: &str = "coil";
+
+  /// The TL commands a MachineSystem dispatches for the given calls
+  fn dispatched_tl(call: impl FnOnce(&MachineSystem, &ServiceContext)) -> Vec<String> {
+    let mut ctx = TestContext::default();
+    ctx.insert_driver(Driver {
+      id: 0xA,
+      name: COIL,
+      assignment: IoAddress::default(),
+      tags: vec![],
+      location: None,
+    });
+    ctx.insert_switch(Switch {
+      name: "sw",
+      id: 0x12,
+      ..Default::default()
+    });
+
+    let (machine_tx, mut machine_rx) = mpsc::unbounded_channel();
+    let (app_tx, _app_rx) = mpsc::unbounded_channel();
+    let machine = MachineSystem::new(machine_tx, app_tx);
+    call(&machine, &ctx.svc_ctx());
+
+    let mut commands = Vec::new();
+    while let Ok(msg) = machine_rx.try_recv() {
+      if let MachineMessage::Dispatch { command, .. } = msg {
+        commands.push(String::from_utf8(command.to_bytes()).unwrap());
+      }
+    }
+    commands
+  }
+
+  #[test]
+  fn deactivate_disabled_disconnects_switch() {
+    // TL control 2 turns the driver off and disconnects its switch. Control 0 would do the opposite and
+    // connect it, leaving e.g. pops and slings live after the turn ends.
+    let sent = dispatched_tl(|m, ctx| m.deactivate_driver(COIL, DeactivationMode::Disabled, ctx));
+    assert_eq!(sent, vec!["TL:A,2,\r"]);
+  }
+
+  #[test]
+  fn deactivate_virtual_switch_off() {
+    let sent =
+      dispatched_tl(|m, ctx| m.deactivate_driver(COIL, DeactivationMode::VirtualSwitchOff, ctx));
+    assert_eq!(sent, vec!["TL:A,2,\r"]);
+  }
+
+  #[test]
+  fn activate_automatic_connects_switch() {
+    let sent = dispatched_tl(|m, ctx| m.activate_driver(COIL, ActivationMode::Automatic("sw"), ctx));
+    assert_eq!(sent, vec!["TL:A,0,12\r"]);
+  }
+
+  #[test]
+  fn activate_tap_and_on() {
+    let sent = dispatched_tl(|m, ctx| {
+      m.activate_driver(COIL, ActivationMode::Tap, ctx);
+      m.activate_driver(COIL, ActivationMode::VirtualSwitchOn, ctx);
+    });
+    assert_eq!(sent, vec!["TL:A,1,\r", "TL:A,3,\r"]);
   }
 }

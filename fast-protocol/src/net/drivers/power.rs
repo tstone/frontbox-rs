@@ -55,7 +55,7 @@ impl Add for Power {
   type Output = Self;
   fn add(self, rhs: Self) -> Self::Output {
     Power {
-      power: self.power + rhs.power,
+      power: self.power.saturating_add(rhs.power),
     }
   }
 }
@@ -64,7 +64,7 @@ impl Sub for Power {
   type Output = Self;
   fn sub(self, rhs: Self) -> Self::Output {
     Power {
-      power: self.power - rhs.power,
+      power: self.power.saturating_sub(rhs.power),
     }
   }
 }

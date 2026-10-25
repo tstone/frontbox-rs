@@ -9,7 +9,6 @@
 - Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play)
 - Establish (and document) consistent log targets
 - Audits: Keep stats on coils fired, etc.
-- Add driver configure support for 78 Pulse Hold Extension
 - High scores are janky and require too much system switching (but how else to support multiple input methods?)
 - Clean up hardware exports
 - Streamline animation curve choices

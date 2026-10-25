@@ -7,6 +7,7 @@ mod pulse;
 mod pulse_cancel;
 mod pulse_hold;
 mod pulse_hold_cancel;
+mod pulse_hold_extension;
 mod pulse_kick;
 
 pub use delayed_pulse::*;
@@ -18,6 +19,7 @@ pub use pulse::*;
 pub use pulse_cancel::*;
 pub use pulse_hold::*;
 pub use pulse_hold_cancel::*;
+pub use pulse_hold_extension::*;
 pub use pulse_kick::*;
 
 use fast_protocol::DriverConfig;
@@ -39,6 +41,7 @@ pub enum DriverMode {
   DelayedPulse(DelayedPulseMode),
   PulseCancel(PulseCancelMode),
   LongPulse(LongPulseMode),
+  PulseHoldExtension(PulseHoldExtensionMode),
   FlipperMainDirect(FlipperMainDirectMode),
   FlipperHoldDirect(FlipperHoldDirectMode),
   FlipperMain3Try(FlipperMain3TryMode),
@@ -80,6 +83,11 @@ impl DriverMode {
     PulseCancelModeBuilder::default()
   }
 
+  /// Mode 78 - Pulse then hold for a timed period (up to 2.55s), which is reset each time the driver is re-triggered.
+  pub fn pulse_hold_extension() -> PulseHoldExtensionModeBuilder {
+    PulseHoldExtensionModeBuilder::default()
+  }
+
   /// Mode 93 - Premium flipper driver for hold coil.
   pub fn flipper_hold_direct(button_switch: &'static str) -> FlipperHoldDirectModeBuilder {
     FlipperHoldDirectModeBuilder::new(button_switch)
@@ -110,6 +118,7 @@ impl DriverMode {
       Self::DelayedPulse(m) => m.to_config(ctx),
       Self::PulseCancel(m) => m.to_config(ctx),
       Self::LongPulse(m) => m.to_config(ctx),
+      Self::PulseHoldExtension(m) => m.to_config(ctx),
       Self::FlipperMainDirect(m) => m.to_config(ctx),
       Self::FlipperHoldDirect(m) => m.to_config(ctx),
       Self::FlipperMain3Try(m) => m.to_config(ctx),
@@ -125,6 +134,7 @@ impl DriverMode {
       Self::DelayedPulse(m) => m.generalized_config_values(),
       Self::PulseCancel(m) => m.generalized_config_values(),
       Self::LongPulse(m) => m.generalized_config_values(),
+      Self::PulseHoldExtension(m) => m.generalized_config_values(),
       Self::FlipperMainDirect(m) => m.generalized_config_values(),
       Self::FlipperHoldDirect(m) => m.generalized_config_values(),
       Self::FlipperMain3Try(m) => m.generalized_config_values(),
