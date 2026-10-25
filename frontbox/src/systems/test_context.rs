@@ -22,7 +22,7 @@ impl TestContext {
   }
 
   pub fn insert_switch(&mut self, switch: Switch) {
-    self.base.switches.insert(switch.name, switch);
+    self.base.switches.insert_switch(switch);
   }
 
   pub fn insert_driver(&mut self, driver: Driver) {

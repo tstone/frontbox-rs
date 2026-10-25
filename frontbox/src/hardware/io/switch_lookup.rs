@@ -110,6 +110,13 @@ impl SwitchLookup {
     self.by_id.values().filter(|switch| query.matches(switch))
   }
 
+  /// Used by tests to register a switch outside of the boot-time wiring
+  #[allow(unused)]
+  pub(crate) fn insert_switch(&mut self, switch: Switch) {
+    self.by_id.insert(switch.id, switch.clone());
+    self.by_name.insert(switch.name, switch);
+  }
+
   /// Used internally to update switch state via switch events
   pub(crate) fn update_switch_state(&mut self, switch_id: usize, state: SwitchState) {
     let is_closed = matches!(state, SwitchState::Closed);

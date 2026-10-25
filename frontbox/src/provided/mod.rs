@@ -1,5 +1,5 @@
-mod quit_game;
+mod switch_combo;
 mod watchdog;
 
-pub use quit_game::*;
+pub use switch_combo::*;
 pub use watchdog::*;

@@ -1,4 +1,3 @@
-- Refactor QuitGameSystem + double flip system to instead by switch combo system that take a list of switches and emit an event if all are pressed
 - With fb-pin centralized, maybe events should be centralized too
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be resolved.
 - So much is built on LedSystem that the framework should probably just start it up automatically. (watchdog, ledsystem, machine, etc. need to be configurable/swappable -- possible means they need interfaces)
