@@ -247,7 +247,7 @@ impl DmdMenuSystem {
           let value = ctx.config.inspect(config);
           self.display_rows.push(DisplayMenuRow::Config {
             id: *id,
-            name: config.name,
+            name: config.label,
             desc: config.desc,
             is_default: config.is_default(value),
             value: config.format(value),

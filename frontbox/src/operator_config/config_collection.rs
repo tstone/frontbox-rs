@@ -12,6 +12,8 @@ use crate::prelude::*;
 #[derive(Default)]
 pub struct ConfigCollection {
   entries: RefCell<HashMap<&'static str, Entry>>,
+  /// Release builds only: definitions that conflict with the first one seen for their key
+  isolated: RefCell<Vec<Entry>>,
   pending_disk: HashMap<String, toml::Value>, // raw until its key is first used
   pub(crate) app_sender: Option<mpsc::UnboundedSender<AppMessage>>,
 }
@@ -25,6 +27,7 @@ impl ConfigCollection {
       .unwrap_or_default();
     Self {
       entries: RefCell::default(),
+      isolated: RefCell::default(),
       pending_disk,
       app_sender: None,
     }
@@ -61,7 +64,7 @@ impl ConfigCollection {
     self.with_entry(config, |entry| entry.value = value);
 
     if let Some(app_sender) = &self.app_sender {
-      let event = ConfigChanged(config.name);
+      let event = ConfigChanged(config.key);
       let _ = app_sender.send(AppMessage::EmitEvent(None, EventBox::new(event)));
     }
   }
@@ -69,19 +72,51 @@ impl ConfigCollection {
   /// Runs `f` on the entry for this config, creating it on first use. `f` must not call back into the store.
   fn with_entry<R>(&self, config: &ConfigDefinition, f: impl FnOnce(&mut Entry) -> R) -> R {
     let mut entries = self.entries.borrow_mut();
-    let entry = entries.entry(config.name).or_insert_with(|| Entry {
+    let entry = entries.entry(config.key).or_insert_with(|| Entry {
       definition: config.clone(),
       value: self.saved_or_default(config),
     });
-    f(entry)
+    if entry.definition.is_compatible(config) {
+      return f(entry);
+    }
+    let first_label = entry.definition.label;
+    drop(entries);
+
+    // A conflicting definition gets a value of its own, so neither reads the other's value as the wrong type or range
+    let mut isolated = self.isolated.borrow_mut();
+    let index = match isolated
+      .iter()
+      .position(|e| e.definition.key == config.key && e.definition.is_compatible(config))
+    {
+      Some(index) => index,
+      None => {
+        let message = format!(
+          "config key '{}' is declared by '{}' and '{}' with a different type, domain or default",
+          config.key, first_label, config.label
+        );
+        if cfg!(debug_assertions) {
+          panic!("{message}. Give one a distinct `.key(...)`");
+        }
+        log::error!(
+          "{message}; '{}' uses its own default until fixed",
+          config.label
+        );
+        isolated.push(Entry {
+          definition: config.clone(),
+          value: config.default,
+        });
+        isolated.len() - 1
+      }
+    };
+    f(&mut isolated[index])
   }
 
   fn saved_or_default(&self, config: &ConfigDefinition) -> ConfigDomainValue {
-    match self.pending_disk.get(config.name) {
+    match self.pending_disk.get(config.key) {
       Some(raw) => config.domain.from_toml(raw).unwrap_or_else(|| {
         log::warn!(
           "config '{}': saved value {raw} doesn't fit, using default",
-          config.name
+          config.key
         );
         config.default
       }),
@@ -92,7 +127,6 @@ impl ConfigCollection {
 
 struct Entry {
   /// The first declaration seen for this key
-  #[allow(dead_code)] // read once saving and the conflict check land
   definition: ConfigDefinition,
   value: ConfigDomainValue,
 }
@@ -150,6 +184,45 @@ mod tests {
     let config = saved("turns = 1");
     config.inc(turns.display());
     assert_eq!(config.get(&turns), 2);
+  }
+
+  #[test]
+  fn key_defaults_to_label_and_can_be_overridden() {
+    let turns = Config::new("Turns", "", 3u8, Ranges::u8(1, 5));
+    let reworded = Config::new("Balls per Game", "", 3u8, Ranges::u8(1, 5)).key("Turns");
+    assert_eq!(turns.display().key, "Turns");
+
+    let config = saved("Turns = 4");
+    assert_eq!(config.get(&turns), 4);
+    assert_eq!(config.get(&reworded), 4);
+  }
+
+  #[test]
+  fn identical_definitions_on_one_key_share_a_value() {
+    let first = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let second = Config::new("turns", "Another reader", 3u8, Ranges::u8(1, 5));
+    let config = ConfigCollection::default();
+
+    config.set(&first, 5);
+    assert_eq!(config.get(&second), 5);
+  }
+
+  #[test]
+  #[cfg(debug_assertions)]
+  #[should_panic(expected = "different type, domain or default")]
+  fn different_types_on_one_key_conflict() {
+    // both are stored as Int, so without the type check a u8 3 would read as 3ms
+    let count = Config::new("length", "", 3u8, Ranges::u8(0, 100));
+    let length = Config::new(
+      "length",
+      "",
+      Duration::from_millis(3),
+      Ranges::duration(0, 100),
+    );
+    let config = ConfigCollection::default();
+
+    config.get(&count);
+    config.get(&length);
   }
 
   fn saved(toml: &str) -> ConfigCollection {

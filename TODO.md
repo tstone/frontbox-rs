@@ -1,32 +1,5 @@
 ## Foundations
 
-- Operator config, in order:
-  1. One live instance. `App` loads operator config from disk and moves it into the read-only `BootSnapshot`
-     (`ctx.config`, read by systems and driver setup), but the menu looks it up as a system with
-     `ctx.expect::<ConfigCollection>()` and panics if none is running. Frontbox never starts one, so a
-     game has to spawn its own `ConfigCollection::default()`: empty, not loaded from disk, and with no `app_sender`, so
-     `ConfigChanged` is never emitted. The menu edits that copy and nothing else ever sees it. Frontbox should
-     start the `App`'s instance as a system (like `MachineSystem`/`WatchdogSystem`) and have `ctx.config` and
-     the menu methods both use it; games then drop their own `app.system(ConfigCollection::default())`. On its own this
-     makes system-managed configs work, since they're read when used.
-  2. Decide whether configs belong on the `System` trait. Today `fn configs()` on `System` is registered
-     automatically, but only for startup systems added with `app.system()`; a system spawned at runtime has to be
-     registered by hand with `app.register_configs()`, and if it isn't, its values silently read as defaults and never
-     show up anywhere. That's easy to miss and a little too magical. Consider dropping it from `System` in favor of an
-     explicit registration call (e.g. `app.configs(...)`), alongside the existing driver scan. Settle before key/label
-     work, since it changes where registration happens. The metrics system's `fn metrics()` raises the same question.
-  3. Separate the saved key from the menu label. `name` is both, so renaming a label loses the saved value and two
-     values with the same name silently share an entry (`register` ignores duplicates). Panic on a duplicate key.
-     Before saving lands, so keys on disk are stable.
-  4. Save to disk. Keep the path (`load_from_disk` drops it), write on every change, keep `pending_disk` entries for
-     values not registered yet, and if the file failed to parse, set it aside rather than overwrite it with defaults.
-     Use `frontbox::toml`. Consider `toml_edit` so comments added by hand survive a save. Needs: step 1.
-  5. Apply HardwareValue changes to the running machine. `MachineSystem::configure_driver` already re-resolves a mode
-     against operator config and sends it, so the missing parts are: a key -> drivers index (can be built in
-     `register_driver_configs`), and tracking the mode each driver currently has. On `ConfigChanged`,
-     re-send the driver's *current* mode, not its definition's default: re-applying the default would undo a runtime
-     change, e.g. enable flippers that are disabled while the operator is in the menu. Modes with no config values
-     (disabled) resolve the same, so nothing is sent. Needs: step 1.
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
   user systems, declared statically like config values (registered the same way, see operator config step 2). Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept

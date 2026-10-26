@@ -15,13 +15,22 @@ impl<T: Clone + ConfigType> HardwareValue<T> {
     Self::Fixed(value)
   }
 
+  /// The key defaults to the label; see [`HardwareValue::key`]
   pub fn config(
-    name: &'static str,
+    label: &'static str,
     desc: &'static str,
     default: T,
     domain: impl IntoConfigDomain<T>,
   ) -> Self {
-    Self::Config(Config::new(name, desc, default, domain))
+    Self::Config(Config::new(label, desc, default, domain))
+  }
+
+  /// Set the config's `key`. Key must be unique but is derived from label by default. This force-sets it to a specific value for uniqueness.
+  pub fn key(self, key: &'static str) -> Self {
+    match self {
+      Self::Config(config) => Self::Config(config.key(key)),
+      Self::Fixed(_) => self,
+    }
   }
 
   /// Get the actual usable value given a working environment
@@ -92,7 +101,8 @@ impl<T: HardwareValueRepr> Serialize for Repr<'_, T> {
 #[derive(Serialize)]
 #[serde(bound = "T: HardwareValueRepr")]
 struct ConfigRepr<'a, T: HardwareValueRepr> {
-  name: &'static str,
+  key: &'static str,
+  label: &'static str,
   desc: &'static str,
   default: Repr<'a, T>,
 }
@@ -105,7 +115,8 @@ impl<T: Clone + ConfigType + HardwareValueRepr> Serialize for HardwareValue<T> {
         0,
         "Config",
         &ConfigRepr {
-          name: config.display().name,
+          key: config.display().key,
+          label: config.display().label,
           desc: config.display().desc,
           default: Repr(&config.default()),
         },
@@ -128,7 +139,7 @@ where
   fn name(_: &ts_rs::Config) -> String {
     let value = T::ts_repr();
     format!(
-      "{{ \"Config\": {{ name: string, desc: string, default: {value} }} }} | {{ \"Fixed\": {value} }}"
+      "{{ \"Config\": {{ key: string, label: string, desc: string, default: {value} }} }} | {{ \"Fixed\": {value} }}"
     )
   }
 

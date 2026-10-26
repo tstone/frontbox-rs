@@ -9,8 +9,8 @@ export type PulseMode = {
 /**
  * What causes the driver to fire (be triggered)
  */
-trigger_mode: DriverTriggerMode, initial_pwm_length: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, secondary_pwm_length: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, secondary_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
+trigger_mode: DriverTriggerMode, initial_pwm_length: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, secondary_pwm_length: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, secondary_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
 /**
  * Time after the driver goes off before it can be triggered again
  */
-rest: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, };
+rest: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, };

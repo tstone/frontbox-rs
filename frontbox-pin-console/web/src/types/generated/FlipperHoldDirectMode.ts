@@ -3,4 +3,4 @@
 /**
  * Mode 81 - Premium flipper driver for hold coil
  */
-export type FlipperHoldDirectMode = { button_switch: string, invert_button_switch: boolean | null, driver_on_time: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, secondary_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, };
+export type FlipperHoldDirectMode = { button_switch: string, invert_button_switch: boolean | null, driver_on_time: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, secondary_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, };

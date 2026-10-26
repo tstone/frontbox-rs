@@ -17,7 +17,7 @@
 //!         .initial_pwm_length(Duration::from_millis(250))
 //!         // configurable value that can be adjusted via operator config
 //!         .initial_pwm_power(HardwareValue::config(
-//!           "coil_power", // name
+//!           "Coil Power", // label
 //!           "Power of my coil", // description
 //!           Power::THREE_QUARTERS, // default
 //!           Ranges::power(128, 255), // domain
@@ -37,7 +37,7 @@
 //! # use std::sync::LazyLock;
 //! pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
 //!   Config::new(
-//!     "Max Extra Balls", // name
+//!     "Max Extra Balls", // label
 //!     "The most extra balls a player can have per game", // description
 //!     5, // default
 //!     Ranges::u8(0, 10),
@@ -47,6 +47,24 @@
 //!
 //! There is no registration step. The first time a config is read or written, its value is loaded from the saved
 //! config file if present and within its domain, otherwise it starts at its default.
+//!
+//! ### Keys
+//!
+//! A config's value is stored and saved under its key, which is its label unless set with `.key(...)`. An explicit
+//! key is needed when two configs share a label, such as each flipper's "Initial Power" shown under its own menu
+//! section, or to keep a saved value when a label is reworded.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! let power = HardwareValue::config("Initial Power", "", Power::FULL, Ranges::full_power())
+//!   .key("Left Flipper Initial Power");
+//! ```
+//!
+//! - Hardware config keys must be unique. Every driver's configs are checked at boot, and a key used twice panics,
+//!   even when both definitions are identical, since a copy-pasted driver config would otherwise share one value.
+//! - Configs declared as statics on the same key share one value when their type, domain and default match. A
+//!   mismatch panics on first use in debug builds; in release it's logged and the later definition keeps its own
+//!   value, starting at its default.
 //!
 //! ### Reading Operator Configs
 //! 

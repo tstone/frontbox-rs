@@ -12,13 +12,13 @@ export type PulseHoldExtensionMode = {
 /**
  * What causes the driver to fire (be triggered)
  */
-trigger_mode: DriverTriggerMode, initial_pwm_length: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
+trigger_mode: DriverTriggerMode, initial_pwm_length: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, initial_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
 /**
  * How long the driver holds after the initial pulse, and what each re-trigger resets it to. 10ms resolution, up
  * to 2.55s.
  */
-secondary_pwm_length: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, secondary_pwm_power: { "Config": { name: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
+secondary_pwm_length: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, secondary_pwm_power: { "Config": { key: string, label: string, desc: string, default: { power: number } } } | { "Fixed": { power: number } }, 
 /**
  * Time after the driver goes off before it can be triggered again
  */
-rest: { "Config": { name: string, desc: string, default: number } } | { "Fixed": number }, };
+rest: { "Config": { key: string, label: string, desc: string, default: number } } | { "Fixed": number }, };
