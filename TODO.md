@@ -2,14 +2,14 @@
 
 - Operator config, in order:
   1. One live instance. `App` loads operator config from disk and moves it into the read-only `BootSnapshot`
-     (`ctx.operator_config`, read by systems and driver setup), but the menu looks it up as a system with
-     `ctx.expect::<OperatorConfig>()` and panics if none is running. Frontbox never starts one, so a
-     game has to spawn its own `OperatorConfig::default()`: empty, not loaded from disk, and with no `app_sender`, so
-     `OperatorConfigChanged` is never emitted. The menu edits that copy and nothing else ever sees it. Frontbox should
-     start the `App`'s instance as a system (like `MachineSystem`/`WatchdogSystem`) and have `ctx.operator_config` and
-     the menu methods both use it; games then drop their own `app.system(OperatorConfig::default())`. On its own this
+     (`ctx.config`, read by systems and driver setup), but the menu looks it up as a system with
+     `ctx.expect::<ConfigCollection>()` and panics if none is running. Frontbox never starts one, so a
+     game has to spawn its own `ConfigCollection::default()`: empty, not loaded from disk, and with no `app_sender`, so
+     `ConfigChanged` is never emitted. The menu edits that copy and nothing else ever sees it. Frontbox should
+     start the `App`'s instance as a system (like `MachineSystem`/`WatchdogSystem`) and have `ctx.config` and
+     the menu methods both use it; games then drop their own `app.system(ConfigCollection::default())`. On its own this
      makes system-managed configs work, since they're read when used.
-  2. Decide whether configs belong on the `System` trait. Today `fn config_values()` on `System` is registered
+  2. Decide whether configs belong on the `System` trait. Today `fn configs()` on `System` is registered
      automatically, but only for startup systems added with `app.system()`; a system spawned at runtime has to be
      registered by hand with `app.register_configs()`, and if it isn't, its values silently read as defaults and never
      show up anywhere. That's easy to miss and a little too magical. Consider dropping it from `System` in favor of an
@@ -23,7 +23,7 @@
      Use `frontbox::toml`. Consider `toml_edit` so comments added by hand survive a save. Needs: step 1.
   5. Apply HardwareValue changes to the running machine. `MachineSystem::configure_driver` already re-resolves a mode
      against operator config and sends it, so the missing parts are: a key -> drivers index (can be built in
-     `register_driver_operator_configs`), and tracking the mode each driver currently has. On `OperatorConfigChanged`,
+     `register_driver_configs`), and tracking the mode each driver currently has. On `ConfigChanged`,
      re-send the driver's *current* mode, not its definition's default: re-applying the default would undo a runtime
      change, e.g. enable flippers that are disabled while the operator is in the menu. Modes with no config values
      (disabled) resolve the same, so nothing is sent. Needs: step 1.
@@ -43,7 +43,7 @@
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit
-  play). A small provided system activates the chosen group at boot and swaps groups on `OperatorConfigChanged` for
+  play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for
   that key, using the existing `activate_system_group`/`deactivate_system_group`. Choices need a saved key separate
   from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles
   that matter mid-game (difficulty, rules variants)? Needs: choice configs and operator config step 1.

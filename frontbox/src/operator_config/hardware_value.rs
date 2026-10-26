@@ -28,14 +28,14 @@ impl<T: Clone + ConfigType> HardwareValue<T> {
   pub fn resolve(&self, snap: &BootSnapshot) -> T {
     match self {
       Self::Fixed(v) => v.clone(),
-      Self::Config(cv) => snap.config.get(cv),
+      Self::Config(config) => snap.config.get(config),
     }
   }
 
   /// The config declaration, if this value is configurable
   pub fn config_display(&self) -> Option<&ConfigDefinition> {
     match self {
-      Self::Config(cv) => Some(cv.display()),
+      Self::Config(config) => Some(config.display()),
       Self::Fixed(_) => None,
     }
   }
@@ -100,14 +100,14 @@ struct ConfigRepr<'a, T: HardwareValueRepr> {
 impl<T: Clone + ConfigType + HardwareValueRepr> Serialize for HardwareValue<T> {
   fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     match self {
-      Self::Config(cv) => serializer.serialize_newtype_variant(
+      Self::Config(config) => serializer.serialize_newtype_variant(
         "HardwareValue",
         0,
         "Config",
         &ConfigRepr {
-          name: cv.display().name,
-          desc: cv.display().desc,
-          default: Repr(&cv.default()),
+          name: config.display().name,
+          desc: config.display().desc,
+          default: Repr(&config.default()),
         },
       ),
       Self::Fixed(value) => {

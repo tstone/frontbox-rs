@@ -29,7 +29,7 @@
 //! 
 //! ### System Config Values
 //! 
-//! Systems can also register operator config values independent of hardware (e.g. ball count, max extra balls, etc.). This is done through the `config_values` method of `System`.
+//! Systems can also register operator config values independent of hardware (e.g. ball count, max extra balls, etc.). This is done through the `configs` method of `System`.
 //! 
 //! ```rust
 //! # use frontbox::prelude::*;
@@ -45,7 +45,7 @@
 //! });
 //! 
 //! impl System for Example {
-//!   fn config_values(&self) -> Vec<&'static ConfigDefinition> {
+//!   fn configs(&self) -> Vec<&'static ConfigDefinition> {
 //!     vec![MAX_EXTRA_BALLS.display()]
 //!   }
 //! }

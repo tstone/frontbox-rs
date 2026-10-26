@@ -33,22 +33,22 @@ impl ConfigCollection {
   }
 
   /// Activate a config value and automatically pre-populate it with either the previously saved value or the default
-  pub fn register(&self, cv: &ConfigDefinition) {
+  pub fn register(&self, config: &ConfigDefinition) {
     let mut current_values = self.current_values.borrow_mut();
-    if current_values.contains_key(cv.name) {
+    if current_values.contains_key(config.name) {
       return; // already registered — safe if the same Config is reachable from two defs
     }
-    let value = match self.pending_disk.get(cv.name) {
-      Some(raw) => cv.domain.from_toml(raw).unwrap_or_else(|| {
+    let value = match self.pending_disk.get(config.name) {
+      Some(raw) => config.domain.from_toml(raw).unwrap_or_else(|| {
         log::warn!(
           "config '{}': saved value {raw} doesn't fit, using default",
-          cv.name
+          config.name
         );
-        cv.default
+        config.default
       }),
-      None => cv.default,
+      None => config.default,
     };
-    current_values.insert(cv.name, value);
+    current_values.insert(config.name, value);
   }
 
   pub fn get<T: ConfigType>(&self, config: &Config<T>) -> T {
@@ -87,14 +87,14 @@ impl ConfigCollection {
     self.current_values.borrow_mut().insert(config.name, value);
 
     if let Some(app_sender) = &self.app_sender {
-      let event = OperatorConfigChanged(config.name);
+      let event = ConfigChanged(config.name);
       let _ = app_sender.send(AppMessage::EmitEvent(None, EventBox::new(event)));
     }
   }
 }
 
 #[derive(serde::Serialize, Event)]
-pub struct OperatorConfigChanged(pub &'static str);
+pub struct ConfigChanged(pub &'static str);
 
 #[cfg(test)]
 mod tests {
@@ -113,19 +113,19 @@ mod tests {
     );
     let power = Config::new("power", "", Power::HALF, Ranges::full_power());
 
-    let mut op_config = ConfigCollection::default();
-    op_config.pending_disk = toml::from_str("pulse = 35\npower = 200").unwrap();
-    op_config.register(pulse.display());
-    op_config.register(power.display());
+    let mut config = ConfigCollection::default();
+    config.pending_disk = toml::from_str("pulse = 35\npower = 200").unwrap();
+    config.register(pulse.display());
+    config.register(power.display());
 
-    assert_eq!(op_config.get(&pulse), Duration::from_millis(35));
-    assert_eq!(op_config.get(&power), Power { power: 200 });
+    assert_eq!(config.get(&pulse), Duration::from_millis(35));
+    assert_eq!(config.get(&power), Power { power: 200 });
     assert_eq!(
-      pulse.display().format(op_config.inspect(pulse.display())),
+      pulse.display().format(config.inspect(pulse.display())),
       "35ms"
     );
     assert_eq!(
-      power.display().format(op_config.inspect(power.display())),
+      power.display().format(config.inspect(power.display())),
       "78%"
     );
   }

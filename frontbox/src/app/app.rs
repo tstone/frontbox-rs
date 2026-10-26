@@ -13,24 +13,24 @@ use tokio::sync::mpsc;
 pub struct App {
   systems: Vec<SystemContainer>,
   tracers: Vec<Box<dyn AppTracer>>,
-  operator_config: ConfigCollection,
+  config: ConfigCollection,
   boot_config: BootConfig,
 }
 
 impl App {
   pub fn new(boot_config: BootConfig) -> Self {
-    let mut operator_config = match boot_config.config_path.clone() {
+    let mut config = match boot_config.config_path.clone() {
       Some(path) => ConfigCollection::load_from_disk(path),
       None => ConfigCollection::default(),
     };
 
-    // look through driver configurations and extract out operator configs
-    Self::register_driver_operator_configs(&boot_config.io_network.drivers, &mut operator_config);
+    // look through driver configurations and extract out their configs
+    Self::register_driver_configs(&boot_config.io_network.drivers, &mut config);
 
     Self {
       systems: Vec::new(),
       tracers: Vec::new(),
-      operator_config,
+      config,
       boot_config,
     }
   }
@@ -39,8 +39,8 @@ impl App {
   pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
     let sys = system.into();
     // auto-register startup systems
-    for cv in sys.configs() {
-      self.operator_config.register(cv);
+    for config in sys.configs() {
+      self.config.register(config);
     }
 
     self.systems.push(sys);
@@ -55,8 +55,8 @@ impl App {
 
   /// Manually register configs
   pub fn register_configs(&mut self, configs: impl IntoConfigs) -> &mut Self {
-    for cv in configs.into_configs() {
-      self.operator_config.register(cv);
+    for config in configs.into_configs() {
+      self.config.register(config);
     }
     self
   }
@@ -70,7 +70,7 @@ impl App {
     let app_config = AppConfig::from_boot_config(&self.boot_config);
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
-    self.operator_config.app_sender = Some(app_sender.clone());
+    self.config.app_sender = Some(app_sender.clone());
 
     let (boot_snapshot, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
@@ -81,7 +81,7 @@ impl App {
           .tracers
           .iter_mut()
           .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
+        let snapshot = BootSnapshot::from_hardware(hardware, self.config, app_config);
         machine.on_pre_run(&snapshot).await;
 
         let machine_sender = machine.sender();
@@ -99,7 +99,7 @@ impl App {
           .tracers
           .iter_mut()
           .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.operator_config, app_config);
+        let snapshot = BootSnapshot::from_hardware(hardware, self.config, app_config);
         machine.on_pre_run(&snapshot).await;
 
         let machine_sender = machine.sender();
@@ -132,15 +132,15 @@ impl App {
     .await;
   }
 
-  /// Scan all the drivers looking for operator configs
-  fn register_driver_operator_configs(
+  /// Scan all the drivers looking for configs
+  fn register_driver_configs(
     drivers: &[IoAddressed<DriverDefinition>],
-    operator_config: &mut ConfigCollection,
+    config: &mut ConfigCollection,
   ) {
     for driver in drivers {
       if let Some(mode) = &driver.definition.mode {
-        for cv in mode.configs() {
-          operator_config.register(cv);
+        for definition in mode.configs() {
+          config.register(definition);
         }
       }
     }
