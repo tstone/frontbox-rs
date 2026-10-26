@@ -113,10 +113,6 @@ impl System for CompetitiveGame {
     self.handle = *ctx.current_handle();
   }
 
-  fn configs(&self) -> Vec<&'static ConfigDefinition> {
-    vec![configs::TURN_COUNT.display()]
-  }
-
   fn on_despawn(&mut self, ctx: &SystemContext) {
     if let Some(game_state) = &self.game_state {
       for player in 0..game_state.player_count() {

@@ -29,12 +29,12 @@
 //! 
 //! ### System Config Values
 //! 
-//! Systems can also register operator config values independent of hardware (e.g. ball count, max extra balls, etc.). This is done through the `configs` method of `System`.
-//! 
+//! Systems can also declare operator config values independent of hardware (e.g. ball count, max extra balls, etc.)
+//! as statics.
+//!
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
-//! # struct Example;
 //! pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
 //!   Config::new(
 //!     "Max Extra Balls", // name
@@ -43,44 +43,11 @@
 //!     Ranges::u8(0, 10),
 //!   )
 //! });
-//! 
-//! impl System for Example {
-//!   fn configs(&self) -> Vec<&'static ConfigDefinition> {
-//!     vec![MAX_EXTRA_BALLS.display()]
-//!   }
-//! }
 //! ```
-//! 
-//! ### System Config Registration
-//! 
-//! - Startup systems have their config values automatically registered
-//! - Dynamically loaded systems must be manually registered
-//! 
-//! ```rust
-//! # use frontbox::prelude::*;
-//! # use std::sync::LazyLock;
-//! # struct MySystem;
-//! # impl MySystem { fn new() -> Self { Self } }
-//! # impl System for MySystem {}
-//! # let some_system = MySystem::new();
-//! # static MY_CONFIG1: LazyLock<Config<u8>> =
-//! #   LazyLock::new(|| Config::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<Config<u8>> =
-//! #   LazyLock::new(|| Config::new("Config 2", "", 2, Ranges::u8(0, 10)));
-//! App::new(BootConfig::default())
-//!   .configure(|app| {
-//!     // config values will be automatically registered
-//!     app.system(MySystem::new());
-//! 
-//!     // manually register configs on a system
-//!     app.register_configs(&some_system);
-//! 
-//!     // or manually register explicit configs
-//!     let configs: Vec<&'static ConfigDefinition> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
-//!     app.register_configs(configs);
-//!   });
-//! ```
-//! 
+//!
+//! There is no registration step. The first time a config is read or written, its value is loaded from the saved
+//! config file if present and within its domain, otherwise it starts at its default.
+//!
 //! ### Reading Operator Configs
 //! 
 //! ```rust

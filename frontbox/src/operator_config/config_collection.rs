@@ -9,46 +9,25 @@ use crate::operator_config::{Config, ConfigDefinition, ConfigDomainValue, Config
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
-/// The live operator config values. Reads and writes go through `&self`, each borrowing only for its own call, so
-/// systems can use it freely through `ctx.config`.
 #[derive(Default)]
 pub struct ConfigCollection {
-  current_values: RefCell<HashMap<&'static str, ConfigDomainValue>>,
-  pending_disk: HashMap<String, toml::Value>, // raw until a matching Config registers
+  entries: RefCell<HashMap<&'static str, Entry>>,
+  pending_disk: HashMap<String, toml::Value>, // raw until its key is first used
   pub(crate) app_sender: Option<mpsc::UnboundedSender<AppMessage>>,
 }
 
 impl ConfigCollection {
-  /// Reads values from disk into a temporary buffer, but waits until a config value is registered before assignment
+  /// Reads saved values from disk. Each is held raw until a config with its key is first used.
   pub fn load_from_disk(path: impl AsRef<Path>) -> Self {
     let pending_disk = fs::read_to_string(path)
       .ok()
       .and_then(|s| toml::from_str(&s).ok())
       .unwrap_or_default();
     Self {
-      current_values: RefCell::default(),
+      entries: RefCell::default(),
       pending_disk,
       app_sender: None,
     }
-  }
-
-  /// Activate a config value and automatically pre-populate it with either the previously saved value or the default
-  pub fn register(&self, config: &ConfigDefinition) {
-    let mut current_values = self.current_values.borrow_mut();
-    if current_values.contains_key(config.name) {
-      return; // already registered — safe if the same Config is reachable from two defs
-    }
-    let value = match self.pending_disk.get(config.name) {
-      Some(raw) => config.domain.from_toml(raw).unwrap_or_else(|| {
-        log::warn!(
-          "config '{}': saved value {raw} doesn't fit, using default",
-          config.name
-        );
-        config.default
-      }),
-      None => config.default,
-    };
-    current_values.insert(config.name, value);
   }
 
   pub fn get<T: ConfigType>(&self, config: &Config<T>) -> T {
@@ -61,12 +40,7 @@ impl ConfigCollection {
 
   /// The current value without its Rust type, for listing configs of mixed types
   pub fn inspect(&self, config: &ConfigDefinition) -> ConfigDomainValue {
-    self
-      .current_values
-      .borrow()
-      .get(config.name)
-      .copied()
-      .unwrap_or(config.default)
+    self.with_entry(config, |entry| entry.value)
   }
 
   /// Step the value up within its domain, returning the new value
@@ -84,13 +58,43 @@ impl ConfigCollection {
   }
 
   fn set_value(&self, config: &ConfigDefinition, value: ConfigDomainValue) {
-    self.current_values.borrow_mut().insert(config.name, value);
+    self.with_entry(config, |entry| entry.value = value);
 
     if let Some(app_sender) = &self.app_sender {
       let event = ConfigChanged(config.name);
       let _ = app_sender.send(AppMessage::EmitEvent(None, EventBox::new(event)));
     }
   }
+
+  /// Runs `f` on the entry for this config, creating it on first use. `f` must not call back into the store.
+  fn with_entry<R>(&self, config: &ConfigDefinition, f: impl FnOnce(&mut Entry) -> R) -> R {
+    let mut entries = self.entries.borrow_mut();
+    let entry = entries.entry(config.name).or_insert_with(|| Entry {
+      definition: config.clone(),
+      value: self.saved_or_default(config),
+    });
+    f(entry)
+  }
+
+  fn saved_or_default(&self, config: &ConfigDefinition) -> ConfigDomainValue {
+    match self.pending_disk.get(config.name) {
+      Some(raw) => config.domain.from_toml(raw).unwrap_or_else(|| {
+        log::warn!(
+          "config '{}': saved value {raw} doesn't fit, using default",
+          config.name
+        );
+        config.default
+      }),
+      None => config.default,
+    }
+  }
+}
+
+struct Entry {
+  /// The first declaration seen for this key
+  #[allow(dead_code)] // read once saving and the conflict check land
+  definition: ConfigDefinition,
+  value: ConfigDomainValue,
 }
 
 #[derive(serde::Serialize, Event)]
@@ -104,7 +108,7 @@ mod tests {
   use crate::operator_config::Ranges;
 
   #[test]
-  fn typed_values_round_trip_through_saved_toml() {
+  fn saved_values_are_read_without_registration() {
     let pulse = Config::new(
       "pulse",
       "",
@@ -113,10 +117,7 @@ mod tests {
     );
     let power = Config::new("power", "", Power::HALF, Ranges::full_power());
 
-    let mut config = ConfigCollection::default();
-    config.pending_disk = toml::from_str("pulse = 35\npower = 200").unwrap();
-    config.register(pulse.display());
-    config.register(power.display());
+    let config = saved("pulse = 35\npower = 200");
 
     assert_eq!(config.get(&pulse), Duration::from_millis(35));
     assert_eq!(config.get(&power), Power { power: 200 });
@@ -131,9 +132,31 @@ mod tests {
   }
 
   #[test]
-  fn unregistered_values_read_as_default() {
+  fn values_without_a_saved_entry_read_as_default() {
     let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
-    assert_eq!(ConfigCollection::default().get(&turns), 3);
+    assert_eq!(saved("other = 1").get(&turns), 3);
+  }
+
+  #[test]
+  fn saved_values_outside_the_domain_are_clamped_or_defaulted() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    assert_eq!(saved("turns = 9").get(&turns), 5);
+    assert_eq!(saved("turns = \"lots\"").get(&turns), 3);
+  }
+
+  #[test]
+  fn stepping_starts_from_the_saved_value() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let config = saved("turns = 1");
+    config.inc(turns.display());
+    assert_eq!(config.get(&turns), 2);
+  }
+
+  fn saved(toml: &str) -> ConfigCollection {
+    ConfigCollection {
+      pending_disk: toml::from_str(toml).unwrap(),
+      ..Default::default()
+    }
   }
 
   #[test]
