@@ -98,9 +98,13 @@ impl ConfigCollection {
   }
 
   fn set_value(&self, config: &ConfigDefinition, value: ConfigDomainValue) {
-    self.with_entry(config, |entry| entry.value = value);
+    let changed = self.with_entry(config, |entry| {
+      let changed = entry.value != value;
+      entry.value = value;
+      changed
+    });
 
-    if let Some(app_sender) = &self.app_sender {
+    if changed && let Some(app_sender) = &self.app_sender {
       let _ = app_sender.send(AppMessage::ConfigChanged(config.key));
     }
   }
@@ -259,6 +263,24 @@ mod tests {
 
     config.get(&count);
     config.get(&length);
+  }
+
+  #[test]
+  fn setting_the_same_value_emits_nothing() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.svc_ctx();
+    ctx.config.set(&turns, 3); // already the default
+    ctx.config.set(&turns, 5);
+    ctx.config.inc(turns.display()); // already at the max
+
+    let changed = test_ctx
+      .events_emitted()
+      .iter()
+      .filter(|e| e.event.is::<ConfigChanged>())
+      .count();
+    assert_eq!(changed, 1);
   }
 
   #[test]
