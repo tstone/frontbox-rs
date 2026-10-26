@@ -24,7 +24,7 @@ pub use pulse_kick::*;
 
 use fast_protocol::DriverConfig;
 
-use crate::operator_config::ConfigDisplay;
+use crate::operator_config::ConfigDefinition;
 use crate::prelude::*;
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
@@ -109,23 +109,23 @@ impl DriverMode {
     FlipperMain3TryModeBuilder::new(button_switch, eos_switch)
   }
 
-  pub fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     match self {
-      Self::Pulse(m) => m.to_config(ctx),
-      Self::PulseKick(m) => m.to_config(ctx),
-      Self::PulseHold(m) => m.to_config(ctx),
-      Self::PulseHoldCancel(m) => m.to_config(ctx),
-      Self::DelayedPulse(m) => m.to_config(ctx),
-      Self::PulseCancel(m) => m.to_config(ctx),
-      Self::LongPulse(m) => m.to_config(ctx),
-      Self::PulseHoldExtension(m) => m.to_config(ctx),
-      Self::FlipperMainDirect(m) => m.to_config(ctx),
-      Self::FlipperHoldDirect(m) => m.to_config(ctx),
-      Self::FlipperMain3Try(m) => m.to_config(ctx),
+      Self::Pulse(m) => m.to_config(snap),
+      Self::PulseKick(m) => m.to_config(snap),
+      Self::PulseHold(m) => m.to_config(snap),
+      Self::PulseHoldCancel(m) => m.to_config(snap),
+      Self::DelayedPulse(m) => m.to_config(snap),
+      Self::PulseCancel(m) => m.to_config(snap),
+      Self::LongPulse(m) => m.to_config(snap),
+      Self::PulseHoldExtension(m) => m.to_config(snap),
+      Self::FlipperMainDirect(m) => m.to_config(snap),
+      Self::FlipperHoldDirect(m) => m.to_config(snap),
+      Self::FlipperMain3Try(m) => m.to_config(snap),
     }
   }
 
-  pub fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub fn configs(&self) -> Vec<&ConfigDefinition> {
     match self {
       Self::Pulse(m) => m.configs(),
       Self::PulseKick(m) => m.configs(),

@@ -1,11 +1,12 @@
 use serde::Serialize;
 
 use crate::operator_config::*;
+use crate::prelude::BootSnapshot;
 
 /// A value that can be assigned to configure a piece of hardware, either with a fixed value or using operator config
 #[derive(Clone, Debug)]
 pub enum HardwareValue<T: Clone> {
-  Config(ConfigValue<T>),
+  Config(Config<T>),
   Fixed(T),
 }
 
@@ -20,19 +21,19 @@ impl<T: Clone + ConfigType> HardwareValue<T> {
     default: T,
     domain: impl IntoConfigDomain<T>,
   ) -> Self {
-    Self::Config(ConfigValue::new(name, desc, default, domain))
+    Self::Config(Config::new(name, desc, default, domain))
   }
 
   /// Get the actual usable value given a working environment
-  pub fn resolve(&self, op: &OperatorConfig) -> T {
+  pub fn resolve(&self, snap: &BootSnapshot) -> T {
     match self {
       Self::Fixed(v) => v.clone(),
-      Self::Config(cv) => cv.resolve(op),
+      Self::Config(cv) => snap.config.get(cv),
     }
   }
 
   /// The config declaration, if this value is configurable
-  pub fn config_display(&self) -> Option<&ConfigDisplay> {
+  pub fn config_display(&self) -> Option<&ConfigDefinition> {
     match self {
       Self::Config(cv) => Some(cv.display()),
       Self::Fixed(_) => None,

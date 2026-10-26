@@ -89,13 +89,13 @@ pub async fn configure_switches(
   }
 }
 
-pub async fn configure_drivers(io_port: &mut SerialInterface, ctx: &BootSnapshot) {
-  for driver in ctx.drivers.values() {
-    if let Some(mode) = ctx.drivers.config(driver.name) {
+pub async fn configure_drivers(io_port: &mut SerialInterface, snap: &BootSnapshot) {
+  for driver in snap.drivers.values() {
+    if let Some(mode) = snap.drivers.config(driver.name) {
       log::info!("Configuring driver {} with {:?}", driver.name, mode);
       match io_port
         .command(
-          &ConfigureDriverCommand::new(driver.id, mode.to_config(ctx)),
+          &ConfigureDriverCommand::new(driver.id, mode.to_config(snap)),
           Duration::from_millis(500),
         )
         .await

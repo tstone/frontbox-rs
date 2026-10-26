@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use fast_protocol::{DriverConfig, Power};
 
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -28,26 +28,26 @@ impl FlipperMain3TryMode {
     }
   }
 
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     DriverConfig::FlipperMain3Try {
-      button_switch: ctx
+      button_switch: snap
         .switches
         .by_name(self.button_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      eos_switch: ctx
+      eos_switch: snap
         .switches
         .by_name(self.eos_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid EOS switch"),
-      max_on_time: self.max_on_time.resolve(&ctx.operator_config),
-      eos_hold_pwm_power: self.eos_hold_pwm_power.resolve(&ctx.operator_config),
-      rest: self.rest.resolve(&ctx.operator_config),
+      max_on_time: self.max_on_time.resolve(snap),
+      eos_hold_pwm_power: self.eos_hold_pwm_power.resolve(snap),
+      rest: self.rest.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.max_on_time.config_display(),
       self.eos_hold_pwm_power.config_display(),

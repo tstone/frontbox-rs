@@ -244,7 +244,7 @@ impl DmdMenuSystem {
           });
         }
         MenuRow::Config(id, config) => {
-          let value = ctx.expect::<OperatorConfig>().get_raw(config);
+          let value = ctx.config.inspect(config);
           self.display_rows.push(DisplayMenuRow::Config {
             id: *id,
             name: config.name,

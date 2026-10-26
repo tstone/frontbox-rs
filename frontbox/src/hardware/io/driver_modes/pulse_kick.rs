@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 12 - Sends up to 2 variable PWM times, then kicks (full power) at the end of the cycle. Useful for gently
@@ -37,21 +37,21 @@ impl Default for PulseKickMode {
 }
 
 impl PulseKickMode {
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, snap);
 
     DriverConfig::PulseKick {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
-      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      kick_length: self.kick_length.resolve(&ctx.operator_config),
+      initial_pwm_length: self.initial_pwm_length.resolve(snap),
+      initial_pwm_power: self.initial_pwm_power.resolve(snap),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      kick_length: self.kick_length.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.initial_pwm_length.config_display(),
       self.initial_pwm_power.config_display(),

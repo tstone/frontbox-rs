@@ -113,7 +113,7 @@ impl System for CompetitiveGame {
     self.handle = *ctx.current_handle();
   }
 
-  fn configs(&self) -> Vec<&'static ConfigDisplay> {
+  fn configs(&self) -> Vec<&'static ConfigDefinition> {
     vec![configs::TURN_COUNT.display()]
   }
 
@@ -197,7 +197,7 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn advance_turn(&mut self, ctx: &ServiceContext) {
-    let max_turn_count = ctx.operator_config.get(&configs::TURN_COUNT);
+    let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {

@@ -35,8 +35,8 @@
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
 //! # struct Example;
-//! pub static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8>> = LazyLock::new(|| {
-//!   ConfigValue::new(
+//! pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
+//!   Config::new(
 //!     "Max Extra Balls", // name
 //!     "The most extra balls a player can have per game", // description
 //!     5, // default
@@ -45,7 +45,7 @@
 //! });
 //! 
 //! impl System for Example {
-//!   fn config_values(&self) -> Vec<&'static ConfigDisplay> {
+//!   fn config_values(&self) -> Vec<&'static ConfigDefinition> {
 //!     vec![MAX_EXTRA_BALLS.display()]
 //!   }
 //! }
@@ -63,10 +63,10 @@
 //! # impl MySystem { fn new() -> Self { Self } }
 //! # impl System for MySystem {}
 //! # let some_system = MySystem::new();
-//! # static MY_CONFIG1: LazyLock<ConfigValue<u8>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<ConfigValue<u8>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
+//! # static MY_CONFIG1: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Config 1", "", 1, Ranges::u8(0, 10)));
+//! # static MY_CONFIG2: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Config 2", "", 2, Ranges::u8(0, 10)));
 //! App::new(BootConfig::default())
 //!   .configure(|app| {
 //!     // config values will be automatically registered
@@ -76,7 +76,7 @@
 //!     app.register_configs(&some_system);
 //! 
 //!     // or manually register explicit configs
-//!     let configs: Vec<&'static ConfigDisplay> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
+//!     let configs: Vec<&'static ConfigDefinition> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
 //!     app.register_configs(configs);
 //!   });
 //! ```
@@ -86,28 +86,28 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
-//! # static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8>> =
-//! #   LazyLock::new(|| ConfigValue::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
 //! # fn example(ctx: &SystemContext) {
 //! // The value is always present since a default is provided
-//! let value: u8 = ctx.operator_config.get(&MAX_EXTRA_BALLS);
+//! let value: u8 = ctx.config.get(&MAX_EXTRA_BALLS);
 //! # }
 //! ```
 
 mod choices;
-mod config_display;
+mod config;
+mod config_definition;
 mod config_domain;
 mod config_type;
-mod config_value;
 mod hardware_value;
-mod operator_config;
+mod config_collection;
 mod range;
 
 pub use choices::*;
-pub use config_display::*;
+pub use config::*;
+pub use config_definition::*;
 pub use config_domain::*;
 pub use config_type::*;
-pub use config_value::*;
 pub use hardware_value::*;
-pub use operator_config::*;
+pub use config_collection::*;
 pub use range::*;

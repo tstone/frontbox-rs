@@ -28,10 +28,10 @@
 //! # struct MySystem2;
 //! # impl MySystem2 { fn new() -> Self { Self } }
 //! # impl System for MySystem2 {}
-//! # static MY_CONFIG1: LazyLock<ConfigValue<u8>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<ConfigValue<u8>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
+//! # static MY_CONFIG1: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Config 1", "", 1, Ranges::u8(0, 10)));
+//! # static MY_CONFIG2: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Config 2", "", 2, Ranges::u8(0, 10)));
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -56,7 +56,7 @@
 //!       app.system(MySystem2::new());
 //!
 //!       // register custom operator configs
-//!       let configs: Vec<&'static ConfigDisplay> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
+//!       let configs: Vec<&'static ConfigDefinition> = vec![MY_CONFIG1.display(), MY_CONFIG2.display()];
 //!       app.register_configs(configs);
 //!     })
 //!     // Running the app boots the hardware and starts the game

@@ -30,7 +30,7 @@ impl MenuSection {
     self
   }
 
-  pub fn configs(mut self, configs: Vec<&'static ConfigDisplay>) -> Self {
+  pub fn configs(mut self, configs: Vec<&'static ConfigDefinition>) -> Self {
     for config in configs {
       let id = MenuRow::next_row_id();
       self.rows.push(MenuRow::Config(id, config));
@@ -72,7 +72,7 @@ impl MenuSection {
 #[derive(Clone)]
 pub enum MenuRow {
   Section(MenuSection),
-  Config(u64, &'static ConfigDisplay),
+  Config(u64, &'static ConfigDefinition),
   Heading(u64, String),
   Special(u64, &'static str),
   Action(
@@ -104,7 +104,7 @@ impl MenuRow {
     }
   }
 
-  pub fn config(&self) -> Option<&'static ConfigDisplay> {
+  pub fn config(&self) -> Option<&'static ConfigDefinition> {
     match self {
       Self::Config(_, cfg) => Some(cfg),
       _ => None,
@@ -113,27 +113,15 @@ impl MenuRow {
 
   pub fn increment(&self, ctx: &SystemContext) -> String {
     match self {
-      Self::Config(_, config) => step_config(config, ctx, ConfigDomain::inc),
+      Self::Config(_, config) => config.format(ctx.config.inc(config)),
       _ => "".to_string(),
     }
   }
 
   pub fn decrement(&self, ctx: &SystemContext) -> String {
     match self {
-      Self::Config(_, config) => step_config(config, ctx, ConfigDomain::dec),
+      Self::Config(_, config) => config.format(ctx.config.dec(config)),
       _ => "".to_string(),
     }
   }
-}
-
-/// Step a config value within its domain, returning the new value as displayed
-fn step_config(
-  config: &ConfigDisplay,
-  ctx: &SystemContext,
-  step: fn(&ConfigDomain, RawConfigValue) -> RawConfigValue,
-) -> String {
-  let mut op_config = ctx.expect::<OperatorConfig>();
-  let next = step(&config.domain, op_config.get_raw(config));
-  op_config.set_raw(config, next);
-  config.format(next)
 }

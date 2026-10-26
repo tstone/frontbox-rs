@@ -20,7 +20,7 @@ impl DriverDefinition {
     LampDefinitionBuilder::new(name)
   }
 
-  pub fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub fn configs(&self) -> Vec<&ConfigDefinition> {
     match &self.mode {
       Some(mode) => mode.configs(),
       None => Vec::new(),

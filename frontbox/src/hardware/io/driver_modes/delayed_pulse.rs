@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 30 - Insert a delay between when the switch is triggered and the driver fires.
@@ -36,21 +36,21 @@ impl Default for DelayedPulseMode {
 }
 
 impl DelayedPulseMode {
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, snap);
 
     DriverConfig::DelayedPulse {
       switch,
       invert_switch,
-      delay_length: self.delay_length.resolve(&ctx.operator_config),
-      initial_full_power_length: self.initial_full_power_length.resolve(&ctx.operator_config),
-      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      rest: self.rest.resolve(&ctx.operator_config),
+      delay_length: self.delay_length.resolve(snap),
+      initial_full_power_length: self.initial_full_power_length.resolve(snap),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      rest: self.rest.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.delay_length.config_display(),
       self.initial_full_power_length.config_display(),

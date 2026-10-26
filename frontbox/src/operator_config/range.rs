@@ -1,6 +1,6 @@
 use fast_protocol::net::prelude::Power;
 
-use crate::operator_config::{ConfigDomain, ConfigType, IntoConfigDomain, RawConfigValue};
+use crate::operator_config::{ConfigDomain, ConfigDomainValue, ConfigType, IntoConfigDomain};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -13,8 +13,8 @@ pub struct Range<T> {
 
 impl<T: ConfigType> IntoConfigDomain<T> for Range<T> {
   fn into_domain(self) -> ConfigDomain {
-    let int = |v: &T| match v.to_raw() {
-      RawConfigValue::Int(v) => v,
+    let int = |v: &T| match v.to_value() {
+      ConfigDomainValue::Int(v) => v,
       other => panic!("Range bounds must be ints, got {other:?}"),
     };
     ConfigDomain::Int {

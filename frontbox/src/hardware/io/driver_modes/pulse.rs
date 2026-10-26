@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 10 - Pulse the driver, up to 255ms, when triggered.
@@ -35,21 +35,21 @@ impl Default for PulseMode {
 }
 
 impl PulseMode {
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, ctx);
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, snap);
 
     DriverConfig::Pulse {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length.resolve(&ctx.operator_config),
-      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_length: self.secondary_pwm_length.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      rest: self.rest.resolve(&ctx.operator_config),
+      initial_pwm_length: self.initial_pwm_length.resolve(snap),
+      initial_pwm_power: self.initial_pwm_power.resolve(snap),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      rest: self.rest.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.initial_pwm_length.config_display(),
       self.initial_pwm_power.config_display(),

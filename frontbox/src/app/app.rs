@@ -2,7 +2,7 @@ use crate::app::app_tracer::AppTracer;
 use crate::app::run_loop;
 use crate::hardware::*;
 use crate::machine::*;
-use crate::operator_config::OperatorConfig;
+use crate::operator_config::ConfigCollection;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::TracerControlEvent;
 use crate::prelude::*;
@@ -13,15 +13,15 @@ use tokio::sync::mpsc;
 pub struct App {
   systems: Vec<SystemContainer>,
   tracers: Vec<Box<dyn AppTracer>>,
-  operator_config: OperatorConfig,
+  operator_config: ConfigCollection,
   boot_config: BootConfig,
 }
 
 impl App {
   pub fn new(boot_config: BootConfig) -> Self {
     let mut operator_config = match boot_config.config_path.clone() {
-      Some(path) => OperatorConfig::load_from_disk(path),
-      None => OperatorConfig::default(),
+      Some(path) => ConfigCollection::load_from_disk(path),
+      None => ConfigCollection::default(),
     };
 
     // look through driver configurations and extract out operator configs
@@ -135,7 +135,7 @@ impl App {
   /// Scan all the drivers looking for operator configs
   fn register_driver_operator_configs(
     drivers: &[IoAddressed<DriverDefinition>],
-    operator_config: &mut OperatorConfig,
+    operator_config: &mut ConfigCollection,
   ) {
     for driver in drivers {
       if let Some(mode) = &driver.definition.mode {

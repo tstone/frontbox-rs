@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 75 - Pulse the driver until the trigger (flip) is deactivated -OR- the cancel switch (flop) is activated.
@@ -33,23 +33,23 @@ impl Default for PulseCancelMode {
 }
 
 impl PulseCancelMode {
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
-      get_switch_ids_and_inverts(&self.trigger_mode, ctx);
+      get_switch_ids_and_inverts(&self.trigger_mode, snap);
 
     DriverConfig::PulseCancel {
       switch: flip_switch,
       invert_switch: invert_flip_switch,
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
-      initial_full_power_length: self.initial_full_power_length.resolve(&ctx.operator_config),
-      secondary_power_length: self.secondary_power_length.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      rest: self.rest.resolve(&ctx.operator_config),
+      initial_full_power_length: self.initial_full_power_length.resolve(snap),
+      secondary_power_length: self.secondary_power_length.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      rest: self.rest.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.initial_full_power_length.config_display(),
       self.secondary_power_length.config_display(),

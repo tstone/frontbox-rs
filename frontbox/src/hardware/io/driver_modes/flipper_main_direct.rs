@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use fast_protocol::{DriverConfig, Power};
 
-use crate::operator_config::{ConfigDisplay, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 80 - Premium flipper driver for main coil. Driver is active when button switch is closed.
@@ -31,27 +31,27 @@ impl FlipperMainDirectMode {
     }
   }
 
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     DriverConfig::FlipperMainDirect {
-      button_switch: ctx
+      button_switch: snap
         .switches
         .by_name(self.button_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      eos_switch: ctx
+      eos_switch: snap
         .switches
         .by_name(self.eos_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid EOS switch"),
-      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      max_eos_time: self.max_eos_time.resolve(&ctx.operator_config),
-      next_flip_refresh: self.next_flip_refresh.resolve(&ctx.operator_config),
+      initial_pwm_power: self.initial_pwm_power.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      max_eos_time: self.max_eos_time.resolve(snap),
+      next_flip_refresh: self.next_flip_refresh.resolve(snap),
     }
   }
 
-  pub(super) fn configs(&self) -> Vec<&ConfigDisplay> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
       self.initial_pwm_power.config_display(),
       self.secondary_pwm_power.config_display(),
