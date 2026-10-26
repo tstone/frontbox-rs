@@ -135,4 +135,41 @@ mod tests {
     let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
     assert_eq!(ConfigCollection::default().get(&turns), 3);
   }
+
+  #[test]
+  fn set_through_context_reads_back_and_emits_changed() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.sys_ctx();
+    ctx.config.set(&turns, 4);
+    assert_eq!(turns.get(&ctx), 4);
+
+    let changed: Vec<&str> = test_ctx
+      .events_emitted()
+      .iter()
+      .filter_map(|e| e.event.downcast_ref::<ConfigChanged>())
+      .map(|e| e.0)
+      .collect();
+    assert_eq!(changed, vec!["turns"]);
+  }
+
+  #[test]
+  fn inc_and_dec_through_context_emit_changed() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.svc_ctx();
+    ctx.config.inc(turns.display());
+    ctx.config.inc(turns.display());
+    ctx.config.dec(turns.display());
+    assert_eq!(ctx.config.get(&turns), 4);
+
+    let changed = test_ctx
+      .events_emitted()
+      .iter()
+      .filter(|e| e.event.is::<ConfigChanged>())
+      .count();
+    assert_eq!(changed, 3);
+  }
 }

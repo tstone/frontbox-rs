@@ -79,8 +79,12 @@ impl Default for TestContext {
     let mut groups = HashMap::new();
     groups.insert(ROOT_GROUP, SystemGroup::new());
 
+    // as in `App::run`, so config changes emit `ConfigChanged`
+    let mut base = BootSnapshot::default();
+    base.config.app_sender = Some(tx.clone());
+
     Self {
-      base: BootSnapshot::default(),
+      base,
       groups,
       tx,
       rx,
