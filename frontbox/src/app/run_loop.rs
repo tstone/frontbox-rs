@@ -88,6 +88,10 @@ pub async fn run(
           AppMessage::SyncSwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
           }
+          AppMessage::ConfigChanged(key) => {
+            base.config.save();
+            emit_event(None, EventBox::new(ConfigChanged(key)), &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+          }
           AppMessage::Shutdown(scope) => {
             log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
             shutdown_scope = scope;

@@ -94,6 +94,7 @@
 
 - DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Implement all menu sounds
+- Need a better pattern/more generalized UI DSP to do the following:
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets

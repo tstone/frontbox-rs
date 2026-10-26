@@ -53,6 +53,9 @@ impl App {
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
     self.configs.app_sender = Some(app_sender.clone());
+    if let Some(path) = self.boot_config.config_path.clone() {
+      self.configs.begin_save_task(path);
+    }
 
     let (boot_snapshot, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {

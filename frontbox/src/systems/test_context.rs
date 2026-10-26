@@ -66,6 +66,8 @@ impl TestContext {
     for msg in self.app_messages() {
       match msg {
         AppMessage::EmitEvent(_, e) => events.push(e),
+        // the run loop emits this after saving
+        AppMessage::ConfigChanged(key) => events.push(EventBox::new(ConfigChanged(key))),
         _ => {}
       }
     }

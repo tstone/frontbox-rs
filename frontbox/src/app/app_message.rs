@@ -15,6 +15,7 @@ pub enum AppMessage {
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
+  ConfigChanged(&'static str),
   SpawnSystem(&'static str, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
@@ -50,6 +51,7 @@ impl Debug for AppMessage {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
       }
       AppMessage::SyncSwitchStates(states) => write!(f, "SwitchStates({:?})", states),
+      AppMessage::ConfigChanged(key) => write!(f, "ConfigChanged({})", key),
       AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
       AppMessage::ReplaceSystem(handle, _) => {
         write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)
