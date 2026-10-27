@@ -78,28 +78,42 @@ impl MachineSystem {
     }
   }
 
-  /// Activate a driver based on an activation mode (e.g. tap, automatic with switch, or virtual switch) (TL)
+  /// Activate a driver based on an activation mode (e.g. tap, automatic, or virtual switch) (TL)
   pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &ServiceContext) {
-    // remap switch to id
-    let switch = mode.switch_name().and_then(|name| {
-      let switch = ctx.switches.by_name(name).map(|sw| sw.id);
-      if switch.is_none() {
-        log::error!(
-          "Activating driver \"{}\" with unknown switch \"{}\", keeping its configured switch",
-          driver,
-          name
-        );
-      }
-      switch
-    });
     if let Some(driver) = ctx.drivers.get(driver) {
-      let control_mode: DriverTriggerControlMode = match mode {
-        ActivationMode::Automatic(_) => DriverTriggerControlMode::Automatic,
-        ActivationMode::Tap => DriverTriggerControlMode::Manual,
-        ActivationMode::VirtualSwitchOn => DriverTriggerControlMode::On,
+      let (control_mode, switch) = match mode {
+        ActivationMode::Automatic => (
+          DriverTriggerControlMode::Automatic,
+          self.trigger_switch(driver.id, ctx),
+        ),
+        ActivationMode::Tap => (DriverTriggerControlMode::Manual, None),
+        ActivationMode::VirtualSwitchOn => (DriverTriggerControlMode::On, None),
       };
       self.trigger_driver(driver.id, control_mode, switch);
     }
+  }
+
+  /// Whether the driver's current mode is triggered by a physical switch automatically or not
+  pub fn is_switch_triggered(&self, driver: &str, ctx: &ServiceContext) -> bool {
+    ctx
+      .drivers
+      .get(driver)
+      .and_then(|driver| self.driver_modes.get(&driver.id))
+      .is_some_and(|mode| mode.trigger_switch().is_some())
+  }
+
+  /// The switch that triggers the driver in its current mode
+  fn trigger_switch(&self, driver_id: usize, ctx: &ServiceContext) -> Option<usize> {
+    let name = self.driver_modes.get(&driver_id)?.trigger_switch()?;
+    let switch = ctx.switches.by_name(name).map(|sw| sw.id);
+    if switch.is_none() {
+      log::error!(
+        "Driver {:X} is triggered by unknown switch \"{}\"",
+        driver_id,
+        name
+      );
+    }
+    switch
   }
 
   /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
@@ -352,6 +366,7 @@ mod tests {
 
   fn pulse_using_power() -> DriverMode {
     DriverMode::pulse()
+      .trigger_mode(DriverTriggerMode::Switch("sw"))
       .initial_pwm_power(HardwareValue::Config(POWER.clone()))
       .build()
   }
@@ -381,6 +396,11 @@ mod tests {
       ctx.insert_switch(Switch {
         name: "sw",
         id: 0x12,
+        ..Default::default()
+      });
+      ctx.insert_switch(Switch {
+        name: "other_sw",
+        id: 0x13,
         ..Default::default()
       });
 
@@ -471,10 +491,26 @@ mod tests {
   }
 
   #[test]
-  fn activate_automatic_connects_switch() {
+  fn activate_automatic_connects_configured_switch() {
     let mut harness = Harness::new();
-    harness.activate(ActivationMode::Automatic("sw"));
+    harness.activate(ActivationMode::Automatic);
     assert_eq!(harness.driver_commands(), vec!["TL:A,0,12\r"]);
+  }
+
+  #[test]
+  fn activate_automatic_without_a_trigger_switch_sends_none() {
+    let mut harness = Harness::new();
+    harness.configure(DriverMode::pulse().build());
+    harness.activate(ActivationMode::Automatic);
+    assert_eq!(harness.driver_commands(), vec!["DL:A", "TL:A,0,\r"]);
+  }
+
+  #[test]
+  fn only_drivers_with_a_trigger_switch_are_switch_triggered() {
+    let harness = Harness::new();
+    let ctx = harness.ctx.svc_ctx();
+    assert!(harness.machine.is_switch_triggered(COIL, &ctx));
+    assert!(!harness.machine.is_switch_triggered("other", &ctx));
   }
 
   #[test]
@@ -488,9 +524,13 @@ mod tests {
   #[test]
   fn configure_then_activate_stays_in_order() {
     let mut harness = Harness::new();
-    harness.configure(DriverMode::pulse().build());
-    harness.activate(ActivationMode::Automatic("sw"));
-    assert_eq!(harness.driver_commands(), vec!["DL:A", "TL:A,0,12\r"]);
+    harness.configure(
+      DriverMode::pulse()
+        .trigger_mode(DriverTriggerMode::Switch("other_sw"))
+        .build(),
+    );
+    harness.activate(ActivationMode::Automatic);
+    assert_eq!(harness.driver_commands(), vec!["DL:A", "TL:A,0,13\r"]);
   }
 
   #[test]

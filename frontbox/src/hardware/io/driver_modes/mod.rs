@@ -157,4 +157,22 @@ impl DriverMode {
       Self::FlipperMain3Try(m) => vec![m.button_switch, m.eos_switch],
     }
   }
+
+  /// The physical switch that fires the driver, if any. This is the switch a TL sets when activating it
+  /// automatically.
+  pub fn trigger_switch(&self) -> Option<&'static str> {
+    match self {
+      Self::Pulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseKick(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHold(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHoldCancel(m) => m.trigger_mode.trigger_switch(),
+      Self::DelayedPulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseCancel(m) => m.trigger_mode.trigger_switch(),
+      Self::LongPulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHoldExtension(m) => m.trigger_mode.trigger_switch(),
+      Self::FlipperMainDirect(m) => Some(m.button_switch),
+      Self::FlipperHoldDirect(m) => Some(m.button_switch),
+      Self::FlipperMain3Try(m) => Some(m.button_switch),
+    }
+  }
 }

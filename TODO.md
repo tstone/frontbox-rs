@@ -32,7 +32,6 @@
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Audits: the operator-facing view of metrics (coils fired, average game time, ball saves, etc.), with resets by
   category. Needs: metrics system.
-- Revisit ActivatePlayfield, if this is a good pattern or not
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no
   ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can
   show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits,

@@ -22,6 +22,14 @@ impl DriverTriggerMode {
       Self::Disabled | Self::VirtualSwitchTrue | Self::VirtualSwitchFalse => vec![],
     }
   }
+
+  /// The physical switch that fires the driver, if any
+  pub fn trigger_switch(&self) -> Option<&'static str> {
+    match self {
+      Self::Switch(name) | Self::InvertedSwitch(name) => Some(name),
+      Self::Disabled | Self::VirtualSwitchTrue | Self::VirtualSwitchFalse => None,
+    }
+  }
 }
 
 /// DriverTriggerDualMode answers: What causes the driver to fire when two switches are involved?
@@ -86,6 +94,20 @@ impl DriverTriggerDualMode {
       | Self::VirtualFlip_FlopSwitchFalse(name)
       | Self::FlipSwitchTrue_VirtualFlop(name)
       | Self::FlipSwitchFalse_VirtualFlop(name) => vec![name],
+    }
+  }
+
+  /// The physical flip switch that fires the driver, if any. The flop switch only gates it.
+  pub fn trigger_switch(&self) -> Option<&'static str> {
+    match self {
+      Self::FlipSwitchTrue_FlopSwitchTrue { flip_switch, .. }
+      | Self::FlipSwitchFalse_FlopSwitchTrue { flip_switch, .. }
+      | Self::FlipSwitchTrue_FlopSwitchFalse { flip_switch, .. }
+      | Self::FlipSwitchFalse_FlopSwitchFalse { flip_switch, .. } => Some(flip_switch),
+      Self::FlipSwitchTrue_VirtualFlop(name) | Self::FlipSwitchFalse_VirtualFlop(name) => Some(name),
+      Self::Disabled | Self::VirtualFlip_FlopSwitchTrue(_) | Self::VirtualFlip_FlopSwitchFalse(_) => {
+        None
+      }
     }
   }
 }
