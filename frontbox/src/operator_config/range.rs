@@ -36,6 +36,15 @@ impl Ranges {
     }
   }
 
+  /// A duration range that steps by whole seconds
+  pub fn seconds(from_secs: u64, to_secs: u64) -> Range<Duration> {
+    Range {
+      min: Duration::from_secs(from_secs),
+      max: Duration::from_secs(to_secs),
+      step: Duration::from_secs(1),
+    }
+  }
+
   pub fn power(from: u8, to: u8) -> Range<Power> {
     Range {
       min: Power { power: from },

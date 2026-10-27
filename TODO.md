@@ -1,7 +1,6 @@
 ## Foundations
 
 - Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
-- Find places in frontbox-pinball systems that should be operator config, and make them a config
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
   user systems, declared statically like config values. Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
@@ -29,6 +28,7 @@
 
 ## Pinball features
 
+- Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Audits: the operator-facing view of metrics (coils fired, average game time, ball saves, etc.), with resets by

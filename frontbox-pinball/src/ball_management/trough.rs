@@ -2,6 +2,7 @@ use frontbox::prelude::*;
 
 use crate::ball_management::trough_management_config::TroughManagementConfig;
 use crate::ball_management::{TroughEjectFailed, TroughEjecting, TroughOccupancyChanged};
+use crate::configs;
 
 pub struct TroughSystem {
   config: TroughManagementConfig,
@@ -32,19 +33,33 @@ impl TroughSystem {
   pub fn eject_coil_definition(name: &'static str) -> DriverDefinitionBuilder {
     DriverDefinitionBuilder::new(name).mode(
       DriverMode::pulse_kick()
-        .initial_pwm_length(HardwareValue::config(
-          "Plunger Touch Time",
-          "Duration by which the eject plunger is brought into contact with the ball, before full eject",
-          Duration::from_millis(5),
-          Ranges::duration(0, 50),
-        ))
-        .initial_pwm_power(Power::THREE_QUARTERS)
-        .kick_length(HardwareValue::config(
-          "Eject Time",
-          "Duration that the plunger exert full power onto the ball (kick)",
-          Duration::from_millis(13),
-          Ranges::duration(5, 75),
-        ))
+        .initial_pwm_length(
+          HardwareValue::config(
+            "Plunger Touch Time",
+            "Duration by which the eject plunger is brought into contact with the ball, before full eject",
+            Duration::from_millis(5),
+            Ranges::duration(0, 50),
+          )
+          .key("trough_eject_touch_time"),
+        )
+        .initial_pwm_power(
+          HardwareValue::config(
+            "Plunger Touch Power",
+            "Power used to bring the eject plunger into contact with the ball, before full eject",
+            Power::THREE_QUARTERS,
+            Ranges::full_power(),
+          )
+          .key("trough_eject_touch_power"),
+        )
+        .kick_length(
+          HardwareValue::config(
+            "Eject Time",
+            "Duration that the plunger exert full power onto the ball (kick)",
+            Duration::from_millis(13),
+            Ranges::duration(5, 75),
+          )
+          .key("trough_eject_kick_time"),
+        )
         .build(),
     )
   }
@@ -95,13 +110,14 @@ impl TroughSystem {
   }
 
   fn retry_eject(&mut self, ctx: &SystemContext) {
-    if self.eject_retries >= self.config.eject_retries_max {
+    let retries_max = ctx.config.get(&configs::TROUGH_EJECT_RETRIES);
+    if self.eject_retries >= retries_max {
       log::warn!(target: "frontbox::trough", "Eject failed after {} retries", self.eject_retries);
       ctx.emit(TroughEjectFailed);
       self.eject_ready(ctx);
     } else {
       self.eject_retries += 1;
-      log::info!(target: "frontbox::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, self.config.eject_retries_max);
+      log::info!(target: "frontbox::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, retries_max);
 
       if matches!(self.occupancy_state, OccupancyState::Settling { .. }) {
         // Balls are still moving; defer the retry until settled. Ready (without resetting retries) lets the queue run it.
@@ -355,6 +371,10 @@ mod tests {
     fn spawn_now(&mut self) {
       self.trough.on_spawn(&self.ctx.sys_ctx());
       self.events(); // discard anything from setup
+    }
+
+    fn retries_max(&self) -> u8 {
+      self.ctx.svc_ctx().config.get(&configs::TROUGH_EJECT_RETRIES)
     }
 
     /// Write the fixture's switch state into the context's switch cache
@@ -803,11 +823,11 @@ mod tests {
   fn verify_timeout_at_max_retries_emits_failed_and_returns_to_ready() {
     let mut f = Fixture::spawn(3, false, false);
     f.eject();
-    for _ in 0..f.trough.config.eject_retries_max {
+    for _ in 0..f.retries_max() {
       f.verify_timeout();
     }
     assert!(f.is_verifying());
-    assert_eq!(f.trough.eject_retries, f.trough.config.eject_retries_max);
+    assert_eq!(f.trough.eject_retries, f.retries_max());
     f.events();
 
     f.verify_timeout();
@@ -820,7 +840,7 @@ mod tests {
   fn verify_timeout_at_max_retries_continues_with_next_queued_eject() {
     let mut f = Fixture::spawn(3, false, false);
     f.eject_many(2);
-    for _ in 0..f.trough.config.eject_retries_max {
+    for _ in 0..f.retries_max() {
       f.verify_timeout();
     }
     f.events();
@@ -947,7 +967,7 @@ mod tests {
     f.settle();
     f.events();
 
-    for _ in 0..=f.trough.config.eject_retries_max {
+    for _ in 0..=f.retries_max() {
       f.verify_timeout();
     }
     assert_eq!(

@@ -2,8 +2,6 @@ use std::time::Duration;
 
 use frontbox::prelude::*;
 
-// TODO: would be nice to make some of these operator config (eject retries, max retries, etc.)
-
 #[derive(Debug, Clone)]
 pub struct TroughManagementConfig {
   // ordered nearest the eject to farthest
@@ -18,7 +16,6 @@ pub struct TroughManagementConfig {
   /// Do not set if the game design allows the ball to intentionally re-enter the plunge lane
   /// If not given, it will be ambiguous for the trough if an eject failed or if a ball re-entered. If not set, consider lowering eject verification time.
   pub(super) eject_verification_switches: Option<SwitchQ>,
-  pub(super) eject_retries_max: u8,
   pub(super) occupancy_settling_time: Duration,
   pub(super) occupancy_settling_max: Duration,
 }
@@ -31,7 +28,6 @@ impl Default for TroughManagementConfig {
       eject_verification_switches: None,
       eject_coil_name: "",
       eject_verification_time: Duration::from_millis(1000),
-      eject_retries_max: 4,
       occupancy_settling_time: Duration::from_millis(300),
       occupancy_settling_max: Duration::from_millis(1500),
     }
