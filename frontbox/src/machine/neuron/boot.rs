@@ -91,7 +91,7 @@ pub async fn configure_switches(
 
 pub async fn configure_drivers(io_port: &mut SerialInterface, snap: &BootSnapshot) {
   for driver in snap.drivers.values() {
-    if let Some(mode) = snap.drivers.config(driver.name) {
+    if let Some(mode) = snap.drivers.mode(driver.name) {
       log::info!("Configuring driver {} with {:?}", driver.name, mode);
       match io_port
         .command(

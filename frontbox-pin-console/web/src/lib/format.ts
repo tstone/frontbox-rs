@@ -21,7 +21,7 @@ export function traceCategory(record: TraceRecord): TraceCategory {
   const event = record.event
   if ('Event' in event) return 'event'
   if ('SwitchStateChange' in event) return 'switch'
-  if ('DriverStateChange' in event) return 'driver'
+  if ('DriverStateChange' in event || 'DriverModeChange' in event) return 'driver'
   return 'system'
 }
 

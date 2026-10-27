@@ -65,6 +65,10 @@ function summary(record: TraceRecord): string {
     const { driver_id, state } = event.DriverStateChange
     return `${hw?.drivers.by_id[driver_id]?.name ?? `Driver ${driver_id}`} ${state.toLowerCase()}`
   }
+  if ('DriverModeChange' in event) {
+    const { driver_id, mode } = event.DriverModeChange
+    return `${hw?.drivers.by_id[driver_id]?.name ?? `Driver ${driver_id}`} set to ${Object.keys(mode)[0]}`
+  }
   if ('SystemSpawned' in event) return shortName(event.SystemSpawned.name)
   if ('SystemDespawned' in event) return systemName(event.SystemDespawned.id)
   if ('SystemActiveStateChange' in event) {

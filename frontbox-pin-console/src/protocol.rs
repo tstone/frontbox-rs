@@ -1,3 +1,4 @@
+use frontbox::prelude::DriverMode;
 use frontbox::prelude::Hardware;
 use frontbox::prelude::SwitchState;
 use frontbox::prelude::app_tracer::{Color, DriverState, TraceEvent};
@@ -20,6 +21,8 @@ pub struct Snapshot {
   pub groups: Vec<SystemGroup>,
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
+  /// Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
+  pub driver_modes: BTreeMap<usize, DriverMode>,
   pub game: Option<GameState>,
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Color>,

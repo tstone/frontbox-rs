@@ -327,6 +327,9 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
     TraceEvent::DriverStateChange { driver_id, state } => {
       snapshot.drivers.insert(*driver_id, state.clone());
     }
+    TraceEvent::DriverModeChange { driver_id, mode } => {
+      snapshot.driver_modes.insert(*driver_id, mode.clone());
+    }
     TraceEvent::Event {
       sender: Some(sender),
       ..

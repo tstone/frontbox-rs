@@ -92,6 +92,10 @@ pub async fn run(
             base.config.save();
             emit_event(None, EventBox::new(ConfigChanged(key)), &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
           }
+          AppMessage::DriverModeChange(driver_id, mode) => {
+            base.drivers.set_mode(driver_id, mode.clone());
+            tracer_txs.send(TraceEvent::DriverModeChange { driver_id, mode });
+          }
           AppMessage::Shutdown(scope) => {
             log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
             shutdown_scope = scope;

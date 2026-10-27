@@ -1,6 +1,6 @@
 import { For, type JSX, Show } from 'solid-js'
 import { describeDriverMode, describeSwitchConfig, hexAddress } from '../../lib/hardwareConfig'
-import { machine } from '../../state/console'
+import { driverMode, machine } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { LED } from '../../types/generated/LED'
 import type { PlaneView } from '../../types/generated/PlaneView'
@@ -29,7 +29,7 @@ export default function HardwareDetail(props: { item: HardwareRef }) {
 }
 
 function DriverDetail(props: { driver: Driver }) {
-  const config = () => machine.hardware?.drivers.configs[props.driver.id]
+  const config = () => driverMode(props.driver.id)
   return (
     <Fields>
       <Field label="Name">{props.driver.name}</Field>

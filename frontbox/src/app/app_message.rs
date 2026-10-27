@@ -10,12 +10,12 @@ pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
   RegisterInterrupt(SystemHandle, TypeId, u16),
   UnregisterInterrupt(u64, TypeId),
-  /// Unregister all everything associated with the given system ID. This is useful for cleaning up when a system is removed.
   UnregisterAllBySystem(u64),
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
   ConfigChanged(&'static str),
+  DriverModeChange(usize, DriverMode),
   SpawnSystem(&'static str, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
@@ -52,6 +52,9 @@ impl Debug for AppMessage {
       }
       AppMessage::SyncSwitchStates(states) => write!(f, "SwitchStates({:?})", states),
       AppMessage::ConfigChanged(key) => write!(f, "ConfigChanged({})", key),
+      AppMessage::DriverModeChange(driver, mode) => {
+        write!(f, "DriverModeChange({}, {:?})", driver, mode)
+      }
       AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
       AppMessage::ReplaceSystem(handle, _) => {
         write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)

@@ -46,6 +46,10 @@ pub enum TraceEvent {
     driver_id: usize,
     state: DriverState,
   },
+  DriverModeChange {
+    driver_id: usize,
+    mode: DriverMode,
+  },
   SwitchStateChange {
     switch_id: usize,
     state: SwitchState,

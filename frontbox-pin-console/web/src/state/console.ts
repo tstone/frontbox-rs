@@ -5,6 +5,7 @@ import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import { shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
+import type { DriverMode } from '../types/generated/DriverMode'
 import { type Connection, connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
@@ -30,6 +31,7 @@ const [state, setState] = createStore<ConsoleState>({
   groups: [],
   switches: {},
   drivers: {},
+  driver_modes: {},
   game: null,
   planes: [],
   led_colors: {},
@@ -58,14 +60,14 @@ export function sendToMachine(message: ClientMessage) {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, game, planes, led_colors, log } = message
+      const { hardware, groups, switches, drivers, driver_modes, game, planes, led_colors, log } = message
       // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
       // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
       // would rebuild everything that reads them.
       batch(() => {
         setState('hardware', reconcile(hardware))
         setState('led_colors', reconcile(led_colors))
-        setState({ groups, switches, drivers, game, planes, log })
+        setState({ groups, switches, drivers, driver_modes, game, planes, log })
       })
       break
     }
@@ -89,6 +91,11 @@ function handleMessage(message: ServerMessage) {
 export function driverState(id: number): 'Fired' | 'On' | 'Off' {
   if (state.firing[id]) return 'Fired'
   return state.drivers[id] === 'On' ? 'On' : 'Off'
+}
+
+/** The mode a driver is in: the last one it was configured with while running, else its defined mode */
+export function driverMode(id: number): DriverMode | undefined {
+  return state.driver_modes[id] ?? state.hardware?.drivers.modes[id]
 }
 
 function markFired(id: number) {
@@ -138,6 +145,9 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverStateChange' in event) {
     const { driver_id, state } = event.DriverStateChange
     s.drivers[driver_id] = state
+  } else if ('DriverModeChange' in event) {
+    const { driver_id, mode } = event.DriverModeChange
+    s.driver_modes[driver_id] = mode
   } else if ('LedsRGBChange' in event) {
     // never sent as a trace: the hub collects LED changes and sends them as `Leds`
     return

@@ -1,5 +1,6 @@
 ## Foundations
 
+- Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
   user systems, declared statically like config values (registered the same way, see operator config step 2). Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
@@ -31,6 +32,7 @@
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Audits: the operator-facing view of metrics (coils fired, average game time, ball saves, etc.), with resets by
   category. Needs: metrics system.
+- Revisit ActivatePlayfield, if this is a good pattern or not
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no
   ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can
   show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits,
@@ -110,6 +112,7 @@
 ## Console
 
 - Initial state: configure switches to be latched by default (e.g. trough, captive ball)
+- Some kind of game state specific/user-customizable JSON emission by systems, to view a system's state somehow
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a
   replayed game is deterministic.

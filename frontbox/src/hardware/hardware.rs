@@ -191,7 +191,7 @@ impl Hardware {
   ) -> Vec<(&'static str, &'static str)> {
     let mut unknown = Vec::new();
     for driver in drivers.values() {
-      if let Some(mode) = drivers.config(driver.name) {
+      if let Some(mode) = drivers.mode(driver.name) {
         for switch in mode.switch_names() {
           if switches.by_name(switch).is_none() {
             unknown.push((driver.name, switch));
@@ -213,7 +213,7 @@ impl Hardware {
     let mut seen = HashMap::new();
     let mut duplicates = Vec::new();
     for name in drivers_by_name {
-      let Some(mode) = drivers.config(name) else {
+      let Some(mode) = drivers.mode(name) else {
         continue;
       };
       for config in mode.configs() {

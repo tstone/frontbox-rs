@@ -9,14 +9,14 @@ use crate::prelude::*;
 pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
-  configs: HashMap<usize, DriverMode>,
+  modes: HashMap<usize, DriverMode>,
 }
 
 impl DriverLookup {
   pub fn new(drivers: Vec<IoAddressed<DriverDefinition>>) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
-    let mut configs = HashMap::new();
+    let mut modes = HashMap::new();
 
     for addressed in drivers {
       let driver = Driver {
@@ -30,15 +30,15 @@ impl DriverLookup {
       by_id.insert(addressed.id, driver.clone());
       by_name.insert(addressed.definition.name, driver);
 
-      if let Some(config) = &addressed.definition.mode {
-        configs.insert(addressed.id, config.clone());
+      if let Some(mode) = &addressed.definition.mode {
+        modes.insert(addressed.id, mode.clone());
       }
     }
 
     Self {
       by_id,
       by_name,
-      configs,
+      modes,
     }
   }
 
@@ -58,11 +58,21 @@ impl DriverLookup {
     self.by_name.get_mut(driver_name)
   }
 
-  pub fn config(&self, name: &str) -> Option<&DriverMode> {
+  /// The driver's current mode
+  pub fn mode(&self, name: &str) -> Option<&DriverMode> {
     self
       .by_name
       .get(name)
-      .and_then(|driver| self.configs.get(&driver.id))
+      .and_then(|driver| self.modes.get(&driver.id))
+  }
+
+  pub(crate) fn modes(&self) -> impl Iterator<Item = (usize, &DriverMode)> {
+    self.modes.iter().map(|(id, mode)| (*id, mode))
+  }
+
+  /// Used internally to update mode (e.g. after operator config change)
+  pub(crate) fn set_mode(&mut self, driver_id: usize, mode: DriverMode) {
+    self.modes.insert(driver_id, mode);
   }
 
   pub fn by_tag<T: Tag + 'static>(&self) -> Vec<&Driver> {
@@ -123,4 +133,3 @@ impl Driver {
       .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
   }
 }
-

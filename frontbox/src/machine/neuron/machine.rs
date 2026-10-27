@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::machine::neuron::boot;
+use crate::machine::neuron::driver_triggers::DriverTriggers;
 use crate::machine::serial_interface::SerialInterface;
 use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
@@ -16,6 +17,7 @@ pub struct Neuron {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
+  driver_triggers: DriverTriggers,
 }
 
 impl Neuron {
@@ -38,6 +40,42 @@ impl Neuron {
       }
       MachineMessage::RefreshSwitchState => {
         self.refresh_switch_state().await;
+      }
+      MachineMessage::ConfigureDriver { driver_id, config } => {
+        self.driver_triggers.cleared(driver_id);
+        self
+          .io_port
+          .command(
+            &ConfigureDriverCommand::new(driver_id, config),
+            COMMAND_TIMEOUT,
+          )
+          .await
+          .ok();
+      }
+      MachineMessage::UpdateDriverConfig { driver_id, config } => {
+        self
+          .io_port
+          .command(
+            &ConfigureDriverCommand::new(driver_id, config),
+            COMMAND_TIMEOUT,
+          )
+          .await
+          .ok();
+        // DL disconnected the driver's switch, so put it back the way it was
+        if let Some(trigger) = self.driver_triggers.restore(driver_id) {
+          self.io_port.dispatch(&trigger).await;
+        }
+      }
+      MachineMessage::TriggerDriver {
+        driver_id,
+        mode,
+        switch,
+      } => {
+        self.driver_triggers.triggered(driver_id, mode, switch);
+        self
+          .io_port
+          .dispatch(&TriggerDriverCommand::new(driver_id, mode, switch))
+          .await;
       }
       MachineMessage::Dispatch { port, command } => {
         let port = self.port_for(port);
@@ -188,6 +226,7 @@ impl MachineBoot for Neuron {
       machine_sender,
       machine_receiver,
       watchdog_interval: app_config.watchdog_interval.unwrap(),
+      driver_triggers: DriverTriggers::default(),
     };
 
     let hardware = Hardware::new(

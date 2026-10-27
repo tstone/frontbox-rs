@@ -2,7 +2,7 @@ import { triggerSwitches } from '../../lib/drivers'
 import { ledName } from '../../lib/format'
 import { hexAddress } from '../../lib/hardwareConfig'
 import { LED_OFF, ledColor, ledColorKnown } from '../../lib/leds'
-import { type ConsoleState, driverState } from '../../state/console'
+import { type ConsoleState, driverMode, driverState } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { Hardware } from '../../types/generated/Hardware'
 import type { LED } from '../../types/generated/LED'
@@ -117,7 +117,7 @@ function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
     case 'automatic-drivers': {
       const automatic = kind === 'automatic-drivers'
       return Object.values(hw.drivers.by_id)
-        .map((driver) => ({ driver, triggers: triggerSwitches(hw.drivers.configs[driver.id]) }))
+        .map((driver) => ({ driver, triggers: triggerSwitches(driverMode(driver.id)) }))
         .filter(({ triggers }) => triggers.length > 0 === automatic)
         .map(({ driver, triggers }) => driverRow(hw, driver, triggers, automatic))
     }
