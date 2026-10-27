@@ -3,7 +3,7 @@
 - Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
 - Find places in frontbox-pinball systems that should be operator config, and make them a config
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
-  user systems, declared statically like config values (registered the same way, see operator config step 2). Records
+  user systems, declared statically like config values. Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
   in memory, written in one transaction at game end, plus a timer outside of games) rather than one per increment,
   which is thousands of rows a game. A reset is a marker, not a zeroing, so "since last reset" is a query and history
@@ -21,7 +21,7 @@
   play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for
   that key, using the existing `activate_system_group`/`deactivate_system_group`. Choices need a saved key separate
   from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles
-  that matter mid-game (difficulty, rules variants)? Needs: choice configs and operator config step 1.
+  that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
@@ -35,8 +35,7 @@
   category. Needs: metrics system.
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no
   ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can
-  show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits,
-  and tracking each driver's current mode (operator config step 5) so a config change doesn't undo the escalation. Open
+  show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits. Open
   questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than
   `Launch::Player`
 - Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.)

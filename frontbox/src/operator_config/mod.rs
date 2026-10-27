@@ -45,6 +45,9 @@
 //! });
 //! ```
 //!
+//! The last argument is the domain, the values the config can take: a range from `Ranges`, `Toggle` for a `bool`, or
+//! `Choices` for a type that maps itself to one of several named choices.
+//!
 //! There is no registration step. The first time a config is read or written, its value is loaded from the saved
 //! config file if present and within its domain, otherwise it starts at its default.
 //!
@@ -78,6 +81,65 @@
 //! let value: u8 = ctx.config.get(&MAX_EXTRA_BALLS);
 //! # }
 //! ```
+//!
+//! ### Setting Operator Configs
+//!
+//! Setting a value takes effect immediately and is kept within its domain. `inc` and `dec` step it, as a menu does.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! # use std::sync::LazyLock;
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # fn example(ctx: &SystemContext) {
+//! ctx.config.set(&MAX_EXTRA_BALLS, 3);
+//! ctx.config.inc(MAX_EXTRA_BALLS.display()); // now 4
+//! # }
+//! ```
+//!
+//! A change emits `ConfigChanged` with the config's key. Drivers using the key are re-configured automatically, so
+//! only software configs need to listen for it.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! # use std::sync::LazyLock;
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # struct ExtraBalls;
+//! # impl System for ExtraBalls {
+//! fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+//!   if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>()
+//!     && *key == MAX_EXTRA_BALLS.display().key
+//!   {
+//!     let max = ctx.config.get(&MAX_EXTRA_BALLS);
+//!     // ...
+//!   }
+//! }
+//! # }
+//! ```
+//!
+//! ### Saving
+//!
+//! Set `BootConfig::config_path` to load saved values at boot and save changes as they're made. Only values that
+//! differ from their default are written.
+//!
+//! ```toml
+//! "Max Extra Balls" = 3
+//! "Left Flipper Initial Power" = 200
+//! ```
+//!
+//! ### Menus
+//!
+//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-pin2dmd` menu section:
+//!
+//! ```rust,ignore
+//! MenuSection::new("Left Flipper").configs(LEFT_FLIPPER.configs())
+//! ```
+//!
+//! ### Web Console
+//!
+//! The console's Config tab lists every config in use and edits them like the menu does. Hardware configs are listed
+//! at boot; software configs appear once something reads them.
 
 mod choices;
 mod config;
