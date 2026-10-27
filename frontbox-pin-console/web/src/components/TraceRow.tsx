@@ -85,6 +85,8 @@ function summary(record: TraceRecord): string {
     const { expansion, states } = event.LedsRGBChange
     return `${states.length} LED${states.length === 1 ? '' : 's'} on ${hexAddress(expansion)}`
   }
+  // kept as state by the hub, never logged
+  if ('ConfigsInUse' in event || 'ConfigChange' in event) return ''
   const body = event.Event.event
   return body == null ? '' : JSON.stringify(body)
 }

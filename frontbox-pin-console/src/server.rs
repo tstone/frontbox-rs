@@ -161,6 +161,7 @@ impl HeldSwitches {
         }
         self.hub.set_switch(switch_id, closed);
       }
+      Ok(ClientMessage::SetConfig { key, value }) => self.hub.set_config(key, value),
       Err(err) => log::warn!(target: "frontbox::console", "Ignoring a message from a console client: {err}"),
     }
   }

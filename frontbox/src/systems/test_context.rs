@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 pub struct TestContext {
@@ -72,6 +73,18 @@ impl TestContext {
       }
     }
     events
+  }
+
+  /// Trace events sent through the run loop up to this point
+  pub fn traces(&mut self) -> Vec<TraceEvent> {
+    self
+      .app_messages()
+      .into_iter()
+      .filter_map(|msg| match msg {
+        AppMessage::TracerEvent(trace) => Some(trace),
+        _ => None,
+      })
+      .collect()
   }
 }
 

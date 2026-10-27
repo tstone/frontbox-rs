@@ -35,6 +35,7 @@ const [state, setState] = createStore<ConsoleState>({
   game: null,
   planes: [],
   led_colors: {},
+  configs: {},
   log: [],
   firing: {},
 })
@@ -60,13 +61,14 @@ export function sendToMachine(message: ClientMessage) {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, driver_modes, game, planes, led_colors, log } = message
+      const { hardware, groups, switches, drivers, driver_modes, game, planes, led_colors, configs, log } = message
       // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
       // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
       // would rebuild everything that reads them.
       batch(() => {
         setState('hardware', reconcile(hardware))
         setState('led_colors', reconcile(led_colors))
+        setState('configs', reconcile(configs))
         setState({ groups, switches, drivers, driver_modes, game, planes, log })
       })
       break
@@ -81,6 +83,13 @@ function handleMessage(message: ServerMessage) {
       setState(
         produce((s) => {
           for (const [name, color] of Object.entries(message.colors)) s.led_colors[name] = color
+        }),
+      )
+      break
+    case 'Configs':
+      setState(
+        produce((s) => {
+          for (const config of message.configs) s.configs[config.key] = config
         }),
       )
       break
@@ -148,8 +157,8 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverModeChange' in event) {
     const { driver_id, mode } = event.DriverModeChange
     s.driver_modes[driver_id] = mode
-  } else if ('LedsRGBChange' in event) {
-    // never sent as a trace: the hub collects LED changes and sends them as `Leds`
+  } else if ('LedsRGBChange' in event || 'ConfigsInUse' in event || 'ConfigChange' in event) {
+    // never sent as traces: the hub keeps LEDs and configs as current state and sends them as `Leds` and `Configs`
     return
   } else if (event.Event.sender !== null) {
     const sender = event.Event.sender

@@ -1,6 +1,7 @@
 ## Foundations
 
 - Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
+- Find places in frontbox-pinball systems that should be operator config, and make them a config
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
   user systems, declared statically like config values (registered the same way, see operator config step 2). Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept

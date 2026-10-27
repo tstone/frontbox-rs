@@ -1,5 +1,6 @@
 /// A config value in the form the menu, persistence, and console work with, independent of its Rust type
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ConfigDomainValue {
   Int(i64),
   Bool(bool),
@@ -8,7 +9,8 @@ pub enum ConfigDomainValue {
 }
 
 /// The values a config is allowed to take. Stepping clamps at the ends rather than wrapping.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ConfigDomain {
   Int {
     min: i64,
@@ -17,7 +19,7 @@ pub enum ConfigDomain {
   },
   Bool,
   /// Choice names, which are also how a choice is saved
-  Choice(&'static [&'static str]),
+  Choice(#[cfg_attr(feature = "ts", ts(type = "Array<string>"))] &'static [&'static str]),
 }
 
 impl ConfigDomain {
@@ -40,8 +42,20 @@ impl ConfigDomain {
         ConfigDomainValue::Int((v - step).max(*min))
       }
       (Self::Bool, ConfigDomainValue::Bool(_)) => ConfigDomainValue::Bool(false),
-      (Self::Choice(_), ConfigDomainValue::Choice(i)) => ConfigDomainValue::Choice(i.saturating_sub(1)),
+      (Self::Choice(_), ConfigDomainValue::Choice(i)) => {
+        ConfigDomainValue::Choice(i.saturating_sub(1))
+      }
       _ => value,
+    }
+  }
+
+  /// Whether this domain can take the value, for values from outside the app such as the console
+  pub(crate) fn contains(&self, value: ConfigDomainValue) -> bool {
+    match (self, value) {
+      (Self::Int { min, max, .. }, ConfigDomainValue::Int(v)) => (*min..=*max).contains(&v),
+      (Self::Bool, ConfigDomainValue::Bool(_)) => true,
+      (Self::Choice(names), ConfigDomainValue::Choice(i)) => i < names.len(),
+      _ => false,
     }
   }
 
@@ -63,7 +77,9 @@ impl ConfigDomain {
   /// The value as it's saved in TOML. Choices are saved by name so reordering them doesn't change a saved value.
   pub fn to_toml(&self, value: ConfigDomainValue) -> toml::Value {
     match (self, value) {
-      (Self::Choice(names), ConfigDomainValue::Choice(i)) => toml::Value::String(names[i].to_string()),
+      (Self::Choice(names), ConfigDomainValue::Choice(i)) => {
+        toml::Value::String(names[i].to_string())
+      }
       (_, ConfigDomainValue::Int(v)) => toml::Value::Integer(v),
       (_, ConfigDomainValue::Bool(v)) => toml::Value::Boolean(v),
       (_, ConfigDomainValue::Choice(i)) => toml::Value::Integer(i as i64),
@@ -89,9 +105,18 @@ mod tests {
 
   #[test]
   fn int_steps_clamp_at_the_ends() {
-    assert_eq!(INT.inc(ConfigDomainValue::Int(8)), ConfigDomainValue::Int(10));
-    assert_eq!(INT.dec(ConfigDomainValue::Int(2)), ConfigDomainValue::Int(0));
-    assert_eq!(INT.inc(ConfigDomainValue::Int(4)), ConfigDomainValue::Int(8));
+    assert_eq!(
+      INT.inc(ConfigDomainValue::Int(8)),
+      ConfigDomainValue::Int(10)
+    );
+    assert_eq!(
+      INT.dec(ConfigDomainValue::Int(2)),
+      ConfigDomainValue::Int(0)
+    );
+    assert_eq!(
+      INT.inc(ConfigDomainValue::Int(4)),
+      ConfigDomainValue::Int(8)
+    );
   }
 
   #[test]
@@ -116,6 +141,15 @@ mod tests {
     assert_eq!(saved, toml::Value::String("credit".into()));
     assert_eq!(CHOICE.from_toml(&saved), Some(ConfigDomainValue::Choice(1)));
     assert_eq!(CHOICE.from_toml(&toml::Value::String("coins".into())), None);
+  }
+
+  #[test]
+  fn contains_checks_the_range_and_the_kind_of_value() {
+    assert!(INT.contains(ConfigDomainValue::Int(10)));
+    assert!(!INT.contains(ConfigDomainValue::Int(11)));
+    assert!(!INT.contains(ConfigDomainValue::Bool(true)));
+    assert!(CHOICE.contains(ConfigDomainValue::Choice(1)));
+    assert!(!CHOICE.contains(ConfigDomainValue::Choice(2)));
   }
 
   #[test]

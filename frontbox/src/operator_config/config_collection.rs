@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::operator_config::{Config, ConfigDefinition, ConfigDomainValue, ConfigType};
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_tracer::{ConfigView, TraceEvent};
 use crate::prelude::*;
 
 #[derive(Default)]
@@ -97,27 +98,66 @@ impl ConfigCollection {
     next
   }
 
+  /// Set a config in use by its key, for callers without its definition such as the console. A key that hasn't been
+  /// used yet has no known definition, so it can't be set.
+  pub(crate) fn set_by_key(&self, key: &str, value: ConfigDomainValue) -> Result<(), String> {
+    let definition = self
+      .entries
+      .borrow()
+      .get(key)
+      .map(|entry| entry.definition.clone())
+      .ok_or_else(|| format!("no config '{key}' is in use"))?;
+    if !definition.domain.contains(value) {
+      return Err(format!("{value:?} is outside the domain of config '{key}'"));
+    }
+    self.set_value(&definition, value);
+    Ok(())
+  }
+
+  /// Every config in use and its value, by key
+  pub(crate) fn views(&self) -> Vec<ConfigView> {
+    let mut views: Vec<_> = self.entries.borrow().values().map(Entry::view).collect();
+    views.sort_by_key(|view| view.key);
+    views
+  }
+
   fn set_value(&self, config: &ConfigDefinition, value: ConfigDomainValue) {
     let changed = self.with_entry(config, |entry| {
       let changed = entry.value != value;
       entry.value = value;
-      changed
+      changed.then(|| entry.view())
     });
 
-    if changed && let Some(app_sender) = &self.app_sender {
+    if let Some(view) = changed
+      && let Some(app_sender) = &self.app_sender
+    {
       let _ = app_sender.send(AppMessage::ConfigChanged(config.key));
+      let _ = app_sender.send(AppMessage::TracerEvent(TraceEvent::ConfigChange {
+        config: view,
+      }));
     }
   }
 
   /// Runs `f` on the entry for this config, creating it on first use. `f` must not call back into the store.
   fn with_entry<R>(&self, config: &ConfigDefinition, f: impl FnOnce(&mut Entry) -> R) -> R {
     let mut entries = self.entries.borrow_mut();
-    let entry = entries.entry(config.key).or_insert_with(|| Entry {
-      definition: config.clone(),
-      value: self.saved_or_default(config),
+    let mut first_use = false;
+    let entry = entries.entry(config.key).or_insert_with(|| {
+      first_use = true;
+      Entry {
+        definition: config.clone(),
+        value: self.saved_or_default(config),
+      }
     });
     if entry.definition.is_compatible(config) {
-      return f(entry);
+      let result = f(entry);
+      // tracers learn of configs as they're used, since nothing lists them ahead of time
+      if first_use && let Some(app_sender) = &self.app_sender {
+        let _ = app_sender.send(AppMessage::TracerEvent(TraceEvent::ConfigChange {
+          config: entry.view(),
+        }));
+      }
+      return result;
     }
     let first_label = entry.definition.label;
     drop(entries);
@@ -169,6 +209,12 @@ struct Entry {
   /// The first declaration seen for this key
   definition: ConfigDefinition,
   value: ConfigDomainValue,
+}
+
+impl Entry {
+  fn view(&self) -> ConfigView {
+    ConfigView::new(&self.definition, self.value)
+  }
 }
 
 #[derive(serde::Serialize, Event)]
@@ -361,6 +407,88 @@ mod tests {
       .map(|e| e.0)
       .collect();
     assert_eq!(changed, vec!["turns"]);
+  }
+
+  #[test]
+  fn set_by_key_sets_a_config_in_use_and_emits_changed() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.svc_ctx();
+    ctx.config.get(&turns);
+    assert_eq!(
+      ctx.config.set_by_key("turns", ConfigDomainValue::Int(5)),
+      Ok(())
+    );
+    assert_eq!(ctx.config.get(&turns), 5);
+
+    let changed: Vec<&str> = test_ctx
+      .events_emitted()
+      .iter()
+      .filter_map(|e| e.event.downcast_ref::<ConfigChanged>())
+      .map(|e| e.0)
+      .collect();
+    assert_eq!(changed, vec!["turns"]);
+  }
+
+  #[test]
+  fn set_by_key_rejects_unknown_keys_and_values_outside_the_domain() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.svc_ctx();
+    // not used yet, so its definition isn't known
+    assert!(
+      ctx
+        .config
+        .set_by_key("turns", ConfigDomainValue::Int(4))
+        .is_err()
+    );
+    ctx.config.get(&turns);
+    assert!(
+      ctx
+        .config
+        .set_by_key("turns", ConfigDomainValue::Int(9))
+        .is_err()
+    );
+    assert!(
+      ctx
+        .config
+        .set_by_key("turns", ConfigDomainValue::Bool(true))
+        .is_err()
+    );
+    assert_eq!(ctx.config.get(&turns), 3);
+
+    let changed = test_ctx
+      .events_emitted()
+      .iter()
+      .filter(|e| e.event.is::<ConfigChanged>())
+      .count();
+    assert_eq!(changed, 0);
+  }
+
+  #[test]
+  fn first_use_and_changes_are_traced() {
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let mut test_ctx = TestContext::default();
+
+    let ctx = test_ctx.svc_ctx();
+    ctx.config.get(&turns);
+    ctx.config.get(&turns);
+    ctx.config.set(&turns, 4);
+
+    let traced: Vec<ConfigDomainValue> = test_ctx
+      .traces()
+      .into_iter()
+      .filter_map(|trace| match trace {
+        TraceEvent::ConfigChange { config } => Some(config.value),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      traced,
+      vec![ConfigDomainValue::Int(3), ConfigDomainValue::Int(4)]
+    );
   }
 
   #[test]

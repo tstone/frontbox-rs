@@ -47,6 +47,7 @@ pub async fn run(
     );
   }
   spawn_system_ticker(base.system_interval, tick_tx, resync_notifier.clone());
+  trace_configs(&base, &tracer_txs);
 
   // listen for ctrl-c to trigger shutdown
   let tx = app_sender.clone();
@@ -160,6 +161,13 @@ pub async fn run(
             if base.switches.is_open_by_id(switch_id).unwrap_or(false) {
               log::warn!(target: "frontbox::run_loop", "Tracer forcibly closing switch {switch_id}...");
               switch_state_changed(None, switch_id, SwitchState::Closed, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            }
+          }
+          TracerControlEvent::SetConfig { key, value } => {
+            // saved, emitted and applied to hardware through `AppMessage::ConfigChanged`, like a menu edit
+            match base.config.set_by_key(&key, value) {
+              Ok(()) => log::info!(target: "frontbox::run_loop", "Tracer set config '{key}' to {value:?}"),
+              Err(err) => log::warn!(target: "frontbox::run_loop", "Tracer couldn't set config: {err}"),
             }
           }
         }
@@ -311,6 +319,19 @@ fn emit_event(
   // event is broadcast to systems if no interrupt halted it
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     system.on_event(event_box.event.as_ref(), ctx);
+  });
+}
+
+/// Tells tracers every config in use. Hardware configs are all known at boot, so they're listed even if nothing has
+/// read them yet; software configs join as they're first used.
+fn trace_configs(base: &BootSnapshot, tracer_txs: &TracerSenders) {
+  for (_, mode) in base.drivers.modes() {
+    for config in mode.configs() {
+      base.config.inspect(config);
+    }
+  }
+  tracer_txs.send(TraceEvent::ConfigsInUse {
+    configs: base.config.views(),
   });
 }
 

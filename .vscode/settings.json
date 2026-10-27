@@ -51,5 +51,11 @@
     "unduck",
     "Worley"
   ],
-  "cSpell.ignoreWords": ["sctx"]
+  "cSpell.ignoreWords": ["sctx"],
+  // keep generated and built files out of Ctrl+P and search; they still show in the explorer
+  "search.exclude": {
+    "**/web/src/types/generated": true,
+    "**/web/dist": true,
+    "**/node_modules": true
+  }
 }

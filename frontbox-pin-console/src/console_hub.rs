@@ -1,6 +1,6 @@
 use axum::extract::ws::Utf8Bytes;
-use frontbox::prelude::app_tracer::{Color, TraceEvent, TracerControlEvent};
-use frontbox::prelude::{Hardware, SystemDespawned, SystemSpawned};
+use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
+use frontbox::prelude::{ConfigDomainValue, Hardware, SystemDespawned, SystemSpawned};
 use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -111,6 +111,19 @@ impl ConsoleHub {
     let _ = control.send(switch_control(switch_id, closed));
   }
 
+  /// Set an operator config in the app. The new value shows up for clients when the app traces it back.
+  pub fn set_config(&self, key: String, value: ConfigDomainValue) {
+    let state = self.state.lock().unwrap();
+    if !state.snapshot.configs.contains_key(key.as_str()) {
+      log::warn!(target: "frontbox::console", "Ignoring a request to set unknown config '{key}'");
+      return;
+    }
+    let Some(control) = &state.control else {
+      return;
+    };
+    let _ = control.send(TracerControlEvent::SetConfig { key, value });
+  }
+
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
     let state = self.state.lock().unwrap();
     state.plane_images.get(index).cloned().flatten()
@@ -175,6 +188,14 @@ impl ConsoleHub {
       return;
     }
 
+    // Configs are current state too: kept in the snapshot and sent on, not logged. Their changes are already logged
+    // as `ConfigChanged` events.
+    let event = match event {
+      TraceEvent::ConfigsInUse { configs } => return self.update_configs(state, configs),
+      TraceEvent::ConfigChange { config } => return self.update_configs(state, vec![config]),
+      event => event,
+    };
+
     let transition = GameTransition::from_event(&event);
     let game = &mut state.snapshot.game;
     match transition {
@@ -217,6 +238,15 @@ impl ConsoleHub {
 
     if let Some(message) = serialize(&message) {
       // no receivers is fine; nobody has the page open
+      let _ = self.tx.send(message);
+    }
+  }
+
+  fn update_configs(&self, state: &mut HubState, configs: Vec<ConfigView>) {
+    for config in &configs {
+      state.snapshot.configs.insert(config.key, config.clone());
+    }
+    if let Some(message) = serialize(&ServerMessage::Configs(ConfigList { configs })) {
       let _ = self.tx.send(message);
     }
   }
@@ -347,7 +377,9 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
     }
     TraceEvent::Event { .. } => {}
     // handled by `ingest`, never logged
-    TraceEvent::LedsRGBChange { .. } => return,
+    TraceEvent::LedsRGBChange { .. }
+    | TraceEvent::ConfigsInUse { .. }
+    | TraceEvent::ConfigChange { .. } => return,
   }
 
   if snapshot.log.len() >= LOG_CAPACITY {
@@ -395,5 +427,51 @@ fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
     TracerControlEvent::CloseSwitch { switch_id }
   } else {
     TracerControlEvent::OpenSwitch { switch_id }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use frontbox::prelude::{Config, Ranges};
+
+  fn turns(value: i64) -> ConfigView {
+    let config = Config::new("Turns", "", 3u8, Ranges::u8(1, 5));
+    ConfigView::new(config.display(), ConfigDomainValue::Int(value))
+  }
+
+  #[test]
+  fn config_traces_update_the_snapshot_without_logging() {
+    let hub = ConsoleHub::new();
+    hub.ingest(TraceEvent::ConfigsInUse {
+      configs: vec![turns(3)],
+    });
+    hub.ingest(TraceEvent::ConfigChange { config: turns(4) });
+
+    let state = hub.state.lock().unwrap();
+    assert_eq!(
+      state.snapshot.configs["Turns"].value,
+      ConfigDomainValue::Int(4)
+    );
+    assert!(state.snapshot.log.is_empty());
+  }
+
+  #[test]
+  fn only_known_configs_are_sent_to_the_app() {
+    let hub = ConsoleHub::new();
+    let (control, mut app) = mpsc::unbounded_channel();
+    hub.set_control(control);
+    hub.ingest(TraceEvent::ConfigsInUse {
+      configs: vec![turns(3)],
+    });
+
+    hub.set_config("Balls".into(), ConfigDomainValue::Int(4));
+    hub.set_config("Turns".into(), ConfigDomainValue::Int(4));
+
+    let Ok(TracerControlEvent::SetConfig { key, value }) = app.try_recv() else {
+      panic!("expected the known config to be sent");
+    };
+    assert_eq!((key.as_str(), value), ("Turns", ConfigDomainValue::Int(4)));
+    assert!(app.try_recv().is_err());
   }
 }

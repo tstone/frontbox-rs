@@ -59,6 +59,12 @@ pub enum TraceEvent {
     breakout: Option<u8>,
     states: Vec<(u8, Color)>,
   },
+  ConfigsInUse {
+    configs: Vec<ConfigView>,
+  },
+  ConfigChange {
+    config: ConfigView,
+  },
   // TODO: some kind of game-specific state push that is JSON encodable
 }
 
@@ -75,6 +81,36 @@ pub enum DriverState {
   Fired,
   On,
   Off,
+}
+
+/// An operator config and its current value, for tracers to show and edit
+#[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ConfigView {
+  pub key: &'static str,
+  pub label: &'static str,
+  pub desc: &'static str,
+  pub type_name: &'static str,
+  pub domain: ConfigDomain,
+  pub default: ConfigDomainValue,
+  pub value: ConfigDomainValue,
+  /// The value as the operator menu shows it
+  pub display: String,
+}
+
+impl ConfigView {
+  pub fn new(definition: &ConfigDefinition, value: ConfigDomainValue) -> Self {
+    Self {
+      key: definition.key,
+      label: definition.label,
+      desc: definition.desc,
+      type_name: definition.type_name,
+      domain: definition.domain.clone(),
+      default: definition.default,
+      value,
+      display: definition.format(value),
+    }
+  }
 }
 
 pub(crate) struct TracerSenders {
@@ -97,6 +133,15 @@ impl TracerSenders {
 #[derive(Debug, Clone, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum TracerControlEvent {
-  CloseSwitch { switch_id: usize },
-  OpenSwitch { switch_id: usize },
+  CloseSwitch {
+    switch_id: usize,
+  },
+  OpenSwitch {
+    switch_id: usize,
+  },
+  /// Set an operator config that's in use, as the menu would. Unknown keys and values outside the domain are ignored.
+  SetConfig {
+    key: String,
+    value: ConfigDomainValue,
+  },
 }

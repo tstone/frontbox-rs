@@ -8,7 +8,7 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
 use frontbox_pin_console::{WebTracer, console_plane};
-use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
+use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning, configs::TURN_COUNT};
 use std::io::Write;
 use std::time::Duration;
 
@@ -97,10 +97,29 @@ mod hardware {
     // automatic: fired by the hardware from a switch
     pub LEFT_FLIPPER: DriverDefinition = DriverDefinition::new("left_flipper")
       .location(Vec2::new(7.0, 41.0).relative_to(&PLAYFIELD))
-      .mode(DriverMode::flipper_main_direct(LEFT_FLIPPER_BUTTON.name, LEFT_FLIPPER_EOS.name).build());
+      .mode(
+        DriverMode::flipper_main_direct(LEFT_FLIPPER_BUTTON.name, LEFT_FLIPPER_EOS.name)
+          .initial_pwm_power(HardwareValue::config(
+            "Initial Power",
+            "Power of the left flipper's stroke",
+            Power::FULL,
+            Ranges::full_power(),
+          ).key("Left Flipper Initial Power"))
+          .build(),
+      );
     pub LEFT_SLING_COIL: DriverDefinition = DriverDefinition::new("left_sling_coil")
       .location(Vec2::new(5.4, 32.4).relative_to(&PLAYFIELD))
-      .mode(DriverMode::pulse().trigger_mode(DriverTriggerMode::Switch(LEFT_SLING.name)).build());
+      .mode(
+        DriverMode::pulse()
+          .trigger_mode(DriverTriggerMode::Switch(LEFT_SLING.name))
+          .initial_pwm_length(HardwareValue::config(
+            "Sling Pulse",
+            "How long the left sling fires",
+            Duration::from_millis(12),
+            Ranges::duration(5, 30),
+          ))
+          .build(),
+      );
 
     // commanded by software
     pub TROUGH_EJECT: DriverDefinition = DriverDefinition::new("trough_eject")
@@ -195,6 +214,49 @@ async fn main() {
   .await;
 }
 
+/// Software configs, for the console's Config tab. They're listed once something reads them.
+mod configs {
+  use super::*;
+  use std::sync::LazyLock;
+
+  pub static FREE_PLAY: LazyLock<Config<bool>> =
+    LazyLock::new(|| Config::new("Free Play", "Start games without credits", true, Toggle));
+
+  pub static DIFFICULTY: LazyLock<Config<Difficulty>> = LazyLock::new(|| {
+    Config::new(
+      "Difficulty",
+      "How forgiving the ball save is",
+      Difficulty::Normal,
+      Choices(&["Easy", "Normal", "Hard"]),
+    )
+  });
+
+  #[derive(Clone, Copy)]
+  pub enum Difficulty {
+    Easy,
+    Normal,
+    Hard,
+  }
+
+  impl ConfigType for Difficulty {
+    fn to_value(&self) -> ConfigDomainValue {
+      ConfigDomainValue::Choice(*self as usize)
+    }
+
+    fn from_value(value: ConfigDomainValue) -> Self {
+      match value {
+        ConfigDomainValue::Choice(0) => Self::Easy,
+        ConfigDomainValue::Choice(2) => Self::Hard,
+        _ => Self::Normal,
+      }
+    }
+
+    fn display(&self) -> String {
+      ["Easy", "Normal", "Hard"][*self as usize].to_string()
+    }
+  }
+}
+
 const PLAYERS: u8 = 2;
 const TURNS: u8 = 3;
 /// Beats between each player's turn starting
@@ -212,6 +274,10 @@ struct Beat;
 impl System for FakeGame {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     ctx.cue(Beat, Cue::Forever(Duration::from_millis(700)));
+    // reading them is what lists them in the console
+    configs::FREE_PLAY.get(ctx);
+    configs::DIFFICULTY.get(ctx);
+    TURN_COUNT.get(ctx);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

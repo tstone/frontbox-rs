@@ -8,3 +8,12 @@ impl<T: ConfigType> IntoConfigDomain<T> for Choices {
     ConfigDomain::Choice(self.0)
   }
 }
+
+/// A config that's either on or off
+pub struct Toggle;
+
+impl IntoConfigDomain<bool> for Toggle {
+  fn into_domain(self) -> ConfigDomain {
+    ConfigDomain::Bool
+  }
+}
