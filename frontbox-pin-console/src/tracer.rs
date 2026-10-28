@@ -1,4 +1,5 @@
 use frontbox::prelude::{Hardware, app_tracer::*};
+use frontbox_metrics::MetricsDb;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -103,9 +104,15 @@ impl Default for WebTracer {
 }
 
 impl AppTracer for WebTracer {
-  fn init(&mut self, hardware: &Hardware, control: mpsc::UnboundedSender<TracerControlEvent>) {
+  fn init(
+    &mut self,
+    hardware: &Hardware,
+    control: mpsc::UnboundedSender<TracerControlEvent>,
+    metrics: Option<MetricsDb>,
+  ) {
     // the app calls this at boot, inside its runtime
     self.hub.set_control(control);
+    self.hub.set_metrics(metrics);
     self.start();
     self.hub.set_hardware(hardware.clone());
   }

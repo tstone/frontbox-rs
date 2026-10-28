@@ -13,7 +13,8 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 - **Flexible**: All hardware can be referenced in 3 ways: by name, tag, or location in space
 - **Retro**: Pin2DMD and NeoSeg\* (alpha numeric) display support out of the box
 - **Visual**: Included Web Console shows what is happening
-- **Dynamic**: Flexible animation + LED support out of the box
+- **Dazzling**: 1D, 2D*, and 3D* LED animations
+- **Data-backed**: Built-in metrics system and historical viewer
 - **Sonically Immersive**: Sound system with preloading and automatic music ducking\*
 
 \* = Coming Soon

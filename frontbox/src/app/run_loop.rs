@@ -10,6 +10,7 @@ use tokio::time::Duration;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
+use crate::metrics;
 use crate::prelude::app_message::*;
 use crate::prelude::app_tracer::*;
 use crate::prelude::*;
@@ -17,7 +18,7 @@ use crate::systems::SystemContainer;
 use crate::systems::event_interrupts::EventInterruptRegistry;
 
 pub async fn run(
-  mut base: BootSnapshot,
+  mut base: AppState,
   initial_systems: Vec<SystemContainer>,
   app_tracers: Vec<Box<dyn AppTracer>>,
   app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -58,6 +59,11 @@ pub async fn run(
     log::info!("Ctrl+C signal received.");
     let _ = tx.send(AppMessage::Shutdown(ShutdownScope::Process));
   });
+
+  let mut metrics_flush = tokio::time::interval_at(
+    tokio::time::Instant::now() + metrics::FLUSH_INTERVAL,
+    metrics::FLUSH_INTERVAL,
+  );
 
   log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
   let shutdown_scope;
@@ -149,6 +155,10 @@ pub async fn run(
         handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
       }
 
+      _ = metrics_flush.tick() => {
+        base.metrics.flush();
+      }
+
       Some(tracer_command) = tracer_ctl_receiver.recv() => {
         match tracer_command {
           TracerControlEvent::OpenSwitch { switch_id } => {
@@ -186,6 +196,9 @@ pub async fn run(
     },
   );
 
+  // after despawning, so anything systems record on their way out is kept
+  base.metrics.close().await;
+
   // wait a sec to allow systems to process shutdown event and clear timers, etc.
   tokio::time::sleep(Duration::from_millis(1500)).await;
 
@@ -200,7 +213,7 @@ pub async fn run(
 fn apply_to_system<F, T>(
   handle: SystemHandle,
   groups: &Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
   mut handler: F,
@@ -228,7 +241,7 @@ where
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
 fn apply_to_systems<F>(
   groups: &Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
   mut handler: F,
@@ -259,7 +272,7 @@ fn emit_event(
   sender: Option<u64>,
   event_box: EventBox,
   groups: &Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -324,7 +337,7 @@ fn emit_event(
 
 /// Tells tracers every config in use. Hardware configs are all known at boot, so they're listed even if nothing has
 /// read them yet; software configs join as they're first used.
-fn trace_configs(base: &BootSnapshot, tracer_txs: &TracerSenders) {
+fn trace_configs(base: &AppState, tracer_txs: &TracerSenders) {
   for (_, mode) in base.drivers.modes() {
     for config in mode.configs() {
       base.config.inspect(config);
@@ -340,7 +353,7 @@ fn switch_state_changed(
   switch_id: usize,
   state: SwitchState,
   groups: &Groups,
-  base: &mut BootSnapshot,
+  base: &mut AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -352,6 +365,9 @@ fn switch_state_changed(
   let outgoing_event = match (base.switches.by_id(&switch_id), state) {
     (Some(switch), SwitchState::Closed) => {
       log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
+      if let Some(hits) = base.switches.hits_counter(switch_id) {
+        base.metrics.inc(hits);
+      }
       Some(EventBox::new(SwitchClosed::new(switch.clone())))
     }
     (Some(switch), SwitchState::Open) => {
@@ -399,7 +415,7 @@ fn switch_state_changed(
   }
 }
 
-fn get_native_switch_id(switch_id: &usize, base: &BootSnapshot) -> Option<(usize, usize)> {
+fn get_native_switch_id(switch_id: &usize, base: &AppState) -> Option<(usize, usize)> {
   let mut offset: usize = 0;
   for (index, board) in base.io_network.iter().enumerate() {
     if *switch_id < (board.switch_count as usize) + offset {
@@ -413,7 +429,7 @@ fn get_native_switch_id(switch_id: &usize, base: &BootSnapshot) -> Option<(usize
 
 async fn handle_system_tick(
   groups: &Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -431,7 +447,7 @@ fn spawn_system(
   system: SystemContainer,
   parent_key: &'static str,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -483,7 +499,7 @@ fn replace_system(
   old_handle: SystemHandle,
   new_system: SystemContainer,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -510,7 +526,7 @@ fn replace_system(
 fn despawn_system(
   handle: SystemHandle,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -542,7 +558,7 @@ fn spawn_system_group(
   child_systems: Vec<ChildSystemContainer>,
   active: bool,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -570,7 +586,7 @@ fn spawn_system_group(
 fn despawn_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
@@ -605,7 +621,7 @@ fn despawn_system_group(
 fn activate_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
@@ -653,7 +669,7 @@ fn activate_system_group(
 fn deactivate_system_group(
   group_name: &'static str,
   groups: &mut Groups,
-  base: &BootSnapshot,
+  base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {

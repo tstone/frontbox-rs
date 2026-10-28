@@ -27,17 +27,17 @@ impl FlipperHoldDirectMode {
     }
   }
 
-  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, state: &AppState) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
-      button_switch: snap
+      button_switch: state
         .switches
         .by_name(self.button_switch)
         .map(|sw| sw.id)
         .expect("Flipper hold direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      driver_on_time: self.driver_on_time.resolve(snap),
-      initial_pwm_power: self.initial_pwm_power.resolve(snap),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      driver_on_time: self.driver_on_time.resolve(state),
+      initial_pwm_power: self.initial_pwm_power.resolve(state),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(state),
     }
   }
 

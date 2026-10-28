@@ -7,6 +7,7 @@ include = ["src/**", "build.rs", "web/dist/**", "Cargo.toml"]
 [dependencies]
 log = "0.4.29"
 frontbox = { path = "../frontbox", features = ["ts"] }
+frontbox-metrics = { path = "../frontbox-metrics", features = ["ts"] }
 frontbox-pinball = { path = "../frontbox-pinball" }
 axum = { version = "0.8.9", features = ["ws"] }
 tokio = { version = "1.53.1", features = ["fs", "macros", "net", "rt", "sync", "time"] }

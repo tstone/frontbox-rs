@@ -6,6 +6,7 @@ import type { TraceRecord } from '../types/generated/TraceRecord'
 import { shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
+import { receiveMetricTotals } from './metricsQuery'
 import { type Connection, connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
@@ -92,6 +93,9 @@ function handleMessage(message: ServerMessage) {
           for (const config of message.configs) s.configs[config.key] = config
         }),
       )
+      break
+    case 'MetricTotals':
+      receiveMetricTotals(message)
       break
   }
 }

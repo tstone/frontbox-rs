@@ -3,10 +3,18 @@ pub use fast_protocol::Color;
 use fast_protocol::SwitchState;
 use tokio::sync::mpsc;
 
+use crate::metrics::MetricsDb;
 use crate::prelude::*;
 
 pub trait AppTracer {
-  fn init(&mut self, hardware: &Hardware, tx: mpsc::UnboundedSender<TracerControlEvent>);
+  /// Called once at boot. `metrics` is the database flushed metrics are written to, for reading their history; `None`
+  /// when the app has no `metrics_path`, or it couldn't be opened.
+  fn init(
+    &mut self,
+    hardware: &Hardware,
+    tx: mpsc::UnboundedSender<TracerControlEvent>,
+    metrics: Option<MetricsDb>,
+  );
   fn sender(&self) -> mpsc::UnboundedSender<TraceEvent>;
 }
 

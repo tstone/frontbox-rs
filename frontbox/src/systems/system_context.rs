@@ -32,7 +32,7 @@ pub struct SystemContext<'a> {
 
 impl<'a> SystemContext<'a> {
   pub fn new(
-    base: &'a BootSnapshot,
+    base: &'a AppState,
     handle: SystemHandle,
     groups: &'a Groups,
     app_sender: mpsc::UnboundedSender<AppMessage>,
@@ -147,7 +147,7 @@ impl<'a> SystemContext<'a> {
 }
 
 impl Deref for SystemContext<'_> {
-  type Target = BootSnapshot;
+  type Target = AppState;
 
   fn deref(&self) -> &Self::Target {
     self.ctx.base

@@ -3,6 +3,7 @@ import MachineTab from './machine/MachineTab'
 import SystemsTab from './systems/SystemsTab'
 import EventsTab from './events/EventsTab'
 import ConfigTab from './config/ConfigTab'
+import MetricsTab from './metrics/MetricsTab'
 
 export type TabDefinition = {
   /** Used in the URL hash, so keep it stable */
@@ -17,4 +18,5 @@ export const tabs: TabDefinition[] = [
   { id: 'systems', label: 'Systems', component: SystemsTab },
   { id: 'events', label: 'Events', component: EventsTab },
   { id: 'config', label: 'Config', component: ConfigTab },
+  { id: 'metrics', label: 'Metrics', component: MetricsTab },
 ]

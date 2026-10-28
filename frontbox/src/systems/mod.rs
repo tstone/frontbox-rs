@@ -154,7 +154,6 @@
 //!   }
 //! }
 //! ```
-mod boot_snapshot;
 mod contextual;
 pub mod cue;
 mod cue_ext;
@@ -169,7 +168,6 @@ pub mod system_group;
 mod system_handle;
 mod test_context;
 
-pub use boot_snapshot::*;
 pub use contextual::*;
 pub use cue::*;
 pub use cue_ext::*;

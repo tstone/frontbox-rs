@@ -1,0 +1,75 @@
+.metrics-tab {
+  padding: 1rem;
+}
+
+.metrics-tab > header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.metrics-tab .hint {
+  flex: 1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.metrics-tab button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.metrics-tab button:hover {
+  background: var(--surface-hover);
+}
+
+.metrics-tab button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.metrics-tab section {
+  max-width: 48rem;
+  margin-bottom: 1.5rem;
+}
+
+.metrics-tab table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.metrics-tab td {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.metrics-tab .label {
+  font-weight: 600;
+}
+
+.metrics-tab .key {
+  margin-left: 0.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.metrics-tab .desc {
+  margin: 0.125rem 0 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.metrics-tab .total {
+  padding-left: 1rem;
+  text-align: right;
+  white-space: nowrap;
+}

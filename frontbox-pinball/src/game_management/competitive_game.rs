@@ -64,6 +64,7 @@ impl CompetitiveGame {
       ball_manager.establish_ball_count(ctx);
     }
 
+    ctx.metrics.begin_game();
     sys_ctx.emit(GameStarted);
   }
 
@@ -72,6 +73,7 @@ impl CompetitiveGame {
     let game_state = self.game_state.as_mut().unwrap();
 
     ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.set_player(game_state.current_player());
 
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to beginning");
     game_state.set_current_player_turn_state(TurnState::Beginning);
@@ -202,6 +204,7 @@ impl GameManagement for CompetitiveGame {
     };
 
     ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
     game_state.increment_current_player_turn();
@@ -250,6 +253,7 @@ impl GameManagement for CompetitiveGame {
     };
 
     self.game_state = None;
+    ctx.metrics.end_game();
     ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 

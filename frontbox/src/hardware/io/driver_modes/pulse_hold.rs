@@ -34,16 +34,16 @@ impl Default for PulseHoldMode {
 }
 
 impl PulseHoldMode {
-  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, snap);
+  pub(super) fn to_config(&self, state: &AppState) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, state);
 
     DriverConfig::PulseHold {
       switch,
       invert_switch,
-      initial_pwm_length: self.initial_pwm_length.resolve(snap),
-      initial_pwm_power: self.initial_pwm_power.resolve(snap),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
-      rest: self.rest.resolve(snap),
+      initial_pwm_length: self.initial_pwm_length.resolve(state),
+      initial_pwm_power: self.initial_pwm_power.resolve(state),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(state),
+      rest: self.rest.resolve(state),
     }
   }
 

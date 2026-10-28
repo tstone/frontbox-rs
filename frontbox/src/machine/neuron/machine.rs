@@ -144,8 +144,8 @@ impl Machine for Neuron {
     self.machine_sender.clone()
   }
 
-  async fn on_pre_run(&mut self, snapshot: &BootSnapshot) {
-    boot::configure_drivers(&mut self.io_port, &snapshot).await;
+  async fn on_pre_run(&mut self, state: &AppState) {
+    boot::configure_drivers(&mut self.io_port, &state).await;
   }
 
   async fn run(&mut self) {
