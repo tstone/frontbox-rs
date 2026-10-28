@@ -55,10 +55,12 @@ impl ConfigCollection {
     }
   }
 
-  /// What's actually written to disk
+  /// What's actually written to disk. Only values changed since loading are rewritten; the rest stay as they were
+  /// saved, so a build that reads a saved value differently (e.g. a debug build with a narrower range) doesn't
+  /// replace it with the clamped or default value it fell back to.
   fn to_table(&self) -> toml::Table {
     let mut table = self.pending_disk.clone();
-    for (key, entry) in self.entries.borrow().iter() {
+    for (key, entry) in self.entries.borrow().iter().filter(|(_, entry)| entry.changed) {
       if entry.definition.is_default(entry.value) {
         table.remove(*key);
       } else {
@@ -125,6 +127,7 @@ impl ConfigCollection {
     let changed = self.with_entry(config, |entry| {
       let changed = entry.value != value;
       entry.value = value;
+      entry.changed |= changed;
       changed.then(|| entry.view())
     });
 
@@ -147,6 +150,7 @@ impl ConfigCollection {
       Entry {
         definition: config.clone(),
         value: self.saved_or_default(config),
+        changed: false,
       }
     });
     if entry.definition.is_compatible(config) {
@@ -184,6 +188,7 @@ impl ConfigCollection {
         isolated.push(Entry {
           definition: config.clone(),
           value: config.default,
+          changed: false,
         });
         isolated.len() - 1
       }
@@ -209,6 +214,8 @@ struct Entry {
   /// The first declaration seen for this key
   definition: ConfigDefinition,
   value: ConfigDomainValue,
+  /// Set since loading, so it's saved. Unchanged values keep what's on disk.
+  changed: bool,
 }
 
 impl Entry {
@@ -237,17 +244,17 @@ mod tests {
     );
     let power = Config::new("power", "", Power::HALF, Ranges::full_power());
 
-    let config = saved("pulse = 35\npower = 200");
+    let config = saved("pulse = 35\npower = \"75%\"");
 
     assert_eq!(config.get(&pulse), Duration::from_millis(35));
-    assert_eq!(config.get(&power), Power { power: 200 });
+    assert_eq!(config.get(&power), Power::THREE_QUARTERS);
     assert_eq!(
       pulse.display().format(config.inspect(pulse.display())),
       "35ms"
     );
     assert_eq!(
       power.display().format(config.inspect(power.display())),
-      "78%"
+      "75%"
     );
   }
 
@@ -341,6 +348,23 @@ mod tests {
     assert_eq!(
       config.to_table(),
       toml::from_str::<toml::Table>("turns = 5\nunused = 7").unwrap()
+    );
+  }
+
+  #[test]
+  fn saving_leaves_unchanged_values_as_they_were_saved() {
+    // a build with a narrower range than the one that saved these
+    let turns = Config::new("turns", "", 3u8, Ranges::u8(1, 5));
+    let balls = Config::new("balls", "", 3u8, Ranges::u8(1, 5));
+    let config = saved("turns = 9\nballs = \"lots\"");
+    assert_eq!(config.get(&turns), 5);
+    assert_eq!(config.get(&balls), 3);
+
+    config.set(&Config::new("other", "", 1u8, Ranges::u8(1, 5)), 2);
+
+    assert_eq!(
+      config.to_table(),
+      toml::from_str::<toml::Table>("turns = 9\nballs = \"lots\"\nother = 2").unwrap()
     );
   }
 

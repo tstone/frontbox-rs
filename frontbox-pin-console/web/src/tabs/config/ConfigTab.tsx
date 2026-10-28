@@ -2,7 +2,6 @@ import { Checkbox } from '@ark-ui/solid/checkbox'
 import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js'
 import FilterList, { type FilterOption } from '../../components/FilterList'
 import { shortName } from '../../lib/format'
-import { describePower } from '../../lib/hardwareConfig'
 import { configKind, formatConfigValue, isDefault, modeConfigKeys } from '../../lib/operatorConfig'
 import { resetConfig, setConfig, setConfigInt, stepConfig } from '../../state/configControl'
 import { driverMode, machine } from '../../state/console'
@@ -222,8 +221,8 @@ function IntControl(props: { config: ConfigView }) {
       <button type="button" aria-label="Increase" disabled={current() >= range().max} onClick={() => stepConfig(props.config, 1)}>
         +
       </button>
-      <Show when={kind() === 'duration' || kind() === 'power'}>
-        <span class="unit">{kind() === 'duration' ? 'ms' : describePower(current())}</span>
+      <Show when={kind() === 'duration'}>
+        <span class="unit">ms</span>
       </Show>
     </div>
   )

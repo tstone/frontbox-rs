@@ -20,7 +20,7 @@
 //!           "Coil Power", // label
 //!           "Power of my coil", // description
 //!           Power::THREE_QUARTERS, // default
-//!           Ranges::power(128, 255), // domain
+//!           Ranges::full_power(), // domain: 0% to 100% in eighths
 //!         ))
 //!         .build(),
 //!     );
@@ -125,7 +125,7 @@
 //!
 //! ```toml
 //! "Max Extra Balls" = 3
-//! "Left Flipper Initial Power" = 200
+//! "Left Flipper Initial Power" = "87.5%"
 //! ```
 //!
 //! ### Menus

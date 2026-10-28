@@ -1,5 +1,6 @@
 use fast_protocol::net::prelude::Power;
 
+use crate::operator_config::config_type::POWER_LEVEL_NAMES;
 use crate::operator_config::{ConfigDomain, ConfigDomainValue, ConfigType, IntoConfigDomain};
 use std::time::Duration;
 
@@ -45,17 +46,9 @@ impl Ranges {
     }
   }
 
-  pub fn power(from: u8, to: u8) -> Range<Power> {
-    Range {
-      min: Power { power: from },
-      max: Power { power: to },
-      step: Power { power: 2 },
-    }
-  }
-
-  /// A range allowing power from 0% to 100%
-  pub fn full_power() -> Range<Power> {
-    Self::power(0, 255)
+  /// Power from 0% to 100% in eighths, the levels FAST PWM can spread evenly over its 8ms window
+  pub fn full_power() -> PowerLevels {
+    PowerLevels
   }
 
   pub fn u8(from: u8, to: u8) -> Range<u8> {
@@ -72,5 +65,14 @@ impl Ranges {
       max: to,
       step: 1,
     }
+  }
+}
+
+/// The domain of a [`Power`] config, a choice of eighths. See [`Ranges::full_power`].
+pub struct PowerLevels;
+
+impl IntoConfigDomain<Power> for PowerLevels {
+  fn into_domain(self) -> ConfigDomain {
+    ConfigDomain::Choice(&POWER_LEVEL_NAMES)
   }
 }

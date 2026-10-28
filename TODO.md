@@ -1,6 +1,9 @@
 ## Foundations
 
+- What happens when you call get/expect on a deactivated System? What should happen?
 - Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
+- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
+  menu animation and transition items.
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
   user systems, declared statically like config values. Records
   over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
@@ -23,8 +26,7 @@
   that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
-- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
-  menu animation and transition items.
+- A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 
 ## Pinball features
 
