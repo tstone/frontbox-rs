@@ -1,6 +1,7 @@
 use crate::app::app_tracer::AppTracer;
 use crate::app::run_loop;
 use crate::machine::*;
+use crate::metrics::StoolapStore;
 use crate::operator_config::ConfigCollection;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::TracerControlEvent;
@@ -56,6 +57,7 @@ impl App {
     if let Some(path) = self.boot_config.config_path.clone() {
       self.configs.begin_save_task(path);
     }
+    let metrics_path = self.boot_config.metrics_path.clone();
 
     let (boot_snapshot, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
@@ -95,6 +97,13 @@ impl App {
         (snapshot, machine_sender)
       }
     };
+
+    if let Some(path) = metrics_path {
+      match StoolapStore::open(&path) {
+        Ok(store) => boot_snapshot.metrics.begin_store_task(store),
+        Err(e) => log::error!("Failed to open metrics store at {}: {e}", path.display()),
+      }
+    }
 
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = SystemContainer::new(MachineSystem::new(machine_sender, app_sender.clone()));

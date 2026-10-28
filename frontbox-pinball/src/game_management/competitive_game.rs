@@ -204,6 +204,7 @@ impl GameManagement for CompetitiveGame {
     };
 
     ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
     game_state.increment_current_player_turn();

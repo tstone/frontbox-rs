@@ -10,6 +10,7 @@ use tokio::time::Duration;
 
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
+use crate::metrics;
 use crate::prelude::app_message::*;
 use crate::prelude::app_tracer::*;
 use crate::prelude::*;
@@ -58,6 +59,11 @@ pub async fn run(
     log::info!("Ctrl+C signal received.");
     let _ = tx.send(AppMessage::Shutdown(ShutdownScope::Process));
   });
+
+  let mut metrics_flush = tokio::time::interval_at(
+    tokio::time::Instant::now() + metrics::FLUSH_INTERVAL,
+    metrics::FLUSH_INTERVAL,
+  );
 
   log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
   let shutdown_scope;
@@ -149,6 +155,10 @@ pub async fn run(
         handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
       }
 
+      _ = metrics_flush.tick() => {
+        base.metrics.flush();
+      }
+
       Some(tracer_command) = tracer_ctl_receiver.recv() => {
         match tracer_command {
           TracerControlEvent::OpenSwitch { switch_id } => {
@@ -185,6 +195,9 @@ pub async fn run(
       system.on_despawn(ctx);
     },
   );
+
+  // after despawning, so anything systems record on their way out is kept
+  base.metrics.close().await;
 
   // wait a sec to allow systems to process shutdown event and clear timers, etc.
   tokio::time::sleep(Duration::from_millis(1500)).await;

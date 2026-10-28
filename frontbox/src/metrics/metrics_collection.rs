@@ -1,19 +1,85 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::collections::hash_map::Entry;
+use std::time::{Duration, SystemTime};
 
-use crate::metrics::{Counter, MetricDefinition, Sample, SampleType};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+use crate::metrics::{Counter, MetricDefinition, MetricsStore, Sample, SampleType};
 
 /// A game recording more samples of one metric than this is probably recording a sample where a counter belongs
 const SAMPLES_PER_GAME_WARNING: u32 = 100;
+
+/// How often recordings are flushed to the store whatever the game is doing. Bounds what a power-off loses.
+pub(crate) const FLUSH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// How long shutdown waits for the last flush to be written
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Everything recorded since the last flush, and the game and player that recordings are tagged with
 #[derive(Default)]
 pub struct MetricsCollection {
   state: RefCell<State>,
+  /// Hands flushed batches to the task writing them to the store, when there's a store
+  writer: RefCell<Option<StoreWriter>>,
 }
 
 impl MetricsCollection {
+  /// Writes to the store should happen outside of the main run loop, so flushed batches are handed to a tokio task
+  /// that owns the store and writes them one at a time
+  pub(crate) fn begin_store_task<S: MetricsStore>(&self, mut store: S) {
+    let (sender, mut receiver) = mpsc::unbounded_channel::<MetricsBatch>();
+    let task = tokio::spawn(async move {
+      while let Some(batch) = receiver.recv().await {
+        let written = tokio::task::spawn_blocking(move || {
+          let result = store.write(&batch);
+          (store, result)
+        })
+        .await;
+        match written {
+          Ok((returned, result)) => {
+            store = returned;
+            if let Err(e) = result {
+              log::error!("Failed to write metrics: {e}");
+            }
+          }
+          Err(e) => {
+            log::error!("Metrics store panicked; no more metrics will be saved: {e}");
+            return;
+          }
+        }
+      }
+    });
+    *self.writer.borrow_mut() = Some(StoreWriter { sender, task });
+  }
+
+  /// Hand everything recorded since the last flush to the store. Without a store it's dropped.
+  ///
+  /// A game's end flushes on its own, and a timer flushes every few minutes. Call this at other natural pauses, such
+  /// as the end of a turn, so less is lost when the machine is switched off.
+  pub fn flush(&self) {
+    let batch = self.take_batch();
+    if batch.is_empty() {
+      return;
+    }
+    if let Some(writer) = &*self.writer.borrow() {
+      let _ = writer.sender.send(batch);
+    }
+  }
+
+  /// Flush, then wait for the store to finish writing. Called at shutdown.
+  pub(crate) async fn close(&self) {
+    self.flush();
+    let Some(writer) = self.writer.borrow_mut().take() else {
+      return;
+    };
+    drop(writer.sender); // the task ends once it has written what's queued
+    if tokio::time::timeout(CLOSE_TIMEOUT, writer.task).await.is_err() {
+      log::error!("Timed out writing the last metrics at shutdown");
+    }
+  }
+
   /// Count one occurrence
   pub fn inc(&self, counter: &Counter) {
     self.add(counter, 1);
@@ -96,17 +162,18 @@ impl MetricsCollection {
     }
   }
 
-  /// Stop tagging recordings with the game in progress
+  /// Stop tagging recordings with the game in progress, and flush
   pub fn end_game(&self) {
     self.state.borrow_mut().end_game();
+    self.flush();
   }
 
   /// Takes everything recorded since the last batch
-  #[allow(dead_code)] // until the store exists, only tests take batches
   pub(crate) fn take_batch(&self) -> MetricsBatch {
     let mut state = self.state.borrow_mut();
     MetricsBatch {
-      definitions: state.definitions.values().cloned().collect(),
+      taken_at: SystemTime::now(),
+      definitions: std::mem::take(&mut state.new_definitions),
       counts: state
         .counts
         .drain()
@@ -127,10 +194,10 @@ impl MetricsCollection {
 pub struct GameId(pub u64);
 
 /// Everything recorded since the previous batch
-#[allow(dead_code)]
-#[derive(Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct MetricsBatch {
-  /// Every metric used since boot
+  pub taken_at: SystemTime,
+  /// Metrics first used since the previous batch
   pub definitions: Vec<MetricDefinition>,
   pub counts: Vec<CountDelta>,
   pub samples: Vec<SampleRecord>,
@@ -138,17 +205,24 @@ pub(crate) struct MetricsBatch {
   pub games: Vec<GameRecord>,
 }
 
+impl MetricsBatch {
+  pub fn is_empty(&self) -> bool {
+    self.definitions.is_empty()
+      && self.counts.is_empty()
+      && self.samples.is_empty()
+      && self.games.is_empty()
+  }
+}
+
 /// How much a counter went up since the previous batch
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CountDelta {
   pub metric: &'static str,
   pub game: Option<GameId>,
   pub count: u64,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SampleRecord {
   pub metric: &'static str,
   pub value: f64,
@@ -157,8 +231,7 @@ pub(crate) struct SampleRecord {
   pub recorded_at: SystemTime,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct GameRecord {
   pub id: GameId,
   pub started_at: SystemTime,
@@ -170,6 +243,8 @@ pub(crate) struct GameRecord {
 struct State {
   /// The first declaration seen for each key
   definitions: HashMap<&'static str, MetricDefinition>,
+  /// Declarations first seen since the previous batch, for the store to label history with
+  new_definitions: Vec<MetricDefinition>,
   counts: HashMap<CountKey, u64>,
   samples: Vec<SampleRecord>,
   games: Vec<GameRecord>,
@@ -181,10 +256,13 @@ impl State {
   /// Remembers a metric on first use. Whether it can be recorded: a definition that conflicts with the first one seen
   /// for its key can't be, since its values would be read as the other's.
   fn define(&mut self, definition: &MetricDefinition) -> bool {
-    let first = self
-      .definitions
-      .entry(definition.key)
-      .or_insert_with(|| definition.clone());
+    let first = match self.definitions.entry(definition.key) {
+      Entry::Occupied(entry) => entry.into_mut(),
+      Entry::Vacant(entry) => {
+        self.new_definitions.push(definition.clone());
+        entry.insert(definition.clone())
+      }
+    };
     if first.is_compatible(definition) {
       return true;
     }
@@ -215,6 +293,11 @@ impl State {
   }
 }
 
+struct StoreWriter {
+  sender: mpsc::UnboundedSender<MetricsBatch>,
+  task: JoinHandle<()>,
+}
+
 #[derive(PartialEq, Eq, Hash)]
 struct CountKey {
   metric: &'static str,
@@ -235,6 +318,7 @@ mod tests {
   use std::time::Duration;
 
   use super::*;
+  use crate::metrics::StoreResult;
   use crate::prelude::*;
 
   #[test]
@@ -266,11 +350,11 @@ mod tests {
     assert_eq!(metrics.take_batch().counts[0].count, 1);
   }
 
-  #[test]
-  fn recordings_are_tagged_with_the_game_and_player_in_progress() {
+  #[tokio::test]
+  async fn recordings_are_tagged_with_the_game_and_player_in_progress() {
     let hits = Counter::new("hits", "");
     let score = Sample::<u32>::new("score", "");
-    let metrics = MetricsCollection::default();
+    let (metrics, store) = with_store();
 
     metrics.inc(&hits);
     metrics.begin_game();
@@ -282,7 +366,7 @@ mod tests {
     metrics.end_game();
     metrics.record(&score, 300);
 
-    let batch = metrics.take_batch();
+    let batch = store.everything_written(&metrics).await;
     let game = batch.games[0].id;
     assert_eq!(batch.games[0].player_count, 2);
 
@@ -305,16 +389,75 @@ mod tests {
     );
   }
 
-  #[test]
-  fn games_started_together_get_distinct_ids() {
-    let metrics = MetricsCollection::default();
+  #[tokio::test]
+  async fn games_started_together_get_distinct_ids() {
+    let (metrics, store) = with_store();
     metrics.begin_game();
     metrics.begin_game(); // ends the first
     metrics.end_game();
 
-    let games = metrics.take_batch().games;
+    let games = store.everything_written(&metrics).await.games;
     assert_eq!(games.len(), 2);
     assert!(games[0].id < games[1].id);
+  }
+
+  #[tokio::test]
+  async fn a_game_is_written_when_it_ends() {
+    let hits = Counter::new("hits", "");
+    let (metrics, store) = with_store();
+
+    metrics.begin_game();
+    metrics.inc(&hits);
+    metrics.end_game();
+    metrics.inc(&hits); // after the game, so not part of its flush
+
+    let written = tokio::time::timeout(Duration::from_secs(2), async {
+      loop {
+        if let Some(batch) = store.0.lock().unwrap().first() {
+          break (batch.games.len(), batch.counts.len());
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+      }
+    })
+    .await
+    .expect("the game was never written");
+    assert_eq!(written, (1, 1));
+  }
+
+  #[tokio::test]
+  async fn definitions_are_written_once() {
+    let hits = Counter::new("hits", "");
+    let (metrics, store) = with_store();
+
+    metrics.inc(&hits);
+    metrics.flush();
+    metrics.inc(&hits);
+    metrics.flush();
+    metrics.close().await;
+
+    let batches = store.0.lock().unwrap();
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[0].definitions.len(), 1);
+    assert!(batches[1].definitions.is_empty());
+  }
+
+  #[tokio::test]
+  async fn nothing_recorded_writes_nothing() {
+    let (metrics, store) = with_store();
+    metrics.flush();
+    metrics.close().await;
+    assert!(store.0.lock().unwrap().is_empty());
+  }
+
+  #[test]
+  fn without_a_store_a_flush_drops_what_was_recorded() {
+    let hits = Counter::new("hits", "");
+    let metrics = MetricsCollection::default();
+
+    metrics.inc(&hits);
+    metrics.flush();
+
+    assert!(metrics.take_batch().counts.is_empty());
   }
 
   #[test]
@@ -393,5 +536,38 @@ mod tests {
     ctx.metrics.inc(&saves);
 
     assert_eq!(test_ctx.base.metrics.take_batch().counts[0].count, 1);
+  }
+
+  fn with_store() -> (MetricsCollection, CapturingStore) {
+    let metrics = MetricsCollection::default();
+    let store = CapturingStore::default();
+    metrics.begin_store_task(store.clone());
+    (metrics, store)
+  }
+
+  /// Keeps every batch written to it
+  #[derive(Clone, Default)]
+  struct CapturingStore(std::sync::Arc<std::sync::Mutex<Vec<MetricsBatch>>>);
+
+  impl CapturingStore {
+    /// Closes the collection, then joins every batch written into one
+    async fn everything_written(&self, metrics: &MetricsCollection) -> MetricsBatch {
+      metrics.close().await;
+      let mut all = metrics.take_batch(); // empty, for its shape
+      for batch in self.0.lock().unwrap().drain(..) {
+        all.definitions.extend(batch.definitions);
+        all.counts.extend(batch.counts);
+        all.samples.extend(batch.samples);
+        all.games.extend(batch.games);
+      }
+      all
+    }
+  }
+
+  impl MetricsStore for CapturingStore {
+    fn write(&mut self, batch: &MetricsBatch) -> StoreResult<()> {
+      self.0.lock().unwrap().push(batch.clone());
+      Ok(())
+    }
   }
 }

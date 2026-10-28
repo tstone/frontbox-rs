@@ -66,13 +66,27 @@
 //! ctx.metrics.end_game();
 //! # }
 //! ```
+//!
+//! ### Storage
+//!
+//! Recordings are held in memory and flushed to an embedded database in the directory set by
+//! [`BootConfig::metrics_path`](crate::app::BootConfig::metrics_path), `metrics.db` in the working directory by default.
+//! Nothing on the run loop touches disk; a background
+//! task writes each flush as one transaction. Counters are written as how much they went up since the previous flush,
+//! so a total is the sum of its rows.
+//!
+//! A flush happens when a game ends, every 5 minutes, and at shutdown. Call
+//! [`flush`](MetricsCollection::flush) at other natural pauses so less is lost when the machine is switched off at the
+//! wall; `frontbox-pinball` flushes at the end of each turn. Without a `metrics_path`, flushed recordings are dropped.
 
 mod counter;
 mod metric_definition;
 mod metrics_collection;
+mod metrics_store;
 mod sample;
 
 pub use counter::*;
 pub use metric_definition::*;
 pub use metrics_collection::*;
+pub(crate) use metrics_store::*;
 pub use sample::*;

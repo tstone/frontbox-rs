@@ -28,7 +28,14 @@ pub struct BootConfig {
   /// Definition of expansion network hardware
   pub exp_network: ExpNetwork,
   /// File for operator config TOML. Any previously edited values will be loaded from here, and any changes made (e.g. via the operator menu) will be saved here. Process must have read+write access.
+  ///
+  /// Defaults to `operator_config.toml` in the working directory. `None` keeps changes in memory only.
   pub config_path: Option<PathBuf>,
+  /// Directory for the metrics database. Recorded metrics are flushed here at the end of each game, every few minutes,
+  /// and at shutdown. Process must have read+write access.
+  ///
+  /// Defaults to `metrics.db` in the working directory. `None` counts metrics in memory and drops them.
+  pub metrics_path: Option<PathBuf>,
   /// The interval at which `tick` and `render` run. This affects both the resolution of timers and LED + display render speed.
   /// Higher values result in higher resolution and smoother animation but additional CPU load. If this value is set too high
   /// it will introduce latency in responding to events.
@@ -42,7 +49,8 @@ impl Default for BootConfig {
     BootConfig {
       io_network: IoNetwork::empty(),
       exp_network: ExpNetwork::empty(),
-      config_path: None,
+      config_path: Some(PathBuf::from("operator_config.toml")),
+      metrics_path: Some(PathBuf::from("metrics.db")),
       system_interval: Duration::from_millis(83), // 12 fps
       // watchdog_interval: Duration::from_millis(1500),
       platform: Platform::Virtual,
