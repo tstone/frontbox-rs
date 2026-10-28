@@ -244,12 +244,13 @@ impl DmdMenuSystem {
           });
         }
         MenuRow::Config(id, config) => {
+          let value = ctx.config.inspect(config);
           self.display_rows.push(DisplayMenuRow::Config {
             id: *id,
-            name: config.text(),
-            desc: config.description(),
-            is_default: !config.value_modified(ctx),
-            value: config.current_value(ctx),
+            name: config.label,
+            desc: config.desc,
+            is_default: config.is_default(value),
+            value: config.format(value),
           });
         }
         MenuRow::Heading(id, text) => {

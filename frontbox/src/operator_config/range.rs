@@ -1,7 +1,7 @@
 use fast_protocol::net::prelude::Power;
 
-use crate::operator_config::Domain;
-use std::ops::{Add, Sub};
+use crate::operator_config::config_type::POWER_LEVEL_NAMES;
+use crate::operator_config::{ConfigDomain, ConfigDomainValue, ConfigType, IntoConfigDomain};
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -12,18 +12,17 @@ pub struct Range<T> {
   step: T,
 }
 
-impl<T> Domain<T> for Range<T>
-where
-  T: Add<Output = T> + Sub<Output = T> + PartialOrd + PartialEq + Copy,
-{
-  fn inc(&self, value: &T) -> T {
-    let v = *value + self.step;
-    if v > self.max { self.max } else { v }
-  }
-
-  fn dec(&self, value: &T) -> T {
-    let v = *value - self.step;
-    if v < self.min { self.min } else { v }
+impl<T: ConfigType> IntoConfigDomain<T> for Range<T> {
+  fn into_domain(self) -> ConfigDomain {
+    let int = |v: &T| match v.to_value() {
+      ConfigDomainValue::Int(v) => v,
+      other => panic!("Range bounds must be ints, got {other:?}"),
+    };
+    ConfigDomain::Int {
+      min: int(&self.min),
+      max: int(&self.max),
+      step: int(&self.step),
+    }
   }
 }
 
@@ -38,17 +37,18 @@ impl Ranges {
     }
   }
 
-  pub fn power(from: u8, to: u8) -> Range<Power> {
+  /// A duration range that steps by whole seconds
+  pub fn seconds(from_secs: u64, to_secs: u64) -> Range<Duration> {
     Range {
-      min: Power { power: from },
-      max: Power { power: to },
-      step: Power { power: 2 },
+      min: Duration::from_secs(from_secs),
+      max: Duration::from_secs(to_secs),
+      step: Duration::from_secs(1),
     }
   }
 
-  /// A range allowing power from 0% to 100%
-  pub fn full_power() -> Range<Power> {
-    Self::power(0, 255)
+  /// Power from 0% to 100% in eighths, the levels FAST PWM can spread evenly over its 8ms window
+  pub fn full_power() -> PowerLevels {
+    PowerLevels
   }
 
   pub fn u8(from: u8, to: u8) -> Range<u8> {
@@ -65,5 +65,14 @@ impl Ranges {
       max: to,
       step: 1,
     }
+  }
+}
+
+/// The domain of a [`Power`] config, a choice of eighths. See [`Ranges::full_power`].
+pub struct PowerLevels;
+
+impl IntoConfigDomain<Power> for PowerLevels {
+  fn into_domain(self) -> ConfigDomain {
+    ConfigDomain::Choice(&POWER_LEVEL_NAMES)
   }
 }

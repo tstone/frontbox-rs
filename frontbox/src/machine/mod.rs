@@ -30,7 +30,7 @@ pub mod neuron;
 pub(crate) mod serial_interface;
 pub mod vm; // virtual
 
-use fast_protocol::{FastBinaryDispatch, FastCommand};
+use fast_protocol::{DriverConfig, DriverTriggerControlMode, FastBinaryDispatch, FastCommand};
 use std::time::Duration;
 
 pub use events::*;
@@ -48,6 +48,23 @@ pub enum MachineMessage {
   WatchdogPing,
   WatchdogClear,
   RefreshSwitchState,
+  /// Configure a driver (DL). How it was triggered is cleared, so it's activated again to make it live.
+  ConfigureDriver {
+    driver_id: usize,
+    config: DriverConfig,
+  },
+  /// Re-send a driver's configuration with new values, e.g. after an operator config change. Unlike `ConfigureDriver`
+  /// the driver keeps how it was triggered: a live flipper stays live.
+  UpdateDriverConfig {
+    driver_id: usize,
+    config: DriverConfig,
+  },
+  /// Trigger a driver (TL)
+  TriggerDriver {
+    driver_id: usize,
+    mode: DriverTriggerControlMode,
+    switch: Option<usize>,
+  },
   Dispatch {
     port: MachinePort,
     command: Box<dyn FastBinaryDispatch>,

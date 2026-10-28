@@ -17,6 +17,22 @@ impl VirtualMachine {
       MachineMessage::Command { port, command, .. } => {
         log::info!("VM: Request on {:?} => {:?}", port, command);
       }
+      MachineMessage::ConfigureDriver { driver_id, config }
+      | MachineMessage::UpdateDriverConfig { driver_id, config } => {
+        log::info!("VM: Configure driver {} => {:?}", driver_id, config);
+      }
+      MachineMessage::TriggerDriver {
+        driver_id,
+        mode,
+        switch,
+      } => {
+        log::info!(
+          "VM: Trigger driver {} => {:?} {:?}",
+          driver_id,
+          mode,
+          switch
+        );
+      }
       MachineMessage::RefreshSwitchState => {
         todo!()
       }

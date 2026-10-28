@@ -39,8 +39,8 @@ function describeValue(value: unknown): string {
     // HardwareValue: fixed, or backed by an operator setting
     if ('Fixed' in value) return describeScalar(value.Fixed)
     if ('Config' in value) {
-      const config = value.Config as { name: string; default: unknown }
-      return `${describeScalar(config.default)} (operator setting "${config.name}")`
+      const config = value.Config as { label: string; default: unknown }
+      return `${describeScalar(config.default)} (operator setting "${config.label}")`
     }
   }
   return JSON.stringify(value)

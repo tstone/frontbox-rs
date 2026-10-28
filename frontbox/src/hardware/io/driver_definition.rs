@@ -20,9 +20,9 @@ impl DriverDefinition {
     LampDefinitionBuilder::new(name)
   }
 
-  pub fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub fn configs(&self) -> Vec<&ConfigDefinition> {
     match &self.mode {
-      Some(mode) => mode.generalized_config_values(),
+      Some(mode) => mode.configs(),
       None => Vec::new(),
     }
   }

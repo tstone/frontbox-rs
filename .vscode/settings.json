@@ -51,5 +51,10 @@
     "unduck",
     "Worley"
   ],
-  "cSpell.ignoreWords": ["sctx"]
+  "cSpell.ignoreWords": ["sctx"],
+  "search.exclude": {
+    "**/web/src/types/generated": true,
+    "**/web/dist": true,
+    "**/node_modules": true
+  }
 }

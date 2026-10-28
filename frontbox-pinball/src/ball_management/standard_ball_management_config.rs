@@ -165,12 +165,6 @@ macro_rules! trough_settings {
         self
       }
 
-      /// How many times a failed eject is retried before giving up
-      pub fn eject_retries(mut self, retries: u8) -> Self {
-        self.trough.eject_retries_max = retries;
-        self
-      }
-
       /// How long the trough switches must be still before occupancy is considered settled
       pub fn occupancy_settling_time(mut self, time: Duration) -> Self {
         self.trough.occupancy_settling_time = time;
@@ -247,14 +241,17 @@ mod tests {
       .plunge_lane("plunge")
       .autoplunger("autoplunger")
       .jam_switch("jam")
-      .eject_retries(2)
+      .eject_verification_time(Duration::from_millis(800))
       .re_enter_timeout(Duration::from_millis(500))
       .config();
 
     assert_eq!(config.trough.trough_switch_names, vec!["t1", "t2"]);
     assert_eq!(config.trough.eject_coil_name, "eject");
     assert_eq!(config.trough.jam_switch_name, Some("jam"));
-    assert_eq!(config.trough.eject_retries_max, 2);
+    assert_eq!(
+      config.trough.eject_verification_time,
+      Duration::from_millis(800)
+    );
     assert_eq!(
       config.plunge_lane().unwrap().re_enter_timeout,
       Duration::from_millis(500)

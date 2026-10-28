@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::prelude::*;
 
 /// FAST EXP boards address LEDs per breakout in a single byte, `0x00`-`0x7F`
@@ -31,6 +33,21 @@ impl Hardware {
         .join("\n");
       panic!(
         "Driver modes reference switches that don't exist:\n{}",
+        list
+      );
+    }
+
+    let duplicate_configs = Self::duplicate_config_keys(&drivers);
+    if !duplicate_configs.is_empty() {
+      let list = duplicate_configs
+        .iter()
+        .map(|(key, first, second)| {
+          format!("  \"{}\" on drivers \"{}\" and \"{}\"", key, first, second)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!(
+        "Hardware config keys must be unique; give one of each a distinct `.key(...)`:\n{}",
         list
       );
     }
@@ -174,7 +191,7 @@ impl Hardware {
   ) -> Vec<(&'static str, &'static str)> {
     let mut unknown = Vec::new();
     for driver in drivers.values() {
-      if let Some(mode) = drivers.config(driver.name) {
+      if let Some(mode) = drivers.mode(driver.name) {
         for switch in mode.switch_names() {
           if switches.by_name(switch).is_none() {
             unknown.push((driver.name, switch));
@@ -184,6 +201,29 @@ impl Hardware {
     }
     unknown.sort();
     unknown
+  }
+
+  /// (key, first driver, second driver) for every config key used more than once across driver modes
+  fn duplicate_config_keys(
+    drivers: &DriverLookup,
+  ) -> Vec<(&'static str, &'static str, &'static str)> {
+    let mut drivers_by_name: Vec<_> = drivers.values().map(|driver| driver.name).collect();
+    drivers_by_name.sort();
+
+    let mut seen = HashMap::new();
+    let mut duplicates = Vec::new();
+    for name in drivers_by_name {
+      let Some(mode) = drivers.mode(name) else {
+        continue;
+      };
+      for config in mode.configs() {
+        if let Some(first) = seen.insert(config.key, name) {
+          duplicates.push((config.key, first, name));
+        }
+      }
+    }
+    duplicates.sort();
+    duplicates
   }
 }
 
@@ -245,6 +285,50 @@ mod tests {
       Hardware::unknown_switch_references(&drivers, &switches),
       vec![("flipper", "missing_eos"), ("typo", "reel")]
     );
+  }
+
+  fn flipper_with_power(name: &'static str, power: HardwareValue<Power>) -> DriverDefinition {
+    DriverDefinition::new(name)
+      .mode(
+        DriverMode::flipper_main_direct("real", "real")
+          .initial_pwm_power(power)
+          .build(),
+      )
+      .build()
+  }
+
+  fn power_config() -> HardwareValue<Power> {
+    HardwareValue::config("Initial Power", "", Power::FULL, Ranges::full_power())
+  }
+
+  static LEFT: LazyLock<DriverDefinition> =
+    LazyLock::new(|| flipper_with_power("left", power_config()));
+  static RIGHT: LazyLock<DriverDefinition> =
+    LazyLock::new(|| flipper_with_power("right", power_config()));
+  static RIGHT_KEYED: LazyLock<DriverDefinition> =
+    LazyLock::new(|| flipper_with_power("right", power_config().key("Right Initial Power")));
+
+  #[test]
+  fn identical_hardware_configs_on_one_key_are_duplicates() {
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
+    assert_eq!(
+      Hardware::duplicate_config_keys(&drivers),
+      vec![("Initial Power", "left", "right")]
+    );
+  }
+
+  #[test]
+  fn an_explicit_key_resolves_a_duplicate() {
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]));
+    assert!(Hardware::duplicate_config_keys(&drivers).is_empty());
+  }
+
+  #[test]
+  #[should_panic(expected = "Hardware config keys must be unique")]
+  fn duplicate_hardware_config_keys_panic_at_boot() {
+    let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
+    Hardware::new(switches, drivers, LedLookup::default(), vec![], vec![]);
   }
 
   static STRIP_64: LazyLock<LedDefinition> =

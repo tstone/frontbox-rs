@@ -1,0 +1,180 @@
+.config-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16rem;
+  height: 100%;
+}
+
+/* ---- list ---- */
+
+.config-list {
+  padding: 0.5rem 0;
+}
+
+.config-list > .empty {
+  padding: 0 1rem;
+}
+
+.config-list ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  /* marks rows that differ from their default */
+  border-left: 3px solid transparent;
+}
+
+.config-row.changed {
+  border-left-color: var(--warn);
+}
+
+.config-row .about {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-row .title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.config-row .label {
+  font-weight: 600;
+}
+
+.config-row .key {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.config-row .desc,
+.config-row .meta {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+}
+
+.config-row .meta {
+  color: var(--muted);
+}
+
+.config-row .control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.config-row button,
+.config-row select,
+.config-row input {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.config-row button {
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.config-row button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.config-row button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.config-row select {
+  padding: 0.25rem 0.375rem;
+}
+
+.config-row :is(button, select, input):focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.config-row .reset {
+  color: var(--muted);
+}
+
+.config-row [data-scope='checkbox'][data-part='root'] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+/* ---- int stepper ---- */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.stepper button {
+  width: 1.75rem;
+  padding: 0.25rem 0;
+}
+
+.stepper input {
+  width: 4.5rem;
+  padding: 0.25rem 0.375rem;
+  text-align: right;
+}
+
+.stepper .unit {
+  min-width: 2rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* ---- sidebar ---- */
+
+.config-sidebar {
+  padding: 1rem;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.config-sidebar .filter-input {
+  width: 100%;
+  padding: 0.4rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.config-sidebar .filter-input::placeholder {
+  color: var(--muted);
+}
+
+.config-sidebar .filter-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.config-sidebar .hint {
+  margin: 0.5rem 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}

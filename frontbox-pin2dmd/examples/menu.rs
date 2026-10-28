@@ -19,6 +19,6 @@ fn main() {
   }
 
   let _menu = MenuSection::root()
-    .section(MenuSection::new("Section 1").configs(DROP_COIL.generalized_config_values()))
+    .section(MenuSection::new("Section 1").configs(DROP_COIL.configs()))
     .section(MenuSection::new("Section 2"));
 }

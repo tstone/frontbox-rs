@@ -24,7 +24,7 @@ pub use pulse_kick::*;
 
 use fast_protocol::DriverConfig;
 
-use crate::operator_config::GeneralizedConfigValue;
+use crate::operator_config::ConfigDefinition;
 use crate::prelude::*;
 
 /// DriverMode is a wrapper around DriverConfig that allows these features:
@@ -109,35 +109,35 @@ impl DriverMode {
     FlipperMain3TryModeBuilder::new(button_switch, eos_switch)
   }
 
-  pub fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     match self {
-      Self::Pulse(m) => m.to_config(ctx),
-      Self::PulseKick(m) => m.to_config(ctx),
-      Self::PulseHold(m) => m.to_config(ctx),
-      Self::PulseHoldCancel(m) => m.to_config(ctx),
-      Self::DelayedPulse(m) => m.to_config(ctx),
-      Self::PulseCancel(m) => m.to_config(ctx),
-      Self::LongPulse(m) => m.to_config(ctx),
-      Self::PulseHoldExtension(m) => m.to_config(ctx),
-      Self::FlipperMainDirect(m) => m.to_config(ctx),
-      Self::FlipperHoldDirect(m) => m.to_config(ctx),
-      Self::FlipperMain3Try(m) => m.to_config(ctx),
+      Self::Pulse(m) => m.to_config(snap),
+      Self::PulseKick(m) => m.to_config(snap),
+      Self::PulseHold(m) => m.to_config(snap),
+      Self::PulseHoldCancel(m) => m.to_config(snap),
+      Self::DelayedPulse(m) => m.to_config(snap),
+      Self::PulseCancel(m) => m.to_config(snap),
+      Self::LongPulse(m) => m.to_config(snap),
+      Self::PulseHoldExtension(m) => m.to_config(snap),
+      Self::FlipperMainDirect(m) => m.to_config(snap),
+      Self::FlipperHoldDirect(m) => m.to_config(snap),
+      Self::FlipperMain3Try(m) => m.to_config(snap),
     }
   }
 
-  pub fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub fn configs(&self) -> Vec<&ConfigDefinition> {
     match self {
-      Self::Pulse(m) => m.generalized_config_values(),
-      Self::PulseKick(m) => m.generalized_config_values(),
-      Self::PulseHold(m) => m.generalized_config_values(),
-      Self::PulseHoldCancel(m) => m.generalized_config_values(),
-      Self::DelayedPulse(m) => m.generalized_config_values(),
-      Self::PulseCancel(m) => m.generalized_config_values(),
-      Self::LongPulse(m) => m.generalized_config_values(),
-      Self::PulseHoldExtension(m) => m.generalized_config_values(),
-      Self::FlipperMainDirect(m) => m.generalized_config_values(),
-      Self::FlipperHoldDirect(m) => m.generalized_config_values(),
-      Self::FlipperMain3Try(m) => m.generalized_config_values(),
+      Self::Pulse(m) => m.configs(),
+      Self::PulseKick(m) => m.configs(),
+      Self::PulseHold(m) => m.configs(),
+      Self::PulseHoldCancel(m) => m.configs(),
+      Self::DelayedPulse(m) => m.configs(),
+      Self::PulseCancel(m) => m.configs(),
+      Self::LongPulse(m) => m.configs(),
+      Self::PulseHoldExtension(m) => m.configs(),
+      Self::FlipperMainDirect(m) => m.configs(),
+      Self::FlipperHoldDirect(m) => m.configs(),
+      Self::FlipperMain3Try(m) => m.configs(),
     }
   }
 
@@ -155,6 +155,24 @@ impl DriverMode {
       Self::FlipperMainDirect(m) => vec![m.button_switch, m.eos_switch],
       Self::FlipperHoldDirect(m) => vec![m.button_switch],
       Self::FlipperMain3Try(m) => vec![m.button_switch, m.eos_switch],
+    }
+  }
+
+  /// The physical switch that fires the driver, if any. This is the switch a TL sets when activating it
+  /// automatically.
+  pub fn trigger_switch(&self) -> Option<&'static str> {
+    match self {
+      Self::Pulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseKick(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHold(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHoldCancel(m) => m.trigger_mode.trigger_switch(),
+      Self::DelayedPulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseCancel(m) => m.trigger_mode.trigger_switch(),
+      Self::LongPulse(m) => m.trigger_mode.trigger_switch(),
+      Self::PulseHoldExtension(m) => m.trigger_mode.trigger_switch(),
+      Self::FlipperMainDirect(m) => Some(m.button_switch),
+      Self::FlipperHoldDirect(m) => Some(m.button_switch),
+      Self::FlipperMain3Try(m) => Some(m.button_switch),
     }
   }
 }

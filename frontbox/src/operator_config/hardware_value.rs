@@ -1,56 +1,57 @@
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 
-use crate::operator_config::generalized_config_value::GeneralizedConfigValue;
 use crate::operator_config::*;
+use crate::prelude::BootSnapshot;
 
 /// A value that can be assigned to configure a piece of hardware, either with a fixed value or using operator config
 #[derive(Clone, Debug)]
-pub enum HardwareValue<T: Clone, D: Domain<T> = Range<T>> {
-  Config(ConfigValue<T, D>),
+pub enum HardwareValue<T: Clone> {
+  Config(Config<T>),
   Fixed(T),
 }
 
-impl<T, D: Domain<T>> HardwareValue<T, D>
-where
-  T: Clone + Send + Sync + 'static,
-{
+impl<T: Clone + ConfigType> HardwareValue<T> {
   pub fn fixed(value: T) -> Self {
     Self::Fixed(value)
   }
 
-  pub fn config(name: &'static str, desc: &'static str, default: T, domain: D) -> Self {
-    Self::Config(ConfigValue {
-      name,
-      desc,
-      default,
-      domain,
-    })
+  /// The key defaults to the label; see [`HardwareValue::key`]
+  pub fn config(
+    label: &'static str,
+    desc: &'static str,
+    default: T,
+    domain: impl IntoConfigDomain<T>,
+  ) -> Self {
+    Self::Config(Config::new(label, desc, default, domain))
   }
 
-  /// Get the actual usable value given a working environment
-  pub fn resolve(&self, op: &OperatorConfig) -> T {
+  /// Set the config's `key`. Key must be unique but is derived from label by default. This force-sets it to a specific value for uniqueness.
+  pub fn key(self, key: &'static str) -> Self {
     match self {
-      Self::Fixed(v) => v.clone(),
-      Self::Config(cv) => cv.resolve(op),
+      Self::Config(config) => Self::Config(config.key(key)),
+      Self::Fixed(_) => self,
     }
   }
 
-  /// Typed version for TOML read/write
-  pub fn generalized_config_value(&self) -> Option<&dyn GeneralizedConfigValue>
-  where
-    T: PartialEq + ConfigDisplay + Serialize + DeserializeOwned + Send + Sync,
-    D: Send + Sync,
-  {
+  /// Get the actual usable value given a working environment
+  pub fn resolve(&self, snap: &BootSnapshot) -> T {
     match self {
-      Self::Config(cv) => Some(cv),
+      Self::Fixed(v) => v.clone(),
+      Self::Config(config) => snap.config.get(config),
+    }
+  }
+
+  /// The config declaration, if this value is configurable
+  pub fn config_display(&self) -> Option<&ConfigDefinition> {
+    match self {
+      Self::Config(config) => Some(config.display()),
       Self::Fixed(_) => None,
     }
   }
 }
 
 /// Allows plain values to be used anywhere a fixed HardwareValue is accepted
-impl<T: Clone, D: Domain<T>> From<T> for HardwareValue<T, D> {
+impl<T: Clone> From<T> for HardwareValue<T> {
   fn from(value: T) -> Self {
     Self::Fixed(value)
   }
@@ -100,22 +101,24 @@ impl<T: HardwareValueRepr> Serialize for Repr<'_, T> {
 #[derive(Serialize)]
 #[serde(bound = "T: HardwareValueRepr")]
 struct ConfigRepr<'a, T: HardwareValueRepr> {
-  name: &'static str,
+  key: &'static str,
+  label: &'static str,
   desc: &'static str,
   default: Repr<'a, T>,
 }
 
-impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, D> {
+impl<T: Clone + ConfigType + HardwareValueRepr> Serialize for HardwareValue<T> {
   fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
     match self {
-      Self::Config(cv) => serializer.serialize_newtype_variant(
+      Self::Config(config) => serializer.serialize_newtype_variant(
         "HardwareValue",
         0,
         "Config",
         &ConfigRepr {
-          name: cv.name,
-          desc: cv.desc,
-          default: Repr(&cv.default),
+          key: config.display().key,
+          label: config.display().label,
+          desc: config.display().desc,
+          default: Repr(&config.default()),
         },
       ),
       Self::Fixed(value) => {
@@ -126,10 +129,9 @@ impl<T: Clone + HardwareValueRepr, D: Domain<T>> Serialize for HardwareValue<T, 
 }
 
 #[cfg(feature = "ts")]
-impl<T, D> ts_rs::TS for HardwareValue<T, D>
+impl<T> ts_rs::TS for HardwareValue<T>
 where
   T: Clone + HardwareValueRepr + 'static,
-  D: Domain<T> + 'static,
 {
   type WithoutGenerics = Self;
   type OptionInnerType = Self;
@@ -137,7 +139,7 @@ where
   fn name(_: &ts_rs::Config) -> String {
     let value = T::ts_repr();
     format!(
-      "{{ \"Config\": {{ name: string, desc: string, default: {value} }} }} | {{ \"Fixed\": {value} }}"
+      "{{ \"Config\": {{ key: string, label: string, desc: string, default: {value} }} }} | {{ \"Fixed\": {value} }}"
     )
   }
 

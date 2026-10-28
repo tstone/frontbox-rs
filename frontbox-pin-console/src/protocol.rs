@@ -1,6 +1,8 @@
+use frontbox::prelude::ConfigDomainValue;
+use frontbox::prelude::DriverMode;
 use frontbox::prelude::Hardware;
 use frontbox::prelude::SwitchState;
-use frontbox::prelude::app_tracer::{Color, DriverState, TraceEvent};
+use frontbox::prelude::app_tracer::{Color, ConfigView, DriverState, TraceEvent};
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
 
@@ -11,6 +13,7 @@ pub enum ServerMessage {
   Init(Snapshot),
   Trace(TraceRecord),
   Leds(LedColors),
+  Configs(ConfigList),
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
@@ -20,10 +23,14 @@ pub struct Snapshot {
   pub groups: Vec<SystemGroup>,
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
+  /// Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
+  pub driver_modes: BTreeMap<usize, DriverMode>,
   pub game: Option<GameState>,
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Color>,
   pub planes: Vec<PlaneView>,
+  /// Operator configs in use, by key, with their current values
+  pub configs: BTreeMap<&'static str, ConfigView>,
   #[ts(as = "Vec<TraceRecord>")]
   pub log: VecDeque<TraceRecord>, // oldest first
 }
@@ -75,10 +82,18 @@ pub struct LedColors {
   pub colors: BTreeMap<String, Color>,
 }
 
+/// Operator configs that were first used or changed
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ConfigList {
+  pub configs: Vec<ConfigView>,
+}
+
 /// Messages from the web app to the console server
 #[derive(Clone, serde::Deserialize, TS)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
   /// Hold a switch closed, or let it open, as if it were pressed on the machine
   SetSwitch { switch_id: usize, closed: bool },
+  /// Set an operator config, as the operator menu would
+  SetConfig { key: String, value: ConfigDomainValue },
 }

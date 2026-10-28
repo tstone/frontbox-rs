@@ -17,10 +17,10 @@
 //!         .initial_pwm_length(Duration::from_millis(250))
 //!         // configurable value that can be adjusted via operator config
 //!         .initial_pwm_power(HardwareValue::config(
-//!           "coil_power", // name
+//!           "Coil Power", // label
 //!           "Power of my coil", // description
 //!           Power::THREE_QUARTERS, // default
-//!           Ranges::power(128, 255), // domain
+//!           Ranges::full_power(), // domain: 0% to 100% in eighths
 //!         ))
 //!         .build(),
 //!     );
@@ -29,83 +29,135 @@
 //! 
 //! ### System Config Values
 //! 
-//! Systems can also register operator config values independent of hardware (e.g. ball count, max extra balls, etc.). This is done through the `config_values` method of `System`.
-//! 
+//! Systems can also declare operator config values independent of hardware (e.g. ball count, max extra balls, etc.)
+//! as statics.
+//!
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
-//! # struct Example;
-//! pub static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8, Range<u8>>> = LazyLock::new(|| {
-//!   ConfigValue::new(
-//!     "Max Extra Balls", // name
+//! pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
+//!   Config::new(
+//!     "Max Extra Balls", // label
 //!     "The most extra balls a player can have per game", // description
 //!     5, // default
 //!     Ranges::u8(0, 10),
 //!   )
 //! });
-//! 
-//! impl System for Example {
-//!   fn config_values(&self) -> Vec<&'static dyn GeneralizedConfigValue> {
-//!     vec![&*MAX_EXTRA_BALLS]
-//!   }
-//! }
 //! ```
-//! 
-//! ### System Config Registration
-//! 
-//! - Startup systems have their config values automatically registered
-//! - Dynamically loaded systems must be manually registered
-//! 
+//!
+//! The last argument is the domain, the values the config can take: a range from `Ranges`, `Toggle` for a `bool`, or
+//! `Choices` for a type that maps itself to one of several named choices.
+//!
+//! There is no registration step. The first time a config is read or written, its value is loaded from the saved
+//! config file if present and within its domain, otherwise it starts at its default.
+//!
+//! ### Keys
+//!
+//! A config's value is stored and saved under its key, which is its label unless set with `.key(...)`. An explicit
+//! key is needed when two configs share a label, such as each flipper's "Initial Power" shown under its own menu
+//! section, or to keep a saved value when a label is reworded.
+//!
 //! ```rust
 //! # use frontbox::prelude::*;
-//! # use std::sync::LazyLock;
-//! # struct MySystem;
-//! # impl MySystem { fn new() -> Self { Self } }
-//! # impl System for MySystem {}
-//! # let some_system = MySystem::new();
-//! # static MY_CONFIG1: LazyLock<ConfigValue<u8, Range<u8>>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<ConfigValue<u8, Range<u8>>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
-//! App::new(BootConfig::default())
-//!   .configure(|app| {
-//!     // config values will be automatically registered
-//!     app.system(MySystem::new());
-//! 
-//!     // manually register configs on a system
-//!     app.register_configs(&some_system);
-//! 
-//!     // or manually register explicit configs
-//!     let configs: Vec<&'static dyn GeneralizedConfigValue> = vec![&*MY_CONFIG1, &*MY_CONFIG2];
-//!     app.register_configs(configs);
-//!   });
+//! let power = HardwareValue::config("Initial Power", "", Power::FULL, Ranges::full_power())
+//!   .key("Left Flipper Initial Power");
 //! ```
-//! 
+//!
+//! - Hardware config keys must be unique. Every driver's configs are checked at boot, and a key used twice panics,
+//!   even when both definitions are identical, since a copy-pasted driver config would otherwise share one value.
+//! - Configs declared as statics on the same key share one value when their type, domain and default match. A
+//!   mismatch panics on first use in debug builds; in release it's logged and the later definition keeps its own
+//!   value, starting at its default.
+//!
 //! ### Reading Operator Configs
 //! 
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # use std::sync::LazyLock;
-//! # static MAX_EXTRA_BALLS: LazyLock<ConfigValue<u8, Range<u8>>> =
-//! #   LazyLock::new(|| ConfigValue::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
 //! # fn example(ctx: &SystemContext) {
 //! // The value is always present since a default is provided
-//! let value: u8 = ctx.operator_config.get(&MAX_EXTRA_BALLS);
+//! let value: u8 = ctx.config.get(&MAX_EXTRA_BALLS);
 //! # }
 //! ```
+//!
+//! ### Setting Operator Configs
+//!
+//! Setting a value takes effect immediately and is kept within its domain. `inc` and `dec` step it, as a menu does.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! # use std::sync::LazyLock;
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # fn example(ctx: &SystemContext) {
+//! ctx.config.set(&MAX_EXTRA_BALLS, 3);
+//! ctx.config.inc(MAX_EXTRA_BALLS.display()); // now 4
+//! # }
+//! ```
+//!
+//! A change emits `ConfigChanged` with the config's key. Drivers using the key are re-configured automatically, so
+//! only software configs need to listen for it.
+//!
+//! ```rust
+//! # use frontbox::prelude::*;
+//! # use std::sync::LazyLock;
+//! # static MAX_EXTRA_BALLS: LazyLock<Config<u8>> =
+//! #   LazyLock::new(|| Config::new("Max Extra Balls", "", 5, Ranges::u8(0, 10)));
+//! # struct ExtraBalls;
+//! # impl System for ExtraBalls {
+//! fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+//!   if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>()
+//!     && *key == MAX_EXTRA_BALLS.display().key
+//!   {
+//!     let max = ctx.config.get(&MAX_EXTRA_BALLS);
+//!     // ...
+//!   }
+//! }
+//! # }
+//! ```
+//!
+//! ### Saving
+//!
+//! Set `BootConfig::config_path` to load saved values at boot and save changes as they're made. Only values that
+//! differ from their default are written. A saved value is only rewritten once it's changed, so a build with a
+//! narrower range won't overwrite it with the value it fell back to.
+//!
+//! ```toml
+//! "Max Extra Balls" = 3
+//! "Left Flipper Initial Power" = "87.5%"
+//! ```
+//!
+//! ### Menus
+//!
+//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-pin2dmd` menu section. A static config is
+//! added with `display()`.
+//!
+//! ```rust,ignore
+//! MenuSection::new("Left Flipper").configs(LEFT_FLIPPER.configs())
+//! MenuSection::new("Game").configs(vec![MAX_EXTRA_BALLS.display()])
+//! ```
+//!
+//! ### Web Console
+//!
+//! The console's Config tab lists every config in use and edits them like the menu does. Hardware configs are listed
+//! at boot; software configs appear once something reads them.
 
-mod config_display;
-mod config_value;
-mod domain;
-mod generalized_config_value;
+mod choices;
+mod config;
+mod config_definition;
+mod config_domain;
+mod config_type;
 mod hardware_value;
-mod operator_config;
+mod config_collection;
 mod range;
 
-pub use config_display::*;
-pub use config_value::*;
-pub use domain::*;
-pub use generalized_config_value::*;
+pub use choices::*;
+pub use config::*;
+pub use config_definition::*;
+pub use config_domain::*;
+pub use config_type::*;
 pub use hardware_value::*;
-pub use operator_config::*;
+pub use config_collection::*;
 pub use range::*;

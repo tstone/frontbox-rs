@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use frontbox::prelude::*;
 
 use crate::ball_management::{BallManager, BallsExitedPlay, Launch};
-use crate::{GameManager, PlayerTurnActive, TurnState};
+use crate::{GameManager, PlayerTurnActive, TurnState, configs};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
@@ -48,6 +48,10 @@ use crate::{GameManager, PlayerTurnActive, TurnState};
 /// }
 /// ```
 ///
+/// ## Turn start
+/// Each turn starts with a request lasting the `BALL_SAVE_TIME` operator config (0 for off), made once the ball enters
+/// play.
+///
 /// ## Saving
 /// While active, every drain is saved: the `BallsExitedPlay` event is halted, since a saved drain is treated as not
 /// having happened, and the balls are relaunched. `BallSaved` is emitted for anything that needs to know.
@@ -58,14 +62,12 @@ use crate::{GameManager, PlayerTurnActive, TurnState};
 /// ## Setup
 /// ```rust,ignore
 /// BallSaveSystem::new()
-///   .on_turn_start(Duration::from_secs(8))
 ///   .grace_period(Duration::from_secs(2))
 ///   .led_effect(ball_save_effect)
 /// ```
 #[derive(Clone)]
 pub struct BallSaveSystem {
   handle: SystemHandle,
-  on_turn_start: Option<Duration>,
   effect: Option<LedProgram1d>,
   effect_playing: bool,
   /// Time remaining per requesting system, or `None` for until released
@@ -83,7 +85,6 @@ impl BallSaveSystem {
   pub fn new() -> Self {
     Self {
       handle: SystemHandle::default(),
-      on_turn_start: None,
       grace_period: Duration::from_secs(2),
       effect: None,
       effect_playing: false,
@@ -91,12 +92,6 @@ impl BallSaveSystem {
       grace_remaining: Duration::ZERO,
       interrupt_registered: false,
     }
-  }
-
-  /// Request a ball save for this long once the ball enters play at the start of each turn
-  pub fn on_turn_start(mut self, duration: Duration) -> Self {
-    self.on_turn_start = Some(duration);
-    self
   }
 
   /// How long saving continues after the last request ends
@@ -198,10 +193,11 @@ impl System for BallSaveSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<PlayerTurnActive>()
-      && let Some(duration) = self.on_turn_start
-    {
-      self.set_request(self.handle.id, Some(duration), ctx);
+    if event.is::<PlayerTurnActive>() {
+      let duration = ctx.config.get(&configs::BALL_SAVE_TIME);
+      if !duration.is_zero() {
+        self.set_request(self.handle.id, Some(duration), ctx);
+      }
     } else if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
       self.remove_request(*id, ctx);
     }
@@ -446,7 +442,7 @@ mod tests {
 
   #[test]
   fn turn_start_requests_a_save() {
-    let mut f = Fixture::with(BallSaveSystem::new().on_turn_start(Duration::from_secs(8)));
+    let mut f = Fixture::spawn();
     f.save
       .on_event(&PlayerTurnActive::new(0, 0), &f.ctx.sys_ctx());
     assert!(f.save.is_saving());
@@ -455,8 +451,12 @@ mod tests {
   }
 
   #[test]
-  fn without_turn_start_option_turn_start_requests_nothing() {
+  fn zero_ball_save_time_turn_start_requests_nothing() {
     let mut f = Fixture::spawn();
+    f.ctx
+      .svc_ctx()
+      .config
+      .set(&configs::BALL_SAVE_TIME, Duration::ZERO);
     f.save
       .on_event(&PlayerTurnActive::new(0, 0), &f.ctx.sys_ctx());
     assert!(!f.save.is_saving());

@@ -3,7 +3,7 @@ use std::time::Duration;
 use fast_protocol::{DriverConfig, Power};
 
 use crate::hardware::io::driver_switches::*;
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 20 - Pulse then indefinitely hold the driver on until the trigger (flip) is deactivated -OR- the cancel
@@ -34,28 +34,28 @@ impl Default for PulseHoldCancelMode {
 }
 
 impl PulseHoldCancelMode {
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
-      get_switch_ids_and_inverts(&self.trigger_mode, ctx);
+      get_switch_ids_and_inverts(&self.trigger_mode, snap);
 
     DriverConfig::PulseHoldCancel {
       switch: flip_switch,
       invert_switch: invert_flip_switch,
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
-      initial_max_on_time: self.initial_pwm_length.resolve(&ctx.operator_config),
-      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
-      rest: self.rest.resolve(&ctx.operator_config),
+      initial_max_on_time: self.initial_pwm_length.resolve(snap),
+      initial_pwm_power: self.initial_pwm_power.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
+      rest: self.rest.resolve(snap),
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
-      self.initial_pwm_length.generalized_config_value(),
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
-      self.rest.generalized_config_value(),
+      self.initial_pwm_length.config_display(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_power.config_display(),
+      self.rest.config_display(),
     ]
     .into_iter()
     .flatten()

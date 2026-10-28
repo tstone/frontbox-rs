@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use fast_protocol::{DriverConfig, Power};
 
-use crate::operator_config::{GeneralizedConfigValue, HardwareValue};
+use crate::operator_config::{ConfigDefinition, HardwareValue};
 use crate::prelude::*;
 
 /// Mode 81 - Premium flipper driver for hold coil
@@ -27,25 +27,25 @@ impl FlipperHoldDirectMode {
     }
   }
 
-  pub(super) fn to_config(&self, ctx: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
     DriverConfig::FlipperHoldDirect {
-      button_switch: ctx
+      button_switch: snap
         .switches
         .by_name(self.button_switch)
         .map(|sw| sw.id)
         .expect("Flipper hold direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      driver_on_time: self.driver_on_time.resolve(&ctx.operator_config),
-      initial_pwm_power: self.initial_pwm_power.resolve(&ctx.operator_config),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(&ctx.operator_config),
+      driver_on_time: self.driver_on_time.resolve(snap),
+      initial_pwm_power: self.initial_pwm_power.resolve(snap),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
     }
   }
 
-  pub(super) fn generalized_config_values(&self) -> Vec<&dyn GeneralizedConfigValue> {
+  pub(super) fn configs(&self) -> Vec<&ConfigDefinition> {
     [
-      self.driver_on_time.generalized_config_value(),
-      self.initial_pwm_power.generalized_config_value(),
-      self.secondary_pwm_power.generalized_config_value(),
+      self.driver_on_time.config_display(),
+      self.initial_pwm_power.config_display(),
+      self.secondary_pwm_power.config_display(),
     ]
     .into_iter()
     .flatten()

@@ -1,29 +1,22 @@
-use std::time::Duration;
-
 use frontbox::prelude::*;
 
 use crate::ball_management::PerformBallSearch;
+use crate::configs;
 
-/// The way this will work is a hybrid of tagging + event handling
-///
+/// The way this will work is a hybrid of tagging + event handling. Searches after `BALL_SEARCH_DELAY` (an operator
+/// config) without a ball present switch closing.
 pub struct BallSearchSystem {
   cue_id: Option<u64>,
   handle: SystemHandle,
-  time_until_search: Duration,
   ball_present_q: SwitchQ,
   ball_searchable_q: DriverQ,
 }
 
 impl BallSearchSystem {
-  pub fn new(
-    ball_present_q: SwitchQ,
-    ball_searchable_q: DriverQ,
-    time_until_search: Duration,
-  ) -> Self {
+  pub fn new(ball_present_q: SwitchQ, ball_searchable_q: DriverQ) -> Self {
     Self {
       cue_id: None,
       handle: SystemHandle::default(),
-      time_until_search,
       ball_present_q,
       ball_searchable_q,
     }
@@ -31,7 +24,8 @@ impl BallSearchSystem {
 
   fn reset(&mut self, ctx: &SystemContext) {
     self.clear_cue(&ctx);
-    self.cue_id = Some(ctx.cue(StartBallSearch, self.time_until_search.once()));
+    let delay = ctx.config.get(&configs::BALL_SEARCH_DELAY);
+    self.cue_id = Some(ctx.cue(StartBallSearch, delay.once()));
   }
 
   fn clear_cue(&mut self, ctx: &SystemContext) {

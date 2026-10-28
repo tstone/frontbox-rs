@@ -1,16 +1,17 @@
 # Contributing
 
-This crate is a companion web service that renders a pinball focused console for development with Frontbox. The Rust side and web app side
-have separate build steps (see below).
+This crate is a companion web service that renders a pinball focused console for development with Frontbox.
 
 ## Build
 
 ```bash
 cargo build
-cd web
-npm install
-npm run build
 ```
+
+`build.rs` builds the web app into `web/dist` whenever its sources change, installing its packages first if needed.
+It needs Node.js 20.19+ or 22.12+, but not on the PATH: it also looks in nvm, nvm-windows and the default install
+location, so a build from PowerShell or the editor works when nvm is only set up in Git Bash. Without a suitable Node
+the build warns and embeds the existing `web/dist`. Set `FRONTBOX_SKIP_WEB_BUILD` to skip the web build.
 
 ## Develop
 
@@ -26,7 +27,8 @@ Vite hot-reloads the UI and forwards the `/ws` websocket to the server on port 3
 ## TypeScript types
 
 The types in `web/src/types/generated` are generated from Rust with ts-rs. Don't edit them by hand.
-They're regenerated automatically by `npm run dev` and `npm run build`, or manually with:
+They're regenerated automatically by `npm run dev` and `npm run build`, but not by `cargo build` (it can't run cargo
+from inside a build), so after changing a Rust type run:
 
 ```bash
 cargo run --example export_types

@@ -1,27 +1,11 @@
 ## Foundations
 
-- Operator config, in order:
-  1. One live instance. Today there are two: the boot copy (loaded from disk, moved into the read-only `BootSnapshot`,
-     read by `ctx.operator_config` and driver setup) and a separate `OperatorConfig::default()` the game spawns as a
-     system, which the menu edits via `ctx.get::<OperatorConfig>()`. Menu edits never reach anything, and its
-     `app_sender` is `None` so `OperatorConfigChanged` is never emitted. The framework should start the one instance as
-     a system (like `MachineSystem`/`WatchdogSystem`) and `ctx.operator_config` should read from it. On its own this
-     makes system-managed configs work, since they're read when used.
-  2. Separate the saved key from the menu label. `name` is both, so renaming a label loses the saved value and two
-     values with the same name silently share an entry (`register` ignores duplicates). Panic on a duplicate key.
-     Before saving lands, so keys on disk are stable.
-  3. Save to disk. Keep the path (`load_from_disk` drops it), write on every change, keep `pending_disk` entries for
-     values not registered yet, and if the file failed to parse, set it aside rather than overwrite it with defaults.
-     Use `frontbox::toml_file`. Consider `toml_edit` so comments added by hand survive a save. Needs: step 1.
-  4. Apply HardwareValue changes to the running machine. `MachineSystem::configure_driver` already re-resolves a mode
-     against operator config and sends it, so the missing parts are: a key -> drivers index (can be built in
-     `register_driver_operator_configs`), and tracking the mode each driver currently has. On `OperatorConfigChanged`,
-     re-send the driver's *current* mode, not its definition's default: re-applying the default would undo a runtime
-     change, e.g. enable flippers that are disabled while the operator is in the menu. Modes with no config values
-     (disabled) resolve the same, so nothing is sent. Needs: step 1.
+- Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
+- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
+  menu animation and transition items.
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
-  user systems, declared statically like config values (`fn metrics()` on `System`). Records over time rather than
-  just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
+  user systems, declared statically like config values. Records
+  over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
   in memory, written in one transaction at game end, plus a timer outside of games) rather than one per increment,
   which is thousands of rows a game. A reset is a marker, not a zeroing, so "since last reset" is a query and history
   is kept. Storage still open: needs crash-safe transactions and range scans, and ideally no C compilation burden for
@@ -34,23 +18,25 @@
   above, so it can still be swapped.
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
-- Maybe some kind of "toggle" group that can rotate between one of N (e.g. free play vs credit play). Needs: recursive
-  system groups.
+- Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit
+  play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for
+  that key, using the existing `activate_system_group`/`deactivate_system_group`. Choices need a saved key separate
+  from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles
+  that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
-- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
-  menu animation and transition items.
 
 ## Pinball features
 
+- A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
+- Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Audits: the operator-facing view of metrics (coils fired, average game time, ball saves, etc.), with resets by
   category. Needs: metrics system.
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no
   ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can
-  show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits,
-  and tracking each driver's current mode (operator config step 4) so a config change doesn't undo the escalation. Open
+  show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits. Open
   questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than
   `Launch::Player`
 - Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.)
@@ -58,7 +44,7 @@
   1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a
   pending entry per player; at game end, initials entry runs once per player and the initials go on every board they
   made. That single end-of-game pass should also fix high scores being janky and needing too much system switching.
-  Stored as TOML via `frontbox::toml_file`.
+  Stored as TOML via `frontbox::toml`.
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes
   linux-specific shutdown handling
@@ -110,6 +96,7 @@
 
 - DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Implement all menu sounds
+- Need a better pattern/more generalized UI DSP to do the following:
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
@@ -125,6 +112,7 @@
 ## Console
 
 - Initial state: configure switches to be latched by default (e.g. trough, captive ball)
+- Some kind of game state specific/user-customizable JSON emission by systems, to view a system's state somehow
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a
   replayed game is deterministic.

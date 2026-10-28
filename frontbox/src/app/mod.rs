@@ -6,12 +6,12 @@
 //! specify boot configuration, immutable settings (COM ports, hardware, etc.), and initial systems.
 //!
 //! An app has two distinct phases:
-//!   1. **Configuration** - Defining initial systems and registering custom operator configs
+//!   1. **Configuration** - Defining initial systems and tracers
 //!   2. **Boot & Run** -  The main event loop processes events and systems
 //!
 //! - See [BootConfig] for details on what is configurable.
 //! - See [mod@crate::hardware] for details on setting up I/O and expansion networks.
-//! - See [mod@crate::operator_config] for details on operator configuration registration.
+//! - See [mod@crate::operator_config] for details on operator configuration.
 //!
 //! Running an  `App` is an async process which requires a [Tokio](https://tokio.rs/) runtime. This is
 //! most easily achieved by tagging the main function as `#[tokio::main]`.
@@ -21,17 +21,12 @@
 //! ```rust,no_run
 //! use frontbox::prelude::*;
 //! use std::io::Write;
-//! # use std::sync::LazyLock;
 //! # struct MySystem;
 //! # impl MySystem { fn new() -> Self { Self } }
 //! # impl System for MySystem {}
 //! # struct MySystem2;
 //! # impl MySystem2 { fn new() -> Self { Self } }
 //! # impl System for MySystem2 {}
-//! # static MY_CONFIG1: LazyLock<ConfigValue<u8, Range<u8>>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 1", "", 1, Ranges::u8(0, 10)));
-//! # static MY_CONFIG2: LazyLock<ConfigValue<u8, Range<u8>>> =
-//! #   LazyLock::new(|| ConfigValue::new("Config 2", "", 2, Ranges::u8(0, 10)));
 //!
 //! #[tokio::main]
 //! async fn main() {
@@ -54,10 +49,6 @@
 //!       // add initial system(s) that will start on `.run()`
 //!       app.system(MySystem::new());
 //!       app.system(MySystem2::new());
-//!
-//!       // register custom operator configs
-//!       let configs: Vec<&'static dyn GeneralizedConfigValue> = vec![&*MY_CONFIG1, &*MY_CONFIG2];
-//!       app.register_configs(configs);
 //!     })
 //!     // Running the app boots the hardware and starts the game
 //!     .run()
@@ -71,7 +62,6 @@ pub(crate) mod app_message;
 pub mod app_tracer;
 mod boot_config;
 pub mod event_box;
-mod into_configs;
 pub(crate) mod run_loop;
 
 use std::collections::HashMap;
@@ -81,7 +71,6 @@ pub(crate) use app_config::*;
 pub use app_message::ShutdownScope;
 pub use boot_config::*;
 pub(crate) use event_box::*;
-pub(crate) use into_configs::*;
 pub use run_loop::Synchronize;
 
 use crate::prelude::SystemGroup;

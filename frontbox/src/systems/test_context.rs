@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::AppMessage;
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 pub struct TestContext {
@@ -66,10 +67,24 @@ impl TestContext {
     for msg in self.app_messages() {
       match msg {
         AppMessage::EmitEvent(_, e) => events.push(e),
+        // the run loop emits this after saving
+        AppMessage::ConfigChanged(key) => events.push(EventBox::new(ConfigChanged(key))),
         _ => {}
       }
     }
     events
+  }
+
+  /// Trace events sent through the run loop up to this point
+  pub fn traces(&mut self) -> Vec<TraceEvent> {
+    self
+      .app_messages()
+      .into_iter()
+      .filter_map(|msg| match msg {
+        AppMessage::TracerEvent(trace) => Some(trace),
+        _ => None,
+      })
+      .collect()
   }
 }
 
@@ -79,8 +94,12 @@ impl Default for TestContext {
     let mut groups = HashMap::new();
     groups.insert(ROOT_GROUP, SystemGroup::new());
 
+    // as in `App::run`, so config changes emit `ConfigChanged`
+    let mut base = BootSnapshot::default();
+    base.config.app_sender = Some(tx.clone());
+
     Self {
-      base: BootSnapshot::default(),
+      base,
       groups,
       tx,
       rx,

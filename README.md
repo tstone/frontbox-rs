@@ -11,17 +11,21 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 
 - **Lightweight**: Built in [Rust](https://rust-lang.org/) to run on minimal hardware
 - **Flexible**: All hardware can be referenced in 3 ways: by name, tag, or location in space
-- **Dynamic**: Flexible animation + LED support out of the box
 - **Retro**: Pin2DMD and NeoSeg\* (alpha numeric) display support out of the box
+- **Visual**: Included Web Console shows what is happening
+- **Dynamic**: Flexible animation + LED support out of the box
 - **Sonically Immersive**: Sound system with preloading and automatic music ducking\*
 
 \* = Coming Soon
 
 ## Documentation
+
 Documentation is embedded within the source and is available via rustdoc: `cargo doc --open`.
 
 ## Guides
+
 (these will link to published docs once live)
+
 - App -- Booting things up
 - Hardware -- Defining what exists
 - Systems -- The behavorial unit everything happens within
@@ -29,15 +33,23 @@ Documentation is embedded within the source and is available via rustdoc: `cargo
 - Switches -- Capturing input
 - LEDs -- Lighting things up
 - DMD -- Dot matrix display rendering
+- Operator Config -- Settings the operator can change from the menu
+
+## Web Console
+
+![Web console machine view](doc/img/console-machine-view.png)
 
 ## Examples
+
 - See included [examples](frontbox/examples)
 - Or [Last of the Kilmore Oaks](https://github.com/tstone/lotko-homebrew) for source of a full game
 
 ## License
+
 Frontbox is dual licensed Apache + MIT.
 
 ## AI Usage
+
 This project generally follows the [Rust language LLM use policy](https://forge.rust-lang.org/policies/llm-usage.html).
 
 - It’s fine to use LLMs to answer questions, analyze, distill, refine, check, suggest, review. But not to **create**.

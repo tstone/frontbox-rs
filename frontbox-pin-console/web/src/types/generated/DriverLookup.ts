@@ -2,4 +2,4 @@
 import type { Driver } from "./Driver";
 import type { DriverMode } from "./DriverMode";
 
-export type DriverLookup = { by_id: { [key in number]: Driver }, by_name: { [key in string]: Driver }, configs: { [key in number]: DriverMode }, };
+export type DriverLookup = { by_id: { [key in number]: Driver }, by_name: { [key in string]: Driver }, modes: { [key in number]: DriverMode }, };

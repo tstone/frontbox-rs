@@ -30,7 +30,6 @@
 //! `BallsExitedPlay.in_play` to know when it's over. Other mechanics that extend a player's turn can register an event
 //! interrupt on `BallsExitedPlay`; halting it prevents the transition to `PlayerTurnEnding`.
 
-mod activate_playfield;
 pub mod ball_management;
 mod ball_save;
 pub mod configs;
@@ -38,7 +37,6 @@ mod game_management;
 mod game_start;
 mod high_scores;
 
-pub use activate_playfield::*;
 pub use ball_management::*;
 pub use ball_save::*;
 pub use game_management::*;
