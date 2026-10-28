@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::operator_config::*;
-use crate::prelude::BootSnapshot;
+use crate::prelude::AppState;
 
 /// A value that can be assigned to configure a piece of hardware, either with a fixed value or using operator config
 #[derive(Clone, Debug)]
@@ -34,10 +34,10 @@ impl<T: Clone + ConfigType> HardwareValue<T> {
   }
 
   /// Get the actual usable value given a working environment
-  pub fn resolve(&self, snap: &BootSnapshot) -> T {
+  pub fn resolve(&self, state: &AppState) -> T {
     match self {
       Self::Fixed(v) => v.clone(),
-      Self::Config(config) => snap.config.get(config),
+      Self::Config(config) => state.config.get(config),
     }
   }
 

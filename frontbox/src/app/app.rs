@@ -59,7 +59,7 @@ impl App {
     }
     let metrics_path = self.boot_config.metrics_path.clone();
 
-    let (boot_snapshot, machine_sender) = match self.boot_config.platform {
+    let (app_state, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
         let (mut machine, hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
@@ -68,15 +68,15 @@ impl App {
           .tracers
           .iter_mut()
           .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.configs, app_config);
-        machine.on_pre_run(&snapshot).await;
+        let state = AppState::from_hardware(hardware, self.configs, app_config);
+        machine.on_pre_run(&state).await;
 
         let machine_sender = machine.sender();
         tokio::spawn(async move {
           machine.run().await;
         });
 
-        (snapshot, machine_sender)
+        (state, machine_sender)
       }
       Platform::Virtual => {
         let (mut machine, hardware) =
@@ -86,21 +86,21 @@ impl App {
           .tracers
           .iter_mut()
           .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.configs, app_config);
-        machine.on_pre_run(&snapshot).await;
+        let state = AppState::from_hardware(hardware, self.configs, app_config);
+        machine.on_pre_run(&state).await;
 
         let machine_sender = machine.sender();
         tokio::spawn(async move {
           machine.run().await;
         });
 
-        (snapshot, machine_sender)
+        (state, machine_sender)
       }
     };
 
     if let Some(path) = metrics_path {
       match StoolapStore::open(&path) {
-        Ok(store) => boot_snapshot.metrics.begin_store_task(store),
+        Ok(store) => app_state.metrics.begin_store_task(store),
         Err(e) => log::error!("Failed to open metrics store at {}: {e}", path.display()),
       }
     }
@@ -115,7 +115,7 @@ impl App {
 
     log::debug!("Starting main run loop");
     run_loop::run(
-      boot_snapshot,
+      app_state,
       self.systems,
       self.tracers,
       app_sender,

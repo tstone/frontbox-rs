@@ -28,22 +28,22 @@ impl FlipperMain3TryMode {
     }
   }
 
-  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, state: &AppState) -> DriverConfig {
     DriverConfig::FlipperMain3Try {
-      button_switch: snap
+      button_switch: state
         .switches
         .by_name(self.button_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid button switch"),
       invert_button_switch: self.invert_button_switch,
-      eos_switch: snap
+      eos_switch: state
         .switches
         .by_name(self.eos_switch)
         .map(|sw| sw.id)
         .expect("Flipper main direct mode requires a valid EOS switch"),
-      max_on_time: self.max_on_time.resolve(snap),
-      eos_hold_pwm_power: self.eos_hold_pwm_power.resolve(snap),
-      rest: self.rest.resolve(snap),
+      max_on_time: self.max_on_time.resolve(state),
+      eos_hold_pwm_power: self.eos_hold_pwm_power.resolve(state),
+      rest: self.rest.resolve(state),
     }
   }
 

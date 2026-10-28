@@ -36,17 +36,17 @@ impl Default for DelayedPulseMode {
 }
 
 impl DelayedPulseMode {
-  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
-    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, snap);
+  pub(super) fn to_config(&self, state: &AppState) -> DriverConfig {
+    let (switch, invert_switch) = get_switch_id_and_invert(&self.trigger_mode, state);
 
     DriverConfig::DelayedPulse {
       switch,
       invert_switch,
-      delay_length: self.delay_length.resolve(snap),
-      initial_full_power_length: self.initial_full_power_length.resolve(snap),
-      secondary_pwm_length: self.secondary_pwm_length.resolve(snap),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
-      rest: self.rest.resolve(snap),
+      delay_length: self.delay_length.resolve(state),
+      initial_full_power_length: self.initial_full_power_length.resolve(state),
+      secondary_pwm_length: self.secondary_pwm_length.resolve(state),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(state),
+      rest: self.rest.resolve(state),
     }
   }
 

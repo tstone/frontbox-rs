@@ -5,7 +5,7 @@ use crate::operator_config::ConfigCollection;
 use crate::prelude::*;
 
 #[derive(Default)]
-pub struct BootSnapshot {
+pub struct AppState {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
   pub leds: LedLookup,
@@ -16,7 +16,7 @@ pub struct BootSnapshot {
   pub(crate) app_config: AppConfig,
 }
 
-impl BootSnapshot {
+impl AppState {
   pub fn from_hardware(
     hardware: Hardware,
     config: ConfigCollection,
@@ -35,7 +35,7 @@ impl BootSnapshot {
   }
 }
 
-impl Deref for BootSnapshot {
+impl Deref for AppState {
   type Target = AppConfig;
 
   fn deref(&self) -> &Self::Target {

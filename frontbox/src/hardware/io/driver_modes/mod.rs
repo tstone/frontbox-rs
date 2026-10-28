@@ -109,19 +109,19 @@ impl DriverMode {
     FlipperMain3TryModeBuilder::new(button_switch, eos_switch)
   }
 
-  pub fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+  pub fn to_config(&self, state: &AppState) -> DriverConfig {
     match self {
-      Self::Pulse(m) => m.to_config(snap),
-      Self::PulseKick(m) => m.to_config(snap),
-      Self::PulseHold(m) => m.to_config(snap),
-      Self::PulseHoldCancel(m) => m.to_config(snap),
-      Self::DelayedPulse(m) => m.to_config(snap),
-      Self::PulseCancel(m) => m.to_config(snap),
-      Self::LongPulse(m) => m.to_config(snap),
-      Self::PulseHoldExtension(m) => m.to_config(snap),
-      Self::FlipperMainDirect(m) => m.to_config(snap),
-      Self::FlipperHoldDirect(m) => m.to_config(snap),
-      Self::FlipperMain3Try(m) => m.to_config(snap),
+      Self::Pulse(m) => m.to_config(state),
+      Self::PulseKick(m) => m.to_config(state),
+      Self::PulseHold(m) => m.to_config(state),
+      Self::PulseHoldCancel(m) => m.to_config(state),
+      Self::DelayedPulse(m) => m.to_config(state),
+      Self::PulseCancel(m) => m.to_config(state),
+      Self::LongPulse(m) => m.to_config(state),
+      Self::PulseHoldExtension(m) => m.to_config(state),
+      Self::FlipperMainDirect(m) => m.to_config(state),
+      Self::FlipperHoldDirect(m) => m.to_config(state),
+      Self::FlipperMain3Try(m) => m.to_config(state),
     }
   }
 
