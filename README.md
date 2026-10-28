@@ -35,6 +35,10 @@ Documentation is embedded within the source and is available via rustdoc: `cargo
 - DMD -- Dot matrix display rendering
 - Operator Config -- Settings the operator can change from the menu
 
+## Web Console
+
+![Web console machine view](doc/img/console-machine-view.png)
+
 ## Examples
 
 - See included [examples](frontbox/examples)
