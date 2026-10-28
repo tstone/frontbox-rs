@@ -1,6 +1,5 @@
 ## Foundations
 
-- Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
 - Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to

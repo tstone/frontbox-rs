@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use crate::metrics::MetricsCollection;
 use crate::operator_config::ConfigCollection;
 use crate::prelude::*;
 
@@ -11,6 +12,7 @@ pub struct BootSnapshot {
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
   pub config: ConfigCollection,
+  pub metrics: MetricsCollection,
   pub(crate) app_config: AppConfig,
 }
 
@@ -28,6 +30,7 @@ impl BootSnapshot {
       exp_network: hardware.exp_network,
       app_config,
       config,
+      metrics: MetricsCollection::default(),
     }
   }
 }
