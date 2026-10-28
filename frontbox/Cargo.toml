@@ -28,11 +28,10 @@ smallvec = "1.15.2"
 ts-rs = { version = "12.0.1", optional = true, features = ["serde-json-impl"] }
 serde_with = "3.24.0"
 erased-serde = "0.4.10"
-stoolap = { version = "0.4.2", default-features = false }
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+frontbox-metrics = { path = "../frontbox-metrics" }
 
 [dev-dependencies]
 env_logger = "0.11.9"
 
 [features]
-ts = ["dep:ts-rs", "fast-protocol/ts"]
+ts = ["dep:ts-rs", "fast-protocol/ts", "frontbox-metrics/ts"]

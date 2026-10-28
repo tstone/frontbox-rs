@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use crate::metrics::{MetricDefinition, MetricKind};
+use crate::{MetricDefinition, MetricKind};
 
-/// A value measured once per occurrence, such as a game's duration or a player's score. See [metrics](crate::metrics).
+/// A value measured once per occurrence, such as a game's duration or a player's score. See [metrics](crate).
 #[derive(Clone, Debug)]
 pub struct Sample<T> {
   definition: MetricDefinition,

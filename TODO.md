@@ -2,15 +2,6 @@
 
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
-- Metrics system: generic, used by the framework (coil fires, switch hits, ball saves, eject failures) and exposed to
-  user systems, declared statically like config values. Records
-  over time rather than just sums, so values can be plotted and min/max/avg taken. Leaning towards one row per metric per game (counts kept
-  in memory, written in one transaction at game end, plus a timer outside of games) rather than one per increment,
-  which is thousands of rows a game. A reset is a marker, not a zeroing, so "since last reset" is a query and history
-  is kept. Storage still open: needs crash-safe transactions and range scans, and ideally no C compilation burden for
-  cross-compiling to the Pi. Candidates: redb (pure Rust key-value, ACID), Stoolap (pure Rust, SQL), sled (pure Rust,
-  but long in beta), SQLite via rusqlite (`bundled` compiles C). With per-game rows, aggregating in Rust over a range
-  scan is easy, so SQL isn't required. Needed by audits.
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.
 - So much is built on LedSystem that the framework should probably just start it up automatically. Needs: interfaces

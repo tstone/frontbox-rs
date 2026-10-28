@@ -19,7 +19,7 @@ pub mod hardware;
 pub mod led;
 pub mod location;
 pub mod machine;
-pub mod metrics;
+pub use frontbox_metrics as metrics;
 mod macros;
 pub mod operator_config;
 pub mod provided;
@@ -43,7 +43,7 @@ pub mod prelude {
   pub use crate::led::*;
   pub use crate::location::*;
   pub use crate::machine::{MachineExt, MachineSystem, SwitchClosed, SwitchOpened};
-  pub use crate::metrics::*;
+  pub use crate::metrics::{Counter, GameId, MetricDefinition, MetricKind, MetricsCollection, Sample, SampleType};
   pub use crate::operator_config::*;
   pub use crate::systems;
   pub use crate::systems::*;

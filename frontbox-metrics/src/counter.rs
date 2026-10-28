@@ -1,6 +1,6 @@
-use crate::metrics::{MetricDefinition, MetricKind};
+use crate::{MetricDefinition, MetricKind};
 
-/// Counts how many times something happened. See [metrics](crate::metrics).
+/// Counts how many times something happened. See [metrics](crate).
 #[derive(Clone, Debug)]
 pub struct Counter {
   definition: MetricDefinition,

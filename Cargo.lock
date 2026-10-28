@@ -995,12 +995,12 @@ dependencies = [
 name = "frontbox"
 version = "0.1.0"
 dependencies = [
- "chrono",
  "dyn-clone",
  "env_logger",
  "erased-serde",
  "fast-protocol",
  "frontbox-derive",
+ "frontbox-metrics",
  "futures-util",
  "glam 0.33.2",
  "humantime",
@@ -1016,7 +1016,6 @@ dependencies = [
  "serde_json",
  "serde_with",
  "smallvec",
- "stoolap",
  "tokio",
  "tokio-serial",
  "tokio-util",
@@ -1044,12 +1043,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "frontbox-metrics"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "humantime",
+ "log",
+ "serde",
+ "stoolap",
+ "tokio",
+ "ts-rs",
+]
+
+[[package]]
 name = "frontbox-pin-console"
 version = "0.1.0"
 dependencies = [
  "axum",
  "env_logger",
  "frontbox",
+ "frontbox-metrics",
  "frontbox-pinball",
  "log",
  "mime_guess",

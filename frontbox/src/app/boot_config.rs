@@ -31,7 +31,7 @@ pub struct BootConfig {
   ///
   /// Defaults to `operator_config.toml` in the working directory. `None` keeps changes in memory only.
   pub config_path: Option<PathBuf>,
-  /// Directory for the metrics database. Recorded metrics are flushed here at the end of each game, every few minutes,
+  /// Directory for the metrics database. Recorded metrics are flushed here at the end of each game, every 30 seconds,
   /// and at shutdown. Process must have read+write access.
   ///
   /// Defaults to `metrics.db` in the working directory. `None` counts metrics in memory and drops them.

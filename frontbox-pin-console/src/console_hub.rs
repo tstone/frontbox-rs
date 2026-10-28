@@ -1,6 +1,7 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
 use frontbox::prelude::{ConfigDomainValue, Hardware, SystemDespawned, SystemSpawned};
+use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -39,6 +40,7 @@ impl ConsoleHub {
         next_seq: 0,
         plane_images: Vec::new(),
         control: None,
+        metrics: None,
         led_names: HashMap::new(),
         pending_leds: BTreeMap::new(),
       })),
@@ -122,6 +124,36 @@ impl ConsoleHub {
       return;
     };
     let _ = control.send(TracerControlEvent::SetConfig { key, value });
+  }
+
+  pub fn set_metrics(&self, metrics: Option<MetricsDb>) {
+    self.state.lock().unwrap().metrics = metrics;
+  }
+
+  /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
+  pub async fn metric_totals(&self) -> Option<Utf8Bytes> {
+    let db = self.state.lock().unwrap().metrics.clone();
+    let totals = match db {
+      None => MetricTotals {
+        stored: false,
+        counters: Vec::new(),
+      },
+      Some(db) => match tokio::task::spawn_blocking(move || db.totals()).await {
+        Ok(Ok(counters)) => MetricTotals {
+          stored: true,
+          counters,
+        },
+        Ok(Err(err)) => {
+          log::error!(target: "frontbox::console", "Unable to read metric totals: {err}");
+          return None;
+        }
+        Err(err) => {
+          log::error!(target: "frontbox::console", "Reading metric totals panicked: {err}");
+          return None;
+        }
+      },
+    };
+    serialize(&ServerMessage::MetricTotals(totals))
   }
 
   pub fn plane_image(&self, index: usize) -> Option<PathBuf> {
@@ -413,6 +445,8 @@ struct HubState {
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.
   control: Option<mpsc::UnboundedSender<TracerControlEvent>>,
+  /// The app's metrics database, for history. `None` until `AppTracer::init`, or when the app has none.
+  metrics: Option<MetricsDb>,
   led_names: LedNames,
   /// LED colors changed since the last `flush_leds`
   pending_leds: BTreeMap<String, Color>,

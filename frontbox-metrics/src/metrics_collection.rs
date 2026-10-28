@@ -6,13 +6,14 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use crate::metrics::{Counter, MetricDefinition, MetricsStore, Sample, SampleType};
+use crate::{Counter, MetricDefinition, MetricsStore, Sample, SampleType};
 
 /// A game recording more samples of one metric than this is probably recording a sample where a counter belongs
 const SAMPLES_PER_GAME_WARNING: u32 = 100;
 
-/// How often recordings are flushed to the store whatever the game is doing. Bounds what a power-off loses.
-pub(crate) const FLUSH_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// How often the app flushes recordings whatever the game is doing. Bounds what a power-off loses, and how far
+/// history read from the store trails what has been recorded.
+pub const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
 
 /// How long shutdown waits for the last flush to be written
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -28,7 +29,7 @@ pub struct MetricsCollection {
 impl MetricsCollection {
   /// Writes to the store should happen outside of the main run loop, so flushed batches are handed to a tokio task
   /// that owns the store and writes them one at a time
-  pub(crate) fn begin_store_task<S: MetricsStore>(&self, mut store: S) {
+  pub fn begin_store_task<S: MetricsStore>(&self, mut store: S) {
     let (sender, mut receiver) = mpsc::unbounded_channel::<MetricsBatch>();
     let task = tokio::spawn(async move {
       while let Some(batch) = receiver.recv().await {
@@ -69,7 +70,7 @@ impl MetricsCollection {
   }
 
   /// Flush, then wait for the store to finish writing. Called at shutdown.
-  pub(crate) async fn close(&self) {
+  pub async fn close(&self) {
     self.flush();
     let Some(writer) = self.writer.borrow_mut().take() else {
       return;
@@ -168,8 +169,8 @@ impl MetricsCollection {
     self.flush();
   }
 
-  /// Takes everything recorded since the last batch
-  pub(crate) fn take_batch(&self) -> MetricsBatch {
+  /// Takes everything recorded since the last batch, as a flush does. For writing to a store by hand, and for tests.
+  pub fn take_batch(&self) -> MetricsBatch {
     let mut state = self.state.borrow_mut();
     MetricsBatch {
       taken_at: SystemTime::now(),
@@ -195,7 +196,7 @@ pub struct GameId(pub u64);
 
 /// Everything recorded since the previous batch
 #[derive(Clone, Debug)]
-pub(crate) struct MetricsBatch {
+pub struct MetricsBatch {
   pub taken_at: SystemTime,
   /// Metrics first used since the previous batch
   pub definitions: Vec<MetricDefinition>,
@@ -216,14 +217,14 @@ impl MetricsBatch {
 
 /// How much a counter went up since the previous batch
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CountDelta {
+pub struct CountDelta {
   pub metric: &'static str,
   pub game: Option<GameId>,
   pub count: u64,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SampleRecord {
+pub struct SampleRecord {
   pub metric: &'static str,
   pub value: f64,
   pub game: Option<GameId>,
@@ -232,7 +233,7 @@ pub(crate) struct SampleRecord {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GameRecord {
+pub struct GameRecord {
   pub id: GameId,
   pub started_at: SystemTime,
   pub ended_at: SystemTime,
@@ -318,8 +319,7 @@ mod tests {
   use std::time::Duration;
 
   use super::*;
-  use crate::metrics::StoreResult;
-  use crate::prelude::*;
+  use crate::StoreResult;
 
   #[test]
   fn counts_add_up_per_metric() {
@@ -525,17 +525,6 @@ mod tests {
 
     metrics.inc(&counter);
     metrics.record(&sample, 3);
-  }
-
-  #[test]
-  fn recorded_through_context() {
-    let saves = Counter::new("saves", "");
-    let test_ctx = TestContext::default();
-
-    let ctx = test_ctx.sys_ctx();
-    ctx.metrics.inc(&saves);
-
-    assert_eq!(test_ctx.base.metrics.take_batch().counts[0].count, 1);
   }
 
   fn with_store() -> (MetricsCollection, CapturingStore) {

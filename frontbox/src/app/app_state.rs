@@ -42,3 +42,19 @@ impl Deref for AppState {
     &self.app_config
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use crate::prelude::*;
+
+  #[test]
+  fn metrics_are_recorded_through_context() {
+    let saves = Counter::new("saves", "");
+    let test_ctx = TestContext::default();
+
+    let ctx = test_ctx.sys_ctx();
+    ctx.metrics.inc(&saves);
+
+    assert_eq!(test_ctx.base.metrics.take_batch().counts[0].count, 1);
+  }
+}
