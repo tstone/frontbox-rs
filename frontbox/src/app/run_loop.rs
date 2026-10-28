@@ -352,6 +352,9 @@ fn switch_state_changed(
   let outgoing_event = match (base.switches.by_id(&switch_id), state) {
     (Some(switch), SwitchState::Closed) => {
       log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
+      if let Some(hits) = base.switches.hits_counter(switch_id) {
+        base.metrics.inc(hits);
+      }
       Some(EventBox::new(SwitchClosed::new(switch.clone())))
     }
     (Some(switch), SwitchState::Open) => {

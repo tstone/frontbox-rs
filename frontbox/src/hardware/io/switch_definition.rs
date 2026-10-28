@@ -19,6 +19,14 @@ impl SwitchDefinition {
   pub fn q(&self) -> SwitchQ {
     SwitchQ::name(self.name)
   }
+
+  /// Counts the switch's closings, keyed `switch_hits.<name>`. Leaks the key, so build it once per switch at boot.
+  pub(crate) fn hits_counter(&self) -> Counter {
+    let key = Box::leak(format!("switch_hits.{}", self.name).into_boxed_str());
+    Counter::new(self.name, "Times the switch closed")
+      .key(key)
+      .category("Switches")
+  }
 }
 
 impl HardwareDefinition for SwitchDefinition {
