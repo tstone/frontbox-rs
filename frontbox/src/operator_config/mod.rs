@@ -121,7 +121,8 @@
 //! ### Saving
 //!
 //! Set `BootConfig::config_path` to load saved values at boot and save changes as they're made. Only values that
-//! differ from their default are written.
+//! differ from their default are written. A saved value is only rewritten once it's changed, so a build with a
+//! narrower range won't overwrite it with the value it fell back to.
 //!
 //! ```toml
 //! "Max Extra Balls" = 3
@@ -130,10 +131,12 @@
 //!
 //! ### Menus
 //!
-//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-pin2dmd` menu section:
+//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-pin2dmd` menu section. A static config is
+//! added with `display()`.
 //!
 //! ```rust,ignore
 //! MenuSection::new("Left Flipper").configs(LEFT_FLIPPER.configs())
+//! MenuSection::new("Game").configs(vec![MAX_EXTRA_BALLS.display()])
 //! ```
 //!
 //! ### Web Console

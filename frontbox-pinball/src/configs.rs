@@ -1,3 +1,15 @@
+//! Operator settings used by this crate's systems. They work without any setup, using their defaults until changed.
+//! To let the operator change them, add them to a menu:
+//!
+//! ```rust,ignore
+//! MenuSection::new("Game").configs(vec![
+//!   configs::TURN_COUNT.display(),
+//!   configs::BALL_SAVE_TIME.display(),
+//! ])
+//! ```
+//!
+//! See [`frontbox::operator_config`] for how configs work.
+
 use std::sync::LazyLock;
 
 use frontbox::prelude::*;

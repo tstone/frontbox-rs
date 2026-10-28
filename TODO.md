@@ -1,6 +1,5 @@
 ## Foundations
 
-- What happens when you call get/expect on a deactivated System? What should happen?
 - Scan run loop to see if there are any Neuron-specific bits in the framework code (and if so, move them to the Neuron machine impl)
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
@@ -26,10 +25,10 @@
   that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
-- A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 
 ## Pinball features
 
+- A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 - Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
