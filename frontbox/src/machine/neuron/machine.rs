@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::machine::neuron::boot;
-use crate::machine::neuron::driver_triggers::DriverTriggers;
+use crate::machine::driver_triggers::DriverTriggers;
 use crate::machine::serial_interface::SerialInterface;
 use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
@@ -144,8 +144,8 @@ impl Machine for Neuron {
     self.machine_sender.clone()
   }
 
-  async fn on_pre_run(&mut self, snapshot: &BootSnapshot) {
-    boot::configure_drivers(&mut self.io_port, &snapshot).await;
+  async fn on_pre_run(&mut self, state: &AppState) {
+    boot::configure_drivers(&mut self.io_port, &state).await;
   }
 
   async fn run(&mut self) {

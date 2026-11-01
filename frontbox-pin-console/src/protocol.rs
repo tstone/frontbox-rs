@@ -3,6 +3,7 @@ use frontbox::prelude::DriverMode;
 use frontbox::prelude::Hardware;
 use frontbox::prelude::SwitchState;
 use frontbox::prelude::app_tracer::{Color, ConfigView, DriverState, TraceEvent};
+use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
 
@@ -14,6 +15,8 @@ pub enum ServerMessage {
   Trace(TraceRecord),
   Leds(LedColors),
   Configs(ConfigList),
+  /// Sent only to the client that asked, in reply to `QueryMetrics`
+  MetricTotals(MetricTotals),
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
@@ -88,6 +91,14 @@ pub struct ConfigList {
   pub configs: Vec<ConfigView>,
 }
 
+/// Metric history read from the metrics database. Trails what's been recorded by up to one flush.
+#[derive(Clone, serde::Serialize, TS)]
+pub struct MetricTotals {
+  /// Whether the app keeps a metrics database. Without one there's no history.
+  pub stored: bool,
+  pub counters: Vec<CounterTotal>,
+}
+
 /// Messages from the web app to the console server
 #[derive(Clone, serde::Deserialize, TS)]
 #[serde(tag = "type")]
@@ -96,4 +107,6 @@ pub enum ClientMessage {
   SetSwitch { switch_id: usize, closed: bool },
   /// Set an operator config, as the operator menu would
   SetConfig { key: String, value: ConfigDomainValue },
+  /// Ask for every counter's total. Answered with `MetricTotals`.
+  QueryMetrics,
 }

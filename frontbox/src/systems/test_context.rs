@@ -7,7 +7,7 @@ use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 pub struct TestContext {
-  pub base: BootSnapshot,
+  pub base: AppState,
   pub groups: Groups,
   tx: mpsc::UnboundedSender<AppMessage>,
   rx: mpsc::UnboundedReceiver<AppMessage>,
@@ -95,7 +95,7 @@ impl Default for TestContext {
     groups.insert(ROOT_GROUP, SystemGroup::new());
 
     // as in `App::run`, so config changes emit `ConfigChanged`
-    let mut base = BootSnapshot::default();
+    let mut base = AppState::default();
     base.config.app_sender = Some(tx.clone());
 
     Self {

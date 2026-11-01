@@ -2,7 +2,7 @@ use frontbox::prelude::*;
 
 use crate::ball_management::trough_management_config::TroughManagementConfig;
 use crate::ball_management::{TroughEjectFailed, TroughEjecting, TroughOccupancyChanged};
-use crate::configs;
+use crate::{configs, metrics};
 
 pub struct TroughSystem {
   config: TroughManagementConfig,
@@ -113,6 +113,7 @@ impl TroughSystem {
     let retries_max = ctx.config.get(&configs::TROUGH_EJECT_RETRIES);
     if self.eject_retries >= retries_max {
       log::warn!(target: "frontbox::trough", "Eject failed after {} retries", self.eject_retries);
+      ctx.metrics.inc(&metrics::TROUGH_EJECT_FAILURES);
       ctx.emit(TroughEjectFailed);
       self.eject_ready(ctx);
     } else {
@@ -151,8 +152,7 @@ impl TroughSystem {
   fn verify_eject_switch(&mut self, ctx: &SystemContext) {
     if let EjectState::Verifying { cue_id, .. } = self.eject_state {
       ctx.cancel_cue(cue_id);
-      self.exits_since_report += 1;
-      self.eject_ready(ctx);
+      self.eject_verified(ctx);
     }
   }
 
@@ -165,12 +165,18 @@ impl TroughSystem {
     {
       // A closed jam switch means the ball didn't leave, even if it no longer registers in occupancy
       if !self.is_jammed(ctx.into()) && self.read_switch_occupancy(ctx.into()) <= target_occupancy {
-        self.exits_since_report += 1;
-        self.eject_ready(ctx);
+        self.eject_verified(ctx);
       } else {
         self.retry_eject(ctx);
       }
     }
+  }
+
+  /// A ball is known to have left the trough
+  fn eject_verified(&mut self, ctx: &SystemContext) {
+    self.exits_since_report += 1;
+    ctx.metrics.inc(&metrics::BALLS_SERVED);
+    self.eject_ready(ctx);
   }
 
   fn eject_ready(&mut self, ctx: &SystemContext) {
@@ -466,6 +472,21 @@ mod tests {
 
     fn is_verifying(&self) -> bool {
       matches!(self.trough.eject_state, EjectState::Verifying { .. })
+    }
+
+    /// Every count recorded so far, by key
+    fn counts(&self) -> Vec<(&'static str, u64)> {
+      let mut counts: Vec<_> = self
+        .ctx
+        .base
+        .metrics
+        .take_batch()
+        .counts
+        .iter()
+        .map(|delta| (delta.metric, delta.count))
+        .collect();
+      counts.sort();
+      counts
     }
 
     fn is_settling(&self) -> bool {
@@ -772,6 +793,20 @@ mod tests {
     f.verify_timeout();
     assert_eq!(f.trough.eject_state, EjectState::Ready);
     assert_eq!(f.trough.eject_retries, 0);
+  }
+
+  #[test]
+  fn verified_ejects_are_counted_as_balls_served() {
+    let mut f = Fixture::spawn(3, false, true);
+    f.eject();
+    f.close_plunge(); // by switch
+    let mut f2 = Fixture::spawn(3, false, false);
+    f2.eject();
+    f2.set_balls(2);
+    f2.settle();
+    f2.verify_timeout(); // by occupancy
+    assert_eq!(f.counts(), vec![("balls_served", 1)]);
+    assert_eq!(f2.counts(), vec![("balls_served", 1)]);
   }
 
   #[test]

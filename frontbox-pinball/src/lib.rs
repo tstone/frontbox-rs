@@ -36,6 +36,7 @@ pub mod configs;
 mod game_management;
 mod game_start;
 mod high_scores;
+pub mod metrics;
 
 pub use ball_management::*;
 pub use ball_save::*;

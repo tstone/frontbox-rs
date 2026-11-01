@@ -30,6 +30,30 @@ impl DriverDefinition {
   pub fn q(&self) -> DriverQ {
     DriverQ::name(self.name)
   }
+
+  /// Counts the driver's fires, keyed `driver_fires.<name>` for taps from software and `driver_fires_switch.<name>`
+  /// for fires by the hardware from its trigger switch. Kept apart so a chattering switch shows. Leaks the keys, so
+  /// build them once per driver at boot.
+  pub(crate) fn fire_counters(&self) -> DriverFireCounters {
+    let tapped = Box::leak(format!("driver_fires.{}", self.name).into_boxed_str());
+    let switch_label = Box::leak(format!("{} (switch)", self.name).into_boxed_str());
+    let switched = Box::leak(format!("driver_fires_switch.{}", self.name).into_boxed_str());
+    DriverFireCounters {
+      tapped: Counter::new(self.name, "Times software fired the driver")
+        .key(tapped)
+        .category("Drivers"),
+      switched: Counter::new(switch_label, "Times the hardware fired the driver from its switch")
+        .key(switched)
+        .category("Drivers"),
+    }
+  }
+}
+
+/// A driver's fire counters. See [`DriverDefinition::fire_counters`].
+#[derive(Clone)]
+pub(crate) struct DriverFireCounters {
+  pub tapped: Counter,
+  pub switched: Counter,
 }
 
 impl HardwareDefinition for DriverDefinition {

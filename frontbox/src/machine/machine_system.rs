@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::hardware::*;
+use crate::machine::driver_triggers::DriverTriggers;
+use crate::machine::machine_metrics::{BOOTS, MINUTES_ON};
 use crate::machine::*;
 use crate::operator_config::ConfigChanged;
 use crate::prelude::app_message::AppMessage;
@@ -12,6 +14,8 @@ use tokio::sync::mpsc;
 
 pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_millis(100);
 
+const MINUTE: Duration = Duration::from_secs(60);
+
 /// Primary interface for interaction with FAST hardware
 pub struct MachineSystem {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
@@ -19,6 +23,10 @@ pub struct MachineSystem {
   /// The mode last sent to each driver. This is the only thing that sends DL at runtime, so unlike `ctx.drivers`,
   /// which catches up a pass later, it's never behind the board.
   driver_modes: HashMap<usize, DriverMode>,
+  /// How each driver was last left live, to count the fires the hardware makes on its own
+  triggers: DriverTriggers,
+  /// Running time not yet counted toward `MINUTES_ON`
+  uncounted: Duration,
 }
 
 #[allow(unused)]
@@ -31,6 +39,8 @@ impl MachineSystem {
       machine_sender,
       app_sender,
       driver_modes: HashMap::new(),
+      triggers: DriverTriggers::default(),
+      uncounted: Duration::ZERO,
     }
   }
 
@@ -71,6 +81,8 @@ impl MachineSystem {
         })
         .ok();
       self.driver_modes.insert(driver.id, mode.clone());
+      // a DL disconnects the driver's switch until it's activated again
+      self.triggers.cleared(driver.id);
       self
         .app_sender
         .send(AppMessage::DriverModeChange(driver.id, mode))
@@ -79,7 +91,7 @@ impl MachineSystem {
   }
 
   /// Activate a driver based on an activation mode (e.g. tap, automatic, or virtual switch) (TL)
-  pub fn activate_driver(&self, driver: &str, mode: ActivationMode, ctx: &ServiceContext) {
+  pub fn activate_driver(&mut self, driver: &str, mode: ActivationMode, ctx: &ServiceContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let (control_mode, switch) = match mode {
         ActivationMode::Automatic => (
@@ -89,7 +101,7 @@ impl MachineSystem {
         ActivationMode::Tap => (DriverTriggerControlMode::Manual, None),
         ActivationMode::VirtualSwitchOn => (DriverTriggerControlMode::On, None),
       };
-      self.trigger_driver(driver.id, control_mode, switch);
+      self.trigger_driver(driver.id, control_mode, switch, ctx);
     }
   }
 
@@ -117,17 +129,30 @@ impl MachineSystem {
   }
 
   /// Deactivate a driver based on a deactivation mode (e.g. automatic, or virtual switch) (TL)
-  pub fn deactivate_driver(&self, driver: &str, mode: DeactivationMode, ctx: &ServiceContext) {
+  pub fn deactivate_driver(&mut self, driver: &str, mode: DeactivationMode, ctx: &ServiceContext) {
     if let Some(driver) = ctx.drivers.get(driver) {
       let control_mode: DriverTriggerControlMode = match mode {
         DeactivationMode::Disabled => DriverTriggerControlMode::Off,
         DeactivationMode::VirtualSwitchOff => DriverTriggerControlMode::Off,
       };
-      self.trigger_driver(driver.id, control_mode, None);
+      self.trigger_driver(driver.id, control_mode, None, ctx);
     }
   }
 
-  fn trigger_driver(&self, driver: usize, mode: DriverTriggerControlMode, switch: Option<usize>) {
+  fn trigger_driver(
+    &mut self,
+    driver: usize,
+    mode: DriverTriggerControlMode,
+    switch: Option<usize>,
+    ctx: &ServiceContext,
+  ) {
+    self.triggers.triggered(driver, mode, switch);
+    if matches!(mode, DriverTriggerControlMode::Manual)
+      && let Some(counters) = ctx.drivers.fire_counters(driver)
+    {
+      ctx.metrics.inc(&counters.tapped);
+    }
+
     let driver_state = match &mode {
       DriverTriggerControlMode::On => Some(DriverState::On),
       DriverTriggerControlMode::Off => Some(DriverState::Off),
@@ -152,6 +177,24 @@ impl MachineSystem {
           state,
         }))
         .ok();
+    }
+  }
+
+  /// FAST never reports fires it makes from hardware rules (flippers, slings, pops), so they're counted from the
+  /// switch change that caused them, for each driver left automatic on that switch whose mode fires on this state.
+  ///
+  /// Counted from the switch event rather than where it's emitted, to keep this out of the run loop. A system that
+  /// halted a switch event would hide its fires too; nothing does today.
+  fn count_switch_fires(&self, switch_id: usize, state: SwitchState, ctx: &SystemContext) {
+    for driver_id in self.triggers.automatic_on(switch_id) {
+      let fires = self
+        .driver_modes
+        .get(&driver_id)
+        .and_then(DriverMode::fires_on)
+        .is_some_and(|(_, fires_on)| fires_on == state);
+      if fires && let Some(counters) = ctx.drivers.fire_counters(driver_id) {
+        ctx.metrics.inc(&counters.switched);
+      }
     }
   }
 
@@ -317,11 +360,24 @@ impl System for MachineSystem {
       .modes()
       .map(|(driver_id, mode)| (driver_id, mode.clone()))
       .collect();
+    ctx.metrics.inc(&BOOTS);
+  }
+
+  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
+    self.uncounted += delta;
+    if self.uncounted >= MINUTE {
+      self.uncounted -= MINUTE;
+      ctx.metrics.inc(&MINUTES_ON);
+    }
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>() {
       self.update_drivers_on_config_change(key, ctx);
+    } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
+      self.count_switch_fires(switch.id, SwitchState::Closed, ctx);
+    } else if let Some(SwitchOpened { switch }) = event.downcast_ref::<SwitchOpened>() {
+      self.count_switch_fires(switch.id, SwitchState::Open, ctx);
     }
   }
 
@@ -579,5 +635,99 @@ mod tests {
         config: DriverConfig::LongPulse { initial_pwm_power, .. }
       }] if initial_pwm_power == Power::HALF
     ));
+  }
+
+  #[test]
+  fn a_boot_is_counted_at_spawn() {
+    let harness = Harness::new();
+    assert_eq!(harness.counts(), vec![("boots", 1)]);
+  }
+
+  #[test]
+  fn a_tap_counts_a_fire() {
+    let mut harness = Harness::new();
+    harness.activate(ActivationMode::Tap);
+    assert_eq!(harness.counts(), vec![("boots", 1), ("driver_fires.coil", 1)]);
+  }
+
+  #[test]
+  fn a_live_driver_counts_a_fire_when_its_switch_closes() {
+    let mut harness = Harness::new();
+    harness.activate(ActivationMode::Automatic);
+    harness.switch(0x12, SwitchState::Closed);
+    harness.switch(0x12, SwitchState::Open); // fires on closing only
+    harness.switch(0x13, SwitchState::Closed); // another switch
+    assert_eq!(
+      harness.counts(),
+      vec![("boots", 1), ("driver_fires_switch.coil", 1)]
+    );
+  }
+
+  #[test]
+  fn a_disabled_driver_counts_nothing() {
+    let mut harness = Harness::new();
+    harness.switch(0x12, SwitchState::Closed); // never activated
+    harness.activate(ActivationMode::Automatic);
+    harness.deactivate(DeactivationMode::Disabled);
+    harness.switch(0x12, SwitchState::Closed);
+    harness.activate(ActivationMode::Automatic);
+    harness.configure(pulse_using_power()); // a DL disconnects the switch
+    harness.switch(0x12, SwitchState::Closed);
+    assert_eq!(harness.counts(), vec![("boots", 1)]);
+  }
+
+  #[test]
+  fn an_inverted_trigger_counts_a_fire_when_its_switch_opens() {
+    let mut harness = Harness::new();
+    harness.configure(
+      DriverMode::pulse()
+        .trigger_mode(DriverTriggerMode::InvertedSwitch("sw"))
+        .build(),
+    );
+    harness.activate(ActivationMode::Automatic);
+    harness.switch(0x12, SwitchState::Closed);
+    harness.switch(0x12, SwitchState::Open);
+    assert_eq!(
+      harness.counts(),
+      vec![("boots", 1), ("driver_fires_switch.coil", 1)]
+    );
+  }
+
+  #[test]
+  fn minutes_on_are_counted_from_ticks() {
+    let mut harness = Harness::new();
+    for _ in 0..3 {
+      harness
+        .machine
+        .on_tick(Duration::from_secs(25), &harness.ctx.sys_ctx());
+    }
+    assert_eq!(harness.counts(), vec![("boots", 1), ("minutes_on", 1)]);
+  }
+
+  impl Harness {
+    /// Deliver the switch event the run loop would emit
+    fn switch(&mut self, id: usize, state: SwitchState) {
+      let switch = self.ctx.base.switches.by_id(&id).unwrap().clone();
+      let ctx = self.ctx.sys_ctx();
+      match state {
+        SwitchState::Closed => self.machine.on_event(&SwitchClosed::new(switch), &ctx),
+        SwitchState::Open => self.machine.on_event(&SwitchOpened::new(switch), &ctx),
+      }
+    }
+
+    /// Every count recorded so far, by key
+    fn counts(&self) -> Vec<(&'static str, u64)> {
+      let mut counts: Vec<_> = self
+        .ctx
+        .base
+        .metrics
+        .take_batch()
+        .counts
+        .iter()
+        .map(|delta| (delta.metric, delta.count))
+        .collect();
+      counts.sort();
+      counts
+    }
   }
 }

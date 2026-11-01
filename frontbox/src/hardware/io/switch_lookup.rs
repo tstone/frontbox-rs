@@ -12,6 +12,9 @@ pub struct SwitchLookup {
   pub(crate) by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
+  #[serde(skip)]
+  #[cfg_attr(feature = "ts", ts(skip))]
+  hit_counters: HashMap<usize, Counter>,
 }
 
 impl SwitchLookup {
@@ -23,6 +26,7 @@ impl SwitchLookup {
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
     let mut configs = HashMap::new();
+    let mut hit_counters = HashMap::new();
     for addressed in addressed {
       let switch = Switch {
         id: addressed.id,
@@ -39,6 +43,8 @@ impl SwitchLookup {
         configs.insert(addressed.id, config.clone());
       }
 
+      hit_counters.insert(addressed.id, addressed.definition.hits_counter());
+
       // Actual state is populated below from initial report
       is_closed.insert(addressed.id, false);
     }
@@ -48,6 +54,7 @@ impl SwitchLookup {
       by_name,
       is_closed,
       configs,
+      hit_counters,
     };
 
     // set initial states
@@ -79,6 +86,11 @@ impl SwitchLookup {
 
   pub fn by_id(&self, switch_id: &usize) -> Option<&Switch> {
     self.by_id.get(switch_id)
+  }
+
+  /// Counts the switch's closings. Only switches wired at boot have one.
+  pub(crate) fn hits_counter(&self, switch_id: usize) -> Option<&Counter> {
+    self.hit_counters.get(&switch_id)
   }
 
   pub fn by_id_mut(&mut self, switch_id: &usize) -> Option<&mut Switch> {
@@ -233,6 +245,26 @@ mod tests {
     let switches = lookup.by_tag::<Playfield>();
     assert_eq!(switches.len(), 1);
     assert_eq!(switches[0].name, "switch1");
+  }
+
+  #[test]
+  fn wired_switches_have_hit_counters() {
+    static DEF: LazyLock<SwitchDefinition> =
+      LazyLock::new(|| SwitchDefinition::new("left_sling").build());
+
+    let lookup = SwitchLookup::new(
+      vec![IoAddressed {
+        definition: &DEF,
+        assignment: IoAddress::new(0, 1),
+        id: 1,
+      }],
+      vec![],
+    );
+
+    let hits = lookup.hits_counter(1).unwrap().definition();
+    assert_eq!(hits.key, "switch_hits.left_sling");
+    assert_eq!(hits.label, "left_sling");
+    assert!(lookup.hits_counter(2).is_none());
   }
 
   #[test]

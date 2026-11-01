@@ -109,19 +109,19 @@ impl DriverMode {
     FlipperMain3TryModeBuilder::new(button_switch, eos_switch)
   }
 
-  pub fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+  pub fn to_config(&self, state: &AppState) -> DriverConfig {
     match self {
-      Self::Pulse(m) => m.to_config(snap),
-      Self::PulseKick(m) => m.to_config(snap),
-      Self::PulseHold(m) => m.to_config(snap),
-      Self::PulseHoldCancel(m) => m.to_config(snap),
-      Self::DelayedPulse(m) => m.to_config(snap),
-      Self::PulseCancel(m) => m.to_config(snap),
-      Self::LongPulse(m) => m.to_config(snap),
-      Self::PulseHoldExtension(m) => m.to_config(snap),
-      Self::FlipperMainDirect(m) => m.to_config(snap),
-      Self::FlipperHoldDirect(m) => m.to_config(snap),
-      Self::FlipperMain3Try(m) => m.to_config(snap),
+      Self::Pulse(m) => m.to_config(state),
+      Self::PulseKick(m) => m.to_config(state),
+      Self::PulseHold(m) => m.to_config(state),
+      Self::PulseHoldCancel(m) => m.to_config(state),
+      Self::DelayedPulse(m) => m.to_config(state),
+      Self::PulseCancel(m) => m.to_config(state),
+      Self::LongPulse(m) => m.to_config(state),
+      Self::PulseHoldExtension(m) => m.to_config(state),
+      Self::FlipperMainDirect(m) => m.to_config(state),
+      Self::FlipperHoldDirect(m) => m.to_config(state),
+      Self::FlipperMain3Try(m) => m.to_config(state),
     }
   }
 
@@ -161,18 +161,24 @@ impl DriverMode {
   /// The physical switch that fires the driver, if any. This is the switch a TL sets when activating it
   /// automatically.
   pub fn trigger_switch(&self) -> Option<&'static str> {
+    self.fires_on().map(|(switch, _)| switch)
+  }
+
+  /// The physical switch that fires the driver, and the state it fires on: closing, or opening for an inverted
+  /// trigger
+  pub fn fires_on(&self) -> Option<(&'static str, SwitchState)> {
     match self {
-      Self::Pulse(m) => m.trigger_mode.trigger_switch(),
-      Self::PulseKick(m) => m.trigger_mode.trigger_switch(),
-      Self::PulseHold(m) => m.trigger_mode.trigger_switch(),
-      Self::PulseHoldCancel(m) => m.trigger_mode.trigger_switch(),
-      Self::DelayedPulse(m) => m.trigger_mode.trigger_switch(),
-      Self::PulseCancel(m) => m.trigger_mode.trigger_switch(),
-      Self::LongPulse(m) => m.trigger_mode.trigger_switch(),
-      Self::PulseHoldExtension(m) => m.trigger_mode.trigger_switch(),
-      Self::FlipperMainDirect(m) => Some(m.button_switch),
-      Self::FlipperHoldDirect(m) => Some(m.button_switch),
-      Self::FlipperMain3Try(m) => Some(m.button_switch),
+      Self::Pulse(m) => m.trigger_mode.fires_on(),
+      Self::PulseKick(m) => m.trigger_mode.fires_on(),
+      Self::PulseHold(m) => m.trigger_mode.fires_on(),
+      Self::PulseHoldCancel(m) => m.trigger_mode.fires_on(),
+      Self::DelayedPulse(m) => m.trigger_mode.fires_on(),
+      Self::PulseCancel(m) => m.trigger_mode.fires_on(),
+      Self::LongPulse(m) => m.trigger_mode.fires_on(),
+      Self::PulseHoldExtension(m) => m.trigger_mode.fires_on(),
+      Self::FlipperMainDirect(m) => Some((m.button_switch, SwitchState::Closed)),
+      Self::FlipperHoldDirect(m) => Some((m.button_switch, SwitchState::Closed)),
+      Self::FlipperMain3Try(m) => Some((m.button_switch, SwitchState::Closed)),
     }
   }
 }

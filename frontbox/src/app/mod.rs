@@ -59,6 +59,7 @@
 mod app;
 pub(crate) mod app_config;
 pub(crate) mod app_message;
+mod app_state;
 pub mod app_tracer;
 mod boot_config;
 pub mod event_box;
@@ -69,6 +70,7 @@ use std::collections::HashMap;
 pub use app::*;
 pub(crate) use app_config::*;
 pub use app_message::ShutdownScope;
+pub use app_state::*;
 pub use boot_config::*;
 pub(crate) use event_box::*;
 pub use run_loop::Synchronize;

@@ -1,6 +1,7 @@
 use crate::app::app_tracer::AppTracer;
 use crate::app::run_loop;
 use crate::machine::*;
+use crate::metrics::MetricsDb;
 use crate::operator_config::ConfigCollection;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::TracerControlEvent;
@@ -52,12 +53,21 @@ impl App {
     let app_config = AppConfig::from_boot_config(&self.boot_config);
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
+
     self.configs.app_sender = Some(app_sender.clone());
+
     if let Some(path) = self.boot_config.config_path.clone() {
       self.configs.begin_save_task(path);
     }
 
-    let (boot_snapshot, machine_sender) = match self.boot_config.platform {
+    // opened before tracers start, so they can read history from it
+    let metrics_db = self.boot_config.metrics_path.as_ref().and_then(|path| {
+      MetricsDb::open(path)
+        .inspect_err(|e| log::error!("Failed to open metrics store at {}: {e}", path.display()))
+        .ok()
+    });
+
+    let (app_state, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
         let (mut machine, hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
@@ -65,16 +75,16 @@ impl App {
         self
           .tracers
           .iter_mut()
-          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.configs, app_config);
-        machine.on_pre_run(&snapshot).await;
+          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone(), metrics_db.clone()));
+        let state = AppState::from_hardware(hardware, self.configs, app_config);
+        machine.on_pre_run(&state).await;
 
         let machine_sender = machine.sender();
         tokio::spawn(async move {
           machine.run().await;
         });
 
-        (snapshot, machine_sender)
+        (state, machine_sender)
       }
       Platform::Virtual => {
         let (mut machine, hardware) =
@@ -83,18 +93,22 @@ impl App {
         self
           .tracers
           .iter_mut()
-          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone()));
-        let snapshot = BootSnapshot::from_hardware(hardware, self.configs, app_config);
-        machine.on_pre_run(&snapshot).await;
+          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone(), metrics_db.clone()));
+        let state = AppState::from_hardware(hardware, self.configs, app_config);
+        machine.on_pre_run(&state).await;
 
         let machine_sender = machine.sender();
         tokio::spawn(async move {
           machine.run().await;
         });
 
-        (snapshot, machine_sender)
+        (state, machine_sender)
       }
     };
+
+    if let Some(db) = metrics_db {
+      app_state.metrics.begin_store_task(db);
+    }
 
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = SystemContainer::new(MachineSystem::new(machine_sender, app_sender.clone()));
@@ -106,7 +120,7 @@ impl App {
 
     log::debug!("Starting main run loop");
     run_loop::run(
-      boot_snapshot,
+      app_state,
       self.systems,
       self.tracers,
       app_sender,

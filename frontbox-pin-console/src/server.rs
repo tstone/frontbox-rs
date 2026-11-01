@@ -92,7 +92,18 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
         }
 
         incoming = socket.recv() => match incoming {
-          Some(Ok(Message::Text(text))) => held.handle(&text),
+          Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
+            // answered to this client alone; the query runs off the runtime, so it only holds up this session
+            Ok(ClientMessage::QueryMetrics) => {
+              if let Some(reply) = hub.metric_totals().await
+                && socket.send(Message::Text(reply)).await.is_err()
+              {
+                return;
+              }
+            }
+            Ok(message) => held.handle(message),
+            Err(err) => log::warn!(target: "frontbox::console", "Ignoring a message from a console client: {err}"),
+          },
           Some(Ok(_)) => {}
           _ => return,
         },
@@ -151,9 +162,9 @@ impl HeldSwitches {
     }
   }
 
-  fn handle(&mut self, text: &str) {
-    match serde_json::from_str::<ClientMessage>(text) {
-      Ok(ClientMessage::SetSwitch { switch_id, closed }) => {
+  fn handle(&mut self, message: ClientMessage) {
+    match message {
+      ClientMessage::SetSwitch { switch_id, closed } => {
         if closed {
           self.closed.insert(switch_id);
         } else {
@@ -161,8 +172,9 @@ impl HeldSwitches {
         }
         self.hub.set_switch(switch_id, closed);
       }
-      Ok(ClientMessage::SetConfig { key, value }) => self.hub.set_config(key, value),
-      Err(err) => log::warn!(target: "frontbox::console", "Ignoring a message from a console client: {err}"),
+      ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
+      // replied to by the session, which has the socket
+      ClientMessage::QueryMetrics => {}
     }
   }
 }

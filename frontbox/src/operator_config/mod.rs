@@ -120,7 +120,8 @@
 //!
 //! ### Saving
 //!
-//! Set `BootConfig::config_path` to load saved values at boot and save changes as they're made. Only values that
+//! Saved values are loaded at boot from `BootConfig::config_path` (`operator_config.toml` in the working directory by
+//! default), and changes are saved there as they're made. Only values that
 //! differ from their default are written. A saved value is only rewritten once it's changed, so a build with a
 //! narrower range won't overwrite it with the value it fell back to.
 //!

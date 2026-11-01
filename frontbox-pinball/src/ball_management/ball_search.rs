@@ -1,7 +1,7 @@
 use frontbox::prelude::*;
 
 use crate::ball_management::PerformBallSearch;
-use crate::configs;
+use crate::{configs, metrics};
 
 /// The way this will work is a hybrid of tagging + event handling. Searches after `BALL_SEARCH_DELAY` (an operator
 /// config) without a ball present switch closing.
@@ -44,6 +44,7 @@ impl System for BallSearchSystem {
       self.reset(ctx.into());
     } else if event.is::<StartBallSearch>() {
       log::info!(target: "frontbox::ball_search", "Starting ball search.");
+      ctx.metrics.inc(&metrics::BALL_SEARCHES);
       ctx.emit(PerformBallSearch);
     }
   }

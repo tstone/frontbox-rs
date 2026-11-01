@@ -91,7 +91,7 @@ impl Machine for VirtualMachine {
     self.machine_sender.clone()
   }
 
-  async fn on_pre_run(&mut self, _snapshot: &BootSnapshot) {}
+  async fn on_pre_run(&mut self, _snapshot: &AppState) {}
 
   async fn run(&mut self) {
     loop {

@@ -39,14 +39,14 @@ use crate::prelude::*;
 /// ```
 #[derive(Clone)]
 pub struct ServiceContext<'a> {
-  pub(crate) base: &'a BootSnapshot,
+  pub(crate) base: &'a AppState,
   groups: &'a Groups,
   app_sender: mpsc::UnboundedSender<AppMessage>,
 }
 
 impl<'a> ServiceContext<'a> {
   pub fn new(
-    base: &'a BootSnapshot,
+    base: &'a AppState,
     groups: &'a Groups,
     app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
@@ -245,7 +245,7 @@ impl<'a> ServiceContext<'a> {
 }
 
 impl Deref for ServiceContext<'_> {
-  type Target = BootSnapshot;
+  type Target = AppState;
 
   fn deref(&self) -> &Self::Target {
     self.base

@@ -1,3 +1,5 @@
+use fast_protocol::SwitchState;
+
 /// DriverTriggerMode answers: What causes the driver to fire?
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -25,8 +27,14 @@ impl DriverTriggerMode {
 
   /// The physical switch that fires the driver, if any
   pub fn trigger_switch(&self) -> Option<&'static str> {
+    self.fires_on().map(|(switch, _)| switch)
+  }
+
+  /// The physical switch that fires the driver, and the state it fires on
+  pub fn fires_on(&self) -> Option<(&'static str, SwitchState)> {
     match self {
-      Self::Switch(name) | Self::InvertedSwitch(name) => Some(name),
+      Self::Switch(name) => Some((name, SwitchState::Closed)),
+      Self::InvertedSwitch(name) => Some((name, SwitchState::Open)),
       Self::Disabled | Self::VirtualSwitchTrue | Self::VirtualSwitchFalse => None,
     }
   }
@@ -99,12 +107,19 @@ impl DriverTriggerDualMode {
 
   /// The physical flip switch that fires the driver, if any. The flop switch only gates it.
   pub fn trigger_switch(&self) -> Option<&'static str> {
+    self.fires_on().map(|(switch, _)| switch)
+  }
+
+  /// The physical flip switch that fires the driver, and the state it fires on. The flop switch can still hold the
+  /// fire back, which this doesn't account for.
+  pub fn fires_on(&self) -> Option<(&'static str, SwitchState)> {
     match self {
       Self::FlipSwitchTrue_FlopSwitchTrue { flip_switch, .. }
-      | Self::FlipSwitchFalse_FlopSwitchTrue { flip_switch, .. }
-      | Self::FlipSwitchTrue_FlopSwitchFalse { flip_switch, .. }
-      | Self::FlipSwitchFalse_FlopSwitchFalse { flip_switch, .. } => Some(flip_switch),
-      Self::FlipSwitchTrue_VirtualFlop(name) | Self::FlipSwitchFalse_VirtualFlop(name) => Some(name),
+      | Self::FlipSwitchTrue_FlopSwitchFalse { flip_switch, .. } => Some((flip_switch, SwitchState::Closed)),
+      Self::FlipSwitchFalse_FlopSwitchTrue { flip_switch, .. }
+      | Self::FlipSwitchFalse_FlopSwitchFalse { flip_switch, .. } => Some((flip_switch, SwitchState::Open)),
+      Self::FlipSwitchTrue_VirtualFlop(name) => Some((name, SwitchState::Closed)),
+      Self::FlipSwitchFalse_VirtualFlop(name) => Some((name, SwitchState::Open)),
       Self::Disabled | Self::VirtualFlip_FlopSwitchTrue(_) | Self::VirtualFlip_FlopSwitchFalse(_) => {
         None
       }

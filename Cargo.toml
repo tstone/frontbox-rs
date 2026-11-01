@@ -4,6 +4,7 @@ members = [
     "frontbox",
     "frontbox-canvas",
     "frontbox-derive",
+    "frontbox-metrics",
     "frontbox-pin-console",
     "frontbox-pin2dmd",
     "frontbox-sound",

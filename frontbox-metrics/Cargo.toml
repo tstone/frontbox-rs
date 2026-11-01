@@ -1,0 +1,19 @@
+[package]
+name = "frontbox-metrics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.29"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+stoolap = { version = "0.4.2", default-features = false }
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+humantime = "2.4.0"
+serde = { version = "1.0.228", features = ["derive"] }
+ts-rs = { version = "12.0.1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[features]
+ts = ["dep:ts-rs"]

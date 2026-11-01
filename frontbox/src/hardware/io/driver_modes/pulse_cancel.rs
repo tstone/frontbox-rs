@@ -33,19 +33,19 @@ impl Default for PulseCancelMode {
 }
 
 impl PulseCancelMode {
-  pub(super) fn to_config(&self, snap: &BootSnapshot) -> DriverConfig {
+  pub(super) fn to_config(&self, state: &AppState) -> DriverConfig {
     let (flip_switch, invert_flip_switch, flop_switch, invert_flop_switch) =
-      get_switch_ids_and_inverts(&self.trigger_mode, snap);
+      get_switch_ids_and_inverts(&self.trigger_mode, state);
 
     DriverConfig::PulseCancel {
       switch: flip_switch,
       invert_switch: invert_flip_switch,
       off_switch: flop_switch,
       invert_off_switch: invert_flop_switch,
-      initial_full_power_length: self.initial_full_power_length.resolve(snap),
-      secondary_power_length: self.secondary_power_length.resolve(snap),
-      secondary_pwm_power: self.secondary_pwm_power.resolve(snap),
-      rest: self.rest.resolve(snap),
+      initial_full_power_length: self.initial_full_power_length.resolve(state),
+      secondary_power_length: self.secondary_power_length.resolve(state),
+      secondary_pwm_power: self.secondary_pwm_power.resolve(state),
+      rest: self.rest.resolve(state),
     }
   }
 

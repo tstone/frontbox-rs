@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use frontbox::prelude::*;
 
 use crate::ball_management::{BallManager, BallsExitedPlay, Launch};
-use crate::{GameManager, PlayerTurnActive, TurnState, configs};
+use crate::{GameManager, PlayerTurnActive, TurnState, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
@@ -217,6 +217,7 @@ impl System for BallSaveSystem {
 
     log::info!(target: "frontbox::ballsave", "Saving {} ball(s)", count);
     ball_manager.eject_many(*count, Launch::Auto, ctx.into());
+    ctx.metrics.add(&metrics::BALL_SAVES, *count as u64);
     ctx.emit(BallSaved { count: *count });
     InterruptResult::Halt
   }
@@ -373,6 +374,24 @@ mod tests {
     assert_eq!(f.drain(2), InterruptResult::Halt);
     assert_eq!(f.ejects(), vec![(2, Launch::Auto)]);
     assert_eq!(f.saved_events(), vec![2]);
+  }
+
+  #[test]
+  fn saved_balls_are_counted() {
+    let mut f = Fixture::spawn();
+    f.drain(1); // not saving
+    f.request(A, 10);
+    f.drain(2);
+    let counts: Vec<_> = f
+      .ctx
+      .base
+      .metrics
+      .take_batch()
+      .counts
+      .iter()
+      .map(|delta| (delta.metric, delta.count))
+      .collect();
+    assert_eq!(counts, vec![("ball_saves", 2)]);
   }
 
   #[test]

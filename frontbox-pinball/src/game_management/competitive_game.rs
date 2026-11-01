@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use frontbox::prelude::*;
 
 use crate::ball_management::{BallEnteredPlay, BallManager, BallsExitedPlay, Launch};
@@ -32,6 +34,8 @@ pub struct CompetitiveGame {
   ball_in_play_switches: SwitchQ,
   game_state: Option<GameState>,
   handle: SystemHandle,
+  /// When the current turn became active, for `metrics::BALL_TIME`
+  turn_active_at: Option<Instant>,
 }
 
 impl CompetitiveGame {
@@ -46,6 +50,7 @@ impl CompetitiveGame {
       ball_in_play_switches,
       game_state: None,
       handle: SystemHandle::default(),
+      turn_active_at: None,
     }
   }
 
@@ -64,6 +69,8 @@ impl CompetitiveGame {
       ball_manager.establish_ball_count(ctx);
     }
 
+    ctx.metrics.begin_game();
+    ctx.metrics.inc(&metrics::GAMES_STARTED);
     sys_ctx.emit(GameStarted);
   }
 
@@ -72,6 +79,8 @@ impl CompetitiveGame {
     let game_state = self.game_state.as_mut().unwrap();
 
     ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.set_player(game_state.current_player());
+    ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to beginning");
     game_state.set_current_player_turn_state(TurnState::Beginning);
@@ -91,6 +100,7 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
+    self.turn_active_at = Some(Instant::now());
     ctx.for_system(self.handle).emit(PlayerTurnActive::new(
       game_state.current_player(),
       game_state.current_player_turn(),
@@ -101,6 +111,9 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Ending);
+    if let Some(active_at) = self.turn_active_at.take() {
+      ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
+    }
     ctx.for_system(self.handle).emit(PlayerTurnEnding::new(
       game_state.current_player(),
       game_state.current_player_turn(),
@@ -202,6 +215,7 @@ impl GameManagement for CompetitiveGame {
     };
 
     ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
     game_state.increment_current_player_turn();
@@ -249,7 +263,15 @@ impl GameManagement for CompetitiveGame {
       _ => Vec::new(),
     };
 
+    for (player, (_, score)) in scores.iter().enumerate() {
+      ctx
+        .metrics
+        .record_for_player(&metrics::FINAL_SCORE, player as u8, *score);
+    }
+
     self.game_state = None;
+    self.turn_active_at = None;
+    ctx.metrics.end_game();
     ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 

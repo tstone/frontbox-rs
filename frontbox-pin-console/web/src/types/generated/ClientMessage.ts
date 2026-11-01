@@ -4,4 +4,4 @@ import type { ConfigDomainValue } from "./ConfigDomainValue";
 /**
  * Messages from the web app to the console server
  */
-export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, };
+export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, } | { "type": "QueryMetrics" };
