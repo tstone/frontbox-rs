@@ -102,7 +102,16 @@ impl MetricsCollection {
 
   /// Record a value, tagged with the game and player in progress if any
   pub fn record<T: SampleType>(&self, sample: &Sample<T>, value: T) {
-    let definition = sample.definition();
+    self.push_sample(sample.definition(), value.to_sample(), None);
+  }
+
+  /// Record a value for a player other than the one whose turn it is, such as each player's final score at the end
+  /// of a game. Tagged with the game in progress if any; outside a game, the player is ignored.
+  pub fn record_for_player<T: SampleType>(&self, sample: &Sample<T>, player: u8, value: T) {
+    self.push_sample(sample.definition(), value.to_sample(), Some(player));
+  }
+
+  fn push_sample(&self, definition: &MetricDefinition, value: f64, player: Option<u8>) {
     let mut state = self.state.borrow_mut();
     if !state.define(definition) {
       return;
@@ -117,12 +126,12 @@ impl MetricsCollection {
           definition.key
         );
       }
-      (game.id, game.player)
+      (game.id, player.or(game.player))
     });
 
     state.samples.push(SampleRecord {
       metric: definition.key,
-      value: value.to_sample(),
+      value,
       game: game.map(|(id, _)| id),
       player: game.and_then(|(_, player)| player),
       recorded_at: SystemTime::now(),
@@ -469,6 +478,20 @@ mod tests {
     metrics.record(&score, 1);
 
     assert_eq!(metrics.take_batch().samples[0].player, None);
+  }
+
+  #[test]
+  fn a_value_can_be_recorded_for_another_player() {
+    let score = Sample::<u32>::new("score", "");
+    let metrics = MetricsCollection::default();
+
+    metrics.record_for_player(&score, 1, 10); // outside a game
+    metrics.begin_game();
+    metrics.set_player(0);
+    metrics.record_for_player(&score, 1, 20);
+
+    let players: Vec<_> = metrics.take_batch().samples.iter().map(|s| s.player).collect();
+    assert_eq!(players, vec![None, Some(1)]);
   }
 
   #[test]

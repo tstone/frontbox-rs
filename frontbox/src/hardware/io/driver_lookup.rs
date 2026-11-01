@@ -10,6 +10,9 @@ pub struct DriverLookup {
   by_id: HashMap<usize, Driver>,
   by_name: HashMap<&'static str, Driver>,
   modes: HashMap<usize, DriverMode>,
+  #[serde(skip)]
+  #[cfg_attr(feature = "ts", ts(skip))]
+  fire_counters: HashMap<usize, DriverFireCounters>,
 }
 
 impl DriverLookup {
@@ -17,6 +20,7 @@ impl DriverLookup {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut modes = HashMap::new();
+    let mut fire_counters = HashMap::new();
 
     for addressed in drivers {
       let driver = Driver {
@@ -33,13 +37,21 @@ impl DriverLookup {
       if let Some(mode) = &addressed.definition.mode {
         modes.insert(addressed.id, mode.clone());
       }
+
+      fire_counters.insert(addressed.id, addressed.definition.fire_counters());
     }
 
     Self {
       by_id,
       by_name,
       modes,
+      fire_counters,
     }
+  }
+
+  /// Counts the driver's fires. Only drivers wired at boot have them.
+  pub(crate) fn fire_counters(&self, driver_id: usize) -> Option<&DriverFireCounters> {
+    self.fire_counters.get(&driver_id)
   }
 
   pub fn by_id(&self, driver_id: &usize) -> Option<&Driver> {

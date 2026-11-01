@@ -21,10 +21,12 @@
 //! # }
 //! ```
 
+mod driver_triggers;
 mod events;
 mod fast_codec;
 mod machine;
 mod machine_ext;
+pub mod machine_metrics;
 mod machine_system;
 pub mod neuron;
 pub(crate) mod serial_interface;

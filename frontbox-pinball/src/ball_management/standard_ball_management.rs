@@ -9,6 +9,7 @@ use crate::ball_management::{
   LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem, StandardBallManagementConfig,
   TroughEjectFailed, TroughOccupancyChanged,
 };
+use crate::metrics;
 
 /// Ball management for machines where every ball not in play comes to rest in a single trough, optionally ejecting
 /// into a plunge lane (with or without an autoplunger). Set up with `BallManager::standard`.
@@ -133,6 +134,8 @@ impl StandardBallManagement {
 
     let drained = entered - excess;
     if drained > 0 {
+      // counted here, where the drain is known, since ball save halts the event for drains it saves
+      ctx.metrics.add(&metrics::BALLS_DRAINED, drained as u64);
       ctx.emit(BallsExitedPlay {
         count: drained,
         in_play: self.in_play(current_occupancy), // after reconcile
@@ -786,6 +789,23 @@ mod tests {
     f.trough_changed(2, 0, 3);
     f.trough_changed(4, 2, 0);
     assert_eq!(f.drained_events(), vec![(2, 1)]);
+  }
+
+  #[test]
+  fn drains_are_counted_by_ball() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(2, 0, 3);
+    f.trough_changed(4, 2, 0);
+    let counts: Vec<_> = f
+      .ctx
+      .base
+      .metrics
+      .take_batch()
+      .counts
+      .iter()
+      .map(|delta| (delta.metric, delta.count))
+      .collect();
+    assert_eq!(counts, vec![("balls_drained", 2)]);
   }
 
   #[test]

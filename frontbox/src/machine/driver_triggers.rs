@@ -2,11 +2,13 @@ use std::collections::HashMap;
 
 use fast_protocol::{DriverTriggerControlMode, TriggerDriverCommand};
 
-/// FAST disconnects a driver's switch whenever the driver is sent a DL, so a driver that was live has to be triggered
-/// again after its configuration is updated. This keeps the last TL that left each driver live: automatic on a
-/// switch, or held on.
+/// The last TL that left each driver live: automatic on a switch, or held on.
+///
+/// FAST disconnects a driver's switch whenever the driver is sent a DL, so the Neuron machine uses this to trigger a
+/// live driver again after its configuration is updated. `MachineSystem` uses it to know which drivers the hardware
+/// fires on its own when their switch changes.
 #[derive(Default)]
-pub(super) struct DriverTriggers {
+pub(crate) struct DriverTriggers {
   standing: HashMap<usize, (DriverTriggerControlMode, Option<usize>)>,
 }
 
@@ -40,6 +42,17 @@ impl DriverTriggers {
       .standing
       .get(&driver_id)
       .map(|(mode, switch)| TriggerDriverCommand::new(driver_id, *mode, *switch))
+  }
+
+  /// Drivers the hardware fires on its own when this switch changes
+  pub fn automatic_on(&self, switch_id: usize) -> impl Iterator<Item = usize> + '_ {
+    self
+      .standing
+      .iter()
+      .filter(move |(_, (mode, switch))| {
+        matches!(mode, DriverTriggerControlMode::Automatic) && *switch == Some(switch_id)
+      })
+      .map(|(driver_id, _)| *driver_id)
   }
 }
 
@@ -92,6 +105,15 @@ mod tests {
     triggers.triggered(COIL, DriverTriggerControlMode::Automatic, Some(0x12));
     triggers.triggered(COIL, DriverTriggerControlMode::Manual, None);
     assert_eq!(restored(&triggers).as_deref(), Some("TL:A,0,12\r"));
+  }
+
+  #[test]
+  fn only_automatic_drivers_fire_on_their_switch() {
+    let mut triggers = DriverTriggers::default();
+    triggers.triggered(COIL, DriverTriggerControlMode::Automatic, Some(0x12));
+    triggers.triggered(0xB, DriverTriggerControlMode::On, None);
+    triggers.triggered(0xC, DriverTriggerControlMode::Automatic, Some(0x13));
+    assert_eq!(triggers.automatic_on(0x12).collect::<Vec<_>>(), vec![COIL]);
   }
 
   #[test]
