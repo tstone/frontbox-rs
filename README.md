@@ -12,14 +12,42 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 - **Lightweight**: Built in [Rust](https://rust-lang.org/) to run on minimal hardware
 - **Flexible**: All hardware can be referenced in 3 ways: by name, tag, or location in space
 - **Retro**: Pin2DMD and NeoSeg\* (alpha numeric) display support out of the box
-- **Visual**: Included Web Console shows what is happening
+- **Visual**: Included Web Console shows what is happening (see below)
 - **Dazzling**: 1D, 2D*, and 3D* LED animations
 - **Data-backed**: Built-in metrics system and historical viewer
 - **Sonically Immersive**: Sound system with preloading and automatic music ducking\*
 
 \* = Coming Soon
 
-### What's Missing
+### Web Console
+
+![Web console machine view](doc/img/console-machine-view.png)
+
+## Frequently Asked Questions
+
+### Q: Is Frontbox an AI port of \_\_\_\_\_\_\_\_ Framework?
+
+A: No. Frontbox was started in [early](https://github.com/tstone/rpin/commit/97c487882d456c3d43141c703f834bf265f3042f) [2025](https://www.youtube.com/shorts/eDWzkOEvjT4) (originally called "rpin") before widespread agentic coding was even a thing.
+
+### Q: How is Frontbox different than \_\_\_\_\_\_\_\_ Framework?
+
+A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. You could use it to build a DIY claw machine if you wanted, so long as that machine was running on hardware Frontbox supports.
+
+### Q: Does that mean I have to write everything pinball related myself?
+
+A: Frontbox includes default implementations of systems for pinball style competitive and cooperative game management, ball management, turn tracking, etc., but all of these are implementations behind interfaces that could be swapped out.
+
+### Q: Does Frontbox work with Godot, Unity, or Unreal?
+
+A: Not officially. Frontbox actually started as a plugin for [Bevy](https://bevy.org/), which is where I'd look if I were wanting to make an LCD game. For the moment, the trajectory for Frontbox is to treat DMD and alphanumeric displays with first-class support for game, and to utilize the web console for any complex management tasks.
+
+### Q: Is there a documentation site?
+
+Q: Not yet. Frontbox uses [rustdoc](https://doc.rust-lang.org/rustdoc/what-is-rustdoc.html), which generates a documentation site on publish. Since the framework isn't yet published, the doc site isn't yet published either. It's possible to view it locally by cloning the repo then running `cargo doc --open`.
+
+### Q: Let's say I just wanted to try it, what's still missing?
+
+A: Some notable things. You probably should wait.
 
 - Core pinball:
   - extra balls
@@ -37,9 +65,12 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 - Sound: loop points, multi-stem music
 - Centralized random seed management
 
-## Documentation
+### Q: How do I set this up? Is there an example.
 
-Documentation is embedded within the source and is available via rustdoc: `cargo doc --open`.
+A: Yes:
+
+- Included [examples](frontbox/examples)
+- Or [Last of the Kilmore Oaks](https://github.com/tstone/lotko-homebrew) for source of a full game
 
 ## Guides
 
@@ -53,15 +84,6 @@ Documentation is embedded within the source and is available via rustdoc: `cargo
 - LEDs -- Lighting things up
 - DMD -- Dot matrix display rendering
 - Operator Config -- Settings the operator can change from the menu
-
-## Web Console
-
-![Web console machine view](doc/img/console-machine-view.png)
-
-## Examples
-
-- See included [examples](frontbox/examples)
-- Or [Last of the Kilmore Oaks](https://github.com/tstone/lotko-homebrew) for source of a full game
 
 ## License
 
