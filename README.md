@@ -19,6 +19,24 @@ Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpin
 
 \* = Coming Soon
 
+### What's Missing
+
+- Core pinball:
+  - extra balls
+  - tilt
+  - ball search
+  - outlane saves
+  - high scores
+- Machine management:
+  - Automatic startup eject
+  - coin based credits
+  - automatic USB reconnects
+- LEDs: 2D and 3D animations (1D supported)
+- Hardware: Motors, servos, NeoSeg
+- Display support outside of Pin2DMD
+- Sound: loop points, multi-stem music
+- Centralized random seed management
+
 ## Documentation
 
 Documentation is embedded within the source and is available via rustdoc: `cargo doc --open`.
