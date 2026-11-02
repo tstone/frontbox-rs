@@ -1,9 +1,9 @@
 use frontbox::prelude::*;
 
-/// The current phase of a player's turn, set by the game manager. Read it with `ctx.state::<TurnState>()`, or watch
-/// `StateChanged<TurnState>`.
+/// The current phase of a player's turn, set by the game manager. Read it with `ctx.state::<TurnPhase>()`, or watch
+/// `StateChanged<TurnPhase>`.
 #[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum TurnState {
+pub enum TurnPhase {
   /// No turn is in progress: no game is started, or the game is over.
   #[default]
   Idle,

@@ -7,11 +7,11 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! #[derive(State, Serialize, Default, Clone, PartialEq)]
-//! enum TurnPhase {
+//! enum Multiball {
 //!   #[default]
-//!   Idle,
-//!   Starting,
-//!   Active,
+//!   Unlit,
+//!   Lit,
+//!   Running,
 //! }
 //! ```
 //!
@@ -26,9 +26,9 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # #[derive(State, Serialize, Default, Clone, PartialEq)]
-//! # enum TurnPhase { #[default] Idle, Starting, Active }
+//! # enum Multiball { #[default] Unlit, Lit, Running }
 //! # fn example(ctx: &SystemContext) {
-//! ctx.set_state(TurnPhase::Active);
+//! ctx.set_state(Multiball::Running);
 //! # }
 //! ```
 //!
@@ -41,10 +41,10 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # #[derive(State, Serialize, Default, Clone, PartialEq)]
-//! # enum TurnPhase { #[default] Idle, Starting, Active }
+//! # enum Multiball { #[default] Unlit, Lit, Running }
 //! # fn example(ctx: &SystemContext) {
-//! let phase = ctx.state::<TurnPhase>();
-//! let active = ctx.in_state(TurnPhase::Active);
+//! let multiball = ctx.state::<Multiball>();
+//! let running = ctx.in_state(Multiball::Running);
 //! # }
 //! ```
 //!
@@ -76,14 +76,14 @@ pub trait State: Any + Send + Sync + Clone + PartialEq + Default + serde::Serial
 /// ```rust
 /// # use frontbox::prelude::*;
 /// # #[derive(State, Serialize, Default, Clone, PartialEq)]
-/// # enum TurnPhase { #[default] Idle, Starting, Active }
+/// # enum Multiball { #[default] Unlit, Lit, Running }
 /// # struct Display;
-/// # impl Display { fn show_shoot_again(&mut self, ctx: &SystemContext) {} }
+/// # impl Display { fn show_lock_lit(&mut self, ctx: &SystemContext) {} }
 /// impl System for Display {
 ///   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-///     if let Some(changed) = event.downcast_ref::<StateChanged<TurnPhase>>() {
-///       if changed.to == TurnPhase::Starting {
-///         self.show_shoot_again(ctx);
+///     if let Some(changed) = event.downcast_ref::<StateChanged<Multiball>>() {
+///       if changed.to == Multiball::Lit {
+///         self.show_lock_lit(ctx);
 ///       }
 ///     }
 ///   }
