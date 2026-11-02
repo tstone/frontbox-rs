@@ -36,6 +36,8 @@ pub struct CompetitiveGame {
   max_players: u8,
   ball_in_play_switches: SwitchQ,
   game_state: Option<GameState>,
+  /// The group of each player added to the game, by player index
+  player_groups: Vec<GroupHandle>,
   handle: SystemHandle,
   /// When the current turn became active, for `metrics::BALL_TIME`
   turn_active_at: Option<Instant>,
@@ -54,6 +56,7 @@ impl CompetitiveGame {
       max_players,
       ball_in_play_switches,
       game_state: None,
+      player_groups: Vec::new(),
       handle: SystemHandle::default(),
       turn_active_at: None,
       ball_served: false,
@@ -84,7 +87,7 @@ impl CompetitiveGame {
     let ctx = &ctx.for_system(self.handle);
     let game_state = self.game_state.as_mut().unwrap();
 
-    ctx.activate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.activate_system_group(&self.player_groups[game_state.current_player() as usize]);
     ctx.metrics.set_player(game_state.current_player());
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
@@ -141,7 +144,7 @@ impl CompetitiveGame {
       return;
     };
 
-    ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.deactivate_system_group(&self.player_groups[game_state.current_player() as usize]);
     ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
@@ -168,15 +171,6 @@ impl CompetitiveGame {
 impl System for CompetitiveGame {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = *ctx.current_handle();
-  }
-
-  fn on_despawn(&mut self, ctx: &SystemContext) {
-    if let Some(game_state) = &self.game_state {
-      for player in 0..game_state.player_count() {
-        let group_name = Self::player_group_name(player);
-        ctx.despawn_system_group(group_name);
-      }
-    }
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -250,7 +244,9 @@ impl GameManagement for CompetitiveGame {
     let group_name = Self::player_group_name(game_state.player_count() - 1);
 
     let svc_ctx = ctx.for_system(self.handle);
-    svc_ctx.spawn_system_group(group_name, copy, false);
+    self
+      .player_groups
+      .push(svc_ctx.spawn_system_group(group_name, copy, false));
     svc_ctx.emit(PlayerAdded);
 
     if game_started_just_now {
@@ -267,9 +263,8 @@ impl GameManagement for CompetitiveGame {
     }
 
     // spin down all player system groups
-    for i in 0..self.game_state.as_ref().unwrap().player_count() {
-      let group_name = Self::player_group_name(i);
-      ctx.despawn_system_group(group_name);
+    for group in self.player_groups.drain(..) {
+      ctx.despawn_system_group(group);
     }
 
     let game_state = self.game_state.as_ref().unwrap();

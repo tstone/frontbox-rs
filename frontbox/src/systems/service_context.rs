@@ -152,33 +152,36 @@ impl<'a> ServiceContext<'a> {
     let _ = self.app_sender.send(AppMessage::DespawnSystem(handle));
   }
 
-  pub fn spawn_system_group(
+  /// Spawn a group owned by `owner`. Only reachable through `SystemContext`, so the owner is always the caller.
+  pub(crate) fn spawn_system_group(
     &self,
+    owner: SystemHandle,
     group_name: &'static str,
     systems: Vec<ChildSystemContainer>,
     active: bool,
-  ) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::SpawnSystemGroup(group_name, systems, active));
+  ) -> GroupHandle {
+    let _ = self.app_sender.send(AppMessage::SpawnSystemGroup(
+      owner, group_name, systems, active,
+    ));
+    GroupHandle::new(group_name)
   }
 
-  pub fn despawn_system_group(&self, group_name: &'static str) {
+  pub fn despawn_system_group(&self, group: GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DespawnSystemGroup(group_name));
+      .send(AppMessage::DespawnSystemGroup(group.name()));
   }
 
-  pub fn activate_system_group(&self, group_name: &'static str) {
+  pub fn activate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::ActivateSystemGroup(group_name));
+      .send(AppMessage::ActivateSystemGroup(group.name()));
   }
 
-  pub fn deactivate_system_group(&self, group_name: &'static str) {
+  pub fn deactivate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DeactivateSystemGroup(group_name));
+      .send(AppMessage::DeactivateSystemGroup(group.name()));
   }
 
   // --- Cues ---

@@ -7,25 +7,31 @@
 //! - **Active state spans the entire group** -- Group can be made active or inactive, which cascades to all children. Like with scoring, this allows all systems for a player to be disabled at once. Each system can also manage their own active state, independent of the group's active state, but the group's active state is always a prerequisite (the logic for active is `group_active && system_active`).
 //! 
 //! - **System lookup also includes siblings** -- By default, performing `ctx.get::<T>` only looks at root systems. When a system is part of a group however, it will _also_ check for all sibling. In the case where the same system is running both within a group and at the root, priority is given to nearness. Siblings are searched first, then global.
-//! 
+//!
+//! - **Groups are owned by the system that spawned them** -- Spawning a group returns a [`GroupHandle`], and it's the
+//!   handle that activating, deactivating, and despawning the group take, so only the owner (or whoever it passes the
+//!   handle to) can do those things. When the owner is despawned, so are its groups.
+//!
 //! Systems spawned into a group must implement `ChildSystem`, which requires that they be `Clone + Send + Sync`. If getting errors trying to add a child to a group, make sure to add `#[derive(Clone)]` to the system definition.
-//! 
+//!
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # fn example(ctx: &SystemContext) {
 //! const GROUP_NAME: &'static str = "example";
 //!
-//! // Start an entire group of systems, initially inactive
-//! ctx.spawn_system_group(GROUP_NAME, vec![/* list of systems */], false);
+//! // Start an entire group of systems, initially inactive. Hang onto the handle.
+//! let group = ctx.spawn_system_group(GROUP_NAME, vec![/* list of systems */], false);
 //!
 //! // Groups can be activated and deactivated at any time
-//! ctx.activate_system_group(GROUP_NAME);
-//! ctx.deactivate_system_group(GROUP_NAME);
+//! ctx.activate_system_group(&group);
+//! ctx.deactivate_system_group(&group);
 //!
 //! // The entire group can be despawned. All `on_despawn` handlers will be invoked for child systems
-//! ctx.despawn_system_group(GROUP_NAME);
+//! ctx.despawn_system_group(group);
 //! # }
 //! ```
+//!
+//! Group names must be unique: spawning a group under a name that's already in use is refused.
 
 use std::cell::RefMut;
 use std::ops::{Deref, DerefMut};
@@ -35,6 +41,8 @@ use crate::prelude::*;
 pub struct SystemGroup {
   pub(crate) systems: Systems,
   pub(crate) active: bool,
+  /// The system that spawned the group. The root has none.
+  pub(crate) owner: Option<SystemHandle>,
 }
 
 impl SystemGroup {
@@ -42,6 +50,14 @@ impl SystemGroup {
     Self {
       systems: Systems::new(),
       active: true,
+      owner: None,
+    }
+  }
+
+  pub(crate) fn owned_by(owner: SystemHandle) -> Self {
+    Self {
+      owner: Some(owner),
+      ..Self::new()
     }
   }
 

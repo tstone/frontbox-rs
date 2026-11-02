@@ -20,7 +20,8 @@ pub enum AppMessage {
   SpawnSystem(&'static str, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
-  SpawnSystemGroup(&'static str, Vec<ChildSystemContainer>, bool),
+  /// Spawn a group owned by the system
+  SpawnSystemGroup(SystemHandle, &'static str, Vec<ChildSystemContainer>, bool),
   DespawnSystemGroup(&'static str),
   ActivateSystemGroup(&'static str),
   DeactivateSystemGroup(&'static str),
@@ -69,8 +70,12 @@ impl Debug for AppMessage {
       AppMessage::DespawnSystem(handle) => {
         write!(f, "DespawnSystem({}, {})", handle.id, handle.parent_key)
       }
-      AppMessage::SpawnSystemGroup(name, _, exclusive) => {
-        write!(f, "SpawnSystemGroup({}, exclusive={})", name, exclusive)
+      AppMessage::SpawnSystemGroup(owner, name, _, exclusive) => {
+        write!(
+          f,
+          "SpawnSystemGroup({}, owner={}:{}, exclusive={})",
+          name, owner.parent_key, owner.id, exclusive
+        )
       }
       AppMessage::DespawnSystemGroup(name) => write!(f, "DespawnSystemGroup({})", name),
       AppMessage::ActivateSystemGroup(name) => write!(f, "ActivateSystemGroup({})", name),

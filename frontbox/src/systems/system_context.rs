@@ -97,25 +97,30 @@ impl<'a> SystemContext<'a> {
     self.ctx.despawn_self(self.handle);
   }
 
+  /// Spawn a group of systems, owned by this system. The returned handle is what activating, deactivating, and
+  /// despawning the group take. The group is despawned along with this system. See
+  /// [system groups](mod@crate::systems::system_group).
   pub fn spawn_system_group(
     &self,
     group_name: &'static str,
     systems: Vec<ChildSystemContainer>,
     active: bool,
-  ) {
-    self.ctx.spawn_system_group(group_name, systems, active);
+  ) -> GroupHandle {
+    self
+      .ctx
+      .spawn_system_group(self.handle, group_name, systems, active)
   }
 
-  pub fn despawn_system_group(&self, group_name: &'static str) {
-    self.ctx.despawn_system_group(group_name);
+  pub fn despawn_system_group(&self, group: GroupHandle) {
+    self.ctx.despawn_system_group(group);
   }
 
-  pub fn activate_system_group(&self, group_name: &'static str) {
-    self.ctx.activate_system_group(group_name);
+  pub fn activate_system_group(&self, group: &GroupHandle) {
+    self.ctx.activate_system_group(group);
   }
 
-  pub fn deactivate_system_group(&self, group_name: &'static str) {
-    self.ctx.deactivate_system_group(group_name);
+  pub fn deactivate_system_group(&self, group: &GroupHandle) {
+    self.ctx.deactivate_system_group(group);
   }
 
   pub fn cue(&self, signal: impl Event + 'static, cue: Cue) -> u64 {

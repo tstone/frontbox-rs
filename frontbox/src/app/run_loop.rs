@@ -116,20 +116,19 @@ pub async fn run(
           // Routines hear about despawns and group activity here, after the change, rather than through a message
           // of their own, so they see it in queue order: a group deactivated and then reactivated still ends a step.
           AppMessage::ReplaceSystem(handle, system) => {
-            replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
-            routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
+            let despawned = replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::DespawnSystem(handle) => {
-            despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
-            routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
+            let despawned = despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
-          AppMessage::SpawnSystemGroup(group_name, child_systems, active) => {
-            spawn_system_group(group_name, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
+          AppMessage::SpawnSystemGroup(owner, group_name, child_systems, active) => {
+            spawn_system_group(owner, group_name, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DespawnSystemGroup(group_name) => {
-            let handles = groups.handles_in(group_name);
-            despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
-            routines.system_activation_changed(&handles, &groups, &base, &app_sender, &tracer_txs);
+            let despawned = despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
             activate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
@@ -534,8 +533,8 @@ fn replace_system(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
-) {
-  despawn_system(
+) -> Vec<SystemHandle> {
+  let despawned = despawn_system(
     old_handle,
     groups,
     base,
@@ -551,9 +550,11 @@ fn replace_system(
     app_sender,
     tracer_txs,
   );
+  despawned
 }
 
-/// Despawns the system, returning true if it succeeded
+/// Despawns the system, along with the groups it owns. Returns the handles of every system despawned: the system
+/// itself, then those in its groups.
 fn despawn_system(
   handle: SystemHandle,
   groups: &mut Groups,
@@ -561,9 +562,14 @@ fn despawn_system(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
-) {
-  if let Some(parent) = groups.get_mut(handle.parent_key)
-    && let Some(cell) = parent.remove(handle.id)
+) -> Vec<SystemHandle> {
+  let Some(cell) = groups
+    .get_mut(handle.parent_key)
+    .and_then(|parent| parent.remove(handle.id))
+  else {
+    return Vec::new();
+  };
+
   {
     let mut system = cell.borrow_mut();
     let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
@@ -571,7 +577,7 @@ fn despawn_system(
     interrupt_registry.unregister_by_system(&handle.id);
 
     log::info!(
-      target: "frontbox::systems::lifecycle", 
+      target: "frontbox::systems::lifecycle",
       "🌐 Despawned system {} ({})", system.name(), system.id());
 
     tracer_txs.send(TraceEvent::SystemDespawned {
@@ -582,9 +588,28 @@ fn despawn_system(
     let event = SystemDespawned::new(handle.id, handle.parent_key);
     let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
+
+  let mut despawned = vec![handle];
+  let owned: Vec<&'static str> = groups
+    .iter()
+    .filter(|(_, group)| group.owner == Some(handle))
+    .map(|(name, _)| *name)
+    .collect();
+  for group_name in owned {
+    despawned.extend(despawn_system_group(
+      group_name,
+      groups,
+      base,
+      app_sender.clone(),
+      interrupt_registry,
+      tracer_txs,
+    ));
+  }
+  despawned
 }
 
 fn spawn_system_group(
+  owner: SystemHandle,
   group_name: &'static str,
   child_systems: Vec<ChildSystemContainer>,
   active: bool,
@@ -593,7 +618,15 @@ fn spawn_system_group(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  groups.insert(group_name, SystemGroup::new());
+  if groups.contains_key(group_name) {
+    log::error!(
+      "A system group named '{}' already exists, cannot spawn another",
+      group_name
+    );
+    return;
+  }
+
+  groups.insert(group_name, SystemGroup::owned_by(owner));
   log::info!("🌐 Spawned system group {}", group_name);
 
   tracer_txs.send(TraceEvent::SystemGroupSpawned { key: group_name });
@@ -614,6 +647,7 @@ fn spawn_system_group(
   }
 }
 
+/// Despawns the group and its systems, returning the handles of every system despawned
 fn despawn_system_group(
   group_name: &'static str,
   groups: &mut Groups,
@@ -621,30 +655,32 @@ fn despawn_system_group(
   app_sender: mpsc::UnboundedSender<AppMessage>,
   interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
-) {
+) -> Vec<SystemHandle> {
   if !groups.contains_key(group_name) {
     log::warn!(
       "No system group named '{}' found, cannot despawn",
       group_name
     );
-    return;
+    return Vec::new();
   }
 
+  let mut despawned = Vec::new();
   for handle in groups.handles_in(group_name) {
-    despawn_system(
+    despawned.extend(despawn_system(
       handle,
       groups,
       base,
       app_sender.clone(),
       interrupt_registry,
       tracer_txs,
-    );
+    ));
   }
 
   tracer_txs.send(TraceEvent::SystemGroupDespawned { key: group_name });
 
   let _ = groups.shift_remove(group_name);
   log::info!("🌐 Despawned system group {}", group_name);
+  despawned
 }
 
 fn activate_system_group(
@@ -788,3 +824,116 @@ fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>, resync: Arc<No
 pub struct Synchronize;
 
 static SYNCHRONIZE_TYPE_ID: TypeId = TypeId::of::<Synchronize>();
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[derive(Clone)]
+  struct Owner;
+
+  impl System for Owner {}
+
+  #[derive(Clone)]
+  struct Member;
+
+  impl System for Member {}
+
+  struct Harness {
+    base: AppState,
+    groups: Groups,
+    tx: mpsc::UnboundedSender<AppMessage>,
+    interrupts: EventInterruptRegistry,
+    tracers: TracerSenders,
+  }
+
+  impl Harness {
+    fn new() -> Self {
+      let (tx, _rx) = mpsc::unbounded_channel();
+      let mut groups = Groups::new();
+      groups.insert(ROOT_GROUP, SystemGroup::new());
+
+      Self {
+        base: AppState::default(),
+        groups,
+        tx,
+        interrupts: EventInterruptRegistry::new(),
+        tracers: TracerSenders::new(Vec::new()),
+      }
+    }
+
+    fn spawn_owner(&mut self) -> SystemHandle {
+      let container = SystemContainer::new(Owner);
+      let handle = SystemHandle::new(container.id(), ROOT_GROUP);
+      spawn_system(
+        container,
+        ROOT_GROUP,
+        &mut self.groups,
+        &self.base,
+        self.tx.clone(),
+        &self.tracers,
+      );
+      handle
+    }
+
+    fn spawn_group(&mut self, owner: SystemHandle, name: &'static str) {
+      let systems = vec![Member.into()];
+      spawn_system_group(
+        owner,
+        name,
+        systems,
+        true,
+        &mut self.groups,
+        &self.base,
+        self.tx.clone(),
+        &self.tracers,
+      );
+    }
+
+    fn despawn(&mut self, handle: SystemHandle) -> Vec<SystemHandle> {
+      despawn_system(
+        handle,
+        &mut self.groups,
+        &self.base,
+        self.tx.clone(),
+        &mut self.interrupts,
+        &self.tracers,
+      )
+    }
+  }
+
+  #[test]
+  fn despawning_an_owner_despawns_its_groups() {
+    let mut h = Harness::new();
+    let owner = h.spawn_owner();
+    let other = h.spawn_owner();
+    h.spawn_group(owner, "player1");
+    h.spawn_group(owner, "player2");
+    h.spawn_group(other, "other");
+    let members: Vec<SystemHandle> = ["player1", "player2"]
+      .iter()
+      .flat_map(|name| h.groups.handles_in(name))
+      .collect();
+
+    let despawned = h.despawn(owner);
+
+    assert!(!h.groups.contains_key("player1"));
+    assert!(!h.groups.contains_key("player2"));
+    assert!(h.groups.contains_key("other"));
+    assert_eq!(despawned, [vec![owner], members].concat());
+  }
+
+  #[test]
+  fn a_group_name_in_use_is_refused() {
+    let mut h = Harness::new();
+    let first = h.spawn_owner();
+    let second = h.spawn_owner();
+    h.spawn_group(first, "player1");
+    let members = h.groups.handles_in("player1");
+
+    h.spawn_group(second, "player1");
+
+    assert_eq!(h.groups["player1"].owner, Some(first));
+    assert_eq!(h.groups.handles_in("player1"), members);
+  }
+}
