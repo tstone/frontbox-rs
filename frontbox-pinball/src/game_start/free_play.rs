@@ -1,6 +1,6 @@
 use frontbox::prelude::*;
 
-use crate::GameManager;
+use crate::{GameManager, PlayerEntry};
 
 /// A simple system to start a game in free play mode
 #[derive(Clone)]
@@ -32,11 +32,7 @@ impl FreePlay {
 
 impl System for FreePlay {
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    // active if players can be added
-    ctx
-      .get::<GameManager>()
-      .map(|gm| gm.is_player_addable())
-      .unwrap_or(false)
+    ctx.in_state(PlayerEntry::Open)
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

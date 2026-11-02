@@ -1,6 +1,6 @@
 use frontbox::prelude::*;
 
-use crate::GameManager;
+use crate::{GameManager, PlayerEntry};
 
 pub trait GameManagementExt {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
@@ -61,10 +61,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
   }
 
   fn is_player_addable(&self) -> bool {
-    self
-      .get::<GameManager>()
-      .map(|manager| manager.is_player_addable())
-      .unwrap_or(false)
+    self.in_state(PlayerEntry::Open)
   }
 }
 

@@ -6,7 +6,7 @@ use frontbox::prelude::*;
 pub enum TurnPhase {
   /// No turn is in progress: no game is started, or the game is over.
   #[default]
-  Idle,
+  None,
   /// The start of a player's turn, while the `TurnStarting` routine runs and the ball is served, before it's in play.
   Starting,
   /// The active part of a player's turn, after the ball is launched and before it goes out of play.

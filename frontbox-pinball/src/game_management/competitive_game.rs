@@ -33,6 +33,14 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   (high-score entry, say) can take their time without a new game starting.
 /// - Event: `GameEnded` - Emitted once `GameEnding` completes and the player groups are gone.
 ///
+/// ## States
+/// Set at the root, so every group reads them:
+/// - `GamePhase` - Starting until the first ball is in play, then Active until play is over, then Ending while
+///   `GameEnding` runs.
+/// - `TurnPhase` - The current turn's Starting, Active, and Ending.
+/// - `PlayerEntry` - Open while a player can be added: no game is started, or the first turn is still going and the
+///   game isn't full.
+///
 /// ## Requires
 /// - `BallManager` at the root
 pub struct CompetitiveGame {
@@ -71,7 +79,7 @@ impl CompetitiveGame {
       max_players,
       ball_in_play_switches,
       game_state: None,
-      turn_phase: TurnPhase::Idle,
+      turn_phase: TurnPhase::None,
       player_groups: Vec::new(),
       handle: SystemHandle::default(),
       turn_active_at: None,
@@ -113,6 +121,7 @@ impl CompetitiveGame {
 
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
     self.set_turn_phase(TurnPhase::Starting, ctx.into());
+    self.update_player_entry(ctx.into());
     self.ball_served = false;
     self.draining = false;
     self.pending_drains.clear();
@@ -137,6 +146,17 @@ impl CompetitiveGame {
   fn set_game_phase(&mut self, game_phase: GamePhase, ctx: &ServiceContext) {
     self.game_phase = game_phase;
     ctx.for_system(self.handle).set_state(game_phase);
+  }
+
+  /// Publishes `PlayerEntry`, from `is_player_addable`. Called after anything that could change it; setting it to the
+  /// value it already has broadcasts nothing.
+  fn update_player_entry(&self, ctx: &ServiceContext) {
+    let entry = if self.is_player_addable() {
+      PlayerEntry::Open
+    } else {
+      PlayerEntry::Closed
+    };
+    ctx.for_system(self.handle).set_state(entry);
   }
 
   fn serve_ball(&mut self, ctx: &ServiceContext) {
@@ -260,6 +280,7 @@ impl CompetitiveGame {
   fn start_game_ending(&mut self, reason: GameEndReason, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Game ending ({:?})", reason);
     self.set_game_phase(GamePhase::Ending, ctx);
+    self.update_player_entry(ctx);
     self.draining = false;
     self.pending_drains.clear();
     self.turn_active_at = None;
@@ -285,7 +306,8 @@ impl CompetitiveGame {
     }
     self.game_state = None;
     self.set_game_phase(GamePhase::None, ctx);
-    self.set_turn_phase(TurnPhase::Idle, ctx);
+    self.set_turn_phase(TurnPhase::None, ctx);
+    self.update_player_entry(ctx);
     ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 
@@ -310,6 +332,7 @@ impl CompetitiveGame {
 impl System for CompetitiveGame {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = *ctx.current_handle();
+    self.update_player_entry(ctx.into());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -322,7 +345,7 @@ impl System for CompetitiveGame {
     }
 
     match self.turn_phase {
-      TurnPhase::Idle => {}
+      TurnPhase::None => {}
       TurnPhase::Starting if !self.ball_served => {
         if event.is::<RoutineCompleted<TurnStarting>>() {
           self.serve_ball(ctx.into());
@@ -395,6 +418,7 @@ impl GameManagement for CompetitiveGame {
       .player_groups
       .push(svc_ctx.spawn_system_group(group_name, copy, false));
     svc_ctx.emit(PlayerAdded);
+    self.update_player_entry(ctx);
 
     if game_started_just_now {
       self.start_turn(ctx);
@@ -591,7 +615,7 @@ mod tests {
     let ending = f.game_endings().remove(0);
     f.event(done(ending, RoutineCompletion::AllSteps));
     assert_eq!(f.game.game_phase, GamePhase::None);
-    assert_eq!(f.game.turn_phase, TurnPhase::Idle);
+    assert_eq!(f.game.turn_phase, TurnPhase::None);
   }
 
   #[test]
