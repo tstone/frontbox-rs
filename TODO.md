@@ -2,9 +2,11 @@
 
 - tests for run_loop
 - Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful (ex: TurnActive)
+  Later: could a state drive a system group on and off? This overlaps with the toggle group item below.
 - Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
 - Does metrics need to go on app state or can it just be owned by run_loop
+- Should a "hold" (like how BallSave uses them) be a framework feature?
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,

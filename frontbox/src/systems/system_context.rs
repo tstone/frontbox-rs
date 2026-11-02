@@ -164,6 +164,26 @@ impl<'a> SystemContext<'a> {
     self.ctx.report_activity_changed(self.handle);
   }
 
+  // -- States --
+
+  /// The current value of the state `S`: as set in this system's group, then the root. The default if neither has set
+  /// it. See [states](crate::systems::state)
+  pub fn state<S: State>(&self) -> S {
+    self.ctx.state::<S>(self.handle)
+  }
+
+  /// Whether the state `S` currently has the value `value`
+  pub fn in_state<S: State>(&self, value: S) -> bool {
+    self.state::<S>() == value
+  }
+
+  /// Set the state `S` in this system's group. The first system to set a state owns it, and only the owner can set it
+  /// again. Takes effect in queue order, so this system reads the old value until then; [`StateChanged<S>`] is
+  /// broadcast once it's set, unless the value didn't change.
+  pub fn set_state<S: State>(&self, value: S) {
+    self.ctx.set_state(self.handle, value);
+  }
+
   pub fn clone_for_system(&self, handle: SystemHandle) -> SystemContext<'a> {
     SystemContext {
       handle,

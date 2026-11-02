@@ -84,6 +84,19 @@ pub fn derive_event(input: TokenStream) -> TokenStream {
   TokenStream::from(expanded)
 }
 
+/// Turn any object in a Frontbox State. Must also be `Serialize + Default + Clone + PartialEq`
+#[proc_macro_derive(State)]
+pub fn derive_state(input: TokenStream) -> TokenStream {
+  let input = parse_macro_input!(input as DeriveInput);
+  let name = &input.ident;
+
+  let expanded = quote! {
+      impl frontbox::systems::State for #name {}
+  };
+
+  TokenStream::from(expanded)
+}
+
 /// Turn any object in a Frontbox Tag
 #[proc_macro_derive(Tag)]
 pub fn derive_tag(input: TokenStream) -> TokenStream {

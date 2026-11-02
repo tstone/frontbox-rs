@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
+use crate::systems::state::set_state;
 
 pub struct TestContext {
   pub base: AppState,
@@ -101,6 +102,18 @@ impl TestContext {
       .app_messages()
       .into_iter()
       .any(|msg| matches!(msg, AppMessage::HaltRoutine(_, type_id) if type_id == TypeId::of::<E>()))
+  }
+
+  /// Applies the states set up to this point, as the run loop would, so they can be read back. Returns the
+  /// `StateChanged` events that would be broadcast.
+  pub fn apply_states(&mut self) -> Vec<EventBox> {
+    let mut changes = Vec::new();
+    for msg in self.app_messages() {
+      if let AppMessage::SetState(state) = msg {
+        changes.extend(set_state(&mut self.groups, state));
+      }
+    }
+    changes
   }
 
   /// Trace events sent through the run loop up to this point

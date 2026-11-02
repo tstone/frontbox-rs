@@ -6,6 +6,7 @@ use fast_protocol::SwitchState;
 use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 use crate::systems::routine::RoutineStart;
+use crate::systems::state::StoredState;
 
 pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
@@ -32,6 +33,7 @@ pub enum AppMessage {
   BeginRoutine(TypeId),
   /// A system's own `is_active` changed, noticed while handling something else
   SystemActivityChanged(SystemHandle),
+  SetState(StoredState),
   TracerEvent(TraceEvent),
 }
 
@@ -87,6 +89,7 @@ impl Debug for AppMessage {
       AppMessage::SystemActivityChanged(handle) => {
         write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
       }
+      AppMessage::SetState(state) => write!(f, "SetState({:?})", state),
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }
