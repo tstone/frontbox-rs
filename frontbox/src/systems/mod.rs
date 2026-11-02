@@ -20,7 +20,6 @@
 //! ## What Systems Do
 //!
 //! - [Emit events](crate::systems::event)
-//! - [Interrupt events](crate::systems::event_interrupts)
 //! - [Schedule cues](crate::systems::cue)
 //! - [Interact with other systems](#services)
 //! - [Become inactive](#active)
@@ -159,7 +158,6 @@ pub mod cue;
 mod cue_ext;
 mod cue_timeline_builder;
 pub mod event;
-pub mod event_interrupts;
 mod group_handle;
 pub mod routine;
 mod service_context;
@@ -175,7 +173,6 @@ pub use cue::*;
 pub use cue_ext::*;
 pub use cue_timeline_builder::*;
 pub use event::*;
-pub use event_interrupts::InterruptResult;
 pub use group_handle::*;
 pub use routine::{RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted};
 pub use service_context::*;

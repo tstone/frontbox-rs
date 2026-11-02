@@ -4,13 +4,12 @@ import type { ConfigView } from "./ConfigView";
 import type { DriverMode } from "./DriverMode";
 import type { DriverState } from "./DriverState";
 import type { GroupId } from "./GroupId";
-import type { InterruptEvaluation } from "./InterruptEvaluation";
 import type { RoutineCompletion } from "./RoutineCompletion";
 import type { RoutineSkipReason } from "./RoutineSkipReason";
 import type { SwitchState } from "./SwitchState";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type TraceEvent = { "Event": { type_name: string, interrupts: Array<InterruptEvaluation>, event: JsonValue | null, sender: number | null, } } | { "SystemSpawned": { id: number, name: string, group: GroupId, } } | { "SystemDespawned": { id: number, group: GroupId, } } | { "SystemGroupSpawned": { id: GroupId, name: string, } } | { "SystemGroupDespawned": { id: GroupId, name: string, } } | { "SystemActiveStateChange": { id: number, active: boolean, } } | { "SystemGroupActiveStateChange": { id: GroupId, active: boolean, } } | { "DriverStateChange": { driver_id: number, state: DriverState, } } | { "DriverModeChange": { driver_id: number, mode: DriverMode, } } | { "SwitchStateChange": { switch_id: number, state: SwitchState, } } | { "LedsRGBChange": { expansion: number, breakout: number | null, states: Array<[number, Color]>, } } | { "ConfigsInUse": { configs: Array<ConfigView>, } } | { "ConfigChange": { config: ConfigView, } } | { "RoutineStarted": { routine: string, origin: number, } } | { "RoutineRejected": { routine: string, origin: number, running_origin: number, } } | { "RoutineStep": { routine: string, participant: number, 
+export type TraceEvent = { "Event": { type_name: string, event: JsonValue | null, sender: number | null, } } | { "SystemSpawned": { id: number, name: string, group: GroupId, } } | { "SystemDespawned": { id: number, group: GroupId, } } | { "SystemGroupSpawned": { id: GroupId, name: string, } } | { "SystemGroupDespawned": { id: GroupId, name: string, } } | { "SystemActiveStateChange": { id: number, active: boolean, } } | { "SystemGroupActiveStateChange": { id: GroupId, active: boolean, } } | { "DriverStateChange": { driver_id: number, state: DriverState, } } | { "DriverModeChange": { driver_id: number, mode: DriverMode, } } | { "SwitchStateChange": { switch_id: number, state: SwitchState, } } | { "LedsRGBChange": { expansion: number, breakout: number | null, states: Array<[number, Color]>, } } | { "ConfigsInUse": { configs: Array<ConfigView>, } } | { "ConfigChange": { config: ConfigView, } } | { "RoutineStarted": { routine: string, origin: number, } } | { "RoutineRejected": { routine: string, origin: number, running_origin: number, } } | { "RoutineStep": { routine: string, participant: number, 
 /**
  * The participant's group. Copies of a system in several groups share an id.
  */

@@ -9,9 +9,6 @@ use crate::systems::routine::RoutineStart;
 
 pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
-  RegisterInterrupt(SystemHandle, TypeId, u16),
-  UnregisterInterrupt(u64, TypeId),
-  UnregisterAllBySystem(u64),
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
@@ -44,17 +41,6 @@ impl Debug for AppMessage {
       AppMessage::EmitEvent(sender, event) => {
         write!(f, "EmitEvent({:?}, {})", sender, event.type_name)
       }
-      AppMessage::RegisterInterrupt(handle, type_id, priority) => {
-        write!(
-          f,
-          "RegisterInterrupt({}, {:?}, {})",
-          handle.id, type_id, priority
-        )
-      }
-      AppMessage::UnregisterInterrupt(id, type_id) => {
-        write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
-      }
-      AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
       AppMessage::Shutdown(_) => write!(f, "Shutdown"),
       AppMessage::SwitchStateChange(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)

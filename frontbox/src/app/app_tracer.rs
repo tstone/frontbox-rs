@@ -23,7 +23,6 @@ pub trait AppTracer {
 pub enum TraceEvent {
   Event {
     type_name: &'static str,
-    interrupts: Vec<InterruptEvaluation>,
     event: Option<serde_json::Value>,
     sender: Option<u64>,
   },
@@ -121,13 +120,6 @@ pub enum TraceEvent {
     origin: u64,
   },
   // TODO: some kind of game-specific state push that is JSON encodable
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct InterruptEvaluation {
-  pub interrupter: u64,
-  pub result: InterruptResult,
 }
 
 /// Why a routine participant didn't get a step

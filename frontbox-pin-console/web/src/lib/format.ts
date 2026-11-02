@@ -28,10 +28,7 @@ export function traceCategory(record: TraceRecord): TraceCategory {
 /** The part of a trace worth showing in detail. `null` for events without a body. */
 export function traceBody(record: TraceRecord): unknown {
   const event = record.event
-  if ('Event' in event) {
-    const { event: body, interrupts } = event.Event
-    return interrupts.length > 0 ? { event: body, interrupts } : body
-  }
+  if ('Event' in event) return event.Event.event
   return Object.values(event)[0]
 }
 

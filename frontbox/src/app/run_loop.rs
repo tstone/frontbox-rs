@@ -1,5 +1,4 @@
 use fast_protocol::SwitchState;
-use itertools::Itertools;
 use std::any::TypeId;
 use std::process::Command;
 use std::sync::Arc;
@@ -9,13 +8,12 @@ use tokio::time::Duration;
 
 use crate::app::GroupsExt;
 use crate::app::app_message::AppMessage::EmitEvent;
-use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
+use crate::app::app_tracer::{AppTracer, TraceEvent};
 use crate::metrics;
 use crate::prelude::app_message::*;
 use crate::prelude::app_tracer::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
-use crate::systems::event_interrupts::EventInterruptRegistry;
 use crate::systems::routine::Routines;
 
 pub async fn run(
@@ -32,7 +30,6 @@ pub async fn run(
   let tracer_txs = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
   let resync_notifier = Arc::new(Notify::new());
 
-  let mut interrupt_registry = EventInterruptRegistry::new();
   let mut groups: Groups = Groups::new();
 
   groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
@@ -83,26 +80,17 @@ pub async fn run(
 
         match command {
           AppMessage::EmitEvent(sender, event_box) => {
-            emit_event(sender, event_box, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
-          }
-          AppMessage::RegisterInterrupt(handle, type_id, priority) => {
-            interrupt_registry.register(type_id, handle.id, handle.group, priority);
-          }
-          AppMessage::UnregisterInterrupt(system_id, type_id) => {
-            interrupt_registry.unregister(system_id, type_id);
-          }
-          AppMessage::UnregisterAllBySystem(system_id) => {
-            unregister_all_by_system(&system_id, &mut interrupt_registry);
+            emit_event(sender, event_box, &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
           }
           AppMessage::SwitchStateChange(id, state) => {
-            switch_state_changed(Some(machine_system_id), id, state, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            switch_state_changed(Some(machine_system_id), id, state, &mut groups, &mut base, &app_sender, &tracer_txs, &resync_notifier);
           }
           AppMessage::SyncSwitchStates(switch_states) => {
             base.switches.update_switch_states(switch_states);
           }
           AppMessage::ConfigChanged(key) => {
             base.config.save();
-            emit_event(None, EventBox::new(ConfigChanged(key)), &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+            emit_event(None, EventBox::new(ConfigChanged(key)), &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
           }
           AppMessage::DriverModeChange(driver_id, mode) => {
             base.drivers.set_mode(driver_id, mode.clone());
@@ -119,18 +107,18 @@ pub async fn run(
           // Routines hear about despawns and group activity here, after the change, rather than through a message
           // of their own, so they see it in queue order: a group deactivated and then reactivated still ends a step.
           AppMessage::ReplaceSystem(handle, system) => {
-            let despawned = replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            let despawned = replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &tracer_txs);
             routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::DespawnSystem(handle) => {
-            let despawned = despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            let despawned = despawn_system(handle, &mut groups, &base, app_sender.clone(), &tracer_txs);
             routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::SpawnSystemGroup(owner, group, child_systems, active) => {
             spawn_system_group(owner, group, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DespawnSystemGroup(group) => {
-            let despawned = despawn_system_group(group, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            let despawned = despawn_system_group(group, &mut groups, &base, app_sender.clone(), &tracer_txs);
             routines.system_activation_changed(&despawned, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::ActivateSystemGroup(group) => {
@@ -154,7 +142,7 @@ pub async fn run(
             let (origin, type_id) = (start.origin, start.type_id);
             if let Some(started) = routines.start(start, &groups, &tracer_txs) {
               // emitted here and the first step queued after it, so whatever its listeners emit lands first
-              emit_event(Some(origin.id), started, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+              emit_event(Some(origin.id), started, &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
               let _ = app_sender.send(AppMessage::BeginRoutine(type_id));
             }
           }
@@ -196,13 +184,13 @@ pub async fn run(
           TracerControlEvent::OpenSwitch { switch_id } => {
             if base.switches.is_closed_by_id(switch_id).unwrap_or(false) {
               log::warn!(target: "frontbox::run_loop", "Tracer forcibly opening switch {switch_id}...");
-              switch_state_changed(None, switch_id, SwitchState::Open, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+              switch_state_changed(None, switch_id, SwitchState::Open, &mut groups, &mut base, &app_sender, &tracer_txs, &resync_notifier);
             }
           }
           TracerControlEvent::CloseSwitch { switch_id } => {
             if base.switches.is_open_by_id(switch_id).unwrap_or(false) {
               log::warn!(target: "frontbox::run_loop", "Tracer forcibly closing switch {switch_id}...");
-              switch_state_changed(None, switch_id, SwitchState::Closed, &mut groups, &mut base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+              switch_state_changed(None, switch_id, SwitchState::Closed, &mut groups, &mut base, &app_sender, &tracer_txs, &resync_notifier);
             }
           }
           TracerControlEvent::SetConfig { key, value } => {
@@ -317,7 +305,6 @@ fn emit_event(
   groups: &Groups,
   base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
   resync_notifier: &Arc<Notify>,
 ) {
@@ -325,54 +312,13 @@ fn emit_event(
     resync_notifier.notify_one();
   }
 
-  let mut interrupt_evals = Vec::new();
-
-  // first pass the event through the interrupt registry. If any interrupt returns `Halt`, stop processing further.
-  if let Some(interrupts) = interrupt_registry.get_interrupts_for_event(event_box.type_id) {
-    // interrupts must be evaluated in order of priority (highest first)
-    let prioritized_interrupts = interrupts
-      .iter()
-      .sorted_by_key(|i| std::cmp::Reverse(i.priority));
-
-    for interrupt in prioritized_interrupts {
-      let interrupt_result = apply_to_system(
-        interrupt.to_handle(),
-        groups,
-        base,
-        app_sender,
-        tracer_txs,
-        |system, ctx| system.on_interrupt(event_box.event.as_ref(), &ctx),
-      );
-
-      if let Some(result) = interrupt_result {
-        interrupt_evals.push(InterruptEvaluation {
-          interrupter: interrupt.system_id,
-          result,
-        });
-      }
-
-      if interrupt_result == Some(InterruptResult::Halt) {
-        log::info!(
-          "Event {} was halted by interrupt in system {}",
-          event_box.type_name,
-          interrupt.system_id
-        );
-        return;
-      }
-    }
-  } else {
-    log::debug!("No interrupts registered for {}", event_box.type_name);
-  }
-
   // notify any monitoring tracers
   tracer_txs.send(TraceEvent::Event {
     type_name: event_box.type_name,
-    interrupts: interrupt_evals.clone(),
     event: event_box.try_json(),
     sender,
   });
 
-  // event is broadcast to systems if no interrupt halted it
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     system.on_event(event_box.event.as_ref(), ctx);
   });
@@ -398,7 +344,6 @@ fn switch_state_changed(
   groups: &Groups,
   base: &mut AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &EventInterruptRegistry,
   tracer_txs: &TracerSenders,
   resync_notifier: &Arc<Notify>,
 ) {
@@ -450,7 +395,6 @@ fn switch_state_changed(
       groups,
       base,
       app_sender,
-      interrupt_registry,
       tracer_txs,
       resync_notifier,
     );
@@ -535,17 +479,9 @@ fn replace_system(
   groups: &mut Groups,
   base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
 ) -> Vec<SystemHandle> {
-  let despawned = despawn_system(
-    old_handle,
-    groups,
-    base,
-    app_sender.clone(),
-    interrupt_registry,
-    tracer_txs,
-  );
+  let despawned = despawn_system(old_handle, groups, base, app_sender.clone(), tracer_txs);
   spawn_system(
     new_system,
     old_handle.group,
@@ -564,7 +500,6 @@ fn despawn_system(
   groups: &mut Groups,
   base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
 ) -> Vec<SystemHandle> {
   let Some(cell) = groups
@@ -578,7 +513,6 @@ fn despawn_system(
     let mut system = cell.borrow_mut();
     let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     system.on_despawn(&ctx);
-    interrupt_registry.unregister_by_system(&handle.id);
 
     log::info!(
       target: "frontbox::systems::lifecycle",
@@ -605,7 +539,6 @@ fn despawn_system(
       groups,
       base,
       app_sender.clone(),
-      interrupt_registry,
       tracer_txs,
     ));
   }
@@ -653,7 +586,6 @@ fn despawn_system_group(
   groups: &mut Groups,
   base: &AppState,
   app_sender: mpsc::UnboundedSender<AppMessage>,
-  interrupt_registry: &mut EventInterruptRegistry,
   tracer_txs: &TracerSenders,
 ) -> Vec<SystemHandle> {
   let Some(name) = groups.get(&id).map(|group| group.name) else {
@@ -668,7 +600,6 @@ fn despawn_system_group(
       groups,
       base,
       app_sender.clone(),
-      interrupt_registry,
       tracer_txs,
     ));
   }
@@ -735,10 +666,6 @@ fn deactivate_system_group(
   }
 
   tracer_txs.send(TraceEvent::SystemGroupActiveStateChange { id, active: false });
-}
-
-fn unregister_all_by_system(system_id: &u64, interrupt_registry: &mut EventInterruptRegistry) {
-  interrupt_registry.unregister_by_system(system_id);
 }
 
 fn create_cue(
@@ -826,7 +753,6 @@ mod tests {
     base: AppState,
     groups: Groups,
     tx: mpsc::UnboundedSender<AppMessage>,
-    interrupts: EventInterruptRegistry,
     tracers: TracerSenders,
   }
 
@@ -840,7 +766,6 @@ mod tests {
         base: AppState::default(),
         groups,
         tx,
-        interrupts: EventInterruptRegistry::new(),
         tracers: TracerSenders::new(Vec::new()),
       }
     }
@@ -881,7 +806,6 @@ mod tests {
         &mut self.groups,
         &self.base,
         self.tx.clone(),
-        &mut self.interrupts,
         &self.tracers,
       )
     }

@@ -118,10 +118,6 @@ impl System for GameManager {
     self.inner.on_event(event, ctx)
   }
 
-  fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
-    self.inner.on_interrupt(event, ctx)
-  }
-
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
     self.inner.on_routine(routine, ctx)
   }

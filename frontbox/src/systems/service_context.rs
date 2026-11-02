@@ -72,41 +72,6 @@ impl<'a> ServiceContext<'a> {
       .ok();
   }
 
-  // -- event interrupts --
-
-  /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  /// See [event interrupts](crate::systems::event_interrupts)
-  pub fn register_interrupt<E: Event + 'static>(&self, handle: SystemHandle, priority: u16) {
-    log::debug!(
-      "Registering interrupt for {} by {}",
-      type_name::<E>(),
-      handle.id,
-    );
-    self
-      .app_sender
-      .send(AppMessage::RegisterInterrupt(
-        handle,
-        TypeId::of::<E>(),
-        priority,
-      ))
-      .ok();
-  }
-
-  pub fn unregister_interrupt<E: Event + 'static>(&self, handle: SystemHandle) {
-    log::debug!(
-      "Unregistering interrupt for {} by {}",
-      type_name::<E>(),
-      handle.id,
-    );
-    self
-      .app_sender
-      .send(AppMessage::UnregisterInterrupt(
-        handle.id,
-        TypeId::of::<E>(),
-      ))
-      .ok();
-  }
-
   // -- Systems access --
 
   /// Lookup a system by type

@@ -11,7 +11,7 @@ use crate::prelude::*;
 ///
 /// Each handler receives a reference to `SystemContext` which has both the `Context` and a reference to the `SystemHandle` of the current system. As this guide has shown, it's through Context that access several features is provided, including:
 ///
-/// - Register cues and interrupts
+/// - Schedule cues
 /// - Emit events
 /// - Access hardware configuration and state
 ///
@@ -58,19 +58,6 @@ impl<'a> SystemContext<'a> {
   pub fn emit<E: Event>(&self, event: E) {
     self.ctx.emit(self.current_system_id(), event);
   }
-  // -- event interrupts --
-
-  /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  /// See [event interrupts](crate::systems::event_interrupts)
-  pub fn register_interrupt<E: Event + 'static>(&self, priority: u16) {
-    self.ctx.register_interrupt::<E>(self.handle, priority);
-  }
-
-  /// Remove a previously registered interrupt handler
-  pub fn unregister_interrupt<E: Event + 'static>(&self) {
-    self.ctx.unregister_interrupt::<E>(self.handle);
-  }
-
   // -- Systems access --
 
   /// Lookup a system by type

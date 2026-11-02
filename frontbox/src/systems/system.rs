@@ -5,7 +5,7 @@ use dyn_clone::DynClone;
 
 use crate::prelude::*;
 
-/// A `System` is a basic building block of Frontbox which responds to events, schedules timers, registers command, and handles interrupts.
+/// A `System` is a basic building block of Frontbox which responds to events, schedules timers, and takes part in routines.
 ///
 /// The base system does not need to be thread safe (Send+Sync), though this can only be spun up at boot time.
 /// Spawning systems dynamically during runtime requires the system to be Send+Sync. Some systems can be managed as others, or used as
@@ -39,10 +39,6 @@ pub trait System: Any {
 
   /// Called when an event is emitted into the system (switch press, game state change, etc.)
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {}
-  /// Invoked by the framework to handle an potential interrupt
-  fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
-    InterruptResult::Continue
-  }
 
   /// Called when this system's step comes up in a routine it's listed in. Call `ctx.complete_routine_step::<E>()` once the
   /// step is done, now or later. See [routines](crate::systems::routine)

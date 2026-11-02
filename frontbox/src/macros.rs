@@ -44,9 +44,6 @@ macro_rules! delegate_system {
       fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
         self.$field.on_event(event, ctx)
       }
-      fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
-        self.$field.on_interrupt(event, ctx)
-      }
       fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
         self.$field.on_routine(routine, ctx)
       }
