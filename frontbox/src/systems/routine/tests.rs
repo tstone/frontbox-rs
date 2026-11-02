@@ -594,7 +594,7 @@ fn abandoned_when_the_origin_is_despawned() {
 #[test]
 fn the_origin_gets_the_routine_back() {
   #[derive(Serialize, Event, Clone)]
-  struct Drained {
+  struct Draining {
     balls: u8,
   }
 
@@ -604,7 +604,7 @@ fn the_origin_gets_the_routine_back() {
 
   impl System for Counter {
     fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-      if let Some(done) = event.downcast_ref::<RoutineCompleted<Drained>>() {
+      if let Some(done) = event.downcast_ref::<RoutineCompleted<Draining>>() {
         self
           .log
           .borrow_mut()
@@ -617,7 +617,7 @@ fn the_origin_gets_the_routine_back() {
   let log = h.log.clone();
   let origin = h.spawn(ROOT_GROUP_NAME, Counter { log });
 
-  h.ctx(origin).start_routine(Drained { balls: 3 });
+  h.ctx(origin).start_routine(Draining { balls: 3 });
   h.pump();
 
   assert_eq!(h.log(), ["3 balls"]);

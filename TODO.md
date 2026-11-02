@@ -1,8 +1,7 @@
 ## Foundations
 
-- Go through all framework events and be strict with naming: events are past tense (ThingHappened), routines are present tense on-going (ThingHappening). Find cases of present tense and see if those should actually be routines.
 - tests for run_loop
-- Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful.
+- Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful (ex: TurnActive)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
 - Does metrics need to go on app state or can it just be owned by run_loop
@@ -25,6 +24,11 @@
 
 ## Pinball features
 
+- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens
+  to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are
+  participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a
+  ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
+  check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 - Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as

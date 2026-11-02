@@ -1,7 +1,7 @@
 use frontbox::prelude::*;
 
 use crate::ball_management::trough_management_config::TroughManagementConfig;
-use crate::ball_management::{TroughEjectFailed, TroughEjecting, TroughOccupancyChanged};
+use crate::ball_management::{TroughEjectFailed, TroughEjectStarted, TroughOccupancyChanged};
 use crate::{configs, metrics};
 
 pub struct TroughSystem {
@@ -79,7 +79,7 @@ impl TroughSystem {
       return;
     }
 
-    ctx.emit(TroughEjecting);
+    ctx.emit(TroughEjectStarted);
     self.eject_inner(ctx);
   }
 
@@ -641,7 +641,7 @@ mod tests {
   fn eject_when_ready_and_settled_emits_ejecting_and_verifies_against_one_less_ball() {
     let mut f = Fixture::spawn(3, false, true);
     f.eject();
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectStarted"]);
     assert!(matches!(
       f.trough.eject_state,
       EjectState::Verifying {
@@ -661,7 +661,7 @@ mod tests {
 
     f.set_balls(1);
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
     assert_eq!(f.trough.eject_queue, 0);
     assert!(f.is_verifying());
   }
@@ -673,7 +673,7 @@ mod tests {
     f.apply();
     f.spawn_now();
     f.eject();
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectStarted"]);
     assert!(f.is_verifying());
   }
 
@@ -686,7 +686,7 @@ mod tests {
     assert_eq!(f.trough.eject_queue, 1);
 
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
     assert!(f.is_verifying());
   }
 
@@ -695,14 +695,14 @@ mod tests {
     let mut f = Fixture::spawn(3, false, true);
     f.eject();
     f.eject();
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectStarted"]);
     assert_eq!(f.trough.eject_queue, 1);
 
     f.set_balls(2); // ejected ball leaves
     f.settle();
     f.close_plunge();
     // the held exit is reported before the queued eject starts
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
     assert_eq!(f.trough.eject_queue, 0);
     assert!(f.is_verifying());
   }
@@ -714,7 +714,7 @@ mod tests {
     assert_eq!(f.trough.eject_queue, 1);
 
     f.trough.on_spawn(&f.ctx.sys_ctx());
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectStarted"]);
     assert!(f.is_verifying());
   }
 
@@ -731,7 +731,7 @@ mod tests {
   fn eject_many_ejects_one_immediately_and_queues_the_rest() {
     let mut f = Fixture::spawn(3, false, true);
     f.eject_many(3);
-    assert_eq!(f.events(), vec!["TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectStarted"]);
     assert_eq!(f.trough.eject_queue, 2);
     assert!(f.is_verifying());
   }
@@ -778,7 +778,7 @@ mod tests {
     assert!(f.events().is_empty());
 
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
     assert!(f.is_verifying());
   }
 
@@ -850,8 +850,8 @@ mod tests {
     f.settle();
     assert!(f.is_verifying());
     assert_eq!(f.trough.eject_retries, 1);
-    // the deferred retry goes through eject(), so TroughEjecting is emitted again
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjecting"]);
+    // the deferred retry goes through eject(), so TroughEjectStarted is emitted again
+    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
   }
 
   #[test]
@@ -881,7 +881,7 @@ mod tests {
     f.events();
 
     f.verify_timeout();
-    assert_eq!(f.events(), vec!["TroughEjectFailed", "TroughEjecting"]);
+    assert_eq!(f.events(), vec!["TroughEjectFailed", "TroughEjectStarted"]);
     assert!(f.is_verifying());
     assert_eq!(f.trough.eject_queue, 0);
     assert_eq!(f.trough.eject_retries, 0);

@@ -105,7 +105,7 @@ struct TroughOccupancyChanged {
 }
 
 #[derive(serde::Serialize, Event)]
-struct TroughEjecting;
+struct TroughEjectStarted;
 
 #[derive(serde::Serialize, Event)]
 pub struct TroughEjectFailed;
