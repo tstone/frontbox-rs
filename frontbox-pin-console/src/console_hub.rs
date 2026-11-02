@@ -431,7 +431,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
         progress.current = None;
       }
     }
-    TraceEvent::RoutineFinished { routine, .. } | TraceEvent::RoutineAbandoned { routine, .. } => {
+    TraceEvent::RoutineCompleted { routine, .. } | TraceEvent::RoutineAbandoned { routine, .. } => {
       snapshot.routines.retain(|r| r.routine != *routine)
     }
     TraceEvent::RoutineRejected { .. }

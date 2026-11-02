@@ -173,8 +173,8 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     // paused once the step in progress is over, so no one holds it
     const progress = s.routines.find((r) => r.routine === event.RoutinePaused.routine)
     if (progress) progress.current = null
-  } else if ('RoutineFinished' in event || 'RoutineAbandoned' in event) {
-    const { routine } = 'RoutineFinished' in event ? event.RoutineFinished : event.RoutineAbandoned
+  } else if ('RoutineCompleted' in event || 'RoutineAbandoned' in event) {
+    const { routine } = 'RoutineCompleted' in event ? event.RoutineCompleted : event.RoutineAbandoned
     s.routines = s.routines.filter((r) => r.routine !== routine)
   } else if ('RoutineRejected' in event || 'RoutineSkipped' in event || 'RoutineResumed' in event) {
     // logged only

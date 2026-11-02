@@ -136,10 +136,10 @@ impl<'a> SystemContext<'a> {
 
   // -- Routines --
 
-  /// Start the routine for the payload's type. Once its last participant is done, [`RoutineComplete<E>`] is delivered
-  /// to this system, like a cue. See [routines](crate::systems::routine)
-  pub fn start_routine<E: Event>(&self, payload: E) {
-    self.ctx.start_routine(self.handle, payload);
+  /// Start the routine for `E`. [`RoutineStarted<E>`] is broadcast before the first participant is
+  /// handed the routine, and [`RoutineCompleted<E>`] once the last one is done. See [routines](crate::systems::routine)
+  pub fn start_routine<E: Event + Clone>(&self, routine: E) {
+    self.ctx.start_routine(self.handle, routine);
   }
 
   /// End this system's step in the routine for `E`, handing it to the next participant

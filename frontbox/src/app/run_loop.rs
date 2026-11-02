@@ -149,7 +149,15 @@ pub async fn run(
             cancel_cue(handle, cue_id, &groups);
           }
           AppMessage::StartRoutine(start) => {
-            routines.start(start, &groups, &base, &app_sender, &tracer_txs);
+            let (origin, type_id) = (start.origin, start.type_id);
+            if let Some(started) = routines.start(start, &groups, &tracer_txs) {
+              // emitted here and the first step queued after it, so whatever its listeners emit lands first
+              emit_event(Some(origin.id), started, &mut groups, &base, &app_sender, &interrupt_registry, &tracer_txs, &resync_notifier);
+              let _ = app_sender.send(AppMessage::BeginRoutine(type_id));
+            }
+          }
+          AppMessage::BeginRoutine(type_id) => {
+            routines.begin(type_id, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::CompleteRoutineStep(handle, type_id) => {
             routines.complete_step(handle, type_id, &groups, &base, &app_sender, &tracer_txs);
@@ -271,7 +279,7 @@ pub(crate) fn is_system_active(
 }
 
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
-fn apply_to_systems<F>(
+pub(crate) fn apply_to_systems<F>(
   groups: &Groups,
   base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,

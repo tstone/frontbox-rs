@@ -75,13 +75,13 @@ impl TestContext {
     events
   }
 
-  /// Payloads of routines started up to this point. Downcast to check them.
+  /// Routines started up to this point. Downcast to check them.
   pub fn routines_started(&mut self) -> Vec<Box<dyn Event>> {
     self
       .app_messages()
       .into_iter()
       .filter_map(|msg| match msg {
-        AppMessage::StartRoutine(start) => Some(start.payload),
+        AppMessage::StartRoutine(start) => Some(start.routine),
         _ => None,
       })
       .collect()

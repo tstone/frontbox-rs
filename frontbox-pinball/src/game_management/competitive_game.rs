@@ -19,8 +19,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
 /// - Event: `PlayerTurnActive` - Emitted when the ball enters play (`BallEnteredPlay`), or on the first ball in play
 ///   switch hit, whichever comes first.
-/// - Event: `PlayerTurnEnding` - Emitted when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
-/// - Routine: `TurnEnding` - Started right after `PlayerTurnEnding`. The turn advances once it finishes.
+/// - Routine: `TurnEnding` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
+///   Modes clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
 ///
 /// ## Interrupts
 /// - `BallsExitedPlay` - Interrupting this event will prevent the player turn from ending. This is how mechanics like
@@ -115,13 +115,7 @@ impl CompetitiveGame {
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
-    let ctx = &ctx.for_system(self.handle);
-    ctx.emit(PlayerTurnEnding::new(
-      game_state.current_player(),
-      game_state.current_player_turn(),
-    ));
-    // queued after the event, so modes clean up on `PlayerTurnEnding` before the routine's first step
-    ctx.start_routine(TurnEnding {
+    ctx.for_system(self.handle).start_routine(TurnEnding {
       current_player: game_state.current_player(),
       turn: game_state.current_player_turn(),
     });
@@ -195,7 +189,7 @@ impl System for CompetitiveGame {
           }
         }
         TurnState::Ending => {
-          if event.is::<RoutineComplete<TurnEnding>>() {
+          if event.is::<RoutineCompleted<TurnEnding>>() {
             self.advance_turn(ctx.into());
           }
         }

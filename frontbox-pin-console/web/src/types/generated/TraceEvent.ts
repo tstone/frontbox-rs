@@ -12,4 +12,4 @@ export type TraceEvent = { "Event": { type_name: string, interrupts: Array<Inter
 /**
  * The participant's group. Copies of a system in several groups share an id.
  */
-group: string, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineFinished": { routine: string, origin: number, } } | { "RoutineAbandoned": { routine: string, origin: number, } };
+group: string, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineCompleted": { routine: string, origin: number, } } | { "RoutineAbandoned": { routine: string, origin: number, } };

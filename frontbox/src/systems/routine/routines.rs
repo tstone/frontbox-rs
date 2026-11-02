@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use super::{RoutineDefinition, RoutineStart};
 use crate::app::app_message::AppMessage;
 use crate::app::app_tracer::{RoutineSkipReason, TraceEvent, TracerSenders};
+use crate::app::event_box::EventBox;
 use crate::app::run_loop::{apply_to_system, is_system_active};
 use crate::app::{Groups, GroupsExt};
 use crate::prelude::*;
@@ -26,20 +27,22 @@ impl Routines {
     }
   }
 
+  /// Registers the routine, returning its `RoutineStarted` for the run loop to emit. Its first participant isn't handed
+  /// the routine until `begin`, which the run loop queues after emitting it, so whatever the listeners of
+  /// `RoutineStarted` emit lands before the first step.
   pub(crate) fn start(
     &mut self,
     start: RoutineStart,
     groups: &Groups,
-    base: &AppState,
-    app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
-  ) {
+  ) -> Option<EventBox> {
     let RoutineStart {
       origin,
       type_id,
       name,
-      payload,
-      into_complete,
+      routine: event,
+      into_started,
+      into_completed,
     } = start;
 
     if let Some(existing) = self.running.get(&type_id) {
@@ -55,21 +58,23 @@ impl Routines {
         origin: origin.id,
         running_origin: existing.origin.id,
       });
-      return;
+      return None;
     }
 
     if !self.definitions.contains_key(&type_id) {
-      log::debug!(target: "frontbox::routines", "Routine {} has no definition, so it finishes immediately", name);
+      log::debug!(target: "frontbox::routines", "Routine {} has no definition, so it completes immediately", name);
     }
 
     log::debug!(target: "frontbox::routines", "Routine {} started by {}", name, Self::describe(groups, origin));
+    let started = into_started(event.as_ref());
     self.running.insert(
       type_id,
       RunningRoutine {
         name,
         origin,
-        payload,
-        into_complete,
+        routine: event,
+        into_completed,
+        begun: false,
         next: 0,
         current: None,
         paused: false,
@@ -80,6 +85,25 @@ impl Routines {
       origin: origin.id,
     });
 
+    Some(started)
+  }
+
+  /// Hand a started routine to its first participant
+  pub(crate) fn begin(
+    &mut self,
+    type_id: TypeId,
+    groups: &Groups,
+    base: &AppState,
+    app_sender: &mpsc::UnboundedSender<AppMessage>,
+    tracer_txs: &TracerSenders,
+  ) {
+    let Some(routine) = self.running.get_mut(&type_id) else {
+      return;
+    };
+    if routine.begun {
+      return;
+    }
+    routine.begun = true;
     self.advance(type_id, groups, base, app_sender, tracer_txs);
   }
 
@@ -126,10 +150,12 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
+    // one that hasn't begun is left to `begin`, which sees where the origin stands then
     let involves = |routine: &RunningRoutine| {
-      handles.iter().any(|&handle| {
-        routine.origin == handle || routine.current.is_some_and(|current| current == handle)
-      })
+      routine.begun
+        && handles.iter().any(|&handle| {
+          routine.origin == handle || routine.current.is_some_and(|current| current == handle)
+        })
     };
     let affected: Vec<TypeId> = self
       .running
@@ -160,7 +186,7 @@ impl Routines {
     }
   }
 
-  /// Hand the routine to its next active participant, or finish it if there are none left. Does nothing while the
+  /// Hand the routine to its next active participant, or complete it if there are none left. Does nothing while the
   /// origin is inactive.
   fn advance(
     &mut self,
@@ -218,7 +244,7 @@ impl Routines {
       routine.next += 1;
 
       let Some(participant) = next else {
-        self.finish(type_id, groups, base, app_sender, tracer_txs);
+        self.complete(type_id, app_sender, tracer_txs);
         return;
       };
 
@@ -261,7 +287,7 @@ impl Routines {
       });
 
       // completing only sends a message, so the participant can't re-enter the routine from here
-      let payload = routine.payload.as_ref();
+      let event = routine.routine.as_ref();
       apply_to_system(
         handle,
         groups,
@@ -269,19 +295,18 @@ impl Routines {
         app_sender,
         tracer_txs,
         |system, ctx| {
-          system.on_routine(payload, ctx);
+          system.on_routine(event, ctx);
         },
       );
       return;
     }
   }
 
-  /// Only called once the origin is known to be active
-  fn finish(
+  /// Only called once the origin is known to be active. `RoutineCompleted` is queued rather than delivered here, so it
+  /// reaches everyone in queue order.
+  fn complete(
     &mut self,
     type_id: TypeId,
-    groups: &Groups,
-    base: &AppState,
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
@@ -289,23 +314,14 @@ impl Routines {
       return;
     };
 
-    log::debug!(target: "frontbox::routines", "Routine {} finished", routine.name);
-    tracer_txs.send(TraceEvent::RoutineFinished {
+    log::debug!(target: "frontbox::routines", "Routine {} completed", routine.name);
+    tracer_txs.send(TraceEvent::RoutineCompleted {
       routine: routine.name,
       origin: routine.origin.id,
     });
 
-    let complete = (routine.into_complete)(routine.payload);
-    apply_to_system(
-      routine.origin,
-      groups,
-      base,
-      app_sender,
-      tracer_txs,
-      |system, ctx| {
-        system.on_event(complete.as_ref(), ctx);
-      },
-    );
+    let completed = (routine.into_completed)(routine.routine);
+    let _ = app_sender.send(AppMessage::EmitEvent(Some(routine.origin.id), completed));
   }
 
   fn origin_state(
@@ -341,9 +357,12 @@ impl Routines {
 struct RunningRoutine {
   name: &'static str,
   origin: SystemHandle,
-  payload: Box<dyn Event>,
-  /// Wraps the payload in its `RoutineComplete`
-  into_complete: fn(Box<dyn Event>) -> Box<dyn Event>,
+  /// The routine as started, which participants are handed
+  routine: Box<dyn Event>,
+  /// Wraps the routine in its `RoutineCompleted`
+  into_completed: fn(Box<dyn Event>) -> EventBox,
+  /// `RoutineStarted` has gone out, and the first participant was handed the routine
+  begun: bool,
   /// Index of the next participant in the definition
   next: usize,
   /// The participant whose step is in progress

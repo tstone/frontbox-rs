@@ -27,6 +27,10 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 
 ### Events and cues
 
+- Name events in the past tense (`BallSaved`), and routine payloads in the present progressive for what's going on
+  while they run (`TurnEnding`).
+- Say "complete" rather than "finish" for something that runs to an end, such as a routine or one of its steps
+  (`RoutineCompleted`, `complete_routine_step`).
 - Cues a system sends to itself are private and live in the same file as the system.
 - Public events for a module are centralized in that module's `mod.rs`, not spread across system files.
 - Only halt an event with an interrupt when there is a specific reason it must not reach other systems. A halted event

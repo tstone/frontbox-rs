@@ -38,30 +38,18 @@ impl PlayerTurnActive {
   }
 }
 
-/// Emitted when the ball goes out of play and is in the trough. This would be the time to render bonus scores, show the player ball end information, etc.
-#[derive(serde::Serialize, Event)]
-pub struct PlayerTurnEnding {
-  pub current_player: u8,
-  pub turn: u8,
-}
-
-impl PlayerTurnEnding {
-  pub fn new(current_player: u8, turn: u8) -> Self {
-    Self {
-      current_player,
-      turn,
-    }
-  }
-}
-
-/// Routine run at the end of a turn, right after `PlayerTurnEnding`. Its participants are the end-of-turn displays and
-/// sequences (bonus, shoot again, etc.); the turn advances once the last one completes its step. With no routine
-/// defined, the turn advances right away.
+/// Routine run once the last ball of a turn has left play. Its participants are the end-of-turn displays and sequences
+/// (bonus, shoot again, etc.); the turn advances once the last one completes its step. With no routine defined, the
+/// turn advances right away.
 ///
 /// ```rust,ignore
 /// app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
 /// ```
-#[derive(serde::Serialize, Event)]
+///
+/// Other systems watch the routine's events:
+/// - `RoutineStarted<TurnEnding>` -- play is over, before any participant runs. Modes clean up here.
+/// - `RoutineCompleted<TurnEnding>` -- the turn is over, just before the next one begins or the game ends.
+#[derive(serde::Serialize, Event, Clone)]
 pub struct TurnEnding {
   pub current_player: u8,
   pub turn: u8,

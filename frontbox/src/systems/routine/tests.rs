@@ -8,15 +8,15 @@ use tokio::sync::mpsc;
 use super::*;
 use crate::app::app_message::AppMessage;
 use crate::app::app_tracer::TracerSenders;
-use crate::app::run_loop::apply_to_system;
+use crate::app::run_loop::{apply_to_system, apply_to_systems};
 use crate::app::{Groups, GroupsExt};
 use crate::prelude::*;
 
 /// What the test systems did, in order, so tests can check the sequence across systems
 type Log = Rc<RefCell<Vec<String>>>;
 
-#[derive(Serialize, Event)]
-struct EndOfTurn;
+#[derive(Serialize, Event, Clone)]
+struct TurnEnding;
 
 /// A participant that completes its step right away, or waits to be told
 struct Step<const N: usize> {
@@ -26,13 +26,13 @@ struct Step<const N: usize> {
 
 impl<const N: usize> System for Step<N> {
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
-    if routine.is::<EndOfTurn>() {
+    if routine.is::<TurnEnding>() {
       self
         .log
         .borrow_mut()
         .push(format!("step {N} in {}", ctx.current_handle().parent_key));
       if self.complete_now {
-        ctx.complete_routine_step::<EndOfTurn>();
+        ctx.complete_routine_step::<TurnEnding>();
       }
     }
   }
@@ -57,8 +57,8 @@ struct Origin {
 
 impl System for Origin {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if event.is::<RoutineComplete<EndOfTurn>>() {
-      self.log.borrow_mut().push("finished".to_string());
+    if event.is::<RoutineCompleted<TurnEnding>>() {
+      self.log.borrow_mut().push("completed".to_string());
     }
   }
 }
@@ -71,13 +71,37 @@ struct OriginToggled {
 
 impl System for OriginToggled {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if event.is::<RoutineComplete<EndOfTurn>>() {
-      self.log.borrow_mut().push("finished".to_string());
+    if event.is::<RoutineCompleted<TurnEnding>>() {
+      self.log.borrow_mut().push("completed".to_string());
     }
   }
 
   fn is_active(&self, _ctx: &SystemContext) -> bool {
     self.active.get()
+  }
+}
+
+#[derive(Serialize, Event)]
+struct CleanedUp;
+
+/// A system that isn't a participant, watching the routine's events. Optionally emits `CleanedUp` when it starts.
+struct Watcher {
+  log: Log,
+  clean_up: bool,
+}
+
+impl System for Watcher {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+    if event.is::<RoutineStarted<TurnEnding>>() {
+      self.log.borrow_mut().push("saw started".to_string());
+      if self.clean_up {
+        ctx.emit(CleanedUp);
+      }
+    } else if event.is::<CleanedUp>() {
+      self.log.borrow_mut().push("cleaned up".to_string());
+    } else if event.is::<RoutineCompleted<TurnEnding>>() {
+      self.log.borrow_mut().push("saw completed".to_string());
+    }
   }
 }
 
@@ -105,7 +129,7 @@ impl Harness {
     Self {
       base: AppState::default(),
       groups,
-      routines: Routines::new(HashMap::from([(TypeId::of::<EndOfTurn>(), definition)])),
+      routines: Routines::new(HashMap::from([(TypeId::of::<TurnEnding>(), definition)])),
       tx,
       rx,
       tracers: TracerSenders::new(Vec::new()),
@@ -134,19 +158,32 @@ impl Harness {
     self.spawn(group, Origin { log })
   }
 
+  fn watcher(&mut self, clean_up: bool) -> SystemHandle {
+    let log = self.log.clone();
+    self.spawn(ROOT_GROUP, Watcher { log, clean_up })
+  }
+
   fn ctx(&self, handle: SystemHandle) -> SystemContext<'_> {
     SystemContext::new(&self.base, handle, &self.groups, self.tx.clone())
   }
 
-  /// Process routine messages the way the run loop does, until there are none left
+  /// Process routine messages and events the way the run loop does, until there are none left
   fn pump(&mut self) {
     while let Ok(message) = self.rx.try_recv() {
       match message {
         AppMessage::StartRoutine(start) => {
+          let type_id = start.type_id;
+          if let Some(started) = self.routines.start(start, &self.groups, &self.tracers) {
+            self.broadcast(started.event.as_ref());
+            let _ = self.tx.send(AppMessage::BeginRoutine(type_id));
+          }
+        }
+        AppMessage::BeginRoutine(type_id) => {
           self
             .routines
-            .start(start, &self.groups, &self.base, &self.tx, &self.tracers)
+            .begin(type_id, &self.groups, &self.base, &self.tx, &self.tracers)
         }
+        AppMessage::EmitEvent(_, event) => self.broadcast(event.event.as_ref()),
         AppMessage::CompleteRoutineStep(caller, type_id) => self.routines.complete_step(
           caller,
           type_id,
@@ -165,6 +202,18 @@ impl Harness {
         _ => {}
       }
     }
+  }
+
+  fn broadcast(&self, event: &dyn Event) {
+    apply_to_systems(
+      &self.groups,
+      &self.base,
+      &self.tx,
+      &self.tracers,
+      |system, ctx| {
+        system.on_event(event, ctx);
+      },
+    );
   }
 
   /// The run loop tells routines about a change it made itself, after making it
@@ -202,12 +251,12 @@ impl Harness {
   }
 
   fn start(&mut self, origin: SystemHandle) {
-    self.ctx(origin).start_routine(EndOfTurn);
+    self.ctx(origin).start_routine(TurnEnding);
     self.pump();
   }
 
   fn complete(&mut self, participant: SystemHandle) {
-    self.ctx(participant).complete_routine_step::<EndOfTurn>();
+    self.ctx(participant).complete_routine_step::<TurnEnding>();
     self.pump();
   }
 
@@ -223,7 +272,7 @@ impl Harness {
   }
 
   fn is_running(&self) -> bool {
-    self.routines.is_running(TypeId::of::<EndOfTurn>())
+    self.routines.is_running(TypeId::of::<TurnEnding>())
   }
 
   fn log(&self) -> Vec<String> {
@@ -242,7 +291,7 @@ fn runs_participants_in_order_then_signals_the_origin() {
 
   assert_eq!(
     h.log(),
-    ["step 1 in __root", "step 2 in __root", "finished"]
+    ["step 1 in __root", "step 2 in __root", "completed"]
   );
   assert!(!h.is_running());
 }
@@ -260,22 +309,22 @@ fn waits_for_a_later_completion() {
   h.complete(first);
   assert_eq!(
     h.log(),
-    ["step 1 in __root", "step 2 in __root", "finished"]
+    ["step 1 in __root", "step 2 in __root", "completed"]
   );
 }
 
 #[test]
-fn empty_and_undefined_routines_finish_immediately() {
+fn empty_and_undefined_routines_complete_immediately() {
   let mut h = Harness::new(routine![]);
   let origin = h.origin(ROOT_GROUP);
   h.start(origin);
-  assert_eq!(h.log(), ["finished"]);
+  assert_eq!(h.log(), ["completed"]);
 
   let mut h = Harness::new(routine![]);
   h.routines = Routines::default();
   let origin = h.origin(ROOT_GROUP);
   h.start(origin);
-  assert_eq!(h.log(), ["finished"]);
+  assert_eq!(h.log(), ["completed"]);
 }
 
 #[test]
@@ -289,7 +338,7 @@ fn a_second_start_is_ignored_while_running() {
   assert_eq!(h.log(), ["step 1 in __root"]);
 
   h.complete(step);
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
 }
 
 #[test]
@@ -304,7 +353,7 @@ fn nearest_instance_wins() {
 
   assert_eq!(
     h.log(),
-    ["step 1 in player", "step 2 in __root", "finished"]
+    ["step 1 in player", "step 2 in __root", "completed"]
   );
 }
 
@@ -317,7 +366,7 @@ fn participants_out_of_reach_are_skipped() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 2 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 2 in __root", "completed"]);
 }
 
 #[test]
@@ -334,7 +383,7 @@ fn inactive_participants_are_skipped() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
 }
 
 #[test]
@@ -350,8 +399,8 @@ fn only_the_current_participant_can_complete() {
   assert_eq!(h.log(), ["step 1 in __root"]);
 
   // a duplicate completion from the first step doesn't skip the second
-  h.ctx(first).complete_routine_step::<EndOfTurn>();
-  h.ctx(first).complete_routine_step::<EndOfTurn>();
+  h.ctx(first).complete_routine_step::<TurnEnding>();
+  h.ctx(first).complete_routine_step::<TurnEnding>();
   h.pump();
   assert_eq!(h.log(), ["step 1 in __root", "step 2 in __root"]);
 }
@@ -368,7 +417,7 @@ fn a_participant_despawned_mid_step_counts_as_complete() {
 
   assert_eq!(
     h.log(),
-    ["step 1 in __root", "step 2 in __root", "finished"]
+    ["step 1 in __root", "step 2 in __root", "completed"]
   );
 }
 
@@ -394,7 +443,7 @@ fn a_participant_deactivated_mid_step_counts_as_complete() {
   assert!(h.log().is_empty());
   h.touch(SystemHandle::new(toggled, ROOT_GROUP));
 
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
 }
 
 #[test]
@@ -411,7 +460,7 @@ fn a_group_deactivated_and_reactivated_in_a_row_still_ends_the_step() {
 
   assert_eq!(
     h.log(),
-    ["step 1 in player", "step 2 in __root", "finished"]
+    ["step 1 in player", "step 2 in __root", "completed"]
   );
 }
 
@@ -444,7 +493,7 @@ fn copies_in_other_groups_dont_affect_the_step() {
   assert!(h.log().is_empty());
 
   h.complete(SystemHandle::new(id, "player 2"));
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
 }
 
 #[test]
@@ -463,7 +512,7 @@ fn pauses_while_the_origin_is_inactive() {
   h.set_group_active("player", true);
   assert_eq!(
     h.log(),
-    ["step 1 in player", "step 2 in __root", "finished"]
+    ["step 1 in player", "step 2 in __root", "completed"]
   );
 }
 
@@ -488,7 +537,7 @@ fn the_signal_waits_for_the_origin() {
 
   active.set(true);
   h.touch(origin);
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
 }
 
 #[test]
@@ -507,8 +556,8 @@ fn abandoned_when_the_origin_is_despawned() {
 }
 
 #[test]
-fn the_origin_gets_the_payload_back() {
-  #[derive(Serialize, Event)]
+fn the_origin_gets_the_routine_back() {
+  #[derive(Serialize, Event, Clone)]
   struct Drained {
     balls: u8,
   }
@@ -519,11 +568,11 @@ fn the_origin_gets_the_payload_back() {
 
   impl System for Counter {
     fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-      if let Some(done) = event.downcast_ref::<RoutineComplete<Drained>>() {
+      if let Some(done) = event.downcast_ref::<RoutineCompleted<Drained>>() {
         self
           .log
           .borrow_mut()
-          .push(format!("{} balls", done.payload.balls));
+          .push(format!("{} balls", done.routine.balls));
       }
     }
   }
@@ -546,13 +595,13 @@ fn test_context_records_starts_and_completions() {
     log: Rc::default(),
     complete_now: true,
   };
-  step.on_routine(&EndOfTurn, &test_ctx.sys_ctx());
-  assert!(test_ctx.routine_step_completed::<EndOfTurn>());
+  step.on_routine(&TurnEnding, &test_ctx.sys_ctx());
+  assert!(test_ctx.routine_step_completed::<TurnEnding>());
 
-  test_ctx.sys_ctx().start_routine(EndOfTurn);
+  test_ctx.sys_ctx().start_routine(TurnEnding);
   let started = test_ctx.routines_started();
   assert_eq!(started.len(), 1);
-  assert!(started[0].as_ref().is::<EndOfTurn>());
+  assert!(started[0].as_ref().is::<TurnEnding>());
 }
 
 #[test]
@@ -564,5 +613,91 @@ fn participants_without_on_routine_complete() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 1 in __root", "finished"]);
+  assert_eq!(h.log(), ["step 1 in __root", "completed"]);
+}
+
+#[test]
+fn started_and_completed_are_broadcast_around_the_steps() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP);
+  h.watcher(false);
+  let step = h.step::<1>(ROOT_GROUP, false);
+
+  h.start(origin);
+  assert_eq!(h.log(), ["saw started", "step 1 in __root"]);
+
+  h.complete(step);
+  assert_eq!(
+    h.log(),
+    [
+      "saw started",
+      "step 1 in __root",
+      "completed",
+      "saw completed"
+    ]
+  );
+}
+
+#[test]
+fn what_listeners_emit_on_started_lands_before_the_first_step() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP);
+  h.watcher(true);
+  h.step::<1>(ROOT_GROUP, true);
+
+  h.start(origin);
+
+  assert_eq!(
+    h.log(),
+    [
+      "saw started",
+      "cleaned up",
+      "step 1 in __root",
+      "completed",
+      "saw completed"
+    ]
+  );
+}
+
+#[test]
+fn empty_and_undefined_routines_still_broadcast_both_events() {
+  let mut h = Harness::new(routine![]);
+  let origin = h.origin(ROOT_GROUP);
+  h.watcher(false);
+  h.start(origin);
+  assert_eq!(h.log(), ["saw started", "completed", "saw completed"]);
+
+  let mut h = Harness::new(routine![]);
+  h.routines = Routines::default();
+  let origin = h.origin(ROOT_GROUP);
+  h.watcher(false);
+  h.start(origin);
+  assert_eq!(h.log(), ["saw started", "completed", "saw completed"]);
+}
+
+#[test]
+fn a_rejected_start_broadcasts_nothing() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP);
+  h.step::<1>(ROOT_GROUP, false);
+  h.watcher(false);
+
+  h.start(origin);
+  h.start(origin);
+
+  assert_eq!(h.log(), ["saw started", "step 1 in __root"]);
+}
+
+#[test]
+fn an_abandoned_routine_never_completes() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP);
+  let step = h.step::<1>(ROOT_GROUP, false);
+  h.watcher(false);
+
+  h.start(origin);
+  h.despawn(origin);
+  h.complete(step);
+
+  assert_eq!(h.log(), ["saw started", "step 1 in __root"]);
 }

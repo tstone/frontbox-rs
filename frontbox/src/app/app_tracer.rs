@@ -102,11 +102,11 @@ pub enum TraceEvent {
   RoutineResumed {
     routine: &'static str,
   },
-  RoutineFinished {
+  RoutineCompleted {
     routine: &'static str,
     origin: u64,
   },
-  /// The routine's origin was despawned before it finished
+  /// The routine's origin was despawned before it completed
   RoutineAbandoned {
     routine: &'static str,
     origin: u64,

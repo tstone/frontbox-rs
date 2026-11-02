@@ -222,13 +222,14 @@ impl<'a> ServiceContext<'a> {
   // --- Routines ---
 
   /// Starting and completing need the caller's identity, so they're only public through `SystemContext`
-  pub(crate) fn start_routine<E: Event>(&self, origin: SystemHandle, payload: E) {
+  pub(crate) fn start_routine<E: Event + Clone>(&self, origin: SystemHandle, routine: E) {
     let _ = self.app_sender.send(AppMessage::StartRoutine(RoutineStart {
       origin,
       type_id: TypeId::of::<E>(),
       name: type_name::<E>(),
-      payload: Box::new(payload),
-      into_complete: RoutineComplete::<E>::from_payload,
+      routine: Box::new(routine),
+      into_started: RoutineStarted::<E>::from_routine,
+      into_completed: RoutineCompleted::<E>::from_routine,
     }));
   }
 

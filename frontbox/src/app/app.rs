@@ -43,7 +43,7 @@ impl App {
     self
   }
 
-  /// Define the routine started with a payload of type `E`. See [routines](crate::systems::routine)
+  /// Define the routine for `E`: the systems, in order, that take part when one is started. See [routines](crate::systems::routine)
   pub fn routine<E: Event>(&mut self, definition: RoutineDefinition) -> &mut Self {
     if self
       .routines
