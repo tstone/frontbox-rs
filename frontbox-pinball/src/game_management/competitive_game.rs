@@ -20,6 +20,7 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// - Event: `PlayerTurnActive` - Emitted when the ball enters play (`BallEnteredPlay`), or on the first ball in play
 ///   switch hit, whichever comes first.
 /// - Event: `PlayerTurnEnding` - Emitted when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
+/// - Routine: `TurnEnding` - Started right after `PlayerTurnEnding`. The turn advances once it finishes.
 ///
 /// ## Interrupts
 /// - `BallsExitedPlay` - Interrupting this event will prevent the player turn from ending. This is how mechanics like
@@ -114,10 +115,48 @@ impl CompetitiveGame {
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
-    ctx.for_system(self.handle).emit(PlayerTurnEnding::new(
+    let ctx = &ctx.for_system(self.handle);
+    ctx.emit(PlayerTurnEnding::new(
       game_state.current_player(),
       game_state.current_player_turn(),
     ));
+    // queued after the event, so modes clean up on `PlayerTurnEnding` before the routine's first step
+    ctx.start_routine(TurnEnding {
+      current_player: game_state.current_player(),
+      turn: game_state.current_player_turn(),
+    });
+  }
+
+  fn advance_turn(&mut self, ctx: &ServiceContext) {
+    let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
+    let game_state = if let Some(game_state) = &mut self.game_state {
+      game_state
+    } else {
+      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
+      return;
+    };
+
+    ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
+    ctx.metrics.flush();
+
+    // increment the previous player's turn before advancing to next player/turn
+    game_state.increment_current_player_turn();
+    game_state.advance_turn();
+
+    // Verify we haven't gone over the turn limit
+    if game_state.current_player_turn() >= max_turn_count {
+      self.end_game(ctx);
+      return;
+    }
+
+    log::info!(
+      target: "frontbox::game_manager",
+      "Advancing turn (player: {}, turn: {})",
+      game_state.current_player(),
+      game_state.current_player_turn()
+    );
+
+    self.start_turn(ctx);
   }
 }
 
@@ -155,7 +194,11 @@ impl System for CompetitiveGame {
             self.transition_turn_to_ending(ctx.into());
           }
         }
-        _ => {}
+        TurnState::Ending => {
+          if event.is::<RoutineComplete<TurnEnding>>() {
+            self.advance_turn(ctx.into());
+          }
+        }
       }
     }
   }
@@ -203,38 +246,6 @@ impl GameManagement for CompetitiveGame {
     if game_started_just_now {
       self.start_turn(ctx);
     }
-  }
-
-  fn advance_turn(&mut self, ctx: &ServiceContext) {
-    let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
-    let game_state = if let Some(game_state) = &mut self.game_state {
-      game_state
-    } else {
-      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
-      return;
-    };
-
-    ctx.deactivate_system_group(Self::player_group_name(game_state.current_player()));
-    ctx.metrics.flush();
-
-    // increment the previous player's turn before advancing to next player/turn
-    game_state.increment_current_player_turn();
-    game_state.advance_turn();
-
-    // Verify we haven't gone over the turn limit
-    if game_state.current_player_turn() >= max_turn_count {
-      self.end_game(ctx);
-      return;
-    }
-
-    log::info!(
-      target: "frontbox::game_manager",
-      "Advancing turn (player: {}, turn: {})",
-      game_state.current_player(),
-      game_state.current_player_turn()
-    );
-
-    self.start_turn(ctx);
   }
 
   fn end_game(&mut self, ctx: &ServiceContext) {

@@ -13,9 +13,17 @@
 //! Regardless of competitive or cooperative play, the turn flow is as follows:
 //! 1. A player's turn begins with the `PlayerTurnBeginning` event, and the game manager asks the `BallManager` for a ball. This is a good time to trigger any "start of turn" mechanics, like music and the display.
 //! 2. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `PlayerTurnActive` is emitted.
-//! 3. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the `PlayerTurnEnding` event is emitted, signaling the end of the current player's turn. This is a good time to trigger any "end of turn" mechanics, such as tallying bonus, displaying to the player, etc.
+//! 3. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the `PlayerTurnEnding` event is emitted, signaling the end of the current player's turn. This is a good time for modes to clean up.
+//! 4. The `TurnEnding` routine runs: each participant (bonus, shoot again, etc.) takes its turn at the end-of-ball display, animations, etc.
+//! 5. Once the last participant completes its step, the game manager advances to the next turn, or ends the game after the last one.
 //!
-//! The next turn is not automatically advanced. Instead, a custom system must call the `AdvanceTurn` command when the game is ready. This allows all of the end-of-ball display, animations, etc. to complete before continuing.
+//! The end-of-turn sequence is defined in the app:
+//!
+//! ```rust,ignore
+//! app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
+//! ```
+//!
+//! With no `TurnEnding` routine defined, the turn advances right away.
 //!
 //! ## Required Systems
 //!

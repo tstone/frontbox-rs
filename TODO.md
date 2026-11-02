@@ -1,5 +1,7 @@
 ## Foundations
 
+- Go through all framework events and be strict with naming: events are past tense (ThingHappened), routines are present tense on-going (ThingHappening). Find cases of present tense and see if those should actually be routines.
+- Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
 - Does metrics need to go on app state or can it just be owned by run_loop
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
@@ -40,6 +42,7 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes
   linux-specific shutdown handling
+- Game Manager: should this spawn a system into each player's group, and launch routines from there so that they are scoped to the group? This feels like a design clue that isn't resolved.
 
 ## API cleanup
 

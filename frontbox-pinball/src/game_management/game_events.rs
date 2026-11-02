@@ -54,6 +54,19 @@ impl PlayerTurnEnding {
   }
 }
 
+/// Routine run at the end of a turn, right after `PlayerTurnEnding`. Its participants are the end-of-turn displays and
+/// sequences (bonus, shoot again, etc.); the turn advances once the last one completes its step. With no routine
+/// defined, the turn advances right away.
+///
+/// ```rust,ignore
+/// app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
+/// ```
+#[derive(serde::Serialize, Event)]
+pub struct TurnEnding {
+  pub current_player: u8,
+  pub turn: u8,
+}
+
 #[derive(serde::Serialize, Event)]
 pub struct PlayerAdded;
 

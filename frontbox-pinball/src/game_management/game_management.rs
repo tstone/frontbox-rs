@@ -9,8 +9,6 @@ use crate::{
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
   fn add_player(&mut self, ctx: &ServiceContext);
-  /// Advances the turn to the next player. Typically should only be called once PlayerTurnEnd event has been fired.
-  fn advance_turn(&mut self, ctx: &ServiceContext);
   /// Ends the game. Typically should only be called once GameEnding event has been fired.
   fn end_game(&mut self, ctx: &ServiceContext);
 
