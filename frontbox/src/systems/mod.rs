@@ -187,8 +187,10 @@ use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use indexmap::IndexMap;
+
 pub struct Systems {
-  systems: HashMap<u64, RefCell<SystemContainer>>,
+  systems: IndexMap<u64, RefCell<SystemContainer>>,
   type_to_id: HashMap<TypeId, u64>,
   id_to_type: HashMap<u64, TypeId>,
 }
@@ -196,7 +198,7 @@ pub struct Systems {
 impl Systems {
   pub fn new() -> Self {
     Self {
-      systems: HashMap::new(),
+      systems: IndexMap::new(),
       type_to_id: HashMap::new(),
       id_to_type: HashMap::new(),
     }
@@ -218,7 +220,7 @@ impl Systems {
   }
 
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
-    let result = self.systems.remove(&system_id);
+    let result = self.systems.shift_remove(&system_id);
     if let Some(system_type) = self.id_to_type.remove(&system_id) {
       self.type_to_id.remove(&system_type);
     }
@@ -269,7 +271,7 @@ impl Debug for Systems {
           .systems
           .iter()
           .map(|(id, cell)| (id, cell.borrow().name().to_string()))
-          .collect::<HashMap<_, _>>(),
+          .collect::<IndexMap<_, _>>(),
       )
       .finish()
   }

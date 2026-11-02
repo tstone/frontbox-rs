@@ -65,7 +65,7 @@ mod boot_config;
 pub mod event_box;
 pub(crate) mod run_loop;
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub use app::*;
 pub(crate) use app_config::*;
@@ -78,4 +78,4 @@ pub use run_loop::Synchronize;
 use crate::prelude::SystemGroup;
 
 pub const ROOT_GROUP: &'static str = "__root";
-pub(crate) type Groups = HashMap<&'static str, SystemGroup>;
+pub(crate) type Groups = IndexMap<&'static str, SystemGroup>;

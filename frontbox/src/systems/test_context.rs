@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::AppMessage;
@@ -91,7 +89,7 @@ impl TestContext {
 impl Default for TestContext {
   fn default() -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
-    let mut groups = HashMap::new();
+    let mut groups = Groups::new();
     groups.insert(ROOT_GROUP, SystemGroup::new());
 
     // as in `App::run`, so config changes emit `ConfigChanged`

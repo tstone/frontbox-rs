@@ -1,7 +1,6 @@
 use fast_protocol::SwitchState;
 use itertools::Itertools;
 use std::any::TypeId;
-use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -31,7 +30,7 @@ pub async fn run(
   let resync_notifier = Arc::new(Notify::new());
 
   let mut interrupt_registry = EventInterruptRegistry::new();
-  let mut groups: Groups = HashMap::new();
+  let mut groups: Groups = Groups::new();
 
   groups.insert(ROOT_GROUP, SystemGroup::new());
   tracer_txs.send(TraceEvent::SystemGroupSpawned { key: ROOT_GROUP });
@@ -614,7 +613,7 @@ fn despawn_system_group(
 
   tracer_txs.send(TraceEvent::SystemGroupDespawned { key: group_name });
 
-  let _ = groups.remove(group_name);
+  let _ = groups.shift_remove(group_name);
   log::info!("🌐 Despawned system group {}", group_name);
 }
 
