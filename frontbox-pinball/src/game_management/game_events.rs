@@ -2,9 +2,39 @@ use frontbox::prelude::Event;
 
 #[derive(serde::Serialize, Event)]
 pub struct GameStarted;
+
+/// Emitted once the game is over: `GameEnding` has completed, the player groups are gone, and no game is started. This
+/// is what systems that only run outside a game (attract mode, the start button) see, as they're inactive while
+/// `GameEnding` runs.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct GameEnded {
   pub scores: Vec<(&'static str, u32)>,
+}
+
+/// Routine run once play is over, before the game ends: after the last turn's `TurnEnding` completes, or when the game
+/// is quit. Its participants are what happens before the machine returns to attract mode (match, high-score entry, a
+/// game-over display). The game is still started while it runs, so a new one can't be started meanwhile; `GameEnded`
+/// is emitted once the last participant completes its step. With no routine defined, the game ends right away.
+///
+/// ```rust,ignore
+/// app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
+/// ```
+///
+/// It's started at the root, as no player is up. The playfield drivers are turned off on its `RoutineStarted`.
+#[derive(serde::Serialize, Event, Clone)]
+pub struct GameEnding {
+  /// Each player's final score, in player order
+  pub scores: Vec<(&'static str, u32)>,
+  pub reason: GameEndReason,
+}
+
+/// Why a game ended
+#[derive(serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameEndReason {
+  /// The last turn was played
+  Completed,
+  /// Ended early, e.g. by the quit game combo
+  Quit,
 }
 
 /// Routine run at the start of each turn, after the player's group is activated and before the ball is served. Its

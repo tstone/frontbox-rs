@@ -77,6 +77,7 @@ impl InitialsEntrySystem {
       ctx.emit(InitialsEntered {
         initials: self.name.clone(),
       });
+      ctx.despawn_self();
     }
   }
 

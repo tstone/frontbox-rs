@@ -5,8 +5,8 @@ use crate::GameManager;
 pub trait GameManagementExt {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
   fn add_player(&self);
-  /// Ends the game. Typically should only be called once GameEnding event has been fired.
-  fn end_game(&self);
+  /// Ends the game in progress early. See `GameManagement::quit_game`.
+  fn quit_game(&self);
 
   fn is_player_addable(&self) -> bool;
   fn is_game_started(&self) -> bool;
@@ -46,10 +46,10 @@ impl<'a> GameManagementExt for SystemContext<'a> {
     });
   }
 
-  fn end_game(&self) {
+  fn quit_game(&self) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.end_game(ctx.into());
+      manager.quit_game(ctx.into());
     });
   }
 

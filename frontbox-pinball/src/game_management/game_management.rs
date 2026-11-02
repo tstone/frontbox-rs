@@ -2,13 +2,14 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox::prelude::*;
 
-use crate::{CompetitiveGame, GameEnded, GameState, TurnEnding, TurnStarting, TurnState};
+use crate::{CompetitiveGame, GameEnding, GameState, TurnEnding, TurnStarting, TurnState};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
   fn add_player(&mut self, ctx: &ServiceContext);
-  /// Ends the game. Typically should only be called once GameEnding event has been fired.
-  fn end_game(&mut self, ctx: &ServiceContext);
+  /// Ends the game in progress early, skipping the rest of the current turn. `GameEnding` still runs, with
+  /// `GameEndReason::Quit`. Does nothing if no game is started, or it's already ending.
+  fn quit_game(&mut self, ctx: &ServiceContext);
 
   fn is_player_addable(&self) -> bool;
   fn is_game_started(&self) -> bool;
@@ -28,7 +29,7 @@ pub trait GameManagement: SpawnableSystem {
 ///
 /// ## Playfield drivers
 /// Drivers matching `playfield_drivers` that fire from a switch (slings, pops, flippers, etc.) are activated
-/// automatically when a turn begins, and disabled when it ends or the game ends. Drivers fired by the game instead
+/// automatically when a turn begins, and disabled when it ends or the game ends (`GameEnding`). Drivers fired by the game instead
 /// (virtual switch triggers like ejects and resets) are left alone even when they match.
 pub struct GameManager {
   inner: Box<dyn GameManagement>,
@@ -111,7 +112,7 @@ impl System for GameManager {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<RoutineStarted<TurnStarting>>() {
       self.activate_playfield(ctx);
-    } else if event.is::<RoutineStarted<TurnEnding>>() || event.is::<GameEnded>() {
+    } else if event.is::<RoutineStarted<TurnEnding>>() || event.is::<RoutineStarted<GameEnding>>() {
       self.deactivate_playfield(ctx);
     }
     self.inner.on_event(event, ctx)

@@ -28,6 +28,11 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted. Modes
 ///   clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
 ///
+/// Once the last turn's `TurnEnding` completes, or the game is quit (`quit_game`), play is over:
+/// - Routine: `GameEnding` - Started at the root. The game stays started while it runs, so its participants
+///   (high-score entry, say) can take their time without a new game starting.
+/// - Event: `GameEnded` - Emitted once `GameEnding` completes and the player groups are gone.
+///
 /// ## Requires
 /// - `BallManager` at the root
 pub struct CompetitiveGame {
@@ -47,6 +52,8 @@ pub struct CompetitiveGame {
   draining: bool,
   /// Drains waiting for the one being decided, oldest first
   pending_drains: VecDeque<BallDraining>,
+  /// Whether `GameEnding` is running. Nothing else about the game moves on meanwhile.
+  game_ending: bool,
 }
 
 impl CompetitiveGame {
@@ -66,6 +73,7 @@ impl CompetitiveGame {
       ball_served: false,
       draining: false,
       pending_drains: VecDeque::new(),
+      game_ending: false,
     }
   }
 
@@ -214,7 +222,7 @@ impl CompetitiveGame {
 
     // Verify we haven't gone over the turn limit
     if game_state.current_player_turn() >= max_turn_count {
-      self.end_game(ctx);
+      self.start_game_ending(GameEndReason::Completed, ctx);
       return;
     }
 
@@ -227,6 +235,55 @@ impl CompetitiveGame {
 
     self.start_turn(ctx);
   }
+
+  /// Play is over. The game stays started until `GameEnding` completes.
+  fn start_game_ending(&mut self, reason: GameEndReason, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Game ending ({:?})", reason);
+    self.game_ending = true;
+    self.draining = false;
+    self.pending_drains.clear();
+    self.turn_active_at = None;
+
+    let scores = self.scores();
+    for (player, (_, score)) in scores.iter().enumerate() {
+      ctx
+        .metrics
+        .record_for_player(&metrics::FINAL_SCORE, player as u8, *score);
+    }
+    ctx.metrics.end_game();
+
+    ctx
+      .for_system(self.handle)
+      .start_routine(GameEnding { scores, reason });
+  }
+
+  /// `GameEnding` completed: the game is over
+  fn end_game(&mut self, scores: Vec<(&'static str, u32)>, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Game ended");
+    for group in self.player_groups.drain(..) {
+      ctx.despawn_system_group(group);
+    }
+    self.game_state = None;
+    self.game_ending = false;
+    ctx.for_system(self.handle).emit(GameEnded { scores });
+  }
+
+  /// Each player's score, in player order
+  fn scores(&self) -> Vec<(&'static str, u32)> {
+    match &self.game_state {
+      Some(GameState::Competitive {
+        player_scores,
+        player_count,
+        ..
+      }) => player_scores
+        .iter()
+        .take(*player_count as usize)
+        .enumerate()
+        .map(|(idx, score)| (PLAYER_GROUP_NAMES[idx], *score))
+        .collect(),
+      _ => Vec::new(),
+    }
+  }
 }
 
 impl System for CompetitiveGame {
@@ -235,6 +292,14 @@ impl System for CompetitiveGame {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+    if self.game_ending {
+      // turn routines still running after a quit complete on their own, and are ignored
+      if let Some(done) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
+        self.end_game(done.routine.scores.clone(), ctx.into());
+      }
+      return;
+    }
+
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
         TurnState::Starting if !self.ball_served => {
@@ -317,44 +382,29 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn end_game(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox::game_manager", "Ending game");
-
-    // verify the game is already running
-    if !self.is_game_started() {
+  fn quit_game(&mut self, ctx: &ServiceContext) {
+    let Some(game_state) = self.game_state.as_mut() else {
+      return;
+    };
+    if self.game_ending {
+      log::info!(target: "frontbox::game_manager", "Quit while the game is already ending, ignored");
       return;
     }
 
-    // spin down all player system groups
-    for group in self.player_groups.drain(..) {
-      ctx.despawn_system_group(group);
-    }
-
-    let game_state = self.game_state.as_ref().unwrap();
-    let player_count = game_state.player_count();
-    let scores: Vec<(&'static str, u32)> = match game_state {
-      GameState::Competitive { player_scores, .. } => player_scores
-        .iter()
-        .take(player_count as usize)
-        .enumerate()
-        .map(|(idx, score)| (PLAYER_GROUP_NAMES[idx], *score))
-        .collect(),
-      _ => Vec::new(),
-    };
-
-    for (player, (_, score)) in scores.iter().enumerate() {
-      ctx
-        .metrics
-        .record_for_player(&metrics::FINAL_SCORE, player as u8, *score);
-    }
-
-    self.game_state = None;
-    self.turn_active_at = None;
-    ctx.metrics.end_game();
-    ctx.for_system(self.handle).emit(GameEnded { scores });
+    log::info!(target: "frontbox::game_manager", "Quitting game");
+    ctx.metrics.inc(&metrics::GAMES_QUIT);
+    // the turn is over without a TurnEnding; its group's systems stop as it deactivates
+    game_state.set_current_player_turn_state(TurnState::Ending);
+    let ctx = &ctx.for_system(self.handle);
+    ctx.deactivate_system_group(&self.player_groups[game_state.current_player() as usize]);
+    ctx.metrics.flush();
+    self.start_game_ending(GameEndReason::Quit, ctx.into());
   }
 
   fn is_player_addable(&self) -> bool {
+    if self.game_ending {
+      return false;
+    }
     // if the game is started, then it must be the first player's turn on their first ball
     if let Some(game_state) = &self.game_state {
       return game_state.current_player() == 0
@@ -411,5 +461,198 @@ impl GameManagement for CompetitiveGame {
         ));
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ball_management::LaunchMethod;
+
+  fn done<E: Event>(routine: E, completion: RoutineCompletion) -> RoutineCompleted<E> {
+    RoutineCompleted {
+      routine,
+      completion,
+    }
+  }
+
+  struct Fixture {
+    game: CompetitiveGame,
+    ctx: TestContext,
+  }
+
+  impl Fixture {
+    /// A one-player game of `turns` turns, with the first turn's ball in play
+    fn playing(turns: u8) -> Self {
+      let ctx = TestContext::default();
+      ctx.svc_ctx().config.set(&configs::TURN_COUNT, turns);
+      let mut game = CompetitiveGame::new(1, Vec::new(), SwitchQ::names([]));
+      game.on_spawn(&ctx.sys_ctx());
+      game.add_player(&ctx.svc_ctx());
+      let mut f = Self { game, ctx };
+      f.event(done(
+        TurnStarting {
+          current_player: 0,
+          turn: 0,
+        },
+        RoutineCompletion::AllSteps,
+      ));
+      f.event(BallEnteredPlay {
+        method: LaunchMethod::Manual,
+        in_play: 1,
+      });
+      f.ctx.routines_started();
+      f
+    }
+
+    fn event(&mut self, event: impl Event) {
+      self.game.on_event(&event, &self.ctx.sys_ctx());
+    }
+
+    /// The ball drains without being saved, and the turn's `TurnEnding` completes
+    fn play_out_turn(&mut self) {
+      let state = self.game.game_state().unwrap();
+      let (current_player, turn) = (state.current_player(), state.current_player_turn());
+      self.event(BallsExitedPlay {
+        count: 1,
+        in_play: 0,
+      });
+      self.event(done(
+        BallDraining {
+          current_player,
+          turn,
+          count: 1,
+          in_play: 0,
+        },
+        RoutineCompletion::AllSteps,
+      ));
+      self.event(done(
+        TurnEnding {
+          current_player,
+          turn,
+        },
+        RoutineCompletion::AllSteps,
+      ));
+    }
+
+    /// The `GameEnding` routines started since the last check
+    fn game_endings(&mut self) -> Vec<GameEnding> {
+      self
+        .ctx
+        .routines_started()
+        .iter()
+        .filter_map(|routine| routine.downcast_ref::<GameEnding>().cloned())
+        .collect()
+    }
+  }
+
+  #[test]
+  fn the_last_turn_starts_game_ending() {
+    let mut f = Fixture::playing(1);
+    f.game.add_points(100, &f.ctx.svc_ctx());
+    f.play_out_turn();
+
+    let endings = f.game_endings();
+    assert_eq!(endings.len(), 1);
+    assert_eq!(endings[0].reason, GameEndReason::Completed);
+    assert_eq!(endings[0].scores, vec![("player1", 100)]);
+  }
+
+  #[test]
+  fn the_game_stays_started_until_game_ending_completes() {
+    let mut f = Fixture::playing(1);
+    f.play_out_turn();
+    let ending = f.game_endings().remove(0);
+    assert!(f.game.is_game_started());
+    assert!(!f.game.is_player_addable(), "no new game during GameEnding");
+
+    f.event(done(ending, RoutineCompletion::AllSteps));
+    assert!(!f.game.is_game_started());
+    let ended: Vec<_> = f
+      .ctx
+      .events_emitted()
+      .iter()
+      .filter_map(|e| {
+        e.event
+          .downcast_ref::<GameEnded>()
+          .map(|e| e.scores.clone())
+      })
+      .collect();
+    assert_eq!(ended, vec![vec![("player1", 0)]]);
+  }
+
+  #[test]
+  fn turns_before_the_last_do_not_end_the_game() {
+    let mut f = Fixture::playing(2);
+    f.play_out_turn();
+    assert!(f.game_endings().is_empty());
+  }
+
+  #[test]
+  fn quitting_mid_turn_starts_game_ending() {
+    let mut f = Fixture::playing(3);
+    f.game.quit_game(&f.ctx.svc_ctx());
+
+    let endings = f.game_endings();
+    assert_eq!(endings.len(), 1);
+    assert_eq!(endings[0].reason, GameEndReason::Quit);
+    assert_eq!(f.game.turn_state(), Some(&TurnState::Ending));
+  }
+
+  #[test]
+  fn the_turn_is_ignored_once_the_game_is_ending() {
+    let mut f = Fixture::playing(3);
+    f.game.quit_game(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert!(f.ctx.routines_started().is_empty(), "no BallDraining");
+  }
+
+  #[test]
+  fn quitting_while_the_game_is_ending_is_ignored() {
+    let mut f = Fixture::playing(1);
+    f.play_out_turn();
+    f.game_endings();
+
+    f.game.quit_game(&f.ctx.svc_ctx());
+    assert!(f.game_endings().is_empty());
+  }
+
+  #[test]
+  fn a_drain_while_another_is_being_decided_waits_its_turn() {
+    let mut f = Fixture::playing(3);
+    let draining = |count, in_play| BallDraining {
+      current_player: 0,
+      turn: 0,
+      count,
+      in_play,
+    };
+    let started = |f: &mut Fixture| -> Vec<u8> {
+      f.ctx
+        .routines_started()
+        .iter()
+        .filter_map(|routine| routine.downcast_ref::<BallDraining>().map(|d| d.in_play))
+        .collect()
+    };
+
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 1,
+    });
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert_eq!(started(&mut f), vec![1], "the second drain waits");
+
+    f.event(done(draining(1, 1), RoutineCompletion::Halted));
+    assert_eq!(started(&mut f), vec![0]);
+
+    f.event(done(draining(1, 0), RoutineCompletion::AllSteps));
+    assert_eq!(f.game.turn_state(), Some(&TurnState::Ending));
   }
 }
