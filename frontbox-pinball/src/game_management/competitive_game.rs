@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use frontbox::prelude::*;
@@ -22,14 +23,10 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
 /// - Event: `TurnActive` - Emitted once per turn, when the served ball enters play (`BallEnteredPlay`), or on the first
 ///   ball in play switch hit, whichever comes first.
-/// - Routine: `BallDraining` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in
-///   play), so its participants can save the ball. A participant halting it keeps the turn going.
-/// - Routine: `TurnEnding` - Started once `BallDraining` completes without being halted. Modes clean up on its
-///   `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
-///
-/// ## Interrupts
-/// - `BallsExitedPlay` - Interrupting this event will prevent the player turn from ending. This is how mechanics like
-///   ball save or extra balls work.
+/// - Routine: `BallDraining` - Started for each drain (`BallsExitedPlay`), so its participants can save the ball. A
+///   participant halting it saves the drain. A drain while another is being decided waits its turn.
+/// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted. Modes
+///   clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
 ///
 /// ## Requires
 /// - `BallManager` at the root
@@ -46,6 +43,10 @@ pub struct CompetitiveGame {
   turn_active_at: Option<Instant>,
   /// Whether this turn's ball has been ejected. Until it has, nothing can make the turn active.
   ball_served: bool,
+  /// Whether a `BallDraining` routine is running
+  draining: bool,
+  /// Drains waiting for the one being decided, oldest first
+  pending_drains: VecDeque<BallDraining>,
 }
 
 impl CompetitiveGame {
@@ -63,6 +64,8 @@ impl CompetitiveGame {
       handle: SystemHandle::default(),
       turn_active_at: None,
       ball_served: false,
+      draining: false,
+      pending_drains: VecDeque::new(),
     }
   }
 
@@ -97,6 +100,8 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
     game_state.set_current_player_turn_state(TurnState::Starting);
     self.ball_served = false;
+    self.draining = false;
+    self.pending_drains.clear();
     let group = &self.player_groups[game_state.current_player() as usize];
     ctx.start_routine_in(
       group,
@@ -129,18 +134,49 @@ impl CompetitiveGame {
     ));
   }
 
-  /// The last ball left play. Its participants decide whether the turn ends.
-  fn start_ball_draining(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox::game_manager", "Last ball in play drained");
+  /// Balls left play. The routine's participants decide whether the drain stands; one that's already being decided
+  /// goes first, as only one routine of a type runs at a time.
+  fn drained(&mut self, count: u8, in_play: u8, ctx: &ServiceContext) {
     let game_state = self.game_state.as_ref().unwrap();
-    let group = &self.player_groups[game_state.current_player() as usize];
-    ctx.for_system(self.handle).start_routine_in(
-      group,
-      BallDraining {
-        current_player: game_state.current_player(),
-        turn: game_state.current_player_turn(),
-      },
-    );
+    let draining = BallDraining {
+      current_player: game_state.current_player(),
+      turn: game_state.current_player_turn(),
+      count,
+      in_play,
+    };
+    if self.draining {
+      log::info!(target: "frontbox::game_manager", "{} ball(s) drained while deciding another drain, waiting", count);
+      self.pending_drains.push_back(draining);
+    } else {
+      self.start_ball_draining(draining, ctx);
+    }
+  }
+
+  fn start_ball_draining(&mut self, draining: BallDraining, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "{} ball(s) drained, {} left in play", draining.count, draining.in_play);
+    self.draining = true;
+    let group = &self.player_groups[draining.current_player as usize];
+    ctx
+      .for_system(self.handle)
+      .start_routine_in(group, draining);
+  }
+
+  fn drain_decided(&mut self, done: &RoutineCompleted<BallDraining>, ctx: &ServiceContext) {
+    self.draining = false;
+    match done.completion {
+      RoutineCompletion::Halted => {
+        log::info!(target: "frontbox::game_manager", "Drain was saved")
+      }
+      RoutineCompletion::AllSteps if done.routine.in_play == 0 => {
+        self.pending_drains.clear();
+        self.transition_turn_to_ending(ctx);
+        return;
+      }
+      RoutineCompletion::AllSteps => {}
+    }
+    if let Some(next) = self.pending_drains.pop_front() {
+      self.start_ball_draining(next, ctx);
+    }
   }
 
   fn transition_turn_to_ending(&mut self, ctx: &ServiceContext) {
@@ -218,16 +254,11 @@ impl System for CompetitiveGame {
           }
         }
         TurnState::Active => {
-          if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>()
+          if let Some(BallsExitedPlay { count, in_play }) = event.downcast_ref::<BallsExitedPlay>()
           {
-            self.start_ball_draining(ctx.into());
+            self.drained(*count, *in_play, ctx.into());
           } else if let Some(done) = event.downcast_ref::<RoutineCompleted<BallDraining>>() {
-            match done.completion {
-              RoutineCompletion::AllSteps => self.transition_turn_to_ending(ctx.into()),
-              RoutineCompletion::Halted => {
-                log::info!(target: "frontbox::game_manager", "Drain was saved, the turn carries on")
-              }
-            }
+            self.drain_decided(done, ctx.into());
           }
         }
         TurnState::Ending => {

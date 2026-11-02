@@ -45,20 +45,30 @@ impl TurnActive {
   }
 }
 
-/// Routine run when the last ball in play leaves play, before the turn ends, to decide whether it really does. Its
-/// participants are whatever can save the ball (ball save, an outlane save, an extra ball), in the order they get the
-/// chance. One that saves it puts a ball back into play and calls `halt_routine`, and the turn carries on; if none
-/// does, the turn ends with `TurnEnding`. With no routine defined, the turn ends right away.
+/// Routine run for each drain during a turn (`BallsExitedPlay`), to decide whether it stands. Its participants are
+/// whatever can save the ball (ball save, an outlane save, an extra ball), in the order they get the chance. One that
+/// saves it puts the balls back into play and calls `halt_routine`, and the participants after it don't take a step.
+/// If none does, the drain stands; when it was the last ball in play (`in_play == 0`), the turn ends with
+/// `TurnEnding`. With no routine defined, every drain stands right away.
 ///
 /// ```rust,ignore
 /// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave, ExtraBall]);
 /// ```
 ///
-/// The origin sees how it went on `RoutineCompleted<BallDraining>`: `RoutineCompletion::Halted` if the ball was saved.
+/// A participant that only saves the last ball, like an extra ball, completes its step right away while other balls
+/// are still in play.
+///
+/// Anything that should only react to drains that aren't saved (a multiball ending once one ball is left) watches
+/// `RoutineCompleted<BallDraining>` rather than `BallsExitedPlay`: `RoutineCompletion::AllSteps` means the drain stands,
+/// `Halted` that it was saved. Drains are decided one at a time, in the order they happened.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct BallDraining {
   pub current_player: u8,
   pub turn: u8,
+  /// How many balls drained
+  pub count: u8,
+  /// Balls left in play after the drain
+  pub in_play: u8,
 }
 
 /// Routine run once the last ball of a turn has left play. Its participants are the end-of-turn displays and sequences

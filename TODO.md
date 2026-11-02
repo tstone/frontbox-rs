@@ -45,7 +45,6 @@
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes
   linux-specific shutdown handling
-- Game Manager: should this spawn a system into each player's group, and launch routines from there so that they are scoped to the group? This feels like a design clue that isn't resolved.
 
 ## API cleanup
 

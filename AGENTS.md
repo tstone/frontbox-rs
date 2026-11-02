@@ -44,5 +44,8 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 - Ball counts are derived from the trough's reported occupancy, not kept as running counters that drift when an event
   is halted, an eject fails, or a drain is missed. Consumers read `BallsExitedPlay.in_play` rather than keeping their
   own counts.
-- Ball save is a deliberate exception to letting events through: while active it halts the `BallsExitedPlay` events it
-  saves, since a saved drain is treated as not having happened. It emits `BallSaved` for anything that needs to know.
+- Ball management reports drains but doesn't decide what they mean. During a turn, the game manager runs the
+  `BallDraining` routine for each drain. Systems that can save a drain (ball save, outlane saves, extra balls) are its
+  participants, and halt it when they save one; the app lists them in the order they get the chance.
+- `BallsExitedPlay` includes drains that are then saved. Anything that should only react to drains that stand (a
+  multiball ending) watches `RoutineCompleted<BallDraining>` for `RoutineCompletion::AllSteps` instead.

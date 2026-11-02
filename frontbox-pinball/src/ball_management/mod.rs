@@ -28,8 +28,8 @@ pub struct MaxBallsInPlayChanged {
   pub delta: i8,
 }
 
-/// Emitted when one or more balls leave play (e.g. drain). A ball save halts the drains it saves, so listeners only see
-/// drains that actually happened.
+/// Emitted when one or more balls leave play (e.g. drain), including drains that are then saved. During a turn, the game
+/// manager runs a `BallDraining` routine for each to decide whether it stands.
 #[derive(serde::Serialize, Event)]
 pub struct BallsExitedPlay {
   /// Balls that left play

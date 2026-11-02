@@ -134,7 +134,7 @@ impl StandardBallManagement {
 
     let drained = entered - excess;
     if drained > 0 {
-      // counted here, where the drain is known, since ball save halts the event for drains it saves
+      // counted here, where the drain is known, whether or not it is then saved
       ctx.metrics.add(&metrics::BALLS_DRAINED, drained as u64);
       ctx.emit(BallsExitedPlay {
         count: drained,

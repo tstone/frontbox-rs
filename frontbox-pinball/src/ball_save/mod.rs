@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use frontbox::prelude::*;
 
-use crate::ball_management::{BallManager, BallsExitedPlay, Launch};
-use crate::{GameManager, TurnActive, TurnState, configs, metrics};
+use crate::ball_management::{BallManager, Launch};
+use crate::{BallDraining, GameManager, TurnActive, TurnState, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
@@ -53,17 +53,22 @@ use crate::{GameManager, TurnActive, TurnState, configs, metrics};
 /// play.
 ///
 /// ## Saving
-/// While active, every drain is saved: the `BallsExitedPlay` event is halted, since a saved drain is treated as not
-/// having happened, and the balls are relaunched. `BallSaved` is emitted for anything that needs to know.
+/// Ball save is a participant in the `BallDraining` routine, which the game manager runs for each drain. While active,
+/// it saves every drain: it relaunches the balls, emits `BallSaved`, and halts the routine, so the drain doesn't stand
+/// and later participants (an extra ball, say) don't take a step. Otherwise it completes its step and lets the drain
+/// go on to them.
 ///
 /// After the last request ends, a grace period keeps saving a little longer (a ball already heading for the outlane as
 /// the save ends). The effect stops when the requests end, not after the grace period.
 ///
 /// ## Setup
 /// ```rust,ignore
+/// // in the player template
 /// BallSaveSystem::new()
 ///   .grace_period(Duration::from_secs(2))
 ///   .led_effect(ball_save_effect)
+///
+/// app.routine::<BallDraining>(routine![BallSaveSystem]);
 /// ```
 #[derive(Clone)]
 pub struct BallSaveSystem {
@@ -74,14 +79,11 @@ pub struct BallSaveSystem {
   requests: HashMap<u64, Option<Duration>>,
   grace_period: Duration,
   grace_remaining: Duration,
-  interrupt_registered: bool,
+  /// Whether drains were being saved as of the last update, to log when that changes
+  was_saving: bool,
 }
 
 impl BallSaveSystem {
-  pub fn interrupt_priority() -> u16 {
-    25
-  }
-
   pub fn new() -> Self {
     Self {
       handle: SystemHandle::default(),
@@ -90,7 +92,7 @@ impl BallSaveSystem {
       effect_playing: false,
       requests: HashMap::new(),
       grace_remaining: Duration::ZERO,
-      interrupt_registered: false,
+      was_saving: false,
     }
   }
 
@@ -145,7 +147,7 @@ impl BallSaveSystem {
     self.update(ctx);
   }
 
-  /// Bring the effect and the drain interrupt in line with the current requests
+  /// Bring the effect in line with the current requests
   fn update(&mut self, ctx: &SystemContext) {
     let requested = !self.requests.is_empty();
     if requested != self.effect_playing {
@@ -161,14 +163,12 @@ impl BallSaveSystem {
     }
 
     let saving = self.is_saving();
-    if saving != self.interrupt_registered {
-      self.interrupt_registered = saving;
+    if saving != self.was_saving {
+      self.was_saving = saving;
       if saving {
         log::info!(target: "frontbox::ballsave", "Ball save started");
-        ctx.register_interrupt::<BallsExitedPlay>(Self::interrupt_priority());
       } else {
         log::info!(target: "frontbox::ballsave", "Ball save ended");
-        ctx.unregister_interrupt::<BallsExitedPlay>();
       }
     }
   }
@@ -203,23 +203,25 @@ impl System for BallSaveSystem {
     }
   }
 
-  fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
-    let Some(BallsExitedPlay { count, .. }) = event.downcast_ref::<BallsExitedPlay>() else {
-      return InterruptResult::Continue;
+  fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+    let Some(BallDraining { count, .. }) = routine.downcast_ref::<BallDraining>() else {
+      return;
     };
     if !self.is_saving() {
-      return InterruptResult::Continue;
+      ctx.complete_routine_step::<BallDraining>();
+      return;
     }
     let Some(mut ball_manager) = ctx.get::<BallManager>() else {
-      log::error!(target: "frontbox::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain through");
-      return InterruptResult::Continue;
+      log::error!(target: "frontbox::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain stand");
+      ctx.complete_routine_step::<BallDraining>();
+      return;
     };
 
     log::info!(target: "frontbox::ballsave", "Saving {} ball(s)", count);
     ball_manager.eject_many(*count, Launch::Auto, ctx.into());
     ctx.metrics.add(&metrics::BALL_SAVES, *count as u64);
     ctx.emit(BallSaved { count: *count });
-    InterruptResult::Halt
+    ctx.halt_routine::<BallDraining>();
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
@@ -254,7 +256,7 @@ impl System for BallSaveSystem {
   }
 }
 
-/// Emitted when a ball save relaunches drained balls (the drain itself is halted)
+/// Emitted when a ball save relaunches drained balls
 #[derive(serde::Serialize, Event)]
 pub struct BallSaved {
   pub count: u8,
@@ -338,10 +340,15 @@ mod tests {
         .on_tick(Duration::from_secs(secs), &self.ctx.sys_ctx());
     }
 
-    fn drain(&mut self, count: u8) -> InterruptResult {
-      self
-        .save
-        .on_interrupt(&BallsExitedPlay { count, in_play: 0 }, &self.ctx.sys_ctx())
+    /// Hand ball save the `BallDraining` step for a drain of `count` balls
+    fn drain(&mut self, count: u8) {
+      let draining = BallDraining {
+        current_player: 0,
+        turn: 0,
+        count,
+        in_play: 0,
+      };
+      self.save.on_routine(&draining, &self.ctx.sys_ctx());
     }
 
     fn saved_events(&mut self) -> Vec<u8> {
@@ -360,19 +367,28 @@ mod tests {
   }
 
   #[test]
-  fn without_requests_drains_go_through() {
+  fn without_requests_drains_stand() {
     let mut f = Fixture::spawn();
     assert!(!f.save.is_saving());
-    assert_eq!(f.drain(1), InterruptResult::Continue);
+    f.drain(1);
+    assert!(f.ctx.routine_step_completed::<BallDraining>());
     assert!(f.ejects().is_empty());
   }
 
   #[test]
-  fn while_requested_drains_are_halted_and_relaunched() {
+  fn while_requested_drains_are_relaunched_and_halt_the_routine() {
     let mut f = Fixture::spawn();
     f.request(A, 10);
-    assert_eq!(f.drain(2), InterruptResult::Halt);
+    f.drain(2);
+    assert!(f.ctx.routine_halted::<BallDraining>());
     assert_eq!(f.ejects(), vec![(2, Launch::Auto)]);
+  }
+
+  #[test]
+  fn saved_drains_emit_ball_saved() {
+    let mut f = Fixture::spawn();
+    f.request(A, 10);
+    f.drain(2);
     assert_eq!(f.saved_events(), vec![2]);
   }
 
@@ -486,6 +502,7 @@ mod tests {
     f.request_until_released(B);
     f.save.on_deactivate(&f.ctx.sys_ctx());
     assert!(!f.save.is_saving());
-    assert_eq!(f.drain(1), InterruptResult::Continue);
+    f.drain(1);
+    assert!(f.ctx.routine_step_completed::<BallDraining>());
   }
 }
