@@ -160,6 +160,7 @@ mod cue_ext;
 mod cue_timeline_builder;
 pub mod event;
 pub mod event_interrupts;
+pub mod routine;
 mod service_context;
 mod system;
 mod system_container;
@@ -174,6 +175,7 @@ pub use cue_ext::*;
 pub use cue_timeline_builder::*;
 pub use event::*;
 pub use event_interrupts::InterruptResult;
+pub use routine::{RoutineComplete, RoutineDefinition};
 pub use service_context::*;
 pub use system::*;
 pub use system_container::*;
@@ -230,6 +232,10 @@ impl Systems {
   pub fn get_id<T: System + 'static>(&self) -> Option<u64> {
     let type_id = TypeId::of::<T>();
     self.type_to_id.get(&type_id).copied()
+  }
+
+  pub(crate) fn id_by_type_id(&self, type_id: &TypeId) -> Option<u64> {
+    self.type_to_id.get(type_id).copied()
   }
 
   pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {

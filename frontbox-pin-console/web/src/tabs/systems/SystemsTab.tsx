@@ -106,6 +106,13 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
               <TreeView.NodeProvider node={child} indexPath={[...props.indexPath, index()]}>
                 <TreeView.Item classList={{ inactive: !child.system.active }} title={child.system.name}>
                   <TreeView.ItemText>{child.label}</TreeView.ItemText>
+                  <For each={routinesHeldBy(child.group.key, child.system.id)}>
+                    {(routine) => (
+                      <span class="routine-tag" title={`Taking its step in ${routine.routine}`}>
+                        {shortName(routine.routine)}
+                      </span>
+                    )}
+                  </For>
                   <Show when={!child.system.active}>
                     <span class="inactive-tag">inactive</span>
                   </Show>
@@ -117,6 +124,11 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
       </TreeView.Branch>
     </TreeView.NodeProvider>
   )
+}
+
+/** Routines whose current step belongs to the system */
+function routinesHeldBy(group: string, id: number) {
+  return machine.routines.filter((r) => r.current?.id === id && r.current.group === group)
 }
 
 function GroupDetail(props: { group: SystemGroup }) {

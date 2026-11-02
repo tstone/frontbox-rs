@@ -34,6 +34,7 @@ const [state, setState] = createStore<ConsoleState>({
   drivers: {},
   driver_modes: {},
   game: null,
+  routines: [],
   planes: [],
   led_colors: {},
   configs: {},
@@ -161,6 +162,22 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverModeChange' in event) {
     const { driver_id, mode } = event.DriverModeChange
     s.driver_modes[driver_id] = mode
+  } else if ('RoutineStarted' in event) {
+    const { routine, origin } = event.RoutineStarted
+    s.routines.push({ routine, origin, current: null })
+  } else if ('RoutineStep' in event) {
+    const { routine, participant, group } = event.RoutineStep
+    const progress = s.routines.find((r) => r.routine === routine)
+    if (progress) progress.current = { id: participant, group }
+  } else if ('RoutinePaused' in event) {
+    // paused once the step in progress is over, so no one holds it
+    const progress = s.routines.find((r) => r.routine === event.RoutinePaused.routine)
+    if (progress) progress.current = null
+  } else if ('RoutineFinished' in event || 'RoutineAbandoned' in event) {
+    const { routine } = 'RoutineFinished' in event ? event.RoutineFinished : event.RoutineAbandoned
+    s.routines = s.routines.filter((r) => r.routine !== routine)
+  } else if ('RoutineRejected' in event || 'RoutineSkipped' in event || 'RoutineResumed' in event) {
+    // logged only
   } else if ('LedsRGBChange' in event || 'ConfigsInUse' in event || 'ConfigChange' in event) {
     // never sent as traces: the hub keeps LEDs and configs as current state and sends them as `Leds` and `Configs`
     return

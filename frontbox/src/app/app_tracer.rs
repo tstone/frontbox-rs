@@ -73,6 +73,44 @@ pub enum TraceEvent {
   ConfigChange {
     config: ConfigView,
   },
+  RoutineStarted {
+    routine: &'static str,
+    origin: u64,
+  },
+  /// A routine was started while one of the same type was already running, so the start was ignored
+  RoutineRejected {
+    routine: &'static str,
+    origin: u64,
+    running_origin: u64,
+  },
+  /// The routine was handed to a participant
+  RoutineStep {
+    routine: &'static str,
+    participant: u64,
+    /// The participant's group. Copies of a system in several groups share an id.
+    group: &'static str,
+  },
+  RoutineSkipped {
+    routine: &'static str,
+    participant: &'static str,
+    reason: RoutineSkipReason,
+  },
+  /// The routine's origin is inactive, so it won't move on until the origin is active again
+  RoutinePaused {
+    routine: &'static str,
+  },
+  RoutineResumed {
+    routine: &'static str,
+  },
+  RoutineFinished {
+    routine: &'static str,
+    origin: u64,
+  },
+  /// The routine's origin was despawned before it finished
+  RoutineAbandoned {
+    routine: &'static str,
+    origin: u64,
+  },
   // TODO: some kind of game-specific state push that is JSON encodable
 }
 
@@ -81,6 +119,15 @@ pub enum TraceEvent {
 pub struct InterruptEvaluation {
   pub interrupter: u64,
   pub result: InterruptResult,
+}
+
+/// Why a routine participant didn't get a step
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum RoutineSkipReason {
+  /// No instance in reach of the origin
+  Missing,
+  Inactive,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

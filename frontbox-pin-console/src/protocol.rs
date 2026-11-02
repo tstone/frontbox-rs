@@ -29,6 +29,8 @@ pub struct Snapshot {
   /// Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
   pub driver_modes: BTreeMap<usize, DriverMode>,
   pub game: Option<GameState>,
+  /// Routines in progress, oldest first
+  pub routines: Vec<RoutineProgress>,
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Color>,
   pub planes: Vec<PlaneView>,
@@ -51,6 +53,21 @@ pub struct TraceRecord {
 pub struct GameState {
   pub player: Option<u8>,
   pub turn: Option<u8>,
+}
+
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RoutineProgress {
+  pub routine: &'static str,
+  pub origin: u64,
+  /// The system whose step is in progress
+  pub current: Option<RoutineParticipant>,
+}
+
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RoutineParticipant {
+  pub id: u64,
+  /// Copies of a system in several groups share an id
+  pub group: &'static str,
 }
 
 #[derive(Clone, serde::Serialize, TS)]

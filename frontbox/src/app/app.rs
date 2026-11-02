@@ -7,6 +7,9 @@ use crate::prelude::app_message::AppMessage;
 use crate::prelude::app_tracer::TracerControlEvent;
 use crate::prelude::*;
 use crate::provided::WatchdogSystem;
+use crate::systems::routine::Routines;
+use std::any::{TypeId, type_name};
+use std::collections::HashMap;
 use tokio::sync::mpsc;
 
 /// Main runnable of Frontbox
@@ -15,6 +18,7 @@ pub struct App {
   tracers: Vec<Box<dyn AppTracer>>,
   configs: ConfigCollection,
   boot_config: BootConfig,
+  routines: HashMap<TypeId, RoutineDefinition>,
 }
 
 impl App {
@@ -29,12 +33,28 @@ impl App {
       tracers: Vec::new(),
       configs,
       boot_config,
+      routines: HashMap::new(),
     }
   }
 
   /// Register and launch system at startup
   pub fn system(&mut self, system: impl Into<SystemContainer>) -> &mut Self {
     self.systems.push(system.into());
+    self
+  }
+
+  /// Define the routine started with a payload of type `E`. See [routines](crate::systems::routine)
+  pub fn routine<E: Event>(&mut self, definition: RoutineDefinition) -> &mut Self {
+    if self
+      .routines
+      .insert(TypeId::of::<E>(), definition)
+      .is_some()
+    {
+      log::warn!(
+        "Routine {} was defined twice; the last definition wins",
+        type_name::<E>()
+      );
+    }
     self
   }
 
@@ -127,6 +147,7 @@ impl App {
       app_receiver,
       tracer_ctl_receiver,
       machine_system_id,
+      Routines::new(self.routines),
     )
     .await;
   }

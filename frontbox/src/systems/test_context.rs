@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::AppMessage;
@@ -71,6 +73,26 @@ impl TestContext {
       }
     }
     events
+  }
+
+  /// Payloads of routines started up to this point. Downcast to check them.
+  pub fn routines_started(&mut self) -> Vec<Box<dyn Event>> {
+    self
+      .app_messages()
+      .into_iter()
+      .filter_map(|msg| match msg {
+        AppMessage::StartRoutine(start) => Some(start.payload),
+        _ => None,
+      })
+      .collect()
+  }
+
+  /// Whether a step of the routine for `E` was completed since the last check
+  pub fn routine_step_completed<E: Event>(&mut self) -> bool {
+    self
+      .app_messages()
+      .into_iter()
+      .any(|msg| matches!(msg, AppMessage::CompleteRoutineStep(_, type_id) if type_id == TypeId::of::<E>()))
   }
 
   /// Trace events sent through the run loop up to this point

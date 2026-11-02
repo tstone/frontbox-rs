@@ -15,6 +15,7 @@ use crate::prelude::app_tracer::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::event_interrupts::EventInterruptRegistry;
+use crate::systems::routine::Routines;
 
 pub async fn run(
   mut base: AppState,
@@ -24,6 +25,7 @@ pub async fn run(
   mut app_receiver: mpsc::UnboundedReceiver<AppMessage>,
   mut tracer_ctl_receiver: mpsc::UnboundedReceiver<TracerControlEvent>,
   machine_system_id: u64,
+  mut routines: Routines,
 ) {
   let (tick_tx, mut tick_rx) = watch::channel(());
   let tracer_txs = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
@@ -110,23 +112,31 @@ pub async fn run(
           AppMessage::SpawnSystem(parent_key, system) => {
             spawn_system(system.to_system_container(), parent_key, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
+          // Routines hear about despawns and group activity here, after the change, rather than through a message
+          // of their own, so they see it in queue order: a group deactivated and then reactivated still ends a step.
           AppMessage::ReplaceSystem(handle, system) => {
             replace_system(handle, system.to_system_container(), &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::DespawnSystem(handle) => {
             despawn_system(handle, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::SpawnSystemGroup(group_name, child_systems, active) => {
             spawn_system_group(group_name, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DespawnSystemGroup(group_name) => {
+            let handles = group_handles(&groups, group_name);
             despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
+            routines.system_activation_changed(&handles, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
             activate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
+            routines.system_activation_changed(&group_handles(&groups, group_name), &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::DeactivateSystemGroup(group_name) => {
             deactivate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
+            routines.system_activation_changed(&group_handles(&groups, group_name), &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::CreateCue(handle, cue_id, cue, signals) => {
             create_cue(handle, cue_id, cue, signals, &groups);
@@ -136,6 +146,15 @@ pub async fn run(
           }
           AppMessage::CancelCue(handle, cue_id) => {
             cancel_cue(handle, cue_id, &groups);
+          }
+          AppMessage::StartRoutine(start) => {
+            routines.start(start, &groups, &base, &app_sender, &tracer_txs);
+          }
+          AppMessage::CompleteRoutineStep(handle, type_id) => {
+            routines.complete_step(handle, type_id, &groups, &base, &app_sender, &tracer_txs);
+          }
+          AppMessage::SystemActivityChanged(handle) => {
+            routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::TracerEvent(event) => {
             tracer_txs.send(event);
@@ -209,7 +228,7 @@ pub async fn run(
 }
 
 /// Find and apply the closure to the system. Returns None if not found or inactive.
-fn apply_to_system<F, T>(
+pub(crate) fn apply_to_system<F, T>(
   handle: SystemHandle,
   groups: &Groups,
   base: &AppState,
@@ -235,6 +254,18 @@ where
   }
 
   result
+}
+
+/// Whether the system exists and is active, in an active group. Like any check of activity, this fires the system's
+/// deactivate/reactivate handlers if its activity changed since it was last checked.
+pub(crate) fn is_system_active(
+  handle: SystemHandle,
+  groups: &Groups,
+  base: &AppState,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) -> bool {
+  apply_to_system(handle, groups, base, app_sender, tracer_txs, |_, _| ()).is_some()
 }
 
 /// Apply the given closure to all systems, including those within groups, respecting handle_active
@@ -761,6 +792,13 @@ fn cancel_cue(handle: SystemHandle, cue_id: u64, groups: &Groups) {
       cue_id
     );
   }
+}
+
+fn group_handles(groups: &Groups, group_name: &'static str) -> Vec<SystemHandle> {
+  group_child_ids(groups, group_name)
+    .into_iter()
+    .map(|id| SystemHandle::new(id, group_name))
+    .collect()
 }
 
 fn group_child_ids(groups: &Groups, group_name: &'static str) -> Vec<u64> {

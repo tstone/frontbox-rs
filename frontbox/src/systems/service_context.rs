@@ -4,8 +4,10 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
+use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
+use crate::systems::routine::RoutineStart;
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
 ///
@@ -110,25 +112,8 @@ impl<'a> ServiceContext<'a> {
   /// Lookup a system by type
   pub fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
     // Priority is given to nearness: siblings are searched first, then global
-    if let Some(found_system) = self.search_group(handle.parent_key) {
-      Some(found_system)
-    } else if handle.parent_key != ROOT_GROUP
-      && let Some(found_system) = self.search_group(ROOT_GROUP)
-    {
-      Some(found_system)
-    } else {
-      None
-    }
-  }
-
-  fn search_group<T: System + 'static>(&self, key: &'static str) -> Option<RefMut<'_, T>> {
-    if let Some(parent) = self.groups.get(key)
-      && let Some(system) = parent.get_by_type::<T>()
-    {
-      Some(system)
-    } else {
-      None
-    }
+    let found = self.groups.nearest(handle.parent_key, TypeId::of::<T>())?;
+    self.groups.get(found.parent_key)?.get_by_type::<T>()
   }
 
   /// Lookup a system by type; panic if does not exist
@@ -232,6 +217,31 @@ impl<'a> ServiceContext<'a> {
 
   pub fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
     let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
+  }
+
+  // --- Routines ---
+
+  /// Starting and completing need the caller's identity, so they're only public through `SystemContext`
+  pub(crate) fn start_routine<E: Event>(&self, origin: SystemHandle, payload: E) {
+    let _ = self.app_sender.send(AppMessage::StartRoutine(RoutineStart {
+      origin,
+      type_id: TypeId::of::<E>(),
+      name: type_name::<E>(),
+      payload: Box::new(payload),
+      into_complete: RoutineComplete::<E>::from_payload,
+    }));
+  }
+
+  pub(crate) fn report_activity_changed(&self, handle: SystemHandle) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::SystemActivityChanged(handle));
+  }
+
+  pub(crate) fn complete_routine_step(&self, handle: SystemHandle, type_id: TypeId) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::CompleteRoutineStep(handle, type_id));
   }
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {

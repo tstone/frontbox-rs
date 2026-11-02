@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::cell::RefMut;
 use std::ops::Deref;
 
@@ -131,6 +132,27 @@ impl<'a> SystemContext<'a> {
 
   pub fn cancel_cue(&self, cue_id: u64) {
     self.ctx.cancel_cue(self.handle, cue_id);
+  }
+
+  // -- Routines --
+
+  /// Start the routine for the payload's type. Once its last participant is done, [`RoutineComplete<E>`] is delivered
+  /// to this system, like a cue. See [routines](crate::systems::routine)
+  pub fn start_routine<E: Event>(&self, payload: E) {
+    self.ctx.start_routine(self.handle, payload);
+  }
+
+  /// End this system's step in the routine for `E`, handing it to the next participant
+  pub fn complete_routine_step<E: Event>(&self) {
+    self.complete_routine_step_by_type_id(TypeId::of::<E>());
+  }
+
+  pub(crate) fn complete_routine_step_by_type_id(&self, type_id: TypeId) {
+    self.ctx.complete_routine_step(self.handle, type_id);
+  }
+
+  pub(crate) fn report_activity_changed(&self) {
+    self.ctx.report_activity_changed(self.handle);
   }
 
   pub fn clone_for_system(&self, handle: SystemHandle) -> SystemContext<'a> {

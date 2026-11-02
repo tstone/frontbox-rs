@@ -1,5 +1,7 @@
 ## Foundations
 
+- Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
+- Does metrics need to go on app state or can it just be owned by run_loop
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,

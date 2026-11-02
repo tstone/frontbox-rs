@@ -408,6 +408,35 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       }
     }
     TraceEvent::Event { .. } => {}
+    TraceEvent::RoutineStarted { routine, origin } => snapshot.routines.push(RoutineProgress {
+      routine,
+      origin: *origin,
+      current: None,
+    }),
+    TraceEvent::RoutineStep {
+      routine,
+      participant,
+      group,
+    } => {
+      if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
+        progress.current = Some(RoutineParticipant {
+          id: *participant,
+          group,
+        });
+      }
+    }
+    // paused once the step in progress is over, so no one holds it
+    TraceEvent::RoutinePaused { routine } => {
+      if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
+        progress.current = None;
+      }
+    }
+    TraceEvent::RoutineFinished { routine, .. } | TraceEvent::RoutineAbandoned { routine, .. } => {
+      snapshot.routines.retain(|r| r.routine != *routine)
+    }
+    TraceEvent::RoutineRejected { .. }
+    | TraceEvent::RoutineSkipped { .. }
+    | TraceEvent::RoutineResumed { .. } => {}
     // handled by `ingest`, never logged
     TraceEvent::LedsRGBChange { .. }
     | TraceEvent::ConfigsInUse { .. }

@@ -85,6 +85,33 @@ function summary(record: TraceRecord): string {
     const { expansion, states } = event.LedsRGBChange
     return `${states.length} LED${states.length === 1 ? '' : 's'} on ${hexAddress(expansion)}`
   }
+  if ('RoutineStarted' in event) {
+    const { routine, origin } = event.RoutineStarted
+    return `${shortName(routine)} by ${systemName(origin)}`
+  }
+  if ('RoutineStep' in event) {
+    const { routine, participant } = event.RoutineStep
+    return `${shortName(routine)} handed to ${systemName(participant)}`
+  }
+  if ('RoutineSkipped' in event) {
+    const { routine, participant, reason } = event.RoutineSkipped
+    const why = reason === 'Missing' ? 'not in reach' : 'inactive'
+    return `${shortName(routine)} skipped ${shortName(participant)} (${why})`
+  }
+  if ('RoutineRejected' in event) {
+    const { routine, origin, running_origin } = event.RoutineRejected
+    return `${shortName(routine)} by ${systemName(origin)} ignored: already running for ${systemName(running_origin)}`
+  }
+  if ('RoutinePaused' in event) return `${shortName(event.RoutinePaused.routine)} waiting for its origin`
+  if ('RoutineResumed' in event) return shortName(event.RoutineResumed.routine)
+  if ('RoutineFinished' in event) {
+    const { routine, origin } = event.RoutineFinished
+    return `${shortName(routine)} for ${systemName(origin)}`
+  }
+  if ('RoutineAbandoned' in event) {
+    const { routine, origin } = event.RoutineAbandoned
+    return `${shortName(routine)}: ${systemName(origin)} was despawned`
+  }
   // kept as state by the hub, never logged
   if ('ConfigsInUse' in event || 'ConfigChange' in event) return ''
   const body = event.Event.event

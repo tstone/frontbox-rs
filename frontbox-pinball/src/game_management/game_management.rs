@@ -125,6 +125,10 @@ impl System for GameManager {
     self.inner.on_interrupt(event, ctx)
   }
 
+  fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+    self.inner.on_routine(routine, ctx)
+  }
+
   fn is_active(&self, ctx: &SystemContext) -> bool {
     self.inner.is_active(ctx)
   }

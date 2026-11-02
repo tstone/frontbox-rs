@@ -5,6 +5,7 @@ use fast_protocol::SwitchState;
 
 use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
+use crate::systems::routine::RoutineStart;
 
 pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
@@ -26,6 +27,10 @@ pub enum AppMessage {
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
+  StartRoutine(RoutineStart),
+  CompleteRoutineStep(SystemHandle, TypeId),
+  /// A system's own `is_active` changed, noticed while handling something else
+  SystemActivityChanged(SystemHandle),
   TracerEvent(TraceEvent),
 }
 
@@ -75,6 +80,13 @@ impl Debug for AppMessage {
         write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
+      AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
+      AppMessage::CompleteRoutineStep(handle, type_id) => {
+        write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
+      }
+      AppMessage::SystemActivityChanged(handle) => {
+        write!(f, "SystemActivityChanged({}, {})", handle.id, handle.parent_key)
+      }
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }

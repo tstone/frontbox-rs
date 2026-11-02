@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{Any, type_name};
 use std::time::Duration;
 
 use dyn_clone::DynClone;
@@ -42,6 +42,17 @@ pub trait System: Any {
   /// Invoked by the framework to handle an potential interrupt
   fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
     InterruptResult::Continue
+  }
+
+  /// Called when this system's step comes up in a routine it's listed in. Call `ctx.complete_routine_step::<E>()` once the
+  /// step is done, now or later. See [routines](crate::systems::routine)
+  fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+    log::error!(
+      target: "frontbox::routines",
+      "{} is listed in a routine but doesn't implement `on_routine`; completing its step",
+      type_name::<Self>()
+    );
+    ctx.complete_routine_step_by_type_id(routine.as_any().type_id());
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {
