@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox::prelude::*;
 
-use crate::{CompetitiveGame, GameEnded, GameState, PlayerTurnBeginning, TurnEnding, TurnState};
+use crate::{CompetitiveGame, GameEnded, GameState, TurnEnding, TurnStarting, TurnState};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
@@ -109,7 +109,7 @@ impl System for GameManager {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<PlayerTurnBeginning>() {
+    if event.is::<RoutineStarted<TurnStarting>>() {
       self.activate_playfield(ctx);
     } else if event.is::<RoutineStarted<TurnEnding>>() || event.is::<GameEnded>() {
       self.deactivate_playfield(ctx);

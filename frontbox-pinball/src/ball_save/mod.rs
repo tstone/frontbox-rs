@@ -183,7 +183,7 @@ impl System for BallSaveSystem {
     ctx
       .get::<GameManager>()
       .and_then(|manager| manager.turn_state().cloned())
-      .map(|state| state == TurnState::Beginning || state == TurnState::Active)
+      .map(|state| state == TurnState::Starting || state == TurnState::Active)
       .unwrap_or(false)
   }
 

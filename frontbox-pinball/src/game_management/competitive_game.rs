@@ -16,7 +16,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   3. Start game management
 ///
 /// ## Outputs
-/// - Event: `PlayerTurnBeginning` - Emitted at the start of a player's turn, but before the ball is in play (launched).
+/// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
+///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
 /// - Event: `PlayerTurnActive` - Emitted when the ball enters play (`BallEnteredPlay`), or on the first ball in play
 ///   switch hit, whichever comes first.
 /// - Routine: `TurnEnding` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
@@ -37,6 +38,8 @@ pub struct CompetitiveGame {
   handle: SystemHandle,
   /// When the current turn became active, for `metrics::BALL_TIME`
   turn_active_at: Option<Instant>,
+  /// Whether this turn's ball has been ejected. Until it has, nothing can make the turn active.
+  ball_served: bool,
 }
 
 impl CompetitiveGame {
@@ -52,6 +55,7 @@ impl CompetitiveGame {
       game_state: None,
       handle: SystemHandle::default(),
       turn_active_at: None,
+      ball_served: false,
     }
   }
 
@@ -83,18 +87,24 @@ impl CompetitiveGame {
     ctx.metrics.set_player(game_state.current_player());
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
-    log::info!(target: "frontbox::game_manager", "Transitioning current turn to beginning");
-    game_state.set_current_player_turn_state(TurnState::Beginning);
-    ctx.emit(PlayerTurnBeginning::new(
-      game_state.current_player(),
-      game_state.current_player_turn(),
-    ));
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
+    game_state.set_current_player_turn_state(TurnState::Starting);
+    self.ball_served = false;
+    ctx.start_routine(TurnStarting {
+      current_player: game_state.current_player(),
+      turn: game_state.current_player_turn(),
+    });
 
+    ctx.emit(Synchronize);
+  }
+
+  fn serve_ball(&mut self, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Serving the ball");
+    self.ball_served = true;
+    let ctx = &ctx.for_system(self.handle);
     if let Some(mut ball_manager) = ctx.get::<BallManager>() {
       ball_manager.eject(Launch::Player, ctx.into());
     }
-
-    ctx.emit(Synchronize);
   }
 
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
@@ -171,7 +181,12 @@ impl System for CompetitiveGame {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(game_state) = &mut self.game_state {
       match game_state.current_player_turn_state() {
-        TurnState::Beginning => {
+        TurnState::Starting if !self.ball_served => {
+          if event.is::<RoutineCompleted<TurnStarting>>() {
+            self.serve_ball(ctx.into());
+          }
+        }
+        TurnState::Starting => {
           if event.is::<BallEnteredPlay>() {
             log::debug!(target: "frontbox::game_manager", "Active caused by ball entering play");
             self.transition_turn_to_active(ctx.into());

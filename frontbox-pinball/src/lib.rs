@@ -11,19 +11,23 @@
 //!
 //! # Overview: Turn Flow
 //! Regardless of competitive or cooperative play, the turn flow is as follows:
-//! 1. A player's turn begins with the `PlayerTurnBeginning` event, and the game manager asks the `BallManager` for a ball. This is a good time to trigger any "start of turn" mechanics, like music and the display.
-//! 2. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `PlayerTurnActive` is emitted.
-//! 3. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the game manager starts the `TurnEnding` routine. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
-//! 4. Each participant of the routine (bonus, shoot again, etc.) takes its turn at the end-of-ball display, animations, etc.
-//! 5. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one.
+//! 1. A player's turn begins with the game manager activating the player's group and starting the `TurnStarting` routine. `RoutineStarted<TurnStarting>` is broadcast first: this is the time for "start of turn" mechanics, like music, and the playfield drivers are turned on.
+//! 2. Each participant of the routine (player-up display, skill shot selection, etc.) takes its turn before the ball comes out.
+//! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
+//! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `PlayerTurnActive` is emitted.
+//! 5. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the game manager starts the `TurnEnding` routine. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
+//! 6. Each participant of the routine (bonus, shoot again, etc.) takes its turn at the end-of-ball display, animations, etc.
+//! 7. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one.
 //!
-//! The end-of-turn sequence is defined in the app:
+//! The start- and end-of-turn sequences are defined in the app:
 //!
 //! ```rust,ignore
+//! app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
 //! app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
 //! ```
 //!
-//! With no `TurnEnding` routine defined, the turn advances right away.
+//! With no `TurnStarting` routine defined, the ball is served right away; with no `TurnEnding` routine, the turn
+//! advances right away.
 //!
 //! ## Required Systems
 //!

@@ -1,8 +1,10 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
-use frontbox::prelude::{ConfigDomainValue, Hardware, SystemDespawned, SystemSpawned};
+use frontbox::prelude::{
+  ConfigDomainValue, Hardware, RoutineStarted, SystemDespawned, SystemSpawned,
+};
 use frontbox_metrics::MetricsDb;
-use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
+use frontbox_pinball::{GameEnded, GameStarted, TurnStarting};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -318,11 +320,12 @@ impl GameTransition {
       Some(Self::Started)
     } else if *name == type_name::<GameEnded>() {
       Some(Self::Ended)
-    } else if *name == type_name::<PlayerTurnBeginning>() {
+    } else if *name == type_name::<RoutineStarted<TurnStarting>>() {
       let field = |name: &str| {
         event
           .as_ref()
-          .and_then(|body| body.get(name))
+          .and_then(|body| body.get("routine"))
+          .and_then(|routine| routine.get(name))
           .and_then(|value| value.as_u64())
           .map(|value| value as u8)
       };

@@ -7,20 +7,21 @@ pub struct GameEnded {
   pub scores: Vec<(&'static str, u32)>,
 }
 
-/// When the current player's turn starts. This happens at the beginning of each "ball" when the ball has been fed to the plunge lane
-#[derive(serde::Serialize, Event)]
-pub struct PlayerTurnBeginning {
+/// Routine run at the start of each turn, after the player's group is activated and before the ball is served. Its
+/// participants are what should happen before the ball comes out (player-up display, skill shot selection, etc.); the
+/// ball is ejected once the last one completes its step. With no routine defined, the ball is ejected right away.
+///
+/// ```rust,ignore
+/// app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
+/// ```
+///
+/// Other systems watch the routine's events:
+/// - `RoutineStarted<TurnStarting>` -- the turn has started. Modes set up for the player here.
+/// - `RoutineCompleted<TurnStarting>` -- the ball is being served.
+#[derive(serde::Serialize, Event, Clone)]
+pub struct TurnStarting {
   pub current_player: u8,
   pub turn: u8,
-}
-
-impl PlayerTurnBeginning {
-  pub fn new(current_player: u8, turn: u8) -> Self {
-    Self {
-      current_player,
-      turn,
-    }
-  }
 }
 
 #[derive(serde::Serialize, Event)]

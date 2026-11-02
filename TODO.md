@@ -19,6 +19,7 @@
   that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
+- Revisit if `Synchronize` event still makes sense or not
 
 ## Pinball features
 

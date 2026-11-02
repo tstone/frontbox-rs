@@ -8,7 +8,7 @@
 use frontbox::animation::*;
 use frontbox::prelude::*;
 use frontbox_pin_console::{WebTracer, console_plane};
-use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning, configs::TURN_COUNT};
+use frontbox_pinball::{GameEnded, GameStarted, TurnStarting, configs::TURN_COUNT};
 use std::io::Write;
 use std::time::Duration;
 
@@ -307,7 +307,10 @@ impl System for FakeGame {
           ctx.deactivate_system_group(group);
         }
       }
-      ctx.emit(PlayerTurnBeginning::new(player, turn));
+      ctx.start_routine(TurnStarting {
+        current_player: player,
+        turn,
+      });
       ctx.activate_driver(TROUGH_EJECT.name, ActivationMode::Tap);
     } else if beat < game_length {
       ctx.activate_driver(SCOOP_EJECT.name, ActivationMode::Tap);
