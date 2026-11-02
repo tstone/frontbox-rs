@@ -1,5 +1,6 @@
 ## Foundations
 
+- Add a GameStarting routine
 - tests for run_loop
 - Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful (ex: TurnActive)
   Later: could a state drive a system group on and off? This overlaps with the toggle group item below.
