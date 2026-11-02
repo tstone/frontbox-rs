@@ -160,8 +160,13 @@ pub async fn run(
             routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::SetState(state) => {
-            let owner = state.owner;
+            let (owner, name, value) = (state.owner, state.name, (state.to_json)(state.value.as_ref()));
             if let Some(changed) = set_state(&mut groups, state) {
+              tracer_txs.send(TraceEvent::StateChange {
+                group: owner.group,
+                name,
+                value: Some(value),
+              });
               emit_event(Some(owner.id), changed, &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
             }
           }
@@ -534,8 +539,15 @@ fn despawn_system(
     let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
   }
 
-  for changed in clear_states_owned_by(groups, handle) {
-    let _ = app_sender.send(EmitEvent(Some(handle.id), changed));
+  for state in clear_states_owned_by(groups, handle) {
+    tracer_txs.send(TraceEvent::StateChange {
+      group: handle.group,
+      name: state.name,
+      value: None,
+    });
+    if let Some(changed) = state.changed_to_default() {
+      let _ = app_sender.send(EmitEvent(Some(handle.id), changed));
+    }
   }
 
   let mut despawned = vec![handle];

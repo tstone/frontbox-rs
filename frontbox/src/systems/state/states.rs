@@ -64,8 +64,8 @@ pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<Event
   }
 }
 
-/// Drops the states the system owns, returning the `StateChanged` back to the default for each that wasn't already
-pub(crate) fn clear_states_owned_by(groups: &mut Groups, owner: SystemHandle) -> Vec<EventBox> {
+/// Drops the states the system owns, returning them. See [`StoredState::changed_to_default`] for what to broadcast.
+pub(crate) fn clear_states_owned_by(groups: &mut Groups, owner: SystemHandle) -> Vec<StoredState> {
   let Some(group) = groups.get_mut(&owner.group) else {
     return Vec::new();
   };
@@ -80,6 +80,5 @@ pub(crate) fn clear_states_owned_by(groups: &mut Groups, owner: SystemHandle) ->
   owned
     .into_iter()
     .filter_map(|type_id| group.states.remove(&type_id))
-    .filter_map(|state| (state.into_changed)(Some(state.value.as_ref()), None))
     .collect()
 }

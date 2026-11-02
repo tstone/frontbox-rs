@@ -177,6 +177,11 @@ impl<'a> SystemContext<'a> {
     self.state::<S>() == value
   }
 
+  /// Whether the state `S` currently has any of the values in `values`
+  pub fn in_any_state<S: State>(&self, values: &[S]) -> bool {
+    values.contains(&self.state::<S>())
+  }
+
   /// Set the state `S` in this system's group. The first system to set a state owns it, and only the owner can set it
   /// again. Takes effect in queue order, so this system reads the old value until then; [`StateChanged<S>`] is
   /// broadcast once it's set, unless the value didn't change.

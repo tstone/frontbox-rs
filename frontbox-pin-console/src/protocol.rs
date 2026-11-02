@@ -78,6 +78,8 @@ pub struct SystemGroup {
   pub name: &'static str,
   pub active: bool,
   pub systems: Vec<System>,
+  /// The states set in this group, by type name, as JSON. Reading one falls back to the root's when it isn't here.
+  pub states: BTreeMap<&'static str, serde_json::Value>,
 }
 
 #[derive(Clone, serde::Serialize, TS)]

@@ -117,7 +117,7 @@ function summary(record: TraceRecord): string {
     return `${shortName(routine)}: ${systemName(origin)} was despawned`
   }
   // kept as state by the hub, never logged
-  if ('ConfigsInUse' in event || 'ConfigChange' in event) return ''
+  if ('ConfigsInUse' in event || 'ConfigChange' in event || 'StateChange' in event) return ''
   const body = event.Event.event
   return body == null ? '' : JSON.stringify(body)
 }

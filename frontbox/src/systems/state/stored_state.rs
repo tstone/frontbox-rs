@@ -15,6 +15,8 @@ pub struct StoredState {
   /// The `StateChanged` from one value to another, or `None` if they're equal. A missing value is the default.
   /// Chosen here, while the state's type is still known.
   pub(crate) into_changed: fn(Option<&StateValue>, Option<&StateValue>) -> Option<EventBox>,
+  /// The value as JSON, for tracing
+  pub(crate) to_json: fn(&StateValue) -> serde_json::Value,
 }
 
 impl StoredState {
@@ -25,7 +27,13 @@ impl StoredState {
       name: type_name::<S>(),
       value: Box::new(value),
       into_changed: into_changed::<S>,
+      to_json: to_json::<S>,
     }
+  }
+
+  /// The `StateChanged` back to the default, once the state is dropped. `None` if it was already the default.
+  pub(crate) fn changed_to_default(&self) -> Option<EventBox> {
+    (self.into_changed)(Some(self.value.as_ref()), None)
   }
 }
 
@@ -33,6 +41,13 @@ impl Debug for StoredState {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{} from {}", self.name, self.owner.id)
   }
+}
+
+fn to_json<S: State>(value: &StateValue) -> serde_json::Value {
+  value
+    .downcast_ref::<S>()
+    .and_then(|value| serde_json::to_value(value).ok())
+    .unwrap_or_default()
 }
 
 fn into_changed<S: State>(from: Option<&StateValue>, to: Option<&StateValue>) -> Option<EventBox> {

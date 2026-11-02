@@ -70,6 +70,22 @@ fn a_state_is_read_back_once_set_and_its_change_broadcast() {
 }
 
 #[test]
+fn a_state_can_be_matched_against_several_values() {
+  let mut t = TestContext::default();
+  let owner = insert(&mut t, ROOT_GROUP, Owner);
+  let ctx = t.svc_ctx().for_system(owner);
+
+  assert!(ctx.in_any_state(&[Phase::Idle, Phase::Ending]));
+  assert!(!ctx.in_any_state(&[Phase::Active, Phase::Ending]));
+  assert!(!ctx.in_any_state::<Phase>(&[]));
+
+  ctx.set_state(Phase::Ending);
+  t.apply_states();
+  let ctx = t.svc_ctx().for_system(owner);
+  assert!(ctx.in_any_state(&[Phase::Active, Phase::Ending]));
+}
+
+#[test]
 fn setting_the_same_value_broadcasts_nothing() {
   let mut t = TestContext::default();
   let owner = insert(&mut t, ROOT_GROUP, Owner);
@@ -127,6 +143,10 @@ fn a_despawned_owners_states_go_back_to_their_default() {
   t.groups.get_mut(&ROOT_GROUP).unwrap().remove(owner.id);
 
   let cleared = clear_states_owned_by(&mut t.groups, owner);
+  let cleared = cleared
+    .iter()
+    .filter_map(StoredState::changed_to_default)
+    .collect();
   assert_eq!(changes(cleared), vec![(Phase::Active, Phase::Idle)]);
   assert_eq!(read(&t, other), Phase::Idle);
 
