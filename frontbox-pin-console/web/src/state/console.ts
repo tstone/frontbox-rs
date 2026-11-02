@@ -169,9 +169,10 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     const { routine, participant, group } = event.RoutineStep
     const progress = s.routines.find((r) => r.routine === routine)
     if (progress) progress.current = { id: participant, group }
-  } else if ('RoutinePaused' in event) {
-    // paused once the step in progress is over, so no one holds it
-    const progress = s.routines.find((r) => r.routine === event.RoutinePaused.routine)
+  } else if ('RoutinePaused' in event || 'RoutineHalted' in event) {
+    // paused once the step in progress is over, and a halt ends it, so no one holds it
+    const { routine } = 'RoutinePaused' in event ? event.RoutinePaused : event.RoutineHalted
+    const progress = s.routines.find((r) => r.routine === routine)
     if (progress) progress.current = null
   } else if ('RoutineCompleted' in event || 'RoutineAbandoned' in event) {
     const { routine } = 'RoutineCompleted' in event ? event.RoutineCompleted : event.RoutineAbandoned

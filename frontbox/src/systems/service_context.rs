@@ -130,8 +130,8 @@ impl<'a> ServiceContext<'a> {
 
   // --- System management ---
 
-  /// Start up a new system
-  pub fn spawn_system(&self, group: GroupId, system: impl Into<SpawnableSystemContainer>) {
+  /// Start up a new system in `group`. Systems spawn into their own group through `SystemContext::spawn_system`.
+  pub(crate) fn spawn_system(&self, group: GroupId, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
       .send(AppMessage::SpawnSystem(group, system.into()));
@@ -224,7 +224,7 @@ impl<'a> ServiceContext<'a> {
 
   // --- Routines ---
 
-  /// Starting and completing need the caller's identity, so they're only public through `SystemContext`
+  /// Starting, completing and halting need the caller's identity, so they're only public through `SystemContext`
   /// Participants are looked up from `scope`.
   pub(crate) fn start_routine<E: Event + Clone>(
     &self,
@@ -253,6 +253,10 @@ impl<'a> ServiceContext<'a> {
     let _ = self
       .app_sender
       .send(AppMessage::CompleteRoutineStep(handle, type_id));
+  }
+
+  pub(crate) fn halt_routine(&self, handle: SystemHandle, type_id: TypeId) {
+    let _ = self.app_sender.send(AppMessage::HaltRoutine(handle, type_id));
   }
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {

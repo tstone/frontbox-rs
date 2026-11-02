@@ -30,6 +30,7 @@ pub enum AppMessage {
   CancelCue(SystemHandle, u64),
   StartRoutine(RoutineStart),
   CompleteRoutineStep(SystemHandle, TypeId),
+  HaltRoutine(SystemHandle, TypeId),
   /// Hand a started routine to its first participant, once its `RoutineStarted` has gone out
   BeginRoutine(TypeId),
   /// A system's own `is_active` changed, noticed while handling something else
@@ -95,6 +96,7 @@ impl Debug for AppMessage {
       AppMessage::CompleteRoutineStep(handle, type_id) => {
         write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
       }
+      AppMessage::HaltRoutine(handle, type_id) => write!(f, "HaltRoutine({}, {:?})", handle.id, type_id),
       AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
       AppMessage::SystemActivityChanged(handle) => {
         write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)

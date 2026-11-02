@@ -5,6 +5,7 @@ import type { DriverMode } from "./DriverMode";
 import type { DriverState } from "./DriverState";
 import type { GroupId } from "./GroupId";
 import type { InterruptEvaluation } from "./InterruptEvaluation";
+import type { RoutineCompletion } from "./RoutineCompletion";
 import type { RoutineSkipReason } from "./RoutineSkipReason";
 import type { SwitchState } from "./SwitchState";
 import type { JsonValue } from "./serde_json/JsonValue";
@@ -13,4 +14,4 @@ export type TraceEvent = { "Event": { type_name: string, interrupts: Array<Inter
 /**
  * The participant's group. Copies of a system in several groups share an id.
  */
-group: GroupId, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineCompleted": { routine: string, origin: number, } } | { "RoutineAbandoned": { routine: string, origin: number, } };
+group: GroupId, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineHalted": { routine: string, participant: number, group: GroupId, } } | { "RoutineCompleted": { routine: string, origin: number, completion: RoutineCompletion, } } | { "RoutineAbandoned": { routine: string, origin: number, } };

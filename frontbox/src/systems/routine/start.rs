@@ -15,7 +15,7 @@ pub struct RoutineStart {
   /// Copies the routine into its `RoutineStarted`. Chosen here, while its type is still known
   pub(crate) into_started: fn(&dyn Event) -> EventBox,
   /// Wraps the routine in its `RoutineCompleted`
-  pub(crate) into_completed: fn(Box<dyn Event>) -> EventBox,
+  pub(crate) into_completed: fn(Box<dyn Event>, RoutineCompletion) -> EventBox,
 }
 
 impl Debug for RoutineStart {

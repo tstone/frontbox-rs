@@ -104,9 +104,13 @@ function summary(record: TraceRecord): string {
   }
   if ('RoutinePaused' in event) return `${shortName(event.RoutinePaused.routine)} waiting for its origin`
   if ('RoutineResumed' in event) return shortName(event.RoutineResumed.routine)
+  if ('RoutineHalted' in event) {
+    const { routine, participant } = event.RoutineHalted
+    return `${shortName(routine)} halted by ${systemName(participant)}`
+  }
   if ('RoutineCompleted' in event) {
-    const { routine, origin } = event.RoutineCompleted
-    return `${shortName(routine)} for ${systemName(origin)}`
+    const { routine, origin, completion } = event.RoutineCompleted
+    return `${shortName(routine)} for ${systemName(origin)}${completion === 'Halted' ? ' (halted)' : ''}`
   }
   if ('RoutineAbandoned' in event) {
     const { routine, origin } = event.RoutineAbandoned

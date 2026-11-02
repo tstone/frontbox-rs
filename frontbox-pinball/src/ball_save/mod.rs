@@ -196,7 +196,7 @@ impl System for BallSaveSystem {
     if event.is::<TurnActive>() {
       let duration = ctx.config.get(&configs::BALL_SAVE_TIME);
       if !duration.is_zero() {
-        self.set_request(self.handle.id, Some(duration), ctx);
+        self.set_request(self.handle.id(), Some(duration), ctx);
       }
     } else if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
       self.remove_request(*id, ctx);

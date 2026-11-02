@@ -16,14 +16,16 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   3. Start game management
 ///
 /// ## Outputs
-/// Each turn goes through these, in order. Both routines are started in the current player's group, so their
+/// Each turn goes through these, in order. The routines are started in the current player's group, so their
 /// participants can be in the player template as well as at the root.
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
 ///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
 /// - Event: `TurnActive` - Emitted once per turn, when the served ball enters play (`BallEnteredPlay`), or on the first
 ///   ball in play switch hit, whichever comes first.
-/// - Routine: `TurnEnding` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
-///   Modes clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
+/// - Routine: `BallDraining` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in
+///   play), so its participants can save the ball. A participant halting it keeps the turn going.
+/// - Routine: `TurnEnding` - Started once `BallDraining` completes without being halted. Modes clean up on its
+///   `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
 ///
 /// ## Interrupts
 /// - `BallsExitedPlay` - Interrupting this event will prevent the player turn from ending. This is how mechanics like
@@ -127,6 +129,20 @@ impl CompetitiveGame {
     ));
   }
 
+  /// The last ball left play. Its participants decide whether the turn ends.
+  fn start_ball_draining(&mut self, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Last ball in play drained");
+    let game_state = self.game_state.as_ref().unwrap();
+    let group = &self.player_groups[game_state.current_player() as usize];
+    ctx.for_system(self.handle).start_routine_in(
+      group,
+      BallDraining {
+        current_player: game_state.current_player(),
+        turn: game_state.current_player_turn(),
+      },
+    );
+  }
+
   fn transition_turn_to_ending(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
     let game_state = self.game_state.as_mut().unwrap();
@@ -204,7 +220,14 @@ impl System for CompetitiveGame {
         TurnState::Active => {
           if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>()
           {
-            self.transition_turn_to_ending(ctx.into());
+            self.start_ball_draining(ctx.into());
+          } else if let Some(done) = event.downcast_ref::<RoutineCompleted<BallDraining>>() {
+            match done.completion {
+              RoutineCompletion::AllSteps => self.transition_turn_to_ending(ctx.into()),
+              RoutineCompletion::Halted => {
+                log::info!(target: "frontbox::game_manager", "Drain was saved, the turn carries on")
+              }
+            }
           }
         }
         TurnState::Ending => {

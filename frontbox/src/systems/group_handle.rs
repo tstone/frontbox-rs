@@ -33,7 +33,6 @@ static NEXT_GROUP_ID: AtomicU64 = AtomicU64::new(1);
 /// Identifies a system group. Each group spawned gets a new one, never reused. The root is `GroupId::ROOT`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[serde(transparent)]
 pub struct GroupId(u64);
 
 impl GroupId {

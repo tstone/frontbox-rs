@@ -45,6 +45,22 @@ impl TurnActive {
   }
 }
 
+/// Routine run when the last ball in play leaves play, before the turn ends, to decide whether it really does. Its
+/// participants are whatever can save the ball (ball save, an outlane save, an extra ball), in the order they get the
+/// chance. One that saves it puts a ball back into play and calls `halt_routine`, and the turn carries on; if none
+/// does, the turn ends with `TurnEnding`. With no routine defined, the turn ends right away.
+///
+/// ```rust,ignore
+/// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave, ExtraBall]);
+/// ```
+///
+/// The origin sees how it went on `RoutineCompleted<BallDraining>`: `RoutineCompletion::Halted` if the ball was saved.
+#[derive(serde::Serialize, Event, Clone)]
+pub struct BallDraining {
+  pub current_player: u8,
+  pub turn: u8,
+}
+
 /// Routine run once the last ball of a turn has left play. Its participants are the end-of-turn displays and sequences
 /// (bonus, shoot again, etc.); the turn advances once the last one completes its step. With no routine defined, the
 /// turn advances right away.

@@ -432,8 +432,8 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
         });
       }
     }
-    // paused once the step in progress is over, so no one holds it
-    TraceEvent::RoutinePaused { routine } => {
+    // paused once the step in progress is over, and a halt ends it, so no one holds it
+    TraceEvent::RoutinePaused { routine } | TraceEvent::RoutineHalted { routine, .. } => {
       if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
         progress.current = None;
       }

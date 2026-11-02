@@ -166,6 +166,13 @@ impl<'a> SystemContext<'a> {
     self.ctx.complete_routine_step(self.handle, type_id);
   }
 
+  /// End the routine for `E` with this system's step, so the participants after it don't take one. For a participant
+  /// that settles what the routine is deciding (e.g. a ball save on a ball-draining routine). `RoutineCompleted<E>` is
+  /// broadcast with `RoutineCompletion::Halted`, so the origin can tell. Only the current participant can halt it.
+  pub fn halt_routine<E: Event>(&self) {
+    self.ctx.halt_routine(self.handle, TypeId::of::<E>());
+  }
+
   pub(crate) fn report_activity_changed(&self) {
     self.ctx.report_activity_changed(self.handle);
   }

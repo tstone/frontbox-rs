@@ -95,6 +95,14 @@ impl TestContext {
       .any(|msg| matches!(msg, AppMessage::CompleteRoutineStep(_, type_id) if type_id == TypeId::of::<E>()))
   }
 
+  /// Whether the routine for `E` was halted since the last check
+  pub fn routine_halted<E: Event>(&mut self) -> bool {
+    self
+      .app_messages()
+      .into_iter()
+      .any(|msg| matches!(msg, AppMessage::HaltRoutine(_, type_id) if type_id == TypeId::of::<E>()))
+  }
+
   /// Trace events sent through the run loop up to this point
   pub fn traces(&mut self) -> Vec<TraceEvent> {
     self

@@ -47,9 +47,11 @@
 //! 1. [`RoutineStarted<E>`] is broadcast, before the first participant is handed the routine. Anything its listeners
 //!    emit lands before the first step.
 //! 2. The participants take their steps, in order.
-//! 3. [`RoutineCompleted<E>`] is broadcast once the last participant is done. The origin watches this to carry on.
+//! 3. [`RoutineCompleted<E>`] is broadcast once the last participant is done, or one of them halts the routine. The
+//!    origin watches this to carry on.
 //!
-//! Both events carry the routine as it was started.
+//! Both events carry the routine as it was started. `RoutineCompleted` also carries how it came to be done
+//! ([`RoutineCompletion`]).
 //!
 //! ```rust
 //! # use frontbox::prelude::*;
@@ -98,16 +100,24 @@
 //! }
 //! ```
 //!
+//! ### Halting
+//!
+//! A participant can end the routine with its step by calling `halt_routine` instead, so the participants after it
+//! don't take one. This is for a routine that decides something, where the first participant to settle it wins: on a
+//! ball-draining routine listing a ball save, an outlane save and an extra ball, whichever saves the ball halts it, and
+//! the others are left alone. The origin sees `RoutineCompletion::Halted` and doesn't carry on as it would have (e.g.
+//! ending the turn).
+//!
 //! ## Rules
 //!
 //! - **One per type** -- Only one routine of a given type runs at a time. A second start is ignored with a warning, and
 //!   broadcasts nothing.
 //! - **Empty or undefined** routines complete immediately, still broadcasting both events.
-//! - **Nearest wins** -- Each listed type resolves to one instance, searched for from the origin's group and then the
-//!   root, the same as `ctx.get`. A routine meant for a player's systems should be started by a system in that
-//!   player's group.
+//! - **Nearest wins** -- Each listed type resolves to one instance, searched for from the routine's group and then the
+//!   root, the same as `ctx.get`. That's the origin's own group, or the group given to `start_routine_in`, so the
+//!   owner of a player's group can start a routine meant for that player's systems.
 //! - **Inactive or missing participants are skipped.**
-//! - **Only the current participant can complete its step** -- Completion is keyed to the caller, so a system that
+//! - **Only the current participant can complete its step or halt** -- Both are keyed to the caller, so a system that
 //!   does work on a participant's behalf reports back, and the participant completes. Late or duplicate completions
 //!   are ignored.
 //! - **Despawned or deactivated mid-step counts as complete**, so a routine can't get stuck. Despawning and group
@@ -116,8 +126,8 @@
 //!   can't complete the old step.
 //! - **Paused while the origin is inactive** -- Like a cue, a routine doesn't move on while its origin is inactive. The
 //!   step in progress carries on, but the next participant isn't handed the routine, nor `RoutineCompleted`
-//!   broadcast, until the origin is active again. A routine whose origin is despawned is abandoned, and never
-//!   completes.
+//!   broadcast, until the origin is active again. That includes a halted routine. A routine whose origin is despawned
+//!   is abandoned, and never completes.
 
 mod definition;
 mod events;
@@ -127,6 +137,6 @@ mod start;
 mod tests;
 
 pub use definition::RoutineDefinition;
-pub use events::{RoutineCompleted, RoutineStarted};
+pub use events::{RoutineCompleted, RoutineCompletion, RoutineStarted};
 pub(crate) use routines::Routines;
 pub use start::RoutineStart;

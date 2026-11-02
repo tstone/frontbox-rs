@@ -104,9 +104,16 @@ pub enum TraceEvent {
   RoutineResumed {
     routine: &'static str,
   },
+  /// The current participant halted the routine. It completes once its origin is active.
+  RoutineHalted {
+    routine: &'static str,
+    participant: u64,
+    group: GroupId,
+  },
   RoutineCompleted {
     routine: &'static str,
     origin: u64,
+    completion: RoutineCompletion,
   },
   /// The routine's origin was despawned before it completed
   RoutineAbandoned {

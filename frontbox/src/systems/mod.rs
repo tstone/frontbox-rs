@@ -177,7 +177,7 @@ pub use cue_timeline_builder::*;
 pub use event::*;
 pub use event_interrupts::InterruptResult;
 pub use group_handle::*;
-pub use routine::{RoutineCompleted, RoutineDefinition, RoutineStarted};
+pub use routine::{RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted};
 pub use service_context::*;
 pub use system::*;
 pub use system_container::*;

@@ -80,6 +80,7 @@ impl Routines {
         next: 0,
         current: None,
         paused: false,
+        halted: false,
       },
     );
     tracer_txs.send(TraceEvent::RoutineStarted {
@@ -118,27 +119,65 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
+    if self.end_step(caller, type_id, "step completion").is_some() {
+      self.advance(type_id, groups, base, app_sender, tracer_txs);
+    }
+  }
+
+  /// The current participant ends the routine with its step. It completes as halted once its origin is active.
+  pub(crate) fn halt(
+    &mut self,
+    caller: SystemHandle,
+    type_id: TypeId,
+    groups: &Groups,
+    base: &AppState,
+    app_sender: &mpsc::UnboundedSender<AppMessage>,
+    tracer_txs: &TracerSenders,
+  ) {
+    let Some(routine) = self.end_step(caller, type_id, "halt") else {
+      return;
+    };
+
+    log::debug!(
+      target: "frontbox::routines",
+      "Routine {} halted by {}",
+      routine.name,
+      Self::describe(groups, caller)
+    );
+    routine.halted = true;
+    tracer_txs.send(TraceEvent::RoutineHalted {
+      routine: routine.name,
+      participant: caller.id,
+      group: caller.group,
+    });
+    self.advance(type_id, groups, base, app_sender, tracer_txs);
+  }
+
+  /// Ends the caller's step, if it's the current participant of the routine
+  fn end_step(&mut self, caller: SystemHandle, type_id: TypeId, what: &str) -> Option<&mut RunningRoutine> {
     let Some(routine) = self.running.get_mut(&type_id) else {
       log::debug!(
         target: "frontbox::routines",
-        "Ignoring a routine step completion from system {}: that routine isn't running",
+        "Ignoring a routine {} from system {}: that routine isn't running",
+        what,
         caller.id
       );
-      return;
+      return None;
     };
 
     if !routine.current.is_some_and(|current| current == caller) {
       log::debug!(
         target: "frontbox::routines",
-        "Ignoring a step completion of routine {} from system {}: it isn't the current participant",
+        "Ignoring a {} of routine {} from system {}: it isn't the current participant",
+        what,
         routine.name,
         caller.id
       );
-      return;
+      return None;
     }
 
     routine.current = None;
-    self.advance(type_id, groups, base, app_sender, tracer_txs);
+    Some(routine)
   }
 
   /// The systems were despawned, or their activity changed. Any routine they're the origin or current participant of
@@ -239,6 +278,11 @@ impl Routines {
         }
       }
 
+      if routine.halted {
+        self.complete(type_id, RoutineCompletion::Halted, app_sender, tracer_txs);
+        return;
+      }
+
       let next = self
         .definitions
         .get(&type_id)
@@ -246,7 +290,7 @@ impl Routines {
       routine.next += 1;
 
       let Some(participant) = next else {
-        self.complete(type_id, app_sender, tracer_txs);
+        self.complete(type_id, RoutineCompletion::AllSteps, app_sender, tracer_txs);
         return;
       };
 
@@ -309,6 +353,7 @@ impl Routines {
   fn complete(
     &mut self,
     type_id: TypeId,
+    completion: RoutineCompletion,
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
@@ -316,13 +361,14 @@ impl Routines {
       return;
     };
 
-    log::debug!(target: "frontbox::routines", "Routine {} completed", routine.name);
+    log::debug!(target: "frontbox::routines", "Routine {} completed ({:?})", routine.name, completion);
     tracer_txs.send(TraceEvent::RoutineCompleted {
       routine: routine.name,
       origin: routine.origin.id,
+      completion,
     });
 
-    let completed = (routine.into_completed)(routine.routine);
+    let completed = (routine.into_completed)(routine.routine, completion);
     let _ = app_sender.send(AppMessage::EmitEvent(Some(routine.origin.id), completed));
   }
 
@@ -364,7 +410,7 @@ struct RunningRoutine {
   /// The routine as started, which participants are handed
   routine: Box<dyn Event>,
   /// Wraps the routine in its `RoutineCompleted`
-  into_completed: fn(Box<dyn Event>) -> EventBox,
+  into_completed: fn(Box<dyn Event>, RoutineCompletion) -> EventBox,
   /// `RoutineStarted` has gone out, and the first participant was handed the routine
   begun: bool,
   /// Index of the next participant in the definition
@@ -373,6 +419,8 @@ struct RunningRoutine {
   current: Option<SystemHandle>,
   /// Waiting for the origin to be active again
   paused: bool,
+  /// A participant halted it, so it completes without handing it to anyone else
+  halted: bool,
 }
 
 enum OriginState {

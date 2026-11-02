@@ -164,6 +164,9 @@ pub async fn run(
           AppMessage::CompleteRoutineStep(handle, type_id) => {
             routines.complete_step(handle, type_id, &groups, &base, &app_sender, &tracer_txs);
           }
+          AppMessage::HaltRoutine(handle, type_id) => {
+            routines.halt(handle, type_id, &groups, &base, &app_sender, &tracer_txs);
+          }
           AppMessage::SystemActivityChanged(handle) => {
             routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
           }

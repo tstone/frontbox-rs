@@ -59,9 +59,18 @@ struct Origin {
 
 impl System for Origin {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if event.is::<RoutineCompleted<TurnEnding>>() {
-      self.log.borrow_mut().push("completed".to_string());
-    }
+    log_completion(&self.log, event);
+  }
+}
+
+/// Logs "completed", or "halted" for a halted routine
+fn log_completion(log: &Log, event: &dyn Event) {
+  if let Some(done) = event.downcast_ref::<RoutineCompleted<TurnEnding>>() {
+    let entry = match done.completion {
+      RoutineCompletion::AllSteps => "completed",
+      RoutineCompletion::Halted => "halted",
+    };
+    log.borrow_mut().push(entry.to_string());
   }
 }
 
@@ -73,9 +82,7 @@ struct OriginToggled {
 
 impl System for OriginToggled {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if event.is::<RoutineCompleted<TurnEnding>>() {
-      self.log.borrow_mut().push("completed".to_string());
-    }
+    log_completion(&self.log, event);
   }
 
   fn is_active(&self, _ctx: &SystemContext) -> bool {
@@ -212,6 +219,14 @@ impl Harness {
           &self.tx,
           &self.tracers,
         ),
+        AppMessage::HaltRoutine(caller, type_id) => self.routines.halt(
+          caller,
+          type_id,
+          &self.groups,
+          &self.base,
+          &self.tx,
+          &self.tracers,
+        ),
         AppMessage::SystemActivityChanged(handle) => self.routines.system_activation_changed(
           &[handle],
           &self.groups,
@@ -277,6 +292,11 @@ impl Harness {
 
   fn complete(&mut self, participant: SystemHandle) {
     self.ctx(participant).complete_routine_step::<TurnEnding>();
+    self.pump();
+  }
+
+  fn halt(&mut self, participant: SystemHandle) {
+    self.ctx(participant).halt_routine::<TurnEnding>();
     self.pump();
   }
 
@@ -717,4 +737,68 @@ fn an_abandoned_routine_never_completes() {
   h.complete(step);
 
   assert_eq!(h.log(), ["saw started", "step 1 in root"]);
+}
+
+#[test]
+fn a_halt_skips_the_remaining_participants() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>, Step<3>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  h.step::<1>(ROOT_GROUP_NAME, true);
+  let second = h.step::<2>(ROOT_GROUP_NAME, false);
+  h.step::<3>(ROOT_GROUP_NAME, true);
+
+  h.start(origin);
+  h.halt(second);
+
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root", "halted"]);
+  assert!(!h.is_running());
+}
+
+#[test]
+fn only_the_current_participant_can_halt() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+  let second = h.step::<2>(ROOT_GROUP_NAME, false);
+
+  h.start(origin);
+  h.halt(second);
+  h.halt(origin);
+  assert_eq!(h.log(), ["step 1 in root"]);
+
+  h.complete(first);
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root"]);
+}
+
+#[test]
+fn a_halt_waits_for_the_origin() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let active = Rc::new(Cell::new(true));
+  let origin = h.spawn(
+    ROOT_GROUP_NAME,
+    OriginToggled {
+      log: h.log.clone(),
+      active: active.clone(),
+    },
+  );
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+
+  h.start(origin);
+  active.set(false);
+  h.halt(first);
+  assert_eq!(h.log(), ["step 1 in root"]);
+  assert!(h.is_running());
+
+  // still halted once the origin is back: the next participant isn't handed the routine
+  active.set(true);
+  h.touch(origin);
+  assert_eq!(h.log(), ["step 1 in root", "halted"]);
+}
+
+#[test]
+fn test_context_records_halts() {
+  let mut test_ctx = TestContext::default();
+  test_ctx.sys_ctx().halt_routine::<TurnEnding>();
+  assert!(test_ctx.routine_halted::<TurnEnding>());
 }
