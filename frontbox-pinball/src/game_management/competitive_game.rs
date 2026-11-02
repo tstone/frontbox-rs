@@ -16,7 +16,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   3. Start game management
 ///
 /// ## Outputs
-/// Each turn goes through these, in order:
+/// Each turn goes through these, in order. Both routines are started in the current player's group, so their
+/// participants can be in the player template as well as at the root.
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
 ///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
 /// - Event: `TurnActive` - Emitted once per turn, when the served ball enters play (`BallEnteredPlay`), or on the first
@@ -94,10 +95,14 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
     game_state.set_current_player_turn_state(TurnState::Starting);
     self.ball_served = false;
-    ctx.start_routine(TurnStarting {
-      current_player: game_state.current_player(),
-      turn: game_state.current_player_turn(),
-    });
+    let group = &self.player_groups[game_state.current_player() as usize];
+    ctx.start_routine_in(
+      group,
+      TurnStarting {
+        current_player: game_state.current_player(),
+        turn: game_state.current_player_turn(),
+      },
+    );
 
     ctx.emit(Synchronize);
   }
@@ -129,10 +134,14 @@ impl CompetitiveGame {
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
-    ctx.for_system(self.handle).start_routine(TurnEnding {
-      current_player: game_state.current_player(),
-      turn: game_state.current_player_turn(),
-    });
+    let group = &self.player_groups[game_state.current_player() as usize];
+    ctx.for_system(self.handle).start_routine_in(
+      group,
+      TurnEnding {
+        current_player: game_state.current_player(),
+        turn: game_state.current_player_turn(),
+      },
+    );
   }
 
   fn advance_turn(&mut self, ctx: &ServiceContext) {
