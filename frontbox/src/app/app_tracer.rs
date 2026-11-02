@@ -30,24 +30,26 @@ pub enum TraceEvent {
   SystemSpawned {
     id: u64,
     name: &'static str,
-    parent_key: &'static str,
+    group: GroupId,
   },
   SystemDespawned {
     id: u64,
-    parent_key: &'static str,
+    group: GroupId,
   },
   SystemGroupSpawned {
-    key: &'static str,
+    id: GroupId,
+    name: &'static str,
   },
   SystemGroupDespawned {
-    key: &'static str,
+    id: GroupId,
+    name: &'static str,
   },
   SystemActiveStateChange {
     id: u64,
     active: bool,
   },
   SystemGroupActiveStateChange {
-    key: &'static str,
+    id: GroupId,
     active: bool,
   },
   DriverStateChange {
@@ -88,7 +90,7 @@ pub enum TraceEvent {
     routine: &'static str,
     participant: u64,
     /// The participant's group. Copies of a system in several groups share an id.
-    group: &'static str,
+    group: GroupId,
   },
   RoutineSkipped {
     routine: &'static str,

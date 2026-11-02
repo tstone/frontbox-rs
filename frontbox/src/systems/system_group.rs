@@ -31,7 +31,8 @@
 //! # }
 //! ```
 //!
-//! Group names must be unique: spawning a group under a name that's already in use is refused.
+//! Groups are identified by their [`GroupId`]. The name is only for display (logs, the console), so names don't need
+//! to be unique.
 
 use std::cell::RefMut;
 use std::ops::{Deref, DerefMut};
@@ -41,24 +42,31 @@ use crate::prelude::*;
 pub struct SystemGroup {
   pub(crate) systems: Systems,
   pub(crate) active: bool,
+  /// For display only
+  pub(crate) name: &'static str,
   /// The system that spawned the group. The root has none.
   pub(crate) owner: Option<SystemHandle>,
 }
 
 impl SystemGroup {
-  pub fn new() -> Self {
+  pub fn new(name: &'static str) -> Self {
     Self {
       systems: Systems::new(),
       active: true,
+      name,
       owner: None,
     }
   }
 
-  pub(crate) fn owned_by(owner: SystemHandle) -> Self {
+  pub(crate) fn owned_by(name: &'static str, owner: SystemHandle) -> Self {
     Self {
       owner: Some(owner),
-      ..Self::new()
+      ..Self::new(name)
     }
+  }
+
+  pub fn name(&self) -> &'static str {
+    self.name
   }
 
   pub fn child_ids(&self) -> Vec<&u64> {

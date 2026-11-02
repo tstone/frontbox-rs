@@ -17,14 +17,14 @@ pub enum AppMessage {
   SyncSwitchStates(Vec<SwitchState>),
   ConfigChanged(&'static str),
   DriverModeChange(usize, DriverMode),
-  SpawnSystem(&'static str, SpawnableSystemContainer),
+  SpawnSystem(GroupId, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
   /// Spawn a group owned by the system
-  SpawnSystemGroup(SystemHandle, &'static str, Vec<ChildSystemContainer>, bool),
-  DespawnSystemGroup(&'static str),
-  ActivateSystemGroup(&'static str),
-  DeactivateSystemGroup(&'static str),
+  SpawnSystemGroup(SystemHandle, GroupHandle, Vec<ChildSystemContainer>, bool),
+  DespawnSystemGroup(GroupId),
+  ActivateSystemGroup(GroupId),
+  DeactivateSystemGroup(GroupId),
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
@@ -63,23 +63,27 @@ impl Debug for AppMessage {
       AppMessage::DriverModeChange(driver, mode) => {
         write!(f, "DriverModeChange({}, {:?})", driver, mode)
       }
-      AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
+      AppMessage::SpawnSystem(group, _) => write!(f, "SpawnSystem({})", group),
       AppMessage::ReplaceSystem(handle, _) => {
-        write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)
+        write!(f, "ReplaceSystem({}, {})", handle.id, handle.group)
       }
       AppMessage::DespawnSystem(handle) => {
-        write!(f, "DespawnSystem({}, {})", handle.id, handle.parent_key)
+        write!(f, "DespawnSystem({}, {})", handle.id, handle.group)
       }
-      AppMessage::SpawnSystemGroup(owner, name, _, exclusive) => {
+      AppMessage::SpawnSystemGroup(owner, group, _, exclusive) => {
         write!(
           f,
-          "SpawnSystemGroup({}, owner={}:{}, exclusive={})",
-          name, owner.parent_key, owner.id, exclusive
+          "SpawnSystemGroup({} {}, owner={}:{}, exclusive={})",
+          group.id(),
+          group.name(),
+          owner.group,
+          owner.id,
+          exclusive
         )
       }
-      AppMessage::DespawnSystemGroup(name) => write!(f, "DespawnSystemGroup({})", name),
-      AppMessage::ActivateSystemGroup(name) => write!(f, "ActivateSystemGroup({})", name),
-      AppMessage::DeactivateSystemGroup(name) => write!(f, "DeactivateSystemGroup({})", name),
+      AppMessage::DespawnSystemGroup(id) => write!(f, "DespawnSystemGroup({})", id),
+      AppMessage::ActivateSystemGroup(id) => write!(f, "ActivateSystemGroup({})", id),
+      AppMessage::DeactivateSystemGroup(id) => write!(f, "DeactivateSystemGroup({})", id),
       AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
         write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
       }
@@ -93,7 +97,7 @@ impl Debug for AppMessage {
       }
       AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
       AppMessage::SystemActivityChanged(handle) => {
-        write!(f, "SystemActivityChanged({}, {})", handle.id, handle.parent_key)
+        write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
       }
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }

@@ -1,5 +1,6 @@
 use frontbox::prelude::ConfigDomainValue;
 use frontbox::prelude::DriverMode;
+use frontbox::prelude::GroupId;
 use frontbox::prelude::Hardware;
 use frontbox::prelude::SwitchState;
 use frontbox::prelude::app_tracer::{Color, ConfigView, DriverState, TraceEvent};
@@ -67,12 +68,14 @@ pub struct RoutineProgress {
 pub struct RoutineParticipant {
   pub id: u64,
   /// Copies of a system in several groups share an id
-  pub group: &'static str,
+  pub group: GroupId,
 }
 
 #[derive(Clone, serde::Serialize, TS)]
 pub struct SystemGroup {
-  pub key: &'static str,
+  pub id: GroupId,
+  /// For display; names don't need to be unique
+  pub name: &'static str,
   pub active: bool,
   pub systems: Vec<System>,
 }

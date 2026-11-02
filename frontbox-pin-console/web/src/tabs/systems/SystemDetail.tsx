@@ -22,7 +22,7 @@ export default function SystemDetail(props: { system: System; group: SystemGroup
         <dt>ID</dt>
         <dd class="mono">{props.system.id}</dd>
         <dt>Group</dt>
-        <dd>{groupLabel(props.group.key)}</dd>
+        <dd>{groupLabel(props.group.id, props.group.name)}</dd>
       </dl>
 
       <section class="recent-events">

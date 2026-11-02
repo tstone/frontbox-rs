@@ -2,7 +2,7 @@ import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createSignal, Show } from 'solid-js'
 import { formatElapsed, groupLabel, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
 import { hexAddress } from '../lib/hardwareConfig'
-import { machine, systemName } from '../state/console'
+import { groupName, machine, systemName } from '../state/console'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import './TraceRow.css'
 
@@ -75,11 +75,11 @@ function summary(record: TraceRecord): string {
     const { id, active } = event.SystemActiveStateChange
     return `${systemName(id)} ${active ? 'activated' : 'deactivated'}`
   }
-  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.key)
-  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.key)
+  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.id, event.SystemGroupSpawned.name)
+  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.id, event.SystemGroupDespawned.name)
   if ('SystemGroupActiveStateChange' in event) {
-    const { key, active } = event.SystemGroupActiveStateChange
-    return `${groupLabel(key)} ${active ? 'activated' : 'deactivated'}`
+    const { id, active } = event.SystemGroupActiveStateChange
+    return `${groupName(id)} ${active ? 'activated' : 'deactivated'}`
   }
   if ('LedsRGBChange' in event) {
     const { expansion, states } = event.LedsRGBChange
@@ -104,8 +104,8 @@ function summary(record: TraceRecord): string {
   }
   if ('RoutinePaused' in event) return `${shortName(event.RoutinePaused.routine)} waiting for its origin`
   if ('RoutineResumed' in event) return shortName(event.RoutineResumed.routine)
-  if ('RoutineFinished' in event) {
-    const { routine, origin } = event.RoutineFinished
+  if ('RoutineCompleted' in event) {
+    const { routine, origin } = event.RoutineCompleted
     return `${shortName(routine)} for ${systemName(origin)}`
   }
   if ('RoutineAbandoned' in event) {

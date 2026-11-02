@@ -77,7 +77,8 @@ pub(crate) use event_box::*;
 pub(crate) use groups_ext::GroupsExt;
 pub use run_loop::Synchronize;
 
-use crate::prelude::SystemGroup;
+use crate::prelude::{GroupId, SystemGroup};
 
-pub const ROOT_GROUP: &'static str = "__root";
-pub(crate) type Groups = IndexMap<&'static str, SystemGroup>;
+pub const ROOT_GROUP: GroupId = GroupId::ROOT;
+pub const ROOT_GROUP_NAME: &'static str = "root";
+pub(crate) type Groups = IndexMap<GroupId, SystemGroup>;

@@ -155,12 +155,12 @@ impl EventExt for dyn Event {
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemSpawned {
   pub id: u64,
-  pub parent_key: &'static str,
+  pub group: GroupId,
 }
 
 impl SystemSpawned {
-  pub fn new(id: u64, parent_key: &'static str) -> Self {
-    Self { id, parent_key }
+  pub fn new(id: u64, group: GroupId) -> Self {
+    Self { id, group }
   }
 }
 
@@ -168,11 +168,11 @@ impl SystemSpawned {
 #[derive(serde::Serialize, Event, Debug, Clone, Copy)]
 pub struct SystemDespawned {
   pub id: u64,
-  pub parent_key: &'static str,
+  pub group: GroupId,
 }
 
 impl SystemDespawned {
-  pub fn new(id: u64, parent_key: &'static str) -> Self {
-    Self { id, parent_key }
+  pub fn new(id: u64, group: GroupId) -> Self {
+    Self { id, group }
   }
 }

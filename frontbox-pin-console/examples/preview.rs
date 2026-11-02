@@ -266,6 +266,7 @@ const BEATS_PER_TURN: u32 = 5;
 #[derive(Default)]
 struct FakeGame {
   beat: u32,
+  player_groups: Vec<GroupHandle>,
 }
 
 #[derive(serde::Serialize, Event)]
@@ -293,14 +294,15 @@ impl System for FakeGame {
     if beat == 0 {
       ctx.emit(GameStarted);
       // like a turn-based game, each player gets a group that's only active during their turn
-      for group in PLAYER_GROUPS {
-        ctx.spawn_system_group(group, vec![PlayerModes.into(), BallSave.into()], false);
-      }
+      self.player_groups = PLAYER_GROUPS
+        .iter()
+        .map(|name| ctx.spawn_system_group(name, vec![PlayerModes.into(), BallSave.into()], false))
+        .collect();
     } else if beat < game_length && (beat - 1) % BEATS_PER_TURN == 0 {
       let turn_index = (beat - 1) / BEATS_PER_TURN;
       let player = (turn_index % PLAYERS as u32) as u8;
       let turn = (turn_index / PLAYERS as u32) as u8 + 1;
-      for (index, group) in PLAYER_GROUPS.iter().enumerate() {
+      for (index, group) in self.player_groups.iter().enumerate() {
         if index == player as usize {
           ctx.activate_system_group(group);
         } else {
@@ -318,7 +320,7 @@ impl System for FakeGame {
       ctx.emit(GameEnded {
         scores: vec![("Player 1", 125_000), ("Player 2", 98_500)],
       });
-      for group in PLAYER_GROUPS {
+      for group in self.player_groups.drain(..) {
         ctx.despawn_system_group(group);
       }
     }

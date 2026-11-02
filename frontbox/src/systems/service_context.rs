@@ -112,8 +112,8 @@ impl<'a> ServiceContext<'a> {
   /// Lookup a system by type
   pub fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
     // Priority is given to nearness: siblings are searched first, then global
-    let found = self.groups.nearest(handle.parent_key, TypeId::of::<T>())?;
-    self.groups.get(found.parent_key)?.get_by_type::<T>()
+    let found = self.groups.nearest(handle.group, TypeId::of::<T>())?;
+    self.groups.get(&found.group)?.get_by_type::<T>()
   }
 
   /// Lookup a system by type; panic if does not exist
@@ -131,14 +131,10 @@ impl<'a> ServiceContext<'a> {
   // --- System management ---
 
   /// Start up a new system
-  pub fn spawn_system(
-    &self,
-    parent_key: &'static str,
-    system: impl Into<SpawnableSystemContainer>,
-  ) {
+  pub fn spawn_system(&self, group: GroupId, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystem(parent_key, system.into()));
+      .send(AppMessage::SpawnSystem(group, system.into()));
   }
 
   /// Despawn self and immediately spawn a new system in its place
@@ -160,28 +156,32 @@ impl<'a> ServiceContext<'a> {
     systems: Vec<ChildSystemContainer>,
     active: bool,
   ) -> GroupHandle {
+    let group = GroupHandle::new(GroupId::next(), group_name);
     let _ = self.app_sender.send(AppMessage::SpawnSystemGroup(
-      owner, group_name, systems, active,
+      owner,
+      group.clone(),
+      systems,
+      active,
     ));
-    GroupHandle::new(group_name)
+    group
   }
 
   pub fn despawn_system_group(&self, group: GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DespawnSystemGroup(group.name()));
+      .send(AppMessage::DespawnSystemGroup(group.id()));
   }
 
   pub fn activate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::ActivateSystemGroup(group.name()));
+      .send(AppMessage::ActivateSystemGroup(group.id()));
   }
 
   pub fn deactivate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DeactivateSystemGroup(group.name()));
+      .send(AppMessage::DeactivateSystemGroup(group.id()));
   }
 
   // --- Cues ---
@@ -225,9 +225,16 @@ impl<'a> ServiceContext<'a> {
   // --- Routines ---
 
   /// Starting and completing need the caller's identity, so they're only public through `SystemContext`
-  pub(crate) fn start_routine<E: Event + Clone>(&self, origin: SystemHandle, routine: E) {
+  /// Participants are looked up from `scope`.
+  pub(crate) fn start_routine<E: Event + Clone>(
+    &self,
+    origin: SystemHandle,
+    scope: GroupId,
+    routine: E,
+  ) {
     let _ = self.app_sender.send(AppMessage::StartRoutine(RoutineStart {
       origin,
+      scope,
       type_id: TypeId::of::<E>(),
       name: type_name::<E>(),
       routine: Box::new(routine),

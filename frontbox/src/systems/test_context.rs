@@ -17,7 +17,7 @@ impl TestContext {
   pub fn insert_system(&mut self, system: impl Into<SystemContainer>) {
     self
       .groups
-      .get_mut(ROOT_GROUP)
+      .get_mut(&ROOT_GROUP)
       .unwrap()
       .insert(system.into());
   }
@@ -112,7 +112,7 @@ impl Default for TestContext {
   fn default() -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
     let mut groups = Groups::new();
-    groups.insert(ROOT_GROUP, SystemGroup::new());
+    groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
 
     // as in `App::run`, so config changes emit `ConfigChanged`
     let mut base = AppState::default();

@@ -51,11 +51,11 @@ export function formatElapsed(ms: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${tail}` : `${minutes}:${tail}`
 }
 
-const ROOT_GROUP = '__root'
+const ROOT_GROUP = 0
 
-/** The framework's root group shows as "Root" */
-export function groupLabel(key: string): string {
-  return key === ROOT_GROUP ? 'Root' : key
+/** A group's name, for display. The framework's root group shows as "Root" */
+export function groupLabel(id: number, name: string): string {
+  return id === ROOT_GROUP ? 'Root' : name
 }
 
 /**

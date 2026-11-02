@@ -343,27 +343,28 @@ impl GameTransition {
 fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
   let groups = &mut snapshot.groups;
   match &record.event {
-    TraceEvent::SystemGroupSpawned { key } => {
-      if !groups.iter().any(|g| g.key == *key) {
+    TraceEvent::SystemGroupSpawned { id, name } => {
+      if !groups.iter().any(|g| g.id == *id) {
         groups.push(SystemGroup {
-          key,
+          id: *id,
+          name,
           active: true,
           systems: Vec::new(),
         });
       }
     }
-    TraceEvent::SystemGroupDespawned { key } => groups.retain(|g| g.key != *key),
-    TraceEvent::SystemGroupActiveStateChange { key, active } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *key) {
+    TraceEvent::SystemGroupDespawned { id, .. } => groups.retain(|g| g.id != *id),
+    TraceEvent::SystemGroupActiveStateChange { id, active } => {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *id) {
         group.active = *active;
       }
     }
     TraceEvent::SystemSpawned {
       id,
       name,
-      parent_key,
+      group: group_id,
     } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *parent_key) {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
         group.systems.push(System {
           id: *id,
           name,
@@ -372,8 +373,11 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
         });
       }
     }
-    TraceEvent::SystemDespawned { id, parent_key } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *parent_key) {
+    TraceEvent::SystemDespawned {
+      id,
+      group: group_id,
+    } => {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
         group.systems.retain(|s| s.id != *id);
       }
     }
@@ -424,7 +428,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
         progress.current = Some(RoutineParticipant {
           id: *participant,
-          group,
+          group: *group,
         });
       }
     }

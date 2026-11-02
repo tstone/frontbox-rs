@@ -7,6 +7,8 @@ use crate::prelude::*;
 /// A request to start a routine, sent from a context to the run loop
 pub struct RoutineStart {
   pub(crate) origin: SystemHandle,
+  /// The group participants are looked up from: the nearest instance, in the group itself, then the root
+  pub(crate) scope: GroupId,
   pub(crate) type_id: TypeId,
   pub(crate) name: &'static str,
   pub(crate) routine: Box<dyn Event>,

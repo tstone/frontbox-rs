@@ -38,6 +38,7 @@ impl Routines {
   ) -> Option<EventBox> {
     let RoutineStart {
       origin,
+      scope,
       type_id,
       name,
       routine: event,
@@ -72,6 +73,7 @@ impl Routines {
       RunningRoutine {
         name,
         origin,
+        scope,
         routine: event,
         into_completed,
         begun: false,
@@ -248,10 +250,10 @@ impl Routines {
         return;
       };
 
-      let Some(handle) = groups.nearest(routine.origin.parent_key, participant.type_id) else {
+      let Some(handle) = groups.nearest(routine.scope, participant.type_id) else {
         log::debug!(
           target: "frontbox::routines",
-          "Routine {}: skipping {}, which has no instance in reach of the origin",
+          "Routine {}: skipping {}, which has no instance in reach of the routine's group",
           routine.name,
           participant.name
         );
@@ -283,7 +285,7 @@ impl Routines {
       tracer_txs.send(TraceEvent::RoutineStep {
         routine: routine.name,
         participant: handle.id,
-        group: handle.parent_key,
+        group: handle.group,
       });
 
       // completing only sends a message, so the participant can't re-enter the routine from here
@@ -357,6 +359,8 @@ impl Routines {
 struct RunningRoutine {
   name: &'static str,
   origin: SystemHandle,
+  /// The group participants are looked up from
+  scope: GroupId,
   /// The routine as started, which participants are handed
   routine: Box<dyn Event>,
   /// Wraps the routine in its `RoutineCompleted`

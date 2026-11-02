@@ -85,7 +85,7 @@ impl<'a> SystemContext<'a> {
 
   /// Start up a new system
   pub fn spawn_system(&self, system: impl Into<SpawnableSystemContainer>) {
-    self.ctx.spawn_system(self.handle.parent_key, system);
+    self.ctx.spawn_system(self.handle.group, system);
   }
 
   /// Despawn self and immediately spawn a new system in its place
@@ -144,7 +144,17 @@ impl<'a> SystemContext<'a> {
   /// Start the routine for `E`. [`RoutineStarted<E>`] is broadcast before the first participant is
   /// handed the routine, and [`RoutineCompleted<E>`] once the last one is done. See [routines](crate::systems::routine)
   pub fn start_routine<E: Event + Clone>(&self, routine: E) {
-    self.ctx.start_routine(self.handle, routine);
+    self
+      .ctx
+      .start_routine(self.handle, self.handle.group, routine);
+  }
+
+  /// Start the routine for `E`, with its participants looked up from `group` rather than this system's own group: the
+  /// nearest instance of each, in `group` itself, then the root. This system is still the origin, so it's the one whose
+  /// activity pauses the routine. Taking the handle means only the group's owner (or whoever it shares the handle with)
+  /// can start a routine in it.
+  pub fn start_routine_in<E: Event + Clone>(&self, group: &GroupHandle, routine: E) {
+    self.ctx.start_routine(self.handle, group.id(), routine);
   }
 
   /// End this system's step in the routine for `E`, handing it to the next participant
