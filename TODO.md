@@ -1,6 +1,7 @@
 ## Foundations
 
 - Go through all framework events and be strict with naming: events are past tense (ThingHappened), routines are present tense on-going (ThingHappening). Find cases of present tense and see if those should actually be routines.
+- Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful.
 - Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
 - Does metrics need to go on app state or can it just be owned by run_loop

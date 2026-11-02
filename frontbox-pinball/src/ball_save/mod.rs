@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use frontbox::prelude::*;
 
 use crate::ball_management::{BallManager, BallsExitedPlay, Launch};
-use crate::{GameManager, PlayerTurnActive, TurnState, configs, metrics};
+use crate::{GameManager, TurnActive, TurnState, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
@@ -193,7 +193,7 @@ impl System for BallSaveSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<PlayerTurnActive>() {
+    if event.is::<TurnActive>() {
       let duration = ctx.config.get(&configs::BALL_SAVE_TIME);
       if !duration.is_zero() {
         self.set_request(self.handle.id, Some(duration), ctx);
@@ -462,8 +462,7 @@ mod tests {
   #[test]
   fn turn_start_requests_a_save() {
     let mut f = Fixture::spawn();
-    f.save
-      .on_event(&PlayerTurnActive::new(0, 0), &f.ctx.sys_ctx());
+    f.save.on_event(&TurnActive::new(0, 0), &f.ctx.sys_ctx());
     assert!(f.save.is_saving());
     f.tick(8);
     assert!(f.save.requests.is_empty());
@@ -476,8 +475,7 @@ mod tests {
       .svc_ctx()
       .config
       .set(&configs::BALL_SAVE_TIME, Duration::ZERO);
-    f.save
-      .on_event(&PlayerTurnActive::new(0, 0), &f.ctx.sys_ctx());
+    f.save.on_event(&TurnActive::new(0, 0), &f.ctx.sys_ctx());
     assert!(!f.save.is_saving());
   }
 

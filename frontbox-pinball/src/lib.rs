@@ -10,11 +10,16 @@
 //! the current turn (receiving the extra ball on drain) versus playing an additional turn at the end of the game.
 //!
 //! # Overview: Turn Flow
-//! Regardless of competitive or cooperative play, the turn flow is as follows:
+//! Regardless of competitive or cooperative play, every turn has the same lifecycle:
+//! - Routine: `TurnStarting` -- before the ball is served
+//! - Event: `TurnActive` -- the served ball is in play
+//! - Routine: `TurnEnding` -- after the last ball has left play
+//!
+//! In detail:
 //! 1. A player's turn begins with the game manager activating the player's group and starting the `TurnStarting` routine. `RoutineStarted<TurnStarting>` is broadcast first: this is the time for "start of turn" mechanics, like music, and the playfield drivers are turned on.
 //! 2. Each participant of the routine (player-up display, skill shot selection, etc.) takes its turn before the ball comes out.
 //! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
-//! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `PlayerTurnActive` is emitted.
+//! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `TurnActive` is emitted. This happens once per turn, unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play.
 //! 5. When the last ball in play leaves play (`BallsExitedPlay` with none left in play), the game manager starts the `TurnEnding` routine. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
 //! 6. Each participant of the routine (bonus, shoot again, etc.) takes its turn at the end-of-ball display, animations, etc.
 //! 7. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one.

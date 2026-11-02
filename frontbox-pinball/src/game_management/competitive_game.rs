@@ -16,10 +16,11 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   3. Start game management
 ///
 /// ## Outputs
+/// Each turn goes through these, in order:
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
 ///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
-/// - Event: `PlayerTurnActive` - Emitted when the ball enters play (`BallEnteredPlay`), or on the first ball in play
-///   switch hit, whichever comes first.
+/// - Event: `TurnActive` - Emitted once per turn, when the served ball enters play (`BallEnteredPlay`), or on the first
+///   ball in play switch hit, whichever comes first.
 /// - Routine: `TurnEnding` - Started when the last ball in play leaves play (`BallsExitedPlay` with none left in play).
 ///   Modes clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
 ///
@@ -112,7 +113,7 @@ impl CompetitiveGame {
     let game_state = self.game_state.as_mut().unwrap();
     game_state.set_current_player_turn_state(TurnState::Active);
     self.turn_active_at = Some(Instant::now());
-    ctx.for_system(self.handle).emit(PlayerTurnActive::new(
+    ctx.for_system(self.handle).emit(TurnActive::new(
       game_state.current_player(),
       game_state.current_player_turn(),
     ));

@@ -24,13 +24,19 @@ pub struct TurnStarting {
   pub turn: u8,
 }
 
+/// Emitted once per turn, when the turn became active: the served ball entered play (`BallEnteredPlay`), or a
+/// `ball_in_play_switches` switch was hit, whichever came first. Anything timed from the start of play (ball save,
+/// skill shot) starts here.
+///
+/// Unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play (multiball, ball save
+/// relaunches), this is emitted only once per turn.
 #[derive(serde::Serialize, Event)]
-pub struct PlayerTurnActive {
+pub struct TurnActive {
   pub current_player: u8,
   pub turn: u8,
 }
 
-impl PlayerTurnActive {
+impl TurnActive {
   pub fn new(current_player: u8, turn: u8) -> Self {
     Self {
       current_player,
