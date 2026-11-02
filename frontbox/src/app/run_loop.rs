@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::time::Duration;
 
+use crate::app::GroupsExt;
 use crate::app::app_message::AppMessage::EmitEvent;
 use crate::app::app_tracer::{AppTracer, InterruptEvaluation, TraceEvent};
 use crate::metrics;
@@ -126,17 +127,17 @@ pub async fn run(
             spawn_system_group(group_name, child_systems, active, &mut groups, &base, app_sender.clone(), &tracer_txs);
           }
           AppMessage::DespawnSystemGroup(group_name) => {
-            let handles = group_handles(&groups, group_name);
+            let handles = groups.handles_in(group_name);
             despawn_system_group(group_name, &mut groups, &base, app_sender.clone(), &mut interrupt_registry, &tracer_txs);
             routines.system_activation_changed(&handles, &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::ActivateSystemGroup(group_name) => {
             activate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
-            routines.system_activation_changed(&group_handles(&groups, group_name), &groups, &base, &app_sender, &tracer_txs);
+            routines.system_activation_changed(&groups.handles_in(group_name), &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::DeactivateSystemGroup(group_name) => {
             deactivate_system_group(group_name, &mut groups, &base, app_sender.clone(), &tracer_txs);
-            routines.system_activation_changed(&group_handles(&groups, group_name), &groups, &base, &app_sender, &tracer_txs);
+            routines.system_activation_changed(&groups.handles_in(group_name), &groups, &base, &app_sender, &tracer_txs);
           }
           AppMessage::CreateCue(handle, cue_id, cue, signals) => {
             create_cue(handle, cue_id, cue, signals, &groups);
@@ -241,9 +242,10 @@ where
 {
   let mut result: Option<T> = None;
 
-  if let Some(group) = groups.get(handle.parent_key)
-    && group.active
-    && let Some(mut system) = group.get_by_id(&handle.id)
+  if groups
+    .get(handle.parent_key)
+    .is_some_and(|group| group.active)
+    && let Some(mut system) = groups.system(handle)
   {
     let mut ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     if system.handle_active(&ctx, tracer_txs) {
@@ -496,22 +498,13 @@ fn spawn_system(
   };
 
   if was_spawned {
-    let mut system = groups
-      .get(parent_key)
-      .unwrap()
-      .systems
-      .get_by_id(&system_id)
-      .unwrap();
+    let handle = SystemHandle::new(system_id, parent_key);
+    let mut system = groups.system(handle).unwrap();
     log::info!(
-      target: "frontbox::systems::lifecycle", 
+      target: "frontbox::systems::lifecycle",
       "🌐 Spawned system {} ({})", system.name(), system.id());
 
-    let ctx = SystemContext::new(
-      base,
-      SystemHandle::new(system_id, parent_key),
-      groups,
-      app_sender.clone(),
-    );
+    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     system.initialize(&ctx);
 
     tracer_txs.send(TraceEvent::SystemSpawned {
@@ -629,9 +622,7 @@ fn despawn_system_group(
     return;
   }
 
-  let child_ids = group_child_ids(groups, group_name);
-  for id in child_ids {
-    let handle = SystemHandle::new(id, group_name);
+  for handle in groups.handles_in(group_name) {
     despawn_system(
       handle,
       groups,
@@ -670,20 +661,9 @@ fn activate_system_group(
     return;
   }
 
-  let child_ids = group_child_ids(groups, group_name);
-  for id in child_ids {
-    let mut system = groups
-      .get(group_name)
-      .unwrap()
-      .systems
-      .get_by_id(&id)
-      .unwrap();
-    let ctx = SystemContext::new(
-      base,
-      SystemHandle::new(id, group_name),
-      groups,
-      app_sender.clone(),
-    );
+  for handle in groups.handles_in(group_name) {
+    let mut system = groups.system(handle).unwrap();
+    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
 
     if system.is_active(&ctx) {
       system.on_reactivate(&ctx);
@@ -718,20 +698,9 @@ fn deactivate_system_group(
     return;
   }
 
-  let child_ids = group_child_ids(groups, group_name);
-  for id in child_ids {
-    let mut system = groups
-      .get(group_name)
-      .unwrap()
-      .systems
-      .get_by_id(&id)
-      .unwrap();
-    let ctx = SystemContext::new(
-      base,
-      SystemHandle::new(id, group_name),
-      groups,
-      app_sender.clone(),
-    );
+  for handle in groups.handles_in(group_name) {
+    let mut system = groups.system(handle).unwrap();
+    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
     system.on_deactivate(&ctx);
   }
 
@@ -752,9 +721,7 @@ fn create_cue(
   signals: Vec<Box<dyn Event>>,
   groups: &Groups,
 ) {
-  if let Some(group) = groups.get(handle.parent_key)
-    && let Some(mut system) = group.get_by_id(&handle.id)
-  {
+  if let Some(mut system) = groups.system(handle) {
     log::debug!("Creating cue for {} ({})", system.name(), handle.id);
     system.create_cue(cue, cue_id, signals);
   } else {
@@ -767,9 +734,7 @@ fn create_cue(
 }
 
 fn create_cue_timeline(handle: SystemHandle, cue_id: u64, timeline: CueTimeline, groups: &Groups) {
-  if let Some(group) = groups.get(handle.parent_key)
-    && let Some(mut system) = group.get_by_id(&handle.id)
-  {
+  if let Some(mut system) = groups.system(handle) {
     system.create_cue_timeline(timeline, cue_id);
   } else {
     log::warn!(
@@ -781,9 +746,7 @@ fn create_cue_timeline(handle: SystemHandle, cue_id: u64, timeline: CueTimeline,
 }
 
 fn cancel_cue(handle: SystemHandle, cue_id: u64, groups: &Groups) {
-  if let Some(group) = groups.get(handle.parent_key)
-    && let Some(mut system) = group.get_by_id(&handle.id)
-  {
+  if let Some(mut system) = groups.system(handle) {
     system.cancel_cue(cue_id);
   } else {
     log::warn!(
@@ -792,20 +755,6 @@ fn cancel_cue(handle: SystemHandle, cue_id: u64, groups: &Groups) {
       cue_id
     );
   }
-}
-
-fn group_handles(groups: &Groups, group_name: &'static str) -> Vec<SystemHandle> {
-  group_child_ids(groups, group_name)
-    .into_iter()
-    .map(|id| SystemHandle::new(id, group_name))
-    .collect()
-}
-
-fn group_child_ids(groups: &Groups, group_name: &'static str) -> Vec<u64> {
-  groups
-    .get(group_name)
-    .map(|g| g.systems.values().map(|s| s.borrow().id()).collect())
-    .unwrap_or(Vec::new())
 }
 
 fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>, resync: Arc<Notify>) {

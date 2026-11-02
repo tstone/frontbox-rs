@@ -6,10 +6,10 @@ use std::rc::Rc;
 use tokio::sync::mpsc;
 
 use super::*;
-use crate::app::Groups;
 use crate::app::app_message::AppMessage;
 use crate::app::app_tracer::TracerSenders;
 use crate::app::run_loop::apply_to_system;
+use crate::app::{Groups, GroupsExt};
 use crate::prelude::*;
 
 /// What the test systems did, in order, so tests can check the sequence across systems
@@ -218,11 +218,7 @@ impl Harness {
     } else {
       group.deactivate()
     }
-    let handles: Vec<SystemHandle> = group
-      .ids()
-      .into_iter()
-      .map(|id| SystemHandle::new(*id, key))
-      .collect();
+    let handles = self.groups.handles_in(key);
     self.changed(&handles);
   }
 
