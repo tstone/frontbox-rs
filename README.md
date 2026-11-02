@@ -31,7 +31,7 @@ A: No. Frontbox was started in [early](https://github.com/tstone/rpin/commit/97c
 
 #### Q: How is Frontbox different than \_\_\_\_\_\_\_\_ Framework?
 
-A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. You could use it to build a DIY claw machine if you wanted, so long as that machine was running on hardware Frontbox supports.
+A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. This gives it a more generalized, code-centric approach to things, in which there are fewer abstractions to understand and more opportunity to swap about base functionality. You could even use it for a homebrew claw machine, so long as that machine was running on hardware Frontbox supports.
 
 #### Q: Does that mean I have to write everything pinball related myself?
 

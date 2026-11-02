@@ -41,6 +41,9 @@ pub struct CompetitiveGame {
   max_players: u8,
   ball_in_play_switches: SwitchQ,
   game_state: Option<GameState>,
+  /// The phase of the current turn. Kept here as well as set as a state, since a state reads as its old value until the
+  /// run loop gets to it.
+  turn_state: TurnState,
   /// The group of each player added to the game, by player index
   player_groups: Vec<GroupHandle>,
   handle: SystemHandle,
@@ -67,6 +70,7 @@ impl CompetitiveGame {
       max_players,
       ball_in_play_switches,
       game_state: None,
+      turn_state: TurnState::Idle,
       player_groups: Vec::new(),
       handle: SystemHandle::default(),
       turn_active_at: None,
@@ -99,17 +103,18 @@ impl CompetitiveGame {
 
   fn start_turn(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    let game_state = self.game_state.as_mut().unwrap();
+    let player = self.game_state.as_ref().unwrap().current_player();
 
-    ctx.activate_system_group(&self.player_groups[game_state.current_player() as usize]);
-    ctx.metrics.set_player(game_state.current_player());
+    ctx.activate_system_group(&self.player_groups[player as usize]);
+    ctx.metrics.set_player(player);
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
-    game_state.set_current_player_turn_state(TurnState::Starting);
+    self.set_turn_state(TurnState::Starting, ctx.into());
     self.ball_served = false;
     self.draining = false;
     self.pending_drains.clear();
+    let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
     ctx.start_routine_in(
       group,
@@ -120,6 +125,11 @@ impl CompetitiveGame {
     );
 
     ctx.emit(Synchronize);
+  }
+
+  fn set_turn_state(&mut self, turn_state: TurnState, ctx: &ServiceContext) {
+    self.turn_state = turn_state;
+    ctx.for_system(self.handle).set_state(turn_state);
   }
 
   fn serve_ball(&mut self, ctx: &ServiceContext) {
@@ -133,8 +143,8 @@ impl CompetitiveGame {
 
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
-    let game_state = self.game_state.as_mut().unwrap();
-    game_state.set_current_player_turn_state(TurnState::Active);
+    self.set_turn_state(TurnState::Active, ctx);
+    let game_state = self.game_state.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
     ctx.for_system(self.handle).emit(TurnActive::new(
       game_state.current_player(),
@@ -189,11 +199,11 @@ impl CompetitiveGame {
 
   fn transition_turn_to_ending(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
-    let game_state = self.game_state.as_mut().unwrap();
-    game_state.set_current_player_turn_state(TurnState::Ending);
+    self.set_turn_state(TurnState::Ending, ctx);
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
+    let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
     ctx.for_system(self.handle).start_routine_in(
       group,
@@ -265,6 +275,7 @@ impl CompetitiveGame {
     }
     self.game_state = None;
     self.game_ending = false;
+    self.set_turn_state(TurnState::Idle, ctx);
     ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 
@@ -300,36 +311,34 @@ impl System for CompetitiveGame {
       return;
     }
 
-    if let Some(game_state) = &mut self.game_state {
-      match game_state.current_player_turn_state() {
-        TurnState::Starting if !self.ball_served => {
-          if event.is::<RoutineCompleted<TurnStarting>>() {
-            self.serve_ball(ctx.into());
-          }
+    match self.turn_state {
+      TurnState::Idle => {}
+      TurnState::Starting if !self.ball_served => {
+        if event.is::<RoutineCompleted<TurnStarting>>() {
+          self.serve_ball(ctx.into());
         }
-        TurnState::Starting => {
-          if event.is::<BallEnteredPlay>() {
-            log::debug!(target: "frontbox::game_manager", "Active caused by ball entering play");
-            self.transition_turn_to_active(ctx.into());
-          } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
-            && self.ball_in_play_switches.matches(&e.switch)
-          {
-            log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
-            self.transition_turn_to_active(ctx.into());
-          }
+      }
+      TurnState::Starting => {
+        if event.is::<BallEnteredPlay>() {
+          log::debug!(target: "frontbox::game_manager", "Active caused by ball entering play");
+          self.transition_turn_to_active(ctx.into());
+        } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
+          && self.ball_in_play_switches.matches(&e.switch)
+        {
+          log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
+          self.transition_turn_to_active(ctx.into());
         }
-        TurnState::Active => {
-          if let Some(BallsExitedPlay { count, in_play }) = event.downcast_ref::<BallsExitedPlay>()
-          {
-            self.drained(*count, *in_play, ctx.into());
-          } else if let Some(done) = event.downcast_ref::<RoutineCompleted<BallDraining>>() {
-            self.drain_decided(done, ctx.into());
-          }
+      }
+      TurnState::Active => {
+        if let Some(BallsExitedPlay { count, in_play }) = event.downcast_ref::<BallsExitedPlay>() {
+          self.drained(*count, *in_play, ctx.into());
+        } else if let Some(done) = event.downcast_ref::<RoutineCompleted<BallDraining>>() {
+          self.drain_decided(done, ctx.into());
         }
-        TurnState::Ending => {
-          if event.is::<RoutineCompleted<TurnEnding>>() {
-            self.advance_turn(ctx.into());
-          }
+      }
+      TurnState::Ending => {
+        if event.is::<RoutineCompleted<TurnEnding>>() {
+          self.advance_turn(ctx.into());
         }
       }
     }
@@ -383,7 +392,7 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn quit_game(&mut self, ctx: &ServiceContext) {
-    let Some(game_state) = self.game_state.as_mut() else {
+    let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
       return;
     };
     if self.game_ending {
@@ -394,9 +403,9 @@ impl GameManagement for CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Quitting game");
     ctx.metrics.inc(&metrics::GAMES_QUIT);
     // the turn is over without a TurnEnding; its group's systems stop as it deactivates
-    game_state.set_current_player_turn_state(TurnState::Ending);
+    self.set_turn_state(TurnState::Ending, ctx);
     let ctx = &ctx.for_system(self.handle);
-    ctx.deactivate_system_group(&self.player_groups[game_state.current_player() as usize]);
+    ctx.deactivate_system_group(&self.player_groups[player as usize]);
     ctx.metrics.flush();
     self.start_game_ending(GameEndReason::Quit, ctx.into());
   }
@@ -421,12 +430,6 @@ impl GameManagement for CompetitiveGame {
 
   fn game_state(&self) -> Option<&GameState> {
     self.game_state.as_ref()
-  }
-
-  fn turn_state(&self) -> Option<&TurnState> {
-    self
-      .game_state()
-      .map(|state| state.current_player_turn_state())
   }
 
   fn clear_multiplier(&mut self) {
@@ -596,7 +599,7 @@ mod tests {
     let endings = f.game_endings();
     assert_eq!(endings.len(), 1);
     assert_eq!(endings[0].reason, GameEndReason::Quit);
-    assert_eq!(f.game.turn_state(), Some(&TurnState::Ending));
+    assert_eq!(f.game.turn_state, TurnState::Ending);
   }
 
   #[test]
@@ -653,6 +656,6 @@ mod tests {
     assert_eq!(started(&mut f), vec![0]);
 
     f.event(done(draining(1, 0), RoutineCompletion::AllSteps));
-    assert_eq!(f.game.turn_state(), Some(&TurnState::Ending));
+    assert_eq!(f.game.turn_state, TurnState::Ending);
   }
 }

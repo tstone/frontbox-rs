@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use frontbox::prelude::*;
 
 use crate::ball_management::{BallManager, Launch};
-use crate::{BallDraining, GameManager, TurnActive, TurnState, configs, metrics};
+use crate::{BallDraining, TurnActive, TurnState, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
@@ -180,11 +180,7 @@ impl System for BallSaveSystem {
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    ctx
-      .get::<GameManager>()
-      .and_then(|manager| manager.turn_state().cloned())
-      .map(|state| state == TurnState::Starting || state == TurnState::Active)
-      .unwrap_or(false)
+    ctx.in_any_state(&[TurnState::Starting, TurnState::Active])
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
