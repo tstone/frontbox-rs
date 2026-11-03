@@ -4,8 +4,10 @@ use std::ops::Deref;
 
 use tokio::sync::mpsc;
 
+use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
+use crate::systems::routine::RoutineStart;
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
 ///
@@ -70,65 +72,13 @@ impl<'a> ServiceContext<'a> {
       .ok();
   }
 
-  // -- event interrupts --
-
-  /// An interrupt is like an event listener but with the ability to halt further processing of the event. Halting an event prevents it from being broadcast.
-  /// See [event interrupts](crate::systems::event_interrupts)
-  pub fn register_interrupt<E: Event + 'static>(&self, handle: SystemHandle, priority: u16) {
-    log::debug!(
-      "Registering interrupt for {} by {}",
-      type_name::<E>(),
-      handle.id,
-    );
-    self
-      .app_sender
-      .send(AppMessage::RegisterInterrupt(
-        handle,
-        TypeId::of::<E>(),
-        priority,
-      ))
-      .ok();
-  }
-
-  pub fn unregister_interrupt<E: Event + 'static>(&self, handle: SystemHandle) {
-    log::debug!(
-      "Unregistering interrupt for {} by {}",
-      type_name::<E>(),
-      handle.id,
-    );
-    self
-      .app_sender
-      .send(AppMessage::UnregisterInterrupt(
-        handle.id,
-        TypeId::of::<E>(),
-      ))
-      .ok();
-  }
-
   // -- Systems access --
 
   /// Lookup a system by type
   pub fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
     // Priority is given to nearness: siblings are searched first, then global
-    if let Some(found_system) = self.search_group(handle.parent_key) {
-      Some(found_system)
-    } else if handle.parent_key != ROOT_GROUP
-      && let Some(found_system) = self.search_group(ROOT_GROUP)
-    {
-      Some(found_system)
-    } else {
-      None
-    }
-  }
-
-  fn search_group<T: System + 'static>(&self, key: &'static str) -> Option<RefMut<'_, T>> {
-    if let Some(parent) = self.groups.get(key)
-      && let Some(system) = parent.get_by_type::<T>()
-    {
-      Some(system)
-    } else {
-      None
-    }
+    let found = self.groups.nearest(handle.group, TypeId::of::<T>())?;
+    self.groups.get(&found.group)?.get_by_type::<T>()
   }
 
   /// Lookup a system by type; panic if does not exist
@@ -145,15 +95,11 @@ impl<'a> ServiceContext<'a> {
 
   // --- System management ---
 
-  /// Start up a new system
-  pub fn spawn_system(
-    &self,
-    parent_key: &'static str,
-    system: impl Into<SpawnableSystemContainer>,
-  ) {
+  /// Start up a new system in `group`. Systems spawn into their own group through `SystemContext::spawn_system`.
+  pub(crate) fn spawn_system(&self, group: GroupId, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
-      .send(AppMessage::SpawnSystem(parent_key, system.into()));
+      .send(AppMessage::SpawnSystem(group, system.into()));
   }
 
   /// Despawn self and immediately spawn a new system in its place
@@ -167,33 +113,40 @@ impl<'a> ServiceContext<'a> {
     let _ = self.app_sender.send(AppMessage::DespawnSystem(handle));
   }
 
-  pub fn spawn_system_group(
+  /// Spawn a group owned by `owner`. Only reachable through `SystemContext`, so the owner is always the caller.
+  pub(crate) fn spawn_system_group(
     &self,
+    owner: SystemHandle,
     group_name: &'static str,
     systems: Vec<ChildSystemContainer>,
     active: bool,
-  ) {
-    let _ = self
-      .app_sender
-      .send(AppMessage::SpawnSystemGroup(group_name, systems, active));
+  ) -> GroupHandle {
+    let group = GroupHandle::new(GroupId::next(), group_name);
+    let _ = self.app_sender.send(AppMessage::SpawnSystemGroup(
+      owner,
+      group.clone(),
+      systems,
+      active,
+    ));
+    group
   }
 
-  pub fn despawn_system_group(&self, group_name: &'static str) {
+  pub fn despawn_system_group(&self, group: GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DespawnSystemGroup(group_name));
+      .send(AppMessage::DespawnSystemGroup(group.id()));
   }
 
-  pub fn activate_system_group(&self, group_name: &'static str) {
+  pub fn activate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::ActivateSystemGroup(group_name));
+      .send(AppMessage::ActivateSystemGroup(group.id()));
   }
 
-  pub fn deactivate_system_group(&self, group_name: &'static str) {
+  pub fn deactivate_system_group(&self, group: &GroupHandle) {
     let _ = self
       .app_sender
-      .send(AppMessage::DeactivateSystemGroup(group_name));
+      .send(AppMessage::DeactivateSystemGroup(group.id()));
   }
 
   // --- Cues ---
@@ -232,6 +185,43 @@ impl<'a> ServiceContext<'a> {
 
   pub fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
     let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
+  }
+
+  // --- Routines ---
+
+  /// Starting, completing and halting need the caller's identity, so they're only public through `SystemContext`
+  /// Participants are looked up from `scope`.
+  pub(crate) fn start_routine<E: Event + Clone>(
+    &self,
+    origin: SystemHandle,
+    scope: GroupId,
+    routine: E,
+  ) {
+    let _ = self.app_sender.send(AppMessage::StartRoutine(RoutineStart {
+      origin,
+      scope,
+      type_id: TypeId::of::<E>(),
+      name: type_name::<E>(),
+      routine: Box::new(routine),
+      into_started: RoutineStarted::<E>::from_routine,
+      into_completed: RoutineCompleted::<E>::from_routine,
+    }));
+  }
+
+  pub(crate) fn report_activity_changed(&self, handle: SystemHandle) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::SystemActivityChanged(handle));
+  }
+
+  pub(crate) fn complete_routine_step(&self, handle: SystemHandle, type_id: TypeId) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::CompleteRoutineStep(handle, type_id));
+  }
+
+  pub(crate) fn halt_routine(&self, handle: SystemHandle, type_id: TypeId) {
+    let _ = self.app_sender.send(AppMessage::HaltRoutine(handle, type_id));
   }
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {

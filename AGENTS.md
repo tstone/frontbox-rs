@@ -27,11 +27,14 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 
 ### Events and cues
 
+- Name events in the past tense (`BallSaved`), and routine payloads in the present progressive for what's going on
+  while they run (`TurnEnding`).
+- Say "complete" rather than "finish" for something that runs to an end, such as a routine or one of its steps
+  (`RoutineCompleted`, `complete_routine_step`).
 - Cues a system sends to itself are private and live in the same file as the system.
 - Public events for a module are centralized in that module's `mod.rs`, not spread across system files.
-- Only halt an event with an interrupt when there is a specific reason it must not reach other systems. A halted event
-  is invisible to everything downstream, including systems that are hard to anticipate (audits, switch hit counts, the
-  console), so the default is to let it through.
+- An event always reaches every active system; nothing can stop it. When systems need the chance to change what
+  happens next (saving a drain, extending a turn), make that a routine they take part in, and have them halt it.
 
 ## Ball Management (`frontbox-pinball/src/ball_management`)
 
@@ -40,5 +43,8 @@ Private methods may take `&SystemContext`. When calling a public method from ins
 - Ball counts are derived from the trough's reported occupancy, not kept as running counters that drift when an event
   is halted, an eject fails, or a drain is missed. Consumers read `BallsExitedPlay.in_play` rather than keeping their
   own counts.
-- Ball save is a deliberate exception to letting events through: while active it halts the `BallsExitedPlay` events it
-  saves, since a saved drain is treated as not having happened. It emits `BallSaved` for anything that needs to know.
+- Ball management reports drains but doesn't decide what they mean. During a turn, the game manager runs the
+  `BallDraining` routine for each drain. Systems that can save a drain (ball save, outlane saves, extra balls) are its
+  participants, and halt it when they save one; the app lists them in the order they get the chance.
+- `BallsExitedPlay` includes drains that are then saved. Anything that should only react to drains that stand (a
+  multiball ending) watches `RoutineCompleted<BallDraining>` for `RoutineCompletion::AllSteps` instead.

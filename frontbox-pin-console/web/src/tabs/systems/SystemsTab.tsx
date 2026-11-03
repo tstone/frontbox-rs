@@ -15,13 +15,13 @@ type Node = GroupNode | SystemNode
 export default function SystemsTab() {
   const groups = createMemo<GroupNode[]>(() =>
     machine.groups.map((group) => ({
-      id: `group:${group.key}`,
-      label: groupLabel(group.key),
+      id: `group:${group.id}`,
+      label: groupLabel(group.id, group.name),
       kind: 'group',
       group,
       children: group.systems.map((system) => ({
         // include the group: systems spawned into several groups (e.g. one per player) can share an id
-        id: `system:${group.key}:${system.id}`,
+        id: `system:${group.id}:${system.id}`,
         label: shortName(system.name),
         kind: 'system',
         group,
@@ -106,6 +106,13 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
               <TreeView.NodeProvider node={child} indexPath={[...props.indexPath, index()]}>
                 <TreeView.Item classList={{ inactive: !child.system.active }} title={child.system.name}>
                   <TreeView.ItemText>{child.label}</TreeView.ItemText>
+                  <For each={routinesHeldBy(child.group.id, child.system.id)}>
+                    {(routine) => (
+                      <span class="routine-tag" title={`Taking its step in ${routine.routine}`}>
+                        {shortName(routine.routine)}
+                      </span>
+                    )}
+                  </For>
                   <Show when={!child.system.active}>
                     <span class="inactive-tag">inactive</span>
                   </Show>
@@ -119,18 +126,23 @@ function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
   )
 }
 
+/** Routines whose current step belongs to the system */
+function routinesHeldBy(group: number, id: number) {
+  return machine.routines.filter((r) => r.current?.id === id && r.current.group === group)
+}
+
 function GroupDetail(props: { group: SystemGroup }) {
   return (
     <article class="detail">
       <h2>
-        {groupLabel(props.group.key)}
+        {groupLabel(props.group.id, props.group.name)}
         <span class={`badge ${props.group.active ? 'ok' : 'warn'}`}>{props.group.active ? 'Active' : 'Inactive'}</span>
       </h2>
       <dl>
         <dt>Kind</dt>
         <dd>System group</dd>
-        <dt>Key</dt>
-        <dd class="mono">{props.group.key}</dd>
+        <dt>ID</dt>
+        <dd class="mono">{props.group.id}</dd>
         <dt>Systems</dt>
         <dd>{props.group.systems.length}</dd>
       </dl>

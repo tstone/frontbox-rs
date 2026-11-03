@@ -20,7 +20,6 @@
 //! ## What Systems Do
 //!
 //! - [Emit events](crate::systems::event)
-//! - [Interrupt events](crate::systems::event_interrupts)
 //! - [Schedule cues](crate::systems::cue)
 //! - [Interact with other systems](#services)
 //! - [Become inactive](#active)
@@ -159,7 +158,8 @@ pub mod cue;
 mod cue_ext;
 mod cue_timeline_builder;
 pub mod event;
-pub mod event_interrupts;
+mod group_handle;
+pub mod routine;
 mod service_context;
 mod system;
 mod system_container;
@@ -173,7 +173,8 @@ pub use cue::*;
 pub use cue_ext::*;
 pub use cue_timeline_builder::*;
 pub use event::*;
-pub use event_interrupts::InterruptResult;
+pub use group_handle::*;
+pub use routine::{RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted};
 pub use service_context::*;
 pub use system::*;
 pub use system_container::*;
@@ -187,8 +188,10 @@ use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use indexmap::IndexMap;
+
 pub struct Systems {
-  systems: HashMap<u64, RefCell<SystemContainer>>,
+  systems: IndexMap<u64, RefCell<SystemContainer>>,
   type_to_id: HashMap<TypeId, u64>,
   id_to_type: HashMap<u64, TypeId>,
 }
@@ -196,7 +199,7 @@ pub struct Systems {
 impl Systems {
   pub fn new() -> Self {
     Self {
-      systems: HashMap::new(),
+      systems: IndexMap::new(),
       type_to_id: HashMap::new(),
       id_to_type: HashMap::new(),
     }
@@ -218,7 +221,7 @@ impl Systems {
   }
 
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
-    let result = self.systems.remove(&system_id);
+    let result = self.systems.shift_remove(&system_id);
     if let Some(system_type) = self.id_to_type.remove(&system_id) {
       self.type_to_id.remove(&system_type);
     }
@@ -228,6 +231,10 @@ impl Systems {
   pub fn get_id<T: System + 'static>(&self) -> Option<u64> {
     let type_id = TypeId::of::<T>();
     self.type_to_id.get(&type_id).copied()
+  }
+
+  pub(crate) fn id_by_type_id(&self, type_id: &TypeId) -> Option<u64> {
+    self.type_to_id.get(type_id).copied()
   }
 
   pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
@@ -269,7 +276,7 @@ impl Debug for Systems {
           .systems
           .iter()
           .map(|(id, cell)| (id, cell.borrow().name().to_string()))
-          .collect::<HashMap<_, _>>(),
+          .collect::<IndexMap<_, _>>(),
       )
       .finish()
   }

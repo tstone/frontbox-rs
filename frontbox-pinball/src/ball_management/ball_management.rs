@@ -14,8 +14,8 @@ use crate::ball_management::StandardBuilder;
 ///   failed eject, or missed drain can't make them drift. Balls that appear unexpectedly are reconciled, not reported
 ///   as drains.
 /// - **Reporting drains.** Emits `BallsExitedPlay` with how many balls are still in play. It does not decide what a drain
-///   means: ending a turn, saving a ball, or ending a multiball belong to the systems listening. Halting a
-///   `BallsExitedPlay` event must not affect ball management's own state.
+///   means: saving a ball is up to the participants of the game manager's `BallDraining` routine, and ending a turn
+///   or a multiball to the systems watching how it completes.
 /// - **Putting balls into play.** Owns the queue of balls requested. Balls are launched one at a time, spaced so the
 ///   hardware can receive each (e.g. waiting for the plunge lane to clear). Callers state intent with `Launch`, and the
 ///   implementation adapts it to the hardware, so callers never need to know what the machine has. Each request

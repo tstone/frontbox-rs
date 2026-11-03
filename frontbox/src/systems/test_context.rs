@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::any::TypeId;
 
 use tokio::sync::mpsc;
 
@@ -17,7 +17,7 @@ impl TestContext {
   pub fn insert_system(&mut self, system: impl Into<SystemContainer>) {
     self
       .groups
-      .get_mut(ROOT_GROUP)
+      .get_mut(&ROOT_GROUP)
       .unwrap()
       .insert(system.into());
   }
@@ -75,6 +75,34 @@ impl TestContext {
     events
   }
 
+  /// Routines started up to this point. Downcast to check them.
+  pub fn routines_started(&mut self) -> Vec<Box<dyn Event>> {
+    self
+      .app_messages()
+      .into_iter()
+      .filter_map(|msg| match msg {
+        AppMessage::StartRoutine(start) => Some(start.routine),
+        _ => None,
+      })
+      .collect()
+  }
+
+  /// Whether a step of the routine for `E` was completed since the last check
+  pub fn routine_step_completed<E: Event>(&mut self) -> bool {
+    self
+      .app_messages()
+      .into_iter()
+      .any(|msg| matches!(msg, AppMessage::CompleteRoutineStep(_, type_id) if type_id == TypeId::of::<E>()))
+  }
+
+  /// Whether the routine for `E` was halted since the last check
+  pub fn routine_halted<E: Event>(&mut self) -> bool {
+    self
+      .app_messages()
+      .into_iter()
+      .any(|msg| matches!(msg, AppMessage::HaltRoutine(_, type_id) if type_id == TypeId::of::<E>()))
+  }
+
   /// Trace events sent through the run loop up to this point
   pub fn traces(&mut self) -> Vec<TraceEvent> {
     self
@@ -91,8 +119,8 @@ impl TestContext {
 impl Default for TestContext {
   fn default() -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
-    let mut groups = HashMap::new();
-    groups.insert(ROOT_GROUP, SystemGroup::new());
+    let mut groups = Groups::new();
+    groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
 
     // as in `App::run`, so config changes emit `ConfigChanged`
     let mut base = AppState::default();

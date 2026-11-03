@@ -23,31 +23,32 @@ pub trait AppTracer {
 pub enum TraceEvent {
   Event {
     type_name: &'static str,
-    interrupts: Vec<InterruptEvaluation>,
     event: Option<serde_json::Value>,
     sender: Option<u64>,
   },
   SystemSpawned {
     id: u64,
     name: &'static str,
-    parent_key: &'static str,
+    group: GroupId,
   },
   SystemDespawned {
     id: u64,
-    parent_key: &'static str,
+    group: GroupId,
   },
   SystemGroupSpawned {
-    key: &'static str,
+    id: GroupId,
+    name: &'static str,
   },
   SystemGroupDespawned {
-    key: &'static str,
+    id: GroupId,
+    name: &'static str,
   },
   SystemActiveStateChange {
     id: u64,
     active: bool,
   },
   SystemGroupActiveStateChange {
-    key: &'static str,
+    id: GroupId,
     active: bool,
   },
   DriverStateChange {
@@ -73,14 +74,61 @@ pub enum TraceEvent {
   ConfigChange {
     config: ConfigView,
   },
+  RoutineStarted {
+    routine: &'static str,
+    origin: u64,
+  },
+  /// A routine was started while one of the same type was already running, so the start was ignored
+  RoutineRejected {
+    routine: &'static str,
+    origin: u64,
+    running_origin: u64,
+  },
+  /// The routine was handed to a participant
+  RoutineStep {
+    routine: &'static str,
+    participant: u64,
+    /// The participant's group. Copies of a system in several groups share an id.
+    group: GroupId,
+  },
+  RoutineSkipped {
+    routine: &'static str,
+    participant: &'static str,
+    reason: RoutineSkipReason,
+  },
+  /// The routine's origin is inactive, so it won't move on until the origin is active again
+  RoutinePaused {
+    routine: &'static str,
+  },
+  RoutineResumed {
+    routine: &'static str,
+  },
+  /// The current participant halted the routine. It completes once its origin is active.
+  RoutineHalted {
+    routine: &'static str,
+    participant: u64,
+    group: GroupId,
+  },
+  RoutineCompleted {
+    routine: &'static str,
+    origin: u64,
+    completion: RoutineCompletion,
+  },
+  /// The routine's origin was despawned before it completed
+  RoutineAbandoned {
+    routine: &'static str,
+    origin: u64,
+  },
   // TODO: some kind of game-specific state push that is JSON encodable
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// Why a routine participant didn't get a step
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct InterruptEvaluation {
-  pub interrupter: u64,
-  pub result: InterruptResult,
+pub enum RoutineSkipReason {
+  /// No instance in reach of the origin
+  Missing,
+  Inactive,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

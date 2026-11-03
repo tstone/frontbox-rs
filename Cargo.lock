@@ -1060,7 +1060,6 @@ name = "frontbox-pin-console"
 version = "0.1.0"
 dependencies = [
  "axum",
- "env_logger",
  "frontbox",
  "frontbox-metrics",
  "frontbox-pinball",

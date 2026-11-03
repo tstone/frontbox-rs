@@ -15,10 +15,9 @@ the build warns and embeds the existing `web/dist`. Set `FRONTBOX_SKIP_WEB_BUILD
 
 ## Develop
 
-Run a machine (or the preview example, a virtual machine that plays a scripted game on a loop) alongside the Vite dev server:
+Run a machine with the console attached (it serves on port 3000 by default) alongside the Vite dev server:
 
 ```bash
-cargo run --example preview   # console server on :3000
 cd web && npm run dev         # http://localhost:5173
 ```
 

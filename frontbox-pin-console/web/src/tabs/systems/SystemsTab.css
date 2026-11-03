@@ -31,6 +31,20 @@
   line-height: 1.1rem;
 }
 
+.systems-tab .routine-tag {
+  margin-left: auto;
+  padding: 0 0.3rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 0.6875rem;
+  line-height: 1.1rem;
+}
+
+.systems-tab .routine-tag + .inactive-tag {
+  margin-left: 0.5rem;
+}
+
 .systems-tab .inactive-tag + .count {
   margin-left: 0.5rem;
 }

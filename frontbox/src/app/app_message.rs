@@ -5,27 +5,33 @@ use fast_protocol::SwitchState;
 
 use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
+use crate::systems::routine::RoutineStart;
 
 pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
-  RegisterInterrupt(SystemHandle, TypeId, u16),
-  UnregisterInterrupt(u64, TypeId),
-  UnregisterAllBySystem(u64),
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
   ConfigChanged(&'static str),
   DriverModeChange(usize, DriverMode),
-  SpawnSystem(&'static str, SpawnableSystemContainer),
+  SpawnSystem(GroupId, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
-  SpawnSystemGroup(&'static str, Vec<ChildSystemContainer>, bool),
-  DespawnSystemGroup(&'static str),
-  ActivateSystemGroup(&'static str),
-  DeactivateSystemGroup(&'static str),
+  /// Spawn a group owned by the system
+  SpawnSystemGroup(SystemHandle, GroupHandle, Vec<ChildSystemContainer>, bool),
+  DespawnSystemGroup(GroupId),
+  ActivateSystemGroup(GroupId),
+  DeactivateSystemGroup(GroupId),
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
+  StartRoutine(RoutineStart),
+  CompleteRoutineStep(SystemHandle, TypeId),
+  HaltRoutine(SystemHandle, TypeId),
+  /// Hand a started routine to its first participant, once its `RoutineStarted` has gone out
+  BeginRoutine(TypeId),
+  /// A system's own `is_active` changed, noticed while handling something else
+  SystemActivityChanged(SystemHandle),
   TracerEvent(TraceEvent),
 }
 
@@ -35,17 +41,6 @@ impl Debug for AppMessage {
       AppMessage::EmitEvent(sender, event) => {
         write!(f, "EmitEvent({:?}, {})", sender, event.type_name)
       }
-      AppMessage::RegisterInterrupt(handle, type_id, priority) => {
-        write!(
-          f,
-          "RegisterInterrupt({}, {:?}, {})",
-          handle.id, type_id, priority
-        )
-      }
-      AppMessage::UnregisterInterrupt(id, type_id) => {
-        write!(f, "UnregisterInterrupt({}, {:?})", id, type_id)
-      }
-      AppMessage::UnregisterAllBySystem(id) => write!(f, "UnregisterAllBySystem({})", id),
       AppMessage::Shutdown(_) => write!(f, "Shutdown"),
       AppMessage::SwitchStateChange(index, state) => {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
@@ -55,19 +50,27 @@ impl Debug for AppMessage {
       AppMessage::DriverModeChange(driver, mode) => {
         write!(f, "DriverModeChange({}, {:?})", driver, mode)
       }
-      AppMessage::SpawnSystem(parent_key, _) => write!(f, "SpawnSystem({:?})", parent_key),
+      AppMessage::SpawnSystem(group, _) => write!(f, "SpawnSystem({})", group),
       AppMessage::ReplaceSystem(handle, _) => {
-        write!(f, "ReplaceSystem({}, {})", handle.id, handle.parent_key)
+        write!(f, "ReplaceSystem({}, {})", handle.id, handle.group)
       }
       AppMessage::DespawnSystem(handle) => {
-        write!(f, "DespawnSystem({}, {})", handle.id, handle.parent_key)
+        write!(f, "DespawnSystem({}, {})", handle.id, handle.group)
       }
-      AppMessage::SpawnSystemGroup(name, _, exclusive) => {
-        write!(f, "SpawnSystemGroup({}, exclusive={})", name, exclusive)
+      AppMessage::SpawnSystemGroup(owner, group, _, exclusive) => {
+        write!(
+          f,
+          "SpawnSystemGroup({} {}, owner={}:{}, exclusive={})",
+          group.id(),
+          group.name(),
+          owner.group,
+          owner.id,
+          exclusive
+        )
       }
-      AppMessage::DespawnSystemGroup(name) => write!(f, "DespawnSystemGroup({})", name),
-      AppMessage::ActivateSystemGroup(name) => write!(f, "ActivateSystemGroup({})", name),
-      AppMessage::DeactivateSystemGroup(name) => write!(f, "DeactivateSystemGroup({})", name),
+      AppMessage::DespawnSystemGroup(id) => write!(f, "DespawnSystemGroup({})", id),
+      AppMessage::ActivateSystemGroup(id) => write!(f, "ActivateSystemGroup({})", id),
+      AppMessage::DeactivateSystemGroup(id) => write!(f, "DeactivateSystemGroup({})", id),
       AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
         write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
       }
@@ -75,6 +78,15 @@ impl Debug for AppMessage {
         write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
+      AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
+      AppMessage::CompleteRoutineStep(handle, type_id) => {
+        write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
+      }
+      AppMessage::HaltRoutine(handle, type_id) => write!(f, "HaltRoutine({}, {:?})", handle.id, type_id),
+      AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
+      AppMessage::SystemActivityChanged(handle) => {
+        write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
+      }
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }
