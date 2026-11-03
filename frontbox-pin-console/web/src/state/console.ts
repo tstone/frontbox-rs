@@ -134,7 +134,7 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
 
   if ('SystemGroupSpawned' in event) {
     const { id, name } = event.SystemGroupSpawned
-    if (!group(id)) s.groups.push({ id, name, active: true, systems: [] })
+    if (!group(id)) s.groups.push({ id, name, active: true, systems: [], states: {} })
   } else if ('SystemGroupDespawned' in event) {
     const { id } = event.SystemGroupDespawned
     s.groups = s.groups.filter((g) => g.id !== id)
@@ -142,6 +142,15 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     const { id, active } = event.SystemGroupActiveStateChange
     const g = group(id)
     if (g) g.active = active
+  } else if ('StateChange' in event) {
+    const { group: groupId, name, value } = event.StateChange
+    const g = group(groupId)
+    if (g) {
+      if (value === null) delete g.states[name]
+      else g.states[name] = value
+    }
+    // not logged: the `StateChanged` event it comes with is
+    return
   } else if ('SystemSpawned' in event) {
     const { id, name, group: groupId } = event.SystemSpawned
     group(groupId)?.systems.push({ id, name, active: true, recent_events: [] })

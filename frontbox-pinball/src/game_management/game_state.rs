@@ -1,13 +1,10 @@
 use std::collections::HashMap;
 
-use crate::TurnState;
-
 pub enum GameState {
   Competitive {
     player_count: u8,
     max_players: u8,
     current_player: u8,
-    current_turn_state: TurnState,
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
     player_scores: Vec<u32>,
@@ -19,7 +16,6 @@ pub enum GameState {
     max_players: u8,
     current_player: u8,
     current_team: u8,
-    current_turn_state: TurnState,
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
     player_scores: Vec<u32>,
@@ -32,32 +28,9 @@ impl GameState {
       player_count: 0,
       max_players,
       current_player: 0,
-      current_turn_state: TurnState::Starting,
       player_turns: vec![0; max_players as usize],
       player_multiplier: vec![1.0; max_players as usize],
       player_scores: vec![0; max_players as usize],
-    }
-  }
-
-  pub fn current_player_turn_state(&self) -> &TurnState {
-    match self {
-      GameState::Competitive {
-        current_turn_state, ..
-      } => current_turn_state,
-      GameState::Cooperative {
-        current_turn_state, ..
-      } => current_turn_state,
-    }
-  }
-
-  pub(crate) fn set_current_player_turn_state(&mut self, turn_state: TurnState) {
-    match self {
-      GameState::Competitive {
-        current_turn_state, ..
-      } => *current_turn_state = turn_state,
-      GameState::Cooperative {
-        current_turn_state, ..
-      } => *current_turn_state = turn_state,
     }
   }
 

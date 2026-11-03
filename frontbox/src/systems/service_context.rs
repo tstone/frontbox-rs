@@ -8,6 +8,7 @@ use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
 use crate::systems::routine::RoutineStart;
+use crate::systems::state::{StoredState, nearest_state};
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
 ///
@@ -206,6 +207,22 @@ impl<'a> ServiceContext<'a> {
       into_started: RoutineStarted::<E>::from_routine,
       into_completed: RoutineCompleted::<E>::from_routine,
     }));
+  }
+
+  // --- States ---
+
+  /// The current value of the state `S`, as seen from `handle`'s group: as set in that group, then the root. The
+  /// default if neither has set it. See [states](crate::systems::state)
+  pub fn state<S: State>(&self, handle: SystemHandle) -> S {
+    nearest_state::<S>(self.groups, handle.group)
+  }
+
+  /// Setting needs the caller's identity, since the first to set a state owns it, so it's only public through
+  /// `SystemContext`
+  pub(crate) fn set_state<S: State>(&self, owner: SystemHandle, value: S) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::SetState(StoredState::new(owner, value)));
   }
 
   pub(crate) fn report_activity_changed(&self, handle: SystemHandle) {

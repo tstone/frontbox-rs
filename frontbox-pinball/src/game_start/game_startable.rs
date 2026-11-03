@@ -1,7 +1,7 @@
 use frontbox::prelude::*;
 use frontbox::tags::Cabinet;
 
-use crate::{GameEnded, GameManagementExt, GameManager, GameStarted};
+use crate::{GameEnded, GameManagementExt, GameStarted, PlayerEntry};
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
@@ -62,11 +62,8 @@ impl Default for GameStartable {
 
 impl System for GameStartable {
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    // active if game is startable or player addable
-    ctx
-      .get::<GameManager>()
-      .map(|gm| gm.is_player_addable())
-      .unwrap_or(false)
+    // active if a game can be started or a player added
+    ctx.in_state(PlayerEntry::Open)
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {

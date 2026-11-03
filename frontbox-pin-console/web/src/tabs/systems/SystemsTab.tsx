@@ -146,6 +146,19 @@ function GroupDetail(props: { group: SystemGroup }) {
         <dt>Systems</dt>
         <dd>{props.group.systems.length}</dd>
       </dl>
+      <h3>States</h3>
+      <Show when={Object.keys(props.group.states).length > 0} fallback={<p class="empty">No states set in this group.</p>}>
+        <dl>
+          <For each={Object.entries(props.group.states)}>
+            {([name, value]) => (
+              <>
+                <dt title={name}>{shortName(name)}</dt>
+                <dd class="mono">{JSON.stringify(value)}</dd>
+              </>
+            )}
+          </For>
+        </dl>
+      </Show>
     </article>
   )
 }

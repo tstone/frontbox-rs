@@ -1,0 +1,16 @@
+use frontbox::prelude::*;
+
+/// The current phase of the game, set by the game manager. Read it with `ctx.state::<GamePhase>()`, or watch
+/// `StateChanged<GamePhase>`.
+#[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum GamePhase {
+  /// No game is started.
+  #[default]
+  None,
+  /// The game has started, but its first ball isn't in play yet.
+  Starting,
+  /// The first ball is in play, until play is over.
+  Active,
+  /// Play is over, and the `GameEnding` routine runs. The game is still started.
+  Ending,
+}

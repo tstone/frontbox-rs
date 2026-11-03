@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox::prelude::*;
 
-use crate::{CompetitiveGame, GameEnding, GameState, TurnEnding, TurnStarting, TurnState};
+use crate::{CompetitiveGame, GameEnding, GameState, TurnEnding, TurnStarting};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
@@ -15,7 +15,6 @@ pub trait GameManagement: SpawnableSystem {
   fn is_game_started(&self) -> bool;
 
   fn game_state(&self) -> Option<&GameState>;
-  fn turn_state(&self) -> Option<&TurnState>;
 
   /// Add points to the current player/team
   fn add_points(&mut self, points: u32, ctx: &ServiceContext);

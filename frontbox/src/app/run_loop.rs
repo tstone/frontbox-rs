@@ -15,6 +15,7 @@ use crate::prelude::app_tracer::*;
 use crate::prelude::*;
 use crate::systems::SystemContainer;
 use crate::systems::routine::Routines;
+use crate::systems::state::{clear_states_owned_by, set_state};
 
 pub async fn run(
   mut base: AppState,
@@ -157,6 +158,17 @@ pub async fn run(
           }
           AppMessage::SystemActivityChanged(handle) => {
             routines.system_activation_changed(&[handle], &groups, &base, &app_sender, &tracer_txs);
+          }
+          AppMessage::SetState(state) => {
+            let (owner, name, value) = (state.owner, state.name, (state.to_json)(state.value.as_ref()));
+            if let Some(changed) = set_state(&mut groups, state) {
+              tracer_txs.send(TraceEvent::StateChange {
+                group: owner.group,
+                name,
+                value: Some(value),
+              });
+              emit_event(Some(owner.id), changed, &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
+            }
           }
           AppMessage::TracerEvent(event) => {
             tracer_txs.send(event);
@@ -525,6 +537,17 @@ fn despawn_system(
 
     let event = SystemDespawned::new(handle.id, handle.group);
     let _ = app_sender.send(EmitEvent(None, EventBox::new(event)));
+  }
+
+  for state in clear_states_owned_by(groups, handle) {
+    tracer_txs.send(TraceEvent::StateChange {
+      group: handle.group,
+      name: state.name,
+      value: None,
+    });
+    if let Some(changed) = state.changed_to_default() {
+      let _ = app_sender.send(EmitEvent(Some(handle.id), changed));
+    }
   }
 
   let mut despawned = vec![handle];

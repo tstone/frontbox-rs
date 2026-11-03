@@ -350,6 +350,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
           name,
           active: true,
           systems: Vec::new(),
+          states: BTreeMap::new(),
         });
       }
     }
@@ -358,6 +359,20 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       if let Some(group) = groups.iter_mut().find(|g| g.id == *id) {
         group.active = *active;
       }
+    }
+    TraceEvent::StateChange {
+      group: group_id,
+      name,
+      value,
+    } => {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
+        match value {
+          Some(value) => group.states.insert(name, value.clone()),
+          None => group.states.remove(name),
+        };
+      }
+      // not logged: the `StateChanged` event it comes with is
+      return;
     }
     TraceEvent::SystemSpawned {
       id,
@@ -503,7 +518,7 @@ fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox::prelude::{Config, Ranges};
+  use frontbox::prelude::{Config, ROOT_GROUP, Ranges};
 
   fn turns(value: i64) -> ConfigView {
     let config = Config::new("Turns", "", 3u8, Ranges::u8(1, 5));
@@ -524,6 +539,32 @@ mod tests {
       ConfigDomainValue::Int(4)
     );
     assert!(state.snapshot.log.is_empty());
+  }
+
+  #[test]
+  fn state_traces_update_their_group_without_logging() {
+    let hub = ConsoleHub::new();
+    let group = ROOT_GROUP;
+    hub.ingest(TraceEvent::SystemGroupSpawned {
+      id: group,
+      name: "root",
+    });
+    let set = |value| TraceEvent::StateChange {
+      group,
+      name: "Phase",
+      value,
+    };
+
+    hub.ingest(set(Some("Active".into())));
+    {
+      let state = hub.state.lock().unwrap();
+      assert_eq!(state.snapshot.groups[0].states["Phase"], "Active");
+      assert_eq!(state.snapshot.log.len(), 1, "only the group spawn");
+    }
+
+    hub.ingest(set(None));
+    let state = hub.state.lock().unwrap();
+    assert!(state.snapshot.groups[0].states.is_empty());
   }
 
   #[test]

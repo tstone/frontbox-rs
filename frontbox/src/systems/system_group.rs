@@ -34,10 +34,13 @@
 //! Groups are identified by their [`GroupId`]. The name is only for display (logs, the console), so names don't need
 //! to be unique.
 
+use std::any::TypeId;
 use std::cell::RefMut;
+use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
+use crate::systems::state::StoredState;
 
 pub struct SystemGroup {
   pub(crate) systems: Systems,
@@ -46,6 +49,8 @@ pub struct SystemGroup {
   pub(crate) name: &'static str,
   /// The system that spawned the group. The root has none.
   pub(crate) owner: Option<SystemHandle>,
+  /// States set by the group's systems. See [states](crate::systems::state)
+  pub(crate) states: HashMap<TypeId, StoredState>,
 }
 
 impl SystemGroup {
@@ -55,6 +60,7 @@ impl SystemGroup {
       active: true,
       name,
       owner: None,
+      states: HashMap::new(),
     }
   }
 

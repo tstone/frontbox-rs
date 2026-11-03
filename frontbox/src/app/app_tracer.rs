@@ -51,6 +51,12 @@ pub enum TraceEvent {
     id: GroupId,
     active: bool,
   },
+  /// A state set in the group changed value. `None` once its owner despawned, so the group no longer sets it.
+  StateChange {
+    group: GroupId,
+    name: &'static str,
+    value: Option<serde_json::Value>,
+  },
   DriverStateChange {
     driver_id: usize,
     state: DriverState,
