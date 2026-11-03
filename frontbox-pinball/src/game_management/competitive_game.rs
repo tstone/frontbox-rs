@@ -17,6 +17,10 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   3. Start game management
 ///
 /// ## Outputs
+/// When the first player is added, the game starts:
+/// - Routine: `GameStarting` - Started at the root. The first turn begins on its `RoutineCompleted`, and players can
+///   still be added while it runs.
+///
 /// Each turn goes through these, in order. The routines are started in the current player's group, so their
 /// participants can be in the player template as well as at the root.
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
@@ -35,8 +39,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///
 /// ## States
 /// Set at the root, so every group reads them:
-/// - `GamePhase` - Starting until the first ball is in play, then Active until play is over, then Ending while
-///   `GameEnding` runs.
+/// - `GamePhase` - Starting while `GameStarting` runs, then Active until play is over, then Ending while `GameEnding`
+///   runs.
 /// - `TurnPhase` - The current turn's Starting, Active, and Ending.
 /// - `PlayerEntry` - Open while a player can be added: no game is started, or the first turn is still going and the
 ///   game isn't full.
@@ -63,8 +67,8 @@ pub struct CompetitiveGame {
   draining: bool,
   /// Drains waiting for the one being decided, oldest first
   pending_drains: VecDeque<BallDraining>,
-  /// The phase of the game, kept here for the same reason as `turn_phase`. While it's `Ending`, nothing else about the
-  /// game moves on.
+  /// The phase of the game, kept here for the same reason as `turn_phase`. While it's `Starting` or `Ending`, no turn
+  /// moves on.
   game_phase: GamePhase,
 }
 
@@ -108,7 +112,14 @@ impl CompetitiveGame {
 
     ctx.metrics.begin_game();
     ctx.metrics.inc(&metrics::GAMES_STARTED);
-    sys_ctx.emit(GameStarted);
+    sys_ctx.start_routine(GameStarting);
+  }
+
+  /// `GameStarting` completed: the first turn begins
+  fn start_first_turn(&mut self, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Game started, beginning the first turn");
+    self.set_game_phase(GamePhase::Active, ctx);
+    self.start_turn(ctx);
   }
 
   fn start_turn(&mut self, ctx: &ServiceContext) {
@@ -171,9 +182,6 @@ impl CompetitiveGame {
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     self.set_turn_phase(TurnPhase::Active, ctx);
-    if self.game_phase == GamePhase::Starting {
-      self.set_game_phase(GamePhase::Active, ctx);
-    }
     let game_state = self.game_state.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
     ctx.for_system(self.handle).emit(TurnActive::new(
@@ -336,12 +344,21 @@ impl System for CompetitiveGame {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if self.game_phase == GamePhase::Ending {
-      // turn routines still running after a quit complete on their own, and are ignored
-      if let Some(done) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
-        self.end_game(done.routine.scores.clone(), ctx.into());
+    match self.game_phase {
+      GamePhase::Starting => {
+        if event.is::<RoutineCompleted<GameStarting>>() {
+          self.start_first_turn(ctx.into());
+        }
+        return;
       }
-      return;
+      GamePhase::Ending => {
+        // routines still running after a quit complete on their own, and are ignored
+        if let Some(done) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
+          self.end_game(done.routine.scores.clone(), ctx.into());
+        }
+        return;
+      }
+      GamePhase::None | GamePhase::Active => {}
     }
 
     match self.turn_phase {
@@ -380,10 +397,8 @@ impl System for CompetitiveGame {
 
 impl GameManagement for CompetitiveGame {
   fn add_player(&mut self, ctx: &ServiceContext) {
-    let mut game_started_just_now = false;
     if !self.is_game_started() {
       self.start_game(ctx);
-      game_started_just_now = true;
     }
 
     let game_state = if let Some(game_state) = &mut self.game_state {
@@ -419,10 +434,6 @@ impl GameManagement for CompetitiveGame {
       .push(svc_ctx.spawn_system_group(group_name, copy, false));
     svc_ctx.emit(PlayerAdded);
     self.update_player_entry(ctx);
-
-    if game_started_just_now {
-      self.start_turn(ctx);
-    }
   }
 
   fn quit_game(&mut self, ctx: &ServiceContext) {
@@ -436,11 +447,14 @@ impl GameManagement for CompetitiveGame {
 
     log::info!(target: "frontbox::game_manager", "Quitting game");
     ctx.metrics.inc(&metrics::GAMES_QUIT);
-    // the turn is over without a TurnEnding; its group's systems stop as it deactivates
-    self.set_turn_phase(TurnPhase::Ending, ctx);
     let ctx = &ctx.for_system(self.handle);
-    ctx.deactivate_system_group(&self.player_groups[player as usize]);
-    ctx.metrics.flush();
+    // quit during GameStarting: no turn has begun, so there's none to end
+    if self.game_phase == GamePhase::Active {
+      // the turn is over without a TurnEnding; its group's systems stop as it deactivates
+      self.set_turn_phase(TurnPhase::Ending, ctx.into());
+      ctx.deactivate_system_group(&self.player_groups[player as usize]);
+      ctx.metrics.flush();
+    }
     self.start_game_ending(GameEndReason::Quit, ctx.into());
   }
 
@@ -539,9 +553,16 @@ mod tests {
 
     /// A one-player game of `turns` turns, with the first turn's `TurnStarting` running
     fn started(turns: u8) -> Self {
+      let mut f = Self::starting(1, turns);
+      f.event(done(GameStarting, RoutineCompletion::AllSteps));
+      f
+    }
+
+    /// A game of up to `max_players` players and `turns` turns, with one player added and `GameStarting` running
+    fn starting(max_players: u8, turns: u8) -> Self {
       let ctx = TestContext::default();
       ctx.svc_ctx().config.set(&configs::TURN_COUNT, turns);
-      let mut game = CompetitiveGame::new(1, Vec::new(), SwitchQ::names([]));
+      let mut game = CompetitiveGame::new(max_players, Vec::new(), SwitchQ::names([]));
       game.on_spawn(&ctx.sys_ctx());
       game.add_player(&ctx.svc_ctx());
       Self { game, ctx }
@@ -601,9 +622,61 @@ mod tests {
   }
 
   #[test]
-  fn the_game_is_starting_until_its_first_ball_is_in_play() {
-    assert_eq!(Fixture::started(1).game.game_phase, GamePhase::Starting);
-    assert_eq!(Fixture::playing(1).game.game_phase, GamePhase::Active);
+  fn starting_a_game_starts_game_starting() {
+    let mut f = Fixture::starting(1, 1);
+    let started = f.ctx.routines_started();
+    assert_eq!(started.len(), 1);
+    assert!(started[0].is::<GameStarting>());
+    assert_eq!(f.game.game_phase, GamePhase::Starting);
+    assert_eq!(f.game.turn_phase, TurnPhase::None);
+  }
+
+  #[test]
+  fn the_first_turn_starts_once_game_starting_completes() {
+    let mut f = Fixture::starting(1, 1);
+    f.ctx.routines_started();
+
+    f.event(done(GameStarting, RoutineCompletion::AllSteps));
+    assert_eq!(f.game.game_phase, GamePhase::Active);
+    assert_eq!(f.game.turn_phase, TurnPhase::Starting);
+    let started = f.ctx.routines_started();
+    assert_eq!(started.len(), 1);
+    assert!(started[0].is::<TurnStarting>());
+  }
+
+  #[test]
+  fn players_can_be_added_while_game_starting_runs() {
+    let mut f = Fixture::starting(2, 1);
+    assert!(f.game.is_player_addable());
+    f.game.add_player(&f.ctx.svc_ctx());
+    assert_eq!(f.game.game_state().unwrap().player_count(), 2);
+    assert!(
+      f.ctx
+        .routines_started()
+        .iter()
+        .all(|routine| !routine.is::<TurnStarting>()),
+      "no turn starts while GameStarting runs"
+    );
+  }
+
+  #[test]
+  fn quitting_while_game_starting_runs_starts_game_ending() {
+    let mut f = Fixture::starting(1, 3);
+    f.game.quit_game(&f.ctx.svc_ctx());
+
+    let endings = f.game_endings();
+    assert_eq!(endings.len(), 1);
+    assert_eq!(endings[0].reason, GameEndReason::Quit);
+    assert_eq!(f.game.turn_phase, TurnPhase::None);
+
+    f.event(done(GameStarting, RoutineCompletion::AllSteps));
+    assert!(
+      f.ctx
+        .routines_started()
+        .iter()
+        .all(|routine| !routine.is::<TurnStarting>()),
+      "GameStarting completing after a quit is ignored"
+    );
   }
 
   #[test]

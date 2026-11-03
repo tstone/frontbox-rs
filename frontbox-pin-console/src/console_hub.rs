@@ -4,7 +4,7 @@ use frontbox::prelude::{
   ConfigDomainValue, Hardware, RoutineStarted, SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
-use frontbox_pinball::{GameEnded, GameStarted, TurnStarting};
+use frontbox_pinball::{GameEnded, GameStarting, TurnStarting};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -316,7 +316,7 @@ impl GameTransition {
       return None;
     };
 
-    if *name == type_name::<GameStarted>() {
+    if *name == type_name::<RoutineStarted<GameStarting>>() {
       Some(Self::Started)
     } else if *name == type_name::<GameEnded>() {
       Some(Self::Ended)

@@ -9,6 +9,12 @@
 //! who grant what is effectively an additional turns to a player when they earn an extra ball. The difference to the player is extending
 //! the current turn (receiving the extra ball on drain) versus playing an additional turn at the end of the game.
 //!
+//! # Overview: Game Start
+//! When the first player is added (e.g. by `FreePlay` or `CreditsPlay`), the game manager starts the game and starts the `GameStarting` routine at the root.
+//! 1. `RoutineStarted<GameStarting>` is broadcast first. The game is started, but no turn has begun and the playfield drivers are still off.
+//! 2. Each participant (game-start sound, start-of-game display, etc.) takes its turn. More players can still be added meanwhile.
+//! 3. Once the last participant completes its step, the first turn begins with `TurnStarting`.
+//!
 //! # Overview: Turn Flow
 //! Regardless of competitive or cooperative play, every turn has the same lifecycle:
 //! - Routine: `TurnStarting` -- before the ball is served
@@ -35,13 +41,15 @@
 //! The routines are defined in the app:
 //!
 //! ```rust,ignore
+//! app.routine::<GameStarting>(routine![GameStartPresenter]);
 //! app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
 //! app.routine::<BallDraining>(routine![BallSaveSystem, ExtraBall]);
 //! app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
 //! app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
 //! ```
 //!
-//! With no `TurnStarting` routine defined, the ball is served right away; with no `BallDraining` routine, no drain is
+//! With no `GameStarting` routine defined, the first turn begins right away; with no `TurnStarting` routine, the ball
+//! is served right away; with no `BallDraining` routine, no drain is
 //! saved; with no `TurnEnding` routine, the turn advances right away; with no `GameEnding` routine, the game ends right
 //! away.
 //!

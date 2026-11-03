@@ -31,13 +31,9 @@ A: No. Frontbox was started in [early](https://github.com/tstone/rpin/commit/97c
 
 #### Q: How is Frontbox different than \_\_\_\_\_\_\_\_ Framework?
 
-A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. This gives it a more generalized, code-centric approach to things, in which there are fewer abstractions to understand and more opportunity to swap about base functionality. You could even use it for a homebrew claw machine, so long as that machine was running on hardware Frontbox supports.
+A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. This gives it a more generalized, code-centric approach to things, in which there are fewer abstractions to understand and more opportunity to swap about base functionality. You could even for non-pinball, such as a homebrew claw machine -- really anything that was running on hardware Frontbox supports.
 
-#### Q: Does that mean I have to write everything pinball related myself?
-
-A: Frontbox includes default implementations of systems for pinball style competitive and cooperative game management, ball management, turn tracking, etc., but all of these are implementations behind interfaces that could be swapped out.
-
-#### Q: Does Frontbox work with Godot, Unity, or Unreal?
+#### Q: Does Frontbox work with Godot, Unity, or Unreal? Will it?
 
 A: Not officially. Frontbox actually started as a plugin for [Bevy](https://bevy.org/), which is where I'd look if I were wanting to make an LCD game. For the moment, the trajectory for Frontbox is to treat DMD and alphanumeric displays with first-class support for game display, and to utilize the web console for any complex management tasks.
 

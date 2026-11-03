@@ -4,7 +4,7 @@ use frontbox::prelude::*;
 /// `StateChanged<TurnPhase>`.
 #[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TurnPhase {
-  /// No turn is in progress: no game is started, or the game is over.
+  /// No turn is in progress: no game is started, `GameStarting` is still running, or the game is over.
   #[default]
   None,
   /// The start of a player's turn, while the `TurnStarting` routine runs and the ball is served, before it's in play.

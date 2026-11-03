@@ -1,19 +1,19 @@
 use frontbox::prelude::*;
 use frontbox::tags::Cabinet;
 
-use crate::{GameEnded, GameManagementExt, GameStarted, PlayerEntry};
+use crate::{GameEnded, GameManagementExt, GameStarting, PlayerEntry};
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
   lamp_driver_name: Option<&'static str>,
-  led_programs: Vec<LedProgram1d>,
+  led_program: Option<LedProgram1d>,
   flash_duration: Duration,
 }
 
 impl GameStartable {
   pub fn new() -> Self {
     Self {
-      led_programs: Vec::new(),
+      led_program: None,
       lamp_driver_name: None,
       flash_duration: Duration::from_millis(185),
     }
@@ -25,7 +25,7 @@ impl GameStartable {
   }
 
   pub fn effect(mut self, effect: LedProgram1d) -> Self {
-    self.led_programs.push(effect);
+    self.led_program = Some(effect);
     self
   }
 
@@ -80,12 +80,10 @@ impl System for GameStartable {
       self.start_btn_on(ctx);
     } else if event.is::<LampOff>() {
       self.start_btn_off(ctx);
-    } else if event.is::<GameStarted>() {
-      for effect in &mut self.led_programs {
+    } else if let Some(effect) = &mut self.led_program {
+      if event.is::<RoutineStarted<GameStarting>>() {
         effect.stop(ctx);
-      }
-    } else if event.is::<GameEnded>() {
-      for effect in &mut self.led_programs {
+      } else if event.is::<GameEnded>() {
         effect.play();
       }
     }
@@ -93,10 +91,10 @@ impl System for GameStartable {
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // only apply effects if a game hasn't started
-    if !ctx.is_game_started() {
-      for effect in &mut self.led_programs {
-        effect.apply(delta, ctx);
-      }
+    if !ctx.is_game_started()
+      && let Some(effect) = &mut self.led_program
+    {
+      effect.apply(delta, ctx);
     }
   }
 }

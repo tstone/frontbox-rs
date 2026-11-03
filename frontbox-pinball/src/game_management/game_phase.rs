@@ -7,9 +7,9 @@ pub enum GamePhase {
   /// No game is started.
   #[default]
   None,
-  /// The game has started, but its first ball isn't in play yet.
+  /// The game has started, and the `GameStarting` routine runs. No turn has begun yet.
   Starting,
-  /// The first ball is in play, until play is over.
+  /// Turns are being played, from the first turn's `TurnStarting` until play is over.
   Active,
   /// Play is over, and the `GameEnding` routine runs. The game is still started.
   Ending,
