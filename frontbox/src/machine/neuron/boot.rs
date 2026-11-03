@@ -238,10 +238,8 @@ pub async fn configure_led_ports(
 ) {
   for board in expansion_boards {
     for (port_index, led_port) in board.led_ports.iter().enumerate() {
-      // a port with no room left on its breakout has nothing to configure
-      if led_port.length == 0 {
-        continue;
-      }
+      // Configure every port, even ones with no LEDs: an unconfigured port keeps its default range (32 LEDs at
+      // 32 * port), which overlaps the ranges given to the ports after it and the board rejects those.
       configure_led_port(exp_port, board, port_index as u8, led_port.offset, led_port).await;
     }
   }
@@ -263,5 +261,32 @@ pub async fn configure_led_port(
     led_port.length,
   );
   // configure port/block
-  let _ = exp_port.command(&cmd, Duration::from_millis(250)).await;
+  match exp_port.command(&cmd, Duration::from_millis(250)).await {
+    Ok(ProcessedResponse::Processed) => {
+      log::debug!(
+        "LED port {} on board {:X} configured with {} LEDs from {}",
+        port_index + 1,
+        board.address,
+        led_port.length,
+        led_index_offset
+      );
+    }
+    Ok(ProcessedResponse::Failed) => {
+      log::warn!(
+        "LED port {} on board {:X} configuration ({} LEDs from {}) failed; its LEDs may be misaddressed",
+        port_index + 1,
+        board.address,
+        led_port.length,
+        led_index_offset
+      );
+    }
+    Err(e) => {
+      log::warn!(
+        "Error configuring LED port {} on board {:X}: {}; its LEDs may be misaddressed",
+        port_index + 1,
+        board.address,
+        e
+      );
+    }
+  }
 }
