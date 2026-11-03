@@ -6,6 +6,7 @@ import type { DriverState } from "./DriverState";
 import type { GameState } from "./GameState";
 import type { Hardware } from "./Hardware";
 import type { PlaneView } from "./PlaneView";
+import type { RoutineProgress } from "./RoutineProgress";
 import type { SwitchState } from "./SwitchState";
 import type { SystemGroup } from "./SystemGroup";
 import type { TraceRecord } from "./TraceRecord";
@@ -19,6 +20,10 @@ hardware: Hardware | null, groups: Array<SystemGroup>, switches: { [key in numbe
  * Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
  */
 driver_modes: { [key in number]: DriverMode }, game: GameState | null, 
+/**
+ * Routines in progress, oldest first
+ */
+routines: Array<RoutineProgress>, 
 /**
  * The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
  */

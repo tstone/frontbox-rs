@@ -45,6 +45,7 @@ pub mod prelude {
   pub use crate::machine::{MachineExt, MachineSystem, SwitchClosed, SwitchOpened};
   pub use crate::metrics::{Counter, GameId, MetricDefinition, MetricKind, MetricsCollection, Sample, SampleType};
   pub use crate::operator_config::*;
+  pub use crate::routine;
   pub use crate::systems;
   pub use crate::systems::*;
 

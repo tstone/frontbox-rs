@@ -63,9 +63,10 @@ mod app_state;
 pub mod app_tracer;
 mod boot_config;
 pub mod event_box;
+mod groups_ext;
 pub(crate) mod run_loop;
 
-use std::collections::HashMap;
+use indexmap::IndexMap;
 
 pub use app::*;
 pub(crate) use app_config::*;
@@ -73,9 +74,11 @@ pub use app_message::ShutdownScope;
 pub use app_state::*;
 pub use boot_config::*;
 pub(crate) use event_box::*;
+pub(crate) use groups_ext::GroupsExt;
 pub use run_loop::Synchronize;
 
-use crate::prelude::SystemGroup;
+use crate::prelude::{GroupId, SystemGroup};
 
-pub const ROOT_GROUP: &'static str = "__root";
-pub(crate) type Groups = HashMap<&'static str, SystemGroup>;
+pub const ROOT_GROUP: GroupId = GroupId::ROOT;
+pub const ROOT_GROUP_NAME: &'static str = "root";
+pub(crate) type Groups = IndexMap<GroupId, SystemGroup>;

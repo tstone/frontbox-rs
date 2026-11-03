@@ -2,7 +2,7 @@ import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createSignal, Show } from 'solid-js'
 import { formatElapsed, groupLabel, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
 import { hexAddress } from '../lib/hardwareConfig'
-import { machine, systemName } from '../state/console'
+import { groupName, machine, systemName } from '../state/console'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import './TraceRow.css'
 
@@ -75,15 +75,46 @@ function summary(record: TraceRecord): string {
     const { id, active } = event.SystemActiveStateChange
     return `${systemName(id)} ${active ? 'activated' : 'deactivated'}`
   }
-  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.key)
-  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.key)
+  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.id, event.SystemGroupSpawned.name)
+  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.id, event.SystemGroupDespawned.name)
   if ('SystemGroupActiveStateChange' in event) {
-    const { key, active } = event.SystemGroupActiveStateChange
-    return `${groupLabel(key)} ${active ? 'activated' : 'deactivated'}`
+    const { id, active } = event.SystemGroupActiveStateChange
+    return `${groupName(id)} ${active ? 'activated' : 'deactivated'}`
   }
   if ('LedsRGBChange' in event) {
     const { expansion, states } = event.LedsRGBChange
     return `${states.length} LED${states.length === 1 ? '' : 's'} on ${hexAddress(expansion)}`
+  }
+  if ('RoutineStarted' in event) {
+    const { routine, origin } = event.RoutineStarted
+    return `${shortName(routine)} by ${systemName(origin)}`
+  }
+  if ('RoutineStep' in event) {
+    const { routine, participant } = event.RoutineStep
+    return `${shortName(routine)} handed to ${systemName(participant)}`
+  }
+  if ('RoutineSkipped' in event) {
+    const { routine, participant, reason } = event.RoutineSkipped
+    const why = reason === 'Missing' ? 'not in reach' : 'inactive'
+    return `${shortName(routine)} skipped ${shortName(participant)} (${why})`
+  }
+  if ('RoutineRejected' in event) {
+    const { routine, origin, running_origin } = event.RoutineRejected
+    return `${shortName(routine)} by ${systemName(origin)} ignored: already running for ${systemName(running_origin)}`
+  }
+  if ('RoutinePaused' in event) return `${shortName(event.RoutinePaused.routine)} waiting for its origin`
+  if ('RoutineResumed' in event) return shortName(event.RoutineResumed.routine)
+  if ('RoutineHalted' in event) {
+    const { routine, participant } = event.RoutineHalted
+    return `${shortName(routine)} halted by ${systemName(participant)}`
+  }
+  if ('RoutineCompleted' in event) {
+    const { routine, origin, completion } = event.RoutineCompleted
+    return `${shortName(routine)} for ${systemName(origin)}${completion === 'Halted' ? ' (halted)' : ''}`
+  }
+  if ('RoutineAbandoned' in event) {
+    const { routine, origin } = event.RoutineAbandoned
+    return `${shortName(routine)}: ${systemName(origin)} was despawned`
   }
   // kept as state by the hub, never logged
   if ('ConfigsInUse' in event || 'ConfigChange' in event) return ''

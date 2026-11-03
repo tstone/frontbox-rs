@@ -1,5 +1,10 @@
 ## Foundations
 
+- tests for run_loop
+- Is it time to revisit states? It seems like a general purpose state machine that emits events on change would be useful (ex: TurnActive)
+- Can we do some end-to-end tests around game management, turn ending/game ending?
+- Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
+- Does metrics need to go on app state or can it just be owned by run_loop
 - Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD
   menu animation and transition items.
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
@@ -15,9 +20,15 @@
   that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console.
   Needed by the console LED designers.
+- Revisit if `Synchronize` event still makes sense or not
 
 ## Pinball features
 
+- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens
+  to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are
+  participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a
+  ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
+  check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 - Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as

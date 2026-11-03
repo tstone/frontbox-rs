@@ -28,10 +28,7 @@ export function traceCategory(record: TraceRecord): TraceCategory {
 /** The part of a trace worth showing in detail. `null` for events without a body. */
 export function traceBody(record: TraceRecord): unknown {
   const event = record.event
-  if ('Event' in event) {
-    const { event: body, interrupts } = event.Event
-    return interrupts.length > 0 ? { event: body, interrupts } : body
-  }
+  if ('Event' in event) return event.Event.event
   return Object.values(event)[0]
 }
 
@@ -51,11 +48,11 @@ export function formatElapsed(ms: number): string {
   return hours > 0 ? `${hours}:${pad(minutes)}:${tail}` : `${minutes}:${tail}`
 }
 
-const ROOT_GROUP = '__root'
+const ROOT_GROUP = 0
 
-/** The framework's root group shows as "Root" */
-export function groupLabel(key: string): string {
-  return key === ROOT_GROUP ? 'Root' : key
+/** A group's name, for display. The framework's root group shows as "Root" */
+export function groupLabel(id: number, name: string): string {
+  return id === ROOT_GROUP ? 'Root' : name
 }
 
 /**

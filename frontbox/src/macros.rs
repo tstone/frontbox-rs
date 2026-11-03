@@ -12,6 +12,15 @@ macro_rules! systems {
   }
 }
 
+/// Builds a [`RoutineDefinition`](crate::systems::RoutineDefinition) from system types, in the order they take their
+/// steps. See [routines](crate::systems::routine)
+#[macro_export]
+macro_rules! routine {
+  ($($system:ty),* $(,)?) => {
+    $crate::systems::RoutineDefinition::new()$(.then::<$system>())*
+  }
+}
+
 #[macro_export]
 /// Implements System for the given type, assuming `inner` is the field name of the inner system
 macro_rules! delegate_system {
@@ -35,8 +44,8 @@ macro_rules! delegate_system {
       fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
         self.$field.on_event(event, ctx)
       }
-      fn on_interrupt(&mut self, event: &dyn Event, ctx: &SystemContext) -> InterruptResult {
-        self.$field.on_interrupt(event, ctx)
+      fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+        self.$field.on_routine(routine, ctx)
       }
       fn is_active(&self, ctx: &SystemContext) -> bool {
         self.$field.is_active(ctx)

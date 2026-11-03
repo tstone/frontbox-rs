@@ -32,7 +32,7 @@ impl GameState {
       player_count: 0,
       max_players,
       current_player: 0,
-      current_turn_state: TurnState::Beginning,
+      current_turn_state: TurnState::Starting,
       player_turns: vec![0; max_players as usize],
       player_multiplier: vec![1.0; max_players as usize],
       player_scores: vec![0; max_players as usize],

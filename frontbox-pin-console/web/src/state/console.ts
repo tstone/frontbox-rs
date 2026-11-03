@@ -3,7 +3,7 @@ import { createStore, produce, reconcile } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
-import { shortName } from '../lib/format'
+import { groupLabel, shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
@@ -34,6 +34,7 @@ const [state, setState] = createStore<ConsoleState>({
   drivers: {},
   driver_modes: {},
   game: null,
+  routines: [],
   planes: [],
   led_colors: {},
   configs: {},
@@ -129,24 +130,24 @@ function markFired(id: number) {
  */
 function applyTrace(s: ConsoleState, record: TraceRecord) {
   const event = record.event
-  const group = (key: string) => s.groups.find((g) => g.key === key)
+  const group = (id: number) => s.groups.find((g) => g.id === id)
 
   if ('SystemGroupSpawned' in event) {
-    const { key } = event.SystemGroupSpawned
-    if (!group(key)) s.groups.push({ key, active: true, systems: [] })
+    const { id, name } = event.SystemGroupSpawned
+    if (!group(id)) s.groups.push({ id, name, active: true, systems: [] })
   } else if ('SystemGroupDespawned' in event) {
-    const { key } = event.SystemGroupDespawned
-    s.groups = s.groups.filter((g) => g.key !== key)
+    const { id } = event.SystemGroupDespawned
+    s.groups = s.groups.filter((g) => g.id !== id)
   } else if ('SystemGroupActiveStateChange' in event) {
-    const { key, active } = event.SystemGroupActiveStateChange
-    const g = group(key)
+    const { id, active } = event.SystemGroupActiveStateChange
+    const g = group(id)
     if (g) g.active = active
   } else if ('SystemSpawned' in event) {
-    const { id, name, parent_key } = event.SystemSpawned
-    group(parent_key)?.systems.push({ id, name, active: true, recent_events: [] })
+    const { id, name, group: groupId } = event.SystemSpawned
+    group(groupId)?.systems.push({ id, name, active: true, recent_events: [] })
   } else if ('SystemDespawned' in event) {
-    const { id, parent_key } = event.SystemDespawned
-    const g = group(parent_key)
+    const { id, group: groupId } = event.SystemDespawned
+    const g = group(groupId)
     if (g) g.systems = g.systems.filter((sys) => sys.id !== id)
   } else if ('SystemActiveStateChange' in event) {
     const { id, active } = event.SystemActiveStateChange
@@ -161,6 +162,23 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
   } else if ('DriverModeChange' in event) {
     const { driver_id, mode } = event.DriverModeChange
     s.driver_modes[driver_id] = mode
+  } else if ('RoutineStarted' in event) {
+    const { routine, origin } = event.RoutineStarted
+    s.routines.push({ routine, origin, current: null })
+  } else if ('RoutineStep' in event) {
+    const { routine, participant, group } = event.RoutineStep
+    const progress = s.routines.find((r) => r.routine === routine)
+    if (progress) progress.current = { id: participant, group }
+  } else if ('RoutinePaused' in event || 'RoutineHalted' in event) {
+    // paused once the step in progress is over, and a halt ends it, so no one holds it
+    const { routine } = 'RoutinePaused' in event ? event.RoutinePaused : event.RoutineHalted
+    const progress = s.routines.find((r) => r.routine === routine)
+    if (progress) progress.current = null
+  } else if ('RoutineCompleted' in event || 'RoutineAbandoned' in event) {
+    const { routine } = 'RoutineCompleted' in event ? event.RoutineCompleted : event.RoutineAbandoned
+    s.routines = s.routines.filter((r) => r.routine !== routine)
+  } else if ('RoutineRejected' in event || 'RoutineSkipped' in event || 'RoutineResumed' in event) {
+    // logged only
   } else if ('LedsRGBChange' in event || 'ConfigsInUse' in event || 'ConfigChange' in event) {
     // never sent as traces: the hub keeps LEDs and configs as current state and sends them as `Leds` and `Configs`
     return
@@ -190,5 +208,17 @@ export function systemName(id: number): string {
   const spawned = state.log.find((r) => 'SystemSpawned' in r.event && r.event.SystemSpawned.id === id)
   if (spawned && 'SystemSpawned' in spawned.event) return shortName(spawned.event.SystemSpawned.name)
   return `System #${id}`
+}
+
+/**
+ * A group's label by id: from the running groups, or, for one that has since despawned, from its spawn record in the
+ * log.
+ */
+export function groupName(id: number): string {
+  const group = state.groups.find((g) => g.id === id)
+  if (group) return groupLabel(group.id, group.name)
+  const spawned = state.log.find((r) => 'SystemGroupSpawned' in r.event && r.event.SystemGroupSpawned.id === id)
+  if (spawned && 'SystemGroupSpawned' in spawned.event) return groupLabel(id, spawned.event.SystemGroupSpawned.name)
+  return `Group #${id}`
 }
 

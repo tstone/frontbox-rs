@@ -1,8 +1,10 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
-use frontbox::prelude::{ConfigDomainValue, Hardware, SystemDespawned, SystemSpawned};
+use frontbox::prelude::{
+  ConfigDomainValue, Hardware, RoutineStarted, SystemDespawned, SystemSpawned,
+};
 use frontbox_metrics::MetricsDb;
-use frontbox_pinball::{GameEnded, GameStarted, PlayerTurnBeginning};
+use frontbox_pinball::{GameEnded, GameStarted, TurnStarting};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -318,11 +320,12 @@ impl GameTransition {
       Some(Self::Started)
     } else if *name == type_name::<GameEnded>() {
       Some(Self::Ended)
-    } else if *name == type_name::<PlayerTurnBeginning>() {
+    } else if *name == type_name::<RoutineStarted<TurnStarting>>() {
       let field = |name: &str| {
         event
           .as_ref()
-          .and_then(|body| body.get(name))
+          .and_then(|body| body.get("routine"))
+          .and_then(|routine| routine.get(name))
           .and_then(|value| value.as_u64())
           .map(|value| value as u8)
       };
@@ -340,27 +343,28 @@ impl GameTransition {
 fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
   let groups = &mut snapshot.groups;
   match &record.event {
-    TraceEvent::SystemGroupSpawned { key } => {
-      if !groups.iter().any(|g| g.key == *key) {
+    TraceEvent::SystemGroupSpawned { id, name } => {
+      if !groups.iter().any(|g| g.id == *id) {
         groups.push(SystemGroup {
-          key,
+          id: *id,
+          name,
           active: true,
           systems: Vec::new(),
         });
       }
     }
-    TraceEvent::SystemGroupDespawned { key } => groups.retain(|g| g.key != *key),
-    TraceEvent::SystemGroupActiveStateChange { key, active } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *key) {
+    TraceEvent::SystemGroupDespawned { id, .. } => groups.retain(|g| g.id != *id),
+    TraceEvent::SystemGroupActiveStateChange { id, active } => {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *id) {
         group.active = *active;
       }
     }
     TraceEvent::SystemSpawned {
       id,
       name,
-      parent_key,
+      group: group_id,
     } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *parent_key) {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
         group.systems.push(System {
           id: *id,
           name,
@@ -369,8 +373,11 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
         });
       }
     }
-    TraceEvent::SystemDespawned { id, parent_key } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.key == *parent_key) {
+    TraceEvent::SystemDespawned {
+      id,
+      group: group_id,
+    } => {
+      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
         group.systems.retain(|s| s.id != *id);
       }
     }
@@ -408,6 +415,35 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       }
     }
     TraceEvent::Event { .. } => {}
+    TraceEvent::RoutineStarted { routine, origin } => snapshot.routines.push(RoutineProgress {
+      routine,
+      origin: *origin,
+      current: None,
+    }),
+    TraceEvent::RoutineStep {
+      routine,
+      participant,
+      group,
+    } => {
+      if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
+        progress.current = Some(RoutineParticipant {
+          id: *participant,
+          group: *group,
+        });
+      }
+    }
+    // paused once the step in progress is over, and a halt ends it, so no one holds it
+    TraceEvent::RoutinePaused { routine } | TraceEvent::RoutineHalted { routine, .. } => {
+      if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
+        progress.current = None;
+      }
+    }
+    TraceEvent::RoutineCompleted { routine, .. } | TraceEvent::RoutineAbandoned { routine, .. } => {
+      snapshot.routines.retain(|r| r.routine != *routine)
+    }
+    TraceEvent::RoutineRejected { .. }
+    | TraceEvent::RoutineSkipped { .. }
+    | TraceEvent::RoutineResumed { .. } => {}
     // handled by `ingest`, never logged
     TraceEvent::LedsRGBChange { .. }
     | TraceEvent::ConfigsInUse { .. }
