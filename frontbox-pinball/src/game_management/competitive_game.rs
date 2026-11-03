@@ -35,7 +35,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// Once the last turn's `TurnEnding` completes, or the game is quit (`quit_game`), play is over:
 /// - Routine: `GameEnding` - Started at the root. The game stays started while it runs, so its participants
 ///   (high-score entry, say) can take their time without a new game starting.
-/// - Event: `GameEnded` - Emitted once `GameEnding` completes and the player groups are gone.
+/// The game ends on `GameEnding`'s `RoutineCompleted`: the player groups are despawned and the states reset before
+/// anyone else hears it, so systems that only run outside a game hear it too.
 ///
 /// ## States
 /// Set at the root, so every group reads them:
@@ -157,6 +158,25 @@ impl CompetitiveGame {
   fn set_game_phase(&mut self, game_phase: GamePhase, ctx: &ServiceContext) {
     self.game_phase = game_phase;
     ctx.for_system(self.handle).set_state(game_phase);
+  }
+
+  fn is_game_started(&self) -> bool {
+    self.game_state.is_some()
+  }
+
+  /// Whether a player can be added right now. Others read this as `PlayerEntry`, published by `update_player_entry`.
+  fn is_player_addable(&self) -> bool {
+    if self.game_phase == GamePhase::Ending {
+      return false;
+    }
+    // if the game is started, then it must be the first player's turn on their first ball
+    if let Some(game_state) = &self.game_state {
+      return game_state.current_player() == 0
+        && game_state.current_player_turn() == 0
+        && game_state.player_count() < game_state.max_players();
+    }
+
+    true
   }
 
   /// Publishes `PlayerEntry`, from `is_player_addable`. Called after anything that could change it; setting it to the
@@ -307,7 +327,7 @@ impl CompetitiveGame {
   }
 
   /// `GameEnding` completed: the game is over
-  fn end_game(&mut self, scores: Vec<(&'static str, u32)>, ctx: &ServiceContext) {
+  fn end_game(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Game ended");
     for group in self.player_groups.drain(..) {
       ctx.despawn_system_group(group);
@@ -316,7 +336,6 @@ impl CompetitiveGame {
     self.set_game_phase(GamePhase::None, ctx);
     self.set_turn_phase(TurnPhase::None, ctx);
     self.update_player_entry(ctx);
-    ctx.for_system(self.handle).emit(GameEnded { scores });
   }
 
   /// Each player's score, in player order
@@ -353,8 +372,8 @@ impl System for CompetitiveGame {
       }
       GamePhase::Ending => {
         // routines still running after a quit complete on their own, and are ignored
-        if let Some(done) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
-          self.end_game(done.routine.scores.clone(), ctx.into());
+        if event.is::<RoutineCompleted<GameEnding>>() {
+          self.end_game(ctx.into());
         }
         return;
       }
@@ -397,6 +416,11 @@ impl System for CompetitiveGame {
 
 impl GameManagement for CompetitiveGame {
   fn add_player(&mut self, ctx: &ServiceContext) {
+    // checked here as well as through `PlayerEntry`, which reads as its old value until the run loop gets to it
+    if !self.is_player_addable() {
+      log::warn!(target: "frontbox::game_manager", "A player can't be added now, ignored");
+      return;
+    }
     if !self.is_game_started() {
       self.start_game(ctx);
     }
@@ -407,15 +431,6 @@ impl GameManagement for CompetitiveGame {
       log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
-
-    if game_state.player_count() >= game_state.max_players() {
-      log::warn!(
-        target: "frontbox::game_manager",
-        "Max players reached ({}), cannot add more players",
-        game_state.max_players()
-      );
-      return;
-    }
 
     game_state.increment_player_count();
     log::info!(
@@ -456,24 +471,6 @@ impl GameManagement for CompetitiveGame {
       ctx.metrics.flush();
     }
     self.start_game_ending(GameEndReason::Quit, ctx.into());
-  }
-
-  fn is_player_addable(&self) -> bool {
-    if self.game_phase == GamePhase::Ending {
-      return false;
-    }
-    // if the game is started, then it must be the first player's turn on their first ball
-    if let Some(game_state) = &self.game_state {
-      return game_state.current_player() == 0
-        && game_state.current_player_turn() == 0
-        && game_state.player_count() < game_state.max_players();
-    }
-
-    true
-  }
-
-  fn is_game_started(&self) -> bool {
-    self.game_state.is_some()
   }
 
   fn game_state(&self) -> Option<&GameState> {
@@ -701,17 +698,16 @@ mod tests {
 
     f.event(done(ending, RoutineCompletion::AllSteps));
     assert!(!f.game.is_game_started());
-    let ended: Vec<_> = f
-      .ctx
-      .events_emitted()
-      .iter()
-      .filter_map(|e| {
-        e.event
-          .downcast_ref::<GameEnded>()
-          .map(|e| e.scores.clone())
-      })
-      .collect();
-    assert_eq!(ended, vec![vec![("player1", 0)]]);
+    assert!(f.game.is_player_addable());
+  }
+
+  #[test]
+  fn adding_a_player_while_the_game_is_ending_is_ignored() {
+    let mut f = Fixture::playing(1);
+    f.play_out_turn();
+
+    f.game.add_player(&f.ctx.svc_ctx());
+    assert_eq!(f.game.game_state().unwrap().player_count(), 1);
   }
 
   #[test]

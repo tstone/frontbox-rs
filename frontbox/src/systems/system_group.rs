@@ -1,11 +1,11 @@
 //! # System Groups
-//! 
+//!
 //! System groups allow a set of child systems to be run as a single unit, with some particular behaviors:
-//! 
+//!
 //! - **The system constraint of one-instance-per-type only applies within a group** -- For example, it might make sense to have a copy of `PlayerScoreSystem` _per player_. Normally only one of these could be spawned at the root. However, if a group was created per player, then one copy could be run per group.
-//! 
+//!
 //! - **Active state spans the entire group** -- Group can be made active or inactive, which cascades to all children. Like with scoring, this allows all systems for a player to be disabled at once. Each system can also manage their own active state, independent of the group's active state, but the group's active state is always a prerequisite (the logic for active is `group_active && system_active`).
-//! 
+//!
 //! - **System lookup also includes siblings** -- By default, performing `ctx.get::<T>` only looks at root systems. When a system is part of a group however, it will _also_ check for all sibling. In the case where the same system is running both within a group and at the root, priority is given to nearness. Siblings are searched first, then global.
 //!
 //! - **Groups are owned by the system that spawned them** -- Spawning a group returns a [`GroupHandle`], and it's the

@@ -1,7 +1,7 @@
 use frontbox::prelude::*;
 use frontbox::tags::Cabinet;
 
-use crate::{GameEnded, GameManagementExt, GameStarting, PlayerEntry};
+use crate::{GameEnding, GamePhase, GameStarting, PlayerEntry};
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
@@ -83,7 +83,7 @@ impl System for GameStartable {
     } else if let Some(effect) = &mut self.led_program {
       if event.is::<RoutineStarted<GameStarting>>() {
         effect.stop(ctx);
-      } else if event.is::<GameEnded>() {
+      } else if event.is::<RoutineCompleted<GameEnding>>() {
         effect.play();
       }
     }
@@ -91,7 +91,7 @@ impl System for GameStartable {
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // only apply effects if a game hasn't started
-    if !ctx.is_game_started()
+    if ctx.in_state(GamePhase::None)
       && let Some(effect) = &mut self.led_program
     {
       effect.apply(delta, ctx);

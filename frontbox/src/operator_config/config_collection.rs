@@ -60,7 +60,12 @@ impl ConfigCollection {
   /// replace it with the clamped or default value it fell back to.
   fn to_table(&self) -> toml::Table {
     let mut table = self.pending_disk.clone();
-    for (key, entry) in self.entries.borrow().iter().filter(|(_, entry)| entry.changed) {
+    for (key, entry) in self
+      .entries
+      .borrow()
+      .iter()
+      .filter(|(_, entry)| entry.changed)
+    {
       if entry.definition.is_default(entry.value) {
         table.remove(*key);
       } else {

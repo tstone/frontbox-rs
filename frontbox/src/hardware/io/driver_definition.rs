@@ -42,9 +42,12 @@ impl DriverDefinition {
       tapped: Counter::new(self.name, "Times software fired the driver")
         .key(tapped)
         .category("Drivers"),
-      switched: Counter::new(switch_label, "Times the hardware fired the driver from its switch")
-        .key(switched)
-        .category("Drivers"),
+      switched: Counter::new(
+        switch_label,
+        "Times the hardware fired the driver from its switch",
+      )
+      .key(switched)
+      .category("Drivers"),
     }
   }
 }

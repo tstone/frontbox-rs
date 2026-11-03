@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-
 pub trait DurationExt {
   fn bpm(value: u16) -> Duration;
 }

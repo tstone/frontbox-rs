@@ -56,7 +56,10 @@ fn main() {
        existing web/dist, which is out of date."
     );
     // keep warning on every build until it's fixed, rather than only on the first
-    println!("cargo:rerun-if-changed={}", web.join(".no-such-file").display());
+    println!(
+      "cargo:rerun-if-changed={}",
+      web.join(".no-such-file").display()
+    );
     return;
   };
 
@@ -67,9 +70,12 @@ fn main() {
   // stale types before they could be regenerated. Vite strips types without checking them; `npm run build` and the
   // editor still check.
   run(
-    node
-      .command(&web)
-      .args(["node_modules/vite/bin/vite.js", "build", "--logLevel", "warn"]),
+    node.command(&web).args([
+      "node_modules/vite/bin/vite.js",
+      "build",
+      "--logLevel",
+      "warn",
+    ]),
     "vite build",
   );
 }
@@ -195,7 +201,11 @@ fn versions_in(root: &Path) -> impl Iterator<Item = PathBuf> {
 fn node_version(exe: &Path) -> Option<(u32, u32, u32)> {
   let output = Command::new(exe).arg("--version").output().ok()?;
   let version = String::from_utf8_lossy(&output.stdout);
-  let mut parts = version.trim().trim_start_matches('v').split('.').map(|p| p.parse().ok());
+  let mut parts = version
+    .trim()
+    .trim_start_matches('v')
+    .split('.')
+    .map(|p| p.parse().ok());
   Some((parts.next()??, parts.next()??, parts.next()??))
 }
 

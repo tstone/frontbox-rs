@@ -349,7 +349,8 @@ impl Routines {
   }
 
   /// Only called once the origin is known to be active. `RoutineCompleted` is queued rather than delivered here, so it
-  /// reaches everyone in queue order.
+  /// lands after whatever was queued before it. The origin gets it first, and everyone else after whatever the origin
+  /// queued in response, so a system it activates by carrying on (e.g. a state change) hears about it.
   fn complete(
     &mut self,
     type_id: TypeId,
@@ -369,7 +370,7 @@ impl Routines {
     });
 
     let completed = (routine.into_completed)(routine.routine, completion);
-    let _ = app_sender.send(AppMessage::EmitEvent(Some(routine.origin.id), completed));
+    let _ = app_sender.send(AppMessage::EmitEventOriginFirst(routine.origin, completed));
   }
 
   fn origin_state(

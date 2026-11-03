@@ -128,7 +128,10 @@ pub enum ClientMessage {
   /// Hold a switch closed, or let it open, as if it were pressed on the machine
   SetSwitch { switch_id: usize, closed: bool },
   /// Set an operator config, as the operator menu would
-  SetConfig { key: String, value: ConfigDomainValue },
+  SetConfig {
+    key: String,
+    value: ConfigDomainValue,
+  },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
 }

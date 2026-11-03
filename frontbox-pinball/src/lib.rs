@@ -36,7 +36,7 @@
 //! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo`), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).
 //! 1. `RoutineStarted<GameEnding>` is broadcast first, and the playfield drivers are turned off.
 //! 2. Each participant (match, high-score entry, game-over display, etc.) takes its turn. The game is still started meanwhile, so the start button can't begin a new one.
-//! 3. Once the last participant completes its step, the player groups are despawned, the game is no longer started, and `GameEnded` is emitted. Systems that only run outside a game (attract mode, the start button) are inactive during `GameEnding`, so they watch `GameEnded` rather than the routine's events.
+//! 3. Once the last participant completes its step, `RoutineCompleted<GameEnding>` goes to the game manager first: the player groups are despawned, and `GamePhase` goes back to `None`. Only then does everyone else hear it, so systems that only run outside a game (attract mode, the start button) are active again by then, and can take the final scores from it.
 //!
 //! The routines are defined in the app:
 //!

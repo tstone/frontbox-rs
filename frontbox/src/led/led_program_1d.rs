@@ -59,7 +59,8 @@ impl LedProgram1d {
         end_behavior,
         undeclared,
       } => {
-        if (modulators.is_complete() && *end_behavior == EndBehavior::Clear) || !modulators.active() {
+        if (modulators.is_complete() && *end_behavior == EndBehavior::Clear) || !modulators.active()
+        {
           if !*undeclared {
             ctx.undeclare_leds(ids);
             *undeclared = true;
@@ -318,9 +319,13 @@ impl LedProgram1d {
     curve: Curve,
     cycle: Cycle,
     colors: Vec<ColorSequence>,
-    end_behavior: EndBehavior
+    end_behavior: EndBehavior,
   ) -> Self {
-    Self::animated(targets, Tween::new(duration, curve, colors, cycle), end_behavior)
+    Self::animated(
+      targets,
+      Tween::new(duration, curve, colors, cycle),
+      end_behavior,
+    )
   }
 
   pub fn tween_oneshot<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
@@ -329,7 +334,11 @@ impl LedProgram1d {
     curve: Curve,
     colors: Vec<ColorSequence>,
   ) -> Self {
-    Self::animated(targets, Tween::new(duration, curve, colors, Cycle::Once), EndBehavior::Clear)
+    Self::animated(
+      targets,
+      Tween::new(duration, curve, colors, Cycle::Once),
+      EndBehavior::Clear,
+    )
   }
 
   /// Typical on/off behavior
@@ -344,7 +353,7 @@ impl LedProgram1d {
       Curve::EaseInOut,
       cycle,
       vec![color, ColorSequence::solid(Rgba::default())],
-      EndBehavior::Clear
+      EndBehavior::Clear,
     )
   }
 
@@ -364,7 +373,7 @@ impl LedProgram1d {
         ColorSequence::solid(color),
         ColorSequence::solid(color.darken(0.3)),
       ],
-      EndBehavior::Clear
+      EndBehavior::Clear,
     )
   }
 
@@ -386,7 +395,7 @@ impl LedProgram1d {
         ],
         cycle,
       ),
-      EndBehavior::Clear
+      EndBehavior::Clear,
     )
   }
 

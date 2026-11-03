@@ -90,7 +90,11 @@ mod tests {
       .build();
     assert_near(
       &LedLayout::strip(3, Vec3::ZERO, FRAC_PI_2, 1.0).relative_to(&plane),
-      &[Vec3::new(1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 1.0), Vec3::new(1.0, 0.0, 2.0)],
+      &[
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(1.0, 0.0, 1.0),
+        Vec3::new(1.0, 0.0, 2.0),
+      ],
     );
   }
 

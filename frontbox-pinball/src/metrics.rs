@@ -44,9 +44,12 @@ pub static GAMES_QUIT: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub static BALLS_SERVED: LazyLock<Counter> = LazyLock::new(|| {
-  Counter::new("Balls Served", "Balls ejected from the trough, once verified")
-    .key("balls_served")
-    .category("Ball Management")
+  Counter::new(
+    "Balls Served",
+    "Balls ejected from the trough, once verified",
+  )
+  .key("balls_served")
+  .category("Ball Management")
 });
 
 pub static BALLS_DRAINED: LazyLock<Counter> = LazyLock::new(|| {

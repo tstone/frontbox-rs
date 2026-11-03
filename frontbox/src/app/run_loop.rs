@@ -83,6 +83,12 @@ pub async fn run(
           AppMessage::EmitEvent(sender, event_box) => {
             emit_event(sender, event_box, &mut groups, &base, &app_sender, &tracer_txs, &resync_notifier);
           }
+          AppMessage::EmitEventOriginFirst(origin, event_box) => {
+            emit_event_to_origin(origin, event_box, &groups, &base, &app_sender, &tracer_txs);
+          }
+          AppMessage::EmitEventToOthers(handled_by, event_box) => {
+            emit_event_to_others(handled_by, event_box, &groups, &base, &app_sender, &tracer_txs);
+          }
           AppMessage::SwitchStateChange(id, state) => {
             switch_state_changed(Some(machine_system_id), id, state, &mut groups, &mut base, &app_sender, &tracer_txs, &resync_notifier);
           }
@@ -333,6 +339,51 @@ fn emit_event(
 
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     system.on_event(event_box.event.as_ref(), ctx);
+  });
+}
+
+/// The first part of `EmitEventOriginFirst`: traces the event, hands it to the origin, and queues the rest of the
+/// broadcast behind whatever the origin queued in response
+pub(crate) fn emit_event_to_origin(
+  origin: SystemHandle,
+  event_box: EventBox,
+  groups: &Groups,
+  base: &AppState,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) {
+  tracer_txs.send(TraceEvent::Event {
+    type_name: event_box.type_name,
+    event: event_box.try_json(),
+    sender: Some(origin.id),
+  });
+
+  apply_to_system(
+    origin,
+    groups,
+    base,
+    app_sender,
+    tracer_txs,
+    |system, ctx| {
+      system.on_event(event_box.event.as_ref(), ctx);
+    },
+  );
+  let _ = app_sender.send(AppMessage::EmitEventToOthers(origin, event_box));
+}
+
+/// The rest of `EmitEventOriginFirst`: broadcasts to every system but the origin, which already handled the event
+pub(crate) fn emit_event_to_others(
+  handled_by: SystemHandle,
+  event_box: EventBox,
+  groups: &Groups,
+  base: &AppState,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) {
+  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
+    if *ctx.current_handle() != handled_by {
+      system.on_event(event_box.event.as_ref(), ctx);
+    }
   });
 }
 

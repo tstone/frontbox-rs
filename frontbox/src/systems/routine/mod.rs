@@ -48,7 +48,8 @@
 //!    emit lands before the first step.
 //! 2. The participants take their steps, in order.
 //! 3. [`RoutineCompleted<E>`] is broadcast once the last participant is done, or one of them halts the routine. The
-//!    origin watches this to carry on.
+//!    origin watches this to carry on, and hears it first: everyone else hears it after whatever the origin queued in
+//!    response (events, state changes, spawns), so a system that the origin's carrying on makes active hears it too.
 //!
 //! Both events carry the routine as it was started. `RoutineCompleted` also carries how it came to be done
 //! ([`RoutineCompletion`]).

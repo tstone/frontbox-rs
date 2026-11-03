@@ -127,11 +127,11 @@ pub(crate) fn render_into(seq: &mut Vec<Rgba<u8>>, fill: &Fill1d, area: &Fill1dA
       .saturating_sub(right.to_absolute(starting_len)),
     Fill1dArea::Anchored { length: l, .. } => l.to_absolute(starting_len),
   };
-  
+
   // it's possible for fill_len to be larger if the values input to anchored are larger
   // so cap it at the starting length
   fill_len = fill_len.min(starting_len);
-  
+
   // generate fill
   let fill = match fill {
     Fill1d::Gradient { stops } => gradient::render(stops, fill_len),
@@ -173,7 +173,11 @@ mod tests {
   #[test]
   fn anchored_start() {
     let mut seq = vec![Rgba::default(); 3];
-    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Start, 2));
+    render_into(
+      &mut seq,
+      &Fill1d::solid(Rgba::blue()),
+      &Fill1dArea::anchored(Anchor1d::Start, 2),
+    );
 
     assert_eq!(seq.len(), 3);
     assert_eq!(seq[0], Rgba::blue());
@@ -185,7 +189,11 @@ mod tests {
   fn anchored_start_overflow() {
     let mut seq = vec![Rgba::default(); 3];
     // anchor length is intentionaly oversized
-    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Start, 6));
+    render_into(
+      &mut seq,
+      &Fill1d::solid(Rgba::blue()),
+      &Fill1dArea::anchored(Anchor1d::Start, 6),
+    );
 
     assert_eq!(seq.len(), 3);
     assert_eq!(seq[0], Rgba::blue());
@@ -196,7 +204,11 @@ mod tests {
   #[test]
   fn anchored_end() {
     let mut seq = vec![Rgba::default(); 3];
-    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::End, 2));
+    render_into(
+      &mut seq,
+      &Fill1d::solid(Rgba::blue()),
+      &Fill1dArea::anchored(Anchor1d::End, 2),
+    );
 
     assert_eq!(seq.len(), 3);
     assert_eq!(seq[0], Rgba::default());
@@ -207,7 +219,11 @@ mod tests {
   #[test]
   fn anchored_center() {
     let mut seq = vec![Rgba::default(); 3];
-    render_into(&mut seq, &Fill1d::solid(Rgba::blue()), &Fill1dArea::anchored(Anchor1d::Center, 1));
+    render_into(
+      &mut seq,
+      &Fill1d::solid(Rgba::blue()),
+      &Fill1dArea::anchored(Anchor1d::Center, 1),
+    );
 
     assert_eq!(seq.len(), 3);
     assert_eq!(seq[0], Rgba::default());

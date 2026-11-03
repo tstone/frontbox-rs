@@ -61,17 +61,29 @@ pub fn get_switch_ids_and_inverts(
       switch_id(flop_switch, state),
       Some(true),
     ),
-    DriverTriggerDualMode::VirtualFlip_FlopSwitchTrue(virtual_flip) => {
-      (None, Some(false), switch_id(virtual_flip, state), Some(false))
-    }
-    DriverTriggerDualMode::VirtualFlip_FlopSwitchFalse(virtual_flip) => {
-      (None, Some(false), switch_id(virtual_flip, state), Some(true))
-    }
-    DriverTriggerDualMode::FlipSwitchTrue_VirtualFlop(virtual_flop) => {
-      (switch_id(virtual_flop, state), Some(false), None, Some(false))
-    }
-    DriverTriggerDualMode::FlipSwitchFalse_VirtualFlop(virtual_flop) => {
-      (switch_id(virtual_flop, state), Some(true), None, Some(false))
-    }
+    DriverTriggerDualMode::VirtualFlip_FlopSwitchTrue(virtual_flip) => (
+      None,
+      Some(false),
+      switch_id(virtual_flip, state),
+      Some(false),
+    ),
+    DriverTriggerDualMode::VirtualFlip_FlopSwitchFalse(virtual_flip) => (
+      None,
+      Some(false),
+      switch_id(virtual_flip, state),
+      Some(true),
+    ),
+    DriverTriggerDualMode::FlipSwitchTrue_VirtualFlop(virtual_flop) => (
+      switch_id(virtual_flop, state),
+      Some(false),
+      None,
+      Some(false),
+    ),
+    DriverTriggerDualMode::FlipSwitchFalse_VirtualFlop(virtual_flop) => (
+      switch_id(virtual_flop, state),
+      Some(true),
+      None,
+      Some(false),
+    ),
   }
 }

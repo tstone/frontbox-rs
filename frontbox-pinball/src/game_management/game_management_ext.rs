@@ -1,15 +1,12 @@
 use frontbox::prelude::*;
 
-use crate::{GameManager, PlayerEntry};
+use crate::GameManager;
 
 pub trait GameManagementExt {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
   fn add_player(&self);
   /// Ends the game in progress early. See `GameManagement::quit_game`.
   fn quit_game(&self);
-
-  fn is_player_addable(&self) -> bool;
-  fn is_game_started(&self) -> bool;
 
   /// Add points to the current player/team
   fn add_points(&self, points: u32);
@@ -51,17 +48,6 @@ impl<'a> GameManagementExt for SystemContext<'a> {
     with_game_manager(self, |manager| {
       manager.quit_game(ctx.into());
     });
-  }
-
-  fn is_game_started(&self) -> bool {
-    self
-      .get::<GameManager>()
-      .map(|manager| manager.is_game_started())
-      .unwrap_or(false)
-  }
-
-  fn is_player_addable(&self) -> bool {
-    self.in_state(PlayerEntry::Open)
   }
 }
 

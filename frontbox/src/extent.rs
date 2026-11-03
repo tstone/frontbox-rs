@@ -4,7 +4,7 @@ use crate::animation::Lerp;
 
 /// Captures a description of a position or length, either absolute (fixed) or relative (percent).
 /// Extents are used by the framework in places where the actual value is later determined at some future computational point.
-/// 
+///
 /// ```rust
 /// # use frontbox::prelude::*;
 /// let half: Extent<u16> = Extent::Relative(0.5); // half way, 50%

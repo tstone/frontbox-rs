@@ -10,6 +10,11 @@ use crate::systems::state::StoredState;
 
 pub enum AppMessage {
   EmitEvent(Option<u64>, EventBox),
+  // Broadcast an event emitted by the given system to it first, then queue `EmitEventToOthers` for everyone else, so
+  // whatever it queues in response lands before they get it (run loop internal)
+  EmitEventOriginFirst(SystemHandle, EventBox),
+  // The rest of an `EmitEventOriginFirst`: broadcast to every system but the given one, which already handled it (run loop internal)
+  EmitEventToOthers(SystemHandle, EventBox),
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
@@ -42,6 +47,20 @@ impl Debug for AppMessage {
     match self {
       AppMessage::EmitEvent(sender, event) => {
         write!(f, "EmitEvent({:?}, {})", sender, event.type_name)
+      }
+      AppMessage::EmitEventOriginFirst(origin, event) => {
+        write!(
+          f,
+          "EmitEventOriginFirst({}, {})",
+          origin.id, event.type_name
+        )
+      }
+      AppMessage::EmitEventToOthers(handled_by, event) => {
+        write!(
+          f,
+          "EmitEventToOthers({}, {})",
+          handled_by.id, event.type_name
+        )
       }
       AppMessage::Shutdown(_) => write!(f, "Shutdown"),
       AppMessage::SwitchStateChange(index, state) => {
@@ -84,7 +103,9 @@ impl Debug for AppMessage {
       AppMessage::CompleteRoutineStep(handle, type_id) => {
         write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
       }
-      AppMessage::HaltRoutine(handle, type_id) => write!(f, "HaltRoutine({}, {:?})", handle.id, type_id),
+      AppMessage::HaltRoutine(handle, type_id) => {
+        write!(f, "HaltRoutine({}, {:?})", handle.id, type_id)
+      }
       AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
       AppMessage::SystemActivityChanged(handle) => {
         write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)

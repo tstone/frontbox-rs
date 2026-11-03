@@ -380,7 +380,11 @@ mod tests {
     }
 
     fn retries_max(&self) -> u8 {
-      self.ctx.svc_ctx().config.get(&configs::TROUGH_EJECT_RETRIES)
+      self
+        .ctx
+        .svc_ctx()
+        .config
+        .get(&configs::TROUGH_EJECT_RETRIES)
     }
 
     /// Write the fixture's switch state into the context's switch cache
@@ -661,7 +665,10 @@ mod tests {
 
     f.set_balls(1);
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughOccupancyChanged", "TroughEjectStarted"]
+    );
     assert_eq!(f.trough.eject_queue, 0);
     assert!(f.is_verifying());
   }
@@ -686,7 +693,10 @@ mod tests {
     assert_eq!(f.trough.eject_queue, 1);
 
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughOccupancyChanged", "TroughEjectStarted"]
+    );
     assert!(f.is_verifying());
   }
 
@@ -702,7 +712,10 @@ mod tests {
     f.settle();
     f.close_plunge();
     // the held exit is reported before the queued eject starts
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughOccupancyChanged", "TroughEjectStarted"]
+    );
     assert_eq!(f.trough.eject_queue, 0);
     assert!(f.is_verifying());
   }
@@ -778,7 +791,10 @@ mod tests {
     assert!(f.events().is_empty());
 
     f.settle();
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughOccupancyChanged", "TroughEjectStarted"]
+    );
     assert!(f.is_verifying());
   }
 
@@ -851,7 +867,10 @@ mod tests {
     assert!(f.is_verifying());
     assert_eq!(f.trough.eject_retries, 1);
     // the deferred retry goes through eject(), so TroughEjectStarted is emitted again
-    assert_eq!(f.events(), vec!["TroughOccupancyChanged", "TroughEjectStarted"]);
+    assert_eq!(
+      f.events(),
+      vec!["TroughOccupancyChanged", "TroughEjectStarted"]
+    );
   }
 
   #[test]

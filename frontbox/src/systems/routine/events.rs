@@ -42,6 +42,9 @@ impl<E: Event + Clone> RoutineStarted<E> {
 /// halted it, handing back the routine as it was started. The origin watches this to carry on, so it doesn't need to
 /// hold on to the routine.
 ///
+/// The origin hears it first. Everyone else hears it once what the origin queued in response has landed, so a state
+/// it sets is already in place, and a system that becomes active as a result hears it as well.
+///
 /// ```rust
 /// # use frontbox::prelude::*;
 /// # #[derive(Serialize, Event, Clone)]

@@ -1,10 +1,10 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
 use frontbox::prelude::{
-  ConfigDomainValue, Hardware, RoutineStarted, SystemDespawned, SystemSpawned,
+  ConfigDomainValue, Hardware, RoutineCompleted, RoutineStarted, SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
-use frontbox_pinball::{GameEnded, GameStarting, TurnStarting};
+use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
 use std::any::type_name;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::PathBuf;
@@ -245,7 +245,7 @@ impl ConsoleHub {
     let record = TraceRecord {
       seq: state.next_seq,
       at_ms: state.started.elapsed().as_millis() as u64,
-      // GameEnded is still tagged with the game it ended
+      // the end of a game is still tagged with the game it ended
       game: state.snapshot.game.clone(),
       event,
     };
@@ -318,7 +318,7 @@ impl GameTransition {
 
     if *name == type_name::<RoutineStarted<GameStarting>>() {
       Some(Self::Started)
-    } else if *name == type_name::<GameEnded>() {
+    } else if *name == type_name::<RoutineCompleted<GameEnding>>() {
       Some(Self::Ended)
     } else if *name == type_name::<RoutineStarted<TurnStarting>>() {
       let field = |name: &str| {

@@ -647,7 +647,10 @@ mod tests {
   fn a_tap_counts_a_fire() {
     let mut harness = Harness::new();
     harness.activate(ActivationMode::Tap);
-    assert_eq!(harness.counts(), vec![("boots", 1), ("driver_fires.coil", 1)]);
+    assert_eq!(
+      harness.counts(),
+      vec![("boots", 1), ("driver_fires.coil", 1)]
+    );
   }
 
   #[test]

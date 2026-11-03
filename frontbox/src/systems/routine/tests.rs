@@ -8,7 +8,9 @@ use tokio::sync::mpsc;
 use super::*;
 use crate::app::app_message::AppMessage;
 use crate::app::app_tracer::TracerSenders;
-use crate::app::run_loop::{apply_to_system, apply_to_systems};
+use crate::app::run_loop::{
+  apply_to_system, apply_to_systems, emit_event_to_origin, emit_event_to_others,
+};
 use crate::app::{Groups, GroupsExt};
 use crate::prelude::*;
 
@@ -211,6 +213,22 @@ impl Harness {
             .begin(type_id, &self.groups, &self.base, &self.tx, &self.tracers)
         }
         AppMessage::EmitEvent(_, event) => self.broadcast(event.event.as_ref()),
+        AppMessage::EmitEventOriginFirst(origin, event) => emit_event_to_origin(
+          origin,
+          event,
+          &self.groups,
+          &self.base,
+          &self.tx,
+          &self.tracers,
+        ),
+        AppMessage::EmitEventToOthers(origin, event) => emit_event_to_others(
+          origin,
+          event,
+          &self.groups,
+          &self.base,
+          &self.tx,
+          &self.tracers,
+        ),
         AppMessage::CompleteRoutineStep(caller, type_id) => self.routines.complete_step(
           caller,
           type_id,
@@ -670,6 +688,73 @@ fn started_and_completed_are_broadcast_around_the_steps() {
       "saw started",
       "step 1 in root",
       "completed",
+      "saw completed"
+    ]
+  );
+}
+
+/// An origin that carries on from the routine: it emits `CleanedUp`, and turns `ending` on
+struct OriginCarriesOn {
+  log: Log,
+  ending: Rc<Cell<bool>>,
+}
+
+impl System for OriginCarriesOn {
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+    if event.is::<RoutineCompleted<TurnEnding>>() {
+      self.log.borrow_mut().push("completed".to_string());
+      self.ending.set(true);
+      ctx.emit(CleanedUp);
+    }
+  }
+}
+
+/// A watcher that's only active once the origin carries on from the routine
+struct WatcherAfterwards {
+  log: Log,
+  ending: Rc<Cell<bool>>,
+}
+
+impl System for WatcherAfterwards {
+  fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+    if event.is::<RoutineCompleted<TurnEnding>>() {
+      self.log.borrow_mut().push("saw completed".to_string());
+    }
+  }
+
+  fn is_active(&self, _ctx: &SystemContext) -> bool {
+    self.ending.get()
+  }
+}
+
+#[test]
+fn the_origin_carries_on_before_everyone_else_hears_completed() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let ending = Rc::new(Cell::new(false));
+  // spawned before the origin, so a single broadcast would reach it before the origin turns it on
+  let log = h.log.clone();
+  h.spawn(
+    ROOT_GROUP_NAME,
+    WatcherAfterwards {
+      log,
+      ending: ending.clone(),
+    },
+  );
+  h.watcher(false);
+  let log = h.log.clone();
+  let origin = h.spawn(ROOT_GROUP_NAME, OriginCarriesOn { log, ending });
+  h.step::<1>(ROOT_GROUP_NAME, true);
+
+  h.start(origin);
+
+  assert_eq!(
+    h.log(),
+    [
+      "saw started",
+      "step 1 in root",
+      "completed",
+      "cleaned up",
+      "saw completed",
       "saw completed"
     ]
   );

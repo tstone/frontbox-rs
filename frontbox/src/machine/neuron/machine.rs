@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use crate::machine::neuron::boot;
 use crate::machine::driver_triggers::DriverTriggers;
+use crate::machine::neuron::boot;
 use crate::machine::serial_interface::SerialInterface;
 use crate::machine::*;
 use crate::prelude::app_message::AppMessage;

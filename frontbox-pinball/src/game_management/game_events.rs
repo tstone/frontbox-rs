@@ -1,8 +1,9 @@
 use frontbox::prelude::Event;
 
-/// Routine run once a game is started, before the first turn: the first player has been added. Its participants are what happens before the first player is up (a game-start sound, a start-of-game
-/// display). More players can still be added while it runs. The first turn's `TurnStarting` begins once the last
-/// participant completes its step. With no routine defined, the first turn begins right away.
+/// Routine run once a game is started, before the first turn: the first player has been added. Its participants are
+/// what happens before the first player is up (a game-start sound, a start-of-game display). More players can still be
+/// added while it runs. The first turn's `TurnStarting` begins once the last participant completes its step. With no
+/// routine defined, the first turn begins right away.
 ///
 /// ```rust,ignore
 /// app.routine::<GameStarting>(routine![GameStartPresenter]);
@@ -12,18 +13,14 @@ use frontbox::prelude::Event;
 #[derive(serde::Serialize, Event, Clone)]
 pub struct GameStarting;
 
-/// Emitted once the game is over: `GameEnding` has completed, the player groups are gone, and no game is started. This
-/// is what systems that only run outside a game (attract mode, the start button) see, as they're inactive while
-/// `GameEnding` runs.
-#[derive(serde::Serialize, Event, Clone)]
-pub struct GameEnded {
-  pub scores: Vec<(&'static str, u32)>,
-}
-
 /// Routine run once play is over, before the game ends: after the last turn's `TurnEnding` completes, or when the game
 /// is quit. Its participants are what happens before the machine returns to attract mode (match, high-score entry, a
-/// game-over display). The game is still started while it runs, so a new one can't be started meanwhile; `GameEnded`
-/// is emitted once the last participant completes its step. With no routine defined, the game ends right away.
+/// game-over display). The game is still started while it runs, so a new one can't be started meanwhile. With no
+/// routine defined, the game ends right away.
+///
+/// The game ends on its `RoutineCompleted`, which the game manager hears first. By the time anyone else hears it, the
+/// player groups are gone and `GamePhase` is `None`, so systems that only run outside a game (attract mode, the start
+/// button) are active again and hear it, final scores included.
 ///
 /// ```rust,ignore
 /// app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);

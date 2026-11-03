@@ -65,7 +65,9 @@ mod tests {
   mod planes {
     use super::*;
 
-    pub static PLAIN: ReferencePlane = ReferencePlane::new("Plain").extent(Vec2::new(20.0, 40.0)).build();
+    pub static PLAIN: ReferencePlane = ReferencePlane::new("Plain")
+      .extent(Vec2::new(20.0, 40.0))
+      .build();
 
     pub static LAZY: LazyLock<ReferencePlane> = LazyLock::new(|| {
       ReferencePlane::new("Lazy")

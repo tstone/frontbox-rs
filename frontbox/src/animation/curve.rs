@@ -159,15 +159,27 @@ mod tests {
     ];
 
     for curve in curves {
-      assert!(curve.sample(0.0).abs() < 0.01, "{curve:?} at 0.0 = {}", curve.sample(0.0));
-      assert!((curve.sample(1.0) - 1.0).abs() < 0.01, "{curve:?} at 1.0 = {}", curve.sample(1.0));
+      assert!(
+        curve.sample(0.0).abs() < 0.01,
+        "{curve:?} at 0.0 = {}",
+        curve.sample(0.0)
+      );
+      assert!(
+        (curve.sample(1.0) - 1.0).abs() < 0.01,
+        "{curve:?} at 1.0 = {}",
+        curve.sample(1.0)
+      );
     }
   }
 
   #[test]
   fn back_curves_overshoot_by_about_ten_percent() {
-    let min_in = (0..=100).map(|i| Curve::BackIn.sample(i as f32 / 100.0)).fold(f32::MAX, f32::min);
-    let max_out = (0..=100).map(|i| Curve::BackOut.sample(i as f32 / 100.0)).fold(f32::MIN, f32::max);
+    let min_in = (0..=100)
+      .map(|i| Curve::BackIn.sample(i as f32 / 100.0))
+      .fold(f32::MAX, f32::min);
+    let max_out = (0..=100)
+      .map(|i| Curve::BackOut.sample(i as f32 / 100.0))
+      .fold(f32::MIN, f32::max);
     assert!((-0.11..-0.09).contains(&min_in), "BackIn min = {min_in}");
     assert!((1.09..1.11).contains(&max_out), "BackOut max = {max_out}");
   }

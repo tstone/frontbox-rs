@@ -238,7 +238,9 @@ impl<'a> ServiceContext<'a> {
   }
 
   pub(crate) fn halt_routine(&self, handle: SystemHandle, type_id: TypeId) {
-    let _ = self.app_sender.send(AppMessage::HaltRoutine(handle, type_id));
+    let _ = self
+      .app_sender
+      .send(AppMessage::HaltRoutine(handle, type_id));
   }
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {

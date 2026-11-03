@@ -115,14 +115,18 @@ impl DriverTriggerDualMode {
   pub fn fires_on(&self) -> Option<(&'static str, SwitchState)> {
     match self {
       Self::FlipSwitchTrue_FlopSwitchTrue { flip_switch, .. }
-      | Self::FlipSwitchTrue_FlopSwitchFalse { flip_switch, .. } => Some((flip_switch, SwitchState::Closed)),
+      | Self::FlipSwitchTrue_FlopSwitchFalse { flip_switch, .. } => {
+        Some((flip_switch, SwitchState::Closed))
+      }
       Self::FlipSwitchFalse_FlopSwitchTrue { flip_switch, .. }
-      | Self::FlipSwitchFalse_FlopSwitchFalse { flip_switch, .. } => Some((flip_switch, SwitchState::Open)),
+      | Self::FlipSwitchFalse_FlopSwitchFalse { flip_switch, .. } => {
+        Some((flip_switch, SwitchState::Open))
+      }
       Self::FlipSwitchTrue_VirtualFlop(name) => Some((name, SwitchState::Closed)),
       Self::FlipSwitchFalse_VirtualFlop(name) => Some((name, SwitchState::Open)),
-      Self::Disabled | Self::VirtualFlip_FlopSwitchTrue(_) | Self::VirtualFlip_FlopSwitchFalse(_) => {
-        None
-      }
+      Self::Disabled
+      | Self::VirtualFlip_FlopSwitchTrue(_)
+      | Self::VirtualFlip_FlopSwitchFalse(_) => None,
     }
   }
 }

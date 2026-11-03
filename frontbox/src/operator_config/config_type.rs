@@ -60,8 +60,9 @@ impl ConfigType for Duration {
 
 /// Power in eighths, which are the choices of [`Ranges::full_power`](crate::operator_config::Ranges::full_power)
 /// and how power is saved
-pub(crate) const POWER_LEVEL_NAMES: [&str; 9] =
-  ["0%", "12.5%", "25%", "37.5%", "50%", "62.5%", "75%", "87.5%", "100%"];
+pub(crate) const POWER_LEVEL_NAMES: [&str; 9] = [
+  "0%", "12.5%", "25%", "37.5%", "50%", "62.5%", "75%", "87.5%", "100%",
+];
 
 /// The PWM pattern for each level, with the on slices spread across the 8ms window
 const POWER_LEVEL_PATTERNS: [Power; 9] = [

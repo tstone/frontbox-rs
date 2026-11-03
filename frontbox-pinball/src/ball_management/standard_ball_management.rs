@@ -5,9 +5,9 @@ use frontbox::prelude::*;
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, EjectCompleted, Launch,
-  LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem, StandardBallManagementConfig,
-  TroughEjectFailed, TroughOccupancyChanged,
+  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, EjectCompleted,
+  Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
+  StandardBallManagementConfig, TroughEjectFailed, TroughOccupancyChanged,
 };
 use crate::metrics;
 
@@ -334,7 +334,11 @@ impl StandardBallManagement {
   /// Carry out the launch intent for the ball in the lane with whatever hardware there is. Without an autoplunger, either intent
   /// waits for the player to plunge.
   fn launch_from_lane(&mut self, ctx: &SystemContext) {
-    let EjectState::InLane { launch_type: launch, .. } = self.eject_state else {
+    let EjectState::InLane {
+      launch_type: launch,
+      ..
+    } = self.eject_state
+    else {
       return;
     };
     let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() else {
@@ -655,7 +659,10 @@ mod tests {
     /// The launch intent of the ball on its way to the plunge lane, if there is one
     fn en_route(&self) -> Option<Launch> {
       match self.system.eject_state {
-        EjectState::EnRoute { launch_type: launch, .. } => Some(launch),
+        EjectState::EnRoute {
+          launch_type: launch,
+          ..
+        } => Some(launch),
         _ => None,
       }
     }
@@ -929,7 +936,10 @@ mod tests {
 
     f.trough_ejected();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
-    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
+    assert!(
+      f.system.trough_ejecting.is_some(),
+      "second ball is now ejecting"
+    );
     assert!(f.system.queue.is_empty());
   }
 
@@ -945,7 +955,10 @@ mod tests {
     let mut f = Fixture::with_lane(5, false, false);
     f.eject_many(2, Launch::Auto);
     f.deliver(&TroughEjectFailed);
-    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
+    assert!(
+      f.system.trough_ejecting.is_some(),
+      "second ball is now ejecting"
+    );
     assert!(f.system.queue.is_empty());
     assert_eq!(f.en_route(), Some(Launch::Auto));
   }
@@ -969,7 +982,10 @@ mod tests {
 
     f.lane_exited();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
-    assert!(f.system.trough_ejecting.is_some(), "second ball is now ejecting");
+    assert!(
+      f.system.trough_ejecting.is_some(),
+      "second ball is now ejecting"
+    );
     assert!(f.system.queue.is_empty());
   }
 
@@ -1066,12 +1082,18 @@ mod tests {
     let mut f = Fixture::with_lane(5, false, false);
     f.lane_entered(); // e.g. left in the lane at boot
     f.eject_many(1, Launch::Player);
-    assert!(!f.system.trough_ejecting.is_some(), "no second ball ejected");
+    assert!(
+      !f.system.trough_ejecting.is_some(),
+      "no second ball ejected"
+    );
     assert!(f.system.queue.is_empty());
 
     f.lane_exited();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Manual]);
-    assert!(!f.system.trough_ejecting.is_some(), "still no second ball once it's gone");
+    assert!(
+      !f.system.trough_ejecting.is_some(),
+      "still no second ball once it's gone"
+    );
   }
 
   #[test]
@@ -1083,7 +1105,10 @@ mod tests {
     assert_eq!(f.system.queue.len(), 1, "waits for the lane to clear");
 
     f.lane_exited();
-    assert!(f.system.trough_ejecting.is_some(), "its own ball is now ejecting");
+    assert!(
+      f.system.trough_ejecting.is_some(),
+      "its own ball is now ejecting"
+    );
   }
 
   #[test]

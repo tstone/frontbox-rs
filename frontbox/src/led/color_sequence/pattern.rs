@@ -47,9 +47,13 @@ mod tests {
     assert_eq!(colors[2], Rgba::default());
   }
 
-    #[test]
+  #[test]
   fn once_under() {
-    let colors = render(&vec![Rgba::red(), Rgba::white(), Rgba::blue()], Cycle::Once, 1);
+    let colors = render(
+      &vec![Rgba::red(), Rgba::white(), Rgba::blue()],
+      Cycle::Once,
+      1,
+    );
 
     assert_eq!(colors.len(), 1);
     assert_eq!(colors[0], Rgba::red());
