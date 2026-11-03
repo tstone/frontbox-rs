@@ -77,16 +77,20 @@
 //! ```rust
 //! # use frontbox::prelude::*;
 //! # struct ExampleSystem;
-//! # // stand-in for `GameManagementExt` from frontbox-pinball
-//! # trait GameExt { fn is_game_started(&self) -> bool; }
-//! # impl GameExt for SystemContext<'_> { fn is_game_started(&self) -> bool { true } }
+//! # // stand-in for `GamePhase` from frontbox-pinball
+//! # #[derive(State, Serialize, Default, Clone, PartialEq)]
+//! # enum GamePhase { #[default] None, Starting, Active, Ending }
 //! // Example system is only active during a game
 //! impl System for ExampleSystem {
 //!   fn is_active(&self, ctx: &SystemContext) -> bool {
-//!     ctx.is_game_started()
+//!     !ctx.in_state(GamePhase::None)
 //!   }
 //! }
 //! ```
+//!
+//! Prefer reading a [state](mod@crate::systems::state) in `is_active` over asking another system. A state holds the
+//! same value for every system while an event is broadcast. Another system's own fields can change partway through
+//! the broadcast, so whether a system hears an event would depend on whether it's handled before or after that change.
 //!
 //! Systems active state can also be controlled by a [parent group](mod@crate::systems::system_group).
 //!

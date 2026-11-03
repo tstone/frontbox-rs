@@ -1,11 +1,10 @@
 ## Foundations
 
-- tests for run_loop
+- tests for run_loop (should this get refactored to more than bare functions?)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
 - Does metrics need to go on app state or can it just be owned by run_loop
 - Should a "hold" (like how BallSave uses them) be a framework feature?
-- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD menu animation and transition items.
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.
 - So much is built on LedSystem that the framework should probably just start it up automatically. Needs: interfaces above, so it can still be swapped.
@@ -27,22 +26,11 @@
 - Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
-- Audits: the operator-facing view of metrics (coils fired, average game time, ball saves, etc.), with resets by
-  category. Needs: metrics system.
-- Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no
-  ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can
-  show it and record it in audits. Kick strength can be escalated with `MachineSystem::configure_driver`. Needs: audits. Open
-  questions: retry forever or give up, and should `Launch::Auto` balls (e.g. multiball) be skipped sooner than
-  `Launch::Player`
-- Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.)
-  that user systems can declare statically. A board has a name, direction (higher or lower is better), capacity (5, or
-  1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a
-  pending entry per player; at game end, initials entry runs once per player and the initials go on every board they
-  made. That single end-of-game pass should also fix high scores being janky and needing too much system switching.
-  Stored as TOML via `frontbox::toml`.
+- Operator metrics can be reset (e.g. when a coil is replaced)
+- Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
+- Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.) that user systems can declare statically. A board has a name, direction (higher or lower is better), capacity (5, or 1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a pending entry per player; at game end, initials entry runs once per player and the initials go on every board they made. That single end-of-game pass should also fix high scores being janky and needing too much system switching. Stored as TOML via `frontbox::toml`.
 - Stability: Robust handling for USB disconnects/reconnects
-- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes
-  linux-specific shutdown handling
+- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 
 ## API cleanup
 
@@ -89,6 +77,7 @@
 
 ## DMD
 
+- Support a virtual DMD that renders to the console, for developing and testing without hardware. Needed by the DMD menu animation and transition items.
 - DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Implement all menu sounds
 - Need a better pattern/more generalized UI DSP to do the following:
@@ -99,8 +88,8 @@
 ## Canvas
 
 - Modulations should work with canvas
-- Uses locations for 2d plane rendering via projections
-- Reference plane stitching
+- Uses locations for 2d plane rendering via projections (maybe with max Z?)
+- Reference plane stitching (for playing 2d anims on difference planes)
 - Fill2d needs a perlin noise fill
 - combine DMD rendering + led canvas rendering. Needs: frontbox-dmd split.
 
