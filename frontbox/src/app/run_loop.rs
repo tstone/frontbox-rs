@@ -265,7 +265,7 @@ where
     && let Some(mut system) = groups.system(handle)
   {
     let mut ctx = SystemContext::new(base, handle, groups, &app_sender);
-    if system.handle_active(&ctx, tracer_txs) {
+    if handle_active(&mut system, &ctx, app_sender, tracer_txs) {
       result = Some(handler(&mut system, &mut ctx));
     } else {
       log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
@@ -307,7 +307,7 @@ pub(crate) fn apply_to_systems<F>(
           groups,
           app_sender,
         );
-        if system.handle_active(&ctx, tracer_txs) {
+        if handle_active(&mut system, &ctx, app_sender, tracer_txs) {
           handler(&mut system, &mut ctx);
         } else {
           log::trace!(target: "frontbox::inactive", "System {} is inactive, skipping", system.id());
@@ -315,6 +315,35 @@ pub(crate) fn apply_to_systems<F>(
       }
     }
   }
+}
+
+/// Whether the system is active, firing its deactivate/reactivate handler and broadcasting the change if its activity
+/// changed since it was last checked
+fn handle_active(
+  system: &mut SystemContainer,
+  ctx: &SystemContext,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) -> bool {
+  let check = system.handle_active(ctx, tracer_txs);
+  if check.changed {
+    emit_activity_changed(ctx.handle(), check.active, app_sender);
+  }
+  check.active
+}
+
+/// Broadcast [`SystemReactivated`] or [`SystemDeactivated`], once the system's own handler has run
+fn emit_activity_changed(
+  handle: SystemHandle,
+  active: bool,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+) {
+  let event = if active {
+    EventBox::new(SystemReactivated::new(handle.id, handle.group))
+  } else {
+    EventBox::new(SystemDeactivated::new(handle.id, handle.group))
+  };
+  let _ = app_sender.send(EmitEvent(None, event));
 }
 
 fn emit_event(
@@ -709,6 +738,7 @@ fn activate_system_group(
 
     if system.is_active(&ctx) {
       system.on_reactivate(&ctx);
+      emit_activity_changed(handle, true, &app_sender);
     }
   }
 
@@ -737,6 +767,7 @@ fn deactivate_system_group(
     let mut system = groups.system(handle).unwrap();
     let ctx = SystemContext::new(base, handle, groups, &app_sender);
     system.on_deactivate(&ctx);
+    emit_activity_changed(handle, false, &app_sender);
   }
 
   tracer_txs.send(TraceEvent::SystemGroupActiveStateChange { id, active: false });
@@ -827,12 +858,13 @@ mod tests {
     base: AppState,
     groups: Groups,
     tx: mpsc::UnboundedSender<AppMessage>,
+    rx: mpsc::UnboundedReceiver<AppMessage>,
     tracers: TracerSenders,
   }
 
   impl Harness {
     fn new() -> Self {
-      let (tx, _rx) = mpsc::unbounded_channel();
+      let (tx, rx) = mpsc::unbounded_channel();
       let mut groups = Groups::new();
       groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
 
@@ -840,8 +872,25 @@ mod tests {
         base: AppState::default(),
         groups,
         tx,
+        rx,
         tracers: TracerSenders::new(Vec::new()),
       }
+    }
+
+    /// The `SystemDeactivated` and `SystemReactivated` events sent so far, as `(system id, active)`
+    fn activity_events(&mut self) -> Vec<(u64, bool)> {
+      let mut events = Vec::new();
+      while let Ok(message) = self.rx.try_recv() {
+        if let AppMessage::EmitEvent(_, event_box) = message {
+          let event = event_box.event.as_ref();
+          if let Some(e) = event.downcast_ref::<SystemDeactivated>() {
+            events.push((e.id, false));
+          } else if let Some(e) = event.downcast_ref::<SystemReactivated>() {
+            events.push((e.id, true));
+          }
+        }
+      }
+      events
     }
 
     fn spawn_owner(&mut self) -> SystemHandle {
@@ -919,5 +968,65 @@ mod tests {
     assert!(!h.groups.contains_key(&first));
     assert_eq!(h.groups[&second].owner, Some(second_owner));
     assert_eq!(h.groups.handles_in(second).len(), 1);
+  }
+
+  /// Active while its flag is set
+  struct Toggled(std::rc::Rc<std::cell::Cell<bool>>);
+
+  impl System for Toggled {
+    fn is_active(&self, _ctx: &SystemContext) -> bool {
+      self.0.get()
+    }
+  }
+
+  #[test]
+  fn a_system_changing_its_own_activity_is_broadcast() {
+    let mut h = Harness::new();
+    let active = std::rc::Rc::new(std::cell::Cell::new(true));
+    let container = SystemContainer::new(Toggled(active.clone()));
+    let id = container.id();
+    spawn_system(
+      container,
+      ROOT_GROUP,
+      &mut h.groups,
+      &h.base,
+      h.tx.clone(),
+      &h.tracers,
+    );
+    h.activity_events();
+    let check = |h: &Harness| apply_to_systems(&h.groups, &h.base, &h.tx, &h.tracers, |_, _| ());
+
+    check(&h);
+    assert_eq!(h.activity_events(), vec![]);
+
+    active.set(false);
+    check(&h);
+    check(&h);
+    assert_eq!(h.activity_events(), vec![(id, false)]);
+
+    active.set(true);
+    check(&h);
+    assert_eq!(h.activity_events(), vec![(id, true)]);
+  }
+
+  #[test]
+  fn a_group_changing_activity_is_broadcast_for_its_systems() {
+    let mut h = Harness::new();
+    let owner = h.spawn_owner();
+    let group = h.spawn_group(owner, "group");
+    let members: Vec<(u64, bool)> = h
+      .groups
+      .handles_in(group)
+      .iter()
+      .map(|m| (m.id, false))
+      .collect();
+    h.activity_events();
+
+    deactivate_system_group(group, &mut h.groups, &h.base, h.tx.clone(), &h.tracers);
+    assert_eq!(h.activity_events(), members);
+
+    activate_system_group(group, &mut h.groups, &h.base, h.tx.clone(), &h.tracers);
+    let reactivated: Vec<(u64, bool)> = members.iter().map(|(id, _)| (*id, true)).collect();
+    assert_eq!(h.activity_events(), reactivated);
   }
 }

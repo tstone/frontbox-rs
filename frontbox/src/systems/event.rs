@@ -176,3 +176,31 @@ impl SystemDespawned {
     Self { id, group }
   }
 }
+
+/// Event that happens when a system stops being active: its `is_active` turned false, or its group was deactivated.
+/// Fired automatically by the framework, after the system's `on_deactivate`.
+#[derive(serde::Serialize, Event, Debug, Clone, Copy)]
+pub struct SystemDeactivated {
+  pub id: u64,
+  pub group: GroupId,
+}
+
+impl SystemDeactivated {
+  pub fn new(id: u64, group: GroupId) -> Self {
+    Self { id, group }
+  }
+}
+
+/// Event that happens when an inactive system becomes active again: its `is_active` turned true, or its group was
+/// reactivated. Fired automatically by the framework, after the system's `on_reactivate`.
+#[derive(serde::Serialize, Event, Debug, Clone, Copy)]
+pub struct SystemReactivated {
+  pub id: u64,
+  pub group: GroupId,
+}
+
+impl SystemReactivated {
+  pub fn new(id: u64, group: GroupId) -> Self {
+    Self { id, group }
+  }
+}

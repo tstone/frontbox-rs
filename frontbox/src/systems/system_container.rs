@@ -51,7 +51,9 @@ impl SystemContainer {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
-  fn on_deactivate(&mut self, ctx: &SystemContext) {
+  /// Called when the system is deactivated, by its own `is_active` or its group's. The run loop broadcasts
+  /// [`SystemDeactivated`] afterwards.
+  pub(crate) fn on_deactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
       target: "frontbox::systems::lifecycle",
       "🌐 System {} ({}) is now inactive",
@@ -61,8 +63,9 @@ impl SystemContainer {
     self.inner.on_deactivate(ctx);
   }
 
-  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
-  fn on_reactivate(&mut self, ctx: &SystemContext) {
+  /// Called when the system is re-activated after being deactivated, by its own `is_active` or its group's. The run
+  /// loop broadcasts [`SystemReactivated`] afterwards.
+  pub(crate) fn on_reactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
       target: "frontbox::systems::lifecycle",
       "🌐 System {} ({}) is now active",
@@ -80,7 +83,11 @@ impl SystemContainer {
 
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
   /// Use `is_active` if you just want to check the active state without firing handlers.
-  pub(crate) fn handle_active(&mut self, ctx: &SystemContext, tracer_txs: &TracerSenders) -> bool {
+  pub(crate) fn handle_active(
+    &mut self,
+    ctx: &SystemContext,
+    tracer_txs: &TracerSenders,
+  ) -> ActivityCheck {
     let fresh = self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
@@ -103,8 +110,12 @@ impl SystemContainer {
       ctx.routines.report_activity_changed();
     }
 
+    let changed = fresh != self.last_active_state;
     self.last_active_state = fresh;
-    fresh
+    ActivityCheck {
+      active: fresh,
+      changed,
+    }
   }
 
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
@@ -166,6 +177,13 @@ impl SystemContainer {
   pub(crate) fn downcast_mut<T: System + 'static>(&mut self) -> Option<&mut T> {
     (self.as_any_mut)(self.inner.as_mut()).downcast_mut::<T>()
   }
+}
+
+/// The result of [`SystemContainer::handle_active`]
+pub(crate) struct ActivityCheck {
+  pub active: bool,
+  /// Whether `active` differs from the last check, so a deactivate or reactivate handler ran
+  pub changed: bool,
 }
 
 impl Deref for SystemContainer {
@@ -270,5 +288,42 @@ impl ChildSystemContainer {
 impl<T: ChildSystem + 'static> From<T> for ChildSystemContainer {
   fn from(system: T) -> Self {
     Self::new(system)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::cell::Cell;
+  use std::rc::Rc;
+
+  use super::*;
+
+  /// Active while its flag is set
+  struct Toggled(Rc<Cell<bool>>);
+
+  impl System for Toggled {
+    fn is_active(&self, _ctx: &SystemContext) -> bool {
+      self.0.get()
+    }
+  }
+
+  #[test]
+  fn handle_active_reports_changes() {
+    let ctx = TestContext::default();
+    let tracers = TracerSenders::new(Vec::new());
+    let active = Rc::new(Cell::new(true));
+    let mut system = SystemContainer::new(Toggled(active.clone()));
+    system.initialize(&ctx.sys_ctx());
+    let mut check = || {
+      let check = system.handle_active(&ctx.sys_ctx(), &tracers);
+      (check.active, check.changed)
+    };
+
+    assert_eq!(check(), (true, false));
+    active.set(false);
+    assert_eq!(check(), (false, true));
+    assert_eq!(check(), (false, false));
+    active.set(true);
+    assert_eq!(check(), (true, true));
   }
 }

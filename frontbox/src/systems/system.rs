@@ -17,20 +17,13 @@ pub trait System: Any {
   /// Called when the system is removed
   fn on_despawn(&mut self, ctx: &SystemContext) {}
 
-  /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
-  fn on_deactivate(&mut self, ctx: &SystemContext) {
-    // TODO: should probably emit a despawned/deactivated event that LedSystem handles instead
-    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
-      led_system.deactivate_by_system(ctx.id());
-    }
-  }
+  /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles).
+  /// [`SystemDeactivated`] is broadcast afterwards.
+  fn on_deactivate(&mut self, ctx: &SystemContext) {}
 
-  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
-  fn on_reactivate(&mut self, ctx: &SystemContext) {
-    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
-      led_system.activate_by_system(ctx.id());
-    }
-  }
+  /// Called when the system is re-activated after being deactivated. This also includes if a parent group is
+  /// re-activated (activation bubbles). [`SystemReactivated`] is broadcast afterwards.
+  fn on_reactivate(&mut self, ctx: &SystemContext) {}
 
   /// On tick is called every system tick, which is typically 30-60Hz, but can be configured by the app. This is where most of the game logic should go.
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {}
@@ -48,7 +41,9 @@ pub trait System: Any {
       "{} is listed in a routine but doesn't implement `on_routine`; completing its step",
       type_name::<Self>()
     );
-    ctx.routines.complete_step_by_type_id(routine.as_any().type_id());
+    ctx
+      .routines
+      .complete_step_by_type_id(routine.as_any().type_id());
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {

@@ -316,6 +316,10 @@ impl System for LedSystem {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
     if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
       self.undeclare_by_system(id);
+    } else if let Some(SystemDeactivated { id, .. }) = event.downcast_ref::<SystemDeactivated>() {
+      self.deactivate_by_system(*id);
+    } else if let Some(SystemReactivated { id, .. }) = event.downcast_ref::<SystemReactivated>() {
+      self.activate_by_system(*id);
     }
   }
 
@@ -721,5 +725,27 @@ mod tests {
 
     // final color shows through as pink
     assert_eq!(resolved_color, Rgba([255, 127, 127, 255]));
+  }
+
+  // A system's declarations stop rendering while it's inactive, and come back when it's reactivated
+  #[test]
+  fn follows_system_activity() {
+    let ctx = TestContext::default();
+    let mut system = LedSystem::new();
+    let led = LedAddress {
+      exp: ExpAddress::new(3, None, 0),
+      index: 1,
+    };
+    system.declare(
+      42,
+      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
+    );
+    let is_active = |system: &LedSystem| system.declarations[&led].values().all(|d| d.active);
+
+    system.on_event(&SystemDeactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
+    assert!(!is_active(&system));
+
+    system.on_event(&SystemReactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
+    assert!(is_active(&system));
   }
 }
