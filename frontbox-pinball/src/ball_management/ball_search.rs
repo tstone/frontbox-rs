@@ -7,8 +7,9 @@ use crate::{configs, metrics};
 /// config) without a ball present switch closing.
 pub struct BallSearchSystem {
   cue_id: Option<u64>,
-  handle: SystemHandle,
   ball_present_q: SwitchQ,
+  // The drivers to fire during a search. Unused until ball search itself is implemented.
+  #[allow(dead_code)]
   ball_searchable_q: DriverQ,
 }
 
@@ -16,7 +17,6 @@ impl BallSearchSystem {
   pub fn new(ball_present_q: SwitchQ, ball_searchable_q: DriverQ) -> Self {
     Self {
       cue_id: None,
-      handle: SystemHandle::default(),
       ball_present_q,
       ball_searchable_q,
     }

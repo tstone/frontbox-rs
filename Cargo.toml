@@ -11,5 +11,3 @@ members = [
     "frontbox-pinball",
 ]
 resolver = "2"
-
-license-file = ["LICENSE-MIT", "LICENSE-APACHE"]

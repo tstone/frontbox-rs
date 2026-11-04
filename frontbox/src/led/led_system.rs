@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::i8;
 
 use image::{Pixel, Rgba};
 use itertools::Itertools;
