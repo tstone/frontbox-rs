@@ -1,12 +1,14 @@
 use frontbox::prelude::*;
 
-use crate::GameManager;
+use crate::{GameEndReason, GameManager};
 
 pub trait GameManagementExt {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started.
   fn add_player(&self);
   /// Ends the game in progress early. See `GameManagement::quit_game`.
-  fn quit_game(&self);
+  fn quit_game(&self, reason: GameEndReason);
+  /// The current player tilts. See `GameManagement::tilt`.
+  fn tilt(&self);
 
   /// Add points to the current player/team
   fn add_points(&self, points: u32);
@@ -48,10 +50,17 @@ impl<'a> GameManagementExt for SystemContext<'a> {
     });
   }
 
-  fn quit_game(&self) {
+  fn quit_game(&self, reason: GameEndReason) {
     let ctx = self;
     with_game_manager(self, |manager| {
-      manager.quit_game(ctx.into());
+      manager.quit_game(reason, ctx.into());
+    });
+  }
+
+  fn tilt(&self) {
+    let ctx = self;
+    with_game_manager(self, |manager| {
+      manager.tilt(ctx.into());
     });
   }
 

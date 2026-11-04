@@ -50,7 +50,6 @@ Q: Not yet. Frontbox uses [rustdoc](https://doc.rust-lang.org/rustdoc/what-is-ru
 A: Some notable things. You probably should wait.
 
 - Core pinball:
-  - tilt
   - ball search
   - outlane saves
   - high scores

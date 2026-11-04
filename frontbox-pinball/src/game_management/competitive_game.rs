@@ -29,11 +29,12 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 ///   ball in play switch hit, whichever comes first.
 /// - Routine: `BallDraining` - Started for each drain (`BallsExitedPlay`), so its participants can save the ball. A
 ///   participant halting it saves the drain. A drain while another is being decided waits its turn.
-/// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted. Modes
-///   clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`: to the same player, if they
-///   have an extra ball to use (`TurnStartReason::ExtraBall`), otherwise to the next player.
+/// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted, or at once
+///   on a tilt (`tilt`, `TurnEndReason::Tilted`). Modes clean up on its `RoutineStarted`. Once it completes and no ball
+///   is left in play, the turn advances: to the same player, if they have an extra ball to use
+///   (`TurnStartReason::ExtraBall`), otherwise to the next player.
 ///
-/// Once the last turn's `TurnEnding` completes, or the game is quit (`quit_game`), play is over:
+/// Once the last turn's `TurnEnding` completes, or the game is quit (`quit_game`, also on a slam tilt), play is over:
 /// - Routine: `GameEnding` - Started at the root. The game stays started while it runs, so its participants
 ///   (high-score entry, say) can take their time without a new game starting.
 /// The game ends on `GameEnding`'s `RoutineCompleted`: the player groups are despawned and the states reset before
@@ -69,6 +70,10 @@ pub struct CompetitiveGame {
   draining: bool,
   /// Drains waiting for the one being decided, oldest first
   pending_drains: VecDeque<BallDraining>,
+  /// Whether the current turn was tilted. Points are ignored until the next turn.
+  tilted: bool,
+  /// Whether `TurnEnding` has completed, and the turn advances once no ball is left in play
+  waiting_for_balls: bool,
   /// The phase of the game, kept here for the same reason as `turn_phase`. While it's `Starting` or `Ending`, no turn
   /// moves on.
   game_phase: GamePhase,
@@ -92,6 +97,8 @@ impl CompetitiveGame {
       ball_served: false,
       draining: false,
       pending_drains: VecDeque::new(),
+      tilted: false,
+      waiting_for_balls: false,
       game_phase: GamePhase::None,
     }
   }
@@ -138,6 +145,8 @@ impl CompetitiveGame {
     self.ball_served = false;
     self.draining = false;
     self.pending_drains.clear();
+    self.tilted = false;
+    self.waiting_for_balls = false;
     let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
     ctx.start_routine_in(
@@ -247,7 +256,7 @@ impl CompetitiveGame {
       }
       RoutineCompletion::AllSteps if done.routine.in_play == 0 => {
         self.pending_drains.clear();
-        self.transition_turn_to_ending(ctx);
+        self.transition_turn_to_ending(TurnEndReason::Drained, ctx);
         return;
       }
       RoutineCompletion::AllSteps => {}
@@ -257,8 +266,8 @@ impl CompetitiveGame {
     }
   }
 
-  fn transition_turn_to_ending(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending");
+  fn transition_turn_to_ending(&mut self, reason: TurnEndReason, ctx: &ServiceContext) {
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending ({:?})", reason);
     self.set_turn_phase(TurnPhase::Ending, ctx);
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
@@ -270,11 +279,33 @@ impl CompetitiveGame {
       TurnEnding {
         current_player: game_state.current_player(),
         turn: game_state.current_player_turn(),
+        reason,
       },
     );
   }
 
+  /// `TurnEnding` completed. The turn advances once no ball is left in play: balls released during the routine, or
+  /// still rolling down after a tilt, are waited for.
+  fn turn_ended(&mut self, ctx: &ServiceContext) {
+    let in_play = self.balls_in_play(ctx);
+    if in_play > 0 {
+      log::info!(target: "frontbox::game_manager", "Waiting for {} ball(s) to leave play before advancing", in_play);
+      self.waiting_for_balls = true;
+    } else {
+      self.advance_turn(ctx);
+    }
+  }
+
+  fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
+    let ctx = &ctx.for_system(self.handle);
+    ctx
+      .get::<BallManager>()
+      .map(|ball_manager| ball_manager.balls_in_play(ctx.into()))
+      .unwrap_or(0)
+  }
+
   fn advance_turn(&mut self, ctx: &ServiceContext) {
+    self.waiting_for_balls = false;
     let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
@@ -328,6 +359,7 @@ impl CompetitiveGame {
     self.update_player_entry(ctx);
     self.draining = false;
     self.pending_drains.clear();
+    self.waiting_for_balls = false;
     self.turn_active_at = None;
 
     let scores = self.scores();
@@ -423,7 +455,13 @@ impl System for CompetitiveGame {
         }
       }
       TurnPhase::Ending => {
+        // drains while the turn is ending (balls rolling down after a tilt) start no BallDraining: they can't be saved
         if event.is::<RoutineCompleted<TurnEnding>>() {
+          self.turn_ended(ctx.into());
+        } else if let Some(BallsExitedPlay { in_play: 0, .. }) =
+          event.downcast_ref::<BallsExitedPlay>()
+          && self.waiting_for_balls
+        {
           self.advance_turn(ctx.into());
         }
       }
@@ -468,7 +506,7 @@ impl GameManagement for CompetitiveGame {
     self.update_player_entry(ctx);
   }
 
-  fn quit_game(&mut self, ctx: &ServiceContext) {
+  fn quit_game(&mut self, reason: GameEndReason, ctx: &ServiceContext) {
     let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
       return;
     };
@@ -477,8 +515,10 @@ impl GameManagement for CompetitiveGame {
       return;
     }
 
-    log::info!(target: "frontbox::game_manager", "Quitting game");
-    ctx.metrics.inc(&metrics::GAMES_QUIT);
+    log::info!(target: "frontbox::game_manager", "Quitting game ({:?})", reason);
+    if reason == GameEndReason::Quit {
+      ctx.metrics.inc(&metrics::GAMES_QUIT);
+    }
     let ctx = &ctx.for_system(self.handle);
     // quit during GameStarting: no turn has begun, so there's none to end
     if self.game_phase == GamePhase::Active {
@@ -487,7 +527,33 @@ impl GameManagement for CompetitiveGame {
       ctx.deactivate_system_group(&self.player_groups[player as usize]);
       ctx.metrics.flush();
     }
-    self.start_game_ending(GameEndReason::Quit, ctx.into());
+    self.start_game_ending(reason, ctx.into());
+  }
+
+  fn tilt(&mut self, ctx: &ServiceContext) {
+    let playing = match self.turn_phase {
+      TurnPhase::Starting => self.ball_served,
+      TurnPhase::Active => true,
+      TurnPhase::None | TurnPhase::Ending => false,
+    };
+    if self.game_phase != GamePhase::Active || !playing {
+      log::info!(target: "frontbox::game_manager", "Tilt while no ball is being played, ignored");
+      return;
+    }
+    let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
+      return;
+    };
+
+    log::info!(target: "frontbox::game_manager", "Player {} tilted", player + 1);
+    ctx.metrics.inc(&metrics::TILTS);
+    self.tilted = true;
+    // a drain being decided completes on its own, and is ignored as the turn is ending
+    self.draining = false;
+    self.pending_drains.clear();
+    ctx.for_system(self.handle).emit(PlayerTilted {
+      player_index: player,
+    });
+    self.transition_turn_to_ending(TurnEndReason::Tilted, ctx);
   }
 
   fn game_state(&self) -> Option<&GameState> {
@@ -511,6 +577,10 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn add_points(&mut self, points: u32, ctx: &ServiceContext) {
+    if self.tilted {
+      log::debug!(target: "frontbox::game_manager", "{} points ignored, the turn was tilted", points);
+      return;
+    }
     if let Some(game_state) = &mut self.game_state {
       let multiplier = game_state.current_player_multiplier();
       let points_received = (points as f32 * multiplier) as u32;
@@ -557,8 +627,11 @@ impl GameManagement for CompetitiveGame {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+  use std::sync::atomic::{AtomicU8, Ordering};
+
   use super::*;
-  use crate::ball_management::LaunchMethod;
+  use crate::ball_management::{BallManagement, LaunchMethod};
 
   fn done<E: Event>(routine: E, completion: RoutineCompletion) -> RoutineCompleted<E> {
     RoutineCompleted {
@@ -570,6 +643,33 @@ mod tests {
   struct Fixture {
     game: CompetitiveGame,
     ctx: TestContext,
+    /// What `FakeBalls` reports as in play
+    in_play: Arc<AtomicU8>,
+  }
+
+  /// Ball management that only reports the balls in play it's told
+  struct FakeBalls {
+    in_play: Arc<AtomicU8>,
+  }
+
+  impl System for FakeBalls {}
+
+  impl BallManagement for FakeBalls {
+    fn eject(&mut self, _launch: Launch, _ctx: &ServiceContext) -> u64 {
+      0
+    }
+    fn eject_many(&mut self, _count: u8, _launch: Launch, _ctx: &ServiceContext) -> u64 {
+      0
+    }
+    fn can_auto_launch(&self) -> bool {
+      true
+    }
+    fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
+      self.in_play.load(Ordering::SeqCst)
+    }
+    fn establish_ball_count(&mut self, _ctx: &ServiceContext) {}
+    fn ball_temporarily_removed_from_play(&mut self, _ctx: &ServiceContext) {}
+    fn ball_returned_to_play(&mut self, _ctx: &ServiceContext) {}
   }
 
   impl Fixture {
@@ -601,12 +701,16 @@ mod tests {
 
     /// A game of up to `max_players` players and `turns` turns, with one player added and `GameStarting` running
     fn starting(max_players: u8, turns: u8) -> Self {
-      let ctx = TestContext::default();
+      let mut ctx = TestContext::default();
       ctx.svc_ctx().config.set(&configs::TURN_COUNT, turns);
+      let in_play = Arc::new(AtomicU8::new(0));
+      ctx.insert_system(BallManager::new(FakeBalls {
+        in_play: in_play.clone(),
+      }));
       let mut game = CompetitiveGame::new(max_players, Vec::new(), SwitchQ::names([]));
       game.on_spawn(&ctx.sys_ctx());
       game.add_player(&ctx.svc_ctx());
-      Self { game, ctx }
+      Self { game, ctx, in_play }
     }
 
     fn event(&mut self, event: impl Event) {
@@ -630,13 +734,40 @@ mod tests {
         },
         RoutineCompletion::AllSteps,
       ));
+      self.complete_turn_ending(TurnEndReason::Drained);
+    }
+
+    fn complete_turn_ending(&mut self, reason: TurnEndReason) {
+      let state = self.game.game_state().unwrap();
+      let (current_player, turn) = (state.current_player(), state.current_player_turn());
       self.event(done(
         TurnEnding {
           current_player,
           turn,
+          reason,
         },
         RoutineCompletion::AllSteps,
       ));
+    }
+
+    /// Balls in play, as ball management reports them
+    fn set_in_play(&mut self, in_play: u8) {
+      self.in_play.store(in_play, Ordering::SeqCst);
+    }
+
+    /// The reasons of the `TurnEnding` routines started since the last check
+    fn turn_endings(&mut self) -> Vec<TurnEndReason> {
+      self
+        .ctx
+        .routines_started()
+        .iter()
+        .filter_map(|routine| routine.downcast_ref::<TurnEnding>())
+        .map(|t| t.reason)
+        .collect()
+    }
+
+    fn score(&self) -> u32 {
+      self.game.scores()[0].1
     }
 
     /// The `GameEnding` routines started since the last check
@@ -761,13 +892,7 @@ mod tests {
     assert_eq!(f.game.turn_phase, TurnPhase::Ending);
 
     assert!(f.game.grant_extra_ball(&f.ctx.svc_ctx()));
-    f.event(done(
-      TurnEnding {
-        current_player: 0,
-        turn: 0,
-      },
-      RoutineCompletion::AllSteps,
-    ));
+    f.complete_turn_ending(TurnEndReason::Drained);
     assert!(f.game_endings().is_empty());
     assert_eq!(f.game.turn_phase, TurnPhase::Starting);
   }
@@ -847,7 +972,7 @@ mod tests {
   #[test]
   fn quitting_while_game_starting_runs_starts_game_ending() {
     let mut f = Fixture::starting(1, 3);
-    f.game.quit_game(&f.ctx.svc_ctx());
+    f.game.quit_game(GameEndReason::Quit, &f.ctx.svc_ctx());
 
     let endings = f.game_endings();
     assert_eq!(endings.len(), 1);
@@ -908,7 +1033,7 @@ mod tests {
   #[test]
   fn quitting_mid_turn_starts_game_ending() {
     let mut f = Fixture::playing(3);
-    f.game.quit_game(&f.ctx.svc_ctx());
+    f.game.quit_game(GameEndReason::Quit, &f.ctx.svc_ctx());
 
     let endings = f.game_endings();
     assert_eq!(endings.len(), 1);
@@ -919,7 +1044,7 @@ mod tests {
   #[test]
   fn the_turn_is_ignored_once_the_game_is_ending() {
     let mut f = Fixture::playing(3);
-    f.game.quit_game(&f.ctx.svc_ctx());
+    f.game.quit_game(GameEndReason::Quit, &f.ctx.svc_ctx());
     f.ctx.routines_started();
 
     f.event(BallsExitedPlay {
@@ -935,7 +1060,7 @@ mod tests {
     f.play_out_turn();
     f.game_endings();
 
-    f.game.quit_game(&f.ctx.svc_ctx());
+    f.game.quit_game(GameEndReason::Quit, &f.ctx.svc_ctx());
     assert!(f.game_endings().is_empty());
   }
 
@@ -971,5 +1096,214 @@ mod tests {
 
     f.event(done(draining(1, 0), RoutineCompletion::AllSteps));
     assert_eq!(f.game.turn_phase, TurnPhase::Ending);
+  }
+
+  #[test]
+  fn a_tilt_starts_turn_ending_at_once() {
+    let mut f = Fixture::playing(3);
+    f.set_in_play(1);
+    f.game.tilt(&f.ctx.svc_ctx());
+
+    assert_eq!(f.game.turn_phase, TurnPhase::Ending);
+    assert_eq!(f.turn_endings(), vec![TurnEndReason::Tilted]);
+  }
+
+  #[test]
+  fn a_tilt_emits_player_tilted() {
+    let mut f = Fixture::playing(3);
+    f.game.tilt(&f.ctx.svc_ctx());
+
+    let tilted: Vec<_> = f
+      .ctx
+      .events_emitted()
+      .iter()
+      .filter_map(|e| e.event.downcast_ref::<PlayerTilted>())
+      .map(|e| e.player_index)
+      .collect();
+    assert_eq!(tilted, vec![0]);
+  }
+
+  #[test]
+  fn a_tilt_once_the_ball_is_served_counts() {
+    let mut f = Fixture::started(3);
+    f.event(done(
+      TurnStarting {
+        current_player: 0,
+        turn: 0,
+        reason: TurnStartReason::Ordered,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+    assert_eq!(
+      f.game.turn_phase,
+      TurnPhase::Starting,
+      "the ball isn't in play yet"
+    );
+
+    f.game.tilt(&f.ctx.svc_ctx());
+    assert_eq!(f.game.turn_phase, TurnPhase::Ending);
+  }
+
+  #[test]
+  fn a_tilt_before_the_ball_is_served_is_ignored() {
+    let mut f = Fixture::started(3);
+    f.game.tilt(&f.ctx.svc_ctx());
+    assert_eq!(f.game.turn_phase, TurnPhase::Starting);
+  }
+
+  #[test]
+  fn a_second_tilt_is_ignored() {
+    let mut f = Fixture::playing(3);
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.game.tilt(&f.ctx.svc_ctx());
+    assert_eq!(f.turn_endings().len(), 1);
+  }
+
+  #[test]
+  fn points_are_ignored_for_the_rest_of_a_tilted_turn() {
+    let mut f = Fixture::playing(3);
+    f.game.add_points(100, &f.ctx.svc_ctx());
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.game.add_points(50, &f.ctx.svc_ctx());
+    assert_eq!(f.score(), 100);
+
+    f.complete_turn_ending(TurnEndReason::Tilted);
+    f.serve();
+    f.game.add_points(10, &f.ctx.svc_ctx());
+    assert_eq!(f.score(), 110, "the next turn scores");
+  }
+
+  #[test]
+  fn drains_after_a_tilt_cannot_be_saved() {
+    let mut f = Fixture::playing(3);
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert!(f.ctx.routines_started().is_empty(), "no BallDraining");
+  }
+
+  #[test]
+  fn a_drain_being_decided_when_tilting_is_ignored() {
+    let mut f = Fixture::playing(3);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.event(done(
+      BallDraining {
+        current_player: 0,
+        turn: 0,
+        count: 1,
+        in_play: 0,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+    assert!(f.turn_endings().is_empty(), "the turn is already ending");
+  }
+
+  #[test]
+  fn the_turn_advances_once_the_balls_left_after_a_tilt_drain() {
+    let mut f = Fixture::playing(3);
+    f.set_in_play(2);
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.complete_turn_ending(TurnEndReason::Tilted);
+    assert!(
+      f.turn_startings().is_empty(),
+      "balls are still rolling down"
+    );
+
+    f.set_in_play(1);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 1,
+    });
+    assert!(f.turn_startings().is_empty());
+
+    f.set_in_play(0);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert_eq!(f.turn_startings(), vec![(0, 1, TurnStartReason::Ordered)]);
+  }
+
+  #[test]
+  fn a_ball_released_during_turn_ending_is_waited_for() {
+    let mut f = Fixture::playing(3);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    f.event(done(
+      BallDraining {
+        current_player: 0,
+        turn: 0,
+        count: 1,
+        in_play: 0,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+    f.ctx.routines_started();
+
+    // a mode holding a ball lets it go as the turn ends
+    f.set_in_play(1);
+    f.complete_turn_ending(TurnEndReason::Drained);
+    assert!(f.turn_startings().is_empty());
+
+    f.set_in_play(0);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert_eq!(f.turn_startings(), vec![(0, 1, TurnStartReason::Ordered)]);
+  }
+
+  #[test]
+  fn drains_before_turn_ending_completes_do_not_advance_the_turn() {
+    let mut f = Fixture::playing(3);
+    f.set_in_play(1);
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.set_in_play(0);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    assert!(f.turn_startings().is_empty(), "TurnEnding is still running");
+
+    f.complete_turn_ending(TurnEndReason::Tilted);
+    assert_eq!(f.turn_startings(), vec![(0, 1, TurnStartReason::Ordered)]);
+  }
+
+  #[test]
+  fn a_tilted_turn_still_uses_an_extra_ball() {
+    let mut f = Fixture::playing(3);
+    f.game.grant_extra_ball(&f.ctx.svc_ctx());
+    f.game.tilt(&f.ctx.svc_ctx());
+    f.ctx.routines_started();
+
+    f.complete_turn_ending(TurnEndReason::Tilted);
+    assert_eq!(f.turn_startings(), vec![(0, 0, TurnStartReason::ExtraBall)]);
+  }
+
+  #[test]
+  fn a_slam_tilt_ends_the_game() {
+    let mut f = Fixture::playing(3);
+    f.game
+      .quit_game(GameEndReason::SlamTilted, &f.ctx.svc_ctx());
+
+    let endings = f.game_endings();
+    assert_eq!(endings.len(), 1);
+    assert_eq!(endings[0].reason, GameEndReason::SlamTilted);
   }
 }

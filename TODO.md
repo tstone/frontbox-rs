@@ -14,6 +14,8 @@
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers.
 - Revisit if `Synchronize` event still makes sense or not
 - Implement a proper LampDriver that also supports flashing
+- Stability: Robust handling for USB disconnects/reconnects
+- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 
 ## Pinball features
 
@@ -23,13 +25,9 @@
   ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
   check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
-- Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
-  the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
 - Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.) that user systems can declare statically. A board has a name, direction (higher or lower is better), capacity (5, or 1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a pending entry per player; at game end, initials entry runs once per player and the initials go on every board they made. That single end-of-game pass should also fix high scores being janky and needing too much system switching. Stored as TOML via `frontbox::toml`.
-- Stability: Robust handling for USB disconnects/reconnects
-- Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 
 ## API cleanup
 

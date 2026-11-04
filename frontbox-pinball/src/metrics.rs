@@ -43,6 +43,24 @@ pub static GAMES_QUIT: LazyLock<Counter> = LazyLock::new(|| {
     .category("Games")
 });
 
+pub static TILT_WARNINGS: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Tilt Warnings", "Tilt warnings given")
+    .key("tilt_warnings")
+    .category("Games")
+});
+
+pub static TILTS: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Tilts", "Turns lost to a tilt")
+    .key("tilts")
+    .category("Games")
+});
+
+pub static SLAM_TILTS: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Slam Tilts", "Slam tilts, during a game or not")
+    .key("slam_tilts")
+    .category("Games")
+});
+
 pub static BALLS_SERVED: LazyLock<Counter> = LazyLock::new(|| {
   Counter::new(
     "Balls Served",

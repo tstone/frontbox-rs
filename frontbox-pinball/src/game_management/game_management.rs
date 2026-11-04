@@ -2,15 +2,18 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox::prelude::*;
 
-use crate::{CompetitiveGame, GameEnding, GameState, TurnEnding, TurnStarting};
+use crate::{CompetitiveGame, GameEndReason, GameEnding, GameState, TurnEnding, TurnStarting};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started. Does nothing if no
   /// player can be added right now; `PlayerEntry` says whether one can.
   fn add_player(&mut self, ctx: &ServiceContext);
-  /// Ends the game in progress early, skipping the rest of the current turn. `GameEnding` still runs, with
-  /// `GameEndReason::Quit`. Does nothing if no game is started, or it's already ending.
-  fn quit_game(&mut self, ctx: &ServiceContext);
+  /// Ends the game in progress early, skipping the rest of the current turn. `GameEnding` still runs, with `reason`
+  /// (`GameEndReason::Quit`, or `SlamTilted`). Does nothing if no game is started, or it's already ending.
+  fn quit_game(&mut self, reason: GameEndReason, ctx: &ServiceContext);
+  /// The current player tilts: their turn ends at once (`TurnEndReason::Tilted`), points are ignored for the rest of
+  /// it, and drains can't be saved. Does nothing unless the turn's ball has been served, or once the turn is ending.
+  fn tilt(&mut self, ctx: &ServiceContext);
 
   fn game_state(&self) -> Option<&GameState>;
 
@@ -29,7 +32,7 @@ pub trait GameManagement: SpawnableSystem {
 ///
 /// ## Playfield drivers
 /// Drivers matching `playfield_drivers` that fire from a switch (slings, pops, flippers, etc.) are activated
-/// automatically when a turn begins, and disabled when it ends or the game ends (`GameEnding`). Drivers fired by the game instead
+/// automatically when a turn begins, and disabled when it ends (including on a tilt) or the game ends (`GameEnding`). Drivers fired by the game instead
 /// (virtual switch triggers like ejects and resets) are left alone even when they match.
 pub struct GameManager {
   inner: Box<dyn GameManagement>,

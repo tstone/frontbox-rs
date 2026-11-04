@@ -41,6 +41,8 @@ pub enum GameEndReason {
   Completed,
   /// Ended early, e.g. by the quit game combo
   Quit,
+  /// Ended by a slam tilt (`SlamTiltSystem`). Participants may skip, e.g. high-score entry.
+  SlamTilted,
 }
 
 /// Routine run at the start of each turn, after the player's group is activated and before the ball is served. Its
@@ -119,9 +121,9 @@ pub struct BallDraining {
   pub in_play: u8,
 }
 
-/// Routine run once the last ball of a turn has left play. Its participants are the end-of-turn displays and sequences
-/// (bonus, etc.); the turn advances once the last one completes its step. With no routine defined, the turn advances
-/// right away.
+/// Routine run once the last ball of a turn has left play, or at once when the player tilts. Its participants are the
+/// end-of-turn displays and sequences (bonus, etc.); the turn advances once the last one completes its step. With no
+/// routine defined, the turn advances right away.
 ///
 /// ```rust,ignore
 /// app.routine::<TurnEnding>(routine![BonusPresenter]);
@@ -129,7 +131,11 @@ pub struct BallDraining {
 ///
 /// Other systems watch the routine's events:
 /// - `RoutineStarted<TurnEnding>` -- play is over, before any participant runs. Modes clean up here.
-/// - `RoutineCompleted<TurnEnding>` -- the turn is over, just before the next one begins or the game ends.
+/// - `RoutineCompleted<TurnEnding>` -- the turn is over. The next one begins, or the game ends, once no ball is left in
+///   play: balls released during the routine, or still rolling down after a tilt, are waited for. Drains meanwhile
+///   can't be saved.
+///
+/// A turn ended by a tilt has `TurnEndReason::Tilted`, so participants can skip (a bonus isn't awarded).
 ///
 /// If the player has an extra ball when it completes, they use it, and the next turn is theirs again
 /// (`TurnStartReason::ExtraBall`). That includes one granted while this routine ran, by a bonus award say.
@@ -137,6 +143,22 @@ pub struct BallDraining {
 pub struct TurnEnding {
   pub current_player: u8,
   pub turn: u8,
+  pub reason: TurnEndReason,
+}
+
+#[derive(serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnEndReason {
+  /// The last ball drained (ie. default behavior)
+  Drained,
+  /// The player tilted. The balls may still be on the playfield.
+  Tilted,
+}
+
+/// Emitted when the current player tilts (`GameManagement::tilt`), just before their turn's `TurnEnding` starts. Points
+/// are ignored for the rest of the turn.
+#[derive(serde::Serialize, Event)]
+pub struct PlayerTilted {
+  pub player_index: u8,
 }
 
 #[derive(serde::Serialize, Event)]

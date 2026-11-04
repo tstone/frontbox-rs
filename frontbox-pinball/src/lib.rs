@@ -28,12 +28,12 @@
 //! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
 //! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `TurnActive` is emitted. This happens once per turn, unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play.
 //! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn.
-//! 6. When a drain that left no ball in play completes without being halted, the game manager starts the `TurnEnding` routine. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
-//! 7. Each participant of the routine (bonus, etc.) takes its turn at the end-of-ball display, animations, etc.
-//! 8. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one. If the player has an extra ball, they use it, and the next turn is theirs again.
+//! 6. When a drain that left no ball in play completes without being halted, or at once when the player tilts, the game manager starts the `TurnEnding` routine, with a `TurnEndReason`. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
+//! 7. Each participant of the routine (bonus, etc.) takes its turn at the end-of-ball display, animations, etc. On `TurnEndReason::Tilted`, participants such as bonus skip.
+//! 8. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast. Once no ball is left in play (balls still rolling down after a tilt, or released during the routine, are waited for, and can't be saved), the game manager advances to the next turn, or ends the game after the last one. If the player has an extra ball, they use it, and the next turn is theirs again.
 //!
 //! # Overview: Game End
-//! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo`), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).
+//! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo` or a slam tilt), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).
 //! 1. `RoutineStarted<GameEnding>` is broadcast first, and the playfield drivers are turned off.
 //! 2. Each participant (match, high-score entry, game-over display, etc.) takes its turn. The game is still started meanwhile, so the start button can't begin a new one.
 //! 3. Once the last participant completes its step, `RoutineCompleted<GameEnding>` goes to the game manager first: the player groups are despawned, and `GamePhase` goes back to `None`. Only then does everyone else hear it, so systems that only run outside a game (attract mode, the start button) are active again by then, and can take the final scores from it.
@@ -72,6 +72,15 @@
 //! A multiball is a mode asking the `BallManager` for more balls, usually with a ball save request alongside. It knows
 //! it's over from `RoutineCompleted<BallDraining>`: a drain completing with `RoutineCompletion::AllSteps` wasn't saved,
 //! and its `in_play` is how many balls are left.
+//!
+//! ## Tilt and Slam Tilt
+//! `TiltSystem` (in the player template) reads the tilt bob, warning the player (`TiltWarned`) up to the
+//! `TILT_WARNINGS` operator config, and tilting them on the next swing. A tilt (`GameManagement::tilt`) emits
+//! `PlayerTilted` and starts `TurnEnding` at once with `TurnEndReason::Tilted`: modes clean up and the drivers go off
+//! while the balls roll down, points are ignored, and drains can't be saved. Warnings can be earned with
+//! `ctx.grant_tilt_warning()` (`TiltExt`).
+//!
+//! `SlamTiltSystem` (at the root) ends the game at once on the slam tilt switch, with `GameEndReason::SlamTilted`.
 
 pub mod ball_management;
 mod ball_save;
@@ -80,9 +89,11 @@ mod game_management;
 mod game_start;
 mod high_scores;
 pub mod metrics;
+mod tilt;
 
 pub use ball_management::*;
 pub use ball_save::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
+pub use tilt::*;

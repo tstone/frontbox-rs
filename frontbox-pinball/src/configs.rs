@@ -44,6 +44,26 @@ pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
   .key("max_extra_balls")
 });
 
+pub static TILT_WARNINGS: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Tilt Warnings",
+    "How many tilt warnings a player gets before the next swing of the tilt bob tilts",
+    2,
+    Ranges::u8(0, 5),
+  )
+  .key("tilt_warnings")
+});
+
+pub static TILT_WARNINGS_PER_TURN: LazyLock<Config<bool>> = LazyLock::new(|| {
+  Config::new(
+    "Tilt Warnings Per Turn",
+    "Whether tilt warnings are given back at the start of each turn, rather than once per game",
+    true,
+    Toggle,
+  )
+  .key("tilt_warnings_per_turn")
+});
+
 pub static BALL_SEARCH_DELAY: LazyLock<Config<Duration>> = LazyLock::new(|| {
   Config::new(
     "Ball Search Delay",
