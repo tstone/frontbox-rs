@@ -47,7 +47,7 @@ impl WatchdogSystem {
 
 impl System for WatchdogSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
 
     // Neuron seems to expect the watchdog to always be running (e.g. otherwise the low voltage drivers don't work)
     // Once the smart power filter board firmware is updated, there will likely be a separate command to enable/disable high voltage

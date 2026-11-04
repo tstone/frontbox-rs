@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{TypeId, type_name};
 use std::cell::RefMut;
 use std::ops::Deref;
 
@@ -44,19 +44,21 @@ impl<'a> SystemContext<'a> {
     }
   }
 
-  /// Each system is automatically assigned an internal ID. This returns the ID for the current system.
-  pub fn current_system_id(&self) -> u64 {
+  /// Each system is automatically assigned an internal ID. This returns the ID for the current system. Pass this, not
+  /// the handle or this context, to a public method of another system that needs to know who is calling it.
+  pub fn id(&self) -> u64 {
     self.handle.id
   }
 
-  /// The complete handle (parent + ID) for the current system
-  pub fn current_handle(&self) -> &SystemHandle {
-    &self.handle
+  /// The complete handle (group + ID) for the current system. A handle lets whoever holds it act as the system, so
+  /// keep it to the system itself; see [`SystemHandle`].
+  pub fn handle(&self) -> SystemHandle {
+    self.handle
   }
 
   /// Dispatch an event to all other active systems
   pub fn emit<E: Event>(&self, event: E) {
-    self.ctx.emit(self.current_system_id(), event);
+    self.ctx.emit(self.id(), event);
   }
   // -- Systems access --
 
@@ -68,6 +70,22 @@ impl<'a> SystemContext<'a> {
   /// Lookup a system by type; panic if does not exist
   pub fn expect<T: System + 'static>(&self) -> RefMut<'_, T> {
     self.ctx.expect::<T>(self.handle)
+  }
+
+  /// Run `f` on the system `T`, looked up as [`get`](Self::get) does. Logs a warning and returns `None` if `T` isn't
+  /// running.
+  ///
+  /// ```rust,ignore
+  /// ctx.with_system::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), duration, ctx.into()));
+  /// ```
+  pub fn with_system<T: System + 'static, R>(&self, f: impl FnOnce(&mut T) -> R) -> Option<R> {
+    match self.get::<T>() {
+      Some(mut system) => Some(f(&mut system)),
+      None => {
+        log::warn!("{} is not running.", type_name::<T>());
+        None
+      }
+    }
   }
 
   /// Start up a new system

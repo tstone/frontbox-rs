@@ -381,7 +381,7 @@ pub(crate) fn emit_event_to_others(
   tracer_txs: &TracerSenders,
 ) {
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
-    if *ctx.current_handle() != handled_by {
+    if ctx.handle() != handled_by {
       system.on_event(event_box.event.as_ref(), ctx);
     }
   });

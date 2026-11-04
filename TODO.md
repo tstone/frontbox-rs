@@ -3,7 +3,6 @@
 - tests for run_loop (should this get refactored to more than bare functions?)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
 - Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
-- Does metrics need to go on app state or can it just be owned by run_loop
 - Should a "hold" (like how BallSave uses them) be a framework feature?
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.

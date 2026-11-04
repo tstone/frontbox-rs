@@ -264,7 +264,7 @@ impl TroughSystem {
 
 impl System for TroughSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
     self.last_occupancy = self.read_switch_occupancy(ctx.into());
     self.eject_ready(ctx);
   }

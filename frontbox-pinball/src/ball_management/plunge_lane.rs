@@ -119,7 +119,7 @@ impl PlungeLaneSystem {
 
 impl System for PlungeLaneSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
 
     if ctx
       .switches

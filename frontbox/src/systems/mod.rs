@@ -153,7 +153,7 @@
 //!
 //! impl System for ExampleSystem {
 //!   fn on_spawn(&mut self, ctx: &SystemContext) {
-//!     self.handle = *ctx.current_handle();
+//!     self.handle = ctx.handle();
 //!   }
 //! }
 //! ```

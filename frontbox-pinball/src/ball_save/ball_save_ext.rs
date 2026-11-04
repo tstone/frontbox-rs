@@ -15,21 +15,21 @@ pub trait BallSaveExt {
 
 impl<'a> BallSaveExt for SystemContext<'a> {
   fn request_ball_save(&self, duration: Duration) {
-    let id = self.current_system_id();
+    let id = self.id();
     with_ball_save(self, |ball_save| {
       ball_save.request(id, duration, self.into())
     });
   }
 
   fn request_ball_save_until_released(&self) {
-    let id = self.current_system_id();
+    let id = self.id();
     with_ball_save(self, |ball_save| {
       ball_save.request_until_released(id, self.into())
     });
   }
 
   fn release_ball_save(&self) {
-    let id = self.current_system_id();
+    let id = self.id();
     with_ball_save(self, |ball_save| ball_save.release(id, self.into()));
   }
 

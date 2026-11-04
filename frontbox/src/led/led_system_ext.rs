@@ -26,7 +26,7 @@ impl<'a> LedSystemExt for SystemContext<'a> {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,
       };
-      led_system.declare(self.current_system_id(), declarations);
+      led_system.declare(self.id(), declarations);
     });
   }
 
@@ -42,26 +42,26 @@ impl<'a> LedSystemExt for SystemContext<'a> {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,
       };
-      led_system.declare_inactive(self.current_system_id(), declarations);
+      led_system.declare_inactive(self.id(), declarations);
     });
   }
 
   fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      led_system.undeclare(self.current_system_id(), targets);
+      led_system.undeclare(self.id(), targets);
     });
   }
 
   fn deactivate_led_declarations(&self) {
     with_led_system(self, |led_system| {
-      led_system.deactivate_by_system(self.current_system_id());
+      led_system.deactivate_by_system(self.id());
     });
   }
 
   fn activate_led_declarations(&self) {
     with_led_system(self, |led_system| {
-      led_system.activate_by_system(self.current_system_id());
+      led_system.activate_by_system(self.id());
     });
   }
 

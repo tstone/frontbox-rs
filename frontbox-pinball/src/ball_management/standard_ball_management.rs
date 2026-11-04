@@ -449,7 +449,7 @@ impl BallManagement for StandardBallManagement {
 
 impl System for StandardBallManagement {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
 
     let mut trough_config = self.config.trough.clone();
     if let Some(lane) = self.config.plunge_lane()

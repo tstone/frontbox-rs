@@ -407,7 +407,7 @@ impl CompetitiveGame {
 
 impl System for CompetitiveGame {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
     self.update_player_entry(ctx.into());
   }
 

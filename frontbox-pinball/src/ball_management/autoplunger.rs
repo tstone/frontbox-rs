@@ -128,7 +128,7 @@ impl AutoPlungerSystem {
 
 impl System for AutoPlungerSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.handle = *ctx.current_handle();
+    self.handle = ctx.handle();
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

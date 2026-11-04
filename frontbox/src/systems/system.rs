@@ -21,14 +21,14 @@ pub trait System: Any {
   fn on_deactivate(&mut self, ctx: &SystemContext) {
     // TODO: should probably emit a despawned/deactivated event that LedSystem handles instead
     if let Some(mut led_system) = ctx.get::<LedSystem>() {
-      led_system.deactivate_by_system(ctx.current_system_id());
+      led_system.deactivate_by_system(ctx.id());
     }
   }
 
   /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
   fn on_reactivate(&mut self, ctx: &SystemContext) {
     if let Some(mut led_system) = ctx.get::<LedSystem>() {
-      led_system.activate_by_system(ctx.current_system_id());
+      led_system.activate_by_system(ctx.id());
     }
   }
 
