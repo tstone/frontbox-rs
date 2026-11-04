@@ -64,6 +64,8 @@ Systems can be grouped or go active/inactive independently. Systems interact wit
 - The ball hits a target, causing another switch event
 - `SkillShotTargetsSystem` recognizes the switch event is for its target, so it calls `ctx.add_points` to award the player points. It also applies an LED effect during its `on_tick` handler, and plays a sound effect via `ctx.play_sfx`.
 
+Most of all this happens automatically. Games primarily implement game modes through custom systems, which use the same means of interaction: receive events, send events, participate in routines, call methods on others systems, or interact with the context (`ctx`).
+
 ## Frequently Asked Questions
 
 #### Q: Is Frontbox an AI port of \_\_\_\_\_\_\_\_ Framework?
