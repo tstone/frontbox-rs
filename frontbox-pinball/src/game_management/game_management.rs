@@ -20,6 +20,9 @@ pub trait GameManagement: SpawnableSystem {
   fn set_multiplier(&mut self, multiplier: f32);
   /// Clear points multiplier for current player/team
   fn clear_multiplier(&mut self);
+
+  /// Give the current player an extra ball to be used after the current turn ends
+  fn grant_extra_ball(&mut self, ctx: &ServiceContext) -> bool;
 }
 
 /// Runs the game through a `GameManagement` implementation, and makes the playfield live for each turn.

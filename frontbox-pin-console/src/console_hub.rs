@@ -234,7 +234,7 @@ impl ConsoleHub {
     let game = &mut state.snapshot.game;
     match transition {
       Some(GameTransition::Started) => *game = Some(GameState::default()),
-      Some(GameTransition::TurnBeginning { player, turn }) => {
+      Some(GameTransition::TurnStarting { player, turn }) => {
         let game = game.get_or_insert_default();
         game.player = Some(player);
         game.turn = Some(turn);
@@ -301,7 +301,7 @@ fn is_redundant(event: &TraceEvent) -> bool {
 #[derive(Clone, Copy)]
 enum GameTransition {
   Started,
-  TurnBeginning { player: u8, turn: u8 },
+  TurnStarting { player: u8, turn: u8 },
   Ended,
 }
 
@@ -329,7 +329,7 @@ impl GameTransition {
           .and_then(|value| value.as_u64())
           .map(|value| value as u8)
       };
-      Some(Self::TurnBeginning {
+      Some(Self::TurnStarting {
         player: field("current_player")?,
         turn: field("turn")?,
       })

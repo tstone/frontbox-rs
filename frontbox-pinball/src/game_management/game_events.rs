@@ -54,10 +54,22 @@ pub enum GameEndReason {
 /// Other systems watch the routine's events:
 /// - `RoutineStarted<TurnStarting>` -- the turn has started. Modes set up for the player here.
 /// - `RoutineCompleted<TurnStarting>` -- the ball is being served.
+///
+/// A turn played on an extra ball has `TurnStartReason::ExtraBall`, so participants can show "shoot again" instead of
+/// the usual player-up display. It has the same `turn` as the turn before it.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct TurnStarting {
   pub current_player: u8,
   pub turn: u8,
+  pub reason: TurnStartReason,
+}
+
+#[derive(serde::Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnStartReason {
+  /// The next turn in player order (ie. default behavior)
+  Ordered,
+  /// The same player again, on an extra ball. The turn number doesn't advance.
+  ExtraBall,
 }
 
 /// Emitted once per turn, when the turn became active: the served ball entered play (`BallEnteredPlay`), or a
@@ -82,17 +94,17 @@ impl TurnActive {
 }
 
 /// Routine run for each drain during a turn (`BallsExitedPlay`), to decide whether it stands. Its participants are
-/// whatever can save the ball (ball save, an outlane save, an extra ball), in the order they get the chance. One that
-/// saves it puts the balls back into play and calls `halt_routine`, and the participants after it don't take a step.
-/// If none does, the drain stands; when it was the last ball in play (`in_play == 0`), the turn ends with
-/// `TurnEnding`. With no routine defined, every drain stands right away.
+/// whatever can save the ball (ball save, an outlane save), in the order they get the chance. One that saves it puts
+/// the balls back into play and calls `halt_routine`, and the participants after it don't take a step. If none does,
+/// the drain stands; when it was the last ball in play (`in_play == 0`), the turn ends with `TurnEnding`. With no
+/// routine defined, every drain stands right away.
 ///
 /// ```rust,ignore
-/// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave, ExtraBallSystem]);
+/// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave]);
 /// ```
 ///
-/// A participant that only saves the last ball, like an extra ball, completes its step right away while other balls
-/// are still in play.
+/// A participant that only saves the last ball completes its step right away while other balls are still in play.
+/// Extra balls aren't participants: they're another turn, played once this one ends (`TurnStartReason::ExtraBall`).
 ///
 /// Anything that should only react to drains that aren't saved (a multiball ending once one ball is left) watches
 /// `RoutineCompleted<BallDraining>` rather than `BallsExitedPlay`: `RoutineCompletion::AllSteps` means the drain stands,
@@ -108,16 +120,19 @@ pub struct BallDraining {
 }
 
 /// Routine run once the last ball of a turn has left play. Its participants are the end-of-turn displays and sequences
-/// (bonus, shoot again, etc.); the turn advances once the last one completes its step. With no routine defined, the
-/// turn advances right away.
+/// (bonus, etc.); the turn advances once the last one completes its step. With no routine defined, the turn advances
+/// right away.
 ///
 /// ```rust,ignore
-/// app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
+/// app.routine::<TurnEnding>(routine![BonusPresenter]);
 /// ```
 ///
 /// Other systems watch the routine's events:
 /// - `RoutineStarted<TurnEnding>` -- play is over, before any participant runs. Modes clean up here.
 /// - `RoutineCompleted<TurnEnding>` -- the turn is over, just before the next one begins or the game ends.
+///
+/// If the player has an extra ball when it completes, they use it, and the next turn is theirs again
+/// (`TurnStartReason::ExtraBall`). That includes one granted while this routine ran, by a bonus award say.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct TurnEnding {
   pub current_player: u8,
@@ -143,4 +158,20 @@ impl PointsAdded {
       total_points,
     }
   }
+}
+
+/// Emitted when the current player is granted an extra ball
+#[derive(serde::Serialize, Event)]
+pub struct ExtraBallGranted {
+  pub player_index: u8,
+  /// Extra balls the player now has unused, including this one
+  pub count: u8,
+}
+
+/// Emitted when an extra ball is used: the player's turn is over, and their next one is about to start
+#[derive(serde::Serialize, Event)]
+pub struct ExtraBallUsed {
+  pub player_index: u8,
+  /// Extra balls the player still has unused
+  pub remaining: u8,
 }

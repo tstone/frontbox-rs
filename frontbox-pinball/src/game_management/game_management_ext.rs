@@ -14,6 +14,11 @@ pub trait GameManagementExt {
   fn set_multiplier(&self, multiplier: f32);
   /// Clear points multiplier for current player/team
   fn clear_multiplier(&self);
+
+  /// Give the current player an extra ball. See `GameManagement::grant_extra_ball`.
+  fn grant_extra_ball(&self) -> bool;
+  /// Extra balls the current player has and hasn't used
+  fn extra_balls(&self) -> u8;
 }
 
 impl<'a> GameManagementExt for SystemContext<'a> {
@@ -49,12 +54,28 @@ impl<'a> GameManagementExt for SystemContext<'a> {
       manager.quit_game(ctx.into());
     });
   }
+
+  fn grant_extra_ball(&self) -> bool {
+    let ctx = self;
+    with_game_manager(self, |manager| manager.grant_extra_ball(ctx.into())).unwrap_or(false)
+  }
+
+  fn extra_balls(&self) -> u8 {
+    with_game_manager(self, |manager| {
+      manager
+        .game_state()
+        .map(|state| state.extra_balls(state.current_player()))
+        .unwrap_or(0)
+    })
+    .unwrap_or(0)
+  }
 }
 
-fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) -> T) {
+fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) -> T) -> Option<T> {
   if let Some(mut system) = ctx.get::<GameManager>() {
-    f(&mut system);
+    Some(f(&mut system))
   } else {
     log::error!("GameManager not running.");
+    None
   }
 }

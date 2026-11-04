@@ -77,7 +77,7 @@ A: Yes:
 
 - App -- Booting things up
 - Hardware -- Defining what exists
-- Systems -- The behavorial unit everything happens within
+- Systems -- The behavioral unit everything happens within
 - Drivers -- Turning things like coils on and off
 - Switches -- Capturing input
 - LEDs -- Lighting things up
@@ -87,12 +87,3 @@ A: Yes:
 ## License
 
 Frontbox is dual licensed Apache + MIT.
-
-## AI Usage
-
-This project generally follows the [Rust language LLM use policy](https://forge.rust-lang.org/policies/llm-usage.html).
-
-- It’s fine to use LLMs to answer questions, analyze, distill, refine, check, suggest, review. But not to **create**.
-- LLMs work best when used as a tool to write _better_, not _faster_.
-
-**Design ("style") should be human-driven.** Frontbox is not "vibe-coded".

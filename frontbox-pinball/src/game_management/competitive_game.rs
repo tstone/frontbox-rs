@@ -30,7 +30,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// - Routine: `BallDraining` - Started for each drain (`BallsExitedPlay`), so its participants can save the ball. A
 ///   participant halting it saves the drain. A drain while another is being decided waits its turn.
 /// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted. Modes
-///   clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`.
+///   clean up on its `RoutineStarted`, and the turn advances on its `RoutineCompleted`: to the same player, if they
+///   have an extra ball to use (`TurnStartReason::ExtraBall`), otherwise to the next player.
 ///
 /// Once the last turn's `TurnEnding` completes, or the game is quit (`quit_game`), play is over:
 /// - Routine: `GameEnding` - Started at the root. The game stays started while it runs, so its participants
@@ -120,10 +121,10 @@ impl CompetitiveGame {
   fn start_first_turn(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Game started, beginning the first turn");
     self.set_game_phase(GamePhase::Active, ctx);
-    self.start_turn(ctx);
+    self.start_turn(TurnStartReason::Ordered, ctx);
   }
 
-  fn start_turn(&mut self, ctx: &ServiceContext) {
+  fn start_turn(&mut self, reason: TurnStartReason, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     let player = self.game_state.as_ref().unwrap().current_player();
 
@@ -144,6 +145,7 @@ impl CompetitiveGame {
       TurnStarting {
         current_player: game_state.current_player(),
         turn: game_state.current_player_turn(),
+        reason,
       },
     );
 
@@ -281,7 +283,22 @@ impl CompetitiveGame {
       return;
     };
 
-    ctx.deactivate_system_group(&self.player_groups[game_state.current_player() as usize]);
+    let player = game_state.current_player();
+    if game_state.use_extra_ball(player) {
+      let remaining = game_state.extra_balls(player);
+      log::info!(target: "frontbox::game_manager", "Using an extra ball, {} unused", remaining);
+      ctx.metrics.inc(&metrics::EXTRA_BALLS);
+      ctx.metrics.flush();
+      ctx.for_system(self.handle).emit(ExtraBallUsed {
+        player_index: player,
+        remaining,
+      });
+      // the player's group stays active, as they're up again
+      self.start_turn(TurnStartReason::ExtraBall, ctx);
+      return;
+    }
+
+    ctx.deactivate_system_group(&self.player_groups[player as usize]);
     ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
@@ -301,7 +318,7 @@ impl CompetitiveGame {
       game_state.current_player_turn()
     );
 
-    self.start_turn(ctx);
+    self.start_turn(TurnStartReason::Ordered, ctx);
   }
 
   /// Play is over. The game stays started until `GameEnding` completes.
@@ -510,6 +527,32 @@ impl GameManagement for CompetitiveGame {
       }
     }
   }
+
+  fn grant_extra_ball(&mut self, ctx: &ServiceContext) -> bool {
+    if self.game_phase != GamePhase::Active {
+      log::warn!(target: "frontbox::game_manager", "An extra ball can only be granted during play, ignored");
+      return false;
+    }
+    let Some(game_state) = &mut self.game_state else {
+      return false;
+    };
+
+    let player = game_state.current_player();
+    let max = ctx.config.get(&configs::MAX_EXTRA_BALLS);
+    if game_state.extra_balls_granted(player) >= max {
+      log::info!(target: "frontbox::game_manager", "Extra ball limit of {} reached, not granted", max);
+      return false;
+    }
+
+    game_state.grant_extra_ball(player);
+    let count = game_state.extra_balls(player);
+    log::info!(target: "frontbox::game_manager", "Extra ball granted, {} unused", count);
+    ctx.for_system(self.handle).emit(ExtraBallGranted {
+      player_index: player,
+      count,
+    });
+    true
+  }
 }
 
 #[cfg(test)]
@@ -537,6 +580,7 @@ mod tests {
         TurnStarting {
           current_player: 0,
           turn: 0,
+          reason: TurnStartReason::Ordered,
         },
         RoutineCompletion::AllSteps,
       ));
@@ -604,6 +648,150 @@ mod tests {
         .filter_map(|routine| routine.downcast_ref::<GameEnding>().cloned())
         .collect()
     }
+
+    /// The `TurnStarting` routines started since the last check, as (player, turn, reason)
+    fn turn_startings(&mut self) -> Vec<(u8, u8, TurnStartReason)> {
+      self
+        .ctx
+        .routines_started()
+        .iter()
+        .filter_map(|routine| routine.downcast_ref::<TurnStarting>())
+        .map(|t| (t.current_player, t.turn, t.reason))
+        .collect()
+    }
+
+    /// The ball of the turn just started enters play
+    fn serve(&mut self) {
+      let state = self.game.game_state().unwrap();
+      let (current_player, turn) = (state.current_player(), state.current_player_turn());
+      self.event(done(
+        TurnStarting {
+          current_player,
+          turn,
+          reason: TurnStartReason::Ordered,
+        },
+        RoutineCompletion::AllSteps,
+      ));
+      self.event(BallEnteredPlay {
+        method: LaunchMethod::Manual,
+        in_play: 1,
+      });
+    }
+  }
+
+  #[test]
+  fn an_extra_ball_starts_another_turn_for_the_same_player() {
+    let mut f = Fixture::playing(1);
+    assert!(f.game.grant_extra_ball(&f.ctx.svc_ctx()));
+    f.play_out_turn();
+
+    assert_eq!(
+      f.game.game_phase,
+      GamePhase::Active,
+      "the last turn's extra ball is still played"
+    );
+    assert_eq!(
+      f.turn_startings(),
+      vec![(0, 0, TurnStartReason::ExtraBall)],
+      "same player, same turn number"
+    );
+    assert_eq!(f.game.turn_phase, TurnPhase::Starting);
+    assert_eq!(f.game.game_state().unwrap().extra_balls(0), 0);
+
+    f.serve();
+    f.play_out_turn();
+    assert_eq!(f.game_endings().len(), 1, "no extra ball left");
+  }
+
+  #[test]
+  fn granting_and_using_extra_balls_emit_events() {
+    let mut f = Fixture::playing(1);
+    f.game.grant_extra_ball(&f.ctx.svc_ctx());
+    f.game.grant_extra_ball(&f.ctx.svc_ctx());
+    f.play_out_turn();
+
+    let events = f.ctx.events_emitted();
+    let granted: Vec<_> = events
+      .iter()
+      .filter_map(|e| e.event.downcast_ref::<ExtraBallGranted>())
+      .map(|e| (e.player_index, e.count))
+      .collect();
+    let used: Vec<_> = events
+      .iter()
+      .filter_map(|e| e.event.downcast_ref::<ExtraBallUsed>())
+      .map(|e| (e.player_index, e.remaining))
+      .collect();
+    assert_eq!(granted, vec![(0, 1), (0, 2)]);
+    assert_eq!(used, vec![(0, 1)]);
+  }
+
+  #[test]
+  fn an_extra_ball_keeps_the_same_player_up() {
+    let mut f = Fixture::starting(2, 3);
+    f.game.add_player(&f.ctx.svc_ctx());
+    f.event(done(GameStarting, RoutineCompletion::AllSteps));
+    f.serve();
+    f.ctx.routines_started();
+
+    f.game.grant_extra_ball(&f.ctx.svc_ctx());
+    f.play_out_turn();
+    assert_eq!(f.turn_startings(), vec![(0, 0, TurnStartReason::ExtraBall)]);
+
+    f.serve();
+    f.play_out_turn();
+    assert_eq!(f.turn_startings(), vec![(1, 0, TurnStartReason::Ordered)]);
+  }
+
+  #[test]
+  fn an_extra_ball_granted_while_turn_ending_runs_is_used_for_the_next_turn() {
+    let mut f = Fixture::playing(1);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+    f.event(done(
+      BallDraining {
+        current_player: 0,
+        turn: 0,
+        count: 1,
+        in_play: 0,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+    assert_eq!(f.game.turn_phase, TurnPhase::Ending);
+
+    assert!(f.game.grant_extra_ball(&f.ctx.svc_ctx()));
+    f.event(done(
+      TurnEnding {
+        current_player: 0,
+        turn: 0,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+    assert!(f.game_endings().is_empty());
+    assert_eq!(f.game.turn_phase, TurnPhase::Starting);
+  }
+
+  #[test]
+  fn extra_balls_are_limited_per_game() {
+    let mut f = Fixture::playing(3);
+    f.ctx.svc_ctx().config.set(&configs::MAX_EXTRA_BALLS, 1);
+    assert!(f.game.grant_extra_ball(&f.ctx.svc_ctx()));
+    assert!(!f.game.grant_extra_ball(&f.ctx.svc_ctx()));
+    assert_eq!(f.game.game_state().unwrap().extra_balls(0), 1);
+
+    f.play_out_turn();
+    f.serve();
+    assert!(
+      !f.game.grant_extra_ball(&f.ctx.svc_ctx()),
+      "using one doesn't make room for another"
+    );
+  }
+
+  #[test]
+  fn extra_balls_cannot_be_granted_before_the_first_turn() {
+    let mut f = Fixture::starting(1, 3);
+    assert!(!f.game.grant_extra_ball(&f.ctx.svc_ctx()));
   }
 
   #[test]

@@ -8,6 +8,8 @@ pub enum GameState {
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
     player_scores: Vec<u32>,
+    player_extra_balls: Vec<u8>,
+    player_extra_balls_granted: Vec<u8>,
   },
   Cooperative {
     player_count: u8,
@@ -19,6 +21,8 @@ pub enum GameState {
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
     player_scores: Vec<u32>,
+    player_extra_balls: Vec<u8>,
+    player_extra_balls_granted: Vec<u8>,
   },
 }
 
@@ -31,6 +35,8 @@ impl GameState {
       player_turns: vec![0; max_players as usize],
       player_multiplier: vec![1.0; max_players as usize],
       player_scores: vec![0; max_players as usize],
+      player_extra_balls: vec![0; max_players as usize],
+      player_extra_balls_granted: vec![0; max_players as usize],
     }
   }
 
@@ -205,6 +211,71 @@ impl GameState {
           .sum();
         Some(team_score)
       }
+    }
+  }
+
+  /// Extra balls the player has and hasn't used
+  pub fn extra_balls(&self, player_index: u8) -> u8 {
+    let (unused, _) = self.extra_ball_counts();
+    unused.get(player_index as usize).copied().unwrap_or(0)
+  }
+
+  /// Extra balls the player has been granted this game, used or not
+  pub fn extra_balls_granted(&self, player_index: u8) -> u8 {
+    let (_, granted) = self.extra_ball_counts();
+    granted.get(player_index as usize).copied().unwrap_or(0)
+  }
+
+  pub(crate) fn grant_extra_ball(&mut self, player_index: u8) {
+    let (unused, granted) = self.extra_ball_counts_mut();
+    if let (Some(unused), Some(granted)) = (
+      unused.get_mut(player_index as usize),
+      granted.get_mut(player_index as usize),
+    ) {
+      *unused = unused.saturating_add(1);
+      *granted = granted.saturating_add(1);
+    }
+  }
+
+  /// Uses one of the player's extra balls. False if they have none.
+  pub(crate) fn use_extra_ball(&mut self, player_index: u8) -> bool {
+    let (unused, _) = self.extra_ball_counts_mut();
+    match unused.get_mut(player_index as usize) {
+      Some(unused) if *unused > 0 => {
+        *unused -= 1;
+        true
+      }
+      _ => false,
+    }
+  }
+
+  fn extra_ball_counts(&self) -> (&Vec<u8>, &Vec<u8>) {
+    match self {
+      GameState::Competitive {
+        player_extra_balls,
+        player_extra_balls_granted,
+        ..
+      } => (player_extra_balls, player_extra_balls_granted),
+      GameState::Cooperative {
+        player_extra_balls,
+        player_extra_balls_granted,
+        ..
+      } => (player_extra_balls, player_extra_balls_granted),
+    }
+  }
+
+  fn extra_ball_counts_mut(&mut self) -> (&mut Vec<u8>, &mut Vec<u8>) {
+    match self {
+      GameState::Competitive {
+        player_extra_balls,
+        player_extra_balls_granted,
+        ..
+      } => (player_extra_balls, player_extra_balls_granted),
+      GameState::Cooperative {
+        player_extra_balls,
+        player_extra_balls_granted,
+        ..
+      } => (player_extra_balls, player_extra_balls_granted),
     }
   }
 }

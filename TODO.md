@@ -72,6 +72,7 @@
 
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
+- apply-able effects (warble, reverb, glitch)
 - legacy hardware emulation? e.g. YM2610 FM
 
 ## DMD

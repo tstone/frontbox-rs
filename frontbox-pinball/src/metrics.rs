@@ -80,7 +80,7 @@ pub static BALL_SEARCHES: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub static EXTRA_BALLS: LazyLock<Counter> = LazyLock::new(|| {
-  Counter::new("Extra Balls", "Extra balls used to extend a turn")
+  Counter::new("Extra Balls", "Extra balls used for another turn")
     .key("extra_balls")
     .category("Games")
 });

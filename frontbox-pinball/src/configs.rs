@@ -34,6 +34,16 @@ pub static BALL_SAVE_TIME: LazyLock<Config<Duration>> = LazyLock::new(|| {
   .key("ball_save_time")
 });
 
+pub static MAX_EXTRA_BALLS: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Max Extra Balls",
+    "How many extra balls a player can be granted per game (0 for none)",
+    5,
+    Ranges::u8(0, 10),
+  )
+  .key("max_extra_balls")
+});
+
 pub static BALL_SEARCH_DELAY: LazyLock<Config<Duration>> = LazyLock::new(|| {
   Config::new(
     "Ball Search Delay",

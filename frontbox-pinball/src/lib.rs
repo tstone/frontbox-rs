@@ -3,11 +3,11 @@
 //!
 //! ### On Naming
 //! Whereas many machines display the language "3 balls", this implementation refers to these as "turns". During a single turn, multiple
-//! balls may be launched into play, or recovered (ball save, extra ball, etc.). The word "turn" here is clearer.
+//! balls may be launched into play, or recovered (ball save, etc.). The word "turn" here is clearer.
 //!
-//! Along these lines, mechanics like "extra ball" are really no more than the existing turn being extended. This is different than some manufacturers
-//! who grant what is effectively an additional turns to a player when they earn an extra ball. The difference to the player is extending
-//! the current turn (receiving the extra ball on drain) versus playing an additional turn at the end of the game.
+//! An extra ball is another turn for the same player, played right after the one that earned it ("shoot again"). The
+//! turn ends as usual (bonus, mode cleanup), and the next `TurnStarting` is the same player's, with
+//! `TurnStartReason::ExtraBall` and the same turn number.
 //!
 //! # Overview: Game Start
 //! When the first player is added (e.g. by `FreePlay` or `CreditsPlay`), the game manager starts the game and starts the `GameStarting` routine at the root.
@@ -24,13 +24,13 @@
 //!
 //! In detail:
 //! 1. A player's turn begins with the game manager activating the player's group and starting the `TurnStarting` routine. `RoutineStarted<TurnStarting>` is broadcast first: this is the time for "start of turn" mechanics, like music, and the playfield drivers are turned on.
-//! 2. Each participant of the routine (player-up display, skill shot selection, etc.) takes its turn before the ball comes out.
+//! 2. Each participant of the routine (player-up or shoot-again display, skill shot selection, etc.) takes its turn before the ball comes out.
 //! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
 //! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `TurnActive` is emitted. This happens once per turn, unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play.
-//! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, an extra ball, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn.
+//! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn.
 //! 6. When a drain that left no ball in play completes without being halted, the game manager starts the `TurnEnding` routine. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
-//! 7. Each participant of the routine (bonus, shoot again, etc.) takes its turn at the end-of-ball display, animations, etc.
-//! 8. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one.
+//! 7. Each participant of the routine (bonus, etc.) takes its turn at the end-of-ball display, animations, etc.
+//! 8. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast, and the game manager advances to the next turn, or ends the game after the last one. If the player has an extra ball, they use it, and the next turn is theirs again.
 //!
 //! # Overview: Game End
 //! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo`), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).
@@ -43,8 +43,8 @@
 //! ```rust,ignore
 //! app.routine::<GameStarting>(routine![GameStartPresenter]);
 //! app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
-//! app.routine::<BallDraining>(routine![BallSaveSystem, ExtraBallSystem]);
-//! app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
+//! app.routine::<BallDraining>(routine![BallSaveSystem]);
+//! app.routine::<TurnEnding>(routine![BonusPresenter]);
 //! app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
 //! ```
 //!
@@ -62,8 +62,12 @@
 //!
 //! ## Ball Save, Multiball, Extra Balls, and Similar Mechanics
 //! `BallSaveSystem` (in the player template) saves drained balls while any system has requested a ball save. It takes
-//! part in `BallDraining`, so the app lists it there. Other mechanics that save a drain or extend a player's turn
-//! (outlane saves, extra balls) are `BallDraining` participants too, and the app picks their order.
+//! part in `BallDraining`, so the app lists it there. Other mechanics that save a drain (outlane saves) are
+//! `BallDraining` participants too, and the app picks their order.
+//!
+//! Extra balls are kept by the game manager, per player. Any system grants one with `ctx.grant_extra_ball()`
+//! (`GameManagementExt`), up to the `MAX_EXTRA_BALLS` operator config's limit per game; it returns false when the
+//! limit is reached, so the caller can award something else.
 //!
 //! A multiball is a mode asking the `BallManager` for more balls, usually with a ball save request alongside. It knows
 //! it's over from `RoutineCompleted<BallDraining>`: a drain completing with `RoutineCompletion::AllSteps` wasn't saved,
@@ -71,7 +75,6 @@
 
 pub mod ball_management;
 mod ball_save;
-mod extra_ball;
 pub mod configs;
 mod game_management;
 mod game_start;
@@ -80,7 +83,6 @@ pub mod metrics;
 
 pub use ball_management::*;
 pub use ball_save::*;
-pub use extra_ball::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
