@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::fmt::Debug;
 use std::ops::{Add, Sub};
 
@@ -67,27 +66,21 @@ where
     self
   }
 
-  pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Sequence<A, T>
-  where
-    A: PartialOrd + Send + Sync + 'static,
-    T: Send + Sync + 'static,
-  {
-    Sequence::new(
-      vec![
-        Tween::boxed(target, curve.clone(), stops.clone(), Cycle::Once) as Box<dyn Animation<A, T>>,
-        Tween::boxed(
-          target,
-          Curve::Reverse(Box::new(curve.clone())),
-          stops.into_iter().rev().collect(),
-          Cycle::Once,
-        ),
-      ],
-      cycle,
-    )
+  /// Plays the stops forward, then back again, as one cycle
+  pub fn ping_pong(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Sequence<A, T> {
+    let forward = Tween::new(target, curve, stops, Cycle::Once);
+    let mut backward = forward.clone();
+    backward.reverse();
+
+    Sequence::new(vec![Box::new(forward), Box::new(backward)], cycle)
   }
 
   pub fn boxed(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Box<Self> {
     Box::new(Self::new(target, curve, stops, cycle))
+  }
+
+  fn last_stop(&self) -> usize {
+    self.stops.len() - 1
   }
 
   fn next_index(&self) -> usize {
@@ -98,17 +91,13 @@ where
     idx
   }
 
+  /// Turns the tween into the original played backwards: the stops run in reverse order, and each segment's curve
+  /// runs backwards in time (an ease-in becomes an ease-out). Progress and completed cycles are reset, so it plays
+  /// from the start of the reversed path.
   pub fn reverse(&mut self) {
-    Tween {
-      target: self.target,
-      current: A::default(),
-      active: self.active,
-      curve: Curve::Reverse(Box::new(self.curve.clone())),
-      stops: self.stops.clone().into_iter().rev().collect(),
-      cycle: self.cycle,
-      cycle_count: self.cycle_count,
-      current_stop_index: self.current_stop_index,
-    };
+    self.stops.reverse();
+    self.curve = self.curve.clone().reflect();
+    self.reset();
   }
 
   pub fn remaining(&self) -> A {
@@ -135,48 +124,52 @@ where
       return AccumulationResult::default();
     }
 
-    let mut result = AccumulationResult {
-      remainder: A::default(),
-      completed_cycle: false,
-    };
+    let mut result = AccumulationResult::default();
+    let last_stop = self.stops.len() - 1;
 
-    // Edge case: In Times & Forever modes the current stop is only reset if the accumulated value overshoots the target
-    // This is so that in the case where the accumulation is exactly the target, the `sample()` method will return the
-    // final stop value instead of jumping back to the first stop. However, this edge case then needs to be caught on the
-    // next accumulation and correct (below).
-    if delta > A::default()
-      && self.current == A::default()
-      && self.current_stop_index >= self.stops.len() - 1
-    {
+    // A zero-length tween completes as soon as it's advanced
+    if self.target <= A::default() {
+      self.current_stop_index = last_stop;
+      self.cycle_count = match self.cycle {
+        Cycle::Once => 1,
+        Cycle::Times(n) => n,
+        Cycle::Forever => self.cycle_count,
+      };
+      result.completed_cycle = true;
+      result.remainder = delta;
+      return result;
+    }
+
+    // When a cycle ends exactly on the target, the tween parks on the last stop so `sample()` returns it rather than
+    // jumping back to the first. The next advance starts the new cycle.
+    if delta > A::default() && self.current == A::default() && self.current_stop_index >= last_stop {
       self.current_stop_index = 0;
     }
 
     self.current = self.current + delta;
-    if self.current >= self.target {
+
+    // A single delta may cover several segments, or several cycles
+    while self.current >= self.target {
       self.current = self.current - self.target;
       self.current_stop_index += 1;
 
-      result.completed_cycle = self.current_stop_index >= max(self.stops.len() - 1, 1);
-      result.remainder = self.current;
+      if self.current_stop_index < last_stop {
+        continue;
+      }
 
-      if result.completed_cycle {
-        match self.cycle {
-          Cycle::Forever => {
-            if self.current > A::default() {
-              self.current_stop_index = 0;
-            }
-          }
-          Cycle::Once => {
-            self.cycle_count += 1;
-            result.completed_cycle = true;
-          }
-          Cycle::Times(n) => {
-            self.cycle_count += 1;
-            if self.cycle_count < n && self.current > A::default() {
-              self.current_stop_index = 0;
-            }
-          }
-        }
+      result.completed_cycle = true;
+      if self.cycle != Cycle::Forever {
+        self.cycle_count = self.cycle_count.saturating_add(1);
+      }
+
+      if self.is_complete() {
+        result.remainder = self.current;
+        self.current = A::default();
+        break;
+      }
+
+      if self.current > A::default() {
+        self.current_stop_index = 0;
       }
     }
 
@@ -218,6 +211,12 @@ where
     + 'static,
 {
   fn sample(&self) -> T {
+    // Parked at the end of the last segment, either between cycles or complete
+    if self.current_stop_index >= self.last_stop() {
+      let last = self.last_stop();
+      return self.stops[last - 1].interpolate(&self.stops[last], self.curve.sample(1.0));
+    }
+
     let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);
     let curve_value = self.curve.sample(phase);
     let from = &self.stops[self.current_stop_index];
@@ -338,5 +337,124 @@ mod tests {
     assert_eq!(result.completed_cycle, true);
     assert_eq!(tween.sample(), 5.0);
     assert!(!tween.is_complete());
+  }
+
+  #[test]
+  fn test_delta_spanning_several_stops() {
+    let mut tween = Tween::new(3.0, Curve::Linear, vec![0.0, 10.0, 20.0, 30.0], Cycle::Once);
+
+    let result = tween.accumulate(3.0);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 30.0);
+    assert!(tween.is_complete());
+  }
+
+  #[test]
+  fn test_delta_spanning_several_cycles() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Forever);
+
+    let result = tween.accumulate(2.25);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(tween.sample(), 2.5);
+  }
+
+  #[test]
+  fn test_times_completes_within_one_delta() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Times(2));
+
+    let result = tween.accumulate(2.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(result.remainder, 0.5);
+    assert_eq!(tween.sample(), 10.0);
+    assert!(tween.is_complete());
+  }
+
+  #[test]
+  fn test_once_overshoot_holds_last_stop() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once);
+
+    let result = tween.accumulate(1.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(result.remainder, 0.5);
+    assert_eq!(tween.sample(), 10.0);
+
+    tween.accumulate(1.0);
+    assert_eq!(tween.sample(), 10.0);
+  }
+
+  #[test]
+  fn test_force_beyond_a_segment_catches_up() {
+    let mut tween = Tween::new(2.0, Curve::Linear, vec![0.0, 10.0, 20.0], Cycle::Once);
+
+    tween.force(1.5);
+    tween.accumulate(0.0);
+    assert_eq!(tween.sample(), 15.0);
+  }
+
+  #[test]
+  fn test_parked_sample_follows_curve() {
+    // Sinusoid returns to its start at the end of each cycle
+    let mut tween = Tween::new(1.0, Curve::Sinusoid, vec![0.0f32, 10.0], Cycle::Forever);
+
+    tween.accumulate(1.0);
+    assert!(tween.sample().abs() < 0.001);
+  }
+
+  #[test]
+  fn test_zero_length_tween_completes() {
+    let mut tween = Tween::new(0.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once);
+
+    let result = tween.accumulate(0.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(result.remainder, 0.5);
+    assert_eq!(tween.sample(), 10.0);
+    assert!(tween.is_complete());
+  }
+
+  #[test]
+  fn test_reverse_plays_backwards() {
+    let curve = Curve::EaseIn;
+    let forward = Tween::new(3.0, curve.clone(), vec![0.0f32, 10.0, 20.0, 30.0], Cycle::Once);
+    let mut backward = forward.clone();
+    backward.reverse();
+
+    for i in 0..=30 {
+      let t = i as f32 / 10.0;
+      let mut f = forward.clone();
+      let mut b = backward.clone();
+      f.accumulate(t);
+      b.accumulate(3.0 - t);
+      assert!((f.sample() - b.sample()).abs() < 0.001, "at {t}: forward {} backward {}", f.sample(), b.sample());
+    }
+  }
+
+  #[test]
+  fn test_reverse_resets_progress() {
+    let mut tween = Tween::new(1.0, Curve::Linear, vec![0.0f32, 10.0], Cycle::Once);
+    tween.accumulate(1.0);
+    assert!(tween.is_complete());
+
+    tween.reverse();
+    assert!(!tween.is_complete());
+    assert_eq!(tween.sample(), 10.0);
+
+    tween.accumulate(1.0);
+    assert_eq!(tween.sample(), 0.0);
+  }
+
+  #[test]
+  fn test_ping_pong_returns_the_way_it_came() {
+    let mut seq = Tween::ping_pong(1.0, Curve::EaseIn, vec![0.0f32, 10.0], Cycle::Once);
+
+    seq.accumulate(0.5);
+    let out = seq.sample();
+    assert_eq!(out, 2.5);
+
+    seq.accumulate(1.0);
+    assert_eq!(seq.sample(), out);
+
+    seq.accumulate(0.5);
+    assert!(seq.is_complete());
+    assert_eq!(seq.sample(), 0.0);
   }
 }

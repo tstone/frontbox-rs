@@ -13,7 +13,7 @@ pub struct Sequence<A, T> {
 impl<A, T> Sequence<A, T>
 where
   T: Clone,
-  A: Copy + Default,
+  A: Copy + Default + PartialEq,
 {
   pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: Cycle) -> Self {
     Self {
@@ -35,11 +35,14 @@ where
     self
   }
 
-  /// Reset all child animations
+  /// Reset all child animations, leaving only the first playing
   fn reset_all(&mut self) {
     for anim in &mut self.sequence {
       anim.reset();
       anim.stop();
+    }
+    if let Some(first) = self.sequence.first_mut() {
+      first.play();
     }
   }
 }
@@ -47,44 +50,66 @@ where
 impl<A, T> Accumulator<A> for Sequence<A, T>
 where
   T: Clone,
-  A: Copy + Default,
+  A: Copy + Default + PartialEq,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
-    if self.active
-      && let Some(current_anim) = &mut self.sequence.get_mut(self.current_anim_index)
-    {
-      let result = current_anim.accumulate(delta);
-
-      if current_anim.is_complete() {
-        self.current_anim_index += 1;
-
-        if self.current_anim_index >= self.sequence.len() {
-          if self.cycle != Cycle::Forever && self.cycle_count < u32::MAX {
-            self.cycle_count += 1;
-          }
-          self.current_anim_index = 0;
-          self.reset_all();
-        }
-
-        if let Some(next_anim) = self.sequence.get_mut(self.current_anim_index) {
-          next_anim.play();
-        }
-
-        return self.accumulate(result.remainder);
-      }
+    let mut result = AccumulationResult::default();
+    if !self.active || self.is_complete() {
+      return result;
     }
 
-    AccumulationResult::default()
+    // Time left over when a child completes carries into the next one, so a single delta may complete several
+    // children, or several cycles
+    let mut delta = delta;
+    let mut cycle_start_delta = delta;
+
+    while let Some(current_anim) = self.sequence.get_mut(self.current_anim_index) {
+      let child = current_anim.accumulate(delta);
+      if !current_anim.is_complete() {
+        break;
+      }
+
+      delta = child.remainder;
+      self.current_anim_index += 1;
+
+      if self.current_anim_index >= self.sequence.len() {
+        result.completed_cycle = true;
+        if self.cycle != Cycle::Forever {
+          self.cycle_count = self.cycle_count.saturating_add(1);
+        }
+
+        // Hold on the last child so `sample()` keeps returning its final value
+        if self.is_complete() {
+          self.current_anim_index = self.sequence.len() - 1;
+          result.remainder = delta;
+          break;
+        }
+
+        // A cycle that took no time (e.g. every child is zero-length) would otherwise repeat forever
+        let no_progress = delta == cycle_start_delta;
+        cycle_start_delta = delta;
+
+        self.current_anim_index = 0;
+        self.reset_all();
+
+        if no_progress {
+          break;
+        }
+      }
+
+      self.sequence[self.current_anim_index].play();
+    }
+
+    result
   }
 
   fn force(&mut self, current: A) {
-    // replay the sequence up to the current value
+    // replay the sequence up to the current value, even if it isn't playing
+    let active = self.active;
     self.reset();
-    let mut remainder = current;
-    for anim in &mut self.sequence {
-      anim.force(current);
-      remainder = anim.accumulate(remainder).remainder;
-    }
+    self.active = true;
+    self.accumulate(current);
+    self.active = active;
   }
 
   fn is_complete(&self) -> bool {
@@ -105,7 +130,7 @@ where
 impl<A, T> Animation<A, T> for Sequence<A, T>
 where
   T: Clone,
-  A: Copy + Default,
+  A: Copy + Default + PartialEq,
 {
   fn sample(&self) -> T {
     self.sequence.get(self.current_anim_index).unwrap().sample()
@@ -125,5 +150,130 @@ where
 
   fn active(&self) -> bool {
     self.active
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// Two one-second steps: 0 -> 10, then 10 -> 20
+  fn two_steps(cycle: Cycle) -> Sequence<f32, f32> {
+    Sequence::new(
+      vec![
+        Tween::boxed(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once),
+        Tween::boxed(1.0, Curve::Linear, vec![10.0, 20.0], Cycle::Once),
+      ],
+      cycle,
+    )
+  }
+
+  #[test]
+  fn test_plays_children_in_order() {
+    let mut seq = two_steps(Cycle::Once);
+    assert_eq!(seq.sample(), 0.0);
+
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 5.0);
+
+    seq.accumulate(1.0);
+    assert_eq!(seq.sample(), 15.0);
+  }
+
+  #[test]
+  fn test_once_holds_final_value() {
+    let mut seq = two_steps(Cycle::Once);
+
+    seq.accumulate(1.0);
+    let result = seq.accumulate(1.0);
+    assert_eq!(result.completed_cycle, true);
+    assert!(seq.is_complete());
+    assert_eq!(seq.sample(), 20.0);
+
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 20.0);
+  }
+
+  #[test]
+  fn test_once_reports_remainder() {
+    let mut seq = two_steps(Cycle::Once);
+
+    let result = seq.accumulate(2.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(result.remainder, 0.5);
+    assert_eq!(seq.sample(), 20.0);
+  }
+
+  #[test]
+  fn test_times_stops_after_n_cycles() {
+    let mut seq = two_steps(Cycle::Times(2));
+
+    let result = seq.accumulate(2.0);
+    assert_eq!(result.completed_cycle, true);
+    assert!(!seq.is_complete());
+
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 5.0);
+
+    seq.accumulate(1.5);
+    assert!(seq.is_complete());
+    assert_eq!(seq.sample(), 20.0);
+  }
+
+  #[test]
+  fn test_forever_loops() {
+    let mut seq = two_steps(Cycle::Forever);
+
+    let result = seq.accumulate(2.5);
+    assert_eq!(result.completed_cycle, true);
+    assert_eq!(seq.sample(), 5.0);
+    assert!(!seq.is_complete());
+  }
+
+  #[test]
+  fn test_reset_keeps_playing() {
+    let mut seq = two_steps(Cycle::Forever);
+
+    seq.accumulate(1.5);
+    seq.reset();
+    assert_eq!(seq.sample(), 0.0);
+
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 5.0);
+  }
+
+  #[test]
+  fn test_force() {
+    let mut seq = two_steps(Cycle::Forever);
+
+    seq.force(1.5);
+    assert_eq!(seq.sample(), 15.0);
+
+    seq.force(0.25);
+    assert_eq!(seq.sample(), 2.5);
+  }
+
+  #[test]
+  fn test_force_while_stopped_stays_stopped() {
+    let mut seq = two_steps(Cycle::Forever).stopped();
+
+    seq.force(1.5);
+    assert_eq!(seq.sample(), 15.0);
+
+    seq.accumulate(0.25);
+    assert_eq!(seq.sample(), 15.0);
+  }
+
+  #[test]
+  fn test_zero_length_children_do_not_hang() {
+    let mut seq: Sequence<f32, f32> = Sequence::new(
+      vec![
+        Tween::boxed(0.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once),
+        Tween::boxed(0.0, Curve::Linear, vec![10.0, 20.0], Cycle::Once),
+      ],
+      Cycle::Forever,
+    );
+
+    seq.accumulate(1.0);
   }
 }
