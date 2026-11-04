@@ -114,7 +114,7 @@ impl AutoPlungerSystem {
 
   fn fire(&mut self, method: LaunchMethod, ctx: &SystemContext) {
     log::info!(target: "frontbox::autoplunger", "Firing auto plunger ({:?})", method);
-    ctx.activate_driver(self.coil_name, ActivationMode::Tap);
+    ctx.drivers.activate(self.coil_name, ActivationMode::Tap);
     ctx.emit(AutoPlungerFired { method });
   }
 

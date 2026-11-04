@@ -43,13 +43,13 @@ impl GameStartable {
 
   fn start_btn_on(&self, ctx: &SystemContext) {
     if let Some(name) = self.lamp_driver_name {
-      ctx.activate_driver(name, ActivationMode::VirtualSwitchOn);
+      ctx.drivers.activate(name, ActivationMode::VirtualSwitchOn);
     }
   }
 
   fn start_btn_off(&self, ctx: &SystemContext) {
     if let Some(name) = self.lamp_driver_name {
-      ctx.deactivate_driver(name, DeactivationMode::VirtualSwitchOff);
+      ctx.drivers.deactivate(name, DeactivationMode::VirtualSwitchOff);
     }
   }
 }

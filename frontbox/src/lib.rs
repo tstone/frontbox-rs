@@ -42,7 +42,7 @@ pub mod prelude {
   pub use crate::led::color_sequence::GradientStop;
   pub use crate::led::*;
   pub use crate::location::*;
-  pub use crate::machine::{MachineExt, MachineSystem, SwitchClosed, SwitchOpened};
+  pub use crate::machine::{ContextDrivers, ContextLeds, ContextSwitches, MachineSystem, SwitchClosed, SwitchOpened};
   pub use crate::metrics::{
     Counter, GameId, MetricDefinition, MetricKind, MetricsCollection, Sample, SampleType,
   };

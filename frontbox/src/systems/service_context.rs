@@ -45,6 +45,12 @@ pub struct ServiceContext<'a> {
   pub(crate) base: &'a AppState,
   groups: &'a Groups,
   app_sender: &'a mpsc::UnboundedSender<AppMessage>,
+  /// Look up drivers, and configure, activate, and deactivate them
+  pub drivers: ContextDrivers<'a>,
+  /// Look up switches and their state, and configure how they report
+  pub switches: ContextSwitches<'a>,
+  /// Look up LEDs, and set them directly
+  pub leds: ContextLeds<'a>,
 }
 
 impl<'a> ServiceContext<'a> {
@@ -57,6 +63,9 @@ impl<'a> ServiceContext<'a> {
       base,
       groups,
       app_sender,
+      drivers: ContextDrivers::new(base, groups, app_sender),
+      switches: ContextSwitches::new(base, groups, app_sender),
+      leds: ContextLeds::new(base, groups, app_sender),
     }
   }
 
@@ -105,7 +114,11 @@ impl<'a> ServiceContext<'a> {
   }
 
   /// Despawn self and immediately spawn a new system in its place
-  pub(crate) fn replace_self(&self, handle: SystemHandle, system: impl Into<SpawnableSystemContainer>) {
+  pub(crate) fn replace_self(
+    &self,
+    handle: SystemHandle,
+    system: impl Into<SpawnableSystemContainer>,
+  ) {
     let _ = self
       .app_sender
       .send(AppMessage::ReplaceSystem(handle, system.into()));
@@ -167,7 +180,12 @@ impl<'a> ServiceContext<'a> {
     cue_id
   }
 
-  pub(crate) fn cue_cycling(&self, handle: SystemHandle, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
+  pub(crate) fn cue_cycling(
+    &self,
+    handle: SystemHandle,
+    signals: Vec<Box<dyn Event>>,
+    cue: Cue,
+  ) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender

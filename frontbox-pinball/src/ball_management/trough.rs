@@ -135,7 +135,7 @@ impl TroughSystem {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
       cue_id: ctx.cues.start(VerifyEject, self.config.eject_verification_time.once()),
     };
-    ctx.activate_driver(self.config.eject_coil_name, ActivationMode::Tap);
+    ctx.drivers.activate(self.config.eject_coil_name, ActivationMode::Tap);
   }
 
   /// Number of balls in the trough according to the switches right now, settled or not

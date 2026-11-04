@@ -253,7 +253,12 @@ impl MachineSystem {
   }
 
   /// Set the color of multiple LEDs in a single command (RD)
-  pub fn set_leds(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, Rgba<u8>)>) {
+  pub(crate) fn set_leds(
+    &self,
+    expansion_id: u8,
+    breakout: Option<u8>,
+    led_states: Vec<(u8, Rgba<u8>)>,
+  ) {
     let led_states = led_states
       .iter()
       .map(|(index, color)| (*index, color.to_color()))
@@ -284,7 +289,7 @@ impl MachineSystem {
   }
 
   /// Set multiple LEDs on a port/breakout to the same color (RB)
-  pub fn set_multiple_leds(
+  pub(crate) fn set_multiple_leds(
     &self,
     expansion_id: u8,
     breakout: Option<u8>,
@@ -321,7 +326,7 @@ impl MachineSystem {
   }
 
   /// Set all LEDs on a port/breakout to the same color (RA)
-  pub fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
+  pub(crate) fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
     // TODO: tracer support
 
     self
@@ -338,7 +343,12 @@ impl MachineSystem {
   }
 
   /// Set the white channel of multiple LEDs in a single command (RZ)
-  pub fn set_leds_white(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, u8)>) {
+  pub(crate) fn set_leds_white(
+    &self,
+    expansion_id: u8,
+    breakout: Option<u8>,
+    led_states: Vec<(u8, u8)>,
+  ) {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {

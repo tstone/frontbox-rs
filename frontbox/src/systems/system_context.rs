@@ -30,6 +30,9 @@ use crate::prelude::*;
 /// - `ctx.cues`: schedule signals back to this system
 /// - `ctx.routines`: start and take part in routines
 /// - `ctx.states`: read and set states
+/// - `ctx.drivers`: look up, configure, activate, and deactivate drivers
+/// - `ctx.switches`: look up switches and their state, and configure how they report
+/// - `ctx.leds`: look up LEDs, and set them directly
 ///
 /// **Important**: SystemContext is specific to the system it was given, and should not be shared to other systems.
 pub struct SystemContext<'a> {
@@ -40,6 +43,9 @@ pub struct SystemContext<'a> {
   pub cues: ContextCues<'a>,
   pub routines: ContextRoutines<'a>,
   pub states: ContextStates<'a>,
+  pub drivers: ContextDrivers<'a>,
+  pub switches: ContextSwitches<'a>,
+  pub leds: ContextLeds<'a>,
 }
 
 impl<'a> SystemContext<'a> {
@@ -58,6 +64,9 @@ impl<'a> SystemContext<'a> {
       cues: ContextCues::new(handle, ctx),
       routines: ContextRoutines::new(handle, ctx),
       states: ContextStates::new(handle, ctx),
+      drivers: ctx.drivers,
+      switches: ctx.switches,
+      leds: ctx.leds,
     }
   }
 

@@ -103,7 +103,7 @@ impl DropTargetDownUp {
 impl System for DropTargetDownUp {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // bring up all targets on startup
-    ctx.activate_driver(drivers::BANK_COIL.name, ActivationMode::Tap);
+    ctx.drivers.activate(drivers::BANK_COIL.name, ActivationMode::Tap);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

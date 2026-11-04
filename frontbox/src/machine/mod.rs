@@ -4,7 +4,7 @@
 //!
 //! Machine handles all the interactions with the FAST mainboard (e.g. Neuron) and the hardware connected to it. This allows operations like activating and deactivating coils, setting LED state, etc.
 //!
-//! [`MachineSystem`] itself is actually a special [system](mod@crate::systems) automatically launched by the framework. It can be interacted with as a service. There are also [SystemContext](crate::systems::SystemContext) extensions ([`MachineExt`]) for most common actions.
+//! [`MachineSystem`] itself is actually a special [system](mod@crate::systems) automatically launched by the framework. It can be interacted with as a service, but the common actions are on the context: `ctx.drivers` ([`ContextDrivers`]), `ctx.switches` ([`ContextSwitches`]), and `ctx.leds` ([`ContextLeds`]).
 //!
 //! ```rust
 //! # use frontbox::prelude::*;
@@ -12,7 +12,7 @@
 //! # let driver = "example_coil";
 //! # let mode = DeactivationMode::Disabled;
 //! // short hand
-//! ctx.deactivate_driver(driver, mode);
+//! ctx.drivers.deactivate(driver, mode);
 //!
 //! # let mode = DeactivationMode::Disabled;
 //! // long hand
@@ -21,11 +21,11 @@
 //! # }
 //! ```
 
+mod context_hardware;
 mod driver_triggers;
 mod events;
 mod fast_codec;
 mod machine;
-mod machine_ext;
 pub mod machine_metrics;
 mod machine_system;
 pub mod neuron;
@@ -37,7 +37,7 @@ use std::time::Duration;
 
 pub use events::*;
 pub use machine::*;
-pub use machine_ext::*;
+pub use context_hardware::*;
 pub use machine_system::*;
 
 #[derive(Debug)]

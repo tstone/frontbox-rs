@@ -66,27 +66,27 @@ impl GameManager {
   }
 
   fn switch_triggered_playfield_drivers(&self, ctx: &SystemContext) -> Vec<&'static str> {
-    let (Some(query), Some(machine)) = (&self.playfield_drivers, ctx.systems.get::<MachineSystem>()) else {
+    let Some(query) = &self.playfield_drivers else {
       return Vec::new();
     };
     query
       .query_names(ctx.into())
       .into_iter()
-      .filter(|driver| machine.is_switch_triggered(driver, ctx.into()))
+      .filter(|driver| ctx.drivers.is_switch_triggered(driver))
       .collect()
   }
 
   fn activate_playfield(&self, ctx: &SystemContext) {
     log::info!(target: "frontbox::game_manager", "Activating playfield drivers due to turn start");
     for driver in self.switch_triggered_playfield_drivers(ctx) {
-      ctx.activate_driver(driver, ActivationMode::Automatic);
+      ctx.drivers.activate(driver, ActivationMode::Automatic);
     }
   }
 
   fn deactivate_playfield(&self, ctx: &SystemContext) {
     log::info!(target: "frontbox::game_manager", "Deactivating playfield drivers due to turn end");
     for driver in self.switch_triggered_playfield_drivers(ctx) {
-      ctx.deactivate_driver(driver, DeactivationMode::Disabled);
+      ctx.drivers.deactivate(driver, DeactivationMode::Disabled);
     }
   }
 }
