@@ -43,7 +43,7 @@
 //! ```rust,ignore
 //! app.routine::<GameStarting>(routine![GameStartPresenter]);
 //! app.routine::<TurnStarting>(routine![PlayerUpPresenter]);
-//! app.routine::<BallDraining>(routine![BallSaveSystem, ExtraBall]);
+//! app.routine::<BallDraining>(routine![BallSaveSystem, ExtraBallSystem]);
 //! app.routine::<TurnEnding>(routine![BonusPresenter, ShootAgainPresenter]);
 //! app.routine::<GameEnding>(routine![MatchPresenter, HighScoreEntry]);
 //! ```
@@ -71,6 +71,7 @@
 
 pub mod ball_management;
 mod ball_save;
+mod extra_ball;
 pub mod configs;
 mod game_management;
 mod game_start;
@@ -79,6 +80,7 @@ pub mod metrics;
 
 pub use ball_management::*;
 pub use ball_save::*;
+pub use extra_ball::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;

@@ -23,7 +23,6 @@
   ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
   check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
-- Extra ball
 - Tilt: when tilted, ball save must stop saving before the balls drain (clearing it when the turn ends is too late, as
   the drains come first). Needs a tilt system, then e.g. a way to suspend ball save or have it listen for a tilt event
 - Operator metrics can be reset (e.g. when a coil is replaced)
@@ -100,6 +99,7 @@
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a
   replayed game is deterministic.
+- Canvas designer: I want to be able to lay out a DMD screen visually (hot reload? JSON eval?)
 - LedEffect1d web based designer: uses an API to render actual colors. Needs: load from JSON, LED renames.
 - LedEffect2d web based designer: same as above, but also uses LED config
 

@@ -88,7 +88,7 @@ impl TurnActive {
 /// `TurnEnding`. With no routine defined, every drain stands right away.
 ///
 /// ```rust,ignore
-/// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave, ExtraBall]);
+/// app.routine::<BallDraining>(routine![BallSaveSystem, OutlaneSave, ExtraBallSystem]);
 /// ```
 ///
 /// A participant that only saves the last ball, like an extra ball, completes its step right away while other balls
