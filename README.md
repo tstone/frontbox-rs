@@ -4,26 +4,65 @@
 
 ## Overview
 
-Frontbox is a homebrew arcade framework built for [FAST Pinball](https://fastpinball.com/) hardware, designed around an actor-like constructs called "Systems", which send and receive signal.
+Frontbox is a homebrew arcade framework, with pinball inclinations, built for [FAST Pinball](https://fastpinball.com/) hardware.
 
 > [!WARNING]
-> Frontbox is in active, pre-release development with unstable APIs
+> Frontbox is in active, pre-release development with potentially unstable APIs
 
-### Features
+### Status
 
-- **Lightweight**: Built in [Rust](https://rust-lang.org/) to run on minimal hardware
-- **Flexible**: All hardware can be referenced in 3 ways: by name, tag, or location in space
-- **Retro**: Pin2DMD and NeoSeg\* (alpha numeric) display support out of the box
-- **Visual**: Included Web Console shows what is happening (see below)
-- **Dazzling**: 1D, 2D*, and 3D* LED animations
-- **Data-backed**: Built-in metrics system and historical viewer
-- **Sonically Immersive**: Sound system with preloading and automatic music ducking\*
+**In**: 
+  - Core framework (systems, events, routines, states)
+  - FAST protocol handshaking, boot sequence, and watchdog management
+  - Hardware support: drivers (coils), switches, and LEDs
+  - Ball management (trough, plunge lane, auto-plunger)
+  - Competitive game management (game lifecycle, player tracking, turn tracking, extra ball, etc.)
+  - DMD display rendering
+  - Free play and tilt support
+  - Music playback, sound effect playback, and callback playback with ducking
+  - Operator config (adjustable game/hardware settings)
+  - Metrics tracking
+  - Web-based management console
 
-\* = Coming Soon
+**Still Missing**: 
+  - Ball search
+  - High scores
+  - 2D and 3D LED animations
+  - Cooperative game management
+  - DMD screen management
+  - Alphanumeric display/NeoSeg support
+  - Hardware support: motors and servos
+  - Coin-based game start
+  - Music loop points, effects, and multi-stem playback
 
-### Web Console
+### Architectural Overview
 
-![Web console machine view](doc/img/console-machine-view.png)
+Frontbox is built around a single abstraction called a `System`. Systems can both send and receive `Events`. Events are typed and always broadcast: every active system receives a copy. Systems can also directly interact with each other in a typesafe way, typically to perform actions (eject the ball, lift the ramp, etc.) which removes the need to send a specific event to a specific system.
+
+Systems can also participate in a `Routine`, which is an ordered processes where each participating system gets to hold the baton, do it's thing, then let it passdown to the next system. These work similar to the concept of middleware in HTTP routing. Routines, likewise, are typesafe and can be initialized by user systems, but the framework comes with notable ones built in (GameStarting, TurnStarting, BallDraining, TurnEnding, GameEnding, etc.).
+
+Systems can be grouped or go active/inactive independently. Systems interact with `Context`, which contains the current hardware on the machine, `States`, a reference to other systems, and is how framework-level behavior is activated (spawn system, despawn, self, etc.) States are special enums within Context that emit events automatically on change, and are typically reacted to by other systems.
+
+#### A Basic Game Lifecycle Example
+
+- The start button is pressed. This causes a switch event.
+- The `FreePlaySystem` receives the switch event then checks the `PlayerEntry` state. It is currently `PlayerEntry::Open`.
+- `FreePlaySystem` calls `GameManagement` (through context) to invoke `add_player`.
+- `GameManagement` adds the player, recognizes this is the first player and starts a game.
+- Event `RoutineStarted<GameStarting>` is emitted.
+- Systems participating in `GameStarting` are run in order (by the framework)
+- Event `RoutineCompleted<GameStarting>` is emitted.
+- It's now the first player's turn, so the game manager starts that turn.
+- Event `RoutineStarted<TurnStarting>` is emitted.
+- Systems participating in `TurnStarting` are run in order (by the framework). At this point there could be interactions for the player, such as choosing their character.
+- Event `RoutineCompleted<TurnStarting>` is emitted.
+- The ball is served into the plunge lane by `TroughSystem`, which is part of ball management. It verifies the ball enters the plunge lane via a switch event.
+- The `TurnPhase` is currently `TurnPhase::Starting`.
+- The player pulls the plunger back and the ball rockets forward. As it lands in the playfield it hits a playfield switch, causing the turn phase to change to `TurnPhase::Active`.
+- A `BallActive` event is emitted.
+- A `SkillShotTargetsSystem` was running. Its `is_active` state was set to `ctx.in_state(TurnPhase::Active)`
+- The ball hits a target, causing another switch event
+- `SkillShotTargetsSystem` recognizes the switch event is for its target, so it calls `ctx.add_points` to award the player points. It also applies an LED effect during its `on_tick` handler, and plays a sound effect via `ctx.play_sfx`.
 
 ## Frequently Asked Questions
 
@@ -33,37 +72,19 @@ A: No. Frontbox was started in [early](https://github.com/tstone/rpin/commit/97c
 
 #### Q: How is Frontbox different than \_\_\_\_\_\_\_\_ Framework?
 
-A: Frontbox isn't a dedicated "pinball framework". It's a hardware framework that happens to have optional pinball components you can opt-in to. This gives it a more generalized, code-centric approach to things, in which there are fewer abstractions to understand and more opportunity to swap about base functionality. You could even for non-pinball, such as a homebrew claw machine -- really anything that was running on hardware Frontbox supports.
+A: Frontbox core is a hardware framework with no built-in pinball concepts. It supports broadcast events, system-to-system interaction, and sequenced processes ("routines"). Frontbox pinball adds an option layer of pinball behavior on top of that, including ball management, game management, tilt, extra balls, score keeping, etc. Your game is then built on any combination of those you want. Traditional pinball is support out of the box, but picking and choosing enables other types of games. You could even build a homebrew claw machine on Frontbox core with FAST hardware.
 
 #### Q: Does Frontbox work with Godot, Unity, or Unreal? Will it?
 
-A: Not officially. Frontbox actually started as a plugin for [Bevy](https://bevy.org/), which is where I'd look if I were wanting to make an LCD game. For the moment, the trajectory for Frontbox is to treat DMD and alphanumeric displays with first-class support for game display, and to utilize the web console for any complex management tasks.
+A: No, not yet anyways. The current focus is to optimize for DMD and alphanumeric displays as first-class supported for game display, then to utilize the web console for any complex management tasks. Though I'm sure something is possible for the adventurous. Frontbox actually started as a plugin for [Bevy](https://bevy.org/), which is where I'd look if I were wanting to make an LCD game.
 
 #### Q: Is Frontbox AI friendly?
 
-A: It will be. An [AGENTS.md](AGENTS.md) is slowly being built up which contains best practices and hints for agents.
+A: Frontbox was designed firstly to be a programmer-friendly framework, with minimal abstractions, consistent naming, and intuitive interfaces. But it turns out those decisions also work well for agents too, and now days most builders will likely use some form of agentic assistance to build up game code. An [AGENTS.md](AGENTS.md) is slowly being built up which contains best practices and hints for agents. More to come.
 
 #### Q: Is there a documentation site?
 
-Q: Not yet. Frontbox uses [rustdoc](https://doc.rust-lang.org/rustdoc/what-is-rustdoc.html), which generates a documentation site on publish. Since the framework isn't yet published, the doc site isn't yet published either. It's possible to view it locally by cloning the repo then running `cargo doc --open`.
-
-#### Q: Let's say I just wanted to try it, what's still missing?
-
-A: Some notable things. You probably should wait.
-
-- Core pinball:
-  - ball search
-  - outlane saves
-  - high scores
-- Machine management:
-  - Automatic startup eject
-  - coin based credits
-  - automatic USB reconnects
-- LEDs: 2D and 3D animations (1D supported)
-- Hardware: Motors, servos, NeoSeg
-- Display support outside of Pin2DMD
-- Sound: loop points, multi-stem music
-- Centralized random seed management
+A: Not yet. Frontbox uses [rustdoc](https://doc.rust-lang.org/rustdoc/what-is-rustdoc.html), which generates a documentation site on publish. Since the framework isn't yet published, the doc site isn't yet published either. It's possible to view it locally by cloning the repo then running `cargo doc --open`.
 
 #### Q: How do I set this up? Is there an example.
 
@@ -71,6 +92,10 @@ A: Yes:
 
 - Included [examples](frontbox/examples)
 - Or [Last of the Kilmore Oaks](https://github.com/tstone/lotko-homebrew) for source of a full game
+
+### Web Console
+
+![Web console machine view](doc/img/console-machine-view.png)
 
 ## Guides
 
