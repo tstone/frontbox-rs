@@ -1,4 +1,4 @@
-![Frontbox](logo.png)
+![Frontbox](doc/img/logo.png)
 
 ## Overview
 
