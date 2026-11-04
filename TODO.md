@@ -2,14 +2,15 @@
 
 - tests for run_loop (should this get refactored to more than bare functions?)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
-- Context is getting heavy. Should maybe swap it so that everything is namespaced, e.g. ctx.system.get, ctx.routine.start
+- Cue naming: `ctx.cues.start_cycling` cycles between signal values, not the cue itself, which reads as if the cue
+  loops (the `Cue` parameter already controls that). Find a name that says it alternates values.
 - Should a "hold" (like how BallSave uses them) be a framework feature?
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.
 - So much is built on LedSystem that the framework should probably just start it up automatically. Needs: interfaces above, so it can still be swapped.
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
-- Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `activate_system_group`/`deactivate_system_group`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
+- Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers.
 - Revisit if `Synchronize` event still makes sense or not
 - Implement a proper LampDriver that also supports flashing

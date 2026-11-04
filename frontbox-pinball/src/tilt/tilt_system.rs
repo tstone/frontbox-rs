@@ -99,7 +99,7 @@ impl System for TiltSystem {
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    ctx.in_any_state(&[TurnPhase::Starting, TurnPhase::Active])
+    ctx.states.is_any(&[TurnPhase::Starting, TurnPhase::Active])
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

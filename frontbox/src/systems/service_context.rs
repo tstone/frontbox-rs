@@ -40,18 +40,18 @@ use crate::systems::state::{StoredState, nearest_state};
 /// }
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct ServiceContext<'a> {
   pub(crate) base: &'a AppState,
   groups: &'a Groups,
-  app_sender: mpsc::UnboundedSender<AppMessage>,
+  app_sender: &'a mpsc::UnboundedSender<AppMessage>,
 }
 
 impl<'a> ServiceContext<'a> {
   pub fn new(
     base: &'a AppState,
     groups: &'a Groups,
-    app_sender: mpsc::UnboundedSender<AppMessage>,
+    app_sender: &'a mpsc::UnboundedSender<AppMessage>,
   ) -> Self {
     Self {
       base,
@@ -60,8 +60,9 @@ impl<'a> ServiceContext<'a> {
     }
   }
 
-  /// Dispatch an event to all other active systems
-  pub fn emit<E: Event>(&self, sender: u64, event: E) {
+  /// Dispatch an event to all other active systems. Takes the sender's identity, so it's only public through
+  /// `SystemContext`
+  pub(crate) fn emit<E: Event>(&self, sender: u64, event: E) {
     log::debug!(
       "📨 Emitting event {} {:?}",
       type_name::<E>(),
@@ -76,14 +77,14 @@ impl<'a> ServiceContext<'a> {
   // -- Systems access --
 
   /// Lookup a system by type
-  pub fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
+  pub(crate) fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
     // Priority is given to nearness: siblings are searched first, then global
     let found = self.groups.nearest(handle.group, TypeId::of::<T>())?;
     self.groups.get(&found.group)?.get_by_type::<T>()
   }
 
   /// Lookup a system by type; panic if does not exist
-  pub fn expect<T: System + 'static>(&self, handle: SystemHandle) -> RefMut<'_, T> {
+  pub(crate) fn expect<T: System + 'static>(&self, handle: SystemHandle) -> RefMut<'_, T> {
     let system_name = type_name::<T>();
     self.get::<T>(handle).expect(
       format!(
@@ -104,13 +105,13 @@ impl<'a> ServiceContext<'a> {
   }
 
   /// Despawn self and immediately spawn a new system in its place
-  pub fn replace_self(&self, handle: SystemHandle, system: impl Into<SpawnableSystemContainer>) {
+  pub(crate) fn replace_self(&self, handle: SystemHandle, system: impl Into<SpawnableSystemContainer>) {
     let _ = self
       .app_sender
       .send(AppMessage::ReplaceSystem(handle, system.into()));
   }
 
-  pub fn despawn_self(&self, handle: SystemHandle) {
+  pub(crate) fn despawn_self(&self, handle: SystemHandle) {
     let _ = self.app_sender.send(AppMessage::DespawnSystem(handle));
   }
 
@@ -152,7 +153,7 @@ impl<'a> ServiceContext<'a> {
 
   // --- Cues ---
 
-  pub fn cue(&self, handle: SystemHandle, signal: impl Event + 'static, cue: Cue) -> u64 {
+  pub(crate) fn cue(&self, handle: SystemHandle, signal: impl Event + 'static, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -166,7 +167,7 @@ impl<'a> ServiceContext<'a> {
     cue_id
   }
 
-  pub fn cue_cycling(&self, handle: SystemHandle, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
+  pub(crate) fn cue_cycling(&self, handle: SystemHandle, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -175,7 +176,7 @@ impl<'a> ServiceContext<'a> {
     cue_id
   }
 
-  pub fn cue_timeline(&self, handle: SystemHandle, timeline: CueTimeline) -> u64 {
+  pub(crate) fn cue_timeline(&self, handle: SystemHandle, timeline: CueTimeline) -> u64 {
     let cue_id = SystemContainer::next_id();
     self
       .app_sender
@@ -184,7 +185,7 @@ impl<'a> ServiceContext<'a> {
     cue_id
   }
 
-  pub fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
+  pub(crate) fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
     let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
   }
 
@@ -213,7 +214,7 @@ impl<'a> ServiceContext<'a> {
 
   /// The current value of the state `S`, as seen from `handle`'s group: as set in that group, then the root. The
   /// default if neither has set it. See [states](crate::systems::state)
-  pub fn state<S: State>(&self, handle: SystemHandle) -> S {
+  pub(crate) fn state<S: State>(&self, handle: SystemHandle) -> S {
     nearest_state::<S>(self.groups, handle.group)
   }
 
@@ -244,7 +245,7 @@ impl<'a> ServiceContext<'a> {
   }
 
   pub fn for_system(&self, handle: SystemHandle) -> SystemContext<'a> {
-    SystemContext::new(self.base, handle, self.groups, self.app_sender.clone())
+    SystemContext::new(self.base, handle, self.groups, self.app_sender)
   }
 
   /// Unregisters drivers, clears the EXP network, and halts the framework

@@ -76,7 +76,7 @@ impl SwitchComboSystem {
     if let Some(window) = self.within {
       if !self.window_started {
         self.window_started = true;
-        self.window_cue = Some(ctx.cue(WindowElapsed, window.once()));
+        self.window_cue = Some(ctx.cues.start(WindowElapsed, window.once()));
       }
     }
 
@@ -90,7 +90,7 @@ impl SwitchComboSystem {
     }
 
     match self.held_for {
-      Some(duration) => self.hold_cue = Some(ctx.cue(Held, duration.once())),
+      Some(duration) => self.hold_cue = Some(ctx.cues.start(Held, duration.once())),
       None => self.fire(ctx),
     }
   }
@@ -98,13 +98,13 @@ impl SwitchComboSystem {
   fn on_member_opened(&mut self, ctx: &SystemContext) {
     self.fired = false;
     if let Some(cue_id) = self.hold_cue.take() {
-      ctx.cancel_cue(cue_id);
+      ctx.cues.cancel(cue_id);
     }
 
     if self.closed_count(ctx) == 0 {
       self.window_started = false;
       if let Some(cue_id) = self.window_cue.take() {
-        ctx.cancel_cue(cue_id);
+        ctx.cues.cancel(cue_id);
       }
     }
   }

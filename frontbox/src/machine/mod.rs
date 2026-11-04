@@ -16,7 +16,7 @@
 //!
 //! # let mode = DeactivationMode::Disabled;
 //! // long hand
-//! ctx.expect::<MachineSystem>()
+//! ctx.systems.expect::<MachineSystem>()
 //!   .deactivate_driver(driver, mode, ctx.into());
 //! # }
 //! ```

@@ -12,7 +12,7 @@ pub trait TiltExt {
 
 impl<'a> TiltExt for SystemContext<'a> {
   fn grant_tilt_warning(&self) {
-    if let Some(mut tilt) = self.get::<TiltSystem>() {
+    if let Some(mut tilt) = self.systems.get::<TiltSystem>() {
       tilt.grant_warning(self.into());
     } else {
       log::warn!(target: "frontbox::tilt", "TiltSystem not running.");
@@ -21,7 +21,7 @@ impl<'a> TiltExt for SystemContext<'a> {
 
   fn tilt_warnings(&self) -> u8 {
     self
-      .get::<TiltSystem>()
+      .systems.get::<TiltSystem>()
       .map(|tilt| tilt.warnings())
       .unwrap_or(0)
   }

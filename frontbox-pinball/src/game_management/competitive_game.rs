@@ -115,13 +115,13 @@ impl CompetitiveGame {
 
     // Start a game assuming the number of balls in the trough is how many there should be
     // this avoids weird cases where a ball search may have abandoned a ball previously
-    if let Some(mut ball_manager) = sys_ctx.get::<BallManager>() {
+    if let Some(mut ball_manager) = sys_ctx.systems.get::<BallManager>() {
       ball_manager.establish_ball_count(ctx);
     }
 
     ctx.metrics.begin_game();
     ctx.metrics.inc(&metrics::GAMES_STARTED);
-    sys_ctx.start_routine(GameStarting);
+    sys_ctx.routines.start(GameStarting);
   }
 
   /// `GameStarting` completed: the first turn begins
@@ -135,7 +135,7 @@ impl CompetitiveGame {
     let ctx = &ctx.for_system(self.handle);
     let player = self.game_state.as_ref().unwrap().current_player();
 
-    ctx.activate_system_group(&self.player_groups[player as usize]);
+    ctx.groups.activate(&self.player_groups[player as usize]);
     ctx.metrics.set_player(player);
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
@@ -149,7 +149,7 @@ impl CompetitiveGame {
     self.waiting_for_balls = false;
     let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
-    ctx.start_routine_in(
+    ctx.routines.start_in(
       group,
       TurnStarting {
         current_player: game_state.current_player(),
@@ -163,12 +163,12 @@ impl CompetitiveGame {
 
   fn set_turn_phase(&mut self, turn_phase: TurnPhase, ctx: &ServiceContext) {
     self.turn_phase = turn_phase;
-    ctx.for_system(self.handle).set_state(turn_phase);
+    ctx.for_system(self.handle).states.set(turn_phase);
   }
 
   fn set_game_phase(&mut self, game_phase: GamePhase, ctx: &ServiceContext) {
     self.game_phase = game_phase;
-    ctx.for_system(self.handle).set_state(game_phase);
+    ctx.for_system(self.handle).states.set(game_phase);
   }
 
   fn is_game_started(&self) -> bool {
@@ -198,14 +198,14 @@ impl CompetitiveGame {
     } else {
       PlayerEntry::Closed
     };
-    ctx.for_system(self.handle).set_state(entry);
+    ctx.for_system(self.handle).states.set(entry);
   }
 
   fn serve_ball(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Serving the ball");
     self.ball_served = true;
     let ctx = &ctx.for_system(self.handle);
-    if let Some(mut ball_manager) = ctx.get::<BallManager>() {
+    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
       ball_manager.eject(Launch::Player, ctx.into());
     }
   }
@@ -245,7 +245,7 @@ impl CompetitiveGame {
     let group = &self.player_groups[draining.current_player as usize];
     ctx
       .for_system(self.handle)
-      .start_routine_in(group, draining);
+      .routines.start_in(group, draining);
   }
 
   fn drain_decided(&mut self, done: &RoutineCompleted<BallDraining>, ctx: &ServiceContext) {
@@ -274,7 +274,7 @@ impl CompetitiveGame {
     }
     let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
-    ctx.for_system(self.handle).start_routine_in(
+    ctx.for_system(self.handle).routines.start_in(
       group,
       TurnEnding {
         current_player: game_state.current_player(),
@@ -299,7 +299,7 @@ impl CompetitiveGame {
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
     let ctx = &ctx.for_system(self.handle);
     ctx
-      .get::<BallManager>()
+      .systems.get::<BallManager>()
       .map(|ball_manager| ball_manager.balls_in_play(ctx.into()))
       .unwrap_or(0)
   }
@@ -372,7 +372,7 @@ impl CompetitiveGame {
 
     ctx
       .for_system(self.handle)
-      .start_routine(GameEnding { scores, reason });
+      .routines.start(GameEnding { scores, reason });
   }
 
   /// `GameEnding` completed: the game is over
@@ -501,7 +501,7 @@ impl GameManagement for CompetitiveGame {
     let svc_ctx = ctx.for_system(self.handle);
     self
       .player_groups
-      .push(svc_ctx.spawn_system_group(group_name, copy, false));
+      .push(svc_ctx.groups.spawn(group_name, copy, false));
     svc_ctx.emit(PlayerAdded);
     self.update_player_entry(ctx);
   }
@@ -524,7 +524,7 @@ impl GameManagement for CompetitiveGame {
     if self.game_phase == GamePhase::Active {
       // the turn is over without a TurnEnding; its group's systems stop as it deactivates
       self.set_turn_phase(TurnPhase::Ending, ctx.into());
-      ctx.deactivate_system_group(&self.player_groups[player as usize]);
+      ctx.groups.deactivate(&self.player_groups[player as usize]);
       ctx.metrics.flush();
     }
     self.start_game_ending(reason, ctx.into());

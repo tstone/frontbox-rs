@@ -60,7 +60,7 @@ Systems can be grouped or go active/inactive independently. Systems interact wit
 - The `TurnPhase` is currently `TurnPhase::Starting`.
 - The player pulls the plunger back and the ball rockets forward. As it lands in the playfield it hits a playfield switch, causing the turn phase to change to `TurnPhase::Active`.
 - A `BallActive` event is emitted.
-- A `SkillShotTargetsSystem` was running. Its `is_active` state was set to `ctx.in_state(TurnPhase::Active)`
+- A `SkillShotTargetsSystem` was running. Its `is_active` state was set to `ctx.states.is(TurnPhase::Active)`
 - The ball hits a target, causing another switch event
 - `SkillShotTargetsSystem` recognizes the switch event is for its target, so it calls `ctx.add_points` to award the player points. It also applies an LED effect during its `on_tick` handler, and plays a sound effect via `ctx.play_sfx`.
 

@@ -1,6 +1,6 @@
 use frontbox::prelude::*;
 
-/// The current phase of the game, set by the game manager. Read it with `ctx.state::<GamePhase>()`, or watch
+/// The current phase of the game, set by the game manager. Read it with `ctx.states.get::<GamePhase>()`, or watch
 /// `StateChanged<GamePhase>`.
 #[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum GamePhase {

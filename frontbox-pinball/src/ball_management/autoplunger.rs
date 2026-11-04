@@ -120,7 +120,7 @@ impl AutoPlungerSystem {
 
   fn is_ball_resting(&self, ctx: &SystemContext) -> bool {
     ctx
-      .get::<PlungeLaneSystem>()
+      .systems.get::<PlungeLaneSystem>()
       .map(|lane| lane.is_ball_resting(ctx.into()))
       .unwrap_or(false)
   }

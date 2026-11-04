@@ -100,7 +100,7 @@ impl SystemContainer {
         });
       }
       // so routines waiting on this system look again
-      ctx.report_activity_changed();
+      ctx.routines.report_activity_changed();
     }
 
     self.last_active_state = fresh;

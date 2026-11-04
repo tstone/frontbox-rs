@@ -47,7 +47,7 @@ impl<'a> MachineExt for SystemContext<'a> {
 }
 
 fn with_machine<T>(ctx: &SystemContext, f: impl FnOnce(&mut MachineSystem) -> T) {
-  if let Some(mut machine) = ctx.get::<MachineSystem>() {
+  if let Some(mut machine) = ctx.systems.get::<MachineSystem>() {
     f(&mut machine);
   } else {
     log::error!("Machine not running.");

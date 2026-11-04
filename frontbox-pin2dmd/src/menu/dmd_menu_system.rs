@@ -497,7 +497,7 @@ impl System for DmdMenuSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    if let Some(mut snd) = ctx.get::<SoundSystem>() {
+    if let Some(mut snd) = ctx.systems.get::<SoundSystem>() {
       snd.preload_embedded(MENU_BEGIN_SND, menu::sounds::DOOR_OPEN);
       snd.preload_embedded(BACK_SND, menu::sounds::MENU_BACK);
       snd.preload_embedded(SELECT_SND, menu::sounds::MENU_FWD);
@@ -516,7 +516,7 @@ impl System for DmdMenuSystem {
   }
 
   fn on_reactivate(&mut self, ctx: &SystemContext) {
-    if let Some(mut dmd) = ctx.get::<DmdSystem>() {
+    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
       dmd.clear();
       self.requires_row_refresh = true;
     }
@@ -534,7 +534,7 @@ impl System for DmdMenuSystem {
     }
 
     if self.requires_render
-      && let Some(mut dmd) = ctx.get::<DmdSystem>()
+      && let Some(mut dmd) = ctx.systems.get::<DmdSystem>()
     {
       let size = *dmd.size();
       dmd.insert_layer(0, self.draw(&size).default_position());

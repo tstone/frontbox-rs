@@ -16,7 +16,7 @@
 //! impl System for Example {
 //!   fn on_spawn(&mut self, ctx: &SystemContext) {
 //!     // setup the cue
-//!     ctx.cue(
+//!     ctx.cues.start(
 //!       SomethingImportant(100),
 //!       Cue::Times(3, Duration::from_secs(3)),
 //!     );
@@ -40,9 +40,9 @@
 //! # #[derive(Serialize, Event)]
 //! # struct SomethingRather;
 //! # fn example(ctx: &SystemContext) {
-//! let handle = ctx.cue(SomethingRather, Cue::Forever(Duration::from_secs(1)));
+//! let handle = ctx.cues.start(SomethingRather, Cue::Forever(Duration::from_secs(1)));
 //! // ...
-//! ctx.cancel_cue(handle);
+//! ctx.cues.cancel(handle);
 //! # }
 //! ```
 //!
@@ -58,7 +58,7 @@
 //! # struct Off;
 //! # fn example(ctx: &SystemContext) {
 //! // note the use of `events!` here rather than `vec!`
-//! ctx.cue_cycling(
+//! ctx.cues.start_cycling(
 //!   events![On, Off],
 //!   Cue::Forever(Duration::from_secs(1))
 //! );
@@ -76,7 +76,7 @@
 //! # #[derive(Serialize, Event)]
 //! # struct SomethingImportant(u16);
 //! # fn example(ctx: &SystemContext) {
-//! ctx.cue_timeline(CueTimeline::new()
+//! ctx.cues.start_timeline(CueTimeline::new()
 //!   .cue_at(Duration::from_secs(3), SomethingImportant(5))
 //!   .cue_at(Duration::from_millis(4150), SomethingImportant(50))
 //!   .cue_at(Duration::from_secs(9), SomethingImportant(500))

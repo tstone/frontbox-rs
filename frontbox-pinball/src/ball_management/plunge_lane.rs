@@ -81,7 +81,7 @@ impl PlungeLaneSystem {
 
   fn cancel_cue(&mut self, ctx: &SystemContext) {
     if let Some(cue_id) = self.wait_cue_id {
-      ctx.cancel_cue(cue_id);
+      ctx.cues.cancel(cue_id);
       self.wait_cue_id = None;
     }
   }
@@ -113,7 +113,7 @@ impl PlungeLaneSystem {
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
     log::info!(target: "frontbox::plunge_lane", "Ball exited ({:?})", self.state);
     self.cancel_cue(ctx);
-    self.wait_cue_id = Some(ctx.cue(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+    self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
   }
 }
 

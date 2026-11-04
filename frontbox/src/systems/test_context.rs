@@ -41,7 +41,7 @@ impl TestContext {
   }
 
   pub fn svc_ctx(&self) -> ServiceContext<'_> {
-    ServiceContext::new(&self.base, &self.groups, self.tx.clone())
+    ServiceContext::new(&self.base, &self.groups, &self.tx)
   }
 
   pub fn sys_ctx(&self) -> SystemContext<'_> {
@@ -49,7 +49,7 @@ impl TestContext {
       &self.base,
       SystemHandle::default(),
       &self.groups,
-      self.tx.clone(),
+      &self.tx,
     )
   }
 

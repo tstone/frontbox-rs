@@ -77,7 +77,7 @@ impl InitialsEntrySystem {
       ctx.emit(InitialsEntered {
         initials: self.name.clone(),
       });
-      ctx.despawn_self();
+      ctx.systems.despawn_self();
     }
   }
 
@@ -124,7 +124,7 @@ impl InitialsEntrySystem {
 
 impl System for InitialsEntrySystem {
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    if let Some(mut dmd) = ctx.get::<DmdSystem>() {
+    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
       self.cursor_flash.accumulate(delta);
       let screen = self.draw();
       dmd.insert_layer(0, screen.default_position());

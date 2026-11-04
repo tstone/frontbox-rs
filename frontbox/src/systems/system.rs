@@ -20,14 +20,14 @@ pub trait System: Any {
   /// Called when the system is deactivated. This also includes if a parent group is deactivated (activation bubbles)
   fn on_deactivate(&mut self, ctx: &SystemContext) {
     // TODO: should probably emit a despawned/deactivated event that LedSystem handles instead
-    if let Some(mut led_system) = ctx.get::<LedSystem>() {
+    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
       led_system.deactivate_by_system(ctx.id());
     }
   }
 
   /// Called when the system is re-activated after being deactivated. This also includes if a parent group is re-activated (activation bubbles)
   fn on_reactivate(&mut self, ctx: &SystemContext) {
-    if let Some(mut led_system) = ctx.get::<LedSystem>() {
+    if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
       led_system.activate_by_system(ctx.id());
     }
   }
@@ -40,7 +40,7 @@ pub trait System: Any {
   /// Called when an event is emitted into the system (switch press, game state change, etc.)
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {}
 
-  /// Called when this system's step comes up in a routine it's listed in. Call `ctx.complete_routine_step::<E>()` once the
+  /// Called when this system's step comes up in a routine it's listed in. Call `ctx.routines.complete_step::<E>()` once the
   /// step is done, now or later. See [routines](crate::systems::routine)
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
     log::error!(
@@ -48,7 +48,7 @@ pub trait System: Any {
       "{} is listed in a routine but doesn't implement `on_routine`; completing its step",
       type_name::<Self>()
     );
-    ctx.complete_routine_step_by_type_id(routine.as_any().type_id());
+    ctx.routines.complete_step_by_type_id(routine.as_any().type_id());
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {

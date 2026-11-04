@@ -81,7 +81,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
 }
 
 fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) -> T) -> Option<T> {
-  if let Some(mut system) = ctx.get::<GameManager>() {
+  if let Some(mut system) = ctx.systems.get::<GameManager>() {
     Some(f(&mut system))
   } else {
     log::error!("GameManager not running.");

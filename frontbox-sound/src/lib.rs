@@ -27,7 +27,7 @@
 //! # use frontbox::prelude::*;
 //! # use frontbox_sound::*;
 //! # fn example(ctx: &SystemContext) {
-//! let mut sound_system = ctx.expect::<SoundSystem>();
+//! let mut sound_system = ctx.systems.expect::<SoundSystem>();
 //!
 //! // typically done `on_spawn`
 //! sound_system.preload("name", "/game/assets/sfx/example.wav");

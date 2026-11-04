@@ -78,7 +78,7 @@ impl<'a> LedSystemExt for SystemContext<'a> {
 }
 
 fn with_led_system<T>(ctx: &SystemContext, f: impl FnOnce(&mut LedSystem) -> T) {
-  if let Some(mut led_system) = ctx.get::<LedSystem>() {
+  if let Some(mut led_system) = ctx.systems.get::<LedSystem>() {
     f(&mut led_system);
   } else {
     log::error!("LedSystem not running.");

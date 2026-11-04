@@ -36,7 +36,7 @@ impl<const N: usize> System for Step<N> {
         .borrow_mut()
         .push(format!("step {N} in {}", self.group));
       if self.complete_now {
-        ctx.complete_routine_step::<Sequencing>();
+        ctx.routines.complete_step::<Sequencing>();
       }
     }
   }
@@ -193,7 +193,7 @@ impl Harness {
   }
 
   fn ctx(&self, handle: SystemHandle) -> SystemContext<'_> {
-    SystemContext::new(&self.base, handle, &self.groups, self.tx.clone())
+    SystemContext::new(&self.base, handle, &self.groups, &self.tx)
   }
 
   /// Process routine messages and events the way the run loop does, until there are none left
@@ -304,17 +304,17 @@ impl Harness {
   }
 
   fn start(&mut self, origin: SystemHandle) {
-    self.ctx(origin).start_routine(Sequencing);
+    self.ctx(origin).routines.start(Sequencing);
     self.pump();
   }
 
   fn complete(&mut self, participant: SystemHandle) {
-    self.ctx(participant).complete_routine_step::<Sequencing>();
+    self.ctx(participant).routines.complete_step::<Sequencing>();
     self.pump();
   }
 
   fn halt(&mut self, participant: SystemHandle) {
-    self.ctx(participant).halt_routine::<Sequencing>();
+    self.ctx(participant).routines.halt::<Sequencing>();
     self.pump();
   }
 
@@ -427,7 +427,7 @@ fn started_in_a_group_reaches_its_participants() {
   let origin = h.origin(ROOT_GROUP_NAME);
   let player = GroupHandle::new(h.group("player"), "player");
 
-  h.ctx(origin).start_routine_in(&player, Sequencing);
+  h.ctx(origin).routines.start_in(&player, Sequencing);
   h.pump();
 
   assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
@@ -463,8 +463,8 @@ fn only_the_current_participant_can_complete() {
   assert_eq!(h.log(), ["step 1 in root"]);
 
   // a duplicate completion from the first step doesn't skip the second
-  h.ctx(first).complete_routine_step::<Sequencing>();
-  h.ctx(first).complete_routine_step::<Sequencing>();
+  h.ctx(first).routines.complete_step::<Sequencing>();
+  h.ctx(first).routines.complete_step::<Sequencing>();
   h.pump();
   assert_eq!(h.log(), ["step 1 in root", "step 2 in root"]);
 }
@@ -635,7 +635,7 @@ fn the_origin_gets_the_routine_back() {
   let log = h.log.clone();
   let origin = h.spawn(ROOT_GROUP_NAME, Counter { log });
 
-  h.ctx(origin).start_routine(Draining { balls: 3 });
+  h.ctx(origin).routines.start(Draining { balls: 3 });
   h.pump();
 
   assert_eq!(h.log(), ["3 balls"]);
@@ -653,7 +653,7 @@ fn test_context_records_starts_and_completions() {
   step.on_routine(&Sequencing, &test_ctx.sys_ctx());
   assert!(test_ctx.routine_step_completed::<Sequencing>());
 
-  test_ctx.sys_ctx().start_routine(Sequencing);
+  test_ctx.sys_ctx().routines.start(Sequencing);
   let started = test_ctx.routines_started();
   assert_eq!(started.len(), 1);
   assert!(started[0].as_ref().is::<Sequencing>());
@@ -884,6 +884,6 @@ fn a_halt_waits_for_the_origin() {
 #[test]
 fn test_context_records_halts() {
   let mut test_ctx = TestContext::default();
-  test_ctx.sys_ctx().halt_routine::<Sequencing>();
+  test_ctx.sys_ctx().routines.halt::<Sequencing>();
   assert!(test_ctx.routine_halted::<Sequencing>());
 }

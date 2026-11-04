@@ -264,7 +264,7 @@ where
   if groups.get(&handle.group).is_some_and(|group| group.active)
     && let Some(mut system) = groups.system(handle)
   {
-    let mut ctx = SystemContext::new(base, handle, groups, app_sender.clone());
+    let mut ctx = SystemContext::new(base, handle, groups, &app_sender);
     if system.handle_active(&ctx, tracer_txs) {
       result = Some(handler(&mut system, &mut ctx));
     } else {
@@ -305,7 +305,7 @@ pub(crate) fn apply_to_systems<F>(
           base,
           SystemHandle::new(system.id(), *key),
           groups,
-          app_sender.clone(),
+          app_sender,
         );
         if system.handle_active(&ctx, tracer_txs) {
           handler(&mut system, &mut ctx);
@@ -522,7 +522,7 @@ fn spawn_system(
       target: "frontbox::systems::lifecycle",
       "🌐 Spawned system {} ({})", system.name(), system.id());
 
-    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
+    let ctx = SystemContext::new(base, handle, groups, &app_sender);
     system.initialize(&ctx);
 
     tracer_txs.send(TraceEvent::SystemSpawned {
@@ -574,7 +574,7 @@ fn despawn_system(
 
   {
     let mut system = cell.borrow_mut();
-    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
+    let ctx = SystemContext::new(base, handle, groups, &app_sender);
     system.on_despawn(&ctx);
 
     log::info!(
@@ -705,7 +705,7 @@ fn activate_system_group(
 
   for handle in groups.handles_in(id) {
     let mut system = groups.system(handle).unwrap();
-    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
+    let ctx = SystemContext::new(base, handle, groups, &app_sender);
 
     if system.is_active(&ctx) {
       system.on_reactivate(&ctx);
@@ -735,7 +735,7 @@ fn deactivate_system_group(
 
   for handle in groups.handles_in(id) {
     let mut system = groups.system(handle).unwrap();
-    let ctx = SystemContext::new(base, handle, groups, app_sender.clone());
+    let ctx = SystemContext::new(base, handle, groups, &app_sender);
     system.on_deactivate(&ctx);
   }
 

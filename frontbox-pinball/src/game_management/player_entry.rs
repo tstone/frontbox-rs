@@ -1,7 +1,7 @@
 use frontbox::prelude::*;
 
 /// Whether a player can be added, set by the game manager: by pressing start, say. Read it with
-/// `ctx.state::<PlayerEntry>()`, or watch `StateChanged<PlayerEntry>`.
+/// `ctx.states.get::<PlayerEntry>()`, or watch `StateChanged<PlayerEntry>`.
 #[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerEntry {
   /// No player can be added: the first turn is over, the game is full, or it's ending. Also the case with no game

@@ -90,7 +90,7 @@ impl DropTargetDownUp {
         .all(|&target| ctx.switches.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.cue(DropUp, Cue::Once(Duration::from_millis(250)));
+        ctx.cues.start(DropUp, Cue::Once(Duration::from_millis(250)));
       }
     }
   }

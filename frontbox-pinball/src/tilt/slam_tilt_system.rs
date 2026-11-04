@@ -35,7 +35,7 @@ impl System for SlamTiltSystem {
       return;
     }
 
-    let in_game = !ctx.in_state(GamePhase::None);
+    let in_game = !ctx.states.is(GamePhase::None);
     log::warn!(target: "frontbox::tilt", "Slam tilt ({}), {}", switch.name, if in_game { "ending the game" } else { "outside a game" });
     ctx.metrics.inc(&metrics::SLAM_TILTS);
     ctx.emit(SlamTilted);

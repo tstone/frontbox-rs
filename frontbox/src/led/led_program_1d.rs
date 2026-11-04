@@ -568,7 +568,7 @@ mod tests {
 
     let declarations = context
       .sys_ctx()
-      .expect::<LedSystem>()
+      .systems.expect::<LedSystem>()
       .declarations_for(&addr);
 
     assert_eq!(declarations.len(), 1);
@@ -607,19 +607,19 @@ mod tests {
 
     let declarations = context
       .sys_ctx()
-      .expect::<LedSystem>()
+      .systems.expect::<LedSystem>()
       .declarations_for(&addr1);
     assert_eq!(declarations[0].color, Rgba::blue());
 
     let declarations = context
       .sys_ctx()
-      .expect::<LedSystem>()
+      .systems.expect::<LedSystem>()
       .declarations_for(&addr2);
     assert_eq!(declarations[0].color, Rgba::red());
 
     let declarations = context
       .sys_ctx()
-      .expect::<LedSystem>()
+      .systems.expect::<LedSystem>()
       .declarations_for(&addr3);
     assert_eq!(declarations[0].color, Rgba::blue());
   }

@@ -33,7 +33,7 @@ both let the callee act as the caller, where an id only says who it is.
 pub fn request(&mut self, requester: u64, duration: Duration, ctx: &ServiceContext) { /* ... */ }
 
 // caller
-ctx.with_system::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), duration, ctx.into()));
+ctx.systems.with::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), duration, ctx.into()));
 ```
 
 ### Events and cues
@@ -41,7 +41,7 @@ ctx.with_system::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), dur
 - Name events in the past tense (`BallSaved`), and routine payloads in the present progressive for what's going on
   while they run (`TurnEnding`).
 - Say "complete" rather than "finish" for something that runs to an end, such as a routine or one of its steps
-  (`RoutineCompleted`, `complete_routine_step`).
+  (`RoutineCompleted`, `ctx.routines.complete_step`).
 - Cues a system sends to itself are private and live in the same file as the system.
 - Public events for a module are centralized in that module's `mod.rs`, not spread across system files.
 - An event always reaches every active system; nothing can stop it. When systems need the chance to change what

@@ -133,7 +133,7 @@ impl TroughSystem {
   fn eject_inner(&mut self, ctx: &SystemContext) {
     self.eject_state = EjectState::Verifying {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
-      cue_id: ctx.cue(VerifyEject, self.config.eject_verification_time.once()),
+      cue_id: ctx.cues.start(VerifyEject, self.config.eject_verification_time.once()),
     };
     ctx.activate_driver(self.config.eject_coil_name, ActivationMode::Tap);
   }
@@ -151,7 +151,7 @@ impl TroughSystem {
 
   fn verify_eject_switch(&mut self, ctx: &SystemContext) {
     if let EjectState::Verifying { cue_id, .. } = self.eject_state {
-      ctx.cancel_cue(cue_id);
+      ctx.cues.cancel(cue_id);
       self.eject_verified(ctx);
     }
   }
@@ -204,15 +204,15 @@ impl TroughSystem {
         max_cue_id,
         settling_cue_id: cue_id,
       } => {
-        ctx.cancel_cue(cue_id);
+        ctx.cues.cancel(cue_id);
         max_cue_id
       }
-      OccupancyState::Ready => ctx.cue(MaxSettle, self.config.occupancy_settling_max.once()),
+      OccupancyState::Ready => ctx.cues.start(MaxSettle, self.config.occupancy_settling_max.once()),
     };
 
     self.occupancy_state = OccupancyState::Settling {
       max_cue_id,
-      settling_cue_id: ctx.cue(VerifyOccupancy, self.config.occupancy_settling_time.once()),
+      settling_cue_id: ctx.cues.start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
     }
   }
 
@@ -227,8 +227,8 @@ impl TroughSystem {
     else {
       return;
     };
-    ctx.cancel_cue(settling_cue_id);
-    ctx.cancel_cue(max_cue_id);
+    ctx.cues.cancel(settling_cue_id);
+    ctx.cues.cancel(max_cue_id);
     self.occupancy_state = OccupancyState::Ready;
 
     // While an eject is verifying, whether the ball has exited isn't known yet. Hold the report until the eject

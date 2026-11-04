@@ -35,14 +35,14 @@ impl<'a> BallSaveExt for SystemContext<'a> {
 
   fn is_ball_save_active(&self) -> bool {
     self
-      .get::<BallSaveSystem>()
+      .systems.get::<BallSaveSystem>()
       .map(|ball_save| ball_save.is_saving())
       .unwrap_or(false)
   }
 }
 
 fn with_ball_save(ctx: &SystemContext, f: impl FnOnce(&mut BallSaveSystem)) {
-  if let Some(mut system) = ctx.get::<BallSaveSystem>() {
+  if let Some(mut system) = ctx.systems.get::<BallSaveSystem>() {
     f(&mut system);
   } else {
     log::warn!(target: "frontbox::ballsave", "BallSaveSystem not running.");

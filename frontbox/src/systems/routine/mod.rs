@@ -69,11 +69,11 @@
 //! }
 //!
 //! # fn example(ctx: &SystemContext) {
-//! ctx.start_routine(TurnEnding { player: 1 });
+//! ctx.routines.start(TurnEnding { player: 1 });
 //! # }
 //! ```
 //!
-//! Each participant is handed the routine in `on_routine`, and calls `complete_routine_step` when its step is done,
+//! Each participant is handed the routine in `on_routine`, and calls `ctx.routines.complete_step` when its step is done,
 //! either right away or later (from a cue, say):
 //!
 //! ```rust
@@ -89,13 +89,13 @@
 //!   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
 //!     if routine.is::<TurnEnding>() {
 //!       // count up the bonus, done in 3 seconds
-//!       ctx.cue(BonusCounted, Cue::Once(Duration::from_secs(3)));
+//!       ctx.cues.start(BonusCounted, Cue::Once(Duration::from_secs(3)));
 //!     }
 //!   }
 //!
 //!   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
 //!     if event.is::<BonusCounted>() {
-//!       ctx.complete_routine_step::<TurnEnding>();
+//!       ctx.routines.complete_step::<TurnEnding>();
 //!     }
 //!   }
 //! }
@@ -103,7 +103,7 @@
 //!
 //! ### Halting
 //!
-//! A participant can end the routine with its step by calling `halt_routine` instead, so the participants after it
+//! A participant can end the routine with its step by calling `ctx.routines.halt` instead, so the participants after it
 //! don't take one. This is for a routine that decides something, where the first participant to settle it wins: on a
 //! ball-draining routine listing a ball save, an outlane save and an extra ball, whichever saves the ball halts it, and
 //! the others are left alone. The origin sees `RoutineCompletion::Halted` and doesn't carry on as it would have (e.g.
@@ -123,7 +123,7 @@
 //!   are ignored.
 //! - **Despawned or deactivated mid-step counts as complete**, so a routine can't get stuck. Despawning and group
 //!   (de)activation take effect in queue order; a system whose own `is_active` changes is noticed when the framework
-//!   next checks it, as with anything else. A system replaced with `replace_self` is a new system, so the replacement
+//!   next checks it, as with anything else. A system replaced with `ctx.systems.replace_self` is a new system, so the replacement
 //!   can't complete the old step.
 //! - **Paused while the origin is inactive** -- Like a cue, a routine doesn't move on while its origin is inactive. The
 //!   step in progress carries on, but the next participant isn't handed the routine, nor `RoutineCompleted`

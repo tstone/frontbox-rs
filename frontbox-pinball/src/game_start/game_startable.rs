@@ -63,7 +63,7 @@ impl Default for GameStartable {
 impl System for GameStartable {
   fn is_active(&self, ctx: &SystemContext) -> bool {
     // active if a game can be started or a player added
-    ctx.in_state(PlayerEntry::Open)
+    ctx.states.is(PlayerEntry::Open)
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
@@ -72,7 +72,7 @@ impl System for GameStartable {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.cue_cycling(events![LampOn, LampOff], Cue::Forever(self.flash_duration));
+    ctx.cues.start_cycling(events![LampOn, LampOff], Cue::Forever(self.flash_duration));
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -91,7 +91,7 @@ impl System for GameStartable {
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     // only apply effects if a game hasn't started
-    if ctx.in_state(GamePhase::None)
+    if ctx.states.is(GamePhase::None)
       && let Some(effect) = &mut self.led_program
     {
       effect.apply(delta, ctx);

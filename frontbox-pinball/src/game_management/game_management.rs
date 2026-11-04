@@ -66,7 +66,7 @@ impl GameManager {
   }
 
   fn switch_triggered_playfield_drivers(&self, ctx: &SystemContext) -> Vec<&'static str> {
-    let (Some(query), Some(machine)) = (&self.playfield_drivers, ctx.get::<MachineSystem>()) else {
+    let (Some(query), Some(machine)) = (&self.playfield_drivers, ctx.systems.get::<MachineSystem>()) else {
       return Vec::new();
     };
     query

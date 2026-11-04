@@ -86,7 +86,7 @@ impl<E: Event> RoutineCompleted<E> {
 pub enum RoutineCompletion {
   /// Every participant took its step (or was skipped)
   AllSteps,
-  /// A participant halted it with `halt_routine`, so the participants after it didn't take a step
+  /// A participant halted it with `ctx.routines.halt`, so the participants after it didn't take a step
   Halted,
 }
 

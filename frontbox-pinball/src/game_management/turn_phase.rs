@@ -1,6 +1,6 @@
 use frontbox::prelude::*;
 
-/// The current phase of a player's turn, set by the game manager. Read it with `ctx.state::<TurnPhase>()`, or watch
+/// The current phase of a player's turn, set by the game manager. Read it with `ctx.states.get::<TurnPhase>()`, or watch
 /// `StateChanged<TurnPhase>`.
 #[derive(State, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TurnPhase {

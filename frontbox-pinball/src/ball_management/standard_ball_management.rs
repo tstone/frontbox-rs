@@ -90,7 +90,7 @@ impl StandardBallManagement {
   }
 
   fn current_in_play(&self, ctx: &SystemContext) -> u8 {
-    self.in_play(ctx.expect::<TroughSystem>().occupancy())
+    self.in_play(ctx.systems.expect::<TroughSystem>().occupancy())
   }
 
   fn max_in_play(&self) -> u8 {
@@ -198,11 +198,11 @@ impl StandardBallManagement {
         arrival_cue_id: None,
         kicked: false,
       };
-      if let Some(mut lane) = ctx.get::<PlungeLaneSystem>() {
+      if let Some(mut lane) = ctx.systems.get::<PlungeLaneSystem>() {
         lane.expect_ball();
       }
     }
-    ctx.expect::<TroughSystem>().eject(ctx.into());
+    ctx.systems.expect::<TroughSystem>().eject(ctx.into());
   }
 
   fn on_trough_ejected(&mut self, ctx: &SystemContext) {
@@ -249,9 +249,9 @@ impl StandardBallManagement {
     } = &mut self.eject_state
     {
       if let Some(cue_id) = arrival_cue_id.take() {
-        ctx.cancel_cue(cue_id);
+        ctx.cues.cancel(cue_id);
       }
-      *arrival_cue_id = Some(ctx.cue(LaneArrivalTimedOut, timeout.once()));
+      *arrival_cue_id = Some(ctx.cues.start(LaneArrivalTimedOut, timeout.once()));
       *was_kicked = kicked;
     }
   }
@@ -268,7 +268,7 @@ impl StandardBallManagement {
       return None;
     };
     if let Some(cue_id) = arrival_cue_id {
-      ctx.cancel_cue(cue_id);
+      ctx.cues.cancel(cue_id);
     }
     self.eject_state = EjectState::Idle;
     Some((launch, eject_id))
@@ -292,7 +292,7 @@ impl StandardBallManagement {
     }
     let kicked = *kicked;
 
-    if !kicked && let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
+    if !kicked && let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
       log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
       autoplunger.launch(ctx.into());
       self.start_arrival_wait(true, ctx);
@@ -341,7 +341,7 @@ impl StandardBallManagement {
     else {
       return;
     };
-    let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() else {
+    let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() else {
       return;
     };
 
@@ -359,7 +359,7 @@ impl StandardBallManagement {
     } = self.eject_state
     {
       self.eject_state = EjectState::Idle;
-      if let Some(mut autoplunger) = ctx.get::<AutoPlungerSystem>() {
+      if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
         autoplunger.disarm_launch_button(ctx.into());
       }
       ctx.emit(BallEnteredPlay {
@@ -414,11 +414,11 @@ impl BallManagement for StandardBallManagement {
   }
 
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
-    self.in_play(ctx.expect::<TroughSystem>(self.handle).occupancy())
+    self.in_play(ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy())
   }
 
   fn establish_ball_count(&mut self, ctx: &ServiceContext) {
-    self.max_balls_in_play = ctx.expect::<TroughSystem>(self.handle).occupancy();
+    self.max_balls_in_play = ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy();
     self.locked_balls = 0;
   }
 
@@ -462,13 +462,13 @@ impl System for StandardBallManagement {
     let trough = TroughSystem::new(trough_config);
     // Until the ball count is established (e.g. at game start), assume the balls in the trough now are all the balls there are
     self.max_balls_in_play = trough.read_switch_occupancy(ctx.into());
-    ctx.spawn_system(trough);
+    ctx.systems.spawn(trough);
 
     if let Some(autoplunger) = self.config.autoplunger() {
-      ctx.spawn_system(AutoPlungerSystem::new(autoplunger));
+      ctx.systems.spawn(AutoPlungerSystem::new(autoplunger));
     }
     if let Some(lane) = self.config.plunge_lane() {
-      ctx.spawn_system(PlungeLaneSystem::new(lane));
+      ctx.systems.spawn(PlungeLaneSystem::new(lane));
     }
   }
 
@@ -633,12 +633,12 @@ mod tests {
       let switch = self.ctx.base.switches.by_name(LAUNCH).unwrap().clone();
       let ctx = self.ctx.sys_ctx();
       ctx
-        .expect::<AutoPlungerSystem>()
+        .systems.expect::<AutoPlungerSystem>()
         .on_event(&SwitchClosed::new(switch), &ctx);
     }
 
     fn is_launch_button_armed(&self) -> bool {
-      self.ctx.sys_ctx().expect::<AutoPlungerSystem>().is_armed()
+      self.ctx.sys_ctx().systems.expect::<AutoPlungerSystem>().is_armed()
     }
 
     /// Delivers autoplunger fires emitted since the last call to ball management, as the app would, and returns them

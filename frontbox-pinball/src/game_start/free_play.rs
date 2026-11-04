@@ -19,7 +19,7 @@ impl FreePlay {
     log::info!("Free play: Start button => add player");
 
     // only active while `PlayerEntry` is open, and the game manager ignores a press that comes in as it closes
-    if let Some(mut game_management) = ctx.get::<GameManager>() {
+    if let Some(mut game_management) = ctx.systems.get::<GameManager>() {
       game_management.add_player(ctx.into());
     } else {
       log::warn!("Free play: GameManagement system not found, cannot start turn");
@@ -29,7 +29,7 @@ impl FreePlay {
 
 impl System for FreePlay {
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    ctx.in_state(PlayerEntry::Open)
+    ctx.states.is(PlayerEntry::Open)
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

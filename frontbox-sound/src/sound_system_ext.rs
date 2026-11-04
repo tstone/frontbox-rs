@@ -31,7 +31,7 @@ impl<'a> SoundSystemExt for SystemContext<'a> {
 }
 
 fn with_snd_system<T>(ctx: &SystemContext, f: impl FnOnce(&mut SoundSystem) -> T) {
-  if let Some(mut system) = ctx.get::<SoundSystem>() {
+  if let Some(mut system) = ctx.systems.get::<SoundSystem>() {
     f(&mut system);
   } else {
     log::error!("SoundSystem not running.");

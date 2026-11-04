@@ -50,7 +50,7 @@ fn read(t: &TestContext, handle: SystemHandle) -> Phase {
 #[test]
 fn a_state_reads_as_its_default_until_set() {
   let t = TestContext::default();
-  assert_eq!(t.sys_ctx().state::<Phase>(), Phase::Idle);
+  assert_eq!(t.sys_ctx().states.get::<Phase>(), Phase::Idle);
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn a_state_is_read_back_once_set_and_its_change_broadcast() {
   let mut t = TestContext::default();
   let owner = insert(&mut t, ROOT_GROUP, Owner);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   // not until the run loop gets to it
   assert_eq!(read(&t, owner), Phase::Idle);
 
@@ -66,7 +66,7 @@ fn a_state_is_read_back_once_set_and_its_change_broadcast() {
     changes(t.apply_states()),
     vec![(Phase::Idle, Phase::Active)]
   );
-  assert!(t.svc_ctx().for_system(owner).in_state(Phase::Active));
+  assert!(t.svc_ctx().for_system(owner).states.is(Phase::Active));
 }
 
 #[test]
@@ -75,14 +75,14 @@ fn a_state_can_be_matched_against_several_values() {
   let owner = insert(&mut t, ROOT_GROUP, Owner);
   let ctx = t.svc_ctx().for_system(owner);
 
-  assert!(ctx.in_any_state(&[Phase::Idle, Phase::Ending]));
-  assert!(!ctx.in_any_state(&[Phase::Active, Phase::Ending]));
-  assert!(!ctx.in_any_state::<Phase>(&[]));
+  assert!(ctx.states.is_any(&[Phase::Idle, Phase::Ending]));
+  assert!(!ctx.states.is_any(&[Phase::Active, Phase::Ending]));
+  assert!(!ctx.states.is_any::<Phase>(&[]));
 
-  ctx.set_state(Phase::Ending);
+  ctx.states.set(Phase::Ending);
   t.apply_states();
   let ctx = t.svc_ctx().for_system(owner);
-  assert!(ctx.in_any_state(&[Phase::Active, Phase::Ending]));
+  assert!(ctx.states.is_any(&[Phase::Active, Phase::Ending]));
 }
 
 #[test]
@@ -90,9 +90,9 @@ fn setting_the_same_value_broadcasts_nothing() {
   let mut t = TestContext::default();
   let owner = insert(&mut t, ROOT_GROUP, Owner);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   t.apply_states();
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
 
   assert_eq!(changes(t.apply_states()), vec![]);
 }
@@ -103,9 +103,9 @@ fn only_the_owner_can_set_a_state() {
   let owner = insert(&mut t, ROOT_GROUP, Owner);
   let other = insert(&mut t, ROOT_GROUP, Other);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   t.apply_states();
-  t.svc_ctx().for_system(other).set_state(Phase::Ending);
+  t.svc_ctx().for_system(other).states.set(Phase::Ending);
 
   assert_eq!(changes(t.apply_states()), vec![]);
   assert_eq!(read(&t, other), Phase::Active);
@@ -118,12 +118,12 @@ fn a_group_reads_its_own_value_before_the_roots() {
   let group = add_group(&mut t);
   let player = insert(&mut t, group, Other);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   t.apply_states();
   assert_eq!(read(&t, player), Phase::Active);
 
   // a separate state of its own, rather than the root's, so it's the player system's to set
-  t.svc_ctx().for_system(player).set_state(Phase::Ending);
+  t.svc_ctx().for_system(player).states.set(Phase::Ending);
   assert_eq!(
     changes(t.apply_states()),
     vec![(Phase::Idle, Phase::Ending)]
@@ -138,7 +138,7 @@ fn a_despawned_owners_states_go_back_to_their_default() {
   let owner = insert(&mut t, ROOT_GROUP, Owner);
   let other = insert(&mut t, ROOT_GROUP, Other);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   t.apply_states();
   t.groups.get_mut(&ROOT_GROUP).unwrap().remove(owner.id);
 
@@ -151,7 +151,7 @@ fn a_despawned_owners_states_go_back_to_their_default() {
   assert_eq!(read(&t, other), Phase::Idle);
 
   // up for grabs again
-  t.svc_ctx().for_system(other).set_state(Phase::Ending);
+  t.svc_ctx().for_system(other).states.set(Phase::Ending);
   assert_eq!(
     changes(t.apply_states()),
     vec![(Phase::Idle, Phase::Ending)]
@@ -163,11 +163,11 @@ fn a_state_set_by_a_system_since_despawned_is_ignored() {
   let mut t = TestContext::default();
   let owner = insert(&mut t, ROOT_GROUP, Owner);
 
-  t.svc_ctx().for_system(owner).set_state(Phase::Active);
+  t.svc_ctx().for_system(owner).states.set(Phase::Active);
   t.groups.get_mut(&ROOT_GROUP).unwrap().remove(owner.id);
 
   assert_eq!(changes(t.apply_states()), vec![]);
-  assert_eq!(t.sys_ctx().state::<Phase>(), Phase::Idle);
+  assert_eq!(t.sys_ctx().states.get::<Phase>(), Phase::Idle);
 }
 
 #[test]

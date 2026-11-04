@@ -28,7 +28,7 @@
 //! # #[derive(State, Serialize, Default, Clone, PartialEq)]
 //! # enum Multiball { #[default] Unlit, Lit, Running }
 //! # fn example(ctx: &SystemContext) {
-//! ctx.set_state(Multiball::Running);
+//! ctx.states.set(Multiball::Running);
 //! # }
 //! ```
 //!
@@ -43,8 +43,8 @@
 //! # #[derive(State, Serialize, Default, Clone, PartialEq)]
 //! # enum Multiball { #[default] Unlit, Lit, Running }
 //! # fn example(ctx: &SystemContext) {
-//! let multiball = ctx.state::<Multiball>();
-//! let running = ctx.in_state(Multiball::Running);
+//! let multiball = ctx.states.get::<Multiball>();
+//! let running = ctx.states.is(Multiball::Running);
 //! # }
 //! ```
 //!

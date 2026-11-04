@@ -58,13 +58,13 @@
 //! # impl System for ExampleSystem {}
 //! # fn example(ctx: &SystemContext) {
 //! // Start a new system
-//! ctx.spawn_system(ExampleSystem::new());
+//! ctx.systems.spawn(ExampleSystem::new());
 //!
 //! // Stop the current system and immediately spawn a replacement
-//! ctx.replace_self(ExampleSystem::new());
+//! ctx.systems.replace_self(ExampleSystem::new());
 //!
 //! // Just stop the current system
-//! ctx.despawn_self();
+//! ctx.systems.despawn_self();
 //! # }
 //! ```
 //!
@@ -83,7 +83,7 @@
 //! // Example system is only active during a game
 //! impl System for ExampleSystem {
 //!   fn is_active(&self, ctx: &SystemContext) -> bool {
-//!     !ctx.in_state(GamePhase::None)
+//!     !ctx.states.is(GamePhase::None)
 //!   }
 //! }
 //! ```
@@ -103,8 +103,9 @@
 //!
 //! There are several ways to access another system, depending on the situation:
 //!
-//! 1. `get::<S>` - Returns a mutable reference to `Option<S>`
-//! 2. `expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
+//! 1. `ctx.systems.get::<S>` - Returns a mutable reference to `Option<S>`
+//! 2. `ctx.systems.expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
+//! 3. `ctx.systems.with::<S, _>` - Runs a closure on `S`, logging a warning if it isn't running
 //!
 //! ```rust
 //! # use frontbox::prelude::*;
@@ -113,12 +114,15 @@
 //! # impl System for TroughSystem {}
 //! # fn example(ctx: &SystemContext) {
 //! // safe but verbose
-//! if let Some(mut trough) = ctx.get::<TroughSystem>() {
+//! if let Some(mut trough) = ctx.systems.get::<TroughSystem>() {
 //!   trough.eject()
 //! }
 //!
 //! // unsafe when you absolutely know it is present
-//! ctx.expect::<TroughSystem>().eject();
+//! ctx.systems.expect::<TroughSystem>().eject();
+//!
+//! // a closure, with a warning if it's missing
+//! ctx.systems.with::<TroughSystem, _>(|trough| trough.eject());
 //! # }
 //! ```
 //!
@@ -157,6 +161,7 @@
 //!   }
 //! }
 //! ```
+mod context_namespaces;
 mod contextual;
 pub mod cue;
 mod cue_ext;
@@ -173,6 +178,7 @@ pub mod system_group;
 mod system_handle;
 mod test_context;
 
+pub use context_namespaces::*;
 pub use contextual::*;
 pub use cue::*;
 pub use cue_ext::*;

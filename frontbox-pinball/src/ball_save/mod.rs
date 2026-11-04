@@ -180,7 +180,7 @@ impl System for BallSaveSystem {
   }
 
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    ctx.in_any_state(&[TurnPhase::Starting, TurnPhase::Active])
+    ctx.states.is_any(&[TurnPhase::Starting, TurnPhase::Active])
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
@@ -204,12 +204,12 @@ impl System for BallSaveSystem {
       return;
     };
     if !self.is_saving() {
-      ctx.complete_routine_step::<BallDraining>();
+      ctx.routines.complete_step::<BallDraining>();
       return;
     }
-    let Some(mut ball_manager) = ctx.get::<BallManager>() else {
+    let Some(mut ball_manager) = ctx.systems.get::<BallManager>() else {
       log::error!(target: "frontbox::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain stand");
-      ctx.complete_routine_step::<BallDraining>();
+      ctx.routines.complete_step::<BallDraining>();
       return;
     };
 
@@ -217,7 +217,7 @@ impl System for BallSaveSystem {
     ball_manager.eject_many(*count, Launch::Auto, ctx.into());
     ctx.metrics.add(&metrics::BALL_SAVES, *count as u64);
     ctx.emit(BallSaved { count: *count });
-    ctx.halt_routine::<BallDraining>();
+    ctx.routines.halt::<BallDraining>();
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {

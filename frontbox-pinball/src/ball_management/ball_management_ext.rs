@@ -38,14 +38,14 @@ impl<'a> BallManagementExt for SystemContext<'a> {
 
   fn can_auto_launch(&self) -> bool {
     self
-      .get::<BallManager>()
+      .systems.get::<BallManager>()
       .map(|manager| manager.can_auto_launch())
       .unwrap_or(false)
   }
 
   fn balls_in_play(&self) -> u8 {
     self
-      .get::<BallManager>()
+      .systems.get::<BallManager>()
       .map(|manager| manager.balls_in_play(self.into()))
       .unwrap_or(0)
   }
@@ -73,7 +73,7 @@ impl<'a> BallManagementExt for SystemContext<'a> {
 }
 
 fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) -> T) -> Option<T> {
-  if let Some(mut system) = ctx.get::<BallManager>() {
+  if let Some(mut system) = ctx.systems.get::<BallManager>() {
     Some(f(&mut system))
   } else {
     log::error!("BallManager not running.");

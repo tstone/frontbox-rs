@@ -25,12 +25,12 @@ impl BallSearchSystem {
   fn reset(&mut self, ctx: &SystemContext) {
     self.clear_cue(&ctx);
     let delay = ctx.config.get(&configs::BALL_SEARCH_DELAY);
-    self.cue_id = Some(ctx.cue(StartBallSearch, delay.once()));
+    self.cue_id = Some(ctx.cues.start(StartBallSearch, delay.once()));
   }
 
   fn clear_cue(&mut self, ctx: &SystemContext) {
     if let Some(cue_id) = self.cue_id.as_ref() {
-      ctx.cancel_cue(*cue_id);
+      ctx.cues.cancel(*cue_id);
       self.cue_id = None;
     }
   }
