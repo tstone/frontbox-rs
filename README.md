@@ -1,4 +1,6 @@
-![Frontbox](doc/img/logo.png)
+<p align="center">
+  <img src="doc/img/logo.png" alt="Alt Text" width="500">
+</p>
 
 ## Overview
 
