@@ -999,6 +999,7 @@ dependencies = [
  "env_logger",
  "erased-serde",
  "fast-protocol",
+ "frontbox-animation",
  "frontbox-derive",
  "frontbox-metrics",
  "futures-util",
@@ -1021,6 +1022,16 @@ dependencies = [
  "tokio-util",
  "toml",
  "ts-rs",
+]
+
+[[package]]
+name = "frontbox-animation"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "fast-protocol",
+ "image",
+ "rand 0.10.0",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-use crate::{animation::*, cycle::Cycle};
+use crate::*;
 
 /// Plays a sequence of animations in order
 #[derive(Clone)]

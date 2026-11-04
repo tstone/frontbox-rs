@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::animation::*;
+use crate::*;
 
 /// Something which advances by `delta` (type `A`) and applies the result to a target (type `S`)
 pub trait Modulation<S, A> {
@@ -12,16 +12,18 @@ pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + Send + Sync + 'static;
 /// A modulator combines an accumulator with a setter, mutating a value over time. Like accumulators, these can be used direct if needed, but are generally used through higher level constructors (like LedProgram1ds).
 ///
 /// ```rust
-/// # use frontbox::prelude::*;
-/// # use frontbox::animation::*;
+/// # use std::time::Duration;
+/// # use frontbox_animation::*;
 /// # let anim = Tween::new(Duration::from_secs(1), Curve::Linear, vec![0u8, 255], Cycle::Once);
+/// struct Light { brightness: u8 }
+///
 /// let mut modulator = Modulator::new(
 ///   anim,
-///   |target: &mut Rgba<u8>, alpha| *target = target.with_alpha(alpha)
+///   |target: &mut Light, brightness| target.brightness = brightness
 /// );
 ///
-/// let mut color = Rgba::red();
-/// modulator.apply(Duration::from_millis(500), &mut color);
+/// let mut light = Light { brightness: 0 };
+/// modulator.apply(Duration::from_millis(500), &mut light);
 /// ```
 #[derive(Clone)]
 pub struct Modulator<S, T, A> {

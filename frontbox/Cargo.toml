@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 fast-protocol = { path = "../fast-protocol", features = ["serde"] }
+frontbox-animation = { path = "../frontbox-animation", features = ["image", "fast-protocol"] }
 frontbox-derive = { path = "../frontbox-derive" }
 log = "0.4.29"
 futures-util = "0.3.32"

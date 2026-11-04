@@ -2,7 +2,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use frontbox::animation::*;
-use frontbox::prelude::*;
 use image::Frame;
 
 use crate::Gif;

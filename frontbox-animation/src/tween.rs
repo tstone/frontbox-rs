@@ -2,8 +2,7 @@ use std::cmp::max;
 use std::fmt::Debug;
 use std::ops::{Add, Sub};
 
-use crate::animation::*;
-use crate::cycle::Cycle;
+use crate::*;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified quantity using a given curve
 #[derive(Clone)]

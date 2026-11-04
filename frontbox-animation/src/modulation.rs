@@ -1,6 +1,6 @@
 use dyn_clone::DynClone;
 
-use crate::animation::{AccumulationResult, Accumulator, Modulation};
+use crate::{AccumulationResult, Accumulator, Modulation};
 
 /// Object-safe, cloneable extension of [`Modulation`], allowing modulations to be stored as `Box<dyn DynModulation>`.
 pub trait DynModulation<S, A>: Modulation<S, A> + DynClone {

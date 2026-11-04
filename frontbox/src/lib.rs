@@ -12,7 +12,6 @@
 
 pub mod animation;
 pub mod app;
-mod cycle;
 mod duration_ext;
 pub mod extent;
 pub mod hardware;
@@ -33,7 +32,7 @@ extern crate self as frontbox;
 
 pub mod prelude {
   pub use crate::app::*;
-  pub use crate::cycle::*;
+  pub use crate::animation::Cycle;
   pub use crate::duration_ext::*;
   pub use crate::events;
   pub use crate::extent::*;

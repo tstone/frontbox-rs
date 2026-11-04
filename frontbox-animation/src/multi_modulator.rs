@@ -1,4 +1,4 @@
-use crate::animation::*;
+use crate::*;
 
 #[derive(Clone, Default)]
 pub struct MultiModulator<S, A> {
