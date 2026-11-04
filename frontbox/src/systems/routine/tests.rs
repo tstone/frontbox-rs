@@ -18,7 +18,7 @@ use crate::prelude::*;
 type Log = Rc<RefCell<Vec<String>>>;
 
 #[derive(Serialize, Event, Clone)]
-struct TurnEnding;
+struct Sequencing;
 
 /// A participant that completes its step right away, or waits to be told
 struct Step<const N: usize> {
@@ -30,13 +30,13 @@ struct Step<const N: usize> {
 
 impl<const N: usize> System for Step<N> {
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
-    if routine.is::<TurnEnding>() {
+    if routine.is::<Sequencing>() {
       self
         .log
         .borrow_mut()
         .push(format!("step {N} in {}", self.group));
       if self.complete_now {
-        ctx.complete_routine_step::<TurnEnding>();
+        ctx.complete_routine_step::<Sequencing>();
       }
     }
   }
@@ -67,7 +67,7 @@ impl System for Origin {
 
 /// Logs "completed", or "halted" for a halted routine
 fn log_completion(log: &Log, event: &dyn Event) {
-  if let Some(done) = event.downcast_ref::<RoutineCompleted<TurnEnding>>() {
+  if let Some(done) = event.downcast_ref::<RoutineCompleted<Sequencing>>() {
     let entry = match done.completion {
       RoutineCompletion::AllSteps => "completed",
       RoutineCompletion::Halted => "halted",
@@ -103,14 +103,14 @@ struct Watcher {
 
 impl System for Watcher {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<RoutineStarted<TurnEnding>>() {
+    if event.is::<RoutineStarted<Sequencing>>() {
       self.log.borrow_mut().push("saw started".to_string());
       if self.clean_up {
         ctx.emit(CleanedUp);
       }
     } else if event.is::<CleanedUp>() {
       self.log.borrow_mut().push("cleaned up".to_string());
-    } else if event.is::<RoutineCompleted<TurnEnding>>() {
+    } else if event.is::<RoutineCompleted<Sequencing>>() {
       self.log.borrow_mut().push("saw completed".to_string());
     }
   }
@@ -142,7 +142,7 @@ impl Harness {
     Self {
       base: AppState::default(),
       groups,
-      routines: Routines::new(HashMap::from([(TypeId::of::<TurnEnding>(), definition)])),
+      routines: Routines::new(HashMap::from([(TypeId::of::<Sequencing>(), definition)])),
       tx,
       rx,
       tracers: TracerSenders::new(Vec::new()),
@@ -304,17 +304,17 @@ impl Harness {
   }
 
   fn start(&mut self, origin: SystemHandle) {
-    self.ctx(origin).start_routine(TurnEnding);
+    self.ctx(origin).start_routine(Sequencing);
     self.pump();
   }
 
   fn complete(&mut self, participant: SystemHandle) {
-    self.ctx(participant).complete_routine_step::<TurnEnding>();
+    self.ctx(participant).complete_routine_step::<Sequencing>();
     self.pump();
   }
 
   fn halt(&mut self, participant: SystemHandle) {
-    self.ctx(participant).halt_routine::<TurnEnding>();
+    self.ctx(participant).halt_routine::<Sequencing>();
     self.pump();
   }
 
@@ -331,7 +331,7 @@ impl Harness {
   }
 
   fn is_running(&self) -> bool {
-    self.routines.is_running(TypeId::of::<TurnEnding>())
+    self.routines.is_running(TypeId::of::<Sequencing>())
   }
 
   fn log(&self) -> Vec<String> {
@@ -427,7 +427,7 @@ fn started_in_a_group_reaches_its_participants() {
   let origin = h.origin(ROOT_GROUP_NAME);
   let player = GroupHandle::new(h.group("player"), "player");
 
-  h.ctx(origin).start_routine_in(&player, TurnEnding);
+  h.ctx(origin).start_routine_in(&player, Sequencing);
   h.pump();
 
   assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
@@ -463,8 +463,8 @@ fn only_the_current_participant_can_complete() {
   assert_eq!(h.log(), ["step 1 in root"]);
 
   // a duplicate completion from the first step doesn't skip the second
-  h.ctx(first).complete_routine_step::<TurnEnding>();
-  h.ctx(first).complete_routine_step::<TurnEnding>();
+  h.ctx(first).complete_routine_step::<Sequencing>();
+  h.ctx(first).complete_routine_step::<Sequencing>();
   h.pump();
   assert_eq!(h.log(), ["step 1 in root", "step 2 in root"]);
 }
@@ -650,13 +650,13 @@ fn test_context_records_starts_and_completions() {
     complete_now: true,
     group: ROOT_GROUP_NAME,
   };
-  step.on_routine(&TurnEnding, &test_ctx.sys_ctx());
-  assert!(test_ctx.routine_step_completed::<TurnEnding>());
+  step.on_routine(&Sequencing, &test_ctx.sys_ctx());
+  assert!(test_ctx.routine_step_completed::<Sequencing>());
 
-  test_ctx.sys_ctx().start_routine(TurnEnding);
+  test_ctx.sys_ctx().start_routine(Sequencing);
   let started = test_ctx.routines_started();
   assert_eq!(started.len(), 1);
-  assert!(started[0].as_ref().is::<TurnEnding>());
+  assert!(started[0].as_ref().is::<Sequencing>());
 }
 
 #[test]
@@ -701,7 +701,7 @@ struct OriginCarriesOn {
 
 impl System for OriginCarriesOn {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<RoutineCompleted<TurnEnding>>() {
+    if event.is::<RoutineCompleted<Sequencing>>() {
       self.log.borrow_mut().push("completed".to_string());
       self.ending.set(true);
       ctx.emit(CleanedUp);
@@ -717,7 +717,7 @@ struct WatcherAfterwards {
 
 impl System for WatcherAfterwards {
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-    if event.is::<RoutineCompleted<TurnEnding>>() {
+    if event.is::<RoutineCompleted<Sequencing>>() {
       self.log.borrow_mut().push("saw completed".to_string());
     }
   }
@@ -884,6 +884,6 @@ fn a_halt_waits_for_the_origin() {
 #[test]
 fn test_context_records_halts() {
   let mut test_ctx = TestContext::default();
-  test_ctx.sys_ctx().halt_routine::<TurnEnding>();
-  assert!(test_ctx.routine_halted::<TurnEnding>());
+  test_ctx.sys_ctx().halt_routine::<Sequencing>();
+  assert!(test_ctx.routine_halted::<Sequencing>());
 }
