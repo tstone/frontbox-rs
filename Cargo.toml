@@ -2,9 +2,9 @@
 members = [
     "fast-protocol",
     "frontbox",
-    "frontbox-animation",
-    "frontbox-canvas",
     "frontbox-derive",
+    "frontbox-gfx",
+    "frontbox-led",
     "frontbox-metrics",
     "frontbox-pin-console",
     "frontbox-pin2dmd",

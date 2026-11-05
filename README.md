@@ -103,14 +103,20 @@ A: Yes:
 
 (these will link to published docs once live)
 
+### Core 
+
 - App -- Booting things up
 - Hardware -- Defining what exists
 - Systems -- The behavioral unit everything happens within
 - Drivers -- Turning things like coils on and off
 - Switches -- Capturing input
+- Operator Config -- Settings the operator can change from the menu
+
+###  Extras
+
+- Pinball -- Lighting things up
 - LEDs -- Lighting things up
 - DMD -- Dot matrix display rendering
-- Operator Config -- Settings the operator can change from the menu
 
 ## License
 

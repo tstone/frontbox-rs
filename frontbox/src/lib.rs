@@ -7,15 +7,12 @@
 //! 2. Define your [hardware](mod@crate::hardware).
 //! 3. Write a [system](mod@crate::systems).
 //! 4. Emit some [events](mod@crate::systems::event).
-//! 5. Turn on some [LEDs](mod@crate::led).
+//! 5. Turn on some LEDs (see `frontbox-led`).
 //! 6. [Choreograph](mod@crate::systems::cue) something.
 
-pub mod animation;
 pub mod app;
 mod duration_ext;
-pub mod extent;
 pub mod hardware;
-pub mod led;
 pub mod location;
 pub mod machine;
 pub use frontbox_metrics as metrics;
@@ -32,14 +29,10 @@ extern crate self as frontbox;
 
 pub mod prelude {
   pub use crate::app::*;
-  pub use crate::animation::Cycle;
   pub use crate::duration_ext::*;
   pub use crate::events;
-  pub use crate::extent::*;
   pub use crate::hardware::*;
   pub use crate::hardware_defs;
-  pub use crate::led::color_sequence::GradientStop;
-  pub use crate::led::*;
   pub use crate::location::*;
   pub use crate::machine::{ContextDrivers, ContextLeds, ContextSwitches, MachineSystem, SwitchClosed, SwitchOpened};
   pub use crate::metrics::{
@@ -55,7 +48,6 @@ pub mod prelude {
   pub use fast_protocol::{DriverTriggerControlMode, LedType, Power, Rgb, SwitchState};
   pub use frontbox_derive::*;
   pub use glam::{Quat, Vec2, Vec3};
-  pub use image::Rgba;
   pub use indexmap::IndexSet;
   pub use serde::Serialize;
   pub use std::time::Duration;

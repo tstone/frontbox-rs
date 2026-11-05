@@ -1,4 +1,4 @@
-use frontbox_canvas::*;
+use frontbox_gfx::canvas::*;
 use image::*;
 use std::collections::HashMap;
 

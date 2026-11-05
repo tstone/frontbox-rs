@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use frontbox_canvas::Size;
+use frontbox_gfx::canvas::Size;
 use image::DynamicImage;
 
 mod sprite_sheet_font;

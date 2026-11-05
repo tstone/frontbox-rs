@@ -1,4 +1,5 @@
 use frontbox::prelude::*;
+use frontbox_led::prelude::*;
 
 use crate::ball_management::{
   AutoPlungerConfig, BallManager, PlungeLaneConfig, StandardBallManagement, TroughManagementConfig,

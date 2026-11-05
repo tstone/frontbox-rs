@@ -1,4 +1,4 @@
-use frontbox_canvas::Size;
+use frontbox_gfx::canvas::Size;
 use rusb::UsbContext;
 use std::time::Duration;
 

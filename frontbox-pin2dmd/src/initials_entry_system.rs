@@ -1,6 +1,7 @@
-use frontbox::animation::{Accumulator, Animation, Curve, Tween};
 use frontbox::prelude::*;
-use frontbox_canvas::*;
+use frontbox_gfx::animation::{Accumulator, Animation, Curve, Tween};
+use frontbox_gfx::canvas::*;
+use frontbox_gfx::prelude::*;
 
 use crate::{BOLD_PIXELS_10PX_REGULAR_FONT, DmdSystem, SIGI_BOLD_7PX_FONT};
 

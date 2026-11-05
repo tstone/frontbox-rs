@@ -119,7 +119,7 @@ impl Deref for ContextSwitches<'_> {
 /// `ctx.leds`: look up LEDs (through [`LedLookup`]), and set them directly
 ///
 /// Setting an LED forces it to a color on the hardware right away. It isn't declared, so it isn't rendered, flattened,
-/// or resolved against other declarations: if [`LedSystem`] is running and an LED is declared, the next render that
+/// or resolved against other declarations: if `LedSystem` (in `frontbox-led`) is running and an LED is declared, the next render that
 /// changes it writes over whatever was set here.
 #[derive(Clone, Copy)]
 pub struct ContextLeds<'a> {

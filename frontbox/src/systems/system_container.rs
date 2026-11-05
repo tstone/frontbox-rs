@@ -4,7 +4,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use crate::animation::Accumulator;
 use crate::app::app_tracer::TraceEvent;
 use crate::prelude::Event;
 use crate::prelude::app_tracer::TracerSenders;
@@ -121,8 +120,8 @@ impl SystemContainer {
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     let mut cues_to_remove = Vec::new();
     for (id, cue) in &mut self.cues {
-      let result = cue.accumulate(delta);
-      if result.completed_cycle {
+      let completed_cycle = cue.accumulate(delta);
+      if completed_cycle {
         log::trace!("Cue {} cycle completed, triggering signal", id);
 
         if let Some(signal) = cue.signal() {

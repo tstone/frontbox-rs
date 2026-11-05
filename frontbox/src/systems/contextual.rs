@@ -7,3 +7,12 @@ pub trait Contextual<T>: DynClone {
 }
 
 dyn_clone::clone_trait_object!(<T> Contextual<T>);
+
+impl<C, T> Contextual<T> for &C
+where
+  C: Contextual<T> + ?Sized,
+{
+  fn resolve(&self, ctx: &SystemContext) -> T {
+    (**self).resolve(ctx)
+  }
+}

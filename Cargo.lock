@@ -999,20 +999,16 @@ dependencies = [
  "env_logger",
  "erased-serde",
  "fast-protocol",
- "frontbox-animation",
  "frontbox-derive",
  "frontbox-metrics",
  "futures-util",
  "glam 0.33.2",
  "humantime",
- "image",
  "indexmap 2.14.0",
  "itertools",
  "log",
  "num-traits",
- "palette",
  "priority-queue",
- "rand 0.10.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -1025,32 +1021,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-animation"
-version = "0.1.0"
-dependencies = [
- "dyn-clone",
- "fast-protocol",
- "image",
- "rand 0.10.0",
-]
-
-[[package]]
-name = "frontbox-canvas"
-version = "0.1.0"
-dependencies = [
- "frontbox",
- "glam 0.33.2",
- "image",
- "log",
-]
-
-[[package]]
 name = "frontbox-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "frontbox-gfx"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "image",
+ "log",
+ "num-traits",
+ "palette",
+ "rand 0.10.0",
+]
+
+[[package]]
+name = "frontbox-led"
+version = "0.1.0"
+dependencies = [
+ "dyn-clone",
+ "env_logger",
+ "fast-protocol",
+ "frontbox",
+ "frontbox-gfx",
+ "image",
+ "itertools",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -1088,7 +1093,7 @@ name = "frontbox-pin2dmd"
 version = "0.1.0"
 dependencies = [
  "frontbox",
- "frontbox-canvas",
+ "frontbox-gfx",
  "frontbox-sound",
  "image",
  "log",
@@ -1104,6 +1109,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "frontbox",
+ "frontbox-led",
  "log",
  "serde",
  "serde_json",
@@ -2184,7 +2190,6 @@ dependencies = [
  "palette_derive",
  "phf",
  "rand 0.8.5",
- "serde",
 ]
 
 [[package]]

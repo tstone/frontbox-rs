@@ -1,5 +1,5 @@
-use frontbox::prelude::Rgba;
-use frontbox_canvas::*;
+use frontbox_gfx::canvas::*;
+use frontbox_gfx::prelude::Rgba;
 
 use crate::PixelFontCharacterMap;
 
@@ -11,7 +11,7 @@ pub struct PixelFontOverflowText {
 }
 
 impl Layer for PixelFontOverflowText {
-  fn render<'a>(&self, canvas: &mut frontbox_canvas::CanvasView<'a>) {
+  fn render<'a>(&self, canvas: &mut frontbox_gfx::canvas::CanvasView<'a>) {
     let ellipsis_width = self.font.glyph(&'…').map(|g| g.width).unwrap_or_else(|| 
       panic!(
         "Expected font {} to include ellipsis character '…' but did not.",

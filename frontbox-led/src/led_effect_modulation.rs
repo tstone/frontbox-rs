@@ -1,0 +1,62 @@
+//! Alteration vs Modulation
+//!
+//! An 'alteration' is a static, one-time modification of something.
+//! A 'modulation' is an alteration + an animation -- an alteration that changes, typically over time
+//!
+
+use std::time::Duration;
+
+use frontbox_gfx::animation::*;
+use frontbox_gfx::color_sequence::ColorSequenceAlteration;
+use frontbox_gfx::prelude::{Cycle, Extent};
+
+#[derive(Clone)]
+pub enum LedProgram1dAlteration {
+  Static(ColorSequenceAlteration),
+  Rotating(Rotating),
+}
+
+impl LedProgram1dModulation for LedProgram1dAlteration {
+  fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration {
+    match self {
+      Self::Static(a) => a.clone(),
+      Self::Rotating(r) => r.apply(delta),
+    }
+  }
+
+  fn reset(&mut self) {
+    match self {
+      LedProgram1dAlteration::Static(_) => {}
+      LedProgram1dAlteration::Rotating(r) => r.reset(),
+    }
+  }
+}
+
+pub trait LedProgram1dModulation {
+  fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration;
+  fn reset(&mut self);
+}
+
+#[derive(Clone)]
+pub struct Rotating {
+  anim: Tween<Duration, f32>,
+}
+
+impl Rotating {
+  pub fn new(duration: Duration, curve: Curve, cycle: Cycle) -> Self {
+    Self {
+      anim: Tween::new(duration, curve, vec![0.0f32, 360.0], cycle),
+    }
+  }
+}
+
+impl LedProgram1dModulation for Rotating {
+  fn apply(&mut self, delta: Duration) -> ColorSequenceAlteration {
+    self.anim.accumulate(delta);
+    ColorSequenceAlteration::Rotate(Extent::Relative(self.anim.sample()))
+  }
+
+  fn reset(&mut self) {
+    self.anim.reset();
+  }
+}

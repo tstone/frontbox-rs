@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 log = "0.4.29"
 frontbox = { path = "../frontbox" }
-frontbox-canvas = { path = "../frontbox-canvas" }
+frontbox-gfx = { path = "../frontbox-gfx" }
 frontbox-sound = { path = "../frontbox-sound", optional = true }
 rusb = "0.9.4"
 image = "0.25.9"

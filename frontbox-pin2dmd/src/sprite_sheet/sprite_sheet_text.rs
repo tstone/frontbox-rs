@@ -1,4 +1,4 @@
-use frontbox_canvas::*;
+use frontbox_gfx::canvas::*;
 
 use crate::SpriteSheetFont;
 
@@ -9,7 +9,7 @@ pub struct SpriteSheetFontText {
 }
 
 impl Layer for SpriteSheetFontText {
-  fn render<'a>(&self, canvas: &mut frontbox_canvas::CanvasView<'a>) {
+  fn render<'a>(&self, canvas: &mut frontbox_gfx::canvas::CanvasView<'a>) {
     let mut offset = 0;
     for c in self.text.chars() {
       let mut char_canvas = canvas.child_view(

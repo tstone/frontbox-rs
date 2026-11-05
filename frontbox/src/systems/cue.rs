@@ -92,7 +92,6 @@ use std::time::Duration;
 
 use itertools::Itertools;
 
-use crate::animation::*;
 use crate::prelude::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,17 +210,11 @@ impl CueAccumulator {
       self.cycle_index = 0;
     }
   }
-}
 
-impl Accumulator<Duration> for CueAccumulator {
-  fn accumulate(&mut self, delta: Duration) -> AccumulationResult<Duration> {
-    let mut result = AccumulationResult {
-      remainder: Duration::ZERO,
-      completed_cycle: false,
-    };
-
+  /// Move the cue forward in time, returning whether it completed a cycle (and so should fire its signal)
+  pub fn accumulate(&mut self, delta: Duration) -> bool {
     if self.is_complete() {
-      return result;
+      return false;
     }
 
     // If we're exactly at the target, we need to roll back to 0 before adding delta
@@ -242,15 +235,15 @@ impl Accumulator<Duration> for CueAccumulator {
         }
 
         // save the result of the (now) first point as that will be the return of this function
-        let first_result = points.first_mut().map(|point| point.accumulate(delta));
+        let first_completed = points.first_mut().map(|point| point.accumulate(delta));
 
         // accumulate time to remaining points so they are ready to trigger when their time comes
         for point in points.iter_mut().skip(1) {
           point.accumulate(delta);
         }
 
-        if let Some(result) = first_result {
-          return result;
+        if let Some(completed) = first_completed {
+          return completed;
         }
       }
       _ => {}
@@ -265,8 +258,6 @@ impl Accumulator<Duration> for CueAccumulator {
         self.elapsed -= self.target();
       }
 
-      result.completed_cycle = true;
-      result.remainder = self.elapsed;
       self.increment_signal_index();
 
       if matches!(self.cue, CueInternal::Once(_)) {
@@ -281,20 +272,14 @@ impl Accumulator<Duration> for CueAccumulator {
         }
         _ => {}
       }
+
+      return true;
     }
 
-    result
+    false
   }
 
-  fn force(&mut self, elapsed: Duration) {
-    self.elapsed = elapsed;
-  }
-
-  fn reset(&mut self) {
-    self.elapsed = Duration::ZERO;
-  }
-
-  fn is_complete(&self) -> bool {
+  pub fn is_complete(&self) -> bool {
     match &self.cue {
       CueInternal::Once(_) => self.completed,
       CueInternal::Times(t, _) => self.loop_count >= *t,
@@ -330,8 +315,8 @@ mod test {
     assert_eq!(cue.signal().is_none(), true);
 
     // Advance 1 second, should trigger signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
@@ -339,8 +324,8 @@ mod test {
     );
 
     // Verify that accumulating more time doesn't change the state
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, false);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(!completed_cycle);
     assert_eq!(cue.is_complete(), true);
   }
 
@@ -356,8 +341,8 @@ mod test {
     assert_eq!(cue.signal().is_none(), true);
 
     // Advance 1 second, should trigger signal
-    let result = cue.accumulate(Duration::from_millis(1100));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_millis(1100));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
@@ -365,8 +350,8 @@ mod test {
     );
 
     // Verify that accumulating more time doesn't change the state
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, false);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(!completed_cycle);
     assert_eq!(cue.is_complete(), true);
   }
 
@@ -381,8 +366,8 @@ mod test {
     assert_eq!(cue.signal().is_none(), true);
 
     // Advance 1 second, should trigger first signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
@@ -390,14 +375,14 @@ mod test {
     );
 
     // Advance another second, should trigger second signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_some(), true);
 
     // Advance another second, should trigger third signal and complete
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(cue.signal().is_some(), true);
   }
@@ -413,8 +398,8 @@ mod test {
     assert_eq!(cue.signal().is_none(), true);
 
     // Advance 1 second, should trigger first signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
@@ -422,8 +407,8 @@ mod test {
     );
 
     // Advance another second, should trigger second signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(cue.signal().is_some(), true);
   }
@@ -436,18 +421,18 @@ mod test {
     );
 
     // Advance 1 second, should trigger first signal
-    let result = cue.accumulate(Duration::from_millis(500));
-    assert_eq!(result.completed_cycle, false);
-    let result = cue.accumulate(Duration::from_millis(500));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_millis(500));
+    assert!(!completed_cycle);
+    let completed_cycle = cue.accumulate(Duration::from_millis(500));
+    assert!(completed_cycle);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
       Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), false);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
@@ -455,8 +440,8 @@ mod test {
     );
 
     // Advance another second, should loop back around to the first signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
@@ -476,24 +461,24 @@ mod test {
     assert_eq!(cue.signal().is_none(), true);
 
     // Advance 1 second, should trigger first signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
       Some(&Signal)
     );
 
     // Advance another second, should trigger second signal
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
       Some(&Signal2)
     );
 
     // Advance another second, should trigger third signal and complete
-    let result = cue.accumulate(Duration::from_secs(1));
-    assert_eq!(result.completed_cycle, true);
+    let completed_cycle = cue.accumulate(Duration::from_secs(1));
+    assert!(completed_cycle);
     assert_eq!(cue.is_complete(), true);
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal3>()),

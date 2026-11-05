@@ -1,6 +1,6 @@
-use frontbox::prelude::color_sequence::GradientStop;
-use frontbox::prelude::*;
-use frontbox_canvas::*;
+use frontbox_gfx::canvas::*;
+use frontbox_gfx::color_sequence::GradientStop;
+use frontbox_gfx::prelude::*;
 
 pub struct DmdMenuTheme {
   pub menu_bg: Fill2d,

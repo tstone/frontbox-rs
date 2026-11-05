@@ -1,5 +1,5 @@
 use frontbox::prelude::*;
-use frontbox_canvas::*;
+use frontbox_gfx::canvas::*;
 
 use crate::Pin2Dmd;
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use frontbox::prelude::Rgba;
-use frontbox_canvas::CanvasView;
+use frontbox_gfx::canvas::CanvasView;
+use frontbox_gfx::prelude::Rgba;
 
 use crate::{PixelFontMultiLineText, PixelFontOverflowText, PixelFontText, TextAlignment};
 
