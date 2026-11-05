@@ -28,12 +28,12 @@ pub type ModulationSetter<S, T> = dyn Fn(&mut S, T) + Send + Sync + 'static;
 #[derive(Clone)]
 pub struct Modulator<S, T, A> {
   setter: Arc<ModulationSetter<S, T>>,
-  animation: Box<dyn Animation<A, T> + Send + Sync>,
+  animation: Box<dyn Animation<A, T>>,
 }
 
 impl<S, T, A> Modulator<S, T, A> {
   pub fn new(
-    animation: impl Animation<A, T> + Send + Sync + 'static,
+    animation: impl Animation<A, T> + 'static,
     setter: impl Fn(&mut S, T) + Send + Sync + 'static,
   ) -> Self {
     Modulator {
@@ -59,7 +59,7 @@ impl<S, T, A> Modulation<S, A> for Modulator<S, T, A> {
   }
 }
 
-impl<S, T, A> DynModulation<S, A> for Modulator<S, T, A>
+impl<S, T, A> Accumulator<A> for Modulator<S, T, A>
 where
   S: Clone + 'static,
   T: Clone + 'static,
@@ -80,7 +80,14 @@ where
   fn is_complete(&self) -> bool {
     self.animation.is_complete()
   }
+}
 
+impl<S, T, A> DynModulation<S, A> for Modulator<S, T, A>
+where
+  S: Clone + 'static,
+  T: Clone + 'static,
+  A: Clone + 'static,
+{
   fn play(&mut self) {
     self.animation.play();
   }

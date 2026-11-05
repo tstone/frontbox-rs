@@ -32,6 +32,9 @@ impl<S, A> MultiModulator<S, A> {
 
   pub fn stop(&mut self) {
     self.active = false;
+    for modulator in &mut self.modulators {
+      modulator.stop();
+    }
   }
 
   pub fn active(&self) -> bool {
@@ -58,5 +61,45 @@ impl<S, A> MultiModulator<S, A> {
         m.apply(delta.clone(), target);
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn ramp() -> Modulator<f32, f32, f32> {
+    Modulator::new(
+      Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once),
+      |target: &mut f32, value| *target = value,
+    )
+  }
+
+  #[test]
+  fn test_apply_advances_children() {
+    let mut multi = MultiModulator::playing(vec![Box::new(ramp())]);
+    let mut value = 0.0;
+
+    multi.apply(0.5, &mut value);
+    assert_eq!(value, 5.0);
+  }
+
+  #[test]
+  fn test_stop_stops_children() {
+    let mut multi = MultiModulator::playing(vec![Box::new(ramp())]);
+    let mut value = 0.0;
+
+    multi.stop();
+    multi.apply(0.5, &mut value);
+    assert_eq!(value, 0.0);
+
+    // the children are stopped too, so advancing one directly does nothing
+    for modulator in &mut multi.modulators {
+      modulator.accumulate(0.5);
+    }
+
+    multi.play();
+    multi.apply(0.25, &mut value);
+    assert_eq!(value, 2.5);
   }
 }

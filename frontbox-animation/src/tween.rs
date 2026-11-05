@@ -1,11 +1,8 @@
-use std::fmt::Debug;
-use std::ops::{Add, Sub};
-
 use crate::*;
 
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified quantity using a given curve
 #[derive(Clone)]
-pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
+pub struct Tween<A, T> {
   /// The accumulated amount for one cycle through all of the stops
   pub target: A,
   pub active: bool,
@@ -23,17 +20,7 @@ pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send +
 impl<A, T> Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync + 'static,
-  A: Tweenable
-    + Copy
-    + Default
-    + Add<Output = A>
-    + Sub<Output = A>
-    + PartialEq
-    + PartialOrd
-    + Send
-    + Sync
-    + Debug
-    + 'static,
+  A: Tweenable + 'static,
 {
   /// *target* - The accumulated amount for one cycle through all of the stops, e.g. `Duration::from_secs(1)` moves
   /// through every stop in one second
@@ -104,16 +91,7 @@ where
 impl<A, T> Accumulator<A> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync,
-  A: Tweenable
-    + Copy
-    + Default
-    + Add<Output = A>
-    + Sub<Output = A>
-    + PartialOrd
-    + PartialEq
-    + Send
-    + Sync
-    + Debug,
+  A: Tweenable,
 {
   fn accumulate(&mut self, delta: A) -> AccumulationResult<A> {
     if !self.active || self.is_complete() {
@@ -187,17 +165,7 @@ where
 impl<A, T> Animation<A, T> for Tween<A, T>
 where
   T: Lerp + Clone + Send + Sync + 'static,
-  A: Tweenable
-    + Copy
-    + Default
-    + Add<Output = A>
-    + Sub<Output = A>
-    + PartialEq
-    + PartialOrd
-    + Send
-    + Sync
-    + Debug
-    + 'static,
+  A: Tweenable + 'static,
 {
   fn sample(&self) -> T {
     let segments = self.stops.len() - 1;

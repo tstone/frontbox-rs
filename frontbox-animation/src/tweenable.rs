@@ -1,7 +1,10 @@
+use std::ops::{Add, Sub};
 use std::time::Duration;
 
 /// An amount a [`Tween`](crate::Tween) can be advanced by, usually time
-pub trait Tweenable: Sized {
+pub trait Tweenable:
+  Copy + Default + PartialEq + PartialOrd + Add<Output = Self> + Sub<Output = Self> + Send + Sync
+{
   fn to_f64(&self) -> f64;
 }
 

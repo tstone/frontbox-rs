@@ -74,21 +74,27 @@ impl Lerp for Vec<image::Rgba<u8>> {
 
 #[cfg(feature = "image")]
 impl Lerp for image::RgbaImage {
+  /// Pixels missing from `other` (when it is smaller) interpolate toward transparent
   fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let mut buffer = image::RgbaImage::new(self.width(), self.height());
+    let (width, height) = self.dimensions();
 
-    for x in 0..self.width() {
-      for y in 0..self.height() {
-        let p = self.get_pixel(x, y);
-        let other = match other.get_pixel_checked(x, y) {
-          Some(p) => p,
-          None => &image::Rgba([0, 0, 0, 0]),
-        };
-        buffer.put_pixel(x, y, p.interpolate(other, t));
-      }
-    }
+    let data = if other.dimensions() == (width, height) {
+      // same size, so the raw channel buffers line up one to one
+      self
+        .as_raw()
+        .iter()
+        .zip(other.as_raw())
+        .map(|(a, b)| a.interpolate(b, t))
+        .collect()
+    } else {
+      let transparent = image::Rgba([0, 0, 0, 0]);
+      self
+        .enumerate_pixels()
+        .flat_map(|(x, y, pixel)| pixel.interpolate(other.get_pixel_checked(x, y).unwrap_or(&transparent), t).0)
+        .collect()
+    };
 
-    buffer
+    image::RgbaImage::from_raw(width, height, data).expect("interpolated buffer matches the image size")
   }
 }
 
@@ -108,5 +114,28 @@ mod tests {
     assert_eq!(0u8.interpolate(&255, 1.2), 255);
     assert_eq!(0u8.interpolate(&255, -0.2), 0);
     assert_eq!(10i8.interpolate(&20, 0.5), 15);
+  }
+
+  #[cfg(feature = "image")]
+  #[test]
+  fn test_images_of_the_same_size() {
+    let from = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 0]));
+    let to = image::RgbaImage::from_pixel(2, 2, image::Rgba([100, 200, 50, 255]));
+
+    let mid = from.interpolate(&to, 0.5);
+    assert_eq!(mid.dimensions(), (2, 2));
+    assert!(mid.pixels().all(|p| *p == image::Rgba([50, 100, 25, 128])));
+  }
+
+  #[cfg(feature = "image")]
+  #[test]
+  fn test_images_of_different_sizes_fade_missing_pixels() {
+    let from = image::RgbaImage::from_pixel(2, 1, image::Rgba([100, 100, 100, 255]));
+    let to = image::RgbaImage::from_pixel(1, 1, image::Rgba([200, 200, 200, 255]));
+
+    let mid = from.interpolate(&to, 0.5);
+    assert_eq!(mid.dimensions(), (2, 1));
+    assert_eq!(*mid.get_pixel(0, 0), image::Rgba([150, 150, 150, 255]));
+    assert_eq!(*mid.get_pixel(1, 0), image::Rgba([50, 50, 50, 127]));
   }
 }
