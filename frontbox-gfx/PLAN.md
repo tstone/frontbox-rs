@@ -1,102 +1,76 @@
 # frontbox-gfx Plan
 
-One library for describing graphics in 1d (an ordered list of LEDs) and 2d (a DMD, or LEDs on a playfield plane), and
-how those graphics move over time. 3d is out of scope for now, but nothing here should rule it out.
+One library for describing graphics and how they move over time, for a list of LEDs, LEDs on a playfield plane, or a
+DMD. There is one model for all of them: a scene is drawn on a 2d stage, and a list of LEDs is laid out on that stage
+as a line.
 
-The rules this plan settles on are kept in [AGENTS.md](AGENTS.md). This file is the roadmap for getting there.
+The rules this plan settles on are kept in [AGENTS.md](AGENTS.md). This file is the roadmap.
 
 ## Approach
 
+Start small. The first goal is solid colors and gradients, on a list of LEDs and in filled shapes on a 2d stage. Each
+later feature is added when a scene needs it, and is shaped as a general piece that combines with what's already
+there, not as a one-off option.
+
 New types are built alongside the existing `color_sequence`, `canvas`, and `animation` modules, without changing them.
-Once the new types cover what the old ones do, users are migrated and the old modules are deleted. Until then, both
-compile side by side, and the old modules only get additive changes (like a `serde` derive on `Curve`).
+Once the new types cover what the old ones do, users are migrated and the old modules are deleted.
 
-## Architecture
+## Sampling
 
-Four layers, of which gfx owns the first three:
-
-1. **Definition** -- What an effect looks like and how it moves. Plain data (enums and structs), serializable to RON.
-   Immutable once loaded.
-2. **Playback** -- An instance of a definition: elapsed time, cycle count, active state, and current parameter values.
-   This is the definition/instance split Flash had between symbols and their instances.
-3. **Sampling** -- Asking a resolved effect for the color at a point. 1d samples take a `t` along a line, 2d samples
-   take a position with a footprint. gfx never allocates a buffer for a device.
-4. **Device adapters** (outside gfx) -- `frontbox-led` and `frontbox-dmd` decide where the sample points are and what
-   to do with the colors.
-
-```text
-Effect (definition, RON) ──▶ Instance (playback) ──resolve(time, params)──▶ Frame ──sample(points)──▶ colors
-                                                                                      ▲
-                                             frontbox-led / frontbox-dmd provide the points and consume the colors
-```
-
-### Sampling
-
-Everything is a function that's sampled, not a buffer that's filled.
+Everything is a function that's sampled, not a buffer that's filled. A device decides where its points are and asks
+the scene for a color at each one:
 
 ```rust
-/// A 1d sample: where along the line, and how long the line is in its own units
-pub struct Span { pub length: f32 }
-pub fn sample_1d(&self, t: f32, span: &Span) -> Rgba<u8>;
-
-/// A 2d sample: a position in stage units and the radius of the area it covers
+/// A position in stage units and the radius of the area it covers
 pub struct Sample { pub pos: Vec2, pub radius: f32 }
-pub fn sample_2d(&self, sample: &Sample) -> Rgba<u8>;
+
+/// What's the same for every sample in one frame
+pub struct Frame<'a> { pub time: f32, pub stage: Bounds, pub params: &'a Params }
+
+pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8>;
 ```
 
-- `Span::length` resolves `Extent::Absolute` values and pattern cell sizes.
-- `Sample::radius` is the footprint of what's being lit: half the pixel pitch on a DMD, the size of the insert or LED
-  on a playfield. Shapes use it for coverage, so a thin line passing between two inserts still lights both partially
-  instead of neither. This replaces the idea of a global DPI.
-- Per-point randomness (sparkle, dropout) hashes the sample position, so it's stable from frame to frame without gfx
-  knowing which LED it is.
+`radius` is the footprint of what's being lit: half the pixel pitch on a DMD, the size of an insert on the playfield,
+half the spacing for an LED on a line. Shape edges use it for coverage, so an edge passing through an LED lights it
+partially.
 
-### What sets the 1d spacing
+Sampling reads the definition directly, resolving each `Prop` at the given time. There's no separate "resolved frame"
+type mirroring the definition. If that's ever too slow, caching is added then.
 
-A 1d paint only sees `t`. The thing it's applied to decides what a unit of length is, so there's no spacing setting:
+### The stage
 
-- **A list of LEDs** -- `t = i / (n - 1)` and `Span::length = n`. One unit is one LED: "red, white, repeat" alternates
-  LEDs.
-- **A path in 2d** -- `t` is the distance along the path divided by its total length, and `Span::length` is that total
-  in real units. Whatever inserts are under the path take the color at their position. Evenly spaced color over
-  unevenly spaced LEDs is a path drawn through them.
+Scenes are drawn on a **stage**, a rectangle in stage units:
 
-### Coordinates and units
+- **Sized** (`size: Some((w, h))`) -- The stage is in real units (the units LED locations already use). A DMD or the
+  playfield maps it onto itself.
+- **Unsized** (`size: None`) -- The stage is the target's, passed in the `Frame`.
 
-2d effects are authored on a **stage**: a rectangle with a size in real units (the same units LED locations already
-use). An adapter maps the stage onto its device. For a DMD that's a pixel grid with a pitch, for the playfield it's a
-rectangle on a `ReferencePlane`. gfx provides the mapping math (`Viewport`, with stretch/contain/cover fits), since it's
-pure geometry; the adapter supplies the device side.
-
-Coordinates are `f32` (`glam::Vec2`). Extents in new code are `Extent<f32>`.
+Where a device's points sit is the device's business, kept apart from the scene types in the `layout` module. A
+`layout::Line` of `n` points (a strip of LEDs) puts point `i` at `(i, 0)` with a radius of 0.5, and its stage runs from
+the first point's center to the last's. So a gradient across the stage puts its end colors exactly on the end LEDs (as
+`ColorSequence` does), and positions on a line are LED indexes.
 
 ## Definition types
 
 Sketches, not final signatures.
 
-### Parameters
+### Values that change: `Value`, `Prop`, `Track`, `Key`
 
-Parameters are values the game supplies at runtime. They're typed, since effects need positions ("from the point the
-ball hit") and colors (a district's accent), not just numbers:
+Parameters are values the game supplies at runtime, typed so they can be positions and colors as well as numbers:
 
 ```rust
 pub enum Value {
   Float(f32),
   Vec2(Vec2),
-  Color(Rgba<u8>),
+  Color(Color),
 }
+
+/// `Rgba<u8>` has no serde support (image's `serde` feature doesn't cover pixel types), so definitions hold this.
+/// Written as `(r, g, b, a)`. Sampling returns plain `Rgba<u8>`.
+pub struct Color(pub Rgba<u8>);
 ```
 
-An effect declares its parameters with defaults. Each one has a scope:
-
-- **Instance** -- set on one playing instance, e.g. a wave's origin or a progress percent.
-- **Global** -- shared by every instance, e.g. the music's beat position, or Steward integrity (0--6). gfx defines
-  the scope; the owner that sets global values lives outside gfx.
-
-### Properties
-
-Every value that can change over time is a `Prop<T>` instead of a bare `T`. This is how both keyframes and parameters
-work, without needing paths to address properties:
+Every field that could change is a `Prop<T>`, so any of them can be fixed, read from a parameter, or keyframed:
 
 ```rust
 pub enum Prop<T> {
@@ -104,287 +78,218 @@ pub enum Prop<T> {
   Fixed(T),
   /// Read from a parameter
   Param(String),
-  /// Keyframes over a timeline
+  /// Keyframes over time
   Track(Track<T>),
 }
 
 pub struct Track<T> {
-  /// What moves the track forward: time, or a parameter (a hit count, or the global beat position for tempo sync)
-  pub driver: Driver,
   pub keys: Vec<Key<T>>,
-  pub cycle: Cycle,
+  pub cycle: Cycle,          // Once | Times(n) | Forever, from `animation`
 }
 
 pub struct Key<T> {
-  pub at: f32,     // seconds when driven by time, parameter value otherwise
+  pub at: f32,               // seconds
   pub value: T,
-  pub curve: Curve, // how to get from this key to the next
+  pub curve: Curve,          // how to get from this key to the next, from `animation`
 }
 ```
 
-In RON this reads naturally: `rotation: Fixed(45.0)`, `rotation: Param("spin")`, or `rotation: Track((keys: [...]))`.
-What `Sequence` and `Delay` do today becomes keys on a track: a delay is a first key at a later time, a sequence is
-more keys. Centers, path points, window lengths, and colors are all `Prop`s, so any of them can come from a parameter.
+In RON: `radius: Fixed(4.0)`, `radius: Param("size")`, or `radius: Track(keys: [...])`. A parameter that's missing
+or of the wrong type resolves to the type's default. A looping track ends at its last key and jumps back to its first.
 
-### Timeline
+### Nodes: warp, kind, adjust
+
+Shapes and paints are both functions of position: a shape gives a distance to its edge, a paint gives a color.
+Anything that changes one of them either changes what goes in or what comes out, so both are the same pipeline:
 
 ```rust
-pub struct Timeline {
-  pub intro: Option<f32>,  // seconds; plays once on start
-  pub loop_: Option<f32>,  // seconds; repeats until stopped
-  pub outro: Option<f32>,  // seconds; plays on stop, then the effect clears
-  pub rate: Prop<f32>,     // playback speed, e.g. a heartbeat that speeds up with each hit
+pub struct Node<K, A> {
+  pub warp: Vec<Warp>,   // changes the position going in
+  pub kind: K,           // the base function
+  pub adjust: Vec<A>,    // changes the output coming out
+}
+
+pub type Shape = Node<ShapeNode, ShapeAdjust>;
+pub type Paint = Node<PaintNode, ColorAdjust>;
+```
+
+- **Warps** don't depend on what they wrap, so there's one `Warp` enum for every node. Warps are listed in the order
+  they're applied to the drawing (scale, then rotate, then move); sampling undoes them in reverse on the sample point.
+- **Adjusts** do depend on the output: a distance and a color need different operations, so each output type has its
+  own adjust enum.
+- Both lists default to empty, so a node only states its kind unless it changes something.
+
+Modifiers are items in these lists, not new fields or wrapper variants. Combining two things (layers, masks, shape
+unions) is structural and isn't a modifier.
+
+```rust
+pub enum Warp {
+  Translate(Prop<Vec2>),
+  Rotate(Prop<f32>),     // degrees, clockwise on a stage whose y runs down
+  Scale(Prop<Vec2>),
+}
+
+pub enum ShapeAdjust {}  // none yet
+
+pub enum ColorAdjust {
+  HueShift(Prop<f32>),   // degrees, keeping saturation, lightness, and alpha
 }
 ```
 
-Segments are ranges of the same time axis that every track reads. `stop()` jumps to the outro instead of cutting off,
-which covers "the shot leaving drains away" and "forest effects pull back into the roots". An effect without segments
-plays through once and follows its `end` behavior.
-
-### 1d
+### Shape kinds
 
 ```rust
-pub struct Paint1d {
-  pub fill: Fill1d,       // Solid | Gradient { stops } | Pattern { colors, cycle, cell }
-  pub window: Window1d,   // Full | Padded { start, end } | Anchored { anchor, length }
-  pub offset: Prop<f32>,  // rotation along the line, wraps; continuous, so it can move by less than one LED
-  pub reverse: bool,
-  pub shuffle: Option<u64>,
-}
-
-pub struct Layer1d {
-  pub paint: Paint1d,
-  pub opacity: Prop<f32>,
-  pub blend: Blend,
-}
-
-pub struct Scene1d {
-  pub layers: Vec<Layer1d>, // composited bottom to top
-}
-```
-
-Most of `ColorSequence`'s alterations become changes to `t`: reverse is `1 - t`, rotate is `(t + offset) mod 1`, the
-window maps `t` into a sub-range. Shuffle and pattern are discrete and use `Span::length` to find their cells.
-
-Layers replace `ColorSequence::overwrite`. A hex ring with filled segments and a flickering last segment is a window
-layer plus a one-LED layer with its own flicker track.
-
-### 2d
-
-```rust
-pub enum Paint2d {
-  Solid(Prop<Rgba<u8>>),
-  /// A 1d paint along an axis
-  Linear { paint: Paint1d, angle: Prop<f32> },
-  /// A 1d paint outward from a center
-  Radial { paint: Paint1d, center: Prop<Vec2>, radius: Prop<f32> },
-  /// A 1d paint around a center
-  Conic { paint: Paint1d, center: Prop<Vec2> },
-  /// Animated simplex noise, used as `t` into a 1d paint
-  Noise { paint: Paint1d, scale: Prop<f32>, speed: Prop<f32>, seed: u64 },
-  /// Random points that flicker on and off
-  Sparkle { color: Prop<Rgba<u8>>, density: Prop<f32>, rate: Prop<f32>, seed: u64 },
-  Image { asset: String, sampling: ImageSampling },
-}
-
-/// Shapes are signed distance functions, which gives soft edges, strokes, and glow from one value
-pub enum Shape {
-  Fill,                          // the whole stage
-  Circle { radius: Prop<f32> },
-  Rect { size: Prop<Vec2>, corner_radius: Prop<f32> },
-  Ring { radius: Prop<f32>, width: Prop<f32> },
+pub enum ShapeNode {
+  /// An ellipse 1 unit across, centered on the origin
+  Ellipse,
+  /// A closed polygon through points
   Polygon { points: Vec<Prop<Vec2>> },
-  Path { points: Vec<Prop<Vec2>>, width: Prop<f32> },
-  Growth(Growth),                // see below
-}
-
-pub struct Layer2d {
-  pub content: Content2d,        // Shape { shape, fill, stroke } | Effect(EffectRef), see Composition
-  pub transform: Transform,      // translate, rotate, scale: all Prop
-  pub opacity: Prop<f32>,
-  pub softness: Prop<f32>,       // edge falloff beyond the sample footprint
-  pub displace: Option<Displace>,// noise or sine offset on the shape's edge, e.g. a fill's moving surface
-  pub blend: Blend,
-  pub mask: Option<Mask>,
-  pub filters: Vec<Filter>,
-}
-
-pub struct Scene2d {
-  pub size: Vec2,                // the stage, in real units
-  pub layers: Vec<Layer2d>,      // composited bottom to top
 }
 ```
 
-`Path` with a `Paint1d` stroke is the bridge between 1d and 2d: the same paint can go along a list of LEDs, or along a
-path on the playfield or DMD, where `t` comes from the nearest point on the path.
+Shapes are signed distance functions. Coverage at a sample comes from the distance to the edge and the sample's
+radius (a linear ramp across the footprint, so a sample centered on the edge is half lit), which gives smooth edges on
+sparse inserts and dense DMDs alike. Distances are measured in the shape's own space and converted to stage units
+through its warps, which is exact under uniform scale and close to the edge under stretching.
 
-### Growth
+Shapes have no position or size of their own; warps give them that. A circle of radius 20 is an `Ellipse` scaled by
+`(40, 40)`, and a rect is a unit square polygon scaled to its size. `Rect` and `Circle` can come back later as sugar.
 
-Roots, lightning, and vines spread from an origin toward a target. Rather than walking a graph of the real LEDs (which
-gfx can't know about), growth generates branching paths as geometry on the stage, and the inserts under them light up:
+### Paint kinds
 
 ```rust
-pub struct Growth {
-  pub origin: Prop<Vec2>,
-  pub target: Prop<Vec2>,
-  pub seed: u64,
-  pub density: Prop<f32>,     // how many branches, and how closely they fill the area between origin and target
-  pub spread: Prop<f32>,      // how far branches wander from the line between origin and target
-  pub jitter: Prop<f32>,      // how crooked each branch is
-  pub width: Prop<f32>,
-  pub progress: Prop<f32>,    // 0..1, how far the growth has reached; tween it down to pull back
-  pub trail: Paint1d,         // color by age behind the growing tip: fades out, or stays solid
+pub enum PaintNode {
+  Solid(Prop<Color>),
+  /// Runs left to right across the paint's space
+  Gradient { stops: Vec<Stop>, space: ColorSpace },  // Oklab (default) | Rgb
 }
+
+pub struct Stop { pub at: f32, pub color: Prop<Color> }
 ```
 
-- The same seed always generates the same branches. Geometry is regenerated only when origin, target, seed, density,
-  spread, or jitter change, and is cached in the resolved frame.
-- The target makes the growth directional, so it overlaps inserts well on most playfields. `density` is tuned per
-  effect until it looks right for the inserts it crosses. That's an approximation, and it's good enough.
-- `progress` reveals each branch along its length. `t` along a branch, relative to the tip, picks the color from
-  `trail`.
+A paint is drawn in its own space, a unit box from `-0.5` to `0.5`, and a gradient's `t` is `x + 0.5`. The layer
+stretches that box over its shape's own bounds (before the shape's warps), and then the shape's warps apply to both.
+So a gradient fills its shape and moves and turns with it. With no shape, the box is the stage, so on a line of LEDs
+it runs from the first LED to the last.
 
-### Composition
+- A vertical or diagonal gradient is a gradient with a `Rotate` warp; there's no `angle`. Past the ends, `t` clamps to
+  the end colors.
+- To keep a gradient still while its shape turns, give the paint the opposite rotation.
+- Gradients interpolate in Oklab by default, so brightness stays even. In RGB, red to blue dips to a dark `#800080`
+  in the middle, which is very visible on LEDs.
 
-Effects are built from other effects:
-
-- **Nested effects** -- `Content2d::Effect` (and its 1d counterpart) places another effect by name, with its own time
-  offset, rate, and parameter values. Changing its timing is how stutter works: hold its time for random lengths.
-- **Masks** -- A layer can be limited to a shape, or to another layer's alpha, optionally inverted. The takeover motif
-  is a city effect under a forest effect, with the forest masked by a growing shape or growth.
-- **Blend modes** -- `Normal` (alpha over), `Add` (glow), `Multiply` (brightness, e.g. noise darkening another layer),
-  `Screen`. gfx provides the blend math, so `LedSystem` can use the same functions when compositing effects from
-  different systems.
-- **Filters** -- Applied to a layer's output: `Dropout { amount, seed }`, `HueShift`, `Brightness`, `Posterize`.
-  Glitch is dropout, hue shift, and stutter together.
-
-Nested effects are looked up by name in a `Library` loaded from a directory of effect files. References that form a
-loop are an error at load time.
-
-### The effect file
+### Layer, scene
 
 ```rust
-pub struct Effect {
+pub struct Layer {
+  pub paint: Paint,
+  pub shape: Option<Shape>,  // None covers the whole stage
+}
+
+/// The whole definition, and what a file holds
+pub struct Scene {
   pub version: u32,
-  pub params: BTreeMap<String, ParamDecl>, // type, scope, default
-  pub timeline: Timeline,
-  pub end: EndBehavior,                    // Hold | Clear
-  pub body: Body,                          // OneD(Scene1d) | TwoD(Scene2d)
+  pub params: Params,        // the inputs the game can set: name and default
+  pub size: Option<Vec2>,    // the stage in real units, or None to take the target's size
+  pub layers: Vec<Layer>,    // painted bottom to top, alpha over
 }
 ```
 
-Colors are `Rgba<u8>` in memory. In RON they're hex strings: `"#ff3300"` (opaque) or `"#ff330080"` (with alpha).
+`params` is the scene's list of inputs, like a function signature. It gives each parameter a default, so a scene
+still draws when the game doesn't set one, and it says what an editor or the game can change without searching the
+layers for `Param(...)`.
 
-## Litmus test: lotko's effect primitives
+"Effect" isn't used as a type name, since it suggests a filter applied to something else (a blur). It stays free in
+case a concept like that shows up.
 
-Last of the Kilmore Oaks (`lotko-homebrew/RULES.md`) lists the primitives its effects are built from. How each maps:
+Fields that aren't written take their default (`#[serde(default)]`). RON's `implicit_some` and
+`unwrap_variant_newtypes` extensions are on, so a file only states what it changes and avoids double parentheses.
+That includes tuples inside a variant: a color is `Fixed(255, 51, 0, 255)` and a size is `Fixed(40.0, 40.0)`; the
+doubled form `Fixed((40.0, 40.0))` doesn't read. Hex colors may come back later as sugar.
 
-| Primitive | Built from | Phase |
-|---|---|---|
-| Radial wave | `Ring` with a radius track, `softness` for falloff, center from a parameter | 3 |
-| Plane sweep | Replaced for now by a `Rect` whose position is tweened across the stage. A true 3d sweep into the backbox is deferred | 3 |
-| Growth | `Shape::Growth` | 4 |
-| Path flow | A `Path` stroke, or an LED list, with a gapped pattern and a moving offset | 1 (lists), 4 (paths) |
-| Noise field | `Paint2d::Noise`; brightness noise is a `Multiply` layer | 4 |
-| Glitch | Dropout and hue shift filters, plus stutter on a nested effect | 4 |
-| Heartbeat | Keys on an opacity track; speed-up is `Timeline::rate` from a parameter | 2 |
-| Fill | A window whose length is a parameter (1d), or a `Rect` with `displace` for the moving surface (2d) | 1, 3 |
-| Layers and masks | Layers, blend modes, masks, nested effects. "All but the roots" is an `LedQ` exclusion in frontbox-led | 3, 4 |
-| Tempo sync | A track driven by the global beat parameter | 2 |
+## Examples
 
-Other things RULES.md needs that shaped this plan: typed parameters for origins and accent colors, global parameters
-for Steward integrity, timeline outros for effects that withdraw, 1d layers for hex rings, sparkle for "cracks flicker
-across the playfield", and many instances of one effect at once (a packet per pop hit).
+A red-to-blue gradient along a strip:
 
-## Phases
+```ron
+(
+  version: 1,
+  layers: [
+    (paint: (kind: Gradient(stops: [
+      (at: 0.0, color: Fixed(255, 0, 0, 255)),
+      (at: 1.0, color: Fixed(0, 0, 255, 255)),
+    ]))),
+  ],
+)
+```
 
-Each phase lands with tests and leaves the old modules untouched. The order follows lotko's needs: radial wave, growth,
-path flow, and layers and masks first.
+A circle with a vertical gradient over a solid background, on a sized stage:
 
-### 0. Foundation
+```ron
+(
+  version: 1,
+  size: (100.0, 50.0),
+  layers: [
+    (paint: (kind: Solid(Fixed(16, 16, 16, 255)))),
+    (
+      shape: (
+        kind: Ellipse,
+        warp: [Scale(Fixed(40.0, 40.0)), Translate(Fixed(50.0, 25.0))],
+      ),
+      paint: (
+        kind: Gradient(stops: [
+          (at: 0.0, color: Fixed(255, 204, 0, 255)),
+          (at: 1.0, color: Fixed(255, 51, 0, 255)),
+        ]),
+        warp: [Rotate(Fixed(90.0))],
+      ),
+    ),
+  ],
+)
+```
+
+Sent to LEDs at their positions on the playfield, the first file sweeps red to blue across it.
+
+## First goal
+
+Done. The new types are in `src/scene`, and frontbox-led plays them with `LedScene`.
 
 - [x] Add `serde`, `glam`, and `ron` dependencies
-- [ ] `format` module: hex color serde (`#rrggbb` / `#rrggbbaa`), RON load/save, `version` checking
-- [ ] `Sample` and `Span`
+- [x] `file`: RON load/save with `implicit_some` and `unwrap_variant_newtypes`, `version` checking (a newer file
+      is reported as newer, not as a parse error)
+- [x] `Sample`, `Frame`, `Bounds`, and `layout::Line` for laying out `n` points (a strip of LEDs) on an unsized stage
+- [x] `Value`, `Color`, `Prop`, `Track`, `Key`, resolved from a time and parameters, reusing `Curve`, `Cycle`, and
+      `Lerp` (`Curve` and `Cycle` now derive serde; `Curve::Custom` was dropped)
+- [x] `Node`, and `Warp` with translate, rotate, and scale
+- [x] `ShapeNode::Ellipse` and `ShapeNode::Polygon`, with coverage from the sample radius
+- [x] `PaintNode::Solid` and `PaintNode::Gradient` (Oklab and RGB), drawn in the shape's own space
+- [x] `Layer` and `Scene`, sampled with alpha-over compositing
+- [x] Tests: a gradient on a line against `ColorSequence`; shapes sampled on a grid (DMD-like) and at sparse points
+      (playfield-like); a gradient turning with its shape; RON round-trips that sample the same
+- [x] frontbox-led: `LedScene` plays a scene on an `LedQ` as a line
+- [x] One color adjust, `HueShift`, to prove the adjust list
 
-### 1. 1d
+## Set aside for now
 
-- [ ] `Paint1d`, `Fill1d`, `Window1d` with `sample_1d`
-- [ ] `Layer1d`, `Scene1d`, and `Blend` (normal and add to start)
-- [ ] Parity tests against `ColorSequence::generate` for the same descriptions
-- [ ] RON round-trip tests: build in code, write, read back, same samples
+Ideas from earlier drafts, to pick up when a scene needs them. Most now land as an item in an existing list rather
+than a new type.
 
-### 2. Motion
-
-- [ ] `Value`, parameter declarations, and instance and global scopes
-- [ ] `Prop<T>`, `Track<T>`, `Key<T>`, `Driver`, reusing `Curve`, `Cycle`, and `Lerp`
-- [ ] `Timeline` with intro/loop/outro segments and `rate`
-- [ ] `Instance`: holds playback state and parameter values, `accumulate(delta)`, `play`/`stop`, completion
-- [ ] Resolve an effect at the current time into a plain frame (no `Prop`s) that's cheap to sample many times
-- [ ] Parity tests against `Tween` for equivalent tracks
-
-### 3. 2d core
-
-- [ ] `Shape` signed distance functions (circle, ring, rect, polygon), with coverage from `Sample::radius` and
-      `softness`
-- [ ] `Paint2d` solid, linear, radial, conic; `Transform`; `displace`
-- [ ] `Layer2d`, `Scene2d`, the remaining blend modes, and masks by shape
-- [ ] `Viewport` stage-to-device mapping
-- [ ] Sampling tests at sparse points (playfield-like) and on a dense grid (DMD-like)
-
-Radial waves, rect sweeps, and fills work at the end of this phase.
-
-### 4. Composition, paths, growth, noise
-
-- [ ] `Library` and nested effects, with time offset, rate, and parameters; masks by another layer's alpha
-- [ ] Filters: dropout, hue shift, brightness, posterize
-- [ ] `Path` shapes and strokes with a `Paint1d` along them
-- [ ] `Shape::Growth`: seeded branch generation from origin toward target, cached geometry, `progress` reveal, trail
-- [ ] `Paint2d::Noise` and `Paint2d::Sparkle`
-
-### 5. Adapters (in frontbox-led and frontbox-dmd, alongside existing types)
-
-- [ ] frontbox-led 1d: an `LedQ` and an effect instance → declarations
-- [ ] frontbox-led 2d: a `ReferencePlane`, an `LedQ`, and an effect instance → project LED locations to stage points,
-      sample with each LED's footprint → declarations
-- [ ] frontbox-led fire-and-forget player: many independent instances of an effect, each removed when it completes,
-      without a system having to own them
-- [ ] frontbox-dmd: a pixel grid and pitch → sample each pixel → frame
-- [ ] LED footprint: an optional size on `LedDefinition`, with a default per plane (frontbox-core)
-- [ ] An owner for global parameters (beat position, game-wide values) that systems can set
-
-### 6. Images
-
-- [ ] `Image` paint: static images and gifs, by asset path, with the frame driven by a `Prop`
-
-### 7. Migration
-
-- [ ] Move `LedProgram1d` users and the DMD canvas onto the new types
-- [ ] Delete `color_sequence`, `canvas`, and the trait-object parts of `animation`
-
-### 8. Editor (later, mostly outside gfx)
-
-- [ ] Hot reload of effect files on change, without recompiling
-- [ ] Console editor: edits RON, previews live against real LED positions and a virtual DMD
+- More warps: displace, mirror, repeat; time warps (offset, rate, stutter), which is where a nested scene's timing
+  would live
+- Shape adjusts: round, inflate, outline (strokes), softness
+- More color adjusts: opacity, brightness, dropout, posterize
+- Combining: blend modes, masks, shape union and subtract, groups of layers
+- Gradient extras: patterns and shuffle; more ways to get `t` (radial, conic, along an outline). Reverse may just be
+  `Scale((-1, 1))`, and a wrapping offset may be repeat plus translate
+- More kinds: noise, sparkle, images, nested scenes; bands, paths, growth
+- Playback: an `Instance` with play/stop, outros on stop, rate, tracks driven by a parameter instead of time,
+  completion
+- Parameter scopes (per instance and global), relative lengths (`Extent`), stage-to-device fitting (`Viewport`)
+- Placing a list of LEDs at its positions on a plane, and a DMD adapter
+- Sugar: a bare kind for a node with no warps or adjusts (`paint: Solid(...)`), `Rect` and `Circle`, evenly spaced
+  gradient colors without writing `at`, hex colors
 
 ## Open questions
 
-- **Modulators.** `Modulator`/`MultiModulator` adjust a value on top of its base. Does that become a `Prop` variant
-  (`Modulated { base, track, op }`) or go away in favor of tracks?
-- **Time units in keys.** Seconds as `f32` read best in RON. Frame-relative timing is also on the TODO list.
-- **Where footprint lives.** Per `LedDefinition`, per plane, or both with a fallback.
-- **Nested effects: by name only, or inline too?** By name keeps files small and reusable; inline is handier for
-  one-off pieces.
-- **Growth tuning.** Which knobs (density, spread, jitter, branch angle, branch length) are worth exposing, and what
-  the defaults are. Settle this by trying it on lotko's playfield.
-
-## Later, outside gfx
-
-- **Single-channel devices.** GI lamps and flashers have positions and should take part in effects. An adapter samples
-  them like LEDs and drives them with the sample's brightness.
-- **Beat position from frontbox-sound**, for tempo sync through the global beat parameter.
-- **DMD UI.** frontbox-dmd already renders pixel fonts. Menus, lists, and text become a UI layer in frontbox-dmd that
-  uses gfx for frames, boxes, outlines, and effects; text stays out of gfx for now.
-- **3d.** True plane sweeps from the playfield into the backbox, and waves and noise that carry through the backbox
-  speaker LEDs. Sampling per point makes this an addition later (`Vec3` samples; sphere, shell, half-space), not a
-  redesign.
+- **Random props.** A `Prop::Random` for values picked per instance. Needs deciding when it rerolls and how instances
+  get a seed.
