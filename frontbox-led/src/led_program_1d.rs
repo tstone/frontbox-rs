@@ -35,8 +35,14 @@ impl LedProgram1d {
   /// Accumulate and declare current LED state
   pub fn apply(&mut self, delta: Duration, ctx: &SystemContext) {
     match self {
-      LedProgram1d::Fixed { ids, color, .. } => {
-        ctx.declare_leds(ids, color.clone());
+      LedProgram1d::Fixed {
+        ids,
+        color,
+        undeclared,
+      } => {
+        if !*undeclared {
+          ctx.declare_leds(ids, color.clone());
+        }
       }
       LedProgram1d::Animated {
         ids,
@@ -83,11 +89,15 @@ impl LedProgram1d {
           *undeclared = false;
           for entry in entries {
             if entry.ready() {
-              entry.launch();
+              if !entry.launched {
+                entry.launch();
+              }
               entry.program.apply(delta, ctx);
-            } else if entry.completed() {
-              entry.program.stop(ctx);
-            } else if !entry.launched {
+            } else {
+              if entry.stale {
+                entry.program.stop(ctx);
+                entry.stale = false;
+              }
               entry.accumulate_launch(delta);
             }
           }
@@ -101,7 +111,16 @@ impl LedProgram1d {
     }
   }
 
+  /// Play the program, restarting it if it has already completed
   pub fn play(&mut self) {
+    if self.is_complete() {
+      self.reset();
+    }
+    self.resume();
+  }
+
+  /// Play from wherever the program is, without restarting it
+  fn resume(&mut self) {
     match self {
       LedProgram1d::Fixed { undeclared, .. } => {
         *undeclared = false;
@@ -127,7 +146,7 @@ impl LedProgram1d {
         ..
       } => {
         for e in entries.iter_mut() {
-          e.program.play();
+          e.program.resume();
         }
         *active = true;
         *undeclared = false;
@@ -144,7 +163,8 @@ impl LedProgram1d {
   fn stop_in_place(&mut self) {
     match self {
       LedProgram1d::Fixed { undeclared, .. } => {
-        *undeclared = false;
+        // nothing is declared yet, and a fixed program only declares while this is false
+        *undeclared = true;
       }
       LedProgram1d::Animated {
         anim, undeclared, ..
@@ -228,9 +248,7 @@ impl LedProgram1d {
       }
       LedProgram1d::Timeline { entries, .. } => {
         for entry in entries {
-          if entry.launched {
-            entry.reset();
-          }
+          entry.reset();
         }
       }
       _ => {}
@@ -239,7 +257,7 @@ impl LedProgram1d {
 
   pub fn is_active(&self) -> bool {
     match self {
-      Self::Fixed { undeclared, .. } => *undeclared,
+      Self::Fixed { undeclared, .. } => !*undeclared,
       Self::Animated { anim, .. } => anim.active(),
       Self::Modulated { modulators, .. } => modulators.active(),
       Self::Timeline { active, .. } => *active,
@@ -505,6 +523,7 @@ impl LedProgram1d {
         elapsed: Duration::ZERO,
         program,
         launched: false,
+        stale: false,
       });
     }
     self
@@ -524,12 +543,15 @@ pub struct TimelineAccumulator {
   elapsed: Duration,
   program: LedProgram1d,
   launched: bool,
+  /// Reset after launching, so the program may still have LEDs declared from its last run
+  stale: bool,
 }
 
 impl TimelineAccumulator {
   fn launch(&mut self) {
     self.launched = true;
-    self.program.play();
+    self.stale = false;
+    self.program.resume();
   }
 
   fn accumulate_launch(&mut self, delta: Duration) {
@@ -539,6 +561,8 @@ impl TimelineAccumulator {
   }
 
   fn reset(&mut self) {
+    self.stale = self.launched;
+    self.launched = false;
     self.elapsed = Duration::ZERO;
     self.program.reset();
   }
@@ -626,6 +650,99 @@ mod tests {
       .systems.expect::<LedSystem>()
       .declarations_for(&addr3);
     assert_eq!(declarations[0].color, Rgba::blue());
+  }
+
+  fn single_led_context() -> (TestContext, LedAddress) {
+    let mut context = TestContext::default();
+    context.insert_system(LedSystem::new());
+    let addr = LedAddress::new(ExpAddress::default(), 5);
+    context.insert_led(LED {
+      name: "led1".to_string(),
+      address: addr.clone(),
+      ..Default::default()
+    });
+    (context, addr)
+  }
+
+  fn is_declared(context: &TestContext, addr: &LedAddress) -> bool {
+    !context
+      .sys_ctx()
+      .systems
+      .expect::<LedSystem>()
+      .declarations_for(addr)
+      .is_empty()
+  }
+
+  #[test]
+  fn fixed_stays_stopped() {
+    let (context, addr) = single_led_context();
+    let mut program = LedProgram1d::fixed(LedQ::name("led1"), ColorSequence::solid(Rgba::blue()));
+
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(program.is_active());
+    assert!(is_declared(&context, &addr));
+
+    program.stop(&context.sys_ctx());
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(!program.is_active());
+    assert!(!is_declared(&context, &addr));
+
+    program.play();
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(is_declared(&context, &addr));
+  }
+
+  #[test]
+  fn fixed_starts_stopped() {
+    let (context, addr) = single_led_context();
+    let mut program =
+      LedProgram1d::fixed(LedQ::name("led1"), ColorSequence::solid(Rgba::blue())).stopped();
+
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(!is_declared(&context, &addr));
+  }
+
+  #[test]
+  fn play_restarts_completed() {
+    let (context, addr) = single_led_context();
+    let mut program = LedProgram1d::tween_oneshot(
+      LedQ::name("led1"),
+      Duration::from_millis(100),
+      Curve::Linear,
+      vec![ColorSequence::solid(Rgba::red()), ColorSequence::solid(Rgba::blue())],
+    );
+
+    program.apply(Duration::from_millis(150), &context.sys_ctx());
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(program.is_complete());
+    assert!(!is_declared(&context, &addr));
+
+    program.play();
+    assert!(!program.is_complete());
+    program.apply(Duration::from_millis(50), &context.sys_ctx());
+    assert!(is_declared(&context, &addr));
+  }
+
+  #[test]
+  fn timeline_reset_relaunches_delayed_entries() {
+    let (context, addr) = single_led_context();
+    let mut program = LedProgram1d::timeline().at(
+      Duration::from_millis(100),
+      LedProgram1d::fixed(LedQ::name("led1"), ColorSequence::solid(Rgba::blue())),
+    );
+    let tick = |program: &mut LedProgram1d| program.apply(Duration::from_millis(100), &context.sys_ctx());
+
+    tick(&mut program);
+    assert!(!is_declared(&context, &addr));
+    tick(&mut program);
+    assert!(is_declared(&context, &addr));
+
+    // the entry is cleared while it waits out its delay again, then comes back
+    program.reset();
+    tick(&mut program);
+    assert!(!is_declared(&context, &addr));
+    tick(&mut program);
+    assert!(is_declared(&context, &addr));
   }
 }
 

@@ -78,7 +78,6 @@
 
 mod alternate_resolver;
 mod led_declarations;
-mod led_effect_modulation;
 mod led_identifications;
 mod led_identifications_ext;
 mod led_program_1d;
@@ -87,7 +86,6 @@ mod led_system_ext;
 
 pub(crate) use alternate_resolver::*;
 pub(crate) use led_declarations::*;
-pub use led_effect_modulation::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
 pub use led_program_1d::*;
@@ -95,7 +93,6 @@ pub use led_system::*;
 pub use led_system_ext::*;
 
 pub mod prelude {
-  pub use crate::led_effect_modulation::*;
   pub use crate::led_identifications::*;
   pub use crate::led_identifications_ext::*;
   pub use crate::led_program_1d::*;
