@@ -21,7 +21,7 @@ use crate::hardware::ExpBoard;
 ///   hardware_defs! {
 ///     pub LEFT_INLANE: LedDefinition = LedDefinition::single("linlane")
 ///       .location(Vec2::new(3.4, 32.5).relative_to(&PLAYFIELD))
-///       .channels(LedChannels::GRBW);
+///       .channels(LedChannels::GRB);
 ///
 ///     pub LEFT_OUTLANE: LedDefinition = LedDefinition::single("loutlane")
 ///       .location(Vec2::new(2.125, 32.5).relative_to(&PLAYFIELD));

@@ -89,7 +89,8 @@ pub struct LedSystem {
   all_addresses: Vec<LedAddress>,
   // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.
   declarations: HashMap<LedAddress, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
-  prior_render: HashMap<LedAddress, Rgba<u8>>,
+  /// What each LED was last set to, so only LEDs that change are sent
+  prior_render: HashMap<LedAddress, Rgb>,
   conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
   monitored: HashSet<LedAddress>,
@@ -328,7 +329,7 @@ impl System for LedSystem {
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
-    let mut leds_to_set: Vec<(LedAddress, Rgba<u8>)> = Vec::new();
+    let mut leds_to_set: Vec<(LedAddress, Rgb)> = Vec::new();
 
     for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
@@ -357,12 +358,12 @@ impl System for LedSystem {
           log::info!(target: "frontbox::leds", "Setting led {:?} to {:?}", led, final_color);
         }
 
-        leds_to_set.push((led.clone(), final_color));
+        leds_to_set.push((led.clone(), final_color.to_rgb()));
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
         log::trace!(target: "frontbox::leds", "Turning off LED at {:?}", led);
-        leds_to_set.push((led.clone(), Rgba::default()));
+        leds_to_set.push((led.clone(), Rgb::black()));
       }
     }
 
@@ -381,16 +382,14 @@ impl System for LedSystem {
 
     if leds_to_set.len() > 0 {
       // group by address to send to machine
-      let outgoing: HashMap<ExpAddress, Vec<(u8, Rgba<u8>)>> =
+      let outgoing: HashMap<ExpAddress, Vec<(u8, Rgb)>> =
         leds_to_set
           .into_iter()
           .fold(HashMap::new(), |mut acc, (addr, color)| {
-            let channels = ctx.leds.color_channels_by_id(&addr);
-            let remapped_color = color.remap(channels);
             acc
               .entry(addr.exp)
               .or_insert_with(Vec::new)
-              .push((addr.index, remapped_color));
+              .push((addr.index, color));
             acc
           });
 

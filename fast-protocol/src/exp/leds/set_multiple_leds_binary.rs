@@ -10,12 +10,12 @@ use std::any::Any;
 pub struct SetMultipleLedsBinaryCommand {
   expansion_board: u8,
   breakout: Option<u8>,
-  color: Color,
+  color: Rgb,
   indexes: Vec<u8>,
 }
 
 impl SetMultipleLedsBinaryCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, color: Color, indexes: Vec<u8>) -> Self {
+  pub fn new(expansion_board: u8, breakout: Option<u8>, color: Rgb, indexes: Vec<u8>) -> Self {
     Self {
       expansion_board,
       breakout,
@@ -63,7 +63,7 @@ mod tests {
     let result = SetMultipleLedsBinaryCommand::new(
       0x48,
       None,
-      Color::rgb(0xFF, 0xFF, 0x00),
+      Rgb::new(0xFF, 0xFF, 0x00),
       vec![0x00, 0x01, 0x02, 0x03, 0x04],
     )
     .to_bytes();
@@ -76,7 +76,7 @@ mod tests {
   #[test]
   fn test_describe() {
     let result =
-      SetMultipleLedsBinaryCommand::new(0x48, None, Color::rgb(0xFF, 0xFF, 0x00), vec![0x00, 0x1A])
+      SetMultipleLedsBinaryCommand::new(0x48, None, Rgb::new(0xFF, 0xFF, 0x00), vec![0x00, 0x1A])
         .describe();
     assert_eq!(result, "RB@48:FFFF00,00,1A");
   }

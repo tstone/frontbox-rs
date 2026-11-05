@@ -1,7 +1,8 @@
 use axum::extract::ws::Utf8Bytes;
-use frontbox::prelude::app_tracer::{Color, ConfigView, TraceEvent, TracerControlEvent};
+use frontbox::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox::prelude::{
-  ConfigDomainValue, Hardware, RoutineCompleted, RoutineStarted, SystemDespawned, SystemSpawned,
+  ConfigDomainValue, Hardware, Rgb, RoutineCompleted, RoutineStarted, SystemDespawned,
+  SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
@@ -500,7 +501,7 @@ struct HubState {
   metrics: Option<MetricsDb>,
   led_names: LedNames,
   /// LED colors changed since the last `flush_leds`
-  pending_leds: BTreeMap<String, Color>,
+  pending_leds: BTreeMap<String, Rgb>,
 }
 
 /// (expansion board address, breakout, index) to LED name

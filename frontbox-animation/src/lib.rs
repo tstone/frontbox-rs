@@ -21,7 +21,7 @@
 //! ## Features
 //!
 //! - `image`: [`Lerp`] for `image::Rgba<u8>` and `image::RgbaImage`
-//! - `fast-protocol`: [`Lerp`] for `fast_protocol::Color`
+//! - `fast-protocol`: [`Lerp`] for `fast_protocol::Rgb`
 
 mod accumulator;
 mod curve;

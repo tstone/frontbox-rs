@@ -1,8 +1,6 @@
-use fast_protocol::Color;
+use fast_protocol::Rgb;
 use image::Rgba;
 use palette::{FromColor, Hsl, IntoColor, Srgb};
-
-use crate::prelude::LedChannels;
 
 /// ### Color (Rgba)
 ///
@@ -52,8 +50,7 @@ pub trait RgbaColor {
   fn off() -> Self;
   fn default() -> Self;
 
-  fn to_color(self) -> Color;
-  fn remap(self, channels: LedChannels) -> Self;
+  fn to_rgb(self) -> Rgb;
 
   fn mix(a: Self, b: Self, t: f32) -> Self;
   fn mix_with(&self, b: Self, t: f32) -> Self;
@@ -93,17 +90,10 @@ impl RgbaColor for Rgba<u8> {
     (0.299 * self[0] as f32 + 0.587 * self[1] as f32 + 0.114 * self[2] as f32) / 255.0
   }
 
-  fn to_color(self) -> Color {
-    Color::rgb(self[0], self[1], self[2])
-  }
-
-  /// Re-map the current color, based on given channel order
-  fn remap(self, channels: LedChannels) -> Self {
-    match channels {
-      LedChannels::RGB | LedChannels::RGBW => self,
-      LedChannels::BRG | LedChannels::BRGW => Rgba([self[2], self[0], self[1], 0]),
-      LedChannels::GRB | LedChannels::GRBW => Rgba([self[1], self[0], self[2], 0]),
-    }
+  /// The color an LED shows for this one, as if composited over an LED that's off: alpha dims it toward black
+  fn to_rgb(self) -> Rgb {
+    let [r, g, b, _] = self.composite_over(Self::black()).0;
+    Rgb::new(r, g, b)
   }
 
   /// Combine two colors, where `t` is the weight of `b` (0.0 = all `a`, 1.0 = all `b`)
@@ -303,4 +293,20 @@ fn from_hsl(hsl: Hsl, alpha: u8) -> Rgba<u8> {
   let srgb: Srgb<f32> = Srgb::from_color(hsl);
   let srgb_u8 = srgb.into_format::<u8>();
   Rgba([srgb_u8.red, srgb_u8.green, srgb_u8.blue, alpha])
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_to_rgb_keeps_opaque_colors() {
+    assert_eq!(Rgba([255, 128, 0, 255]).to_rgb(), Rgb::new(255, 128, 0));
+  }
+
+  #[test]
+  fn test_to_rgb_dims_translucent_colors_toward_off() {
+    assert_eq!(Rgba([255, 0, 200, 128]).to_rgb(), Rgb::new(128, 0, 100));
+    assert_eq!(Rgba::transparent().to_rgb(), Rgb::black());
+  }
 }

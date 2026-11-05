@@ -85,9 +85,10 @@ lerp_tuple!(
 );
 
 #[cfg(feature = "fast-protocol")]
-impl Lerp for fast_protocol::Color {
+impl Lerp for fast_protocol::Rgb {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
-    self.mix(other, t)
+    let [r, g, b] = [self.r, self.g, self.b].interpolate(&[other.r, other.g, other.b], t);
+    fast_protocol::Rgb::new(r, g, b)
   }
 }
 
@@ -168,6 +169,15 @@ mod tests {
     let from = image::Rgba([0, 255, 100, 255]);
     let to = image::Rgba([100, 55, 100, 0]);
     assert_eq!(from.interpolate(&to, 0.5), image::Rgba([50, 155, 100, 127]));
+  }
+
+  #[cfg(feature = "fast-protocol")]
+  #[test]
+  fn test_rgb_in_either_direction() {
+    let from = fast_protocol::Rgb::new(200, 0, 100);
+    let to = fast_protocol::Rgb::new(0, 200, 100);
+    assert_eq!(from.interpolate(&to, 0.5), fast_protocol::Rgb::new(100, 100, 100));
+    assert_eq!(to.interpolate(&from, 0.25), fast_protocol::Rgb::new(50, 150, 100));
   }
 
   #[test]

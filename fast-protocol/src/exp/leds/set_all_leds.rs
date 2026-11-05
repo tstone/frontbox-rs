@@ -6,11 +6,11 @@ use crate::*;
 pub struct SetAllLedsCommand {
   expansion_board: u8,
   breakout: Option<u8>,
-  color: Color,
+  color: Rgb,
 }
 
 impl SetAllLedsCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, color: Color) -> Self {
+  pub fn new(expansion_board: u8, breakout: Option<u8>, color: Rgb) -> Self {
     Self {
       expansion_board,
       breakout,
@@ -33,7 +33,7 @@ mod tests {
 
   #[test]
   fn test_request() {
-    let result = SetAllLedsCommand::new(0x48, None, Color::rgb(255, 0, 0)).to_string();
+    let result = SetAllLedsCommand::new(0x48, None, Rgb::new(255, 0, 0)).to_string();
     assert_eq!(result, "RA@48:FF0000\r");
   }
 }

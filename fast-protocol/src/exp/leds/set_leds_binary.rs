@@ -9,11 +9,11 @@ use std::any::Any;
 pub struct SetLedsBinaryCommand {
   expansion_board: u8,
   breakout: Option<u8>,
-  states: Vec<(u8, Color)>,
+  states: Vec<(u8, Rgb)>,
 }
 
 impl SetLedsBinaryCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u8, Color)>) -> Self {
+  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u8, Rgb)>) -> Self {
     Self {
       expansion_board,
       breakout,
@@ -61,9 +61,9 @@ mod tests {
       0x48,
       None,
       vec![
-        (0x01, Color::rgb(0xFF, 0x00, 0xFF)),
-        (0x24, Color::rgb(0xFF, 0xFF, 0x00)),
-        (0x7A, Color::rgb(0x00, 0x00, 0xFF)),
+        (0x01, Rgb::new(0xFF, 0x00, 0xFF)),
+        (0x24, Rgb::new(0xFF, 0xFF, 0x00)),
+        (0x7A, Rgb::new(0x00, 0x00, 0xFF)),
       ],
     )
     .to_bytes();
@@ -81,8 +81,8 @@ mod tests {
       0x48,
       None,
       vec![
-        (0x01, Color::rgb(0xFF, 0x00, 0xFF)),
-        (0x24, Color::rgb(0xFF, 0xFF, 0x00)),
+        (0x01, Rgb::new(0xFF, 0x00, 0xFF)),
+        (0x24, Rgb::new(0xFF, 0xFF, 0x00)),
       ],
     )
     .describe();
@@ -91,7 +91,7 @@ mod tests {
 
   #[test]
   fn test_request_splits_over_max_count() {
-    let states = (0..130).map(|i| (i as u8, Color::black())).collect();
+    let states = (0..130).map(|i| (i as u8, Rgb::black())).collect();
     let result = SetLedsBinaryCommand::new(0x48, None, states).to_bytes();
 
     // Two frames: 127 LEDs then 3 LEDs, each LED being 4 bytes

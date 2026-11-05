@@ -252,18 +252,13 @@ impl MachineSystem {
     }
   }
 
-  /// Set the color of multiple LEDs in a single command (RD)
+  /// Set the color of multiple LEDs in a single command (RD). Colors are already in each LED's channel order.
   pub(crate) fn set_leds(
     &self,
     expansion_id: u8,
     breakout: Option<u8>,
-    led_states: Vec<(u8, Rgba<u8>)>,
+    led_states: Vec<(u8, Rgb)>,
   ) {
-    let led_states = led_states
-      .iter()
-      .map(|(index, color)| (*index, color.to_color()))
-      .collect::<Vec<_>>();
-
     if cfg!(debug_assertions) {
       self
         .app_sender
@@ -288,12 +283,12 @@ impl MachineSystem {
       .ok();
   }
 
-  /// Set multiple LEDs on a port/breakout to the same color (RB)
+  /// Set multiple LEDs on a port/breakout to the same color (RB), already in their channel order
   pub(crate) fn set_multiple_leds(
     &self,
     expansion_id: u8,
     breakout: Option<u8>,
-    rgba: Rgba<u8>,
+    color: Rgb,
     indexes: Vec<u8>,
   ) {
     if cfg!(debug_assertions) {
@@ -305,7 +300,7 @@ impl MachineSystem {
           states: indexes
             .clone()
             .into_iter()
-            .map(|index| (index, rgba.to_color()))
+            .map(|index| (index, color))
             .collect(),
         }))
         .ok();
@@ -318,26 +313,22 @@ impl MachineSystem {
         command: Box::new(SetMultipleLedsBinaryCommand::new(
           expansion_id,
           breakout,
-          rgba.to_color(),
+          color,
           indexes,
         )),
       })
       .ok();
   }
 
-  /// Set all LEDs on a port/breakout to the same color (RA)
-  pub(crate) fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
+  /// Set all LEDs on a port/breakout to the same color (RA), already in their channel order
+  pub(crate) fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb) {
     // TODO: tracer support
 
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetAllLedsCommand::new(
-          expansion_id,
-          breakout,
-          rgba.to_color(),
-        )),
+        command: Box::new(SetAllLedsCommand::new(expansion_id, breakout, color)),
       })
       .ok();
   }

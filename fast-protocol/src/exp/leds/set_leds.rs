@@ -6,11 +6,11 @@ use crate::*;
 pub struct SetLedsCommand {
   expansion_board: u8,
   breakout: Option<u8>,
-  states: Vec<(u16, Color)>,
+  states: Vec<(u16, Rgb)>,
 }
 
 impl SetLedsCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u16, Color)>) -> Self {
+  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u16, Rgb)>) -> Self {
     Self {
       expansion_board,
       breakout,
@@ -42,7 +42,7 @@ mod tests {
     let result = SetLedsCommand::new(
       0x48,
       None,
-      vec![(0, Color::rgb(255, 0, 0)), (1, Color::rgb(0, 255, 0))],
+      vec![(0, Rgb::new(255, 0, 0)), (1, Rgb::new(0, 255, 0))],
     )
     .to_string();
     assert_eq!(result, "RS@48:00FF0000,0100FF00\r");

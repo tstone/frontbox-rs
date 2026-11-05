@@ -9,15 +9,16 @@ use crate::prelude::*;
 pub struct LedLookup {
   by_name: HashMap<String, LED>,
   configs: HashMap<String, LedConfiguration>,
+  /// Keyed the way the hardware sets LEDs: (board address, breakout, index)
   #[serde(skip)] // redundant with by_name for web console
-  channel_by_address: HashMap<LedAddress, LedChannels>,
+  channels_by_index: HashMap<(u8, Option<u8>, u8), LedChannels>,
 }
 
 impl LedLookup {
   pub fn new(boards: &Vec<ResolvedExpansionBoard>) -> Self {
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
-    let mut channel_by_address = HashMap::new();
+    let mut channels_by_index = HashMap::new();
 
     for board in boards {
       for port in &board.led_ports {
@@ -27,12 +28,16 @@ impl LedLookup {
             index: led.id as u8,
           };
 
-          let channel = if let Some(config) = &led.definition.config {
-            config.channels
-          } else {
-            LedChannels::default()
-          };
-          channel_by_address.insert(address.clone(), channel);
+          let channels = led
+            .definition
+            .config
+            .as_ref()
+            .map(|config| config.channels)
+            .unwrap_or_default();
+          channels_by_index.insert(
+            (address.board(), address.breakout(), address.index),
+            channels,
+          );
 
           by_name.insert(
             led.definition.name.to_string(),
@@ -56,7 +61,7 @@ impl LedLookup {
     Self {
       by_name,
       configs,
-      channel_by_address,
+      channels_by_index,
     }
   }
 
@@ -137,11 +142,26 @@ impl LedLookup {
       .and_then(|led| self.configs.get(&led.name))
   }
 
-  pub(crate) fn color_channels_by_id(&self, addr: &LedAddress) -> LedChannels {
-    match self.channel_by_address.get(&addr) {
-      Some(channels) => *channels,
-      None => LedChannels::default(),
-    }
+  /// The channel order of the LED at `index` on a board's breakout, or the default for an LED that isn't defined
+  pub(crate) fn channels_at(&self, board: u8, breakout: Option<u8>, index: u8) -> LedChannels {
+    self
+      .channels_by_index
+      .get(&(board, breakout, index))
+      .copied()
+      .unwrap_or_default()
+  }
+
+  /// The index and channel order of every LED defined on a board's breakout
+  pub(crate) fn channels_on(
+    &self,
+    board: u8,
+    breakout: Option<u8>,
+  ) -> impl Iterator<Item = (u8, LedChannels)> + '_ {
+    self
+      .channels_by_index
+      .iter()
+      .filter(move |((b, bo, _), _)| *b == board && *bo == breakout)
+      .map(|((_, _, index), channels)| (*index, *channels))
   }
 }
 

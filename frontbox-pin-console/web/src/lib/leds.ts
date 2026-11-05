@@ -1,18 +1,17 @@
 import { machine } from '../state/console'
-import type { Color } from '../types/generated/Color'
 import type { LedChannels } from '../types/generated/LedChannels'
+import type { Rgb } from '../types/generated/Rgb'
 
 /**
  * Colors are traced in the order they're sent on the wire, which depends on how each LED is wired (GRB, BRG, ...).
- * This puts them back in red, green, blue order. Mirrors `remap` in frontbox/src/led/rgba_color.rs.
+ * This puts them back in red, green, blue order. Mirrors `LedChannels::reorder` in
+ * frontbox/src/hardware/exp/led_channels.rs.
  */
-function toRgb({ r: first, g: second, b: third }: Color, channels: LedChannels): Color {
+function toRgb({ r: first, g: second, b: third }: Rgb, channels: LedChannels): Rgb {
   switch (channels) {
     case 'GRB':
-    case 'GRBW':
       return { r: second, g: first, b: third }
     case 'BRG':
-    case 'BRGW':
       return { r: second, g: third, b: first }
     default:
       return { r: first, g: second, b: third }

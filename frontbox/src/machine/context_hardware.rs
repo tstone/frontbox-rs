@@ -141,31 +141,54 @@ impl<'a> ContextLeds<'a> {
     }
   }
 
-  /// Set the color of each LED, by index on the port/breakout, in a single command (RD)
-  pub fn set(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, Rgba<u8>)>) {
+  /// Set the color of each LED, by index on the port/breakout, in a single command (RD). Each color is put into the
+  /// channel order of its LED.
+  pub fn set(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, Rgb)>) {
+    let leds = &self.machine.base.leds;
+    let led_states = led_states
+      .into_iter()
+      .map(|(index, color)| {
+        let channels = leds.channels_at(expansion_id, breakout, index);
+        (index, channels.reorder(color))
+      })
+      .collect();
     self
       .machine
       .with(|machine, _| machine.set_leds(expansion_id, breakout, led_states));
   }
 
-  /// Set the LEDs at `indexes` on a port/breakout to the same color (RB)
-  pub fn set_multiple(
-    &self,
-    expansion_id: u8,
-    breakout: Option<u8>,
-    rgba: Rgba<u8>,
-    indexes: Vec<u8>,
-  ) {
-    self
-      .machine
-      .with(|machine, _| machine.set_multiple_leds(expansion_id, breakout, rgba, indexes));
+  /// Set the LEDs at `indexes` on a port/breakout to the same color (RB). LEDs that take their channels in different
+  /// orders are sent in a command per order.
+  pub fn set_multiple(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb, indexes: Vec<u8>) {
+    let leds = &self.machine.base.leds;
+    let groups = group_by_channels(
+      indexes
+        .into_iter()
+        .map(|index| (index, leds.channels_at(expansion_id, breakout, index))),
+    );
+    self.machine.with(|machine, _| {
+      for (channels, indexes) in groups {
+        machine.set_multiple_leds(expansion_id, breakout, channels.reorder(color), indexes);
+      }
+    });
   }
 
-  /// Set every LED on a port/breakout to the same color (RA)
-  pub fn set_all(&self, expansion_id: u8, breakout: Option<u8>, rgba: Rgba<u8>) {
-    self
-      .machine
-      .with(|machine, _| machine.set_all_leds(expansion_id, breakout, rgba));
+  /// Set every LED on a port/breakout to the same color (RA). The color is sent in the channel order most of its
+  /// LEDs take, then LEDs that take another order are set again in theirs (RB).
+  pub fn set_all(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb) {
+    let mut groups = group_by_channels(self.machine.base.leds.channels_on(expansion_id, breakout));
+    groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
+    let base = groups
+      .first()
+      .map(|(channels, _)| *channels)
+      .unwrap_or_default();
+
+    self.machine.with(|machine, _| {
+      machine.set_all_leds(expansion_id, breakout, base.reorder(color));
+      for (channels, indexes) in groups.into_iter().skip(1) {
+        machine.set_multiple_leds(expansion_id, breakout, channels.reorder(color), indexes);
+      }
+    });
   }
 
   /// Set the white channel of each LED, by index on the port/breakout, in a single command (RZ)
@@ -214,5 +237,40 @@ impl MachineAccess<'_> {
         None
       }
     }
+  }
+}
+
+/// Group LED indexes by the channel order their LEDs take, keeping the order each first appears in
+fn group_by_channels(leds: impl Iterator<Item = (u8, LedChannels)>) -> Vec<(LedChannels, Vec<u8>)> {
+  let mut groups: Vec<(LedChannels, Vec<u8>)> = Vec::new();
+  for (index, channels) in leds {
+    match groups.iter_mut().find(|(c, _)| *c == channels) {
+      Some((_, indexes)) => indexes.push(index),
+      None => groups.push((channels, vec![index])),
+    }
+  }
+  groups
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_group_by_channels() {
+    let leds = [
+      (0, LedChannels::GRB),
+      (1, LedChannels::RGB),
+      (2, LedChannels::GRB),
+      (3, LedChannels::BRG),
+    ];
+    assert_eq!(
+      group_by_channels(leds.into_iter()),
+      vec![
+        (LedChannels::GRB, vec![0, 2]),
+        (LedChannels::RGB, vec![1]),
+        (LedChannels::BRG, vec![3]),
+      ]
+    );
   }
 }

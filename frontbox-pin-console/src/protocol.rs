@@ -2,8 +2,9 @@ use frontbox::prelude::ConfigDomainValue;
 use frontbox::prelude::DriverMode;
 use frontbox::prelude::GroupId;
 use frontbox::prelude::Hardware;
+use frontbox::prelude::Rgb;
 use frontbox::prelude::SwitchState;
-use frontbox::prelude::app_tracer::{Color, ConfigView, DriverState, TraceEvent};
+use frontbox::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
@@ -33,7 +34,7 @@ pub struct Snapshot {
   /// Routines in progress, oldest first
   pub routines: Vec<RoutineProgress>,
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
-  pub led_colors: BTreeMap<String, Color>,
+  pub led_colors: BTreeMap<String, Rgb>,
   pub planes: Vec<PlaneView>,
   /// Operator configs in use, by key, with their current values
   pub configs: BTreeMap<&'static str, ConfigView>,
@@ -104,7 +105,7 @@ pub struct PlaneView {
 
 #[derive(Clone, serde::Serialize, TS)]
 pub struct LedColors {
-  pub colors: BTreeMap<String, Color>,
+  pub colors: BTreeMap<String, Rgb>,
 }
 
 /// Operator configs that were first used or changed

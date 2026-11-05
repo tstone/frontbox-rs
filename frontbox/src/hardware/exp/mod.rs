@@ -1,6 +1,7 @@
 mod exp_board;
 mod exp_network;
 mod led;
+mod led_channels;
 mod led_definition;
 mod led_layout;
 mod led_lookup;
@@ -12,6 +13,7 @@ mod single_led_definition_builder;
 pub use exp_board::*;
 pub use exp_network::*;
 pub use led::*;
+pub use led_channels::*;
 pub use led_definition::*;
 pub use led_layout::*;
 pub use led_lookup::*;

@@ -1,5 +1,3 @@
-/// The color type in `TraceEvent::LedsRGBChange`, re-exported so tracers can name it
-pub use fast_protocol::Color;
 use fast_protocol::SwitchState;
 use tokio::sync::mpsc;
 
@@ -72,7 +70,7 @@ pub enum TraceEvent {
   LedsRGBChange {
     expansion: u8,
     breakout: Option<u8>,
-    states: Vec<(u8, Color)>,
+    states: Vec<(u8, Rgb)>,
   },
   ConfigsInUse {
     configs: Vec<ConfigView>,
