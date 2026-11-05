@@ -30,8 +30,6 @@ pub enum Curve {
   /// Discrete steps instead of a continuous curve, with the given number of steps
   Steps(usize),
   Constant(f32),
-  /// Flips the curve vertically, `1 - c(phase)`
-  Reverse(Box<Self>),
   /// Runs the curve backwards in time and flips it, `1 - c(1 - phase)`, turning an ease-in into an ease-out. Over
   /// reversed stops this plays the original curve backwards; see [`Tween::reverse`](crate::Tween::reverse).
   Reflect(Box<Self>),
@@ -61,14 +59,9 @@ impl Curve {
       Self::Random => rand::random::<f32>(),
       // should steps be a quantization of an existing Curve?
       Self::Steps(steps) => sample_steps(steps.saturating_sub(1).clamp(1, usize::MAX), phase),
-      Self::Reverse(other) => 1.0 - other.sample(phase),
       Self::Reflect(other) => 1.0 - other.sample(1.0 - phase),
       Self::Remap(a, b) => a.sample(phase) * b.sample(phase),
     }
-  }
-
-  pub fn reverse(self) -> Self {
-    Curve::Reverse(Box::new(self))
   }
 
   /// Wraps the curve in [`Curve::Reflect`], unwrapping it instead if it's already reflected

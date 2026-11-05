@@ -16,6 +16,8 @@ where
   A: Copy + Default + PartialEq,
 {
   pub fn new(sequence: Vec<Box<dyn Animation<A, T>>>, cycle: Cycle) -> Self {
+    assert!(!sequence.is_empty(), "Sequence requires at least 1 animation");
+
     Self {
       sequence,
       current_anim_index: 0,
@@ -133,7 +135,7 @@ where
   A: Copy + Default + PartialEq,
 {
   fn sample(&self) -> T {
-    self.sequence.get(self.current_anim_index).unwrap().sample()
+    self.sequence[self.current_anim_index].sample()
   }
 
   fn stop(&mut self) {
@@ -166,6 +168,12 @@ mod tests {
       ],
       cycle,
     )
+  }
+
+  #[test]
+  #[should_panic(expected = "at least 1 animation")]
+  fn test_empty_sequence_is_rejected() {
+    Sequence::<f32, f32>::new(Vec::new(), Cycle::Once);
   }
 
   #[test]
