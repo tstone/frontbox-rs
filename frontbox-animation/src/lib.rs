@@ -26,6 +26,8 @@
 mod accumulator;
 mod curve;
 mod cycle;
+mod delay;
+mod hold;
 mod lerp;
 mod modulation;
 mod modulator;
@@ -37,6 +39,8 @@ mod tweenable;
 pub use accumulator::*;
 pub use curve::*;
 pub use cycle::*;
+pub use delay::*;
+pub use hold::*;
 pub use lerp::*;
 pub use modulation::*;
 pub use modulator::*;
