@@ -86,22 +86,14 @@ impl Lerp for Fill1d {
     match (self, other) {
       (Fill1d::Gradient { stops: a }, Fill1d::Gradient { stops: b }) if a.len() == b.len() => {
         Fill1d::Gradient {
-          stops: a
-            .iter()
-            .zip(b)
-            .map(|(sa, sb)| sa.interpolate(sb, t))
-            .collect(),
+          stops: a.interpolate(b, t),
         }
       }
       (Fill1d::Pattern { pattern: a, cycle }, Fill1d::Pattern { pattern: b, .. })
         if a.len() == b.len() =>
       {
         Fill1d::Pattern {
-          pattern: a
-            .iter()
-            .zip(b)
-            .map(|(ca, cb)| ca.interpolate(cb, t))
-            .collect(),
+          pattern: a.interpolate(b, t),
           cycle: cycle.clone(),
         }
       }

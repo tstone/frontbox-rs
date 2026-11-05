@@ -273,6 +273,60 @@ mod tests {
   }
 
   #[test]
+  fn test_stop_pauses_mid_child() {
+    let mut seq = two_steps(Cycle::Once);
+
+    seq.accumulate(1.5);
+    seq.stop();
+    assert!(!seq.active());
+    seq.accumulate(0.25);
+    assert_eq!(seq.sample(), 15.0);
+
+    seq.play();
+    seq.accumulate(0.25);
+    assert_eq!(seq.sample(), 17.5);
+  }
+
+  #[test]
+  fn test_stopped_waits_for_play() {
+    let mut seq = two_steps(Cycle::Once).stopped();
+
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 0.0);
+
+    seq.play();
+    seq.accumulate(0.5);
+    assert_eq!(seq.sample(), 5.0);
+  }
+
+  #[test]
+  fn test_reset_after_completing_replays() {
+    let mut seq = two_steps(Cycle::Once);
+
+    seq.accumulate(2.0);
+    assert!(seq.is_complete());
+
+    seq.reset();
+    assert!(!seq.is_complete());
+    seq.accumulate(1.5);
+    assert_eq!(seq.sample(), 15.0);
+  }
+
+  #[test]
+  fn test_nested_sequences() {
+    let mut seq: Sequence<f32, f32> = Sequence::new(
+      vec![
+        Box::new(two_steps(Cycle::Once)),
+        Tween::boxed(1.0, Curve::Linear, vec![20.0, 0.0], Cycle::Once),
+      ],
+      Cycle::Once,
+    );
+
+    seq.accumulate(2.5);
+    assert_eq!(seq.sample(), 10.0);
+  }
+
+  #[test]
   fn test_zero_length_children_do_not_hang() {
     let mut seq: Sequence<f32, f32> = Sequence::new(
       vec![

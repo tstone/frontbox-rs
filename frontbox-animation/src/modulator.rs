@@ -96,3 +96,63 @@ where
     self.animation.stop();
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn ramp() -> Modulator<f32, f32, f32> {
+    Modulator::new(
+      Tween::new(1.0, Curve::Linear, vec![0.0, 10.0], Cycle::Once),
+      |target: &mut f32, value| *target = value,
+    )
+  }
+
+  #[test]
+  fn test_apply_sets_target() {
+    let mut modulator = ramp();
+    let mut value = -1.0;
+
+    modulator.apply(0.25, &mut value);
+    assert_eq!(value, 2.5);
+
+    modulator.apply(0.25, &mut value);
+    assert_eq!(value, 5.0);
+  }
+
+  #[test]
+  fn test_stopped_still_sets_current_value() {
+    let mut modulator = ramp();
+    let mut value = 0.0;
+
+    modulator.apply(0.5, &mut value);
+    modulator.stop();
+    value = -1.0;
+    modulator.apply(0.25, &mut value);
+    assert_eq!(value, 5.0);
+
+    modulator.play();
+    modulator.apply(0.25, &mut value);
+    assert_eq!(value, 7.5);
+  }
+
+  #[test]
+  fn test_accumulator_forwards_to_animation() {
+    let mut modulator = ramp();
+    let mut value = 0.0;
+
+    modulator.force(0.75);
+    modulator.apply(0.0, &mut value);
+    assert_eq!(value, 7.5);
+
+    let result = modulator.accumulate(0.5);
+    assert!(result.completed_cycle);
+    assert_eq!(result.remainder, 0.25);
+    assert!(modulator.is_complete());
+
+    modulator.reset();
+    assert!(!modulator.is_complete());
+    modulator.apply(0.0, &mut value);
+    assert_eq!(value, 0.0);
+  }
+}

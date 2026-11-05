@@ -435,6 +435,21 @@ mod tests {
   }
 
   #[test]
+  fn test_wide_integer_targets() {
+    let mut a = Tween::new(10u64, Curve::Linear, vec![0.0, 100.0], Cycle::Once);
+    a.accumulate(5);
+    assert_eq!(a.sample(), 50.0);
+
+    let mut b = Tween::new(10i64, Curve::Linear, vec![0.0, 100.0], Cycle::Once);
+    b.accumulate(5);
+    assert_eq!(b.sample(), 50.0);
+
+    let mut c = Tween::new(10usize, Curve::Linear, vec![0.0, 100.0], Cycle::Once);
+    c.accumulate(5);
+    assert_eq!(c.sample(), 50.0);
+  }
+
+  #[test]
   fn test_integer_target_is_not_truncated() {
     let mut tween = Tween::new(10u32, Curve::Linear, vec![0.0f32, 1.0, 2.0, 3.0], Cycle::Once);
 

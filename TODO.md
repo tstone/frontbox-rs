@@ -16,6 +16,7 @@
 - Implement a proper LampDriver that also supports flashing
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
+- fast-protocol probably should take RGB or RGBW not "Color"
 
 ## Pinball features
 

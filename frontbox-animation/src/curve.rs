@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, fmt::Debug};
+use std::{f32::consts::PI, fmt, sync::Arc};
 
 /// Overshoot amount for the Back curves
 const BACK_C1: f32 = 1.70158;
@@ -27,15 +27,19 @@ pub enum Curve {
   BounceInOut,
   /// A new random value on every sample, ignoring phase
   Random,
-  /// Discrete steps instead of a continuous curve, with the given number of steps
+  /// Discrete steps instead of a continuous curve, with the given number of steps. Compose another curve into it to
+  /// quantize that curve instead, e.g. `Curve::EaseIn.compose(Curve::Steps(4))`
   Steps(usize),
   Constant(f32),
   /// Runs the curve backwards in time and flips it, `1 - c(1 - phase)`, turning an ease-in into an ease-out. Over
   /// reversed stops this plays the original curve backwards; see [`Tween::reverse`](crate::Tween::reverse).
   Reflect(Box<Self>),
-  /// Combines two curves by multiplying their outputs together, allowing for complex interactions between curve shapes
-  /// e.g. Remap(Random, EaseIn) for a flicker that grows in intensity
-  Remap(Box<Self>, Box<Self>),
+  /// Multiplies the outputs of two curves, e.g. `Multiply(Random, EaseIn)` for a flicker that grows in intensity
+  Multiply(Box<Self>, Box<Self>),
+  /// Feeds the output of the first curve into the second, `second(first(phase))`
+  Compose(Box<Self>, Box<Self>),
+  /// A curve the built-in list doesn't cover; see [`Curve::custom`]
+  Custom(CustomCurve),
 }
 
 impl Curve {
@@ -57,10 +61,11 @@ impl Curve {
       Self::BackOut => 1.0 + BACK_C3 * (phase - 1.0).powi(3) + BACK_C1 * (phase - 1.0).powi(2),
       Self::BackInOut => sample_back_inout(phase),
       Self::Random => rand::random::<f32>(),
-      // should steps be a quantization of an existing Curve?
       Self::Steps(steps) => sample_steps(steps.saturating_sub(1).clamp(1, usize::MAX), phase),
       Self::Reflect(other) => 1.0 - other.sample(1.0 - phase),
-      Self::Remap(a, b) => a.sample(phase) * b.sample(phase),
+      Self::Multiply(a, b) => a.sample(phase) * b.sample(phase),
+      Self::Compose(first, second) => second.sample(first.sample(phase)),
+      Self::Custom(f) => (f.0)(phase),
     }
   }
 
@@ -73,8 +78,35 @@ impl Curve {
     }
   }
 
-  pub fn remap(self, other: Self) -> Self {
-    Curve::Remap(Box::new(self), Box::new(other))
+  /// Multiplies this curve's output by `other`'s; see [`Curve::Multiply`]
+  pub fn multiply(self, other: Self) -> Self {
+    Curve::Multiply(Box::new(self), Box::new(other))
+  }
+
+  /// Feeds this curve's output into `next`, `next(self(phase))`; see [`Curve::Compose`]
+  pub fn compose(self, next: Self) -> Self {
+    Curve::Compose(Box::new(self), Box::new(next))
+  }
+
+  /// A curve from a function of phase, usually returning 0 at phase 0 and 1 at phase 1
+  ///
+  /// ```rust
+  /// # use frontbox_animation::*;
+  /// let smoothstep = Curve::custom(|x| x * x * (3.0 - 2.0 * x));
+  /// assert_eq!(smoothstep.sample(0.5), 0.5);
+  /// ```
+  pub fn custom(f: impl Fn(f32) -> f32 + Send + Sync + 'static) -> Self {
+    Curve::Custom(CustomCurve(Arc::new(f)))
+  }
+}
+
+/// The function behind [`Curve::Custom`], made with [`Curve::custom`]
+#[derive(Clone)]
+pub struct CustomCurve(Arc<dyn Fn(f32) -> f32 + Send + Sync>);
+
+impl fmt::Debug for CustomCurve {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.write_str("CustomCurve")
   }
 }
 
@@ -198,5 +230,35 @@ mod tests {
       .fold(f32::MIN, f32::max);
     assert!((-0.11..-0.09).contains(&min_in), "BackIn min = {min_in}");
     assert!((1.09..1.11).contains(&max_out), "BackOut max = {max_out}");
+  }
+
+  #[test]
+  fn multiply_multiplies_outputs() {
+    let curve = Curve::Linear.multiply(Curve::Constant(0.5));
+    assert_eq!(curve.sample(0.5), 0.25);
+    assert_eq!(curve.sample(1.0), 0.5);
+  }
+
+  #[test]
+  fn compose_feeds_first_into_second() {
+    // EaseIn(0.5) = 0.25, then Steps(5) snaps 0.25 to the nearest quarter
+    let curve = Curve::EaseIn.compose(Curve::Steps(5));
+    assert_eq!(curve.sample(0.5), 0.25);
+    assert_eq!(curve.sample(0.6), 0.25);
+    assert_eq!(curve.sample(1.0), 1.0);
+
+    // order matters: Steps first, then EaseIn
+    let curve = Curve::Steps(5).compose(Curve::EaseIn);
+    assert_eq!(curve.sample(0.5), 0.25);
+    assert_eq!(curve.sample(0.6), 0.25);
+    assert_eq!(curve.sample(0.7), 0.5625);
+  }
+
+  #[test]
+  fn custom_samples_the_function() {
+    let curve = Curve::custom(|x| 1.0 - x);
+    assert_eq!(curve.sample(0.0), 1.0);
+    assert_eq!(curve.sample(0.25), 0.75);
+    assert_eq!(format!("{:?}", curve.clone()), "Custom(CustomCurve)");
   }
 }

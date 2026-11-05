@@ -20,7 +20,7 @@
 //!
 //! ## Features
 //!
-//! - `image`: [`Lerp`] for `image::Rgba<u8>`, `Vec<image::Rgba<u8>>`, and `image::RgbaImage`
+//! - `image`: [`Lerp`] for `image::Rgba<u8>` and `image::RgbaImage`
 //! - `fast-protocol`: [`Lerp`] for `fast_protocol::Color`
 
 mod accumulator;
