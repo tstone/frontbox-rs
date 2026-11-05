@@ -3,85 +3,23 @@ pub trait Lerp {
   fn interpolate(&self, other: &Self, t: f32) -> Self;
 }
 
-impl Lerp for u8 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as u8
-  }
+/// Integers move by an offset from `self`, so `t = 0` returns `self` exactly, and results past either end (e.g. from
+/// `Curve::BackOut`) clamp to the type's range
+macro_rules! lerp_integer {
+  ($($t:ty),*) => {
+    $(
+      impl Lerp for $t {
+        fn interpolate(&self, other: &Self, t: f32) -> Self {
+          let from = *self as i128;
+          let offset = ((*other as i128 - from) as f64 * t as f64).round() as i128;
+          (from + offset).clamp(<$t>::MIN as i128, <$t>::MAX as i128) as $t
+        }
+      }
+    )*
+  };
 }
 
-impl Lerp for u16 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as u16
-  }
-}
-
-impl Lerp for u32 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as u32
-  }
-}
-
-impl Lerp for u64 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f64;
-    let to = *other as f64;
-    (from + (to - from) * t as f64).round() as u64
-  }
-}
-
-impl Lerp for usize {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f64;
-    let to = *other as f64;
-    (from + (to - from) * t as f64).round() as usize
-  }
-}
-
-impl Lerp for i8 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as i8
-  }
-}
-
-impl Lerp for i16 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as i16
-  }
-}
-
-impl Lerp for i32 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f32;
-    let to = *other as f32;
-    (from + (to - from) * t).round() as i32
-  }
-}
-
-impl Lerp for i64 {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f64;
-    let to = *other as f64;
-    (from + (to - from) * t as f64).round() as i64
-  }
-}
-
-impl Lerp for isize {
-  fn interpolate(&self, other: &Self, t: f32) -> Self {
-    let from = *self as f64;
-    let to = *other as f64;
-    (from + (to - from) * t as f64).round() as isize
-  }
-}
+lerp_integer!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 
 impl Lerp for f32 {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
@@ -151,5 +89,24 @@ impl Lerp for image::RgbaImage {
     }
 
     buffer
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn test_large_integers_keep_precision() {
+    assert_eq!(100_000_000u32.interpolate(&100_000_010, 0.5), 100_000_005);
+    assert_eq!(1_000_000_000_000i64.interpolate(&1_000_000_000_010, 0.5), 1_000_000_000_005);
+    assert_eq!(u64::MAX.interpolate(&(u64::MAX - 10), 0.5), u64::MAX - 5);
+  }
+
+  #[test]
+  fn test_integers_clamp_past_either_end() {
+    assert_eq!(0u8.interpolate(&255, 1.2), 255);
+    assert_eq!(0u8.interpolate(&255, -0.2), 0);
+    assert_eq!(10i8.interpolate(&20, 0.5), 15);
   }
 }

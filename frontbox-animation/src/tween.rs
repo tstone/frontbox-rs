@@ -6,15 +6,18 @@ use crate::*;
 /// Animation implementation that interpolates (lerps) between two values of type T over a specified quantity using a given curve
 #[derive(Clone)]
 pub struct Tween<A: Tweenable + Copy + Default + Debug, T: Lerp + Clone + Send + Sync> {
-  // the amount which signals this animation is done
+  /// The accumulated amount for one cycle through all of the stops
   pub target: A,
   pub active: bool,
-  current: A,
   pub curve: Curve,
   pub stops: Vec<T>,
   pub cycle: Cycle,
+  /// Progress through the current cycle, from zero up to `target`
+  current: A,
   cycle_count: u32,
-  current_stop_index: usize,
+  /// Set when a cycle ends exactly on `target`, or the tween is complete, so `sample()` holds the end of the last stop
+  /// rather than jumping back to the first. The next advance starts the new cycle.
+  at_end: bool,
 }
 
 impl<A, T> Tween<A, T>
@@ -32,19 +35,20 @@ where
     + Debug
     + 'static,
 {
-  /// *target* - Accumulated value to get to, e.g. Duration::from_secs(1) = animation lasts for a minute
+  /// *target* - The accumulated amount for one cycle through all of the stops, e.g. `Duration::from_secs(1)` moves
+  /// through every stop in one second
   pub fn new(target: A, curve: Curve, stops: Vec<T>, cycle: Cycle) -> Self {
     assert!(stops.len() >= 2, "Tween requires at least 2 stops");
 
     Self {
-      target: target.div_usize(stops.len() - 1),
+      target,
       current: A::default(),
       active: true,
       curve,
       stops,
       cycle,
       cycle_count: 0,
-      current_stop_index: 0,
+      at_end: false,
     }
   }
 
@@ -79,18 +83,6 @@ where
     Box::new(Self::new(target, curve, stops, cycle))
   }
 
-  fn last_stop(&self) -> usize {
-    self.stops.len() - 1
-  }
-
-  fn next_index(&self) -> usize {
-    let idx = self.current_stop_index + 1;
-    if idx == self.stops.len() {
-      return 0;
-    }
-    idx
-  }
-
   /// Turns the tween into the original played backwards: the stops run in reverse order, and each segment's curve
   /// runs backwards in time (an ease-in becomes an ease-out). Progress and completed cycles are reset, so it plays
   /// from the start of the reversed path.
@@ -100,7 +92,11 @@ where
     self.reset();
   }
 
+  /// The amount left in the current cycle, or zero once the tween is complete
   pub fn remaining(&self) -> A {
+    if self.is_complete() {
+      return A::default();
+    }
     self.target - self.current
   }
 }
@@ -125,11 +121,10 @@ where
     }
 
     let mut result = AccumulationResult::default();
-    let last_stop = self.stops.len() - 1;
 
     // A zero-length tween completes as soon as it's advanced
     if self.target <= A::default() {
-      self.current_stop_index = last_stop;
+      self.at_end = true;
       self.cycle_count = match self.cycle {
         Cycle::Once => 1,
         Cycle::Times(n) => n,
@@ -140,23 +135,15 @@ where
       return result;
     }
 
-    // When a cycle ends exactly on the target, the tween parks on the last stop so `sample()` returns it rather than
-    // jumping back to the first. The next advance starts the new cycle.
-    if delta > A::default() && self.current == A::default() && self.current_stop_index >= last_stop {
-      self.current_stop_index = 0;
+    if delta > A::default() {
+      self.at_end = false;
     }
 
     self.current = self.current + delta;
 
-    // A single delta may cover several segments, or several cycles
+    // A single delta may cover several cycles
     while self.current >= self.target {
       self.current = self.current - self.target;
-      self.current_stop_index += 1;
-
-      if self.current_stop_index < last_stop {
-        continue;
-      }
-
       result.completed_cycle = true;
       if self.cycle != Cycle::Forever {
         self.cycle_count = self.cycle_count.saturating_add(1);
@@ -165,11 +152,12 @@ where
       if self.is_complete() {
         result.remainder = self.current;
         self.current = A::default();
+        self.at_end = true;
         break;
       }
 
-      if self.current > A::default() {
-        self.current_stop_index = 0;
+      if self.current == A::default() {
+        self.at_end = true;
       }
     }
 
@@ -187,11 +175,12 @@ where
   fn reset(&mut self) {
     self.current = A::default();
     self.cycle_count = 0;
-    self.current_stop_index = 0;
+    self.at_end = false;
   }
 
   fn force(&mut self, current: A) {
     self.current = current;
+    self.at_end = false;
   }
 }
 
@@ -211,17 +200,23 @@ where
     + 'static,
 {
   fn sample(&self) -> T {
-    // Parked at the end of the last segment, either between cycles or complete
-    if self.current_stop_index >= self.last_stop() {
-      let last = self.last_stop();
-      return self.stops[last - 1].interpolate(&self.stops[last], self.curve.sample(1.0));
+    let segments = self.stops.len() - 1;
+
+    if self.at_end {
+      return self.stops[segments - 1].interpolate(&self.stops[segments], self.curve.sample(1.0));
     }
 
-    let phase = (self.current.to_f32() / self.target.to_f32()).min(1.0);
-    let curve_value = self.curve.sample(phase);
-    let from = &self.stops[self.current_stop_index];
-    let to = &self.stops[self.next_index()];
-    from.interpolate(to, curve_value)
+    // Position across all of the stops, e.g. 1.5 is halfway between the second and third
+    let target = self.target.to_f64();
+    let position = if target > 0.0 {
+      self.current.to_f64() * segments as f64 / target
+    } else {
+      0.0
+    };
+    let segment = (position as usize).min(segments - 1);
+    let phase = (position - segment as f64).min(1.0) as f32;
+
+    self.stops[segment].interpolate(&self.stops[segment + 1], self.curve.sample(phase))
   }
 
   fn play(&mut self) {
@@ -456,5 +451,31 @@ mod tests {
     seq.accumulate(0.5);
     assert!(seq.is_complete());
     assert_eq!(seq.sample(), 0.0);
+  }
+
+  #[test]
+  fn test_target_is_the_whole_cycle() {
+    let mut tween = Tween::new(3.0, Curve::Linear, vec![0.0f32, 10.0, 20.0, 30.0], Cycle::Once);
+    assert_eq!(tween.target, 3.0);
+    assert_eq!(tween.remaining(), 3.0);
+
+    tween.accumulate(1.5);
+    assert_eq!(tween.remaining(), 1.5);
+
+    tween.accumulate(1.5);
+    assert_eq!(tween.remaining(), 0.0);
+  }
+
+  #[test]
+  fn test_integer_target_is_not_truncated() {
+    let mut tween = Tween::new(10u32, Curve::Linear, vec![0.0f32, 1.0, 2.0, 3.0], Cycle::Once);
+
+    tween.accumulate(9);
+    assert!(!tween.is_complete());
+    assert!((tween.sample() - 2.7).abs() < 0.001);
+
+    tween.accumulate(1);
+    assert!(tween.is_complete());
+    assert_eq!(tween.sample(), 3.0);
   }
 }
