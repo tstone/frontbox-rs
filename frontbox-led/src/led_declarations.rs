@@ -1,4 +1,4 @@
-use frontbox::hardware::LedAddress;
+use frontbox_core::hardware::LedAddress;
 use image::Rgba;
 
 #[derive(Debug, Clone)]

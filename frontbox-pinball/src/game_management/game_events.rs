@@ -1,4 +1,4 @@
-use frontbox::prelude::Event;
+use frontbox_core::prelude::Event;
 
 /// Routine run once a game is started, before the first turn: the first player has been added. Its participants are
 /// what happens before the first player is up (a game-start sound, a start-of-game display). More players can still be

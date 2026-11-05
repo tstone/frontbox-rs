@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_gfx::animation::*;
 use frontbox_gfx::prelude::*;
 
@@ -295,7 +295,7 @@ impl LedProgram1d {
   /// For abrupt changes use Curve::Steps(N), where N is the total ColorSequences in the cycle
   ///
   /// ```rust
-  /// # use frontbox::prelude::*;
+  /// # use frontbox_core::prelude::*;
   /// # use frontbox_led::prelude::*;
   /// # use frontbox_gfx::animation::Curve;
   /// # let q = LedQ::every();

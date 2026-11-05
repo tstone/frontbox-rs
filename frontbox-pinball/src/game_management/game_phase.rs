@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 /// The current phase of the game, set by the game manager. Read it with `ctx.states.get::<GamePhase>()`, or watch
 /// `StateChanged<GamePhase>`.

@@ -71,7 +71,7 @@ pub fn derive_event(input: TokenStream) -> TokenStream {
   let name = &input.ident;
 
   let expanded = quote! {
-      impl frontbox::systems::Event for #name {
+      impl frontbox_core::systems::Event for #name {
           fn as_any(&self) -> &dyn std::any::Any {
               self
           }
@@ -91,7 +91,7 @@ pub fn derive_state(input: TokenStream) -> TokenStream {
   let name = &input.ident;
 
   let expanded = quote! {
-      impl frontbox::systems::State for #name {}
+      impl frontbox_core::systems::State for #name {}
   };
 
   TokenStream::from(expanded)
@@ -105,7 +105,7 @@ pub fn derive_tag(input: TokenStream) -> TokenStream {
   let name_str = name.to_string();
 
   let expanded = quote! {
-      impl frontbox::hardware::Tag for #name {
+      impl frontbox_core::hardware::Tag for #name {
           fn as_any(&self) -> &dyn std::any::Any { self }
           fn tag_name(&self) -> &'static str { #name_str }
       }

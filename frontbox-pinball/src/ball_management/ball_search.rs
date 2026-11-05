@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 use crate::ball_management::PerformBallSearch;
 use crate::{configs, metrics};
@@ -43,7 +43,7 @@ impl System for BallSearchSystem {
     {
       self.reset(ctx.into());
     } else if event.is::<StartBallSearch>() {
-      log::info!(target: "frontbox::ball_search", "Starting ball search.");
+      log::info!(target: "frontbox_core::ball_search", "Starting ball search.");
       ctx.metrics.inc(&metrics::BALL_SEARCHES);
       ctx.emit(PerformBallSearch);
     }

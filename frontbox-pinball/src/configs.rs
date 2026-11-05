@@ -8,11 +8,11 @@
 //! ])
 //! ```
 //!
-//! See [`frontbox::operator_config`] for how configs work.
+//! See [`frontbox_core::operator_config`] for how configs work.
 
 use std::sync::LazyLock;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 pub static TURN_COUNT: LazyLock<Config<u8>> = LazyLock::new(|| {
   Config::new(

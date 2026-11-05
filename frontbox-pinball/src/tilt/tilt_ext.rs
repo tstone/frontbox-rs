@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 use crate::TiltSystem;
 
@@ -15,7 +15,7 @@ impl<'a> TiltExt for SystemContext<'a> {
     if let Some(mut tilt) = self.systems.get::<TiltSystem>() {
       tilt.grant_warning(self.into());
     } else {
-      log::warn!(target: "frontbox::tilt", "TiltSystem not running.");
+      log::warn!(target: "frontbox_core::tilt", "TiltSystem not running.");
     }
   }
 

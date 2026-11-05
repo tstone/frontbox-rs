@@ -322,7 +322,7 @@ impl ColorSequence {
       }
     }
 
-    log::trace!(target: "frontbox::color", "ColorSequence: Generated color sequence: {:?}", seq);
+    log::trace!(target: "frontbox_core::color", "ColorSequence: Generated color sequence: {:?}", seq);
     seq
   }
 }

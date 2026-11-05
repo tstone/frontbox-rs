@@ -1,13 +1,13 @@
 [workspace]
 members = [
     "fast-protocol",
-    "frontbox",
+    "frontbox-core",
     "frontbox-derive",
     "frontbox-gfx",
     "frontbox-led",
     "frontbox-metrics",
-    "frontbox-pin-console",
-    "frontbox-pin2dmd",
+    "frontbox-console",
+    "frontbox-dmd",
     "frontbox-sound",
     "frontbox-pinball",
 ]

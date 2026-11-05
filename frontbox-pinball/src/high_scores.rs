@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use frontbox::prelude::System;
-use frontbox::toml;
+use frontbox_core::prelude::System;
+use frontbox_core::toml;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]

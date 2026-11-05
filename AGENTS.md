@@ -23,7 +23,7 @@ pub fn eject(&mut self, ctx: &ServiceContext) {
 ```
 
 Private methods may take `&SystemContext`. When calling a public method from inside the system, convert with
-`ctx.into()`. See the docs on `ServiceContext` in `frontbox/src/systems/service_context.rs`.
+`ctx.into()`. See the docs on `ServiceContext` in `frontbox-core/src/systems/service_context.rs`.
 
 A public method that needs to know who is calling it (e.g. to key a request or declaration by its owner) takes the
 caller's id as a parameter, passed as `ctx.id()`. Never take the caller's `SystemContext` or `SystemHandle` for this:

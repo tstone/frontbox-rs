@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 fast-protocol = { path = "../fast-protocol" }
-frontbox = { path = "../frontbox" }
+frontbox-core = { path = "../frontbox-core" }
 frontbox-gfx = { path = "../frontbox-gfx" }
 dyn-clone = "1.0.20"
 image = "0.25.9"

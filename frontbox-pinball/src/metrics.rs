@@ -1,11 +1,11 @@
-//! Metrics recorded by this crate's systems, without any setup. See [`frontbox::metrics`] for how metrics work.
+//! Metrics recorded by this crate's systems, without any setup. See [`frontbox_core::metrics`] for how metrics work.
 //!
 //! Some audits need no metric of their own: game durations and player counts are kept for every finished game, so
 //! they're queries over its games.
 
 use std::sync::LazyLock;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 pub static GAMES_STARTED: LazyLock<Counter> = LazyLock::new(|| {
   Counter::new(

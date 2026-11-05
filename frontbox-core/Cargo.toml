@@ -1,0 +1,34 @@
+[package]
+name = "frontbox-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fast-protocol = { path = "../fast-protocol", features = ["serde"] }
+frontbox-derive = { path = "../frontbox-derive" }
+log = "0.4.29"
+futures-util = "0.3.32"
+tokio = { version = "1", features = ["full"] }
+tokio-serial = "5.4.4"
+tokio-util = { version = "0.7.18", features = ["codec"] }
+dyn-clone = "1.0.20"
+serde_json = "1.0.149"
+serde = { version = "1.0.228", features = ["derive"] }
+priority-queue = "2.7.0"
+itertools = "0.14.0"
+glam = { version = "0.33.2", features = ["serde"] }
+indexmap = "2.14.0"
+toml = "1.1.3"
+humantime = "2.4.0"
+num-traits = "0.2.19"
+smallvec = "1.15.2"
+ts-rs = { version = "12.0.1", optional = true, features = ["serde-json-impl"] }
+serde_with = "3.24.0"
+erased-serde = "0.4.10"
+frontbox-metrics = { path = "../frontbox-metrics" }
+
+[dev-dependencies]
+env_logger = "0.11.9"
+
+[features]
+ts = ["dep:ts-rs", "fast-protocol/ts", "frontbox-metrics/ts"]

@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct LedIdentifications {

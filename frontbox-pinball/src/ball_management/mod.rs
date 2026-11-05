@@ -18,7 +18,7 @@ pub use standard_ball_management_config::*;
 pub use trough::*;
 pub use trough_management_config::*;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 // -- Ball Management Events --
 

@@ -8,7 +8,7 @@
 //!   Each value is kept, so averages, minimums and maximums can be taken later. Record one a handful of times per game,
 //!   not on every switch hit.
 //!
-//! Frontbox re-exports this crate as `frontbox::metrics`, and every system reaches the machine's
+//! Frontbox re-exports this crate as `frontbox_core::metrics`, and every system reaches the machine's
 //! [`MetricsCollection`] as `ctx.metrics`. Tools that only read history, such as the console or an audits CLI, depend
 //! on this crate alone.
 //!

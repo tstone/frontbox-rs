@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 /// Whether a player can be added, set by the game manager: by pressing start, say. Read it with
 /// `ctx.states.get::<PlayerEntry>()`, or watch `StateChanged<PlayerEntry>`.

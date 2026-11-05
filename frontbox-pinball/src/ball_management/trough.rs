@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 use crate::ball_management::trough_management_config::TroughManagementConfig;
 use crate::ball_management::{TroughEjectFailed, TroughEjectStarted, TroughOccupancyChanged};
@@ -112,13 +112,13 @@ impl TroughSystem {
   fn retry_eject(&mut self, ctx: &SystemContext) {
     let retries_max = ctx.config.get(&configs::TROUGH_EJECT_RETRIES);
     if self.eject_retries >= retries_max {
-      log::warn!(target: "frontbox::trough", "Eject failed after {} retries", self.eject_retries);
+      log::warn!(target: "frontbox_core::trough", "Eject failed after {} retries", self.eject_retries);
       ctx.metrics.inc(&metrics::TROUGH_EJECT_FAILURES);
       ctx.emit(TroughEjectFailed);
       self.eject_ready(ctx);
     } else {
       self.eject_retries += 1;
-      log::info!(target: "frontbox::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, retries_max);
+      log::info!(target: "frontbox_core::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, retries_max);
 
       if matches!(self.occupancy_state, OccupancyState::Settling { .. }) {
         // Balls are still moving; defer the retry until settled. Ready (without resetting retries) lets the queue run it.

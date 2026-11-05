@@ -6,7 +6,7 @@ pub use slam_tilt_system::*;
 pub use tilt_ext::*;
 pub use tilt_system::*;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 /// Emitted when the tilt bob swings and the player is warned, rather than tilted
 #[derive(serde::Serialize, Event)]

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use frontbox::prelude::SystemContext;
+use frontbox_core::prelude::SystemContext;
 
 use crate::*;
 

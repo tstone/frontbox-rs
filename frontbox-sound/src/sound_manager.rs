@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::{TrackBuilder, TrackHandle};
@@ -65,7 +65,7 @@ impl SoundManager {
     let devices: Vec<_> = host.output_devices().unwrap().collect();
     for device in &devices {
       log::trace!(
-        target: "frontbox::sound",
+        target: "frontbox_core::sound",
         "Found audio device: {:?}",
         device.description().unwrap().extended()
       );
@@ -85,7 +85,7 @@ impl SoundManager {
 
     if device.is_none() {
       log::warn!(
-        target: "frontbox::sound",
+        target: "frontbox_core::sound",
         "Audio device matching '{}' not found, using system default",
         device_name
       );
@@ -135,13 +135,13 @@ impl SoundManager {
   }
 
   fn preload(&mut self, name: &'static str, path: impl AsRef<Path>) {
-    log::debug!(target: "frontbox::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
+    log::debug!(target: "frontbox_core::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
         self.sounds.insert(name, sound);
       }
       Err(e) => log::error!(
-        target: "frontbox::sound",
+        target: "frontbox_core::sound",
         "Failed to preload sound {}: {:?}",
         path.as_ref().display(),
         e
@@ -151,7 +151,7 @@ impl SoundManager {
 
   fn preload_embedded(&mut self, name: &'static str, bytes: &'static [u8]) {
     log::debug!(
-      target: "frontbox::sound",
+      target: "frontbox_core::sound",
       "Preloading embedded sound '{}' ({} bytes)",
       name,
       bytes.len()
@@ -161,17 +161,17 @@ impl SoundManager {
         self.sounds.insert(name, sound);
       }
       Err(e) => {
-        log::error!(target: "frontbox::sound", "Failed to preload embedded sound {}: {:?}", name, e)
+        log::error!(target: "frontbox_core::sound", "Failed to preload embedded sound {}: {:?}", name, e)
       }
     }
   }
 
   fn play_sfx(&mut self, key: &'static str) {
     if let Some(sound) = self.sounds.get(key) {
-      log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
+      log::debug!(target: "frontbox_core::sound", "🔊 Playing SFX '{}'", key);
       self.manager.play(sound.clone()).ok();
     } else {
-      log::error!(target: "frontbox::sound", "🔊 Sound with key '{}' not found", key);
+      log::error!(target: "frontbox_core::sound", "🔊 Sound with key '{}' not found", key);
     }
   }
 
@@ -184,7 +184,7 @@ impl SoundManager {
         self.play_callout_sound(sound.clone());
       }
     } else {
-      log::error!(target: "frontbox::sound", "🗣️ Callout with key '{}' not found", key);
+      log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", key);
     }
   }
 
@@ -193,14 +193,14 @@ impl SoundManager {
       Ok(handle) => {
         self.active_callout = Some(handle);
       }
-      Err(e) => log::error!(target: "frontbox::sound", "Failed to play callout sound: {:?}", e),
+      Err(e) => log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e),
     }
   }
 
   fn crossfade_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
-        log::info!(target: "frontbox::sound", "🎵 Playing music {}", path.as_ref().display());
+        log::info!(target: "frontbox_core::sound", "🎵 Playing music {}", path.as_ref().display());
         let new_music = self.music_track.play(sound).ok();
         if let Some(mut old_music) = self.active_music.replace(new_music.unwrap()) {
           old_music.stop(Tween {
@@ -210,20 +210,20 @@ impl SoundManager {
         }
       }
       Err(e) => {
-        log::error!(target: "frontbox::sound", "🎵 Failed to play music {}: {:?}", path.as_ref().display(), e)
+        log::error!(target: "frontbox_core::sound", "🎵 Failed to play music {}: {:?}", path.as_ref().display(), e)
       }
     }
   }
 
   fn stop_music(&mut self, crossfade: Duration) {
     if let Some(old_music) = &mut self.active_music {
-      log::info!(target: "frontbox::sound", "🎵 Stopping music");
+      log::info!(target: "frontbox_core::sound", "🎵 Stopping music");
       old_music.stop(Tween {
         duration: crossfade,
         ..Default::default()
       });
     } else {
-      log::info!(target: "frontbox::sound", "Stop music requested, but no music track was active");
+      log::info!(target: "frontbox_core::sound", "Stop music requested, but no music track was active");
     }
   }
 

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
@@ -114,7 +114,7 @@ impl StandardBallManagement {
 
     // then increment max balls
     if rem > 0 {
-      log::warn!(target: "frontbox::ball_management", "{} unexpected ball(s) entered the trough, increasing max balls in play", rem);
+      log::warn!(target: "frontbox_core::ball_management", "{} unexpected ball(s) entered the trough, increasing max balls in play", rem);
       self.max_balls_in_play += rem;
       ctx.emit(MaxBallsInPlayChanged {
         max_in_play: self.max_in_play(),
@@ -225,7 +225,7 @@ impl StandardBallManagement {
 
   fn on_trough_eject_failed(&mut self, ctx: &SystemContext) {
     // TODO: re-queue with backoff and report it to the game, rather than dropping the ball (see TODO.md)
-    log::warn!(target: "frontbox::ball_management", "Trough eject failed, abandoning the ball");
+    log::warn!(target: "frontbox_core::ball_management", "Trough eject failed, abandoning the ball");
     let trough_eject_id = self.trough_ejecting.take();
     let en_route = self.end_en_route(ctx);
     // With a plunge lane, a ball that already reached it isn't abandoned
@@ -293,13 +293,13 @@ impl StandardBallManagement {
     let kicked = *kicked;
 
     if !kicked && let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
-      log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
+      log::warn!(target: "frontbox_core::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
       autoplunger.launch(ctx.into());
       self.start_arrival_wait(true, ctx);
       return;
     }
 
-    log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
+    log::warn!(target: "frontbox_core::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
     let en_route = self.end_en_route(ctx);
     ctx.emit(BallEnteredPlay {
       method: if kicked {

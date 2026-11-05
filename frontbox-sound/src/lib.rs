@@ -24,7 +24,7 @@
 //! - Can crossfade into each other
 //! 
 //! ```rust
-//! # use frontbox::prelude::*;
+//! # use frontbox_core::prelude::*;
 //! # use frontbox_sound::*;
 //! # fn example(ctx: &SystemContext) {
 //! let mut sound_system = ctx.systems.expect::<SoundSystem>();

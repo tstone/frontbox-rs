@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_gfx::prelude::*;
 
 pub struct AlternateResolver {

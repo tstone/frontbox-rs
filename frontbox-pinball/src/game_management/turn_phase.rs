@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 /// The current phase of a player's turn, set by the game manager. Read it with `ctx.states.get::<TurnPhase>()`, or watch
 /// `StateChanged<TurnPhase>`.

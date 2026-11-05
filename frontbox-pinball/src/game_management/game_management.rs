@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 use crate::{CompetitiveGame, GameEndReason, GameEnding, GameState, TurnEnding, TurnStarting};
 
@@ -77,14 +77,14 @@ impl GameManager {
   }
 
   fn activate_playfield(&self, ctx: &SystemContext) {
-    log::info!(target: "frontbox::game_manager", "Activating playfield drivers due to turn start");
+    log::info!(target: "frontbox_core::game_manager", "Activating playfield drivers due to turn start");
     for driver in self.switch_triggered_playfield_drivers(ctx) {
       ctx.drivers.activate(driver, ActivationMode::Automatic);
     }
   }
 
   fn deactivate_playfield(&self, ctx: &SystemContext) {
-    log::info!(target: "frontbox::game_manager", "Deactivating playfield drivers due to turn end");
+    log::info!(target: "frontbox_core::game_manager", "Deactivating playfield drivers due to turn end");
     for driver in self.switch_triggered_playfield_drivers(ctx) {
       ctx.drivers.deactivate(driver, DeactivationMode::Disabled);
     }

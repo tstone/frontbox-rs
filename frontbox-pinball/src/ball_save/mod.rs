@@ -3,7 +3,7 @@ pub use ball_save_ext::*;
 
 use std::collections::HashMap;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_led::prelude::*;
 
 use crate::ball_management::{BallManager, Launch};
@@ -167,9 +167,9 @@ impl BallSaveSystem {
     if saving != self.was_saving {
       self.was_saving = saving;
       if saving {
-        log::info!(target: "frontbox::ballsave", "Ball save started");
+        log::info!(target: "frontbox_core::ballsave", "Ball save started");
       } else {
-        log::info!(target: "frontbox::ballsave", "Ball save ended");
+        log::info!(target: "frontbox_core::ballsave", "Ball save ended");
       }
     }
   }
@@ -209,12 +209,12 @@ impl System for BallSaveSystem {
       return;
     }
     let Some(mut ball_manager) = ctx.systems.get::<BallManager>() else {
-      log::error!(target: "frontbox::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain stand");
+      log::error!(target: "frontbox_core::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain stand");
       ctx.routines.complete_step::<BallDraining>();
       return;
     };
 
-    log::info!(target: "frontbox::ballsave", "Saving {} ball(s)", count);
+    log::info!(target: "frontbox_core::ballsave", "Saving {} ball(s)", count);
     ball_manager.eject_many(*count, Launch::Auto, ctx.into());
     ctx.metrics.add(&metrics::BALL_SAVES, *count as u64);
     ctx.emit(BallSaved { count: *count });

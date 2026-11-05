@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_led::prelude::*;
 
 use crate::ball_management::{
@@ -91,7 +91,7 @@ impl PlungeLaneSystem {
     // If a pending wait cue is running, then the ball has rolled back in rather than a new ball entering
     if self.wait_cue_id.is_some() {
       self.cancel_cue(ctx);
-      log::info!(target: "frontbox::plunge_lane", "Ball re-entered");
+      log::info!(target: "frontbox_core::plunge_lane", "Ball re-entered");
       ctx.emit(BallReenteredPlungeLane);
       return;
     }
@@ -102,7 +102,7 @@ impl PlungeLaneSystem {
       self.state = PlungeLaneState::UnexpectedBallPresent;
     }
 
-    log::info!(target: "frontbox::plunge_lane", "Ball entered ({:?})", self.state);
+    log::info!(target: "frontbox_core::plunge_lane", "Ball entered ({:?})", self.state);
     ctx.emit(BallEnteredPlungeLane::new(self.state));
     self.expect_ball = false;
 
@@ -112,7 +112,7 @@ impl PlungeLaneSystem {
   }
 
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
-    log::info!(target: "frontbox::plunge_lane", "Ball exited ({:?})", self.state);
+    log::info!(target: "frontbox_core::plunge_lane", "Ball exited ({:?})", self.state);
     self.cancel_cue(ctx);
     self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
   }

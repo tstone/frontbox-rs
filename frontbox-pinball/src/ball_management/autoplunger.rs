@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_led::prelude::*;
 
 use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
@@ -94,7 +94,7 @@ impl AutoPlungerSystem {
     if self.launch_button.is_none() || self.armed {
       return;
     }
-    log::debug!(target: "frontbox::autoplunger", "Launch button armed");
+    log::debug!(target: "frontbox_core::autoplunger", "Launch button armed");
     self.armed = true;
     if let Some(effect) = self.launch_ready_effect.as_mut() {
       effect.reset();
@@ -114,7 +114,7 @@ impl AutoPlungerSystem {
   }
 
   fn fire(&mut self, method: LaunchMethod, ctx: &SystemContext) {
-    log::info!(target: "frontbox::autoplunger", "Firing auto plunger ({:?})", method);
+    log::info!(target: "frontbox_core::autoplunger", "Firing auto plunger ({:?})", method);
     ctx.drivers.activate(self.coil_name, ActivationMode::Tap);
     ctx.emit(AutoPlungerFired { method });
   }
@@ -140,7 +140,7 @@ impl System for AutoPlungerSystem {
     {
       // A ball still rolling (e.g. a half plunge) isn't launched; the button stays armed until it settles
       if self.is_ball_resting(ctx) {
-        log::info!(target: "frontbox::autoplunger", "Launching ball via launch button");
+        log::info!(target: "frontbox_core::autoplunger", "Launching ball via launch button");
         self.disarm_launch_button(ctx.into());
         self.fire(LaunchMethod::Button, ctx);
       }

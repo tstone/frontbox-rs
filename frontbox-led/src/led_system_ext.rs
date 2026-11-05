@@ -1,4 +1,4 @@
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use frontbox_gfx::prelude::*;
 
 use crate::*;

@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use frontbox::{delegate_system, prelude::*};
+use frontbox_core::{delegate_system, prelude::*};
 
 use crate::ball_management::StandardBuilder;
 

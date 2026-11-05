@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct TroughManagementConfig {

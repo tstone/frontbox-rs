@@ -92,7 +92,7 @@ A: Not yet. Frontbox uses [rustdoc](https://doc.rust-lang.org/rustdoc/what-is-ru
 
 A: Yes:
 
-- Included [examples](frontbox/examples)
+- Included [examples](frontbox-core/examples)
 - Or [Last of the Kilmore Oaks](https://github.com/tstone/lotko-homebrew) for source of a full game
 
 ### Web Console

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use frontbox::prelude::*;
+use frontbox_core::prelude::*;
 use kira::backend::cpal::Error;
 use tokio::sync::mpsc;
 

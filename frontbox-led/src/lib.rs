@@ -24,7 +24,7 @@
 //! corresponding LEDs can lose that effect automatically.
 //!
 //! ```rust
-//! # use frontbox::prelude::*;
+//! # use frontbox_core::prelude::*;
 //! # use frontbox_led::prelude::*;
 //! pub struct Example {
 //!   effect: LedProgram1d
@@ -73,7 +73,7 @@
 //! - [`LedEffectPlayerNd`] - Plays temporary, one-shot style reaction effects (Requires `LedSystem`)
 //! - [`LedEffectNd`] - Handles state of a sequence of LED transitions -- gradient, rotation, etc. (Requires `LedSystem`)
 //! - [`LedSystem`] - Manages declarations, prioritization, and layers. Sets the final color with `Machine`. Typically not interacted with directly.
-//! - [`Machine`](frontbox::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
+//! - [`Machine`](frontbox_core::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
 //!
 
 mod alternate_resolver;
