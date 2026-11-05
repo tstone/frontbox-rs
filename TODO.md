@@ -11,6 +11,8 @@
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
+- Evaluate RON for operator configs (and other stored data like leaderboards). frontbox-gfx stores effects in RON, and
+  one format across the project may be simpler than TOML for some files and RON for others.
 - Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers.
 - Revisit if `Synchronize` event still makes sense or not
 - Implement a proper LampDriver that also supports flashing
@@ -66,6 +68,8 @@
 - NeoSeg support
 - LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color
   modifications
+- Alternate resolver doesn't work with animated inputs
+- FirstWins isn't first. Hashmap does not guarantee order
 
 ## Sound
 
