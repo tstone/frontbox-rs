@@ -10,6 +10,6 @@ export type Key<T> = {
  */
 at: number, value: T, 
 /**
- * How to get from this key to the next
+ * How to get here from the key before. The first key has none before it, so this does nothing there.
  */
 curve: Curve, };

@@ -19,6 +19,7 @@ import {
   orEmpty,
   POLYGON_POINT,
   removed,
+  repeatRanges,
   ROTATION,
   scaleRanges,
   startingValue,
@@ -59,16 +60,20 @@ const WARP_OPTIONS: { value: WarpKind; label: string }[] = [
   { value: 'Translate', label: 'Translate' },
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
+  { value: 'Mirror', label: 'Mirror' },
+  { value: 'Repeat', label: 'Repeat' },
 ]
 const ADJUST_OPTIONS: { value: 'HueShift'; label: string }[] = [{ value: 'HueShift', label: 'Hue shift' }]
 
-type WarpKind = 'Translate' | 'Rotate' | 'Scale'
+type WarpKind = 'Translate' | 'Rotate' | 'Scale' | 'Mirror' | 'Repeat'
 
 /** A warp that leaves things where they are, until it's changed */
 const NEW_WARPS: Record<WarpKind, Warp> = {
   Translate: { Translate: { Fixed: [0, 0] } },
   Rotate: { Rotate: { Fixed: 0 } },
   Scale: { Scale: { Fixed: [1, 1] } },
+  Mirror: { Mirror: { Fixed: 0 } },
+  Repeat: { Repeat: { Fixed: [0, 0] } },
 }
 
 /** The scene's viewport and layers */
@@ -389,10 +394,7 @@ function WarpList(props: { lens: Lens<Warp[]>; space: WarpSpace }) {
 
 function WarpEditor(props: { lens: Lens<Warp>; space: WarpSpace }) {
   const surface = useContext(SurfaceContext)!
-  const kind = (): WarpKind => {
-    const warp = props.lens.get()
-    return 'Translate' in warp ? 'Translate' : 'Rotate' in warp ? 'Rotate' : 'Scale'
-  }
+  const kind = () => Object.keys(props.lens.get())[0] as WarpKind
   return (
     <>
       <Dropdown
@@ -431,7 +433,28 @@ function WarpEditor(props: { lens: Lens<Warp>; space: WarpSpace }) {
             lens={variant(props.lens, 'Scale')}
           />
         </Match>
+        <Match when={kind() === 'Mirror'}>
+          <PropField
+            label="Degrees"
+            paramName="mirror"
+            fallback={0}
+            ranges={both(ROTATION)}
+            lens={variant(props.lens, 'Mirror')}
+          />
+        </Match>
+        <Match when={kind() === 'Repeat'}>
+          <PropField
+            label="Spacing"
+            paramName="spacing"
+            fallback={[0, 0] as Vec2}
+            ranges={repeatRanges(surface(), props.space)}
+            lens={variant(props.lens, 'Repeat')}
+          />
+        </Match>
       </Switch>
+      <Show when={props.space === 'shape' && (kind() === 'Mirror' || kind() === 'Repeat')}>
+        <p class="scene-note">This works around the origin, so it belongs above the Translate that puts the shape in place.</p>
+      </Show>
     </>
   )
 }

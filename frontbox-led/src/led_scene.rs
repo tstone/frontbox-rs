@@ -16,7 +16,7 @@ use crate::*;
 /// # use frontbox_led::prelude::*;
 /// # use frontbox_gfx::scene::*;
 /// let scene = file::load(r#"(
-///   version: 2,
+///   version: 5,
 ///   viewport: Sequence,
 ///   layers: [(paint: (base: Solid(Param("color"))))],
 /// )"#).unwrap();
@@ -35,7 +35,7 @@ use crate::*;
 /// static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield").extent(Vec2::new(20.25, 45.0)).build();
 ///
 /// let scene = file::load(r#"(
-///   version: 2,
+///   version: 5,
 ///   viewport: Area,
 ///   layers: [(paint: (base: Solid(Fixed(255, 0, 0, 255))))],
 /// )"#).unwrap();
@@ -48,6 +48,7 @@ pub struct LedScene {
   scene: Scene,
   params: Params,
   elapsed: Duration,
+  take: u32,
   playing: bool,
   end_behavior: EndBehavior,
   undeclared: bool,
@@ -90,6 +91,7 @@ impl LedScene {
       scene,
       params: Params::new(),
       elapsed: Duration::ZERO,
+      take: rand::random(),
       playing: true,
       end_behavior: EndBehavior::Clear,
       undeclared: false,
@@ -138,7 +140,7 @@ impl LedScene {
 
     let placement = self.targets.place(ctx);
     ctx.declare_led_colors(&placement.ids, |_| {
-      let frame = Frame { time: self.elapsed.as_secs_f32(), params: &self.params, size: placement.size };
+      let frame = Frame { time: self.elapsed.as_secs_f32(), take: self.take, params: &self.params, size: placement.size };
       placement.samples.iter().map(|s| self.scene.sample(s, &frame)).collect()
     });
   }
@@ -161,6 +163,7 @@ impl LedScene {
   /// Back to the start of the scene
   pub fn reset(&mut self) {
     self.elapsed = Duration::ZERO;
+    self.take = rand::random();
     self.undeclared = false;
   }
 
@@ -400,6 +403,23 @@ mod tests {
     program.apply(Duration::from_secs(1), &context.sys_ctx());
     assert!(program.is_complete());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  #[test]
+  fn each_play_picks_its_own_random_values() {
+    let (context, addresses) = three_leds();
+    let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
+    let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 0 });
+    let scene = scene(PaintNode::Solid(color)).timing(Timing::new(1.0, Cycle::Once));
+    let mut program = LedScene::new(LedQ::name("led1"), scene).unwrap();
+
+    let mut shots = vec![];
+    for _ in 0..8 {
+      program.reset();
+      program.apply(Duration::ZERO, &context.sys_ctx());
+      shots.push(colors(&context, &addresses)[0]);
+    }
+    assert!(shots.iter().any(|shot| *shot != shots[0]), "{shots:?}");
   }
 
   #[test]

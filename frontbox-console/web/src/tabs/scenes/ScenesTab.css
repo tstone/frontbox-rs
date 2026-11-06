@@ -360,7 +360,9 @@
 }
 
 .scene-config input,
-.scene-params input {
+.scene-params input,
+.scene-key-editor input,
+.scene-timeline input {
   box-sizing: border-box;
   padding: 0.375rem 0.5rem;
   border: 1px solid var(--border);
@@ -372,7 +374,9 @@
 }
 
 .scene-config input:focus-visible,
-.scene-params input:focus-visible {
+.scene-params input:focus-visible,
+.scene-key-editor input:focus-visible,
+.scene-timeline input:focus-visible {
   border-color: var(--accent);
   outline: none;
 }
@@ -446,6 +450,27 @@
 .scene-number [data-part='thumb'][data-focus] {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* the slider gets a row of its own to have the width for two ends, with a box under each */
+.scene-range {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.scene-range [data-scope='slider'][data-part='root'] {
+  flex-basis: 100%;
+  order: -1;
+}
+
+.scene-range input[type='number'] {
+  width: 5.5rem;
+}
+
+.scene-range-drawn [data-part='range'] {
+  outline: 2px solid var(--text);
+  background: none;
 }
 
 /* ---- dropdown ---- */
@@ -669,4 +694,285 @@
 /* Ark places these at their value but, unlike the area's thumb, leaves centering them there to the styles */
 .scene-color-picker [data-part='channel-slider-thumb'] {
   transform: translate(-50%, -50%);
+}
+
+/* ---- the timeline ---- */
+
+.scene-timeline {
+  --label-width: 13rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 0.5rem 1rem;
+}
+
+.scene-timeline > header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  font-size: 0.875rem;
+}
+
+.scene-timeline > header button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scene-timeline > header button:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-timeline > header button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.scene-timeline > header svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+.scene-timeline > header label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+}
+
+.scene-timeline input {
+  width: 5rem;
+}
+
+.scene-timeline .scene-dropdown {
+  width: 7rem;
+}
+
+.scene-timeline .scene-dropdown button {
+  width: 100%;
+  padding: 0 0.625rem;
+}
+
+.scene-timeline-time {
+  min-width: 7rem;
+  margin: 0 0.5rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: scene-spin 0.8s linear infinite;
+}
+
+@keyframes scene-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.scene-timeline-tracks {
+  flex: 1;
+  min-height: 0;
+  /* a key or tick at the very end hangs past the lanes by half its width */
+  overflow: hidden auto;
+}
+
+/* what the playhead and the shade measure against, which is every track and not only those scrolled into view */
+.scene-timeline-lanes {
+  position: relative;
+}
+
+.scene-timeline-row {
+  display: grid;
+  grid-template-columns: var(--label-width) 1fr;
+}
+
+/* the times stay up as the tracks scroll under them */
+.scene-timeline-times {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+
+.scene-timeline-label {
+  overflow: hidden;
+  padding-right: 0.75rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-timeline-ruler {
+  position: relative;
+  height: 1.25rem;
+  margin: 0 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.scene-timeline-tick {
+  position: absolute;
+  top: 0;
+  padding-left: 0.1875rem;
+  border-left: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.scene-timeline-lane {
+  position: relative;
+  height: 1.75rem;
+  margin: 0 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* the track itself, thin behind its dots */
+.scene-timeline-lane::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 2px dotted var(--border);
+  content: '';
+}
+
+/* over the part of the view past the scene's end, where a key is cut off. It lines up with the lanes' margins. */
+.scene-timeline-lanes::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0.75rem;
+  bottom: 0;
+  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--end-fraction, 1));
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  pointer-events: none;
+  content: '';
+}
+
+/* the times sit above the shade over the lanes, so they carry their own */
+.scene-timeline-ruler::after {
+  position: absolute;
+  inset: 0 0 0 calc(100% * var(--end-fraction, 1));
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  pointer-events: none;
+  content: '';
+}
+
+.scene-timeline-playhead {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--played-fraction));
+  width: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.scene-key,
+.scene-key-add {
+  position: absolute;
+  top: 50%;
+  translate: -50% -50%;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.scene-key {
+  z-index: 2;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid var(--text);
+  touch-action: none;
+  cursor: grab;
+}
+.scene-key:active {
+  cursor: grabbing;
+}
+
+.scene-key-value {
+  background: var(--text);
+}
+
+/* square, as nothing eases into a pick: it's a change at that moment */
+.scene-key-pick {
+  border-radius: 0;
+  rotate: 45deg;
+}
+
+.scene-key:hover,
+.scene-key[data-state='open'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-key-add {
+  display: grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  place-items: center;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.scene-key-editor {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 18rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-key-remove {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-key-remove:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-key-remove:disabled {
+  color: var(--muted);
+  cursor: default;
 }

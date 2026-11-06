@@ -7,4 +7,8 @@ import type { SceneSource } from "./SceneSource";
 /**
  * Messages from the web app to the console server
  */
-export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, } | { "type": "QueryMetrics" } | { "type": "RenderScene", source: SceneSource, size: SceneSize, leds: SceneLeds, };
+export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: boolean, } | { "type": "SetConfig", key: string, value: ConfigDomainValue, } | { "type": "QueryMetrics" } | { "type": "RenderScene", source: SceneSource, size: SceneSize, leds: SceneLeds, 
+/**
+ * Seconds into a cycle of the scene
+ */
+time: number, } | { "type": "RenderClip", id: number, source: SceneSource, size: SceneSize, leds: SceneLeds, };

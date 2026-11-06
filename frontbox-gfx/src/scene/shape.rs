@@ -32,7 +32,7 @@ impl Shape {
   /// How much of the sample's footprint the shape covers (0 to 1), and the sample's position in the shape's own
   /// space. `None` when the shape draws nothing.
   pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2)> {
-    let to_local = self.to_local(env)?;
+    let to_local = self.to_local(at.pos, env)?;
     let local = to_local.transform_point2(at.pos);
     let (distance, gradient) = self.base.distance(local, env);
     let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);

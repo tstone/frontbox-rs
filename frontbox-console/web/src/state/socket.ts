@@ -18,6 +18,7 @@ export type Connection = {
  */
 export function connect(
   onMessage: (message: ServerMessage) => void,
+  onBinary: (message: ArrayBuffer) => void,
   onStatus: (status: ConnectionStatus) => void,
 ): Connection {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
@@ -28,11 +29,12 @@ export function connect(
   const open = () => {
     onStatus('connecting')
     socket = new WebSocket(url)
+    socket.binaryType = 'arraybuffer'
     socket.onopen = () => {
       retries = 0
       onStatus('connected')
     }
-    socket.onmessage = (e) => onMessage(JSON.parse(e.data))
+    socket.onmessage = (e) => (typeof e.data === 'string' ? onMessage(JSON.parse(e.data)) : onBinary(e.data))
     socket.onclose = () => {
       onStatus('disconnected')
       if (!stopped) {

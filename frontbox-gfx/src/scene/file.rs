@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 5;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -86,7 +86,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, params: &params, size: Vec2::new(100.0, 50.0) };
+        let frame = Frame { time, take: 0, params: &params, size: Vec2::new(100.0, 50.0) };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -107,6 +107,8 @@ mod tests {
             space: ColorSpace::Oklab,
           })
           .warp(Warp::Rotate(90.0.into()))
+          .warp(Warp::Repeat(Vec2::new(0.25, 0.0).into()))
+          .warp(Warp::Mirror(45.0.into()))
           .adjust(ColorAdjust::HueShift(Prop::Param("hue".into()))),
         )
         .shape(
@@ -114,8 +116,8 @@ mod tests {
             .warp(Warp::Scale(Vec2::splat(40.0).into()))
             .warp(Warp::Translate(Prop::Track(Track {
               keys: vec![
-                Key::new(0.0, Vec2::new(30.0, 25.0), Curve::EaseInOut),
-                Key::new(1.0, Vec2::new(70.0, 25.0), Curve::Linear),
+                Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
+                Key::new(1.0, Vec2::new(70.0, 25.0), Curve::EaseInOut),
               ],
               cycle: Cycle::Forever,
             }))),
@@ -128,6 +130,36 @@ mod tests {
     ]);
     scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
     scene.timing(Timing::new(1.0, Cycle::Forever))
+  }
+
+  #[test]
+  fn a_random_color_with_no_alpha_is_opaque() {
+    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(paint: (base: Solid(Random(
+      picks: [(at: 0.0)],
+      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+    ))))])");
+    let scene = scene.unwrap();
+    let PaintNode::Solid(Prop::Random(random)) = &scene.layers[0].paint.base else {
+      panic!("{scene:?}");
+    };
+    assert!(matches!(random.spread, Spread::Color { alpha: (1.0, 1.0), .. }));
+  }
+
+  #[test]
+  fn random_props_read_and_write() {
+    let source = "(version: 5, viewport: Sequence, timing: (duration: 2.0), layers: [(paint: (base: Solid(Random(
+      picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
+      spread: Color(hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0)),
+      seed: 7,
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    let loaded = load(&written).unwrap();
+    let PaintNode::Solid(Prop::Random(random)) = &loaded.layers[0].paint.base else {
+      panic!("{written}");
+    };
+    assert_eq!(random.picks, [Pick::new(0.0), Pick { at: 1.0, smooth_in: 0.25, smooth_out: 0.5 }]);
+    assert_eq!(random.spread, Spread::Color { hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0) });
+    assert_eq!(random.seed, 7);
   }
 
   #[test]
@@ -157,7 +189,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, params: &params, size: Vec2::new(100.0, 50.0) };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: Vec2::new(100.0, 50.0) };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -211,7 +243,7 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 3, layers: [(paint: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 3 })), "{result:?}");
+    let result = load("(version: 6, layers: [(paint: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 6 })), "{result:?}");
   }
 }

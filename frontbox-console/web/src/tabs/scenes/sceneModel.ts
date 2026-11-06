@@ -1,7 +1,13 @@
 import type { Color } from '../../types/generated/Color'
+import type { Curve } from '../../types/generated/Curve'
 import type { Prop } from '../../types/generated/Prop'
+import type { Pick } from '../../types/generated/Pick'
+import type { Random } from '../../types/generated/Random'
 import type { Scene } from '../../types/generated/Scene'
+import type { Spread } from '../../types/generated/Spread'
+import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
+import type { Warp } from '../../types/generated/Warp'
 
 export type Vec2 = [number, number]
 
@@ -85,10 +91,42 @@ export function paramFits(param: Value | undefined, like: SceneValue) {
   return param !== undefined && Object.keys(param)[0] === Object.keys(wrapValue(like))[0]
 }
 
-/** The value a prop shows with no game running: the parameter's default, or a track's first key */
+/** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
+export function spreadFits(spread: Spread, like: SceneValue) {
+  return Object.keys(spread)[0] === Object.keys(wrapValue(like))[0]
+}
+
+const midpoint = ([low, high]: [number, number]) => (low + high) / 2
+
+/** The fully saturated color at a hue in degrees, and a brightness and an alpha from 0 to 1 */
+function hsvColor(hue: number, brightness: number, alpha: number): Color {
+  const channel = (n: number) => {
+    const k = (n + hue / 60) % 6
+    return Math.round(255 * brightness * (1 - Math.max(0, Math.min(k, 4 - k, 1))))
+  }
+  return [channel(5), channel(3), channel(1), Math.round(alpha * 255)]
+}
+
+/** The middle of what a spread can pick */
+function spreadMiddle(spread: Spread): SceneValue {
+  if ('Float' in spread) return midpoint(spread.Float)
+  if ('Vec2' in spread) return [midpoint(spread.Vec2.x), midpoint(spread.Vec2.y)]
+  const { hue, brightness, alpha } = spread.Color
+  return hsvColor(midpoint(hue), midpoint(brightness), midpoint(alpha))
+}
+
+/** The widest spread for a prop holding values like `like`, short of making a color see-through */
+export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
+  if (typeof like === 'number') return { Float: [x.min, x.max] }
+  if (like.length === 2) return { Vec2: { x: [x.min, x.max], y: [y.min, y.max] } }
+  return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
+}
+
+/** The value a prop shows with no game running: the parameter's default, a track's first key, or the middle of a spread */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
+  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadMiddle(prop.Random.spread) as T) : fallback
   const param = scene.params?.[prop.Param]
   return paramFits(param, fallback) ? (unwrapValue(param!) as T) : fallback
 }
@@ -102,6 +140,11 @@ export function freshParamName(scene: Scene, base: string) {
   return `${base}_${n}`
 }
 
+/** Whether a scene plays more than once, which gives its first moment something to come from and its last somewhere to go */
+export function repeats(scene: Scene) {
+  return scene.timing !== undefined && scene.timing.cycle !== 'Once'
+}
+
 /** Scene with a timing, which it needs before it can have keyframes */
 export function withTiming(scene: Scene): Scene {
   return scene.timing ? scene : { ...scene, timing: { duration: 1, cycle: 'Once' } }
@@ -112,38 +155,117 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
   return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
 }
 
-/** Every prop in a scene, with the ranges its sliders use */
-function propUses(scene: Scene, surface: Surface) {
-  const uses: { prop: Prop<SceneValue>; ranges: Ranges }[] = []
-  const warps = (warp: Scene['layers'][number]['paint']['warp'], space: WarpSpace) => {
-    for (const w of warp ?? []) {
-      if ('Translate' in w) uses.push({ prop: w.Translate, ranges: translateRanges(surface, space) })
-      else if ('Scale' in w) uses.push({ prop: w.Scale, ranges: scaleRanges(surface, space) })
-      else uses.push({ prop: w.Rotate, ranges: both(ROTATION) })
-    }
+type PropLens = Lens<Prop<SceneValue>>
+
+/** Every prop in a scene: where it is, what to call it, and the ranges its sliders use */
+function propUses(scene: Lens<Scene>, surface: Surface) {
+  const uses: { lens: PropLens; label: string; ranges: Ranges }[] = []
+  const use = (lens: unknown, label: string, ranges: Ranges) => uses.push({ lens: lens as PropLens, label, ranges })
+
+  const warps = (warp: Lens<Warp[]>, label: string, space: WarpSpace) => {
+    warp.get().forEach((w, index) => {
+      const lens = item(warp, index)
+      if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
+      else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges(surface, space))
+      else if ('Mirror' in w) use(variant(lens, 'Mirror'), `${label} · Mirror`, both(ROTATION))
+      else if ('Repeat' in w) use(variant(lens, 'Repeat'), `${label} · Repeat`, repeatRanges(surface, space))
+      else use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
+    })
   }
 
-  for (const { paint, shape } of scene.layers) {
-    warps(paint.warp, 'paint')
-    if ('Solid' in paint.base) uses.push({ prop: paint.base.Solid, ranges: both(UNIT) })
-    else for (const stop of paint.base.Gradient.stops) uses.push({ prop: stop.color, ranges: both(UNIT) })
-    for (const adjust of paint.adjust ?? []) uses.push({ prop: adjust.HueShift, ranges: both(HUE) })
+  const layers = field(scene, 'layers')
+  layers.get().forEach(({ paint, shape }, index) => {
+    const layer = item(layers, index)
+    const label = `Layer ${index + 1}`
+
+    const paintLens = field(layer, 'paint')
+    warps(orEmpty(field(paintLens, 'warp')), `${label} · Paint`, 'paint')
+    const base = field(paintLens, 'base')
+    if ('Solid' in paint.base) {
+      use(variant(base, 'Solid'), `${label} · Color`, both(UNIT))
+    } else {
+      const stops = field(variant(base, 'Gradient'), 'stops')
+      stops.get().forEach((_, stop) => use(field(item(stops, stop), 'color'), `${label} · Stop ${stop + 1}`, both(UNIT)))
+    }
+    const adjust = orEmpty(field(paintLens, 'adjust'))
+    adjust.get().forEach((_, i) => use(variant(item(adjust, i), 'HueShift'), `${label} · Hue shift`, both(HUE)))
 
     if (shape) {
-      warps(shape.warp, 'shape')
+      const shapeLens = field(layer, 'shape') as Lens<NonNullable<typeof shape>>
+      warps(orEmpty(field(shapeLens, 'warp')), `${label} · Shape`, 'shape')
       if (shape.base !== 'Ellipse') {
-        for (const point of shape.base.Polygon.points) uses.push({ prop: point, ranges: both(POLYGON_POINT) })
+        const points = field(variant(field(shapeLens, 'base'), 'Polygon'), 'points')
+        points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, both(POLYGON_POINT)))
       }
     }
-  }
+  })
   return uses
 }
+
+const reading = (scene: Scene): Lens<Scene> => ({ get: () => scene, set: () => {} })
 
 /** The names of the parameters a scene's props read */
 function referencedParams(scene: Scene) {
   const names = new Set<string>()
-  for (const { prop } of propUses(scene, null)) if ('Param' in prop) names.add(prop.Param)
+  for (const { lens } of propUses(reading(scene), null)) {
+    const prop = lens.get()
+    if ('Param' in prop) names.add(prop.Param)
+  }
   return names
+}
+
+export type SceneTrack = { prop: PropLens; label: string; ranges: Ranges }
+
+/** Every prop in a scene that changes along the timeline */
+export function sceneTracks(scene: Lens<Scene>, surface: Surface): SceneTrack[] {
+  return propUses(scene, surface).flatMap(({ lens, label, ranges }) => {
+    const prop = lens.get()
+    return 'Track' in prop || 'Random' in prop ? [{ prop: lens, label, ranges }] : []
+  })
+}
+
+/** When a prop changes, in order: a track's keys or the moments a value is picked */
+export function trackTimes(prop: Prop<SceneValue>) {
+  if ('Track' in prop) return prop.Track.keys.map((key) => key.at)
+  return 'Random' in prop ? prop.Random.picks.map((pick) => pick.at) : []
+}
+
+/**
+ * `next` without its timing once `current`'s last track is gone, as the timing was only there for them and would
+ * otherwise end a scene that's meant to stay up.
+ */
+export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
+  const tracks = (scene: Scene) => sceneTracks(reading(scene), null).length
+  if (!next.timing || tracks(current) === 0 || tracks(next) > 0) return next
+  const { timing: _, ...rest } = next
+  return rest
+}
+
+function lerp(a: SceneValue, b: SceneValue, by: number): SceneValue {
+  if (typeof a === 'number') return a + ((b as number) - a) * by
+  const mixed = a.map((channel, i) => (lerp(channel, (b as number[])[i], by) as number))
+  return (a.length === 4 ? mixed.map(Math.round) : mixed) as SceneValue
+}
+
+/**
+ * `track` with a key added at a time, so that the scene looks as it did. Between two keys that's the value partway
+ * from one to the next as if by a straight line, which is close enough for a curve to start from.
+ */
+export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue> {
+  const { keys } = track
+  const after = keys.findIndex((key) => key.at > at)
+  const index = after === -1 ? keys.length : after
+  const [before, next] = [keys[index - 1], keys[index]]
+  const value = !before ? next.value : !next ? before.value : lerp(before.value, next.value, (at - before.at) / (next.at - before.at))
+  // the stretch up to the new key is still the one `next` was curving
+  const curve: Curve = next?.curve ?? 'Linear'
+  return { ...track, keys: [...keys.slice(0, index), { at, value, curve }, ...keys.slice(index)] }
+}
+
+/** `random` with one more moment to pick a value */
+export function withPick(random: Random, at: number): Random {
+  const pick: Pick = { at, smooth_in: 0, smooth_out: 0 }
+  return { ...random, picks: [...random.picks, pick].sort((a, b) => a.at - b.at) }
 }
 
 /**
@@ -161,7 +283,10 @@ export function withoutDroppedParams(current: Scene, next: Scene): Scene {
 
 /** The ranges for a parameter's sliders, from the first prop that reads it */
 export function paramRanges(scene: Scene, name: string, surface: Surface): Ranges {
-  const use = propUses(scene, surface).find(({ prop }) => 'Param' in prop && prop.Param === name)
+  const use = propUses(reading(scene), surface).find(({ lens }) => {
+    const prop = lens.get()
+    return 'Param' in prop && prop.Param === name
+  })
   return use?.ranges ?? both(UNREFERENCED)
 }
 
@@ -187,6 +312,11 @@ export function scaleRanges(surface: Surface, space: WarpSpace): Ranges {
   if (space === 'paint') return both(PAINT_SCALE)
   if (!surface) return both({ min: 0, max: 2, step: 0.01 })
   return [span(0, surface[0] * 2), span(0, surface[1] * 2)]
+}
+
+export function repeatRanges(surface: Surface, space: WarpSpace): Ranges {
+  if (space === 'paint' || !surface) return both(UNIT)
+  return [span(0, surface[0]), span(0, surface[1])]
 }
 
 /** A range with a round step of about a 200th of its width */

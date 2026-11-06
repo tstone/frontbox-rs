@@ -76,14 +76,15 @@ impl Scene {
 
   fn env<'a>(&'a self, frame: &Frame<'a>) -> Env<'a> {
     let time = self.timing.map_or(0.0, |timing| timing.local_time(frame.time));
-    Env { time, params: frame.params, defaults: &self.params }
+    let cycle = self.timing.map_or(0, |timing| timing.cycle_index(frame.time));
+    Env { time, cycle, timing: self.timing, take: frame.take, params: frame.params, defaults: &self.params }
   }
 }
 
 /// Why a scene can't be played
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneError {
-  /// It has keyframes but no timing to play them in
+  /// It has props that change over time, but no timing to play them in
   NoTiming,
   /// Its timing has no length
   NoDuration,
@@ -92,7 +93,7 @@ pub enum SceneError {
 impl fmt::Display for SceneError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      Self::NoTiming => write!(f, "a scene with keyframes needs a timing"),
+      Self::NoTiming => write!(f, "a scene that changes over time needs a timing"),
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
     }
   }
@@ -105,7 +106,7 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::layout::{Grid, Line};
-  use crate::scene::{Color, ColorAdjust, ColorSpace, Key, Paint, PaintNode, Prop, Shape, ShapeNode, Stop, Track, Warp};
+  use crate::scene::{Color, ColorAdjust, ColorSpace, Key, Paint, PaintNode, Pick, Prop, Random, Shape, ShapeNode, Spread, Stop, Track, Warp};
 
   const SIZE: Vec2 = Vec2::new(100.0, 50.0);
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -125,14 +126,71 @@ mod tests {
 
   fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, params: &params, size: SIZE };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, params: &params, size: SIZE };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
     Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
+  }
+
+  /// A scene a second long whose color is picked at the start of each cycle
+  fn random_color(cycle: Cycle) -> Scene {
+    let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
+    let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 1 });
+    Scene::new(Viewport::Sequence, vec![Layer::new(Paint::new(PaintNode::Solid(color)))]).timing(Timing::new(1.0, cycle))
+  }
+
+  fn random_color_at(scene: &Scene, time: f32, take: u32) -> Rgba<u8> {
+    let params = Params::new();
+    let frame = Frame { time, take, params: &params, size: SIZE };
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
+  }
+
+  #[test]
+  fn random_picks_smooth_into_the_next_cycle() {
+    let smoothed = |cycle| {
+      let spread = Spread::Float(0.0, 360.0);
+      let pick = Pick { at: 0.0, smooth_in: 1.0, smooth_out: 0.0 };
+      let shift = Prop::Random(Random { picks: vec![pick], spread, seed: 1 });
+      Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED).adjust(ColorAdjust::HueShift(shift)))])
+        .timing(Timing::new(1.0, cycle))
+    };
+    let looping = smoothed(Cycle::Forever);
+    assert_ne!(random_color_at(&looping, 1.25, 0), random_color_at(&looping, 1.75, 0));
+    let once = smoothed(Cycle::Once);
+    assert_eq!(random_color_at(&once, 0.25, 0), random_color_at(&once, 0.75, 0));
+  }
+
+  #[test]
+  fn random_picks_change_each_cycle_and_hold_within_one() {
+    let scene = random_color(Cycle::Forever);
+    assert_eq!(random_color_at(&scene, 0.1, 0), random_color_at(&scene, 0.9, 0));
+    assert_ne!(random_color_at(&scene, 0.9, 0), random_color_at(&scene, 1.1, 0));
+    assert_eq!(random_color_at(&scene, 1.1, 0), random_color_at(&scene, 1.9, 0));
+  }
+
+  #[test]
+  fn a_take_is_the_same_each_time_and_differs_from_another() {
+    let scene = random_color(Cycle::Forever);
+    assert_eq!(random_color_at(&scene, 0.5, 3), random_color_at(&scene, 0.5, 3));
+    assert_ne!(random_color_at(&scene, 0.5, 3), random_color_at(&scene, 0.5, 4));
+  }
+
+  #[test]
+  fn a_completed_scene_holds_its_last_pick() {
+    let scene = random_color(Cycle::Times(2));
+    assert_eq!(random_color_at(&scene, 1.9, 0), random_color_at(&scene, 2.0, 0));
+    assert_eq!(random_color_at(&scene, 1.9, 0), random_color_at(&scene, 30.0, 0));
+  }
+
+  #[test]
+  fn random_props_need_a_timing() {
+    let mut scene = random_color(Cycle::Once);
+    scene.timing = None;
+    assert_eq!(scene.check().unwrap_err(), SceneError::NoTiming);
   }
 
   /// A circle of diameter 40 at (50, 25) in a 100 x 50 viewport, over a dark background
@@ -149,7 +207,7 @@ mod tests {
 
   fn outlines(layer: Layer) -> Vec<Vec2> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, params: &params, size: SIZE };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
     Scene::new(Viewport::Area, vec![layer]).outlines(&frame).remove(0)
   }
 
@@ -158,7 +216,7 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED))]);
     let params = Params::new();
     let at = Sample::new(Vec2::new(150.0, 25.0), 0.0);
-    let color = |size: Vec2| scene.sample(&at, &Frame { time: 0.0, params: &params, size });
+    let color = |size: Vec2| scene.sample(&at, &Frame { time: 0.0, take: 0, params: &params, size });
     assert_eq!(color(Vec2::new(200.0, 50.0)), RED);
     assert_eq!(color(SIZE), Rgba([0, 0, 0, 0]));
   }
@@ -168,7 +226,7 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(red_to_blue())]);
     let params = Params::new();
     let far_edge = |width: f32| {
-      let frame = Frame { time: 0.0, params: &params, size: Vec2::new(width, 50.0) };
+      let frame = Frame { time: 0.0, take: 0, params: &params, size: Vec2::new(width, 50.0) };
       scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
     };
     assert_eq!(far_edge(100.0), BLUE);
@@ -291,6 +349,68 @@ mod tests {
   }
 
   #[test]
+  fn mirror_makes_a_strip_symmetric_from_the_middle_of_a_paint() {
+    let paint = red_to_blue().warp(Warp::Mirror(0.0.into()));
+    let colors = line(&Scene::new(Viewport::Sequence, vec![Layer::new(paint)]), 7);
+    assert_eq!(colors[0], BLUE);
+    assert_eq!(colors[6], BLUE);
+    assert_eq!(colors[1], colors[5]);
+    assert_eq!(colors[2], colors[4]);
+  }
+
+  #[test]
+  fn repeat_tiles_a_paint_along_a_strip() {
+    let paint = red_to_blue().warp(Warp::Scale(Vec2::new(0.5, 1.0).into())).warp(Warp::Repeat(Vec2::new(0.5, 0.0).into()));
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(paint)]);
+    assert_ne!(sample(&scene, 0.3, 0.0, 0.1), sample(&scene, 0.4, 0.0, 0.1));
+    // the copies meet at 0.25 and 0.75, so these stay within one
+    for x in [0.3, 0.375, 0.45] {
+      assert_eq!(sample(&scene, x, 0.0, 0.1), sample(&scene, x + 0.5, 0.0, 0.1));
+    }
+  }
+
+  #[test]
+  fn repeat_copies_a_shape_and_a_later_warp_moves_the_copies() {
+    let shape = Shape::new(ShapeNode::Ellipse)
+      .warp(Warp::Scale(Vec2::splat(4.0).into()))
+      .warp(Warp::Repeat(Vec2::new(20.0, 0.0).into()))
+      .warp(Warp::Translate(Vec2::new(10.0, 25.0).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    for x in [10.0, 30.0, 50.0, 90.0] {
+      assert_eq!(sample(&scene, x, 25.0, 0.0), RED, "{x}");
+      assert_eq!(sample(&scene, x + 10.0, 25.0, 0.0)[3], 0, "{x}");
+    }
+    assert_eq!(sample(&scene, 10.0, 35.0, 0.0)[3], 0);
+  }
+
+  #[test]
+  fn a_mirrored_shape_keeps_its_soft_edge_on_both_sides() {
+    let shape = Shape::new(ShapeNode::Ellipse)
+      .warp(Warp::Scale(Vec2::new(20.0, 10.0).into()))
+      .warp(Warp::Translate(Vec2::new(30.0, 0.0).into()))
+      .warp(Warp::Mirror(0.0.into()))
+      .warp(Warp::Translate(Vec2::new(50.0, 25.0).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    assert_eq!(sample(&scene, 80.0, 25.0, 1.0), RED);
+    assert_eq!(sample(&scene, 20.0, 25.0, 1.0), RED);
+    assert_eq!(sample(&scene, 50.0, 25.0, 1.0)[3], 0);
+    assert_eq!(sample(&scene, 90.0, 25.0, 1.0), sample(&scene, 10.0, 25.0, 1.0));
+    assert_eq!(sample(&scene, 90.0, 25.0, 1.0)[3], 128);
+  }
+
+  #[test]
+  fn an_outline_shows_the_drawing_a_fold_starts_from() {
+    let params = Params::new();
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
+    let plain = Shape::new(ShapeNode::Ellipse).warp(Warp::Translate(Vec2::new(10.0, 5.0).into()));
+    let mut folded = plain.clone();
+    folded.warp.insert(0, Warp::Repeat(Vec2::splat(4.0).into()));
+    folded.warp.insert(1, Warp::Mirror(30.0.into()));
+    let outlines = |shape| Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]).outlines(&frame);
+    assert_eq!(outlines(folded), outlines(plain));
+  }
+
+  #[test]
   fn a_sequence_plays_on_any_number_of_leds() {
     let scene = Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue())]);
     for count in [2, 6, 8, 60] {
@@ -340,7 +460,7 @@ mod tests {
     // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
     let scene = circle(solid(RED));
     let params = Params::new();
-    let frame = Frame { time: 0.0, params: &params, size: SIZE };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
     let pixels: Vec<_> =
       Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
     let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
@@ -367,7 +487,7 @@ mod tests {
 
   fn level_at(scene: &Scene, time: f32) -> u8 {
     let params = Params::new();
-    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, params: &params, size: SIZE })[0]
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, take: 0, params: &params, size: SIZE })[0]
   }
 
   #[test]
@@ -453,7 +573,7 @@ mod tests {
     assert_eq!(line(&scene, 1), vec![RED]);
 
     let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-    let frame = Frame { time: 0.0, params: &params, size: SIZE };
+    let frame = Frame { time: 0.0, take: 0, params: &params, size: SIZE };
     assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
   }
 }

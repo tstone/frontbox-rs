@@ -23,6 +23,8 @@ impl Sample {
 pub struct Frame<'a> {
   /// Seconds since the scene started
   pub time: f32,
+  /// Which set of random picks to show. Anything that plays a scene takes a new one each time it starts it over.
+  pub take: u32,
   /// Parameters supplied by the game, which take the place of the scene's defaults
   pub params: &'a Params,
   /// The size of the device, in its own units. A scene's numbers are in these units. A `Sequence` doesn't use this.

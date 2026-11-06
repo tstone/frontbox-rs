@@ -5,6 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
+use crate::scene::Timing;
 
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
@@ -66,7 +67,13 @@ impl Lerp for Color {
 
 /// What props resolve against: the time, the game's parameters, and the scene's defaults
 pub(crate) struct Env<'a> {
+  /// Seconds into the current cycle of the scene
   pub time: f32,
+  /// Which cycle of the scene that is, counting from zero
+  pub cycle: u32,
+  /// The scene's timing, for looking past the ends of a cycle
+  pub timing: Option<Timing>,
+  pub take: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,
 }
@@ -82,6 +89,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, params, defaults: params }
+    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params }
   }
 }

@@ -24,6 +24,8 @@ pub enum ServerMessage {
   SceneRendered(RenderedScene),
   /// Sent only to the client that asked, when the scene in a `RenderScene` can't be rendered
   SceneRenderFailed { error: String },
+  /// Sent only to the client that asked, when the scene in a `RenderClip` can't be rendered
+  SceneClipFailed { id: u32, error: String },
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
@@ -133,6 +135,21 @@ pub struct RenderedScene {
   pub led_colors: BTreeMap<String, Rgb>,
 }
 
+/// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a
+/// little-endian `u32`. After it come the frames' points, red, green, blue, and alpha as for `RenderedScene::colors`,
+/// then the frames' LEDs, as red, green, and blue in the order of `leds`.
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedClip {
+  /// The `RenderClip` this answers
+  pub id: u32,
+  /// Evenly spaced from the start of a cycle to its end, both included
+  pub frames: usize,
+  pub width: usize,
+  pub height: usize,
+  /// The name of each LED the scene lands on
+  pub leds: Vec<String>,
+}
+
 /// A rectangle in a scene
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedArea {
@@ -169,8 +186,17 @@ pub enum ClientMessage {
   },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
-  /// Render a scene. Answered with `SceneRendered` or `SceneRenderFailed`.
+  /// Render a moment of a scene. Answered with `SceneRendered` or `SceneRenderFailed`.
   RenderScene {
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+    /// Seconds into a cycle of the scene
+    time: f32,
+  },
+  /// Render a whole cycle of a scene for the client to play. Answered with a clip, or `SceneClipFailed`.
+  RenderClip {
+    id: u32,
     source: SceneSource,
     size: SceneSize,
     leds: SceneLeds,

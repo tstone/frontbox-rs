@@ -1,4 +1,4 @@
-use axum::extract::ws::Utf8Bytes;
+use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
   ConfigDomainValue, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
-use crate::scene_render::{LedTarget, render_scene};
+use crate::scene_render::{LedTarget, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -142,23 +142,10 @@ impl ConsoleHub {
     source: SceneSource,
     size: SceneSize,
     leds: SceneLeds,
+    time: f32,
   ) -> Option<Utf8Bytes> {
-    let target = {
-      let state = self.state.lock().unwrap();
-      LedTarget {
-        leds: state
-          .snapshot
-          .hardware
-          .as_ref()
-          .map(|hardware| hardware.leds.clone())
-          .unwrap_or_default(),
-        plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
-        query: match leds.query {
-          SceneLedQuery::Every => LedQ::every(),
-        },
-      }
-    };
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target)).await {
+    let target = self.led_target(leds);
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, time)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -167,6 +154,36 @@ impl ConsoleHub {
       }
     };
     serialize(&message)
+  }
+
+  /// Runs off the runtime, and has a message ready for the client whichever way it goes
+  pub async fn render_clip(&self, id: u32, source: SceneSource, size: SceneSize, leds: SceneLeds) -> Option<Message> {
+    let target = self.led_target(leds);
+    let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target)).await {
+      Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
+      Ok(Err(error)) => failed(error),
+      Err(err) => {
+        log::error!(target: "frontbox_core::console", "Scene clip stopped: {err}");
+        failed("The clip stopped rendering".into())
+      }
+    }
+  }
+
+  fn led_target(&self, leds: SceneLeds) -> LedTarget {
+    let state = self.state.lock().unwrap();
+    LedTarget {
+      leds: state
+        .snapshot
+        .hardware
+        .as_ref()
+        .map(|hardware| hardware.leds.clone())
+        .unwrap_or_default(),
+      plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
+      query: match leds.query {
+        SceneLedQuery::Every => LedQ::every(),
+      },
+    }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client

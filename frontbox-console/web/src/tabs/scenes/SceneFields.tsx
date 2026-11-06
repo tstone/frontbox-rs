@@ -7,7 +7,8 @@ import { Portal } from 'solid-js/web'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
-import { freshParamName, paramFits, startingValue, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import type { Spread } from '../../types/generated/Spread'
+import { field, freshParamName, fullSpread, HUE, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -111,6 +112,137 @@ export function NumberField(props: { label: string; value: number; onChange: (va
         }}
       />
     </div>
+  )
+}
+
+/**
+ * The lowest and highest of a span, as a slider with two ends and a box for typing each. As with `NumberField`, a value
+ * from a box or the file past the range widens the slider. `track` draws the slider's track for those limits.
+ */
+function RangeField(props: {
+  label: string
+  value: [number, number]
+  onChange: (value: [number, number]) => void
+  range: Range
+  track?: (min: number, max: number) => string
+}) {
+  const ends = () => [Math.min(...props.value), Math.max(...props.value)]
+  const min = () => Math.min(props.range.min, ends()[0])
+  const max = () => Math.max(props.range.max, ends()[1])
+
+  const box = (index: 0 | 1, name: string) => (
+    <input
+      type="number"
+      aria-label={`${props.label} ${name}`}
+      step={props.range.step}
+      value={props.value[index]}
+      onInput={(e) => {
+        if (!Number.isFinite(e.currentTarget.valueAsNumber)) return
+        const next: [number, number] = [...props.value]
+        next[index] = e.currentTarget.valueAsNumber
+        props.onChange(next)
+      }}
+    />
+  )
+
+  return (
+    <div class="scene-number scene-range" classList={{ 'scene-range-drawn': props.track !== undefined }}>
+      {box(0, 'lowest')}
+      <Slider.Root
+        aria-label={[`${props.label} lowest`, `${props.label} highest`]}
+        min={min()}
+        max={max()}
+        step={props.range.step}
+        value={ends()}
+        onValueChange={({ value: [low, high] }) => {
+          if (low !== ends()[0] || high !== ends()[1]) props.onChange([low, high])
+        }}
+      >
+        <Slider.Control>
+          <Slider.Track style={{ background: props.track?.(min(), max()) }}>
+            <Slider.Range />
+          </Slider.Track>
+          <Slider.Thumb index={0}>
+            <Slider.HiddenInput />
+          </Slider.Thumb>
+          <Slider.Thumb index={1}>
+            <Slider.HiddenInput />
+          </Slider.Thumb>
+        </Slider.Control>
+      </Slider.Root>
+      {box(1, 'highest')}
+    </div>
+  )
+}
+
+/** The hues from `min` to `max`, which can be more than one turn or start below zero */
+function hueTrack(min: number, max: number) {
+  const stops = Array.from({ length: 7 }, (_, i) => `hsl(${min + ((max - min) * i) / 6} 100% 50%)`)
+  return `linear-gradient(to right, ${stops.join(', ')})`
+}
+
+const brightnessTrack = () => 'linear-gradient(to right, #000, #fff)'
+
+const opacityTrack = () => 'linear-gradient(to right, transparent, #fff)'
+
+/** What a random prop can pick from, with a control for each thing about it that varies */
+function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges }) {
+  const spread = () => props.lens.get()
+  const float = () => variant(props.lens, 'Float')
+  const vec2 = () => variant(props.lens, 'Vec2')
+  const color = () => variant(props.lens, 'Color')
+
+  const axis = (name: 'x' | 'y', index: 0 | 1) => (
+    <div class="scene-axis">
+      <span aria-hidden="true">{name}</span>
+      <RangeField
+        label={`${props.label} ${name}`}
+        range={props.ranges[index]}
+        value={field(vec2(), name).get()}
+        onChange={field(vec2(), name).set}
+      />
+    </div>
+  )
+
+  return (
+    <Switch>
+      <Match when={'Float' in spread()}>
+        <RangeField label={props.label} range={props.ranges[0]} value={float().get()} onChange={float().set} />
+      </Match>
+      <Match when={'Vec2' in spread()}>
+        {axis('x', 0)}
+        {axis('y', 1)}
+      </Match>
+      <Match when={'Color' in spread()}>
+        <FieldRow label="Hue">
+          <RangeField
+            label={`${props.label} hue`}
+            range={HUE}
+            track={hueTrack}
+            value={field(color(), 'hue').get()}
+            onChange={field(color(), 'hue').set}
+          />
+        </FieldRow>
+        <FieldRow label="Brightness">
+          <RangeField
+            label={`${props.label} brightness`}
+            range={UNIT}
+            track={brightnessTrack}
+            value={field(color(), 'brightness').get()}
+            onChange={field(color(), 'brightness').set}
+          />
+        </FieldRow>
+        <FieldRow label="Opacity">
+          <RangeField
+            label={`${props.label} opacity`}
+            range={UNIT}
+            track={opacityTrack}
+            value={field(color(), 'alpha').get()}
+            onChange={field(color(), 'alpha').set}
+          />
+        </FieldRow>
+      </Match>
+    </Switch>
   )
 }
 
@@ -222,10 +354,10 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-type PropKind = 'Fixed' | 'Param' | 'Track'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track']
+type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random']
 
-/** A prop: whether it's fixed, read from a parameter, or keyframed, and the control for that */
+/** A prop: whether it's fixed, read from a parameter, keyframed, or picked at random, and the control for that */
 export function PropField<T extends SceneValue>(props: {
   label: string
   /** What to call a parameter made from this prop */
@@ -237,7 +369,7 @@ export function PropField<T extends SceneValue>(props: {
 }) {
   const scene = useScene()
   const prop = () => props.lens.get()
-  const kind = (): PropKind => ('Fixed' in prop() ? 'Fixed' : 'Param' in prop() ? 'Param' : 'Track')
+  const kind = () => Object.keys(prop())[0] as PropKind
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   const paramName = () => (prop() as { Param: string }).Param
 
@@ -248,6 +380,12 @@ export function PropField<T extends SceneValue>(props: {
     if (next === 'Track') {
       scene.set(withTiming(scene.get()))
       props.lens.set({ Track: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
+    }
+    if (next === 'Random') {
+      scene.set(withTiming(scene.get()))
+      const seed = Math.floor(Math.random() * 2 ** 32)
+      const picks = [{ at: 0, smooth_in: 0, smooth_out: 0 }]
+      props.lens.set({ Random: { picks, spread: fullSpread(current, props.ranges), seed } })
     }
     if (next === 'Param') {
       const name = freshParamName(scene.get(), props.paramName)
@@ -308,7 +446,18 @@ export function PropField<T extends SceneValue>(props: {
           </Show>
         </Match>
         <Match when={kind() === 'Track'}>
-          <p class="scene-note">Keyframes can't be edited here yet.</p>
+          <p class="scene-note">Keyframes are on the timeline below.</p>
+        </Match>
+        <Match when={kind() === 'Random'}>
+          <SpreadField
+            label={props.label}
+            ranges={props.ranges}
+            lens={field(variant(props.lens, 'Random'), 'spread')}
+          />
+          <Show when={!spreadFits((prop() as { Random: { spread: Spread } }).Random.spread, props.fallback)}>
+            <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
+          </Show>
+          <p class="scene-note">When to pick a new value is on the timeline below.</p>
         </Match>
       </Switch>
     </div>

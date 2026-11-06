@@ -9,4 +9,4 @@ import type { TraceRecord } from "./TraceRecord";
 /**
  * Messages pushed from the backend to the web app over websockets
  */
-export type ServerMessage = { "type": "Init" } & Snapshot | { "type": "Trace" } & TraceRecord | { "type": "Leds" } & LedColors | { "type": "Configs" } & ConfigList | { "type": "MetricTotals" } & MetricTotals | { "type": "SceneRendered" } & RenderedScene | { "type": "SceneRenderFailed", error: string, };
+export type ServerMessage = { "type": "Init" } & Snapshot | { "type": "Trace" } & TraceRecord | { "type": "Leds" } & LedColors | { "type": "Configs" } & ConfigList | { "type": "MetricTotals" } & MetricTotals | { "type": "SceneRendered" } & RenderedScene | { "type": "SceneRenderFailed", error: string, } | { "type": "SceneClipFailed", id: number, error: string, };

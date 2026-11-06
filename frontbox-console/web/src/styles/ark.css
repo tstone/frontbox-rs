@@ -55,6 +55,16 @@
   z-index: 1;
 }
 
+[data-scope='splitter'][data-part='resize-trigger'][data-orientation='vertical'] {
+  width: auto;
+  height: 5px;
+  margin: -2px 0;
+  border: none;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+  cursor: row-resize;
+}
+
 [data-scope='splitter'][data-part='resize-trigger']:hover,
 [data-scope='splitter'][data-part='resize-trigger'][data-dragging],
 [data-scope='splitter'][data-part='resize-trigger'][data-focus] {

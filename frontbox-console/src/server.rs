@@ -45,6 +45,8 @@ async fn ws_handler(ws: WebSocketUpgrade, State(hub): State<ConsoleHub>) -> Resp
 async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
   // outlives resyncs; dropped when the session ends for any reason
   let mut held = HeldSwitches::new(hub.clone());
+  // a clip takes a while, and the session carries on in the meantime rather than waiting on it
+  let (clip_sender, mut clips) = tokio::sync::mpsc::channel(1);
   'resync: loop {
     let Some(Subscription {
       init,
@@ -91,6 +93,12 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           }
         }
 
+        Some(clip) = clips.recv() => {
+          if socket.send(clip).await.is_err() {
+            return;
+          }
+        }
+
         incoming = socket.recv() => match incoming {
           Some(Ok(Message::Text(text))) => match serde_json::from_str::<ClientMessage>(&text) {
             // answered to this client alone; the query runs off the runtime, so it only holds up this session
@@ -101,12 +109,21 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
                 return;
               }
             }
-            Ok(ClientMessage::RenderScene { source, size, leds }) => {
-              if let Some(reply) = hub.render_scene(source, size, leds).await
+            Ok(ClientMessage::RenderScene { source, size, leds, time }) => {
+              if let Some(reply) = hub.render_scene(source, size, leds, time).await
                 && socket.send(Message::Text(reply)).await.is_err()
               {
                 return;
               }
+            }
+            Ok(ClientMessage::RenderClip { id, source, size, leds }) => {
+              let hub = hub.clone();
+              let clip_sender = clip_sender.clone();
+              tokio::spawn(async move {
+                if let Some(clip) = hub.render_clip(id, source, size, leds).await {
+                  let _ = clip_sender.send(clip).await;
+                }
+              });
             }
             Ok(message) => held.handle(message),
             Err(err) => log::warn!(target: "frontbox_core::console", "Ignoring a message from a console client: {err}"),
@@ -181,7 +198,7 @@ impl HeldSwitches {
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
       // replied to by the session, which has the socket
-      ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } => {}
+      ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } | ClientMessage::RenderClip { .. } => {}
     }
   }
 }

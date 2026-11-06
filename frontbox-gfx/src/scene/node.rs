@@ -1,4 +1,4 @@
-use glam::Affine2;
+use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Warp};
@@ -40,22 +40,24 @@ impl<N, A> Node<N, A> {
   }
 
   /// Maps a point in the node's own space into the scene, applying its warps. `None` when a warp collapses the drawing
-  /// (a scale of zero), so nothing is drawn.
+  /// (a scale of zero), so nothing is drawn. A point can be drawn in many places once it's mirrored or repeated, and this
+  /// gives the one they start from.
   pub(crate) fn to_scene(&self, env: &Env) -> Option<Affine2> {
     let forward = self.warp.iter().fold(Affine2::IDENTITY, |acc, warp| warp.affine(env) * acc);
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
-  /// Maps a point in the scene into the node's own space, undoing its warps
-  pub(crate) fn to_local(&self, env: &Env) -> Option<Affine2> {
-    self.to_scene(env).map(|forward| forward.inverse())
+  /// What maps the point `at` in the scene, and those around it, into the node's own space, undoing its warps. Other
+  /// points can need another one, as what `Mirror` and `Repeat` do depends on where a point is.
+  pub(crate) fn to_local(&self, at: Vec2, env: &Env) -> Option<Affine2> {
+    self.warp.iter().rev().try_fold(Affine2::IDENTITY, |undone, warp| {
+      warp.undo(undone.transform_point2(at), env).map(|undo| undo * undone)
+    })
   }
 }
 
 #[cfg(test)]
 mod tests {
-  use glam::Vec2;
-
   use super::*;
   use crate::scene::Params;
   use crate::scene::value::tests::env;
@@ -72,30 +74,55 @@ mod tests {
       Warp::Scale(Vec2::splat(2.0).into()),
       Warp::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
-    let local = n.to_local(&env(0.0, &params)).unwrap();
-    assert!(local.transform_point2(Vec2::new(11.0, 0.0)).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
+    let at = Vec2::new(11.0, 0.0);
+    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
     // move then scale: the same point is drawn at 2 * (0.5 + 10)
     let n = node(vec![
       Warp::Translate(Vec2::new(10.0, 0.0).into()),
       Warp::Scale(Vec2::splat(2.0).into()),
     ]);
-    let local = n.to_local(&env(0.0, &params)).unwrap();
-    assert!(local.transform_point2(Vec2::new(21.0, 0.0)).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
+    let at = Vec2::new(21.0, 0.0);
+    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
   }
 
   #[test]
   fn rotate_turns_x_toward_y() {
     let params = Params::new();
     let n = node(vec![Warp::Rotate(90.0.into())]);
-    let local = n.to_local(&env(0.0, &params)).unwrap();
-    assert!(local.transform_point2(Vec2::new(0.0, 1.0)).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
+    let at = Vec2::new(0.0, 1.0);
+    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
   }
 
   #[test]
   fn zero_scale_draws_nothing() {
     let params = Params::new();
     let n = node(vec![Warp::Scale(Vec2::new(0.0, 1.0).into())]);
-    assert!(n.to_local(&env(0.0, &params)).is_none());
+    assert!(n.to_local(Vec2::ZERO, &env(0.0, &params)).is_none());
+  }
+
+  #[test]
+  fn a_warp_after_a_fold_moves_the_result() {
+    let params = Params::new();
+    // copies 10 apart, then all of them moved along by 3: the copy at 23 shows the drawing's origin
+    let n = node(vec![Warp::Repeat(Vec2::new(10.0, 0.0).into()), Warp::Translate(Vec2::new(3.0, 0.0).into())]);
+    let at = Vec2::new(23.0, 1.0);
+    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.0, 1.0), 1e-5));
+  }
+
+  #[test]
+  fn a_warp_before_a_fold_moves_what_gets_folded() {
+    let params = Params::new();
+    // moved to +5 and then mirrored, the drawing's origin shows up at both +5 and -5
+    let n = node(vec![Warp::Translate(Vec2::new(5.0, 0.0).into()), Warp::Mirror(0.0.into())]);
+    for x in [5.0, -5.0] {
+      let at = Vec2::new(x, 0.0);
+      let local = n.to_local(at, &env(0.0, &params)).unwrap();
+      assert!(local.transform_point2(at).abs_diff_eq(Vec2::ZERO, 1e-6));
+    }
   }
 }

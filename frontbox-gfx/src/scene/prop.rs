@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Animatable, Env, Track};
+use crate::scene::{Animatable, Env, Random, Track};
 
-/// A value in a definition that can be fixed, read from a parameter, or keyframed
+/// A value in a definition that can be fixed, read from a parameter, keyframed, or picked at random
 ///
-/// In RON: `Fixed(4.0)`, `Param("size")`, or `Track((keys: [...]))`.
+/// In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, or `Random((picks: [...], spread: Float(0.0, 1.0)))`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Prop<T> {
@@ -14,6 +14,8 @@ pub enum Prop<T> {
   Param(String),
   /// Keyframes over time
   Track(Track<T>),
+  /// A new value at set times, from within a range
+  Random(Random),
 }
 
 impl<T> From<T> for Prop<T> {
@@ -24,7 +26,7 @@ impl<T> From<T> for Prop<T> {
 
 impl<T> Prop<T> {
   pub(crate) fn is_animated(&self) -> bool {
-    matches!(self, Self::Track(_))
+    matches!(self, Self::Track(_) | Self::Random(_))
   }
 }
 
@@ -34,6 +36,7 @@ impl<T: Animatable> Prop<T> {
       Self::Fixed(value) => value.clone(),
       Self::Param(name) => env.param(name).and_then(T::from_value).unwrap_or_default(),
       Self::Track(track) => track.resolve(env.time),
+      Self::Random(random) => random.resolve(env),
     }
   }
 }
@@ -54,7 +57,7 @@ mod tests {
   fn param_prefers_the_games_value_over_the_default() {
     let defaults = Params::from([("size".into(), Value::Float(1.0)), ("other".into(), Value::Float(9.0))]);
     let params = Params::from([("size".into(), Value::Float(2.0))]);
-    let env = Env { time: 0.0, params: &params, defaults: &defaults };
+    let env = Env { time: 0.0, cycle: 0, timing: None, take: 0, params: &params, defaults: &defaults };
     assert_eq!(Prop::<f32>::Param("size".into()).resolve(&env), 2.0);
     assert_eq!(Prop::<f32>::Param("other".into()).resolve(&env), 9.0);
   }

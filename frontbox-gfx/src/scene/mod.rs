@@ -18,7 +18,7 @@
 //!
 //! let line = Line::new(8);
 //! let params = Params::new();
-//! let frame = Frame { time: 0.0, params: &params, size: Default::default() };
+//! let frame = Frame { time: 0.0, take: 0, params: &params, size: Default::default() };
 //! let colors: Vec<Rgba<u8>> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
 //! # assert_eq!(colors[0], Rgba::red());
 //! # assert_eq!(colors[7], Rgba::blue());
@@ -27,7 +27,7 @@
 //! - [`Scene`], [`Layer`] -- Layers of paint in shapes, composited bottom to top
 //! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
 //! - [`Node`] -- Shapes and paints, each a base kind with [`Warp`]s going in and adjusts coming out
-//! - [`Prop`] -- A value that's fixed, read from a parameter, or keyframed
+//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, or picked at random
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`] -- Reading and writing scenes as RON
 
@@ -38,6 +38,7 @@ mod layer;
 mod node;
 mod paint;
 mod prop;
+mod random;
 mod bounds;
 mod sample;
 mod scene;
@@ -54,6 +55,7 @@ pub use layer::*;
 pub use node::*;
 pub use paint::*;
 pub use prop::*;
+pub use random::*;
 pub use bounds::*;
 pub use sample::*;
 pub use scene::*;

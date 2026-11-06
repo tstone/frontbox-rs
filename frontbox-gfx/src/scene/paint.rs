@@ -15,7 +15,7 @@ pub type Paint = Node<PaintNode, ColorAdjust>;
 impl Paint {
   /// The color at a point in the paint's box, before its warps
   pub(crate) fn color(&self, p: Vec2, env: &Env) -> Rgba<u8> {
-    let Some(to_local) = self.to_local(env) else {
+    let Some(to_local) = self.to_local(p, env) else {
       return Rgba([0, 0, 0, 0]);
     };
     let color = self.base.color(to_local.transform_point2(p), env);

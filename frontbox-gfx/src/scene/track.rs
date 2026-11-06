@@ -30,7 +30,7 @@ impl<T: Animatable> Track<T> {
       if time < b.at {
         let span = b.at - a.at;
         let phase = if span > 0.0 { (time - a.at) / span } else { 1.0 };
-        return a.value.interpolate(&b.value, a.curve.sample(phase));
+        return a.value.interpolate(&b.value, b.curve.sample(phase));
       }
     }
 
@@ -45,7 +45,7 @@ pub struct Key<T> {
   /// Seconds
   pub at: f32,
   pub value: T,
-  /// How to get from this key to the next
+  /// How to get here from the key before. The first key has none before it, so this does nothing there.
   #[serde(default)]
   pub curve: Curve,
 }
@@ -66,20 +66,31 @@ mod tests {
     Prop::Track(Track {
       keys: vec![
         Key::new(0.0, 0.0, Curve::Linear),
-        Key::new(1.0, 10.0, Curve::EaseIn),
-        Key::new(2.0, 20.0, Curve::Linear),
+        Key::new(1.0, 10.0, Curve::Linear),
+        Key::new(2.0, 20.0, Curve::EaseIn),
       ],
       cycle,
     })
   }
 
   #[test]
-  fn track_eases_with_the_curve_of_the_key_it_leaves() {
+  fn track_eases_with_the_curve_of_the_key_it_arrives_at() {
     let params = Params::new();
     let prop = track(Cycle::Once);
     assert_eq!(prop.resolve(&env(0.5, &params)), 5.0);
     // EaseIn at phase 0.5 is 0.25
     assert_eq!(prop.resolve(&env(1.5, &params)), 12.5);
+  }
+
+  #[test]
+  fn the_first_keys_curve_does_nothing() {
+    let params = Params::new();
+    let prop = Prop::Track(Track {
+      keys: vec![Key::new(0.0, 0.0, Curve::EaseIn), Key::new(1.0, 10.0, Curve::Linear)],
+      cycle: Cycle::Forever,
+    });
+    assert_eq!(prop.resolve(&env(0.5, &params)), 5.0);
+    assert_eq!(prop.resolve(&env(1.5, &params)), 5.0);
   }
 
   #[test]

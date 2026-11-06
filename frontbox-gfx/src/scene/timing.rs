@@ -23,6 +23,14 @@ impl Timing {
     self.cycle.local_time(time, self.duration)
   }
 
+  pub(crate) fn cycle_index(&self, time: f32) -> u32 {
+    self.cycle.index(time, self.duration)
+  }
+
+  pub(crate) fn is_last_cycle(&self, cycle: u32) -> bool {
+    self.cycle.is_last(cycle)
+  }
+
   pub(crate) fn is_complete(&self, time: f32) -> bool {
     self.cycle.is_complete(time, self.duration)
   }
