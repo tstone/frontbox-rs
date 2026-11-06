@@ -23,6 +23,7 @@ impl Paint {
   }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PaintNode {
   Solid(Prop<Color>),
@@ -37,6 +38,7 @@ pub enum PaintNode {
 }
 
 /// A color at a point along a gradient, from 0 to 1
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stop {
   pub at: f32,
@@ -50,6 +52,7 @@ impl Stop {
 }
 
 /// How a gradient mixes between its colors
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColorSpace {
   /// Perceptually even, so brightness doesn't dip between colors

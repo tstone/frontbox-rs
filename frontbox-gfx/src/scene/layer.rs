@@ -4,11 +4,13 @@ use serde::{Deserialize, Serialize};
 use crate::scene::{Env, Paint, Bounds, Sample, Shape};
 
 /// A paint drawn in a shape
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
   pub paint: Paint,
   /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
+  #[cfg_attr(feature = "ts", ts(optional))]
   pub shape: Option<Shape>,
 }
 

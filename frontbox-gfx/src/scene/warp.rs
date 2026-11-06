@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use crate::scene::{Env, Prop};
 
 /// Changes where a node is drawn
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Warp {
-  Translate(Prop<Vec2>),
+  Translate(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
   /// Degrees, clockwise in a scene whose y runs down
   Rotate(Prop<f32>),
-  Scale(Prop<Vec2>),
+  Scale(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
 }
 
 impl Warp {

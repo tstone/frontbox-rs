@@ -10,10 +10,11 @@ use crate::animation::Lerp;
 pub type Params = BTreeMap<String, Value>;
 
 /// A parameter value the game supplies at runtime
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Value {
   Float(f32),
-  Vec2(Vec2),
+  Vec2(#[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))] Vec2),
   Color(Color),
 }
 
@@ -23,6 +24,7 @@ pub enum Value {
 /// Sampling returns plain `Rgba<u8>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "(u8, u8, u8, u8)", into = "(u8, u8, u8, u8)")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(type = "[number, number, number, number]"))]
 pub struct Color(pub Rgba<u8>);
 
 impl Default for Color {

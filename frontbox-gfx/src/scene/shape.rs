@@ -8,15 +8,20 @@ pub type Shape = Node<ShapeNode, ShapeAdjust>;
 
 /// Shapes have no position or size of their own; warps give them that. A circle of radius 20 is an `Ellipse`
 /// scaled by `(40, 40)`, and a rect is a unit square polygon scaled to its size.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
   /// An ellipse 1 unit across, centered on the origin
   Ellipse,
   /// A closed polygon through points
-  Polygon { points: Vec<Prop<Vec2>> },
+  Polygon {
+    #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
+    points: Vec<Prop<Vec2>>,
+  },
 }
 
 /// Changes to a shape's edge. None yet.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeAdjust {}
 

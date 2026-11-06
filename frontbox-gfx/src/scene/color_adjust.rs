@@ -5,6 +5,7 @@ use crate::color::RgbaColor;
 use crate::scene::{Env, Prop};
 
 /// Changes to a paint's colors, applied in order to whatever its kind produces
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ColorAdjust {
   /// Turns the hue by degrees, keeping saturation, lightness, and alpha

@@ -5,6 +5,7 @@ const BACK_C1: f32 = 1.70158;
 const BACK_C2: f32 = BACK_C1 * 1.525;
 const BACK_C3: f32 = BACK_C1 + 1.0;
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Curve {
   #[default]

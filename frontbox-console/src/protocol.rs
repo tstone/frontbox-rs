@@ -5,6 +5,7 @@ use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
 use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
+use frontbox_gfx::scene::Scene;
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
@@ -115,20 +116,14 @@ pub struct LedColors {
 /// A scene's colors at each point, row by row from the top left
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
-  pub viewport: SceneViewport,
+  /// The scene that was rendered
+  pub scene: Scene,
+  /// The same scene as RON
+  pub ron: String,
   pub width: usize,
   pub height: usize,
   /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
   pub colors: Vec<u8>,
-}
-
-/// The kind of viewport a scene has, which decides the points it renders to
-#[derive(Clone, Copy, serde::Serialize, TS)]
-pub enum SceneViewport {
-  /// A list of LEDs
-  Sequence,
-  /// Rows of pixels, like a DMD
-  Area,
 }
 
 /// Operator configs that were first used or changed
@@ -158,8 +153,17 @@ pub enum ClientMessage {
   },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
-  /// Render a scene from its RON source. Answered with `SceneRendered` or `SceneRenderFailed`.
-  RenderScene { source: String, size: SceneSize },
+  /// Render a scene. Answered with `SceneRendered` or `SceneRenderFailed`.
+  RenderScene { source: SceneSource, size: SceneSize },
+}
+
+/// A scene to render, as either of the forms the console edits it in
+#[derive(Clone, serde::Deserialize, TS)]
+pub enum SceneSource {
+  /// As written in a file
+  Ron(String),
+  /// As edited field by field
+  Definition(Scene),
 }
 
 /// How many points to sample a scene at. The scene's viewport decides which of these applies.

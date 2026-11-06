@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use crate::scene::Bounds;
 
 /// What the scene is seen within
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Viewport {
   /// Points in order, such as a list of LEDs (1D space)
   Sequence,
   /// A rectangle from the origin (2D space)
-  Area(Vec2),
+  Area(#[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))] Vec2),
 }
 
 impl Viewport {

@@ -136,8 +136,8 @@ impl ConsoleHub {
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
   /// Runs off the runtime, so a large render only holds up the client that asked. Needs nothing from the machine.
-  pub async fn render_scene(&self, source: String, size: SceneSize) -> Option<Utf8Bytes> {
-    let message = match tokio::task::spawn_blocking(move || render_scene(&source, size)).await {
+  pub async fn render_scene(&self, source: SceneSource, size: SceneSize) -> Option<Utf8Bytes> {
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {

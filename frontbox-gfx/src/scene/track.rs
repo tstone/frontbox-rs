@@ -4,6 +4,7 @@ use crate::animation::{Curve, Cycle};
 use crate::scene::Animatable;
 
 /// Keyframes, played from time zero
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track<T> {
   /// In order of `at`
@@ -50,6 +51,7 @@ impl<T: Animatable> Track<T> {
 }
 
 /// A value at a point in time
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Key<T> {
   /// Seconds

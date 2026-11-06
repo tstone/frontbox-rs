@@ -6,11 +6,13 @@ use crate::scene::{Env, Frame, Layer, Params, Sample, Viewport, file};
 
 /// A graphic and how it moves over time: layers seen through a viewport, and the parameters the game can change. Ready to be
 /// sampled by any device, and written to a file with [`file`].
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
   pub version: u32,
   /// Parameter names and their defaults
   #[serde(default, skip_serializing_if = "Params::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Params>", optional))]
   pub params: Params,
   pub viewport: Viewport,
   /// Painted bottom to top, alpha over

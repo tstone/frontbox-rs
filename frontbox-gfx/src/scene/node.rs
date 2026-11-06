@@ -8,14 +8,17 @@ use crate::scene::{Env, Warp};
 ///
 /// Shapes and paints are both nodes ([`Shape`](crate::scene::Shape), [`Paint`](crate::scene::Paint)). Anything
 /// that changes one is an item in one of these lists, never a new field or wrapper.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node<N, A> {
   /// Applied to the drawing in order. Sampling undoes them in reverse on the sample point.
   #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Warp>>", optional))]
   pub warp: Vec<Warp>,
   pub base: N,
   /// Applied to the output in order
   #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<A>>", optional))]
   pub adjust: Vec<A>,
 }
 

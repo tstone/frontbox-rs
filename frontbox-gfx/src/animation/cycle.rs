@@ -1,3 +1,4 @@
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Cycle {
   /// Run once

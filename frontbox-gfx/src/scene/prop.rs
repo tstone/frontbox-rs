@@ -5,6 +5,7 @@ use crate::scene::{Animatable, Env, Track};
 /// A value in a definition that can be fixed, read from a parameter, or keyframed
 ///
 /// In RON: `Fixed(4.0)`, `Param("size")`, or `Track((keys: [...]))`.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Prop<T> {
   /// A value that doesn't change
