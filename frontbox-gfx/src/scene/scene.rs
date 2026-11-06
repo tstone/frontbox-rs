@@ -1,9 +1,11 @@
+use std::fmt;
+
 use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
-use crate::scene::{Env, Frame, Layer, Params, Sample, Viewport, file};
+use crate::scene::{Env, Frame, Layer, Params, Sample, Timing, Viewport, file};
 
 /// A graphic and how it moves over time: layers seen through a viewport, and the parameters the game can change. Ready to be
 /// sampled by any device, and written to a file with [`file`].
@@ -16,6 +18,10 @@ pub struct Scene {
   #[cfg_attr(feature = "ts", ts(as = "Option<Params>", optional))]
   pub params: Params,
   pub viewport: Viewport,
+  /// `None` is a static scene, whose tracks stay on their first moment
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  #[cfg_attr(feature = "ts", ts(optional))]
+  pub timing: Option<Timing>,
   /// Painted bottom to top, alpha over
   #[serde(default)]
   pub layers: Vec<Layer>,
@@ -24,7 +30,27 @@ pub struct Scene {
 impl Scene {
   /// A scene of the current format version
   pub fn new(viewport: Viewport, layers: Vec<Layer>) -> Self {
-    Self { version: file::VERSION, params: Params::new(), viewport, layers }
+    Self { version: file::VERSION, params: Params::new(), viewport, timing: None, layers }
+  }
+
+  pub fn timing(mut self, timing: Timing) -> Self {
+    self.timing = Some(timing);
+    self
+  }
+
+  /// Whether every cycle of the scene has played by `time`. A scene that's static or repeats forever never completes.
+  pub fn is_complete(&self, time: f32) -> bool {
+    self.timing.is_some_and(|timing| timing.is_complete(time))
+  }
+
+  /// Checks what a definition's types can't say for themselves. Scenes from outside the program need this; [`file::load`]
+  /// already does it.
+  pub fn check(&self) -> Result<(), SceneError> {
+    match self.timing {
+      Some(timing) if !(timing.duration.is_finite() && timing.duration > 0.0) => Err(SceneError::NoDuration),
+      None if self.layers.iter().any(Layer::is_animated) => Err(SceneError::NoTiming),
+      _ => Ok(()),
+    }
   }
 
   /// The color at a sample. Transparent outside the viewport.
@@ -49,15 +75,37 @@ impl Scene {
   }
 
   fn env<'a>(&'a self, frame: &Frame<'a>) -> Env<'a> {
-    Env { time: frame.time, params: frame.params, defaults: &self.params }
+    let time = self.timing.map_or(0.0, |timing| timing.local_time(frame.time));
+    Env { time, params: frame.params, defaults: &self.params }
   }
 }
+
+/// Why a scene can't be played
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneError {
+  /// It has keyframes but no timing to play them in
+  NoTiming,
+  /// Its timing has no length
+  NoDuration,
+}
+
+impl fmt::Display for SceneError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::NoTiming => write!(f, "a scene with keyframes needs a timing"),
+      Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
+    }
+  }
+}
+
+impl std::error::Error for SceneError {}
 
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::animation::{Curve, Cycle};
   use crate::layout::{Grid, Line};
-  use crate::scene::{Color, ColorSpace, Paint, PaintNode, Shape, ShapeNode, Stop, Warp};
+  use crate::scene::{Color, ColorAdjust, ColorSpace, Key, Paint, PaintNode, Prop, Shape, ShapeNode, Stop, Track, Warp};
 
   const SIZE: Vec2 = Vec2::new(100.0, 50.0);
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -301,9 +349,101 @@ mod tests {
     assert_eq!(pixels[0], Rgba([0, 0, 0, 0]));
   }
 
+  /// A level that rises from 0 to 100 over a second, and stays there. Read back with `level_at`.
+  fn rising(timing: Option<Timing>) -> Scene {
+    let track = Prop::Track(Track {
+      keys: vec![
+        Key::new(0.0, Color(Rgba([0, 0, 0, 255])), Curve::Linear),
+        Key::new(1.0, Color(Rgba([100, 0, 0, 255])), Curve::Linear),
+      ],
+      cycle: Cycle::Once,
+    });
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(Paint::new(PaintNode::Solid(track)))]);
+    match timing {
+      Some(timing) => scene.timing(timing),
+      None => scene,
+    }
+  }
+
+  fn level_at(scene: &Scene, time: f32) -> u8 {
+    let params = Params::new();
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, params: &params, size: SIZE })[0]
+  }
+
+  #[test]
+  fn a_scene_that_plays_once_rests_at_its_end() {
+    let scene = rising(Some(Timing::new(1.0, Cycle::Once)));
+    assert_eq!(level_at(&scene, 0.5), 50);
+    assert!(!scene.is_complete(0.5));
+    assert_eq!(level_at(&scene, 1.0), 100);
+    assert!(scene.is_complete(1.0));
+    assert_eq!(level_at(&scene, 9.0), 100);
+  }
+
+  #[test]
+  fn a_scene_repeats_as_many_times_as_it_says() {
+    let scene = rising(Some(Timing::new(1.0, Cycle::Times(2))));
+    assert_eq!(level_at(&scene, 1.5), 50);
+    assert!(!scene.is_complete(1.5));
+    assert!(scene.is_complete(2.0));
+    assert_eq!(level_at(&scene, 2.5), 100);
+  }
+
+  #[test]
+  fn a_scene_can_repeat_forever() {
+    let scene = rising(Some(Timing::new(1.0, Cycle::Forever)));
+    assert_eq!(level_at(&scene, 10.25), 25);
+    assert!(!scene.is_complete(1000.0));
+  }
+
+  #[test]
+  fn timing_cuts_a_track_that_runs_longer() {
+    let scene = rising(Some(Timing::new(0.5, Cycle::Forever)));
+    assert_eq!(level_at(&scene, 0.75), 25);
+  }
+
+  #[test]
+  fn a_static_scene_has_no_time() {
+    let scene = rising(None);
+    assert_eq!(level_at(&scene, 0.5), 0);
+    assert!(!scene.is_complete(1000.0));
+  }
+
+  #[test]
+  fn keyframes_need_a_timing() {
+    assert_eq!(rising(None).check(), Err(SceneError::NoTiming));
+    assert_eq!(rising(Some(Timing::new(1.0, Cycle::Once))).check(), Ok(()));
+    assert_eq!(Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED))]).check(), Ok(()));
+  }
+
+  #[test]
+  fn keyframes_are_found_wherever_a_scene_has_them() {
+    fn track<T>() -> Track<T> {
+      Track { keys: vec![], cycle: Cycle::Once }
+    }
+    let in_warp = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::Ellipse).warp(Warp::Rotate(Prop::Track(track()))));
+    let in_point = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
+    let in_stop = Layer::new(Paint::new(PaintNode::Gradient {
+      stops: vec![Stop::new(0.0, Prop::Track(track()))],
+      space: ColorSpace::Rgb,
+    }));
+    let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));
+    for layer in [in_warp, in_point, in_stop, in_adjust] {
+      assert_eq!(Scene::new(Viewport::Area, vec![layer]).check(), Err(SceneError::NoTiming));
+    }
+  }
+
+  #[test]
+  fn a_timing_needs_a_length() {
+    for duration in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+      let scene = Scene::new(Viewport::Area, vec![]).timing(Timing::new(duration, Cycle::Once));
+      assert_eq!(scene.check(), Err(SceneError::NoDuration), "{duration}");
+    }
+  }
+
   #[test]
   fn params_override_defaults() {
-    use crate::scene::{Prop, Value};
+    use crate::scene::Value;
 
     let mut scene = Scene::new(
       Viewport::Sequence,

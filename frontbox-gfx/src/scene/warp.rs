@@ -21,4 +21,11 @@ impl Warp {
       Self::Scale(scale) => Affine2::from_scale(scale.resolve(env)),
     }
   }
+
+  pub(crate) fn is_animated(&self) -> bool {
+    match self {
+      Self::Translate(prop) | Self::Scale(prop) => prop.is_animated(),
+      Self::Rotate(prop) => prop.is_animated(),
+    }
+  }
 }

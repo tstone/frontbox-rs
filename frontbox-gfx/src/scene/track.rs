@@ -20,7 +20,7 @@ impl<T: Animatable> Track<T> {
       return T::default();
     };
 
-    let time = self.local_time(time, last.at);
+    let time = self.cycle.local_time(time, last.at);
     if time <= first.at {
       return first.value.clone();
     }
@@ -35,18 +35,6 @@ impl<T: Animatable> Track<T> {
     }
 
     last.value.clone()
-  }
-
-  /// The time within the current cycle
-  fn local_time(&self, time: f32, end: f32) -> f32 {
-    if end <= 0.0 {
-      return time;
-    }
-    match self.cycle {
-      Cycle::Once => time,
-      Cycle::Times(n) if time >= end * n as f32 => end,
-      Cycle::Times(_) | Cycle::Forever => time.rem_euclid(end),
-    }
   }
 }
 

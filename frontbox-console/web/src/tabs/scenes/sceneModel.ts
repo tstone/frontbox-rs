@@ -102,6 +102,11 @@ export function freshParamName(scene: Scene, base: string) {
   return `${base}_${n}`
 }
 
+/** Scene with a timing, which it needs before it can have keyframes */
+export function withTiming(scene: Scene): Scene {
+  return scene.timing ? scene : { ...scene, timing: { duration: 1, cycle: 'Once' } }
+}
+
 /** Scene with a parameter added or changed */
 export function withParam(scene: Scene, name: string, value: SceneValue): Scene {
   return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }

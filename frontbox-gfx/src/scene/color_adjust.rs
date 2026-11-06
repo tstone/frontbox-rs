@@ -18,6 +18,12 @@ impl ColorAdjust {
       Self::HueShift(degrees) => color.hue_shift(degrees.resolve(env)),
     }
   }
+
+  pub(crate) fn is_animated(&self) -> bool {
+    match self {
+      Self::HueShift(degrees) => degrees.is_animated(),
+    }
+  }
 }
 
 #[cfg(test)]

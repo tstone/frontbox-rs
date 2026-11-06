@@ -16,7 +16,7 @@ use crate::*;
 /// # use frontbox_led::prelude::*;
 /// # use frontbox_gfx::scene::*;
 /// let scene = file::load(r#"(
-///   version: 1,
+///   version: 2,
 ///   viewport: Sequence,
 ///   layers: [(paint: (base: Solid(Param("color"))))],
 /// )"#).unwrap();
@@ -35,7 +35,7 @@ use crate::*;
 /// static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield").extent(Vec2::new(20.25, 45.0)).build();
 ///
 /// let scene = file::load(r#"(
-///   version: 1,
+///   version: 2,
 ///   viewport: Area,
 ///   layers: [(paint: (base: Solid(Fixed(255, 0, 0, 255))))],
 /// )"#).unwrap();
@@ -49,6 +49,8 @@ pub struct LedScene {
   params: Params,
   elapsed: Duration,
   playing: bool,
+  end_behavior: EndBehavior,
+  undeclared: bool,
 }
 
 impl LedScene {
@@ -89,7 +91,15 @@ impl LedScene {
       params: Params::new(),
       elapsed: Duration::ZERO,
       playing: true,
+      end_behavior: EndBehavior::Clear,
+      undeclared: false,
     }
+  }
+
+  /// What to do when the scene is over. It clears unless told otherwise.
+  pub fn end_behavior(mut self, end_behavior: EndBehavior) -> Self {
+    self.end_behavior = end_behavior;
+    self
   }
 
   /// The layer to declare the LEDs on
@@ -116,6 +126,14 @@ impl LedScene {
     if !self.playing {
       return;
     }
+    if self.is_complete() && self.end_behavior == EndBehavior::Clear {
+      if !self.undeclared {
+        let placement = self.targets.place(ctx);
+        ctx.undeclare_leds(&placement.ids);
+        self.undeclared = true;
+      }
+      return;
+    }
     self.elapsed += delta;
 
     let placement = self.targets.place(ctx);
@@ -125,8 +143,11 @@ impl LedScene {
     });
   }
 
-  /// Play from where the scene is
+  /// Play from where the scene is, restarting it if it has already completed
   pub fn play(&mut self) {
+    if self.is_complete() {
+      self.reset();
+    }
     self.playing = true;
   }
 
@@ -140,10 +161,17 @@ impl LedScene {
   /// Back to the start of the scene
   pub fn reset(&mut self) {
     self.elapsed = Duration::ZERO;
+    self.undeclared = false;
   }
 
   pub fn is_playing(&self) -> bool {
     self.playing
+  }
+
+  /// Whether the scene has played through. A scene that's static or repeats forever never completes, and plays until
+  /// it's stopped.
+  pub fn is_complete(&self) -> bool {
+    self.scene.is_complete(self.elapsed.as_secs_f32())
   }
 }
 
@@ -318,12 +346,105 @@ mod tests {
           Key::new(1.0, Color(Rgba([200, 0, 0, 255])), Curve::Linear),
         ],
         cycle: Cycle::Once,
-      }))),
+      })))
+      .timing(Timing::new(1.0, Cycle::Once)),
     )
     .unwrap();
 
     program.apply(Duration::from_millis(500), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba([100, 0, 0, 255])));
+  }
+
+  fn timed(cycle: Cycle) -> Scene {
+    scene(PaintNode::Solid(Color(Rgba::red()).into())).timing(Timing::new(1.0, cycle))
+  }
+
+  #[test]
+  fn clears_the_leds_after_showing_the_last_moment() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+
+    program.apply(Duration::from_millis(500), &context.sys_ctx());
+    assert!(!program.is_complete());
+
+    program.apply(Duration::from_millis(500), &context.sys_ctx());
+    assert!(program.is_complete());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses)[0], None);
+    assert!(program.is_complete());
+  }
+
+  #[test]
+  fn clearing_gives_the_leds_back_for_good() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+
+    // something else takes the LED, and a completed scene mustn't touch it
+    let mut other = LedScene::new(LedQ::name("led1"), scene(PaintNode::Solid(Color(Rgba::blue()).into()))).unwrap();
+    other.apply(Duration::from_millis(16), &context.sys_ctx());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::blue()));
+  }
+
+  #[test]
+  fn can_hold_its_last_moment() {
+    let (context, addresses) = three_leds();
+    let mut program =
+      LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap().end_behavior(EndBehavior::Hold);
+
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    assert!(program.is_complete());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  #[test]
+  fn play_restarts_a_completed_scene() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+
+    program.play();
+    assert!(!program.is_complete());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  #[test]
+  fn play_continues_a_scene_that_was_stopped_partway() {
+    let (context, _) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    program.apply(Duration::from_millis(600), &context.sys_ctx());
+    program.stop(&context.sys_ctx());
+
+    program.play();
+    program.apply(Duration::from_millis(600), &context.sys_ctx());
+    assert!(program.is_complete());
+  }
+
+  #[test]
+  fn a_scene_that_repeats_forever_never_completes() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Forever)).unwrap();
+    program.apply(Duration::from_secs(100), &context.sys_ctx());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert!(!program.is_complete());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  #[test]
+  fn a_static_scene_never_completes() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), scene(PaintNode::Solid(Color(Rgba::red()).into()))).unwrap();
+    program.apply(Duration::from_secs(100), &context.sys_ctx());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert!(!program.is_complete());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
   }
 
   #[test]

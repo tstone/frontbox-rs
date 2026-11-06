@@ -9,10 +9,10 @@ use ron::extensions::Extensions;
 use ron::ser::PrettyConfig;
 use serde::Deserialize;
 
-use crate::scene::Scene;
+use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -27,7 +27,9 @@ pub fn load(source: &str) -> Result<Scene, FormatError> {
     return Err(FormatError::Newer { version: header.version });
   }
 
-  options().from_str(source).map_err(FormatError::Read)
+  let scene: Scene = options().from_str(source).map_err(FormatError::Read)?;
+  scene.check().map_err(FormatError::Invalid)?;
+  Ok(scene)
 }
 
 /// Writes a scene as RON
@@ -50,6 +52,8 @@ pub enum FormatError {
   Write(ron::Error),
   /// The file was written by a newer version of the format
   Newer { version: u32 },
+  /// The file reads as a scene, but not one that can be played
+  Invalid(SceneError),
 }
 
 impl fmt::Display for FormatError {
@@ -60,6 +64,7 @@ impl fmt::Display for FormatError {
       Self::Newer { version } => {
         write!(f, "scene is format version {version}, but this build reads up to {VERSION}")
       }
+      Self::Invalid(e) => write!(f, "{e}"),
     }
   }
 }
@@ -122,7 +127,7 @@ mod tests {
         )),
     ]);
     scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
-    scene
+    scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
   #[test]
@@ -165,13 +170,48 @@ mod tests {
   }
 
   #[test]
+  fn reads_a_timing() {
+    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5, cycle: Times(3)), layers: [])").unwrap();
+    assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Times(3))));
+
+    // playing once is the default
+    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5), layers: [])").unwrap();
+    assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Once)));
+  }
+
+  #[test]
+  fn a_static_scene_writes_no_timing() {
+    let written = save(&Scene::new(Viewport::Area, vec![])).unwrap();
+    assert!(!written.contains("timing"), "{written}");
+    assert_eq!(load(&written).unwrap().timing, None);
+  }
+
+  #[test]
+  fn refuses_keyframes_with_no_timing() {
+    let result = load(
+      r#"(
+        version: 2,
+        viewport: Area,
+        layers: [(paint: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+      )"#,
+    );
+    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming))), "{result:?}");
+  }
+
+  #[test]
+  fn refuses_a_timing_with_no_length() {
+    let result = load("(version: 2, viewport: Area, timing: (duration: 0.0), layers: [])");
+    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoDuration))), "{result:?}");
+  }
+
+  #[test]
   fn a_scene_must_state_its_viewport() {
     assert!(matches!(load("(version: 1, layers: [])"), Err(FormatError::Read(_))));
   }
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 2, layers: [(paint: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 2 })), "{result:?}");
+    let result = load("(version: 3, layers: [(paint: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 3 })), "{result:?}");
   }
 }

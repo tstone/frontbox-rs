@@ -1,7 +1,7 @@
 use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Node, Prop, Bounds, Sample};
+use crate::scene::{Env, Node, Prop, Bounds, Sample, Warp};
 
 /// How many points an ellipse's outline has. Enough that it looks round on screen.
 const ELLIPSE_OUTLINE_POINTS: usize = 64;
@@ -46,9 +46,20 @@ impl Shape {
     };
     self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
   }
+
+  pub(crate) fn is_animated(&self) -> bool {
+    self.base.is_animated() || self.warp.iter().any(Warp::is_animated)
+  }
 }
 
 impl ShapeNode {
+  fn is_animated(&self) -> bool {
+    match self {
+      Self::Ellipse => false,
+      Self::Polygon { points } => points.iter().any(Prop::is_animated),
+    }
+  }
+
   /// The shape's bounds in its own space, before its warps
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {

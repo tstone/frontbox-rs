@@ -16,7 +16,7 @@ import { withoutDroppedParams, type Lens, type Vec2 } from './sceneModel'
 import './ScenesTab.css'
 
 const STARTING_SCENE = `(
-  version: 1,
+  version: 2,
   viewport: Sequence,
   layers: [
     (paint: (base: Gradient(stops: [

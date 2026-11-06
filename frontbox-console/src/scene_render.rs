@@ -29,7 +29,10 @@ pub(crate) fn render_scene(
 ) -> Result<RenderedScene, String> {
   let scene = match source {
     SceneSource::Ron(ron) => file::load(&ron).map_err(|err| err.to_string())?,
-    SceneSource::Definition(scene) => scene,
+    SceneSource::Definition(scene) => {
+      scene.check().map_err(|err| err.to_string())?;
+      scene
+    }
   };
 
   let (width, height) = match scene.viewport {
@@ -307,11 +310,26 @@ mod tests {
   }
 
   #[test]
+  fn a_definition_is_held_to_the_same_rules_as_a_file() {
+    let source = r#"(
+      version: 2,
+      viewport: Area,
+      timing: (duration: 1.0),
+      layers: [(paint: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+    )"#;
+    let mut scene = render_scene(ron(source), SIZE, no_leds()).unwrap().scene;
+    scene.timing = None;
+    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds()).err().unwrap();
+    assert!(error.contains("timing"), "{error}");
+  }
+
+  #[test]
   fn a_scene_survives_the_trip_to_a_client_and_back() {
     let source = r#"(
-      version: 1,
+      version: 2,
       params: {"tint": Color(1, 2, 3, 4), "size": Float(2.5), "at": Vec2(0.5, 0.25)},
       viewport: Area,
+      timing: (duration: 2.0, cycle: Forever),
       layers: [(
         shape: (
           base: Polygon(points: [Fixed(0.0, 0.0), Param("at"), Fixed(1.0, 0.0)]),

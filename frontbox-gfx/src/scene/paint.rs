@@ -4,7 +4,7 @@ use palette::{FromColor, Mix, Oklab, Srgb};
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, ColorAdjust, Env, Node, Prop};
+use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Warp};
 
 /// What a layer is drawn with
 ///
@@ -20,6 +20,12 @@ impl Paint {
     };
     let color = self.base.color(to_local.transform_point2(p), env);
     self.adjust.iter().fold(color, |color, adjust| adjust.apply(color, env))
+  }
+
+  pub(crate) fn is_animated(&self) -> bool {
+    self.base.is_animated()
+      || self.warp.iter().any(Warp::is_animated)
+      || self.adjust.iter().any(ColorAdjust::is_animated)
   }
 }
 
@@ -63,6 +69,13 @@ pub enum ColorSpace {
 }
 
 impl PaintNode {
+  fn is_animated(&self) -> bool {
+    match self {
+      Self::Solid(color) => color.is_animated(),
+      Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
+    }
+  }
+
   fn color(&self, p: Vec2, env: &Env) -> Rgba<u8> {
     match self {
       Self::Solid(color) => color.resolve(env).0,

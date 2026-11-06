@@ -7,7 +7,7 @@ import { Portal } from 'solid-js/web'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
-import { freshParamName, paramFits, startingValue, withParam, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import { freshParamName, paramFits, startingValue, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -245,7 +245,10 @@ export function PropField<T extends SceneValue>(props: {
     if (next === kind()) return
     const current = value()
     if (next === 'Fixed') props.lens.set({ Fixed: current })
-    if (next === 'Track') props.lens.set({ Track: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
+    if (next === 'Track') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Track: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
+    }
     if (next === 'Param') {
       const name = freshParamName(scene.get(), props.paramName)
       scene.set(withParam(scene.get(), name, current))

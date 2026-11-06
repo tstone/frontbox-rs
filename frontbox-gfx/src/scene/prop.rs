@@ -22,6 +22,12 @@ impl<T> From<T> for Prop<T> {
   }
 }
 
+impl<T> Prop<T> {
+  pub(crate) fn is_animated(&self) -> bool {
+    matches!(self, Self::Track(_))
+  }
+}
+
 impl<T: Animatable> Prop<T> {
   pub(crate) fn resolve(&self, env: &Env) -> T {
     match self {

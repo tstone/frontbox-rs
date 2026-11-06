@@ -1,7 +1,6 @@
 //! # Scenes
 //!
-//! <div class="warning">Stability Level: Low. This is the start of the replacement for `color_sequence` and `canvas`;
-//! see the crate's PLAN.md.</div>
+//! <div class="warning">Stability Level: Low. This is the start of the replacement for `color_sequence` and `canvas`.</div>
 //!
 //! A scene describes a graphic and how it moves over time, as data that can be written to a file. It says what can be
 //! seen with its [`Viewport`], and is sampled rather than rendered into a buffer: a device maps its points into the
@@ -29,6 +28,7 @@
 //! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
 //! - [`Node`] -- Shapes and paints, each a base kind with [`Warp`]s going in and adjusts coming out
 //! - [`Prop`] -- A value that's fixed, read from a parameter, or keyframed
+//! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`] -- Reading and writing scenes as RON
 
 mod animatable;
@@ -42,6 +42,7 @@ mod bounds;
 mod sample;
 mod scene;
 mod shape;
+mod timing;
 mod track;
 mod value;
 mod viewport;
@@ -57,6 +58,7 @@ pub use bounds::*;
 pub use sample::*;
 pub use scene::*;
 pub use shape::*;
+pub use timing::*;
 pub use track::*;
 pub use value::*;
 pub use viewport::*;

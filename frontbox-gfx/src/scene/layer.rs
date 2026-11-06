@@ -25,6 +25,10 @@ impl Layer {
     self
   }
 
+  pub(crate) fn is_animated(&self) -> bool {
+    self.paint.is_animated() || self.shape.as_ref().is_some_and(Shape::is_animated)
+  }
+
   pub(crate) fn sample(&self, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
     let (coverage, paint_pos) = match &self.shape {
       None => (1.0, viewport.to_unit(at.pos)),

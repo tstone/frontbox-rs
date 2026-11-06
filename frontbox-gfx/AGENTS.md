@@ -1,6 +1,6 @@
 # frontbox-gfx Agent Guidelines
 
-These add to the repository's [AGENTS.md](../AGENTS.md). The roadmap is in [PLAN.md](PLAN.md).
+These add to the repository's [AGENTS.md](../AGENTS.md).
 
 ## Design
 
