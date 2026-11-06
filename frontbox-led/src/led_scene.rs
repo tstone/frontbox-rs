@@ -4,10 +4,7 @@ use frontbox_gfx::scene::{Frame, Params, Scene, Value};
 
 use crate::*;
 
-/// Plays a [`frontbox_gfx::scene::Scene`] on a list of LEDs, laid out as a line in the order the targets resolve
-/// to
-///
-/// Like [`LedProgram1d`], the owning system calls `apply` from `on_tick`. The program starts playing.
+/// Plays a [`frontbox_gfx::scene::Scene`] on a list of LEDs, laid out as a sequence
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
