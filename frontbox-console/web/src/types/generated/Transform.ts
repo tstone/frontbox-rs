@@ -6,4 +6,4 @@ import type { Prop } from "./Prop";
  *
  * `Mirror` and `Repeat` work around the origin, so a later `Translate` moves the result as a whole.
  */
-export type Warp = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<[number, number]> } | { "Mirror": Prop<number> } | { "Repeat": Prop<[number, number]> };
+export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<[number, number]> } | { "Mirror": Prop<number> } | { "Repeat": Prop<[number, number]> };

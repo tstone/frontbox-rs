@@ -1,20 +1,20 @@
 use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Warp};
+use crate::scene::{Env, Transform};
 
-/// A function of position, with the changes made to it: warps change the position going in, adjusts change the
+/// A function of position, with the changes made to it: transforms change the position going in, adjusts change the
 /// output coming out
 ///
-/// Shapes and paints are both nodes ([`Shape`](crate::scene::Shape), [`Paint`](crate::scene::Paint)). Anything
+/// Shapes and fills are both nodes ([`Shape`](crate::scene::Shape), [`Fill`](crate::scene::Fill)). Anything
 /// that changes one is an item in one of these lists, never a new field or wrapper.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node<N, A> {
   /// Applied to the drawing in order. Sampling undoes them in reverse on the sample point.
   #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
-  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Warp>>", optional))]
-  pub warp: Vec<Warp>,
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Transform>>", optional))]
+  pub transform: Vec<Transform>,
   pub base: N,
   /// Applied to the output in order
   #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
@@ -24,12 +24,12 @@ pub struct Node<N, A> {
 
 impl<N, A> Node<N, A> {
   pub fn new(base: N) -> Self {
-    Self { warp: Vec::new(), base, adjust: Vec::new() }
+    Self { transform: Vec::new(), base, adjust: Vec::new() }
   }
 
-  /// Adds a warp after the existing ones
-  pub fn warp(mut self, warp: Warp) -> Self {
-    self.warp.push(warp);
+  /// Adds a transform after the existing ones
+  pub fn transform(mut self, transform: Transform) -> Self {
+    self.transform.push(transform);
     self
   }
 
@@ -39,19 +39,19 @@ impl<N, A> Node<N, A> {
     self
   }
 
-  /// Maps a point in the node's own space into the scene, applying its warps. `None` when a warp collapses the drawing
-  /// (a scale of zero), so nothing is drawn. A point can be drawn in many places once it's mirrored or repeated, and this
-  /// gives the one they start from.
+  /// Maps a point in the node's own space into the scene, applying its transforms. `None` when a transform collapses the
+  /// drawing (a scale of zero), so nothing is drawn. A point can be drawn in many places once it's mirrored or repeated,
+  /// and this gives the one they start from.
   pub(crate) fn to_scene(&self, env: &Env) -> Option<Affine2> {
-    let forward = self.warp.iter().fold(Affine2::IDENTITY, |acc, warp| warp.affine(env) * acc);
+    let forward = self.transform.iter().fold(Affine2::IDENTITY, |acc, transform| transform.affine(env) * acc);
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
-  /// What maps the point `at` in the scene, and those around it, into the node's own space, undoing its warps. Other
-  /// points can need another one, as what `Mirror` and `Repeat` do depends on where a point is.
+  /// What maps the point `at` in the scene, and those around it, into the node's own space, undoing its transforms.
+  /// Other points can need another one, as what `Mirror` and `Repeat` do depends on where a point is.
   pub(crate) fn to_local(&self, at: Vec2, env: &Env) -> Option<Affine2> {
-    self.warp.iter().rev().try_fold(Affine2::IDENTITY, |undone, warp| {
-      warp.undo(undone.transform_point2(at), env).map(|undo| undo * undone)
+    self.transform.iter().rev().try_fold(Affine2::IDENTITY, |undone, transform| {
+      transform.undo(undone.transform_point2(at), env).map(|undo| undo * undone)
     })
   }
 }
@@ -62,17 +62,17 @@ mod tests {
   use crate::scene::Params;
   use crate::scene::value::tests::env;
 
-  fn node(warp: Vec<Warp>) -> Node<(), ()> {
-    Node { warp, base: (), adjust: vec![] }
+  fn node(transform: Vec<Transform>) -> Node<(), ()> {
+    Node { transform, base: (), adjust: vec![] }
   }
 
   #[test]
-  fn warps_apply_to_the_drawing_in_order() {
+  fn transforms_apply_to_the_drawing_in_order() {
     let params = Params::new();
     // scale then move: the local point (0.5, 0) is drawn at 2 * 0.5 + 10
     let n = node(vec![
-      Warp::Scale(Vec2::splat(2.0).into()),
-      Warp::Translate(Vec2::new(10.0, 0.0).into()),
+      Transform::Scale(Vec2::splat(2.0).into()),
+      Transform::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
     let local = n.to_local(at, &env(0.0, &params)).unwrap();
@@ -80,8 +80,8 @@ mod tests {
 
     // move then scale: the same point is drawn at 2 * (0.5 + 10)
     let n = node(vec![
-      Warp::Translate(Vec2::new(10.0, 0.0).into()),
-      Warp::Scale(Vec2::splat(2.0).into()),
+      Transform::Translate(Vec2::new(10.0, 0.0).into()),
+      Transform::Scale(Vec2::splat(2.0).into()),
     ]);
     let at = Vec2::new(21.0, 0.0);
     let local = n.to_local(at, &env(0.0, &params)).unwrap();
@@ -91,7 +91,7 @@ mod tests {
   #[test]
   fn rotate_turns_x_toward_y() {
     let params = Params::new();
-    let n = node(vec![Warp::Rotate(90.0.into())]);
+    let n = node(vec![Transform::Rotate(90.0.into())]);
     let at = Vec2::new(0.0, 1.0);
     let local = n.to_local(at, &env(0.0, &params)).unwrap();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
@@ -100,25 +100,25 @@ mod tests {
   #[test]
   fn zero_scale_draws_nothing() {
     let params = Params::new();
-    let n = node(vec![Warp::Scale(Vec2::new(0.0, 1.0).into())]);
+    let n = node(vec![Transform::Scale(Vec2::new(0.0, 1.0).into())]);
     assert!(n.to_local(Vec2::ZERO, &env(0.0, &params)).is_none());
   }
 
   #[test]
-  fn a_warp_after_a_fold_moves_the_result() {
+  fn a_transform_after_a_fold_moves_the_result() {
     let params = Params::new();
     // copies 10 apart, then all of them moved along by 3: the copy at 23 shows the drawing's origin
-    let n = node(vec![Warp::Repeat(Vec2::new(10.0, 0.0).into()), Warp::Translate(Vec2::new(3.0, 0.0).into())]);
+    let n = node(vec![Transform::Repeat(Vec2::new(10.0, 0.0).into()), Transform::Translate(Vec2::new(3.0, 0.0).into())]);
     let at = Vec2::new(23.0, 1.0);
     let local = n.to_local(at, &env(0.0, &params)).unwrap();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.0, 1.0), 1e-5));
   }
 
   #[test]
-  fn a_warp_before_a_fold_moves_what_gets_folded() {
+  fn a_transform_before_a_fold_moves_what_gets_folded() {
     let params = Params::new();
     // moved to +5 and then mirrored, the drawing's origin shows up at both +5 and -5
-    let n = node(vec![Warp::Translate(Vec2::new(5.0, 0.0).into()), Warp::Mirror(0.0.into())]);
+    let n = node(vec![Transform::Translate(Vec2::new(5.0, 0.0).into()), Transform::Mirror(0.0.into())]);
     for x in [5.0, -5.0] {
       let at = Vec2::new(x, 0.0);
       let local = n.to_local(at, &env(0.0, &params)).unwrap();

@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::Params;
+use crate::scene::{Images, Params};
 
 /// A point a device wants a color for: a position in scene units and the radius of the area it covers
 ///
@@ -27,6 +27,9 @@ pub struct Frame<'a> {
   pub take: u32,
   /// Parameters supplied by the game, which take the place of the scene's defaults
   pub params: &'a Params,
+  /// The images the scene draws, by name. A layer naming one that isn't here draws nothing, so
+  /// [`Content::images_for`](crate::scene::Content::images_for) is the way to get these, as it says so.
+  pub images: &'a Images,
   /// The size of the device, in its own units. A scene's numbers are in these units. A `Sequence` doesn't use this.
   pub size: Vec2,
 }

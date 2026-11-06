@@ -2,7 +2,7 @@
 import type { Prop } from "./Prop";
 
 /**
- * Shapes have no position or size of their own; warps give them that. A circle of radius 20 is an `Ellipse`
- * scaled by `(40, 40)`, and a rect is a unit square polygon scaled to its size.
+ * Shapes sit around the origin; transforms put them in the scene. The sizes here are in the shape's own space, so a
+ * `Scale` multiplies them.
  */
-export type ShapeNode = "Ellipse" | { "Polygon": { points: Array<Prop<[number, number]>>, } };
+export type ShapeNode = { "Ellipse": { r1: Prop<number>, r2: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } };

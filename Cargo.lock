@@ -1004,6 +1004,7 @@ dependencies = [
  "frontbox-led",
  "frontbox-metrics",
  "frontbox-pinball",
+ "image",
  "log",
  "mime_guess",
  "rust-embed",

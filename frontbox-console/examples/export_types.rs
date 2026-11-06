@@ -1,6 +1,6 @@
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::app_tracer::TraceEvent;
-use frontbox_console::protocol::{ClientMessage, RenderedClip, ServerMessage};
+use frontbox_console::protocol::{ClientMessage, ImageInfo, RenderedClip, ServerMessage};
 use ts_rs::{Config, TS};
 
 fn main() {
@@ -13,4 +13,5 @@ fn main() {
   ServerMessage::export_all(&cfg).unwrap();
   ClientMessage::export_all(&cfg).unwrap();
   RenderedClip::export_all(&cfg).unwrap();
+  ImageInfo::export_all(&cfg).unwrap();
 }

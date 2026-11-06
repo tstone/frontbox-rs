@@ -2,8 +2,10 @@ import { ColorPicker, parseColor, type Color as PickerColor } from '@ark-ui/soli
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
+import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor } from 'solid-js'
 import { Portal } from 'solid-js/web'
+import InfoTip from '../../components/InfoTip'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
@@ -79,7 +81,10 @@ export function Dropdown<T extends string>(props: {
   )
 }
 
-/** A slider and a box for typing a value. A value from the box or the file past the range widens the slider. */
+/**
+ * A slider and a box for typing a value. A value from the box or the file past the range widens the slider, and double
+ * clicking the slider's handle resets it to the range's `rest`.
+ */
 export function NumberField(props: { label: string; value: number; onChange: (value: number) => void; range: Range }) {
   return (
     <div class="scene-number">
@@ -97,7 +102,12 @@ export function NumberField(props: { label: string; value: number; onChange: (va
           <Slider.Track>
             <Slider.Range />
           </Slider.Track>
-          <Slider.Thumb index={0}>
+          <Slider.Thumb
+            index={0}
+            onDblClick={() => {
+              if (props.range.rest !== undefined) props.onChange(props.range.rest)
+            }}
+          >
             <Slider.HiddenInput />
           </Slider.Thumb>
         </Slider.Control>
@@ -384,7 +394,7 @@ export function PropField<T extends SceneValue>(props: {
     if (next === 'Random') {
       scene.set(withTiming(scene.get()))
       const seed = Math.floor(Math.random() * 2 ** 32)
-      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed } })
+      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
     }
     if (next === 'Param') {
       const name = freshParamName(scene.get(), props.paramName)
@@ -456,9 +466,29 @@ export function PropField<T extends SceneValue>(props: {
           <Show when={!spreadFits((prop() as { Random: { spread: Spread } }).Random.spread, props.fallback)}>
             <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
           </Show>
+          <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
           <p class="scene-note">When to pick a new value is on the timeline below.</p>
         </Match>
       </Switch>
+    </div>
+  )
+}
+
+function ForceUniqueField(props: { label: string; lens: Lens<boolean> }) {
+  return (
+    <div class="scene-unique">
+      <Toggle.Root
+        class="scene-switch"
+        checked={props.lens.get()}
+        onCheckedChange={(details) => props.lens.set(details.checked)}
+      >
+        <Toggle.Control>
+          <Toggle.Thumb />
+        </Toggle.Control>
+        <Toggle.Label>Force unique</Toggle.Label>
+        <Toggle.HiddenInput aria-label={`${props.label} force unique`} />
+      </Toggle.Root>
+      <InfoTip text="Each new pick has to be different from the one before it, so the value never stays the same across a pick. Turn this off to let a value repeat." />
     </div>
   )
 }

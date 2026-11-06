@@ -11,35 +11,38 @@
 //! # use frontbox_gfx::scene::*;
 //! # use frontbox_gfx::layout::Line;
 //! # use frontbox_gfx::prelude::*;
-//! let scene = Scene::new(Viewport::Sequence, vec![Layer::new(Paint::new(PaintNode::Gradient {
+//! let scene = Scene::new(Viewport::Sequence, vec![Layer::new(Fill::new(FillNode::Gradient {
 //!   stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
 //!   space: ColorSpace::Oklab,
 //! }))]);
 //!
 //! let line = Line::new(8);
 //! let params = Params::new();
-//! let frame = Frame { time: 0.0, take: 0, params: &params, size: Default::default() };
+//! let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Default::default() };
 //! let colors: Vec<Rgba<u8>> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
 //! # assert_eq!(colors[0], Rgba::red());
 //! # assert_eq!(colors[7], Rgba::blue());
 //! ```
 //!
-//! - [`Scene`], [`Layer`] -- Layers of paint in shapes, composited bottom to top
+//! - [`Scene`], [`Layer`] -- Layers of fill in shapes, composited bottom to top
 //! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
-//! - [`Node`] -- Shapes and paints, each a base kind with [`Warp`]s going in and adjusts coming out
+//! - [`Node`] -- Shapes and fills, each a base kind with [`Transform`]s going in and adjusts coming out
 //! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, or picked at random
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`] -- Reading and writing scenes as RON
+//! - [`Content`], [`Images`] -- The folder of what scenes use, and the images it decodes for one to play with
 
 mod animatable;
+mod bounds;
 mod color_adjust;
+mod content;
 pub mod file;
+mod fill;
+mod images;
 mod layer;
 mod node;
-mod paint;
 mod prop;
 mod random;
-mod bounds;
 mod sample;
 mod scene;
 mod shape;
@@ -47,16 +50,18 @@ mod timing;
 mod track;
 mod value;
 mod viewport;
-mod warp;
+mod transform;
 
 pub use animatable::*;
+pub use bounds::*;
 pub use color_adjust::*;
+pub use content::*;
+pub use fill::*;
+pub use images::*;
 pub use layer::*;
 pub use node::*;
-pub use paint::*;
 pub use prop::*;
 pub use random::*;
-pub use bounds::*;
 pub use sample::*;
 pub use scene::*;
 pub use shape::*;
@@ -64,4 +69,4 @@ pub use timing::*;
 pub use track::*;
 pub use value::*;
 pub use viewport::*;
-pub use warp::*;
+pub use transform::*;

@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::animation::Curve;
 use crate::scene::{Animatable, Env};
 
+/// How many times a pick rolls for a value unlike its neighbors' before giving up, as there may not be one
+const MAX_ROLLS: u32 = 64;
+
 /// Values picked at random, each held until the next pick or smoothed into it
 ///
 /// A pick is worked out from the moment it's for rather than drawn from a running generator, so that a scene reads the
@@ -20,17 +23,30 @@ pub struct Random {
   /// Keeps these picks apart from those of another prop picking at the same times
   #[serde(default)]
   pub seed: u32,
+  /// Whether a pick has to differ from the one before it. On by default.
+  #[serde(default = "on")]
+  pub force_unique: bool,
 }
 
 impl Random {
   pub(crate) fn resolve<T: Animatable>(&self, env: &Env) -> T {
+    self.moving(env, |beat| self.unique(beat, env, false, |beat, attempt| self.roll::<T>(beat, attempt, env)))
+  }
+
+  /// [`Self::resolve`] for a number that drops its fraction where it's used, so that picks only count as different if
+  /// their whole numbers are. Two whole numbers is the one spread with too few values for [`Self::unique`] to work out
+  /// for itself.
+  pub(crate) fn resolve_whole(&self, env: &Env) -> f32 {
+    let two_values = matches!(self.spread, Spread::Float(low, high) if high.ceil() - low.floor() == 2.0);
+    self.moving(env, |beat| self.unique(beat, env, two_values, |beat, attempt| self.roll::<f32>(beat, attempt, env).floor()))
+  }
+
+  /// The value now, given the value of each pick
+  fn moving<T: Animatable>(&self, env: &Env, value: impl Fn(Beat) -> T) -> T {
     let Some(here) = self.current(env) else {
       return T::default();
     };
 
-    let value = |beat: Beat| -> T {
-      T::from_spread(&self.spread, rolls((self.seed, env.take, beat.cycle, beat.pick))).unwrap_or_default()
-    };
     // both picks' smoothing is one blend, so it's eased as one however much of it each gave
     let blend = |from: Beat, to: Beat| {
       let start = self.at(to, env) - self.fades(from, env).1;
@@ -44,6 +60,33 @@ impl Random {
       (_, Some(after)) if env.time > self.at(after, env) - fade_out => blend(here, after),
       _ => value(here),
     }
+  }
+
+  /// The value of a pick
+  ///
+  /// Picks are worked out from their moments, so one can't follow every pick before it to learn what the last came to.
+  /// It only has to look next door instead: every other pick keeps its first roll, and those between roll until they
+  /// differ from both sides. With only two values those between have no room unless the others agree, so they all take
+  /// the first pick's roll, and the two values take turns.
+  fn unique<T: PartialEq>(&self, beat: Beat, env: &Env, two_values: bool, roll: impl Fn(Beat, u32) -> T) -> T {
+    if !self.force_unique {
+      return roll(beat, 0);
+    }
+
+    let kept = |beat: Beat| roll(if two_values { Beat { cycle: 0, pick: 0 } } else { beat }, 0);
+    if (beat.cycle as u64 * self.picks.len() as u64 + beat.pick as u64) % 2 == 0 {
+      return kept(beat);
+    }
+
+    let (before, after) = (self.before(beat).map(kept), self.after(beat, env).map(kept));
+    (0..MAX_ROLLS)
+      .map(|attempt| roll(beat, attempt))
+      .find(|value| before.as_ref() != Some(value) && after.as_ref() != Some(value))
+      .unwrap_or_else(|| roll(beat, 0))
+  }
+
+  fn roll<T: Animatable>(&self, beat: Beat, attempt: u32, env: &Env) -> T {
+    T::from_spread(&self.spread, rolls((self.seed, env.take, beat.cycle, beat.pick, attempt))).unwrap_or_default()
   }
 
   /// The pick that's in effect. `None` if there are none.
@@ -136,6 +179,10 @@ pub enum Spread {
   },
 }
 
+fn on() -> bool {
+  true
+}
+
 fn opaque() -> (f32, f32) {
   (1.0, 1.0)
 }
@@ -167,7 +214,12 @@ mod tests {
   use crate::scene::{Color, Params, Prop, Timing};
 
   fn random(picks: Vec<f32>) -> Random {
-    Random { picks: picks.into_iter().map(Pick::new).collect(), spread: Spread::Float(0.0, 1000.0), seed: 1 }
+    Random {
+      picks: picks.into_iter().map(Pick::new).collect(),
+      spread: Spread::Float(0.0, 1000.0),
+      seed: 1,
+      force_unique: true,
+    }
   }
 
   /// The value of a [`random`] with these picks, at a moment of a scene 4 seconds long
@@ -225,7 +277,7 @@ mod tests {
     let params = Params::new();
     let spread = Spread::Vec2 { x: (2.0, 3.0), y: (-5.0, -4.0) };
     for seed in 0..500 {
-      let value: Vec2 = Random { picks: vec![Pick::new(0.0)], spread, seed }.resolve(&env(0.0, &params));
+      let value: Vec2 = Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve(&env(0.0, &params));
       assert!((2.0..=3.0).contains(&value.x), "{value}");
       assert!((-5.0..=-4.0).contains(&value.y), "{value}");
     }
@@ -234,7 +286,7 @@ mod tests {
   #[test]
   fn an_empty_spread_is_that_value() {
     let params = Params::new();
-    let random = Random { picks: vec![Pick::new(0.0)], spread: Spread::Float(4.0, 4.0), seed: 1 };
+    let random = Random { picks: vec![Pick::new(0.0)], spread: Spread::Float(4.0, 4.0), seed: 1, force_unique: true };
     assert_eq!(random.resolve::<f32>(&env(0.0, &params)), 4.0);
   }
 
@@ -243,7 +295,7 @@ mod tests {
     let params = Params::new();
     let color = |hue, brightness| -> Rgba<u8> {
       let spread = Spread::Color { hue, brightness, alpha: (1.0, 1.0) };
-      Random { picks: vec![Pick::new(0.0)], spread, seed: 1 }.resolve::<Color>(&env(0.0, &params)).0
+      Random { picks: vec![Pick::new(0.0)], spread, seed: 1, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0
     };
     assert_eq!(color((120.0, 120.0), (1.0, 1.0)), Rgba([0, 255, 0, 255]));
     assert_eq!(color((240.0, 240.0), (0.5, 0.5)), Rgba([0, 0, 128, 255]));
@@ -256,7 +308,7 @@ mod tests {
     for seed in 0..500 {
       let spread = Spread::Color { hue: (330.0, 390.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
       let picks = vec![Pick::new(0.0)];
-      let Rgba([red, green, blue, _]) = Random { picks, spread, seed }.resolve::<Color>(&env(0.0, &params)).0;
+      let Rgba([red, green, blue, _]) = Random { picks, spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0;
       assert_eq!(red, 255);
       assert!(green <= 128 && blue <= 128, "{green} {blue}");
     }
@@ -269,7 +321,7 @@ mod tests {
     let alphas: Vec<u8> = (0..500)
       .map(|seed| {
         let Rgba([red, green, blue, alpha]) =
-          Random { picks: vec![Pick::new(0.0)], spread, seed }.resolve::<Color>(&env(0.0, &params)).0;
+          Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0;
         assert_eq!((red, green, blue), (0, 255, 0));
         alpha
       })
@@ -350,6 +402,72 @@ mod tests {
     assert_eq!(smoothed(&picks, twice, 0.0), smoothed(&picks, twice, 1.0));
     assert_eq!(smoothed(&picks, twice, 6.0), smoothed(&picks, twice, 8.0));
     assert_ne!(smoothed(&picks, twice, 3.0), smoothed(&picks, twice, 3.9));
+  }
+
+  /// What each pick comes to, as whole numbers, over a scene looping through these picks for `beats` of them
+  fn whole_picks(random: &Random, beats: u32) -> Vec<f32> {
+    let params = Params::new();
+    let timing = Timing::new(1.0, Cycle::Forever);
+    let count = random.picks.len() as u32;
+    (0..beats)
+      .map(|beat| {
+        let time = random.picks[(beat % count) as usize].at;
+        random.resolve_whole(&Env { cycle: beat / count, timing: Some(timing), ..env(time, &params) })
+      })
+      .collect()
+  }
+
+  fn numbers(picks: usize, count: u32, seed: u32) -> Random {
+    let picks = (0..picks).map(|n| n as f32 / picks as f32).collect();
+    Random { spread: Spread::Float(0.0, count as f32), seed, ..random(picks) }
+  }
+
+  #[test]
+  fn a_whole_number_never_comes_up_twice_in_a_row() {
+    for (picks, count, seed) in (1..=3).flat_map(|p| (2..=6).flat_map(move |c| (0..20).map(move |s| (p, c, s)))) {
+      let picks = whole_picks(&numbers(picks, count, seed), 200);
+      assert!(picks.windows(2).all(|pair| pair[0] != pair[1]), "{picks:?}");
+      assert!(picks.iter().all(|pick| (0.0..count as f32).contains(pick)), "{picks:?}");
+    }
+  }
+
+  #[test]
+  fn forcing_uniqueness_still_reaches_every_value_about_as_often() {
+    let picks = whole_picks(&numbers(1, 4, 1), 8000);
+    for value in 0..4 {
+      let seen = picks.iter().filter(|pick| **pick == value as f32).count();
+      assert!((1600..2400).contains(&seen), "{value} came up {seen} times");
+    }
+  }
+
+  #[test]
+  fn two_values_take_turns() {
+    let picks = whole_picks(&numbers(1, 2, 1), 50);
+    assert!(picks.windows(3).all(|three| three[0] == three[2] && three[0] != three[1]), "{picks:?}");
+  }
+
+  #[test]
+  fn without_force_unique_a_value_can_repeat() {
+    let random = Random { force_unique: false, ..numbers(1, 2, 1) };
+    let picks = whole_picks(&random, 50);
+    assert!(picks.windows(2).any(|pair| pair[0] == pair[1]), "{picks:?}");
+  }
+
+  #[test]
+  fn colors_differ_from_the_one_before_too() {
+    let params = Params::new();
+    let timing = Timing::new(1.0, Cycle::Forever);
+    // only a few colors are this dark
+    let spread = Spread::Color { hue: (120.0, 120.0), brightness: (0.0, 0.016), alpha: (1.0, 1.0) };
+    let random = Random { spread, ..random(vec![0.0]) };
+    let colors: Vec<Color> =
+      (0..200).map(|cycle| random.resolve(&Env { cycle, timing: Some(timing), ..env(0.0, &params) })).collect();
+    assert!(colors.windows(2).all(|pair| pair[0] != pair[1]));
+  }
+
+  #[test]
+  fn a_spread_of_one_value_is_that_value_at_every_pick() {
+    assert_eq!(whole_picks(&numbers(1, 1, 1), 10), vec![0.0; 10]);
   }
 
   #[test]

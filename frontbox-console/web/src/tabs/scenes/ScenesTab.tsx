@@ -1,7 +1,7 @@
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
-import { createEffect, createMemo, createSignal, For, Show, untrack } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import {
@@ -16,12 +16,13 @@ import {
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
-import PlayfieldView from '../machine/PlayfieldView'
+import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, SceneContext, SurfaceContext } from './SceneFields'
 import { changesEachCycle, cycleCount, withoutDroppedParams, withoutDroppedTiming, type Lens, type Vec2 } from './sceneModel'
+import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 import './ScenesTab.css'
 
@@ -29,7 +30,7 @@ const STARTING_SCENE = `(
   version: 5,
   viewport: Sequence,
   layers: [
-    (paint: (base: Gradient(stops: [
+    (fill: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
       (at: 1.0, color: Fixed(0, 0, 255, 255)),
     ]))),
@@ -204,9 +205,43 @@ export default function ScenesTab() {
     return (!playback.playing() && layer !== null && drawn()?.outlines[layer]) || []
   }
 
-  const planeOutline = () => {
-    const target = plane()
-    return target && outline().length > 0 ? { plane: target, points: outline() } : null
+  /** The open layer is the one selected in the preview. Its handles are left out while playing, as its outline is. */
+  const selected = () => (playback.playing() || error() !== null ? null : openLayer[0]())
+  const selectedPose = () => {
+    const layer = selected()
+    return layer === null ? null : (drawn()?.shapes[layer] ?? null)
+  }
+  const hasShape = (layer: number | null) => layer !== null && scene()?.layers[layer]?.shape !== undefined
+
+  /** Selects the shape at a point, or leaves it with nothing selected. A layer with no shape isn't selected this way. */
+  const pick = (point: Vec2 | null) => {
+    const [open, setOpen] = openLayer
+    if (playback.playing() || error() !== null || !drawn()) return
+    const under = point && layerUnder(scene()!, drawn()!.outlines, point)
+    if (under !== null || hasShape(open())) setOpen(under)
+  }
+
+  const handles = (space: PreviewSpace) => <ShapeHandles space={space} layer={selected()} pose={selectedPose()} time={playback.position()} />
+
+  const [rawSize, setRawSize] = createSignal<Vec2>([0, 0])
+  onMount(() => {
+    const observer = new ResizeObserver(() => setRawSize([canvas.clientWidth, canvas.clientHeight]))
+    observer.observe(canvas)
+    onCleanup(() => observer.disconnect())
+  })
+
+  /** The raw view is the part of the scene the machine rendered, stretched over the canvas */
+  const rawSpace: PreviewSpace = {
+    project([x, y]) {
+      const area = drawn()?.area
+      const [width, height] = rawSize()
+      return area ? [((x - area.x) / area.width) * width, ((y - area.y) / area.height) * height] : null
+    },
+    unproject(clientX, clientY) {
+      const area = drawn()?.area
+      const { left, top, width, height } = canvas.getBoundingClientRect()
+      return area ? [area.x + ((clientX - left) / width) * area.width, area.y + ((clientY - top) / height) * area.height] : null
+    },
   }
 
   return (
@@ -284,6 +319,9 @@ export default function ScenesTab() {
                           <span class="scene-note">The machine has no planes</span>
                         </Show>
                         <span class="scene-note">Every LED</span>
+                        <Show when={isSequence() && hasShape(selected())}>
+                          <span class="scene-note">A sequence has no place on the machine, so its handles are in Raw</span>
+                        </Show>
                         <Show when={!isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
                           <span class="scene-note scene-note-warn">None are on this plane</span>
                         </Show>
@@ -324,10 +362,20 @@ export default function ScenesTab() {
                 <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
                 {/* both stay up, so the camera and the last render are still there on the way back */}
                 <div class="scene-machine" classList={{ stale: error() !== null }} hidden={view() !== 'Machine'}>
-                  <PlayfieldView ledColor={ledColor} outline={planeOutline} />
+                  <PlayfieldView
+                    ledColor={ledColor}
+                    plane={() => (isSequence() ? null : plane())}
+                    outline={outline}
+                    onClickPlane={(point) => !isSequence() && plane() && pick(point)}
+                    overlay={(space) => <Show when={!isSequence() && plane()}>{handles(space)}</Show>}
+                  />
                 </div>
                 <div class="scene-raw" classList={{ stale: error() !== null }} hidden={view() !== 'Raw'}>
-                  <canvas ref={canvas} style={{ 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }} />
+                  <canvas
+                    ref={canvas}
+                    style={{ 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}
+                    onClick={(e) => pick(rawSpace.unproject(e.clientX, e.clientY))}
+                  />
                   <Show when={drawn()?.area}>
                     {(area) => (
                       <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
@@ -335,6 +383,7 @@ export default function ScenesTab() {
                       </svg>
                     )}
                   </Show>
+                  {handles(rawSpace)}
                 </div>
               </Splitter.Panel>
             </Splitter.Root>

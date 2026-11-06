@@ -2,13 +2,13 @@ use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Paint, Bounds, Sample, Shape};
+use crate::scene::{Env, Fill, Bounds, Sample, Shape};
 
-/// A paint drawn in a shape
+/// A fill drawn in a shape
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
-  pub paint: Paint,
+  pub fill: Fill,
   /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
@@ -16,8 +16,8 @@ pub struct Layer {
 }
 
 impl Layer {
-  pub fn new(paint: Paint) -> Self {
-    Self { paint, shape: None }
+  pub fn new(fill: Fill) -> Self {
+    Self { fill, shape: None }
   }
 
   pub fn shape(mut self, shape: Shape) -> Self {
@@ -26,19 +26,22 @@ impl Layer {
   }
 
   pub(crate) fn is_animated(&self) -> bool {
-    self.paint.is_animated() || self.shape.as_ref().is_some_and(Shape::is_animated)
+    self.fill.is_animated() || self.shape.as_ref().is_some_and(Shape::is_animated)
   }
 
   pub(crate) fn sample(&self, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
-    let (coverage, paint_pos) = match &self.shape {
-      None => (1.0, viewport.to_unit(at.pos)),
+    let (coverage, fill_pos, footprint) = match &self.shape {
+      None => (1.0, viewport.to_unit(at.pos), viewport.to_unit_length(at.radius)),
       Some(shape) => match shape.cover(at, env) {
-        Some((coverage, local)) => (coverage, shape.base.bounds(env).to_unit(local)),
+        Some((coverage, local, reach)) => {
+          let bounds = shape.base.bounds(env);
+          (coverage, bounds.to_unit(local), reach * bounds.to_unit_length(1.0))
+        }
         None => return Rgba([0, 0, 0, 0]),
       },
     };
 
-    let mut color = self.paint.color(paint_pos, env);
+    let mut color = self.fill.color(fill_pos, footprint, env);
     color[3] = (color[3] as f32 * coverage).round() as u8;
     color
   }

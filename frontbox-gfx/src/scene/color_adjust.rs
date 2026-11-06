@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::color::RgbaColor;
 use crate::scene::{Env, Prop};
 
-/// Changes to a paint's colors, applied in order to whatever its kind produces
+/// Changes to a fill's colors, applied in order to whatever its kind produces
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ColorAdjust {

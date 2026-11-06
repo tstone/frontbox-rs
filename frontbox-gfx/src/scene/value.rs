@@ -5,7 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::Timing;
+use crate::scene::{Images, Timing};
 
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
@@ -76,6 +76,7 @@ pub(crate) struct Env<'a> {
   pub take: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,
+  pub images: &'a Images,
 }
 
 impl Env<'_> {
@@ -89,6 +90,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params }
+    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none() }
   }
 }

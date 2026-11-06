@@ -6,7 +6,7 @@ use crate::animation::Lerp;
 use crate::scene::{Color, Spread, Value};
 
 /// A type a `Prop` can hold
-pub trait Animatable: Lerp + Clone + Default {
+pub trait Animatable: Lerp + Clone + Default + PartialEq {
   fn from_value(value: &Value) -> Option<Self>;
 
   /// A value from a spread, with `rolls` from 0 to 1 saying where in it. `None` if the spread is of another type.

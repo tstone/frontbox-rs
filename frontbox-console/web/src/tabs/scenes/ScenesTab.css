@@ -169,6 +169,66 @@
   vector-effect: non-scaling-stroke;
 }
 
+.scene-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene-handle {
+  position: absolute;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  /* over the scene's own colors, which can be anything, so this needs to read against all of them */
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 2px;
+  box-shadow: 0 0 2px #000;
+  pointer-events: auto;
+  touch-action: none;
+  transition:
+    background 0.1s,
+    box-shadow 0.1s,
+    transform 0.1s;
+}
+
+.scene-handle-move {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+}
+
+/* out past the corner, where a polygon can have a point of its own */
+.scene-handle-scale {
+  margin: -20px 0 0 8px;
+}
+
+.scene-handle-point {
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+}
+
+.scene-handle:hover {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: scale(1.2);
+}
+
+.scene-handle-locked {
+  background: #999;
+}
+
+.scene-handle-locked:hover {
+  background: #999;
+  box-shadow: 0 0 2px #000;
+  transform: none;
+}
+
 /* the last good render, kept up while the source doesn't parse */
 .scene-raw.stale,
 .scene-machine.stale {
@@ -249,6 +309,53 @@
   gap: 0.25rem 0.5rem;
 }
 
+.scene-unique {
+  display: flex;
+  align-items: center;
+}
+
+.scene-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-switch [data-part='control'] {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1rem;
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+  background: var(--border);
+  transition: background 0.1s;
+}
+
+.scene-switch [data-part='control'][data-state='checked'] {
+  background: var(--accent);
+}
+
+.scene-switch [data-part='control'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scene-switch [data-part='thumb'] {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.1s;
+}
+
+.scene-switch [data-part='control'][data-state='checked'] [data-part='thumb'] {
+  background: #fff;
+  transform: translateX(0.75rem);
+}
+
 .scene-note {
   margin: 0;
   color: var(--muted);
@@ -257,6 +364,171 @@
 
 .scene-note-warn {
   color: var(--warn);
+}
+
+.scene-image-chosen {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.scene-image-chosen img {
+  flex: none;
+  width: 3rem;
+  height: 2rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.scene-image-chosen span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-image-button {
+  flex: none;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-image-button:hover {
+  background: var(--surface-hover);
+}
+
+.scene-image-button:focus-within {
+  outline: 2px solid var(--accent);
+}
+
+.scene-image-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.scene-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.scene-dialog-positioner {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.scene-dialog-backdrop[hidden],
+.scene-dialog-positioner[hidden] {
+  display: none;
+}
+
+.scene-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-sizing: border-box;
+  width: min(60rem, 100%);
+  max-height: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  outline: none;
+}
+
+.scene-dialog header,
+.scene-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scene-dialog footer {
+  justify-content: flex-end;
+}
+
+.scene-dialog h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.scene-dialog header button {
+  padding: 0 0.375rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.scene-dialog header button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-image-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow-y: scroll;
+}
+
+.scene-image {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.scene-image:hover {
+  background: var(--surface-hover);
+}
+
+.scene-image[aria-selected='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.scene-image img {
+  width: 100%;
+  height: 6rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* a whole path, as what tells two images apart can be at either end of it */
+.scene-image span {
+  overflow-wrap: anywhere;
 }
 
 .scene-item {
@@ -957,7 +1229,18 @@
   box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
 }
 
-.scene-key-remove {
+.scene-key-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.scene-key-actions button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.scene-key-remove,
+.scene-key-duplicate {
   padding: 0.375rem 0.625rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -968,11 +1251,17 @@
   cursor: pointer;
 }
 
-.scene-key-remove:hover:enabled {
+.scene-key-duplicate {
+  color: var(--text);
+}
+
+.scene-key-remove:hover:enabled,
+.scene-key-duplicate:hover:enabled {
   background: var(--surface-hover);
 }
 
-.scene-key-remove:disabled {
+.scene-key-remove:disabled,
+.scene-key-duplicate:disabled {
   color: var(--muted);
   cursor: default;
 }

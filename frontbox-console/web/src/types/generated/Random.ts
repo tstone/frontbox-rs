@@ -21,4 +21,8 @@ spread: Spread,
 /**
  * Keeps these picks apart from those of another prop picking at the same times
  */
-seed: number, };
+seed: number, 
+/**
+ * Whether a pick has to differ from the one before it. On by default.
+ */
+force_unique: boolean, };

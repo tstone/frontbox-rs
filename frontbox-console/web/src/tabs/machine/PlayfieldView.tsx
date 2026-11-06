@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
+import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
@@ -152,8 +152,13 @@ function originGizmo() {
   return group
 }
 
-/** A closed loop of points on a plane, in the plane's units */
-export type PlaneOutline = { plane: PlaneView; points: [number, number][] }
+/** Between points on what a preview shows and the pixels they're on. Tracks anything that moves them. */
+export type PreviewSpace = {
+  /** Where a point is on screen, from the top left of the preview. `null` when it's out of sight. */
+  project(point: [number, number]): [number, number] | null
+  /** The point under a place on screen, as a pointer event gives it. `null` when there's none. */
+  unproject(clientX: number, clientY: number): [number, number] | null
+}
 
 /** A coordinate as a Rust f32 literal, to the thousandth of an inch: `32.1`, `0.0`, `-1.145` */
 function rustFloat(n: number): string {
@@ -206,10 +211,27 @@ export default function PlayfieldView(props: {
    * hardware sits idle, and can't be pressed or placed.
    */
   ledColor?: (name: string) => string | null
-  /** What to outline in a preview */
-  outline?: () => PlaneOutline | null
+  /** The plane a preview works on */
+  plane?: () => PlaneView | null
+  /** A closed loop of points to outline on the plane, in the plane's units */
+  outline?: () => [number, number][]
+  /** Drawn over a preview, with the plane as the space to work in */
+  overlay?: (space: PreviewSpace) => JSX.Element
+  /** A click on a preview that didn't move the camera, with the point it landed on, if any, on the plane */
+  onClickPlane?: (point: [number, number] | null) => void
 }) {
   let container!: HTMLDivElement
+  // bumped whenever points on the plane move on screen
+  const [viewMoved, setViewMoved] = createSignal(0)
+  let toScreen: PreviewSpace['project'] = () => null
+  let fromScreen: PreviewSpace['unproject'] = () => null
+  const space: PreviewSpace = {
+    project: (point) => {
+      viewMoved()
+      return toScreen(point)
+    },
+    unproject: (clientX, clientY) => fromScreen(clientX, clientY),
+  }
   const preview = props.ledColor !== undefined
   const ledColor = (name: string) => (props.ledColor ?? machineLedColor)(name)
   const placing = () => (preview ? null : placingHardware())
@@ -273,6 +295,7 @@ export default function PlayfieldView(props: {
       })
     }
     controls.addEventListener('change', render)
+    controls.addEventListener('change', () => setViewMoved((moves) => moves + 1))
 
     // the cabinet's origin, so positions can be checked against the code. Kept out of `content` so it isn't rebuilt
     // or counted when framing the camera.
@@ -503,18 +526,41 @@ export default function PlayfieldView(props: {
     }
 
     function applyOutline() {
-      const outline = props.outline?.()
-      dashedLine.visible = !!outline
-      if (outline) {
-        const { plane, points } = outline
+      const plane = props.plane?.()
+      const points = props.outline?.() ?? []
+      dashedLine.visible = !!plane && points.length > 0
+      if (plane) {
+        dashedLine.position.set(...plane.origin)
+        dashedLine.quaternion.set(...plane.rotation)
+      }
+      if (dashedLine.visible) {
         const loop = [...points, points[0]].map(([x, y]) => new THREE.Vector3(x, y, 0))
         dashedLine.geometry.dispose()
         dashedLine.geometry = new THREE.BufferGeometry().setFromPoints(loop)
         dashedLine.computeLineDistances()
-        dashedLine.position.set(...plane.origin)
-        dashedLine.quaternion.set(...plane.rotation)
       }
+      setViewMoved((moves) => moves + 1)
       render()
+    }
+
+    toScreen = ([x, y]) => {
+      const { clientWidth, clientHeight } = canvas
+      dashedLine.updateWorldMatrix(true, false)
+      camera.updateMatrixWorld()
+      const at = dashedLine.localToWorld(new THREE.Vector3(x, y, 0)).project(camera)
+      if (at.z > 1) return null
+      return [((at.x + 1) / 2) * clientWidth, ((1 - at.y) / 2) * clientHeight]
+    }
+
+    fromScreen = (clientX, clientY) => {
+      aim({ clientX, clientY } as MouseEvent)
+      dashedLine.updateWorldMatrix(true, false)
+      const corners = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => dashedLine.localToWorld(new THREE.Vector3(x, y, 0)))
+      const surface = new THREE.Plane().setFromCoplanarPoints(corners[0], corners[1], corners[2])
+      const hit = raycaster.ray.intersectPlane(surface, new THREE.Vector3())
+      if (!hit) return null
+      const { x, y } = dashedLine.worldToLocal(hit)
+      return [x, y]
     }
 
     function resize() {
@@ -523,6 +569,7 @@ export default function PlayfieldView(props: {
       renderer.setSize(width, height, false)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+      setViewMoved((moves) => moves + 1)
       render()
     }
     const resizeObserver = new ResizeObserver(resize)
@@ -621,6 +668,7 @@ export default function PlayfieldView(props: {
       if (key && e.button === 0 && isClick(e) && ghostPosition) {
         place(key, ghostPosition)
       }
+      if (preview && e.button === 0 && isClick(e)) props.onClickPlane?.(fromScreen(e.clientX, e.clientY))
     }
 
     function onContextMenu(e: MouseEvent) {
@@ -733,6 +781,7 @@ export default function PlayfieldView(props: {
 
   return (
     <div class="playfield-view" ref={container}>
+      {props.overlay?.(space)}
       <div class="view-toggles" role="group" aria-label="Show in the 3D view">
         <For each={LAYERS}>
           {({ layer, label, title }) => (

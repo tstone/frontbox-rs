@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Line;
-use frontbox_gfx::scene::{Bounds, Frame, Params, Sample, Scene, Value, Viewport};
+use frontbox_gfx::scene::{Bounds, Frame, Images, Params, Sample, Scene, Value, Viewport};
 
 use crate::*;
 
@@ -18,7 +18,7 @@ use crate::*;
 /// let scene = file::load(r#"(
 ///   version: 5,
 ///   viewport: Sequence,
-///   layers: [(paint: (base: Solid(Param("color"))))],
+///   layers: [(fill: (base: Solid(Param("color"))))],
 /// )"#).unwrap();
 ///
 /// let mut program = LedScene::new(LedQ::every(), scene).unwrap();
@@ -37,7 +37,7 @@ use crate::*;
 /// let scene = file::load(r#"(
 ///   version: 5,
 ///   viewport: Area,
-///   layers: [(paint: (base: Solid(Fixed(255, 0, 0, 255))))],
+///   layers: [(fill: (base: Solid(Fixed(255, 0, 0, 255))))],
 /// )"#).unwrap();
 ///
 /// let program = LedScene::on_plane(&PLAYFIELD, LedQ::every(), scene).unwrap().at_z(2);
@@ -47,6 +47,7 @@ pub struct LedScene {
   targets: Targets,
   scene: Scene,
   params: Params,
+  images: Images,
   elapsed: Duration,
   take: u32,
   playing: bool,
@@ -90,12 +91,20 @@ impl LedScene {
       targets,
       scene,
       params: Params::new(),
+      images: Images::new(),
       elapsed: Duration::ZERO,
       take: rand::random(),
       playing: true,
       end_behavior: EndBehavior::Clear,
       undeclared: false,
     }
+  }
+
+  /// The images the scene draws, from [`Content::images_for`](frontbox_gfx::scene::Content::images_for). That reads
+  /// files, so do it ahead of time rather than in a tick.
+  pub fn images(mut self, images: Images) -> Self {
+    self.images = images;
+    self
   }
 
   /// What to do when the scene is over. It clears unless told otherwise.
@@ -140,7 +149,7 @@ impl LedScene {
 
     let placement = self.targets.place(ctx);
     ctx.declare_led_colors(&placement.ids, |_| {
-      let frame = Frame { time: self.elapsed.as_secs_f32(), take: self.take, params: &self.params, size: placement.size };
+      let frame = Frame { time: self.elapsed.as_secs_f32(), take: self.take, params: &self.params, images: &self.images, size: placement.size };
       placement.samples.iter().map(|s| self.scene.sample(s, &frame)).collect()
     });
   }
@@ -330,8 +339,24 @@ mod tests {
       .collect()
   }
 
-  fn scene(paint: PaintNode) -> Scene {
-    Scene::new(Viewport::Sequence, vec![Layer::new(Paint::new(paint))])
+  fn scene(fill: FillNode) -> Scene {
+    Scene::new(Viewport::Sequence, vec![Layer::new(Fill::new(fill))])
+  }
+
+  #[test]
+  fn an_image_runs_along_the_leds() {
+    let (context, addresses) = three_leds();
+    let art = image::RgbaImage::from_fn(8, 1, |x, _| if x < 4 { Rgba::red() } else { Rgba::blue() });
+    let mut images = Images::new();
+    images.insert("art.png", Picture::new(art));
+
+    let mut program = LedScene::new(LedQ::names(vec!["led1", "led2", "led3"]), scene(FillNode::image("art.png")))
+      .unwrap()
+      .images(images);
+
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    let shown = colors(&context, &addresses);
+    assert_eq!((shown[0], shown[2]), (Some(Rgba::red()), Some(Rgba::blue())));
   }
 
   #[test]
@@ -339,7 +364,7 @@ mod tests {
     let (context, addresses) = three_leds();
     let mut program = LedScene::new(
       LedQ::names(vec!["led1", "led2", "led3"]),
-      scene(PaintNode::Gradient {
+      scene(FillNode::Gradient {
         stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
         space: ColorSpace::Rgb,
       }),
@@ -364,7 +389,7 @@ mod tests {
     let (context, addresses) = three_leds();
     let mut program = LedScene::new(
       LedQ::name("led1"),
-      scene(PaintNode::Solid(Prop::Track(Track {
+      scene(FillNode::Solid(Prop::Track(Track {
         keys: vec![
           Key::new(0.0, Color(Rgba([0, 0, 0, 255])), Curve::Linear),
           Key::new(1.0, Color(Rgba([200, 0, 0, 255])), Curve::Linear),
@@ -380,7 +405,7 @@ mod tests {
   }
 
   fn timed(cycle: Cycle) -> Scene {
-    scene(PaintNode::Solid(Color(Rgba::red()).into())).timing(Timing::new(1.0, cycle))
+    scene(FillNode::Solid(Color(Rgba::red()).into())).timing(Timing::new(1.0, cycle))
   }
 
   #[test]
@@ -408,7 +433,7 @@ mod tests {
     program.apply(Duration::from_millis(16), &context.sys_ctx());
 
     // something else takes the LED, and a completed scene mustn't touch it
-    let mut other = LedScene::new(LedQ::name("led1"), scene(PaintNode::Solid(Color(Rgba::blue()).into()))).unwrap();
+    let mut other = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::blue()).into()))).unwrap();
     other.apply(Duration::from_millis(16), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::blue()));
@@ -430,8 +455,8 @@ mod tests {
   fn each_play_picks_its_own_random_values() {
     let (context, addresses) = three_leds();
     let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
-    let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 0 });
-    let scene = scene(PaintNode::Solid(color)).timing(Timing::new(1.0, Cycle::Once));
+    let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 0, force_unique: true });
+    let scene = scene(FillNode::Solid(color)).timing(Timing::new(1.0, Cycle::Once));
     let mut program = LedScene::new(LedQ::name("led1"), scene).unwrap();
 
     let mut shots = vec![];
@@ -481,7 +506,7 @@ mod tests {
   #[test]
   fn a_static_scene_never_completes() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), scene(PaintNode::Solid(Color(Rgba::red()).into()))).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into()))).unwrap();
     program.apply(Duration::from_secs(100), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert!(!program.is_complete());
@@ -491,7 +516,7 @@ mod tests {
   #[test]
   fn stop_clears_the_leds() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), scene(PaintNode::Solid(Color(Rgba::red()).into()))).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into()))).unwrap();
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
@@ -506,7 +531,7 @@ mod tests {
     let (context, addresses) = three_leds();
     let mut program = LedScene::new(
       LedQ::name("led1"),
-      scene(PaintNode::Solid(Prop::Param("color".into()))),
+      scene(FillNode::Solid(Prop::Param("color".into()))),
     )
     .unwrap();
     program.set_param("color", Value::Color(Color(Rgba::green())));
@@ -539,16 +564,16 @@ mod tests {
     Some(Vec3::new(x, y, 0.0))
   }
 
-  fn area(paint: PaintNode) -> Scene {
-    Scene::new(Viewport::Area, vec![Layer::new(Paint::new(paint))])
+  fn area(fill: FillNode) -> Scene {
+    Scene::new(Viewport::Area, vec![Layer::new(Fill::new(fill))])
   }
 
   fn red() -> Scene {
-    area(PaintNode::Solid(Color(Rgba::red()).into()))
+    area(FillNode::Solid(Color(Rgba::red()).into()))
   }
 
-  fn red_to_blue() -> PaintNode {
-    PaintNode::Gradient {
+  fn red_to_blue() -> FillNode {
+    FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
       space: ColorSpace::Rgb,
     }
@@ -561,7 +586,7 @@ mod tests {
 
   #[test]
   fn a_sequence_scene_is_refused_on_a_plane() {
-    let result = LedScene::on_plane(&plane(), LedQ::every(), scene(PaintNode::Solid(Color(Rgba::red()).into())));
+    let result = LedScene::on_plane(&plane(), LedQ::every(), scene(FillNode::Solid(Color(Rgba::red()).into())));
     assert!(matches!(result, Err(PlaneSceneError::NotAnArea)));
   }
 
@@ -642,10 +667,10 @@ mod tests {
     let coverage = |radius: f32| {
       let (mut context, addresses) = placed_leds(&[at(5.0, 6.95)]);
       context.set_led_radius(radius);
-      let circle = Layer::new(Paint::new(PaintNode::Solid(Color(Rgba::red()).into()))).shape(
-        Shape::new(ShapeNode::Ellipse)
-          .warp(Warp::Scale(Vec2::splat(4.0).into()))
-          .warp(Warp::Translate(Vec2::new(5.0, 5.0).into())),
+      let circle = Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into()))).shape(
+        Shape::new(ShapeNode::circle(0.5))
+          .transform(Transform::Scale(Vec2::splat(4.0).into()))
+          .transform(Transform::Translate(Vec2::new(5.0, 5.0).into())),
       );
       let scene = Scene::new(Viewport::Area, vec![circle]);
       let program = LedScene::on_plane(&plane(), LedQ::every(), scene).unwrap();
@@ -700,7 +725,7 @@ mod tests {
   #[test]
   fn each_z_is_its_own_layer() {
     let (context, addresses) = three_leds();
-    let solid = |color: Rgba<u8>| scene(PaintNode::Solid(Color(color).into()));
+    let solid = |color: Rgba<u8>| scene(FillNode::Solid(Color(color).into()));
     let mut under = LedScene::new(LedQ::name("led1"), solid(Rgba::red())).unwrap();
     let mut over = LedScene::new(LedQ::name("led1"), solid(Rgba::blue())).unwrap().at_z(1);
     let layers = || context.sys_ctx().systems.expect::<LedSystem>().declarations_for(&addresses[0]).len();

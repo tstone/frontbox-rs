@@ -2,6 +2,6 @@
 import type { Prop } from "./Prop";
 
 /**
- * Changes to a paint's colors, applied in order to whatever its kind produces
+ * Changes to a fill's colors, applied in order to whatever its kind produces
  */
 export type ColorAdjust = { "HueShift": Prop<number> };

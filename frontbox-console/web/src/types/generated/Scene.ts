@@ -18,6 +18,6 @@ params?: { [key in string]: Value }, viewport: Viewport,
  */
 timing?: Timing, 
 /**
- * Painted bottom to top, alpha over
+ * Drawn bottom to top, alpha over
  */
 layers: Array<Layer>, };

@@ -8,7 +8,7 @@ use crate::scene::{Env, Prop};
 /// `Mirror` and `Repeat` work around the origin, so a later `Translate` moves the result as a whole.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Warp {
+pub enum Transform {
   Translate(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
   /// Degrees, clockwise in a scene whose y runs down
   Rotate(Prop<f32>),
@@ -22,7 +22,7 @@ pub enum Warp {
   Repeat(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
 }
 
-impl Warp {
+impl Transform {
   /// What this does to a point of the drawing. `Mirror` and `Repeat` differ from place to place, so for them this is the
   /// drawing they start from.
   pub(crate) fn affine(&self, env: &Env) -> Affine2 {
@@ -34,7 +34,7 @@ impl Warp {
     }
   }
 
-  /// What takes the point `p` back to where it was before this warp. `None` when this collapses the drawing.
+  /// What takes the point `p` back to where it was before this transform. `None` when this collapses the drawing.
   pub(crate) fn undo(&self, p: Vec2, env: &Env) -> Option<Affine2> {
     match self {
       Self::Mirror(degrees) => {
@@ -77,28 +77,28 @@ mod tests {
   use crate::scene::value::tests::env;
   use crate::scene::{Params, Track};
 
-  fn back(warp: Warp, p: Vec2) -> Vec2 {
+  fn back(transform: Transform, p: Vec2) -> Vec2 {
     let params = Params::new();
-    warp.undo(p, &env(0.0, &params)).unwrap().transform_point2(p)
+    transform.undo(p, &env(0.0, &params)).unwrap().transform_point2(p)
   }
 
   #[test]
   fn mirror_folds_the_far_side_onto_the_near_side() {
-    let mirror = Warp::Mirror(0.0.into());
+    let mirror = Transform::Mirror(0.0.into());
     assert_eq!(back(mirror.clone(), Vec2::new(3.0, 4.0)), Vec2::new(3.0, 4.0));
     assert_eq!(back(mirror, Vec2::new(-3.0, 4.0)), Vec2::new(3.0, 4.0));
   }
 
   #[test]
   fn mirror_turns_with_its_degrees() {
-    let mirror = Warp::Mirror(90.0.into());
+    let mirror = Transform::Mirror(90.0.into());
     assert!(back(mirror.clone(), Vec2::new(3.0, 4.0)).abs_diff_eq(Vec2::new(3.0, 4.0), 1e-6));
     assert!(back(mirror, Vec2::new(3.0, -4.0)).abs_diff_eq(Vec2::new(3.0, 4.0), 1e-6));
   }
 
   #[test]
   fn repeat_brings_a_point_into_the_cell_around_the_origin() {
-    let repeat = Warp::Repeat(Vec2::new(10.0, 4.0).into());
+    let repeat = Transform::Repeat(Vec2::new(10.0, 4.0).into());
     assert_eq!(back(repeat.clone(), Vec2::new(23.0, 1.0)), Vec2::new(3.0, 1.0));
     assert_eq!(back(repeat.clone(), Vec2::new(-23.0, 3.0)), Vec2::new(-3.0, -1.0));
     assert_eq!(back(repeat, Vec2::new(4.0, -1.0)), Vec2::new(4.0, -1.0));
@@ -106,14 +106,14 @@ mod tests {
 
   #[test]
   fn repeat_leaves_an_axis_of_zero_alone() {
-    let repeat = Warp::Repeat(Vec2::new(10.0, 0.0).into());
+    let repeat = Transform::Repeat(Vec2::new(10.0, 0.0).into());
     assert_eq!(back(repeat, Vec2::new(23.0, 99.0)), Vec2::new(3.0, 99.0));
   }
 
   #[test]
   fn folds_change_with_their_props() {
     let track = Track { keys: vec![], cycle: Default::default() };
-    assert!(Warp::Mirror(Prop::Track(track)).is_animated());
-    assert!(!Warp::Repeat(Vec2::ONE.into()).is_animated());
+    assert!(Transform::Mirror(Prop::Track(track)).is_animated());
+    assert!(!Transform::Repeat(Vec2::ONE.into()).is_animated());
   }
 }

@@ -9,7 +9,7 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
 import { Dropdown, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
-import { field, item, removed, repeats, sceneTracks, trackTimes, UNIT, variant, withKey, withPick, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
+import { field, item, removed, repeats, sceneTracks, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** Times are kept to this, in seconds, as a key at 0.4183 is only ever an accident of the mouse */
 const TIME_STEP = 0.01
@@ -19,6 +19,9 @@ const KEY_REACH = 12
 
 /** How far in pixels a press on a dot has to move before it's a drag and not a click */
 const DRAG_START = 3
+
+/** How far along the view a copy of a key goes from it, given the room */
+const COPY_DISTANCE = 0.05
 
 const CURVES: Extract<Curve, string>[] = [
   'Linear',
@@ -280,6 +283,16 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
 /** Where a dot sits among the others on its track */
 type DotPlace = { index: number; left: string; times: number[]; span: number }
 
+/** A free time just after a dot, or just before it if it has no room after. There's none if it's hemmed in both ways. */
+function roomNear({ index, times, span }: DotPlace) {
+  const toward = (end: number) => {
+    const room = end - times[index]
+    return snap(times[index] + Math.sign(room) * Math.min(span * COPY_DISTANCE, Math.abs(room) / 2))
+  }
+  const candidates = [toward(times[index + 1] ?? span), toward(times[index - 1] ?? 0)]
+  return candidates.find((candidate) => times.every((time) => Math.abs(time - candidate) >= TIME_STEP / 2))
+}
+
 /** A dot on a track. Clicking it opens what can be changed about it, and dragging it moves it between its neighbors. */
 function Dot(props: DotPlace & { label: string; move: (at: number) => void; pick?: boolean; background?: string; children: any }) {
   const [open, setOpen] = createSignal(false)
@@ -366,6 +379,7 @@ function PickDot(props: DotPlace & { label: string; picks: Lens<RandomPick[]> })
 function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ranges'>; keys: Lens<Key<SceneValue>[]> }) {
   const key = () => item(props.keys, props.index)
   const at = () => key().get().at
+  const room = () => roomNear(props)
 
   const curve = () => {
     const value = key().get().curve
@@ -394,15 +408,25 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
           />
         </FieldRow>
       </Show>
-      {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Track */}
-      <button
-        type="button"
-        class="scene-key-remove"
-        disabled={props.keys.get().length === 1}
-        onClick={() => props.keys.set(removed(props.keys.get(), props.index))}
-      >
-        Remove keyframe
-      </button>
+      <div class="scene-key-actions">
+        <button
+          type="button"
+          class="scene-key-duplicate"
+          disabled={room() === undefined}
+          onClick={() => props.keys.set(withKeyCopy(props.keys.get(), props.index, room()!))}
+        >
+          Duplicate
+        </button>
+        {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Track */}
+        <button
+          type="button"
+          class="scene-key-remove"
+          disabled={props.keys.get().length === 1}
+          onClick={() => props.keys.set(removed(props.keys.get(), props.index))}
+        >
+          Remove keyframe
+        </button>
+      </div>
     </Dot>
   )
 }

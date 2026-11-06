@@ -1,4 +1,5 @@
 use axum::extract::ws::{Message, Utf8Bytes};
+use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
   ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
@@ -45,6 +46,7 @@ impl ConsoleHub {
         plane_images: Vec::new(),
         planes: Vec::new(),
         led_radius: DEFAULT_LED_RADIUS,
+        content: None,
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -147,7 +149,8 @@ impl ConsoleHub {
     cycle: Option<u32>,
   ) -> Option<Utf8Bytes> {
     let target = self.led_target(leds);
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, time, cycle)).await {
+    let content = self.content();
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, content, time, cycle)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -169,7 +172,8 @@ impl ConsoleHub {
   ) -> Option<Message> {
     let target = self.led_target(leds);
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
-    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, cycle)).await {
+    let content = self.content();
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, content, cycle)).await {
       Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
@@ -181,6 +185,20 @@ impl ConsoleHub {
 
   pub fn set_led_radius(&self, radius: f32) {
     self.state.lock().unwrap().led_radius = radius;
+  }
+
+  pub fn set_content(&self, path: Option<PathBuf>) {
+    if let Some(path) = &path {
+      if !path.is_dir() {
+        log::warn!(target: "frontbox_core::console", "Content folder {} isn't there yet", path.display());
+      }
+    }
+    self.state.lock().unwrap().content = path.map(Content::new);
+  }
+
+  /// The app's content folder. `None` until `AppTracer::init`, or when the app has none.
+  pub fn content(&self) -> Option<Content> {
+    self.state.lock().unwrap().content.clone()
   }
 
   fn led_target(&self, leds: SceneLeds) -> LedTarget {
@@ -563,6 +581,7 @@ struct HubState {
   /// Planes for `snapshot.planes`, by the same index
   planes: Vec<&'static ReferencePlane>,
   led_radius: f32,
+  content: Option<Content>,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

@@ -1,7 +1,7 @@
 use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Node, Prop, Bounds, Sample, Warp};
+use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform};
 
 /// How many points an ellipse's outline has. Enough that it looks round on screen.
 const ELLIPSE_OUTLINE_POINTS: usize = 64;
@@ -9,18 +9,31 @@ const ELLIPSE_OUTLINE_POINTS: usize = 64;
 /// Where a layer is drawn
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
 
-/// Shapes have no position or size of their own; warps give them that. A circle of radius 20 is an `Ellipse`
-/// scaled by `(40, 40)`, and a rect is a unit square polygon scaled to its size.
+/// Shapes sit around the origin; transforms put them in the scene. The sizes here are in the shape's own space, so a
+/// `Scale` multiplies them.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
-  /// An ellipse 1 unit across, centered on the origin
-  Ellipse,
+  /// An ellipse centered on the origin, `r1` up and down from its center and `r2` side to side
+  Ellipse { r1: Prop<f32>, r2: Prop<f32> },
+  /// A rectangle centered on the origin
+  Rect { width: Prop<f32>, height: Prop<f32> },
   /// A closed polygon through points
   Polygon {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
+}
+
+/// A shape as it stands at a moment, for an editor to draw over
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapePose {
+  /// What each of the shape's transforms does, in the order they apply
+  pub transforms: Vec<Affine2>,
+  /// The shape's bounds in its own space, before its transforms
+  pub bounds: Bounds,
+  /// A polygon's points in its own space. Empty for the other shapes.
+  pub points: Vec<Vec2>,
 }
 
 /// Changes to a shape's edge. None yet.
@@ -31,12 +44,12 @@ pub enum ShapeAdjust {}
 impl Shape {
   /// How much of the sample's footprint the shape covers (0 to 1), and the sample's position in the shape's own
   /// space. `None` when the shape draws nothing.
-  pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2)> {
+  pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2, Vec2)> {
     let to_local = self.to_local(at.pos, env)?;
     let local = to_local.transform_point2(at.pos);
     let (distance, gradient) = self.base.distance(local, env);
     let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);
-    (coverage > 0.0).then_some((coverage, local))
+    (coverage > 0.0).then(|| (coverage, local, to_local.matrix2.abs() * Vec2::splat(at.radius)))
   }
 
   /// The shape's edge in the scene, as a closed loop of points. Empty when it draws nothing.
@@ -47,23 +60,45 @@ impl Shape {
     self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
   }
 
+  /// The shape as it stands at a moment. `None` when a transform collapses it.
+  pub(crate) fn pose(&self, env: &Env) -> Option<ShapePose> {
+    self.to_scene(env)?;
+    let points = match &self.base {
+      ShapeNode::Polygon { points } => points.iter().map(|p| p.resolve(env)).collect(),
+      _ => Vec::new(),
+    };
+    Some(ShapePose {
+      transforms: self.transform.iter().map(|transform| transform.affine(env)).collect(),
+      bounds: self.base.bounds(env),
+      points,
+    })
+  }
+
   pub(crate) fn is_animated(&self) -> bool {
-    self.base.is_animated() || self.warp.iter().any(Warp::is_animated)
+    self.base.is_animated() || self.transform.iter().any(Transform::is_animated)
   }
 }
 
 impl ShapeNode {
+  /// An `Ellipse` with both radii the same
+  pub fn circle(radius: f32) -> Self {
+    Self::Ellipse { r1: radius.into(), r2: radius.into() }
+  }
+
   fn is_animated(&self) -> bool {
     match self {
-      Self::Ellipse => false,
+      Self::Ellipse { r1: a, r2: b } | Self::Rect { width: a, height: b } => a.is_animated() || b.is_animated(),
       Self::Polygon { points } => points.iter().any(Prop::is_animated),
     }
   }
 
-  /// The shape's bounds in its own space, before its warps
+  /// The shape's bounds in its own space, before its transforms
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {
-      Self::Ellipse => Bounds::new(Vec2::splat(-0.5), Vec2::splat(0.5)),
+      Self::Ellipse { .. } | Self::Rect { .. } => {
+        let reach = self.reach(env);
+        Bounds::new(-reach, reach)
+      }
       Self::Polygon { points } => {
         let mut points = points.iter().map(|p| p.resolve(env));
         let Some(first) = points.next() else {
@@ -74,22 +109,36 @@ impl ShapeNode {
     }
   }
 
-  /// The shape's edge in its own space, before its warps
+  /// The shape's edge in its own space, before its transforms
   fn outline(&self, env: &Env) -> Vec<Vec2> {
     match self {
-      Self::Ellipse => (0..ELLIPSE_OUTLINE_POINTS)
-        .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ELLIPSE_OUTLINE_POINTS as f32) * 0.5)
+      Self::Ellipse { .. } => (0..ELLIPSE_OUTLINE_POINTS)
+        .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ELLIPSE_OUTLINE_POINTS as f32) * self.reach(env))
         .collect(),
+      Self::Rect { .. } => {
+        let reach = self.reach(env);
+        [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
+      }
       // too few points to enclose anything, so it draws nothing
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
       Self::Polygon { points } => points.iter().map(|p| p.resolve(env)).collect(),
     }
   }
 
+  /// How far an ellipse or a rect reaches from its center along each axis
+  fn reach(&self, env: &Env) -> Vec2 {
+    match self {
+      Self::Ellipse { r1, r2 } => Vec2::new(r2.resolve(env), r1.resolve(env)),
+      Self::Rect { width, height } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
+      Self::Polygon { .. } => Vec2::ZERO,
+    }
+  }
+
   /// Signed distance to the edge (negative inside) in the shape's own space, and the direction it grows in
   fn distance(&self, p: Vec2, env: &Env) -> (f32, Vec2) {
     match self {
-      Self::Ellipse => (p.length() - 0.5, p.normalize_or(Vec2::X)),
+      Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
+      Self::Rect { .. } => rect_distance(self.reach(env), p),
       Self::Polygon { points } => {
         let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
         polygon_distance(&points, p)
@@ -111,6 +160,29 @@ fn coverage(distance: f32, radius: f32) -> f32 {
     return if distance <= 0.0 { 1.0 } else { 0.0 };
   }
   (0.5 - distance / (2.0 * radius)).clamp(0.0, 1.0)
+}
+
+/// How far `p` is from the edge of an ellipse as a fraction of its radius there, and how fast that changes. The two
+/// together give the distance close to the edge, which is where coverage needs it.
+fn ellipse_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
+  if reach.min_element() <= 0.0 {
+    return (f32::INFINITY, Vec2::X);
+  }
+  let along = p / reach;
+  (along.length() - 1.0, along.normalize_or(Vec2::X) / reach)
+}
+
+fn rect_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
+  if reach.min_element() <= 0.0 {
+    return (f32::INFINITY, Vec2::X);
+  }
+  let past = p.abs() - reach;
+  let side = Vec2::new(p.x.signum(), p.y.signum());
+  if past.max_element() > 0.0 {
+    let outside = past.max(Vec2::ZERO);
+    return (outside.length(), (outside * side).normalize_or(Vec2::X));
+  }
+  if past.x > past.y { (past.x, Vec2::X * side.x) } else { (past.y, Vec2::Y * side.y) }
 }
 
 fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
@@ -150,8 +222,8 @@ fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::Params;
-  use crate::scene::Warp;
+  use crate::animation::{Curve, Cycle};
+  use crate::scene::{Key, Params, Track, Transform};
   use crate::scene::value::tests::env;
 
   fn square() -> ShapeNode {
@@ -167,12 +239,12 @@ mod tests {
     let params = Params::new();
     shape
       .cover(&Sample::new(Vec2::new(x, y), radius), &env(0.0, &params))
-      .map_or(0.0, |(c, _)| c)
+      .map_or(0.0, |(c, ..)| c)
   }
 
   #[test]
   fn circle_covers_inside_and_not_outside() {
-    let circle = Shape::new(ShapeNode::Ellipse).warp(Warp::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
     assert_eq!(covered(&circle, 0.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&circle, 4.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&circle, 6.0, 0.0, 0.5), 0.0);
@@ -180,14 +252,14 @@ mod tests {
 
   #[test]
   fn edge_through_a_sample_covers_it_partially() {
-    let circle = Shape::new(ShapeNode::Ellipse).warp(Warp::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
     assert!((covered(&circle, 5.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&circle, 5.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
 
   #[test]
   fn ellipse_edge_is_in_scene_units_when_stretched() {
-    let ellipse = Shape::new(ShapeNode::Ellipse).warp(Warp::Scale(Vec2::new(20.0, 4.0).into()));
+    let ellipse = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::new(20.0, 4.0).into()));
     assert!((covered(&ellipse, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&ellipse, 0.0, 2.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&ellipse, 10.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
@@ -195,7 +267,7 @@ mod tests {
 
   #[test]
   fn square_polygon_covers_its_inside() {
-    let rect = Shape::new(square()).warp(Warp::Scale(Vec2::new(10.0, 4.0).into()));
+    let rect = Shape::new(square()).transform(Transform::Scale(Vec2::new(10.0, 4.0).into()));
     assert_eq!(covered(&rect, 0.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&rect, 4.0, 1.5, 0.5), 1.0);
     assert_eq!(covered(&rect, 0.0, 3.0, 0.5), 0.0);
@@ -221,8 +293,87 @@ mod tests {
   }
 
   #[test]
+  fn an_ellipses_radii_are_up_and_down_then_side_to_side() {
+    let ellipse = Shape::new(ShapeNode::Ellipse { r1: 2.0.into(), r2: 10.0.into() });
+    assert_eq!(covered(&ellipse, 9.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&ellipse, 0.0, 3.0, 0.1), 0.0);
+    assert!((covered(&ellipse, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&ellipse, 0.0, 2.0, 0.5) - 0.5).abs() < 1e-5);
+  }
+
+  #[test]
+  fn an_ellipse_with_no_radius_draws_nothing() {
+    let ellipse = Shape::new(ShapeNode::Ellipse { r1: 0.0.into(), r2: 10.0.into() });
+    assert_eq!(covered(&ellipse, 0.0, 0.0, 0.5), 0.0);
+  }
+
+  #[test]
+  fn a_rect_is_its_width_and_height_around_the_origin() {
+    let rect = Shape::new(ShapeNode::Rect { width: 10.0.into(), height: 4.0.into() });
+    assert_eq!(covered(&rect, 0.0, 0.0, 0.5), 1.0);
+    assert_eq!(covered(&rect, -4.0, 1.5, 0.5), 1.0);
+    assert_eq!(covered(&rect, 0.0, 3.0, 0.5), 0.0);
+    assert!((covered(&rect, 5.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&rect, 0.0, -2.0, 0.5) - 0.5).abs() < 1e-5);
+  }
+
+  #[test]
+  fn a_rect_edge_is_in_scene_units_when_scaled() {
+    let rect = Shape::new(ShapeNode::Rect { width: 1.0.into(), height: 1.0.into() })
+      .transform(Transform::Scale(Vec2::new(20.0, 4.0).into()));
+    assert!((covered(&rect, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&rect, 10.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
+    assert!((covered(&rect, 0.0, 2.25, 0.5) - 0.25).abs() < 1e-5);
+  }
+
+  #[test]
+  fn a_rect_past_a_corner_is_measured_to_the_corner() {
+    let rect = Shape::new(ShapeNode::Rect { width: 2.0.into(), height: 2.0.into() });
+    assert_eq!(covered(&rect, 1.3, 1.4, 0.2), 0.0);
+    assert!(covered(&rect, 1.05, 1.05, 0.2) > 0.0);
+  }
+
+  #[test]
+  fn a_rect_with_no_width_draws_nothing() {
+    let rect = Shape::new(ShapeNode::Rect { width: 0.0.into(), height: 4.0.into() });
+    assert_eq!(covered(&rect, 0.0, 0.0, 0.5), 0.0);
+  }
+
+  #[test]
+  fn sizes_change_over_time() {
+    let params = Params::new();
+    let grows = Prop::Track(Track {
+      keys: vec![Key::new(0.0, 2.0, Curve::Linear), Key::new(1.0, 6.0, Curve::Linear)],
+      cycle: Cycle::Once,
+    });
+    let rect = Shape::new(ShapeNode::Rect { width: grows, height: 4.0.into() });
+    assert!(rect.is_animated());
+    assert_eq!(rect.base.bounds(&env(0.5, &params)), Bounds::new(Vec2::new(-2.0, -2.0), Vec2::new(2.0, 2.0)));
+  }
+
+  #[test]
+  fn a_pose_has_what_an_editor_needs_to_work_out_a_drag() {
+    let params = Params::new();
+    let triangle = ShapeNode::Polygon {
+      points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(4.0, 0.0).into(), Vec2::new(0.0, 2.0).into()],
+    };
+    let shape = Shape::new(triangle).transform(Transform::Translate(Vec2::new(1.0, 2.0).into()));
+    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    assert_eq!(pose.transforms, vec![Affine2::from_translation(Vec2::new(1.0, 2.0))]);
+    assert_eq!(pose.bounds, Bounds::new(Vec2::ZERO, Vec2::new(4.0, 2.0)));
+    assert_eq!(pose.points.len(), 3);
+  }
+
+  #[test]
+  fn a_collapsed_shape_has_no_pose() {
+    let params = Params::new();
+    let flat = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(Vec2::ZERO.into()));
+    assert_eq!(flat.pose(&env(0.0, &params)), None);
+  }
+
+  #[test]
   fn zero_radius_is_a_hard_edge() {
-    let circle = Shape::new(ShapeNode::Ellipse).warp(Warp::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
     assert_eq!(covered(&circle, 4.99, 0.0, 0.0), 1.0);
     assert_eq!(covered(&circle, 5.01, 0.0, 0.0), 0.0);
   }

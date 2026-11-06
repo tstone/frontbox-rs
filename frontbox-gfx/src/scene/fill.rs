@@ -4,42 +4,56 @@ use palette::{FromColor, Mix, Oklab, Srgb};
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Warp};
+use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Transform};
 
 /// What a layer is drawn with
 ///
-/// A paint is drawn in its own space, a unit box from `-0.5` to `0.5`. The layer stretches that box over its
-/// shape's own bounds, so a paint fills its shape and moves and turns with it. With no shape, the box is the viewport.
-pub type Paint = Node<PaintNode, ColorAdjust>;
+/// A fill is drawn in its own space, a unit box from `-0.5` to `0.5`. The layer stretches that box over its
+/// shape's own bounds, so a fill fills its shape and moves and turns with it. With no shape, the box is the viewport.
+pub type Fill = Node<FillNode, ColorAdjust>;
 
-impl Paint {
-  /// The color at a point in the paint's box, before its warps
-  pub(crate) fn color(&self, p: Vec2, env: &Env) -> Rgba<u8> {
+impl Fill {
+  /// The color at a point in the fill's box, before its transforms. `footprint` is how far the sample reaches from the
+  /// point along each axis, in the same box.
+  pub(crate) fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
     let Some(to_local) = self.to_local(p, env) else {
       return Rgba([0, 0, 0, 0]);
     };
-    let color = self.base.color(to_local.transform_point2(p), env);
+    let footprint = to_local.matrix2.abs() * footprint;
+    let color = self.base.color(to_local.transform_point2(p), footprint, env);
     self.adjust.iter().fold(color, |color, adjust| adjust.apply(color, env))
   }
 
   pub(crate) fn is_animated(&self) -> bool {
     self.base.is_animated()
-      || self.warp.iter().any(Warp::is_animated)
+      || self.transform.iter().any(Transform::is_animated)
       || self.adjust.iter().any(ColorAdjust::is_animated)
   }
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PaintNode {
+pub enum FillNode {
   Solid(Prop<Color>),
-  /// Runs left to right across the paint's space, so `t` is `x + 0.5`. Past the ends, `t` clamps to the end colors.
-  /// A vertical or diagonal gradient is a gradient with a `Rotate` warp.
+  /// Runs left to right across the fill's space, so `t` is `x + 0.5`. Past the ends, `t` clamps to the end colors.
+  /// A vertical or diagonal gradient is a gradient with a `Rotate` transform.
   Gradient {
     /// In order of `at`
     stops: Vec<Stop>,
     #[serde(default)]
     space: ColorSpace,
+  },
+  /// An image stretched over the fill's space. Past its edges nothing is drawn, as an image has no colors to go on with.
+  /// A `Sequence` runs along its middle row.
+  Image {
+    /// As it is in the [`Content`](crate::scene::Content) folder. An empty name draws nothing, for an image that's yet
+    /// to be chosen.
+    name: String,
+    /// Which of an animated image's frames to draw, from 0, or the first if there's none. A fraction is dropped, so
+    /// a value moving from 0 to the number of frames spends the same time on each, and past the last is the last.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    frame: Option<Prop<f32>>,
   },
 }
 
@@ -68,18 +82,34 @@ pub enum ColorSpace {
   Rgb,
 }
 
-impl PaintNode {
+impl FillNode {
+  /// An image, on its first frame
+  pub fn image(name: impl Into<String>) -> Self {
+    Self::Image { name: name.into(), frame: None }
+  }
+
   fn is_animated(&self) -> bool {
     match self {
       Self::Solid(color) => color.is_animated(),
       Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
+      Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
     }
   }
 
-  fn color(&self, p: Vec2, env: &Env) -> Rgba<u8> {
+  pub(crate) fn image_name(&self) -> Option<&str> {
+    match self {
+      Self::Image { name, .. } if !name.is_empty() => Some(name),
+      _ => None,
+    }
+  }
+
+  fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
     match self {
       Self::Solid(color) => color.resolve(env).0,
       Self::Gradient { stops, space } => gradient(stops, *space, (p.x + 0.5).clamp(0.0, 1.0), env),
+      Self::Image { name, frame } => env.images.get(name).map_or(Rgba([0, 0, 0, 0]), |image| {
+        image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_whole(env)), p, footprint)
+      }),
     }
   }
 }
@@ -119,32 +149,32 @@ fn mix(a: Rgba<u8>, b: Rgba<u8>, t: f32, space: ColorSpace) -> Rgba<u8> {
 mod tests {
   use super::*;
   use crate::scene::Params;
-  use crate::scene::Warp;
+  use crate::scene::Transform;
   use crate::scene::value::tests::env;
 
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
   const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 
-  fn red_to_blue(space: ColorSpace) -> Paint {
-    Paint::new(PaintNode::Gradient {
+  fn red_to_blue(space: ColorSpace) -> Fill {
+    Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
       space,
     })
   }
 
-  fn color(paint: &Paint, x: f32, y: f32) -> Rgba<u8> {
+  fn color(fill: &Fill, x: f32, y: f32) -> Rgba<u8> {
     let params = Params::new();
-    paint.color(Vec2::new(x, y), &env(0.0, &params))
+    fill.color(Vec2::new(x, y), Vec2::ZERO, &env(0.0, &params))
   }
 
   #[test]
   fn gradient_runs_left_to_right_and_clamps() {
-    let paint = red_to_blue(ColorSpace::Rgb);
-    assert_eq!(color(&paint, -0.5, 0.0), RED);
-    assert_eq!(color(&paint, 0.5, 0.0), BLUE);
-    assert_eq!(color(&paint, -3.0, 0.0), RED);
-    assert_eq!(color(&paint, 3.0, 0.0), BLUE);
-    assert_eq!(color(&paint, 0.0, 0.0), Rgba([127, 0, 128, 255]));
+    let fill = red_to_blue(ColorSpace::Rgb);
+    assert_eq!(color(&fill, -0.5, 0.0), RED);
+    assert_eq!(color(&fill, 0.5, 0.0), BLUE);
+    assert_eq!(color(&fill, -3.0, 0.0), RED);
+    assert_eq!(color(&fill, 3.0, 0.0), BLUE);
+    assert_eq!(color(&fill, 0.0, 0.0), Rgba([127, 0, 128, 255]));
   }
 
   #[test]
@@ -159,14 +189,14 @@ mod tests {
 
   #[test]
   fn rotate_makes_a_gradient_vertical() {
-    let paint = red_to_blue(ColorSpace::Rgb).warp(Warp::Rotate(90.0.into()));
-    assert_eq!(color(&paint, 0.5, -0.5), RED);
-    assert_eq!(color(&paint, -0.5, 0.5), BLUE);
+    let fill = red_to_blue(ColorSpace::Rgb).transform(Transform::Rotate(90.0.into()));
+    assert_eq!(color(&fill, 0.5, -0.5), RED);
+    assert_eq!(color(&fill, -0.5, 0.5), BLUE);
   }
 
   #[test]
   fn stops_in_the_middle() {
-    let paint = Paint::new(PaintNode::Gradient {
+    let fill = Fill::new(FillNode::Gradient {
       stops: vec![
         Stop::new(0.25, Color(RED)),
         Stop::new(0.5, Color(Rgba([0, 255, 0, 255]))),
@@ -174,24 +204,24 @@ mod tests {
       ],
       space: ColorSpace::Rgb,
     });
-    assert_eq!(color(&paint, -0.4, 0.0), RED);
-    assert_eq!(color(&paint, 0.0, 0.0), Rgba([0, 255, 0, 255]));
-    assert_eq!(color(&paint, 0.4, 0.0), BLUE);
+    assert_eq!(color(&fill, -0.4, 0.0), RED);
+    assert_eq!(color(&fill, 0.0, 0.0), Rgba([0, 255, 0, 255]));
+    assert_eq!(color(&fill, 0.4, 0.0), BLUE);
   }
 
   #[test]
   fn adjusts_apply_in_order_after_the_kind() {
-    let mut paint = red_to_blue(ColorSpace::Rgb);
-    paint.adjust.push(ColorAdjust::HueShift(120.0.into()));
-    paint.adjust.push(ColorAdjust::HueShift((-60.0).into()));
+    let mut fill = red_to_blue(ColorSpace::Rgb);
+    fill.adjust.push(ColorAdjust::HueShift(120.0.into()));
+    fill.adjust.push(ColorAdjust::HueShift((-60.0).into()));
     // red turned 60 degrees is yellow; blue turned 60 degrees is magenta
-    assert_eq!(color(&paint, -0.5, 0.0), Rgba([255, 255, 0, 255]));
-    assert_eq!(color(&paint, 0.5, 0.0), Rgba([255, 0, 255, 255]));
+    assert_eq!(color(&fill, -0.5, 0.0), Rgba([255, 255, 0, 255]));
+    assert_eq!(color(&fill, 0.5, 0.0), Rgba([255, 0, 255, 255]));
   }
 
   #[test]
   fn solid_ignores_position() {
-    let paint = Paint::new(PaintNode::Solid(Color(RED).into()));
-    assert_eq!(color(&paint, 100.0, -3.0), RED);
+    let fill = Fill::new(FillNode::Solid(Color(RED).into()));
+    assert_eq!(color(&fill, 100.0, -3.0), RED);
   }
 }

@@ -1,5 +1,7 @@
+import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { Curve } from '../../types/generated/Curve'
+import type { Key } from '../../types/generated/Key'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
@@ -8,7 +10,7 @@ import type { Spread } from '../../types/generated/Spread'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
-import type { Warp } from '../../types/generated/Warp'
+import type { Transform } from '../../types/generated/Transform'
 
 export type Vec2 = [number, number]
 
@@ -19,13 +21,21 @@ export type Surface = Vec2 | null
 export type SceneValue = number | Vec2 | Color
 
 /** The span a slider covers. The number box next to it can go past this. */
-export type Range = { min: number; max: number; step: number }
+export type Range = {
+  min: number
+  max: number
+  step: number
+  /** Where a new random spread ends, for when that isn't `max` */
+  spreadEnd?: number
+  /** What double clicking the slider's handle resets it to. Without one, there's no value to go back to. */
+  rest?: number
+}
 
 /** A range for each axis. A plain number uses the first. */
 export type Ranges = [Range, Range]
 
-/** Which space a warp moves things in: a shape's is the viewport, a paint's is its unit box */
-export type WarpSpace = 'shape' | 'paint'
+/** Which space a transform moves things in: a shape's is the viewport, a fill's is its unit box */
+export type TransformSpace = 'shape' | 'fill'
 
 /**
  * A place in the scene that can be read and replaced. Fields take a lens rather than a value and a callback so that
@@ -56,6 +66,11 @@ export function item<T>(lens: Lens<T[]>, index: number): Lens<T> {
 /** A list the format leaves out when it's empty */
 export function orEmpty<T>(lens: Lens<T[] | undefined>): Lens<T[]> {
   return { get: () => lens.get() ?? [], set: lens.set }
+}
+
+/** A value the format can leave out, which reads as `fallback` until it's set */
+export function orElse<T>(lens: Lens<T | undefined>, fallback: T): Lens<T> {
+  return { get: () => lens.get() ?? fallback, set: lens.set }
 }
 
 /** What's inside an enum variant. Only for use while the enum is that variant. */
@@ -118,7 +133,7 @@ function spreadMiddle(spread: Spread): SceneValue {
 
 /** The widest spread for a prop holding values like `like`, short of making a color see-through */
 export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
-  if (typeof like === 'number') return { Float: [x.min, x.max] }
+  if (typeof like === 'number') return { Float: [x.min, x.spreadEnd ?? x.max] }
   if (like.length === 2) return { Vec2: { x: [x.min, x.max], y: [y.min, y.max] } }
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
@@ -159,7 +174,7 @@ export function changesEachCycle(scene: Scene) {
 
 /** Scene with a timing, which it needs before it can have keyframes */
 export function withTiming(scene: Scene): Scene {
-  return scene.timing ? scene : { ...scene, timing: { duration: 1, cycle: 'Once' } }
+  return scene.timing ? scene : { ...scene, timing: { duration: 1, cycle: 'Forever' } }
 }
 
 /** Scene with a parameter added or changed */
@@ -174,11 +189,11 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
   const uses: { lens: PropLens; label: string; ranges: Ranges }[] = []
   const use = (lens: unknown, label: string, ranges: Ranges) => uses.push({ lens: lens as PropLens, label, ranges })
 
-  const warps = (warp: Lens<Warp[]>, label: string, space: WarpSpace) => {
-    warp.get().forEach((w, index) => {
-      const lens = item(warp, index)
+  const transforms = (transform: Lens<Transform[]>, label: string, space: TransformSpace) => {
+    transform.get().forEach((w, index) => {
+      const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
-      else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges(surface, space))
+      else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
       else if ('Mirror' in w) use(variant(lens, 'Mirror'), `${label} · Mirror`, both(ROTATION))
       else if ('Repeat' in w) use(variant(lens, 'Repeat'), `${label} · Repeat`, repeatRanges(surface, space))
       else use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
@@ -186,28 +201,41 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
   }
 
   const layers = field(scene, 'layers')
-  layers.get().forEach(({ paint, shape }, index) => {
+  layers.get().forEach(({ fill, shape }, index) => {
     const layer = item(layers, index)
     const label = `Layer ${index + 1}`
 
-    const paintLens = field(layer, 'paint')
-    warps(orEmpty(field(paintLens, 'warp')), `${label} · Paint`, 'paint')
-    const base = field(paintLens, 'base')
-    if ('Solid' in paint.base) {
+    const fillLens = field(layer, 'fill')
+    transforms(orEmpty(field(fillLens, 'transform')), `${label} · Fill`, 'fill')
+    const base = field(fillLens, 'base')
+    if ('Solid' in fill.base) {
       use(variant(base, 'Solid'), `${label} · Color`, both(UNIT))
-    } else {
+    } else if ('Gradient' in fill.base) {
       const stops = field(variant(base, 'Gradient'), 'stops')
       stops.get().forEach((_, stop) => use(field(item(stops, stop), 'color'), `${label} · Stop ${stop + 1}`, both(UNIT)))
+    } else if ('Image' in fill.base && fill.base.Image.frame) {
+      const frames = contentImageInfo(fill.base.Image.name)?.frames
+      use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
     }
-    const adjust = orEmpty(field(paintLens, 'adjust'))
+    const adjust = orEmpty(field(fillLens, 'adjust'))
     adjust.get().forEach((_, i) => use(variant(item(adjust, i), 'HueShift'), `${label} · Hue shift`, both(HUE)))
 
     if (shape) {
       const shapeLens = field(layer, 'shape') as Lens<NonNullable<typeof shape>>
-      warps(orEmpty(field(shapeLens, 'warp')), `${label} · Shape`, 'shape')
-      if (shape.base !== 'Ellipse') {
-        const points = field(variant(field(shapeLens, 'base'), 'Polygon'), 'points')
-        points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, both(POLYGON_POINT)))
+      transforms(orEmpty(field(shapeLens, 'transform')), `${label} · Shape`, 'shape')
+      const shapeBase = field(shapeLens, 'base')
+      const [across, down] = sizeRanges(surface)
+      if ('Ellipse' in shape.base) {
+        const ellipse = variant(shapeBase, 'Ellipse')
+        use(field(ellipse, 'r1'), `${label} · R1`, both(radius(down)))
+        use(field(ellipse, 'r2'), `${label} · R2`, both(radius(across)))
+      } else if ('Rect' in shape.base) {
+        const rect = variant(shapeBase, 'Rect')
+        use(field(rect, 'width'), `${label} · Width`, both(across))
+        use(field(rect, 'height'), `${label} · Height`, both(down))
+      } else {
+        const points = field(variant(shapeBase, 'Polygon'), 'points')
+        points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
       }
     }
   })
@@ -274,6 +302,11 @@ export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue>
   return { ...track, keys: [...keys.slice(0, index), { at, value, curve }, ...keys.slice(index)] }
 }
 
+/** `keys` with a copy of the one at `index` at another time */
+export function withKeyCopy(keys: Key<SceneValue>[], index: number, at: number): Key<SceneValue>[] {
+  return [...keys, { ...keys[index], at }].sort((a, b) => a.at - b.at)
+}
+
 /** A moment to pick a value, held until the next one */
 export function newPick(at: number): Pick {
   return { at, smooth_in: 0, smooth_out: 0 }
@@ -309,30 +342,58 @@ export function paramRanges(scene: Scene, name: string, surface: Surface): Range
 /** The same range on both axes */
 export const both = (range: Range): Ranges => [range, range]
 
-export const UNIT: Range = { min: 0, max: 1, step: 0.01 }
-export const ROTATION: Range = { min: -180, max: 180, step: 1 }
-export const HUE: Range = { min: 0, max: 360, step: 1 }
-/** A polygon's points are in the shape's own space, before its warps size it */
-export const POLYGON_POINT: Range = { min: -1, max: 1, step: 0.01 }
-const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1 }
-const PAINT_MOVE: Range = { min: -1, max: 1, step: 0.01 }
-const PAINT_SCALE: Range = { min: 0, max: 4, step: 0.01 }
+export const UNIT: Range = { min: 0, max: 1, step: 0.01, rest: 0 }
+export const ROTATION: Range = { min: -180, max: 180, step: 1, rest: 0 }
+export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
+const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
+const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
+const SCALE: Range = { min: 0, max: 4, step: 0.01, rest: 1 }
 
-export function translateRanges(surface: Surface, space: WarpSpace): Ranges {
-  if (space === 'paint') return both(PAINT_MOVE)
-  if (!surface) return [UNIT, { min: -0.5, max: 0.5, step: 0.01 }]
-  return [span(0, surface[0]), span(0, surface[1])]
+/**
+ * Any of an animated image's frames, or a good many until it's known how many there are. A fraction of a frame is
+ * dropped, so a spread goes one past the last, which gives the last the same odds as any other.
+ */
+export function frameRanges(frames = 100): Ranges {
+  return both({ min: 0, max: Math.max(frames - 1, 1), step: 1, spreadEnd: Math.max(frames, 2), rest: 0 })
 }
 
-export function scaleRanges(surface: Surface, space: WarpSpace): Ranges {
-  if (space === 'paint') return both(PAINT_SCALE)
-  if (!surface) return both({ min: 0, max: 2, step: 0.01 })
-  return [span(0, surface[0] * 2), span(0, surface[1] * 2)]
+export function translateRanges(surface: Surface, space: TransformSpace): Ranges {
+  if (space === 'fill') return both(FILL_MOVE)
+  if (!surface) return [UNIT, { min: -0.5, max: 0.5, step: 0.01, rest: 0 }]
+  return [{ ...span(0, surface[0]), rest: 0 }, { ...span(0, surface[1]), rest: 0 }]
 }
 
-export function repeatRanges(surface: Surface, space: WarpSpace): Ranges {
-  if (space === 'paint' || !surface) return both(UNIT)
-  return [span(0, surface[0]), span(0, surface[1])]
+export function scaleRanges(): Ranges {
+  return both(SCALE)
+}
+
+/** How wide and tall a new shape is: half of what it's on, and a sequence runs from 0 to 1 */
+export function newShapeSize(surface: Surface) {
+  const [width, height] = surface ?? [1, 0]
+  return (height > 0 ? Math.min(width, height) : width) / 2
+}
+
+/** A shape's width and height, which can go up to the size of what it's on */
+export function sizeRanges(surface: Surface): Ranges {
+  const rest = newShapeSize(surface)
+  if (!surface) return both({ ...UNIT, rest })
+  return [{ ...span(0, surface[0]), rest }, { ...span(0, surface[1]), rest }]
+}
+
+/** An ellipse's radius along an axis of `sizeRanges`, which comes to the same size of shape */
+export function radius(size: Range): Range {
+  return { ...size, rest: size.rest! / 2 }
+}
+
+/** A polygon's points, in the shape's own space around its center */
+export function pointRanges(surface: Surface): Ranges {
+  if (!surface) return both({ min: -1, max: 1, step: 0.01 })
+  return [span(-surface[0], surface[0]), span(-surface[1], surface[1])]
+}
+
+export function repeatRanges(surface: Surface, space: TransformSpace): Ranges {
+  if (space === 'fill' || !surface) return both(UNIT)
+  return [{ ...span(0, surface[0]), rest: 0 }, { ...span(0, surface[1]), rest: 0 }]
 }
 
 /** A range with a round step of about a 200th of its width */

@@ -86,7 +86,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, take: 0, params: &params, size: Vec2::new(100.0, 50.0) };
+        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -97,24 +97,24 @@ mod tests {
   /// Uses every type in a definition
   fn everything() -> Scene {
     let mut scene = Scene::new(Viewport::Area, vec![
-        Layer::new(Paint::new(PaintNode::Solid(Prop::Param("background".into())))),
+        Layer::new(Fill::new(FillNode::Solid(Prop::Param("background".into())))),
         Layer::new(
-          Paint::new(PaintNode::Gradient {
+          Fill::new(FillNode::Gradient {
             stops: vec![
               Stop::new(0.0, Color(Rgba([255, 204, 0, 255]))),
               Stop::new(1.0, Color(Rgba([255, 51, 0, 128]))),
             ],
             space: ColorSpace::Oklab,
           })
-          .warp(Warp::Rotate(90.0.into()))
-          .warp(Warp::Repeat(Vec2::new(0.25, 0.0).into()))
-          .warp(Warp::Mirror(45.0.into()))
+          .transform(Transform::Rotate(90.0.into()))
+          .transform(Transform::Repeat(Vec2::new(0.25, 0.0).into()))
+          .transform(Transform::Mirror(45.0.into()))
           .adjust(ColorAdjust::HueShift(Prop::Param("hue".into()))),
         )
         .shape(
-          Shape::new(ShapeNode::Ellipse)
-            .warp(Warp::Scale(Vec2::splat(40.0).into()))
-            .warp(Warp::Translate(Prop::Track(Track {
+          Shape::new(ShapeNode::circle(0.5))
+            .transform(Transform::Scale(Vec2::splat(40.0).into()))
+            .transform(Transform::Translate(Prop::Track(Track {
               keys: vec![
                 Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
                 Key::new(1.0, Vec2::new(70.0, 25.0), Curve::EaseInOut),
@@ -122,7 +122,7 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Paint::new(PaintNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).shape(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).shape(Shape::new(
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
@@ -134,32 +134,47 @@ mod tests {
 
   #[test]
   fn a_random_color_with_no_alpha_is_opaque() {
-    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(paint: (base: Solid(Random(
+    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
     ))))])");
     let scene = scene.unwrap();
-    let PaintNode::Solid(Prop::Random(random)) = &scene.layers[0].paint.base else {
+    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
       panic!("{scene:?}");
     };
     assert!(matches!(random.spread, Spread::Color { alpha: (1.0, 1.0), .. }));
   }
 
   #[test]
+  fn a_random_forces_unique_picks_unless_told_otherwise() {
+    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+      picks: [(at: 0.0)],
+      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+    ))))])");
+    let scene = scene.unwrap();
+    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
+      panic!("{scene:?}");
+    };
+    assert!(random.force_unique);
+  }
+
+  #[test]
   fn random_props_read_and_write() {
-    let source = "(version: 5, viewport: Sequence, timing: (duration: 2.0), layers: [(paint: (base: Solid(Random(
+    let source = "(version: 5, viewport: Sequence, timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
       spread: Color(hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0)),
       seed: 7,
+      force_unique: false,
     ))))])";
     let written = save(&load(source).unwrap()).unwrap();
     let loaded = load(&written).unwrap();
-    let PaintNode::Solid(Prop::Random(random)) = &loaded.layers[0].paint.base else {
+    let FillNode::Solid(Prop::Random(random)) = &loaded.layers[0].fill.base else {
       panic!("{written}");
     };
     assert_eq!(random.picks, [Pick::new(0.0), Pick { at: 1.0, smooth_in: 0.25, smooth_out: 0.5 }]);
     assert_eq!(random.spread, Spread::Color { hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0) });
     assert_eq!(random.seed, 7);
+    assert!(!random.force_unique);
   }
 
   #[test]
@@ -178,7 +193,7 @@ mod tests {
         version: 1,
         viewport: Sequence,
         layers: [
-          (paint: (base: Gradient(stops: [
+          (fill: (base: Gradient(stops: [
             (at: 0.0, color: Fixed(255, 0, 0, 255)),
             (at: 1.0, color: Fixed(0, 0, 255, 255)),
           ]))),
@@ -189,10 +204,55 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, take: 0, params: &params, size: Vec2::new(100.0, 50.0) };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn an_animated_image_keeps_its_frame_when_written_and_read() {
+    let frame = Track {
+      keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
+      cycle: Default::default(),
+    };
+    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(frame)) };
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
+    let read = load(&save(&scene).unwrap()).unwrap();
+
+    let first = Rgba([255, 0, 0, 255]);
+    let last = Rgba([0, 0, 255, 255]);
+    let art = [first, first, last].map(|color| image::RgbaImage::from_pixel(1, 1, color));
+    let (mut images, params) = (Images::new(), Params::new());
+    images.insert("a.gif", Picture::animated(art, 0.3));
+
+    let size = Vec2::new(1.0, 1.0);
+    let at = Sample::new(Vec2::splat(0.5), 0.1);
+    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size });
+    for time in [0.0, 0.4, 1.0] {
+      assert_eq!(color(&read, time), color(&scene, time));
+    }
+    assert_eq!(color(&read, 0.0), first);
+    assert_eq!(color(&read, 1.0), last);
+  }
+
+  #[test]
+  fn an_image_is_written_and_read_by_its_name() {
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))]);
+    let written = save(&scene).unwrap();
+    assert!(written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"), "{written}");
+
+    let read = load(&written).unwrap();
+    assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
+
+    let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
+    let (mut images, params) = (Images::new(), Params::new());
+    images.insert("dmd/title.png", Picture::new(art));
+    let size = Vec2::new(2.0, 2.0);
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size };
+    let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
+    assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
+    assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
   }
 
   #[test]
@@ -224,7 +284,7 @@ mod tests {
       r#"(
         version: 2,
         viewport: Area,
-        layers: [(paint: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+        layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
       )"#,
     );
     assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming))), "{result:?}");
@@ -243,7 +303,7 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 6, layers: [(paint: (base: SomethingNew))])");
+    let result = load("(version: 6, layers: [(fill: (base: SomethingNew))])");
     assert!(matches!(result, Err(FormatError::Newer { version: 6 })), "{result:?}");
   }
 }

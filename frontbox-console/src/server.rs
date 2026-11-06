@@ -1,16 +1,21 @@
 use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
+use axum::body::Bytes;
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{StatusCode, Uri, header};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
+use frontbox_gfx::scene::ContentError;
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
-use crate::protocol::ClientMessage;
+use crate::protocol::{ClientMessage, ImageInfo};
+
+/// The largest image a client can add
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
 
 /// The built SolidJS app
 #[derive(RustEmbed)]
@@ -22,6 +27,12 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
   let app = Router::new()
     .route("/ws", get(ws_handler))
     .route("/planes/{index}/image", get(plane_image))
+    .route("/content/images", get(content_images))
+    .route(
+      "/content/images/{*name}",
+      get(content_image).put(add_content_image).layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
+    )
+    .route("/content/image-info/{*name}", get(content_image_info))
     .fallback(static_handler)
     .with_state(hub);
 
@@ -149,6 +160,82 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
     Err(err) => {
       log::warn!(target: "frontbox_core::console", "Unable to read plane image {}: {err}", path.display());
       StatusCode::NOT_FOUND.into_response()
+    }
+  }
+}
+
+/// The name of every image in the content folder. An app without one has none.
+async fn content_images(State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return Json(Vec::<String>::new()).into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.image_names()).await {
+    Ok(names) => Json(names).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// An image from the content folder, read from disk on each request so it can be edited while the machine runs
+async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(Ok(path)) = hub.content().map(|content| content.image_path(&name)) else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match tokio::fs::read(&path).await {
+    Ok(bytes) => {
+      let mime = mime_guess::from_path(&path).first_or_octet_stream();
+      ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+    }
+    Err(_) => StatusCode::NOT_FOUND.into_response(),
+  }
+}
+
+/// The size and frames of an image in the content folder. This decodes it if nothing has yet. The reply to a failure is
+/// text for showing to whoever chose it.
+async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.picture(&name)).await {
+    Ok(Ok(picture)) => Json(ImageInfo {
+      width: picture.width(),
+      height: picture.height(),
+      frames: picture.frames(),
+      duration: picture.duration(),
+    })
+    .into_response(),
+    Ok(Err(ContentError::Decode { name, error })) => {
+      (StatusCode::UNPROCESSABLE_ENTITY, ContentError::Decode { name, error }.to_string()).into_response()
+    }
+    Ok(Err(err)) => (StatusCode::NOT_FOUND, err.to_string()).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Reading an image stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// Adds an image to the content folder. The reply to a failure is text for showing to whoever is adding it.
+async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>, bytes: Bytes) -> Response {
+  let Some(content) = hub.content() else {
+    return (StatusCode::CONFLICT, "this machine has no content folder").into_response();
+  };
+  let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
+  match added {
+    Ok(Ok(())) => StatusCode::CREATED.into_response(),
+    Ok(Err(err)) => {
+      let status = match err {
+        ContentError::Taken(_) => StatusCode::CONFLICT,
+        ContentError::Write { .. } | ContentError::Read { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        ContentError::BadName(_) | ContentError::Decode { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+      };
+      (status, err.to_string()).into_response()
+    }
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Adding an image stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
 }

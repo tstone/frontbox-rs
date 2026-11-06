@@ -126,13 +126,38 @@ pub struct RenderedScene {
   pub height: usize,
   /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
   pub colors: Vec<u8>,
-  /// The part of an `Area` scene those points show, in scene units
-  pub area: Option<RenderedArea>,
-  /// Where each layer is drawn, as a closed loop of points in scene units. Without an `Area`, this is empty.
+  /// The part of the scene those points show, in scene units
+  pub area: RenderedArea,
+  /// Where each layer is drawn, as a closed loop of points in scene units
   pub outlines: Vec<Vec<[f32; 2]>>,
+  /// Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
+  pub shapes: Vec<Option<RenderedShape>>,
   /// What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
   /// order, however the LED is wired.
   pub led_colors: BTreeMap<String, Rgb>,
+}
+
+/// A shape as it stands at a moment
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedShape {
+  /// What each transform does, in the order they apply: where it takes x's axis, y's axis, and the origin
+  pub transforms: Vec<[f32; 6]>,
+  /// The corners of its bounds in its own space
+  pub min: [f32; 2],
+  pub max: [f32; 2],
+  /// A polygon's points in its own space
+  pub points: Vec<[f32; 2]>,
+}
+
+/// What the console says about an image in the content folder, so an editor can offer its frames
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ImageInfo {
+  pub width: u32,
+  pub height: u32,
+  /// 1 for an image that isn't animated
+  pub frames: usize,
+  /// Seconds it takes to play, by what the file says
+  pub duration: f32,
 }
 
 /// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a

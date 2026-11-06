@@ -9,7 +9,7 @@ These add to the repository's [AGENTS.md](../AGENTS.md).
 - Simplicity means fewer concepts, not shorter files. A wordier definition is fine if it uses fewer ideas; most scenes
   are written by the editor, templates, or agents, but they must stay readable.
 - Common, high-traffic patterns can get syntactic sugar on top, once they're known to be common.
-- Something that changes a shape or paint is a `Warp` (changes the position going in) or an adjust (changes the output
+- Something that changes a shape or fill is a `Transform` (changes the position going in) or an adjust (changes the output
   coming out), added as an item in the node's list. Don't add it as a new field or a wrapper variant.
 
 ## No frontbox dependencies
@@ -42,7 +42,7 @@ allocates a buffer sized for a device. Devices decide where to sample.
 ## One model
 
 There is no separate 1d model. A scene states what it's for with its `Viewport`, a `Sequence` of points in order or an
-`Area`, and that's the only difference: every layer, shape, paint, blend, mask, and filter works in both. Don't add a
+`Area`, and that's the only difference: every layer, shape, fill, blend, mask, and filter works in both. Don't add a
 feature that only works in one; if a strip needs something, build it so it also works on a plane.
 
 A device maps its points into the viewport, so a scene never changes with a device's resolution, and a target that

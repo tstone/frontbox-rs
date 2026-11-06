@@ -37,6 +37,13 @@ impl Bounds {
     let axis = |offset: f32, size: f32| if size.abs() > f32::EPSILON { offset / size } else { -0.5 };
     Vec2::new(axis(offset.x, size.x), axis(offset.y, size.y))
   }
+
+  /// How far a distance in this rectangle reaches in the unit box, along each axis. An axis with no length has none.
+  pub fn to_unit_length(&self, length: f32) -> Vec2 {
+    let size = self.size();
+    let axis = |size: f32| if size.abs() > f32::EPSILON { length / size.abs() } else { 0.0 };
+    Vec2::new(axis(size.x), axis(size.y))
+  }
 }
 
 #[cfg(test)]
@@ -49,6 +56,13 @@ mod tests {
     assert_eq!(rect.to_unit(Vec2::new(10.0, 0.0)), Vec2::new(-0.5, -0.5));
     assert_eq!(rect.to_unit(Vec2::new(20.0, 4.0)), Vec2::new(0.5, 0.5));
     assert_eq!(rect.to_unit(Vec2::new(15.0, 2.0)), Vec2::ZERO);
+  }
+
+  #[test]
+  fn to_unit_length_scales_by_each_axis() {
+    let rect = Bounds::new(Vec2::new(10.0, 0.0), Vec2::new(20.0, 4.0));
+    assert_eq!(rect.to_unit_length(2.0), Vec2::new(0.2, 0.5));
+    assert_eq!(Bounds::new(Vec2::ZERO, Vec2::new(0.0, 2.0)).to_unit_length(1.0), Vec2::new(0.0, 0.5));
   }
 
   #[test]

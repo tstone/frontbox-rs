@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::Sample;
+use crate::scene::{Bounds, Sample};
 
 /// `count` points evenly spaced along a [`Sequence`](crate::scene::Viewport::Sequence) viewport, such as a strip of
 /// LEDs
@@ -15,6 +15,14 @@ pub struct Line {
 impl Line {
   pub fn new(count: usize) -> Self {
     Self { count }
+  }
+
+  /// The part of a `Sequence` the points show when each is given the same room, which reaches past both ends
+  pub fn covers(&self) -> Bounds {
+    let steps = self.count.saturating_sub(1) as f32;
+    let radius = if steps > 0.0 { 0.5 / steps } else { 0.5 };
+    let end = if steps > 0.0 { 1.0 } else { 0.0 };
+    Bounds::new(Vec2::new(-radius, -0.5), Vec2::new(end + radius, 0.5))
   }
 
   pub fn samples(&self) -> impl Iterator<Item = Sample> {
