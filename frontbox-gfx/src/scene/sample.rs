@@ -25,4 +25,6 @@ pub struct Frame<'a> {
   pub time: f32,
   /// Parameters supplied by the game, which take the place of the scene's defaults
   pub params: &'a Params,
+  /// The size of the device, in its own units. A scene's numbers are in these units. A `Sequence` doesn't use this.
+  pub size: Vec2,
 }

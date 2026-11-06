@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Node, Prop, Bounds, Sample};
 
+/// How many points an ellipse's outline has. Enough that it looks round on screen.
+const ELLIPSE_OUTLINE_POINTS: usize = 64;
+
 /// Where a layer is drawn
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
 
@@ -35,6 +38,14 @@ impl Shape {
     let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);
     (coverage > 0.0).then_some((coverage, local))
   }
+
+  /// The shape's edge in the scene, as a closed loop of points. Empty when it draws nothing.
+  pub(crate) fn outline(&self, env: &Env) -> Vec<Vec2> {
+    let Some(to_scene) = self.to_scene(env) else {
+      return Vec::new();
+    };
+    self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
+  }
 }
 
 impl ShapeNode {
@@ -49,6 +60,18 @@ impl ShapeNode {
         };
         points.fold(Bounds::new(first, first), |rect, p| Bounds::new(rect.min.min(p), rect.max.max(p)))
       }
+    }
+  }
+
+  /// The shape's edge in its own space, before its warps
+  fn outline(&self, env: &Env) -> Vec<Vec2> {
+    match self {
+      Self::Ellipse => (0..ELLIPSE_OUTLINE_POINTS)
+        .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ELLIPSE_OUTLINE_POINTS as f32) * 0.5)
+        .collect(),
+      // too few points to enclose anything, so it draws nothing
+      Self::Polygon { points } if points.len() < 3 => Vec::new(),
+      Self::Polygon { points } => points.iter().map(|p| p.resolve(env)).collect(),
     }
   }
 

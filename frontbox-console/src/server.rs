@@ -101,8 +101,8 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
                 return;
               }
             }
-            Ok(ClientMessage::RenderScene { source, size }) => {
-              if let Some(reply) = hub.render_scene(source, size).await
+            Ok(ClientMessage::RenderScene { source, size, leds }) => {
+              if let Some(reply) = hub.render_scene(source, size, leds).await
                 && socket.send(Message::Text(reply)).await.is_err()
               {
                 return;

@@ -19,14 +19,14 @@
 //!
 //! let line = Line::new(8);
 //! let params = Params::new();
-//! let frame = Frame { time: 0.0, params: &params };
+//! let frame = Frame { time: 0.0, params: &params, size: Default::default() };
 //! let colors: Vec<Rgba<u8>> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
 //! # assert_eq!(colors[0], Rgba::red());
 //! # assert_eq!(colors[7], Rgba::blue());
 //! ```
 //!
 //! - [`Scene`], [`Layer`] -- Layers of paint in shapes, composited bottom to top
-//! - [`Viewport`] -- What can be seen, either points in order or an area
+//! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
 //! - [`Node`] -- Shapes and paints, each a base kind with [`Warp`]s going in and adjusts coming out
 //! - [`Prop`] -- A value that's fixed, read from a parameter, or keyframed
 //! - [`file`] -- Reading and writing scenes as RON

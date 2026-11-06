@@ -2,9 +2,9 @@ import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onM
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
-import { LED_OFF, ledColor } from '../../lib/leds'
+import { LED_OFF, ledColor as machineLedColor } from '../../lib/leds'
 import { type ConsoleState, driverState, machine } from '../../state/console'
-import { cancelPlacing, highlighted, movedPositions, place, placing, type Position } from '../../state/placement'
+import { cancelPlacing, highlighted, movedPositions, place, placing as placingHardware, type Position } from '../../state/placement'
 import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
@@ -42,6 +42,9 @@ const IMAGE_OPACITY = 0.5
 const OUTLINE_SCALE = 1.2
 /** How much larger than its shape the outline of hardware pointed at in the hardware list is */
 const HIGHLIGHT_SCALE = 1.5
+/** The dashes of a preview's outline, in inches */
+const OUTLINE_DASH = 0.6
+const OUTLINE_GAP = 0.4
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
 
@@ -94,19 +97,19 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
-// which layers are shown, remembered per browser
+// which layers are shown, remembered per browser. A preview is about the LEDs, so it keeps its own.
 const LAYERS_KEY = 'frontbox-console.layers'
-function readLayers(): Record<Layer, boolean> {
-  const shown = { axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }
+const PREVIEW_LAYERS_KEY = 'frontbox-console.preview-layers'
+function readLayers(key: string, shown: Record<Layer, boolean>): Record<Layer, boolean> {
   try {
-    return { ...shown, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? '{}') }
+    return { ...shown, ...JSON.parse(localStorage.getItem(key) ?? '{}') }
   } catch {
     return shown
   }
 }
-function writeLayers(shown: Record<Layer, boolean>) {
+function writeLayers(key: string, shown: Record<Layer, boolean>) {
   try {
-    localStorage.setItem(LAYERS_KEY, JSON.stringify(shown))
+    localStorage.setItem(key, JSON.stringify(shown))
   } catch {
     // storage can be unavailable (private windows); the toggles still work for this session
   }
@@ -149,6 +152,9 @@ function originGizmo() {
   return group
 }
 
+/** A closed loop of points on a plane, in the plane's units */
+export type PlaneOutline = { plane: PlaneView; points: [number, number][] }
+
 /** A coordinate as a Rust f32 literal, to the thousandth of an inch: `32.1`, `0.0`, `-1.145` */
 function rustFloat(n: number): string {
   const rounded = Math.round(n * 1000) / 1000 || 0 // `|| 0` folds -0 into 0
@@ -184,16 +190,30 @@ const HELD_SCALE = 1.4
 
 const switchId = (point: Point): number | null => (point.kind === 'Switch' ? Number(point.key.slice('switch:'.length)) : null)
 
+const named = (point: Point) => `${point.name} (${point.kind})`
+
 /** A dot's hover label, including what a left click does to it */
 function describe(point: Point): string {
   const id = switchId(point)
-  if (id === null) return `${point.name} (${point.kind})`
+  if (id === null) return named(point)
   const action = latched[id] ? 'click to open' : 'hold to close, shift-click to latch'
   return `${point.name} (Switch): ${action}`
 }
 
-export default function PlayfieldView() {
+export default function PlayfieldView(props: {
+  /**
+   * Makes this a preview: LEDs show these colors, as CSS or `null` for off, rather than the machine's. The rest of the
+   * hardware sits idle, and can't be pressed or placed.
+   */
+  ledColor?: (name: string) => string | null
+  /** What to outline in a preview */
+  outline?: () => PlaneOutline | null
+}) {
   let container!: HTMLDivElement
+  const preview = props.ledColor !== undefined
+  const ledColor = (name: string) => (props.ledColor ?? machineLedColor)(name)
+  const placing = () => (preview ? null : placingHardware())
+  const layersKey = preview ? PREVIEW_LAYERS_KEY : LAYERS_KEY
   const data = createMemo(() => sceneData(machine), undefined, { equals: (a, b) => a.signature === b.signature })
   const [hovered, setHovered] = createSignal<{ name: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = createSignal<Menu | null>(null)
@@ -201,7 +221,9 @@ export default function PlayfieldView() {
   // set once the scene is up; used by the chooser
   let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
-  const [layers, setLayers] = createSignal(readLayers())
+  const [layers, setLayers] = createSignal(
+    readLayers(layersKey, { axes: !preview, planes: true, artwork: true, switches: !preview, leds: true, drivers: !preview }),
+  )
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
     const key = placing()
@@ -257,6 +279,14 @@ export default function PlayfieldView() {
     const origin = originGizmo()
     scene.add(origin)
 
+    // kept out of `content` for the same reason. Drawn on top, as it often runs along the plane's own edges.
+    const dashedMaterial = new THREE.LineDashedMaterial({ dashSize: OUTLINE_DASH, gapSize: OUTLINE_GAP, depthTest: false })
+    const dashedLine = new THREE.Line(new THREE.BufferGeometry(), dashedMaterial)
+    dashedLine.renderOrder = 3
+    const dashedGroup = cabinetGroup()
+    dashedGroup.add(dashedLine)
+    scene.add(dashedGroup)
+
     // everything drawn for the current data, so it can be torn down on a rebuild
     let content = cabinetGroup()
     scene.add(content)
@@ -304,14 +334,14 @@ export default function PlayfieldView() {
       if (!point) return
       const id = switchId(point)
       const live =
-        id !== null
-          ? isSwitchClosed(id) && palette.active
-          : point.kind === 'Driver'
-            ? driverState(Number(point.key.slice('driver:'.length))) !== 'Off' && palette.active
-            : point.kind === 'LED' && (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+        point.kind === 'LED'
+          ? (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+          : !preview &&
+            (id !== null ? isSwitchClosed(id) : driverState(Number(point.key.slice('driver:'.length))) !== 'Off') &&
+            palette.active
       const color = dot === hoveredDot ? palette.hover : point.moved ? palette.moved : live || palette.dot
       ;(dot.material as THREE.MeshBasicMaterial).color.set(color)
-      dot.scale.setScalar(id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
+      dot.scale.setScalar(!preview && id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
     }
 
     function texture(url: string) {
@@ -337,6 +367,7 @@ export default function PlayfieldView() {
       outlineMaterial.color.set(css('--hw-outline'))
       highlightMaterial.color.set(css('--hw-highlight'))
       ghostMaterial.color.set(css('--accent'))
+      dashedMaterial.color.set(css('--accent'))
       untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
       stylePlanes()
       render()
@@ -471,6 +502,21 @@ export default function PlayfieldView() {
       controls.update()
     }
 
+    function applyOutline() {
+      const outline = props.outline?.()
+      dashedLine.visible = !!outline
+      if (outline) {
+        const { plane, points } = outline
+        const loop = [...points, points[0]].map(([x, y]) => new THREE.Vector3(x, y, 0))
+        dashedLine.geometry.dispose()
+        dashedLine.geometry = new THREE.BufferGeometry().setFromPoints(loop)
+        dashedLine.computeLineDistances()
+        dashedLine.position.set(...plane.origin)
+        dashedLine.quaternion.set(...plane.rotation)
+      }
+      render()
+    }
+
     function resize() {
       const { width, height } = container.getBoundingClientRect()
       if (width === 0 || height === 0) return
@@ -532,9 +578,9 @@ export default function PlayfieldView() {
       // everything under the pointer is listed, so overlapping hardware is visible before clicking
       const hits = dotsUnder(e)
       setHoveredDot(hits[0] ?? null)
-      const label = hits.map((dot) => describe(dots.get(dot)!)).join(' · ')
+      const label = hits.map((dot) => (preview ? named : describe)(dots.get(dot)!)).join(' · ')
       setHovered(hits.length > 0 ? { name: label, x: e.clientX, y: e.clientY } : null)
-      canvas.style.cursor = hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
+      canvas.style.cursor = !preview && hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
     }
 
     /**
@@ -543,7 +589,7 @@ export default function PlayfieldView() {
      * When switches overlap, a chooser opens instead.
      */
     function onPressStart(e: PointerEvent) {
-      if (e.target !== canvas || e.button !== 0 || placing()) return
+      if (preview || e.target !== canvas || e.button !== 0 || placing()) return
       const switches = switchesUnder(e)
       if (switches.length === 0) return
       e.stopPropagation()
@@ -644,8 +690,9 @@ export default function PlayfieldView() {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     createEffect(() => build(data()))
+    createEffect(applyOutline)
     createEffect(() => {
-      writeLayers(layers())
+      writeLayers(layersKey, layers())
       applyLayers()
     })
     createEffect(() => {
@@ -674,6 +721,8 @@ export default function PlayfieldView() {
       textures.forEach((t) => t.dispose())
       shapeGeometries.forEach((geometry) => geometry.dispose())
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
+      dashedLine.geometry.dispose()
+      dashedMaterial.dispose()
       ghostMaterial.dispose()
       outlineMaterial.dispose()
       highlightMaterial.dispose()
@@ -722,7 +771,7 @@ export default function PlayfieldView() {
               {m().point.name} ({m().point.kind})
             </p>
             {/* switch ids start at 0, so the id can't be the `when` itself */}
-            <Show when={switchId(m().point) !== null}>
+            <Show when={!preview && switchId(m().point) !== null}>
               <button
                 type="button"
                 role="menuitem"

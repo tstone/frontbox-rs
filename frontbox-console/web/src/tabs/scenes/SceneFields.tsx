@@ -2,15 +2,18 @@ import { ColorPicker, parseColor, type Color as PickerColor } from '@ark-ui/soli
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
-import { createContext, createSignal, For, Match, Show, Switch, useContext } from 'solid-js'
+import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
-import { freshParamName, paramFits, startingValue, withParam, type Lens, type Range, type Ranges, type SceneValue, type Vec2 } from './sceneModel'
+import { freshParamName, paramFits, startingValue, withParam, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
+
+/** The size the scene is being edited for */
+export const SurfaceContext = createContext<Accessor<Surface>>()
 
 function useScene() {
   return useContext(SceneContext)!
@@ -139,29 +142,11 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
   // what the picker last chose. The scene only keeps red, green, and blue, which lose the hue of a black or a gray, so
   // the picker keeps its own color for as long as the scene still agrees with it.
   const [picked, setPicked] = createSignal<PickerColor>()
-  const [open, setOpen] = createSignal(false)
-  // the scene shows what's being picked as it's picked, so this is the color to go back to unless it's applied
-  let original: Color | null = null
   const value = () => {
     const color = picked()
     if (color && toScene(color).every((channel, i) => channel === props.lens.get()[i])) return color
     const [r, g, b, a] = props.lens.get()
     return parseColor(`rgba(${r}, ${g}, ${b}, ${a / 255})`)
-  }
-
-  const onOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next) {
-      original = props.lens.get()
-    } else if (original) {
-      if (original.some((channel, i) => channel !== props.lens.get()[i])) props.lens.set(original)
-      original = null
-    }
-  }
-
-  const apply = () => {
-    original = null
-    setOpen(false)
   }
 
   const channelSlider = (channel: 'hue' | 'alpha') => (
@@ -175,8 +160,6 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
     <ColorPicker.Root
       class="scene-color"
       format="rgba"
-      open={open()}
-      onOpenChange={(details) => onOpenChange(details.open)}
       value={value()}
       onValueChange={(details) => {
         setPicked(details.value)
@@ -198,9 +181,6 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
             </ColorPicker.Area>
             {channelSlider('hue')}
             {channelSlider('alpha')}
-            <button type="button" class="scene-color-apply" onClick={apply}>
-              Apply
-            </button>
           </ColorPicker.Content>
         </ColorPicker.Positioner>
       </Portal>

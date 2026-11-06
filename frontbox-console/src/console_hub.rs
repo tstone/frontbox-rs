@@ -1,8 +1,8 @@
 use axum::extract::ws::Utf8Bytes;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  ConfigDomainValue, Hardware, Rgb, RoutineCompleted, RoutineStarted, SystemDespawned,
-  SystemSpawned,
+  ConfigDomainValue, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
+  SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
-use crate::scene_render::render_scene;
+use crate::scene_render::{LedTarget, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -43,6 +43,7 @@ impl ConsoleHub {
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
+        planes: Vec::new(),
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -92,6 +93,7 @@ impl ConsoleHub {
       })
       .collect();
     state.plane_images = planes.iter().map(|p| p.plane.image.clone()).collect();
+    state.planes = planes.iter().map(|p| p.plane).collect();
   }
 
   pub fn set_control(&self, control: mpsc::UnboundedSender<TracerControlEvent>) {
@@ -134,10 +136,29 @@ impl ConsoleHub {
     self.state.lock().unwrap().metrics = metrics;
   }
 
-  /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
-  /// Runs off the runtime, so a large render only holds up the client that asked. Needs nothing from the machine.
-  pub async fn render_scene(&self, source: SceneSource, size: SceneSize) -> Option<Utf8Bytes> {
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size)).await {
+  /// Runs off the runtime, so a large render only holds up the client that asked
+  pub async fn render_scene(
+    &self,
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+  ) -> Option<Utf8Bytes> {
+    let target = {
+      let state = self.state.lock().unwrap();
+      LedTarget {
+        leds: state
+          .snapshot
+          .hardware
+          .as_ref()
+          .map(|hardware| hardware.leds.clone())
+          .unwrap_or_default(),
+        plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
+        query: match leds.query {
+          SceneLedQuery::Every => LedQ::every(),
+        },
+      }
+    };
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -148,6 +169,7 @@ impl ConsoleHub {
     serialize(&message)
   }
 
+  /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
   pub async fn metric_totals(&self) -> Option<Utf8Bytes> {
     let db = self.state.lock().unwrap().metrics.clone();
     let totals = match db {
@@ -507,6 +529,8 @@ struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
+  /// Planes for `snapshot.planes`, by the same index
+  planes: Vec<&'static ReferencePlane>,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

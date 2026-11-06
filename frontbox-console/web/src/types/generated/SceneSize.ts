@@ -9,10 +9,10 @@ export type SceneSize = {
  */
 leds: number, 
 /**
- * Pixels across, for an `Area` viewport
+ * Points across, for an `Area` viewport
  */
 width: number, 
 /**
- * Pixels down, for an `Area` viewport
+ * Points down, for an `Area` viewport
  */
 height: number, };

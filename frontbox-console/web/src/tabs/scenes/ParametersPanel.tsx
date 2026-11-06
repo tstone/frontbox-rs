@@ -1,10 +1,11 @@
 import { For, Show, useContext } from 'solid-js'
-import { FieldRow, SceneContext, ValueField } from './SceneFields'
+import { FieldRow, SceneContext, SurfaceContext, ValueField } from './SceneFields'
 import { paramRanges, unwrapValue, withParam, type Lens, type SceneValue } from './sceneModel'
 
 /** The defaults of a scene's parameters */
 export default function ParametersPanel() {
   const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
   const names = () => Object.keys(scene.get().params ?? {}).sort()
 
   const value = (name: string): Lens<SceneValue> => ({
@@ -19,7 +20,7 @@ export default function ParametersPanel() {
         <For each={names()}>
           {(name) => (
             <FieldRow label={name}>
-              <ValueField label={name} lens={value(name)} ranges={paramRanges(scene.get(), name)} />
+              <ValueField label={name} lens={value(name)} ranges={paramRanges(scene.get(), name, surface())} />
             </FieldRow>
           )}
         </For>

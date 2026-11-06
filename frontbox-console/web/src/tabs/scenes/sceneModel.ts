@@ -2,9 +2,11 @@ import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
 import type { Value } from '../../types/generated/Value'
-import type { Viewport } from '../../types/generated/Viewport'
 
 export type Vec2 = [number, number]
+
+/** The size of what an `Area` scene is being edited for, in that device's units. A `Sequence` has none. */
+export type Surface = Vec2 | null
 
 /** What a `Prop` can hold */
 export type SceneValue = number | Vec2 | Color
@@ -106,12 +108,12 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
 }
 
 /** Every prop in a scene, with the ranges its sliders use */
-function propUses(scene: Scene) {
+function propUses(scene: Scene, surface: Surface) {
   const uses: { prop: Prop<SceneValue>; ranges: Ranges }[] = []
   const warps = (warp: Scene['layers'][number]['paint']['warp'], space: WarpSpace) => {
     for (const w of warp ?? []) {
-      if ('Translate' in w) uses.push({ prop: w.Translate, ranges: translateRanges(scene.viewport, space) })
-      else if ('Scale' in w) uses.push({ prop: w.Scale, ranges: scaleRanges(scene.viewport, space) })
+      if ('Translate' in w) uses.push({ prop: w.Translate, ranges: translateRanges(surface, space) })
+      else if ('Scale' in w) uses.push({ prop: w.Scale, ranges: scaleRanges(surface, space) })
       else uses.push({ prop: w.Rotate, ranges: both(ROTATION) })
     }
   }
@@ -135,7 +137,7 @@ function propUses(scene: Scene) {
 /** The names of the parameters a scene's props read */
 function referencedParams(scene: Scene) {
   const names = new Set<string>()
-  for (const { prop } of propUses(scene)) if ('Param' in prop) names.add(prop.Param)
+  for (const { prop } of propUses(scene, null)) if ('Param' in prop) names.add(prop.Param)
   return names
 }
 
@@ -153,8 +155,8 @@ export function withoutDroppedParams(current: Scene, next: Scene): Scene {
 }
 
 /** The ranges for a parameter's sliders, from the first prop that reads it */
-export function paramRanges(scene: Scene, name: string): Ranges {
-  const use = propUses(scene).find(({ prop }) => 'Param' in prop && prop.Param === name)
+export function paramRanges(scene: Scene, name: string, surface: Surface): Ranges {
+  const use = propUses(scene, surface).find(({ prop }) => 'Param' in prop && prop.Param === name)
   return use?.ranges ?? both(UNREFERENCED)
 }
 
@@ -166,21 +168,20 @@ export const ROTATION: Range = { min: -180, max: 180, step: 1 }
 export const HUE: Range = { min: 0, max: 360, step: 1 }
 /** A polygon's points are in the shape's own space, before its warps size it */
 export const POLYGON_POINT: Range = { min: -1, max: 1, step: 0.01 }
-export const VIEWPORT_SIDE: Range = { min: 1, max: 512, step: 1 }
 const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1 }
 const PAINT_MOVE: Range = { min: -1, max: 1, step: 0.01 }
 const PAINT_SCALE: Range = { min: 0, max: 4, step: 0.01 }
 
-export function translateRanges(viewport: Viewport, space: WarpSpace): Ranges {
+export function translateRanges(surface: Surface, space: WarpSpace): Ranges {
   if (space === 'paint') return both(PAINT_MOVE)
-  if (viewport === 'Sequence') return [UNIT, { min: -0.5, max: 0.5, step: 0.01 }]
-  return [span(0, viewport.Area[0]), span(0, viewport.Area[1])]
+  if (!surface) return [UNIT, { min: -0.5, max: 0.5, step: 0.01 }]
+  return [span(0, surface[0]), span(0, surface[1])]
 }
 
-export function scaleRanges(viewport: Viewport, space: WarpSpace): Ranges {
+export function scaleRanges(surface: Surface, space: WarpSpace): Ranges {
   if (space === 'paint') return both(PAINT_SCALE)
-  if (viewport === 'Sequence') return both({ min: 0, max: 2, step: 0.01 })
-  return [span(0, viewport.Area[0] * 2), span(0, viewport.Area[1] * 2)]
+  if (!surface) return both({ min: 0, max: 2, step: 0.01 })
+  return [span(0, surface[0] * 2), span(0, surface[1] * 2)]
 }
 
 /** A range with a round step of about a 200th of its width */

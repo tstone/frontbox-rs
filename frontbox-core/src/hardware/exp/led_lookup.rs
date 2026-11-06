@@ -127,8 +127,11 @@ impl LedLookup {
 
         // For other non-ordered results (e.g. by take) sort by hardware address to maintain consistent order
         matches.sort_by_key(|led| {
-          ((led.address.board() as u32 * 10) + led.address.breakout().unwrap_or(0) as u32)
-            * led.address.index as u32
+          (
+            led.address.board(),
+            led.address.breakout(),
+            led.address.index,
+          )
         });
         Box::new(matches.into_iter())
       }
@@ -176,5 +179,43 @@ impl Deref for LedLookup {
 impl DerefMut for LedLookup {
   fn deref_mut(&mut self) -> &mut Self::Target {
     &mut self.by_name
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// LEDs named by their (board, breakout, index)
+  fn lookup(addresses: &[(u8, Option<u8>, u8)]) -> LedLookup {
+    let mut leds = LedLookup::default();
+    for &(board, breakout, index) in addresses {
+      let name = format!("{board}.{}.{index}", breakout.unwrap_or(0));
+      let address = LedAddress::new(ExpAddress::new(board, breakout, 0), index);
+      leds.insert(name.clone(), LED { name, address, ..Default::default() });
+    }
+    leds
+  }
+
+  fn names<'a>(leds: &'a LedLookup, query: &'a LedQ) -> Vec<&'a str> {
+    leds.query_iter(query).map(|led| led.name.as_str()).collect()
+  }
+
+  #[test]
+  fn leds_come_in_hardware_order() {
+    let leds = lookup(&[(2, Some(0), 0), (1, Some(1), 1), (1, Some(1), 0), (1, Some(0), 5)]);
+    assert_eq!(names(&leds, &LedQ::every()), ["1.0.5", "1.1.0", "1.1.1", "2.0.0"]);
+  }
+
+  #[test]
+  fn hardware_order_holds_on_board_zero() {
+    let leds = lookup(&[(0, None, 2), (0, None, 0), (0, None, 1)]);
+    assert_eq!(names(&leds, &LedQ::every()), ["0.0.0", "0.0.1", "0.0.2"]);
+  }
+
+  #[test]
+  fn reverse_is_hardware_order_backwards() {
+    let leds = lookup(&[(1, Some(0), 5), (1, Some(1), 0), (2, Some(0), 0)]);
+    assert_eq!(names(&leds, &LedQ::every().reverse()), ["2.0.0", "1.1.0", "1.0.5"]);
   }
 }

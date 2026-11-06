@@ -124,6 +124,22 @@ pub struct RenderedScene {
   pub height: usize,
   /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
   pub colors: Vec<u8>,
+  /// The part of an `Area` scene those points show, in scene units
+  pub area: Option<RenderedArea>,
+  /// Where each layer is drawn, as a closed loop of points in scene units. Without an `Area`, this is empty.
+  pub outlines: Vec<Vec<[f32; 2]>>,
+  /// What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
+  /// order, however the LED is wired.
+  pub led_colors: BTreeMap<String, Rgb>,
+}
+
+/// A rectangle in a scene
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedArea {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
 }
 
 /// Operator configs that were first used or changed
@@ -154,7 +170,11 @@ pub enum ClientMessage {
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
   /// Render a scene. Answered with `SceneRendered` or `SceneRenderFailed`.
-  RenderScene { source: SceneSource, size: SceneSize },
+  RenderScene {
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+  },
 }
 
 /// A scene to render, as either of the forms the console edits it in
@@ -171,8 +191,23 @@ pub enum SceneSource {
 pub struct SceneSize {
   /// LEDs in the list, for a `Sequence` viewport
   pub leds: usize,
-  /// Pixels across, for an `Area` viewport
+  /// Points across, for an `Area` viewport
   pub width: usize,
-  /// Pixels down, for an `Area` viewport
+  /// Points down, for an `Area` viewport
   pub height: usize,
+}
+
+/// The machine's LEDs to play a scene on
+#[derive(Clone, Copy, serde::Deserialize, TS)]
+pub struct SceneLeds {
+  /// Index into `Snapshot::planes` of the plane an `Area` scene plays on, which gives it its size. Without one it reaches
+  /// no LEDs, and its size is that of the render in `SceneSize`, like a display.
+  pub plane: Option<usize>,
+  pub query: SceneLedQuery,
+}
+
+/// Which LEDs take part
+#[derive(Clone, Copy, serde::Deserialize, TS)]
+pub enum SceneLedQuery {
+  Every,
 }

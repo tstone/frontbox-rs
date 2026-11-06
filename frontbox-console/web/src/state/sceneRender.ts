@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js'
 import type { RenderedScene } from '../types/generated/RenderedScene'
+import type { SceneLeds } from '../types/generated/SceneLeds'
 import type { SceneSize } from '../types/generated/SceneSize'
 import type { SceneSource } from '../types/generated/SceneSource'
 import { sendToMachine } from './console'
@@ -22,22 +23,22 @@ const [render, setRender] = createSignal<SceneRender | null>(null)
 export const sceneRender = render
 
 let inFlight: { source: SceneSource; timeout: ReturnType<typeof setTimeout> } | null = null
-let waiting: { source: SceneSource; size: SceneSize } | null = null
+let waiting: { source: SceneSource; size: SceneSize; leds: SceneLeds } | null = null
 
 /**
  * Asks the machine to render a scene. One request runs at a time and only the newest waits, so dragging a slider can't
  * queue up renders. Waits a tick so that the edits of one change go together.
  */
-export function renderScene(source: SceneSource, size: SceneSize) {
-  waiting = { source, size }
+export function renderScene(source: SceneSource, size: SceneSize, leds: SceneLeds) {
+  waiting = { source, size, leds }
   queueMicrotask(sendWaiting)
 }
 
 function sendWaiting() {
   if (inFlight || !waiting) return
-  const { source, size } = waiting
+  const { source, size, leds } = waiting
   waiting = null
-  sendToMachine({ type: 'RenderScene', source, size })
+  sendToMachine({ type: 'RenderScene', source, size, leds })
   inFlight = { source, timeout: setTimeout(replied, REPLY_TIMEOUT_MS) }
 }
 

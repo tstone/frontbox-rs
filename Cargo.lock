@@ -1001,6 +1001,7 @@ dependencies = [
  "axum",
  "frontbox-core",
  "frontbox-gfx",
+ "frontbox-led",
  "frontbox-metrics",
  "frontbox-pinball",
  "log",

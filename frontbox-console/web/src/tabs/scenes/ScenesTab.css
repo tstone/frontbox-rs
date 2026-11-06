@@ -92,6 +92,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* the tallest of what it holds, so the preview stays put as they change */
+  min-height: 2.5rem;
 }
 
 .scene-output input {
@@ -108,15 +110,68 @@
   width: 6rem;
 }
 
-.scene-output canvas {
+.scene-output .scene-dropdown {
+  width: 14rem;
+}
+
+.scene-output .scene-note {
+  white-space: nowrap;
+}
+
+/* above the size of the toggles in the editor, as this one switches the whole preview */
+.scene-view {
+  margin-left: auto;
+  font-size: 0.9375rem;
+}
+
+.scene-machine {
+  flex: 1;
+  min-height: 0;
+}
+
+.scene-machine[hidden] {
+  display: none;
+}
+
+.scene-raw {
+  position: relative;
+}
+
+.scene-raw[hidden] {
+  display: none;
+}
+
+.scene-raw canvas {
+  display: block;
   width: 100%;
   /* transparent means unlit */
   background: #000;
   image-rendering: pixelated;
 }
 
+.scene-raw svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* here rather than on what's inside, where the viewBox would scale it into a haze over the scene */
+  filter: drop-shadow(0 0 1px #000);
+  pointer-events: none;
+}
+
+.scene-raw polygon {
+  fill: none;
+  /* over the scene's own colors, which can be anything, so this needs to read against all of them */
+  stroke: #fff;
+  stroke-dasharray: 6 4;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 /* the last good render, kept up while the source doesn't parse */
-.scene-output canvas.stale {
+.scene-raw.stale,
+.scene-machine.stale {
   opacity: 0.4;
 }
 
@@ -611,18 +666,7 @@
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5);
 }
 
-.scene-color-apply {
-  padding: 0.5rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: white;
-  font: inherit;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.scene-color-apply:hover {
-  filter: brightness(1.1);
+/* Ark places these at their value but, unlike the area's thumb, leaves centering them there to the styles */
+.scene-color-picker [data-part='channel-slider-thumb'] {
+  transform: translate(-50%, -50%);
 }

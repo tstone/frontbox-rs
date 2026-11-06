@@ -10,6 +10,9 @@ use crate::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 
+/// Half the width of a common 5050 addressable LED (5mm square), in inches
+pub const DEFAULT_LED_RADIUS: f32 = 0.1;
+
 /// # LedSystem
 ///
 /// ### Features
@@ -100,6 +103,7 @@ pub struct LedSystem {
   conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
   monitored: HashSet<LedAddress>,
+  pub(crate) led_radius: f32,
 }
 
 impl LedSystem {
@@ -111,7 +115,15 @@ impl LedSystem {
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
       monitored: HashSet::new(),
+      led_radius: DEFAULT_LED_RADIUS,
     }
+  }
+
+  /// The radius of the area an LED lights, in the units of its location. This is how far a scene's shape edges fade
+  /// across an LED.
+  pub fn led_radius(mut self, radius: f32) -> Self {
+    self.led_radius = radius;
+    self
   }
 
   #[allow(unused)]

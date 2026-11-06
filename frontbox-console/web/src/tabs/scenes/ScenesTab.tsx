@@ -1,15 +1,18 @@
+import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
-import { createEffect, createMemo, createSignal, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
+import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import { renderScene, sceneRender } from '../../state/sceneRender'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
+import PlayfieldView from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ParametersPanel from './ParametersPanel'
-import { SceneContext } from './SceneFields'
-import { withoutDroppedParams, type Lens } from './sceneModel'
+import { Dropdown, SceneContext, SurfaceContext } from './SceneFields'
+import { withoutDroppedParams, type Lens, type Vec2 } from './sceneModel'
 import './ScenesTab.css'
 
 const STARTING_SCENE = `(
@@ -23,6 +26,10 @@ const STARTING_SCENE = `(
   ],
 )
 `
+
+/** How a scene is previewed: played on the machine's LEDs, or drawn out point by point */
+const VIEWS = ['Machine', 'Raw'] as const
+type View = (typeof VIEWS)[number]
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -43,6 +50,11 @@ export default function ScenesTab() {
   const [leds, setLeds] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
+  const [view, setView] = createSignal<View>('Machine')
+  const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
+  const openLayer = createSignal<number | null>(0)
+  // what's on show, which stays put while the source doesn't parse
+  const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
 
   const size = createMemo(() => ({ leds: leds(), width: width(), height: height() }), undefined, {
     equals: (a, b) => a.leds === b.leds && a.width === b.width && a.height === b.height,
@@ -51,7 +63,7 @@ export default function ScenesTab() {
   let latest: SceneSource = { Ron: STARTING_SCENE }
   const send = (source: SceneSource) => {
     latest = source
-    renderScene(source, size())
+    renderScene(source, size(), { plane: planeIndex(), query: 'Every' })
   }
 
   const error = () => {
@@ -59,8 +71,9 @@ export default function ScenesTab() {
     return reply && 'error' in reply ? reply.error : null
   }
 
-  // also the first render, and picks back up after a reconnect
+  // also the first render, and picks back up after a reconnect or once the machine has its hardware
   createEffect(() => {
+    machine.hardware
     if (machine.connection === 'connected') send(latest)
   })
 
@@ -68,6 +81,7 @@ export default function ScenesTab() {
     const reply = sceneRender()
     if (!reply || !('rendered' in reply)) return
     draw(canvas, reply.rendered)
+    setDrawn(reply.rendered)
     if (!reply.settled || !reply.source) return
     if ('Ron' in reply.source) setScene(reply.rendered.scene)
     else setRon(reply.rendered.ron)
@@ -84,7 +98,36 @@ export default function ScenesTab() {
 
   const isSequence = () => (scene()?.viewport ?? 'Sequence') === 'Sequence'
 
+  // a plane with no extent has no size to give a scene
+  const planes = () =>
+    machine.planes.flatMap((plane, index) => (plane.extent[0] > 0 && plane.extent[1] > 0 ? [{ plane, index }] : []))
+  const planeIndex = () => chosenPlane() ?? planes()[0]?.index ?? null
+  const plane = () => planes().find(({ index }) => index === planeIndex())?.plane ?? null
+
+  /** With no plane to take a size from, the render is its own device, as a display would be */
+  const surface = () => (isSequence() ? null : (plane()?.extent ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)))
+
   const number = (set: (value: number) => void) => (e: { currentTarget: HTMLInputElement }) => set(e.currentTarget.valueAsNumber || 0)
+
+  const ledColors = () => drawn()?.led_colors ?? {}
+
+  const ledColor = (name: string) => {
+    const color = ledColors()[name]
+    return color ? cssColor(color) : null
+  }
+
+  const planeOptions = () => planes().map(({ plane, index }) => ({ value: String(index), label: plane.name }))
+
+  /** Where the open layer is drawn, in scene units */
+  const outline = (): Vec2[] => {
+    const layer = openLayer[0]()
+    return (layer !== null && drawn()?.outlines[layer]) || []
+  }
+
+  const planeOutline = () => {
+    const target = plane()
+    return target && outline().length > 0 ? { plane: target, points: outline() } : null
+  }
 
   return (
     <Splitter.Root
@@ -99,6 +142,7 @@ export default function ScenesTab() {
         <div class="scene-source">
           <Show when={scene() !== null}>
             <SceneContext.Provider value={editing}>
+              <SurfaceContext.Provider value={surface}>
               {/* an edit here would replace the RON with the last scene that could be read */}
               <div class="scene-editing" inert={error() !== null}>
                 <ParametersPanel />
@@ -114,7 +158,7 @@ export default function ScenesTab() {
                     <p class="scene-note scene-note-warn">This is the last scene that rendered. Fix the error to edit it.</p>
                   </Show>
                   <div class="scene-editing" inert={error() !== null}>
-                    <ConfigPanel />
+                    <ConfigPanel openLayer={openLayer} />
                   </div>
                 </Tabs.Content>
                 <Tabs.Content value="raw">
@@ -129,6 +173,7 @@ export default function ScenesTab() {
                   />
                 </Tabs.Content>
               </Tabs.Root>
+              </SurfaceContext.Provider>
             </SceneContext.Provider>
           </Show>
         </div>
@@ -136,25 +181,74 @@ export default function ScenesTab() {
       <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />
       <Splitter.Panel id="output" class="scene-output">
         <header>
+          <Show when={!isSequence() && planes().length > 0}>
+            <Dropdown
+              label="Plane"
+              options={planeOptions()}
+              value={String(planeIndex())}
+              onChange={(value) => setChosenPlane(Number(value))}
+            />
+          </Show>
           <Show
-            when={isSequence()}
+            when={view() === 'Raw'}
             fallback={
               <>
-                <input type="number" min="1" aria-label="Width" value={width()} onInput={number(setWidth)} />
-                <span>×</span>
-                <input type="number" min="1" aria-label="Height" value={height()} onInput={number(setHeight)} />
+                <Show when={!isSequence() && planes().length === 0}>
+                  <span class="scene-note">The machine has no planes</span>
+                </Show>
+                <span class="scene-note">Every LED</span>
+                <Show when={!isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
+                  <span class="scene-note scene-note-warn">None are on this plane</span>
+                </Show>
               </>
             }
           >
-            <input type="number" min="1" aria-label="Number of LEDs" value={leds()} onInput={number(setLeds)} />
+            <Show
+              when={isSequence()}
+              fallback={
+                <>
+                  <input type="number" min="1" aria-label="Width" value={width()} onInput={number(setWidth)} />
+                  <span>×</span>
+                  <input type="number" min="1" aria-label="Height" value={height()} onInput={number(setHeight)} />
+                </>
+              }
+            >
+              <input type="number" min="1" aria-label="Number of LEDs" value={leds()} onInput={number(setLeds)} />
+            </Show>
           </Show>
+          <SegmentGroup.Root
+            class="scene-prop-kind scene-view"
+            aria-label="Preview"
+            value={view()}
+            onValueChange={(details) => setView(details.value as View)}
+          >
+            <SegmentGroup.Indicator />
+            <For each={VIEWS}>
+              {(option) => (
+                <SegmentGroup.Item value={option}>
+                  <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+                  <SegmentGroup.ItemControl />
+                  <SegmentGroup.ItemHiddenInput />
+                </SegmentGroup.Item>
+              )}
+            </For>
+          </SegmentGroup.Root>
         </header>
         <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
-        <canvas
-          ref={canvas}
-          classList={{ stale: error() !== null }}
-          style={{ 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}
-        />
+        {/* both stay up, so the camera and the last render are still there on the way back */}
+        <div class="scene-machine" classList={{ stale: error() !== null }} hidden={view() !== 'Machine'}>
+          <PlayfieldView ledColor={ledColor} outline={planeOutline} />
+        </div>
+        <div class="scene-raw" classList={{ stale: error() !== null }} hidden={view() !== 'Raw'}>
+          <canvas ref={canvas} style={{ 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }} />
+          <Show when={drawn()?.area}>
+            {(area) => (
+              <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
+                <polygon points={outline().join(' ')} />
+              </svg>
+            )}
+          </Show>
+        </div>
       </Splitter.Panel>
     </Splitter.Root>
   )

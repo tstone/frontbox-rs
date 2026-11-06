@@ -1,3 +1,4 @@
+use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
@@ -36,5 +37,15 @@ impl Layer {
     let mut color = self.paint.color(paint_pos, env);
     color[3] = (color[3] as f32 * coverage).round() as u8;
     color
+  }
+
+  pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec2> {
+    match &self.shape {
+      None => {
+        let Bounds { min, max } = viewport;
+        vec![min, Vec2::new(max.x, min.y), max, Vec2::new(min.x, max.y)]
+      }
+      Some(shape) => shape.outline(env),
+    }
   }
 }

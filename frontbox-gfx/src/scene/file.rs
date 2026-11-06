@@ -81,7 +81,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, params: &params };
+        let frame = Frame { time, params: &params, size: Vec2::new(100.0, 50.0) };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -91,7 +91,7 @@ mod tests {
 
   /// Uses every type in a definition
   fn everything() -> Scene {
-    let mut scene = Scene::new(Viewport::Area(Vec2::new(100.0, 50.0)), vec![
+    let mut scene = Scene::new(Viewport::Area, vec![
         Layer::new(Paint::new(PaintNode::Solid(Prop::Param("background".into())))),
         Layer::new(
           Paint::new(PaintNode::Gradient {
@@ -152,7 +152,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, params: &params };
+    let frame = Frame { time: 0.0, params: &params, size: Vec2::new(100.0, 50.0) };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -160,8 +160,8 @@ mod tests {
 
   #[test]
   fn reads_an_area_viewport() {
-    let scene = load("(version: 1, viewport: Area(100.0, 50.0), layers: [])").unwrap();
-    assert_eq!(scene.viewport, Viewport::Area(Vec2::new(100.0, 50.0)));
+    let scene = load("(version: 1, viewport: Area, layers: [])").unwrap();
+    assert_eq!(scene.viewport, Viewport::Area);
   }
 
   #[test]

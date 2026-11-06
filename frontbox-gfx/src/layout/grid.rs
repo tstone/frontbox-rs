@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::Sample;
+use crate::scene::{Bounds, Sample};
 
 /// A `width` by `height` grid of points fit to an [`Area`](crate::scene::Viewport::Area) viewport, such as the pixels
 /// of a DMD
@@ -22,14 +22,8 @@ impl Grid {
   }
 
   pub fn samples(&self) -> impl Iterator<Item = Sample> {
-    let Self {
-      width,
-      height,
-      size,
-    } = *self;
-    let cells = Vec2::new(width.max(1) as f32, height.max(1) as f32);
-    let cell = (size / cells).max_element();
-    let origin = (size - cells * cell) / 2.0;
+    let Self { width, height, .. } = *self;
+    let Fit { origin, cell } = self.fit();
     (0..height).flat_map(move |y| {
       (0..width).map(move |x| {
         let pos = origin + Vec2::new(x as f32 + 0.5, y as f32 + 0.5) * cell;
@@ -37,6 +31,31 @@ impl Grid {
       })
     })
   }
+
+  /// The part of the scene the grid shows, in scene units. Cells are square, so this matches `size` along one axis and
+  /// runs past it, centered, along the other.
+  pub fn covers(&self) -> Bounds {
+    let Fit { origin, cell } = self.fit();
+    Bounds::new(origin, origin + self.cells() * cell)
+  }
+
+  fn cells(&self) -> Vec2 {
+    Vec2::new(self.width.max(1) as f32, self.height.max(1) as f32)
+  }
+
+  fn fit(&self) -> Fit {
+    let cells = self.cells();
+    let cell = (self.size / cells).max_element();
+    Fit { origin: (self.size - cells * cell) / 2.0, cell }
+  }
+}
+
+/// How a grid lays over its viewport
+struct Fit {
+  /// The grid's top left, in scene units
+  origin: Vec2,
+  /// The size of a cell, in scene units
+  cell: f32,
 }
 
 #[cfg(test)]
@@ -65,5 +84,40 @@ mod tests {
     let xs: Vec<_> = samples.iter().map(|s| s.pos.x).collect();
     assert_eq!(xs, vec![-2.0, 0.0, 2.0, 4.0]);
     assert!(samples.iter().all(|s| s.pos.y == 1.0 && s.radius == 1.0));
+  }
+
+  #[test]
+  fn a_grid_of_the_same_shape_covers_exactly_the_size() {
+    let covers = Grid::new(4, 2, Vec2::new(100.0, 50.0)).covers();
+    assert_eq!(covers, Bounds::sized(Vec2::new(100.0, 50.0)));
+  }
+
+  #[test]
+  fn a_wider_grid_covers_past_the_sides() {
+    let covers = Grid::new(4, 1, Vec2::new(2.0, 2.0)).covers();
+    assert_eq!(covers, Bounds::new(Vec2::new(-3.0, 0.0), Vec2::new(5.0, 2.0)));
+  }
+
+  #[test]
+  fn a_taller_grid_covers_past_the_top_and_bottom() {
+    let covers = Grid::new(1, 4, Vec2::new(2.0, 2.0)).covers();
+    assert_eq!(covers, Bounds::new(Vec2::new(0.0, -3.0), Vec2::new(2.0, 5.0)));
+  }
+
+  #[test]
+  fn what_a_grid_covers_lines_up_with_its_samples() {
+    let grid = Grid::new(128, 32, Vec2::new(12.0, 22.0));
+    let covers = grid.covers();
+    let cell = covers.size() / Vec2::new(128.0, 32.0);
+    for (i, sample) in grid.samples().enumerate() {
+      let at = covers.min + Vec2::new((i % 128) as f32 + 0.5, (i / 128) as f32 + 0.5) * cell;
+      assert!(at.abs_diff_eq(sample.pos, 1e-3), "{at} vs {}", sample.pos);
+    }
+  }
+
+  #[test]
+  fn a_grid_over_no_size_covers_nothing() {
+    let covers = Grid::new(4, 2, Vec2::ZERO).covers();
+    assert_eq!(covers.size(), Vec2::ZERO);
   }
 }

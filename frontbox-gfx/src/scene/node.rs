@@ -39,14 +39,16 @@ impl<N, A> Node<N, A> {
     self
   }
 
-  /// Maps a point in the scene into the node's own space, undoing its warps. `None` when a warp collapses the drawing (a
-  /// scale of zero), so nothing is drawn.
-  pub(crate) fn to_local(&self, env: &Env) -> Option<Affine2> {
+  /// Maps a point in the node's own space into the scene, applying its warps. `None` when a warp collapses the drawing
+  /// (a scale of zero), so nothing is drawn.
+  pub(crate) fn to_scene(&self, env: &Env) -> Option<Affine2> {
     let forward = self.warp.iter().fold(Affine2::IDENTITY, |acc, warp| warp.affine(env) * acc);
-    if forward.matrix2.determinant().abs() <= f32::EPSILON {
-      return None;
-    }
-    Some(forward.inverse())
+    (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
+  }
+
+  /// Maps a point in the scene into the node's own space, undoing its warps
+  pub(crate) fn to_local(&self, env: &Env) -> Option<Affine2> {
+    self.to_scene(env).map(|forward| forward.inverse())
   }
 }
 

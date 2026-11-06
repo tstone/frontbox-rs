@@ -1,5 +1,5 @@
 import { Accordion } from '@ark-ui/solid/accordion'
-import { createSignal, Index, Match, Show, Switch, useContext } from 'solid-js'
+import { Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { ColorSpace } from '../../types/generated/ColorSpace'
@@ -9,7 +9,7 @@ import type { Scene } from '../../types/generated/Scene'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Warp } from '../../types/generated/Warp'
-import { Dropdown, FieldRow, NumberField, PropField, SceneContext } from './SceneFields'
+import { Dropdown, FieldRow, NumberField, PropField, SceneContext, SurfaceContext } from './SceneFields'
 import {
   both,
   field,
@@ -25,7 +25,6 @@ import {
   translateRanges,
   UNIT,
   variant,
-  VIEWPORT_SIDE,
   type Lens,
   type Range,
   type Vec2,
@@ -37,8 +36,6 @@ type Shape = NonNullable<Layer['shape']>
 
 const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
-/** A new Area, as a common DMD */
-const DEFAULT_AREA: Vec2 = [128, 32]
 const COLOR_RANGES = both(UNIT)
 
 const VIEWPORT_OPTIONS: { value: 'Sequence' | 'Area'; label: string }[] = [
@@ -75,21 +72,21 @@ const NEW_WARPS: Record<WarpKind, Warp> = {
 }
 
 /** The scene's viewport and layers */
-export default function ConfigPanel() {
+export default function ConfigPanel(props: { openLayer: Signal<number | null> }) {
   return (
     <div class="scene-config">
       <ViewportEditor />
-      <LayerList />
+      <LayerList open={props.openLayer} />
     </div>
   )
 }
 
 /** The scene's layers, with one open at a time */
-function LayerList() {
+function LayerList(props: { open: Signal<number | null> }) {
   const scene = useContext(SceneContext)!
   const layers = field(scene, 'layers')
   // by position, so this follows the open layer as layers around it move and go
-  const [open, setOpen] = createSignal<number | null>(0)
+  const [open, setOpen] = props.open
 
   const add = () => {
     layers.set([...layers.get(), { paint: { base: { Solid: { Fixed: WHITE } } } }])
@@ -152,24 +149,6 @@ function LayerList() {
 function ViewportEditor() {
   const scene = useContext(SceneContext)!
   const viewport = field(scene, 'viewport')
-  const area = () => {
-    const current = viewport.get()
-    return current === 'Sequence' ? null : current.Area
-  }
-  const side = (index: 0 | 1, label: string) => (
-    <FieldRow label={label}>
-      <NumberField
-        label={label}
-        range={VIEWPORT_SIDE}
-        value={area()![index]}
-        onChange={(value) => {
-          const next: Vec2 = [...area()!]
-          next[index] = value
-          viewport.set({ Area: next })
-        }}
-      />
-    </FieldRow>
-  )
 
   return (
     <section class="scene-group">
@@ -177,18 +156,14 @@ function ViewportEditor() {
         <Dropdown
           label="Viewport"
           options={VIEWPORT_OPTIONS}
-          value={area() ? 'Area' : 'Sequence'}
+          value={viewport.get()}
           onChange={(value) => {
-            if (value === (area() ? 'Area' : 'Sequence')) return
-            if (value === 'Area') viewport.set({ Area: DEFAULT_AREA })
+            if (value === viewport.get()) return
+            if (value === 'Area') viewport.set('Area')
             else scene.set(asSequence(scene.get()))
           }}
         />
       </FieldRow>
-      <Show when={area() !== null}>
-        {side(0, 'Width')}
-        {side(1, 'Height')}
-      </Show>
     </section>
   )
 }
@@ -312,7 +287,7 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
 }
 
 function ShapeEditor(props: { lens: Lens<Shape | undefined> }) {
-  const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
   const shape = props.lens as Lens<Shape>
   const base = field(shape, 'base')
   const kind = () => {
@@ -324,7 +299,7 @@ function ShapeEditor(props: { lens: Lens<Shape | undefined> }) {
   // sized and placed so that it can be seen, as a shape has neither of its own
   const newShape = (shapeBase: ShapeNode): Shape => {
     // only an Area has shapes to edit
-    const [width, height] = (scene.get().viewport as { Area: Vec2 }).Area
+    const [width, height] = surface()!
     const across = Math.min(width, height) / 2
     return {
       base: shapeBase,
@@ -413,8 +388,7 @@ function WarpList(props: { lens: Lens<Warp[]>; space: WarpSpace }) {
 }
 
 function WarpEditor(props: { lens: Lens<Warp>; space: WarpSpace }) {
-  const scene = useContext(SceneContext)!
-  const viewport = () => scene.get().viewport
+  const surface = useContext(SurfaceContext)!
   const kind = (): WarpKind => {
     const warp = props.lens.get()
     return 'Translate' in warp ? 'Translate' : 'Rotate' in warp ? 'Rotate' : 'Scale'
@@ -435,7 +409,7 @@ function WarpEditor(props: { lens: Lens<Warp>; space: WarpSpace }) {
             label="Offset"
             paramName="offset"
             fallback={[0, 0] as Vec2}
-            ranges={translateRanges(viewport(), props.space)}
+            ranges={translateRanges(surface(), props.space)}
             lens={variant(props.lens, 'Translate')}
           />
         </Match>
@@ -453,7 +427,7 @@ function WarpEditor(props: { lens: Lens<Warp>; space: WarpSpace }) {
             label="Scale"
             paramName="scale"
             fallback={[1, 1] as Vec2}
-            ranges={scaleRanges(viewport(), props.space)}
+            ranges={scaleRanges(surface(), props.space)}
             lens={variant(props.lens, 'Scale')}
           />
         </Match>
