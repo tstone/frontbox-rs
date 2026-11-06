@@ -89,10 +89,13 @@ impl Content {
 
   /// The images a scene draws, to play it with. An image that can't be had is an error here, rather than a layer that's
   /// quietly missing when the scene plays.
-  pub fn images_for(&self, scene: &Scene) -> Result<Images, ContentError> {
+  pub fn images_for(&self, scene: &Scene) -> Result<Images, LayerImageError> {
     let mut images = Images::new();
-    for name in scene.image_names() {
-      images.insert(name, self.picture(name)?);
+    for (index, layer) in scene.layers.iter().enumerate() {
+      if let Some(name) = layer.fill.base.image_name() {
+        let picture = self.picture(name).map_err(|error| LayerImageError { layer: layer.label(index), error })?;
+        images.insert(name, picture);
+      }
     }
     Ok(images)
   }
@@ -167,6 +170,21 @@ impl fmt::Display for ContentError {
 }
 
 impl std::error::Error for ContentError {}
+
+/// Why a layer of a scene can't have its image
+#[derive(Debug)]
+pub struct LayerImageError {
+  pub layer: String,
+  pub error: ContentError,
+}
+
+impl fmt::Display for LayerImageError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}: {}", self.layer, self.error)
+  }
+}
+
+impl std::error::Error for LayerImageError {}
 
 /// Symbolic links aren't followed, as one can lead back to a folder this is already in
 fn scan(folder: &Path, prefix: &str, names: &mut Vec<String>) {
@@ -352,6 +370,17 @@ mod tests {
     let folder = Folder::new();
     let error = Content::new(&folder.0).images_for(&drawing("logo.png")).unwrap_err();
     assert!(error.to_string().contains("logo.png"), "{error}");
+  }
+
+  #[test]
+  fn a_missing_image_is_blamed_on_the_layer_that_draws_it() {
+    let folder = Folder::new();
+    let mut scene = drawing("logo.png");
+    assert_eq!(Content::new(&folder.0).images_for(&scene).unwrap_err().layer, "layer 1");
+
+    scene.layers[0].name = Some("title".into());
+    let error = Content::new(&folder.0).images_for(&scene).unwrap_err();
+    assert_eq!(error.to_string(), "layer \"title\": there's no image \"logo.png\" in the content folder");
   }
 
   #[test]

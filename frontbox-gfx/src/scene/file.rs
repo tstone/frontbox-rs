@@ -287,7 +287,19 @@ mod tests {
         layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
       )"#,
     );
-    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming))), "{result:?}");
+    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming { .. }))), "{result:?}");
+  }
+
+  #[test]
+  fn a_layer_keeps_its_name_and_only_writes_one_it_has() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).name("sky"), Layer::new(fill())]);
+
+    let written = save(&scene).unwrap();
+    assert_eq!(written.matches("name:").count(), 1, "{written}");
+    let read = load(&written).unwrap();
+    assert_eq!(read.layers[0].name.as_deref(), Some("sky"));
+    assert_eq!(read.layers[1].name, None);
   }
 
   #[test]

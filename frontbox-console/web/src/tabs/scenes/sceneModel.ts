@@ -2,6 +2,7 @@ import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { Curve } from '../../types/generated/Curve'
 import type { Key } from '../../types/generated/Key'
+import type { Layer } from '../../types/generated/Layer'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
@@ -203,7 +204,7 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
   const layers = field(scene, 'layers')
   layers.get().forEach(({ fill, shape }, index) => {
     const layer = item(layers, index)
-    const label = `Layer ${index + 1}`
+    const label = layerLabel(layers.get()[index], index)
 
     const fillLens = field(layer, 'fill')
     transforms(orEmpty(field(fillLens, 'transform')), `${label} · Fill`, 'fill')
@@ -241,6 +242,9 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
   })
   return uses
 }
+
+/** What to call a layer, which is its place from the bottom until it's given a name */
+export const layerLabel = (layer: Layer, index: number) => layer.name ?? `Layer ${index + 1}`
 
 const reading = (scene: Scene): Lens<Scene> => ({ get: () => scene, set: () => {} })
 

@@ -20,6 +20,7 @@ import {
   frameRanges,
   HUE,
   item,
+  layerLabel,
   moved,
   newShapeSize,
   orElse,
@@ -136,15 +137,17 @@ function LayerList(props: { open: Signal<number | null> }) {
         onValueChange={(details) => setOpen(details.value.length > 0 ? Number(details.value[0]) : null)}
       >
         <Index each={layers.get()}>
-          {(_, index) => (
+          {(layer, index) => (
             <Accordion.Item class="scene-item" value={String(index)}>
               <header>
                 <Accordion.ItemTrigger>
                   <Accordion.ItemIndicator>›</Accordion.ItemIndicator>
-                  Layer {index + 1}
+                  <span class="scene-item-name" title={layerLabel(layer(), index)}>
+                    {layerLabel(layer(), index)}
+                  </span>
                 </Accordion.ItemTrigger>
                 <ItemButtons
-                  title={`Layer ${index + 1}`}
+                  title={layerLabel(layer(), index)}
                   list={layers}
                   index={index}
                   onMove={(by) => move(index, by)}
@@ -153,7 +156,7 @@ function LayerList(props: { open: Signal<number | null> }) {
               </header>
               <Accordion.ItemContent>
                 <div class="scene-config">
-                  <LayerEditor lens={item(layers, index)} />
+                  <LayerEditor lens={item(layers, index)} index={index} />
                 </div>
               </Accordion.ItemContent>
             </Accordion.Item>
@@ -187,12 +190,29 @@ function ViewportEditor() {
 
 /** A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to covering all of it. */
 function onViewport(scene: Scene, viewport: Scene['viewport']): Scene {
-  return { ...scene, viewport, layers: scene.layers.map(({ fill }) => ({ fill })) }
+  return { ...scene, viewport, layers: scene.layers.map(({ shape, ...layer }) => layer) }
 }
 
-function LayerEditor(props: { lens: Lens<Layer> }) {
+function LayerEditor(props: { lens: Lens<Layer>; index: number }) {
+  const name = field(props.lens, 'name')
+
   return (
     <>
+      <section class="scene-group">
+        <FieldRow label="Name">
+          <input
+            class="scene-layer-name"
+            aria-label="Layer name"
+            placeholder={`Layer ${props.index + 1}`}
+            spellcheck={false}
+            value={name.get() ?? ''}
+            onChange={(e) => {
+              name.set(e.currentTarget.value.trim() || undefined)
+              e.currentTarget.value = name.get() ?? ''
+            }}
+          />
+        </FieldRow>
+      </section>
       <ShapeEditor lens={field(props.lens, 'shape')} />
       <FillEditor lens={field(props.lens, 'fill')} />
     </>

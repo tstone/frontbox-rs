@@ -588,6 +588,12 @@
   font-weight: 600;
 }
 
+.scene-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .scene-layers [data-part='item-indicator'] {
   color: var(--muted);
   font-size: 1.125rem;
@@ -651,6 +657,10 @@
 .scene-timeline input:focus-visible {
   border-color: var(--accent);
   outline: none;
+}
+
+.scene-layer-name {
+  width: 100%;
 }
 
 .scene-param-name {

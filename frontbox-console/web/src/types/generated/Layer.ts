@@ -8,7 +8,11 @@ import type { ShapeNode } from "./ShapeNode";
 /**
  * A fill drawn in a shape
  */
-export type Layer = { fill: Node<FillNode, ColorAdjust>, 
+export type Layer = { 
+/**
+ * What people call it. It changes nothing about how it's drawn, and two layers can share one.
+ */
+name?: string, fill: Node<FillNode, ColorAdjust>, 
 /**
  * `None` covers the whole viewport
  */

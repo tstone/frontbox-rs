@@ -81,9 +81,9 @@ impl Scene {
   /// Checks what a definition's types can't say for themselves. Scenes from outside the program need this; [`file::load`]
   /// already does it.
   pub fn check(&self) -> Result<(), SceneError> {
-    match self.timing {
-      Some(timing) if !(timing.duration.is_finite() && timing.duration > 0.0) => Err(SceneError::NoDuration),
-      None if self.layers.iter().any(Layer::is_animated) => Err(SceneError::NoTiming),
+    match (self.timing, self.layers.iter().position(Layer::is_animated)) {
+      (Some(timing), _) if !(timing.duration.is_finite() && timing.duration > 0.0) => Err(SceneError::NoDuration),
+      (None, Some(index)) => Err(SceneError::NoTiming { layer: self.layers[index].label(index) }),
       _ => Ok(()),
     }
   }
@@ -144,10 +144,10 @@ impl Scene {
 }
 
 /// Why a scene can't be played
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneError {
-  /// It has props that change over time, but no timing to play them in
-  NoTiming,
+  /// A layer has props that change over time, but there's no timing to play them in
+  NoTiming { layer: String },
   /// Its timing has no length
   NoDuration,
 }
@@ -155,7 +155,7 @@ pub enum SceneError {
 impl fmt::Display for SceneError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      Self::NoTiming => write!(f, "a scene that changes over time needs a timing"),
+      Self::NoTiming { layer } => write!(f, "{layer} changes over time, so the scene needs a timing"),
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
     }
   }
@@ -193,6 +193,21 @@ mod tests {
     let params = Params::new();
     let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
+  }
+
+  fn no_timing(layer: &str) -> SceneError {
+    SceneError::NoTiming { layer: layer.into() }
+  }
+
+  #[test]
+  fn a_scene_that_cant_play_says_which_layer_is_why() {
+    let changing = || solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(Track { keys: vec![], cycle: Cycle::Once })));
+    let scene = |top: Layer| Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), top]);
+
+    let error = scene(Layer::new(changing()).name("sparkle")).check().unwrap_err();
+    assert_eq!(error, no_timing("layer \"sparkle\""));
+    assert_eq!(error.to_string(), "layer \"sparkle\" changes over time, so the scene needs a timing");
+    assert_eq!(scene(Layer::new(changing())).check(), Err(no_timing("layer 2")));
   }
 
   fn turned(degrees: f32) -> Scene {
@@ -346,7 +361,7 @@ mod tests {
   fn random_props_need_a_timing() {
     let mut scene = random_color(Cycle::Once);
     scene.timing = None;
-    assert_eq!(scene.check().unwrap_err(), SceneError::NoTiming);
+    assert_eq!(scene.check().unwrap_err(), no_timing("layer 1"));
   }
 
   /// A circle of diameter 40 at (50, 25) in a 100 x 50 viewport, over a dark background
@@ -687,7 +702,7 @@ mod tests {
 
   #[test]
   fn keyframes_need_a_timing() {
-    assert_eq!(rising(None).check(), Err(SceneError::NoTiming));
+    assert_eq!(rising(None).check(), Err(no_timing("layer 1")));
     assert_eq!(rising(Some(Timing::new(1.0, Cycle::Once))).check(), Ok(()));
     assert_eq!(Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED))]).check(), Ok(()));
   }
@@ -705,7 +720,7 @@ mod tests {
     }));
     let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));
     for layer in [in_transform, in_point, in_stop, in_adjust] {
-      assert_eq!(Scene::new(Viewport::Area, vec![layer]).check(), Err(SceneError::NoTiming));
+      assert_eq!(Scene::new(Viewport::Area, vec![layer]).check(), Err(no_timing("layer 1")));
     }
   }
 
@@ -886,7 +901,7 @@ mod tests {
     let track = Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once };
     let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(track)) };
     let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]);
-    assert!(matches!(scene.check(), Err(SceneError::NoTiming)));
+    assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
   }
 
   #[test]

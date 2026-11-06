@@ -8,6 +8,10 @@ use crate::scene::{Env, Fill, Bounds, Sample, Shape};
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
+  /// What people call it. It changes nothing about how it's drawn, and two layers can share one.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  #[cfg_attr(feature = "ts", ts(optional))]
+  pub name: Option<String>,
   pub fill: Fill,
   /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -17,12 +21,26 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { fill, shape: None }
+    Self { name: None, fill, shape: None }
+  }
+
+  pub fn name(mut self, name: impl Into<String>) -> Self {
+    self.name = Some(name.into());
+    self
   }
 
   pub fn shape(mut self, shape: Shape) -> Self {
     self.shape = Some(shape);
     self
+  }
+
+  /// How logs and errors should refer to the layer at `index` of a scene: by its name, or else its place from the bottom,
+  /// counted from 1 as the console counts them
+  pub fn label(&self, index: usize) -> String {
+    match &self.name {
+      Some(name) => format!("layer \"{name}\""),
+      None => format!("layer {}", index + 1),
+    }
   }
 
   pub(crate) fn is_animated(&self) -> bool {
