@@ -35,6 +35,10 @@ impl TestContext {
     self.base.leds.insert(led.name.to_string(), led);
   }
 
+  pub fn set_led_radius(&mut self, radius: f32) {
+    self.base.app_config.led_radius = radius;
+  }
+
   /// Manually set the current state of all switches for test setup
   pub fn update_switch_states(&mut self, states: Vec<SwitchState>) {
     self.base.switches.update_switch_states(states);

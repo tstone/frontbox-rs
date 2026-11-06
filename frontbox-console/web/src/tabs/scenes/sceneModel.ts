@@ -142,7 +142,8 @@ export function freshParamName(scene: Scene, base: string) {
 
 /** Whether a scene plays more than once, which gives its first moment something to come from and its last somewhere to go */
 export function repeats(scene: Scene) {
-  return scene.timing !== undefined && scene.timing.cycle !== 'Once'
+  const cycle = scene.timing?.cycle
+  return cycle === 'Forever' || (typeof cycle === 'object' && cycle.Times > 1)
 }
 
 /** Scene with a timing, which it needs before it can have keyframes */
@@ -262,10 +263,14 @@ export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue>
   return { ...track, keys: [...keys.slice(0, index), { at, value, curve }, ...keys.slice(index)] }
 }
 
+/** A moment to pick a value, held until the next one */
+export function newPick(at: number): Pick {
+  return { at, smooth_in: 0, smooth_out: 0 }
+}
+
 /** `random` with one more moment to pick a value */
 export function withPick(random: Random, at: number): Random {
-  const pick: Pick = { at, smooth_in: 0, smooth_out: 0 }
-  return { ...random, picks: [...random.picks, pick].sort((a, b) => a.at - b.at) }
+  return { ...random, picks: [...random.picks, newPick(at)].sort((a, b) => a.at - b.at) }
 }
 
 /**

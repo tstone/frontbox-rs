@@ -19,6 +19,11 @@ impl Timing {
     Self { duration, cycle }
   }
 
+  /// Whether more than one cycle plays
+  pub(crate) fn repeats(&self) -> bool {
+    !self.cycle.is_last(0)
+  }
+
   pub(crate) fn local_time(&self, time: f32) -> f32 {
     self.cycle.local_time(time, self.duration)
   }

@@ -1,9 +1,7 @@
 use frontbox_core::prelude::{LED, LedLookup, LedQ, ReferencePlane, Rgb, Vec2};
 use frontbox_gfx::layout::{Grid, Line};
-use frontbox_gfx::animation::Cycle;
-use frontbox_gfx::prelude::{Rgba, RgbaColor};
-use frontbox_gfx::scene::{Frame, Params, Sample, Scene, Timing, Viewport, file};
-use frontbox_led::{DEFAULT_LED_RADIUS, place_on_plane};
+use frontbox_gfx::scene::{Frame, Params, Sample, Scene, Viewport, file};
+use frontbox_led::{led_color, place_leds};
 use std::collections::BTreeMap;
 
 use crate::protocol::{RenderedArea, RenderedClip, RenderedScene, SceneSize, SceneSource};
@@ -17,16 +15,13 @@ const MAX_CLIP_SAMPLES: usize = 1 << 23;
 
 const CLIP_FRAMES_PER_SECOND: f32 = 30.0;
 
-/// How far before the end of a cycle in the middle of a scene to show its last moment, as a fraction of the cycle. Any
-/// nearer and the time rounds into the next cycle.
-const END_OF_CYCLE: f32 = 1e-4;
-
 /// The LEDs to play a scene on, mirroring how `LedScene` is given them
 pub(crate) struct LedTarget {
   pub leds: LedLookup,
   /// What an `Area` scene plays on. A `Sequence` scene doesn't use one.
   pub plane: Option<&'static ReferencePlane>,
   pub query: LedQ,
+  pub radius: f32,
 }
 
 /// Renders a moment of a scene with its default parameters, to whichever of the sizes suits its viewport. The reply has
@@ -40,9 +35,9 @@ pub(crate) fn render_scene(
 ) -> Result<RenderedScene, String> {
   let scene = read(source)?;
   let (width, height, device_size) = points(&scene, size, &target)?;
-  let cycle = one_cycle(&scene);
+  let cycle = scene.middle_cycle();
   let params = Params::new();
-  let frame = Frame { time: cycle_time(&cycle, time), take: 0, params: &params, size: device_size };
+  let frame = Frame { time: cycle.middle_cycle_time(time), take: 0, params: &params, size: device_size };
 
   let (colors, area, outlines) = match scene.viewport {
     Viewport::Sequence => (sample(&cycle, Line::new(width).samples(), &frame), None, Vec::new()),
@@ -72,7 +67,7 @@ pub(crate) fn render_clip(
     return Err("a static scene has nothing to play".into());
   };
   let (width, height, device_size) = points(&scene, size, &target)?;
-  let scene = one_cycle(&scene);
+  let scene = scene.middle_cycle();
 
   let samples: Vec<Sample> = match scene.viewport {
     Viewport::Sequence => Line::new(width).samples().collect(),
@@ -97,10 +92,13 @@ pub(crate) fn render_clip(
   let mut led_colors = Vec::with_capacity(frames * placed.len() * 3);
   let params = Params::new();
   for index in 0..frames {
-    let time = cycle_time(&scene, timing.duration * index as f32 / (frames - 1) as f32);
+    let time = scene.middle_cycle_time(timing.duration * index as f32 / (frames - 1) as f32);
     let frame = Frame { time, take: 0, params: &params, size: device_size };
     clip.extend(samples.iter().flat_map(|at| scene.sample(at, &frame).0));
-    led_colors.extend(placed.iter().flat_map(|(_, at)| lit(scene.sample(at, &frame))));
+    led_colors.extend(placed.iter().flat_map(|(_, at)| {
+      let Rgb { r, g, b } = led_color(scene.sample(at, &frame));
+      [r, g, b]
+    }));
   }
   clip.extend(led_colors);
   Ok(clip)
@@ -132,24 +130,6 @@ fn points(scene: &Scene, size: SceneSize, target: &LedTarget) -> Result<(usize, 
   Ok((width, height, device_size))
 }
 
-/// The scene for showing one of its cycles, as a previewed scene is always somewhere in one however many times it
-/// repeats. One that repeats gets a cycle either side, so that random picks smooth across the ends as they do in play.
-fn one_cycle(scene: &Scene) -> Scene {
-  let mut scene = scene.clone();
-  if let Some(timing) = scene.timing.as_mut().filter(|timing| timing.cycle != Cycle::Once) {
-    timing.cycle = Cycle::Times(3);
-  }
-  scene
-}
-
-/// The time in a scene from [`one_cycle`] of a time in the cycle it's showing, even the very end
-fn cycle_time(scene: &Scene, time: f32) -> f32 {
-  match scene.timing {
-    Some(Timing { duration, cycle: Cycle::Times(_) }) => duration + time.min(duration * (1.0 - END_OF_CYCLE)),
-    _ => time,
-  }
-}
-
 fn rendered_area(grid: &Grid) -> RenderedArea {
   let covers = grid.covers();
   let size = covers.size();
@@ -164,36 +144,19 @@ fn sample(scene: &Scene, samples: impl Iterator<Item = Sample>, frame: &Frame) -
 fn led_colors(scene: &Scene, target: &LedTarget, frame: &Frame) -> BTreeMap<String, Rgb> {
   placed(scene.viewport, target)
     .iter()
-    .map(|(led, at)| {
-      let [r, g, b] = lit(scene.sample(at, frame));
-      (led.name.clone(), Rgb::new(r, g, b))
-    })
+    .map(|(led, at)| (led.name.clone(), led_color(scene.sample(at, frame))))
     .collect()
 }
 
-/// A color as an LED shows it, where nothing behind it is the LED being off
-fn lit(color: Rgba<u8>) -> [u8; 3] {
-  let [r, g, b, _] = color.composite_over(Rgba::black()).0;
-  [r, g, b]
-}
-
 fn placed(viewport: Viewport, target: &LedTarget) -> Vec<(&LED, Sample)> {
-  let LedTarget { leds, plane, query } = target;
-  match (viewport, plane) {
-    (Viewport::Sequence, _) => {
-      let matching: Vec<_> = leds.query_iter(query).collect();
-      let line = Line::new(matching.len());
-      matching.into_iter().zip(line.samples()).collect()
-    }
-    (Viewport::Area, Some(plane)) => place_on_plane(leds, plane, query, DEFAULT_LED_RADIUS),
-    (Viewport::Area, None) => Vec::new(),
-  }
+  let LedTarget { leds, plane, query, radius } = target;
+  place_leds(viewport, leds, *plane, query, *radius)
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{ExpAddress, LedAddress, Vec3};
+  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LedAddress, Vec3};
   use std::sync::LazyLock;
 
   const RED_TO_BLUE: &str = r#"(
@@ -214,7 +177,7 @@ mod tests {
   }
 
   fn no_leds() -> LedTarget {
-    LedTarget { leds: LedLookup::default(), plane: None, query: LedQ::every() }
+    LedTarget { leds: LedLookup::default(), plane: None, query: LedQ::every(), radius: DEFAULT_LED_RADIUS }
   }
 
   /// LEDs in hardware order, with these locations
@@ -272,26 +235,25 @@ mod tests {
   }
 
   #[test]
-  fn leds_off_the_plane_arent_colored() {
-    let target = LedTarget {
-      leds: leds(&[Some(Vec3::new(5.0, 5.0, 0.0)), None]),
-      plane: Some(&PLANE),
-      ..no_leds()
+  fn shape_edges_on_leds_fade_across_the_radius_the_machine_was_booted_with() {
+    let source = r#"(
+      version: 1,
+      viewport: Area,
+      layers: [(
+        shape: (base: Ellipse, warp: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
+        paint: (base: Solid(Fixed(255, 0, 0, 255))),
+      )],
+    )"#;
+    let brightness = |radius| {
+      let target = LedTarget {
+        leds: leds(&[Some(Vec3::new(5.0, 6.95, 0.0))]),
+        plane: Some(&SQUARE),
+        radius,
+        ..no_leds()
+      };
+      colors(source, target)["led0"].r
     };
-    assert!(colors(AREA, target).is_empty());
-  }
-
-  #[test]
-  fn an_area_without_a_plane_colors_nothing() {
-    let target = LedTarget { leds: leds(&[Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_leds() };
-    assert!(colors(AREA, target).is_empty());
-  }
-
-  #[test]
-  fn alpha_dims_an_led_toward_off() {
-    let source = "(version: 1, viewport: Sequence, layers: [(paint: (base: Solid(Fixed(255, 0, 0, 128))))])";
-    let target = LedTarget { leds: leds(&[None]), ..no_leds() };
-    assert_eq!(colors(source, target)["led0"], Rgb::new(127, 0, 0));
+    assert!(brightness(2.0) < brightness(DEFAULT_LED_RADIUS));
   }
 
   #[test]
@@ -463,6 +425,7 @@ mod tests {
     let colors = |source, time| render_scene(source, SIZE, no_leds(), time).unwrap().colors;
     assert_ne!(colors(scene("Forever"), 0.25), colors(scene("Forever"), 0.75));
     assert_eq!(colors(scene("Once"), 0.25), colors(scene("Once"), 0.75));
+    assert_eq!(colors(scene("Times(1)"), 0.25), colors(scene("Times(1)"), 0.75));
   }
 
   #[test]

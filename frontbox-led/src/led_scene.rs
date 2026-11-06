@@ -210,9 +210,32 @@ impl std::fmt::Display for PlaneSceneError {
 
 impl std::error::Error for PlaneSceneError {}
 
+/// The LEDs matching `query` that a scene on `viewport` lands on, each with where it samples the scene. This is what
+/// [`LedScene`] does, for anything that wants to know what it would show without playing it.
+///
+/// On a `Sequence` they spread along it in order. An `Area` needs a `plane` to put them on, and without one reaches no
+/// LEDs.
+pub fn place_leds<'a>(
+  viewport: Viewport,
+  leds: &'a LedLookup,
+  plane: Option<&ReferencePlane>,
+  query: &'a LedQ,
+  radius: f32,
+) -> Vec<(&'a LED, Sample)> {
+  match (viewport, plane) {
+    (Viewport::Sequence, _) => {
+      let matching: Vec<_> = leds.query_iter(query).collect();
+      let line = Line::new(matching.len());
+      matching.into_iter().zip(line.samples()).collect()
+    }
+    (Viewport::Area, Some(plane)) => place_on_plane(leds, plane, query, radius),
+    (Viewport::Area, None) => Vec::new(),
+  }
+}
+
 /// The LEDs matching `query` that land within `plane`'s extent when projected straight onto it, each with where it
 /// samples a scene. LEDs without a location don't take part.
-pub fn place_on_plane<'a>(
+fn place_on_plane<'a>(
   leds: &'a LedLookup,
   plane: &ReferencePlane,
   query: &'a LedQ,
@@ -267,9 +290,7 @@ struct Placement {
 
 impl Placement {
   fn on_plane(plane: &ReferencePlane, query: &LedQ, z_index: i8, ctx: &SystemContext) -> Self {
-    let radius = ctx.systems.get::<LedSystem>().map_or(DEFAULT_LED_RADIUS, |system| system.led_radius);
-
-    let (leds, samples) = place_on_plane(&ctx.leds, plane, query, radius)
+    let (leds, samples) = place_on_plane(&ctx.leds, plane, query, ctx.led_radius)
       .into_iter()
       .map(|(led, sample)| (led.address.clone(), sample))
       .unzip();
@@ -495,9 +516,9 @@ mod tests {
   }
 
   /// LEDs at these locations, named by position in the list
-  fn placed_leds(system: LedSystem, locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
+  fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
     let mut context = TestContext::default();
-    context.insert_system(system);
+    context.insert_system(LedSystem::new());
     let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), i as u8)).collect();
     for (i, address) in addresses.iter().enumerate() {
       context.insert_led(LED {
@@ -555,7 +576,7 @@ mod tests {
   fn a_scene_takes_its_size_from_the_plane() {
     // the same scene on a plane twice as wide: halfway across its gradient is further along
     let wide = ReferencePlane::new("Wide").extent(Vec2::new(20.0, 10.0)).build();
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(20.0, 5.0)]);
+    let (context, addresses) = placed_leds(&[at(20.0, 5.0)]);
     let program = LedScene::on_plane(&wide, LedQ::every(), area(red_to_blue())).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::blue())]);
@@ -564,7 +585,7 @@ mod tests {
   #[test]
   fn colors_come_from_where_leds_are_not_their_order() {
     // out of order and unevenly spread: along a list these would be red, purple, blue
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(10.0, 5.0), at(0.0, 5.0), at(5.0, 5.0)]);
+    let (context, addresses) = placed_leds(&[at(10.0, 5.0), at(0.0, 5.0), at(5.0, 5.0)]);
     let program = LedScene::on_plane(&plane(), LedQ::every(), area(red_to_blue())).unwrap();
 
     assert_eq!(
@@ -575,7 +596,7 @@ mod tests {
 
   #[test]
   fn only_leds_matching_the_query_take_part() {
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(1.0, 1.0), at(2.0, 2.0)]);
+    let (context, addresses) = placed_leds(&[at(1.0, 1.0), at(2.0, 2.0)]);
     let program = LedScene::on_plane(&plane(), LedQ::name("led1"), red()).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::red())]);
@@ -583,7 +604,7 @@ mod tests {
 
   #[test]
   fn leds_without_a_location_dont_take_part() {
-    let (context, addresses) = placed_leds(LedSystem::new(), &[None, at(2.0, 2.0)]);
+    let (context, addresses) = placed_leds(&[None, at(2.0, 2.0)]);
     let program = LedScene::on_plane(&plane(), LedQ::every(), red()).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::red())]);
@@ -591,7 +612,7 @@ mod tests {
 
   #[test]
   fn leds_outside_the_viewport_dont_take_part() {
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(2.0, 2.0), at(11.0, 2.0)]);
+    let (context, addresses) = placed_leds(&[at(2.0, 2.0), at(11.0, 2.0)]);
     let program = LedScene::on_plane(&plane(), LedQ::every(), red()).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red()), None]);
@@ -601,7 +622,7 @@ mod tests {
   fn positions_are_relative_to_the_plane() {
     // the plane starts at x = 100, so x = 110 is its far edge and x = 5 is off it
     let offset = ReferencePlane::new("Offset").origin(Vec3::new(100.0, 0.0, 0.0)).extent(Vec2::new(10.0, 10.0)).build();
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(110.0, 5.0), at(5.0, 5.0)]);
+    let (context, addresses) = placed_leds(&[at(110.0, 5.0), at(5.0, 5.0)]);
     let program = LedScene::on_plane(&offset, LedQ::every(), area(red_to_blue())).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::blue()), None]);
@@ -609,7 +630,7 @@ mod tests {
 
   #[test]
   fn leds_off_the_surface_project_straight_onto_it() {
-    let (context, addresses) = placed_leds(LedSystem::new(), &[Some(Vec3::new(0.0, 5.0, 1.5))]);
+    let (context, addresses) = placed_leds(&[Some(Vec3::new(0.0, 5.0, 1.5))]);
     let program = LedScene::on_plane(&plane(), LedQ::every(), area(red_to_blue())).unwrap();
 
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red())]);
@@ -618,8 +639,9 @@ mod tests {
   #[test]
   fn led_radius_softens_shape_edges() {
     // how much of a circle's edge shows on an LED just inside it
-    let coverage = |system: LedSystem| {
-      let (context, addresses) = placed_leds(system, &[at(5.0, 6.95)]);
+    let coverage = |radius: f32| {
+      let (mut context, addresses) = placed_leds(&[at(5.0, 6.95)]);
+      context.set_led_radius(radius);
       let circle = Layer::new(Paint::new(PaintNode::Solid(Color(Rgba::red()).into()))).shape(
         Shape::new(ShapeNode::Ellipse)
           .warp(Warp::Scale(Vec2::splat(4.0).into()))
@@ -630,14 +652,42 @@ mod tests {
       played(&context, &addresses, program)[0].unwrap()[3]
     };
 
-    let default = coverage(LedSystem::new());
-    let soft = coverage(LedSystem::new().led_radius(2.0));
+    let default = coverage(DEFAULT_LED_RADIUS);
+    let soft = coverage(2.0);
     assert!(soft < default && soft > 127, "{soft} vs {default}");
   }
 
   #[test]
+  fn place_leds_spreads_a_sequence_along_the_leds_in_order() {
+    let (context, _) = placed_leds(&[None, None, None]);
+    let query = LedQ::names(vec!["led2", "led0", "led1"]);
+    let placed = place_leds(Viewport::Sequence, &context.base.leds, None, &query, DEFAULT_LED_RADIUS);
+    let names: Vec<_> = placed.iter().map(|(led, _)| led.name.as_str()).collect();
+    let spots: Vec<_> = placed.iter().map(|(_, sample)| sample.pos.x).collect();
+    assert_eq!(names, ["led2", "led0", "led1"]);
+    assert_eq!(spots, [0.0, 0.5, 1.0]);
+  }
+
+  #[test]
+  fn place_leds_puts_an_area_on_the_plane_with_the_radius_its_given() {
+    let (context, _) = placed_leds(&[at(2.0, 3.0), at(50.0, 3.0), None]);
+    let query = LedQ::every();
+    let placed = place_leds(Viewport::Area, &context.base.leds, Some(&plane()), &query, 0.25);
+    assert_eq!(placed.len(), 1);
+    assert_eq!(placed[0].0.name, "led0");
+    assert_eq!(placed[0].1, Sample::new(Vec2::new(2.0, 3.0), 0.25));
+  }
+
+  #[test]
+  fn place_leds_reaches_nothing_on_an_area_without_a_plane() {
+    let (context, _) = placed_leds(&[at(2.0, 3.0)]);
+    let query = LedQ::every();
+    assert!(place_leds(Viewport::Area, &context.base.leds, None, &query, DEFAULT_LED_RADIUS).is_empty());
+  }
+
+  #[test]
   fn stop_clears_leds_on_their_layer() {
-    let (context, addresses) = placed_leds(LedSystem::new(), &[at(2.0, 2.0)]);
+    let (context, addresses) = placed_leds(&[at(2.0, 2.0)]);
     let mut program = LedScene::on_plane(&plane(), LedQ::every(), red()).unwrap().at_z(3);
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());

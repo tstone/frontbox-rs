@@ -4,8 +4,13 @@ use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
+use crate::animation::Cycle;
 use crate::color::RgbaColor;
 use crate::scene::{Env, Frame, Layer, Params, Sample, Timing, Viewport, file};
+
+/// How far before the end of a cycle in the middle of a scene its last moment is, as a fraction of the cycle. Any nearer
+/// and the time rounds into the next cycle.
+const END_OF_CYCLE: f32 = 1e-4;
 
 /// A graphic and how it moves over time: layers seen through a viewport, and the parameters the game can change. Ready to be
 /// sampled by any device, and written to a file with [`file`].
@@ -41,6 +46,24 @@ impl Scene {
   /// Whether every cycle of the scene has played by `time`. A scene that's static or repeats forever never completes.
   pub fn is_complete(&self, time: f32) -> bool {
     self.timing.is_some_and(|timing| timing.is_complete(time))
+  }
+
+  /// This scene for showing a cycle as it looks partway through play, with a cycle either side to reach into, such as for
+  /// random picks to smooth across. A scene that plays one cycle has none either side, and stays as it is.
+  pub fn middle_cycle(&self) -> Self {
+    let mut scene = self.clone();
+    if let Some(timing) = scene.timing.as_mut().filter(|timing| timing.repeats()) {
+      timing.cycle = Cycle::Times(3);
+    }
+    scene
+  }
+
+  /// The time in a scene from [`Scene::middle_cycle`] of a time in the cycle it shows, up to and including the end
+  pub fn middle_cycle_time(&self, time: f32) -> f32 {
+    match self.timing {
+      Some(timing) if timing.repeats() => timing.duration + time.min(timing.duration * (1.0 - END_OF_CYCLE)),
+      _ => time,
+    }
   }
 
   /// Checks what a definition's types can't say for themselves. Scenes from outside the program need this; [`file::load`]
@@ -147,6 +170,29 @@ mod tests {
     let params = Params::new();
     let frame = Frame { time, take, params: &params, size: SIZE };
     scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
+  }
+
+  #[test]
+  fn a_scene_that_repeats_has_a_cycle_either_side_of_its_middle() {
+    let middle = |cycle| Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
+    assert_eq!(middle(Cycle::Forever).timing.unwrap().cycle, Cycle::Times(3));
+    assert_eq!(middle(Cycle::Times(2)).timing.unwrap().cycle, Cycle::Times(3));
+    assert_eq!(middle(Cycle::Forever).middle_cycle_time(0.5), 1.5);
+  }
+
+  #[test]
+  fn a_scene_of_one_cycle_stays_as_it_is_in_its_middle() {
+    for cycle in [Cycle::Once, Cycle::Times(1)] {
+      let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
+      assert_eq!(scene.timing.unwrap().cycle, cycle);
+      assert_eq!(scene.middle_cycle_time(0.5), 0.5);
+    }
+  }
+
+  #[test]
+  fn the_end_of_a_middle_cycle_is_still_that_cycle() {
+    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(0.1, Cycle::Forever)).middle_cycle();
+    assert_eq!(scene.timing.unwrap().cycle_index(scene.middle_cycle_time(0.1)), 1);
   }
 
   #[test]

@@ -1,7 +1,7 @@
 use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  ConfigDomainValue, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
+  ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
   SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
@@ -44,6 +44,7 @@ impl ConsoleHub {
         next_seq: 0,
         plane_images: Vec::new(),
         planes: Vec::new(),
+        led_radius: DEFAULT_LED_RADIUS,
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -170,6 +171,10 @@ impl ConsoleHub {
     }
   }
 
+  pub fn set_led_radius(&self, radius: f32) {
+    self.state.lock().unwrap().led_radius = radius;
+  }
+
   fn led_target(&self, leds: SceneLeds) -> LedTarget {
     let state = self.state.lock().unwrap();
     LedTarget {
@@ -183,6 +188,7 @@ impl ConsoleHub {
       query: match leds.query {
         SceneLedQuery::Every => LedQ::every(),
       },
+      radius: state.led_radius,
     }
   }
 
@@ -548,6 +554,7 @@ struct HubState {
   next_seq: u64,
   /// Planes for `snapshot.planes`, by the same index
   planes: Vec<&'static ReferencePlane>,
+  led_radius: f32,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

@@ -10,9 +10,6 @@ use crate::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 
-/// Half the width of a common 5050 addressable LED (5mm square), in inches
-pub const DEFAULT_LED_RADIUS: f32 = 0.1;
-
 /// # LedSystem
 ///
 /// ### Features
@@ -103,7 +100,6 @@ pub struct LedSystem {
   conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
   monitored: HashSet<LedAddress>,
-  pub(crate) led_radius: f32,
 }
 
 impl LedSystem {
@@ -115,15 +111,7 @@ impl LedSystem {
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
       monitored: HashSet::new(),
-      led_radius: DEFAULT_LED_RADIUS,
     }
-  }
-
-  /// The radius of the area an LED lights, in the units of its location. This is how far a scene's shape edges fade
-  /// across an LED.
-  pub fn led_radius(mut self, radius: f32) -> Self {
-    self.led_radius = radius;
-    self
   }
 
   #[allow(unused)]
@@ -376,7 +364,7 @@ impl System for LedSystem {
           log::info!(target: "frontbox_core::leds", "Setting led {:?} to {:?}", led, final_color);
         }
 
-        leds_to_set.push((led.clone(), to_rgb(final_color)));
+        leds_to_set.push((led.clone(), led_color(final_color)));
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
@@ -445,7 +433,7 @@ pub enum LedConflictResolution {
 }
 
 /// The color an LED shows for this one, as if composited over an LED that's off: alpha dims it toward black
-fn to_rgb(color: Rgba<u8>) -> Rgb {
+pub fn led_color(color: Rgba<u8>) -> Rgb {
   let [r, g, b, _] = color.composite_over(Rgba::black()).0;
   Rgb::new(r, g, b)
 }
@@ -773,13 +761,13 @@ mod tests {
   }
 
   #[test]
-  fn to_rgb_keeps_opaque_colors() {
-    assert_eq!(to_rgb(Rgba([255, 128, 0, 255])), Rgb::new(255, 128, 0));
+  fn led_color_keeps_opaque_colors() {
+    assert_eq!(led_color(Rgba([255, 128, 0, 255])), Rgb::new(255, 128, 0));
   }
 
   #[test]
-  fn to_rgb_dims_translucent_colors_toward_off() {
-    assert_eq!(to_rgb(Rgba([255, 0, 200, 128])), Rgb::new(128, 0, 100));
-    assert_eq!(to_rgb(Rgba::transparent()), Rgb::black());
+  fn led_color_dims_translucent_colors_toward_off() {
+    assert_eq!(led_color(Rgba([255, 0, 200, 128])), Rgb::new(128, 0, 100));
+    assert_eq!(led_color(Rgba::transparent()), Rgb::black());
   }
 }

@@ -8,7 +8,7 @@ import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
 import type { Spread } from '../../types/generated/Spread'
-import { field, freshParamName, fullSpread, HUE, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import { field, freshParamName, fullSpread, HUE, newPick, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -384,8 +384,7 @@ export function PropField<T extends SceneValue>(props: {
     if (next === 'Random') {
       scene.set(withTiming(scene.get()))
       const seed = Math.floor(Math.random() * 2 ** 32)
-      const picks = [{ at: 0, smooth_in: 0, smooth_out: 0 }]
-      props.lens.set({ Random: { picks, spread: fullSpread(current, props.ranges), seed } })
+      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed } })
     }
     if (next === 'Param') {
       const name = freshParamName(scene.get(), props.paramName)
