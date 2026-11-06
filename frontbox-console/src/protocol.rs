@@ -254,7 +254,7 @@ pub struct SceneSize {
 }
 
 /// The machine's LEDs to play a scene on
-#[derive(Clone, Copy, serde::Deserialize, TS)]
+#[derive(Clone, serde::Deserialize, TS)]
 pub struct SceneLeds {
   /// Index into `Snapshot::planes` of the plane an `Area` scene plays on, which gives it its size. Without one it reaches
   /// no LEDs, and its size is that of the render in `SceneSize`, like a display.
@@ -263,7 +263,12 @@ pub struct SceneLeds {
 }
 
 /// Which LEDs take part
-#[derive(Clone, Copy, serde::Deserialize, TS)]
+#[derive(Clone, serde::Deserialize, TS)]
 pub enum SceneLedQuery {
   Every,
+  /// These LEDs, which a `Sequence` scene spreads over in this order
+  Names(Vec<String>),
+  /// The LEDs with any of these tags, by the names the hardware reports them under. As with `LedQ::Or`, they run a tag at
+  /// a time in this order, each in hardware order, and an LED with several comes at the first of them.
+  Tags(Vec<String>),
 }

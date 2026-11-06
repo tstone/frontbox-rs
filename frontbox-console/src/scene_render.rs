@@ -259,6 +259,15 @@ mod tests {
   }
 
   #[test]
+  fn a_sequence_spreads_over_only_the_chosen_leds_in_their_order() {
+    let target = LedTarget { leds: leds(&[None, None, None]), query: LedQ::names(["led2", "led0"]), ..no_leds() };
+    let colors = colors(RED_TO_BLUE, target);
+    assert_eq!(colors.len(), 2);
+    assert_eq!(colors["led2"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
+  }
+
+  #[test]
   fn an_area_colors_leds_by_where_they_are_on_the_plane() {
     let at = |x: f32| Some(Vec3::new(100.0 + x, 5.0, 0.0));
     let target = LedTarget { leds: leds(&[at(10.0), at(0.0)]), plane: Some(&PLANE), ..no_leds() };

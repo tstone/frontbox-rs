@@ -16,6 +16,9 @@ impl Fill {
   /// The color at a point in the fill's box, before its transforms. `footprint` is how far the sample reaches from the
   /// point along each axis, in the same box.
   pub(crate) fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
+    // the fill's own box runs around, and it's a point's width more than the box as the points reach past both ends
+    let env = &Env { lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x), ..*env };
+    let p = self.on_lap(p, Vec2::ZERO, env);
     let Some(to_local) = self.to_local(p, env) else {
       return Rgba([0, 0, 0, 0]);
     };

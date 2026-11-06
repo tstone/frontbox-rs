@@ -20,5 +20,5 @@ export const tabs: TabDefinition[] = [
   { id: 'events', label: 'Events', component: EventsTab },
   { id: 'config', label: 'Config', component: ConfigTab },
   { id: 'metrics', label: 'Metrics', component: MetricsTab },
-  { id: 'scenes', label: 'LED Editor', component: ScenesTab },
+  { id: 'scenes', label: 'Scenes', component: ScenesTab },
 ]

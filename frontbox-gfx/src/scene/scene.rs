@@ -95,7 +95,7 @@ impl Scene {
 
   /// The color at a sample. Transparent outside the viewport.
   pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8> {
-    let env = self.env(frame);
+    let env = Env { lap: self.lap(at.radius), ..self.env(frame) };
     let viewport = self.viewport.bounds(frame.size);
     if !viewport.contains(at.pos) {
       return Rgba([0, 0, 0, 0]);
@@ -120,6 +120,13 @@ impl Scene {
     self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
   }
 
+  /// How far it is around a `Sequence` of points this far across: the line and the gap that closes it, which spaces the
+  /// points evenly around a ring, so that the last never lands on the first.
+  fn lap(&self, radius: f32) -> Option<f32> {
+    (self.viewport == Viewport::Sequence).then(|| 1.0 + 2.0 * radius)
+  }
+
+  /// Without a sample to go by, a `Sequence` is taken to be too many points for their spacing to matter
   fn env<'a>(&'a self, frame: &Frame<'a>) -> Env<'a> {
     let time = self.timing.map_or(0.0, |timing| timing.local_time(frame.time));
     let cycle = self.timing.map_or(0, |timing| timing.cycle_index(frame.time));
@@ -131,6 +138,7 @@ impl Scene {
       params: frame.params,
       defaults: &self.params,
       images: frame.images,
+      lap: self.lap(0.0),
     }
   }
 }
@@ -185,6 +193,50 @@ mod tests {
     let params = Params::new();
     let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
+  }
+
+  fn turned(degrees: f32) -> Scene {
+    Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue().transform(Transform::Rotate(degrees.into())))])
+  }
+
+  #[test]
+  fn rotate_runs_a_sequence_around_a_point_at_a_time() {
+    let still = line(&turned(0.0), 8);
+    let mut around = still.clone();
+    around.rotate_right(1);
+    assert_eq!(line(&turned(45.0), 8), around);
+    around.rotate_left(2);
+    assert_eq!(line(&turned(-45.0), 8), around);
+  }
+
+  #[test]
+  fn a_lap_of_a_sequence_comes_back_to_the_start() {
+    assert_eq!(line(&turned(360.0), 8), line(&turned(0.0), 8));
+    assert_eq!(line(&turned(-720.0), 8), line(&turned(0.0), 8));
+  }
+
+  #[test]
+  fn rotate_runs_a_shape_past_the_end_of_a_sequence_to_its_start() {
+    let lit = |transform: Vec<Transform>| -> Vec<bool> {
+      let shape = transform.into_iter().fold(Shape::new(ShapeNode::Rect { width: 0.1.into(), height: 1.0.into() }), Shape::transform);
+      line(&Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(shape)]), 5).iter().map(|color| color[3] > 0).collect()
+    };
+    let place = || Transform::Translate(Vec2::new(0.75, 0.0).into());
+    let turn = |degrees: f32| Transform::Rotate(degrees.into());
+
+    assert_eq!(lit(vec![place(), turn(72.0)]), [false, false, false, false, true]);
+    assert_eq!(lit(vec![place(), turn(144.0)]), [true, false, false, false, false]);
+    assert_eq!(lit(vec![turn(144.0), place()]), [true, false, false, false, false]);
+  }
+
+  #[test]
+  fn a_shape_rotating_on_an_area_turns_rather_than_runs_around() {
+    let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
+      .transform(Transform::Rotate(90.0.into()))
+      .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
+    assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {

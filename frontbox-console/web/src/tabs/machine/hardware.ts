@@ -92,7 +92,7 @@ export function hardwareRows(machine: ConsoleState, kind: HardwareKind): Hardwar
   return rowsOf(machine, kind).sort((a, b) => byName.compare(a.name, b.name))
 }
 
-const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+export const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
   // planes come from the console's configuration, not the machine's hardware

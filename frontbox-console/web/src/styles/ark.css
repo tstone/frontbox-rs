@@ -20,7 +20,8 @@
   line-height: 1;
 }
 
-[data-scope='checkbox'][data-part='control'][data-state='checked'] {
+[data-scope='checkbox'][data-part='control'][data-state='checked'],
+[data-scope='checkbox'][data-part='control'][data-state='indeterminate'] {
   border-color: var(--accent);
   background: var(--accent);
 }

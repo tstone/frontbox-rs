@@ -18,6 +18,7 @@
 - Implement a proper LampDriver that also supports flashing
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
+- Reference planes should allow polygons so that cabinet sides don't look weird
 
 ## Pinball features
 

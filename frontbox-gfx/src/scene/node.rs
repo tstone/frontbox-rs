@@ -47,6 +47,19 @@ impl<N, A> Node<N, A> {
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
+  /// Where to draw `at` from when `Rotate` runs this node around a `Sequence`: the place that is on the lap nearest the
+  /// drawing, whose middle is `center` in its own space, so it's whole wherever its transforms have put it.
+  pub(crate) fn on_lap(&self, at: Vec2, center: Vec2, env: &Env) -> Vec2 {
+    let Some(lap) = env.lap.filter(|_| self.transform.iter().any(|transform| matches!(transform, Transform::Rotate(_)))) else {
+      return at;
+    };
+    let Some(to_scene) = self.to_scene(env) else {
+      return at;
+    };
+    let laps = ((to_scene.transform_point2(center).x - at.x) / lap).round();
+    Vec2::new(at.x + laps * lap, at.y)
+  }
+
   /// What maps the point `at` in the scene, and those around it, into the node's own space, undoing its transforms.
   /// Other points can need another one, as what `Mirror` and `Repeat` do depends on where a point is.
   pub(crate) fn to_local(&self, at: Vec2, env: &Env) -> Option<Affine2> {

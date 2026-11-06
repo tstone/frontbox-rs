@@ -18,6 +18,7 @@ import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
+import LedPicker, { EVERY_LED, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, SceneContext, SurfaceContext } from './SceneFields'
@@ -28,7 +29,7 @@ import './ScenesTab.css'
 
 const STARTING_SCENE = `(
   version: 5,
-  viewport: Sequence,
+  viewport: Area,
   layers: [
     (fill: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
@@ -76,6 +77,7 @@ export default function ScenesTab() {
   const [height, setHeight] = createSignal(32)
   const [view, setView] = createSignal<View>('Machine')
   const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
+  const [ledPick, setLedPick] = createSignal<LedPick>(EVERY_LED)
   const openLayer = createSignal<number | null>(0)
   // what's on show, which stays put while the source doesn't parse
   const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
@@ -102,7 +104,9 @@ export default function ScenesTab() {
     return changesEach() && timing && cycle + 1 < cycleCount(timing) ? [cycle, cycle + 1] : [cycle]
   })
 
-  const ledTarget = () => ({ plane: planeIndex(), query: 'Every' }) as const
+  // held until the LEDs change, which is how a clip of them is told from a clip of others
+  const ledQuery = createMemo(() => pickedQuery(ledPick()))
+  const ledTarget = () => ({ plane: planeIndex(), query: ledQuery() })
 
   let latest: SceneSource = { Ron: STARTING_SCENE }
   const send = (source: SceneSource) => {
@@ -175,7 +179,7 @@ export default function ScenesTab() {
     },
   }
 
-  const isSequence = () => (scene()?.viewport ?? 'Sequence') === 'Sequence'
+  const isSequence = () => scene()?.viewport === 'Sequence'
 
   // a plane with no extent has no size to give a scene
   const planes = () =>
@@ -318,7 +322,8 @@ export default function ScenesTab() {
                         <Show when={!isSequence() && planes().length === 0}>
                           <span class="scene-note">The machine has no planes</span>
                         </Show>
-                        <span class="scene-note">Every LED</span>
+                        <LedPicker pick={ledPick()} onChange={setLedPick} />
+                        <span class="scene-note">{ledsLabel(ledQuery())}</span>
                         <Show when={isSequence() && hasShape(selected())}>
                           <span class="scene-note">A sequence has no place on the machine, so its handles are in Raw</span>
                         </Show>

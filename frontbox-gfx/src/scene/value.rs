@@ -77,6 +77,8 @@ pub(crate) struct Env<'a> {
   pub params: &'a Params,
   pub defaults: &'a Params,
   pub images: &'a Images,
+  /// How far it is around a `Sequence`, in the space being drawn, or `None` in an `Area`
+  pub lap: Option<f32>,
 }
 
 impl Env<'_> {
@@ -90,6 +92,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none() }
+    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none(), lap: None }
   }
 }

@@ -10,7 +10,8 @@ use crate::scene::{Env, Prop};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
   Translate(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
-  /// Degrees, clockwise in a scene whose y runs down
+  /// Degrees, clockwise in a scene whose y runs down. A `Sequence` has no second axis to turn into, so there it runs the
+  /// drawing around the line as if its ends met, toward the last point: 360 is one lap.
   Rotate(Prop<f32>),
   Scale(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
   /// Folds the drawing across a line through the origin, replacing what's on the far side with a reflection of what's
@@ -28,7 +29,10 @@ impl Transform {
   pub(crate) fn affine(&self, env: &Env) -> Affine2 {
     match self {
       Self::Translate(offset) => Affine2::from_translation(offset.resolve(env)),
-      Self::Rotate(degrees) => Affine2::from_angle(degrees.resolve(env).to_radians()),
+      Self::Rotate(degrees) => match env.lap {
+        Some(lap) => Affine2::from_translation(Vec2::new(lap * degrees.resolve(env) / 360.0, 0.0)),
+        None => Affine2::from_angle(degrees.resolve(env).to_radians()),
+      },
       Self::Scale(scale) => Affine2::from_scale(scale.resolve(env)),
       Self::Mirror(_) | Self::Repeat(_) => Affine2::IDENTITY,
     }

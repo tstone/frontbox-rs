@@ -171,9 +171,9 @@ function ViewportEditor() {
 
   return (
     <section class="scene-group">
-      <FieldRow label="Viewport">
+      <FieldRow label="Type">
         <Dropdown
-          label="Viewport"
+          label="Type"
           options={VIEWPORT_OPTIONS}
           value={viewport.get()}
           onChange={(value) => {

@@ -203,17 +203,21 @@ impl ConsoleHub {
 
   fn led_target(&self, leds: SceneLeds) -> LedTarget {
     let state = self.state.lock().unwrap();
+    let lookup = state
+      .snapshot
+      .hardware
+      .as_ref()
+      .map(|hardware| hardware.leds.clone())
+      .unwrap_or_default();
+    let query = match leds.query {
+      SceneLedQuery::Every => LedQ::every(),
+      SceneLedQuery::Names(names) => LedQ::names(names),
+      SceneLedQuery::Tags(names) => LedQ::Or(names.iter().map(|name| lookup.tag_named(name)).collect()),
+    };
     LedTarget {
-      leds: state
-        .snapshot
-        .hardware
-        .as_ref()
-        .map(|hardware| hardware.leds.clone())
-        .unwrap_or_default(),
+      leds: lookup,
       plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
-      query: match leds.query {
-        SceneLedQuery::Every => LedQ::every(),
-      },
+      query,
       radius: state.led_radius,
     }
   }

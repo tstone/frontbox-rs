@@ -3,4 +3,4 @@
 /**
  * Which LEDs take part
  */
-export type SceneLedQuery = "Every";
+export type SceneLedQuery = "Every" | { "Names": Array<string> } | { "Tags": Array<string> };

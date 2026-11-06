@@ -82,6 +82,19 @@ impl LedLookup {
       .collect()
   }
 
+  /// The query for a tag known only by its name, as it is from outside the app. One that no LED has reaches none.
+  pub fn tag_named(&self, name: &str) -> LedQ {
+    self
+      .by_name
+      .values()
+      .flat_map(|led| &led.tags)
+      .find(|tag| tag.tag_name() == name)
+      .map_or_else(
+        || LedQ::names(Vec::<String>::new()),
+        |tag| LedQ::Tag(<dyn Tag>::as_any(&**tag).type_id()),
+      )
+  }
+
   fn matches(&self, query: &LedQ, led: &LED) -> bool {
     match query {
       LedQ::Every => true,
@@ -104,7 +117,13 @@ impl LedLookup {
     match query {
       LedQ::Name(name) => Box::new(self.by_name.get(name).into_iter()),
       LedQ::Names(names) => Box::new(names.iter().filter_map(|n| self.by_name.get(n))),
-      LedQ::Or(queries) => Box::new(queries.iter().flat_map(|q| self.query_iter(q))),
+      // An LED several of them reach comes once, at the first of them
+      LedQ::Or(queries) => Box::new(
+        queries
+          .iter()
+          .flat_map(|q| self.query_iter(q))
+          .unique_by(|led| led.name.as_str()),
+      ),
       LedQ::Skip(other, n) => Box::new(self.query_iter(other).skip(*n)),
       LedQ::Take(other, n) => Box::new(self.query_iter(other).take(*n)),
       LedQ::Reverse(other) => {
@@ -211,6 +230,42 @@ mod tests {
   fn hardware_order_holds_on_board_zero() {
     let leds = lookup(&[(0, None, 2), (0, None, 0), (0, None, 1)]);
     assert_eq!(names(&leds, &LedQ::every()), ["0.0.0", "0.0.1", "0.0.2"]);
+  }
+
+  #[test]
+  fn a_tag_named_comes_in_hardware_order() {
+    let mut leds = lookup(&[(2, Some(0), 0), (1, Some(1), 0), (1, Some(0), 5)]);
+    for name in ["2.0.0", "1.0.5"] {
+      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
+    }
+    leds.get_mut("1.1.0").unwrap().tags.push(Box::new(crate::tags::Lane));
+    assert_eq!(names(&leds, &leds.tag_named("Insert")), ["1.0.5", "2.0.0"]);
+  }
+
+  #[test]
+  fn or_runs_a_query_at_a_time_and_reaches_an_led_once() {
+    let mut leds = lookup(&[(2, Some(0), 0), (1, Some(1), 0), (1, Some(0), 5)]);
+    for name in ["2.0.0", "1.1.0"] {
+      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Lane));
+    }
+    for name in ["1.0.5", "1.1.0"] {
+      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
+    }
+    let lane_first = LedQ::Or(vec![leds.tag_named("Lane"), leds.tag_named("Insert")]);
+    assert_eq!(names(&leds, &lane_first), ["1.1.0", "2.0.0", "1.0.5"]);
+  }
+
+  #[test]
+  fn names_come_in_the_order_given() {
+    let leds = lookup(&[(1, Some(0), 0), (1, Some(0), 1), (1, Some(0), 2)]);
+    let query = LedQ::names(["1.0.2", "1.0.0", "1.0.1"]);
+    assert_eq!(names(&leds, &query), ["1.0.2", "1.0.0", "1.0.1"]);
+  }
+
+  #[test]
+  fn a_tag_no_led_has_reaches_none() {
+    let leds = lookup(&[(1, Some(0), 0)]);
+    assert!(names(&leds, &leds.tag_named("Insert")).is_empty());
   }
 
   #[test]

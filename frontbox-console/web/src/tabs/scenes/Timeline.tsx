@@ -214,6 +214,13 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
   const [hovering, setHovering] = createSignal<number | null>(null)
+  let lane!: HTMLDivElement
+
+  /** On the page, as the tracks scroll and cut off whatever hangs out of them, and the times would cover the first */
+  const addTimePlace = () => {
+    const { left, top, width } = lane.getBoundingClientRect()
+    return { '--x': `${left + (hovering()! / props.span) * width}px`, top: `${top}px` }
+  }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
     const { width } = e.currentTarget.getBoundingClientRect()
@@ -233,7 +240,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
       <span class="scene-timeline-label" title={props.track.label}>
         {props.track.label}
       </span>
-      <div class="scene-timeline-lane" onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
+      <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
         <Show when={hovering() !== null}>
           <button
             type="button"
@@ -247,6 +254,11 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
           >
             +
           </button>
+          <Portal>
+            <span class="scene-key-add-time" style={addTimePlace()}>
+              {hovering()!.toFixed(2)} s
+            </span>
+          </Portal>
         </Show>
         <Index each={times()}>
           {(time, index) => (

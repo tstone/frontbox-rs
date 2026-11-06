@@ -55,11 +55,24 @@ export function groupLabel(id: number, name: string): string {
   return id === ROOT_GROUP ? 'Root' : name
 }
 
+const CHILD_LED = /^___child::(.+)::(\d+)$/
+
 /**
  * LED definitions are split into child LEDs named `___child::{name}::{index}` by the framework.
  * `___child::lane_1::0` becomes `lane_1[0]`; other names pass through.
  */
 export function ledName(name: string): string {
-  const match = /^___child::(.+)::(\d+)$/.exec(name)
+  const match = CHILD_LED.exec(name)
   return match ? `${match[1]}[${match[2]}]` : name
+}
+
+/** Where a child LED sits in its definition, so `0` for `___child::lane_1::0`, or `null` for an LED on its own */
+export function ledIndex(name: string): number | null {
+  const index = CHILD_LED.exec(name)?.[2]
+  return index === undefined ? null : Number(index)
+}
+
+/** The definition a child LED was split from, so `lane_1` for `___child::lane_1::0`, or `null` for an LED on its own */
+export function ledStrip(name: string): string | null {
+  return CHILD_LED.exec(name)?.[1] ?? null
 }
