@@ -193,6 +193,9 @@ pub enum ClientMessage {
     leds: SceneLeds,
     /// Seconds into a cycle of the scene
     time: f32,
+    /// Which cycle, counting from zero. With none, it's one from the middle of the scene, to show it as it looks partway
+    /// through play.
+    cycle: Option<u32>,
   },
   /// Render a whole cycle of a scene for the client to play. Answered with a clip, or `SceneClipFailed`.
   RenderClip {
@@ -200,6 +203,8 @@ pub enum ClientMessage {
     source: SceneSource,
     size: SceneSize,
     leds: SceneLeds,
+    /// Which cycle, counting from zero
+    cycle: u32,
   },
 }
 

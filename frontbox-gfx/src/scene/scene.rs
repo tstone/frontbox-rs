@@ -8,9 +8,9 @@ use crate::animation::Cycle;
 use crate::color::RgbaColor;
 use crate::scene::{Env, Frame, Layer, Params, Sample, Timing, Viewport, file};
 
-/// How far before the end of a cycle in the middle of a scene its last moment is, as a fraction of the cycle. Any nearer
-/// and the time rounds into the next cycle.
-const END_OF_CYCLE: f32 = 1e-4;
+/// How far inside a cycle in a repeating scene its first and last moments are, as a fraction of the cycle. Any nearer and
+/// the time rounds into the cycle next to it.
+const CYCLE_MARGIN: f32 = 1e-4;
 
 /// A graphic and how it moves over time: layers seen through a viewport, and the parameters the game can change. Ready to be
 /// sampled by any device, and written to a file with [`file`].
@@ -60,8 +60,20 @@ impl Scene {
 
   /// The time in a scene from [`Scene::middle_cycle`] of a time in the cycle it shows, up to and including the end
   pub fn middle_cycle_time(&self, time: f32) -> f32 {
+    self.cycle_time(1, time)
+  }
+
+  /// The time in the scene of a time in one of its cycles, up to and including the end of it. A cycle past the scene's
+  /// last is its last.
+  pub fn cycle_time(&self, cycle: u32, time: f32) -> f32 {
     match self.timing {
-      Some(timing) if timing.repeats() => timing.duration + time.min(timing.duration * (1.0 - END_OF_CYCLE)),
+      Some(timing) if timing.repeats() => {
+        let cycle = match timing.cycle {
+          Cycle::Times(times) => cycle.min(times - 1),
+          _ => cycle,
+        };
+        timing.duration * (cycle as f32 + (time / timing.duration).clamp(CYCLE_MARGIN, 1.0 - CYCLE_MARGIN))
+      }
       _ => time,
     }
   }
@@ -193,6 +205,30 @@ mod tests {
   fn the_end_of_a_middle_cycle_is_still_that_cycle() {
     let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(0.1, Cycle::Forever)).middle_cycle();
     assert_eq!(scene.timing.unwrap().cycle_index(scene.middle_cycle_time(0.1)), 1);
+  }
+
+  #[test]
+  fn a_time_in_a_cycle_stays_in_that_cycle() {
+    for duration in [0.1, 0.7, 2.0] {
+      let timing = Timing::new(duration, Cycle::Forever);
+      let scene = Scene::new(Viewport::Sequence, vec![]).timing(timing);
+      for cycle in 0..1000 {
+        assert_eq!(timing.cycle_index(scene.cycle_time(cycle, 0.0)), cycle, "start of {cycle} of {duration}");
+        assert_eq!(timing.cycle_index(scene.cycle_time(cycle, duration)), cycle, "end of {cycle} of {duration}");
+      }
+    }
+  }
+
+  #[test]
+  fn a_cycle_past_the_last_is_the_last() {
+    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Times(3)));
+    assert_eq!(scene.cycle_time(7, 0.5), 2.5);
+  }
+
+  #[test]
+  fn a_scene_of_one_cycle_has_only_that_one() {
+    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Once));
+    assert_eq!(scene.cycle_time(3, 1.0), 1.0);
   }
 
   #[test]

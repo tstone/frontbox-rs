@@ -24,50 +24,58 @@ pub(crate) struct LedTarget {
   pub radius: f32,
 }
 
-/// Renders a moment of a scene with its default parameters, to whichever of the sizes suits its viewport. The reply has
-/// the scene in both forms, as this is the only place RON is read or written for a client. The error is for showing to
-/// whoever wrote the scene.
+/// Renders a moment of a scene with its default parameters, to whichever of the sizes suits its viewport. Without a
+/// cycle, that moment is in one from the middle of the scene. The reply has the scene in both forms, as this is the only
+/// place RON is read or written for a client. The error is for showing to whoever wrote the scene.
 pub(crate) fn render_scene(
   source: SceneSource,
   size: SceneSize,
   target: LedTarget,
   time: f32,
+  cycle: Option<u32>,
 ) -> Result<RenderedScene, String> {
   let scene = read(source)?;
   let (width, height, device_size) = points(&scene, size, &target)?;
-  let cycle = scene.middle_cycle();
-  let params = Params::new();
-  let frame = Frame { time: cycle.middle_cycle_time(time), take: 0, params: &params, size: device_size };
-
-  let (colors, area, outlines) = match scene.viewport {
-    Viewport::Sequence => (sample(&cycle, Line::new(width).samples(), &frame), None, Vec::new()),
-    Viewport::Area => {
-      let grid = Grid::new(width, height, device_size);
-      let outlines = cycle.outlines(&frame);
-      let outlines = outlines.iter().map(|outline| outline.iter().map(|p| p.to_array()).collect()).collect();
-      (sample(&cycle, grid.samples(), &frame), Some(rendered_area(&grid)), outlines)
+  let (shown, time) = match cycle {
+    Some(cycle) => (scene.clone(), scene.cycle_time(cycle, time)),
+    None => {
+      let middle = scene.middle_cycle();
+      let time = middle.middle_cycle_time(time);
+      (middle, time)
     }
   };
-  let led_colors = led_colors(&cycle, &target, &frame);
+  let params = Params::new();
+  let frame = Frame { time, take: 0, params: &params, size: device_size };
+
+  let (colors, area, outlines) = match scene.viewport {
+    Viewport::Sequence => (sample(&shown, Line::new(width).samples(), &frame), None, Vec::new()),
+    Viewport::Area => {
+      let grid = Grid::new(width, height, device_size);
+      let outlines = shown.outlines(&frame);
+      let outlines = outlines.iter().map(|outline| outline.iter().map(|p| p.to_array()).collect()).collect();
+      (sample(&shown, grid.samples(), &frame), Some(rendered_area(&grid)), outlines)
+    }
+  };
+  let led_colors = led_colors(&shown, &target, &frame);
   let ron = file::save(&scene).map_err(|err| err.to_string())?;
 
   Ok(RenderedScene { scene, ron, width, height, colors, area, outlines, led_colors })
 }
 
-/// Renders every frame of a cycle of a scene, for a client to play without coming back to the machine. See
-/// [`RenderedClip`] for how it's laid out.
+/// Renders every frame of one cycle of a scene, for a client to play without coming back to the machine until the next.
+/// See [`RenderedClip`] for how it's laid out.
 pub(crate) fn render_clip(
   id: u32,
   source: SceneSource,
   size: SceneSize,
   target: LedTarget,
+  cycle: u32,
 ) -> Result<Vec<u8>, String> {
   let scene = read(source)?;
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
   let (width, height, device_size) = points(&scene, size, &target)?;
-  let scene = scene.middle_cycle();
 
   let samples: Vec<Sample> = match scene.viewport {
     Viewport::Sequence => Line::new(width).samples().collect(),
@@ -92,7 +100,7 @@ pub(crate) fn render_clip(
   let mut led_colors = Vec::with_capacity(frames * placed.len() * 3);
   let params = Params::new();
   for index in 0..frames {
-    let time = scene.middle_cycle_time(timing.duration * index as f32 / (frames - 1) as f32);
+    let time = scene.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
     let frame = Frame { time, take: 0, params: &params, size: device_size };
     clip.extend(samples.iter().flat_map(|at| scene.sample(at, &frame).0));
     led_colors.extend(placed.iter().flat_map(|(_, at)| {
@@ -214,7 +222,7 @@ mod tests {
   )"#;
 
   fn colors(source: &str, target: LedTarget) -> BTreeMap<String, Rgb> {
-    render_scene(ron(source), SIZE, target, 0.0).unwrap().led_colors
+    render_scene(ron(source), SIZE, target, 0.0, None).unwrap().led_colors
   }
 
   #[test]
@@ -258,7 +266,7 @@ mod tests {
 
   #[test]
   fn a_sequence_renders_to_leds() {
-    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0).unwrap();
+    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (3, 1));
     assert_eq!(rendered.colors.len(), 12);
     assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
@@ -268,7 +276,7 @@ mod tests {
   #[test]
   fn an_area_renders_to_pixels() {
     let source = "(version: 1, viewport: Area, layers: [])";
-    let rendered = render_scene(ron(source), SIZE, no_leds(), 0.0).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_leds(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (4, 2));
   }
 
@@ -277,14 +285,14 @@ mod tests {
     // 4 x 2 is twice as wide as this square plane, so half of it falls either side
     let target = LedTarget { plane: Some(&SQUARE), ..no_leds() };
     let source = "(version: 1, viewport: Area, layers: [])";
-    let area = render_scene(ron(source), SIZE, target, 0.0).unwrap().area.unwrap();
+    let area = render_scene(ron(source), SIZE, target, 0.0, None).unwrap().area.unwrap();
     assert_eq!((area.x, area.y, area.width, area.height), (-5.0, 0.0, 20.0, 10.0));
   }
 
   #[test]
   fn an_area_with_no_plane_is_the_size_of_the_render() {
     let source = "(version: 1, viewport: Area, layers: [])";
-    let area = render_scene(ron(source), SIZE, no_leds(), 0.0).unwrap().area.unwrap();
+    let area = render_scene(ron(source), SIZE, no_leds(), 0.0, None).unwrap().area.unwrap();
     assert_eq!((area.x, area.y, area.width, area.height), (0.0, 0.0, 4.0, 2.0));
   }
 
@@ -292,7 +300,7 @@ mod tests {
   fn a_layer_with_no_shape_outlines_the_plane() {
     let target = LedTarget { plane: Some(&SQUARE), ..no_leds() };
     let source = "(version: 1, viewport: Area, layers: [(paint: (base: Solid(Fixed(1, 2, 3, 255))))])";
-    let outlines = render_scene(ron(source), SIZE, target, 0.0).unwrap().outlines;
+    let outlines = render_scene(ron(source), SIZE, target, 0.0, None).unwrap().outlines;
     assert_eq!(outlines, [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
   }
 
@@ -307,18 +315,18 @@ mod tests {
         paint: (base: Solid(Fixed(1, 2, 3, 255))),
       )],
     )"#;
-    let outlines = render_scene(ron(source), SIZE, target, 0.0).unwrap().outlines;
+    let outlines = render_scene(ron(source), SIZE, target, 0.0, None).unwrap().outlines;
     assert_eq!(outlines, [[[2.0, 3.0], [3.0, 3.0], [2.0, 4.0]]]);
   }
 
   #[test]
   fn a_sequence_has_no_outlines() {
-    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0).unwrap().outlines.is_empty());
+    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0, None).unwrap().outlines.is_empty());
   }
 
   #[test]
   fn a_sequence_has_no_area() {
-    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0).unwrap().area.is_none());
+    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0, None).unwrap().area.is_none());
   }
 
   #[test]
@@ -333,7 +341,7 @@ mod tests {
       )],
     )"#;
     let target = LedTarget { plane: Some(&WIDE), ..no_leds() };
-    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 3, height: 3 }, target, 0.0).unwrap();
+    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 3, height: 3 }, target, 0.0, None).unwrap();
     let pixel = |x: usize, y: usize| &rendered.colors[(y * 3 + x) * 4..][..4];
     assert_eq!(pixel(1, 1), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
@@ -341,20 +349,20 @@ mod tests {
 
   #[test]
   fn reports_where_a_scene_is_wrong() {
-    let error = render_scene(ron("(version: 1, viewport: Sequence, layers: [(paint: (base: Nope))])"), SIZE, no_leds(), 0.0);
+    let error = render_scene(ron("(version: 1, viewport: Sequence, layers: [(paint: (base: Nope))])"), SIZE, no_leds(), 0.0, None);
     assert!(error.err().unwrap().contains("1:"));
   }
 
   #[test]
   fn refuses_a_size_too_large_to_sample() {
     let size = SceneSize { leds: usize::MAX, ..SIZE };
-    assert!(render_scene(ron(RED_TO_BLUE), size, no_leds(), 0.0).is_err());
+    assert!(render_scene(ron(RED_TO_BLUE), size, no_leds(), 0.0, None).is_err());
   }
 
   #[test]
   fn a_definition_renders_like_its_ron() {
-    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0).unwrap();
-    let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), 0.0).unwrap();
+    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), 0.0, None).unwrap();
+    let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), 0.0, None).unwrap();
     assert_eq!(from_definition.colors, from_ron.colors);
     assert_eq!(from_definition.ron, from_ron.ron);
   }
@@ -367,9 +375,9 @@ mod tests {
       timing: (duration: 1.0),
       layers: [(paint: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
     )"#;
-    let mut scene = render_scene(ron(source), SIZE, no_leds(), 0.0).unwrap().scene;
+    let mut scene = render_scene(ron(source), SIZE, no_leds(), 0.0, None).unwrap().scene;
     scene.timing = None;
-    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), 0.0).err().unwrap();
+    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), 0.0, None).err().unwrap();
     assert!(error.contains("timing"), "{error}");
   }
 
@@ -396,13 +404,13 @@ mod tests {
 
   #[test]
   fn renders_any_moment() {
-    let rendered = render_scene(rising("Once"), SIZE, no_leds(), 1.0).unwrap();
+    let rendered = render_scene(rising("Once"), SIZE, no_leds(), 1.0, None).unwrap();
     assert_eq!(rendered.colors[..4], [100, 0, 0, 255]);
   }
 
   #[test]
   fn the_end_of_a_cycle_is_its_last_moment_however_often_it_repeats() {
-    let rendered = render_scene(rising("Forever"), SIZE, no_leds(), 2.0).unwrap();
+    let rendered = render_scene(rising("Forever"), SIZE, no_leds(), 2.0, None).unwrap();
     assert_eq!(rendered.colors[..4], [200, 0, 0, 255]);
     assert!(rendered.ron.contains("Forever"), "{}", rendered.ron);
   }
@@ -422,15 +430,57 @@ mod tests {
         )"#
       ))
     };
-    let colors = |source, time| render_scene(source, SIZE, no_leds(), time).unwrap().colors;
+    let colors = |source, time| render_scene(source, SIZE, no_leds(), time, None).unwrap().colors;
     assert_ne!(colors(scene("Forever"), 0.25), colors(scene("Forever"), 0.75));
     assert_eq!(colors(scene("Once"), 0.25), colors(scene("Once"), 0.75));
     assert_eq!(colors(scene("Times(1)"), 0.25), colors(scene("Times(1)"), 0.75));
   }
 
+  /// A new color at the start of each cycle of a second
+  fn picking(cycle: &str, smooth_in: f32) -> SceneSource {
+    ron(&format!(
+      r#"(
+        version: 5,
+        viewport: Sequence,
+        timing: (duration: 1.0, cycle: {cycle}),
+        layers: [(paint: (base: Solid(Random(
+          picks: [(at: 0.0, smooth_in: {smooth_in})],
+          spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+        ))))],
+      )"#
+    ))
+  }
+
+  #[test]
+  fn each_cycle_of_a_scene_has_a_clip_of_its_own() {
+    let clip = |cycle| render_clip(0, picking("Forever", 0.0), SIZE, no_leds(), cycle).unwrap();
+    let first = clip(0);
+    assert_eq!(first, clip(0));
+    assert_ne!(read_clip(&first).1, read_clip(&clip(1)).1);
+    assert_ne!(read_clip(&clip(1)).1, read_clip(&clip(2)).1);
+  }
+
+  #[test]
+  fn the_first_cycle_of_a_clip_has_nothing_to_smooth_from() {
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), 0).unwrap();
+    let (header, colors) = read_clip(&clip);
+    let frames = header["frames"].as_u64().unwrap() as usize;
+    assert_eq!(colors[..12], colors[(frames - 1) * 12..]);
+  }
+
+  #[test]
+  fn a_moment_of_a_cycle_is_what_its_clip_shows() {
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), 4).unwrap();
+    let (header, colors) = read_clip(&clip);
+    let frames = header["frames"].as_u64().unwrap() as usize;
+    let middle = (frames - 1) / 2;
+    let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), 0.5, Some(4)).unwrap();
+    assert_eq!(moment.colors, colors[middle * 12..][..12]);
+  }
+
   #[test]
   fn a_clip_runs_from_the_start_of_a_cycle_to_its_end() {
-    let clip = render_clip(7, rising("Forever"), SIZE, no_leds()).unwrap();
+    let clip = render_clip(7, rising("Forever"), SIZE, no_leds(), 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["id"], 7);
     assert_eq!(header["width"], 3);
@@ -453,7 +503,7 @@ mod tests {
       layers: [(paint: (base: Solid(Fixed(200, 0, 0, 128))))],
     )"#;
     let target = LedTarget { leds: leds(&[None, None]), ..no_leds() };
-    let clip = render_clip(0, ron(source), SIZE, target).unwrap();
+    let clip = render_clip(0, ron(source), SIZE, target, 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["leds"], serde_json::json!(["led0", "led1"]));
 
@@ -465,13 +515,13 @@ mod tests {
 
   #[test]
   fn a_static_scene_has_no_clip() {
-    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_leds()).is_err());
+    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_leds(), 0).is_err());
   }
 
   #[test]
   fn refuses_a_clip_too_big_to_send() {
     let size = SceneSize { leds: 1 << 18, width: 0, height: 0 };
-    let error = render_clip(0, rising("Once"), size, no_leds()).unwrap_err();
+    let error = render_clip(0, rising("Once"), size, no_leds(), 0).unwrap_err();
     assert!(error.contains("more than"), "{error}");
   }
 
@@ -490,9 +540,9 @@ mod tests {
         paint: (base: Solid(Param("tint")), adjust: [HueShift(Param("size"))]),
       )],
     )"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), 0.0).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_leds(), 0.0, None).unwrap();
     let json = serde_json::to_string(&rendered.scene).unwrap();
-    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), 0.0).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), 0.0, None).unwrap();
     assert_eq!(back.ron, rendered.ron);
   }
 }

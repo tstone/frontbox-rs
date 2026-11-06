@@ -1,5 +1,6 @@
-import { createEffect, createSignal, onCleanup, type Accessor } from 'solid-js'
+import { batch, createEffect, createSignal, onCleanup, type Accessor } from 'solid-js'
 import type { Timing } from '../../types/generated/Timing'
+import { cycleCount } from './sceneModel'
 
 export type Playback = ReturnType<typeof createPlayback>
 
@@ -10,18 +11,21 @@ export type Playback = ReturnType<typeof createPlayback>
 export function createPlayback(timing: Accessor<Timing | undefined>, ready: Accessor<boolean>) {
   const [position, setPosition] = createSignal(0)
   const [playing, setPlaying] = createSignal(false)
+  const [cycle, setCycle] = createSignal<number | null>(null)
   // across the cycles, where `position` is within one
   let elapsed = 0
 
   const advance = (seconds: number) => {
-    const { duration, cycle } = timing()!
+    const { duration } = timing()!
     elapsed += seconds
-    const cycles = cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
-    if (elapsed >= duration * cycles) {
+    if (elapsed >= duration * cycleCount(timing()!)) {
       setPosition(duration)
       setPlaying(false)
     } else {
-      setPosition(elapsed % duration)
+      batch(() => {
+        setCycle(Math.floor(elapsed / duration))
+        setPosition(elapsed % duration)
+      })
     }
   }
 
@@ -31,7 +35,8 @@ export function createPlayback(timing: Accessor<Timing | undefined>, ready: Acce
     // a tick can be what ends this, by reaching the end of the scene
     let ended = false
     const tick = (now: number) => {
-      advance((now - last) / 1000)
+      // the first can be stamped from before this started
+      advance(Math.max(now - last, 0) / 1000)
       last = now
       if (!ended) frame = requestAnimationFrame(tick)
     }
@@ -44,6 +49,7 @@ export function createPlayback(timing: Accessor<Timing | undefined>, ready: Acce
 
   const seek = (seconds: number) => {
     elapsed = seconds
+    setCycle(null)
     setPosition(seconds)
   }
 
@@ -59,11 +65,13 @@ export function createPlayback(timing: Accessor<Timing | undefined>, ready: Acce
   return {
     /** Seconds into a cycle of the scene */
     position,
+    /** Which cycle a play of the scene has reached, which pausing keeps. `null` when one isn't under way. */
+    cycle,
     playing,
     /** From where it is, or from the start if it's at the end */
     play: () => {
       if (position() >= timing()!.duration) seek(0)
-      else elapsed = position()
+      setCycle(Math.floor(elapsed / timing()!.duration))
       setPlaying(true)
     },
     pause: () => setPlaying(false),

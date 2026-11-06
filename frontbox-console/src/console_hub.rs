@@ -144,9 +144,10 @@ impl ConsoleHub {
     size: SceneSize,
     leds: SceneLeds,
     time: f32,
+    cycle: Option<u32>,
   ) -> Option<Utf8Bytes> {
     let target = self.led_target(leds);
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, time)).await {
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, time, cycle)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -158,10 +159,17 @@ impl ConsoleHub {
   }
 
   /// Runs off the runtime, and has a message ready for the client whichever way it goes
-  pub async fn render_clip(&self, id: u32, source: SceneSource, size: SceneSize, leds: SceneLeds) -> Option<Message> {
+  pub async fn render_clip(
+    &self,
+    id: u32,
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+    cycle: u32,
+  ) -> Option<Message> {
     let target = self.led_target(leds);
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
-    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target)).await {
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, cycle)).await {
       Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {

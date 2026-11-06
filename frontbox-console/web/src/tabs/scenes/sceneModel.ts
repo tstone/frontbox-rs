@@ -5,6 +5,7 @@ import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { Scene } from '../../types/generated/Scene'
 import type { Spread } from '../../types/generated/Spread'
+import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
 import type { Warp } from '../../types/generated/Warp'
@@ -144,6 +145,16 @@ export function freshParamName(scene: Scene, base: string) {
 export function repeats(scene: Scene) {
   const cycle = scene.timing?.cycle
   return cycle === 'Forever' || (typeof cycle === 'object' && cycle.Times > 1)
+}
+
+/** How many times a scene's cycle plays */
+export function cycleCount({ cycle }: Timing) {
+  return cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
+}
+
+/** Whether a scene's cycles differ from each other, which only random picks can make them do */
+export function changesEachCycle(scene: Scene) {
+  return repeats(scene) && propUses(reading(scene), null).some(({ lens }) => 'Random' in lens.get())
 }
 
 /** Scene with a timing, which it needs before it can have keyframes */

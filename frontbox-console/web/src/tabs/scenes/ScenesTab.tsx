@@ -5,7 +5,7 @@ import { createEffect, createMemo, createSignal, For, Show, untrack } from 'soli
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import {
-  renderClip,
+  renderClips,
   renderScene,
   sceneClip,
   sceneClipError,
@@ -21,7 +21,7 @@ import ConfigPanel from './ConfigPanel'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, SceneContext, SurfaceContext } from './SceneFields'
-import { withoutDroppedParams, withoutDroppedTiming, type Lens, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, withoutDroppedParams, withoutDroppedTiming, type Lens, type Vec2 } from './sceneModel'
 import Timeline from './Timeline'
 import './ScenesTab.css'
 
@@ -83,26 +83,56 @@ export default function ScenesTab() {
     equals: (a, b) => a.leds === b.leds && a.width === b.width && a.height === b.height,
   })
 
-  const playback = createPlayback(() => scene()?.timing, () => sceneClip() !== null && !sceneClipError())
+  const playback = createPlayback(() => scene()?.timing, () => sceneClip(clipCycle()) !== null && !sceneClipError())
 
   // read without tracking while playing, as those moments come from the clip
   const moment = () => (playback.playing() ? untrack(playback.position) : playback.position())
+  const momentCycle = () => (playback.playing() ? untrack(playback.cycle) : playback.cycle())
+
+  const changesEach = createMemo(() => scene() !== null && changesEachCycle(scene()!))
+
+  /** Which clip is playing. A scene that's the same every cycle has the one, on a loop. */
+  const clipCycle = () => (changesEach() ? (playback.cycle() ?? 0) : 0)
+
+  /** The clips to have ready: the one playing, and the one after it so that it's there when this one ends */
+  const clipCycles = createMemo(() => {
+    const cycle = clipCycle()
+    const timing = scene()?.timing
+    return changesEach() && timing && cycle + 1 < cycleCount(timing) ? [cycle, cycle + 1] : [cycle]
+  })
+
+  const ledTarget = () => ({ plane: planeIndex(), query: 'Every' }) as const
 
   let latest: SceneSource = { Ron: STARTING_SCENE }
   const send = (source: SceneSource) => {
     latest = source
-    const target = { plane: planeIndex(), query: 'Every' } as const
-    renderScene(source, size(), target, moment())
-    if (playback.playing()) renderClip(source, size(), target)
+    renderScene(source, size(), ledTarget(), moment(), momentCycle())
+    if (playback.playing()) renderClips(source, size(), ledTarget(), untrack(clipCycles))
   }
 
-  /** Which frame of the clip is on show. `null` is when the preview is showing the last render instead. */
-  const clipFrame = createMemo(() => {
-    const clip = sceneClip()
-    const duration = scene()?.timing?.duration
-    if (!playback.playing() || !clip || !duration) return null
-    return Math.min(Math.round((playback.position() / duration) * (clip.frames - 1)), clip.frames - 1)
+  // moving on to a cycle wants the one after it, where `send` is for changes to the scene
+  createEffect(() => {
+    const cycles = clipCycles()
+    untrack(() => {
+      if (playback.playing()) renderClips(latest, size(), ledTarget(), cycles)
+    })
   })
+
+  /**
+   * What's on show from the clips, which stays put if the next cycle is late back from the machine. `null` is when the
+   * preview is showing the last render instead.
+   */
+  const clipFrame = createMemo<{ clip: SceneClip; frame: number } | null>(
+    (held) => {
+      const duration = scene()?.timing?.duration
+      if (!playback.playing() || !duration) return null
+      const clip = sceneClip(clipCycle())
+      if (!clip) return held
+      return { clip, frame: Math.min(Math.round((playback.position() / duration) * (clip.frames - 1)), clip.frames - 1) }
+    },
+    null,
+    { equals: (a, b) => a?.clip === b?.clip && a?.frame === b?.frame },
+  )
 
   const error = () => {
     const reply = sceneRender()
@@ -127,8 +157,8 @@ export default function ScenesTab() {
   })
 
   createEffect(() => {
-    const frame = clipFrame()
-    if (frame !== null) drawClipFrame(canvas, sceneClip()!, frame)
+    const shown = clipFrame()
+    if (shown) drawClipFrame(canvas, shown.clip, shown.frame)
   })
 
   createEffect(() => {
@@ -160,8 +190,8 @@ export default function ScenesTab() {
   const ledColors = () => drawn()?.led_colors ?? {}
 
   const ledColor = (name: string) => {
-    const frame = clipFrame()
-    if (frame !== null) return clipLedColor(sceneClip()!, frame, name)
+    const shown = clipFrame()
+    if (shown) return clipLedColor(shown.clip, shown.frame, name)
     const color = ledColors()[name]
     return color ? cssColor(color) : null
   }

@@ -11,4 +11,13 @@ export type ClientMessage = { "type": "SetSwitch", switch_id: number, closed: bo
 /**
  * Seconds into a cycle of the scene
  */
-time: number, } | { "type": "RenderClip", id: number, source: SceneSource, size: SceneSize, leds: SceneLeds, };
+time: number, 
+/**
+ * Which cycle, counting from zero. With none, it's one from the middle of the scene, to show it as it looks partway
+ * through play.
+ */
+cycle: number | null, } | { "type": "RenderClip", id: number, source: SceneSource, size: SceneSize, leds: SceneLeds, 
+/**
+ * Which cycle, counting from zero
+ */
+cycle: number, };
