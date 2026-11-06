@@ -9,7 +9,7 @@ use crate::scene::{Color, ColorAdjust, Env, Node, Prop};
 /// What a layer is drawn with
 ///
 /// A paint is drawn in its own space, a unit box from `-0.5` to `0.5`. The layer stretches that box over its
-/// shape's own bounds, so a paint fills its shape and moves and turns with it. With no shape, the box is the stage.
+/// shape's own bounds, so a paint fills its shape and moves and turns with it. With no shape, the box is the viewport.
 pub type Paint = Node<PaintNode, ColorAdjust>;
 
 impl Paint {

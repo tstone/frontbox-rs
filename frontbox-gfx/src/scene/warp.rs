@@ -7,7 +7,7 @@ use crate::scene::{Env, Prop};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Warp {
   Translate(Prop<Vec2>),
-  /// Degrees, clockwise on a stage whose y runs down
+  /// Degrees, clockwise in a scene whose y runs down
   Rotate(Prop<f32>),
   Scale(Prop<Vec2>),
 }

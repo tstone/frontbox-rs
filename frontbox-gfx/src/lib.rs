@@ -8,7 +8,7 @@
 //! - [`color_sequence`] -- One dimensional rendering: a list of colors for a sequence of pixels
 //! - [`canvas`] -- Two dimensional rendering: layers composited onto an image
 //! - [`scene`] -- Graphics as data, sampled at any point: the replacement for `color_sequence` and `canvas`
-//! - [`layout`] -- Where a device's sample points sit on a scene's stage
+//! - [`layout`] -- Where a device's sample points sit in a scene's viewport
 //! - [`extent`] -- Positions and lengths that are either absolute or relative
 
 pub mod animation;

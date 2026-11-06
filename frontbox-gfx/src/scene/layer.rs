@@ -7,7 +7,7 @@ use crate::scene::{Env, Paint, Bounds, Sample, Shape};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
   pub paint: Paint,
-  /// `None` covers the whole stage
+  /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub shape: Option<Shape>,
 }
@@ -22,9 +22,9 @@ impl Layer {
     self
   }
 
-  pub(crate) fn sample(&self, at: &Sample, stage: Bounds, env: &Env) -> Rgba<u8> {
+  pub(crate) fn sample(&self, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
     let (coverage, paint_pos) = match &self.shape {
-      None => (1.0, stage.to_unit(at.pos)),
+      None => (1.0, viewport.to_unit(at.pos)),
       Some(shape) => match shape.cover(at, env) {
         Some((coverage, local)) => (coverage, shape.base.bounds(env).to_unit(local)),
         None => return Rgba([0, 0, 0, 0]),

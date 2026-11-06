@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-/// An axis-aligned area in stage units: the stage, or a shape's extent
+/// An axis-aligned area in scene units: a viewport, or a shape's extent
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bounds {
   pub min: Vec2,
@@ -19,6 +19,10 @@ impl Bounds {
 
   pub fn size(&self) -> Vec2 {
     self.max - self.min
+  }
+
+  pub fn contains(&self, p: Vec2) -> bool {
+    p.cmpge(self.min).all() && p.cmple(self.max).all()
   }
 
   pub fn center(&self) -> Vec2 {

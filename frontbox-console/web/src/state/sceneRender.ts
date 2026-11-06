@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js'
 import type { RenderedScene } from '../types/generated/RenderedScene'
-import type { SceneTarget } from '../types/generated/SceneTarget'
+import type { SceneSize } from '../types/generated/SceneSize'
 import { sendToMachine } from './console'
 
 export type SceneRender = { rendered: RenderedScene } | { error: string }
@@ -11,8 +11,8 @@ const [render, setRender] = createSignal<SceneRender | null>(null)
 export const sceneRender = render
 
 /** Asks the machine to render a scene from its RON source */
-export function renderScene(source: string, target: SceneTarget) {
-  sendToMachine({ type: 'RenderScene', source, target })
+export function renderScene(source: string, size: SceneSize) {
+  sendToMachine({ type: 'RenderScene', source, size })
 }
 
 /** Called by the console for the machine's reply */

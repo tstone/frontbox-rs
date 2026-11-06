@@ -21,7 +21,7 @@ may depend on general crates (`image`, `palette`, `glam`, `serde`, `ron`).
 
 gfx describes what a scene looks like and how it moves. Which LEDs it lands on (`LedQ`), which plane, z-index, and DMD
 pixel grids all belong to the adapter crates (`frontbox-led`, `frontbox-dmd`). A scene file
-never names hardware, so the same scene can go to a list of LEDs, the playfield, or a DMD.
+never names hardware, so a scene can go to any target its viewport suits.
 
 ## Definitions are data
 
@@ -36,19 +36,22 @@ gfx owns the definition of scenes and their storage format (RON).
 
 ## Sample, don't fill
 
-gfx outputs things that can be sampled: a color for a position on the stage and the footprint around it. It never
+gfx outputs things that can be sampled: a color for a position in the scene and the footprint around it. It never
 allocates a buffer sized for a device. Devices decide where to sample.
 
 ## One model
 
-There is no separate 1d model. A list of LEDs is laid out as a line on the stage, so every layer, shape, paint, blend,
-mask, and filter works on strips, the playfield, and DMDs alike. Don't add a feature that only works on one kind of
-target; if a strip needs something, build it so it also works on a plane.
+There is no separate 1d model. A scene states what it's for with its `Viewport`, a `Sequence` of points in order or an
+`Area`, and that's the only difference: every layer, shape, paint, blend, mask, and filter works in both. Don't add a
+feature that only works in one; if a strip needs something, build it so it also works on a plane.
+
+A device maps its points into the viewport, so a scene never changes with a device's resolution, and a target that
+doesn't suit a scene's viewport is an error rather than a guess.
 
 ## Units and color
 
-- Coordinates are stage units, as `f32` (`glam::Vec2`). Not pixels. A sized stage is in real units; an unsized one
-  takes the target's size (one unit per LED on a line).
+- Coordinates are scene units, as `f32` (`glam::Vec2`). Not pixels. They mean whatever the viewport's size says: a
+  scene for a DMD might use pixels, one for the playfield inches.
 - Colors are `Rgba<u8>`, with alpha, since LEDs and DMDs both composite. Definitions hold them as `Color`, a newtype
   that serializes as `(r, g, b, a)`, because `Rgba` has no serde support.
 

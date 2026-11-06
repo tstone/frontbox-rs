@@ -81,7 +81,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, stage: Line::new(10).stage(), params: &params };
+        let frame = Frame { time, params: &params };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -91,7 +91,7 @@ mod tests {
 
   /// Uses every type in a definition
   fn everything() -> Scene {
-    let mut scene = Scene::new(vec![
+    let mut scene = Scene::new(Viewport::Area(Vec2::new(100.0, 50.0)), vec![
         Layer::new(Paint::new(PaintNode::Solid(Prop::Param("background".into())))),
         Layer::new(
           Paint::new(PaintNode::Gradient {
@@ -120,8 +120,7 @@ mod tests {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
-    ])
-    .sized(Vec2::new(100.0, 50.0));
+    ]);
     scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
     scene
   }
@@ -140,6 +139,7 @@ mod tests {
     let scene = load(
       r#"(
         version: 1,
+        viewport: Sequence,
         layers: [
           (paint: (base: Gradient(stops: [
             (at: 0.0, color: Fixed(255, 0, 0, 255)),
@@ -152,10 +152,21 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, stage: line.stage(), params: &params };
+    let frame = Frame { time: 0.0, params: &params };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn reads_an_area_viewport() {
+    let scene = load("(version: 1, viewport: Area(100.0, 50.0), layers: [])").unwrap();
+    assert_eq!(scene.viewport, Viewport::Area(Vec2::new(100.0, 50.0)));
+  }
+
+  #[test]
+  fn a_scene_must_state_its_viewport() {
+    assert!(matches!(load("(version: 1, layers: [])"), Err(FormatError::Read(_))));
   }
 
   #[test]

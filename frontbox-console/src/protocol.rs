@@ -115,10 +115,20 @@ pub struct LedColors {
 /// A scene's colors at each point, row by row from the top left
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
+  pub viewport: SceneViewport,
   pub width: usize,
   pub height: usize,
   /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
   pub colors: Vec<u8>,
+}
+
+/// The kind of viewport a scene has, which decides the points it renders to
+#[derive(Clone, Copy, serde::Serialize, TS)]
+pub enum SceneViewport {
+  /// A list of LEDs
+  Sequence,
+  /// Rows of pixels, like a DMD
+  Area,
 }
 
 /// Operator configs that were first used or changed
@@ -149,15 +159,16 @@ pub enum ClientMessage {
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
   /// Render a scene from its RON source. Answered with `SceneRendered` or `SceneRenderFailed`.
-  RenderScene { source: String, target: SceneTarget },
+  RenderScene { source: String, size: SceneSize },
 }
 
-/// Where to sample a scene
+/// How many points to sample a scene at. The scene's viewport decides which of these applies.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
-#[serde(tag = "type")]
-pub enum SceneTarget {
-  /// A list of LEDs
-  Line { count: usize },
-  /// Rows of pixels, like a DMD
-  Grid { width: usize, height: usize },
+pub struct SceneSize {
+  /// LEDs in the list, for a `Sequence` viewport
+  pub leds: usize,
+  /// Pixels across, for an `Area` viewport
+  pub width: usize,
+  /// Pixels down, for an `Area` viewport
+  pub height: usize,
 }

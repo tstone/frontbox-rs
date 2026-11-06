@@ -1,14 +1,14 @@
 # frontbox-gfx Plan
 
 One library for describing graphics and how they move over time, for a list of LEDs, LEDs on a playfield plane, or a
-DMD. There is one model for all of them: a scene is drawn on a 2d stage, and a list of LEDs is laid out on that stage
-as a line.
+DMD. There is one model for all of them: a scene is sampled at points, and its viewport says whether those points run
+in order or cover an area.
 
 The rules this plan settles on are kept in [AGENTS.md](AGENTS.md). This file is the roadmap.
 
 ## Approach
 
-Start small. The first goal is solid colors and gradients, on a list of LEDs and in filled shapes on a 2d stage. Each
+Start small. The first goal is solid colors and gradients, on a list of LEDs and in filled shapes on a 2d area. Each
 later feature is added when a scene needs it, and is shaped as a general piece that combines with what's already
 there, not as a one-off option.
 
@@ -21,11 +21,11 @@ Everything is a function that's sampled, not a buffer that's filled. A device de
 the scene for a color at each one:
 
 ```rust
-/// A position in stage units and the radius of the area it covers
+/// A position in scene units and the radius of the area it covers
 pub struct Sample { pub pos: Vec2, pub radius: f32 }
 
 /// What's the same for every sample in one frame
-pub struct Frame<'a> { pub time: f32, pub stage: Bounds, pub params: &'a Params }
+pub struct Frame<'a> { pub time: f32, pub params: &'a Params }
 
 pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8>;
 ```
@@ -37,18 +37,35 @@ partially.
 Sampling reads the definition directly, resolving each `Prop` at the given time. There's no separate "resolved frame"
 type mirroring the definition. If that's ever too slow, caching is added then.
 
-### The stage
+### The viewport
 
-Scenes are drawn on a **stage**, a rectangle in stage units:
+A scene states the part of it that can be seen, and how much room that is:
 
-- **Sized** (`size: Some((w, h))`) -- The stage is in real units (the units LED locations already use). A DMD or the
-  playfield maps it onto itself.
-- **Unsized** (`size: None`) -- The stage is the target's, passed in the `Frame`.
+```rust
+pub enum Viewport {
+  /// Points in order, such as a list of LEDs, measured along them from 0 to 1
+  Sequence,
+  /// A rectangle from the origin, this size
+  Area(Vec2),
+}
+```
 
-Where a device's points sit is the device's business, kept apart from the scene types in the `layout` module. A
-`layout::Line` of `n` points (a strip of LEDs) puts point `i` at `(i, 0)` with a radius of 0.5, and its stage runs from
-the first point's center to the last's. So a gradient across the stage puts its end colors exactly on the end LEDs (as
-`ColorSequence` does), and positions on a line are LED indexes.
+The viewport is what a scene's numbers are measured against: an `Area` in whatever units the author chose, a
+`Sequence` from 0 to 1 along its points. A device maps its points into it, so there's no global DPI: the pitch comes
+from the device's resolution and the viewport, and that gives each sample its radius. The same `Sequence` plays on 6
+LEDs or 60, and a shape 0.25 wide covers a quarter of either. The same `Area(128.0, 32.0)` plays on a DMD of any size.
+
+- `layout::Line` maps `n` points onto a `Sequence`. The first and last points land on its ends, so a gradient puts its
+  end colors exactly on the end LEDs (as `ColorSequence` does).
+- `layout::Grid` fits a pixel grid to an `Area`. Cells stay square, so a scene isn't squashed, and the whole viewport
+  shows, centered. Points past its edges are transparent.
+
+Scenes can draw outside their viewport; only what's inside is seen. An image larger than the viewport is a layer with
+a shape that size, moved around with a warp.
+
+A target that doesn't suit a scene's viewport is an error, not a guess: a `Sequence` scene won't play on a DMD, and an
+`Area` scene won't play on a list of LEDs. An `Area` scene plays on LEDs at their positions on a plane, once those can
+be placed. One file doesn't play on both kinds of target; if a scene needs to, that's another `Viewport` variant.
 
 ## Definition types
 
@@ -125,7 +142,7 @@ unions) is structural and isn't a modifier.
 ```rust
 pub enum Warp {
   Translate(Prop<Vec2>),
-  Rotate(Prop<f32>),     // degrees, clockwise on a stage whose y runs down
+  Rotate(Prop<f32>),     // degrees, clockwise in a scene whose y runs down
   Scale(Prop<Vec2>),
 }
 
@@ -149,7 +166,7 @@ pub enum ShapeNode {
 
 Shapes are signed distance functions. Coverage at a sample comes from the distance to the edge and the sample's
 radius (a linear ramp across the footprint, so a sample centered on the edge is half lit), which gives smooth edges on
-sparse inserts and dense DMDs alike. Distances are measured in the shape's own space and converted to stage units
+sparse inserts and dense DMDs alike. Distances are measured in the shape's own space and converted to scene units
 through its warps, which is exact under uniform scale and close to the edge under stretching.
 
 Shapes have no position or size of their own; warps give them that. A circle of radius 20 is an `Ellipse` scaled by
@@ -169,8 +186,8 @@ pub struct Stop { pub at: f32, pub color: Prop<Color> }
 
 A paint is drawn in its own space, a unit box from `-0.5` to `0.5`, and a gradient's `t` is `x + 0.5`. The layer
 stretches that box over its shape's own bounds (before the shape's warps), and then the shape's warps apply to both.
-So a gradient fills its shape and moves and turns with it. With no shape, the box is the stage, so on a line of LEDs
-it runs from the first LED to the last.
+So a gradient fills its shape and moves and turns with it. With no shape, the box is the viewport, so on a list of
+LEDs it runs from the first LED to the last.
 
 - A vertical or diagonal gradient is a gradient with a `Rotate` warp; there's no `angle`. Past the ends, `t` clamps to
   the end colors.
@@ -183,14 +200,14 @@ it runs from the first LED to the last.
 ```rust
 pub struct Layer {
   pub paint: Paint,
-  pub shape: Option<Shape>,  // None covers the whole stage
+  pub shape: Option<Shape>,  // None covers the whole viewport
 }
 
 /// The whole definition, and what a file holds
 pub struct Scene {
   pub version: u32,
   pub params: Params,        // the inputs the game can set: name and default
-  pub size: Option<Vec2>,    // the stage in real units, or None to take the target's size
+  pub viewport: Viewport,    // what can be seen
   pub layers: Vec<Layer>,    // painted bottom to top, alpha over
 }
 ```
@@ -214,6 +231,7 @@ A red-to-blue gradient along a strip:
 ```ron
 (
   version: 1,
+  viewport: Sequence,
   layers: [
     (paint: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
@@ -223,12 +241,12 @@ A red-to-blue gradient along a strip:
 )
 ```
 
-A circle with a vertical gradient over a solid background, on a sized stage:
+A circle with a vertical gradient over a solid background, in an area:
 
 ```ron
 (
   version: 1,
-  size: (100.0, 50.0),
+  viewport: Area(100.0, 50.0),
   layers: [
     (paint: (base: Solid(Fixed(16, 16, 16, 255)))),
     (
@@ -248,8 +266,6 @@ A circle with a vertical gradient over a solid background, on a sized stage:
 )
 ```
 
-Sent to LEDs at their positions on the playfield, the first file sweeps red to blue across it.
-
 ## First goal
 
 Done. The new types are in `src/scene`, and frontbox-led plays them with `LedScene`.
@@ -257,7 +273,7 @@ Done. The new types are in `src/scene`, and frontbox-led plays them with `LedSce
 - [x] Add `serde`, `glam`, and `ron` dependencies
 - [x] `file`: RON load/save with `implicit_some` and `unwrap_variant_newtypes`, `version` checking (a newer file
       is reported as newer, not as a parse error)
-- [x] `Sample`, `Frame`, `Bounds`, and `layout::Line` for laying out `n` points (a strip of LEDs) on an unsized stage
+- [x] `Sample`, `Frame`, `Bounds`, and `layout::Line` and `layout::Grid` for mapping a device's points into a `Viewport`
 - [x] `Value`, `Color`, `Prop`, `Track`, `Key`, resolved from a time and parameters, reusing `Curve`, `Cycle`, and
       `Lerp` (`Curve` and `Cycle` now derive serde; `Curve::Custom` was dropped)
 - [x] `Node`, and `Warp` with translate, rotate, and scale
@@ -284,7 +300,8 @@ than a new type.
 - More kinds: noise, sparkle, images, nested scenes; bands, paths, growth
 - Playback: an `Instance` with play/stop, outros on stop, rate, tracks driven by a parameter instead of time,
   completion
-- Parameter scopes (per instance and global), relative lengths (`Extent`), stage-to-device fitting (`Viewport`)
+- Parameter scopes (per instance and global), relative lengths (`Extent`), other fits than showing the whole viewport
+  (stretch, cover)
 - Placing a list of LEDs at its positions on a plane, and a DMD adapter
 - Sugar: a bare kind for a node with no warps or adjusts (`paint: Solid(...)`), `Rect` and `Circle`, evenly spaced
   gradient colors without writing `at`, hex colors

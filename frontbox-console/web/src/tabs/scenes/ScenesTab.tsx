@@ -1,10 +1,14 @@
+import { Splitter } from '@ark-ui/solid/splitter'
+import { Tabs } from '@ark-ui/solid/tabs'
 import { createEffect, createSignal, Show } from 'solid-js'
 import { renderScene, sceneRender } from '../../state/sceneRender'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
+import type { SceneViewport } from '../../types/generated/SceneViewport'
 import './ScenesTab.css'
 
 const STARTING_SCENE = `(
   version: 1,
+  viewport: Sequence,
   layers: [
     (paint: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
@@ -13,8 +17,6 @@ const STARTING_SCENE = `(
   ],
 )
 `
-
-type Kind = 'Line' | 'Grid'
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -29,15 +31,13 @@ function draw(canvas: HTMLCanvasElement, { width, height, colors }: RenderedScen
 export default function ScenesTab() {
   let canvas!: HTMLCanvasElement
   const [source, setSource] = createSignal(STARTING_SCENE)
-  const [kind, setKind] = createSignal<Kind>('Line')
-  const [count, setCount] = createSignal(32)
+  // the viewport of the last scene to render, as the source is opaque here
+  const [viewport, setViewport] = createSignal<SceneViewport>('Sequence')
+  const [leds, setLeds] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
 
-  const render = () => {
-    const target = kind() === 'Line' ? { type: 'Line' as const, count: count() } : { type: 'Grid' as const, width: width(), height: height() }
-    renderScene(source(), target)
-  }
+  const render = () => renderScene(source(), { leds: leds(), width: width(), height: height() })
 
   const rendered = () => {
     const reply = sceneRender()
@@ -50,30 +50,48 @@ export default function ScenesTab() {
 
   createEffect(() => {
     const scene = rendered()
-    if (scene) draw(canvas, scene)
+    if (!scene) return
+    setViewport(scene.viewport)
+    draw(canvas, scene)
   })
 
   const number = (set: (value: number) => void) => (e: { currentTarget: HTMLInputElement }) => set(e.currentTarget.valueAsNumber || 0)
 
   return (
-    <div class="scenes-tab pane">
-      <textarea
-        aria-label="Scene, as RON"
-        spellcheck={false}
-        value={source()}
-        onInput={(e) => setSource(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) render()
-        }}
-      />
-      <div class="scene-output">
+    <Splitter.Root
+      class="scenes-tab"
+      panels={[
+        { id: 'source', minSize: 15 },
+        { id: 'output', minSize: 15 },
+      ]}
+      defaultSize={[25, 75]}
+    >
+      <Splitter.Panel id="source">
+        <Tabs.Root class="scene-source" defaultValue="raw">
+          <Tabs.List>
+            <Tabs.Trigger value="config">Config</Tabs.Trigger>
+            <Tabs.Trigger value="raw">Raw</Tabs.Trigger>
+            <Tabs.Indicator />
+          </Tabs.List>
+          <Tabs.Content value="config" />
+          <Tabs.Content value="raw">
+            <textarea
+              aria-label="Scene, as RON"
+              spellcheck={false}
+              value={source()}
+              onInput={(e) => setSource(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) render()
+              }}
+            />
+          </Tabs.Content>
+        </Tabs.Root>
+      </Splitter.Panel>
+      <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />
+      <Splitter.Panel id="output" class="scene-output">
         <header>
-          <select aria-label="Render to" value={kind()} onChange={(e) => setKind(e.currentTarget.value as Kind)}>
-            <option value="Line">LEDs</option>
-            <option value="Grid">Pixels</option>
-          </select>
           <Show
-            when={kind() === 'Line'}
+            when={viewport() === 'Sequence'}
             fallback={
               <>
                 <input type="number" min="1" aria-label="Width" value={width()} onInput={number(setWidth)} />
@@ -82,7 +100,7 @@ export default function ScenesTab() {
               </>
             }
           >
-            <input type="number" min="1" aria-label="Number of LEDs" value={count()} onInput={number(setCount)} />
+            <input type="number" min="1" aria-label="Number of LEDs" value={leds()} onInput={number(setLeds)} />
           </Show>
           <button type="button" onClick={render}>
             Render
@@ -92,9 +110,9 @@ export default function ScenesTab() {
         <canvas
           ref={canvas}
           classList={{ stale: error() !== null }}
-          style={{ 'min-height': `${rendered()?.height === 1 ? MIN_DRAWN_HEIGHT : 0}px` }}
+          style={{ 'min-height': `${viewport() === 'Sequence' ? MIN_DRAWN_HEIGHT : 0}px` }}
         />
-      </div>
-    </div>
+      </Splitter.Panel>
+    </Splitter.Root>
   )
 }

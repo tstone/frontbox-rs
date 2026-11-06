@@ -27,7 +27,7 @@ impl Shape {
     let to_local = self.to_local(env)?;
     let local = to_local.transform_point2(at.pos);
     let (distance, gradient) = self.base.distance(local, env);
-    let coverage = coverage(stage_distance(distance, gradient, &to_local), at.radius);
+    let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);
     (coverage > 0.0).then_some((coverage, local))
   }
 }
@@ -59,9 +59,9 @@ impl ShapeNode {
   }
 }
 
-/// Converts a distance in the shape's own space to stage units. Exact under uniform scale, and close to the edge
+/// Converts a distance in the shape's own space to scene units. Exact under uniform scale, and close to the edge
 /// under non-uniform scale, which is where coverage needs it.
-fn stage_distance(distance: f32, gradient: Vec2, to_local: &Affine2) -> f32 {
+fn scene_distance(distance: f32, gradient: Vec2, to_local: &Affine2) -> f32 {
   let stretch = (to_local.matrix2.transpose() * gradient).length();
   if stretch > f32::EPSILON { distance / stretch } else { distance }
 }
@@ -147,7 +147,7 @@ mod tests {
   }
 
   #[test]
-  fn ellipse_edge_is_in_stage_units_when_stretched() {
+  fn ellipse_edge_is_in_scene_units_when_stretched() {
     let ellipse = Shape::new(ShapeNode::Ellipse).warp(Warp::Scale(Vec2::new(20.0, 4.0).into()));
     assert!((covered(&ellipse, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&ellipse, 0.0, 2.0, 0.5) - 0.5).abs() < 1e-5);

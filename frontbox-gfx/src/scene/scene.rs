@@ -1,11 +1,10 @@
-use glam::Vec2;
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
-use crate::scene::{Env, Frame, Layer, Params, Bounds, Sample, file};
+use crate::scene::{Env, Frame, Layer, Params, Sample, Viewport, file};
 
-/// A graphic and how it moves over time: layers on a stage, and the parameters the game can change. Ready to be
+/// A graphic and how it moves over time: layers seen through a viewport, and the parameters the game can change. Ready to be
 /// sampled by any device, and written to a file with [`file`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
@@ -13,41 +12,38 @@ pub struct Scene {
   /// Parameter names and their defaults
   #[serde(default, skip_serializing_if = "Params::is_empty")]
   pub params: Params,
-  /// The stage in real units, or `None` to take the target's size
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  pub size: Option<Vec2>,
+  pub viewport: Viewport,
   /// Painted bottom to top, alpha over
   #[serde(default)]
   pub layers: Vec<Layer>,
 }
 
 impl Scene {
-  /// An unsized scene of the current format version
-  pub fn new(layers: Vec<Layer>) -> Self {
-    Self { version: file::VERSION, params: Params::new(), size: None, layers }
+  /// A scene of the current format version
+  pub fn new(viewport: Viewport, layers: Vec<Layer>) -> Self {
+    Self { version: file::VERSION, params: Params::new(), viewport, layers }
   }
 
-  /// Sets the stage's size in real units
-  pub fn sized(mut self, size: Vec2) -> Self {
-    self.size = Some(size);
-    self
-  }
-
-  /// The color at a sample
+  /// The color at a sample. Transparent outside the viewport.
   pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8> {
     let env = Env { time: frame.time, params: frame.params, defaults: &self.params };
-    let stage = self.size.map_or(frame.stage, Bounds::sized);
+    let viewport = self.viewport.bounds();
+    if !viewport.contains(at.pos) {
+      return Rgba([0, 0, 0, 0]);
+    }
     self
       .layers
       .iter()
-      .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, stage, &env).composite_over(below))
+      .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, viewport, &env).composite_over(below))
   }
 }
 
 #[cfg(test)]
 mod tests {
+  use glam::Vec2;
+
   use super::*;
-  use crate::layout::Line;
+  use crate::layout::{Grid, Line};
   use crate::scene::{Color, ColorSpace, Paint, PaintNode, Shape, ShapeNode, Stop, Warp};
 
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
@@ -67,20 +63,19 @@ mod tests {
 
   fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, stage: Bounds::sized(Vec2::ZERO), params: &params };
+    let frame = Frame { time: 0.0, params: &params };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
-    let line = Line::new(count);
-    let frame = Frame { time: 0.0, stage: line.stage(), params: &params };
-    line.samples().map(|s| scene.sample(&s, &frame)).collect()
+    let frame = Frame { time: 0.0, params: &params };
+    Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
   }
 
-  /// A circle of diameter 40 at (50, 25) on a 100 x 50 stage, over a dark background
+  /// A circle of diameter 40 at (50, 25) in a 100 x 50 viewport, over a dark background
   fn circle(paint: Paint) -> Scene {
-    Scene::new(vec![
+    Scene::new(Viewport::Area(Vec2::new(100.0, 50.0)), vec![
       Layer::new(solid(DARK)),
       Layer::new(paint).shape(
         Shape::new(ShapeNode::Ellipse)
@@ -88,12 +83,11 @@ mod tests {
           .warp(Warp::Translate(Vec2::new(50.0, 25.0).into())),
       ),
     ])
-    .sized(Vec2::new(100.0, 50.0))
   }
 
   #[test]
   fn solid_on_a_line() {
-    let scene = Scene::new(vec![Layer::new(solid(RED))]);
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED))]);
     assert_eq!(line(&scene, 4), vec![RED; 4]);
   }
 
@@ -101,8 +95,8 @@ mod tests {
   fn gradient_on_a_line_matches_color_sequence() {
     use crate::prelude::*;
 
-    let scene = Scene::new(vec![Layer::new(red_to_blue())]);
     for count in [1, 2, 5, 16, 33] {
+      let scene = Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue())]);
       let expected = ColorSequence::fade(RED, BLUE).generate(count);
       let actual = line(&scene, count);
       for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
@@ -156,29 +150,89 @@ mod tests {
   }
 
   #[test]
-  fn shape_on_a_line_uses_led_indexes() {
-    // a circle 3 LEDs across centered on the third LED lights LEDs 1 to 3
-    let scene = Scene::new(vec![Layer::new(solid(RED)).shape(
+  fn shape_on_a_line_is_measured_along_it() {
+    // on 5 LEDs, a circle most of the way across centered on the middle lights all but the end LEDs
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(
       Shape::new(ShapeNode::Ellipse)
-        .warp(Warp::Scale(Vec2::splat(3.0).into()))
-        .warp(Warp::Translate(Vec2::new(2.0, 0.0).into())),
+        .warp(Warp::Scale(Vec2::splat(0.75).into()))
+        .warp(Warp::Translate(Vec2::new(0.5, 0.0).into())),
     )]);
     let transparent = Rgba([0, 0, 0, 0]);
     assert_eq!(line(&scene, 5), vec![transparent, RED, RED, RED, transparent]);
   }
 
   #[test]
+  fn a_sequence_plays_on_any_number_of_leds() {
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue())]);
+    for count in [2, 6, 8, 60] {
+      let colors = line(&scene, count);
+      assert_eq!(colors[0], RED, "{count} LEDs");
+      assert_eq!(colors[count - 1], BLUE, "{count} LEDs");
+    }
+  }
+
+  #[test]
+  fn a_shape_covers_the_same_part_of_any_strip() {
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(
+      Shape::new(ShapeNode::Ellipse)
+        .warp(Warp::Scale(Vec2::splat(0.5).into()))
+        .warp(Warp::Translate(Vec2::new(0.5, 0.0).into())),
+    )]);
+    let lit = |count| line(&scene, count).iter().filter(|c| **c == RED).count();
+    // the middle half, less the LEDs its edges pass through
+    assert_eq!(lit(9), 3);
+    assert_eq!(lit(101), 49);
+  }
+
+  #[test]
+  fn nothing_is_seen_outside_the_viewport() {
+    let scene = circle(solid(RED));
+    let transparent = Rgba([0, 0, 0, 0]);
+    assert_eq!(sample(&scene, -1.0, 25.0, 0.5), transparent);
+    assert_eq!(sample(&scene, 101.0, 25.0, 0.5), transparent);
+    assert_eq!(sample(&scene, 50.0, 51.0, 0.5), transparent);
+  }
+
+  #[test]
+  fn a_shape_larger_than_the_viewport_can_move_under_it() {
+    // a 300 wide gradient, moved so its middle is in view
+    let scene = Scene::new(Viewport::Area(Vec2::new(100.0, 50.0)), vec![Layer::new(red_to_blue()).shape(
+      Shape::new(ShapeNode::Polygon {
+        points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+      })
+      .warp(Warp::Scale(Vec2::new(300.0, 50.0).into()))
+      .warp(Warp::Translate(Vec2::new(-100.0, 0.0).into())),
+    )]);
+    assert_eq!(sample(&scene, 50.0, 25.0, 0.0), Rgba([127, 0, 128, 255]));
+  }
+
+  #[test]
+  fn a_grid_of_another_shape_does_not_squash_the_scene() {
+    // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
+    let scene = circle(solid(RED));
+    let params = Params::new();
+    let frame = Frame { time: 0.0, params: &params };
+    let pixels: Vec<_> =
+      Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
+    let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
+    let column = |x: usize| (0..32).filter(|y| pixels[y * 128 + x] == RED).count();
+    assert!(row(16).abs_diff(column(64)) <= 2, "{} across, {} down", row(16), column(64));
+    assert_eq!(pixels[0], Rgba([0, 0, 0, 0]));
+  }
+
+  #[test]
   fn params_override_defaults() {
     use crate::scene::{Prop, Value};
 
-    let mut scene = Scene::new(vec![Layer::new(Paint::new(PaintNode::Solid(Prop::Param(
-      "color".into(),
-    ))))]);
+    let mut scene = Scene::new(
+      Viewport::Sequence,
+      vec![Layer::new(Paint::new(PaintNode::Solid(Prop::Param("color".into()))))],
+    );
     scene.params.insert("color".into(), Value::Color(Color(RED)));
     assert_eq!(line(&scene, 1), vec![RED]);
 
     let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-    let frame = Frame { time: 0.0, stage: Line::new(1).stage(), params: &params };
+    let frame = Frame { time: 0.0, params: &params };
     assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
   }
 }
