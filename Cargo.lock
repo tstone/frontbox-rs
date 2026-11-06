@@ -1000,6 +1000,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "frontbox-core",
+ "frontbox-gfx",
  "frontbox-metrics",
  "frontbox-pinball",
  "log",

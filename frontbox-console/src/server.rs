@@ -101,6 +101,13 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
                 return;
               }
             }
+            Ok(ClientMessage::RenderScene { source, target }) => {
+              if let Some(reply) = hub.render_scene(source, target).await
+                && socket.send(Message::Text(reply)).await.is_err()
+              {
+                return;
+              }
+            }
             Ok(message) => held.handle(message),
             Err(err) => log::warn!(target: "frontbox_core::console", "Ignoring a message from a console client: {err}"),
           },
@@ -174,7 +181,7 @@ impl HeldSwitches {
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
       // replied to by the session, which has the socket
-      ClientMessage::QueryMetrics => {}
+      ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } => {}
     }
   }
 }

@@ -103,9 +103,9 @@ Shapes and paints are both functions of position: a shape gives a distance to it
 Anything that changes one of them either changes what goes in or what comes out, so both are the same pipeline:
 
 ```rust
-pub struct Node<K, A> {
+pub struct Node<N, A> {
   pub warp: Vec<Warp>,   // changes the position going in
-  pub kind: K,           // the base function
+  pub base: N,           // the base function
   pub adjust: Vec<A>,    // changes the output coming out
 }
 
@@ -215,7 +215,7 @@ A red-to-blue gradient along a strip:
 (
   version: 1,
   layers: [
-    (paint: (kind: Gradient(stops: [
+    (paint: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
       (at: 1.0, color: Fixed(0, 0, 255, 255)),
     ]))),
@@ -230,14 +230,14 @@ A circle with a vertical gradient over a solid background, on a sized stage:
   version: 1,
   size: (100.0, 50.0),
   layers: [
-    (paint: (kind: Solid(Fixed(16, 16, 16, 255)))),
+    (paint: (base: Solid(Fixed(16, 16, 16, 255)))),
     (
       shape: (
-        kind: Ellipse,
+        base: Ellipse,
         warp: [Scale(Fixed(40.0, 40.0)), Translate(Fixed(50.0, 25.0))],
       ),
       paint: (
-        kind: Gradient(stops: [
+        base: Gradient(stops: [
           (at: 0.0, color: Fixed(255, 204, 0, 255)),
           (at: 1.0, color: Fixed(255, 51, 0, 255)),
         ]),

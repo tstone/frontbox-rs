@@ -7,6 +7,7 @@ import { groupLabel, shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
+import { receiveSceneRender } from './sceneRender'
 import { type Connection, connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
@@ -97,6 +98,12 @@ function handleMessage(message: ServerMessage) {
       break
     case 'MetricTotals':
       receiveMetricTotals(message)
+      break
+    case 'SceneRendered':
+      receiveSceneRender({ rendered: message })
+      break
+    case 'SceneRenderFailed':
+      receiveSceneRender({ error: message.error })
       break
   }
 }

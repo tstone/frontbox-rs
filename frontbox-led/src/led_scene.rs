@@ -12,7 +12,7 @@ use crate::*;
 /// # use frontbox_gfx::scene::*;
 /// let scene = file::load(r#"(
 ///   version: 1,
-///   layers: [(paint: (kind: Solid(Param("color"))))],
+///   layers: [(paint: (base: Solid(Param("color"))))],
 /// )"#).unwrap();
 ///
 /// let mut program = LedScene::new(LedQ::every(), scene);

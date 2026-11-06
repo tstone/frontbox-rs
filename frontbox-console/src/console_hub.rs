@@ -15,6 +15,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
+use crate::scene_render::render_scene;
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -134,6 +135,19 @@ impl ConsoleHub {
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
+  /// Runs off the runtime, so a large render only holds up the client that asked. Needs nothing from the machine.
+  pub async fn render_scene(&self, source: String, target: SceneTarget) -> Option<Utf8Bytes> {
+    let message = match tokio::task::spawn_blocking(move || render_scene(&source, target)).await {
+      Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
+      Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
+      Err(err) => {
+        log::error!(target: "frontbox_core::console", "Scene render stopped: {err}");
+        return None;
+      }
+    };
+    serialize(&message)
+  }
+
   pub async fn metric_totals(&self) -> Option<Utf8Bytes> {
     let db = self.state.lock().unwrap().metrics.clone();
     let totals = match db {

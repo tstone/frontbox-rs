@@ -141,7 +141,7 @@ mod tests {
       r#"(
         version: 1,
         layers: [
-          (paint: (kind: Gradient(stops: [
+          (paint: (base: Gradient(stops: [
             (at: 0.0, color: Fixed(255, 0, 0, 255)),
             (at: 1.0, color: Fixed(0, 0, 255, 255)),
           ]))),
@@ -160,7 +160,7 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 2, layers: [(paint: (kind: SomethingNew))])");
+    let result = load("(version: 2, layers: [(paint: (base: SomethingNew))])");
     assert!(matches!(result, Err(FormatError::Newer { version: 2 })), "{result:?}");
   }
 }

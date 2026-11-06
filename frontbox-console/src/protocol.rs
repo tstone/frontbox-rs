@@ -19,6 +19,10 @@ pub enum ServerMessage {
   Configs(ConfigList),
   /// Sent only to the client that asked, in reply to `QueryMetrics`
   MetricTotals(MetricTotals),
+  /// Sent only to the client that asked, in reply to `RenderScene`
+  SceneRendered(RenderedScene),
+  /// Sent only to the client that asked, when the scene in a `RenderScene` can't be rendered
+  SceneRenderFailed { error: String },
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
@@ -108,6 +112,15 @@ pub struct LedColors {
   pub colors: BTreeMap<String, Rgb>,
 }
 
+/// A scene's colors at each point, row by row from the top left
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedScene {
+  pub width: usize,
+  pub height: usize,
+  /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
+  pub colors: Vec<u8>,
+}
+
 /// Operator configs that were first used or changed
 #[derive(Clone, serde::Serialize, TS)]
 pub struct ConfigList {
@@ -135,4 +148,16 @@ pub enum ClientMessage {
   },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
+  /// Render a scene from its RON source. Answered with `SceneRendered` or `SceneRenderFailed`.
+  RenderScene { source: String, target: SceneTarget },
+}
+
+/// Where to sample a scene
+#[derive(Clone, Copy, serde::Deserialize, TS)]
+#[serde(tag = "type")]
+pub enum SceneTarget {
+  /// A list of LEDs
+  Line { count: usize },
+  /// Rows of pixels, like a DMD
+  Grid { width: usize, height: usize },
 }

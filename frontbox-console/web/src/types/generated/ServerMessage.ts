@@ -2,10 +2,11 @@
 import type { ConfigList } from "./ConfigList";
 import type { LedColors } from "./LedColors";
 import type { MetricTotals } from "./MetricTotals";
+import type { RenderedScene } from "./RenderedScene";
 import type { Snapshot } from "./Snapshot";
 import type { TraceRecord } from "./TraceRecord";
 
 /**
  * Messages pushed from the backend to the web app over websockets
  */
-export type ServerMessage = { "type": "Init" } & Snapshot | { "type": "Trace" } & TraceRecord | { "type": "Leds" } & LedColors | { "type": "Configs" } & ConfigList | { "type": "MetricTotals" } & MetricTotals;
+export type ServerMessage = { "type": "Init" } & Snapshot | { "type": "Trace" } & TraceRecord | { "type": "Leds" } & LedColors | { "type": "Configs" } & ConfigList | { "type": "MetricTotals" } & MetricTotals | { "type": "SceneRendered" } & RenderedScene | { "type": "SceneRenderFailed", error: string, };
