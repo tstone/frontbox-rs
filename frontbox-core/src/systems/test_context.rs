@@ -35,6 +35,10 @@ impl TestContext {
     self.base.leds.insert(led.name.to_string(), led);
   }
 
+  pub fn add_plane(&mut self, plane: &'static ReferencePlane) {
+    self.base.leds.add_plane(plane);
+  }
+
   pub fn set_led_radius(&mut self, radius: f32) {
     self.base.app_config.led_radius = radius;
   }

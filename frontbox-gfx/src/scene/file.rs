@@ -1,41 +1,41 @@
-//! Reading and writing scenes as RON
+//! Reading and writing scene files as RON
 //!
 //! Files are written with RON's `implicit_some` and `unwrap_variant_newtypes` extensions, so they only state what
 //! they change and avoid double parentheses. Fields that aren't written take their default.
+//!
+//! What's in a file is up to the scene that's written to it, such as `LedScene` or `DmdScene`. Each is held in a variant
+//! with the name of its kind, so a file says what it is, and one kind can't be read as another.
 
 use std::fmt;
 
 use ron::extensions::Extensions;
 use ron::ser::PrettyConfig;
-use serde::Deserialize;
-
-use crate::scene::{Scene, SceneError};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 1;
 
-/// Reads a scene from RON
-pub fn load(source: &str) -> Result<Scene, FormatError> {
-  // read the version on its own first, so a newer file is reported as newer rather than as a parse error from a
-  // variant this build doesn't know
-  #[derive(Deserialize)]
-  struct Header {
-    version: u32,
-  }
-  let header: Header = options().from_str(source).map_err(FormatError::Read)?;
-  if header.version > VERSION {
-    return Err(FormatError::Newer { version: header.version });
-  }
+/// The extension of the files that are scenes, in lower case
+pub const EXTENSION: &str = "scene";
 
-  let scene: Scene = options().from_str(source).map_err(FormatError::Read)?;
-  scene.check().map_err(FormatError::Invalid)?;
-  Ok(scene)
+/// Reads a scene file. What it says still needs checking.
+pub fn load<T: DeserializeOwned>(source: &str) -> Result<T, FormatError> {
+  options().from_str(source).map_err(FormatError::Read)
 }
 
-/// Writes a scene as RON
-pub fn save(scene: &Scene) -> Result<String, FormatError> {
+/// Writes a scene file
+pub fn save<T: Serialize>(scene: &T) -> Result<String, FormatError> {
   let config = PrettyConfig::new().indentor("  ").extensions(extensions());
   options().to_string_pretty(scene, config).map_err(FormatError::Write)
+}
+
+/// Whether this build can read a file of a version
+pub fn check_version(version: u32) -> Result<(), FormatError> {
+  if version > VERSION {
+    return Err(FormatError::Newer { version });
+  }
+  Ok(())
 }
 
 fn extensions() -> Extensions {
@@ -53,7 +53,7 @@ pub enum FormatError {
   /// The file was written by a newer version of the format
   Newer { version: u32 },
   /// The file reads as a scene, but not one that can be played
-  Invalid(SceneError),
+  Invalid(String),
 }
 
 impl fmt::Display for FormatError {
@@ -79,14 +79,25 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::layout::Line;
+  use crate::scene::test_scene::Scene;
   use crate::scene::*;
+
+  fn load(source: &str) -> Result<Scene, FormatError> {
+    let composition: GfxComposition = super::load(source)?;
+    composition.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
+    Ok(Scene::with_composition(Viewport::Area, composition))
+  }
+
+  fn save(scene: &Scene) -> Result<String, FormatError> {
+    super::save(&scene.composition)
+  }
 
   fn sample_grid(scene: &Scene) -> Vec<Rgba<u8>> {
     let params = Params::new();
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
+        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport, target: None };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -171,7 +182,7 @@ mod tests {
     let sweep = "Sweep(path: (base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0))), start: 0.0, end: 1.0)";
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
-        "(version: 7, viewport: Area, timing: (duration: 1.0), layers: [(
+        "(timing: (duration: 1.0), layers: [(
           shape: (transform: [{transform}], base: Ellipse(r1: {radius}, r2: Fixed(1.0))),
           fill: (base: Solid({color})),
         )])"
@@ -193,7 +204,7 @@ mod tests {
 
   #[test]
   fn a_random_color_with_no_alpha_is_opaque() {
-    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
     ))))])");
@@ -206,7 +217,7 @@ mod tests {
 
   #[test]
   fn a_random_forces_unique_picks_unless_told_otherwise() {
-    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0)],
       spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
     ))))])");
@@ -219,7 +230,7 @@ mod tests {
 
   #[test]
   fn random_props_read_and_write() {
-    let source = "(version: 5, viewport: Sequence, timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
+    let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
       picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
       spread: Color(hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0)),
       seed: 7,
@@ -247,10 +258,8 @@ mod tests {
 
   #[test]
   fn reads_a_hand_written_file() {
-    let scene = load(
+    let mut scene = load(
       r#"(
-        version: 1,
-        viewport: Sequence,
         layers: [
           (fill: (base: Gradient(stops: [
             (at: 0.0, color: Fixed(255, 0, 0, 255)),
@@ -260,10 +269,11 @@ mod tests {
       )"#,
     )
     .unwrap();
+    scene.viewport = Viewport::Sequence;
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport, target: None };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -271,7 +281,7 @@ mod tests {
 
   #[test]
   fn a_gradient_with_no_style_is_linear() {
-    let scene = load("(version: 8, viewport: Sequence, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    let scene = load("(layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
     assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Linear, .. }));
   }
 
@@ -293,7 +303,7 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size });
+    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size, viewport: scene.viewport, target: None });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -314,25 +324,19 @@ mod tests {
     let (mut images, params) = (Images::new(), Params::new());
     images.insert("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: scene.viewport, target: None };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
   }
 
   #[test]
-  fn reads_an_area_viewport() {
-    let scene = load("(version: 1, viewport: Area, layers: [])").unwrap();
-    assert_eq!(scene.viewport, Viewport::Area);
-  }
-
-  #[test]
   fn reads_a_timing() {
-    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5, cycle: Times(3)), layers: [])").unwrap();
+    let scene = load("(timing: (duration: 2.5, cycle: Times(3)), layers: [])").unwrap();
     assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Times(3))));
 
     // playing once is the default
-    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5), layers: [])").unwrap();
+    let scene = load("(timing: (duration: 2.5), layers: [])").unwrap();
     assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Once)));
   }
 
@@ -347,12 +351,10 @@ mod tests {
   fn refuses_keyframes_with_no_timing() {
     let result = load(
       r#"(
-        version: 2,
-        viewport: Area,
         layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
       )"#,
     );
-    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming { .. }))), "{result:?}");
+    assert!(matches!(result, Err(FormatError::Invalid(_))), "{result:?}");
   }
 
   #[test]
@@ -369,27 +371,15 @@ mod tests {
 
   #[test]
   fn refuses_a_timing_with_no_length() {
-    let result = load("(version: 2, viewport: Area, timing: (duration: 0.0), layers: [])");
-    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoDuration))), "{result:?}");
-  }
-
-  #[test]
-  fn a_scene_must_state_its_viewport() {
-    assert!(matches!(load("(version: 1, layers: [])"), Err(FormatError::Read(_))));
+    let result = load("(timing: (duration: 0.0), layers: [])");
+    assert!(matches!(result, Err(FormatError::Invalid(_))), "{result:?}");
   }
 
   #[test]
   fn a_layer_is_only_hidden_if_it_says_so() {
-    let scene = load("(version: 9, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    let scene = load("(layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
     assert!(!scene.layers[0].hidden);
     assert!(!save(&scene).unwrap().contains("hidden"));
-  }
-
-  #[test]
-  fn a_layer_from_before_masks_has_none() {
-    let scene = load("(version: 10, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
-    assert!(scene.layers[0].mask.is_none());
-    assert!(!save(&scene).unwrap().contains("mask"));
   }
 
   #[test]
@@ -401,24 +391,8 @@ mod tests {
   }
 
   #[test]
-  fn rejects_a_newer_version() {
-    let result = load("(version: 13, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 13 })), "{result:?}");
-  }
-
-  #[test]
-  fn targets_survive_a_save() {
-    let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(fill()), Layer::new(fill()).targets(["ring"])]).targets(["ring", "center"]);
-    let read = load(&save(&scene).unwrap()).unwrap();
-    assert_eq!(read.targets, ["ring", "center"]);
-    assert_eq!(read.layers[0].targets, None);
-    assert_eq!(read.layers[1].targets, Some(vec!["ring".to_string()]));
-  }
-
-  #[test]
-  fn a_scene_from_before_targets_has_none() {
-    let scene = load("(version: 11, viewport: Sequence, layers: [(fill: (base: Solid(Fixed(0, 0, 0, 255))))])").unwrap();
-    assert!(scene.targets.is_empty() && scene.layers[0].targets.is_none());
+  fn a_newer_file_is_refused() {
+    assert!(matches!(check_version(VERSION + 1), Err(FormatError::Newer { .. })));
+    assert!(check_version(VERSION).is_ok());
   }
 }

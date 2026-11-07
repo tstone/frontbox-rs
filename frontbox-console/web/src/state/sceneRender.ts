@@ -111,8 +111,7 @@ const sameTarget = (a: Target, b: Target | null) =>
   a.size.leds === b.size.leds &&
   a.size.width === b.size.width &&
   a.size.height === b.size.height &&
-  a.leds.plane === b.leds.plane &&
-  a.leds.query === b.leds.query
+  a.leds.plane === b.leds.plane
 
 /**
  * Has the machine render these cycles of a scene, in order, and lets go of any others. Runs as `renderScene` does, one

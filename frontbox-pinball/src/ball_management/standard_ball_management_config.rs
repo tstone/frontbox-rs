@@ -126,7 +126,7 @@ impl StandardAutoPlungerBuilder {
   }
 
   /// An effect to play while a launch button press would launch the ball
-  pub fn launch_ready_effect(mut self, effect: LedScene) -> Self {
+  pub fn launch_ready_effect(mut self, effect: LedPlayback) -> Self {
     self.autoplunger.launch_ready_effect = Some(effect.stopped());
     self
   }
@@ -191,7 +191,7 @@ macro_rules! plunge_lane_settings {
       }
 
       /// An effect to play while a ball is in the plunge lane
-      pub fn ball_present_effect(mut self, effect: LedScene) -> Self {
+      pub fn ball_present_effect(mut self, effect: LedPlayback) -> Self {
         self.lane.ball_present_effect = Some(effect);
         self
       }

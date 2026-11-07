@@ -16,7 +16,8 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
   #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
   pub hidden: bool,
-  /// Which of the scene's targets it plays on. `None` is all of them.
+  /// Which of an LED scene's targets it plays on. `None` is all of them. This is the one thing here that's only for LEDs,
+  /// and a DMD scene refuses a layer that sets it.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub targets: Option<Vec<String>>,
@@ -103,6 +104,7 @@ impl Layer {
 /// A fill drawn in a shape at a sample, or over the whole viewport with no shape
 pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
   let (coverage, fill_pos, footprint) = match shape {
+    None if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
     None => (1.0, viewport.to_unit(at.pos), viewport.to_unit_length(at.radius)),
     Some(shape) => match shape.cover(at, env) {
       Some((coverage, local, reach)) => {

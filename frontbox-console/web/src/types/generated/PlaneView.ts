@@ -2,6 +2,6 @@
 
 export type PlaneView = { name: string, origin: [number, number, number], rotation: [number, number, number, number], extent: [number, number], image: string | null, 
 /**
- * e.g. `planes::PLAYFIELD`, when added with `console_plane!`
+ * e.g. `planes::PLAYFIELD`, when added with `app_plane!`
  */
 code: string | null, };

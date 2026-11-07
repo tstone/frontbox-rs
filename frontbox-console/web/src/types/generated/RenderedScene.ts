@@ -2,7 +2,7 @@
 import type { RenderedArea } from "./RenderedArea";
 import type { RenderedShape } from "./RenderedShape";
 import type { Rgb } from "./Rgb";
-import type { Scene } from "./Scene";
+import type { SceneDefinition } from "./SceneDefinition";
 
 /**
  * A scene's colors at each point, row by row from the top left
@@ -11,7 +11,7 @@ export type RenderedScene = {
 /**
  * The scene that was rendered
  */
-scene: Scene, 
+scene: SceneDefinition, 
 /**
  * The same scene as RON
  */

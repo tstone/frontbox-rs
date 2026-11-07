@@ -6,7 +6,7 @@ import { Portal } from 'solid-js/web'
 import { ledIndex, ledName, ledStrip } from '../../lib/format'
 import { machine } from '../../state/console'
 import type { LED } from '../../types/generated/LED'
-import type { SceneLedQuery } from '../../types/generated/SceneLedQuery'
+import type { LedQ } from '../../types/generated/LedQ'
 import { byName } from '../machine/hardware'
 import { moved, removed } from './sceneModel'
 
@@ -18,16 +18,45 @@ export type LedPick = { kind: (typeof PICK_KINDS)[number]; names: string[]; tags
 export const EVERY_LED: LedPick = { kind: 'Every', names: [], tags: [] }
 
 /** Having nothing chosen is every LED */
-export function pickedQuery(pick: LedPick): SceneLedQuery {
+export function pickedQuery(pick: LedPick): LedQ {
   if (pick.kind === 'By name' && pick.names.length > 0) return { Names: pick.names }
-  if (pick.kind === 'By tag' && pick.tags.length > 0) return { Tags: pick.tags }
+  if (pick.kind === 'By tag' && pick.tags.length === 1) return { Tag: pick.tags[0] }
+  if (pick.kind === 'By tag' && pick.tags.length > 1) return { Or: pick.tags.map((tag) => ({ Tag: tag })) }
   return 'Every'
 }
 
-export function ledsLabel(query: SceneLedQuery): string {
+/** The tags of a query that's only tags */
+function queryTags(query: LedQ): string[] | null {
+  if (query !== 'Every' && 'Tag' in query) return [query.Tag]
+  if (query === 'Every' || !('Or' in query)) return null
+  const tags = query.Or.map(queryTags)
+  return tags.every((tag) => tag !== null) ? tags.flat() : null
+}
+
+/** The names of a query that's only names */
+function queryNames(query: LedQ): string[] | null {
+  if (query === 'Every') return null
+  if ('Name' in query) return [query.Name]
+  return 'Names' in query ? query.Names : null
+}
+
+/** Whether a query is one this can show. A file can say more, such as reversing or skipping LEDs. */
+export const canPick = (query: LedQ) => query === 'Every' || queryNames(query) !== null || queryTags(query) !== null
+
+/** A query that this can't show starts over from every LED */
+export function ledPick(query: LedQ): LedPick {
+  const [names, tags] = [queryNames(query), queryTags(query)]
+  if (names) return { ...EVERY_LED, kind: 'By name', names }
+  if (tags) return { ...EVERY_LED, kind: 'By tag', tags }
+  return EVERY_LED
+}
+
+export function ledsLabel(query: LedQ): string {
   if (query === 'Every') return 'Every LED'
-  if ('Tags' in query) return query.Tags.join(', ')
-  return query.Names.length === 1 ? ledName(query.Names[0]) : `${query.Names.length} LEDs`
+  const [names, tags] = [queryNames(query), queryTags(query)]
+  if (tags) return tags.join(', ')
+  if (names) return names.length === 1 ? ledName(names[0]) : `${names.length} LEDs`
+  return 'A custom query'
 }
 
 /**

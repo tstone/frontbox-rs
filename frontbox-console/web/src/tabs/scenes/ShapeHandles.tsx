@@ -2,11 +2,10 @@ import { createMemo, Index, Show, useContext } from 'solid-js'
 import type { Layer } from '../../types/generated/Layer'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedShape } from '../../types/generated/RenderedShape'
-import type { Scene } from '../../types/generated/Scene'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['shape']>
 

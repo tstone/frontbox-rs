@@ -12,6 +12,9 @@ pub struct LedLookup {
   /// Keyed the way the hardware sets LEDs: (board address, breakout, index)
   #[serde(skip)] // redundant with by_name for web console
   channels_by_index: HashMap<(u8, Option<u8>, u8), LedChannels>,
+  /// What the app was given, for finding one by name
+  #[serde(skip)]
+  planes: Vec<&'static ReferencePlane>,
 }
 
 impl LedLookup {
@@ -62,6 +65,7 @@ impl LedLookup {
       by_name,
       configs,
       channels_by_index,
+      planes: Vec::new(),
     }
   }
 
@@ -82,17 +86,13 @@ impl LedLookup {
       .collect()
   }
 
-  /// The query for a tag known only by its name, as it is from outside the app. One that no LED has reaches none.
-  pub fn tag_named(&self, name: &str) -> LedQ {
-    self
-      .by_name
-      .values()
-      .flat_map(|led| &led.tags)
-      .find(|tag| tag.tag_name() == name)
-      .map_or_else(
-        || LedQ::names(Vec::<String>::new()),
-        |tag| LedQ::Tag(<dyn Tag>::as_any(&**tag).type_id()),
-      )
+  pub fn add_plane(&mut self, plane: &'static ReferencePlane) {
+    self.planes.push(plane);
+  }
+
+  /// A plane added to the app, by its name
+  pub fn plane(&self, name: &str) -> Option<&'static ReferencePlane> {
+    self.planes.iter().find(|plane| plane.name == name).copied()
   }
 
   fn matches(&self, query: &LedQ, led: &LED) -> bool {
@@ -100,13 +100,10 @@ impl LedLookup {
       LedQ::Every => true,
       LedQ::Name(name) => led.name == *name,
       LedQ::Names(names) => names.contains(&led.name),
-      LedQ::Tag(tag) => led.has_typed_tag(*tag),
+      LedQ::Tag(tag) => led.has_tag_named(tag),
       LedQ::And(qs) => qs.iter().all(|q| self.matches(q, led)),
       LedQ::Or(qs) => qs.iter().any(|q| self.matches(q, led)),
-      LedQ::Location(plane, region) => led
-        .location
-        .map(|location| region.within(plane.to_relative(location)))
-        .unwrap_or(false),
+      LedQ::Location(plane, region) => self.plane(plane).zip(led.location).is_some_and(|(plane, location)| region.within(plane.to_relative(location))),
       LedQ::Reverse(other) => self.matches(other, led),
       LedQ::Skip(other, _) => self.query_iter(other).contains(led),
       LedQ::Take(other, _) => self.query_iter(other).contains(led),
@@ -233,13 +230,13 @@ mod tests {
   }
 
   #[test]
-  fn a_tag_named_comes_in_hardware_order() {
+  fn a_tag_comes_in_hardware_order() {
     let mut leds = lookup(&[(2, Some(0), 0), (1, Some(1), 0), (1, Some(0), 5)]);
     for name in ["2.0.0", "1.0.5"] {
       leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
     }
     leds.get_mut("1.1.0").unwrap().tags.push(Box::new(crate::tags::Lane));
-    assert_eq!(names(&leds, &leds.tag_named("Insert")), ["1.0.5", "2.0.0"]);
+    assert_eq!(names(&leds, &LedQ::Tag("Insert".into())), ["1.0.5", "2.0.0"]);
   }
 
   #[test]
@@ -251,7 +248,7 @@ mod tests {
     for name in ["1.0.5", "1.1.0"] {
       leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
     }
-    let lane_first = LedQ::Or(vec![leds.tag_named("Lane"), leds.tag_named("Insert")]);
+    let lane_first = LedQ::Or(vec![LedQ::Tag("Lane".into()), LedQ::Tag("Insert".into())]);
     assert_eq!(names(&leds, &lane_first), ["1.1.0", "2.0.0", "1.0.5"]);
   }
 
@@ -265,7 +262,7 @@ mod tests {
   #[test]
   fn a_tag_no_led_has_reaches_none() {
     let leds = lookup(&[(1, Some(0), 0)]);
-    assert!(names(&leds, &leds.tag_named("Insert")).is_empty());
+    assert!(names(&leds, &LedQ::Tag("Insert".into())).is_empty());
   }
 
   #[test]

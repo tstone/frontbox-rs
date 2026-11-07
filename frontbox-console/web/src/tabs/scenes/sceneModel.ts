@@ -9,7 +9,11 @@ import type { Mask } from '../../types/generated/Mask'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
-import type { Scene } from '../../types/generated/Scene'
+import type { GfxComposition } from '../../types/generated/GfxComposition'
+import type { LedTarget } from '../../types/generated/LedTarget'
+import type { LedTargets } from '../../types/generated/LedTargets'
+import type { SceneDefinition } from '../../types/generated/SceneDefinition'
+import type { Viewport } from '../../types/generated/Viewport'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Spread } from '../../types/generated/Spread'
@@ -233,34 +237,65 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
   return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
 }
 
-/** Scene with one more target. The first time, that's two, as with one there's nothing for layers to choose between. */
-export function withTargetAdded(scene: Scene): Scene {
-  const targets = [...(scene.targets ?? [])]
-  do {
-    let number = targets.length + 1
-    while (targets.includes(`Target ${number}`)) number++
-    targets.push(`Target ${number}`)
-  } while (targets.length < 2)
-  return { ...scene, targets }
+/** A scene's targets, as the editor goes through them. A single target has no name. */
+export function sceneTargets({ targets }: Scene): { name: string | null; target: LedTarget }[] {
+  if (targets === 'None') return []
+  if ('Single' in targets) return [{ name: null, target: targets.Single }]
+  return Object.entries(targets.Multiple).map(([name, target]) => ({ name, target }))
 }
 
-/** Scene without a target. With one left there's nothing to choose between, so it goes back to having none. */
-export function withTargetRemoved(scene: Scene, name: string): Scene {
-  const targets = (scene.targets ?? []).filter((target) => target !== name)
-  if (targets.length < 2) {
-    return { ...scene, targets: undefined, layers: scene.layers.map(({ targets: _, ...layer }) => layer) }
-  }
+/** The names layers choose between, which only multiple targets have */
+export const targetNames = (scene: Scene) => sceneTargets(scene).flatMap(({ name }) => (name === null ? [] : [name]))
+
+const withoutLayerTargets = (layers: Layer[]) => layers.map(({ targets: _, ...layer }) => layer)
+
+/** Scene with one more target, on every LED. A second target gives the first a name, as layers then choose between them. */
+export function withTargetAdded(scene: Scene, plane: string | undefined): Scene {
+  const added: LedTarget = scene.viewport === 'Area' && plane !== undefined ? { leds: 'Every', plane } : { leds: 'Every' }
+  const { targets } = scene
+  if (targets === 'None') return { ...scene, targets: { Single: added } }
+  if ('Single' in targets) return { ...scene, targets: { Multiple: { 'Target 1': targets.Single, 'Target 2': added } } }
+  let number = Object.keys(targets.Multiple).length + 1
+  while (`Target ${number}` in targets.Multiple) number++
+  return { ...scene, targets: { Multiple: { ...targets.Multiple, [`Target ${number}`]: added } } }
+}
+
+/** Scene without a target. With one left there's nothing to choose between, so that goes back to being a single target. */
+export function withTargetRemoved(scene: Scene, name: string | null): Scene {
+  const { targets } = scene
+  if (targets === 'None' || 'Single' in targets || name === null) return { ...scene, targets: 'None' }
+  const { [name]: _, ...left } = targets.Multiple
+  const remaining = Object.values(left)
+  if (remaining.length === 1) return { ...scene, targets: { Single: remaining[0] }, layers: withoutLayerTargets(scene.layers) }
   const layers = scene.layers.map((layer) =>
     layer.targets ? { ...layer, targets: layer.targets.filter((target) => target !== name) } : layer,
   )
-  return { ...scene, targets, layers }
+  return { ...scene, targets: { Multiple: left }, layers }
 }
 
-/** Scene with a target renamed, in the layers that play on it too */
+/** Scene with a target renamed, in the layers that play on it too. It stays where it is in the order. */
 export function withTargetRenamed(scene: Scene, name: string, renamed: string): Scene {
+  const { targets } = scene
+  if (targets === 'None' || 'Single' in targets) return scene
   const rename = (target: string) => (target === name ? renamed : target)
   const layers = scene.layers.map((layer) => (layer.targets ? { ...layer, targets: layer.targets.map(rename) } : layer))
-  return { ...scene, targets: (scene.targets ?? []).map(rename), layers }
+  const entries = Object.entries(targets.Multiple).map(([target, value]) => [rename(target), value])
+  return { ...scene, targets: { Multiple: Object.fromEntries(entries) }, layers }
+}
+
+/** Scene with a target changed. `name` is `null` for a single target. */
+export function withTargetChanged(scene: Scene, name: string | null, target: LedTarget): Scene {
+  const { targets } = scene
+  if (name === null || targets === 'None' || 'Single' in targets) return { ...scene, targets: { Single: target } }
+  return { ...scene, targets: { Multiple: { ...targets.Multiple, [name]: target } } }
+}
+
+/** Targets as a viewport needs them: on a plane for an `Area`, and on none for a `Sequence` */
+export function targetsFor(viewport: Viewport, targets: LedTargets, plane: string | undefined): LedTargets {
+  const fit = ({ plane: _, ...target }: LedTarget): LedTarget => (viewport === 'Area' && plane !== undefined ? { ...target, plane } : target)
+  if (targets === 'None') return targets
+  if ('Single' in targets) return { Single: fit(targets.Single) }
+  return { Multiple: Object.fromEntries(Object.entries(targets.Multiple).map(([name, target]) => [name, fit(target)])) }
 }
 
 export const playsOn = (layer: Layer, target: string) => layer.targets?.includes(target) ?? true
@@ -443,6 +478,25 @@ function held(prop: Prop<SceneValue>): Prop<SceneValue> {
   return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
 }
 
+/**
+ * A scene as the editor works on it, which is everything in one place whichever kind of file it's from. A DMD covers an
+ * `Area` and has no targets, so those are only here to keep the kinds alike.
+ */
+export type Scene = GfxComposition & { kind: 'Led' | 'Dmd'; version: number; viewport: Viewport; targets: LedTargets }
+
+export function editedScene(definition: SceneDefinition): Scene {
+  if ('Led' in definition) {
+    const { composition, ...led } = definition.Led
+    return { ...composition, ...led, kind: 'Led' }
+  }
+  const { composition, version } = definition.Dmd
+  return { ...composition, version, kind: 'Dmd', viewport: 'Area', targets: 'None' }
+}
+
+function sceneDefinition({ kind, version, viewport, targets, ...composition }: Scene): SceneDefinition {
+  return kind === 'Led' ? { Led: { version, viewport, targets, composition } } : { Dmd: { version, composition } }
+}
+
 /** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
 export function sceneSource(scene: Scene): SceneSource {
   let shown = scene
@@ -450,7 +504,8 @@ export function sceneSource(scene: Scene): SceneSource {
   for (const { prop } of tracks) {
     if (isHidden(prop.get())) prop.set(held(prop.get()))
   }
-  return shown === scene ? { Definition: scene } : { Preview: { scene, shown } }
+  const definition = sceneDefinition(scene)
+  return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneDefinition(shown) } }
 }
 
 /** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */

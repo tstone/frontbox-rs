@@ -1,33 +1,27 @@
 use frontbox_core::prelude::*;
-use frontbox_gfx::scene::Scene;
 use frontbox_led::prelude::*;
 
 use crate::GamePhase;
 
-/// Attract mode: while no game is running, plays a list of scenes on every LED, each until it completes, and starts
-/// over at the end of the list
+/// Attract mode: while no game is running, plays a list of scenes, each until it completes, and starts over at the end of
+/// the list
 ///
-/// `Area` scenes play across `plane`, which is what gives them their size, so LEDs that aren't on it sit those scenes
-/// out. `Sequence` scenes run along all the LEDs and don't use it. A scene that never completes (static, or repeating
-/// forever) plays until the system goes inactive, and the scenes after it aren't reached. Scenes play without images,
-/// so a layer that draws one shows nothing.
+/// Each plays on whichever LEDs and plane it says. A scene that never completes (static, or repeating forever) plays until
+/// the system goes inactive, and the scenes after it aren't reached. Scenes play without images, so a layer that draws one
+/// shows nothing.
 ///
 /// ```rust,ignore
-/// app.system(AttractSystem::new(&PLAYFIELD, vec![file::load(SWEEP)?, file::load(RAINBOW)?])?);
+/// app.system(AttractSystem::new(vec![LedScene::load(SWEEP)?, LedScene::load(RAINBOW)?])?);
 /// ```
 pub struct AttractSystem {
-  scenes: Vec<LedScene>,
+  scenes: Vec<LedPlayback>,
   current: usize,
 }
 
 impl AttractSystem {
-  /// A plane with no extent has no area to play on, so it's refused if there's an `Area` scene
-  pub fn new(plane: &ReferencePlane, scenes: Vec<Scene>) -> Result<Self, PlaneSceneError> {
-    let scenes = scenes
-      .into_iter()
-      .map(|scene| LedScene::on_every_led(plane, scene))
-      .collect::<Result<_, _>>()?;
-
+  /// A scene with no targets has nothing to play on, so it's refused
+  pub fn new(scenes: Vec<LedScene>) -> Result<Self, PlaybackError> {
+    let scenes = scenes.into_iter().map(LedPlayback::new).collect::<Result<_, _>>()?;
     Ok(Self { scenes, current: 0 })
   }
 
@@ -75,9 +69,7 @@ mod tests {
   struct GameOwner;
   impl System for GameOwner {}
 
-  fn plane() -> ReferencePlane {
-    ReferencePlane::new("Plane").extent(Vec2::new(10.0, 10.0)).build()
-  }
+  static PLANE: ReferencePlane = ReferencePlane::new("Plane").extent(Vec2::new(10.0, 10.0)).build();
 
   /// One LED on the plane, and one off it
   fn two_leds() -> (TestContext, Vec<LedAddress>) {
@@ -92,6 +84,7 @@ mod tests {
         ..Default::default()
       });
     }
+    context.add_plane(&PLANE);
     (context, addresses)
   }
 
@@ -104,23 +97,28 @@ mod tests {
       .collect()
   }
 
-  fn solid(color: Rgba<u8>) -> Scene {
-    Scene::new(Viewport::Sequence, vec![Layer::new(Fill::new(FillNode::Solid(Color(color).into())))])
+  fn composition(color: Rgba<u8>) -> GfxComposition {
+    GfxComposition::new(vec![Layer::new(Fill::new(FillNode::Solid(Color(color).into())))])
+  }
+
+  fn solid(color: Rgba<u8>) -> LedScene {
+    LedScene::new(Viewport::Sequence, LedTargets::Single(LedTarget::new(LedQ::every())), composition(color))
   }
 
   /// One second of `color`
-  fn second_of(color: Rgba<u8>) -> Scene {
-    solid(color).timing(Timing::new(1.0, Cycle::Once))
+  fn second_of(color: Rgba<u8>) -> LedScene {
+    let timed = composition(color).timing(Timing::new(1.0, Cycle::Once));
+    LedScene::new(Viewport::Sequence, LedTargets::Single(LedTarget::new(LedQ::every())), timed)
   }
 
   /// One second of `color` across the plane
-  fn second_across_plane(color: Rgba<u8>) -> Scene {
-    let fill = Fill::new(FillNode::Solid(Color(color).into()));
-    Scene::new(Viewport::Area, vec![Layer::new(fill)]).timing(Timing::new(1.0, Cycle::Once))
+  fn second_across_plane(color: Rgba<u8>) -> LedScene {
+    let timed = composition(color).timing(Timing::new(1.0, Cycle::Once));
+    LedScene::new(Viewport::Area, LedTargets::Single(LedTarget::new(LedQ::every()).on_plane("Plane")), timed)
   }
 
-  fn attract(scenes: Vec<Scene>) -> AttractSystem {
-    AttractSystem::new(&plane(), scenes).unwrap()
+  fn attract(scenes: Vec<LedScene>) -> AttractSystem {
+    AttractSystem::new(scenes).unwrap()
   }
 
   fn tick(attract: &mut AttractSystem, context: &TestContext, delta: Duration) {
@@ -180,13 +178,6 @@ mod tests {
 
     tick(&mut attract, &context, Duration::from_millis(16));
     assert_eq!(colors(&context, &addresses), vec![Some(Rgba::red()), None]);
-  }
-
-  #[test]
-  fn an_area_scene_is_refused_on_a_plane_with_no_extent() {
-    let flat = ReferencePlane::new("Flat").build();
-    let result = AttractSystem::new(&flat, vec![second_across_plane(Rgba::red())]);
-    assert!(matches!(result, Err(PlaneSceneError::NoExtent)));
   }
 
   #[test]

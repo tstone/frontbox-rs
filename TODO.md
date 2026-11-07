@@ -23,11 +23,7 @@
 ## Pinball features
 
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
-- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens
-  to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are
-  participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a
-  ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
-  check.
+- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
@@ -66,8 +62,6 @@
 
 ## LEDs
 
-- LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these
-  are true"
 - Because of the way LedScene is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
 - Single channel flasher support
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?

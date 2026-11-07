@@ -27,7 +27,7 @@
 //! # use frontbox_core::prelude::*;
 //! # use frontbox_led::prelude::*;
 //! pub struct Example {
-//!   effect: LedScene
+//!   effect: LedPlayback
 //! }
 //!
 //! impl System for Example {
@@ -49,7 +49,8 @@
 //!
 //! ## LED Identification (dimensions)
 //!
-//! What LEDs show is a [`Scene`](frontbox_gfx::scene::Scene), which says what it's for with its viewport.
+//! What LEDs show is an [`LedScene`], a composition and the LEDs it's on, written to a `.scene` file. It says how it lands
+//! on them with its viewport.
 //!
 //! ### Sequence
 //! A `Sequence` viewport spreads over one or more LEDs in a list, typically by name, tag, or definition. These can be used for a variety of
@@ -63,13 +64,14 @@
 //!
 //! Generally, setting LEDs happens by way of scenes, but understanding the stack can be useful when choosing which approach to use or building your own from scratch.
 //!
-//! - [`LedScene`] - Plays a scene on LEDs (Requires `LedSystem`)
+//! - [`LedPlayback`] - Plays an [`LedScene`] (Requires `LedSystem`)
 //! - [`LedSystem`] - Manages declarations, prioritization, and layers. Sets the final color with `Machine`. Typically not interacted with directly.
 //! - [`Machine`](frontbox_core::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
 //!
 
 mod alternate_resolver;
 mod end_behavior;
+mod led_playback;
 mod led_declarations;
 mod led_scene;
 mod led_identifications;
@@ -80,6 +82,7 @@ mod led_system_ext;
 pub(crate) use alternate_resolver::*;
 pub(crate) use led_declarations::*;
 pub use end_behavior::*;
+pub use led_playback::*;
 pub use led_scene::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
@@ -88,6 +91,7 @@ pub use led_system_ext::*;
 
 pub mod prelude {
   pub use crate::end_behavior::*;
+  pub use crate::led_playback::*;
   pub use crate::led_scene::*;
   pub use crate::led_identifications::*;
   pub use crate::led_identifications_ext::*;

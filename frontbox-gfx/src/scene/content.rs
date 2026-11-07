@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use crate::scene::file::{self, FormatError};
-use crate::scene::{Images, Picture, Scene};
+use crate::scene::file;
+use crate::scene::{GfxComposition, Images, Picture};
 
 /// The longest side of an image that will be decoded. A picture bigger than this costs the machine more memory than
 /// anything it can show is worth.
@@ -27,8 +27,6 @@ const MAX_FRAMES: usize = 10_000;
 /// The extensions of the files that are images, in lower case
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
-/// The extension of the files that are scenes, in lower case
-const SCENE_EXTENSION: &str = "ron";
 
 /// A folder of what scenes use
 ///
@@ -102,7 +100,7 @@ impl Content {
 
   /// The images a scene draws, to play it with. An image that can't be had is an error here, rather than a layer that's
   /// quietly missing when the scene plays.
-  pub fn images_for(&self, scene: &Scene) -> Result<Images, LayerImageError> {
+  pub fn images_for(&self, scene: &GfxComposition) -> Result<Images, LayerImageError> {
     let mut images = Images::new();
     for (index, layer) in scene.layers.iter().enumerate() {
       for name in layer.image_names() {
@@ -139,10 +137,9 @@ impl Content {
     fs::read_to_string(path).map_err(|error| SceneFileError::Read { name: name.into(), error })
   }
 
-  /// Adds a scene to the folder. It has to be one that can be played, and a scene that's already there is left as it is.
+  /// Adds a scene to the folder. A scene that's already there is left as it is.
   pub fn add_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
-    file::load(source).map_err(|error| SceneFileError::Invalid { name: name.into(), error })?;
 
     write_new(&path, source.as_bytes()).map_err(|error| match error.kind() {
       io::ErrorKind::AlreadyExists => SceneFileError::Taken(name.into()),
@@ -150,13 +147,11 @@ impl Content {
     })
   }
 
-  /// Writes a scene to the folder over any by that name. It has to be one that can be played, and the file is replaced
-  /// all at once, so a machine reading it gets one version or the other and a failed save loses nothing.
+  /// Writes a scene to the folder over any by that name. The file is replaced all at once, so a machine reading it gets one version or the other and a failed save loses nothing.
   pub fn save_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
-    file::load(source).map_err(|error| SceneFileError::Invalid { name: name.into(), error })?;
 
-    let saving = path.with_extension("ron.saving");
+    let saving = path.with_extension("scene.saving");
     replace(&path, &saving, source.as_bytes()).map_err(|error| {
       let _ = fs::remove_file(&saving);
       SceneFileError::Write { name: name.into(), error }
@@ -241,8 +236,6 @@ pub enum SceneFileError {
   BadName(String),
   /// The file couldn't be read, which includes it not being there
   Read { name: String, error: io::Error },
-  /// What's being written isn't a scene that can be played
-  Invalid { name: String, error: FormatError },
   /// There's already a scene by this name
   Taken(String),
   Write { name: String, error: io::Error },
@@ -258,7 +251,6 @@ impl fmt::Display for SceneFileError {
         write!(f, "there's no scene \"{name}\" in the content folder")
       }
       Self::Read { name, error } => write!(f, "couldn't read scene \"{name}\": {error}"),
-      Self::Invalid { name, error } => write!(f, "scene \"{name}\" wasn't saved: {error}"),
       Self::Taken(name) => write!(f, "there's already a scene \"{name}\""),
       Self::Write { name, error } => write!(f, "couldn't save scene \"{name}\": {error}"),
       Self::Delete { name, error } => write!(f, "couldn't delete scene \"{name}\": {error}"),
@@ -291,7 +283,7 @@ fn is_image_name(name: &str) -> bool {
 }
 
 fn is_scene_name(name: &str) -> bool {
-  is_inside(name) && extension(name).is_some_and(|extension| extension == SCENE_EXTENSION)
+  is_inside(name) && extension(name).is_some_and(|extension| extension == file::EXTENSION)
 }
 
 /// A path going down from the root with `/` between its parts, and nothing that can lead out of it on any platform. A
@@ -365,7 +357,7 @@ fn gif(bytes: &[u8], limits: Limits) -> ImageResult<Picture> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::{Fill, FillNode, Layer, Viewport};
+  use crate::scene::{Fill, FillNode, Layer};
   use image::codecs::gif::GifEncoder;
   use image::{Delay, Rgba, RgbaImage};
   use std::sync::atomic::{AtomicU32, Ordering};
@@ -418,8 +410,8 @@ mod tests {
     bytes
   }
 
-  fn drawing(name: &str) -> Scene {
-    Scene::new(Viewport::Area, vec![Layer::new(Fill::new(FillNode::image(name)))])
+  fn drawing(name: &str) -> GfxComposition {
+    GfxComposition::new(vec![Layer::new(Fill::new(FillNode::image(name)))])
   }
 
   #[test]
@@ -429,7 +421,7 @@ mod tests {
     folder.write("dmd/modes/Hurry Up.PNG", &png(1, 1));
     folder.write("photos/a.jpg", b"not looked at until it's used");
     folder.write("sounds/hit.mp3", b"");
-    folder.write("attract.ron", b"");
+    folder.write("attract.scene", b"");
 
     assert_eq!(
       Content::new(&folder.0).image_names(),
@@ -463,7 +455,7 @@ mod tests {
 
   #[test]
   fn only_images_can_be_named() {
-    assert!(matches!(Content::new("root").image_path("attract.ron"), Err(ContentError::BadName(_))));
+    assert!(matches!(Content::new("root").image_path("attract.scene"), Err(ContentError::BadName(_))));
     assert!(Content::new("root").image_path("dmd/A.PNG").is_ok());
   }
 
@@ -635,17 +627,17 @@ mod tests {
   #[test]
   fn scenes_are_found_however_the_folder_is_organized() {
     let folder = Folder::new();
-    folder.write("attract.ron", b"");
-    folder.write("dmd/modes/Hurry Up.RON", b"");
+    folder.write("attract.scene", b"");
+    folder.write("dmd/modes/Hurry Up.SCENE", b"");
     folder.write("title.png", &png(1, 1));
 
-    assert_eq!(Content::new(&folder.0).scene_names(), ["attract.ron", "dmd/modes/Hurry Up.RON"]);
+    assert_eq!(Content::new(&folder.0).scene_names(), ["attract.scene", "dmd/modes/Hurry Up.SCENE"]);
   }
 
   #[test]
   fn no_scene_name_leads_out_of_the_folder() {
     let content = Content::new("root");
-    for name in ["../secret.ron", "a/../../secret.ron", "/etc/secret.ron", "C:/secret.ron", "a\\..\\secret.ron", "a.png", ""] {
+    for name in ["../secret.scene", "a/../../secret.scene", "/etc/secret.scene", "C:/secret.scene", "a\\..\\secret.scene", "a.png", ""] {
       assert!(matches!(content.scene_path(name), Err(SceneFileError::BadName(_))), "{name}");
     }
   }
@@ -654,80 +646,68 @@ mod tests {
   fn an_added_scene_can_be_read_back_and_makes_its_folders() {
     let folder = Folder::new();
     let content = Content::new(folder.0.join("not/made/yet"));
-    content.add_scene("led/a.ron", SCENE).unwrap();
-    assert_eq!(content.scene_names(), ["led/a.ron"]);
-    assert_eq!(content.read_scene("led/a.ron").unwrap(), SCENE);
+    content.add_scene("led/a.scene", SCENE).unwrap();
+    assert_eq!(content.scene_names(), ["led/a.scene"]);
+    assert_eq!(content.read_scene("led/a.scene").unwrap(), SCENE);
   }
 
   #[test]
   fn adding_never_replaces_a_scene() {
     let folder = Folder::new();
-    folder.write("a.ron", b"what was there");
+    folder.write("a.scene", b"what was there");
     let content = Content::new(&folder.0);
 
-    assert!(matches!(content.add_scene("a.ron", SCENE), Err(SceneFileError::Taken(_))));
-    assert_eq!(content.read_scene("a.ron").unwrap(), "what was there");
+    assert!(matches!(content.add_scene("a.scene", SCENE), Err(SceneFileError::Taken(_))));
+    assert_eq!(content.read_scene("a.scene").unwrap(), "what was there");
   }
 
   #[test]
   fn saving_replaces_a_scene_and_leaves_nothing_else() {
     let folder = Folder::new();
-    folder.write("a.ron", b"what was there");
+    folder.write("a.scene", b"what was there");
     let content = Content::new(&folder.0);
 
-    content.save_scene("a.ron", SCENE).unwrap();
-    assert_eq!(content.read_scene("a.ron").unwrap(), SCENE);
+    content.save_scene("a.scene", SCENE).unwrap();
+    assert_eq!(content.read_scene("a.scene").unwrap(), SCENE);
     assert_eq!(fs::read_dir(&folder.0).unwrap().count(), 1);
-  }
-
-  #[test]
-  fn a_scene_that_can_not_be_played_is_not_written() {
-    let folder = Folder::new();
-    folder.write("a.ron", b"what was there");
-    let content = Content::new(&folder.0);
-
-    assert!(matches!(content.save_scene("a.ron", "(oops"), Err(SceneFileError::Invalid { .. })));
-    assert!(matches!(content.add_scene("b.ron", "(oops"), Err(SceneFileError::Invalid { .. })));
-    assert_eq!(content.read_scene("a.ron").unwrap(), "what was there");
-    assert_eq!(content.scene_names(), ["a.ron"]);
   }
 
   #[test]
   fn deleting_removes_only_that_scene() {
     let folder = Folder::new();
-    folder.write("led/a.ron", b"");
-    folder.write("led/b.ron", b"");
+    folder.write("led/a.scene", b"");
+    folder.write("led/b.scene", b"");
     let content = Content::new(&folder.0);
 
-    content.delete_scene("led/a.ron").unwrap();
-    assert_eq!(content.scene_names(), ["led/b.ron"]);
+    content.delete_scene("led/a.scene").unwrap();
+    assert_eq!(content.scene_names(), ["led/b.scene"]);
   }
 
   #[test]
   fn deleting_a_missing_scene_says_which() {
     let folder = Folder::new();
-    let error = Content::new(&folder.0).delete_scene("a.ron").unwrap_err();
-    assert_eq!(error.to_string(), "there's no scene \"a.ron\" in the content folder");
+    let error = Content::new(&folder.0).delete_scene("a.scene").unwrap_err();
+    assert_eq!(error.to_string(), "there's no scene \"a.scene\" in the content folder");
   }
 
   #[test]
   fn deleting_stays_in_the_folder() {
     let content = Content::new("root");
-    assert!(matches!(content.delete_scene("../secret.ron"), Err(SceneFileError::BadName(_))));
+    assert!(matches!(content.delete_scene("../secret.scene"), Err(SceneFileError::BadName(_))));
   }
 
   #[test]
   fn a_broken_scene_can_still_be_opened() {
     let folder = Folder::new();
-    folder.write("a.ron", b"(oops");
-    assert_eq!(Content::new(&folder.0).read_scene("a.ron").unwrap(), "(oops");
+    folder.write("a.scene", b"(oops");
+    assert_eq!(Content::new(&folder.0).read_scene("a.scene").unwrap(), "(oops");
   }
 
   #[test]
   fn a_missing_scene_says_which() {
     let folder = Folder::new();
-    let error = Content::new(&folder.0).read_scene("a.ron").unwrap_err();
-    assert_eq!(error.to_string(), "there's no scene \"a.ron\" in the content folder");
+    let error = Content::new(&folder.0).read_scene("a.scene").unwrap_err();
+    assert_eq!(error.to_string(), "there's no scene \"a.scene\" in the content folder");
   }
 
   #[test]

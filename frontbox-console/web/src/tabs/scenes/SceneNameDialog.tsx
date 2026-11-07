@@ -1,5 +1,5 @@
 import { Dialog } from '@ark-ui/solid/dialog'
-import { createEffect, createSignal, on, Show, splitProps } from 'solid-js'
+import { createEffect, createSignal, on, Show, splitProps, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { sceneName } from '../../state/contentScenes'
 
@@ -46,6 +46,7 @@ export default function SceneNameDialog(props: NameProps & { open: boolean; onCl
               <Dialog.CloseTrigger aria-label="Close">×</Dialog.CloseTrigger>
             </header>
             <form onSubmit={submit}>
+              {props.children}
               <input
                 ref={input}
                 type="text"
@@ -91,4 +92,6 @@ type NameProps = {
   /** What the name starts out as */
   name?: string
   onName: (name: string) => Promise<void>
+  /** Anything else to ask, above the name */
+  children?: JSX.Element
 }

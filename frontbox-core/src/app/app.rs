@@ -19,6 +19,7 @@ pub struct App {
   configs: ConfigCollection,
   boot_config: BootConfig,
   routines: HashMap<TypeId, RoutineDefinition>,
+  planes: Vec<AppPlane>,
 }
 
 impl App {
@@ -34,6 +35,7 @@ impl App {
       configs,
       boot_config,
       routines: HashMap::new(),
+      planes: Vec::new(),
     }
   }
 
@@ -58,6 +60,13 @@ impl App {
     self
   }
 
+  /// Add a surface of the machine, which scene files can then name and tracers are told about. Pass the plane, or
+  /// `app_plane!(planes::PLAYFIELD)` so positions on it can be copied as code.
+  pub fn plane(&mut self, plane: impl Into<AppPlane>) -> &mut Self {
+    self.planes.push(plane.into());
+    self
+  }
+
   /// Register a tracer to monitor things
   pub fn tracer(&mut self, tracer: impl AppTracer + 'static) -> &mut Self {
     self.tracers.push(Box::new(tracer));
@@ -70,7 +79,7 @@ impl App {
   }
 
   pub async fn run(mut self) {
-    let app_config = AppConfig::from_boot_config(&self.boot_config);
+    let app_config = AppConfig { planes: std::mem::take(&mut self.planes), ..AppConfig::from_boot_config(&self.boot_config) };
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
 
@@ -89,9 +98,10 @@ impl App {
 
     let (app_state, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
-        let (mut machine, hardware) =
+        let (mut machine, mut hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
 
+        app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
         self
           .tracers
           .iter_mut()
@@ -107,9 +117,10 @@ impl App {
         (state, machine_sender)
       }
       Platform::Virtual => {
-        let (mut machine, hardware) =
+        let (mut machine, mut hardware) =
           vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
 
+        app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
         self
           .tracers
           .iter_mut()

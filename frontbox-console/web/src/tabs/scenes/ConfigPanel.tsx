@@ -17,12 +17,12 @@ import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
 import type { Prop } from '../../types/generated/Prop'
-import type { Scene } from '../../types/generated/Scene'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
 import { ImagePicker } from './ImagePicker'
 import { Dropdown, EyeButton, FieldRow, NumberField, PropField, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
+import { planeNames } from './TargetsPanel'
 import {
   adjustAmount,
   adjustKind,
@@ -52,8 +52,11 @@ import {
   startingValue,
   translateRanges,
   UNIT,
+  targetNames,
+  targetsFor,
   variant,
   withLayerTarget,
+  type Scene,
   withTiming,
   type AdjustKind,
   type Lens,
@@ -229,11 +232,13 @@ function LayerList(props: { open: Signal<Selection | null> }) {
   )
 }
 
+/** A DMD is always an area, so only an LED scene has this to choose */
 function ViewportEditor() {
   const scene = useContext(SceneContext)!
   const viewport = field(scene, 'viewport')
 
   return (
+    <Show when={scene.get().kind === 'Led'}>
     <section class="scene-group">
       <FieldRow label="Type">
         <Dropdown
@@ -246,12 +251,17 @@ function ViewportEditor() {
         />
       </FieldRow>
     </section>
+    </Show>
   )
 }
 
-/** A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to covering all of it, unmasked. */
+/**
+ * A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to
+ * covering all of it, unmasked. Targets go onto a plane for an area, and come off one for a sequence.
+ */
 function onViewport(scene: Scene, viewport: Scene['viewport']): Scene {
-  return { ...scene, viewport, layers: scene.layers.map(({ shape, mask, ...layer }) => layer) }
+  const targets = targetsFor(viewport, scene.targets, planeNames()[0])
+  return { ...scene, viewport, targets, layers: scene.layers.map(({ shape, mask, ...layer }) => layer) }
 }
 
 /**
@@ -323,7 +333,7 @@ function LayerEditor(props: { lens: Lens<Layer>; mask: boolean; onMask: (mask: b
 /** Which of the scene's targets a layer plays on. With one or none, there's no choosing to do. */
 function LayerTargets(props: { lens: Lens<Layer> }) {
   const scene = useContext(SceneContext)!
-  const targets = () => scene.get().targets ?? []
+  const targets = () => targetNames(scene.get())
 
   return (
     <Show when={targets().length > 1}>

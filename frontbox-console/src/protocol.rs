@@ -5,7 +5,10 @@ use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
 use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
-use frontbox_gfx::scene::Scene;
+use frontbox_dmd::DmdScene;
+use frontbox_gfx::scene::file::{self, FormatError};
+use frontbox_gfx::scene::{GfxComposition, Viewport};
+use frontbox_led::LedScene;
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
@@ -106,7 +109,7 @@ pub struct PlaneView {
   pub rotation: [f32; 4],
   pub extent: [f32; 2],
   pub image: Option<String>,
-  /// e.g. `planes::PLAYFIELD`, when added with `console_plane!`
+  /// e.g. `planes::PLAYFIELD`, when added with `app_plane!`
   pub code: Option<String>,
 }
 
@@ -119,7 +122,7 @@ pub struct LedColors {
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
   /// The scene that was rendered
-  pub scene: Scene,
+  pub scene: SceneDefinition,
   /// The same scene as RON
   pub ron: String,
   pub width: usize,
@@ -252,12 +255,61 @@ pub enum SceneSource {
   /// As written in a file
   Ron(String),
   /// As edited field by field
-  Definition(Scene),
+  Definition(SceneDefinition),
   /// Drawn as `shown`, for trying a change out without making it. `scene` is what's given back in both forms.
-  Preview { scene: Scene, shown: Scene },
+  Preview { scene: SceneDefinition, shown: SceneDefinition },
 }
 
-/// How many points to sample a scene at. The scene's viewport decides which of these applies.
+/// A scene file, whichever kind it says it is
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+pub enum SceneDefinition {
+  Led(LedScene),
+  Dmd(DmdScene),
+}
+
+impl SceneDefinition {
+  pub fn load(source: &str) -> Result<Self, FormatError> {
+    let scene: Self = file::load(source)?;
+    file::check_version(scene.version())?;
+    scene.check().map_err(FormatError::Invalid)?;
+    Ok(scene)
+  }
+
+  pub fn save(&self) -> Result<String, FormatError> {
+    file::save(self)
+  }
+
+  /// Checks what a definition's types can't say for themselves
+  pub fn check(&self) -> Result<(), String> {
+    match self {
+      Self::Led(scene) => scene.check().map_err(|err| err.to_string()),
+      Self::Dmd(scene) => scene.check().map_err(|err| err.to_string()),
+    }
+  }
+
+  fn version(&self) -> u32 {
+    match self {
+      Self::Led(scene) => scene.version,
+      Self::Dmd(scene) => scene.version,
+    }
+  }
+
+  pub fn composition(&self) -> &GfxComposition {
+    match self {
+      Self::Led(scene) => &scene.composition,
+      Self::Dmd(scene) => &scene.composition,
+    }
+  }
+
+  pub fn viewport(&self) -> Viewport {
+    match self {
+      Self::Led(scene) => scene.viewport,
+      Self::Dmd(_) => Viewport::Area,
+    }
+  }
+}
+
+/// How many points to sample a scene at. The kind of scene decides which of these applies.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
 pub struct SceneSize {
   /// LEDs in the list, for a `Sequence` viewport
@@ -268,26 +320,10 @@ pub struct SceneSize {
   pub height: usize,
 }
 
-/// The machine's LEDs to play a scene on
+/// What a scene that hasn't said where it plays is previewed on
 #[derive(Clone, serde::Deserialize, TS)]
 pub struct SceneLeds {
-  /// Index into `Snapshot::planes` of the plane an `Area` scene plays on, which gives it its size. Without one it reaches
-  /// no LEDs, and its size is that of the render in `SceneSize`, like a display.
+  /// Index into `Snapshot::planes` of the plane an `Area` scene with no targets is previewed on, which gives it its size.
+  /// Without one it reaches no LEDs, and its size is that of the render in `SceneSize`.
   pub plane: Option<usize>,
-  /// What a scene with no targets plays on
-  pub query: SceneLedQuery,
-  /// What each of a scene's targets plays on, which a scene file doesn't say. One that's left out is on every LED, and
-  /// where they overlap the later of the scene's targets is on top.
-  pub target_queries: BTreeMap<String, SceneLedQuery>,
-}
-
-/// Which LEDs take part
-#[derive(Clone, serde::Deserialize, TS)]
-pub enum SceneLedQuery {
-  Every,
-  /// These LEDs, which a `Sequence` scene spreads over in this order
-  Names(Vec<String>),
-  /// The LEDs with any of these tags, by the names the hardware reports them under. As with `LedQ::Or`, they run a tag at
-  /// a time in this order, each in hardware order, and an LED with several comes at the first of them.
-  Tags(Vec<String>),
 }

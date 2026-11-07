@@ -8,7 +8,8 @@ include = ["src/**", "build.rs", "web/dist/**", "Cargo.toml"]
 log = "0.4.29"
 frontbox-core = { path = "../frontbox-core", features = ["ts"] }
 frontbox-gfx = { path = "../frontbox-gfx", features = ["ts"] }
-frontbox-led = { path = "../frontbox-led" }
+frontbox-dmd = { path = "../frontbox-dmd", features = ["ts"] }
+frontbox-led = { path = "../frontbox-led", features = ["ts"] }
 frontbox-metrics = { path = "../frontbox-metrics", features = ["ts"] }
 frontbox-pinball = { path = "../frontbox-pinball" }
 axum = { version = "0.8.9", features = ["ws"] }

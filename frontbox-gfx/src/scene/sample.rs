@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Images, Params};
+use crate::scene::{Images, Params, Viewport};
 
 /// A point a device wants a color for: a position in scene units and the radius of the area it covers
 ///
@@ -32,4 +32,8 @@ pub struct Frame<'a> {
   pub images: &'a Images,
   /// The size of the device, in its own units. A scene's numbers are in these units. A `Sequence` doesn't use this.
   pub size: Vec2,
+  /// What the device's points are spread over
+  pub viewport: Viewport,
+  /// Draws only the layers playing on this one of the device's targets, or all of them with none
+  pub target: Option<&'a str>,
 }

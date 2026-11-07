@@ -2,7 +2,7 @@ use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
+  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
   SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
@@ -14,9 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 
-use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
-use crate::scene_render::{LedTarget, render_clip, render_scene};
+use crate::scene_render::{LedSurface, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -75,12 +74,12 @@ impl ConsoleHub {
   }
 
   /// Called before any client connects, so nothing is broadcast
-  pub fn set_planes(&self, planes: &[ConsolePlane]) {
+  pub fn set_planes(&self, planes: &[AppPlane]) {
     let mut state = self.state.lock().unwrap();
     state.snapshot.planes = planes
       .iter()
       .enumerate()
-      .map(|(index, ConsolePlane { plane, code })| {
+      .map(|(index, AppPlane { plane, code })| {
         let (origin, rotation) = plane.world_transform();
         PlaneView {
           name: plane.name.to_string(),
@@ -148,7 +147,7 @@ impl ConsoleHub {
     time: f32,
     cycle: Option<u32>,
   ) -> Option<Utf8Bytes> {
-    let target = self.led_target(leds);
+    let target = self.led_surface(leds);
     let content = self.content();
     let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, content, time, cycle)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
@@ -170,7 +169,7 @@ impl ConsoleHub {
     leds: SceneLeds,
     cycle: u32,
   ) -> Option<Message> {
-    let target = self.led_target(leds);
+    let target = self.led_surface(leds);
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
     match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, content, cycle)).await {
@@ -201,7 +200,7 @@ impl ConsoleHub {
     self.state.lock().unwrap().content.clone()
   }
 
-  fn led_target(&self, leds: SceneLeds) -> LedTarget {
+  fn led_surface(&self, leds: SceneLeds) -> LedSurface {
     let state = self.state.lock().unwrap();
     let lookup = state
       .snapshot
@@ -209,18 +208,9 @@ impl ConsoleHub {
       .as_ref()
       .map(|hardware| hardware.leds.clone())
       .unwrap_or_default();
-    let to_query = |query: SceneLedQuery| match query {
-      SceneLedQuery::Every => LedQ::every(),
-      SceneLedQuery::Names(names) => LedQ::names(names),
-      SceneLedQuery::Tags(names) => LedQ::Or(names.iter().map(|name| lookup.tag_named(name)).collect()),
-    };
-    let query = to_query(leds.query);
-    let target_queries = leds.target_queries.into_iter().map(|(name, query)| (name, to_query(query))).collect();
-    LedTarget {
+    LedSurface {
       leds: lookup,
       plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
-      query,
-      target_queries,
       radius: state.led_radius,
     }
   }

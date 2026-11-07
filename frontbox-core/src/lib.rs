@@ -29,6 +29,7 @@ extern crate self as frontbox_core;
 
 pub mod prelude {
   pub use crate::app::*;
+  pub use crate::app_plane;
   pub use crate::duration_ext::*;
   pub use crate::events;
   pub use crate::hardware::*;

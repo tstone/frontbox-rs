@@ -1000,6 +1000,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "frontbox-core",
+ "frontbox-dmd",
  "frontbox-gfx",
  "frontbox-led",
  "frontbox-metrics",
@@ -1065,6 +1066,7 @@ dependencies = [
  "rusb",
  "serde",
  "serde_json",
+ "ts-rs",
 ]
 
 [[package]]
@@ -1093,12 +1095,14 @@ dependencies = [
  "frontbox-core",
  "frontbox-gfx",
  "image",
+ "indexmap 2.14.0",
  "itertools",
  "log",
  "rand 0.10.0",
  "serde",
  "serde_json",
  "tokio",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3569,6 +3573,7 @@ version = "12.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8"
 dependencies = [
+ "indexmap 2.14.0",
  "serde_json",
  "thiserror 2.0.18",
  "ts-rs-macros",

@@ -8,10 +8,10 @@ const [listFailed, setListFailed] = createSignal(false)
 export const contentScenes = names
 export const contentScenesFailed = listFailed
 
-/** A scene's name is its path in the content folder, and the `.ron` needn't be typed */
+/** A scene's name is its path in the content folder, and the `.scene` needn't be typed */
 export function sceneName(typed: string): string {
   const name = typed.trim()
-  return name.toLowerCase().endsWith('.ron') ? name : `${name}.ron`
+  return name.toLowerCase().endsWith('.scene') ? name : `${name}.scene`
 }
 
 function sceneUrl(name: string): string {

@@ -17,24 +17,22 @@ import {
 } from '../../state/sceneRender'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
-import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ConfirmDialog from './ConfirmDialog'
-import LedPicker, { ledsLabel, pickedQuery } from './LedPicker'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
-import { changesEachCycle, cycleCount, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, editedScene, sceneSource, sceneTargets, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
-import TargetsPanel, { loadLedPicks, storeLedPicks } from './TargetsPanel'
+import TargetsPanel from './TargetsPanel'
 import Timeline from './Timeline'
 
-/** How a scene is previewed: played on the machine's LEDs, or on a DMD of its own. A sequence has a strip for that. */
-const VIEWS = ['Machine', 'DMD'] as const
-type View = (typeof VIEWS)[number]
+/** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
+const SEQUENCE_VIEWS = ['Machine', 'Strip'] as const
+type SequenceView = (typeof SEQUENCE_VIEWS)[number]
 
 /** Marks the history entry that the editor is on */
 const EDITING = { editing: true }
@@ -80,9 +78,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const [leds, setLeds] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
-  const [view, setView] = createSignal<View>('Machine')
+  const [sequenceView, setSequenceView] = createSignal<SequenceView>('Machine')
   const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
-  const [ledPicks, setLedPicks] = createSignal(loadLedPicks(props.name))
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
   const revealing = createSignal<Prop<SceneValue> | null>(null)
@@ -111,15 +108,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     return changesEach() && timing && cycle + 1 < cycleCount(timing) ? [cycle, cycle + 1] : [cycle]
   })
 
-  // held until the LEDs change, which is how a clip of them is told from a clip of others
-  const ledQuery = createMemo(() => pickedQuery(ledPicks().only))
-  const targetQueries = createMemo(() =>
-    Object.fromEntries(Object.entries(ledPicks().targets).map(([name, pick]) => [name, pickedQuery(pick)])),
-  )
   // a DMD gives a scene its own size, where a plane would size it in the plane's units
-  const ledTarget = () => ({ plane: view() === 'DMD' ? null : planeIndex(), query: ledQuery(), target_queries: targetQueries() })
-
-  createEffect(() => storeLedPicks(name(), ledPicks()))
+  const ledTarget = () => ({ plane: isDmd() ? null : planeIndex() })
 
   let latest: SceneSource = { Ron: props.source }
   const send = (source: SceneSource) => {
@@ -170,7 +160,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     if (!untrack(playback.playing)) draw(canvas, width, height, new Uint8ClampedArray(colors))
     setDrawn(reply.rendered)
     if (!reply.settled) return
-    if ('Ron' in reply.source) setScene(reply.rendered.scene)
+    if ('Ron' in reply.source) setScene(editedScene(reply.rendered.scene))
     else setRon(reply.rendered.ron)
   })
 
@@ -297,18 +287,33 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     if (scene() === null && error() !== null) setSourceTab('raw')
   })
 
+  const isDmd = () => scene()?.kind === 'Dmd'
   const isSequence = () => scene()?.viewport === 'Sequence'
+
+  /** What's on show comes from the kind of scene: a DMD is on its screen, and LEDs are on the machine */
+  const onMachine = () => !isDmd() && (!isSequence() || sequenceView() === 'Machine')
 
   // a plane with no extent has no size to give a scene
   const planes = () =>
     machine.planes.flatMap((plane, index) => (plane.extent[0] > 0 && plane.extent[1] > 0 ? [{ plane, index }] : []))
-  const planeIndex = () => chosenPlane() ?? planes()[0]?.index ?? null
+
+  /** A scene with targets says where it plays, and the first target's plane is what's shown. Only one with none is up to the editor. */
+  const namedPlane = () => {
+    const shown = scene()
+    const target = shown ? sceneTargets(shown)[0]?.target : undefined
+    return target?.plane
+  }
+  const planeIndex = () => {
+    const named = namedPlane()
+    if (named !== undefined) return planes().find(({ plane }) => plane.name === named)?.index ?? null
+    return chosenPlane() ?? planes()[0]?.index ?? null
+  }
   const plane = () => planes().find(({ index }) => index === planeIndex())?.plane ?? null
 
   /** With no plane to take a size from, the render is its own device, as a DMD is */
   const surface = () => {
     if (isSequence()) return null
-    const onPlane = view() === 'Machine' ? plane()?.extent : undefined
+    const onPlane = onMachine() ? plane()?.extent : undefined
     return onPlane ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)
   }
 
@@ -418,7 +423,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
           <div class="scene-file-view">
             <Show
-              when={view() === 'DMD'}
+              when={!onMachine()}
               fallback={
                 <>
                   <Show when={!isSequence() && planes().length === 0}>
@@ -427,7 +432,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                   <Show when={isSequence() && hasShape(selected())}>
                     <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
                   </Show>
-                  <Show when={!isSequence() && planes().length > 0}>
+                  <Show when={!isSequence() && planes().length > 0 && namedPlane() === undefined}>
                     <Dropdown
                       label="Plane"
                       options={planeOptions()}
@@ -451,23 +456,25 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                 <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
               </Show>
             </Show>
-            <SegmentGroup.Root
-              class="scene-prop-kind scene-view"
-              aria-label="Preview"
-              value={view()}
-              onValueChange={(details) => setView(details.value as View)}
-            >
-              <SegmentGroup.Indicator />
-              <For each={VIEWS}>
-                {(option) => (
-                  <SegmentGroup.Item value={option}>
-                    <SegmentGroup.ItemText>{option === 'DMD' && isSequence() ? 'Strip' : option}</SegmentGroup.ItemText>
-                    <SegmentGroup.ItemControl />
-                    <SegmentGroup.ItemHiddenInput />
-                  </SegmentGroup.Item>
-                )}
-              </For>
-            </SegmentGroup.Root>
+            <Show when={isSequence()}>
+              <SegmentGroup.Root
+                class="scene-prop-kind scene-view"
+                aria-label="Preview"
+                value={sequenceView()}
+                onValueChange={(details) => setSequenceView(details.value as SequenceView)}
+              >
+                <SegmentGroup.Indicator />
+                <For each={SEQUENCE_VIEWS}>
+                  {(option) => (
+                    <SegmentGroup.Item value={option}>
+                      <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+                      <SegmentGroup.ItemControl />
+                      <SegmentGroup.ItemHiddenInput />
+                    </SegmentGroup.Item>
+                  )}
+                </For>
+              </SegmentGroup.Root>
+            </Show>
           </div>
         </header>
         <Splitter.Root
@@ -489,24 +496,16 @@ export default function SceneEditor(props: { name: string; source: string; onClo
             >
               <Splitter.Panel id="source">
                 <div class="scene-source">
-                  <div class="scene-leds">
-                    <Show
-                      when={scene() !== null}
-                      fallback={
-                        <>
-                          <LedPicker pick={ledPicks().only} onChange={(only) => setLedPicks({ ...ledPicks(), only })} />
-                          <span class="scene-note">{ledsLabel(ledQuery())}</span>
-                        </>
-                      }
-                    >
+                  <Show when={scene() !== null && !isDmd()}>
+                    <div class="scene-leds">
                       <div class="scene-editing scene-targets" inert={error() !== null}>
-                        <TargetsPanel picks={ledPicks()} onChange={setLedPicks} />
+                        <TargetsPanel />
                       </div>
-                    </Show>
-                    <Show when={view() === 'Machine' && !isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
-                      <span class="scene-note scene-note-warn">None are on this plane</span>
-                    </Show>
-                  </div>
+                      <Show when={onMachine() && !isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
+                        <span class="scene-note scene-note-warn">None are on this plane</span>
+                      </Show>
+                    </div>
+                  </Show>
                   <Show when={scene() !== null}>
                     {/* an edit here would replace the RON with the last scene that could be read */}
                     <div class="scene-editing" inert={error() !== null}>
@@ -549,7 +548,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
               <Splitter.Panel id="output" class="scene-output">
                 <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
                 {/* both stay up, so the camera and the last render are still there on the way back */}
-                <div class="scene-machine" classList={{ stale: error() !== null }} hidden={view() !== 'Machine'}>
+                <div class="scene-machine" classList={{ stale: error() !== null }} hidden={!onMachine()}>
                   <PlayfieldView
                     ledColor={ledColor}
                     plane={() => (isSequence() ? null : plane())}
@@ -558,7 +557,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                     overlay={(space) => <Show when={!isSequence() && plane()}>{handles(space)}</Show>}
                   />
                 </div>
-                <div class="scene-dmd" classList={{ stale: error() !== null }} hidden={view() !== 'DMD'}>
+                <div class="scene-dmd" classList={{ stale: error() !== null }} hidden={onMachine()}>
                   <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}>
                     <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
                     <Show when={drawn()?.area}>

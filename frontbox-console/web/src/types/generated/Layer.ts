@@ -19,7 +19,8 @@ name?: string,
  */
 hidden?: boolean, 
 /**
- * Which of the scene's targets it plays on. `None` is all of them.
+ * Which of an LED scene's targets it plays on. `None` is all of them. This is the one thing here that's only for LEDs,
+ * and a DMD scene refuses a layer that sets it.
  */
 targets?: Array<string>, fill: Node<FillNode, ColorAdjust>, 
 /**

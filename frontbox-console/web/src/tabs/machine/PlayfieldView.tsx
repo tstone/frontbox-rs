@@ -181,7 +181,7 @@ function relativeTo(plane: PlaneView, position: Position): Position {
 
 /**
  * A position on a plane as code for the machine: `Vec3::new(..).relative_to(&planes::PLAYFIELD)` when the plane was
- * added with `console_plane!` (which knows its path), otherwise just the `Vec3::new(..)`.
+ * added with `app_plane!` (which knows its path), otherwise just the `Vec3::new(..)`.
  */
 function relativeCode(plane: PlaneView, position: Position): string {
   const vec = rustVec3(relativeTo(plane, position))

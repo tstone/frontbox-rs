@@ -1,28 +1,29 @@
-use frontbox_core::prelude::ReferencePlane;
+use crate::location::ReferencePlane;
 use std::sync::LazyLock;
 
-/// A plane for the console to draw. `code` is only set by [`console_plane!`], and lets positions on the plane be
+/// A surface of the machine. Scene files find planes by name among those added to the app, and tracers like the console
+/// are given them when they start. `code` is only set by [`app_plane!`], and lets positions on the plane be
 /// copied as code.
 #[derive(Debug, Clone, Copy)]
-pub struct ConsolePlane {
+pub struct AppPlane {
   pub plane: &'static ReferencePlane,
   /// How the plane is referred to in code, e.g. `planes::PLAYFIELD`
   pub code: Option<&'static str>,
 }
 
-impl From<&'static ReferencePlane> for ConsolePlane {
+impl From<&'static ReferencePlane> for AppPlane {
   fn from(plane: &'static ReferencePlane) -> Self {
     Self { plane, code: None }
   }
 }
 
-impl From<&'static LazyLock<ReferencePlane>> for ConsolePlane {
+impl From<&'static LazyLock<ReferencePlane>> for AppPlane {
   fn from(plane: &'static LazyLock<ReferencePlane>) -> Self {
     Self { plane, code: None }
   }
 }
 
-/// Lets [`console_plane!`] take a plane declared either as a plain `static` or as a `LazyLock`
+/// Lets [`app_plane!`] take a plane declared either as a plain `static` or as a `LazyLock`
 pub trait StaticPlane {
   fn reference_plane(&'static self) -> &'static ReferencePlane;
 }
@@ -39,19 +40,18 @@ impl StaticPlane for LazyLock<ReferencePlane> {
   }
 }
 
-/// A [`ConsolePlane`] that records the plane's path. Taking the path itself makes a typo or rename a compile error
+/// An [`AppPlane`] that records the plane's path. Taking the path itself makes a typo or rename a compile error
 /// rather than wrong copied code.
 ///
 /// ```rust,ignore
-/// WebTracer::new()
-///   .plane(console_plane!(planes::PLAYFIELD))
-///   .plane(console_plane!(planes::CABINET_FRONT))
+/// app.plane(app_plane!(planes::PLAYFIELD));
+/// app.plane(app_plane!(planes::CABINET_FRONT));
 /// ```
 #[macro_export]
-macro_rules! console_plane {
+macro_rules! app_plane {
   ($plane:path) => {
-    $crate::ConsolePlane {
-      plane: $crate::StaticPlane::reference_plane(&$plane),
+    $crate::prelude::AppPlane {
+      plane: $crate::prelude::StaticPlane::reference_plane(&$plane),
       code: Some(stringify!($plane)),
     }
   };
@@ -60,7 +60,7 @@ macro_rules! console_plane {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{Quat, Vec2, Vec3};
+  use crate::prelude::{Quat, Vec2, Vec3};
 
   mod planes {
     use super::*;
@@ -78,19 +78,19 @@ mod tests {
   }
 
   #[test]
-  fn console_plane_records_the_path_for_plain_and_lazy_statics() {
-    let plain = console_plane!(planes::PLAIN);
+  fn app_plane_records_the_path_for_plain_and_lazy_statics() {
+    let plain = crate::app_plane!(planes::PLAIN);
     assert_eq!(plain.code, Some("planes::PLAIN"));
     assert_eq!(plain.plane.name, "Plain");
 
-    let lazy = console_plane!(planes::LAZY);
+    let lazy = crate::app_plane!(planes::LAZY);
     assert_eq!(lazy.code, Some("planes::LAZY"));
     assert_eq!(lazy.plane.name, "Lazy");
   }
 
   #[test]
   fn planes_without_the_macro_have_no_path() {
-    assert_eq!(ConsolePlane::from(&planes::PLAIN).code, None);
-    assert_eq!(ConsolePlane::from(&planes::LAZY).code, None);
+    assert_eq!(AppPlane::from(&planes::PLAIN).code, None);
+    assert_eq!(AppPlane::from(&planes::LAZY).code, None);
   }
 }

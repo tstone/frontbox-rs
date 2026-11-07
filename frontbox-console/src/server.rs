@@ -339,7 +339,7 @@ fn scene_file_failure(err: SceneFileError) -> Response {
     SceneFileError::Read { .. } | SceneFileError::Write { .. } | SceneFileError::Delete { .. } => {
       StatusCode::INTERNAL_SERVER_ERROR
     }
-    SceneFileError::BadName(_) | SceneFileError::Invalid { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+    SceneFileError::BadName(_) => StatusCode::UNPROCESSABLE_ENTITY,
   };
   (status, err.to_string()).into_response()
 }
