@@ -33,9 +33,8 @@ impl VirtualMachine {
           switch
         );
       }
-      MachineMessage::RefreshSwitchState => {
-        todo!()
-      }
+      // switches here only change through the tracer, so there's nothing newer to read
+      MachineMessage::RefreshSwitchState => {}
       _ => {} // watchdog, etc.
     }
   }

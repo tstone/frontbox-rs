@@ -2,8 +2,7 @@
 
 - tests for run_loop (should this get refactored to more than bare functions?)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
-- Cue naming: `ctx.cues.start_cycling` cycles between signal values, not the cue itself, which reads as if the cue
-  loops (the `Cue` parameter already controls that). Find a name that says it alternates values.
+- Cue naming: `ctx.cues.start_cycling` cycles between signal values, not the cue itself, which reads as if the cue loops (the `Cue` parameter already controls that). Find a name that says it alternates values.
 - Should a "hold" (like how BallSave uses them) be a framework feature?
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.
@@ -46,9 +45,11 @@
 
 ## Scenes/Editor
 
+- Remove oklab on gradients and just use RGB
 - Color picker has weird bug where hue isn't selectable if color hasn't first been picked
 - Color picker needs to also show named colors
 - Needs a grid + snap to grid option for everything with points
+- Need to probably move pixel font rendering into gfx (real TTF rendering?)
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
 - Curve preview (static) pop out in timeline
 - New curves for flame/flicker, stutter, glitch
