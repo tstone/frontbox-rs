@@ -1,7 +1,7 @@
 use crate::animation::*;
 
 /// Waits a set amount before starting another animation. While waiting it samples the wrapped animation's starting
-/// value. Useful for staggering animations that run side by side, e.g. in a [`MultiModulator`].
+/// value. Useful for staggering animations that run side by side.
 ///
 /// ```rust
 /// # use std::time::Duration;

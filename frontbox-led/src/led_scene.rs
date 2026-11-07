@@ -73,6 +73,8 @@ pub struct LedScene {
   params: Params,
   images: Images,
   elapsed: Duration,
+  /// How much of the scene plays in a second
+  speed: f32,
   take: u32,
   playing: bool,
   end_behavior: EndBehavior,
@@ -167,6 +169,7 @@ impl LedScene {
       params: Params::new(),
       images: Images::new(),
       elapsed: Duration::ZERO,
+      speed: 1.0,
       take: rand::random(),
       playing: true,
       end_behavior: EndBehavior::Clear,
@@ -199,9 +202,24 @@ impl LedScene {
     self
   }
 
+  /// Plays a cycle of the scene in `duration`, however long it was written to take, for when how long it lasts is only
+  /// known once it's played
+  pub fn over(mut self, duration: Duration) -> Self {
+    if let Some(timing) = self.scene.timing {
+      self.speed = timing.duration / duration.as_secs_f32();
+    }
+    self
+  }
+
   /// Sets a parameter, taking the place of the scene's default
-  pub fn set_param(&mut self, name: impl Into<String>, value: Value) {
-    self.params.insert(name.into(), value);
+  pub fn set_param(&mut self, name: impl Into<String>, value: impl Into<Value>) {
+    self.params.insert(name.into(), value.into());
+  }
+
+  /// [`LedScene::set_param`] for chaining onto a new scene
+  pub fn param(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
+    self.set_param(name, value);
+    self
   }
 
   /// Move time forward and declare the LEDs' colors
@@ -216,7 +234,7 @@ impl LedScene {
       }
       return;
     }
-    self.elapsed += delta;
+    self.elapsed += delta.mul_f32(self.speed);
 
     for part in &mut self.parts {
       let placement = part.targets.place(ctx);
@@ -544,6 +562,25 @@ mod tests {
     assert!(program.is_playing());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  #[test]
+  fn over_stretches_the_scene_to_a_duration() {
+    let (context, _) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).over(Duration::from_secs(20));
+
+    program.apply(Duration::from_secs(19), &context.sys_ctx());
+    assert!(!program.is_complete());
+    program.apply(Duration::from_secs(2), &context.sys_ctx());
+    assert!(program.is_complete());
+  }
+
+  #[test]
+  fn a_param_can_be_chained_on() {
+    let (context, addresses) = three_leds();
+    let program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Prop::Param("color".into())))).param("color", Rgba::red());
+
+    assert_eq!(played(&context, &addresses, program)[0], Some(Rgba::red()));
   }
 
   #[test]

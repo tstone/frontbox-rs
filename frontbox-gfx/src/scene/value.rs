@@ -19,6 +19,24 @@ pub enum Value {
   Color(Color),
 }
 
+impl From<f32> for Value {
+  fn from(value: f32) -> Self {
+    Self::Float(value)
+  }
+}
+
+impl From<Vec2> for Value {
+  fn from(value: Vec2) -> Self {
+    Self::Vec2(value)
+  }
+}
+
+impl From<Rgba<u8>> for Value {
+  fn from(color: Rgba<u8>) -> Self {
+    Self::Color(Color(color))
+  }
+}
+
 /// A color in a definition, written in files as `(r, g, b, a)`
 ///
 /// `Rgba<u8>` belongs to the `image` crate, which has no serde support for it, so definitions hold this instead.

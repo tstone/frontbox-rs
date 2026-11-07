@@ -7,7 +7,7 @@ use crate::{GameEnding, GamePhase, GameStarting, PlayerEntry};
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
   lamp_driver_name: Option<&'static str>,
-  led_program: Option<LedProgram1d>,
+  led_program: Option<LedScene>,
   flash_duration: Duration,
 }
 
@@ -25,7 +25,7 @@ impl GameStartable {
     self
   }
 
-  pub fn effect(mut self, effect: LedProgram1d) -> Self {
+  pub fn effect(mut self, effect: LedScene) -> Self {
     self.led_program = Some(effect);
     self
   }

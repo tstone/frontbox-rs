@@ -22,6 +22,7 @@
 
 ## Pinball features
 
+- Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens
   to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are
   participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a
@@ -47,25 +48,33 @@
 - FAST protocol
 - Update Machine to support motor commands
 
-## LEDs and animation
+## Scenes/Editor
+
+- Needs a grid + snap to grid option for everything with points
+- Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
+- Curve preview (static) pop out in timeline
+- New curves for flame/flicker, stutter, glitch
+- Ability to compose curves in editor
+- Feather/soften edges of layer shape
+- Noise and noise masks
+- Blend modes (needed?)
+- Layer grouping (needed?)
+- Plane stitching for playback
+- SVG import for layer shapes
+- Animations should be able to be specified as relative to the frame rate
+- Proper BPM sync between music+scenes
+
+## LEDs
 
 - LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these
   are true"
-- Because of the way LedProgram1d is "owned" by the system, the system has to hang around to let the effect complete.
-  This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there
-  could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect`
-  could be called it places through, then removes itself independent of the system starting it. This would need to be
-  ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages
-  these and doesn't auto-remove on despawn?).
-- Animations should be able to be specified as relative to the frame rate
+- Because of the way LedScene is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
 - Single channel flasher support
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?
-- Expand named color library
-- Maybe: Declare library colors with FAST and reference by ID
+- Expand named color library // related: Declare library colors with FAST and reference by ID
 - NeoSeg support
 - Alternate resolver doesn't work with animated inputs
 - FirstWins isn't first. Hashmap does not guarantee order
-- Scene editor: Needs a grid/snap to grid
 
 ## Sound
 
