@@ -76,6 +76,11 @@ export function createPlayback(timing: Accessor<Timing | undefined>, ready: Acce
     },
     pause: () => setPlaying(false),
     stop,
+    /** Stays at the same moment of a scene whose times have all been scaled by `by` */
+    rescale: (by: number) => {
+      elapsed *= by
+      setPosition(position() * by)
+    },
     /** Pauses, at a place in a cycle */
     scrub: (seconds: number) => {
       setPlaying(false)

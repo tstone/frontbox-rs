@@ -67,7 +67,7 @@ const SPACE_OPTIONS: { value: ColorSpace; label: string }[] = [
   { value: 'Rgb', label: 'RGB' },
 ]
 const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
-  { value: 'None', label: 'Whole viewport' },
+  { value: 'None', label: 'All' },
   { value: 'Ellipse', label: 'Ellipse' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Polygon', label: 'Polygon' },

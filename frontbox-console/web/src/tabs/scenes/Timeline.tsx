@@ -1,5 +1,5 @@
 import { Popover } from '@ark-ui/solid/popover'
-import { createMemo, createSignal, For, Index, Show, useContext } from 'solid-js'
+import { batch, createMemo, createSignal, For, Index, onCleanup, Show, useContext } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { Curve } from '../../types/generated/Curve'
 import type { Cycle } from '../../types/generated/Cycle'
@@ -10,10 +10,7 @@ import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
 import { Dropdown, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
-import { field, item, removed, repeats, sceneTracks, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
-
-/** Times are kept to this, in seconds, as a key at 0.4183 is only ever an accident of the mouse */
-const TIME_STEP = 0.01
+import { field, item, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -23,6 +20,26 @@ const DRAG_START = 3
 
 /** How far along the view a copy of a key goes from it, given the room */
 const COPY_DISTANCE = 0.05
+
+/** How many milliseconds the pointer rests on the button for the time scale menu to open */
+const SCALE_MENU_OPEN_DELAY = 400
+
+/** How many milliseconds the time scale menu stays open once the pointer has left it */
+const SCALE_MENU_CLOSE_DELAY = 1000
+
+type TimeScale = { label: string; by: number }
+
+const SHORTER: TimeScale[] = [
+  { label: '÷ 4', by: 1 / 4 },
+  { label: '÷ 2', by: 1 / 2 },
+  { label: '÷ 1.5', by: 1 / 1.5 },
+]
+
+const LONGER: TimeScale[] = [
+  { label: '× 1.5', by: 1.5 },
+  { label: '× 2', by: 2 },
+  { label: '× 4', by: 4 },
+]
 
 const CURVES: Extract<Curve, string>[] = [
   'Linear',
@@ -112,7 +129,7 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
           <span class="scene-timeline-time">
             {props.playback.position().toFixed(2)} / {timing()!.duration.toFixed(2)} s
           </span>
-          <TimingFields lens={field(scene, 'timing') as Lens<Timing>} />
+          <TimingFields lens={field(scene, 'timing') as Lens<Timing>} playback={props.playback} />
         </Show>
         <Show when={props.error}>
           <span class="scene-note scene-note-warn">{props.error}</span>
@@ -158,11 +175,19 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
 }
 
 /** The length of a cycle, and how many times it plays */
-function TimingFields(props: { lens: Lens<Timing> }) {
+function TimingFields(props: { lens: Lens<Timing>; playback: Playback }) {
+  const scene = useContext(SceneContext)!
   const cycle = field(props.lens, 'cycle')
   const kind = () => {
     const value = cycle.get()
     return typeof value === 'string' ? value : 'Times'
+  }
+
+  const scale = (by: number) => {
+    batch(() => {
+      scene.set(withTimesScaled(scene.get(), by))
+      props.playback.rescale(by)
+    })
   }
 
   return (
@@ -173,13 +198,17 @@ function TimingFields(props: { lens: Lens<Timing> }) {
           type="number"
           min={TIME_STEP}
           step="0.1"
-          value={props.lens.get().duration}
+          // a scaled length can run on for more digits than this box has room for
+          value={Number(props.lens.get().duration.toFixed(3))}
           onInput={(e) => {
             const duration = e.currentTarget.valueAsNumber
             if (duration > 0) field(props.lens, 'duration').set(duration)
           }}
+          // not on each keystroke, as typing a length passes through shorter ones on the way to it
+          onChange={() => scene.set(withTimesInLength(scene.get()))}
         />
       </label>
+      <TimeScaleMenu duration={props.lens.get().duration} scale={scale} />
       <Dropdown<'Once' | 'Times' | 'Forever'>
         label="Repeat"
         options={[
@@ -206,6 +235,71 @@ function TimingFields(props: { lens: Lens<Timing> }) {
         />
       </Show>
     </>
+  )
+}
+
+/**
+ * A button with a menu for scaling a scene's times, which opens by resting the pointer on it as well as by clicking it.
+ * It leaves the keyboard's focus alone, as it can come and go while the length is being typed in.
+ */
+function TimeScaleMenu(props: { duration: number; scale: (by: number) => void }) {
+  const [open, setOpen] = createSignal(false)
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const stay = () => clearTimeout(timer)
+  const after = (delay: number, next: boolean) => {
+    stay()
+    timer = setTimeout(() => setOpen(next), delay)
+  }
+  const leave = () => after(SCALE_MENU_CLOSE_DELAY, false)
+  onCleanup(stay)
+
+  const option = ({ label, by }: TimeScale) => (
+    <button
+      type="button"
+      disabled={props.duration * by < TIME_STEP}
+      onClick={() => {
+        props.scale(by)
+        stay()
+        setOpen(false)
+      }}
+    >
+      {label}
+    </button>
+  )
+
+  return (
+    <Popover.Root
+      lazyMount
+      unmountOnExit
+      autoFocus={false}
+      restoreFocus={false}
+      positioning={{ placement: 'top' }}
+      open={open()}
+      onOpenChange={(details) => {
+        stay()
+        setOpen(details.open)
+      }}
+    >
+      <Popover.Trigger
+        aria-label="Scale the length and everything on the timeline"
+        onPointerEnter={() => (open() ? stay() : after(SCALE_MENU_OPEN_DELAY, true))}
+        onPointerLeave={() => (open() ? leave() : stay())}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 3h1.25v10H2zM12.75 3H14v10h-1.25zM4.25 8 7 5.25v2h2v-2L11.75 8 9 10.75v-2H7v2z" />
+        </svg>
+      </Popover.Trigger>
+      <Portal>
+        <Popover.Positioner>
+          <Popover.Content class="scene-time-scales" onPointerEnter={stay} onPointerLeave={leave}>
+            <For each={SHORTER}>{option}</For>
+            <span class="scene-time-scales-divider" />
+            <For each={LONGER}>{option}</For>
+          </Popover.Content>
+        </Popover.Positioner>
+      </Portal>
+    </Popover.Root>
   )
 }
 

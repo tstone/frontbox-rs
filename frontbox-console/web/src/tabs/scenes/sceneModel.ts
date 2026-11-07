@@ -35,6 +35,9 @@ export type Range = {
   rest?: number
 }
 
+/** Times are kept to this, in seconds, as a key at 0.4183 is only ever an accident of the mouse */
+export const TIME_STEP = 0.01
+
 /** A range for each axis. A plain number uses the first. */
 export type Ranges = [Range, Range]
 
@@ -293,6 +296,63 @@ export function trackTimes(prop: Prop<SceneValue>) {
   if ('Track' in prop) return prop.Track.keys.map((key) => key.at)
   if ('Sweep' in prop) return [prop.Sweep.start, prop.Sweep.end]
   return 'Random' in prop ? prop.Random.picks.map((pick) => pick.at) : []
+}
+
+/** `scene` with new times for what's on its timeline: the keys and picks of a prop, and the two ends of a sweep */
+function withTimes(
+  scene: Scene,
+  moments: <T extends { at: number }>(list: T[]) => T[],
+  ends: (sweep: Sweep) => [number, number],
+): Scene {
+  let next = scene
+  const tracks = sceneTracks({ get: () => next, set: (edited) => (next = edited) }, null)
+  for (const { prop } of tracks) {
+    const current = prop.get()
+    if ('Track' in current) {
+      prop.set({ Track: { ...current.Track, keys: moments(current.Track.keys) } })
+    } else if ('Random' in current) {
+      prop.set({ Random: { ...current.Random, picks: moments(current.Random.picks) } })
+    } else if ('Sweep' in current) {
+      const [start, end] = ends(current.Sweep)
+      prop.set({ Sweep: { ...current.Sweep, start, end } })
+    }
+  }
+  return next
+}
+
+/** `moments` with the last of them at `length` if any are past it, and those it comes up against kept a step apart */
+function pulledBack<T extends { at: number }>(moments: T[], length: number): T[] {
+  if (moments.every(({ at }) => at <= length)) return moments
+  const pulled = [...moments]
+  let latest = length
+  for (let index = pulled.length - 1; index >= 0; index--) {
+    latest = Math.max(Math.min(pulled[index].at, latest), 0)
+    pulled[index] = { ...pulled[index], at: latest }
+    latest -= TIME_STEP
+  }
+  return pulled
+}
+
+/** `scene` with what's past the end of its timeline brought back to the end */
+export function withTimesInLength(scene: Scene): Scene {
+  const length = scene.timing?.duration
+  if (length === undefined) return scene
+  return withTimes(
+    scene,
+    (moments) => pulledBack(moments, length),
+    ({ start, end }) => (end <= length ? [start, end] : [Math.min(start, Math.max(length - TIME_STEP, 0)), length]),
+  )
+}
+
+/** `scene` with its length and everything on its timeline scaled by `by`. What's past the end stays past a longer one. */
+export function withTimesScaled(scene: Scene, by: number): Scene {
+  const scaled = withTimes(
+    scene,
+    (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })),
+    ({ start, end }) => [start * by, end * by],
+  )
+  const next = { ...scaled, timing: scaled.timing && { ...scaled.timing, duration: scaled.timing.duration * by } }
+  return by < 1 ? withTimesInLength(next) : next
 }
 
 /**

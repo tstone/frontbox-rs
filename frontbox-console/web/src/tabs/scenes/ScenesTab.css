@@ -1097,6 +1097,46 @@
   width: 5rem;
 }
 
+.scene-time-scales {
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-time-scales button {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-time-scales button:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-time-scales button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.scene-time-scales-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
 .scene-timeline .scene-dropdown {
   width: 7rem;
 }
