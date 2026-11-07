@@ -22,13 +22,14 @@ import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ConfirmDialog from './ConfirmDialog'
-import LedPicker, { EVERY_LED, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
+import LedPicker, { ledsLabel, pickedQuery } from './LedPicker'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
 import { changesEachCycle, cycleCount, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
+import TargetsPanel, { loadLedPicks, storeLedPicks } from './TargetsPanel'
 import Timeline from './Timeline'
 
 /** How a scene is previewed: played on the machine's LEDs, or on a DMD of its own. A sequence has a strip for that. */
@@ -81,7 +82,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const [height, setHeight] = createSignal(32)
   const [view, setView] = createSignal<View>('Machine')
   const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
-  const [ledPick, setLedPick] = createSignal<LedPick>(EVERY_LED)
+  const [ledPicks, setLedPicks] = createSignal(loadLedPicks(props.name))
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
   const revealing = createSignal<Prop<SceneValue> | null>(null)
@@ -111,9 +112,14 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   })
 
   // held until the LEDs change, which is how a clip of them is told from a clip of others
-  const ledQuery = createMemo(() => pickedQuery(ledPick()))
+  const ledQuery = createMemo(() => pickedQuery(ledPicks().only))
+  const targetQueries = createMemo(() =>
+    Object.fromEntries(Object.entries(ledPicks().targets).map(([name, pick]) => [name, pickedQuery(pick)])),
+  )
   // a DMD gives a scene its own size, where a plane would size it in the plane's units
-  const ledTarget = () => ({ plane: view() === 'DMD' ? null : planeIndex(), query: ledQuery() })
+  const ledTarget = () => ({ plane: view() === 'DMD' ? null : planeIndex(), query: ledQuery(), target_queries: targetQueries() })
+
+  createEffect(() => storeLedPicks(name(), ledPicks()))
 
   let latest: SceneSource = { Ron: props.source }
   const send = (source: SceneSource) => {
@@ -484,8 +490,19 @@ export default function SceneEditor(props: { name: string; source: string; onClo
               <Splitter.Panel id="source">
                 <div class="scene-source">
                   <div class="scene-leds">
-                    <LedPicker pick={ledPick()} onChange={setLedPick} />
-                    <span class="scene-note">{ledsLabel(ledQuery())}</span>
+                    <Show
+                      when={scene() !== null}
+                      fallback={
+                        <>
+                          <LedPicker pick={ledPicks().only} onChange={(only) => setLedPicks({ ...ledPicks(), only })} />
+                          <span class="scene-note">{ledsLabel(ledQuery())}</span>
+                        </>
+                      }
+                    >
+                      <div class="scene-editing scene-targets" inert={error() !== null}>
+                        <TargetsPanel picks={ledPicks()} onChange={setLedPicks} />
+                      </div>
+                    </Show>
                     <Show when={view() === 'Machine' && !isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
                       <span class="scene-note scene-note-warn">None are on this plane</span>
                     </Show>

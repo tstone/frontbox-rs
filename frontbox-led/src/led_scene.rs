@@ -21,7 +21,7 @@ use crate::*;
 ///   layers: [(fill: (base: Solid(Param("color"))))],
 /// )"#).unwrap();
 ///
-/// let mut program = LedScene::new(LedQ::every(), scene).unwrap();
+/// let mut program = LedScene::new(LedQ::every(), scene);
 /// program.set_param("color", Value::Color(Color(Rgba::red())));
 /// ```
 ///
@@ -42,9 +42,33 @@ use crate::*;
 ///
 /// let program = LedScene::on_plane(&PLAYFIELD, LedQ::every(), scene).unwrap().at_z(2);
 /// ```
+///
+/// A scene with targets plays on several sets of LEDs at once, on the one timeline. Its layers choose between them, and
+/// what each is on is said here, where a scene file can't know:
+///
+/// ```rust
+/// # use frontbox_core::prelude::*;
+/// # use frontbox_led::prelude::*;
+/// # use frontbox_gfx::scene::*;
+/// let scene = file::load(r#"(
+///   version: 12,
+///   viewport: Sequence,
+///   targets: ["ring", "center"],
+///   layers: [
+///     (fill: (base: Solid(Fixed(0, 0, 255, 255)))),
+///     (targets: ["center"], fill: (base: Solid(Fixed(255, 0, 0, 255)))),
+///   ],
+/// )"#).unwrap();
+///
+/// let program = LedScene::unbound(scene)
+///   .on("ring", LedQ::name("ring"))?
+///   .on("center", LedQ::name("center").at_z(1))?;
+/// # Ok::<(), TargetError>(())
+/// ```
 #[derive(Clone)]
 pub struct LedScene {
-  targets: Targets,
+  /// What's playing on which LEDs. They all run on the one clock, so each is only a share of `scene`'s layers.
+  parts: Vec<Part>,
   scene: Scene,
   params: Params,
   images: Images,
@@ -56,27 +80,64 @@ pub struct LedScene {
 }
 
 impl LedScene {
+  /// Plays along a list of LEDs in order, as a `Sequence` whatever viewport the scene was written for. A scene from a
+  /// file may have been written for somewhere else, so use [`LedScene::try_new`] to have that refused. Every layer plays
+  /// on these LEDs, whatever targets it names.
+  pub fn new<T: Contextual<LedIdentifications> + Send + Sync + 'static>(targets: T, mut scene: Scene) -> Self {
+    scene.viewport = Viewport::Sequence;
+    Self::targeting(Targets::Sequence(Box::new(targets)), scene)
+  }
+
+  /// Plays on no LEDs until [`LedScene::on`] or [`LedScene::on_area`] says what the scene's targets are on. A target
+  /// that's never given any is left out.
+  pub fn unbound(scene: Scene) -> Self {
+    Self::with_parts(Vec::new(), scene)
+  }
+
+  /// Puts one of the scene's targets on a list of LEDs, for a scene with a `Sequence` viewport
+  pub fn on<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+    self,
+    target: &str,
+    leds: T,
+  ) -> Result<Self, TargetError> {
+    if self.scene.viewport != Viewport::Sequence {
+      return Err(TargetError::NotASequence);
+    }
+    self.bind(target, Targets::Sequence(Box::new(leds)))
+  }
+
+  /// Puts one of the scene's targets on the LEDs matching `query` on `plane`, as [`LedScene::on_plane`] does, for a scene
+  /// with an `Area` viewport
+  pub fn on_area(self, target: &str, plane: &ReferencePlane, query: LedQ, z_index: i8) -> Result<Self, TargetError> {
+    check_plane(plane, &self.scene).map_err(TargetError::Plane)?;
+    self.bind(target, Targets::Plane { plane: plane.clone(), query, z_index, placement: None })
+  }
+
+  fn bind(mut self, target: &str, targets: Targets) -> Result<Self, TargetError> {
+    if !self.scene.targets.iter().any(|name| name == target) {
+      return Err(TargetError::Unknown(target.to_string()));
+    }
+    self.parts.retain(|part| part.target.as_deref() != Some(target));
+    self.parts.push(Part { target: Some(target.to_string()), targets, scene: self.scene.for_target(target) });
+    Ok(self)
+  }
+
   /// A list of LEDs has no positions to place on an `Area` viewport, so a scene with one is refused
-  pub fn new<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
+  pub fn try_new<T: Contextual<LedIdentifications> + Send + Sync + 'static>(
     targets: T,
     scene: Scene,
   ) -> Result<Self, NotASequence> {
     if scene.viewport != Viewport::Sequence {
       return Err(NotASequence);
     }
-    Ok(Self::targeting(Targets::Sequence(Box::new(targets)), scene))
+    Ok(Self::new(targets, scene))
   }
 
   /// Plays on the LEDs matching `query` that have a location, projected straight onto `plane`. LEDs that land outside
   /// the plane's extent don't take part. A `Sequence` viewport has no area to project onto and a plane with no extent
   /// has no area to play on, so either is refused.
   pub fn on_plane(plane: &ReferencePlane, query: LedQ, scene: Scene) -> Result<Self, PlaneSceneError> {
-    if scene.viewport != Viewport::Area {
-      return Err(PlaneSceneError::NotAnArea);
-    }
-    if plane.extent.min_element() <= 0.0 {
-      return Err(PlaneSceneError::NoExtent);
-    }
+    check_plane(plane, &scene)?;
     let targets = Targets::Plane {
       plane: plane.clone(),
       query,
@@ -96,8 +157,12 @@ impl LedScene {
   }
 
   fn targeting(targets: Targets, scene: Scene) -> Self {
+    Self::with_parts(vec![Part { target: None, targets, scene: scene.clone() }], scene)
+  }
+
+  fn with_parts(parts: Vec<Part>, scene: Scene) -> Self {
     Self {
-      targets,
+      parts,
       scene,
       params: Params::new(),
       images: Images::new(),
@@ -122,17 +187,15 @@ impl LedScene {
     self
   }
 
-  /// The layer to declare the LEDs on
+  /// The layer to declare the LEDs on, for all of them
   pub fn at_z(mut self, z_index: i8) -> Self {
-    self.targets = match self.targets {
-      Targets::Sequence(ids) => Targets::Sequence(Box::new(ids.at_z(z_index))),
-      Targets::Plane { plane, query, .. } => Targets::Plane {
-        plane,
-        query,
-        z_index,
-        placement: None,
-      },
-    };
+    self.parts = self.parts.into_iter().map(|part| part.at_z(z_index)).collect();
+    self
+  }
+
+  /// A scene starts out playing. Use this to chain it to prevent that, and it waits for [`LedScene::play`].
+  pub fn stopped(mut self) -> Self {
+    self.playing = false;
     self
   }
 
@@ -148,19 +211,27 @@ impl LedScene {
     }
     if self.is_complete() && self.end_behavior == EndBehavior::Clear {
       if !self.undeclared {
-        let placement = self.targets.place(ctx);
-        ctx.undeclare_leds(&placement.ids);
+        self.undeclare(ctx);
         self.undeclared = true;
       }
       return;
     }
     self.elapsed += delta;
 
-    let placement = self.targets.place(ctx);
-    ctx.declare_led_colors(&placement.ids, |_| {
-      let frame = Frame { time: self.elapsed.as_secs_f32(), take: self.take, params: &self.params, images: &self.images, size: placement.size };
-      placement.samples.iter().map(|s| self.scene.sample(s, &frame)).collect()
-    });
+    for part in &mut self.parts {
+      let placement = part.targets.place(ctx);
+      ctx.declare_led_colors(&placement.ids, |_| {
+        let frame = Frame { time: self.elapsed.as_secs_f32(), take: self.take, params: &self.params, images: &self.images, size: placement.size };
+        placement.samples.iter().map(|s| part.scene.sample(s, &frame)).collect()
+      });
+    }
+  }
+
+  fn undeclare(&mut self, ctx: &SystemContext) {
+    for part in &mut self.parts {
+      let placement = part.targets.place(ctx);
+      ctx.undeclare_leds(&placement.ids);
+    }
   }
 
   /// Play from where the scene is, restarting it if it has already completed
@@ -174,8 +245,7 @@ impl LedScene {
   /// Stop playing and clear the LEDs
   pub fn stop(&mut self, ctx: &SystemContext) {
     self.playing = false;
-    let placement = self.targets.place(ctx);
-    ctx.undeclare_leds(&placement.ids);
+    self.undeclare(ctx);
   }
 
   /// Back to the start of the scene
@@ -196,7 +266,7 @@ impl LedScene {
   }
 }
 
-/// A scene given to [`LedScene::new`] with a viewport other than `Sequence`
+/// A scene given to [`LedScene::try_new`] with a viewport other than `Sequence`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotASequence;
 
@@ -227,6 +297,29 @@ impl std::fmt::Display for PlaneSceneError {
 }
 
 impl std::error::Error for PlaneSceneError {}
+
+/// Why [`LedScene::on`] or [`LedScene::on_area`] can't put a scene's target on some LEDs
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetError {
+  /// The scene has no target with this name
+  Unknown(String),
+  /// A list of LEDs was given for a scene that isn't a `Sequence`
+  NotASequence,
+  /// A plane was given that the scene can't play on
+  Plane(PlaneSceneError),
+}
+
+impl std::fmt::Display for TargetError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Unknown(target) => write!(f, "the scene has no target named \"{target}\""),
+      Self::NotASequence => write!(f, "{NotASequence}"),
+      Self::Plane(err) => write!(f, "{err}"),
+    }
+  }
+}
+
+impl std::error::Error for TargetError {}
 
 /// The LEDs matching `query` that a scene on `viewport` lands on, each with where it samples the scene. This is what
 /// [`LedScene`] does, for anything that wants to know what it would show without playing it.
@@ -267,6 +360,40 @@ fn place_on_plane<'a>(
       extent.contains(pos).then(|| (led, Sample::new(pos, radius)))
     })
     .collect()
+}
+
+fn check_plane(plane: &ReferencePlane, scene: &Scene) -> Result<(), PlaneSceneError> {
+  if scene.viewport != Viewport::Area {
+    return Err(PlaneSceneError::NotAnArea);
+  }
+  if plane.extent.min_element() <= 0.0 {
+    return Err(PlaneSceneError::NoExtent);
+  }
+  Ok(())
+}
+
+/// The layers playing on some LEDs
+#[derive(Clone)]
+struct Part {
+  /// `None` when the whole scene plays on them
+  target: Option<String>,
+  targets: Targets,
+  scene: Scene,
+}
+
+impl Part {
+  fn at_z(self, z_index: i8) -> Self {
+    let targets = match self.targets {
+      Targets::Sequence(ids) => Targets::Sequence(Box::new(ids.at_z(z_index))),
+      Targets::Plane { plane, query, .. } => Targets::Plane {
+        plane,
+        query,
+        z_index,
+        placement: None,
+      },
+    };
+    Self { targets, ..self }
+  }
 }
 
 /// The LEDs a scene plays on
@@ -360,7 +487,6 @@ mod tests {
     images.insert("art.png", Picture::new(art));
 
     let mut program = LedScene::new(LedQ::names(vec!["led1", "led2", "led3"]), scene(FillNode::image("art.png")))
-      .unwrap()
       .images(images);
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
@@ -378,8 +504,7 @@ mod tests {
         space: ColorSpace::Rgb,
         style: GradientStyle::Linear,
       }),
-    )
-    .unwrap();
+    );
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(
@@ -391,7 +516,34 @@ mod tests {
   #[test]
   fn an_area_scene_is_refused() {
     let area = Scene::new(Viewport::Area, vec![]);
-    assert!(matches!(LedScene::new(LedQ::every(), area), Err(NotASequence)));
+    assert!(matches!(LedScene::try_new(LedQ::every(), area), Err(NotASequence)));
+  }
+
+  #[test]
+  fn new_plays_any_scene_along_the_leds() {
+    let (context, addresses) = three_leds();
+    let program = LedScene::new(LedQ::names(vec!["led1", "led2", "led3"]), area(red_to_blue()));
+
+    assert_eq!(
+      played(&context, &addresses, program),
+      vec![Some(Rgba::red()), Some(Rgba([127, 0, 128, 255])), Some(Rgba::blue())]
+    );
+  }
+
+  #[test]
+  fn a_stopped_scene_waits_for_play() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).stopped();
+    assert!(!program.is_playing());
+
+    program.apply(Duration::from_secs(5), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses)[0], None);
+    assert!(!program.is_complete());
+
+    program.play();
+    assert!(program.is_playing());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
   }
 
   #[test]
@@ -407,8 +559,7 @@ mod tests {
         cycle: Cycle::Once,
       })))
       .timing(Timing::new(1.0, Cycle::Once)),
-    )
-    .unwrap();
+    );
 
     program.apply(Duration::from_millis(500), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba([100, 0, 0, 255])));
@@ -421,7 +572,7 @@ mod tests {
   #[test]
   fn clears_the_leds_after_showing_the_last_moment() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once));
 
     program.apply(Duration::from_millis(500), &context.sys_ctx());
     assert!(!program.is_complete());
@@ -438,12 +589,12 @@ mod tests {
   #[test]
   fn clearing_gives_the_leds_back_for_good() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once));
     program.apply(Duration::from_secs(1), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
 
     // something else takes the LED, and a completed scene mustn't touch it
-    let mut other = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::blue()).into()))).unwrap();
+    let mut other = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::blue()).into())));
     other.apply(Duration::from_millis(16), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::blue()));
@@ -453,7 +604,7 @@ mod tests {
   fn can_hold_its_last_moment() {
     let (context, addresses) = three_leds();
     let mut program =
-      LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap().end_behavior(EndBehavior::Hold);
+      LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).end_behavior(EndBehavior::Hold);
 
     program.apply(Duration::from_secs(1), &context.sys_ctx());
     program.apply(Duration::from_secs(1), &context.sys_ctx());
@@ -467,7 +618,7 @@ mod tests {
     let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
     let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 0, force_unique: true });
     let scene = scene(FillNode::Solid(color)).timing(Timing::new(1.0, Cycle::Once));
-    let mut program = LedScene::new(LedQ::name("led1"), scene).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), scene);
 
     let mut shots = vec![];
     for _ in 0..8 {
@@ -481,7 +632,7 @@ mod tests {
   #[test]
   fn play_restarts_a_completed_scene() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once));
     program.apply(Duration::from_secs(1), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
 
@@ -494,7 +645,7 @@ mod tests {
   #[test]
   fn play_continues_a_scene_that_was_stopped_partway() {
     let (context, _) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once)).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Once));
     program.apply(Duration::from_millis(600), &context.sys_ctx());
     program.stop(&context.sys_ctx());
 
@@ -506,7 +657,7 @@ mod tests {
   #[test]
   fn a_scene_that_repeats_forever_never_completes() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Forever)).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), timed(Cycle::Forever));
     program.apply(Duration::from_secs(100), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert!(!program.is_complete());
@@ -516,7 +667,7 @@ mod tests {
   #[test]
   fn a_static_scene_never_completes() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into()))).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into())));
     program.apply(Duration::from_secs(100), &context.sys_ctx());
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert!(!program.is_complete());
@@ -526,7 +677,7 @@ mod tests {
   #[test]
   fn stop_clears_the_leds() {
     let (context, addresses) = three_leds();
-    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into()))).unwrap();
+    let mut program = LedScene::new(LedQ::name("led1"), scene(FillNode::Solid(Color(Rgba::red()).into())));
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
@@ -542,8 +693,7 @@ mod tests {
     let mut program = LedScene::new(
       LedQ::name("led1"),
       scene(FillNode::Solid(Prop::Param("color".into()))),
-    )
-    .unwrap();
+    );
     program.set_param("color", Value::Color(Color(Rgba::green())));
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
@@ -737,8 +887,8 @@ mod tests {
   fn each_z_is_its_own_layer() {
     let (context, addresses) = three_leds();
     let solid = |color: Rgba<u8>| scene(FillNode::Solid(Color(color).into()));
-    let mut under = LedScene::new(LedQ::name("led1"), solid(Rgba::red())).unwrap();
-    let mut over = LedScene::new(LedQ::name("led1"), solid(Rgba::blue())).unwrap().at_z(1);
+    let mut under = LedScene::new(LedQ::name("led1"), solid(Rgba::red()));
+    let mut over = LedScene::new(LedQ::name("led1"), solid(Rgba::blue())).at_z(1);
     let layers = || context.sys_ctx().systems.expect::<LedSystem>().declarations_for(&addresses[0]).len();
 
     under.apply(Duration::from_millis(16), &context.sys_ctx());
@@ -747,5 +897,115 @@ mod tests {
 
     over.stop(&context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
+  }
+
+  fn on_two_targets() -> Scene {
+    let solid = |color: Rgba<u8>| Fill::new(FillNode::Solid(Color(color).into()));
+    Scene::new(Viewport::Sequence, vec![
+      Layer::new(solid(Rgba::red())).targets(["left"]),
+      Layer::new(solid(Rgba::blue())).targets(["right"]),
+    ])
+    .targets(["left", "right"])
+    .timing(Timing::new(1.0, Cycle::Once))
+  }
+
+  #[test]
+  fn targets_play_their_own_layers_on_their_own_leds() {
+    let (context, addresses) = three_leds();
+    let program = LedScene::unbound(on_two_targets())
+      .on("left", LedQ::name("led1"))
+      .unwrap()
+      .on("right", LedQ::name("led3"))
+      .unwrap();
+
+    assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red()), None, Some(Rgba::blue())]);
+  }
+
+  #[test]
+  fn targets_run_on_one_clock_and_clear_together() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::unbound(on_two_targets())
+      .on("left", LedQ::name("led1"))
+      .unwrap()
+      .on("right", LedQ::name("led2"))
+      .unwrap();
+
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    assert!(program.is_complete());
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+    assert_eq!(colors(&context, &addresses), vec![None, None, None]);
+  }
+
+  #[test]
+  fn each_target_spreads_over_its_own_leds() {
+    let (context, addresses) = three_leds();
+    let gradient = Layer::new(Fill::new(red_to_blue()));
+    let scene = Scene::new(Viewport::Sequence, vec![gradient]).targets(["a", "b"]);
+    let program = LedScene::unbound(scene)
+      .on("a", LedQ::names(vec!["led1", "led2"]))
+      .unwrap()
+      .on("b", LedQ::name("led3"))
+      .unwrap();
+
+    // on its own, the third LED is the start of its target
+    assert_eq!(
+      played(&context, &addresses, program),
+      vec![Some(Rgba::red()), Some(Rgba::blue()), Some(Rgba::red())]
+    );
+  }
+
+  #[test]
+  fn stop_clears_every_target() {
+    let (context, addresses) = three_leds();
+    let mut program = LedScene::unbound(on_two_targets())
+      .on("left", LedQ::name("led1"))
+      .unwrap()
+      .on("right", LedQ::name("led2").at_z(2))
+      .unwrap();
+    program.apply(Duration::from_millis(16), &context.sys_ctx());
+
+    program.stop(&context.sys_ctx());
+    assert_eq!(colors(&context, &addresses), vec![None, None, None]);
+  }
+
+  #[test]
+  fn a_target_left_unbound_is_left_out() {
+    let (context, addresses) = three_leds();
+    let program = LedScene::unbound(on_two_targets()).on("left", LedQ::name("led1")).unwrap();
+    assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red()), None, None]);
+  }
+
+  #[test]
+  fn binding_a_target_again_moves_it() {
+    let (context, addresses) = three_leds();
+    let program = LedScene::unbound(on_two_targets())
+      .on("left", LedQ::name("led1"))
+      .unwrap()
+      .on("left", LedQ::name("led2"))
+      .unwrap();
+    assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::red()), None]);
+  }
+
+  #[test]
+  fn a_target_the_scene_doesnt_have_is_refused() {
+    let result = LedScene::unbound(on_two_targets()).on("middle", LedQ::every());
+    assert!(matches!(result, Err(TargetError::Unknown(_))));
+  }
+
+  #[test]
+  fn a_target_has_to_suit_the_viewport() {
+    let sequence = LedScene::unbound(on_two_targets()).on_area("left", &plane(), LedQ::every(), 0);
+    assert!(matches!(sequence, Err(TargetError::Plane(PlaneSceneError::NotAnArea))));
+
+    let area = LedScene::unbound(area(red_to_blue()).targets(["a"])).on("a", LedQ::every());
+    assert!(matches!(area, Err(TargetError::NotASequence)));
+  }
+
+  #[test]
+  fn targets_work_on_a_plane_too() {
+    let (context, addresses) = placed_leds(&[at(0.0, 5.0), at(10.0, 5.0)]);
+    let scene = area(red_to_blue()).targets(["a"]);
+    let program = LedScene::unbound(scene).on_area("a", &plane(), LedQ::name("led1"), 0).unwrap();
+    assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::blue())]);
   }
 }

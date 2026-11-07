@@ -8,7 +8,7 @@ import SceneNameDialog, { SceneNameButton } from './SceneNameDialog'
 import './ScenesTab.css'
 
 const STARTING_SCENE = `(
-  version: 11,
+  version: 12,
   viewport: Area,
   layers: [
     (fill: (base: Gradient(stops: [

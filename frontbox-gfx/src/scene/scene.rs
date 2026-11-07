@@ -27,6 +27,11 @@ pub struct Scene {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub timing: Option<Timing>,
+  /// Names for the separate surfaces it plays on at once, which layers choose between. What each one is on comes from
+  /// the device playing the scene, and they all share its timing. With none, it plays on one surface.
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
+  pub targets: Vec<String>,
   /// Drawn bottom to top, alpha over
   #[serde(default)]
   pub layers: Vec<Layer>,
@@ -35,12 +40,24 @@ pub struct Scene {
 impl Scene {
   /// A scene of the current format version
   pub fn new(viewport: Viewport, layers: Vec<Layer>) -> Self {
-    Self { version: file::VERSION, params: Params::new(), viewport, timing: None, layers }
+    Self { version: file::VERSION, params: Params::new(), viewport, timing: None, targets: Vec::new(), layers }
   }
 
   pub fn timing(mut self, timing: Timing) -> Self {
     self.timing = Some(timing);
     self
+  }
+
+  pub fn targets(mut self, targets: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    self.targets = targets.into_iter().map(Into::into).collect();
+    self
+  }
+
+  /// This scene with only the layers that play on `target`
+  pub fn for_target(&self, target: &str) -> Self {
+    let mut scene = self.clone();
+    scene.layers.retain(|layer| layer.plays_on(target));
+    scene
   }
 
   /// Whether every cycle of the scene has played by `time`. A scene that's static or repeats forever never completes.
@@ -82,10 +99,19 @@ impl Scene {
   /// already does it.
   pub fn check(&self) -> Result<(), SceneError> {
     match (self.timing, self.layers.iter().position(Layer::is_animated)) {
-      (Some(timing), _) if !(timing.duration.is_finite() && timing.duration > 0.0) => Err(SceneError::NoDuration),
-      (None, Some(index)) => Err(SceneError::NoTiming { layer: self.layers[index].label(index) }),
-      _ => Ok(()),
+      (Some(timing), _) if !(timing.duration.is_finite() && timing.duration > 0.0) => return Err(SceneError::NoDuration),
+      (None, Some(index)) => return Err(SceneError::NoTiming { layer: self.layers[index].label(index) }),
+      _ => {}
     }
+    if let Some((_, name)) = self.targets.iter().enumerate().find(|(index, name)| self.targets[..*index].contains(name)) {
+      return Err(SceneError::RepeatedTarget { target: name.clone() });
+    }
+    for (index, layer) in self.layers.iter().enumerate() {
+      if let Some(target) = layer.targets.iter().flatten().find(|target| !self.targets.contains(target)) {
+        return Err(SceneError::UnknownTarget { layer: layer.label(index), target: target.clone() });
+      }
+    }
+    Ok(())
   }
 
   /// The names of the images it draws, which can repeat
@@ -167,6 +193,10 @@ pub enum SceneError {
   NoTiming { layer: String },
   /// Its timing has no length
   NoDuration,
+  /// Two of its targets have the same name
+  RepeatedTarget { target: String },
+  /// A layer plays on a target the scene doesn't have
+  UnknownTarget { layer: String, target: String },
 }
 
 impl fmt::Display for SceneError {
@@ -174,6 +204,8 @@ impl fmt::Display for SceneError {
     match self {
       Self::NoTiming { layer } => write!(f, "{layer} changes over time, so the scene needs a timing"),
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
+      Self::RepeatedTarget { target } => write!(f, "there are two targets named \"{target}\""),
+      Self::UnknownTarget { layer, target } => write!(f, "{layer} plays on \"{target}\", which isn't one of the scene's targets"),
     }
   }
 }
@@ -979,5 +1011,36 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(image_fill())]);
     assert!(scene.check().is_ok());
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5)[3], 0);
+  }
+
+  #[test]
+  fn a_target_has_the_layers_that_play_on_it() {
+    let scene = Scene::new(Viewport::Sequence, vec![
+      Layer::new(solid(RED)),
+      Layer::new(solid(BLUE)).targets(["center"]),
+    ])
+    .targets(["ring", "center"]);
+
+    assert_eq!(line(&scene.for_target("ring"), 1)[0], RED);
+    assert_eq!(line(&scene.for_target("center"), 1)[0], BLUE);
+  }
+
+  #[test]
+  fn a_layer_can_play_on_several_targets() {
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).targets(["a", "b"])]).targets(["a", "b", "c"]);
+    let counts: Vec<_> = ["a", "b", "c"].iter().map(|target| scene.for_target(target).layers.len()).collect();
+    assert_eq!(counts, [1, 1, 0]);
+  }
+
+  #[test]
+  fn a_layer_must_name_one_of_the_scenes_targets() {
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).targets(["ring"])]);
+    assert!(matches!(scene.check(), Err(SceneError::UnknownTarget { .. })));
+  }
+
+  #[test]
+  fn targets_have_their_own_names() {
+    let scene = Scene::new(Viewport::Sequence, vec![]).targets(["ring", "ring"]);
+    assert_eq!(scene.check(), Err(SceneError::RepeatedTarget { target: "ring".to_string() }));
   }
 }

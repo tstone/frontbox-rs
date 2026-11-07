@@ -419,6 +419,8 @@ export function PropField<T extends SceneValue>(props: {
   /** For a prop with nothing to take a value from */
   fallback: T
   ranges: Ranges
+  /** For a pair of numbers that isn't a position, such as a scale */
+  notPosition?: boolean
 }) {
   const scene = useScene()
   const [revealing, setRevealing] = useContext(RevealContext)!
@@ -428,8 +430,9 @@ export function PropField<T extends SceneValue>(props: {
   const kind = () => Object.keys(prop())[0] as PropKind
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   const paramName = () => (prop() as { Param: string }).Param
-  // only a position can follow a path
-  const kinds = () => PROP_KINDS.filter((option) => option !== 'Sweep' || (Array.isArray(props.fallback) && props.fallback.length === 2))
+  // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
+  const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2 && !props.notPosition
+  const kinds = () => PROP_KINDS.filter((option) => option !== 'Sweep' || isPosition() || kind() === 'Sweep')
 
   const choose = (next: PropKind) => {
     if (next === kind()) return

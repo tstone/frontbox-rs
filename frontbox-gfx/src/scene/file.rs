@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -402,7 +402,23 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 12, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 12 })), "{result:?}");
+    let result = load("(version: 13, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 13 })), "{result:?}");
+  }
+
+  #[test]
+  fn targets_survive_a_save() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(fill()), Layer::new(fill()).targets(["ring"])]).targets(["ring", "center"]);
+    let read = load(&save(&scene).unwrap()).unwrap();
+    assert_eq!(read.targets, ["ring", "center"]);
+    assert_eq!(read.layers[0].targets, None);
+    assert_eq!(read.layers[1].targets, Some(vec!["ring".to_string()]));
+  }
+
+  #[test]
+  fn a_scene_from_before_targets_has_none() {
+    let scene = load("(version: 11, viewport: Sequence, layers: [(fill: (base: Solid(Fixed(0, 0, 0, 255))))])").unwrap();
+    assert!(scene.targets.is_empty() && scene.layers[0].targets.is_none());
   }
 }

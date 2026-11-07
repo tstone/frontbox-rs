@@ -274,7 +274,11 @@ pub struct SceneLeds {
   /// Index into `Snapshot::planes` of the plane an `Area` scene plays on, which gives it its size. Without one it reaches
   /// no LEDs, and its size is that of the render in `SceneSize`, like a display.
   pub plane: Option<usize>,
+  /// What a scene with no targets plays on
   pub query: SceneLedQuery,
+  /// What each of a scene's targets plays on, which a scene file doesn't say. One that's left out is on every LED, and
+  /// where they overlap the later of the scene's targets is on top.
+  pub target_queries: BTreeMap<String, SceneLedQuery>,
 }
 
 /// Which LEDs take part

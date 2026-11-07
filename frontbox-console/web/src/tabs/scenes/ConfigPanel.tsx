@@ -1,6 +1,11 @@
 import { Accordion } from '@ark-ui/solid/accordion'
+import { Editable } from '@ark-ui/solid/editable'
+import { Menu } from '@ark-ui/solid/menu'
+import { Popover } from '@ark-ui/solid/popover'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { For, Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
+import { Switch as Toggle } from '@ark-ui/solid/switch'
+import { createEffect, createSignal, For, Index, Match, on, Show, Switch, useContext, type Signal } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import { contentImageInfo } from '../../state/contentImages'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
@@ -17,7 +22,7 @@ import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
 import { ImagePicker } from './ImagePicker'
-import { Dropdown, EyeButton, FieldRow, NumberField, PropField, SceneContext, SurfaceContext } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, NumberField, PropField, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
 import {
   adjustAmount,
   adjustKind,
@@ -26,6 +31,8 @@ import {
   both,
   field,
   frameRanges,
+  framesTrack,
+  imageLength,
   item,
   layerLabel,
   moved,
@@ -34,6 +41,7 @@ import {
   orElse,
   radius,
   orEmpty,
+  playsOn,
   pointRanges,
   removed,
   ROTATION,
@@ -45,6 +53,8 @@ import {
   translateRanges,
   UNIT,
   variant,
+  withLayerTarget,
+  withTiming,
   type AdjustKind,
   type Lens,
   type Range,
@@ -66,6 +76,9 @@ const RING_HOLE = 0.75
 const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
 const COLOR_RANGES = both(UNIT)
+
+/** How far in pixels a press on a stop has to move before it's a drag and not a click */
+const DRAG_START = 3
 
 const VIEWPORT_OPTIONS: { value: 'Sequence' | 'Area'; label: string }[] = [
   { value: 'Sequence', label: 'Sequence (1D)' },
@@ -157,6 +170,8 @@ function LayerList(props: { open: Signal<Selection | null> }) {
     })
   }
 
+  const toggle = (index: number) => setOpen((current) => (current?.layer === index ? null : { layer: index, mask: false }))
+
   return (
     <>
       <Accordion.Root
@@ -174,12 +189,15 @@ function LayerList(props: { open: Signal<Selection | null> }) {
           {(layer, index) => (
             <Accordion.Item class="scene-item" value={String(index)}>
               <header>
-                <Accordion.ItemTrigger>
+                <Accordion.ItemTrigger aria-label={layerLabel(layer(), index)}>
                   <Accordion.ItemIndicator>›</Accordion.ItemIndicator>
-                  <span class="scene-item-name" classList={{ 'scene-item-hidden': layer().hidden }} title={layerLabel(layer(), index)}>
-                    {layerLabel(layer(), index)}
-                  </span>
                 </Accordion.ItemTrigger>
+                <LayerName
+                  lens={field(item(layers, index), 'name')}
+                  placeholder={`Layer ${index + 1}`}
+                  hidden={layer().hidden === true}
+                  onClick={() => toggle(index)}
+                />
                 <EyeButton
                   label={layerLabel(layer(), index)}
                   hidden={layer().hidden === true}
@@ -197,7 +215,6 @@ function LayerList(props: { open: Signal<Selection | null> }) {
                 <div class="scene-config">
                   <LayerEditor
                     lens={item(layers, index)}
-                    index={index}
                     mask={open()?.mask === true}
                     onMask={(mask) => setOpen({ layer: index, mask })}
                   />
@@ -237,9 +254,37 @@ function onViewport(scene: Scene, viewport: Scene['viewport']): Scene {
   return { ...scene, viewport, layers: scene.layers.map(({ shape, mask, ...layer }) => layer) }
 }
 
-function LayerEditor(props: { lens: Lens<Layer>; index: number; mask: boolean; onMask: (mask: boolean) => void }) {
-  const name = field(props.lens, 'name')
+/**
+ * A layer's name in its header. A click does what a click on the header does, and a double click edits it. It can't go
+ * in the trigger, as that's a button.
+ */
+function LayerName(props: { lens: Lens<string | undefined>; placeholder: string; hidden: boolean; onClick: () => void }) {
+  // what's being typed, as the name only changes once that's done
+  const [draft, setDraft] = createSignal<string | null>(null)
 
+  return (
+    <Editable.Root
+      class="scene-item-name"
+      classList={{ 'scene-item-hidden': props.hidden }}
+      activationMode="dblclick"
+      placeholder={props.placeholder}
+      value={draft() ?? props.lens.get() ?? ''}
+      onValueChange={(details) => setDraft(details.value)}
+      onValueRevert={() => setDraft(null)}
+      onValueCommit={(details) => {
+        props.lens.set(details.value.trim() || undefined)
+        setDraft(null)
+      }}
+    >
+      <Editable.Area>
+        <Editable.Input aria-label="Layer name" spellcheck={false} />
+        <Editable.Preview title={props.lens.get() ?? props.placeholder} onClick={props.onClick} />
+      </Editable.Area>
+    </Editable.Root>
+  )
+}
+
+function LayerEditor(props: { lens: Lens<Layer>; mask: boolean; onMask: (mask: boolean) => void }) {
   return (
     <>
       <SegmentGroup.Root
@@ -263,21 +308,7 @@ function LayerEditor(props: { lens: Lens<Layer>; index: number; mask: boolean; o
         when={props.mask}
         fallback={
           <>
-            <section class="scene-group">
-              <FieldRow label="Name">
-                <input
-                  class="scene-layer-name"
-                  aria-label="Layer name"
-                  placeholder={`Layer ${props.index + 1}`}
-                  spellcheck={false}
-                  value={name.get() ?? ''}
-                  onChange={(e) => {
-                    name.set(e.currentTarget.value.trim() || undefined)
-                    e.currentTarget.value = name.get() ?? ''
-                  }}
-                />
-              </FieldRow>
-            </section>
+            <LayerTargets lens={props.lens} />
             <ShapeEditor lens={field(props.lens, 'shape')} />
             <FillEditor lens={field(props.lens, 'fill')} />
           </>
@@ -286,6 +317,38 @@ function LayerEditor(props: { lens: Lens<Layer>; index: number; mask: boolean; o
         <MaskEditor lens={field(props.lens, 'mask')} />
       </Show>
     </>
+  )
+}
+
+/** Which of the scene's targets a layer plays on. With one or none, there's no choosing to do. */
+function LayerTargets(props: { lens: Lens<Layer> }) {
+  const scene = useContext(SceneContext)!
+  const targets = () => scene.get().targets ?? []
+
+  return (
+    <Show when={targets().length > 1}>
+      <section class="scene-group">
+        <FieldRow label="Plays on">
+          <div class="scene-layer-targets">
+            <For each={targets()}>
+              {(target) => (
+                <Toggle.Root
+                  class="scene-switch"
+                  checked={playsOn(props.lens.get(), target)}
+                  onCheckedChange={(details) => props.lens.set(withLayerTarget(props.lens.get(), targets(), target, details.checked))}
+                >
+                  <Toggle.Control>
+                    <Toggle.Thumb />
+                  </Toggle.Control>
+                  <Toggle.Label>{target}</Toggle.Label>
+                  <Toggle.HiddenInput />
+                </Toggle.Root>
+              )}
+            </For>
+          </div>
+        </FieldRow>
+      </section>
+    </Show>
   )
 }
 
@@ -363,16 +426,33 @@ function FillEditor(props: { lens: Lens<Fill> }) {
 }
 
 function ImageEditor(props: { lens: Lens<ImageFill> }) {
+  const scene = useContext(SceneContext)!
   const name = () => props.lens.get().name
   const info = () => contentImageInfo(name())
   const frame = () => props.lens.get().frame
+
+  // whether a chosen image is animated is only known once the machine has decoded it
+  let choosing: string | null = null
 
   // a frame's number means nothing in another image, but where a track or a param leads is still wanted
   const choose = (next: string) => {
     if (next === name()) return
     const current = frame()
+    choosing = next
     props.lens.set(current && !('Fixed' in current) ? { name: next, frame: current } : { name: next })
   }
+
+  // an animated image plays from the start, unless it's been given something else to do
+  createEffect(
+    on(info, (known) => {
+      if (!known || name() !== choosing) return
+      choosing = null
+      if (known.frames <= 1 || frame() !== undefined) return
+      const timed = withTiming(scene.get(), imageLength(known))
+      scene.set(timed)
+      field(props.lens, 'frame').set(framesTrack(known, timed.timing!))
+    }),
+  )
 
   // one that's already moving stays in reach, so it can be undone after picking an image that isn't animated
   const hasFrames = () => (info()?.frames ?? 1) > 1 || (frame() !== undefined && !('Fixed' in frame()!))
@@ -410,7 +490,16 @@ function describeImage({ width, height, frames, duration }: ImageInfo) {
 }
 
 function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }> }) {
+  const scene = useContext(SceneContext)!
+  const [revealing] = useContext(RevealContext)!
   const stops = field(props.lens, 'stops')
+  // both by position, which is what a stop keeps as the others move around it
+  const [open, setOpen] = createSignal<number | null>(null)
+  const [dragging, setDragging] = createSignal<number | null>(null)
+  let row!: HTMLDivElement
+  let pressedAt: Vec2 | null = null
+  // the press that a drag was ends in a click, which isn't one
+  let dragged = false
 
   // the format needs stops in order of `at`, so each stays between its neighbors
   const stopRange = (index: number): Range => ({
@@ -436,7 +525,49 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
     // its own copy, as a prop is told from another by which one it is
     const added: Stop = { at: ((before?.at ?? 0) + (after?.at ?? 1)) / 2, color: before ? structuredClone(before.color) : { Fixed: WHITE } }
     stops.set([...list.slice(0, index), added, ...list.slice(index)])
+    setOpen(index)
   }
+
+  const removeStop = (index: number) => {
+    setOpen(null)
+    stops.set(removed(stops.get(), index))
+  }
+
+  const press = (e: PointerEvent & { currentTarget: HTMLElement }) => {
+    dragged = false
+    if (e.button !== 0) return
+    pressedAt = [e.clientX, e.clientY]
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const drag = (e: PointerEvent, index: number) => {
+    if (pressedAt === null) return
+    if (dragging() === null) {
+      if (Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < DRAG_START) return
+      dragged = true
+      setOpen(null)
+      setDragging(index)
+    }
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-stop]')
+    if (!over || !row.contains(over)) return
+    const [from, to] = [dragging()!, Number(over.dataset.stop)]
+    if (to === from) return
+    moveStop(from, to - from)
+    setDragging(to)
+  }
+
+  const release = () => {
+    pressedAt = null
+    setDragging(null)
+  }
+
+  // a stop's fields are in its popup, so finding one from the timeline opens it
+  createEffect(() => {
+    const index = stops.get().findIndex((stop) => stop.color === revealing())
+    if (index < 0) return
+    setOpen(index)
+    row.querySelector(`[data-stop="${index}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  })
 
   return (
     <>
@@ -448,37 +579,70 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
           onChange={field(props.lens, 'space').set}
         />
       </FieldRow>
-      <Index each={stops.get()}>
-        {(_, index) => (
-          <ListItem
-            title={`Stop ${index + 1}`}
-            list={stops}
-            index={index}
-            canRemove={stops.get().length > 1}
-            onMove={(by) => moveStop(index, by)}
-          >
-            <FieldRow label="At">
-              <NumberField
-                label={`Stop ${index + 1} position`}
-                range={stopRange(index)}
-                value={stops.get()[index].at}
-                onChange={field(item(stops, index), 'at').set}
+      <div class="scene-stops" ref={row}>
+        <Index each={stops.get()}>
+          {(stop, index) => (
+            <Popover.Root
+              lazyMount
+              unmountOnExit
+              autoFocus={false}
+              positioning={{ placement: 'bottom-start' }}
+              open={open() === index}
+              onOpenChange={(details) => {
+                if (details.open && dragged) return
+                // another stop's can be opening as this one closes
+                setOpen((current) => (details.open ? index : current === index ? null : current))
+              }}
+            >
+              <Popover.Trigger
+                class="scene-stop"
+                classList={{ dragging: dragging() === index }}
+                data-stop={index}
+                aria-label={`Stop ${index + 1}`}
+                style={{ background: cssColor(startingValue(stop().color, scene.get(), WHITE)) }}
+                onPointerDown={press}
+                onPointerMove={(e) => drag(e, index)}
+                onPointerUp={release}
+                onPointerCancel={release}
               />
-            </FieldRow>
-            <PropField
-              label="Color"
-              paramName="stop_color"
-              fallback={WHITE}
-              ranges={COLOR_RANGES}
-              lens={field(item(stops, index), 'color')}
-            />
-          </ListItem>
-        )}
-      </Index>
-      <AddButton onClick={addStop}>Add stop</AddButton>
+              <Portal>
+                <Popover.Positioner>
+                  <Popover.Content class="scene-config scene-stop-popup">
+                    <FieldRow label="At">
+                      <NumberField
+                        label={`Stop ${index + 1} position`}
+                        range={stopRange(index)}
+                        value={stop().at}
+                        onChange={field(item(stops, index), 'at').set}
+                      />
+                    </FieldRow>
+                    <PropField
+                      label="Color"
+                      paramName="stop_color"
+                      fallback={WHITE}
+                      ranges={COLOR_RANGES}
+                      lens={field(item(stops, index), 'color')}
+                    />
+                    <Show when={stops.get().length > 1}>
+                      <button type="button" class="scene-add" onClick={() => removeStop(index)}>
+                        Remove stop
+                      </button>
+                    </Show>
+                  </Popover.Content>
+                </Popover.Positioner>
+              </Portal>
+            </Popover.Root>
+          )}
+        </Index>
+        <button type="button" class="scene-add" aria-label="Add stop" title="Add stop" onClick={addStop}>
+          +
+        </button>
+      </div>
     </>
   )
 }
+
+const cssColor = ([r, g, b, a]: Color) => `rgb(${r} ${g} ${b} / ${a / 255})`
 
 /** A layer's shape, or with `path` the shape a sweep goes around, which can't be left out */
 export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: Lens<Shape>; path: true }) {
@@ -685,59 +849,69 @@ function TransformList(props: { lens: Lens<Transform[]>; space: TransformSpace }
     <>
       <Index each={props.lens.get()}>
         {(_, index) => (
-          <ListItem title="Transform" list={props.lens} index={index}>
+          <ListItem title="Transform" heading={<TransformPicker lens={item(props.lens, index)} />} list={props.lens} index={index}>
             <TransformEditor lens={item(props.lens, index)} space={props.space} />
           </ListItem>
         )}
       </Index>
-      <AddButton onClick={() => props.lens.set([...props.lens.get(), NEW_TRANSFORMS.Translate])}>Add transform</AddButton>
+      <AddMenu options={TRANSFORM_OPTIONS} onPick={(kind) => props.lens.set([...props.lens.get(), NEW_TRANSFORMS[kind]])}>
+        Add transform
+      </AddMenu>
     </>
+  )
+}
+
+const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
+
+/** Heads a transform, saying which kind it is and changing it */
+function TransformPicker(props: { lens: Lens<Transform> }) {
+  const kind = () => transformKind(props.lens.get())
+  return (
+    <Dropdown
+      label="Kind of transform"
+      options={TRANSFORM_OPTIONS}
+      value={kind()}
+      onChange={(next) => {
+        if (next !== kind()) props.lens.set(NEW_TRANSFORMS[next])
+      }}
+    />
   )
 }
 
 function TransformEditor(props: { lens: Lens<Transform>; space: TransformSpace }) {
   const surface = useContext(SurfaceContext)!
-  const kind = () => Object.keys(props.lens.get())[0] as TransformKind
+  const kind = () => transformKind(props.lens.get())
   return (
-    <>
-      <Dropdown
-        label="Kind of transform"
-        options={TRANSFORM_OPTIONS}
-        value={kind()}
-        onChange={(next) => {
-          if (next !== kind()) props.lens.set(NEW_TRANSFORMS[next])
-        }}
-      />
-      <Switch>
-        <Match when={kind() === 'Translate'}>
-          <PropField
-            label="Offset"
-            paramName="offset"
-            fallback={[0, 0] as Vec2}
-            ranges={translateRanges(surface(), props.space)}
-            lens={variant(props.lens, 'Translate')}
-          />
-        </Match>
-        <Match when={kind() === 'Rotate'}>
-          <PropField
-            label="Degrees"
-            paramName="rotation"
-            fallback={0}
-            ranges={both(ROTATION)}
-            lens={variant(props.lens, 'Rotate')}
-          />
-        </Match>
-        <Match when={kind() === 'Scale'}>
-          <PropField
-            label="Scale"
-            paramName="scale"
-            fallback={[1, 1] as Vec2}
-            ranges={scaleRanges()}
-            lens={variant(props.lens, 'Scale')}
-          />
-        </Match>
-      </Switch>
-    </>
+    <Switch>
+      <Match when={kind() === 'Translate'}>
+        <PropField
+          label="Offset"
+          paramName="offset"
+          fallback={[0, 0] as Vec2}
+          ranges={translateRanges(surface(), props.space)}
+          lens={variant(props.lens, 'Translate')}
+        />
+      </Match>
+      <Match when={kind() === 'Rotate'}>
+        <PropField
+          label="Degrees"
+          paramName="rotation"
+          fallback={0}
+          ranges={both(ROTATION)}
+          lens={variant(props.lens, 'Rotate')}
+        />
+      </Match>
+      <Match when={kind() === 'Scale'}>
+        <PropField
+          label="Scale"
+          paramName="scale"
+          fallback={[1, 1] as Vec2}
+          ranges={scaleRanges()}
+          lens={variant(props.lens, 'Scale')}
+          notPosition
+        />
+      </Match>
+    </Switch>
   )
 }
 
@@ -746,37 +920,43 @@ function AdjustList(props: { lens: Lens<ColorAdjust[]> }) {
     <>
       <Index each={props.lens.get()}>
         {(_, index) => (
-          <ListItem title="Adjust" list={props.lens} index={index}>
+          <ListItem title="Adjust" heading={<AdjustPicker lens={item(props.lens, index)} />} list={props.lens} index={index}>
             <AdjustEditor lens={item(props.lens, index)} />
           </ListItem>
         )}
       </Index>
-      <AddButton onClick={() => props.lens.set([...props.lens.get(), newAdjust('HueShift')])}>Add adjust</AddButton>
+      <AddMenu options={ADJUST_OPTIONS} onPick={(kind) => props.lens.set([...props.lens.get(), newAdjust(kind)])}>
+        Add adjust
+      </AddMenu>
     </>
   )
 }
 
-function AdjustEditor(props: { lens: Lens<ColorAdjust> }) {
+/** Heads an adjust, saying which kind it is and changing it */
+function AdjustPicker(props: { lens: Lens<ColorAdjust> }) {
   const kind = () => adjustKind(props.lens.get())
-  const adjust = () => ADJUSTS[kind()]
   return (
-    <>
-      <Dropdown
-        label="Kind of adjust"
-        options={ADJUST_OPTIONS}
-        value={kind()}
-        onChange={(next) => {
-          if (next !== kind()) props.lens.set(newAdjust(next))
-        }}
-      />
-      <PropField
-        label={adjust().amount}
-        paramName={adjust().paramName}
-        fallback={adjust().range.rest!}
-        ranges={both(adjust().range)}
-        lens={adjustAmount(props.lens)}
-      />
-    </>
+    <Dropdown
+      label="Kind of adjust"
+      options={ADJUST_OPTIONS}
+      value={kind()}
+      onChange={(next) => {
+        if (next !== kind()) props.lens.set(newAdjust(next))
+      }}
+    />
+  )
+}
+
+function AdjustEditor(props: { lens: Lens<ColorAdjust> }) {
+  const adjust = () => ADJUSTS[adjustKind(props.lens.get())]
+  return (
+    <PropField
+      label={adjust().amount}
+      paramName={adjust().paramName}
+      fallback={adjust().range.rest!}
+      ranges={both(adjust().range)}
+      lens={adjustAmount(props.lens)}
+    />
   )
 }
 
@@ -790,12 +970,14 @@ type ItemButtonsProps<T> = {
   onRemove?: () => void
 }
 
-/** A thing in a list, with the buttons for moving and removing it */
-function ListItem<T>(props: ItemButtonsProps<T> & { children: any }) {
+/** A thing in a list, with the buttons for moving and removing it. `heading` stands in for its title on screen. */
+function ListItem<T>(props: ItemButtonsProps<T> & { heading?: any; children: any }) {
   return (
     <div class="scene-item">
       <header>
-        <span>{props.title}</span>
+        <Show when={props.heading} fallback={<span>{props.title}</span>}>
+          {props.heading}
+        </Show>
         <ItemButtons {...props} />
       </header>
       {props.children}
@@ -834,6 +1016,28 @@ function ItemButtons<T>(props: ItemButtonsProps<T>) {
         ×
       </button>
     </>
+  )
+}
+
+/** An add button for a list of several kinds of thing, which asks which kind */
+function AddMenu<T extends string>(props: { options: { value: T; label: string }[]; onPick: (kind: T) => void; children: any }) {
+  return (
+    <Menu.Root positioning={{ sameWidth: true }} onSelect={(details) => props.onPick(details.value as T)}>
+      <Menu.Trigger class="scene-add">{props.children}</Menu.Trigger>
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content class="scene-dropdown-list">
+            <For each={props.options}>
+              {(option) => (
+                <Menu.Item value={option.value}>
+                  <Menu.ItemText>{option.label}</Menu.ItemText>
+                </Menu.Item>
+              )}
+            </For>
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
+    </Menu.Root>
   )
 }
 

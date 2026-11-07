@@ -49,12 +49,8 @@
 
 ## LEDs and animation
 
-- Really should revert name back to "effect" which is so much more natural LedEffect1d, LedEffect2d
-- Should "timeline" be renamed "keyframe"?
 - LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these
   are true"
-- While LedProgram makes things feel normal, it's still a little weird how sometimes things are still manually declared.
-  Feels like there needs to be a unified API.
 - Because of the way LedProgram1d is "owned" by the system, the system has to hang around to let the effect complete.
   This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there
   could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect`
@@ -67,10 +63,9 @@
 - Expand named color library
 - Maybe: Declare library colors with FAST and reference by ID
 - NeoSeg support
-- LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color
-  modifications
 - Alternate resolver doesn't work with animated inputs
 - FirstWins isn't first. Hashmap does not guarantee order
+- Scene editor: Needs a grid/snap to grid
 
 ## Sound
 

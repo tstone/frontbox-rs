@@ -2,6 +2,7 @@ import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Curve } from '../../types/generated/Curve'
+import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
@@ -41,6 +42,8 @@ export type Range = {
 
 /** Times are kept to this, in seconds, as a key at 0.4183 is only ever an accident of the mouse */
 export const TIME_STEP = 0.01
+
+export const snap = (seconds: number) => Math.round(seconds / TIME_STEP) * TIME_STEP
 
 /** A range for each axis. A plain number uses the first. */
 export type Ranges = [Range, Range]
@@ -204,14 +207,68 @@ export function changesEachCycle(scene: Scene) {
   return repeats(scene) && propUses(reading(scene), null).some(({ lens }) => 'Random' in lens.get())
 }
 
-/** Scene with a timing, which it needs before it can have keyframes */
-export function withTiming(scene: Scene): Scene {
-  return scene.timing ? scene : { ...scene, timing: { duration: 1, cycle: 'Forever' } }
+/** Scene with a timing, which it needs before it can have keyframes. A new one is `duration` long and repeats. */
+export function withTiming(scene: Scene, duration = 1): Scene {
+  return scene.timing ? scene : { ...scene, timing: { duration, cycle: 'Forever' } }
+}
+
+/** How long an image takes to play on the timeline, if its file says */
+export const imageLength = ({ duration }: ImageInfo) => snap(duration) || undefined
+
+/**
+ * A track that plays an animated image once at the speed its file says, or as fast as it takes to end with the timeline.
+ * It goes up to the frame count rather than the last frame, as that gives every frame the same time.
+ */
+export function framesTrack(info: ImageInfo, { duration }: Timing): Prop<number> {
+  const end = Math.min(imageLength(info) ?? duration, duration)
+  const keys: Key<number>[] = [
+    { at: 0, value: 0, curve: 'Linear' },
+    { at: end, value: info.frames, curve: 'Linear' },
+  ]
+  return { Track: { keys, cycle: 'Once' } }
 }
 
 /** Scene with a parameter added or changed */
 export function withParam(scene: Scene, name: string, value: SceneValue): Scene {
   return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
+}
+
+/** Scene with one more target. The first time, that's two, as with one there's nothing for layers to choose between. */
+export function withTargetAdded(scene: Scene): Scene {
+  const targets = [...(scene.targets ?? [])]
+  do {
+    let number = targets.length + 1
+    while (targets.includes(`Target ${number}`)) number++
+    targets.push(`Target ${number}`)
+  } while (targets.length < 2)
+  return { ...scene, targets }
+}
+
+/** Scene without a target. With one left there's nothing to choose between, so it goes back to having none. */
+export function withTargetRemoved(scene: Scene, name: string): Scene {
+  const targets = (scene.targets ?? []).filter((target) => target !== name)
+  if (targets.length < 2) {
+    return { ...scene, targets: undefined, layers: scene.layers.map(({ targets: _, ...layer }) => layer) }
+  }
+  const layers = scene.layers.map((layer) =>
+    layer.targets ? { ...layer, targets: layer.targets.filter((target) => target !== name) } : layer,
+  )
+  return { ...scene, targets, layers }
+}
+
+/** Scene with a target renamed, in the layers that play on it too */
+export function withTargetRenamed(scene: Scene, name: string, renamed: string): Scene {
+  const rename = (target: string) => (target === name ? renamed : target)
+  const layers = scene.layers.map((layer) => (layer.targets ? { ...layer, targets: layer.targets.map(rename) } : layer))
+  return { ...scene, targets: (scene.targets ?? []).map(rename), layers }
+}
+
+export const playsOn = (layer: Layer, target: string) => layer.targets?.includes(target) ?? true
+
+/** Layer turned on or off for a target. On all of them it says nothing, so that it stays on any that are added. */
+export function withLayerTarget(layer: Layer, targets: string[], target: string, on: boolean): Layer {
+  const chosen = targets.filter((name) => (name === target ? on : playsOn(layer, name)))
+  return { ...layer, targets: chosen.length === targets.length ? undefined : chosen }
 }
 
 type PropLens = Lens<Prop<SceneValue>>

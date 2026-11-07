@@ -18,6 +18,11 @@ params?: { [key in string]: Value }, viewport: Viewport,
  */
 timing?: Timing, 
 /**
+ * Names for the separate surfaces it plays on at once, which layers choose between. What each one is on comes from
+ * the device playing the scene, and they all share its timing. With none, it plays on one surface.
+ */
+targets?: Array<string>, 
+/**
  * Drawn bottom to top, alpha over
  */
 layers: Array<Layer>, };

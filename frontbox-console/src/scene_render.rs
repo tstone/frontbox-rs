@@ -1,8 +1,9 @@
-use frontbox_core::prelude::{LED, LedLookup, LedQ, ReferencePlane, Rgb, Vec2};
+use frontbox_core::prelude::{LedLookup, LedQ, ReferencePlane, Rgb, Vec2};
+use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
 use frontbox_gfx::scene::{Bounds, Content, Frame, Images, Params, Sample, Scene, ShapePose, Viewport, file};
 use frontbox_led::{led_color, place_leds};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{RenderedArea, RenderedClip, RenderedScene, RenderedShape, SceneSize, SceneSource};
 
@@ -20,7 +21,10 @@ pub(crate) struct LedTarget {
   pub leds: LedLookup,
   /// What an `Area` scene plays on. A `Sequence` scene doesn't use one.
   pub plane: Option<&'static ReferencePlane>,
+  /// What a scene with no targets plays on
   pub query: LedQ,
+  /// What each of a scene's targets plays on. One that isn't here is on every LED.
+  pub target_queries: BTreeMap<String, LedQ>,
   pub radius: f32,
 }
 
@@ -53,7 +57,7 @@ pub(crate) fn render_scene(
   let (colors, covers) = match scene.viewport {
     Viewport::Sequence => {
       let line = Line::new(width);
-      (sample(&shown, line.samples(), &frame), line.covers())
+      (strips(&shown).iter().flat_map(|strip| sample(strip, line.samples(), &frame)).collect(), line.covers())
     }
     Viewport::Area => {
       let grid = Grid::new(width, height, device_size);
@@ -65,7 +69,7 @@ pub(crate) fn render_scene(
   let shapes = rendered_shapes(shown.shape_poses(&frame));
   let mask_outlines = rendered_outlines(shown.mask_outlines(&frame));
   let mask_shapes = rendered_shapes(shown.mask_poses(&frame));
-  let led_colors = led_colors(&shown, &target, &frame);
+  let led_colors = led_colors(&led_parts(&shown, &target), &frame);
   let ron = file::save(&scene).map_err(|err| err.to_string())?;
 
   Ok(RenderedScene { scene, ron, width, height, colors, area, outlines, shapes, mask_outlines, mask_shapes, led_colors })
@@ -92,33 +96,39 @@ pub(crate) fn render_clip(
     Viewport::Sequence => Line::new(width).samples().collect(),
     Viewport::Area => Grid::new(width, height, device_size).samples().collect(),
   };
-  let placed = placed(scene.viewport, &target);
+  let rows = match scene.viewport {
+    Viewport::Sequence => strips(&scene),
+    Viewport::Area => vec![scene.clone()],
+  };
+  let parts = led_parts(&scene, &target);
+  let leds: BTreeSet<_> = parts.iter().flat_map(|part| part.placed.iter().map(|(name, _)| name.clone())).collect();
   // a frame at each end, so that a clip finishes on the scene's last moment
   let frames = ((timing.duration * CLIP_FRAMES_PER_SECOND).ceil() as usize).saturating_add(1);
-  let total = (samples.len() + placed.len()).saturating_mul(frames);
+  let points = samples.len().saturating_mul(rows.len());
+  let total = points.saturating_add(leds.len()).saturating_mul(frames);
   if total > MAX_CLIP_SAMPLES {
     return Err(format!("this clip is {total} points, more than the {MAX_CLIP_SAMPLES} one can sample"));
   }
 
-  let leds = placed.iter().map(|(led, _)| led.name.clone()).collect();
   let images = images(&scene, content)?;
-  let header = RenderedClip { id, frames, width, height, leds };
+  let led_count = leds.len();
+  let header = RenderedClip { id, frames, width, height, leds: leds.into_iter().collect() };
   let header = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
 
-  let mut clip = Vec::with_capacity(4 + header.len() + frames * (samples.len() * 4 + placed.len() * 3));
+  let mut clip = Vec::with_capacity(4 + header.len() + frames * (points * 4 + led_count * 3));
   clip.extend((header.len() as u32).to_le_bytes());
   clip.extend(header);
 
-  let mut led_colors = Vec::with_capacity(frames * placed.len() * 3);
+  let mut led_colors = Vec::with_capacity(frames * led_count * 3);
   let params = Params::new();
   for index in 0..frames {
     let time = scene.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
     let frame = Frame { time, take: 0, params: &params, images: &images, size: device_size };
-    clip.extend(samples.iter().flat_map(|at| scene.sample(at, &frame).0));
-    led_colors.extend(placed.iter().flat_map(|(_, at)| {
-      let Rgb { r, g, b } = led_color(scene.sample(at, &frame));
-      [r, g, b]
-    }));
+    for row in &rows {
+      clip.extend(samples.iter().flat_map(|at| row.sample(at, &frame).0));
+    }
+    // every LED is shown every frame, and in name order, as `leds` has them
+    led_colors.extend(self::led_colors(&parts, &frame).into_values().flat_map(|Rgb { r, g, b }| [r, g, b]));
   }
   clip.extend(led_colors);
   Ok(clip)
@@ -158,7 +168,7 @@ fn images(scene: &Scene, content: Option<Content>) -> Result<Images, String> {
 /// How many points to sample across and down, and the size the device playing the scene would give it
 fn points(scene: &Scene, size: SceneSize, target: &LedTarget) -> Result<(usize, usize, Vec2), String> {
   let (width, height) = match scene.viewport {
-    Viewport::Sequence => (size.leds, 1),
+    Viewport::Sequence => (size.leds, scene.targets.len().max(1)),
     Viewport::Area => (size.width, size.height),
   };
   if width.saturating_mul(height) > MAX_SAMPLES {
@@ -200,23 +210,55 @@ fn sample(scene: &Scene, samples: impl Iterator<Item = Sample>, frame: &Frame) -
   samples.flat_map(|at| scene.sample(&at, frame).0).collect()
 }
 
-/// What each LED shows while the scene plays on it alone
-fn led_colors(scene: &Scene, target: &LedTarget, frame: &Frame) -> BTreeMap<String, Rgb> {
-  placed(scene.viewport, target)
+/// What each row of the strip shows: a target's layers, or with no targets the whole scene
+fn strips(scene: &Scene) -> Vec<Scene> {
+  match scene.targets.as_slice() {
+    [] => vec![scene.clone()],
+    targets => targets.iter().map(|target| scene.for_target(target)).collect(),
+  }
+}
+
+/// The layers playing on some LEDs, each with where it samples them
+struct LedPart {
+  scene: Scene,
+  placed: Vec<(String, Sample)>,
+}
+
+/// What a scene plays on the LEDs, mirroring how `LedScene` splits it up
+fn led_parts(scene: &Scene, target: &LedTarget) -> Vec<LedPart> {
+  let part = |scene: Scene, query: &LedQ| {
+    let placed = place_leds(scene.viewport, &target.leds, target.plane, query, target.radius);
+    let placed = placed.into_iter().map(|(led, at)| (led.name.clone(), at)).collect();
+    LedPart { scene, placed }
+  };
+
+  if scene.targets.is_empty() {
+    return vec![part(scene.clone(), &target.query)];
+  }
+  let every = LedQ::every();
+  scene
+    .targets
     .iter()
-    .map(|(led, at)| (led.name.clone(), led_color(scene.sample(at, frame))))
+    .map(|name| part(scene.for_target(name), target.target_queries.get(name).unwrap_or(&every)))
     .collect()
 }
 
-fn placed(viewport: Viewport, target: &LedTarget) -> Vec<(&LED, Sample)> {
-  let LedTarget { leds, plane, query, radius } = target;
-  place_leds(viewport, leds, *plane, query, *radius)
+/// What each LED shows while the scene plays on them alone. Where parts overlap, the later one is on top.
+fn led_colors(parts: &[LedPart], frame: &Frame) -> BTreeMap<String, Rgb> {
+  let mut shown: BTreeMap<String, Rgba<u8>> = BTreeMap::new();
+  for part in parts {
+    for (name, at) in &part.placed {
+      let color = part.scene.sample(at, frame);
+      shown.entry(name.clone()).and_modify(|below| *below = color.composite_over(*below)).or_insert(color);
+    }
+  }
+  shown.into_iter().map(|(name, color)| (name, led_color(color))).collect()
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LedAddress, Vec3};
+  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LED, LedAddress, Vec3};
   use std::sync::LazyLock;
 
   const RED_TO_BLUE: &str = r#"(
@@ -237,7 +279,7 @@ mod tests {
   }
 
   fn no_leds() -> LedTarget {
-    LedTarget { leds: LedLookup::default(), plane: None, query: LedQ::every(), radius: DEFAULT_LED_RADIUS }
+    LedTarget { leds: LedLookup::default(), plane: None, query: LedQ::every(), target_queries: BTreeMap::new(), radius: DEFAULT_LED_RADIUS }
   }
 
   /// LEDs in hardware order, with these locations
@@ -292,6 +334,58 @@ mod tests {
     assert_eq!(colors.len(), 2);
     assert_eq!(colors["led2"], Rgb::new(255, 0, 0));
     assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
+  }
+
+  /// Red on `ring` and blue on `center`, for a second
+  const TWO_TARGETS: &str = r#"(
+    version: 12,
+    viewport: Sequence,
+    timing: (duration: 1.0),
+    targets: ["ring", "center"],
+    layers: [
+      (targets: ["ring"], fill: (base: Solid(Fixed(255, 0, 0, 255)))),
+      (targets: ["center"], fill: (base: Solid(Fixed(0, 0, 255, 255)))),
+    ],
+  )"#;
+
+  fn two_targets(ring: &[&str], center: &[&str]) -> LedTarget {
+    let target_queries = BTreeMap::from([
+      ("ring".to_string(), LedQ::names(ring.to_vec())),
+      ("center".to_string(), LedQ::names(center.to_vec())),
+    ]);
+    LedTarget { leds: leds(&[None, None, None]), target_queries, ..no_leds() }
+  }
+
+  #[test]
+  fn every_target_plays_on_its_own_leds_at_once() {
+    let colors = colors(TWO_TARGETS, two_targets(&["led0", "led1"], &["led2"]));
+    assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["led1"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["led2"], Rgb::new(0, 0, 255));
+  }
+
+  #[test]
+  fn the_later_target_is_on_top_where_they_overlap() {
+    let colors = colors(TWO_TARGETS, two_targets(&["led0"], &["led0"]));
+    assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
+  }
+
+  #[test]
+  fn each_target_gets_a_row_of_the_strip() {
+    let rendered = render_scene(ron(TWO_TARGETS), SIZE, no_leds(), None, 0.0, None).unwrap();
+    assert_eq!((rendered.width, rendered.height), (3, 2));
+    assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
+    assert_eq!(rendered.colors[12..16], [0, 0, 255, 255]);
+  }
+
+  #[test]
+  fn a_clip_plays_every_target_on_one_timeline() {
+    let clip = render_clip(1, ron(TWO_TARGETS), SIZE, two_targets(&["led0"], &["led2"]), None, 0).unwrap();
+    let header_length = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
+    let header: serde_json::Value = serde_json::from_slice(&clip[4..4 + header_length]).unwrap();
+    assert_eq!(header["leds"], serde_json::json!(["led0", "led2"]));
+    assert_eq!(header["height"], 2);
+    assert_eq!(clip[clip.len() - 6..], [255, 0, 0, 0, 0, 255]);
   }
 
   #[test]

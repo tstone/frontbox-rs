@@ -17,7 +17,11 @@ name?: string,
 /**
  * Left out when the scene is drawn. It's still there to go back to, and still has to be something the scene can play.
  */
-hidden?: boolean, fill: Node<FillNode, ColorAdjust>, 
+hidden?: boolean, 
+/**
+ * Which of the scene's targets it plays on. `None` is all of them.
+ */
+targets?: Array<string>, fill: Node<FillNode, ColorAdjust>, 
 /**
  * `None` covers the whole viewport
  */

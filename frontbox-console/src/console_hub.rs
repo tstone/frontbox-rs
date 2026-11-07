@@ -209,15 +209,18 @@ impl ConsoleHub {
       .as_ref()
       .map(|hardware| hardware.leds.clone())
       .unwrap_or_default();
-    let query = match leds.query {
+    let to_query = |query: SceneLedQuery| match query {
       SceneLedQuery::Every => LedQ::every(),
       SceneLedQuery::Names(names) => LedQ::names(names),
       SceneLedQuery::Tags(names) => LedQ::Or(names.iter().map(|name| lookup.tag_named(name)).collect()),
     };
+    let query = to_query(leds.query);
+    let target_queries = leds.target_queries.into_iter().map(|(name, query)| (name, to_query(query))).collect();
     LedTarget {
       leds: lookup,
       plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
       query,
+      target_queries,
       radius: state.led_radius,
     }
   }

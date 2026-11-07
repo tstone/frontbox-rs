@@ -10,7 +10,7 @@ import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
 import { Dropdown, EyeButton, FieldRow, NumberBox, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, snap, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -64,8 +64,6 @@ const CUSTOM_CURVE = 'Custom'
 
 const TICK_SPACINGS = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]
 const MOST_TICKS = 10
-
-const snap = (seconds: number) => Math.round(seconds / TIME_STEP) * TIME_STEP
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
