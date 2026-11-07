@@ -8,6 +8,7 @@ import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
+import CurvePreview, { CURVES } from './CurvePreview'
 import type { Playback } from './playback'
 import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
 import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, snap, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
@@ -39,24 +40,6 @@ const LONGER: TimeScale[] = [
   { label: '× 1.5', by: 1.5 },
   { label: '× 2', by: 2 },
   { label: '× 4', by: 4 },
-]
-
-const CURVES: Extract<Curve, string>[] = [
-  'Linear',
-  'EaseIn',
-  'EaseOut',
-  'EaseInOut',
-  'ExponentialIn',
-  'ExponentialOut',
-  'ExponentialInOut',
-  'Sinusoid',
-  'BackIn',
-  'BackOut',
-  'BackInOut',
-  'BounceIn',
-  'BounceOut',
-  'BounceInOut',
-  'Random',
 ]
 
 /** Written for the scene file by hand, and not something this list can make */
@@ -132,6 +115,9 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
         <Show when={props.error}>
           <span class="scene-note scene-note-warn">{props.error}</span>
         </Show>
+        <span class="scene-timeline-end">
+          <CurvePreview />
+        </span>
       </header>
       <Show
         when={timing()}

@@ -44,7 +44,6 @@
 
 ## Scenes/Editor
 
-- Needs a grid + snap to grid option for everything with points
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
 - Curve preview (static) pop out in timeline

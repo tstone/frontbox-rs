@@ -758,6 +758,52 @@ label.scene-button:hover {
   overflow-y: scroll;
 }
 
+.scene-curve-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.scene-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.scene-curve svg {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: visible;
+}
+
+.scene-curve-guide {
+  stroke: var(--border);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.scene-curve-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.scene-curve figcaption {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+
 .scene-image {
   display: flex;
   flex-direction: column;
@@ -1442,6 +1488,10 @@ label.scene-button:hover {
   width: 1rem;
   height: 1rem;
   fill: currentColor;
+}
+
+.scene-timeline-end {
+  margin-left: auto;
 }
 
 .scene-timeline > header label {
