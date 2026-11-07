@@ -97,7 +97,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport, target: None };
+        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -273,7 +273,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -303,7 +303,7 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size, viewport: scene.viewport, target: None });
+    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size, viewport: scene.viewport });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -324,7 +324,7 @@ mod tests {
     let (mut images, params) = (Images::new(), Params::new());
     images.insert("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: scene.viewport, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: scene.viewport };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));

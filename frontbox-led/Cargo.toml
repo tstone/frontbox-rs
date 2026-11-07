@@ -8,13 +8,12 @@ fast-protocol = { path = "../fast-protocol" }
 frontbox-core = { path = "../frontbox-core" }
 frontbox-gfx = { path = "../frontbox-gfx" }
 dyn-clone = "1.0.20"
-indexmap = { version = "2.14.0", features = ["serde"] }
 image = "0.25.9"
 itertools = "0.14.0"
 log = "0.4.29"
 rand = "0.10.0"
 serde = { version = "1.0.228", features = ["derive"] }
-ts-rs = { version = "12.0.1", optional = true, features = ["indexmap-impl"] }
+ts-rs = { version = "12.0.1", optional = true }
 
 [dev-dependencies]
 env_logger = "0.11.9"

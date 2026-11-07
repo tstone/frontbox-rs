@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use frontbox_core::prelude::*;
+use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::Line;
-use frontbox_gfx::scene::{Frame, Images, Params, Sample, Value, Viewport};
+use frontbox_gfx::scene::{Frame, GfxComposition, Images, Params, Sample, Value, Viewport};
 
 use crate::*;
 
@@ -16,31 +18,35 @@ use crate::*;
 /// # use frontbox_led::prelude::*;
 /// let scene = LedScene::load(r#"Led(
 ///   version: 1,
-///   viewport: Sequence,
-///   targets: Single(leds: Name("lane")),
-///   composition: (layers: [(fill: (base: Solid(Param("color"))))]),
+///   layers: [(
+///     leds: Name("lane"),
+///     surface: Sequence,
+///     layer: (fill: (base: Solid(Param("color")))),
+///   )],
 /// )"#).unwrap();
 ///
 /// let program = LedPlayback::new(scene).unwrap().param("color", Rgba::red());
 /// ```
 ///
-/// A scene with a single target can be moved to other LEDs, for when which ones is only known in the game:
+/// A scene whose layers are all on the same LEDs can be moved to others, for when which ones is only known in the game:
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
 /// # use frontbox_led::prelude::*;
 /// # let scene = LedScene::load(r#"Led(
 /// #   version: 1,
-/// #   viewport: Sequence,
-/// #   targets: Single(leds: Name("lane")),
-/// #   composition: (layers: [(fill: (base: Solid(Fixed(255, 0, 0, 255))))]),
+/// #   layers: [(
+/// #     leds: Name("lane"),
+/// #     surface: Sequence,
+/// #     layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))),
+/// #   )],
 /// # )"#).unwrap();
 /// let program = LedPlayback::with_leds(scene, LedQ::name("other_lane")).unwrap();
 /// ```
 #[derive(Clone)]
 pub struct LedPlayback {
   scene: LedScene,
-  /// Where each target lands, found the first time it plays as LEDs don't move
+  /// Where each z's layers land, found the first time it plays as LEDs don't move
   placements: Option<Vec<Placement>>,
   params: Params,
   images: Images,
@@ -54,10 +60,10 @@ pub struct LedPlayback {
 }
 
 impl LedPlayback {
-  /// A scene with no targets has nothing to play on, so it's refused
+  /// A scene with a layer that isn't on any LEDs yet is refused
   pub fn new(scene: LedScene) -> Result<Self, PlaybackError> {
-    if matches!(scene.targets, LedTargets::None) {
-      return Err(PlaybackError::NoTargets);
+    if scene.layers.iter().any(|layer| layer.leds.is_none()) {
+      return Err(PlaybackError::NoLeds);
     }
     Ok(Self {
       scene,
@@ -73,13 +79,18 @@ impl LedPlayback {
     })
   }
 
-  /// Plays a scene's single target on other LEDs. Which layer it declares on, and the plane of an `Area`, stay as the
-  /// scene says. A scene with no target to move, or several, is refused.
+  /// Plays a scene on other LEDs. Each layer's z and surface stay as the scene says. That's only for a scene whose layers
+  /// are all on the same LEDs, as there's otherwise no saying which of them to move.
   pub fn with_leds(mut scene: LedScene, leds: LedQ) -> Result<Self, PlaybackError> {
-    match &mut scene.targets {
-      LedTargets::None => return Err(PlaybackError::NoTargets),
-      LedTargets::Multiple(_) => return Err(PlaybackError::MultipleTargets),
-      LedTargets::Single(target) => target.leds = leds,
+    if scene.layers.iter().any(|layer| layer.leds.is_none()) {
+      return Err(PlaybackError::NoLeds);
+    }
+    let first = scene.layers.first().and_then(|layer| layer.leds.as_ref());
+    if scene.layers.iter().any(|layer| layer.leds.as_ref() != first) {
+      return Err(PlaybackError::DifferentLeds);
+    }
+    for layer in &mut scene.layers {
+      layer.leds = Some(leds.clone());
     }
     Self::new(scene)
   }
@@ -106,7 +117,7 @@ impl LedPlayback {
   /// Plays a cycle of the scene in `duration`, however long it was written to take, for when how long it lasts is only
   /// known once it's played
   pub fn over(mut self, duration: Duration) -> Self {
-    if let Some(timing) = self.scene.composition.timing {
+    if let Some(timing) = self.scene.timing {
       self.speed = timing.duration / duration.as_secs_f32();
     }
     self
@@ -137,18 +148,10 @@ impl LedPlayback {
     }
     self.elapsed += delta.mul_f32(self.speed);
 
+    let time = self.elapsed.as_secs_f32();
     let scene = &self.scene;
     for placement in self.placements.get_or_insert_with(|| place(scene, ctx)) {
-      let frame = Frame {
-        time: self.elapsed.as_secs_f32(),
-        take: self.take,
-        params: &self.params,
-        images: &self.images,
-        size: placement.size,
-        viewport: scene.viewport,
-        target: placement.target.as_deref(),
-      };
-      let colors = placement.samples.iter().map(|s| scene.composition.sample(s, &frame));
+      let colors = placement.colors(time, self.take, &self.params, &self.images);
 
       // a transparent declaration could still beat another system's on the same layer, so LEDs the scene isn't reaching
       // right now are given up instead
@@ -196,24 +199,24 @@ impl LedPlayback {
   /// Whether the scene has played through. A scene that's static or repeats forever never completes, and plays until
   /// it's stopped.
   pub fn is_complete(&self) -> bool {
-    self.scene.composition.is_complete(self.elapsed.as_secs_f32())
+    self.scene.timing.is_some_and(|timing| timing.is_complete(self.elapsed.as_secs_f32()))
   }
 }
 
 /// Why a scene can't be played as it was asked to
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackError {
-  /// The scene has no targets, so it isn't on any LEDs
-  NoTargets,
-  /// Code can only change the LEDs of a scene with a single target
-  MultipleTargets,
+  /// A layer of the scene isn't on any LEDs
+  NoLeds,
+  /// Code can only change the LEDs of a scene whose layers are all on the same ones
+  DifferentLeds,
 }
 
 impl fmt::Display for PlaybackError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      Self::NoTargets => write!(f, "the scene has no targets to play on"),
-      Self::MultipleTargets => write!(f, "a scene with several targets can't be moved to other LEDs"),
+      Self::NoLeds => write!(f, "a layer of the scene has no LEDs to play on"),
+      Self::DifferentLeds => write!(f, "a scene with layers on different LEDs can't be moved to other LEDs"),
     }
   }
 }
@@ -257,43 +260,79 @@ fn place_on_plane<'a>(
     .collect()
 }
 
-/// Where each of a scene's targets lands
+/// Where the scene's layers land, with those on one z together, as an LED only has one declaration there
 fn place(scene: &LedScene, ctx: &SystemContext) -> Vec<Placement> {
-  scene.targets.iter().map(|(name, target)| Placement::of(name, target, scene.viewport, ctx)).collect()
+  let composition = scene.composition();
+  let mut placements: Vec<Placement> = Vec::new();
+  for (index, layer) in scene.layers.iter().enumerate() {
+    let found = placements.iter().position(|placement| placement.ids.z_index == layer.z);
+    let at = found.unwrap_or_else(|| {
+      placements.push(Placement::new(layer.z));
+      placements.len() - 1
+    });
+    placements[at].add(composition.only(index), layer, ctx);
+  }
+  placements
 }
 
-/// Which LEDs a target lands on, and each one's sample of it, in the same order
+/// What's declared on one z: every LED its layers land on, and each layer's samples of them
 #[derive(Clone)]
 struct Placement {
-  /// Which of the scene's layers it shows. `None` is all of them.
-  target: Option<String>,
   ids: LedIdentifications,
-  samples: Vec<Sample>,
-  /// The size of what they're on
-  size: Vec2,
+  /// Where each LED is in `ids`
+  spots: HashMap<LedAddress, usize>,
+  parts: Vec<Part>,
 }
 
 impl Placement {
-  fn of(name: Option<&str>, target: &LedTarget, viewport: Viewport, ctx: &SystemContext) -> Self {
-    let plane = target.plane.as_deref().and_then(|plane| {
+  fn new(z: i8) -> Self {
+    Self { ids: LedIdentifications::new(Vec::new(), z), spots: HashMap::new(), parts: Vec::new() }
+  }
+
+  fn add(&mut self, composition: GfxComposition, layer: &LedLayer, ctx: &SystemContext) {
+    let plane = layer.surface.plane().and_then(|plane| {
       let found = ctx.leds.plane(plane);
       if found.is_none() {
         log::error!("LedPlayback: there's no plane \"{plane}\" added to the app");
       }
       found
     });
-    let (leds, samples) = place_leds(viewport, &ctx.leds, plane, &target.leds, ctx.led_radius)
-      .into_iter()
-      .map(|(led, sample)| (led.address.clone(), sample))
-      .unzip();
-
-    Self {
-      target: name.map(str::to_string),
-      ids: LedIdentifications::new(leds, target.z),
-      samples,
-      size: plane.map_or(Vec2::ZERO, |plane| plane.extent),
-    }
+    let viewport = layer.surface.viewport();
+    let placed = layer.leds.as_ref().map_or(Vec::new(), |leds| place_leds(viewport, &ctx.leds, plane, leds, ctx.led_radius));
+    let samples = placed.into_iter().map(|(led, sample)| (self.spot(&led.address), sample)).collect();
+    let size = plane.map_or(Vec2::ZERO, |plane| plane.extent);
+    self.parts.push(Part { composition, viewport, size, samples });
   }
+
+  fn spot(&mut self, led: &LedAddress) -> usize {
+    *self.spots.entry(led.clone()).or_insert_with(|| {
+      self.ids.leds.push(led.clone());
+      self.ids.leds.len() - 1
+    })
+  }
+
+  /// The color of each LED in `ids`, with the layers on it drawn bottom to top
+  fn colors(&self, time: f32, take: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
+    let mut colors = vec![Rgba([0, 0, 0, 0]); self.ids.leds.len()];
+    for part in &self.parts {
+      let frame = Frame { time, take, params, images, size: part.size, viewport: part.viewport };
+      for (spot, sample) in &part.samples {
+        colors[*spot] = part.composition.sample(sample, &frame).composite_over(colors[*spot]);
+      }
+    }
+    colors
+  }
+}
+
+/// One layer on its surface
+#[derive(Clone)]
+struct Part {
+  composition: GfxComposition,
+  viewport: Viewport,
+  /// The size of what it's on
+  size: Vec2,
+  /// Its LEDs, by their spot in the [`Placement`], and where each samples it
+  samples: Vec<(usize, Sample)>,
 }
 
 #[cfg(test)]
@@ -303,7 +342,6 @@ mod tests {
   use frontbox_gfx::animation::{Curve, Cycle};
   use frontbox_gfx::scene::*;
   use frontbox_gfx::prelude::*;
-  use indexmap::IndexMap;
 
   use super::*;
 
@@ -312,26 +350,25 @@ mod tests {
   static OFFSET: LazyLock<ReferencePlane> =
     LazyLock::new(|| ReferencePlane::new("Offset").origin(Vec3::new(100.0, 0.0, 0.0)).extent(Vec2::new(10.0, 10.0)).build());
 
+  /// Every layer of a composition on the same LEDs and surface
+  fn scene_on(leds: LedQ, surface: Surface, composition: GfxComposition) -> LedScene {
+    let GfxComposition { params, timing, layers } = composition;
+    let layers = layers.into_iter().map(|layer| LedLayer { leds: Some(leds.clone()), z: 0, surface: surface.clone(), layer }).collect();
+    LedScene { params, timing, ..LedScene::new(layers) }
+  }
+
   /// Plays along some LEDs
   fn on(leds: LedQ, composition: GfxComposition) -> LedPlayback {
-    let scene = LedScene::new(Viewport::Sequence, LedTargets::Single(LedTarget::new(leds)), composition);
-    LedPlayback::new(scene).unwrap()
+    LedPlayback::new(scene_on(leds, Surface::Sequence, composition)).unwrap()
   }
 
   /// Plays across a plane
   fn across(plane: &str, leds: LedQ, composition: GfxComposition) -> LedPlayback {
-    let target = LedTarget::new(leds).on_plane(plane);
-    LedPlayback::new(LedScene::new(Viewport::Area, LedTargets::Single(target), composition)).unwrap()
+    LedPlayback::new(scene_on(leds, Surface::Area(plane.to_string()), composition)).unwrap()
   }
 
   fn on_plane(leds: LedQ, composition: GfxComposition) -> LedPlayback {
     across("Plane", leds, composition)
-  }
-
-  /// Plays on some named targets
-  fn on_targets(viewport: Viewport, targets: Vec<(&str, LedTarget)>, composition: GfxComposition) -> LedPlayback {
-    let targets = targets.into_iter().map(|(name, target)| (name.to_string(), target)).collect::<IndexMap<_, _>>();
-    LedPlayback::new(LedScene::new(viewport, LedTargets::Multiple(targets), composition)).unwrap()
   }
 
   fn three_leds() -> (TestContext, Vec<LedAddress>) {
@@ -772,7 +809,8 @@ mod tests {
   #[test]
   fn stop_clears_leds_on_their_layer() {
     let (context, addresses) = placed_leds(&[at(2.0, 2.0)]);
-    let mut program = LedPlayback::new(LedScene::new(Viewport::Area, LedTargets::Single(LedTarget::new(LedQ::every()).on_plane("Plane").at_z(3)), red())).unwrap();
+    let layer = LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::red())).at_z(3);
+    let mut program = LedPlayback::new(LedScene::new(vec![layer])).unwrap();
 
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
@@ -786,8 +824,7 @@ mod tests {
     let (context, addresses) = three_leds();
     let solid = |color: Rgba<u8>| scene(FillNode::Solid(Color(color).into()));
     let mut under = on(LedQ::name("led1"), solid(Rgba::red()));
-    let target = LedTarget::new(LedQ::name("led1")).at_z(1);
-    let mut over = LedPlayback::new(LedScene::new(Viewport::Sequence, LedTargets::Single(target), solid(Rgba::blue()))).unwrap();
+    let mut over = LedPlayback::new(LedScene::new(vec![LedLayer::sequence(LedQ::name("led1"), solid_layer(Rgba::blue())).at_z(1)])).unwrap();
     let layers = || context.sys_ctx().systems.expect::<LedSystem>().declarations_for(&addresses[0]).len();
 
     under.apply(Duration::from_millis(16), &context.sys_ctx());
@@ -798,31 +835,36 @@ mod tests {
     assert_eq!(colors(&context, &addresses)[0], Some(Rgba::red()));
   }
 
-  fn on_two_targets() -> GfxComposition {
-    let solid = |color: Rgba<u8>| Fill::new(FillNode::Solid(Color(color).into()));
-    GfxComposition::new(vec![
-      Layer::new(solid(Rgba::red())).targets(["left"]),
-      Layer::new(solid(Rgba::blue())).targets(["right"]),
-    ])
-    .timing(Timing::new(1.0, Cycle::Once))
+  fn solid_layer(color: Rgba<u8>) -> Layer {
+    Layer::new(Fill::new(FillNode::Solid(Color(color).into())))
   }
 
-  fn left_and_right(left: &str, right: &str) -> LedPlayback {
-    let targets = vec![("left", LedTarget::new(LedQ::name(left))), ("right", LedTarget::new(LedQ::name(right)).at_z(2))];
-    on_targets(Viewport::Sequence, targets, on_two_targets())
+  fn see_through(color: Rgba<u8>) -> Layer {
+    solid_layer(Rgba([color[0], color[1], color[2], 128]))
+  }
+
+  fn two_layers(under: &str, over: &str) -> LedPlayback {
+    LedPlayback::new(
+      LedScene::new(vec![
+        LedLayer::sequence(LedQ::name(under), solid_layer(Rgba::red())),
+        LedLayer::sequence(LedQ::name(over), solid_layer(Rgba::blue())).at_z(2),
+      ])
+      .timing(Timing::new(1.0, Cycle::Once)),
+    )
+    .unwrap()
   }
 
   #[test]
-  fn targets_play_their_own_layers_on_their_own_leds() {
+  fn layers_play_on_their_own_leds() {
     let (context, addresses) = three_leds();
-    let program = left_and_right("led1", "led3");
+    let program = two_layers("led1", "led3");
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red()), None, Some(Rgba::blue())]);
   }
 
   #[test]
-  fn targets_run_on_one_clock_and_clear_together() {
+  fn layers_run_on_one_clock_and_clear_together() {
     let (context, addresses) = three_leds();
-    let mut program = left_and_right("led1", "led2");
+    let mut program = two_layers("led1", "led2");
 
     program.apply(Duration::from_secs(1), &context.sys_ctx());
     assert!(program.is_complete());
@@ -831,22 +873,22 @@ mod tests {
   }
 
   #[test]
-  fn each_target_spreads_over_its_own_leds() {
+  fn each_layer_spreads_over_its_own_leds() {
     let (context, addresses) = three_leds();
-    let targets = vec![("a", LedTarget::new(LedQ::names(vec!["led1", "led2"]))), ("b", LedTarget::new(LedQ::name("led3")))];
-    let program = on_targets(Viewport::Sequence, targets, scene(red_to_blue()));
+    let fade = || Layer::new(Fill::new(red_to_blue()));
+    let scene = LedScene::new(vec![LedLayer::sequence(LedQ::names(vec!["led1", "led2"]), fade()), LedLayer::sequence(LedQ::name("led3"), fade())]);
 
-    // on its own, the third LED is the start of its target
+    // on its own, the third LED is the start of its layer
     assert_eq!(
-      played(&context, &addresses, program),
+      played(&context, &addresses, LedPlayback::new(scene).unwrap()),
       vec![Some(Rgba::red()), Some(Rgba::blue()), Some(Rgba::red())]
     );
   }
 
   #[test]
-  fn stop_clears_every_target() {
+  fn stop_clears_every_layer() {
     let (context, addresses) = three_leds();
-    let mut program = left_and_right("led1", "led2");
+    let mut program = two_layers("led1", "led2");
     program.apply(Duration::from_millis(16), &context.sys_ctx());
 
     program.stop(&context.sys_ctx());
@@ -854,35 +896,87 @@ mod tests {
   }
 
   #[test]
-  fn targets_work_on_a_plane_too() {
-    let (context, addresses) = placed_leds(&[at(0.0, 5.0), at(10.0, 5.0)]);
-    let targets = vec![("a", LedTarget::new(LedQ::name("led1")).on_plane("Plane"))];
-    let program = on_targets(Viewport::Area, targets, scene(red_to_blue()));
-    assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::blue())]);
+  fn each_layer_is_measured_against_its_own_plane() {
+    // x = 10 is halfway along Wide, and x = 110 is the far edge of Offset, which starts at x = 100
+    let (context, addresses) = placed_leds(&[at(10.0, 5.0), at(110.0, 5.0)]);
+    let gradient = |leds: &str, plane: &str| LedLayer::area(LedQ::name(leds), plane, Layer::new(Fill::new(red_to_blue())));
+    let scene = LedScene::new(vec![gradient("led0", "Wide"), gradient("led1", "Offset")]);
+
+    let shown = played(&context, &addresses, LedPlayback::new(scene).unwrap());
+    assert_eq!(shown, vec![Some(Rgba([127, 0, 128, 255])), Some(Rgba::blue())]);
   }
 
   #[test]
-  fn with_leds_moves_a_single_target() {
+  fn a_scene_can_mix_a_sequence_with_an_area() {
+    let (context, addresses) = placed_leds(&[at(5.0, 5.0), None]);
+    let scene = LedScene::new(vec![
+      LedLayer::area(LedQ::name("led0"), "Plane", solid_layer(Rgba::red())),
+      LedLayer::sequence(LedQ::name("led1"), solid_layer(Rgba::blue())),
+    ]);
+    assert_eq!(played(&context, &addresses, LedPlayback::new(scene).unwrap()), vec![Some(Rgba::red()), Some(Rgba::blue())]);
+  }
+
+  #[test]
+  fn layers_on_one_z_blend_rather_than_replace_each_other() {
     let (context, addresses) = three_leds();
-    let target = LedTarget::new(LedQ::name("led1")).at_z(3);
-    let scene = LedScene::new(Viewport::Sequence, LedTargets::Single(target), timed(Cycle::Forever));
-    let program = LedPlayback::with_leds(scene, LedQ::name("led2")).unwrap();
-
-    assert_eq!(played(&context, &addresses, program), vec![None, Some(Rgba::red()), None]);
+    let scene = LedScene::new(vec![
+      LedLayer::sequence(LedQ::name("led1"), solid_layer(Rgba::blue())),
+      LedLayer::sequence(LedQ::name("led1"), see_through(Rgba::red())),
+    ]);
+    let shown = played(&context, &addresses, LedPlayback::new(scene).unwrap())[0].unwrap();
+    assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
+    assert_eq!(shown[3], 255);
   }
 
   #[test]
-  fn a_scene_with_no_targets_cant_play() {
-    let scene = LedScene::new(Viewport::Sequence, LedTargets::None, timed(Cycle::Once));
-    assert!(matches!(LedPlayback::new(scene.clone()), Err(PlaybackError::NoTargets)));
-    assert!(matches!(LedPlayback::with_leds(scene, LedQ::every()), Err(PlaybackError::NoTargets)));
+  fn a_layer_that_misses_an_led_leaves_it_to_the_others_on_its_z() {
+    let (context, addresses) = placed_leds(&[at(5.0, 5.0)]);
+    let far_away = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(Vec2::new(50.0, 50.0).into()));
+    let scene = LedScene::new(vec![
+      LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::red())),
+      LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::blue()).shape(far_away)),
+    ]);
+    assert_eq!(played(&context, &addresses, LedPlayback::new(scene).unwrap()), vec![Some(Rgba::red())]);
   }
 
   #[test]
-  fn several_targets_cant_be_moved() {
-    let targets = IndexMap::from([("a".to_string(), LedTarget::new(LedQ::every()))]);
-    let scene = LedScene::new(Viewport::Sequence, LedTargets::Multiple(targets), timed(Cycle::Once));
-    assert!(matches!(LedPlayback::with_leds(scene, LedQ::every()), Err(PlaybackError::MultipleTargets)));
+  fn layers_on_different_zs_are_declared_apart() {
+    let (context, addresses) = three_leds();
+    let scene = LedScene::new(vec![
+      LedLayer::sequence(LedQ::name("led1"), solid_layer(Rgba::red())),
+      LedLayer::sequence(LedQ::name("led1"), solid_layer(Rgba::blue())).at_z(1),
+    ]);
+    played(&context, &addresses, LedPlayback::new(scene).unwrap());
+    assert_eq!(context.sys_ctx().systems.expect::<LedSystem>().declarations_for(&addresses[0]).len(), 2);
+  }
+
+  fn stacked(leds: LedQ) -> LedScene {
+    LedScene::new(vec![LedLayer::sequence(leds.clone(), solid_layer(Rgba::red())), LedLayer::sequence(leds, see_through(Rgba::red())).at_z(3)])
+  }
+
+  #[test]
+  fn with_leds_moves_every_layer_keeping_its_z() {
+    let (context, addresses) = three_leds();
+    let program = LedPlayback::with_leds(stacked(LedQ::name("led1")), LedQ::name("led2")).unwrap();
+
+    assert_eq!(played(&context, &addresses, program)[0], None);
+    assert_eq!(context.sys_ctx().systems.expect::<LedSystem>().declarations_for(&addresses[1]).len(), 2);
+  }
+
+  #[test]
+  fn a_layer_with_no_leds_cant_play() {
+    let mut scene = stacked(LedQ::every());
+    scene.layers[1].leds = None;
+    assert!(matches!(LedPlayback::new(scene.clone()), Err(PlaybackError::NoLeds)));
+    assert!(matches!(LedPlayback::with_leds(scene, LedQ::every()), Err(PlaybackError::NoLeds)));
+  }
+
+  #[test]
+  fn layers_on_different_leds_cant_be_moved() {
+    let mut scene = stacked(LedQ::every());
+    scene.layers[1].leds = Some(LedQ::name("led1"));
+    assert!(LedPlayback::new(scene.clone()).is_ok());
+    assert!(matches!(LedPlayback::with_leds(scene, LedQ::every()), Err(PlaybackError::DifferentLeds)));
   }
 
   #[test]

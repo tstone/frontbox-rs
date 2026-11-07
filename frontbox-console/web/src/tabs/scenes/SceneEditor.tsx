@@ -21,13 +21,13 @@ import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ConfirmDialog from './ConfirmDialog'
+import { LedsNote } from './LayerPlace'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
-import { Dropdown, NumberBox, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
-import { changesEachCycle, cycleCount, editedScene, sceneSource, sceneTargets, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { NumberBox, LayerSurfacesContext, RevealContext, SceneContext } from './SceneFields'
+import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
-import TargetsPanel from './TargetsPanel'
 import Timeline from './Timeline'
 
 /** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
@@ -79,7 +79,6 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [sequenceView, setSequenceView] = createSignal<SequenceView>('Machine')
-  const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
   const revealing = createSignal<Prop<SceneValue> | null>(null)
@@ -108,21 +107,18 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     return changesEach() && timing && cycle + 1 < cycleCount(timing) ? [cycle, cycle + 1] : [cycle]
   })
 
-  // a DMD gives a scene its own size, where a plane would size it in the plane's units
-  const ledTarget = () => ({ plane: isDmd() ? null : planeIndex() })
-
   let latest: SceneSource = { Ron: props.source }
   const send = (source: SceneSource) => {
     latest = source
-    renderScene(source, size(), ledTarget(), moment(), momentCycle())
-    if (playback.playing()) renderClips(source, size(), ledTarget(), untrack(clipCycles))
+    renderScene(source, size(), moment(), momentCycle())
+    if (playback.playing()) renderClips(source, size(), untrack(clipCycles))
   }
 
   // moving on to a cycle wants the one after it, where `send` is for changes to the scene
   createEffect(() => {
     const cycles = clipCycles()
     untrack(() => {
-      if (playback.playing()) renderClips(latest, size(), ledTarget(), cycles)
+      if (playback.playing()) renderClips(latest, size(), cycles)
     })
   })
 
@@ -288,34 +284,28 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   })
 
   const isDmd = () => scene()?.kind === 'Dmd'
-  const isSequence = () => scene()?.viewport === 'Sequence'
 
-  /** What's on show comes from the kind of scene: a DMD is on its screen, and LEDs are on the machine */
+  /** The layer the preview is showing the surface of: the open one, or with none open, the last that was */
+  const shownIndex = createMemo<number>((last) => selection[0]()?.layer ?? last, 0)
+  const shownLayer = () => scene()?.layers[shownIndex()]
+  const isSequence = () => shownLayer()?.surface === 'Sequence'
+
+  /** What's on show comes from the layer: a DMD is on its screen, and LEDs are on the machine */
   const onMachine = () => !isDmd() && (!isSequence() || sequenceView() === 'Machine')
 
-  // a plane with no extent has no size to give a scene
-  const planes = () =>
-    machine.planes.flatMap((plane, index) => (plane.extent[0] > 0 && plane.extent[1] > 0 ? [{ plane, index }] : []))
-
-  /** A scene with targets says where it plays, and the first target's plane is what's shown. Only one with none is up to the editor. */
-  const namedPlane = () => {
-    const shown = scene()
-    const target = shown ? sceneTargets(shown)[0]?.target : undefined
-    return target?.plane
-  }
-  const planeIndex = () => {
-    const named = namedPlane()
-    if (named !== undefined) return planes().find(({ plane }) => plane.name === named)?.index ?? null
-    return chosenPlane() ?? planes()[0]?.index ?? null
-  }
-  const plane = () => planes().find(({ index }) => index === planeIndex())?.plane ?? null
+  // a plane with no extent has no size to give a layer
+  const planes = () => machine.planes.filter((plane) => plane.extent[0] > 0 && plane.extent[1] > 0)
+  const planeOf = (layer: SceneLayer | undefined) => planes().find(({ name }) => layer !== undefined && name === layerPlane(layer)) ?? null
+  const plane = () => planeOf(shownLayer())
 
   /** With no plane to take a size from, the render is its own device, as a DMD is */
-  const surface = () => {
-    if (isSequence()) return null
-    const onPlane = onMachine() ? plane()?.extent : undefined
-    return onPlane ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)
+  const layerSurface = (layer: SceneLayer) => {
+    if (layer.surface === 'Sequence') return null
+    return planeOf(layer)?.extent ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)
   }
+
+  /** Whether a layer is on what's on show, as those are the ones a click there can reach */
+  const onShownSurface = (layer: SceneLayer) => JSON.stringify(layer.surface) === JSON.stringify(shownLayer()?.surface)
 
   const ledColors = () => drawn()?.led_colors ?? {}
 
@@ -325,8 +315,6 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     const color = ledColors()[name]
     return color ? cssColor(color) : null
   }
-
-  const planeOptions = () => planes().map(({ plane, index }) => ({ value: String(index), label: plane.name }))
 
   /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
   const outline = (): Vec2[] => {
@@ -350,7 +338,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const pick = (point: Vec2 | null) => {
     const [open, setOpen] = selection
     if (playback.playing() || error() !== null || !drawn()) return
-    const under = point && layerUnder(scene()!, drawn()!.outlines, point)
+    const under = point && layerUnder(scene()!, drawn()!.outlines, point, onShownSurface)
     if (under !== null) setOpen({ layer: under, mask: false })
     else if (hasShape(open())) setOpen(null)
   }
@@ -395,7 +383,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   return (
     <SceneContext.Provider value={editing}>
-      <SurfaceContext.Provider value={surface}>
+      <LayerSurfacesContext.Provider value={layerSurface}>
         <RevealContext.Provider value={revealing}>
         <div class="scene-editor" ref={root}>
         <header class="scene-file">
@@ -431,14 +419,6 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                   </Show>
                   <Show when={isSequence() && hasShape(selected())}>
                     <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
-                  </Show>
-                  <Show when={!isSequence() && planes().length > 0 && namedPlane() === undefined}>
-                    <Dropdown
-                      label="Plane"
-                      options={planeOptions()}
-                      value={String(planeIndex())}
-                      onChange={(value) => setChosenPlane(Number(value))}
-                    />
                   </Show>
                 </>
               }
@@ -498,12 +478,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                 <div class="scene-source">
                   <Show when={scene() !== null && !isDmd()}>
                     <div class="scene-leds">
-                      <div class="scene-editing scene-targets" inert={error() !== null}>
-                        <TargetsPanel />
-                      </div>
-                      <Show when={onMachine() && !isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
-                        <span class="scene-note scene-note-warn">None are on this plane</span>
-                      </Show>
+                      <LedsNote />
                     </div>
                   </Show>
                   <Show when={scene() !== null}>
@@ -611,7 +586,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
         />
         </div>
         </RevealContext.Provider>
-      </SurfaceContext.Provider>
+      </LayerSurfacesContext.Provider>
     </SceneContext.Provider>
   )
 }

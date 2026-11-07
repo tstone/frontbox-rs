@@ -10,13 +10,14 @@ import { ShapeEditor } from './ConfigPanel'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Spread } from '../../types/generated/Spread'
-import { field, freshParamName, fullSpread, HUE, newPick, newSweep, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import { field, freshParamName, fullSpread, HUE, newPick, newSweep, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
 
 /** The size the scene is being edited for */
 export const SurfaceContext = createContext<Accessor<Surface>>()
+export const LayerSurfacesContext = createContext<LayerSurfaces>()
 
 /** The prop waiting to be shown to whoever asked, until its field comes up and takes it */
 export const RevealContext = createContext<Signal<Prop<SceneValue> | null>>()

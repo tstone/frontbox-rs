@@ -10,13 +10,12 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { GfxComposition } from '../../types/generated/GfxComposition'
-import type { LedTarget } from '../../types/generated/LedTarget'
-import type { LedTargets } from '../../types/generated/LedTargets'
+import type { LedLayer } from '../../types/generated/LedLayer'
 import type { SceneDefinition } from '../../types/generated/SceneDefinition'
-import type { Viewport } from '../../types/generated/Viewport'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Spread } from '../../types/generated/Spread'
+import type { Surface as LedSurface } from '../../types/generated/Surface'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
@@ -27,8 +26,11 @@ export type Vec2 = [number, number]
 
 type Shape = NonNullable<Layer['shape']>
 
-/** The size of what an `Area` scene is being edited for, in that device's units. A `Sequence` has none. */
+/** The size of what a layer is being edited for, in that device's units. A `Sequence` has none. */
 export type Surface = Vec2 | null
+
+/** Says what a layer is measured against, as a scene's layers can each be on something different */
+export type LayerSurfaces = (layer: SceneLayer) => Surface
 
 /** What a `Prop` can hold */
 export type SceneValue = number | Vec2 | Color
@@ -208,7 +210,7 @@ export function cycleCount({ cycle }: Timing) {
 
 /** Whether a scene's cycles differ from each other, which only random picks can make them do */
 export function changesEachCycle(scene: Scene) {
-  return repeats(scene) && propUses(reading(scene), null).some(({ lens }) => 'Random' in lens.get())
+  return repeats(scene) && propUses(reading(scene)).some(({ lens }) => 'Random' in lens.get())
 }
 
 /** Scene with a timing, which it needs before it can have keyframes. A new one is `duration` long and repeats. */
@@ -237,73 +239,31 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
   return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
 }
 
-/** A scene's targets, as the editor goes through them. A single target has no name. */
-export function sceneTargets({ targets }: Scene): { name: string | null; target: LedTarget }[] {
-  if (targets === 'None') return []
-  if ('Single' in targets) return [{ name: null, target: targets.Single }]
-  return Object.entries(targets.Multiple).map(([name, target]) => ({ name, target }))
+/** The plane an `Area` layer covers, which is `null` for a `Sequence` or a layer of a DMD */
+export function layerPlane({ surface }: SceneLayer) {
+  return surface === undefined || surface === 'Sequence' ? null : surface.Area
 }
 
-/** The names layers choose between, which only multiple targets have */
-export const targetNames = (scene: Scene) => sceneTargets(scene).flatMap(({ name }) => (name === null ? [] : [name]))
-
-const withoutLayerTargets = (layers: Layer[]) => layers.map(({ targets: _, ...layer }) => layer)
-
-/** Scene with one more target, on every LED. A second target gives the first a name, as layers then choose between them. */
-export function withTargetAdded(scene: Scene, plane: string | undefined): Scene {
-  const added: LedTarget = scene.viewport === 'Area' && plane !== undefined ? { leds: 'Every', plane } : { leds: 'Every' }
-  const { targets } = scene
-  if (targets === 'None') return { ...scene, targets: { Single: added } }
-  if ('Single' in targets) return { ...scene, targets: { Multiple: { 'Target 1': targets.Single, 'Target 2': added } } }
-  let number = Object.keys(targets.Multiple).length + 1
-  while (`Target ${number}` in targets.Multiple) number++
-  return { ...scene, targets: { Multiple: { ...targets.Multiple, [`Target ${number}`]: added } } }
+/**
+ * Layer on something else. A shape is measured in the units of what it's on, so it would land somewhere else on another
+ * kind of surface. The layer goes back to covering all of it, unmasked.
+ */
+export function withLayerSurface({ shape, mask, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
+  return { ...layer, surface }
 }
 
-/** Scene without a target. With one left there's nothing to choose between, so that goes back to being a single target. */
-export function withTargetRemoved(scene: Scene, name: string | null): Scene {
-  const { targets } = scene
-  if (targets === 'None' || 'Single' in targets || name === null) return { ...scene, targets: 'None' }
-  const { [name]: _, ...left } = targets.Multiple
-  const remaining = Object.values(left)
-  if (remaining.length === 1) return { ...scene, targets: { Single: remaining[0] }, layers: withoutLayerTargets(scene.layers) }
-  const layers = scene.layers.map((layer) =>
-    layer.targets ? { ...layer, targets: layer.targets.filter((target) => target !== name) } : layer,
-  )
-  return { ...scene, targets: { Multiple: left }, layers }
+/** Where a new layer goes: where the one under it is, so that stacking is the easy thing to do */
+export function newLayerPlace(scene: Scene): Partial<LedLayer> {
+  if (scene.kind === 'Dmd') return {}
+  const under = scene.layers.at(-1)
+  return { leds: under?.leds, z: under?.z, surface: under?.surface ?? 'Sequence' }
 }
 
-/** Scene with a target renamed, in the layers that play on it too. It stays where it is in the order. */
-export function withTargetRenamed(scene: Scene, name: string, renamed: string): Scene {
-  const { targets } = scene
-  if (targets === 'None' || 'Single' in targets) return scene
-  const rename = (target: string) => (target === name ? renamed : target)
-  const layers = scene.layers.map((layer) => (layer.targets ? { ...layer, targets: layer.targets.map(rename) } : layer))
-  const entries = Object.entries(targets.Multiple).map(([target, value]) => [rename(target), value])
-  return { ...scene, targets: { Multiple: Object.fromEntries(entries) }, layers }
-}
-
-/** Scene with a target changed. `name` is `null` for a single target. */
-export function withTargetChanged(scene: Scene, name: string | null, target: LedTarget): Scene {
-  const { targets } = scene
-  if (name === null || targets === 'None' || 'Single' in targets) return { ...scene, targets: { Single: target } }
-  return { ...scene, targets: { Multiple: { ...targets.Multiple, [name]: target } } }
-}
-
-/** Targets as a viewport needs them: on a plane for an `Area`, and on none for a `Sequence` */
-export function targetsFor(viewport: Viewport, targets: LedTargets, plane: string | undefined): LedTargets {
-  const fit = ({ plane: _, ...target }: LedTarget): LedTarget => (viewport === 'Area' && plane !== undefined ? { ...target, plane } : target)
-  if (targets === 'None') return targets
-  if ('Single' in targets) return { Single: fit(targets.Single) }
-  return { Multiple: Object.fromEntries(Object.entries(targets.Multiple).map(([name, target]) => [name, fit(target)])) }
-}
-
-export const playsOn = (layer: Layer, target: string) => layer.targets?.includes(target) ?? true
-
-/** Layer turned on or off for a target. On all of them it says nothing, so that it stays on any that are added. */
-export function withLayerTarget(layer: Layer, targets: string[], target: string, on: boolean): Layer {
-  const chosen = targets.filter((name) => (name === target ? on : playsOn(layer, name)))
-  return { ...layer, targets: chosen.length === targets.length ? undefined : chosen }
+/** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */
+export function ledsCase({ layers }: Scene) {
+  if (layers.some((layer) => layer.leds === undefined)) return 'None'
+  const leds = new Set(layers.map((layer) => JSON.stringify(layer.leds)))
+  return leds.size <= 1 ? 'Replaceable' : 'Fixed'
 }
 
 type PropLens = Lens<Prop<SceneValue>>
@@ -324,10 +284,11 @@ export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection
 }
 
 /** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
-function propUses(scene: Lens<Scene>, surface: Surface) {
+function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
   const uses: { lens: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }[] = []
   let layerIndex = 0
   let inMask = false
+  let surface: Surface = null
   const use = (lens: unknown, label: string, ranges: Ranges) => {
     uses.push({ lens: lens as PropLens, layer: layerIndex, mask: inMask, label, ranges })
     if ('Sweep' in (lens as PropLens).get()) {
@@ -402,6 +363,7 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
   layers.get().forEach(({ shape: layerShape, mask }, index) => {
     layerIndex = index
     inMask = false
+    surface = surfaces(layers.get()[index])
     const layer = item(layers, index)
     const label = layerLabel(layers.get()[index], index)
 
@@ -420,14 +382,14 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
 }
 
 /** What to call a layer, which is its place from the bottom until it's given a name */
-export const layerLabel = (layer: Layer, index: number) => layer.name ?? `Layer ${index + 1}`
+export const layerLabel = (layer: SceneLayer, index: number) => layer.name ?? `Layer ${index + 1}`
 
 const reading = (scene: Scene): Lens<Scene> => ({ get: () => scene, set: () => {} })
 
 /** The names of the parameters a scene's props read */
 function referencedParams(scene: Scene) {
   const names = new Set<string>()
-  for (const { lens } of propUses(reading(scene), null)) {
+  for (const { lens } of propUses(reading(scene))) {
     const prop = lens.get()
     if ('Param' in prop) names.add(prop.Param)
   }
@@ -437,8 +399,8 @@ function referencedParams(scene: Scene) {
 export type SceneTrack = { prop: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }
 
 /** Every prop in a scene that changes along the timeline */
-export function sceneTracks(scene: Lens<Scene>, surface: Surface): SceneTrack[] {
-  return propUses(scene, surface).flatMap(({ lens, layer, mask, label, ranges }) => {
+export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
+  return propUses(scene, surfaces).flatMap(({ lens, layer, mask, label, ranges }) => {
     const prop = lens.get()
     return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
   })
@@ -478,29 +440,31 @@ function held(prop: Prop<SceneValue>): Prop<SceneValue> {
   return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
 }
 
-/**
- * A scene as the editor works on it, which is everything in one place whichever kind of file it's from. A DMD covers an
- * `Area` and has no targets, so those are only here to keep the kinds alike.
- */
-export type Scene = GfxComposition & { kind: 'Led' | 'Dmd'; version: number; viewport: Viewport; targets: LedTargets }
+/** A layer as the editor works on it, with where it happens alongside what it draws. A DMD's layers don't say where. */
+export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>>
+
+/** A scene as the editor works on it, which is everything in one place whichever kind of file it's from */
+export type Scene = Omit<GfxComposition, 'layers'> & { kind: 'Led' | 'Dmd'; version: number; layers: SceneLayer[] }
 
 export function editedScene(definition: SceneDefinition): Scene {
   if ('Led' in definition) {
-    const { composition, ...led } = definition.Led
-    return { ...composition, ...led, kind: 'Led' }
+    const { layers, ...scene } = definition.Led
+    return { ...scene, kind: 'Led', layers: layers.map(({ layer, ...place }) => ({ ...layer, ...place })) }
   }
   const { composition, version } = definition.Dmd
-  return { ...composition, version, kind: 'Dmd', viewport: 'Area', targets: 'None' }
+  return { ...composition, version, kind: 'Dmd' }
 }
 
-function sceneDefinition({ kind, version, viewport, targets, ...composition }: Scene): SceneDefinition {
-  return kind === 'Led' ? { Led: { version, viewport, targets, composition } } : { Dmd: { version, composition } }
+function sceneDefinition({ kind, version, layers, ...scene }: Scene): SceneDefinition {
+  if (kind === 'Dmd') return { Dmd: { version, composition: { ...scene, layers } } }
+  const placed = layers.map(({ leds, z, surface, ...layer }) => ({ leds, z, surface: surface!, layer }))
+  return { Led: { version, ...scene, layers: placed } }
 }
 
 /** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
 export function sceneSource(scene: Scene): SceneSource {
   let shown = scene
-  const tracks = sceneTracks({ get: () => shown, set: (edited) => (shown = edited) }, null)
+  const tracks = sceneTracks({ get: () => shown, set: (edited) => (shown = edited) })
   for (const { prop } of tracks) {
     if (isHidden(prop.get())) prop.set(held(prop.get()))
   }
@@ -522,7 +486,7 @@ function withTimes(
   ends: (sweep: Sweep) => [number, number],
 ): Scene {
   let next = scene
-  const tracks = sceneTracks({ get: () => next, set: (edited) => (next = edited) }, null)
+  const tracks = sceneTracks({ get: () => next, set: (edited) => (next = edited) })
   for (const { prop } of tracks) {
     const current = prop.get()
     if ('Track' in current) {
@@ -577,7 +541,7 @@ export function withTimesScaled(scene: Scene, by: number): Scene {
  * otherwise end a scene that's meant to stay up.
  */
 export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
-  const tracks = (scene: Scene) => sceneTracks(reading(scene), null).length
+  const tracks = (scene: Scene) => sceneTracks(reading(scene)).length
   if (!next.timing || tracks(current) === 0 || tracks(next) > 0) return next
   const { timing: _, ...rest } = next
   return rest
@@ -646,8 +610,8 @@ export function withoutDroppedParams(current: Scene, next: Scene): Scene {
 }
 
 /** The ranges for a parameter's sliders, from the first prop that reads it */
-export function paramRanges(scene: Scene, name: string, surface: Surface): Ranges {
-  const use = propUses(reading(scene), surface).find(({ lens }) => {
+export function paramRanges(scene: Scene, name: string, surfaces: LayerSurfaces): Ranges {
+  const use = propUses(reading(scene), surfaces).find(({ lens }) => {
     const prop = lens.get()
     return 'Param' in prop && prop.Param === name
   })

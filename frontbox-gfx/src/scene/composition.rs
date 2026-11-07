@@ -41,6 +41,11 @@ impl GfxComposition {
     self
   }
 
+  /// One of its layers on its own, on the same timeline, for a device that puts each of them somewhere different
+  pub fn only(&self, index: usize) -> Self {
+    Self { params: self.params.clone(), timing: self.timing, layers: vec![self.layers[index].clone()] }
+  }
+
   /// Whether every cycle of the scene has played by `time`. A scene that's static or repeats forever never completes.
   pub fn is_complete(&self, time: f32) -> bool {
     self.timing.is_some_and(|timing| timing.is_complete(time))
@@ -99,7 +104,7 @@ impl GfxComposition {
     self
       .layers
       .iter()
-      .filter(|layer| !layer.hidden && frame.target.is_none_or(|target| layer.plays_on(target)))
+      .filter(|layer| !layer.hidden)
       .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, viewport, &env).composite_over(below))
   }
 
@@ -206,7 +211,7 @@ mod tests {
 
   fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
@@ -231,7 +236,7 @@ mod tests {
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5), RED);
 
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     assert_eq!(scene.outlines(&frame).len(), 2);
   }
 
@@ -318,7 +323,7 @@ mod tests {
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
   }
 
@@ -331,7 +336,7 @@ mod tests {
 
   fn random_color_at(scene: &Scene, time: f32, take: u32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time, take, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time, take, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
   }
 
@@ -440,7 +445,7 @@ mod tests {
 
   fn outlines(layer: Layer) -> Vec<Vec2> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     Scene::new(Viewport::Area, vec![layer]).outlines(&frame).remove(0)
   }
 
@@ -449,7 +454,7 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED))]);
     let params = Params::new();
     let at = Sample::new(Vec2::new(150.0, 25.0), 0.0);
-    let color = |size: Vec2| scene.sample(&at, &Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size, viewport: Viewport::Area, target: None });
+    let color = |size: Vec2| scene.sample(&at, &Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size, viewport: Viewport::Area });
     assert_eq!(color(Vec2::new(200.0, 50.0)), RED);
     assert_eq!(color(SIZE), Rgba([0, 0, 0, 0]));
   }
@@ -459,7 +464,7 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(red_to_blue())]);
     let params = Params::new();
     let far_edge = |width: f32| {
-      let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), viewport: Viewport::Area, target: None };
+      let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), viewport: Viewport::Area };
       scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
     };
     assert_eq!(far_edge(100.0), BLUE);
@@ -610,7 +615,7 @@ mod tests {
   fn a_masks_outline_and_pose_line_up_with_the_layers() {
     let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     assert!(scene.mask_outlines(&frame)[0].is_empty());
     assert!(!scene.mask_outlines(&frame)[1].is_empty());
     assert!(scene.mask_poses(&frame)[0].is_none());
@@ -706,7 +711,7 @@ mod tests {
     // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
     let scene = circle(solid(RED));
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     let pixels: Vec<_> =
       Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
     let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
@@ -733,7 +738,7 @@ mod tests {
 
   fn level_at(scene: &Scene, time: f32) -> u8 {
     let params = Params::new();
-    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None })[0]
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area })[0]
   }
 
   #[test]
@@ -820,7 +825,7 @@ mod tests {
     assert_eq!(line(&scene, 1), vec![RED]);
 
     let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
     assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
   }
 
@@ -843,7 +848,7 @@ mod tests {
 
   fn drawn(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let (params, images) = (Params::new(), images());
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), viewport: Viewport::Area };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
@@ -852,7 +857,7 @@ mod tests {
     let scene = Scene::new(Viewport::Area, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
     let size = Vec2::new(4.0, 3.0);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area };
     let colors: Vec<_> = Grid::new(4, 3, size).samples().map(|at| scene.sample(&at, &frame)).collect();
 
     let green = Rgba([0, 255, 0, 255]);
@@ -872,7 +877,7 @@ mod tests {
   fn a_strip_runs_along_the_middle_of_an_image() {
     let scene = Scene::new(Viewport::Sequence, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: SIZE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: SIZE, viewport: Viewport::Area };
     for at in Line::new(5).samples() {
       assert_eq!(scene.sample(&Sample::new(at.pos, 0.0), &frame), Rgba([0, 255, 0, 255]));
     }
@@ -884,7 +889,7 @@ mod tests {
     let mut images = Images::new();
     images.insert("art.png", Picture::new(checkers));
     let (params, size) = (Params::new(), Vec2::new(64.0, 64.0));
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area, target: None };
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area };
 
     // a whole viewport of it shows each pixel, and the same image in a shape of 4 units has 16 pixels to each unit
     let at = Sample::new(Vec2::new(32.0, 32.0), 0.5);
@@ -934,7 +939,7 @@ mod tests {
     let art = (0..4).map(|n| image::RgbaImage::from_pixel(1, 1, Rgba([n, 0, 0, 255])));
     let mut images = Images::new();
     images.insert("a.gif", Picture::animated(art, 0.4));
-    let frame = Frame { time, take, params, images: &images, size: Vec2::ONE, viewport: Viewport::Area, target: None };
+    let frame = Frame { time, take, params, images: &images, size: Vec2::ONE, viewport: Viewport::Area };
     scene.sample(&Sample::new(Vec2::splat(0.5), 0.1), &frame)[0]
   }
 
@@ -993,28 +998,15 @@ mod tests {
     assert!(scene.check().is_ok());
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5)[3], 0);
   }
-
-  fn on_target(scene: &Scene, target: &str) -> Rgba<u8> {
-    let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Sequence, target: Some(target) };
-    scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame)
-  }
-
   #[test]
-  fn a_target_has_the_layers_that_play_on_it() {
-    let scene = Scene::new(Viewport::Sequence, vec![
-      Layer::new(solid(RED)).targets(["ring"]),
-      Layer::new(solid(BLUE)).targets(["center"]),
-    ]);
+  fn a_layer_on_its_own_keeps_the_timeline_and_the_parameters() {
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE))]).timing(Timing::new(1.0, Cycle::Forever));
+    let mut composition = scene.composition.clone();
+    composition.params.insert("size".into(), 2.0.into());
 
-    assert_eq!(on_target(&scene, "ring"), RED);
-    assert_eq!(on_target(&scene, "center"), BLUE);
-  }
-
-  #[test]
-  fn a_layer_can_play_on_several_targets() {
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).targets(["a", "b"])]);
-    assert_eq!(on_target(&scene, "b"), RED);
-    assert_eq!(on_target(&scene, "c"), Rgba([0, 0, 0, 0]));
+    let only = composition.only(1);
+    assert_eq!(only.timing, composition.timing);
+    assert_eq!(only.params.len(), 1);
+    assert_eq!(sample(&Scene::with_composition(Viewport::Area, only), 1.0, 1.0, 0.5), BLUE);
   }
 }

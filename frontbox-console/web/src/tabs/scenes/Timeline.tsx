@@ -9,7 +9,7 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
-import { Dropdown, EyeButton, FieldRow, NumberBox, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
 import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, snap, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
@@ -76,9 +76,9 @@ function along(e: PointerEvent, element: HTMLElement) {
 /** A scene's timing, and a track for each keyframed prop, along the bottom of the editor */
 export default function Timeline(props: { playback: Playback; rendering: boolean; error: string | null; reveal: (track: SceneTrack) => void }) {
   const scene = useContext(SceneContext)!
-  const surface = useContext(SurfaceContext)!
+  const surfaces = useContext(LayerSurfacesContext)!
   const timing = () => scene.get().timing
-  const tracks = createMemo(() => sceneTracks(scene, surface()))
+  const tracks = createMemo(() => sceneTracks(scene, surfaces))
 
   /** How much time the view shows. A key past the end is still there to be found and moved. */
   const span = createMemo(() =>

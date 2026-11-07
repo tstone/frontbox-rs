@@ -128,18 +128,18 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
                 return;
               }
             }
-            Ok(ClientMessage::RenderScene { source, size, leds, time, cycle }) => {
-              if let Some(reply) = hub.render_scene(source, size, leds, time, cycle).await
+            Ok(ClientMessage::RenderScene { source, size, time, cycle }) => {
+              if let Some(reply) = hub.render_scene(source, size, time, cycle).await
                 && socket.send(Message::Text(reply)).await.is_err()
               {
                 return;
               }
             }
-            Ok(ClientMessage::RenderClip { id, source, size, leds, cycle }) => {
+            Ok(ClientMessage::RenderClip { id, source, size, cycle }) => {
               let hub = hub.clone();
               let clip_sender = clip_sender.clone();
               tokio::spawn(async move {
-                if let Some(clip) = hub.render_clip(id, source, size, leds, cycle).await {
+                if let Some(clip) = hub.render_clip(id, source, size, cycle).await {
                   let _ = clip_sender.send(clip).await;
                 }
               });

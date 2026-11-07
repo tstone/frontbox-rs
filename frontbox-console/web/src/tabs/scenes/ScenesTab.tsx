@@ -8,24 +8,21 @@ import SceneEditor from './SceneEditor'
 import SceneNameDialog, { SceneNameButton } from './SceneNameDialog'
 import './ScenesTab.css'
 
-const STARTING_LAYERS = `[
-    (fill: (base: Gradient(stops: [
+const STARTING_LAYER = `(fill: (base: Gradient(stops: [
       (at: 0.0, color: Fixed(255, 0, 0, 255)),
       (at: 1.0, color: Fixed(0, 0, 255, 255)),
-    ]))),
-  ]`
+    ])))`
 
-/** A new scene of each kind. Which LEDs an LED scene plays on is chosen in the editor. */
+/** A new scene of each kind. Which LEDs an LED scene's layers are on is chosen in the editor. */
 const STARTING_SCENES = {
   LED: `Led(
   version: 1,
-  viewport: Area,
-  composition: (layers: ${STARTING_LAYERS}),
+  layers: [(surface: Sequence, layer: ${STARTING_LAYER})],
 )
 `,
   DMD: `Dmd(
   version: 1,
-  composition: (layers: ${STARTING_LAYERS}),
+  composition: (layers: [${STARTING_LAYER}]),
 )
 `,
 }

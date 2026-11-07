@@ -36,7 +36,7 @@ impl Timing {
     self.cycle.is_last(cycle)
   }
 
-  pub(crate) fn is_complete(&self, time: f32) -> bool {
+  pub fn is_complete(&self, time: f32) -> bool {
     self.cycle.is_complete(time, self.duration)
   }
 }

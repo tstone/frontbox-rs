@@ -16,11 +16,6 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
   #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
   pub hidden: bool,
-  /// Which of an LED scene's targets it plays on. `None` is all of them. This is the one thing here that's only for LEDs,
-  /// and a DMD scene refuses a layer that sets it.
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  #[cfg_attr(feature = "ts", ts(optional))]
-  pub targets: Option<Vec<String>>,
   pub fill: Fill,
   /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -34,7 +29,7 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, hidden: false, targets: None, fill, shape: None, mask: None }
+    Self { name: None, hidden: false, fill, shape: None, mask: None }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -44,12 +39,6 @@ impl Layer {
 
   pub fn hidden(mut self) -> Self {
     self.hidden = true;
-    self
-  }
-
-  /// Plays on only these of the scene's targets
-  pub fn targets(mut self, targets: impl IntoIterator<Item = impl Into<String>>) -> Self {
-    self.targets = Some(targets.into_iter().map(Into::into).collect());
     self
   }
 
@@ -70,10 +59,6 @@ impl Layer {
       Some(name) => format!("layer \"{name}\""),
       None => format!("layer {}", index + 1),
     }
-  }
-
-  pub(crate) fn plays_on(&self, target: &str) -> bool {
-    self.targets.as_ref().is_none_or(|targets| targets.iter().any(|name| name == target))
   }
 
   pub(crate) fn is_animated(&self) -> bool {

@@ -19,7 +19,7 @@ pub struct AttractSystem {
 }
 
 impl AttractSystem {
-  /// A scene with no targets has nothing to play on, so it's refused
+  /// A scene with a layer that isn't on any LEDs yet is refused
   pub fn new(scenes: Vec<LedScene>) -> Result<Self, PlaybackError> {
     let scenes = scenes.into_iter().map(LedPlayback::new).collect::<Result<_, _>>()?;
     Ok(Self { scenes, current: 0 })
@@ -97,24 +97,22 @@ mod tests {
       .collect()
   }
 
-  fn composition(color: Rgba<u8>) -> GfxComposition {
-    GfxComposition::new(vec![Layer::new(Fill::new(FillNode::Solid(Color(color).into())))])
+  fn layer(color: Rgba<u8>) -> Layer {
+    Layer::new(Fill::new(FillNode::Solid(Color(color).into())))
   }
 
   fn solid(color: Rgba<u8>) -> LedScene {
-    LedScene::new(Viewport::Sequence, LedTargets::Single(LedTarget::new(LedQ::every())), composition(color))
+    LedScene::new(vec![LedLayer::sequence(LedQ::every(), layer(color))])
   }
 
   /// One second of `color`
   fn second_of(color: Rgba<u8>) -> LedScene {
-    let timed = composition(color).timing(Timing::new(1.0, Cycle::Once));
-    LedScene::new(Viewport::Sequence, LedTargets::Single(LedTarget::new(LedQ::every())), timed)
+    solid(color).timing(Timing::new(1.0, Cycle::Once))
   }
 
   /// One second of `color` across the plane
   fn second_across_plane(color: Rgba<u8>) -> LedScene {
-    let timed = composition(color).timing(Timing::new(1.0, Cycle::Once));
-    LedScene::new(Viewport::Area, LedTargets::Single(LedTarget::new(LedQ::every()).on_plane("Plane")), timed)
+    LedScene::new(vec![LedLayer::area(LedQ::every(), "Plane", layer(color))]).timing(Timing::new(1.0, Cycle::Once))
   }
 
   fn attract(scenes: Vec<LedScene>) -> AttractSystem {

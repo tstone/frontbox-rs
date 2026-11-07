@@ -5,7 +5,7 @@
  */
 export type SceneSize = { 
 /**
- * LEDs in the list, for a `Sequence` viewport
+ * LEDs along the strip, for an LED scene's `Sequence` layers
  */
 leds: number, 
 /**

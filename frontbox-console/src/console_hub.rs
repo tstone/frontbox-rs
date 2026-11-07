@@ -2,7 +2,7 @@ use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
+  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted,
   SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
@@ -15,7 +15,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::protocol::*;
-use crate::scene_render::{LedSurface, render_clip, render_scene};
+use crate::scene_render::{MachineLeds, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -43,7 +43,6 @@ impl ConsoleHub {
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
-        planes: Vec::new(),
         led_radius: DEFAULT_LED_RADIUS,
         content: None,
         control: None,
@@ -95,7 +94,6 @@ impl ConsoleHub {
       })
       .collect();
     state.plane_images = planes.iter().map(|p| p.plane.image.clone()).collect();
-    state.planes = planes.iter().map(|p| p.plane).collect();
   }
 
   pub fn set_control(&self, control: mpsc::UnboundedSender<TracerControlEvent>) {
@@ -143,13 +141,12 @@ impl ConsoleHub {
     &self,
     source: SceneSource,
     size: SceneSize,
-    leds: SceneLeds,
     time: f32,
     cycle: Option<u32>,
   ) -> Option<Utf8Bytes> {
-    let target = self.led_surface(leds);
+    let machine = self.machine_leds();
     let content = self.content();
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, content, time, cycle)).await {
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, machine, content, time, cycle)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -166,13 +163,12 @@ impl ConsoleHub {
     id: u32,
     source: SceneSource,
     size: SceneSize,
-    leds: SceneLeds,
     cycle: u32,
   ) -> Option<Message> {
-    let target = self.led_surface(leds);
+    let machine = self.machine_leds();
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
-    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, content, cycle)).await {
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle)).await {
       Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
@@ -200,19 +196,15 @@ impl ConsoleHub {
     self.state.lock().unwrap().content.clone()
   }
 
-  fn led_surface(&self, leds: SceneLeds) -> LedSurface {
+  fn machine_leds(&self) -> MachineLeds {
     let state = self.state.lock().unwrap();
-    let lookup = state
+    let leds = state
       .snapshot
       .hardware
       .as_ref()
       .map(|hardware| hardware.leds.clone())
       .unwrap_or_default();
-    LedSurface {
-      leds: lookup,
-      plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
-      radius: state.led_radius,
-    }
+    MachineLeds { leds, radius: state.led_radius }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
@@ -575,8 +567,6 @@ struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
-  /// Planes for `snapshot.planes`, by the same index
-  planes: Vec<&'static ReferencePlane>,
   led_radius: f32,
   content: Option<Content>,
   /// Image files for `snapshot.planes`, by the same index

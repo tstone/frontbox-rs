@@ -34,6 +34,4 @@ pub struct Frame<'a> {
   pub size: Vec2,
   /// What the device's points are spread over
   pub viewport: Viewport,
-  /// Draws only the layers playing on this one of the device's targets, or all of them with none
-  pub target: Option<&'a str>,
 }

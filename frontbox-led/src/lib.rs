@@ -49,15 +49,15 @@
 //!
 //! ## LED Identification (dimensions)
 //!
-//! What LEDs show is an [`LedScene`], a composition and the LEDs it's on, written to a `.scene` file. It says how it lands
-//! on them with its viewport.
+//! What LEDs show is an [`LedScene`], written to a `.scene` file: layers on one timeline, each saying which LEDs it's on, its
+//! z, and how it lands on them with its [`Surface`].
 //!
 //! ### Sequence
-//! A `Sequence` viewport spreads over one or more LEDs in a list, typically by name, tag, or definition. These can be used for a variety of
+//! A `Sequence` surface spreads over one or more LEDs in a list, typically by name, tag, or definition. These can be used for a variety of
 //! purposes including turn on lane states, flashing, breathing, pulsing, progress bars, rotational animations, and the like.
 //!
 //! ### Area
-//! An `Area` viewport covers a plane, and the LEDs on it light up from where they physically are. These can be used for playfield sweeps,
+//! An `Area` surface covers a plane, and the LEDs on it light up from where they physically are. These can be used for playfield sweeps,
 //! explosions, and the like, and are often what are behind attract mode style animations.
 //!
 //! ## LED Rendering Stack

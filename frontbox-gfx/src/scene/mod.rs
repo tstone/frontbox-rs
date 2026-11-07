@@ -21,7 +21,7 @@
 //!
 //! let line = Line::new(8);
 //! let params = Params::new();
-//! let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Default::default(), viewport: Viewport::Sequence, target: None };
+//! let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Default::default(), viewport: Viewport::Sequence };
 //! let colors: Vec<Rgba<u8>> = line.samples().map(|s| composition.sample(&s, &frame)).collect();
 //! # assert_eq!(colors[0], Rgba::red());
 //! # assert_eq!(colors[7], Rgba::blue());

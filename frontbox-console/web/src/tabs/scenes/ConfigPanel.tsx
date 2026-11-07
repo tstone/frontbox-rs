@@ -3,7 +3,6 @@ import { Editable } from '@ark-ui/solid/editable'
 import { Menu } from '@ark-ui/solid/menu'
 import { Popover } from '@ark-ui/solid/popover'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createEffect, createSignal, For, Index, Match, on, Show, Switch, useContext, type Signal } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { contentImageInfo } from '../../state/contentImages'
@@ -21,8 +20,8 @@ import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
 import { ImagePicker } from './ImagePicker'
-import { Dropdown, EyeButton, FieldRow, NumberField, PropField, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
-import { planeNames } from './TargetsPanel'
+import LayerPlace from './LayerPlace'
+import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberField, PropField, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
 import {
   adjustAmount,
   adjustKind,
@@ -37,11 +36,11 @@ import {
   layerLabel,
   moved,
   newAdjust,
+  newLayerPlace,
   newShapeSize,
   orElse,
   radius,
   orEmpty,
-  playsOn,
   pointRanges,
   removed,
   ROTATION,
@@ -52,11 +51,9 @@ import {
   startingValue,
   translateRanges,
   UNIT,
-  targetNames,
-  targetsFor,
   variant,
-  withLayerTarget,
   type Scene,
+  type SceneLayer,
   withTiming,
   type AdjustKind,
   type Lens,
@@ -83,10 +80,6 @@ const COLOR_RANGES = both(UNIT)
 /** How far in pixels a press on a stop has to move before it's a drag and not a click */
 const DRAG_START = 3
 
-const VIEWPORT_OPTIONS: { value: 'Sequence' | 'Area'; label: string }[] = [
-  { value: 'Sequence', label: 'Sequence (1D)' },
-  { value: 'Area', label: 'Area (2D)' },
-]
 const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Solid', label: 'Solid' },
   { value: 'Linear', label: 'Linear gradient' },
@@ -134,11 +127,10 @@ const NEW_TRANSFORMS: Record<TransformKind, Transform> = {
   Scale: { Scale: { Fixed: [1, 1] } },
 }
 
-/** The scene's viewport and layers */
+/** The scene's layers */
 export default function ConfigPanel(props: { selection: Signal<Selection | null> }) {
   return (
     <div class="scene-config">
-      <ViewportEditor />
       <LayerList open={props.selection} />
     </div>
   )
@@ -152,7 +144,7 @@ function LayerList(props: { open: Signal<Selection | null> }) {
   const [open, setOpen] = props.open
 
   const add = () => {
-    layers.set([...layers.get(), { fill: { base: { Solid: { Fixed: WHITE } } } }])
+    layers.set([...layers.get(), { ...newLayerPlace(scene.get()), fill: { base: { Solid: { Fixed: WHITE } } } }])
     setOpen({ layer: layers.get().length - 1, mask: false })
   }
 
@@ -232,38 +224,6 @@ function LayerList(props: { open: Signal<Selection | null> }) {
   )
 }
 
-/** A DMD is always an area, so only an LED scene has this to choose */
-function ViewportEditor() {
-  const scene = useContext(SceneContext)!
-  const viewport = field(scene, 'viewport')
-
-  return (
-    <Show when={scene.get().kind === 'Led'}>
-    <section class="scene-group">
-      <FieldRow label="Type">
-        <Dropdown
-          label="Type"
-          options={VIEWPORT_OPTIONS}
-          value={viewport.get()}
-          onChange={(value) => {
-            if (value !== viewport.get()) scene.set(onViewport(scene.get(), value))
-          }}
-        />
-      </FieldRow>
-    </section>
-    </Show>
-  )
-}
-
-/**
- * A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to
- * covering all of it, unmasked. Targets go onto a plane for an area, and come off one for a sequence.
- */
-function onViewport(scene: Scene, viewport: Scene['viewport']): Scene {
-  const targets = targetsFor(viewport, scene.targets, planeNames()[0])
-  return { ...scene, viewport, targets, layers: scene.layers.map(({ shape, mask, ...layer }) => layer) }
-}
-
 /**
  * A layer's name in its header. A click does what a click on the header does, and a double click edits it. It can't go
  * in the trigger, as that's a button.
@@ -294,9 +254,11 @@ function LayerName(props: { lens: Lens<string | undefined>; placeholder: string;
   )
 }
 
-function LayerEditor(props: { lens: Lens<Layer>; mask: boolean; onMask: (mask: boolean) => void }) {
+/** Measures what's in it against what the layer is on */
+function LayerEditor(props: { lens: Lens<SceneLayer>; mask: boolean; onMask: (mask: boolean) => void }) {
+  const surfaces = useContext(LayerSurfacesContext)!
   return (
-    <>
+    <SurfaceContext.Provider value={() => surfaces(props.lens.get())}>
       <SegmentGroup.Root
         class="scene-prop-kind"
         aria-label="Editing"
@@ -318,7 +280,7 @@ function LayerEditor(props: { lens: Lens<Layer>; mask: boolean; onMask: (mask: b
         when={props.mask}
         fallback={
           <>
-            <LayerTargets lens={props.lens} />
+            <LayerPlace lens={props.lens} />
             <ShapeEditor lens={field(props.lens, 'shape')} />
             <FillEditor lens={field(props.lens, 'fill')} />
           </>
@@ -326,39 +288,7 @@ function LayerEditor(props: { lens: Lens<Layer>; mask: boolean; onMask: (mask: b
       >
         <MaskEditor lens={field(props.lens, 'mask')} />
       </Show>
-    </>
-  )
-}
-
-/** Which of the scene's targets a layer plays on. With one or none, there's no choosing to do. */
-function LayerTargets(props: { lens: Lens<Layer> }) {
-  const scene = useContext(SceneContext)!
-  const targets = () => targetNames(scene.get())
-
-  return (
-    <Show when={targets().length > 1}>
-      <section class="scene-group">
-        <FieldRow label="Plays on">
-          <div class="scene-layer-targets">
-            <For each={targets()}>
-              {(target) => (
-                <Toggle.Root
-                  class="scene-switch"
-                  checked={playsOn(props.lens.get(), target)}
-                  onCheckedChange={(details) => props.lens.set(withLayerTarget(props.lens.get(), targets(), target, details.checked))}
-                >
-                  <Toggle.Control>
-                    <Toggle.Thumb />
-                  </Toggle.Control>
-                  <Toggle.Label>{target}</Toggle.Label>
-                  <Toggle.HiddenInput />
-                </Toggle.Root>
-              )}
-            </For>
-          </div>
-        </FieldRow>
-      </section>
-    </Show>
+    </SurfaceContext.Provider>
   )
 }
 

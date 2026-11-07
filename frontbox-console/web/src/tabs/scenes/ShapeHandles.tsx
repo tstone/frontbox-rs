@@ -130,11 +130,11 @@ function Grip(props: { handle: Handle; space: PreviewSpace }) {
   )
 }
 
-/** The topmost layer showing a shape at a point in the scene */
-export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2) {
+/** The topmost layer showing a shape at a point on what's on show, which only some of a scene's layers may be on */
+export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean) {
   for (let index = scene.layers.length - 1; index >= 0; index--) {
     const { shape, hidden } = scene.layers[index]
-    if (shape && !hidden && encloses(outlines[index] ?? [], point)) return index
+    if (shape && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
   }
   return null
 }

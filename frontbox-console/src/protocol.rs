@@ -7,7 +7,7 @@ use frontbox_core::prelude::SwitchState;
 use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
 use frontbox_dmd::DmdScene;
 use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::{GfxComposition, Viewport};
+use frontbox_gfx::scene::GfxComposition;
 use frontbox_led::LedScene;
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
@@ -231,7 +231,6 @@ pub enum ClientMessage {
   RenderScene {
     source: SceneSource,
     size: SceneSize,
-    leds: SceneLeds,
     /// Seconds into a cycle of the scene
     time: f32,
     /// Which cycle, counting from zero. With none, it's one from the middle of the scene, to show it as it looks partway
@@ -243,7 +242,6 @@ pub enum ClientMessage {
     id: u32,
     source: SceneSource,
     size: SceneSize,
-    leds: SceneLeds,
     /// Which cycle, counting from zero
     cycle: u32,
   },
@@ -294,17 +292,11 @@ impl SceneDefinition {
     }
   }
 
-  pub fn composition(&self) -> &GfxComposition {
+  /// What's drawn, leaving out where
+  pub fn composition(&self) -> GfxComposition {
     match self {
-      Self::Led(scene) => &scene.composition,
-      Self::Dmd(scene) => &scene.composition,
-    }
-  }
-
-  pub fn viewport(&self) -> Viewport {
-    match self {
-      Self::Led(scene) => scene.viewport,
-      Self::Dmd(_) => Viewport::Area,
+      Self::Led(scene) => scene.composition(),
+      Self::Dmd(scene) => scene.composition.clone(),
     }
   }
 }
@@ -312,7 +304,7 @@ impl SceneDefinition {
 /// How many points to sample a scene at. The kind of scene decides which of these applies.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
 pub struct SceneSize {
-  /// LEDs in the list, for a `Sequence` viewport
+  /// LEDs along the strip, for an LED scene's `Sequence` layers
   pub leds: usize,
   /// Points across, for an `Area` viewport
   pub width: usize,
@@ -320,10 +312,3 @@ pub struct SceneSize {
   pub height: usize,
 }
 
-/// What a scene that hasn't said where it plays is previewed on
-#[derive(Clone, serde::Deserialize, TS)]
-pub struct SceneLeds {
-  /// Index into `Snapshot::planes` of the plane an `Area` scene with no targets is previewed on, which gives it its size.
-  /// Without one it reaches no LEDs, and its size is that of the render in `SceneSize`.
-  pub plane: Option<usize>,
-}
