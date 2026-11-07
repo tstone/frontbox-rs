@@ -29,10 +29,11 @@ pub enum ShapeNode {
   Ellipse { r1: Prop<f32>, r2: Prop<f32> },
   /// A rectangle centered on the origin
   Rect { width: Prop<f32>, height: Prop<f32> },
-  /// Blades coming out of the origin and running past the edges of the viewport, each as wide as the gap after it, so
-  /// there are two lines out of the middle for every one. The first starts at the right and they go clockwise. A fraction
-  /// of a blade is dropped. Its fill stretches over a box the size of the viewport around the origin.
-  Pinwheel { blades: Prop<f32> },
+  /// Blades coming out of the origin and running past the edges of the viewport, so there are two lines out of the
+  /// middle for every one. Each blade and the gap after it take an even share of the way around, `balance` (0 to 1) of
+  /// which is the blade, so at 0.5 a blade is as wide as its gap. The first starts at the right and they go clockwise. A
+  /// fraction of a blade is dropped. Its fill stretches over a box the size of the viewport around the origin.
+  Pinwheel { blades: Prop<f32>, balance: Prop<f32> },
   /// A closed polygon through points
   Polygon {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
@@ -159,8 +160,10 @@ impl ShapeNode {
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
-      Self::Pinwheel { blades } => blades.is_animated(),
-      Self::Ring { radius: a, thickness: b } | Self::Ellipse { r1: a, r2: b } | Self::Rect { width: a, height: b } => {
+      Self::Ring { radius: a, thickness: b }
+      | Self::Ellipse { r1: a, r2: b }
+      | Self::Rect { width: a, height: b }
+      | Self::Pinwheel { blades: a, balance: b } => {
         a.is_animated() || b.is_animated()
       }
       Self::Polygon { points } | Self::Route { points } => points.iter().any(Prop::is_animated),
@@ -191,7 +194,9 @@ impl ShapeNode {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Pinwheel { blades } => pinwheel_outline(whole_blades(blades, env), self.reach(env).length()),
+      Self::Pinwheel { blades, balance } => {
+        pinwheel_outline(whole_blades(blades, env), unit_balance(balance, env), self.reach(env).length())
+      }
       // too few points to enclose anything, so it draws nothing
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
       Self::Polygon { points } | Self::Route { points } => points.iter().map(|p| p.resolve(env)).collect(),
@@ -229,7 +234,7 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
       Self::Ring { radius, thickness } => ring_distance(radius.resolve(env), thickness.resolve(env), p),
       Self::Rect { .. } => rect_distance(self.reach(env), p),
-      Self::Pinwheel { blades } => pinwheel_distance(whole_blades(blades, env), p),
+      Self::Pinwheel { blades, balance } => pinwheel_distance(whole_blades(blades, env), unit_balance(balance, env), p),
       Self::Polygon { points } => {
         let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
         polygon_distance(&points, p)
@@ -322,29 +327,36 @@ fn whole_blades(blades: &Prop<f32>, env: &Env) -> u32 {
   blades.resolve_whole(env).floor().clamp(0.0, MAX_BLADES) as u32
 }
 
+fn unit_balance(balance: &Prop<f32>, env: &Env) -> f32 {
+  balance.resolve(env).clamp(0.0, 1.0)
+}
+
 /// Each blade as a loop out of the middle and around its far end
-fn pinwheel_outline(blades: u32, reach: f32) -> Vec<Vec2> {
-  let width = std::f32::consts::PI / blades.max(1) as f32;
+fn pinwheel_outline(blades: u32, balance: f32, reach: f32) -> Vec<Vec2> {
+  let share = std::f32::consts::TAU / blades.max(1) as f32;
+  let width = share * balance;
   let steps = (ROUND_OUTLINE_POINTS as u32 / (2 * blades.max(1))).max(1);
   (0..blades)
     .flat_map(|blade| {
-      let start = 2.0 * blade as f32 * width;
+      let start = blade as f32 * share;
       let end = (0..=steps).map(move |step| Vec2::from_angle(start + width * step as f32 / steps as f32) * reach);
       std::iter::once(Vec2::ZERO).chain(end)
     })
     .collect()
 }
 
-/// Signed distance to the nearer edge of the nearest blade. Past a right angle from it there's always a nearer one, so the
-/// angle's sine is all it takes.
-fn pinwheel_distance(blades: u32, p: Vec2) -> (f32, Vec2) {
+/// Signed distance to the nearer edge of the nearest blade. Within a right angle of that edge it's the angle's sine; past
+/// one, the nearest point of the edge is the middle.
+fn pinwheel_distance(blades: u32, balance: f32, p: Vec2) -> (f32, Vec2) {
   if blades == 0 {
     return (f32::INFINITY, Vec2::X);
   }
-  let width = std::f32::consts::PI / blades as f32;
+  let share = std::f32::consts::TAU / blades as f32;
+  let width = share * balance;
   // how far around from the middle of the nearest blade
-  let around = (p.y.atan2(p.x) + width / 2.0).rem_euclid(2.0 * width) - width;
-  let (sin, cos) = (around.abs() - width / 2.0).sin_cos();
+  let around = (p.y.atan2(p.x) - width / 2.0 + share / 2.0).rem_euclid(share) - share / 2.0;
+  let right = std::f32::consts::FRAC_PI_2;
+  let (sin, cos) = (around.abs() - width / 2.0).clamp(-right, right).sin_cos();
   let out = p.normalize_or(Vec2::X);
   (p.length() * sin, out * sin + out.perp() * around.signum() * cos)
 }
@@ -536,7 +548,11 @@ mod tests {
   }
 
   fn pinwheel(blades: f32) -> Shape {
-    Shape::new(ShapeNode::Pinwheel { blades: blades.into() })
+    balanced_pinwheel(blades, 0.5)
+  }
+
+  fn balanced_pinwheel(blades: f32, balance: f32) -> Shape {
+    Shape::new(ShapeNode::Pinwheel { blades: blades.into(), balance: balance.into() })
   }
 
   /// How much of a point this many degrees clockwise from the right is covered, far from the middle
@@ -581,6 +597,25 @@ mod tests {
   fn a_fraction_of_a_blade_is_dropped() {
     assert_eq!(covered_at(&pinwheel(1.9), 90.0), 1.0);
     assert_eq!(covered_at(&pinwheel(1.9), 270.0), 0.0);
+  }
+
+  #[test]
+  fn a_pinwheels_balance_is_how_much_of_each_share_is_blade() {
+    let shape = balanced_pinwheel(4.0, 0.25);
+    for (degrees, filled) in [(5.0, 1.0), (17.0, 1.0), (30.0, 0.0), (85.0, 0.0), (95.0, 1.0), (120.0, 0.0)] {
+      assert_eq!(covered_at(&shape, degrees), filled, "at {degrees} degrees");
+    }
+    assert!((covered_at(&shape, 22.5) - 0.5).abs() < 0.01);
+  }
+
+  #[test]
+  fn past_a_right_angle_from_a_blades_edge_the_middle_is_nearest() {
+    let behind = |balance: f32| Vec2::from_angle(std::f32::consts::PI * (balance + 1.0)) * 10.0;
+    let middle = |balance: f32| Vec2::from_angle(std::f32::consts::PI * balance) * 10.0;
+    assert!((pinwheel_distance(1, 0.1, behind(0.1)).0 - 10.0).abs() < 1e-4);
+    assert!((pinwheel_distance(1, 0.9, middle(0.9)).0 + 10.0).abs() < 1e-4);
+    assert_eq!(covered(&balanced_pinwheel(1.0, 0.9), 10.0, -0.1, 0.05), 0.0);
+    assert_eq!(covered(&balanced_pinwheel(1.0, 0.9), -10.0, 0.0, 0.05), 1.0);
   }
 
   #[test]

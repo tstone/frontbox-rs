@@ -25,7 +25,8 @@ impl PixelFontText {
   }
 
   fn render_center_alignment(&self, canvas: &mut CanvasView) {
-    let left_offset = (canvas.bounds.width as u16 / 2) - (self.total_width() / 2);
+    // text wider than the canvas starts at the left edge and is clipped on the right
+    let left_offset = (canvas.bounds.width as u16 / 2).saturating_sub(self.total_width() / 2);
     self.render_left_alignment(canvas, left_offset as i32);
   }
 
@@ -61,7 +62,7 @@ impl PixelFontText {
         });
 
     // include spacing in total width
-    char_widths + (self.spacing as u16).saturating_mul(self.text.len().saturating_sub(1) as u16)
+    char_widths + (self.spacing as u16).saturating_mul(self.text.chars().count().saturating_sub(1) as u16)
   }
 }
 

@@ -29,8 +29,11 @@ type Handle = {
   arm?: Vec2
 }
 
-/** What's drawn over a shape: its handles, and the paths it goes along as lines in the scene */
-type Overlay = { handles: Handle[]; paths: Vec2[][] }
+/** The lines a shape's points snap to, in the scene, and a corner of one of its cells to tell how far apart they're drawn */
+type Grid = { lines: Vec2[][]; cell: [Vec2, Vec2, Vec2] }
+
+/** What's drawn over a shape: its handles, the paths it goes along as lines in the scene, and the grids its points snap to */
+type Overlay = { handles: Handle[]; paths: Vec2[][]; grids: Grid[] }
 
 /** How the values a handle writes are rounded, so a drag doesn't leave long decimals in a scene */
 const PRECISION = 1000
@@ -41,30 +44,54 @@ const SAME_MOMENT = 0.001
 /** The smallest scale a handle leaves, as a shape scaled to nothing has no handles to bring it back with */
 const MIN_SCALE = 0.001
 
+/** How many cells a grid goes past a shape's bounds on each side, so there's somewhere to drag its points out to */
+const GRID_MARGIN = 4
+
+/** The most lines a grid is drawn with. One finer than this still snaps, but is left undrawn. */
+const MAX_GRID_LINES = 400
+
+/** The fewest pixels apart a grid's lines are drawn, as any closer they'd hide the scene under them */
+const MIN_GRID_SPACING = 6
+
 const IDENTITY: Affine = [1, 0, 0, 1, 0, 0]
 
-const NOTHING: Overlay = { handles: [], paths: [] }
+const NOTHING: Overlay = { handles: [], paths: [], grids: [] }
 
-/** Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are */
-export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; time: number }) {
+/**
+ * Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are.
+ * With a `grid`, a shape's points snap to a grid of that size in its own space, which is drawn over it.
+ */
+export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; time: number; grid: number | null }) {
   const scene = useContext(SceneContext)!
 
   const overlay = createMemo((): Overlay => {
-    const { selection, pose } = props
+    const { selection, pose, grid } = props
     if (selection === null || !pose || !selectedShape(scene.get(), selection)) return NOTHING
     const shape = selectedShapeLens(scene, selection)
     if (outOfStep(shape, pose)) return NOTHING
     const write = writer(scene, props.time)
-    const { handles, paths } = pathOverlay(shape, pose, write, IDENTITY)
+    const { handles, paths, grids } = pathOverlay(shape, pose, write, IDENTITY, grid)
     // a path's on top, as its shape is held to it and has nothing there to grab
-    return { handles: [...shapeHandles(shape, pose, write), ...handles], paths }
+    return { handles: [...shapeHandles(shape, pose, write, grid), ...handles], paths, grids: [...shapeGrid(pose, grid, IDENTITY), ...grids] }
   })
 
   const onScreen = (line: Vec2[]) => line.flatMap((point) => props.space.project(point) ?? []).join(' ')
 
+  /** Whether a grid's lines are far enough apart on screen to draw */
+  const spread = ({ cell: [corner, ...sides] }: Grid) => {
+    const at = props.space.project(corner)
+    return at !== null && sides.every((side) => {
+      const to = props.space.project(side)
+      return to !== null && Math.hypot(to[0] - at[0], to[1] - at[1]) >= MIN_GRID_SPACING
+    })
+  }
+
   return (
     <div class="scene-handles">
       <svg class="scene-paths" aria-hidden="true">
+        <Index each={overlay().grids.filter(spread)}>
+          {(grid) => <Index each={grid().lines}>{(line) => <polyline class="scene-grid" points={onScreen(line())} />}</Index>}
+        </Index>
         <Index each={overlay().paths}>{(line) => <polyline points={onScreen(line())} />}</Index>
         <Index each={overlay().handles.filter(({ arm }) => arm)}>
           {(handle) => <polyline class="scene-arm" points={onScreen([handle().arm!, handle().at])} />}
@@ -181,11 +208,16 @@ function writer(scene: Lens<Scene>, time: number): Write {
   }
 }
 
-function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Handle[] {
+function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, grid: number | null): Handle[] {
   const toScene = chain(pose.transforms)
   const fromScene = invert(toScene)
   if (!fromScene) return []
   const toLocal = (at: Vec2) => apply(fromScene, at)
+  /** Where a point dragged to a place in the scene lands in the shape's own space, which is on the grid if there is one */
+  const toPoint = (at: Vec2): Vec2 => {
+    const [x, y] = toLocal(at)
+    return grid ? [Math.round(x / grid) * grid, Math.round(y / grid) * grid] : [x, y]
+  }
   const base = field(shape, 'base')
   const current = base.get()
   const list = orEmpty(field(shape, 'transform'))
@@ -209,10 +241,10 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
     cursor: 'move',
     at: apply(toScene, pose.points[index]),
     locked: !write.can(prop.get(), [0, 0]),
-    drag: (to) => write.to(prop, roundedPoint(toLocal(to))),
+    drag: (to) => write.to(prop, roundedPoint(toPoint(to))),
   })
 
-  /** One of the two ends of a bezier's handle, either side of its point, which move as one */
+  /** One of the two ends of a bezier's handle, either side of its point, which move as one. The end held is what snaps. */
   const curveHandle = (index: number, prop: Lens<Prop<Vec2>>, side: 1 | -1): Handle => {
     const [x, y] = pose.points[index]
     const [offsetX, offsetY] = pose.handles[index]
@@ -224,7 +256,7 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
       arm: apply(toScene, [x, y]),
       locked: !write.can(prop.get(), [0, 0]),
       drag(to) {
-        const [toX, toY] = toLocal(to)
+        const [toX, toY] = toPoint(to)
         write.to(prop, roundedPoint([(toX - x) * side, (toY - y) * side]))
       },
     }
@@ -270,7 +302,7 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
  * The paths of a shape's transforms, and any on those in turn. `view` takes where the shape is to the scene being shown,
  * and each path is carried along from the values of its transform to where those put the shape's center.
  */
-function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view: Affine): Overlay {
+function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view: Affine, grid: number | null): Overlay {
   const list = orEmpty(field(shape, 'transform'))
   const parts = pose.paths.flatMap((pathPose, index) => {
     const transform = list.get()[index]
@@ -281,15 +313,41 @@ function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view
 
     const [x, y] = apply(chain(pose.transforms.slice(0, index)), middle(pose))
     const pathView = chain([[1, 0, 0, 1, x, y], ...movesAfter(list.get(), pose, index), view])
-    const further = pathOverlay(path, pathPose, write, pathView)
+    const further = pathOverlay(path, pathPose, write, pathView, grid)
     return [
       {
-        handles: [...seenThrough(shapeHandles(path, pathPose, write), pathView), ...further.handles],
+        handles: [...seenThrough(shapeHandles(path, pathPose, write, grid), pathView), ...further.handles],
         paths: [traced(path.get().base, pathPose).map((point) => apply(pathView, point)), ...further.paths],
+        grids: [...shapeGrid(pathPose, grid, pathView), ...further.grids],
       },
     ]
   })
-  return { handles: parts.flatMap(({ handles }) => handles), paths: parts.flatMap(({ paths }) => paths) }
+  return {
+    handles: parts.flatMap(({ handles }) => handles),
+    paths: parts.flatMap(({ paths }) => paths),
+    grids: parts.flatMap(({ grids }) => grids),
+  }
+}
+
+/**
+ * The grid a shape's points snap to, in its own space, over its bounds and a few cells past them, and taken through
+ * `view` to the scene being shown. None for a shape with no points, or one too fine to draw.
+ */
+function shapeGrid(pose: RenderedShape, grid: number | null, view: Affine): Grid[] {
+  if (!grid || pose.points.length === 0) return []
+  const toScene = chain([...pose.transforms, view])
+  const [fromX, fromY] = pose.min.map((value) => Math.floor(value / grid) - GRID_MARGIN)
+  const [toX, toY] = pose.max.map((value) => Math.ceil(value / grid) + GRID_MARGIN)
+  if (toX - fromX + (toY - fromY) + 2 > MAX_GRID_LINES) return []
+  const steps = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => (from + i) * grid)
+  // a point at each crossing, so a line that runs out of sight still shows the part that's in it
+  const [across, down] = [steps(fromX, toX), steps(fromY, toY)]
+  const lines = [
+    ...across.map((x) => down.map((y): Vec2 => [x, y])),
+    ...down.map((y) => across.map((x): Vec2 => [x, y])),
+  ].map((line) => line.map((point) => apply(toScene, point)))
+  const cell: Grid['cell'] = [apply(toScene, [0, 0]), apply(toScene, [grid, 0]), apply(toScene, [0, grid])]
+  return [{ lines, cell }]
 }
 
 /** The line that goes along a shape's edge, back to where it started if it's the kind that does */

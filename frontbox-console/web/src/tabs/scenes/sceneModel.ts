@@ -326,7 +326,9 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       use(field(rect, 'width'), `${label} · Width`, both(across))
       use(field(rect, 'height'), `${label} · Height`, both(down))
     } else if ('Pinwheel' in current) {
-      use(field(variant(base, 'Pinwheel'), 'blades'), `${label} · Blades`, both(BLADES))
+      const pinwheel = variant(base, 'Pinwheel')
+      use(field(pinwheel, 'blades'), `${label} · Blades`, both(BLADES))
+      use(field(pinwheel, 'balance'), `${label} · Balance`, both(BALANCE))
     } else if ('Bezier' in current) {
       const points = field(variant(base, 'Bezier'), 'points')
       points.get().forEach((_, i) => {
@@ -632,6 +634,8 @@ const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
 export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
+/** How much of each of a pinwheel's shares is blade. Past these ends, its blades or its gaps are too thin to make out. */
+export const BALANCE: Range = { min: 0.1, max: 0.9, step: 0.01, rest: 0.5 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 

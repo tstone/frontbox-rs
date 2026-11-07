@@ -10,9 +10,8 @@
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
-- Evaluate RON for operator configs (and other stored data like leaderboards). frontbox-gfx stores effects in RON, and
-  one format across the project may be simpler than TOML for some files and RON for others.
-- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers.
+- Evaluate RON for operator configs (and other stored data like leaderboards)
+- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers. (maybe?)
 - Revisit if `Synchronize` event still makes sense or not
 - Implement a proper LampDriver that also supports flashing
 - Stability: Robust handling for USB disconnects/reconnects
@@ -45,7 +44,6 @@
 
 ## Scenes/Editor
 
-- Pinwheel should have a balance slider, 50/50 is the current, but it should have a range of 10/90 to 90/10
 - Needs a grid + snap to grid option for everything with points
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
@@ -75,6 +73,7 @@
 
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
+- music track repeat
 - apply-able effects (warble, reverb, glitch)
 - legacy hardware emulation? e.g. YM2610 FM
 

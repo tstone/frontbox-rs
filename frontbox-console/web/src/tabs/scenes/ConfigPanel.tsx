@@ -25,6 +25,7 @@ import {
   adjustAmount,
   adjustKind,
   ADJUSTS,
+  BALANCE,
   BLADES,
   both,
   field,
@@ -616,6 +617,7 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
         </Match>
         <Match when={kind() === 'Pinwheel'}>
           <PropField label="Blades" paramName="blades" fallback={0} ranges={both(BLADES)} lens={field(variant(base, 'Pinwheel'), 'blades')} />
+          <PropField label="Balance" paramName="balance" fallback={BALANCE.rest!} ranges={both(BALANCE)} lens={field(variant(base, 'Pinwheel'), 'balance')} />
         </Match>
         <Match when={kind() === 'Polygon'}>
           <PolygonEditor lens={field(variant(base, 'Polygon'), 'points')} />
@@ -652,7 +654,7 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ring') return { Ring: { radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { r1: { Fixed: height / 2 }, r2: { Fixed: width / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
-  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! } } }
+  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! }, balance: { Fixed: BALANCE.rest! } } }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
     [-width / 2, height / 2],

@@ -144,7 +144,7 @@ mod tests {
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into() })),
+          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), balance: 0.25.into() })),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),

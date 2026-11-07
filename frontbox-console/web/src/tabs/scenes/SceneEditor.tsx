@@ -1,3 +1,4 @@
+import { Checkbox } from '@ark-ui/solid/checkbox'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
@@ -40,6 +41,27 @@ const EDITING = { editing: true }
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
 
+/** Whether points snap to a grid as they're dragged, and its size in the units of the shape being edited */
+type Snap = { on: boolean; size: number }
+
+const SNAP_KEY = 'frontbox-console.scene-snap'
+const DEFAULT_SNAP: Snap = { on: false, size: 1 }
+function readSnap(): Snap {
+  try {
+    const stored = { ...DEFAULT_SNAP, ...JSON.parse(localStorage.getItem(SNAP_KEY) ?? '{}') }
+    return stored.size > 0 ? stored : DEFAULT_SNAP
+  } catch {
+    return DEFAULT_SNAP
+  }
+}
+function writeSnap(snap: Snap) {
+  try {
+    localStorage.setItem(SNAP_KEY, JSON.stringify(snap))
+  } catch {
+    // storage can be unavailable (private windows); snapping still works for this session
+  }
+}
+
 function draw(canvas: HTMLCanvasElement, width: number, height: number, colors: Uint8ClampedArray<ArrayBuffer>) {
   canvas.width = width
   canvas.height = height
@@ -79,6 +101,11 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [sequenceView, setSequenceView] = createSignal<SequenceView>('Machine')
+  const [snap, setSnapState] = createSignal(readSnap())
+  const setSnap = (change: Partial<Snap>) => {
+    setSnapState({ ...snap(), ...change })
+    writeSnap(snap())
+  }
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
   const revealing = createSignal<Prop<SceneValue> | null>(null)
@@ -352,7 +379,9 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     })
   }
 
-  const handles = (space: PreviewSpace) => <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} />
+  const handles = (space: PreviewSpace) => (
+    <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} grid={snap().on ? snap().size : null} />
+  )
 
   const [screenSize, setScreenSize] = createSignal<Vec2>([0, 0])
   onMount(() => {
@@ -410,6 +439,23 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           </Show>
           <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
           <div class="scene-file-view">
+            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier to a grid in the shape's own units as they're dragged">
+              <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
+                <Checkbox.Control>
+                  <Checkbox.Indicator>✓</Checkbox.Indicator>
+                </Checkbox.Control>
+                <Checkbox.Label>Snap to grid</Checkbox.Label>
+                <Checkbox.HiddenInput />
+              </Checkbox.Root>
+              <NumberBox
+                min="0.001"
+                step="any"
+                aria-label="Grid size"
+                disabled={!snap().on}
+                value={snap().size}
+                onNumber={(size) => size > 0 && setSnap({ size })}
+              />
+            </div>
             <Show
               when={!onMachine()}
               fallback={

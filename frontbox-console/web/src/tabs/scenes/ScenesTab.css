@@ -417,6 +417,30 @@
   stroke-width: 1;
 }
 
+/* faint, as it's there to line points up with and not to read over the scene */
+.scene-paths .scene-grid {
+  stroke: rgb(255 255 255 / 0.3);
+  stroke-dasharray: none;
+  stroke-width: 1;
+}
+
+.scene-snap {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.scene-snap [data-scope='checkbox'][data-part='root'] {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  cursor: pointer;
+}
+
+.scene-snap input[type='number'] {
+  width: 4.5rem;
+}
+
 /* the last good render, kept up while the source doesn't parse */
 .scene-dmd.stale,
 .scene-machine.stale {

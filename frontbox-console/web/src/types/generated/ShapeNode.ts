@@ -6,4 +6,4 @@ import type { Prop } from "./Prop";
  * Shapes sit around the origin; transforms put them in the scene. The sizes here are in the shape's own space, so a
  * `Scale` multiplies them.
  */
-export type ShapeNode = { "Circle": { radius: Prop<number>, } } | { "Ring": { radius: Prop<number>, thickness: Prop<number>, } } | { "Ellipse": { r1: Prop<number>, r2: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Pinwheel": { blades: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } } | { "Route": { points: Array<Prop<[number, number]>>, } } | { "Bezier": { points: Array<BezierPoint>, } };
+export type ShapeNode = { "Circle": { radius: Prop<number>, } } | { "Ring": { radius: Prop<number>, thickness: Prop<number>, } } | { "Ellipse": { r1: Prop<number>, r2: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Pinwheel": { blades: Prop<number>, balance: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } } | { "Route": { points: Array<Prop<[number, number]>>, } } | { "Bezier": { points: Array<BezierPoint>, } };
