@@ -1,3 +1,93 @@
+/* ---- choosing a scene ---- */
+
+.scene-list {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.scene-list > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scene-list h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.scene-list ul {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.scene-list li button {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  overflow: hidden;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-list li button:hover {
+  background: var(--surface-hover);
+}
+
+/* ---- the scene being edited ---- */
+
+.scene-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.scene-editor > .scenes-tab {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.scene-file {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-file-name {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-file-save {
+  margin-left: auto;
+}
+
 .scene-source {
   display: flex;
   flex-direction: column;
@@ -450,7 +540,7 @@
   white-space: nowrap;
 }
 
-.scene-image-button {
+.scene-button {
   flex: none;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--border);
@@ -462,15 +552,21 @@
   cursor: pointer;
 }
 
-.scene-image-button:hover {
+.scene-button:hover:enabled,
+label.scene-button:hover {
   background: var(--surface-hover);
 }
 
-.scene-image-button:focus-within {
+.scene-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scene-button:focus-within {
   outline: 2px solid var(--accent);
 }
 
-.scene-image-button input {
+.scene-button input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -524,6 +620,28 @@
 
 .scene-dialog footer {
   justify-content: flex-end;
+}
+
+.scene-dialog-small {
+  width: min(26rem, 100%);
+}
+
+.scene-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.scene-dialog input[type='text'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
 }
 
 .scene-dialog h2 {

@@ -122,6 +122,14 @@ pub(crate) fn render_clip(
   Ok(clip)
 }
 
+/// A scene as it's written to a file. RON is kept as it was typed, comments and all.
+pub(crate) fn scene_file(source: SceneSource) -> Result<String, String> {
+  match source {
+    SceneSource::Ron(ron) => Ok(ron),
+    SceneSource::Definition(scene) | SceneSource::Preview { scene, .. } => file::save(&scene).map_err(|err| err.to_string()),
+  }
+}
+
 /// The scene, and what to draw in its place if it's only being previewed
 fn read(source: SceneSource) -> Result<(Scene, Option<Scene>), String> {
   match source {
@@ -557,6 +565,17 @@ mod tests {
         ))))],
       )"#
     ))
+  }
+
+  #[test]
+  fn a_scene_is_filed_as_what_was_typed_or_the_definition_being_kept() {
+    let typed = "// the title\n(version: 1, viewport: Area, layers: [])";
+    assert_eq!(scene_file(SceneSource::Ron(typed.into())).unwrap(), typed);
+
+    let scene = file::load(typed).unwrap();
+    let shown = Scene::new(Viewport::Sequence, Vec::new());
+    let written = file::save(&scene).unwrap();
+    assert_eq!(scene_file(SceneSource::Preview { scene, shown }).unwrap(), written);
   }
 
   /// A folder with a 2 by 1 image, red on the left and blue on the right, called `art/a.png`

@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use crate::scene::file::{self, FormatError};
 use crate::scene::{Images, Picture, Scene};
 
 /// The longest side of an image that will be decoded. A picture bigger than this costs the machine more memory than
@@ -26,11 +27,14 @@ const MAX_FRAMES: usize = 10_000;
 /// The extensions of the files that are images, in lower case
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
+/// The extension of the files that are scenes, in lower case
+const SCENE_EXTENSION: &str = "ron";
+
 /// A folder of what scenes use
 ///
 /// It's scanned whatever is inside it, so it can be organized any way that suits and can hold other files too. A scene
 /// names an image by its path from the root with forward slashes, such as `dmd/title.png`, so the name is the same on
-/// any machine the folder is on.
+/// any machine the folder is on. Scenes are kept in it too, as RON files named the same way.
 ///
 /// Decoded images are kept until their file changes. Clones share them.
 #[derive(Debug, Clone)]
@@ -50,8 +54,17 @@ impl Content {
 
   /// The name of every image in the folder, in order. A folder that isn't there has none.
   pub fn image_names(&self) -> Vec<String> {
+    self.names(is_image_name)
+  }
+
+  /// The name of every scene in the folder, in order. A folder that isn't there has none.
+  pub fn scene_names(&self) -> Vec<String> {
+    self.names(is_scene_name)
+  }
+
+  fn names(&self, wanted: fn(&str) -> bool) -> Vec<String> {
     let mut names = Vec::new();
-    scan(&self.root, "", &mut names);
+    scan(&self.root, "", wanted, &mut names);
     names.sort();
     names
   }
@@ -106,18 +119,47 @@ impl Content {
     let path = self.image_path(name)?;
     decode(name, bytes)?;
 
-    let failed = |error| ContentError::Write { name: name.into(), error };
-    if let Some(folder) = path.parent() {
-      fs::create_dir_all(folder).map_err(failed)?;
+    write_new(&path, bytes).map_err(|error| match error.kind() {
+      io::ErrorKind::AlreadyExists => ContentError::Taken(name.into()),
+      _ => ContentError::Write { name: name.into(), error },
+    })
+  }
+
+  /// Where the file of a named scene is, which doesn't mean it's there
+  pub fn scene_path(&self, name: &str) -> Result<PathBuf, SceneFileError> {
+    if !is_scene_name(name) {
+      return Err(SceneFileError::BadName(name.into()));
     }
-    let mut file = match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-      Ok(file) => file,
-      Err(error) if error.kind() == io::ErrorKind::AlreadyExists => return Err(ContentError::Taken(name.into())),
-      Err(error) => return Err(failed(error)),
-    };
-    file.write_all(bytes).map_err(|error| {
-      let _ = fs::remove_file(&path);
-      failed(error)
+    Ok(self.root.join(name))
+  }
+
+  /// A scene's file as it's written. This doesn't check that it's a scene, so that one that isn't can be opened and fixed.
+  pub fn read_scene(&self, name: &str) -> Result<String, SceneFileError> {
+    let path = self.scene_path(name)?;
+    fs::read_to_string(path).map_err(|error| SceneFileError::Read { name: name.into(), error })
+  }
+
+  /// Adds a scene to the folder. It has to be one that can be played, and a scene that's already there is left as it is.
+  pub fn add_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
+    let path = self.scene_path(name)?;
+    file::load(source).map_err(|error| SceneFileError::Invalid { name: name.into(), error })?;
+
+    write_new(&path, source.as_bytes()).map_err(|error| match error.kind() {
+      io::ErrorKind::AlreadyExists => SceneFileError::Taken(name.into()),
+      _ => SceneFileError::Write { name: name.into(), error },
+    })
+  }
+
+  /// Writes a scene to the folder over any by that name. It has to be one that can be played, and the file is replaced
+  /// all at once, so a machine reading it gets one version or the other and a failed save loses nothing.
+  pub fn save_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
+    let path = self.scene_path(name)?;
+    file::load(source).map_err(|error| SceneFileError::Invalid { name: name.into(), error })?;
+
+    let saving = path.with_extension("ron.saving");
+    replace(&path, &saving, source.as_bytes()).map_err(|error| {
+      let _ = fs::remove_file(&saving);
+      SceneFileError::Write { name: name.into(), error }
     })
   }
 }
@@ -186,8 +228,39 @@ impl fmt::Display for LayerImageError {
 
 impl std::error::Error for LayerImageError {}
 
+/// Why a scene file in a [`Content`] folder can't be used
+#[derive(Debug)]
+pub enum SceneFileError {
+  /// Not a path inside the folder with the extension of a scene
+  BadName(String),
+  /// The file couldn't be read, which includes it not being there
+  Read { name: String, error: io::Error },
+  /// What's being written isn't a scene that can be played
+  Invalid { name: String, error: FormatError },
+  /// There's already a scene by this name
+  Taken(String),
+  Write { name: String, error: io::Error },
+}
+
+impl fmt::Display for SceneFileError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::BadName(name) => write!(f, "\"{name}\" isn't the name of a scene in the content folder"),
+      Self::Read { name, error } if error.kind() == io::ErrorKind::NotFound => {
+        write!(f, "there's no scene \"{name}\" in the content folder")
+      }
+      Self::Read { name, error } => write!(f, "couldn't read scene \"{name}\": {error}"),
+      Self::Invalid { name, error } => write!(f, "scene \"{name}\" wasn't saved: {error}"),
+      Self::Taken(name) => write!(f, "there's already a scene \"{name}\""),
+      Self::Write { name, error } => write!(f, "couldn't save scene \"{name}\": {error}"),
+    }
+  }
+}
+
+impl std::error::Error for SceneFileError {}
+
 /// Symbolic links aren't followed, as one can lead back to a folder this is already in
-fn scan(folder: &Path, prefix: &str, names: &mut Vec<String>) {
+fn scan(folder: &Path, prefix: &str, wanted: fn(&str) -> bool, names: &mut Vec<String>) {
   let Ok(entries) = fs::read_dir(folder) else {
     return;
   };
@@ -197,19 +270,50 @@ fn scan(folder: &Path, prefix: &str, names: &mut Vec<String>) {
     };
     let name = format!("{prefix}{file_name}");
     match entry.file_type() {
-      Ok(kind) if kind.is_dir() => scan(&entry.path(), &format!("{name}/"), names),
-      Ok(kind) if kind.is_file() && is_image_name(&name) => names.push(name),
+      Ok(kind) if kind.is_dir() => scan(&entry.path(), &format!("{name}/"), wanted, names),
+      Ok(kind) if kind.is_file() && wanted(&name) => names.push(name),
       _ => {}
     }
   }
 }
 
+fn is_image_name(name: &str) -> bool {
+  is_inside(name) && extension(name).is_some_and(|extension| IMAGE_EXTENSIONS.contains(&extension.as_str()))
+}
+
+fn is_scene_name(name: &str) -> bool {
+  is_inside(name) && extension(name).is_some_and(|extension| extension == SCENE_EXTENSION)
+}
+
 /// A path going down from the root with `/` between its parts, and nothing that can lead out of it on any platform. A
 /// scene can be written by anyone who can reach the console, so its names can't be trusted to stay in the folder.
-fn is_image_name(name: &str) -> bool {
+fn is_inside(name: &str) -> bool {
   let safe = |part: &str| !part.is_empty() && part != "." && part != ".." && !part.contains(['\\', ':']);
-  let extension = name.rsplit_once('.').map(|(_, extension)| extension.to_ascii_lowercase());
-  name.split('/').all(safe) && extension.is_some_and(|extension| IMAGE_EXTENSIONS.contains(&extension.as_str()))
+  name.split('/').all(safe)
+}
+
+fn extension(name: &str) -> Option<String> {
+  name.rsplit_once('.').map(|(_, extension)| extension.to_ascii_lowercase())
+}
+
+/// Makes a file that has to be new, along with the folders it's in, leaving nothing behind if that fails partway
+fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
+  if let Some(folder) = path.parent() {
+    fs::create_dir_all(folder)?;
+  }
+  let mut file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+  file.write_all(bytes).inspect_err(|_| {
+    let _ = fs::remove_file(path);
+  })
+}
+
+/// Writes `saving` beside a file, then moves it into the file's place
+fn replace(path: &Path, saving: &Path, bytes: &[u8]) -> io::Result<()> {
+  if let Some(folder) = path.parent() {
+    fs::create_dir_all(folder)?;
+  }
+  fs::write(saving, bytes)?;
+  fs::rename(saving, path)
 }
 
 fn decode(name: &str, bytes: &[u8]) -> Result<Picture, ContentError> {
@@ -515,6 +619,82 @@ mod tests {
 
     keep(&mut kept, "c", decoded(4), limit);
     assert_eq!(kept.keys().collect::<Vec<_>>(), ["c"]);
+  }
+
+  const SCENE: &str = "(version: 1, viewport: Area, layers: [(fill: (base: Solid(Fixed(255, 0, 0, 255))))])";
+
+  #[test]
+  fn scenes_are_found_however_the_folder_is_organized() {
+    let folder = Folder::new();
+    folder.write("attract.ron", b"");
+    folder.write("dmd/modes/Hurry Up.RON", b"");
+    folder.write("title.png", &png(1, 1));
+
+    assert_eq!(Content::new(&folder.0).scene_names(), ["attract.ron", "dmd/modes/Hurry Up.RON"]);
+  }
+
+  #[test]
+  fn no_scene_name_leads_out_of_the_folder() {
+    let content = Content::new("root");
+    for name in ["../secret.ron", "a/../../secret.ron", "/etc/secret.ron", "C:/secret.ron", "a\\..\\secret.ron", "a.png", ""] {
+      assert!(matches!(content.scene_path(name), Err(SceneFileError::BadName(_))), "{name}");
+    }
+  }
+
+  #[test]
+  fn an_added_scene_can_be_read_back_and_makes_its_folders() {
+    let folder = Folder::new();
+    let content = Content::new(folder.0.join("not/made/yet"));
+    content.add_scene("led/a.ron", SCENE).unwrap();
+    assert_eq!(content.scene_names(), ["led/a.ron"]);
+    assert_eq!(content.read_scene("led/a.ron").unwrap(), SCENE);
+  }
+
+  #[test]
+  fn adding_never_replaces_a_scene() {
+    let folder = Folder::new();
+    folder.write("a.ron", b"what was there");
+    let content = Content::new(&folder.0);
+
+    assert!(matches!(content.add_scene("a.ron", SCENE), Err(SceneFileError::Taken(_))));
+    assert_eq!(content.read_scene("a.ron").unwrap(), "what was there");
+  }
+
+  #[test]
+  fn saving_replaces_a_scene_and_leaves_nothing_else() {
+    let folder = Folder::new();
+    folder.write("a.ron", b"what was there");
+    let content = Content::new(&folder.0);
+
+    content.save_scene("a.ron", SCENE).unwrap();
+    assert_eq!(content.read_scene("a.ron").unwrap(), SCENE);
+    assert_eq!(fs::read_dir(&folder.0).unwrap().count(), 1);
+  }
+
+  #[test]
+  fn a_scene_that_can_not_be_played_is_not_written() {
+    let folder = Folder::new();
+    folder.write("a.ron", b"what was there");
+    let content = Content::new(&folder.0);
+
+    assert!(matches!(content.save_scene("a.ron", "(oops"), Err(SceneFileError::Invalid { .. })));
+    assert!(matches!(content.add_scene("b.ron", "(oops"), Err(SceneFileError::Invalid { .. })));
+    assert_eq!(content.read_scene("a.ron").unwrap(), "what was there");
+    assert_eq!(content.scene_names(), ["a.ron"]);
+  }
+
+  #[test]
+  fn a_broken_scene_can_still_be_opened() {
+    let folder = Folder::new();
+    folder.write("a.ron", b"(oops");
+    assert_eq!(Content::new(&folder.0).read_scene("a.ron").unwrap(), "(oops");
+  }
+
+  #[test]
+  fn a_missing_scene_says_which() {
+    let folder = Folder::new();
+    let error = Content::new(&folder.0).read_scene("a.ron").unwrap_err();
+    assert_eq!(error.to_string(), "there's no scene \"a.ron\" in the content folder");
   }
 
   #[test]

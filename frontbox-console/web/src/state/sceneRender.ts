@@ -9,8 +9,8 @@ import { sendToMachine } from './console'
 type SceneRenderReply = { rendered: RenderedScene } | { error: string }
 
 export type SceneRender = SceneRenderReply & {
-  /** What was asked for, if the reply could be matched to a request */
-  source?: SceneSource
+  /** What was asked for */
+  source: SceneSource
   /** Whether this answers the latest request, rather than one a newer edit has replaced */
   settled: boolean
 }
@@ -41,8 +41,10 @@ const [render, setRender] = createSignal<SceneRender | null>(null)
 /** The machine's last reply; `null` until the first one */
 export const sceneRender = render
 
-let inFlight: { source: SceneSource; timeout: ReturnType<typeof setTimeout> } | null = null
+let inFlight: { timeout: ReturnType<typeof setTimeout> } | null = null
 let waiting: (Target & { time: number; cycle: number | null }) | null = null
+// what the next reply answers, which outlives `inFlight` as a slow render is still worth having. `null` once forgotten.
+let asked: SceneSource | null = null
 
 /**
  * Asks the machine to render a scene. One request runs at a time and only the newest waits, so dragging a slider can't
@@ -58,7 +60,8 @@ function sendWaiting() {
   const { source, size, leds, time, cycle } = waiting
   waiting = null
   sendToMachine({ type: 'RenderScene', source, size, leds, time, cycle })
-  inFlight = { source, timeout: setTimeout(replied, REPLY_TIMEOUT_MS) }
+  asked = source
+  inFlight = { timeout: setTimeout(replied, REPLY_TIMEOUT_MS) }
 }
 
 function replied() {
@@ -69,8 +72,21 @@ function replied() {
 
 /** Called by the console for the machine's reply */
 export function receiveSceneRender(reply: SceneRenderReply) {
-  setRender({ ...reply, source: inFlight?.source, settled: inFlight !== null && waiting === null })
+  if (asked) setRender({ ...reply, source: asked, settled: waiting === null })
   replied()
+}
+
+/** Lets go of everything to do with the scene that's been rendering, including replies still on their way */
+export function forgetSceneRender() {
+  asked = null
+  waiting = null
+  setRender(null)
+  clipInFlight = null
+  clipsWanted = null
+  clipsRendered = null
+  setClips(new Map())
+  setClipRendering(false)
+  setClipError(null)
 }
 
 const [clips, setClips] = createSignal<ReadonlyMap<number, SceneClip>>(new Map())

@@ -5,17 +5,20 @@ use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
-use frontbox_gfx::scene::ContentError;
+use frontbox_gfx::scene::{Content, ContentError, SceneFileError};
 use rust_embed::RustEmbed;
 use std::collections::HashSet;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
-use crate::protocol::{ClientMessage, ImageInfo};
+use crate::protocol::{ClientMessage, ImageInfo, SceneSource};
+use crate::scene_render::scene_file;
 
 /// The largest image a client can add
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
+const NO_CONTENT_FOLDER: &str = "this machine has no content folder";
 
 /// The built SolidJS app
 #[derive(RustEmbed)]
@@ -33,6 +36,11 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
       get(content_image).put(add_content_image).layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
     )
     .route("/content/image-info/{*name}", get(content_image_info))
+    .route("/content/scenes", get(content_scenes))
+    .route(
+      "/content/scenes/{*name}",
+      get(content_scene).post(add_content_scene).put(save_content_scene),
+    )
     .fallback(static_handler)
     .with_state(hub);
 
@@ -220,7 +228,7 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
 /// Adds an image to the content folder. The reply to a failure is text for showing to whoever is adding it.
 async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>, bytes: Bytes) -> Response {
   let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, "this machine has no content folder").into_response();
+    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
   };
   let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
   match added {
@@ -238,6 +246,81 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
+}
+
+/// The name of every scene in the content folder. An app without one has none.
+async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return Json(Vec::<String>::new()).into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.scene_names()).await {
+    Ok(names) => Json(names).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// A scene's file as RON, read from disk on each request so it can be edited while the machine runs. The reply to a
+/// failure is text for showing to whoever is opening it.
+async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.read_scene(&name)).await {
+    Ok(Ok(ron)) => ron.into_response(),
+    Ok(Err(err)) => scene_file_failure(err),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Reading a scene stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// Adds a scene to the content folder. The reply is the file as it's been written, or text for showing to whoever is
+/// adding it.
+async fn add_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: Json<SceneSource>) -> Response {
+  write_scene(hub, name, source, StatusCode::CREATED, Content::add_scene).await
+}
+
+/// Saves a scene over the one in the content folder. Replies as `add_content_scene` does.
+async fn save_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: Json<SceneSource>) -> Response {
+  write_scene(hub, name, source, StatusCode::OK, Content::save_scene).await
+}
+
+async fn write_scene(
+  State(hub): State<ConsoleHub>,
+  Path(name): Path<String>,
+  Json(source): Json<SceneSource>,
+  written: StatusCode,
+  write: fn(&Content, &str, &str) -> Result<(), SceneFileError>,
+) -> Response {
+  let Some(content) = hub.content() else {
+    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
+  };
+  let ron = match scene_file(source) {
+    Ok(ron) => ron,
+    Err(err) => return (StatusCode::UNPROCESSABLE_ENTITY, err).into_response(),
+  };
+  match tokio::task::spawn_blocking(move || write(&content, &name, &ron).map(|()| ron)).await {
+    Ok(Ok(ron)) => (written, ron).into_response(),
+    Ok(Err(err)) => scene_file_failure(err),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Writing a scene stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+fn scene_file_failure(err: SceneFileError) -> Response {
+  let status = match err {
+    SceneFileError::Read { ref error, .. } if error.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+    SceneFileError::Taken(_) => StatusCode::CONFLICT,
+    SceneFileError::Read { .. } | SceneFileError::Write { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+    SceneFileError::BadName(_) | SceneFileError::Invalid { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+  };
+  (status, err.to_string()).into_response()
 }
 
 async fn static_handler(uri: Uri) -> Response {

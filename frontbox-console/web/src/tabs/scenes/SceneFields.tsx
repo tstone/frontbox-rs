@@ -3,7 +3,7 @@ import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createEffect, createSignal, For, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
+import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import InfoTip from '../../components/InfoTip'
 import { ShapeEditor } from './ConfigPanel'
@@ -108,6 +108,33 @@ export function Dropdown<T extends string>(props: {
 }
 
 /**
+ * A box for typing a number, which is given each number as it's typed. Writing to a box moves its caret and drops text
+ * like `0.` that's on its way to a number, so it's only written when the value becomes something it doesn't already say,
+ * and tidied up when it's left.
+ */
+export function NumberBox(props: Omit<JSX.InputHTMLAttributes<HTMLInputElement>, 'value'> & { value: number; onNumber: (value: number) => void }) {
+  const [own, input] = splitProps(props, ['value', 'onNumber'])
+  const value = createMemo(() => own.value)
+  let box!: HTMLInputElement
+
+  createEffect(() => {
+    if (box.valueAsNumber !== value()) box.value = String(value())
+  })
+
+  return (
+    <input
+      {...input}
+      ref={box}
+      type="number"
+      onInput={() => {
+        if (Number.isFinite(box.valueAsNumber)) own.onNumber(box.valueAsNumber)
+      }}
+      onBlur={() => (box.value = String(value()))}
+    />
+  )
+}
+
+/**
  * A slider and a box for typing a value. A value from the box or the file past the range widens the slider, and double
  * clicking the slider's handle resets it to the range's `rest`.
  */
@@ -138,15 +165,7 @@ export function NumberField(props: { label: string; value: number; onChange: (va
           </Slider.Thumb>
         </Slider.Control>
       </Slider.Root>
-      <input
-        type="number"
-        aria-label={props.label}
-        step={props.range.step}
-        value={props.value}
-        onInput={(e) => {
-          if (Number.isFinite(e.currentTarget.valueAsNumber)) props.onChange(e.currentTarget.valueAsNumber)
-        }}
-      />
+      <NumberBox aria-label={props.label} step={props.range.step} value={props.value} onNumber={props.onChange} />
     </div>
   )
 }
@@ -167,15 +186,13 @@ function RangeField(props: {
   const max = () => Math.max(props.range.max, ends()[1])
 
   const box = (index: 0 | 1, name: string) => (
-    <input
-      type="number"
+    <NumberBox
       aria-label={`${props.label} ${name}`}
       step={props.range.step}
       value={props.value[index]}
-      onInput={(e) => {
-        if (!Number.isFinite(e.currentTarget.valueAsNumber)) return
+      onNumber={(typed) => {
         const next: [number, number] = [...props.value]
-        next[index] = e.currentTarget.valueAsNumber
+        next[index] = typed
         props.onChange(next)
       }}
     />

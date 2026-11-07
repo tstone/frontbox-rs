@@ -59,7 +59,7 @@ export function ImagePicker(props: { lens: Lens<string> }) {
           <img src={contentImageUrl(props.lens.get())} alt="" />
           <span title={props.lens.get()}>{props.lens.get()}</span>
         </Show>
-        <Dialog.Trigger class="scene-image-button">Choose</Dialog.Trigger>
+        <Dialog.Trigger class="scene-button">Choose</Dialog.Trigger>
       </div>
       <Portal>
         <Dialog.Backdrop class="scene-dialog-backdrop" />
@@ -96,7 +96,7 @@ export function ImagePicker(props: { lens: Lens<string> }) {
               <Show when={error()}>
                 <p class="scene-note scene-note-warn">{error()}</p>
               </Show>
-              <label class="scene-image-button">
+              <label class="scene-button">
                 {adding() ? 'Adding…' : 'Add image…'}
                 <input type="file" accept="image/*" disabled={adding()} onChange={(e) => add(e.currentTarget)} />
               </label>

@@ -9,7 +9,7 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
-import { Dropdown, EyeButton, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, NumberBox, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
 import { field, isHidden, item, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
@@ -194,14 +194,12 @@ function TimingFields(props: { lens: Lens<Timing>; playback: Playback }) {
     <>
       <label>
         Length
-        <input
-          type="number"
+        <NumberBox
           min={TIME_STEP}
           step="0.1"
           // a scaled length can run on for more digits than this box has room for
           value={Number(props.lens.get().duration.toFixed(3))}
-          onInput={(e) => {
-            const duration = e.currentTarget.valueAsNumber
+          onNumber={(duration) => {
             if (duration > 0) field(props.lens, 'duration').set(duration)
           }}
           // not on each keystroke, as typing a length passes through shorter ones on the way to it
@@ -222,14 +220,12 @@ function TimingFields(props: { lens: Lens<Timing>; playback: Playback }) {
         }}
       />
       <Show when={kind() === 'Times'}>
-        <input
-          type="number"
+        <NumberBox
           min="1"
           step="1"
           aria-label="Times to play"
           value={(cycle.get() as { Times: number }).Times}
-          onInput={(e) => {
-            const times = e.currentTarget.valueAsNumber
+          onNumber={(times) => {
             if (Number.isInteger(times) && times > 0) cycle.set({ Times: times })
           }}
         />
