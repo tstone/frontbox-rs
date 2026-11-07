@@ -1,6 +1,5 @@
 use glam::Vec2;
 use image::Rgba;
-use palette::{FromColor, Mix, Oklab, Srgb};
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
@@ -44,8 +43,6 @@ pub enum FillNode {
     /// In order of `at`
     stops: Vec<Stop>,
     #[serde(default)]
-    space: ColorSpace,
-    #[serde(default)]
     style: GradientStyle,
   },
   /// An image stretched over the fill's space. Past its edges nothing is drawn, as an image has no colors to go on with.
@@ -74,17 +71,6 @@ impl Stop {
   pub fn new(at: f32, color: impl Into<Prop<Color>>) -> Self {
     Self { at, color: color.into() }
   }
-}
-
-/// How a gradient mixes between its colors
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ColorSpace {
-  /// Perceptually even, so brightness doesn't dip between colors
-  #[default]
-  Oklab,
-  /// Each channel separately. Red to blue dips to a dark purple in the middle.
-  Rgb,
 }
 
 /// The way a gradient runs across its fill's space
@@ -136,7 +122,7 @@ impl FillNode {
   fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
     match self {
       Self::Solid(color) => color.resolve(env).0,
-      Self::Gradient { stops, space, style } => gradient(stops, *space, style.at(p), env),
+      Self::Gradient { stops, style } => gradient(stops, style.at(p), env),
       Self::Image { name, frame } => env.images.get(name).map_or(Rgba([0, 0, 0, 0]), |image| {
         image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_whole(env)), p, footprint)
       }),
@@ -144,7 +130,7 @@ impl FillNode {
   }
 }
 
-fn gradient(stops: &[Stop], space: ColorSpace, t: f32, env: &Env) -> Rgba<u8> {
+fn gradient(stops: &[Stop], t: f32, env: &Env) -> Rgba<u8> {
   let (Some(first), Some(last)) = (stops.first(), stops.last()) else {
     return Rgba([0, 0, 0, 0]);
   };
@@ -157,22 +143,11 @@ fn gradient(stops: &[Stop], space: ColorSpace, t: f32, env: &Env) -> Rgba<u8> {
     if t <= b.at {
       let span = b.at - a.at;
       let local = if span > 0.0 { (t - a.at) / span } else { 1.0 };
-      return mix(a.color.resolve(env).0, b.color.resolve(env).0, local, space);
+      return a.color.resolve(env).0.interpolate(&b.color.resolve(env).0, local);
     }
   }
 
   last.color.resolve(env).0
-}
-
-fn mix(a: Rgba<u8>, b: Rgba<u8>, t: f32, space: ColorSpace) -> Rgba<u8> {
-  match space {
-    ColorSpace::Rgb => a.interpolate(&b, t),
-    ColorSpace::Oklab => {
-      let to_oklab = |c: Rgba<u8>| Oklab::from_color(Srgb::new(c[0], c[1], c[2]).into_format::<f32>());
-      let mixed: Srgb<u8> = Srgb::from_color(to_oklab(a).mix(to_oklab(b), t)).into_format();
-      Rgba([mixed.red, mixed.green, mixed.blue, a[3].interpolate(&b[3], t)])
-    }
-  }
 }
 
 #[cfg(test)]
@@ -185,14 +160,13 @@ mod tests {
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
   const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 
-  fn red_to_blue(space: ColorSpace) -> Fill {
-    styled(GradientStyle::Linear, space)
+  fn red_to_blue() -> Fill {
+    styled(GradientStyle::Linear)
   }
 
-  fn styled(style: GradientStyle, space: ColorSpace) -> Fill {
+  fn styled(style: GradientStyle) -> Fill {
     Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
-      space,
       style,
     })
   }
@@ -204,7 +178,7 @@ mod tests {
 
   #[test]
   fn gradient_runs_left_to_right_and_clamps() {
-    let fill = red_to_blue(ColorSpace::Rgb);
+    let fill = red_to_blue();
     assert_eq!(color(&fill, -0.5, 0.0), RED);
     assert_eq!(color(&fill, 0.5, 0.0), BLUE);
     assert_eq!(color(&fill, -3.0, 0.0), RED);
@@ -214,7 +188,7 @@ mod tests {
 
   #[test]
   fn a_radial_gradient_runs_out_from_the_middle() {
-    let fill = styled(GradientStyle::Radial, ColorSpace::Rgb);
+    let fill = styled(GradientStyle::Radial);
     assert_eq!(color(&fill, 0.0, 0.0), RED);
     assert_eq!(color(&fill, 0.5, 0.0), BLUE);
     assert_eq!(color(&fill, 0.0, -0.5), BLUE);
@@ -225,7 +199,7 @@ mod tests {
 
   #[test]
   fn a_conical_gradient_runs_clockwise_from_the_right() {
-    let fill = styled(GradientStyle::Conical, ColorSpace::Rgb);
+    let fill = styled(GradientStyle::Conical);
     assert_eq!(color(&fill, 0.5, 0.0), RED);
     assert_eq!(color(&fill, 0.0, 0.5), Rgba([191, 0, 64, 255]));
     assert_eq!(color(&fill, -0.5, 0.0), Rgba([127, 0, 128, 255]));
@@ -235,31 +209,21 @@ mod tests {
 
   #[test]
   fn rotate_turns_where_a_conical_gradient_starts() {
-    let fill = styled(GradientStyle::Conical, ColorSpace::Rgb).transform(Transform::Rotate(90.0.into()));
+    let fill = styled(GradientStyle::Conical).transform(Transform::Rotate(90.0.into()));
     // just past the start, as exactly on it could land either side of where the ends meet
     assert_eq!(color(&fill, -0.0001, 0.5), RED);
   }
 
   #[test]
-  fn oklab_stays_brighter_than_rgb_in_the_middle() {
-    let rgb = color(&red_to_blue(ColorSpace::Rgb), 0.0, 0.0);
-    let oklab = color(&red_to_blue(ColorSpace::Oklab), 0.0, 0.0);
-    let sum = |c: Rgba<u8>| c[0] as u32 + c[1] as u32 + c[2] as u32;
-    assert!(sum(oklab) > sum(rgb), "{oklab:?} vs {rgb:?}");
-    assert_eq!(color(&red_to_blue(ColorSpace::Oklab), -0.5, 0.0), RED);
-    assert_eq!(color(&red_to_blue(ColorSpace::Oklab), 0.5, 0.0), BLUE);
-  }
-
-  #[test]
   fn rotate_makes_a_gradient_vertical() {
-    let fill = red_to_blue(ColorSpace::Rgb).transform(Transform::Rotate(90.0.into()));
+    let fill = red_to_blue().transform(Transform::Rotate(90.0.into()));
     assert_eq!(color(&fill, 0.5, -0.5), RED);
     assert_eq!(color(&fill, -0.5, 0.5), BLUE);
   }
 
   #[test]
   fn a_fill_moved_then_rotated_turns_around_its_own_middle() {
-    let fill = red_to_blue(ColorSpace::Rgb)
+    let fill = red_to_blue()
       .transform(Transform::Translate(Vec2::new(1.0, 0.0).into()))
       .transform(Transform::Rotate(90.0.into()));
     assert_eq!(color(&fill, 1.0, -0.5), RED);
@@ -274,7 +238,6 @@ mod tests {
         Stop::new(0.5, Color(Rgba([0, 255, 0, 255]))),
         Stop::new(0.75, Color(BLUE)),
       ],
-      space: ColorSpace::Rgb,
       style: GradientStyle::Linear,
     });
     assert_eq!(color(&fill, -0.4, 0.0), RED);
@@ -284,7 +247,7 @@ mod tests {
 
   #[test]
   fn adjusts_apply_in_order_after_the_kind() {
-    let mut fill = red_to_blue(ColorSpace::Rgb);
+    let mut fill = red_to_blue();
     fill.adjust.push(ColorAdjust::HueShift(120.0.into()));
     fill.adjust.push(ColorAdjust::HueShift((-60.0).into()));
     // red turned 60 degrees is yellow; blue turned 60 degrees is magenta

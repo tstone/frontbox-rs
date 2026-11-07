@@ -7,7 +7,7 @@ use crate::*;
 pub trait SoundSystemExt {
   fn preload_sound(&self, name: &'static str, path: impl AsRef<Path>);
   fn play_sfx(&self, key: &'static str);
-  fn play_callout(&self, key: &'static str);
+  fn play_callout(&self, request: impl Into<CalloutRequest>);
 }
 
 impl<'a> SoundSystemExt for SystemContext<'a> {
@@ -23,9 +23,9 @@ impl<'a> SoundSystemExt for SystemContext<'a> {
     });
   }
 
-  fn play_callout(&self, key: &'static str) {
+  fn play_callout(&self, request: impl Into<CalloutRequest>) {
     with_snd_system(self, |snd_system| {
-      snd_system.play_callout(key);
+      snd_system.play_callout(request);
     });
   }
 }

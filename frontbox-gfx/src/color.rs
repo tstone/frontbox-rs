@@ -315,6 +315,36 @@ impl RgbaColor for Rgba<u8> {
   }
 }
 
+/// The named colors for choosing from, around the hues and then the neutrals. `transparent`, and `off` as another name
+/// for black, are left out.
+pub fn named_colors() -> Vec<(&'static str, Rgba<u8>)> {
+  vec![
+    ("red", Rgba::red()),
+    ("coral", Rgba::coral()),
+    ("orange", Rgba::orange()),
+    ("peach", Rgba::peach()),
+    ("gold", Rgba::gold()),
+    ("yellow", Rgba::yellow()),
+    ("olive", Rgba::olive()),
+    ("lime", Rgba::lime()),
+    ("green", Rgba::green()),
+    ("mint", Rgba::mint()),
+    ("turquoise", Rgba::turquoise()),
+    ("cyan", Rgba::cyan()),
+    ("blue", Rgba::blue()),
+    ("navy", Rgba::navy()),
+    ("indigo", Rgba::indigo()),
+    ("purple", Rgba::purple()),
+    ("plum", Rgba::plum()),
+    ("magenta", Rgba::magenta()),
+    ("pink", Rgba::pink()),
+    ("maroon", Rgba::maroon()),
+    ("bronze", Rgba::bronze()),
+    ("white", Rgba::white()),
+    ("black", Rgba::black()),
+  ]
+}
+
 fn to_hsl(c: Rgba<u8>) -> (Hsl, u8) {
   let srgb: Srgb<u8> = Srgb::new(c.0[0], c.0[1], c.0[2]);
   let hsl: Hsl = srgb.into_format::<f32>().into_color();

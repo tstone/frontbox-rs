@@ -188,7 +188,7 @@ mod tests {
   use crate::layout::{Grid, Line};
   use crate::scene::test_scene::Scene;
   use crate::scene::{
-    Color, ColorAdjust, ColorSpace, Fill, FillNode, GradientStyle, Images, Key, Mask, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread,
+    Color, ColorAdjust, Fill, FillNode, GradientStyle, Images, Key, Mask, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread,
     Stop, Track, Transform,
   };
 
@@ -204,7 +204,6 @@ mod tests {
   fn red_to_blue() -> Fill {
     Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
-      space: ColorSpace::Rgb,
       style: GradientStyle::Linear,
     })
   }
@@ -796,7 +795,6 @@ mod tests {
     let in_point = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
     let in_stop = Layer::new(Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Prop::Track(track()))],
-      space: ColorSpace::Rgb,
       style: GradientStyle::Linear,
     }));
     let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));

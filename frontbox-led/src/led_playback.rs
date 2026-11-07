@@ -419,7 +419,6 @@ mod tests {
     let mut program = on(LedQ::names(vec!["led1", "led2", "led3"]),
       scene(FillNode::Gradient {
         stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
-        space: ColorSpace::Rgb,
         style: GradientStyle::Linear,
       }),
     );
@@ -650,7 +649,6 @@ mod tests {
   fn red_to_blue() -> FillNode {
     FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
-      space: ColorSpace::Rgb,
       style: GradientStyle::Linear,
     }
   }

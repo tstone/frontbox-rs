@@ -115,7 +115,6 @@ mod tests {
               Stop::new(0.0, Color(Rgba([255, 204, 0, 255]))),
               Stop::new(1.0, Color(Rgba([255, 51, 0, 128]))),
             ],
-            space: ColorSpace::Oklab,
             style: GradientStyle::Radial,
           })
           .transform(Transform::Rotate(90.0.into()))
@@ -283,6 +282,17 @@ mod tests {
   fn a_gradient_with_no_style_is_linear() {
     let scene = load("(layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
     assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Linear, .. }));
+  }
+
+  #[test]
+  fn a_gradient_from_before_colors_only_mixed_in_rgb_still_reads() {
+    let scene = load(
+      "(layers: [(fill: (base: Gradient(stops: [
+        (at: 0.0, color: Fixed(255, 0, 0, 255)),
+      ], space: Oklab, style: Radial)))])",
+    )
+    .unwrap();
+    assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Radial, .. }));
   }
 
   #[test]

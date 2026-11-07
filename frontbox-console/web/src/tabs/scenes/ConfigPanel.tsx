@@ -9,7 +9,6 @@ import { contentImageInfo } from '../../state/contentImages'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
-import type { ColorSpace } from '../../types/generated/ColorSpace'
 import type { FillNode } from '../../types/generated/FillNode'
 import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
@@ -86,10 +85,6 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Radial', label: 'Radial gradient' },
   { value: 'Conical', label: 'Conical gradient' },
   { value: 'Image', label: 'Image' },
-]
-const SPACE_OPTIONS: { value: ColorSpace; label: string }[] = [
-  { value: 'Oklab', label: 'Oklab' },
-  { value: 'Rgb', label: 'RGB' },
 ]
 const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
   { value: 'None', label: 'All' },
@@ -339,7 +334,7 @@ function FillEditor(props: { lens: Lens<Fill> }) {
         { at: 0, color: color ?? { Fixed: WHITE } },
         { at: 1, color: { Fixed: BLACK } },
       ]
-      base.set({ Gradient: { stops, space: 'Oklab', style: next } })
+      base.set({ Gradient: { stops, style: next } })
     }
   }
 
@@ -429,7 +424,7 @@ function describeImage({ width, height, frames, duration }: ImageInfo) {
   return `${size}, ${frames} frames (0 to ${frames - 1})${length}`
 }
 
-function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }> }) {
+function GradientEditor(props: { lens: Lens<{ stops: Stop[] }> }) {
   const scene = useContext(SceneContext)!
   const [revealing] = useContext(RevealContext)!
   const stops = field(props.lens, 'stops')
@@ -510,75 +505,65 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
   })
 
   return (
-    <>
-      <FieldRow label="Mix in">
-        <Dropdown
-          label="Mix in"
-          options={SPACE_OPTIONS}
-          value={props.lens.get().space}
-          onChange={field(props.lens, 'space').set}
-        />
-      </FieldRow>
-      <div class="scene-stops" ref={row}>
-        <Index each={stops.get()}>
-          {(stop, index) => (
-            <Popover.Root
-              lazyMount
-              unmountOnExit
-              autoFocus={false}
-              positioning={{ placement: 'bottom-start' }}
-              open={open() === index}
-              onOpenChange={(details) => {
-                if (details.open && dragged) return
-                // another stop's can be opening as this one closes
-                setOpen((current) => (details.open ? index : current === index ? null : current))
-              }}
-            >
-              <Popover.Trigger
-                class="scene-stop"
-                classList={{ dragging: dragging() === index }}
-                data-stop={index}
-                aria-label={`Stop ${index + 1}`}
-                style={{ background: cssColor(startingValue(stop().color, scene.get(), WHITE)) }}
-                onPointerDown={press}
-                onPointerMove={(e) => drag(e, index)}
-                onPointerUp={release}
-                onPointerCancel={release}
-              />
-              <Portal>
-                <Popover.Positioner>
-                  <Popover.Content class="scene-config scene-stop-popup">
-                    <FieldRow label="At">
-                      <NumberField
-                        label={`Stop ${index + 1} position`}
-                        range={stopRange(index)}
-                        value={stop().at}
-                        onChange={field(item(stops, index), 'at').set}
-                      />
-                    </FieldRow>
-                    <PropField
-                      label="Color"
-                      paramName="stop_color"
-                      fallback={WHITE}
-                      ranges={COLOR_RANGES}
-                      lens={field(item(stops, index), 'color')}
+    <div class="scene-stops" ref={row}>
+      <Index each={stops.get()}>
+        {(stop, index) => (
+          <Popover.Root
+            lazyMount
+            unmountOnExit
+            autoFocus={false}
+            positioning={{ placement: 'bottom-start' }}
+            open={open() === index}
+            onOpenChange={(details) => {
+              if (details.open && dragged) return
+              // another stop's can be opening as this one closes
+              setOpen((current) => (details.open ? index : current === index ? null : current))
+            }}
+          >
+            <Popover.Trigger
+              class="scene-stop"
+              classList={{ dragging: dragging() === index }}
+              data-stop={index}
+              aria-label={`Stop ${index + 1}`}
+              style={{ background: cssColor(startingValue(stop().color, scene.get(), WHITE)) }}
+              onPointerDown={press}
+              onPointerMove={(e) => drag(e, index)}
+              onPointerUp={release}
+              onPointerCancel={release}
+            />
+            <Portal>
+              <Popover.Positioner>
+                <Popover.Content class="scene-config scene-stop-popup">
+                  <FieldRow label="At">
+                    <NumberField
+                      label={`Stop ${index + 1} position`}
+                      range={stopRange(index)}
+                      value={stop().at}
+                      onChange={field(item(stops, index), 'at').set}
                     />
-                    <Show when={stops.get().length > 1}>
-                      <button type="button" class="scene-add" onClick={() => removeStop(index)}>
-                        Remove stop
-                      </button>
-                    </Show>
-                  </Popover.Content>
-                </Popover.Positioner>
-              </Portal>
-            </Popover.Root>
-          )}
-        </Index>
-        <button type="button" class="scene-add" aria-label="Add stop" title="Add stop" onClick={addStop}>
-          +
-        </button>
-      </div>
-    </>
+                  </FieldRow>
+                  <PropField
+                    label="Color"
+                    paramName="stop_color"
+                    fallback={WHITE}
+                    ranges={COLOR_RANGES}
+                    lens={field(item(stops, index), 'color')}
+                  />
+                  <Show when={stops.get().length > 1}>
+                    <button type="button" class="scene-add" onClick={() => removeStop(index)}>
+                      Remove stop
+                    </button>
+                  </Show>
+                </Popover.Content>
+              </Popover.Positioner>
+            </Portal>
+          </Popover.Root>
+        )}
+      </Index>
+      <button type="button" class="scene-add" aria-label="Add stop" title="Add stop" onClick={addStop}>
+        +
+      </button>
+    </div>
   )
 }
 

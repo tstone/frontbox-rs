@@ -4,22 +4,26 @@ use frontbox_core::prelude::*;
 use kira::backend::cpal::Error;
 use tokio::sync::mpsc;
 
+use crate::CalloutCompleted;
+use crate::callout::CalloutRequest;
 use crate::sound_manager::SoundManagerCmds::*;
 use crate::sound_manager::{SoundManager, SoundManagerCmds};
 
 pub struct SoundSystem {
   tx: mpsc::UnboundedSender<SoundManagerCmds>,
+  completed_rx: mpsc::UnboundedReceiver<CalloutCompleted>,
 }
 
 impl SoundSystem {
   pub fn by_name(device_name: &'static str) -> Result<Self, Error> {
     let (tx, rx) = mpsc::unbounded_channel::<SoundManagerCmds>();
-    match SoundManager::new(device_name, rx) {
+    let (completed_tx, completed_rx) = mpsc::unbounded_channel();
+    match SoundManager::new(device_name, rx, completed_tx) {
       Ok(mut manager) => {
         tokio::spawn(async move {
           manager.run().await;
         });
-        Ok(Self { tx })
+        Ok(Self { tx, completed_rx })
       }
       Err(err) => Err(err),
     }
@@ -27,12 +31,13 @@ impl SoundSystem {
 
   pub fn default() -> Result<Self, Error> {
     let (tx, rx) = mpsc::unbounded_channel::<SoundManagerCmds>();
-    match SoundManager::default(rx) {
+    let (completed_tx, completed_rx) = mpsc::unbounded_channel();
+    match SoundManager::default(rx, completed_tx) {
       Ok(mut manager) => {
         tokio::spawn(async move {
           manager.run().await;
         });
-        Ok(Self { tx })
+        Ok(Self { tx, completed_rx })
       }
       Err(err) => Err(err),
     }
@@ -58,9 +63,10 @@ impl SoundSystem {
     let _ = self.tx.send(PlaySfx(key));
   }
 
-  /// Play the wave AND duck any music that is currently playing, then restore the music volume after the sound finishes
-  pub fn play_callout(&mut self, key: &'static str) {
-    let _ = self.tx.send(PlayCallout(key));
+  /// Play the wave AND duck any music that is currently playing, then restore the music volume after the sound finishes.
+  /// Lines play one at a time, and [`CalloutCompleted`] says when this one is done with.
+  pub fn play_callout(&mut self, request: impl Into<CalloutRequest>) {
+    let _ = self.tx.send(PlayCallout(request.into()));
   }
 
   pub fn play_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
@@ -74,29 +80,10 @@ impl SoundSystem {
   }
 }
 
-impl System for SoundSystem {}
-
-// impl System for SoundSystem {
-//   fn on_tick(&mut self, _delta: Duration, _ctx: &Context) {
-//     let SoundSystem {
-//       active_callout,
-//       music_track,
-//       ..
-//     } = self;
-
-//     // un-duck music if callout finished
-//     if active_callout.is_some()
-//       && active_callout.as_ref().unwrap().state() == PlaybackState::Stopped
-//     {
-//       // check if there are any queued callouts, and if so play the next one instead of un-ducking music
-//       if let Some(next_key) = self.callout_queue.pop() {
-//         if let Some(sound) = self.sounds.get(next_key) {
-//           self.play_callout_sound(sound.clone());
-//         }
-//       } else {
-//         self.active_callout = None;
-//         Self::unduck_track(music_track);
-//       }
-//     }
-//   }
-// }
+impl System for SoundSystem {
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    while let Ok(completed) = self.completed_rx.try_recv() {
+      ctx.emit(completed);
+    }
+  }
+}

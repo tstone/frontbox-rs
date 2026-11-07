@@ -1344,6 +1344,32 @@ label.scene-button:hover {
   transform: translate(-50%, -50%);
 }
 
+.scene-color-picker [data-part='swatch-group'] {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0.25rem;
+}
+
+.scene-color-picker [data-part='swatch-trigger'] {
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.scene-color-picker [data-part='swatch'] {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+.scene-color-picker [data-part='swatch-trigger'][data-state='checked'] {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
 /* ---- the timeline ---- */
 
 .scene-timeline {

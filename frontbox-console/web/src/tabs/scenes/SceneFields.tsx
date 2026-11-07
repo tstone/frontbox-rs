@@ -8,6 +8,7 @@ import { Portal } from 'solid-js/web'
 import InfoTip from '../../components/InfoTip'
 import { ShapeEditor } from './ConfigPanel'
 import type { Color } from '../../types/generated/Color'
+import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
 import type { Spread } from '../../types/generated/Spread'
 import { field, freshParamName, fullSpread, HUE, newPick, newSweep, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
@@ -324,8 +325,9 @@ function Vec2Field(props: { label: string; lens: Lens<Vec2>; ranges: Ranges }) {
 }
 
 function ColorField(props: { label: string; lens: Lens<Color> }) {
-  // what the picker last chose. The scene only keeps red, green, and blue, which lose the hue of a black or a gray, so
-  // the picker keeps its own color for as long as the scene still agrees with it.
+  // what the picker last chose. The scene only keeps red, green, and blue, which lose the hue of a white, a black, or a
+  // gray, so the picker keeps its own color for as long as the scene still agrees with it. Its format has to be one with
+  // a hue too, as it turns the value it's given into that format.
   const [picked, setPicked] = createSignal<PickerColor>()
   const value = () => {
     const color = picked()
@@ -344,7 +346,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
   return (
     <ColorPicker.Root
       class="scene-color"
-      format="rgba"
+      format="hsba"
       value={value()}
       onValueChange={(details) => {
         setPicked(details.value)
@@ -366,6 +368,15 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
             </ColorPicker.Area>
             {channelSlider('hue')}
             {channelSlider('alpha')}
+            <ColorPicker.SwatchGroup>
+              <For each={NAMED_COLORS}>
+                {({ name, hex }) => (
+                  <ColorPicker.SwatchTrigger value={hex} title={name} aria-label={name}>
+                    <ColorPicker.Swatch value={hex} />
+                  </ColorPicker.SwatchTrigger>
+                )}
+              </For>
+            </ColorPicker.SwatchGroup>
           </ColorPicker.Content>
         </ColorPicker.Positioner>
       </Portal>

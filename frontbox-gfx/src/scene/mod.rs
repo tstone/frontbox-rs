@@ -15,7 +15,6 @@
 //! # use frontbox_gfx::prelude::*;
 //! let composition = GfxComposition::new(vec![Layer::new(Fill::new(FillNode::Gradient {
 //!   stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
-//!   space: ColorSpace::Oklab,
 //!   style: GradientStyle::Linear,
 //! }))]);
 //!

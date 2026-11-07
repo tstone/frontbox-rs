@@ -45,9 +45,7 @@
 
 ## Scenes/Editor
 
-- Remove oklab on gradients and just use RGB
-- Color picker has weird bug where hue isn't selectable if color hasn't first been picked
-- Color picker needs to also show named colors
+- Pinwheel should have a balance slider, 50/50 is the current, but it should have a range of 10/90 to 90/10
 - Needs a grid + snap to grid option for everything with points
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
