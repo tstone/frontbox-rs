@@ -15,4 +15,13 @@ min: [number, number], max: [number, number],
 /**
  * A polygon's points in its own space
  */
-points: Array<[number, number]>, };
+points: Array<[number, number]>, 
+/**
+ * Its edge in the scene, as a closed loop of points
+ */
+outline: Array<[number, number]>, 
+/**
+ * For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that
+ * doesn't.
+ */
+paths: Array<RenderedShape | null>, };

@@ -1,5 +1,5 @@
 import { Accordion } from '@ark-ui/solid/accordion'
-import { Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
+import { createEffect, createSignal, Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
@@ -28,7 +28,6 @@ import {
   orEmpty,
   pointRanges,
   removed,
-  repeatRanges,
   ROTATION,
   scaleRanges,
   sizeRanges,
@@ -38,6 +37,7 @@ import {
   variant,
   type Lens,
   type Range,
+  type Ranges,
   type Vec2,
   type TransformSpace,
 } from './sceneModel'
@@ -46,6 +46,7 @@ type Fill = Layer['fill']
 type FillKind = 'Solid' | 'Gradient' | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type Shape = NonNullable<Layer['shape']>
+type EllipseRadii = Extract<ShapeNode, { Ellipse: unknown }>['Ellipse']
 type ShapeKind = 'None' | 'Ellipse' | 'Rect' | 'Polygon'
 
 const WHITE: Color = [255, 255, 255, 255]
@@ -75,20 +76,16 @@ const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
   { value: 'Translate', label: 'Translate' },
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
-  { value: 'Mirror', label: 'Mirror' },
-  { value: 'Repeat', label: 'Repeat' },
 ]
 const ADJUST_OPTIONS: { value: 'HueShift'; label: string }[] = [{ value: 'HueShift', label: 'Hue shift' }]
 
-type TransformKind = 'Translate' | 'Rotate' | 'Scale' | 'Mirror' | 'Repeat'
+type TransformKind = 'Translate' | 'Rotate' | 'Scale'
 
 /** A transform that leaves things where they are, until it's changed */
 const NEW_TRANSFORMS: Record<TransformKind, Transform> = {
   Translate: { Translate: { Fixed: [0, 0] } },
   Rotate: { Rotate: { Fixed: 0 } },
   Scale: { Scale: { Fixed: [1, 1] } },
-  Mirror: { Mirror: { Fixed: 0 } },
-  Repeat: { Repeat: { Fixed: [0, 0] } },
 }
 
 /** The scene's viewport and layers */
@@ -382,13 +379,17 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
   )
 }
 
-function ShapeEditor(props: { lens: Lens<Shape | undefined> }) {
+/** A layer's shape, or with `path` the shape a sweep goes around, which can't be left out */
+export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: Lens<Shape>; path: true }) {
+  const path = 'path' in props
+  const label = path ? 'Path' : 'Shape'
   const surface = useContext(SurfaceContext)!
   const scene = useContext(SceneContext)!
+  const lens = props.lens as Lens<Shape | undefined>
   const shape = props.lens as Lens<Shape>
   const base = field(shape, 'base') as Lens<ShapeNode>
   const kind = (): ShapeKind => {
-    const current = props.lens.get()
+    const current = lens.get()
     return current ? (Object.keys(current.base)[0] as ShapeKind) : 'None'
   }
 
@@ -405,23 +406,22 @@ function ShapeEditor(props: { lens: Lens<Shape | undefined> }) {
 
   const setKind = (next: ShapeKind) => {
     if (next === kind()) return
-    if (next === 'None') return props.lens.set(undefined)
+    if (next === 'None') return lens.set(undefined)
     // one shape turned into another takes up the same room
-    if (props.lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get())))
-    else props.lens.set(newShape(next))
+    if (lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get())))
+    else lens.set(newShape(next))
   }
 
   const ranges = () => sizeRanges(surface())
 
   return (
     <section class="scene-group">
-      <FieldRow label="Shape">
-        <Dropdown label="Shape" options={SHAPE_OPTIONS} value={kind()} onChange={setKind} />
+      <FieldRow label={label}>
+        <Dropdown label={label} options={path ? SHAPE_OPTIONS.slice(1) : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
       </FieldRow>
       <Switch>
         <Match when={kind() === 'Ellipse'}>
-          <PropField label="R1" paramName="r1" fallback={0} ranges={both(radius(ranges()[1]))} lens={field(variant(base, 'Ellipse'), 'r1')} />
-          <PropField label="R2" paramName="r2" fallback={0} ranges={both(radius(ranges()[0]))} lens={field(variant(base, 'Ellipse'), 'r2')} />
+          <EllipseFields ranges={ranges()} lens={variant(base, 'Ellipse')} />
         </Match>
         <Match when={kind() === 'Rect'}>
           <PropField label="Width" paramName="width" fallback={0} ranges={both(ranges()[0])} lens={field(variant(base, 'Rect'), 'width')} />
@@ -435,6 +435,62 @@ function ShapeEditor(props: { lens: Lens<Shape | undefined> }) {
         <TransformList lens={orEmpty(field(shape, 'transform'))} space="shape" />
       </Show>
     </section>
+  )
+}
+
+/**
+ * An ellipse's radii, and a button that locks them together into a circle. Whichever one changes takes the other with
+ * it, wherever the change came from, as a handle on the shape only knows of its own radius. A file has no way to say
+ * they're locked, so this lasts as long as the editor is open. While they're locked both are on the wider of their two
+ * ranges, so that the same value puts their sliders in the same spot.
+ */
+function EllipseFields(props: { lens: Lens<EllipseRadii>; ranges: Ranges }) {
+  const [locked, setLocked] = createSignal(false)
+  const r1 = field(props.lens, 'r1')
+  const r2 = field(props.lens, 'r2')
+  const same = (a: Prop<number>, b: Prop<number>) => JSON.stringify(a) === JSON.stringify(b)
+
+  let lastR1 = r1.get()
+  createEffect(() => {
+    const [first, second] = [r1.get(), r2.get()]
+    if (locked() && !same(first, second)) {
+      const radius = same(first, lastR1) ? second : first
+      props.lens.set({ r1: radius, r2: radius })
+    }
+    lastR1 = first
+  })
+
+  const toggle = () => {
+    if (!locked()) props.lens.set({ r1: r1.get(), r2: r1.get() })
+    setLocked(!locked())
+  }
+
+  const range = (own: Range) => {
+    const [across, down] = props.ranges
+    return both(radius(!locked() ? own : across.max > down.max ? across : down))
+  }
+
+  const lock = (
+    <button
+      type="button"
+      class="scene-radii-lock"
+      aria-pressed={locked()}
+      aria-label="Lock R1 and R2 together"
+      title={locked() ? 'R1 and R2 change together, keeping this a circle' : 'Lock R1 and R2 together to make a circle'}
+      onClick={toggle}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M3.5 7.5h9v6h-9z" />
+        <path d={locked() ? 'M5.5 7.5V5a2.5 2.5 0 0 1 5 0v2.5' : 'M5.5 7.5V5a2.5 2.5 0 0 1 4.75-1.1'} />
+      </svg>
+    </button>
+  )
+
+  return (
+    <>
+      <PropField label="R1" paramName="r1" fallback={0} ranges={range(props.ranges[1])} lens={r1} />
+      <PropField label="R2" paramName="r2" fallback={0} ranges={range(props.ranges[0])} lens={r2} action={lock} />
+    </>
   )
 }
 
@@ -550,28 +606,7 @@ function TransformEditor(props: { lens: Lens<Transform>; space: TransformSpace }
             lens={variant(props.lens, 'Scale')}
           />
         </Match>
-        <Match when={kind() === 'Mirror'}>
-          <PropField
-            label="Degrees"
-            paramName="mirror"
-            fallback={0}
-            ranges={both(ROTATION)}
-            lens={variant(props.lens, 'Mirror')}
-          />
-        </Match>
-        <Match when={kind() === 'Repeat'}>
-          <PropField
-            label="Spacing"
-            paramName="spacing"
-            fallback={[0, 0] as Vec2}
-            ranges={repeatRanges(surface(), props.space)}
-            lens={variant(props.lens, 'Repeat')}
-          />
-        </Match>
       </Switch>
-      <Show when={props.space === 'shape' && (kind() === 'Mirror' || kind() === 'Repeat')}>
-        <p class="scene-note">This works around the origin, so it belongs above the Translate that puts the shape in place.</p>
-      </Show>
     </>
   )
 }

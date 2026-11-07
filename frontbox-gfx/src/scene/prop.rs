@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Animatable, Env, Random, Track};
+use crate::scene::sweep::only_for_positions;
+use crate::scene::{Animatable, Env, Random, Sweep, Track};
 
-/// A value in a definition that can be fixed, read from a parameter, keyframed, or picked at random
+/// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, or swept along a path
 ///
-/// In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, or `Random((picks: [...], spread: Float(0.0, 1.0)))`.
+/// In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`, or
+/// `Sweep((path: (base: Ellipse(r1: Fixed(5.0), r2: Fixed(5.0))), start: 0.0, end: 1.0))`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(deserialize = "T: Animatable + Deserialize<'de>"))]
 pub enum Prop<T> {
   /// A value that doesn't change
   Fixed(T),
@@ -16,6 +19,9 @@ pub enum Prop<T> {
   Track(Track<T>),
   /// A new value at set times, from within a range
   Random(Random),
+  /// Goes around the edge of a shape. Only a position can do this, and a file with any other kind of value doesn't load.
+  #[serde(deserialize_with = "only_for_positions::<T, _>")]
+  Sweep(Sweep),
 }
 
 impl<T> From<T> for Prop<T> {
@@ -26,7 +32,7 @@ impl<T> From<T> for Prop<T> {
 
 impl<T> Prop<T> {
   pub(crate) fn is_animated(&self) -> bool {
-    matches!(self, Self::Track(_) | Self::Random(_))
+    matches!(self, Self::Track(_) | Self::Random(_) | Self::Sweep(_))
   }
 }
 
@@ -37,6 +43,7 @@ impl<T: Animatable> Prop<T> {
       Self::Param(name) => env.param(name).and_then(T::from_value).unwrap_or_default(),
       Self::Track(track) => track.resolve(env.time),
       Self::Random(random) => random.resolve(env),
+      Self::Sweep(sweep) => T::from_point(sweep.resolve(env)).unwrap_or_default(),
     }
   }
 }

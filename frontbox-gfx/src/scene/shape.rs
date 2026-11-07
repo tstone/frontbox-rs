@@ -34,6 +34,11 @@ pub struct ShapePose {
   pub bounds: Bounds,
   /// A polygon's points in its own space. Empty for the other shapes.
   pub points: Vec<Vec2>,
+  /// The shape's edge in the scene, as a closed loop of points
+  pub outline: Vec<Vec2>,
+  /// For each of the shape's transforms, the path it moves the shape along, if it does and that path has a pose. Its
+  /// scene is the values the transform takes.
+  pub paths: Vec<Option<ShapePose>>,
 }
 
 /// Changes to a shape's edge. None yet.
@@ -45,8 +50,9 @@ impl Shape {
   /// How much of the sample's footprint the shape covers (0 to 1), and the sample's position in the shape's own
   /// space. `None` when the shape draws nothing.
   pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2, Vec2)> {
-    let pos = self.on_lap(at.pos, self.base.bounds(env).center(), env);
-    let to_local = self.to_local(pos, env)?;
+    let center = self.base.bounds(env).center();
+    let pos = self.on_lap(at.pos, center, env);
+    let to_local = self.to_local(center, env)?;
     let local = to_local.transform_point2(pos);
     let (distance, gradient) = self.base.distance(local, env);
     let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);
@@ -55,7 +61,7 @@ impl Shape {
 
   /// The shape's edge in the scene, as a closed loop of points. Empty when it draws nothing.
   pub(crate) fn outline(&self, env: &Env) -> Vec<Vec2> {
-    let Some(to_scene) = self.to_scene(env) else {
+    let Some(to_scene) = self.to_scene(self.base.bounds(env).center(), env) else {
       return Vec::new();
     };
     self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
@@ -63,16 +69,27 @@ impl Shape {
 
   /// The shape as it stands at a moment. `None` when a transform collapses it.
   pub(crate) fn pose(&self, env: &Env) -> Option<ShapePose> {
-    self.to_scene(env)?;
+    let bounds = self.base.bounds(env);
+    self.to_scene(bounds.center(), env)?;
     let points = match &self.base {
       ShapeNode::Polygon { points } => points.iter().map(|p| p.resolve(env)).collect(),
       _ => Vec::new(),
     };
     Some(ShapePose {
-      transforms: self.transform.iter().map(|transform| transform.affine(env)).collect(),
-      bounds: self.base.bounds(env),
+      transforms: self.affines(bounds.center(), env),
+      bounds,
       points,
+      outline: self.outline(env),
+      paths: self.transform.iter().map(|transform| transform.path().and_then(|path| path.pose(env))).collect(),
     })
+  }
+
+  /// The point in the scene a fraction of the way around the shape's edge. The origin when it has no edge to go around.
+  pub(crate) fn along(&self, phase: f32, env: &Env) -> Vec2 {
+    match self.to_scene(self.base.bounds(env).center(), env) {
+      Some(to_scene) => to_scene.transform_point2(self.base.along(phase, env)),
+      None => Vec2::ZERO,
+    }
   }
 
   pub(crate) fn is_animated(&self) -> bool {
@@ -126,6 +143,15 @@ impl ShapeNode {
     }
   }
 
+  /// The point a fraction of the way around the shape's edge, in its own space. An ellipse needs no outline for this, as
+  /// a prop can resolve once for every point being drawn.
+  fn along(&self, phase: f32, env: &Env) -> Vec2 {
+    match self {
+      Self::Ellipse { .. } => Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env),
+      _ => along_loop(&self.outline(env), phase),
+    }
+  }
+
   /// How far an ellipse or a rect reaches from its center along each axis
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
@@ -146,6 +172,20 @@ impl ShapeNode {
       }
     }
   }
+}
+
+/// The point a fraction of the distance around a closed loop of points
+fn along_loop(points: &[Vec2], phase: f32) -> Vec2 {
+  let edges = || points.iter().zip(points.iter().cycle().skip(1));
+  let mut left = phase * edges().map(|(a, b)| a.distance(*b)).sum::<f32>();
+  for (a, b) in edges() {
+    let length = a.distance(*b);
+    if left <= length && length > 0.0 {
+      return a.lerp(*b, left / length);
+    }
+    left -= length;
+  }
+  points.first().copied().unwrap_or_default()
 }
 
 /// Converts a distance in the shape's own space to scene units. Exact under uniform scale, and close to the edge
@@ -363,6 +403,16 @@ mod tests {
     assert_eq!(pose.transforms, vec![Affine2::from_translation(Vec2::new(1.0, 2.0))]);
     assert_eq!(pose.bounds, Bounds::new(Vec2::ZERO, Vec2::new(4.0, 2.0)));
     assert_eq!(pose.points.len(), 3);
+  }
+
+  #[test]
+  fn a_pose_turns_around_the_shape_where_it_has_been_moved() {
+    let params = Params::new();
+    let shape = Shape::new(ShapeNode::circle(1.0))
+      .transform(Transform::Translate(Vec2::new(10.0, 0.0).into()))
+      .transform(Transform::Rotate(90.0.into()));
+    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    assert!(pose.transforms[1].transform_point2(Vec2::new(10.0, 0.0)).abs_diff_eq(Vec2::new(10.0, 0.0), 1e-5));
   }
 
   #[test]

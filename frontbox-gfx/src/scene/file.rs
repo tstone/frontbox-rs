@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 8;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -107,8 +107,6 @@ mod tests {
             space: ColorSpace::Oklab,
           })
           .transform(Transform::Rotate(90.0.into()))
-          .transform(Transform::Repeat(Vec2::new(0.25, 0.0).into()))
-          .transform(Transform::Mirror(45.0.into()))
           .adjust(ColorAdjust::HueShift(Prop::Param("hue".into()))),
         )
         .shape(
@@ -127,9 +125,41 @@ mod tests {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+            0.25,
+            1.0,
+          )))),
+        ),
     ]);
     scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
     scene.timing(Timing::new(1.0, Cycle::Forever))
+  }
+
+  #[test]
+  fn a_sweep_only_loads_on_a_position() {
+    let sweep = "Sweep(path: (base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0))), start: 0.0, end: 1.0)";
+    let scene = |transform: &str, radius: &str, color: &str| {
+      format!(
+        "(version: 7, viewport: Area, timing: (duration: 1.0), layers: [(
+          shape: (transform: [{transform}], base: Ellipse(r1: {radius}, r2: Fixed(1.0))),
+          fill: (base: Solid({color})),
+        )])"
+      )
+    };
+    let (radius, color) = ("Fixed(1.0)", "Fixed(255, 0, 0, 255)");
+    assert!(load(&scene(&format!("Translate({sweep})"), radius, color)).is_ok());
+
+    let not_positions = [
+      scene(&format!("Rotate({sweep})"), radius, color),
+      scene("", sweep, color),
+      scene("", radius, sweep),
+    ];
+    for source in not_positions {
+      let error = load(&source).unwrap_err().to_string();
+      assert!(error.contains("only a position"), "{error}");
+    }
   }
 
   #[test]
@@ -315,7 +345,7 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 6, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 6 })), "{result:?}");
+    let result = load("(version: 9, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 9 })), "{result:?}");
   }
 }

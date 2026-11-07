@@ -6,6 +6,7 @@ import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
+import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
 import { Dropdown, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
@@ -208,11 +209,12 @@ function TimingFields(props: { lens: Lens<Timing> }) {
   )
 }
 
-/** A prop's name and its keys or picks along the timeline, with a button that follows the mouse for adding one */
+/** A prop's name and its keys, its picks, or its sweep along the timeline, with a button that follows the mouse for adding a key or a pick */
 function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number }) {
   // read through `props`, as a row goes to whichever prop comes to be at its position
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
+  const swept = () => 'Sweep' in prop.get()
   const [hovering, setHovering] = createSignal<number | null>(null)
   let lane!: HTMLDivElement
 
@@ -223,6 +225,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
+    if (swept()) return
     const { width } = e.currentTarget.getBoundingClientRect()
     const at = along(e, e.currentTarget) * props.span
     const onKey = times().some((time) => (Math.abs(time - at) / props.span) * width < KEY_REACH)
@@ -260,7 +263,10 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
             </span>
           </Portal>
         </Show>
-        <Index each={times()}>
+        <Show when={swept()}>
+          <SweepBar label={props.track.label} lens={variant(prop, 'Sweep')} percent={props.percent} span={props.span} />
+        </Show>
+        <Index each={swept() ? [] : times()}>
           {(time, index) => (
             <Show
               when={'Track' in prop.get()}
@@ -288,6 +294,71 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
           )}
         </Index>
       </div>
+    </div>
+  )
+}
+
+/** When a path is followed: a line along the track, with an arrow at each end for changing them and a grip for moving it as a whole */
+function SweepBar(props: { label: string; lens: Lens<Sweep>; percent: (seconds: number) => string; span: number }) {
+  const sweep = () => props.lens.get()
+  let bar!: HTMLDivElement
+
+  /** Dragging something that sets both ends from how far it's come, and from how they were when it was pressed */
+  const dragged = (ends: (by: number, pressed: { start: number; end: number; span: number }) => [number, number]) => {
+    // kept from the press, as the view's length can change with where the ends are
+    let press: { x: number; start: number; end: number; span: number } | null = null
+    const lane = () => bar.parentElement!
+    return {
+      onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        press = { x: along(e, lane()), start: sweep().start, end: sweep().end, span: props.span }
+      },
+      onPointerMove(e: PointerEvent) {
+        if (!press) return
+        const [start, end] = ends((along(e, lane()) - press.x) * press.span, press)
+        props.lens.set({ ...sweep(), start, end })
+      },
+      onPointerUp: () => (press = null),
+      onPointerCancel: () => (press = null),
+    }
+  }
+
+  // made once, as each of these holds its own press
+  const startArrow = dragged((by, { start, end }) => [clamp(snap(start + by), 0, end - TIME_STEP), end])
+  const endArrow = dragged((by, { start, end, span }) => [start, clamp(snap(end + by), start + TIME_STEP, span)])
+  const grip = dragged((by, { start, end, span }) => {
+    const moved = clamp(snap(by), -start, span - end)
+    return [snap(start + moved), snap(end + moved)]
+  })
+
+  return (
+    <div
+      class="scene-sweep"
+      ref={bar}
+      style={{ left: props.percent(sweep().start), width: props.percent(sweep().end - sweep().start) }}
+    >
+      <button
+        type="button"
+        class="scene-sweep-end scene-sweep-start"
+        aria-label={`${props.label} start, ${sweep().start.toFixed(2)} seconds`}
+        {...startArrow}
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        class="scene-sweep-grip"
+        aria-label={`Move ${props.label} along the timeline`}
+        {...grip}
+      />
+      <button
+        type="button"
+        class="scene-sweep-end scene-sweep-finish"
+        aria-label={`${props.label} end, ${sweep().end.toFixed(2)} seconds`}
+        {...endArrow}
+      >
+        ›
+      </button>
     </div>
   )
 }

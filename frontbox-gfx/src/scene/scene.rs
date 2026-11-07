@@ -254,6 +254,27 @@ mod tests {
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
 
+  #[test]
+  fn a_shape_moved_then_rotated_turns_where_it_is() {
+    let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
+      .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
+      .transform(Transform::Rotate(90.0.into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
+    assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
+  }
+
+  #[test]
+  fn a_polygon_away_from_the_origin_turns_around_its_own_middle() {
+    let bar = ShapeNode::Polygon {
+      points: [(10.0, 4.0), (30.0, 4.0), (30.0, 6.0), (10.0, 6.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+    };
+    let shape = Shape::new(bar).transform(Transform::Rotate(90.0.into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    assert_eq!(sample(&scene, 20.0, 12.0, 0.1), RED);
+    assert_eq!(sample(&scene, 12.0, 5.0, 0.1)[3], 0);
+  }
+
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
     let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
@@ -517,68 +538,6 @@ mod tests {
     )]);
     let transparent = Rgba([0, 0, 0, 0]);
     assert_eq!(line(&scene, 5), vec![transparent, RED, RED, RED, transparent]);
-  }
-
-  #[test]
-  fn mirror_makes_a_strip_symmetric_from_the_middle_of_a_fill() {
-    let fill = red_to_blue().transform(Transform::Mirror(0.0.into()));
-    let colors = line(&Scene::new(Viewport::Sequence, vec![Layer::new(fill)]), 7);
-    assert_eq!(colors[0], BLUE);
-    assert_eq!(colors[6], BLUE);
-    assert_eq!(colors[1], colors[5]);
-    assert_eq!(colors[2], colors[4]);
-  }
-
-  #[test]
-  fn repeat_tiles_a_fill_along_a_strip() {
-    let fill = red_to_blue().transform(Transform::Scale(Vec2::new(0.5, 1.0).into())).transform(Transform::Repeat(Vec2::new(0.5, 0.0).into()));
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(fill)]);
-    assert_ne!(sample(&scene, 0.3, 0.0, 0.1), sample(&scene, 0.4, 0.0, 0.1));
-    // the copies meet at 0.25 and 0.75, so these stay within one
-    for x in [0.3, 0.375, 0.45] {
-      assert_eq!(sample(&scene, x, 0.0, 0.1), sample(&scene, x + 0.5, 0.0, 0.1));
-    }
-  }
-
-  #[test]
-  fn repeat_copies_a_shape_and_a_later_transform_moves_the_copies() {
-    let shape = Shape::new(ShapeNode::circle(0.5))
-      .transform(Transform::Scale(Vec2::splat(4.0).into()))
-      .transform(Transform::Repeat(Vec2::new(20.0, 0.0).into()))
-      .transform(Transform::Translate(Vec2::new(10.0, 25.0).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
-    for x in [10.0, 30.0, 50.0, 90.0] {
-      assert_eq!(sample(&scene, x, 25.0, 0.0), RED, "{x}");
-      assert_eq!(sample(&scene, x + 10.0, 25.0, 0.0)[3], 0, "{x}");
-    }
-    assert_eq!(sample(&scene, 10.0, 35.0, 0.0)[3], 0);
-  }
-
-  #[test]
-  fn a_mirrored_shape_keeps_its_soft_edge_on_both_sides() {
-    let shape = Shape::new(ShapeNode::circle(0.5))
-      .transform(Transform::Scale(Vec2::new(20.0, 10.0).into()))
-      .transform(Transform::Translate(Vec2::new(30.0, 0.0).into()))
-      .transform(Transform::Mirror(0.0.into()))
-      .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
-    assert_eq!(sample(&scene, 80.0, 25.0, 1.0), RED);
-    assert_eq!(sample(&scene, 20.0, 25.0, 1.0), RED);
-    assert_eq!(sample(&scene, 50.0, 25.0, 1.0)[3], 0);
-    assert_eq!(sample(&scene, 90.0, 25.0, 1.0), sample(&scene, 10.0, 25.0, 1.0));
-    assert_eq!(sample(&scene, 90.0, 25.0, 1.0)[3], 128);
-  }
-
-  #[test]
-  fn an_outline_shows_the_drawing_a_fold_starts_from() {
-    let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
-    let plain = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Translate(Vec2::new(10.0, 5.0).into()));
-    let mut folded = plain.clone();
-    folded.transform.insert(0, Transform::Repeat(Vec2::splat(4.0).into()));
-    folded.transform.insert(1, Transform::Mirror(30.0.into()));
-    let outlines = |shape| Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]).outlines(&frame);
-    assert_eq!(outlines(folded), outlines(plain));
   }
 
   #[test]

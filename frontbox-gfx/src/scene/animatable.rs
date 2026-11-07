@@ -11,6 +11,9 @@ pub trait Animatable: Lerp + Clone + Default + PartialEq {
 
   /// A value from a spread, with `rolls` from 0 to 1 saying where in it. `None` if the spread is of another type.
   fn from_spread(spread: &Spread, rolls: [f32; 3]) -> Option<Self>;
+
+  /// A position in the scene as this type, for a `Sweep`. `None` if this isn't a type of position.
+  fn from_point(point: Vec2) -> Option<Self>;
 }
 
 fn between((low, high): (f32, f32), roll: f32) -> f32 {
@@ -31,6 +34,10 @@ impl Animatable for f32 {
       _ => None,
     }
   }
+
+  fn from_point(_: Vec2) -> Option<Self> {
+    None
+  }
 }
 
 impl Animatable for Vec2 {
@@ -46,6 +53,10 @@ impl Animatable for Vec2 {
       Spread::Vec2 { x, y } => Some(Vec2::new(between(x, x_roll), between(y, y_roll))),
       _ => None,
     }
+  }
+
+  fn from_point(point: Vec2) -> Option<Self> {
+    Some(point)
   }
 }
 
@@ -66,6 +77,10 @@ impl Animatable for Color {
       }
       _ => None,
     }
+  }
+
+  fn from_point(_: Vec2) -> Option<Self> {
+    None
   }
 }
 

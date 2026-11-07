@@ -8,12 +8,15 @@ import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { Scene } from '../../types/generated/Scene'
 import type { Spread } from '../../types/generated/Spread'
+import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
 import type { Transform } from '../../types/generated/Transform'
 
 export type Vec2 = [number, number]
+
+type Shape = NonNullable<Layer['shape']>
 
 /** The size of what an `Area` scene is being edited for, in that device's units. A `Sequence` has none. */
 export type Surface = Vec2 | null
@@ -139,11 +142,15 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
 
-/** The value a prop shows with no game running: the parameter's default, a track's first key, or the middle of a spread */
+/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, or where a path was moved to */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
   if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadMiddle(prop.Random.spread) as T) : fallback
+  if ('Sweep' in prop) {
+    const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
+    return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
+  }
   const param = scene.params?.[prop.Param]
   return paramFits(param, fallback) ? (unwrapValue(param!) as T) : fallback
 }
@@ -155,6 +162,13 @@ export function freshParamName(scene: Scene, base: string) {
   let n = 2
   while (taken(`${base}_${n}`)) n++
   return `${base}_${n}`
+}
+
+/** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
+export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
+  const reach = Math.min(x.max - x.min, y.max - y.min) / 4
+  const base = { Ellipse: { r1: { Fixed: reach }, r2: { Fixed: reach } } }
+  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, start: 0, end: duration }
 }
 
 /** Whether a scene plays more than once, which gives its first moment something to come from and its last somewhere to go */
@@ -188,21 +202,44 @@ type PropLens = Lens<Prop<SceneValue>>
 /** Every prop in a scene: where it is, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surface: Surface) {
   const uses: { lens: PropLens; label: string; ranges: Ranges }[] = []
-  const use = (lens: unknown, label: string, ranges: Ranges) => uses.push({ lens: lens as PropLens, label, ranges })
+  const use = (lens: unknown, label: string, ranges: Ranges) => {
+    uses.push({ lens: lens as PropLens, label, ranges })
+    if ('Sweep' in (lens as PropLens).get()) {
+      const path = `${label} · Path`
+      shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
+    }
+  }
 
   const transforms = (transform: Lens<Transform[]>, label: string, space: TransformSpace) => {
     transform.get().forEach((w, index) => {
       const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
       else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
-      else if ('Mirror' in w) use(variant(lens, 'Mirror'), `${label} · Mirror`, both(ROTATION))
-      else if ('Repeat' in w) use(variant(lens, 'Repeat'), `${label} · Repeat`, repeatRanges(surface, space))
       else use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
     })
   }
 
+  const shape = (lens: Lens<Shape>, label: string, transformLabel: string) => {
+    transforms(orEmpty(field(lens, 'transform')), transformLabel, 'shape')
+    const base = field(lens, 'base')
+    const current = base.get()
+    const [across, down] = sizeRanges(surface)
+    if ('Ellipse' in current) {
+      const ellipse = variant(base, 'Ellipse')
+      use(field(ellipse, 'r1'), `${label} · R1`, both(radius(down)))
+      use(field(ellipse, 'r2'), `${label} · R2`, both(radius(across)))
+    } else if ('Rect' in current) {
+      const rect = variant(base, 'Rect')
+      use(field(rect, 'width'), `${label} · Width`, both(across))
+      use(field(rect, 'height'), `${label} · Height`, both(down))
+    } else {
+      const points = field(variant(base, 'Polygon'), 'points')
+      points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
+    }
+  }
+
   const layers = field(scene, 'layers')
-  layers.get().forEach(({ fill, shape }, index) => {
+  layers.get().forEach(({ fill, shape: layerShape }, index) => {
     const layer = item(layers, index)
     const label = layerLabel(layers.get()[index], index)
 
@@ -221,24 +258,7 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
     const adjust = orEmpty(field(fillLens, 'adjust'))
     adjust.get().forEach((_, i) => use(variant(item(adjust, i), 'HueShift'), `${label} · Hue shift`, both(HUE)))
 
-    if (shape) {
-      const shapeLens = field(layer, 'shape') as Lens<NonNullable<typeof shape>>
-      transforms(orEmpty(field(shapeLens, 'transform')), `${label} · Shape`, 'shape')
-      const shapeBase = field(shapeLens, 'base')
-      const [across, down] = sizeRanges(surface)
-      if ('Ellipse' in shape.base) {
-        const ellipse = variant(shapeBase, 'Ellipse')
-        use(field(ellipse, 'r1'), `${label} · R1`, both(radius(down)))
-        use(field(ellipse, 'r2'), `${label} · R2`, both(radius(across)))
-      } else if ('Rect' in shape.base) {
-        const rect = variant(shapeBase, 'Rect')
-        use(field(rect, 'width'), `${label} · Width`, both(across))
-        use(field(rect, 'height'), `${label} · Height`, both(down))
-      } else {
-        const points = field(variant(shapeBase, 'Polygon'), 'points')
-        points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
-      }
-    }
+    if (layerShape) shape(field(layer, 'shape') as Lens<Shape>, label, `${label} · Shape`)
   })
   return uses
 }
@@ -264,13 +284,14 @@ export type SceneTrack = { prop: PropLens; label: string; ranges: Ranges }
 export function sceneTracks(scene: Lens<Scene>, surface: Surface): SceneTrack[] {
   return propUses(scene, surface).flatMap(({ lens, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop ? [{ prop: lens, label, ranges }] : []
+    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, label, ranges }] : []
   })
 }
 
-/** When a prop changes, in order: a track's keys or the moments a value is picked */
+/** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */
 export function trackTimes(prop: Prop<SceneValue>) {
   if ('Track' in prop) return prop.Track.keys.map((key) => key.at)
+  if ('Sweep' in prop) return [prop.Sweep.start, prop.Sweep.end]
   return 'Random' in prop ? prop.Random.picks.map((pick) => pick.at) : []
 }
 
@@ -351,7 +372,7 @@ export const ROTATION: Range = { min: -180, max: 180, step: 1, rest: 0 }
 export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
 const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
-const SCALE: Range = { min: 0, max: 4, step: 0.01, rest: 1 }
+const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 
 /**
  * Any of an animated image's frames, or a good many until it's known how many there are. A fraction of a frame is
@@ -393,11 +414,6 @@ export function radius(size: Range): Range {
 export function pointRanges(surface: Surface): Ranges {
   if (!surface) return both({ min: -1, max: 1, step: 0.01 })
   return [span(-surface[0], surface[0]), span(-surface[1], surface[1])]
-}
-
-export function repeatRanges(surface: Surface, space: TransformSpace): Ranges {
-  if (space === 'fill' || !surface) return both(UNIT)
-  return [{ ...span(0, surface[0]), rest: 0 }, { ...span(0, surface[1]), rest: 0 }]
 }
 
 /** A range with a round step of about a 200th of its width */

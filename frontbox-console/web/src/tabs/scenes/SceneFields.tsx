@@ -3,14 +3,15 @@ import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor } from 'solid-js'
+import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import InfoTip from '../../components/InfoTip'
+import { ShapeEditor } from './ConfigPanel'
 import type { Color } from '../../types/generated/Color'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
 import type { Spread } from '../../types/generated/Spread'
-import { field, freshParamName, fullSpread, HUE, newPick, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import { field, freshParamName, fullSpread, HUE, newPick, newSweep, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -364,10 +365,10 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random']
+type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Sweep'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Sweep']
 
-/** A prop: whether it's fixed, read from a parameter, keyframed, or picked at random, and the control for that */
+/** A prop: whether it's fixed, read from a parameter, keyframed, picked at random, or swept along a path, and the control for that */
 export function PropField<T extends SceneValue>(props: {
   label: string
   /** What to call a parameter made from this prop */
@@ -376,12 +377,16 @@ export function PropField<T extends SceneValue>(props: {
   /** For a prop with nothing to take a value from */
   fallback: T
   ranges: Ranges
+  /** A control that belongs next to the label */
+  action?: JSX.Element
 }) {
   const scene = useScene()
   const prop = () => props.lens.get()
   const kind = () => Object.keys(prop())[0] as PropKind
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   const paramName = () => (prop() as { Param: string }).Param
+  // only a position can follow a path
+  const kinds = () => PROP_KINDS.filter((option) => option !== 'Sweep' || (Array.isArray(props.fallback) && props.fallback.length === 2))
 
   const choose = (next: PropKind) => {
     if (next === kind()) return
@@ -395,6 +400,11 @@ export function PropField<T extends SceneValue>(props: {
       scene.set(withTiming(scene.get()))
       const seed = Math.floor(Math.random() * 2 ** 32)
       props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
+    }
+    if (next === 'Sweep') {
+      const timed = withTiming(scene.get())
+      scene.set(timed)
+      props.lens.set({ Sweep: newSweep(current as Vec2, props.ranges, timed.timing!.duration) })
     }
     if (next === 'Param') {
       const name = freshParamName(scene.get(), props.paramName)
@@ -412,7 +422,10 @@ export function PropField<T extends SceneValue>(props: {
   return (
     <div class="scene-field scene-prop">
       <div class="scene-prop-header">
-        <span class="scene-field-label">{props.label}</span>
+        <span class="scene-prop-name">
+          <span class="scene-field-label">{props.label}</span>
+          {props.action}
+        </span>
         <SegmentGroup.Root
           class="scene-prop-kind"
           aria-label={`${props.label} source`}
@@ -420,7 +433,7 @@ export function PropField<T extends SceneValue>(props: {
           onValueChange={(details) => choose(details.value as PropKind)}
         >
           <SegmentGroup.Indicator />
-          <For each={PROP_KINDS}>
+          <For each={kinds()}>
             {(option) => (
               <SegmentGroup.Item value={option}>
                 <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
@@ -468,6 +481,10 @@ export function PropField<T extends SceneValue>(props: {
           </Show>
           <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
           <p class="scene-note">When to pick a new value is on the timeline below.</p>
+        </Match>
+        <Match when={kind() === 'Sweep'}>
+          <ShapeEditor path lens={field(variant(props.lens, 'Sweep'), 'path')} />
+          <p class="scene-note">When it goes around is on the timeline below.</p>
         </Match>
       </Switch>
     </div>

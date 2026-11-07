@@ -19,7 +19,7 @@ impl Fill {
     // the fill's own box runs around, and it's a point's width more than the box as the points reach past both ends
     let env = &Env { lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x), ..*env };
     let p = self.on_lap(p, Vec2::ZERO, env);
-    let Some(to_local) = self.to_local(p, env) else {
+    let Some(to_local) = self.to_local(Vec2::ZERO, env) else {
       return Rgba([0, 0, 0, 0]);
     };
     let footprint = to_local.matrix2.abs() * footprint;
@@ -195,6 +195,15 @@ mod tests {
     let fill = red_to_blue(ColorSpace::Rgb).transform(Transform::Rotate(90.0.into()));
     assert_eq!(color(&fill, 0.5, -0.5), RED);
     assert_eq!(color(&fill, -0.5, 0.5), BLUE);
+  }
+
+  #[test]
+  fn a_fill_moved_then_rotated_turns_around_its_own_middle() {
+    let fill = red_to_blue(ColorSpace::Rgb)
+      .transform(Transform::Translate(Vec2::new(1.0, 0.0).into()))
+      .transform(Transform::Rotate(90.0.into()));
+    assert_eq!(color(&fill, 1.0, -0.5), RED);
+    assert_eq!(color(&fill, 1.0, 0.5), BLUE);
   }
 
   #[test]

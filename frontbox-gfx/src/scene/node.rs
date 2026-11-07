@@ -39,11 +39,20 @@ impl<N, A> Node<N, A> {
     self
   }
 
-  /// Maps a point in the node's own space into the scene, applying its transforms. `None` when a transform collapses the
-  /// drawing (a scale of zero), so nothing is drawn. A point can be drawn in many places once it's mirrored or repeated,
-  /// and this gives the one they start from.
-  pub(crate) fn to_scene(&self, env: &Env) -> Option<Affine2> {
-    let forward = self.transform.iter().fold(Affine2::IDENTITY, |acc, transform| transform.affine(env) * acc);
+  /// What each of the transforms does in order, to a drawing whose middle is `center` in its own space
+  pub(crate) fn affines(&self, center: Vec2, env: &Env) -> Vec<Affine2> {
+    let step = |center: &mut Vec2, transform: &Transform| {
+      let affine = transform.affine(*center, env);
+      *center = affine.transform_point2(*center);
+      Some(affine)
+    };
+    self.transform.iter().scan(center, step).collect()
+  }
+
+  /// Maps a point in the node's own space into the scene, applying its transforms to a drawing whose middle is `center`.
+  /// `None` when a transform collapses the drawing (a scale of zero), so nothing is drawn.
+  pub(crate) fn to_scene(&self, center: Vec2, env: &Env) -> Option<Affine2> {
+    let forward = self.affines(center, env).into_iter().fold(Affine2::IDENTITY, |acc, affine| affine * acc);
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
@@ -53,19 +62,17 @@ impl<N, A> Node<N, A> {
     let Some(lap) = env.lap.filter(|_| self.transform.iter().any(|transform| matches!(transform, Transform::Rotate(_)))) else {
       return at;
     };
-    let Some(to_scene) = self.to_scene(env) else {
+    let Some(to_scene) = self.to_scene(center, env) else {
       return at;
     };
     let laps = ((to_scene.transform_point2(center).x - at.x) / lap).round();
     Vec2::new(at.x + laps * lap, at.y)
   }
 
-  /// What maps the point `at` in the scene, and those around it, into the node's own space, undoing its transforms.
-  /// Other points can need another one, as what `Mirror` and `Repeat` do depends on where a point is.
-  pub(crate) fn to_local(&self, at: Vec2, env: &Env) -> Option<Affine2> {
-    self.transform.iter().rev().try_fold(Affine2::IDENTITY, |undone, transform| {
-      transform.undo(undone.transform_point2(at), env).map(|undo| undo * undone)
-    })
+  /// What maps a point in the scene into the node's own space, undoing its transforms to a drawing whose middle is
+  /// `center`. `None` when a transform collapses the drawing.
+  pub(crate) fn to_local(&self, center: Vec2, env: &Env) -> Option<Affine2> {
+    self.to_scene(center, env).map(|to_scene| to_scene.inverse())
   }
 }
 
@@ -88,7 +95,7 @@ mod tests {
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
-    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
     // move then scale: the same point is drawn at 2 * (0.5 + 10)
@@ -97,7 +104,7 @@ mod tests {
       Transform::Scale(Vec2::splat(2.0).into()),
     ]);
     let at = Vec2::new(21.0, 0.0);
-    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
   }
 
@@ -106,8 +113,23 @@ mod tests {
     let params = Params::new();
     let n = node(vec![Transform::Rotate(90.0.into())]);
     let at = Vec2::new(0.0, 1.0);
-    let local = n.to_local(at, &env(0.0, &params)).unwrap();
+    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
+  }
+
+  #[test]
+  fn rotate_turns_around_the_middle_of_a_drawing_wherever_it_has_been_moved() {
+    let params = Params::new();
+    // the middle stays at (11, 0), and what was 1 past it on x is now 1 past it on y
+    let n = node(vec![Transform::Translate(Vec2::new(10.0, 0.0).into()), Transform::Rotate(90.0.into())]);
+    let center = Vec2::new(1.0, 0.0);
+    let to_scene = n.to_scene(center, &env(0.0, &params)).unwrap();
+    assert!(to_scene.transform_point2(center).abs_diff_eq(Vec2::new(11.0, 0.0), 1e-5));
+    assert!(to_scene.transform_point2(Vec2::new(2.0, 0.0)).abs_diff_eq(Vec2::new(11.0, 1.0), 1e-5));
+
+    let at = Vec2::new(11.0, 1.0);
+    let local = n.to_local(center, &env(0.0, &params)).unwrap();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(2.0, 0.0), 1e-5));
   }
 
   #[test]
@@ -115,27 +137,5 @@ mod tests {
     let params = Params::new();
     let n = node(vec![Transform::Scale(Vec2::new(0.0, 1.0).into())]);
     assert!(n.to_local(Vec2::ZERO, &env(0.0, &params)).is_none());
-  }
-
-  #[test]
-  fn a_transform_after_a_fold_moves_the_result() {
-    let params = Params::new();
-    // copies 10 apart, then all of them moved along by 3: the copy at 23 shows the drawing's origin
-    let n = node(vec![Transform::Repeat(Vec2::new(10.0, 0.0).into()), Transform::Translate(Vec2::new(3.0, 0.0).into())]);
-    let at = Vec2::new(23.0, 1.0);
-    let local = n.to_local(at, &env(0.0, &params)).unwrap();
-    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.0, 1.0), 1e-5));
-  }
-
-  #[test]
-  fn a_transform_before_a_fold_moves_what_gets_folded() {
-    let params = Params::new();
-    // moved to +5 and then mirrored, the drawing's origin shows up at both +5 and -5
-    let n = node(vec![Transform::Translate(Vec2::new(5.0, 0.0).into()), Transform::Mirror(0.0.into())]);
-    for x in [5.0, -5.0] {
-      let at = Vec2::new(x, 0.0);
-      let local = n.to_local(at, &env(0.0, &params)).unwrap();
-      assert!(local.transform_point2(at).abs_diff_eq(Vec2::ZERO, 1e-6));
-    }
   }
 }

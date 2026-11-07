@@ -166,6 +166,8 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     min: pose.bounds.min.to_array(),
     max: pose.bounds.max.to_array(),
     points: pose.points.iter().map(|p| p.to_array()).collect(),
+    outline: pose.outline.iter().map(|p| p.to_array()).collect(),
+    paths: pose.paths.iter().map(|path| path.as_ref().map(rendered_shape)).collect(),
   }
 }
 
@@ -677,5 +679,38 @@ mod tests {
     let json = serde_json::to_string(&rendered.scene).unwrap();
     let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), None, 0.0, None).unwrap();
     assert_eq!(back.ron, rendered.ron);
+  }
+
+  #[test]
+  fn a_sweep_survives_the_editor_and_only_on_a_position() {
+    let source = r#"(
+      version: 7,
+      viewport: Area,
+      timing: (duration: 2.0, cycle: Forever),
+      layers: [(
+        shape: (
+          base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0)),
+          transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), start: 0.5, end: 1.5))],
+        ),
+        fill: (base: Solid(Fixed(255, 0, 0, 255))),
+      )],
+    )"#;
+    let rendered = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let json = serde_json::to_string(&rendered.scene).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), None, 0.0, None).unwrap();
+    assert_eq!(back.ron, rendered.ron);
+
+    let path = rendered.shapes[0].as_ref().unwrap().paths[0].as_ref().unwrap();
+    assert_eq!(path.outline[0], [3.0, 4.0]);
+
+    let on_a_size = json.replace(r#""r1":{"Fixed":1.0}"#, &format!(r#""r1":{}"#, sweep_of(&json)));
+    let error = serde_json::from_str::<Scene>(&on_a_size).unwrap_err().to_string();
+    assert!(error.contains("only a position"), "{error}");
+  }
+
+  /// The first sweep in a scene as JSON
+  fn sweep_of(json: &str) -> String {
+    let scene: serde_json::Value = serde_json::from_str(json).unwrap();
+    scene["layers"][0]["shape"]["transform"][0]["Translate"].to_string()
   }
 }

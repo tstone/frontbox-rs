@@ -27,7 +27,7 @@
 //! - [`Scene`], [`Layer`] -- Layers of fill in shapes, composited bottom to top
 //! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
 //! - [`Node`] -- Shapes and fills, each a base kind with [`Transform`]s going in and adjusts coming out
-//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, or picked at random
+//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, or swept along a path ([`Sweep`])
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`] -- Reading and writing scenes as RON
 //! - [`Content`], [`Images`] -- The folder of what scenes use, and the images it decodes for one to play with
@@ -46,6 +46,7 @@ mod random;
 mod sample;
 mod scene;
 mod shape;
+mod sweep;
 mod timing;
 mod track;
 mod value;
@@ -65,6 +66,7 @@ pub use random::*;
 pub use sample::*;
 pub use scene::*;
 pub use shape::*;
+pub use sweep::*;
 pub use timing::*;
 pub use track::*;
 pub use value::*;
