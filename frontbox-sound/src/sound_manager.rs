@@ -20,6 +20,9 @@ use tokio::sync::{mpsc, watch};
 use crate::CalloutCompleted;
 use crate::callout::{CalloutQueue, CalloutRequest};
 
+/// How far the music drops while a callout plays
+const CALLOUT_DUCK_DB: f32 = -14.0;
+
 pub struct SoundManager {
   rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
   completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
@@ -195,7 +198,7 @@ impl SoundManager {
       self.report_callout(key, false);
     }
     if self.active_callout.is_none() {
-      Self::duck_track(&mut self.music_track, -10.0);
+      Self::duck_track(&mut self.music_track, CALLOUT_DUCK_DB);
       self.start_next_callout();
     }
   }
