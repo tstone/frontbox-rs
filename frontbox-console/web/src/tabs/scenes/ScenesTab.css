@@ -890,39 +890,6 @@
   font-size: 0.75rem;
 }
 
-.scene-prop-name {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.scene-radii-lock {
-  display: flex;
-  padding: 0.0625rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.scene-radii-lock:hover {
-  color: var(--text);
-}
-
-.scene-radii-lock[aria-pressed='true'] {
-  background: var(--surface-selected);
-  color: var(--accent);
-}
-
-.scene-radii-lock svg {
-  width: 0.875rem;
-  height: 0.875rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
-}
-
 .scene-prop-kind [data-part='item'] {
   position: relative;
   padding: 0.125rem 0.375rem;

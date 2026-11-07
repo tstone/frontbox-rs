@@ -367,6 +367,7 @@ mod tests {
       scene(FillNode::Gradient {
         stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
         space: ColorSpace::Rgb,
+        style: GradientStyle::Linear,
       }),
     )
     .unwrap();
@@ -576,6 +577,7 @@ mod tests {
     FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(Rgba::red())), Stop::new(1.0, Color(Rgba::blue()))],
       space: ColorSpace::Rgb,
+      style: GradientStyle::Linear,
     }
   }
 

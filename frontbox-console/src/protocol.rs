@@ -147,6 +147,8 @@ pub struct RenderedShape {
   pub max: [f32; 2],
   /// A polygon's points in its own space
   pub points: Vec<[f32; 2]>,
+  /// How far a ring's hole reaches from its center, in its own space
+  pub hole: f32,
   /// Its edge in the scene, as a closed loop of points
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that

@@ -3,7 +3,7 @@ import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor, type JSX } from 'solid-js'
+import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import InfoTip from '../../components/InfoTip'
 import { ShapeEditor } from './ConfigPanel'
@@ -377,8 +377,6 @@ export function PropField<T extends SceneValue>(props: {
   /** For a prop with nothing to take a value from */
   fallback: T
   ranges: Ranges
-  /** A control that belongs next to the label */
-  action?: JSX.Element
 }) {
   const scene = useScene()
   const prop = () => props.lens.get()
@@ -422,10 +420,7 @@ export function PropField<T extends SceneValue>(props: {
   return (
     <div class="scene-field scene-prop">
       <div class="scene-prop-header">
-        <span class="scene-prop-name">
-          <span class="scene-field-label">{props.label}</span>
-          {props.action}
-        </span>
+        <span class="scene-field-label">{props.label}</span>
         <SegmentGroup.Root
           class="scene-prop-kind"
           aria-label={`${props.label} source`}

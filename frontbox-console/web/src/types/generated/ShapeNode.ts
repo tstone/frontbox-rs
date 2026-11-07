@@ -5,4 +5,4 @@ import type { Prop } from "./Prop";
  * Shapes sit around the origin; transforms put them in the scene. The sizes here are in the shape's own space, so a
  * `Scale` multiplies them.
  */
-export type ShapeNode = { "Ellipse": { r1: Prop<number>, r2: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } };
+export type ShapeNode = { "Circle": { radius: Prop<number>, } } | { "Ring": { radius: Prop<number>, thickness: Prop<number>, } } | { "Ellipse": { r1: Prop<number>, r2: Prop<number>, } } | { "Rect": { width: Prop<number>, height: Prop<number>, } } | { "Polygon": { points: Array<Prop<[number, number]>>, } };

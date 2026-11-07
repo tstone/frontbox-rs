@@ -38,13 +38,15 @@ impl Fill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FillNode {
   Solid(Prop<Color>),
-  /// Runs left to right across the fill's space, so `t` is `x + 0.5`. Past the ends, `t` clamps to the end colors.
-  /// A vertical or diagonal gradient is a gradient with a `Rotate` transform.
+  /// A vertical or diagonal gradient is a gradient with a `Rotate` transform, which also turns where a `Conical` one
+  /// starts.
   Gradient {
     /// In order of `at`
     stops: Vec<Stop>,
     #[serde(default)]
     space: ColorSpace,
+    #[serde(default)]
+    style: GradientStyle,
   },
   /// An image stretched over the fill's space. Past its edges nothing is drawn, as an image has no colors to go on with.
   /// A `Sequence` runs along its middle row.
@@ -85,6 +87,31 @@ pub enum ColorSpace {
   Rgb,
 }
 
+/// The way a gradient runs across its fill's space
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GradientStyle {
+  /// Left to right. Past the ends, it stays on the end colors.
+  #[default]
+  Linear,
+  /// Out from the middle, reaching 1 at the middle of each side of the space and staying on the last color past that
+  Radial,
+  /// Clockwise around the middle, starting and ending at the right. The colors at 0 and 1 meet there, with a hard edge
+  /// unless they're the same.
+  Conical,
+}
+
+impl GradientStyle {
+  /// How far along a gradient a point in the fill's space is, from 0 to 1
+  fn at(self, p: Vec2) -> f32 {
+    match self {
+      Self::Linear => (p.x + 0.5).clamp(0.0, 1.0),
+      Self::Radial => (p.length() * 2.0).clamp(0.0, 1.0),
+      Self::Conical => (p.y.atan2(p.x) / std::f32::consts::TAU).rem_euclid(1.0),
+    }
+  }
+}
+
 impl FillNode {
   /// An image, on its first frame
   pub fn image(name: impl Into<String>) -> Self {
@@ -109,7 +136,7 @@ impl FillNode {
   fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
     match self {
       Self::Solid(color) => color.resolve(env).0,
-      Self::Gradient { stops, space } => gradient(stops, *space, (p.x + 0.5).clamp(0.0, 1.0), env),
+      Self::Gradient { stops, space, style } => gradient(stops, *space, style.at(p), env),
       Self::Image { name, frame } => env.images.get(name).map_or(Rgba([0, 0, 0, 0]), |image| {
         image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_whole(env)), p, footprint)
       }),
@@ -159,9 +186,14 @@ mod tests {
   const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 
   fn red_to_blue(space: ColorSpace) -> Fill {
+    styled(GradientStyle::Linear, space)
+  }
+
+  fn styled(style: GradientStyle, space: ColorSpace) -> Fill {
     Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
       space,
+      style,
     })
   }
 
@@ -178,6 +210,34 @@ mod tests {
     assert_eq!(color(&fill, -3.0, 0.0), RED);
     assert_eq!(color(&fill, 3.0, 0.0), BLUE);
     assert_eq!(color(&fill, 0.0, 0.0), Rgba([127, 0, 128, 255]));
+  }
+
+  #[test]
+  fn a_radial_gradient_runs_out_from_the_middle() {
+    let fill = styled(GradientStyle::Radial, ColorSpace::Rgb);
+    assert_eq!(color(&fill, 0.0, 0.0), RED);
+    assert_eq!(color(&fill, 0.5, 0.0), BLUE);
+    assert_eq!(color(&fill, 0.0, -0.5), BLUE);
+    assert_eq!(color(&fill, 0.25, 0.0), color(&fill, 0.0, -0.25));
+    assert_eq!(color(&fill, 0.25, 0.0), Rgba([127, 0, 128, 255]));
+    assert_eq!(color(&fill, 0.5, 0.5), BLUE);
+  }
+
+  #[test]
+  fn a_conical_gradient_runs_clockwise_from_the_right() {
+    let fill = styled(GradientStyle::Conical, ColorSpace::Rgb);
+    assert_eq!(color(&fill, 0.5, 0.0), RED);
+    assert_eq!(color(&fill, 0.0, 0.5), Rgba([191, 0, 64, 255]));
+    assert_eq!(color(&fill, -0.5, 0.0), Rgba([127, 0, 128, 255]));
+    assert_eq!(color(&fill, 0.0, -0.5), Rgba([64, 0, 191, 255]));
+    assert_eq!(color(&fill, 0.5, -0.0001), BLUE);
+  }
+
+  #[test]
+  fn rotate_turns_where_a_conical_gradient_starts() {
+    let fill = styled(GradientStyle::Conical, ColorSpace::Rgb).transform(Transform::Rotate(90.0.into()));
+    // just past the start, as exactly on it could land either side of where the ends meet
+    assert_eq!(color(&fill, -0.0001, 0.5), RED);
   }
 
   #[test]
@@ -215,6 +275,7 @@ mod tests {
         Stop::new(0.75, Color(BLUE)),
       ],
       space: ColorSpace::Rgb,
+      style: GradientStyle::Linear,
     });
     assert_eq!(color(&fill, -0.4, 0.0), RED);
     assert_eq!(color(&fill, 0.0, 0.0), Rgba([0, 255, 0, 255]));

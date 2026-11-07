@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform};
 
-/// How many points an ellipse's outline has. Enough that it looks round on screen.
-const ELLIPSE_OUTLINE_POINTS: usize = 64;
+/// How many points the outline of a round shape has. Enough that it looks round on screen.
+const ROUND_OUTLINE_POINTS: usize = 64;
 
 /// Where a layer is drawn
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
@@ -14,6 +14,11 @@ pub type Shape = Node<ShapeNode, ShapeAdjust>;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
+  /// A circle centered on the origin
+  Circle { radius: Prop<f32> },
+  /// A band around the origin, its hole `radius` across from its center and `thickness` wide from there out. With no
+  /// `radius` it has no hole, and is a circle.
+  Ring { radius: Prop<f32>, thickness: Prop<f32> },
   /// An ellipse centered on the origin, `r1` up and down from its center and `r2` side to side
   Ellipse { r1: Prop<f32>, r2: Prop<f32> },
   /// A rectangle centered on the origin
@@ -34,7 +39,9 @@ pub struct ShapePose {
   pub bounds: Bounds,
   /// A polygon's points in its own space. Empty for the other shapes.
   pub points: Vec<Vec2>,
-  /// The shape's edge in the scene, as a closed loop of points
+  /// How far a ring's hole reaches from its center, in its own space. 0 for the other shapes.
+  pub hole: f32,
+  /// The shape's edge in the scene, as a closed loop of points. A ring's is its outside edge.
   pub outline: Vec<Vec2>,
   /// For each of the shape's transforms, the path it moves the shape along, if it does and that path has a pose. Its
   /// scene is the values the transform takes.
@@ -75,10 +82,15 @@ impl Shape {
       ShapeNode::Polygon { points } => points.iter().map(|p| p.resolve(env)).collect(),
       _ => Vec::new(),
     };
+    let hole = match &self.base {
+      ShapeNode::Ring { radius, .. } => radius.resolve(env).max(0.0),
+      _ => 0.0,
+    };
     Some(ShapePose {
       transforms: self.affines(bounds.center(), env),
       bounds,
       points,
+      hole,
       outline: self.outline(env),
       paths: self.transform.iter().map(|transform| transform.path().and_then(|path| path.pose(env))).collect(),
     })
@@ -98,14 +110,16 @@ impl Shape {
 }
 
 impl ShapeNode {
-  /// An `Ellipse` with both radii the same
   pub fn circle(radius: f32) -> Self {
-    Self::Ellipse { r1: radius.into(), r2: radius.into() }
+    Self::Circle { radius: radius.into() }
   }
 
   fn is_animated(&self) -> bool {
     match self {
-      Self::Ellipse { r1: a, r2: b } | Self::Rect { width: a, height: b } => a.is_animated() || b.is_animated(),
+      Self::Circle { radius } => radius.is_animated(),
+      Self::Ring { radius: a, thickness: b } | Self::Ellipse { r1: a, r2: b } | Self::Rect { width: a, height: b } => {
+        a.is_animated() || b.is_animated()
+      }
       Self::Polygon { points } => points.iter().any(Prop::is_animated),
     }
   }
@@ -113,7 +127,7 @@ impl ShapeNode {
   /// The shape's bounds in its own space, before its transforms
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {
-      Self::Ellipse { .. } | Self::Rect { .. } => {
+      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } | Self::Rect { .. } => {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
       }
@@ -130,8 +144,8 @@ impl ShapeNode {
   /// The shape's edge in its own space, before its transforms
   fn outline(&self, env: &Env) -> Vec<Vec2> {
     match self {
-      Self::Ellipse { .. } => (0..ELLIPSE_OUTLINE_POINTS)
-        .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ELLIPSE_OUTLINE_POINTS as f32) * self.reach(env))
+      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => (0..ROUND_OUTLINE_POINTS)
+        .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ROUND_OUTLINE_POINTS as f32) * self.reach(env))
         .collect(),
       Self::Rect { .. } => {
         let reach = self.reach(env);
@@ -143,18 +157,22 @@ impl ShapeNode {
     }
   }
 
-  /// The point a fraction of the way around the shape's edge, in its own space. An ellipse needs no outline for this, as
-  /// a prop can resolve once for every point being drawn.
+  /// The point a fraction of the way around the shape's edge, in its own space. A round shape needs no outline for this,
+  /// as a prop can resolve once for every point being drawn.
   fn along(&self, phase: f32, env: &Env) -> Vec2 {
     match self {
-      Self::Ellipse { .. } => Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env),
+      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => {
+        Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env)
+      }
       _ => along_loop(&self.outline(env), phase),
     }
   }
 
-  /// How far an ellipse or a rect reaches from its center along each axis
+  /// How far a shape other than a polygon reaches from its center along each axis
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
+      Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
+      Self::Ring { radius, thickness } => Vec2::splat(radius.resolve(env).max(0.0) + thickness.resolve(env)),
       Self::Ellipse { r1, r2 } => Vec2::new(r2.resolve(env), r1.resolve(env)),
       Self::Rect { width, height } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
       Self::Polygon { .. } => Vec2::ZERO,
@@ -164,7 +182,8 @@ impl ShapeNode {
   /// Signed distance to the edge (negative inside) in the shape's own space, and the direction it grows in
   fn distance(&self, p: Vec2, env: &Env) -> (f32, Vec2) {
     match self {
-      Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
+      Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
+      Self::Ring { radius, thickness } => ring_distance(radius.resolve(env), thickness.resolve(env), p),
       Self::Rect { .. } => rect_distance(self.reach(env), p),
       Self::Polygon { points } => {
         let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
@@ -211,6 +230,17 @@ fn ellipse_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
   }
   let along = p / reach;
   (along.length() - 1.0, along.normalize_or(Vec2::X) / reach)
+}
+
+/// Signed distance to the nearer edge of a ring. With no hole, the outside edge is the only one.
+fn ring_distance(hole: f32, thickness: f32, p: Vec2) -> (f32, Vec2) {
+  if thickness <= 0.0 {
+    return (f32::INFINITY, Vec2::X);
+  }
+  let out = p.normalize_or(Vec2::X);
+  let to_outside = p.length() - (hole.max(0.0) + thickness);
+  let to_hole = hole - p.length();
+  if hole <= 0.0 || to_outside > to_hole { (to_outside, out) } else { (to_hole, -out) }
 }
 
 fn rect_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
@@ -346,6 +376,57 @@ mod tests {
   fn an_ellipse_with_no_radius_draws_nothing() {
     let ellipse = Shape::new(ShapeNode::Ellipse { r1: 0.0.into(), r2: 10.0.into() });
     assert_eq!(covered(&ellipse, 0.0, 0.0, 0.5), 0.0);
+  }
+
+  fn ring(radius: f32, thickness: f32) -> Shape {
+    Shape::new(ShapeNode::Ring { radius: radius.into(), thickness: thickness.into() })
+  }
+
+  #[test]
+  fn a_circle_reaches_its_radius_every_way() {
+    let params = Params::new();
+    let circle = ShapeNode::circle(3.0);
+    assert_eq!(circle.bounds(&env(0.0, &params)), Bounds::new(Vec2::splat(-3.0), Vec2::splat(3.0)));
+  }
+
+  #[test]
+  fn a_ring_covers_its_band_and_not_its_hole() {
+    let band = ring(4.0, 2.0);
+    assert_eq!(covered(&band, 0.0, 0.0, 0.1), 0.0);
+    assert_eq!(covered(&band, 3.0, 0.0, 0.1), 0.0);
+    assert_eq!(covered(&band, 0.0, 5.0, 0.1), 1.0);
+    assert_eq!(covered(&band, 7.0, 0.0, 0.1), 0.0);
+    assert!((covered(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&band, 6.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+  }
+
+  #[test]
+  fn a_rings_edges_are_in_scene_units_when_scaled() {
+    let band = ring(4.0, 2.0).transform(Transform::Scale(Vec2::splat(10.0).into()));
+    assert!((covered(&band, 40.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&band, 60.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
+  }
+
+  #[test]
+  fn a_ring_with_no_hole_is_a_circle() {
+    assert_eq!(covered(&ring(0.0, 2.0), 0.0, 0.0, 0.5), 1.0);
+    assert_eq!(covered(&ring(0.0, 2.0), 3.0, 0.0, 0.5), 0.0);
+  }
+
+  #[test]
+  fn a_ring_with_no_thickness_draws_nothing() {
+    assert_eq!(covered(&ring(4.0, 0.0), 4.0, 0.0, 0.5), 0.0);
+  }
+
+  #[test]
+  fn a_ring_is_bounded_and_gone_around_by_its_outside_edge() {
+    let params = Params::new();
+    let frame = env(0.0, &params);
+    let pose = ring(4.0, 2.0).pose(&frame).unwrap();
+    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-6.0), Vec2::splat(6.0)));
+    assert_eq!(pose.hole, 4.0);
+    assert!(ring(4.0, 2.0).along(0.0, &frame).abs_diff_eq(Vec2::new(6.0, 0.0), 1e-5));
+    assert!(pose.outline.iter().all(|p| (p.length() - 6.0).abs() < 1e-4));
   }
 
   #[test]

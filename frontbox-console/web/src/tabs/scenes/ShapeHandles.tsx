@@ -192,7 +192,15 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
 
   const center = middle(pose)
   const handles = [moveHandle(list, pose, write, center), scaleHandle(list, pose, write, [right, top])]
-  if ('Ellipse' in current) {
+  if ('Circle' in current) {
+    handles.push(size('Radius', field(variant(base, 'Circle'), 'radius'), [right, 0], across))
+  } else if ('Ring' in current) {
+    const ring = variant(base, 'Ring')
+    handles.push(
+      size('Radius', field(ring, 'radius'), [pose.hole, 0], across),
+      size('Thickness', field(ring, 'thickness'), [right, 0], (local) => Math.max(across(local) - pose.hole, 0)),
+    )
+  } else if ('Ellipse' in current) {
     const { r1, r2 } = { r1: field(variant(base, 'Ellipse'), 'r1'), r2: field(variant(base, 'Ellipse'), 'r2') }
     handles.push(size('R1', r1, [0, top], down), size('R2', r2, [right, 0], across))
   } else if ('Rect' in current) {

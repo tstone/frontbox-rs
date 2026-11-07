@@ -1,10 +1,11 @@
 import { Accordion } from '@ark-ui/solid/accordion'
-import { createEffect, createSignal, Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
+import { Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { ColorSpace } from '../../types/generated/ColorSpace'
 import type { FillNode } from '../../types/generated/FillNode'
+import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Layer } from '../../types/generated/Layer'
 import type { Prop } from '../../types/generated/Prop'
@@ -29,6 +30,7 @@ import {
   pointRanges,
   removed,
   ROTATION,
+  roundRange,
   scaleRanges,
   sizeRanges,
   startingValue,
@@ -37,17 +39,18 @@ import {
   variant,
   type Lens,
   type Range,
-  type Ranges,
   type Vec2,
   type TransformSpace,
 } from './sceneModel'
 
 type Fill = Layer['fill']
-type FillKind = 'Solid' | 'Gradient' | 'Image'
+type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type Shape = NonNullable<Layer['shape']>
-type EllipseRadii = Extract<ShapeNode, { Ellipse: unknown }>['Ellipse']
-type ShapeKind = 'None' | 'Ellipse' | 'Rect' | 'Polygon'
+type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon'
+
+/** How much of a new ring's reach is its hole */
+const RING_HOLE = 0.75
 
 const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
@@ -59,7 +62,9 @@ const VIEWPORT_OPTIONS: { value: 'Sequence' | 'Area'; label: string }[] = [
 ]
 const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Solid', label: 'Solid' },
-  { value: 'Gradient', label: 'Gradient' },
+  { value: 'Linear', label: 'Linear gradient' },
+  { value: 'Radial', label: 'Radial gradient' },
+  { value: 'Conical', label: 'Conical gradient' },
   { value: 'Image', label: 'Image' },
 ]
 const SPACE_OPTIONS: { value: ColorSpace; label: string }[] = [
@@ -68,6 +73,8 @@ const SPACE_OPTIONS: { value: ColorSpace; label: string }[] = [
 ]
 const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
   { value: 'None', label: 'All' },
+  { value: 'Circle', label: 'Circle' },
+  { value: 'Ring', label: 'Ring' },
   { value: 'Ellipse', label: 'Ellipse' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Polygon', label: 'Polygon' },
@@ -220,7 +227,7 @@ function FillEditor(props: { lens: Lens<Fill> }) {
   const base = field(props.lens, 'base')
   const kind = (): FillKind => {
     const current = base.get()
-    return 'Solid' in current ? 'Solid' : 'Gradient' in current ? 'Gradient' : 'Image'
+    return 'Solid' in current ? 'Solid' : 'Gradient' in current ? current.Gradient.style : 'Image'
   }
 
   const setKind = (next: FillKind) => {
@@ -229,14 +236,16 @@ function FillEditor(props: { lens: Lens<Fill> }) {
     if (next === kind()) return
     if (next === 'Solid') {
       base.set({ Solid: color ?? { Fixed: WHITE } })
-    } else if (next === 'Gradient') {
+    } else if (next === 'Image') {
+      base.set({ Image: { name: '' } })
+    } else if ('Gradient' in current) {
+      base.set({ Gradient: { ...current.Gradient, style: next } })
+    } else {
       const stops = [
         { at: 0, color: color ?? { Fixed: WHITE } },
         { at: 1, color: { Fixed: BLACK } },
       ]
-      base.set({ Gradient: { stops, space: 'Oklab' } })
-    } else {
-      base.set({ Image: { name: '' } })
+      base.set({ Gradient: { stops, space: 'Oklab', style: next } })
     }
   }
 
@@ -249,7 +258,7 @@ function FillEditor(props: { lens: Lens<Fill> }) {
         <Match when={kind() === 'Solid'}>
           <PropField label="Color" paramName="color" fallback={WHITE} ranges={COLOR_RANGES} lens={variant(base, 'Solid')} />
         </Match>
-        <Match when={kind() === 'Gradient'}>
+        <Match when={'Gradient' in base.get()}>
           <GradientEditor lens={variant(base, 'Gradient')} />
         </Match>
         <Match when={kind() === 'Image'}>
@@ -420,8 +429,16 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
         <Dropdown label={label} options={path ? SHAPE_OPTIONS.slice(1) : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
       </FieldRow>
       <Switch>
+        <Match when={kind() === 'Circle'}>
+          <PropField label="Radius" paramName="radius" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Circle'), 'radius')} />
+        </Match>
+        <Match when={kind() === 'Ring'}>
+          <PropField label="Radius" paramName="radius" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Ring'), 'radius')} />
+          <PropField label="Thickness" paramName="thickness" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Ring'), 'thickness')} />
+        </Match>
         <Match when={kind() === 'Ellipse'}>
-          <EllipseFields ranges={ranges()} lens={variant(base, 'Ellipse')} />
+          <PropField label="R1" paramName="r1" fallback={0} ranges={both(radius(ranges()[1]))} lens={field(variant(base, 'Ellipse'), 'r1')} />
+          <PropField label="R2" paramName="r2" fallback={0} ranges={both(radius(ranges()[0]))} lens={field(variant(base, 'Ellipse'), 'r2')} />
         </Match>
         <Match when={kind() === 'Rect'}>
           <PropField label="Width" paramName="width" fallback={0} ranges={both(ranges()[0])} lens={field(variant(base, 'Rect'), 'width')} />
@@ -438,64 +455,11 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
   )
 }
 
-/**
- * An ellipse's radii, and a button that locks them together into a circle. Whichever one changes takes the other with
- * it, wherever the change came from, as a handle on the shape only knows of its own radius. A file has no way to say
- * they're locked, so this lasts as long as the editor is open. While they're locked both are on the wider of their two
- * ranges, so that the same value puts their sliders in the same spot.
- */
-function EllipseFields(props: { lens: Lens<EllipseRadii>; ranges: Ranges }) {
-  const [locked, setLocked] = createSignal(false)
-  const r1 = field(props.lens, 'r1')
-  const r2 = field(props.lens, 'r2')
-  const same = (a: Prop<number>, b: Prop<number>) => JSON.stringify(a) === JSON.stringify(b)
-
-  let lastR1 = r1.get()
-  createEffect(() => {
-    const [first, second] = [r1.get(), r2.get()]
-    if (locked() && !same(first, second)) {
-      const radius = same(first, lastR1) ? second : first
-      props.lens.set({ r1: radius, r2: radius })
-    }
-    lastR1 = first
-  })
-
-  const toggle = () => {
-    if (!locked()) props.lens.set({ r1: r1.get(), r2: r1.get() })
-    setLocked(!locked())
-  }
-
-  const range = (own: Range) => {
-    const [across, down] = props.ranges
-    return both(radius(!locked() ? own : across.max > down.max ? across : down))
-  }
-
-  const lock = (
-    <button
-      type="button"
-      class="scene-radii-lock"
-      aria-pressed={locked()}
-      aria-label="Lock R1 and R2 together"
-      title={locked() ? 'R1 and R2 change together, keeping this a circle' : 'Lock R1 and R2 together to make a circle'}
-      onClick={toggle}
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M3.5 7.5h9v6h-9z" />
-        <path d={locked() ? 'M5.5 7.5V5a2.5 2.5 0 0 1 5 0v2.5' : 'M5.5 7.5V5a2.5 2.5 0 0 1 4.75-1.1'} />
-      </svg>
-    </button>
-  )
-
-  return (
-    <>
-      <PropField label="R1" paramName="r1" fallback={0} ranges={range(props.ranges[1])} lens={r1} />
-      <PropField label="R2" paramName="r2" fallback={0} ranges={range(props.ranges[0])} lens={r2} action={lock} />
-    </>
-  )
-}
-
 /** A shape this wide and tall */
 function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): ShapeNode {
+  const reach = Math.max(width, height) / 2
+  if (kind === 'Circle') return { Circle: { radius: { Fixed: reach } } }
+  if (kind === 'Ring') return { Ring: { radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { r1: { Fixed: height / 2 }, r2: { Fixed: width / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
   const corners: Vec2[] = [
@@ -510,6 +474,11 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
 /** How wide and tall a shape is in its own space */
 function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
+  if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
+  if ('Ring' in base) {
+    const across = (value(base.Ring.radius) + value(base.Ring.thickness)) * 2
+    return [across, across]
+  }
   if ('Ellipse' in base) return [value(base.Ellipse.r2) * 2, value(base.Ellipse.r1) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
   const points = base.Polygon.points.map((point) => startingValue(point, scene, [0, 0] as Vec2))

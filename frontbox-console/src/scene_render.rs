@@ -166,6 +166,7 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     min: pose.bounds.min.to_array(),
     max: pose.bounds.max.to_array(),
     points: pose.points.iter().map(|p| p.to_array()).collect(),
+    hole: pose.hole,
     outline: pose.outline.iter().map(|p| p.to_array()).collect(),
     paths: pose.paths.iter().map(|path| path.as_ref().map(rendered_shape)).collect(),
   }

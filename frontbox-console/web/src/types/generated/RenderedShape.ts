@@ -17,6 +17,10 @@ min: [number, number], max: [number, number],
  */
 points: Array<[number, number]>, 
 /**
+ * How far a ring's hole reaches from its center, in its own space
+ */
+hole: number, 
+/**
  * Its edge in the scene, as a closed loop of points
  */
 outline: Array<[number, number]>, 

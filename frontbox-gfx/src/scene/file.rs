@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -105,6 +105,7 @@ mod tests {
               Stop::new(1.0, Color(Rgba([255, 51, 0, 128]))),
             ],
             space: ColorSpace::Oklab,
+            style: GradientStyle::Radial,
           })
           .transform(Transform::Rotate(90.0.into()))
           .adjust(ColorAdjust::HueShift(Prop::Param("hue".into()))),
@@ -124,6 +125,9 @@ mod tests {
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
+        )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
+          ShapeNode::Ring { radius: 3.0.into(), thickness: 1.0.into() },
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
@@ -241,6 +245,12 @@ mod tests {
   }
 
   #[test]
+  fn a_gradient_with_no_style_is_linear() {
+    let scene = load("(version: 8, viewport: Sequence, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Linear, .. }));
+  }
+
+  #[test]
   fn an_animated_image_keeps_its_frame_when_written_and_read() {
     let frame = Track {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
@@ -345,7 +355,7 @@ mod tests {
 
   #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 9, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 9 })), "{result:?}");
+    let result = load("(version: 10, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 10 })), "{result:?}");
   }
 }

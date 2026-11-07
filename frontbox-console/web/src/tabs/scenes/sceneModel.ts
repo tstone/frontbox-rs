@@ -170,7 +170,7 @@ export function freshParamName(scene: Scene, base: string) {
 /** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
   const reach = Math.min(x.max - x.min, y.max - y.min) / 4
-  const base = { Ellipse: { r1: { Fixed: reach }, r2: { Fixed: reach } } }
+  const base = { Circle: { radius: { Fixed: reach } } }
   return { path: { base, transform: [{ Translate: { Fixed: center } }] }, start: 0, end: duration }
 }
 
@@ -227,7 +227,13 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
     const base = field(lens, 'base')
     const current = base.get()
     const [across, down] = sizeRanges(surface)
-    if ('Ellipse' in current) {
+    if ('Circle' in current) {
+      use(field(variant(base, 'Circle'), 'radius'), `${label} · Radius`, both(roundRange(surface)))
+    } else if ('Ring' in current) {
+      const ring = variant(base, 'Ring')
+      use(field(ring, 'radius'), `${label} · Radius`, both(roundRange(surface)))
+      use(field(ring, 'thickness'), `${label} · Thickness`, both(roundRange(surface)))
+    } else if ('Ellipse' in current) {
       const ellipse = variant(base, 'Ellipse')
       use(field(ellipse, 'r1'), `${label} · R1`, both(radius(down)))
       use(field(ellipse, 'r2'), `${label} · R2`, both(radius(across)))
@@ -468,6 +474,12 @@ export function sizeRanges(surface: Surface): Ranges {
 /** An ellipse's radius along an axis of `sizeRanges`, which comes to the same size of shape */
 export function radius(size: Range): Range {
   return { ...size, rest: size.rest! / 2 }
+}
+
+/** A size of a shape that's the same every way around, which can use the wider of `sizeRanges` */
+export function roundRange(surface: Surface): Range {
+  const [across, down] = sizeRanges(surface)
+  return radius(across.max > down.max ? across : down)
 }
 
 /** A polygon's points, in the shape's own space around its center */

@@ -169,7 +169,7 @@ mod tests {
   use crate::animation::{Curve, Cycle};
   use crate::layout::{Grid, Line};
   use crate::scene::{
-    Color, ColorAdjust, ColorSpace, Fill, FillNode, Images, Key, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread, Stop,
+    Color, ColorAdjust, ColorSpace, Fill, FillNode, GradientStyle, Images, Key, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread, Stop,
     Track, Transform,
   };
 
@@ -186,6 +186,7 @@ mod tests {
     Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))],
       space: ColorSpace::Rgb,
+      style: GradientStyle::Linear,
     })
   }
 
@@ -676,6 +677,7 @@ mod tests {
     let in_stop = Layer::new(Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Prop::Track(track()))],
       space: ColorSpace::Rgb,
+      style: GradientStyle::Linear,
     }));
     let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));
     for layer in [in_transform, in_point, in_stop, in_adjust] {

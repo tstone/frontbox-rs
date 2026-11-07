@@ -7,6 +7,6 @@ import type { Track } from "./Track";
  * A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, or swept along a path
  *
  * In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`, or
- * `Sweep((path: (base: Ellipse(r1: Fixed(5.0), r2: Fixed(5.0))), start: 0.0, end: 1.0))`.
+ * `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`.
  */
 export type Prop<T> = { "Fixed": T } | { "Param": string } | { "Track": Track<T> } | { "Random": Random } | { "Sweep": Sweep };
