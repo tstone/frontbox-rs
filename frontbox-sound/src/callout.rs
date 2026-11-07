@@ -38,7 +38,8 @@ impl CalloutRequest {
     self
   }
 
-  /// A sound played right before the line, as part of it
+  /// A sound played right before the line, as part of it. It's skipped when the line follows straight on from one with
+  /// the same lead-in, so a run of lines is introduced once.
   pub fn lead_in(mut self, key: &'static str) -> Self {
     self.lead_in = Some(key);
     self

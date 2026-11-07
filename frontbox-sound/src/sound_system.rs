@@ -69,6 +69,12 @@ impl SoundSystem {
     let _ = self.tx.send(PlayCallout(request.into()));
   }
 
+  /// Turn callouts up or down relative to everything else, in decibels. 0 is as recorded, and above it boosts them, which
+  /// can clip loud lines.
+  pub fn set_callout_volume(&mut self, db: f32) {
+    let _ = self.tx.send(SetCalloutVolume(db));
+  }
+
   pub fn play_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
     let _ = self
       .tx

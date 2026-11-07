@@ -21,7 +21,7 @@ use crate::CalloutCompleted;
 use crate::callout::{CalloutQueue, CalloutRequest};
 
 /// How far the music drops while a callout plays
-const CALLOUT_DUCK_DB: f32 = -14.0;
+const CALLOUT_DUCK_DB: f32 = -12.0;
 
 pub struct SoundManager {
   rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
@@ -140,6 +140,7 @@ impl SoundManager {
             SoundManagerCmds::PreloadEmbedded(name, bytes) => self.preload_embedded(name, bytes),
             SoundManagerCmds::PlaySfx(key) => self.play_sfx(key),
             SoundManagerCmds::PlayCallout(request) => self.play_callout(request),
+            SoundManagerCmds::SetCalloutVolume(db) => self.set_callout_volume(db),
             SoundManagerCmds::PlayMusic(path, crossfade) => self.crossfade_music(path, crossfade),
             SoundManagerCmds::StopMusic(crossfade) => self.stop_music(crossfade),
           }
@@ -205,10 +206,16 @@ impl SoundManager {
 
   /// Say the next line that can be said, or give the music its volume back if there's none
   fn start_next_callout(&mut self) {
+    let previous_lead_in = self
+      .active_callout
+      .as_ref()
+      .and_then(|active| active.lead_in);
     while let Some(request) = self.callout_queue.pop() {
-      if let Some(handle) = self.start_callout(&request) {
+      let follows_on = previous_lead_in.is_some() && previous_lead_in == request.lead_in_key();
+      if let Some(handle) = self.start_callout(&request, follows_on) {
         self.active_callout = Some(ActiveCallout {
           key: request.key(),
+          lead_in: request.lead_in_key(),
           handle,
         });
         return;
@@ -219,7 +226,12 @@ impl SoundManager {
     Self::unduck_track(&mut self.music_track);
   }
 
-  fn start_callout(&mut self, request: &CalloutRequest) -> Option<StaticSoundHandle> {
+  /// Start a line, with its lead-in unless it follows on from a line that already had it
+  fn start_callout(
+    &mut self,
+    request: &CalloutRequest,
+    follows_on: bool,
+  ) -> Option<StaticSoundHandle> {
     let Some(sound) = self.sounds.get(request.key()).cloned() else {
       log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", request.key());
       return None;
@@ -228,6 +240,7 @@ impl SoundManager {
     // the line is scheduled on the audio clock, as waiting for a tick to start it would leave a gap of up to 100ms
     let lead_in = request
       .lead_in_key()
+      .filter(|_| !follows_on)
       .and_then(|key| self.sounds.get(key))
       .cloned();
     let sound = match lead_in {
@@ -248,6 +261,12 @@ impl SoundManager {
         None
       }
     }
+  }
+
+  fn set_callout_volume(&mut self, db: f32) {
+    self
+      .callout_track
+      .set_volume(Decibels(db), Tween::default());
   }
 
   fn report_callout(&self, key: &'static str, played: bool) {
@@ -321,6 +340,7 @@ impl SoundManager {
 
 struct ActiveCallout {
   key: &'static str,
+  lead_in: Option<&'static str>,
   handle: StaticSoundHandle,
 }
 
@@ -329,6 +349,7 @@ pub enum SoundManagerCmds {
   PreloadEmbedded(&'static str, &'static [u8]),
   PlaySfx(&'static str),
   PlayCallout(CalloutRequest),
+  SetCalloutVolume(f32),
   PlayMusic(PathBuf, Duration),
   StopMusic(Duration),
 }
