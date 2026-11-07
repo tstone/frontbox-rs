@@ -74,7 +74,7 @@ use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 #[derive(Clone)]
 pub struct BallSaveSystem {
   handle: SystemHandle,
-  effect: Option<LedProgram1d>,
+  effect: Option<LedScene>,
   effect_playing: bool,
   /// Time remaining per requesting system, or `None` for until released
   requests: HashMap<u64, Option<Duration>>,
@@ -104,7 +104,7 @@ impl BallSaveSystem {
   }
 
   /// An effect to play while there are requests
-  pub fn led_effect(mut self, effect: LedProgram1d) -> Self {
+  pub fn led_effect(mut self, effect: LedScene) -> Self {
     self.effect = Some(effect.stopped());
     self
   }

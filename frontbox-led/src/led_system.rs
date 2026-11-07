@@ -123,6 +123,11 @@ impl LedSystem {
       .unwrap_or(Vec::new())
   }
 
+  /// The colors declared for an LED by any system, in no particular order
+  pub fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>> {
+    self.declarations_for(addr).iter().map(|d| d.color).collect()
+  }
+
   pub fn reset(&mut self) {
     self.declarations.clear();
     self.prior_render.clear();
@@ -364,7 +369,7 @@ impl System for LedSystem {
           log::info!(target: "frontbox_core::leds", "Setting led {:?} to {:?}", led, final_color);
         }
 
-        leds_to_set.push((led.clone(), to_rgb(final_color)));
+        leds_to_set.push((led.clone(), led_color(final_color)));
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
@@ -433,7 +438,7 @@ pub enum LedConflictResolution {
 }
 
 /// The color an LED shows for this one, as if composited over an LED that's off: alpha dims it toward black
-fn to_rgb(color: Rgba<u8>) -> Rgb {
+pub fn led_color(color: Rgba<u8>) -> Rgb {
   let [r, g, b, _] = color.composite_over(Rgba::black()).0;
   Rgb::new(r, g, b)
 }
@@ -761,13 +766,13 @@ mod tests {
   }
 
   #[test]
-  fn to_rgb_keeps_opaque_colors() {
-    assert_eq!(to_rgb(Rgba([255, 128, 0, 255])), Rgb::new(255, 128, 0));
+  fn led_color_keeps_opaque_colors() {
+    assert_eq!(led_color(Rgba([255, 128, 0, 255])), Rgb::new(255, 128, 0));
   }
 
   #[test]
-  fn to_rgb_dims_translucent_colors_toward_off() {
-    assert_eq!(to_rgb(Rgba([255, 0, 200, 128])), Rgb::new(128, 0, 100));
-    assert_eq!(to_rgb(Rgba::transparent()), Rgb::black());
+  fn led_color_dims_translucent_colors_toward_off() {
+    assert_eq!(led_color(Rgba([255, 0, 200, 128])), Rgb::new(128, 0, 100));
+    assert_eq!(led_color(Rgba::transparent()), Rgb::black());
   }
 }

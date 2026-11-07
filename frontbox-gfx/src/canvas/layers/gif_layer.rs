@@ -83,10 +83,3 @@ impl Animation<Duration, usize> for GifLayer {
     self.active
   }
 }
-
-impl Modulation<usize, Duration> for GifLayer {
-  fn apply(&mut self, delta: Duration, target: &mut usize) {
-    self.accumulate(delta);
-    self.current_frame = *target;
-  }
-}

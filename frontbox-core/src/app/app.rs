@@ -95,7 +95,7 @@ impl App {
         self
           .tracers
           .iter_mut()
-          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone(), metrics_db.clone()));
+          .for_each(|tr| tr.init(&hardware, &app_config, tracer_ctl_sender.clone(), metrics_db.clone()));
         let state = AppState::from_hardware(hardware, self.configs, app_config);
         machine.on_pre_run(&state).await;
 
@@ -113,7 +113,7 @@ impl App {
         self
           .tracers
           .iter_mut()
-          .for_each(|tr| tr.init(&hardware, tracer_ctl_sender.clone(), metrics_db.clone()));
+          .for_each(|tr| tr.init(&hardware, &app_config, tracer_ctl_sender.clone(), metrics_db.clone()));
         let state = AppState::from_hardware(hardware, self.configs, app_config);
         machine.on_pre_run(&state).await;
 

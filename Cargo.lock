@@ -1000,8 +1000,11 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "frontbox-core",
+ "frontbox-gfx",
+ "frontbox-led",
  "frontbox-metrics",
  "frontbox-pinball",
+ "image",
  "log",
  "mime_guess",
  "rust-embed",
@@ -1077,6 +1080,7 @@ dependencies = [
  "rand 0.10.0",
  "ron",
  "serde",
+ "ts-rs",
 ]
 
 [[package]]
@@ -1091,6 +1095,7 @@ dependencies = [
  "image",
  "itertools",
  "log",
+ "rand 0.10.0",
  "serde",
  "serde_json",
  "tokio",
@@ -1115,6 +1120,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "frontbox-core",
+ "frontbox-gfx",
  "frontbox-led",
  "log",
  "serde",

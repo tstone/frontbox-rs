@@ -1,8 +1,9 @@
-use axum::extract::ws::Utf8Bytes;
+use axum::extract::ws::{Message, Utf8Bytes};
+use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  ConfigDomainValue, Hardware, Rgb, RoutineCompleted, RoutineStarted, SystemDespawned,
-  SystemSpawned,
+  ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, LedQ, ReferencePlane, Rgb, RoutineCompleted, RoutineStarted,
+  SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
@@ -15,6 +16,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::console_plane::ConsolePlane;
 use crate::protocol::*;
+use crate::scene_render::{LedTarget, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -42,6 +44,9 @@ impl ConsoleHub {
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
+        planes: Vec::new(),
+        led_radius: DEFAULT_LED_RADIUS,
+        content: None,
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -91,6 +96,7 @@ impl ConsoleHub {
       })
       .collect();
     state.plane_images = planes.iter().map(|p| p.plane.image.clone()).collect();
+    state.planes = planes.iter().map(|p| p.plane).collect();
   }
 
   pub fn set_control(&self, control: mpsc::UnboundedSender<TracerControlEvent>) {
@@ -131,6 +137,92 @@ impl ConsoleHub {
 
   pub fn set_metrics(&self, metrics: Option<MetricsDb>) {
     self.state.lock().unwrap().metrics = metrics;
+  }
+
+  /// Runs off the runtime, so a large render only holds up the client that asked
+  pub async fn render_scene(
+    &self,
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+    time: f32,
+    cycle: Option<u32>,
+  ) -> Option<Utf8Bytes> {
+    let target = self.led_target(leds);
+    let content = self.content();
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, target, content, time, cycle)).await {
+      Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
+      Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
+      Err(err) => {
+        log::error!(target: "frontbox_core::console", "Scene render stopped: {err}");
+        return None;
+      }
+    };
+    serialize(&message)
+  }
+
+  /// Runs off the runtime, and has a message ready for the client whichever way it goes
+  pub async fn render_clip(
+    &self,
+    id: u32,
+    source: SceneSource,
+    size: SceneSize,
+    leds: SceneLeds,
+    cycle: u32,
+  ) -> Option<Message> {
+    let target = self.led_target(leds);
+    let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
+    let content = self.content();
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, target, content, cycle)).await {
+      Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
+      Ok(Err(error)) => failed(error),
+      Err(err) => {
+        log::error!(target: "frontbox_core::console", "Scene clip stopped: {err}");
+        failed("The clip stopped rendering".into())
+      }
+    }
+  }
+
+  pub fn set_led_radius(&self, radius: f32) {
+    self.state.lock().unwrap().led_radius = radius;
+  }
+
+  pub fn set_content(&self, path: Option<PathBuf>) {
+    if let Some(path) = &path {
+      if !path.is_dir() {
+        log::warn!(target: "frontbox_core::console", "Content folder {} isn't there yet", path.display());
+      }
+    }
+    self.state.lock().unwrap().content = path.map(Content::new);
+  }
+
+  /// The app's content folder. `None` until `AppTracer::init`, or when the app has none.
+  pub fn content(&self) -> Option<Content> {
+    self.state.lock().unwrap().content.clone()
+  }
+
+  fn led_target(&self, leds: SceneLeds) -> LedTarget {
+    let state = self.state.lock().unwrap();
+    let lookup = state
+      .snapshot
+      .hardware
+      .as_ref()
+      .map(|hardware| hardware.leds.clone())
+      .unwrap_or_default();
+    let to_query = |query: SceneLedQuery| match query {
+      SceneLedQuery::Every => LedQ::every(),
+      SceneLedQuery::Names(names) => LedQ::names(names),
+      SceneLedQuery::Tags(names) => LedQ::Or(names.iter().map(|name| lookup.tag_named(name)).collect()),
+    };
+    let query = to_query(leds.query);
+    let target_queries = leds.target_queries.into_iter().map(|(name, query)| (name, to_query(query))).collect();
+    LedTarget {
+      leds: lookup,
+      plane: leds.plane.and_then(|index| state.planes.get(index).copied()),
+      query,
+      target_queries,
+      radius: state.led_radius,
+    }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
@@ -493,6 +585,10 @@ struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
+  /// Planes for `snapshot.planes`, by the same index
+  planes: Vec<&'static ReferencePlane>,
+  led_radius: f32,
+  content: Option<Content>,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

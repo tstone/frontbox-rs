@@ -1,0 +1,2060 @@
+/* ---- choosing a scene ---- */
+
+.scene-list {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.scene-list > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scene-list h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.scene-tree {
+  min-height: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.scene-tree [data-scope='tree-view'][data-part='tree'] {
+  font-size: 1rem;
+}
+
+.scene-tree [data-scope='tree-view'][data-part='item'],
+.scene-tree [data-scope='tree-view'][data-part='branch-control'] {
+  padding-block: 0.375rem;
+}
+
+/* a file's name lines up with a folder's, which has its indicator before it */
+.scene-tree [data-scope='tree-view'][data-part='item'] {
+  padding-left: calc(1.625rem + (var(--depth, 1) - 1) * 1rem);
+}
+
+.scene-tree [data-part='item-text'],
+.scene-tree [data-part='branch-text'] {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* hidden by opacity rather than removed, so rows keep their height and the buttons can be tabbed to */
+.scene-tree-actions {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+  opacity: 0;
+}
+
+.scene-tree [data-part='item']:hover .scene-tree-actions,
+.scene-tree [data-part='item']:focus-within .scene-tree-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .scene-tree-actions {
+    opacity: 1;
+  }
+}
+
+.scene-tree-actions .scene-button {
+  display: flex;
+  padding: 0.125rem;
+}
+
+.scene-tree-actions svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- the scene being edited ---- */
+
+.scene-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.scene-editor > .scenes-tab {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.scene-file {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-file-name {
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-file-actions {
+  display: flex;
+  flex: none;
+  gap: 0.375rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.scene-file-view {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.scene-leds {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-source {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.scene-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.scene-tabs > [data-part='list'] {
+  position: relative;
+  display: flex;
+  flex: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.scene-tabs [data-scope='tabs'][data-part='trigger'] {
+  padding: 0.625rem 1.25rem;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.scene-tabs [data-scope='tabs'][data-part='trigger']:hover,
+.scene-tabs [data-scope='tabs'][data-part='trigger'][data-selected] {
+  color: var(--text);
+}
+
+.scene-tabs [data-scope='tabs'][data-part='trigger'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Ark measures the selected trigger into these variables and animates between them */
+.scene-tabs [data-scope='tabs'][data-part='indicator'] {
+  bottom: -1px;
+  left: var(--left);
+  width: var(--width);
+  height: 2px;
+  background: var(--accent);
+}
+
+/* positioned to hold Ark's hidden inputs, which would otherwise scroll the page instead of this */
+.scene-tabs > [data-part='content'] {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.scene-tabs > [data-part='content'][hidden] {
+  display: none;
+}
+
+.scene-source textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 0.9375rem;
+  resize: none;
+}
+
+.scene-source textarea:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.scene-output {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.scene-file input {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.scene-file input {
+  width: 6rem;
+}
+
+.scene-file .scene-dropdown {
+  width: 14rem;
+}
+
+.scene-file .scene-note {
+  white-space: nowrap;
+}
+
+/* above the size of the toggles in the editor, as this one switches the whole preview */
+.scene-view {
+  font-size: 0.9375rem;
+}
+
+.scene-machine {
+  flex: 1;
+  min-height: 0;
+}
+
+.scene-machine[hidden] {
+  display: none;
+}
+
+/* sized by its container rather than what's in it, which is what lets the screen fit either way around */
+.scene-dmd {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  container-type: size;
+}
+
+.scene-dmd[hidden] {
+  display: none;
+}
+
+.scene-dmd-screen {
+  position: relative;
+  width: min(100cqw, 100cqh * var(--aspect));
+  aspect-ratio: var(--aspect);
+}
+
+.scene-dmd canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* transparent means unlit */
+  background: #000;
+  image-rendering: pixelated;
+}
+
+.scene-dmd svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* here rather than on what's inside, where the viewBox would scale it into a haze over the scene */
+  filter: drop-shadow(0 0 1px #000);
+  pointer-events: none;
+}
+
+.scene-dmd polygon {
+  fill: none;
+  /* over the scene's own colors, which can be anything, so this needs to read against all of them */
+  stroke: #fff;
+  stroke-dasharray: 6 4;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.scene-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.scene-handle {
+  position: absolute;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  /* over the scene's own colors, which can be anything, so this needs to read against all of them */
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 2px;
+  box-shadow: 0 0 2px #000;
+  pointer-events: auto;
+  touch-action: none;
+  transition:
+    background 0.1s,
+    box-shadow 0.1s,
+    transform 0.1s;
+}
+
+.scene-handle-move {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+}
+
+/* out past the corner, where a polygon can have a point of its own */
+.scene-handle-scale {
+  margin: -20px 0 0 8px;
+}
+
+.scene-handle-point {
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+}
+
+.scene-handle-bezier {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 1px;
+}
+
+/* a color of its own, so it can't be taken for the shape going along it */
+.scene-handles {
+  --scene-path: #ff4fd8;
+}
+
+.scene-handle-path {
+  background: var(--scene-path);
+}
+
+.scene-handle:hover {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: scale(1.2);
+}
+
+.scene-handle-locked {
+  background: #999;
+}
+
+.scene-handle-locked:hover {
+  background: #999;
+  box-shadow: 0 0 2px #000;
+  transform: none;
+}
+
+.scene-paths {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 0 1px #000);
+}
+
+.scene-paths polyline {
+  fill: none;
+  stroke: var(--scene-path);
+  stroke-dasharray: 6 4;
+  stroke-width: 1.5;
+}
+
+.scene-paths .scene-arm {
+  stroke-dasharray: none;
+  stroke-width: 1;
+}
+
+/* the last good render, kept up while the source doesn't parse */
+.scene-dmd.stale,
+.scene-machine.stale {
+  opacity: 0.4;
+}
+
+.scene-error {
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+}
+
+/* ---- editing a scene ---- */
+
+.scene-params {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 40%;
+  padding: 1rem;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.scene-editing {
+  display: contents;
+}
+
+.scene-editing[inert] > * {
+  opacity: 0.5;
+}
+
+.scene-params h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scene-config {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.scene-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.scene-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.scene-field-label {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-ping {
+  border-radius: var(--radius-sm);
+  animation: scene-ping 1.6s ease-out;
+}
+
+/* around the field and not on it, in the room its item leaves, as a line on the field would run into its label */
+@keyframes scene-ping {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
+      0 0 0 6px var(--accent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow:
+      0 0 0 5px transparent,
+      0 0 0 6px transparent;
+  }
+}
+
+.scene-prop-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 0.5rem;
+}
+
+.scene-unique {
+  display: flex;
+  align-items: center;
+}
+
+.scene-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-switch [data-part='control'] {
+  display: inline-flex;
+  box-sizing: border-box;
+  width: 1.75rem;
+  height: 1rem;
+  padding: 0.125rem;
+  border-radius: 0.5rem;
+  background: var(--border);
+  transition: background 0.1s;
+}
+
+.scene-switch [data-part='control'][data-state='checked'] {
+  background: var(--accent);
+}
+
+.scene-switch [data-part='control'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scene-switch [data-part='thumb'] {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.1s;
+}
+
+.scene-switch [data-part='control'][data-state='checked'] [data-part='thumb'] {
+  background: #fff;
+  transform: translateX(0.75rem);
+}
+
+.scene-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.scene-note-warn {
+  color: var(--warn);
+}
+
+.scene-image-chosen {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.875rem;
+}
+
+.scene-image-chosen img {
+  flex: none;
+  width: 3rem;
+  height: 2rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.scene-image-chosen span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-button {
+  flex: none;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-button:hover:enabled,
+label.scene-button:hover {
+  background: var(--surface-hover);
+}
+
+.scene-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scene-button:focus-within {
+  outline: 2px solid var(--accent);
+}
+
+.scene-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.scene-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.scene-dialog-positioner {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.scene-dialog-backdrop[hidden],
+.scene-dialog-positioner[hidden] {
+  display: none;
+}
+
+.scene-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-sizing: border-box;
+  width: min(60rem, 100%);
+  max-height: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  outline: none;
+}
+
+.scene-dialog header,
+.scene-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.scene-dialog footer {
+  justify-content: flex-end;
+}
+
+.scene-dialog-small {
+  width: min(26rem, 100%);
+}
+
+.scene-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.scene-dialog input[type='text'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.scene-dialog h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.scene-dialog header button {
+  padding: 0 0.375rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.scene-dialog header button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-image-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  align-content: start;
+  gap: 0.5rem;
+  min-height: 0;
+  overflow-y: scroll;
+}
+
+.scene-image {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.scene-image:hover {
+  background: var(--surface-hover);
+}
+
+.scene-image[aria-selected='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.scene-image img {
+  width: 100%;
+  height: 6rem;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+/* a whole path, as what tells two images apart can be at either end of it */
+.scene-image span {
+  overflow-wrap: anywhere;
+}
+
+.scene-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.scene-item .scene-item {
+  background: var(--bg);
+}
+
+.scene-item > header {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.scene-item > header > span,
+.scene-item > header > .scene-dropdown {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-item > header > button {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scene-item > header [data-part='item-trigger'] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+}
+
+.scene-eye {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-eye:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-eye:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-eye svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  margin: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.scene-item-hidden {
+  opacity: 0.5;
+}
+
+.scene-item-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.scene-item-name [data-part='preview'] {
+  display: block;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-item-name [data-part='input'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 0.25rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.scene-layers [data-part='item-indicator'] {
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+
+.scene-layers [data-part='item-indicator'][data-state='open'] {
+  transform: rotate(90deg);
+}
+
+.scene-layers [data-part='item-trigger'][data-focus-visible],
+.scene-layers [data-part='item-trigger']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-item > header > button:hover:enabled {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-item > header > button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.scene-add {
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-add:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-config input,
+.scene-params input,
+.scene-key-editor input,
+.scene-timeline input {
+  box-sizing: border-box;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.scene-config input:focus-visible,
+.scene-params input:focus-visible,
+.scene-key-editor input:focus-visible,
+.scene-timeline input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.scene-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.scene-stop,
+.scene-stops .scene-add {
+  box-sizing: border-box;
+  width: 2.125rem;
+  height: 2.125rem;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.scene-stop {
+  border: 1px solid var(--border);
+  touch-action: none;
+  cursor: grab;
+}
+
+.scene-stop:hover {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.scene-stop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-stop.dragging {
+  box-shadow: 0 0 0 2px var(--accent);
+  cursor: grabbing;
+}
+
+.scene-stop-popup {
+  z-index: 10;
+  box-sizing: border-box;
+  width: min(20rem, 100vw - 2rem);
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+  outline: none;
+}
+
+.scene-layer-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.scene-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.scene-target {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scene-target-name {
+  box-sizing: border-box;
+  width: 8rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.scene-target-name:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.scene-target-remove {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-target-remove:hover {
+  color: var(--text);
+}
+
+.scene-param-name {
+  width: 100%;
+  font-family: var(--mono) !important;
+}
+
+/* ---- a slider and its box ---- */
+
+.scene-axis {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.scene-axis .scene-number {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-number {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.scene-number [data-scope='slider'][data-part='root'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-number input[type='number'] {
+  flex: none;
+  width: 5.5rem;
+}
+
+.scene-number [data-part='control'] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 1.25rem;
+}
+
+.scene-number [data-part='track'] {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.scene-number [data-part='range'] {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.scene-number [data-part='thumb'] {
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--surface);
+  cursor: grab;
+}
+
+.scene-number [data-part='thumb'][data-focus] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the slider gets a row of its own to have the width for two ends, with a box under each */
+.scene-range {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.scene-range [data-scope='slider'][data-part='root'] {
+  flex-basis: 100%;
+  order: -1;
+}
+
+.scene-range input[type='number'] {
+  width: 5.5rem;
+}
+
+.scene-range-drawn [data-part='range'] {
+  outline: 2px solid var(--text);
+  background: none;
+}
+
+/* ---- dropdown ---- */
+
+.scene-dropdown [data-part='trigger'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.4375rem 0.5rem 0.4375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-hover);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.scene-dropdown [data-part='trigger']:hover,
+.scene-dropdown [data-part='trigger'][data-state='open'] {
+  border-color: var(--accent);
+}
+
+.scene-dropdown [data-part='trigger']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* a dropdown that heads an item reads as its title, and only looks like a control when reached for */
+:where(.scene-item) > header > .scene-dropdown [data-part='trigger'] {
+  justify-content: flex-start;
+  padding: 0.125rem 0.25rem 0.125rem 0.375rem;
+  border-color: transparent;
+  background: none;
+  font-weight: inherit;
+}
+
+.scene-dropdown [data-part='indicator'] {
+  display: flex;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.scene-dropdown [data-part='indicator'][data-state='open'] {
+  transform: rotate(180deg);
+}
+
+.scene-dropdown svg,
+.scene-dropdown-list svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.scene-dropdown-list {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.3125rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  font-size: 0.9375rem;
+  outline: none;
+}
+
+.scene-dropdown-list[data-state='open'] {
+  animation: scene-dropdown-open 0.12s ease-out;
+}
+
+@keyframes scene-dropdown-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.scene-dropdown-list [data-part='item'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.scene-dropdown-list [data-part='item'][data-highlighted] {
+  background: var(--surface-hover);
+}
+
+.scene-dropdown-list [data-part='item'][data-state='checked'] {
+  background: var(--surface-selected);
+  font-weight: 600;
+}
+
+.scene-dropdown-list [data-part='item-indicator'] {
+  display: flex;
+  color: var(--accent);
+}
+
+/* ---- Fixed, Param, Track ---- */
+
+.scene-prop-kind {
+  position: relative;
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+}
+
+.scene-prop-kind [data-part='item'] {
+  position: relative;
+  padding: 0.125rem 0.375rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-prop-kind [data-part='item'][data-state='checked'] {
+  color: var(--text);
+}
+
+.scene-prop-kind [data-part='item'][data-focus-visible] {
+  outline: 2px solid var(--accent);
+}
+
+/* Ark measures the chosen segment into these variables */
+.scene-prop-kind [data-part='indicator'] {
+  top: var(--top);
+  left: var(--left);
+  width: var(--width);
+  height: var(--height);
+  border-radius: var(--radius-sm);
+  background: var(--surface-selected);
+}
+
+/* ---- color ---- */
+
+.scene-color [data-part='control'] {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.scene-color [data-part='trigger'] {
+  flex: none;
+  width: 2.125rem;
+  height: 2.125rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.scene-color [data-part='swatch'] {
+  width: 100%;
+  height: 100%;
+}
+
+.scene-color [data-part='channel-input'] {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+}
+
+.scene-color-picker {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 16rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+  outline: none;
+}
+
+/* Ark closes these with `hidden`, which a display of their own would override */
+.scene-dropdown-list [data-part='item-indicator'][hidden],
+.scene-dropdown-list[hidden],
+.scene-color-picker[hidden] {
+  display: none;
+}
+
+.scene-color-picker [data-part='area'] {
+  position: relative;
+  height: 10rem;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.scene-color-picker [data-part='area-background'] {
+  height: 100%;
+}
+
+.scene-color-picker [data-part='channel-slider'] {
+  position: relative;
+  height: 0.875rem;
+}
+
+.scene-color-picker [data-part='channel-slider-track'] {
+  height: 100%;
+  border-radius: 7px;
+}
+
+.scene-color-picker [data-part='area-thumb'],
+.scene-color-picker [data-part='channel-slider-thumb'] {
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid white;
+  border-radius: 50%;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5);
+}
+
+/* Ark places these at their value but, unlike the area's thumb, leaves centering them there to the styles */
+.scene-color-picker [data-part='channel-slider-thumb'] {
+  transform: translate(-50%, -50%);
+}
+
+/* ---- the timeline ---- */
+
+.scene-timeline {
+  --label-width: 13rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 0.5rem 1rem;
+}
+
+.scene-timeline > header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  font-size: 0.875rem;
+}
+
+.scene-timeline > header button {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.scene-timeline > header button:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-timeline > header button:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.5;
+}
+
+.scene-timeline > header svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+.scene-timeline > header label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+}
+
+.scene-timeline input {
+  width: 5rem;
+}
+
+.scene-time-scales {
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-time-scales button {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-time-scales button:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-time-scales button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.scene-time-scales-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
+.scene-timeline .scene-dropdown {
+  width: 7rem;
+}
+
+.scene-timeline .scene-dropdown button {
+  width: 100%;
+  padding: 0 0.625rem;
+}
+
+.scene-timeline-time {
+  min-width: 7rem;
+  margin: 0 0.5rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: scene-spin 0.8s linear infinite;
+}
+
+@keyframes scene-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.scene-timeline-tracks {
+  flex: 1;
+  min-height: 0;
+  /* a key or tick at the very end hangs past the lanes by half its width */
+  overflow: hidden auto;
+}
+
+/* what the playhead and the shade measure against, which is every track and not only those scrolled into view */
+.scene-timeline-lanes {
+  position: relative;
+}
+
+.scene-timeline-row {
+  display: grid;
+  grid-template-columns: var(--label-width) 1fr;
+}
+
+/* the times stay up as the tracks scroll under them */
+.scene-timeline-times {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg);
+}
+
+.scene-timeline-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.scene-timeline-hidden .scene-timeline-label,
+.scene-timeline-hidden .scene-timeline-lane {
+  opacity: 0.45;
+}
+
+.scene-timeline-label {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  padding: 0 0.75rem 0 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.75rem;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-timeline-label:hover {
+  color: var(--text);
+}
+
+.scene-timeline-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.scene-timeline-ruler {
+  position: relative;
+  height: 1.25rem;
+  margin: 0 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.6875rem;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.scene-timeline-tick {
+  position: absolute;
+  top: 0;
+  padding-left: 0.1875rem;
+  border-left: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.scene-timeline-lane {
+  position: relative;
+  height: 1.75rem;
+  margin: 0 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* the track itself, thin behind its dots */
+.scene-timeline-lane::before {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  border-top: 2px dotted var(--border);
+  content: '';
+}
+
+/* over the part of the view past the scene's end, where a key is cut off. It lines up with the lanes' margins. */
+.scene-timeline-lanes::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  right: 0.75rem;
+  bottom: 0;
+  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--end-fraction, 1));
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  pointer-events: none;
+  content: '';
+}
+
+/* the times sit above the shade over the lanes, so they carry their own */
+.scene-timeline-ruler::after {
+  position: absolute;
+  inset: 0 0 0 calc(100% * var(--end-fraction, 1));
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  pointer-events: none;
+  content: '';
+}
+
+.scene-timeline-playhead {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--label-width) + 0.5rem + (100% - var(--label-width) - 1.25rem) * var(--played-fraction));
+  width: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.scene-key,
+.scene-key-add {
+  position: absolute;
+  top: 50%;
+  translate: -50% -50%;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.scene-key {
+  z-index: 2;
+  width: 0.875rem;
+  height: 0.875rem;
+  border: 2px solid var(--text);
+  touch-action: none;
+  cursor: grab;
+}
+.scene-key:active {
+  cursor: grabbing;
+}
+
+.scene-key-value {
+  background: var(--text);
+}
+
+/* square, as nothing eases into a pick: it's a change at that moment */
+.scene-key-pick {
+  border-radius: 0;
+  rotate: 45deg;
+}
+
+/* a line and not dots, as what it follows is the path and not values at moments */
+.scene-sweep {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  height: 0.375rem;
+  translate: 0 -50%;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+}
+
+.scene-sweep button {
+  position: absolute;
+  top: 50%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  line-height: 1;
+  touch-action: none;
+}
+
+/* outside the line, so a short one can still be reached by both ends and the grip */
+.scene-sweep-end {
+  z-index: 1;
+  width: 0.75rem;
+  height: 1.25rem;
+  font-size: 1rem;
+  cursor: ew-resize;
+}
+
+.scene-sweep-start {
+  left: 0;
+  translate: -100% -50%;
+}
+
+.scene-sweep-finish {
+  right: 0;
+  translate: 100% -50%;
+}
+
+.scene-sweep .scene-sweep-grip {
+  left: 50%;
+  width: 1.5rem;
+  height: 0.875rem;
+  translate: -50% -50%;
+  border: 1px solid var(--text);
+  border-radius: var(--radius-sm);
+  background: repeating-linear-gradient(to right, var(--text) 0 1px, var(--bg) 1px 3px) center / 0.5625rem 0.5rem no-repeat var(--bg);
+  cursor: grab;
+}
+
+.scene-sweep-grip:active {
+  cursor: grabbing;
+}
+
+.scene-sweep button:hover,
+.scene-sweep button:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.scene-sweep .scene-sweep-grip:hover,
+.scene-sweep .scene-sweep-grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-key:hover,
+.scene-key[data-state='open'] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-key-add {
+  display: grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  place-items: center;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.scene-key-editor {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  width: 18rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-led-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-led-button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-led-button.chosen {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scene-led-button svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.scene-led-picker {
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(26rem, 100vw - 2rem);
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.scene-led-picker .scene-prop-kind [data-part='item'] {
+  flex: 1;
+  text-align: center;
+}
+
+.scene-led-picker input[type='search'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.scene-led-picker input[type='search']:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.scene-led-list {
+  overflow-y: auto;
+  height: min(20rem, 45vh);
+}
+
+.scene-led-row {
+  display: flex;
+  align-items: center;
+}
+
+.scene-led-row [data-scope='checkbox'][data-part='root'] {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.scene-led-row [data-scope='checkbox'][data-part='root']:hover {
+  background: var(--surface-hover);
+}
+
+.scene-led-row [data-scope='checkbox'][data-part='label'] {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-led-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.scene-led-expand {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-led-expand:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-led-expand svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  transition: transform 0.15s;
+}
+
+.scene-led-expand[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.scene-led-children {
+  margin-left: 1.25rem;
+}
+
+.scene-led-order-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.scene-led-order {
+  overflow-y: auto;
+  height: 7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scene-led-order li {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.scene-led-place {
+  flex: none;
+  width: 1.25rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.scene-led-order-label {
+  overflow: hidden;
+  flex: 1;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-led-order .scene-led-count {
+  margin-left: 0;
+}
+
+.scene-led-order button {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-led-order button:hover:enabled {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-led-order button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.scene-led-picker footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+
+.scene-led-picker footer button {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.scene-led-picker footer button:hover {
+  background: var(--surface-hover);
+}
+
+/* held in from the sides of the window, as the end of the timeline is close to its edge */
+.scene-key-add-time {
+  position: fixed;
+  z-index: 10;
+  left: clamp(2.25rem, var(--x), calc(100vw - 2.25rem));
+  translate: -50% -100%;
+  margin-top: -0.25rem;
+  padding: 0.125rem 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.scene-key-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.scene-key-actions button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.scene-key-remove,
+.scene-key-duplicate {
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--danger);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.scene-key-duplicate {
+  color: var(--text);
+}
+
+.scene-key-remove:hover:enabled,
+.scene-key-duplicate:hover:enabled {
+  background: var(--surface-hover);
+}
+
+.scene-key-remove:disabled,
+.scene-key-duplicate:disabled {
+  color: var(--muted);
+  cursor: default;
+}

@@ -7,6 +7,8 @@ include = ["src/**", "build.rs", "web/dist/**", "Cargo.toml"]
 [dependencies]
 log = "0.4.29"
 frontbox-core = { path = "../frontbox-core", features = ["ts"] }
+frontbox-gfx = { path = "../frontbox-gfx", features = ["ts"] }
+frontbox-led = { path = "../frontbox-led" }
 frontbox-metrics = { path = "../frontbox-metrics", features = ["ts"] }
 frontbox-pinball = { path = "../frontbox-pinball" }
 axum = { version = "0.8.9", features = ["ws"] }
@@ -16,3 +18,6 @@ serde = "1.0.229"
 ts-rs = "12.0.1"
 rust-embed = { version = "8.12.0", features = ["mime-guess"] }
 mime_guess = "2.0.5"
+
+[dev-dependencies]
+image = "0.25.9"

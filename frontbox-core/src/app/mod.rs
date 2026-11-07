@@ -69,7 +69,7 @@ pub(crate) mod run_loop;
 use indexmap::IndexMap;
 
 pub use app::*;
-pub(crate) use app_config::*;
+pub use app_config::AppConfig;
 pub use app_message::ShutdownScope;
 pub use app_state::*;
 pub use boot_config::*;

@@ -27,7 +27,7 @@
 //! # use frontbox_core::prelude::*;
 //! # use frontbox_led::prelude::*;
 //! pub struct Example {
-//!   effect: LedProgram1d
+//!   effect: LedScene
 //! }
 //!
 //! impl System for Example {
@@ -43,59 +43,54 @@
 //! starts the effect, it doesn't need to babysit the effect and manually turn it on and off. Responses are temporary, one-shot type effects
 //! The method of interaction here is more akin to playing a sound effect: "Just play this and I'm not worried about it".
 //!
-//! These are run through an `EffectPlayer`. The advantage of using EffectPlayer is that the effect can continue to play despite what the owning
-//! system is doing or even if it is running.
-//!
 //! ```rust,ignore
-//! // TODO: EffectPlayer / play_effect_1d
-//! let effect: LedEffect1d = Rgba::red().into();
-//! // fire and forget
-//! ctx.play_effect_1d(effect);
+//! // TODO: a way to play a scene that outlives the system starting it
 //! ```
 //!
 //! ## LED Identification (dimensions)
 //!
-//! Frontbox presents LED interactions based around dimensionality.
+//! What LEDs show is a [`Scene`](frontbox_gfx::scene::Scene), which says what it's for with its viewport.
 //!
-//! ### LedEffect1d
-//! `LedEffect1d` describes one or more LEDs in a sequence (list), typically by name, tag, or definition. These can be used for a variety of
+//! ### Sequence
+//! A `Sequence` viewport spreads over one or more LEDs in a list, typically by name, tag, or definition. These can be used for a variety of
 //! purposes including turn on lane states, flashing, breathing, pulsing, progress bars, rotational animations, and the like.
 //!
-//! ### LedEffect2d
-//! `LedEffect2d` describes a region of the playfield on which to apply geometry or an image. The framework automatically selects the LEDs that
-//! are within that region, and assigns their color. These can be used for playfield sweeps, explosions, and the like, and are often what are
-//! behind attract mode style animations.
+//! ### Area
+//! An `Area` viewport covers a plane, and the LEDs on it light up from where they physically are. These can be used for playfield sweeps,
+//! explosions, and the like, and are often what are behind attract mode style animations.
 //!
 //! ## LED Rendering Stack
 //!
-//! Generally, setting LEDs happens by way of _effects_, but understanding the stack can be useful when choosing which approach to use or building your own effects from scratch.
+//! Generally, setting LEDs happens by way of scenes, but understanding the stack can be useful when choosing which approach to use or building your own from scratch.
 //!
-//! - [`LedEffectPlayerNd`] - Plays temporary, one-shot style reaction effects (Requires `LedSystem`)
-//! - [`LedEffectNd`] - Handles state of a sequence of LED transitions -- gradient, rotation, etc. (Requires `LedSystem`)
+//! - [`LedScene`] - Plays a scene on LEDs (Requires `LedSystem`)
 //! - [`LedSystem`] - Manages declarations, prioritization, and layers. Sets the final color with `Machine`. Typically not interacted with directly.
 //! - [`Machine`](frontbox_core::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
 //!
 
 mod alternate_resolver;
+mod end_behavior;
 mod led_declarations;
+mod led_scene;
 mod led_identifications;
 mod led_identifications_ext;
-mod led_program_1d;
 mod led_system;
 mod led_system_ext;
 
 pub(crate) use alternate_resolver::*;
 pub(crate) use led_declarations::*;
+pub use end_behavior::*;
+pub use led_scene::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
-pub use led_program_1d::*;
 pub use led_system::*;
 pub use led_system_ext::*;
 
 pub mod prelude {
+  pub use crate::end_behavior::*;
+  pub use crate::led_scene::*;
   pub use crate::led_identifications::*;
   pub use crate::led_identifications_ext::*;
-  pub use crate::led_program_1d::*;
   pub use crate::led_system::*;
   pub use crate::led_system_ext::*;
   pub use frontbox_gfx::prelude::*;

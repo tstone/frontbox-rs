@@ -1,10 +1,10 @@
-import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
+import { createEffect, createMemo, createRoot, createSignal, For, onCleanup, onMount, Show, untrack, type JSX } from 'solid-js'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
-import { LED_OFF, ledColor } from '../../lib/leds'
+import { LED_OFF, ledColor as machineLedColor } from '../../lib/leds'
 import { type ConsoleState, driverState, machine } from '../../state/console'
-import { cancelPlacing, highlighted, movedPositions, place, placing, type Position } from '../../state/placement'
+import { cancelPlacing, highlighted, movedPositions, place, placing as placingHardware, type Position } from '../../state/placement'
 import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
@@ -42,6 +42,9 @@ const IMAGE_OPACITY = 0.5
 const OUTLINE_SCALE = 1.2
 /** How much larger than its shape the outline of hardware pointed at in the hardware list is */
 const HIGHLIGHT_SCALE = 1.5
+/** The dashes of a preview's outline, in inches */
+const OUTLINE_DASH = 0.6
+const OUTLINE_GAP = 0.4
 /** How far the pointer can move between press and release and still count as a click, in pixels */
 const CLICK_SLOP = 4
 
@@ -94,10 +97,12 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
+/** A preview is about the LEDs, so what it shows is fixed */
+const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, switches: false, leds: true, drivers: false }
+
 // which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
-function readLayers(): Record<Layer, boolean> {
-  const shown = { axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }
+function readLayers(shown: Record<Layer, boolean>): Record<Layer, boolean> {
   try {
     return { ...shown, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? '{}') }
   } catch {
@@ -149,6 +154,14 @@ function originGizmo() {
   return group
 }
 
+/** Between points on what a preview shows and the pixels they're on. Tracks anything that moves them. */
+export type PreviewSpace = {
+  /** Where a point is on screen, from the top left of the preview. `null` when it's out of sight. */
+  project(point: [number, number]): [number, number] | null
+  /** The point under a place on screen, as a pointer event gives it. `null` when there's none. */
+  unproject(clientX: number, clientY: number): [number, number] | null
+}
+
 /** A coordinate as a Rust f32 literal, to the thousandth of an inch: `32.1`, `0.0`, `-1.145` */
 function rustFloat(n: number): string {
   const rounded = Math.round(n * 1000) / 1000 || 0 // `|| 0` folds -0 into 0
@@ -184,16 +197,46 @@ const HELD_SCALE = 1.4
 
 const switchId = (point: Point): number | null => (point.kind === 'Switch' ? Number(point.key.slice('switch:'.length)) : null)
 
+const named = (point: Point) => `${point.name} (${point.kind})`
+
 /** A dot's hover label, including what a left click does to it */
 function describe(point: Point): string {
   const id = switchId(point)
-  if (id === null) return `${point.name} (${point.kind})`
+  if (id === null) return named(point)
   const action = latched[id] ? 'click to open' : 'hold to close, shift-click to latch'
   return `${point.name} (Switch): ${action}`
 }
 
-export default function PlayfieldView() {
+export default function PlayfieldView(props: {
+  /**
+   * Makes this a preview: LEDs show these colors, as CSS or `null` for off, rather than the machine's. The rest of the
+   * hardware sits idle, and can't be pressed or placed.
+   */
+  ledColor?: (name: string) => string | null
+  /** The plane a preview works on */
+  plane?: () => PlaneView | null
+  /** A closed loop of points to outline on the plane, in the plane's units */
+  outline?: () => [number, number][]
+  /** Drawn over a preview, with the plane as the space to work in */
+  overlay?: (space: PreviewSpace) => JSX.Element
+  /** A click on a preview that didn't move the camera, with the point it landed on, if any, on the plane */
+  onClickPlane?: (point: [number, number] | null) => void
+}) {
   let container!: HTMLDivElement
+  // bumped whenever points on the plane move on screen
+  const [viewMoved, setViewMoved] = createSignal(0)
+  let toScreen: PreviewSpace['project'] = () => null
+  let fromScreen: PreviewSpace['unproject'] = () => null
+  const space: PreviewSpace = {
+    project: (point) => {
+      viewMoved()
+      return toScreen(point)
+    },
+    unproject: (clientX, clientY) => fromScreen(clientX, clientY),
+  }
+  const preview = props.ledColor !== undefined
+  const ledColor = (name: string) => (props.ledColor ?? machineLedColor)(name)
+  const placing = () => (preview ? null : placingHardware())
   const data = createMemo(() => sceneData(machine), undefined, { equals: (a, b) => a.signature === b.signature })
   const [hovered, setHovered] = createSignal<{ name: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = createSignal<Menu | null>(null)
@@ -201,7 +244,9 @@ export default function PlayfieldView() {
   // set once the scene is up; used by the chooser
   let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
-  const [layers, setLayers] = createSignal(readLayers())
+  const [layers, setLayers] = createSignal(
+    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }),
+  )
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
     const key = placing()
@@ -251,11 +296,20 @@ export default function PlayfieldView() {
       })
     }
     controls.addEventListener('change', render)
+    controls.addEventListener('change', () => setViewMoved((moves) => moves + 1))
 
     // the cabinet's origin, so positions can be checked against the code. Kept out of `content` so it isn't rebuilt
     // or counted when framing the camera.
     const origin = originGizmo()
     scene.add(origin)
+
+    // kept out of `content` for the same reason. Drawn on top, as it often runs along the plane's own edges.
+    const dashedMaterial = new THREE.LineDashedMaterial({ dashSize: OUTLINE_DASH, gapSize: OUTLINE_GAP, depthTest: false })
+    const dashedLine = new THREE.Line(new THREE.BufferGeometry(), dashedMaterial)
+    dashedLine.renderOrder = 3
+    const dashedGroup = cabinetGroup()
+    dashedGroup.add(dashedLine)
+    scene.add(dashedGroup)
 
     // everything drawn for the current data, so it can be torn down on a rebuild
     let content = cabinetGroup()
@@ -304,14 +358,14 @@ export default function PlayfieldView() {
       if (!point) return
       const id = switchId(point)
       const live =
-        id !== null
-          ? isSwitchClosed(id) && palette.active
-          : point.kind === 'Driver'
-            ? driverState(Number(point.key.slice('driver:'.length))) !== 'Off' && palette.active
-            : point.kind === 'LED' && (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+        point.kind === 'LED'
+          ? (ledColor(point.key.slice('led:'.length)) ?? LED_OFF)
+          : !preview &&
+            (id !== null ? isSwitchClosed(id) : driverState(Number(point.key.slice('driver:'.length))) !== 'Off') &&
+            palette.active
       const color = dot === hoveredDot ? palette.hover : point.moved ? palette.moved : live || palette.dot
       ;(dot.material as THREE.MeshBasicMaterial).color.set(color)
-      dot.scale.setScalar(id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
+      dot.scale.setScalar(!preview && id !== null && (pressed() === id || latched[id]) ? HELD_SCALE : 1)
     }
 
     function texture(url: string) {
@@ -337,6 +391,7 @@ export default function PlayfieldView() {
       outlineMaterial.color.set(css('--hw-outline'))
       highlightMaterial.color.set(css('--hw-highlight'))
       ghostMaterial.color.set(css('--accent'))
+      dashedMaterial.color.set(css('--accent'))
       untrack(() => dots.forEach((_, dot) => paint(dot as THREE.Mesh)))
       stylePlanes()
       render()
@@ -471,12 +526,51 @@ export default function PlayfieldView() {
       controls.update()
     }
 
+    function applyOutline() {
+      const plane = props.plane?.()
+      const points = props.outline?.() ?? []
+      dashedLine.visible = !!plane && points.length > 0
+      if (plane) {
+        dashedLine.position.set(...plane.origin)
+        dashedLine.quaternion.set(...plane.rotation)
+      }
+      if (dashedLine.visible) {
+        const loop = [...points, points[0]].map(([x, y]) => new THREE.Vector3(x, y, 0))
+        dashedLine.geometry.dispose()
+        dashedLine.geometry = new THREE.BufferGeometry().setFromPoints(loop)
+        dashedLine.computeLineDistances()
+      }
+      setViewMoved((moves) => moves + 1)
+      render()
+    }
+
+    toScreen = ([x, y]) => {
+      const { clientWidth, clientHeight } = canvas
+      dashedLine.updateWorldMatrix(true, false)
+      camera.updateMatrixWorld()
+      const at = dashedLine.localToWorld(new THREE.Vector3(x, y, 0)).project(camera)
+      if (at.z > 1) return null
+      return [((at.x + 1) / 2) * clientWidth, ((1 - at.y) / 2) * clientHeight]
+    }
+
+    fromScreen = (clientX, clientY) => {
+      aim({ clientX, clientY } as MouseEvent)
+      dashedLine.updateWorldMatrix(true, false)
+      const corners = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => dashedLine.localToWorld(new THREE.Vector3(x, y, 0)))
+      const surface = new THREE.Plane().setFromCoplanarPoints(corners[0], corners[1], corners[2])
+      const hit = raycaster.ray.intersectPlane(surface, new THREE.Vector3())
+      if (!hit) return null
+      const { x, y } = dashedLine.worldToLocal(hit)
+      return [x, y]
+    }
+
     function resize() {
       const { width, height } = container.getBoundingClientRect()
       if (width === 0 || height === 0) return
       renderer.setSize(width, height, false)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+      setViewMoved((moves) => moves + 1)
       render()
     }
     const resizeObserver = new ResizeObserver(resize)
@@ -532,9 +626,9 @@ export default function PlayfieldView() {
       // everything under the pointer is listed, so overlapping hardware is visible before clicking
       const hits = dotsUnder(e)
       setHoveredDot(hits[0] ?? null)
-      const label = hits.map((dot) => describe(dots.get(dot)!)).join(' · ')
+      const label = hits.map((dot) => (preview ? named : describe)(dots.get(dot)!)).join(' · ')
       setHovered(hits.length > 0 ? { name: label, x: e.clientX, y: e.clientY } : null)
-      canvas.style.cursor = hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
+      canvas.style.cursor = !preview && hits.some((dot) => switchId(dots.get(dot)!) !== null) ? 'pointer' : ''
     }
 
     /**
@@ -543,7 +637,7 @@ export default function PlayfieldView() {
      * When switches overlap, a chooser opens instead.
      */
     function onPressStart(e: PointerEvent) {
-      if (e.target !== canvas || e.button !== 0 || placing()) return
+      if (preview || e.target !== canvas || e.button !== 0 || placing()) return
       const switches = switchesUnder(e)
       if (switches.length === 0) return
       e.stopPropagation()
@@ -575,6 +669,7 @@ export default function PlayfieldView() {
       if (key && e.button === 0 && isClick(e) && ghostPosition) {
         place(key, ghostPosition)
       }
+      if (preview && e.button === 0 && isClick(e)) props.onClickPlane?.(fromScreen(e.clientX, e.clientY))
     }
 
     function onContextMenu(e: MouseEvent) {
@@ -644,8 +739,9 @@ export default function PlayfieldView() {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     createEffect(() => build(data()))
+    createEffect(applyOutline)
     createEffect(() => {
-      writeLayers(layers())
+      if (!preview) writeLayers(layers())
       applyLayers()
     })
     createEffect(() => {
@@ -674,6 +770,8 @@ export default function PlayfieldView() {
       textures.forEach((t) => t.dispose())
       shapeGeometries.forEach((geometry) => geometry.dispose())
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
+      dashedLine.geometry.dispose()
+      dashedMaterial.dispose()
       ghostMaterial.dispose()
       outlineMaterial.dispose()
       highlightMaterial.dispose()
@@ -684,15 +782,18 @@ export default function PlayfieldView() {
 
   return (
     <div class="playfield-view" ref={container}>
-      <div class="view-toggles" role="group" aria-label="Show in the 3D view">
-        <For each={LAYERS}>
-          {({ layer, label, title }) => (
-            <button type="button" class="view-toggle" aria-pressed={layers()[layer]} title={title} onClick={() => toggleLayer(layer)}>
-              {label}
-            </button>
-          )}
-        </For>
-      </div>
+      {props.overlay?.(space)}
+      <Show when={!preview}>
+        <div class="view-toggles" role="group" aria-label="Show in the 3D view">
+          <For each={LAYERS}>
+            {({ layer, label, title }) => (
+              <button type="button" class="view-toggle" aria-pressed={layers()[layer]} title={title} onClick={() => toggleLayer(layer)}>
+                {label}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={data().planes.length === 0 && data().points.length === 0}>
         <p class="notice empty">
           Nothing to draw yet. Give hardware a <code>location</code>, or add planes with <code>WebTracer::plane</code>.
@@ -722,7 +823,7 @@ export default function PlayfieldView() {
               {m().point.name} ({m().point.kind})
             </p>
             {/* switch ids start at 0, so the id can't be the `when` itself */}
-            <Show when={switchId(m().point) !== null}>
+            <Show when={!preview && switchId(m().point) !== null}>
               <button
                 type="button"
                 role="menuitem"

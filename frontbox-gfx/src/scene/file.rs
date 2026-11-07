@@ -1,0 +1,424 @@
+//! Reading and writing scenes as RON
+//!
+//! Files are written with RON's `implicit_some` and `unwrap_variant_newtypes` extensions, so they only state what
+//! they change and avoid double parentheses. Fields that aren't written take their default.
+
+use std::fmt;
+
+use ron::extensions::Extensions;
+use ron::ser::PrettyConfig;
+use serde::Deserialize;
+
+use crate::scene::{Scene, SceneError};
+
+/// The format version this build writes, and the newest it reads
+pub const VERSION: u32 = 12;
+
+/// Reads a scene from RON
+pub fn load(source: &str) -> Result<Scene, FormatError> {
+  // read the version on its own first, so a newer file is reported as newer rather than as a parse error from a
+  // variant this build doesn't know
+  #[derive(Deserialize)]
+  struct Header {
+    version: u32,
+  }
+  let header: Header = options().from_str(source).map_err(FormatError::Read)?;
+  if header.version > VERSION {
+    return Err(FormatError::Newer { version: header.version });
+  }
+
+  let scene: Scene = options().from_str(source).map_err(FormatError::Read)?;
+  scene.check().map_err(FormatError::Invalid)?;
+  Ok(scene)
+}
+
+/// Writes a scene as RON
+pub fn save(scene: &Scene) -> Result<String, FormatError> {
+  let config = PrettyConfig::new().indentor("  ").extensions(extensions());
+  options().to_string_pretty(scene, config).map_err(FormatError::Write)
+}
+
+fn extensions() -> Extensions {
+  Extensions::IMPLICIT_SOME | Extensions::UNWRAP_VARIANT_NEWTYPES
+}
+
+fn options() -> ron::Options {
+  ron::Options::default().with_default_extension(extensions())
+}
+
+#[derive(Debug)]
+pub enum FormatError {
+  Read(ron::error::SpannedError),
+  Write(ron::Error),
+  /// The file was written by a newer version of the format
+  Newer { version: u32 },
+  /// The file reads as a scene, but not one that can be played
+  Invalid(SceneError),
+}
+
+impl fmt::Display for FormatError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Read(e) => write!(f, "couldn't read scene: {e}"),
+      Self::Write(e) => write!(f, "couldn't write scene: {e}"),
+      Self::Newer { version } => {
+        write!(f, "scene is format version {version}, but this build reads up to {VERSION}")
+      }
+      Self::Invalid(e) => write!(f, "{e}"),
+    }
+  }
+}
+
+impl std::error::Error for FormatError {}
+
+#[cfg(test)]
+mod tests {
+  use glam::Vec2;
+  use image::Rgba;
+
+  use super::*;
+  use crate::animation::{Curve, Cycle};
+  use crate::layout::Line;
+  use crate::scene::*;
+
+  fn sample_grid(scene: &Scene) -> Vec<Rgba<u8>> {
+    let params = Params::new();
+    [0.0, 0.5, 1.0, 1.5]
+      .into_iter()
+      .flat_map(|time| {
+        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
+        (0..20)
+          .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
+          .map(move |s| scene.sample(&s, &frame))
+      })
+      .collect()
+  }
+
+  /// Uses every type in a definition
+  fn everything() -> Scene {
+    let mut scene = Scene::new(Viewport::Area, vec![
+        Layer::new(Fill::new(FillNode::Solid(Prop::Param("background".into())))),
+        Layer::new(
+          Fill::new(FillNode::Gradient {
+            stops: vec![
+              Stop::new(0.0, Color(Rgba([255, 204, 0, 255]))),
+              Stop::new(1.0, Color(Rgba([255, 51, 0, 128]))),
+            ],
+            space: ColorSpace::Oklab,
+            style: GradientStyle::Radial,
+          })
+          .transform(Transform::Rotate(90.0.into()))
+          .adjust(ColorAdjust::HueShift(Prop::Param("hue".into())))
+          .adjust(ColorAdjust::Opacity(0.75.into()))
+          .adjust(ColorAdjust::Brightness(1.25.into()))
+          .adjust(ColorAdjust::Contrast(1.5.into())),
+        )
+        .shape(
+          Shape::new(ShapeNode::circle(0.5))
+            .transform(Transform::Scale(Vec2::splat(40.0).into()))
+            .transform(Transform::Translate(Prop::Track(Track {
+              keys: vec![
+                Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
+                Key::new(1.0, Vec2::new(70.0, 25.0), Curve::EaseInOut),
+              ],
+              cycle: Cycle::Forever,
+            }))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).shape(Shape::new(
+          ShapeNode::Polygon {
+            points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
+          },
+        )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
+          ShapeNode::Ring { radius: 3.0.into(), thickness: 1.0.into() },
+        )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
+          .hidden()
+          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into() })),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+            0.25,
+            1.0,
+          )))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::Route { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
+            0.0,
+            1.0,
+          )))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::Bezier {
+              points: vec![
+                BezierPoint { point: Vec2::ZERO.into(), handle: Vec2::new(0.0, 5.0).into() },
+                BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
+              ],
+            }),
+            0.0,
+            1.0,
+          )))),
+        ),
+    ]);
+    scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+    scene.timing(Timing::new(1.0, Cycle::Forever))
+  }
+
+  #[test]
+  fn a_sweep_only_loads_on_a_position() {
+    let sweep = "Sweep(path: (base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0))), start: 0.0, end: 1.0)";
+    let scene = |transform: &str, radius: &str, color: &str| {
+      format!(
+        "(version: 7, viewport: Area, timing: (duration: 1.0), layers: [(
+          shape: (transform: [{transform}], base: Ellipse(r1: {radius}, r2: Fixed(1.0))),
+          fill: (base: Solid({color})),
+        )])"
+      )
+    };
+    let (radius, color) = ("Fixed(1.0)", "Fixed(255, 0, 0, 255)");
+    assert!(load(&scene(&format!("Translate({sweep})"), radius, color)).is_ok());
+
+    let not_positions = [
+      scene(&format!("Rotate({sweep})"), radius, color),
+      scene("", sweep, color),
+      scene("", radius, sweep),
+    ];
+    for source in not_positions {
+      let error = load(&source).unwrap_err().to_string();
+      assert!(error.contains("only a position"), "{error}");
+    }
+  }
+
+  #[test]
+  fn a_random_color_with_no_alpha_is_opaque() {
+    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+      picks: [(at: 0.0)],
+      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+    ))))])");
+    let scene = scene.unwrap();
+    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
+      panic!("{scene:?}");
+    };
+    assert!(matches!(random.spread, Spread::Color { alpha: (1.0, 1.0), .. }));
+  }
+
+  #[test]
+  fn a_random_forces_unique_picks_unless_told_otherwise() {
+    let scene = load("(version: 5, viewport: Sequence, timing: (duration: 1.0), layers: [(fill: (base: Solid(Random(
+      picks: [(at: 0.0)],
+      spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
+    ))))])");
+    let scene = scene.unwrap();
+    let FillNode::Solid(Prop::Random(random)) = &scene.layers[0].fill.base else {
+      panic!("{scene:?}");
+    };
+    assert!(random.force_unique);
+  }
+
+  #[test]
+  fn random_props_read_and_write() {
+    let source = "(version: 5, viewport: Sequence, timing: (duration: 2.0), layers: [(fill: (base: Solid(Random(
+      picks: [(at: 0.0), (at: 1.0, smooth_in: 0.25, smooth_out: 0.5)],
+      spread: Color(hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0)),
+      seed: 7,
+      force_unique: false,
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    let loaded = load(&written).unwrap();
+    let FillNode::Solid(Prop::Random(random)) = &loaded.layers[0].fill.base else {
+      panic!("{written}");
+    };
+    assert_eq!(random.picks, [Pick::new(0.0), Pick { at: 1.0, smooth_in: 0.25, smooth_out: 0.5 }]);
+    assert_eq!(random.spread, Spread::Color { hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0) });
+    assert_eq!(random.seed, 7);
+    assert!(!random.force_unique);
+  }
+
+  #[test]
+  fn round_trip_samples_the_same() {
+    let scene = everything();
+    let written = save(&scene).unwrap();
+    let read = load(&written).unwrap();
+    assert_eq!(sample_grid(&read), sample_grid(&scene), "written as:\n{written}");
+    assert_eq!(save(&read).unwrap(), written);
+  }
+
+  #[test]
+  fn reads_a_hand_written_file() {
+    let scene = load(
+      r#"(
+        version: 1,
+        viewport: Sequence,
+        layers: [
+          (fill: (base: Gradient(stops: [
+            (at: 0.0, color: Fixed(255, 0, 0, 255)),
+            (at: 1.0, color: Fixed(0, 0, 255, 255)),
+          ]))),
+        ],
+      )"#,
+    )
+    .unwrap();
+
+    let params = Params::new();
+    let line = Line::new(3);
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0) };
+    let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
+    assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
+    assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn a_gradient_with_no_style_is_linear() {
+    let scene = load("(version: 8, viewport: Sequence, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(matches!(scene.layers[0].fill.base, FillNode::Gradient { style: GradientStyle::Linear, .. }));
+  }
+
+  #[test]
+  fn an_animated_image_keeps_its_frame_when_written_and_read() {
+    let frame = Track {
+      keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
+      cycle: Default::default(),
+    };
+    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(frame)) };
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
+    let read = load(&save(&scene).unwrap()).unwrap();
+
+    let first = Rgba([255, 0, 0, 255]);
+    let last = Rgba([0, 0, 255, 255]);
+    let art = [first, first, last].map(|color| image::RgbaImage::from_pixel(1, 1, color));
+    let (mut images, params) = (Images::new(), Params::new());
+    images.insert("a.gif", Picture::animated(art, 0.3));
+
+    let size = Vec2::new(1.0, 1.0);
+    let at = Sample::new(Vec2::splat(0.5), 0.1);
+    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size });
+    for time in [0.0, 0.4, 1.0] {
+      assert_eq!(color(&read, time), color(&scene, time));
+    }
+    assert_eq!(color(&read, 0.0), first);
+    assert_eq!(color(&read, 1.0), last);
+  }
+
+  #[test]
+  fn an_image_is_written_and_read_by_its_name() {
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))]);
+    let written = save(&scene).unwrap();
+    assert!(written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"), "{written}");
+
+    let read = load(&written).unwrap();
+    assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
+
+    let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
+    let (mut images, params) = (Images::new(), Params::new());
+    images.insert("dmd/title.png", Picture::new(art));
+    let size = Vec2::new(2.0, 2.0);
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size };
+    let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
+    assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
+    assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn reads_an_area_viewport() {
+    let scene = load("(version: 1, viewport: Area, layers: [])").unwrap();
+    assert_eq!(scene.viewport, Viewport::Area);
+  }
+
+  #[test]
+  fn reads_a_timing() {
+    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5, cycle: Times(3)), layers: [])").unwrap();
+    assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Times(3))));
+
+    // playing once is the default
+    let scene = load("(version: 2, viewport: Area, timing: (duration: 2.5), layers: [])").unwrap();
+    assert_eq!(scene.timing, Some(Timing::new(2.5, Cycle::Once)));
+  }
+
+  #[test]
+  fn a_static_scene_writes_no_timing() {
+    let written = save(&Scene::new(Viewport::Area, vec![])).unwrap();
+    assert!(!written.contains("timing"), "{written}");
+    assert_eq!(load(&written).unwrap().timing, None);
+  }
+
+  #[test]
+  fn refuses_keyframes_with_no_timing() {
+    let result = load(
+      r#"(
+        version: 2,
+        viewport: Area,
+        layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+      )"#,
+    );
+    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoTiming { .. }))), "{result:?}");
+  }
+
+  #[test]
+  fn a_layer_keeps_its_name_and_only_writes_one_it_has() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).name("sky"), Layer::new(fill())]);
+
+    let written = save(&scene).unwrap();
+    assert_eq!(written.matches("name:").count(), 1, "{written}");
+    let read = load(&written).unwrap();
+    assert_eq!(read.layers[0].name.as_deref(), Some("sky"));
+    assert_eq!(read.layers[1].name, None);
+  }
+
+  #[test]
+  fn refuses_a_timing_with_no_length() {
+    let result = load("(version: 2, viewport: Area, timing: (duration: 0.0), layers: [])");
+    assert!(matches!(result, Err(FormatError::Invalid(SceneError::NoDuration))), "{result:?}");
+  }
+
+  #[test]
+  fn a_scene_must_state_its_viewport() {
+    assert!(matches!(load("(version: 1, layers: [])"), Err(FormatError::Read(_))));
+  }
+
+  #[test]
+  fn a_layer_is_only_hidden_if_it_says_so() {
+    let scene = load("(version: 9, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(!scene.layers[0].hidden);
+    assert!(!save(&scene).unwrap().contains("hidden"));
+  }
+
+  #[test]
+  fn a_layer_from_before_masks_has_none() {
+    let scene = load("(version: 10, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(scene.layers[0].mask.is_none());
+    assert!(!save(&scene).unwrap().contains("mask"));
+  }
+
+  #[test]
+  fn a_mask_survives_a_save() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
+    let read = load(&save(&scene).unwrap()).unwrap();
+    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.shape.is_none()));
+  }
+
+  #[test]
+  fn rejects_a_newer_version() {
+    let result = load("(version: 13, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 13 })), "{result:?}");
+  }
+
+  #[test]
+  fn targets_survive_a_save() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(fill()), Layer::new(fill()).targets(["ring"])]).targets(["ring", "center"]);
+    let read = load(&save(&scene).unwrap()).unwrap();
+    assert_eq!(read.targets, ["ring", "center"]);
+    assert_eq!(read.layers[0].targets, None);
+    assert_eq!(read.layers[1].targets, Some(vec!["ring".to_string()]));
+  }
+
+  #[test]
+  fn a_scene_from_before_targets_has_none() {
+    let scene = load("(version: 11, viewport: Sequence, layers: [(fill: (base: Solid(Fixed(0, 0, 0, 255))))])").unwrap();
+    assert!(scene.targets.is_empty() && scene.layers[0].targets.is_none());
+  }
+}
