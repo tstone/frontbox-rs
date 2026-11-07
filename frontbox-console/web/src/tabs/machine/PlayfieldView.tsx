@@ -97,19 +97,21 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
-// which layers are shown, remembered per browser. A preview is about the LEDs, so it keeps its own.
+/** A preview is about the LEDs, so what it shows is fixed */
+const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, switches: false, leds: true, drivers: false }
+
+// which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
-const PREVIEW_LAYERS_KEY = 'frontbox-console.preview-layers'
-function readLayers(key: string, shown: Record<Layer, boolean>): Record<Layer, boolean> {
+function readLayers(shown: Record<Layer, boolean>): Record<Layer, boolean> {
   try {
-    return { ...shown, ...JSON.parse(localStorage.getItem(key) ?? '{}') }
+    return { ...shown, ...JSON.parse(localStorage.getItem(LAYERS_KEY) ?? '{}') }
   } catch {
     return shown
   }
 }
-function writeLayers(key: string, shown: Record<Layer, boolean>) {
+function writeLayers(shown: Record<Layer, boolean>) {
   try {
-    localStorage.setItem(key, JSON.stringify(shown))
+    localStorage.setItem(LAYERS_KEY, JSON.stringify(shown))
   } catch {
     // storage can be unavailable (private windows); the toggles still work for this session
   }
@@ -235,7 +237,6 @@ export default function PlayfieldView(props: {
   const preview = props.ledColor !== undefined
   const ledColor = (name: string) => (props.ledColor ?? machineLedColor)(name)
   const placing = () => (preview ? null : placingHardware())
-  const layersKey = preview ? PREVIEW_LAYERS_KEY : LAYERS_KEY
   const data = createMemo(() => sceneData(machine), undefined, { equals: (a, b) => a.signature === b.signature })
   const [hovered, setHovered] = createSignal<{ name: string; x: number; y: number } | null>(null)
   const [menu, setMenu] = createSignal<Menu | null>(null)
@@ -244,7 +245,7 @@ export default function PlayfieldView(props: {
   let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
   const [layers, setLayers] = createSignal(
-    readLayers(layersKey, { axes: !preview, planes: true, artwork: true, switches: !preview, leds: true, drivers: !preview }),
+    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }),
   )
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
@@ -740,7 +741,7 @@ export default function PlayfieldView(props: {
     createEffect(() => build(data()))
     createEffect(applyOutline)
     createEffect(() => {
-      writeLayers(layersKey, layers())
+      if (!preview) writeLayers(layers())
       applyLayers()
     })
     createEffect(() => {
@@ -782,15 +783,17 @@ export default function PlayfieldView(props: {
   return (
     <div class="playfield-view" ref={container}>
       {props.overlay?.(space)}
-      <div class="view-toggles" role="group" aria-label="Show in the 3D view">
-        <For each={LAYERS}>
-          {({ layer, label, title }) => (
-            <button type="button" class="view-toggle" aria-pressed={layers()[layer]} title={title} onClick={() => toggleLayer(layer)}>
-              {label}
-            </button>
-          )}
-        </For>
-      </div>
+      <Show when={!preview}>
+        <div class="view-toggles" role="group" aria-label="Show in the 3D view">
+          <For each={LAYERS}>
+            {({ layer, label, title }) => (
+              <button type="button" class="view-toggle" aria-pressed={layers()[layer]} title={title} onClick={() => toggleLayer(layer)}>
+                {label}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={data().planes.length === 0 && data().points.length === 0}>
         <p class="notice empty">
           Nothing to draw yet. Give hardware a <code>location</code>, or add planes with <code>WebTracer::plane</code>.

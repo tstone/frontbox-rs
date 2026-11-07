@@ -8,6 +8,12 @@ const [listFailed, setListFailed] = createSignal(false)
 export const contentScenes = names
 export const contentScenesFailed = listFailed
 
+/** A scene's name is its path in the content folder, and the `.ron` needn't be typed */
+export function sceneName(typed: string): string {
+  const name = typed.trim()
+  return name.toLowerCase().endsWith('.ron') ? name : `${name}.ron`
+}
+
 function sceneUrl(name: string): string {
   return `/content/scenes/${name.split('/').map(encodeURIComponent).join('/')}`
 }
@@ -50,4 +56,9 @@ export function addContentScene(name: string, source: SceneSource): Promise<stri
 /** Writes a scene over its file, giving back what was written. Throws what to show if it can't. */
 export function saveContentScene(name: string, source: SceneSource): Promise<string> {
   return writeScene('PUT', name, source)
+}
+
+/** Removes a scene from the folder. Throws what to show if it can't. */
+export async function deleteContentScene(name: string): Promise<void> {
+  await replyText(await fetch(sceneUrl(name), { method: 'DELETE' }), "The scene couldn't be deleted")
 }

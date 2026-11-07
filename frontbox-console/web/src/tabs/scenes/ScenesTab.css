@@ -23,34 +23,70 @@
   font-size: 1.125rem;
 }
 
-.scene-list ul {
-  flex: 1;
+.scene-tree {
   min-height: 0;
-  margin: 0;
-  padding: 0;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
   overflow-y: auto;
-  list-style: none;
 }
 
-.scene-list li button {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 0.5rem 0.75rem;
+.scene-tree [data-scope='tree-view'][data-part='tree'] {
+  font-size: 1rem;
+}
+
+.scene-tree [data-scope='tree-view'][data-part='item'],
+.scene-tree [data-scope='tree-view'][data-part='branch-control'] {
+  padding-block: 0.375rem;
+}
+
+/* a file's name lines up with a folder's, which has its indicator before it */
+.scene-tree [data-scope='tree-view'][data-part='item'] {
+  padding-left: calc(1.625rem + (var(--depth, 1) - 1) * 1rem);
+}
+
+.scene-tree [data-part='item-text'],
+.scene-tree [data-part='branch-text'] {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 0.875rem;
-  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  cursor: pointer;
 }
 
-.scene-list li button:hover {
-  background: var(--surface-hover);
+/* hidden by opacity rather than removed, so rows keep their height and the buttons can be tabbed to */
+.scene-tree-actions {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+  opacity: 0;
+}
+
+.scene-tree [data-part='item']:hover .scene-tree-actions,
+.scene-tree [data-part='item']:focus-within .scene-tree-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .scene-tree-actions {
+    opacity: 1;
+  }
+}
+
+.scene-tree-actions .scene-button {
+  display: flex;
+  padding: 0.125rem;
+}
+
+.scene-tree-actions svg {
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* ---- the scene being edited ---- */
@@ -84,8 +120,30 @@
   white-space: nowrap;
 }
 
-.scene-file-save {
+.scene-file-actions {
+  display: flex;
+  flex: none;
+  gap: 0.375rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.scene-file-view {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
   margin-left: auto;
+}
+
+.scene-leds {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .scene-source {
@@ -178,15 +236,7 @@
   padding: 1rem;
 }
 
-.scene-output > header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  /* the tallest of what it holds, so the preview stays put as they change */
-  min-height: 2.5rem;
-}
-
-.scene-output input {
+.scene-file input {
   padding: 0.375rem 0.625rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -196,21 +246,20 @@
   font-size: 0.9375rem;
 }
 
-.scene-output input {
+.scene-file input {
   width: 6rem;
 }
 
-.scene-output .scene-dropdown {
+.scene-file .scene-dropdown {
   width: 14rem;
 }
 
-.scene-output .scene-note {
+.scene-file .scene-note {
   white-space: nowrap;
 }
 
 /* above the size of the toggles in the editor, as this one switches the whole preview */
 .scene-view {
-  margin-left: auto;
   font-size: 0.9375rem;
 }
 
@@ -223,23 +272,35 @@
   display: none;
 }
 
-.scene-raw {
-  position: relative;
+/* sized by its container rather than what's in it, which is what lets the screen fit either way around */
+.scene-dmd {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  container-type: size;
 }
 
-.scene-raw[hidden] {
+.scene-dmd[hidden] {
   display: none;
 }
 
-.scene-raw canvas {
+.scene-dmd-screen {
+  position: relative;
+  width: min(100cqw, 100cqh * var(--aspect));
+  aspect-ratio: var(--aspect);
+}
+
+.scene-dmd canvas {
   display: block;
   width: 100%;
+  height: 100%;
   /* transparent means unlit */
   background: #000;
   image-rendering: pixelated;
 }
 
-.scene-raw svg {
+.scene-dmd svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -250,7 +311,7 @@
   pointer-events: none;
 }
 
-.scene-raw polygon {
+.scene-dmd polygon {
   fill: none;
   /* over the scene's own colors, which can be anything, so this needs to read against all of them */
   stroke: #fff;
@@ -357,7 +418,7 @@
 }
 
 /* the last good render, kept up while the source doesn't parse */
-.scene-raw.stale,
+.scene-dmd.stale,
 .scene-machine.stale {
   opacity: 0.4;
 }

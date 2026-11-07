@@ -39,7 +39,7 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     .route("/content/scenes", get(content_scenes))
     .route(
       "/content/scenes/{*name}",
-      get(content_scene).post(add_content_scene).put(save_content_scene),
+      get(content_scene).post(add_content_scene).put(save_content_scene).delete(delete_content_scene),
     )
     .fallback(static_handler)
     .with_state(hub);
@@ -289,6 +289,21 @@ async fn save_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: 
   write_scene(hub, name, source, StatusCode::OK, Content::save_scene).await
 }
 
+/// Removes a scene from the content folder. The reply to a failure is text for showing to whoever is deleting it.
+async fn delete_content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.delete_scene(&name)).await {
+    Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
+    Ok(Err(err)) => scene_file_failure(err),
+    Err(err) => {
+      log::error!(target: "frontbox_core::console", "Deleting a scene stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
 async fn write_scene(
   State(hub): State<ConsoleHub>,
   Path(name): Path<String>,
@@ -315,9 +330,15 @@ async fn write_scene(
 
 fn scene_file_failure(err: SceneFileError) -> Response {
   let status = match err {
-    SceneFileError::Read { ref error, .. } if error.kind() == std::io::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+    SceneFileError::Read { ref error, .. } | SceneFileError::Delete { ref error, .. }
+      if error.kind() == std::io::ErrorKind::NotFound =>
+    {
+      StatusCode::NOT_FOUND
+    }
     SceneFileError::Taken(_) => StatusCode::CONFLICT,
-    SceneFileError::Read { .. } | SceneFileError::Write { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+    SceneFileError::Read { .. } | SceneFileError::Write { .. } | SceneFileError::Delete { .. } => {
+      StatusCode::INTERNAL_SERVER_ERROR
+    }
     SceneFileError::BadName(_) | SceneFileError::Invalid { .. } => StatusCode::UNPROCESSABLE_ENTITY,
   };
   (status, err.to_string()).into_response()

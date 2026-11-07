@@ -10,7 +10,7 @@ import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
 import { Dropdown, EyeButton, FieldRow, NumberBox, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
-import { field, isHidden, item, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -305,21 +305,23 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
   const swept = () => 'Sweep' in prop.get()
-  const [hovering, setHovering] = createSignal<number | null>(null)
+  /** The time under the mouse, and whether that's a dot's rather than one to add a dot at */
+  const [hovering, setHovering] = createSignal<{ at: number; onDot: boolean } | null>(null)
   let lane!: HTMLDivElement
 
   /** On the page, as the tracks scroll and cut off whatever hangs out of them, and the times would cover the first */
   const addTimePlace = () => {
     const { left, top, width } = lane.getBoundingClientRect()
-    return { '--x': `${left + (hovering()! / props.span) * width}px`, top: `${top}px` }
+    return { '--x': `${left + (hovering()!.at / props.span) * width}px`, top: `${top}px` }
   }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
     if (swept()) return
     const { width } = e.currentTarget.getBoundingClientRect()
     const at = along(e, e.currentTarget) * props.span
-    const onKey = times().some((time) => (Math.abs(time - at) / props.span) * width < KEY_REACH)
-    setHovering(onKey ? null : snap(at))
+    const nearest = times().reduce((near, time) => (Math.abs(time - at) < Math.abs(near - at) ? time : near), Infinity)
+    const onDot = (Math.abs(nearest - at) / props.span) * width < KEY_REACH
+    setHovering(onDot ? { at: nearest, onDot } : { at: snap(at), onDot })
   }
 
   const add = (at: number) => {
@@ -337,22 +339,24 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
         </button>
       </div>
       <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
-        <Show when={hovering() !== null}>
+        <Show when={hovering()?.onDot === false}>
           <button
             type="button"
             class="scene-key-add"
             aria-label={`Add a key to ${props.track.label}`}
-            style={{ left: props.percent(hovering()!) }}
+            style={{ left: props.percent(hovering()!.at) }}
             onClick={() => {
-              add(hovering()!)
+              add(hovering()!.at)
               setHovering(null)
             }}
           >
             +
           </button>
+        </Show>
+        <Show when={hovering() !== null}>
           <Portal>
             <span class="scene-key-add-time" style={addTimePlace()}>
-              {hovering()!.toFixed(2)} s
+              {hovering()!.at.toFixed(2)} s
             </span>
           </Portal>
         </Show>
@@ -469,11 +473,12 @@ function roomNear({ index, times, span }: DotPlace) {
   return candidates.find((candidate) => times.every((time) => Math.abs(time - candidate) >= TIME_STEP / 2))
 }
 
-/** A dot on a track. Clicking it opens what can be changed about it, and dragging it moves it between its neighbors. */
-function Dot(props: DotPlace & { label: string; move: (at: number) => void; pick?: boolean; background?: string; children: any }) {
+/** A dot on a track. Clicking it opens what can be changed about it, and dragging it moves it along the track, past the others if it comes to them. */
+function Dot<T extends { at: number }>(props: DotPlace & { label: string; moments: Lens<T[]>; pick?: boolean; background?: string; children: any }) {
   const [open, setOpen] = createSignal(false)
-  // kept from the press, as the view's length can change with where the dot is
-  let press: { x: number; min: number; max: number; span: number } | null = null
+  // kept from the press, as the view's length can change with where the dot is. Dots are matched to moments by position,
+  // so this is what follows the moment being dragged as it passes others, while the press stays with this dot.
+  let press: { x: number; index: number; span: number } | null = null
   // until the next press, as the click that ends a drag comes after the pointer is let go
   let dragged = false
 
@@ -495,19 +500,15 @@ function Dot(props: DotPlace & { label: string; move: (at: number) => void; pick
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           dragged = false
-          const before = props.times[props.index - 1]
-          const after = props.times[props.index + 1]
-          press = {
-            x: e.clientX,
-            min: before === undefined ? 0 : before + TIME_STEP,
-            max: after === undefined ? props.span : after - TIME_STEP,
-            span: props.span,
-          }
+          press = { x: e.clientX, index: props.index, span: props.span }
         }}
         onPointerMove={(e) => {
           if (!press || (!dragged && Math.abs(e.clientX - press.x) < DRAG_START)) return
+          // what's open would otherwise be left showing whichever moment takes this one's place
+          if (!dragged) setOpen(false)
           dragged = true
-          props.move(clamp(snap(along(e, e.currentTarget.parentElement!) * press.span), press.min, press.max))
+          const at = clamp(snap(along(e, e.currentTarget.parentElement!) * press.span), 0, press.span)
+          press.index = moveMoment(props.moments, press.index, at)
         }}
         onPointerUp={() => (press = null)}
         onPointerCancel={() => (press = null)}
@@ -534,7 +535,7 @@ function PickDot(props: DotPlace & { label: string; picks: Lens<RandomPick[]> })
   )
 
   return (
-    <Dot {...props} label={`${props.label} pick at ${pick().get().at.toFixed(2)} seconds`} move={field(pick(), 'at').set} pick>
+    <Dot {...props} label={`${props.label} pick at ${pick().get().at.toFixed(2)} seconds`} moments={props.picks} pick>
       {/* the first moment of a scene has nothing to smooth from, nor the last anything to smooth to */}
       <Show when={props.index > 0 || repeats(scene.get())}>{smoothing('Smooth in', 'smooth_in')}</Show>
       <Show when={!last() || repeats(scene.get())}>{smoothing('Smooth out', 'smooth_out')}</Show>
@@ -568,7 +569,7 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
   }
 
   return (
-    <Dot {...props} label={`${props.label} key at ${at().toFixed(2)} seconds`} move={field(key(), 'at').set} background={background()}>
+    <Dot {...props} label={`${props.label} key at ${at().toFixed(2)} seconds`} moments={props.keys} background={background()}>
       <FieldRow label="Value">
         <ValueField label="Value" lens={field(key(), 'value')} ranges={props.ranges.ranges} />
       </FieldRow>

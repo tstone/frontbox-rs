@@ -105,7 +105,7 @@ impl Content {
   pub fn images_for(&self, scene: &Scene) -> Result<Images, LayerImageError> {
     let mut images = Images::new();
     for (index, layer) in scene.layers.iter().enumerate() {
-      if let Some(name) = layer.fill.base.image_name() {
+      for name in layer.image_names() {
         let picture = self.picture(name).map_err(|error| LayerImageError { layer: layer.label(index), error })?;
         images.insert(name, picture);
       }
@@ -161,6 +161,12 @@ impl Content {
       let _ = fs::remove_file(&saving);
       SceneFileError::Write { name: name.into(), error }
     })
+  }
+
+  /// Removes a scene from the folder, leaving the folders it was in
+  pub fn delete_scene(&self, name: &str) -> Result<(), SceneFileError> {
+    let path = self.scene_path(name)?;
+    fs::remove_file(path).map_err(|error| SceneFileError::Delete { name: name.into(), error })
   }
 }
 
@@ -240,19 +246,22 @@ pub enum SceneFileError {
   /// There's already a scene by this name
   Taken(String),
   Write { name: String, error: io::Error },
+  /// The file couldn't be removed, which includes it not being there
+  Delete { name: String, error: io::Error },
 }
 
 impl fmt::Display for SceneFileError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::BadName(name) => write!(f, "\"{name}\" isn't the name of a scene in the content folder"),
-      Self::Read { name, error } if error.kind() == io::ErrorKind::NotFound => {
+      Self::Read { name, error } | Self::Delete { name, error } if error.kind() == io::ErrorKind::NotFound => {
         write!(f, "there's no scene \"{name}\" in the content folder")
       }
       Self::Read { name, error } => write!(f, "couldn't read scene \"{name}\": {error}"),
       Self::Invalid { name, error } => write!(f, "scene \"{name}\" wasn't saved: {error}"),
       Self::Taken(name) => write!(f, "there's already a scene \"{name}\""),
       Self::Write { name, error } => write!(f, "couldn't save scene \"{name}\": {error}"),
+      Self::Delete { name, error } => write!(f, "couldn't delete scene \"{name}\": {error}"),
     }
   }
 }
@@ -681,6 +690,30 @@ mod tests {
     assert!(matches!(content.add_scene("b.ron", "(oops"), Err(SceneFileError::Invalid { .. })));
     assert_eq!(content.read_scene("a.ron").unwrap(), "what was there");
     assert_eq!(content.scene_names(), ["a.ron"]);
+  }
+
+  #[test]
+  fn deleting_removes_only_that_scene() {
+    let folder = Folder::new();
+    folder.write("led/a.ron", b"");
+    folder.write("led/b.ron", b"");
+    let content = Content::new(&folder.0);
+
+    content.delete_scene("led/a.ron").unwrap();
+    assert_eq!(content.scene_names(), ["led/b.ron"]);
+  }
+
+  #[test]
+  fn deleting_a_missing_scene_says_which() {
+    let folder = Folder::new();
+    let error = Content::new(&folder.0).delete_scene("a.ron").unwrap_err();
+    assert_eq!(error.to_string(), "there's no scene \"a.ron\" in the content folder");
+  }
+
+  #[test]
+  fn deleting_stays_in_the_folder() {
+    let content = Content::new("root");
+    assert!(matches!(content.delete_scene("../secret.ron"), Err(SceneFileError::BadName(_))));
   }
 
   #[test]

@@ -6,7 +6,7 @@ import type { Scene } from '../../types/generated/Scene'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, orEmpty, paramFits, shapePoints, variant, withKey, withParam, type Lens, type SceneValue, type Vec2 } from './sceneModel'
+import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['shape']>
 
@@ -46,14 +46,14 @@ const IDENTITY: Affine = [1, 0, 0, 1, 0, 0]
 
 const NOTHING: Overlay = { handles: [], paths: [] }
 
-/** Grab handles over the selected layer's shape and the paths it follows, placed by the machine's account of where they are */
-export default function ShapeHandles(props: { space: PreviewSpace; layer: number | null; pose: RenderedShape | null; time: number }) {
+/** Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are */
+export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; time: number }) {
   const scene = useContext(SceneContext)!
 
   const overlay = createMemo((): Overlay => {
-    const { layer, pose } = props
-    if (layer === null || !pose || !scene.get()?.layers[layer]?.shape) return NOTHING
-    const shape = field(item(field(scene, 'layers'), layer), 'shape') as Lens<Shape>
+    const { selection, pose } = props
+    if (selection === null || !pose || !selectedShape(scene.get(), selection)) return NOTHING
+    const shape = selectedShapeLens(scene, selection)
     if (outOfStep(shape, pose)) return NOTHING
     const write = writer(scene, props.time)
     const { handles, paths } = pathOverlay(shape, pose, write, IDENTITY)

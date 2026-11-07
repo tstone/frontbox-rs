@@ -4,6 +4,7 @@ import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Curve } from '../../types/generated/Curve'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
+import type { Mask } from '../../types/generated/Mask'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
@@ -215,12 +216,28 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
 
 type PropLens = Lens<Prop<SceneValue>>
 
-/** Every prop in a scene: where it is, which layer it's in, what to call it, and the ranges its sliders use */
+/** The layer open in the config, and whether it's the layer's mask being edited rather than the layer */
+export type Selection = { layer: number; mask: boolean }
+
+/** The shape of what's selected, if it has one */
+export function selectedShape(scene: Scene | null | undefined, { layer, mask }: Selection) {
+  const current = scene?.layers[layer]
+  return (mask ? current?.mask : current)?.shape
+}
+
+/** Where to change the shape of what's selected, which has to have one */
+export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection) {
+  const lens = item(field(scene, 'layers'), layer)
+  return (mask ? field(field(lens, 'mask') as Lens<Mask>, 'shape') : field(lens, 'shape')) as Lens<Shape>
+}
+
+/** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surface: Surface) {
-  const uses: { lens: PropLens; layer: number; label: string; ranges: Ranges }[] = []
+  const uses: { lens: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }[] = []
   let layerIndex = 0
+  let inMask = false
   const use = (lens: unknown, label: string, ranges: Ranges) => {
-    uses.push({ lens: lens as PropLens, layer: layerIndex, label, ranges })
+    uses.push({ lens: lens as PropLens, layer: layerIndex, mask: inMask, label, ranges })
     if ('Sweep' in (lens as PropLens).get()) {
       const path = `${label} · Path`
       shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
@@ -269,31 +286,43 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
     }
   }
 
-  const layers = field(scene, 'layers')
-  layers.get().forEach(({ fill, shape: layerShape }, index) => {
-    layerIndex = index
-    const layer = item(layers, index)
-    const label = layerLabel(layers.get()[index], index)
-
-    const fillLens = field(layer, 'fill')
-    transforms(orEmpty(field(fillLens, 'transform')), `${label} · Fill`, 'fill')
-    const base = field(fillLens, 'base')
-    if ('Solid' in fill.base) {
+  const fill = (lens: Lens<Layer['fill']>, label: string) => {
+    transforms(orEmpty(field(lens, 'transform')), `${label} · Fill`, 'fill')
+    const base = field(lens, 'base')
+    const current = base.get()
+    if ('Solid' in current) {
       use(variant(base, 'Solid'), `${label} · Color`, both(UNIT))
-    } else if ('Gradient' in fill.base) {
+    } else if ('Gradient' in current) {
       const stops = field(variant(base, 'Gradient'), 'stops')
       stops.get().forEach((_, stop) => use(field(item(stops, stop), 'color'), `${label} · Stop ${stop + 1}`, both(UNIT)))
-    } else if ('Image' in fill.base && fill.base.Image.frame) {
-      const frames = contentImageInfo(fill.base.Image.name)?.frames
+    } else if ('Image' in current && current.Image.frame) {
+      const frames = contentImageInfo(current.Image.name)?.frames
       use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
     }
-    const adjust = orEmpty(field(fillLens, 'adjust'))
+    const adjust = orEmpty(field(lens, 'adjust'))
     adjust.get().forEach((current, i) => {
       const { label: name, range } = ADJUSTS[adjustKind(current)]
       use(adjustAmount(item(adjust, i)), `${label} · ${name}`, both(range))
     })
+  }
 
+  const layers = field(scene, 'layers')
+  layers.get().forEach(({ shape: layerShape, mask }, index) => {
+    layerIndex = index
+    inMask = false
+    const layer = item(layers, index)
+    const label = layerLabel(layers.get()[index], index)
+
+    fill(field(layer, 'fill'), label)
     if (layerShape) shape(field(layer, 'shape') as Lens<Shape>, label, `${label} · Shape`)
+
+    if (mask) {
+      inMask = true
+      const lens = field(layer, 'mask') as Lens<Mask>
+      const maskLabel = `${label} · Mask`
+      fill(field(lens, 'fill'), maskLabel)
+      if (mask.shape) shape(field(lens, 'shape') as Lens<Shape>, maskLabel, `${maskLabel} · Shape`)
+    }
   })
   return uses
 }
@@ -313,13 +342,13 @@ function referencedParams(scene: Scene) {
   return names
 }
 
-export type SceneTrack = { prop: PropLens; layer: number; label: string; ranges: Ranges }
+export type SceneTrack = { prop: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }
 
 /** Every prop in a scene that changes along the timeline */
 export function sceneTracks(scene: Lens<Scene>, surface: Surface): SceneTrack[] {
-  return propUses(scene, surface).flatMap(({ lens, layer, label, ranges }) => {
+  return propUses(scene, surface).flatMap(({ lens, layer, mask, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, label, ranges }] : []
+    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
   })
 }
 
@@ -461,6 +490,19 @@ export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue>
   // the stretch up to the new key is still the one `next` was curving
   const curve: Curve = next?.curve ?? 'Linear'
   return { ...track, keys: [...keys.slice(0, index), { at, value, curve }, ...keys.slice(index)] }
+}
+
+/**
+ * Moves the moment at `index` to a time, passing any others on the way as the format has them in order, and says where
+ * it's ended up. A time another is already at is skipped over, as two dots there couldn't be told apart.
+ */
+export function moveMoment<T extends { at: number }>(moments: Lens<T[]>, index: number, at: number) {
+  const list = moments.get()
+  const others = removed(list, index)
+  if (others.some((other) => Math.abs(other.at - at) < TIME_STEP / 2)) return index
+  const place = others.filter((other) => other.at < at).length
+  moments.set([...others.slice(0, place), { ...list[index], at }, ...others.slice(place)])
+  return place
 }
 
 /** `keys` with a copy of the one at `index` at another time */

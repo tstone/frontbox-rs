@@ -1,12 +1,10 @@
-import { Dialog } from '@ark-ui/solid/dialog'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
 import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
-import { Portal } from 'solid-js/web'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
-import { saveContentScene } from '../../state/contentScenes'
+import { addContentScene, deleteContentScene, saveContentScene } from '../../state/contentScenes'
 import {
   forgetSceneRender,
   renderClips,
@@ -23,17 +21,22 @@ import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
+import ConfirmDialog from './ConfirmDialog'
 import LedPicker, { EVERY_LED, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
-import { changesEachCycle, cycleCount, sceneSource, withoutDroppedParams, withoutDroppedTiming, type Lens, type SceneTrack, type SceneValue, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { SceneNameButton } from './SceneNameDialog'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
-/** How a scene is previewed: played on the machine's LEDs, or drawn out point by point */
-const VIEWS = ['Machine', 'Raw'] as const
+/** How a scene is previewed: played on the machine's LEDs, or on a DMD of its own. A sequence has a strip for that. */
+const VIEWS = ['Machine', 'DMD'] as const
 type View = (typeof VIEWS)[number]
+
+/** Marks the history entry that the editor is on */
+const EDITING = { editing: true }
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -66,18 +69,20 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   // is the last that could be read, so it's `null` until the first reply and stays put while the RON doesn't parse.
   const [ron, setRon] = createSignal(props.source)
   const [scene, setScene] = createSignal<Scene | null>(null)
+  // the file being edited, which a save as moves on to
+  const [name, setName] = createSignal(props.name)
   // the file as it's last known to be on the machine
   const [saved, setSaved] = createSignal(props.source)
-  const [saving, setSaving] = createSignal(false)
-  const [saveError, setSaveError] = createSignal<string | null>(null)
-  const [discarding, setDiscarding] = createSignal(false)
+  const [fileWork, setFileWork] = createSignal<'saving' | 'deleting' | null>(null)
+  const [fileError, setFileError] = createSignal<string | null>(null)
+  const [confirming, setConfirming] = createSignal<'close' | 'reset' | 'delete' | null>(null)
   const [leds, setLeds] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [view, setView] = createSignal<View>('Machine')
   const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
   const [ledPick, setLedPick] = createSignal<LedPick>(EVERY_LED)
-  const openLayer = createSignal<number | null>(0)
+  const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
   const revealing = createSignal<Prop<SceneValue> | null>(null)
   // what's on show, which stays put while the source doesn't parse
@@ -107,7 +112,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   // held until the LEDs change, which is how a clip of them is told from a clip of others
   const ledQuery = createMemo(() => pickedQuery(ledPick()))
-  const ledTarget = () => ({ plane: planeIndex(), query: ledQuery() })
+  // a DMD gives a scene its own size, where a plane would size it in the plane's units
+  const ledTarget = () => ({ plane: view() === 'DMD' ? null : planeIndex(), query: ledQuery() })
 
   let latest: SceneSource = { Ron: props.source }
   const send = (source: SceneSource) => {
@@ -182,23 +188,80 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   const unsaved = () => ron() !== saved()
 
-  /** Saves `latest` rather than `ron`, which is a reply behind an edit made a moment ago */
-  const save = async () => {
-    if (saving()) return
-    setSaving(true)
-    setSaveError(null)
+  const workOnFile = async (work: 'saving' | 'deleting', action: () => Promise<void>) => {
+    if (fileWork()) return
+    setFileWork(work)
+    setFileError(null)
     try {
-      setSaved(await saveContentScene(props.name, latest))
+      await action()
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err))
+      setFileError(err instanceof Error ? err.message : String(err))
     } finally {
-      setSaving(false)
+      setFileWork(null)
     }
   }
 
-  const close = () => (unsaved() ? setDiscarding(true) : props.onClose())
+  /** Saves `latest` rather than `ron`, which is a reply behind an edit made a moment ago */
+  const save = () =>
+    workOnFile('saving', async () => {
+      setSaved(await saveContentScene(name(), latest))
+    })
+
+  /** Goes on editing the new file. A name that's taken is refused, so this never writes over another scene. */
+  const saveAs = async (chosen: string) => {
+    const written = await addContentScene(chosen, latest)
+    batch(() => {
+      setSaved(written)
+      setName(chosen)
+      setFileError(null)
+    })
+  }
+
+  /** Goes back to the file. What's selected may not be there anymore. */
+  const reset = () => {
+    batch(() => {
+      setConfirming(null)
+      selection[1]({ layer: 0, mask: false })
+      setRon(saved())
+    })
+    send({ Ron: saved() })
+  }
+
+  const remove = () => {
+    setConfirming(null)
+    workOnFile('deleting', async () => {
+      await deleteContentScene(name())
+      leave()
+    })
+  }
+
+  /** Takes its history entry with it, so that Back doesn't stop on the list that's already showing */
+  const leave = () => {
+    props.onClose()
+    if (history.state?.editing) history.back()
+  }
+
+  const close = () => (unsaved() ? setConfirming('close') : leave())
 
   onMount(() => {
+    // Back goes to the list, by way of an entry on top of the one the list has
+    const tabHash = location.hash
+    history.pushState(EDITING, '')
+
+    const onPopState = () => {
+      // choosing a tab comes through here too, and the tab only shows after a change of hash
+      if (history.state?.editing || location.hash !== tabHash || !root.checkVisibility()) return
+      if (!unsaved()) {
+        props.onClose()
+        return
+      }
+      history.pushState(EDITING, '')
+      setConfirming('close')
+    }
+    // coming back by choosing the tab makes a new entry, which Back would otherwise leave the tab from
+    const onHashChange = () => {
+      if (location.hash === tabHash && !history.state?.editing) history.pushState(EDITING, '')
+    }
     const onKeyDown = (e: KeyboardEvent) => {
       // the tab stays mounted while another is showing
       if (e.key !== 's' || !(e.ctrlKey || e.metaKey) || !root.checkVisibility()) return
@@ -208,9 +271,13 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (unsaved()) e.preventDefault()
     }
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('hashchange', onHashChange)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('beforeunload', onBeforeUnload)
     onCleanup(() => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('hashchange', onHashChange)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('beforeunload', onBeforeUnload)
     })
@@ -232,8 +299,12 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const planeIndex = () => chosenPlane() ?? planes()[0]?.index ?? null
   const plane = () => planes().find(({ index }) => index === planeIndex())?.plane ?? null
 
-  /** With no plane to take a size from, the render is its own device, as a display would be */
-  const surface = () => (isSequence() ? null : (plane()?.extent ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)))
+  /** With no plane to take a size from, the render is its own device, as a DMD is */
+  const surface = () => {
+    if (isSequence()) return null
+    const onPlane = view() === 'Machine' ? plane()?.extent : undefined
+    return onPlane ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)
+  }
 
   const ledColors = () => drawn()?.led_colors ?? {}
 
@@ -246,51 +317,62 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   const planeOptions = () => planes().map(({ plane, index }) => ({ value: String(index), label: plane.name }))
 
-  /** Where the open layer is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
+  /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
   const outline = (): Vec2[] => {
-    const layer = openLayer[0]()
-    return (!playback.playing() && layer !== null && drawn()?.outlines[layer]) || []
+    const open = selection[0]()
+    const rendered = drawn()
+    if (playback.playing() || open === null || !rendered) return []
+    return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
   }
 
-  /** The open layer is the one selected in the preview. Its handles are left out while playing, as its outline is. */
-  const selected = () => (playback.playing() || error() !== null ? null : openLayer[0]())
+  /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */
+  const selected = () => (playback.playing() || error() !== null ? null : selection[0]())
   const selectedPose = () => {
-    const layer = selected()
-    return layer === null ? null : (drawn()?.shapes[layer] ?? null)
+    const open = selected()
+    const rendered = drawn()
+    if (open === null || !rendered) return null
+    return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
   }
-  const hasShape = (layer: number | null) => layer !== null && scene()?.layers[layer]?.shape !== undefined
+  const hasShape = (open: Selection | null) => open !== null && selectedShape(scene(), open) !== undefined
 
   /** Selects the shape at a point, or leaves it with nothing selected. A layer with no shape isn't selected this way. */
   const pick = (point: Vec2 | null) => {
-    const [open, setOpen] = openLayer
+    const [open, setOpen] = selection
     if (playback.playing() || error() !== null || !drawn()) return
     const under = point && layerUnder(scene()!, drawn()!.outlines, point)
-    if (under !== null || hasShape(open())) setOpen(under)
+    if (under !== null) setOpen({ layer: under, mask: false })
+    else if (hasShape(open())) setOpen(null)
   }
 
   /** Brings a track's field up in the config, from wherever that's been left */
-  const reveal = ({ prop, layer }: SceneTrack) => {
+  const reveal = ({ prop, layer, mask }: SceneTrack) => {
     batch(() => {
       setSourceTab('config')
-      openLayer[1](layer)
+      selection[1]({ layer, mask })
       revealing[1](prop.get())
     })
   }
 
-  const handles = (space: PreviewSpace) => <ShapeHandles space={space} layer={selected()} pose={selectedPose()} time={playback.position()} />
+  const handles = (space: PreviewSpace) => <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} />
 
-  const [rawSize, setRawSize] = createSignal<Vec2>([0, 0])
+  const [screenSize, setScreenSize] = createSignal<Vec2>([0, 0])
   onMount(() => {
-    const observer = new ResizeObserver(() => setRawSize([canvas.clientWidth, canvas.clientHeight]))
+    const observer = new ResizeObserver(() => setScreenSize([canvas.clientWidth, canvas.clientHeight]))
     observer.observe(canvas)
     onCleanup(() => observer.disconnect())
   })
 
-  /** The raw view is the part of the scene the machine rendered, stretched over the canvas */
-  const rawSpace: PreviewSpace = {
+  /** Keeps its shape however much room the preview has, with one point of a sequence being as tall as it is wide */
+  const screenAspect = () => {
+    const shown = drawn()
+    return shown ? Math.max(shown.width, 1) / Math.max(shown.height, 1) : 1
+  }
+
+  /** The DMD is the part of the scene the machine rendered, stretched over the canvas */
+  const screenSpace: PreviewSpace = {
     project([x, y]) {
       const area = drawn()?.area
-      const [width, height] = rawSize()
+      const [width, height] = screenSize()
       return area ? [((x - area.x) / area.width) * width, ((y - area.y) / area.height) * height] : null
     },
     unproject(clientX, clientY) {
@@ -309,16 +391,78 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           <button type="button" class="scene-button" onClick={close}>
             ← Scenes
           </button>
-          <span class="scene-file-name" title={props.name}>
-            {props.name}
+          <span class="scene-file-name" title={name()}>
+            {name()}
           </span>
+          <div class="scene-file-actions">
+            <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={save}>
+              {fileWork() === 'saving' ? 'Saving…' : 'Save'}
+            </button>
+            <SceneNameButton label="Save as" title="Save scene as" action="Save" acting="Saving…" name={name()} disabled={fileWork() !== null} onName={saveAs} />
+            <button type="button" class="scene-button" disabled={!unsaved() || fileWork() !== null} onClick={() => setConfirming('reset')}>
+              Reset
+            </button>
+            <button type="button" class="scene-button" disabled={fileWork() !== null} onClick={() => setConfirming('delete')}>
+              {fileWork() === 'deleting' ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
           <Show when={unsaved()}>
             <span class="scene-note">Unsaved changes</span>
           </Show>
-          <Show when={saveError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
-          <button type="button" class="scene-button scene-file-save" disabled={!unsaved() || saving()} onClick={save}>
-            {saving() ? 'Saving…' : 'Save'}
-          </button>
+          <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
+          <div class="scene-file-view">
+            <Show
+              when={view() === 'DMD'}
+              fallback={
+                <>
+                  <Show when={!isSequence() && planes().length === 0}>
+                    <span class="scene-note">The machine has no planes</span>
+                  </Show>
+                  <Show when={isSequence() && hasShape(selected())}>
+                    <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
+                  </Show>
+                  <Show when={!isSequence() && planes().length > 0}>
+                    <Dropdown
+                      label="Plane"
+                      options={planeOptions()}
+                      value={String(planeIndex())}
+                      onChange={(value) => setChosenPlane(Number(value))}
+                    />
+                  </Show>
+                </>
+              }
+            >
+              <Show
+                when={isSequence()}
+                fallback={
+                  <>
+                    <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
+                    <span>×</span>
+                    <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
+                  </>
+                }
+              >
+                <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
+              </Show>
+            </Show>
+            <SegmentGroup.Root
+              class="scene-prop-kind scene-view"
+              aria-label="Preview"
+              value={view()}
+              onValueChange={(details) => setView(details.value as View)}
+            >
+              <SegmentGroup.Indicator />
+              <For each={VIEWS}>
+                {(option) => (
+                  <SegmentGroup.Item value={option}>
+                    <SegmentGroup.ItemText>{option === 'DMD' && isSequence() ? 'Strip' : option}</SegmentGroup.ItemText>
+                    <SegmentGroup.ItemControl />
+                    <SegmentGroup.ItemHiddenInput />
+                  </SegmentGroup.Item>
+                )}
+              </For>
+            </SegmentGroup.Root>
+          </div>
         </header>
         <Splitter.Root
           class="scenes-tab"
@@ -339,6 +483,13 @@ export default function SceneEditor(props: { name: string; source: string; onClo
             >
               <Splitter.Panel id="source">
                 <div class="scene-source">
+                  <div class="scene-leds">
+                    <LedPicker pick={ledPick()} onChange={setLedPick} />
+                    <span class="scene-note">{ledsLabel(ledQuery())}</span>
+                    <Show when={view() === 'Machine' && !isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
+                      <span class="scene-note scene-note-warn">None are on this plane</span>
+                    </Show>
+                  </div>
                   <Show when={scene() !== null}>
                     {/* an edit here would replace the RON with the last scene that could be read */}
                     <div class="scene-editing" inert={error() !== null}>
@@ -359,7 +510,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                       </Show>
                       <Show when={scene() !== null}>
                         <div class="scene-editing" inert={error() !== null}>
-                          <ConfigPanel openLayer={openLayer} />
+                          <ConfigPanel selection={selection} />
                         </div>
                       </Show>
                     </Tabs.Content>
@@ -379,64 +530,6 @@ export default function SceneEditor(props: { name: string; source: string; onClo
               </Splitter.Panel>
               <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />
               <Splitter.Panel id="output" class="scene-output">
-                <header>
-                  <Show when={!isSequence() && planes().length > 0}>
-                    <Dropdown
-                      label="Plane"
-                      options={planeOptions()}
-                      value={String(planeIndex())}
-                      onChange={(value) => setChosenPlane(Number(value))}
-                    />
-                  </Show>
-                  <Show
-                    when={view() === 'Raw'}
-                    fallback={
-                      <>
-                        <Show when={!isSequence() && planes().length === 0}>
-                          <span class="scene-note">The machine has no planes</span>
-                        </Show>
-                        <LedPicker pick={ledPick()} onChange={setLedPick} />
-                        <span class="scene-note">{ledsLabel(ledQuery())}</span>
-                        <Show when={isSequence() && hasShape(selected())}>
-                          <span class="scene-note">A sequence has no place on the machine, so its handles are in Raw</span>
-                        </Show>
-                        <Show when={!isSequence() && planes().length > 0 && Object.keys(ledColors()).length === 0}>
-                          <span class="scene-note scene-note-warn">None are on this plane</span>
-                        </Show>
-                      </>
-                    }
-                  >
-                    <Show
-                      when={isSequence()}
-                      fallback={
-                        <>
-                          <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
-                          <span>×</span>
-                          <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
-                        </>
-                      }
-                    >
-                      <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
-                    </Show>
-                  </Show>
-                  <SegmentGroup.Root
-                    class="scene-prop-kind scene-view"
-                    aria-label="Preview"
-                    value={view()}
-                    onValueChange={(details) => setView(details.value as View)}
-                  >
-                    <SegmentGroup.Indicator />
-                    <For each={VIEWS}>
-                      {(option) => (
-                        <SegmentGroup.Item value={option}>
-                          <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
-                          <SegmentGroup.ItemControl />
-                          <SegmentGroup.ItemHiddenInput />
-                        </SegmentGroup.Item>
-                      )}
-                    </For>
-                  </SegmentGroup.Root>
-                </header>
                 <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
                 {/* both stay up, so the camera and the last render are still there on the way back */}
                 <div class="scene-machine" classList={{ stale: error() !== null }} hidden={view() !== 'Machine'}>
@@ -448,20 +541,18 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                     overlay={(space) => <Show when={!isSequence() && plane()}>{handles(space)}</Show>}
                   />
                 </div>
-                <div class="scene-raw" classList={{ stale: error() !== null }} hidden={view() !== 'Raw'}>
-                  <canvas
-                    ref={canvas}
-                    style={{ 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}
-                    onClick={(e) => pick(rawSpace.unproject(e.clientX, e.clientY))}
-                  />
-                  <Show when={drawn()?.area}>
-                    {(area) => (
-                      <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
-                        <polygon points={outline().join(' ')} />
-                      </svg>
-                    )}
-                  </Show>
-                  {handles(rawSpace)}
+                <div class="scene-dmd" classList={{ stale: error() !== null }} hidden={view() !== 'DMD'}>
+                  <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}>
+                    <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
+                    <Show when={drawn()?.area}>
+                      {(area) => (
+                        <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
+                          <polygon points={outline().join(' ')} />
+                        </svg>
+                      )}
+                    </Show>
+                    {handles(screenSpace)}
+                  </div>
                 </div>
               </Splitter.Panel>
             </Splitter.Root>
@@ -475,31 +566,33 @@ export default function SceneEditor(props: { name: string; source: string; onClo
             </Show>
           </Splitter.Panel>
         </Splitter.Root>
-        <Dialog.Root
-          lazyMount
-          unmountOnExit
-          role="alertdialog"
-          open={discarding()}
-          onOpenChange={(details) => setDiscarding(details.open)}
-        >
-          <Portal>
-            <Dialog.Backdrop class="scene-dialog-backdrop" />
-            <Dialog.Positioner class="scene-dialog-positioner">
-              <Dialog.Content class="scene-dialog scene-dialog-small">
-                <header>
-                  <Dialog.Title>Discard unsaved changes?</Dialog.Title>
-                </header>
-                <Dialog.Description class="scene-note">{props.name} has changes that haven't been saved.</Dialog.Description>
-                <footer>
-                  <Dialog.CloseTrigger class="scene-button">Keep editing</Dialog.CloseTrigger>
-                  <button type="button" class="scene-button" onClick={props.onClose}>
-                    Discard
-                  </button>
-                </footer>
-              </Dialog.Content>
-            </Dialog.Positioner>
-          </Portal>
-        </Dialog.Root>
+        <ConfirmDialog
+          open={confirming() === 'close'}
+          title="Discard unsaved changes?"
+          description={`${name()} has changes that haven't been saved.`}
+          cancel="Keep editing"
+          action="Discard"
+          onCancel={() => setConfirming(null)}
+          onConfirm={leave}
+        />
+        <ConfirmDialog
+          open={confirming() === 'reset'}
+          title="Reset to the saved scene?"
+          description={`The unsaved changes to ${name()} will be lost.`}
+          cancel="Keep editing"
+          action="Reset"
+          onCancel={() => setConfirming(null)}
+          onConfirm={reset}
+        />
+        <ConfirmDialog
+          open={confirming() === 'delete'}
+          title="Delete this scene?"
+          description={`${name()} will be removed from the machine's content folder. This can't be undone.`}
+          cancel="Keep editing"
+          action="Delete"
+          onCancel={() => setConfirming(null)}
+          onConfirm={remove}
+        />
         </div>
         </RevealContext.Provider>
       </SurfaceContext.Provider>

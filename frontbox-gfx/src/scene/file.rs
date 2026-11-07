@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -386,8 +386,23 @@ mod tests {
   }
 
   #[test]
+  fn a_layer_from_before_masks_has_none() {
+    let scene = load("(version: 10, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(scene.layers[0].mask.is_none());
+    assert!(!save(&scene).unwrap().contains("mask"));
+  }
+
+  #[test]
+  fn a_mask_survives_a_save() {
+    let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
+    let read = load(&save(&scene).unwrap()).unwrap();
+    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.shape.is_none()));
+  }
+
+  #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 11, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 11 })), "{result:?}");
+    let result = load("(version: 12, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 12 })), "{result:?}");
   }
 }

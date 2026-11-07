@@ -26,6 +26,7 @@
 //! ```
 //!
 //! - [`Scene`], [`Layer`] -- Layers of fill in shapes, composited bottom to top
+//! - [`Mask`] -- Where a layer shows, apart from what its shape covers
 //! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
 //! - [`Node`] -- Shapes and fills, each a base kind with [`Transform`]s going in and adjusts coming out
 //! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, or swept along a path ([`Sweep`])
@@ -41,6 +42,7 @@ pub mod file;
 mod fill;
 mod images;
 mod layer;
+mod mask;
 mod node;
 mod prop;
 mod random;
@@ -61,6 +63,7 @@ pub use content::*;
 pub use fill::*;
 pub use images::*;
 pub use layer::*;
+pub use mask::*;
 pub use node::*;
 pub use prop::*;
 pub use random::*;

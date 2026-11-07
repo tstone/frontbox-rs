@@ -1,5 +1,6 @@
 import { Accordion } from '@ark-ui/solid/accordion'
-import { Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
+import { SegmentGroup } from '@ark-ui/solid/segment-group'
+import { For, Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
 import { contentImageInfo } from '../../state/contentImages'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
@@ -9,6 +10,7 @@ import type { FillNode } from '../../types/generated/FillNode'
 import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Layer } from '../../types/generated/Layer'
+import type { Mask } from '../../types/generated/Mask'
 import type { Prop } from '../../types/generated/Prop'
 import type { Scene } from '../../types/generated/Scene'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
@@ -46,6 +48,7 @@ import {
   type AdjustKind,
   type Lens,
   type Range,
+  type Selection,
   type Surface,
   type Vec2,
   type TransformSpace,
@@ -99,6 +102,11 @@ const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
 ]
+const EDITING = ['Layer', 'Mask'] as const
+const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
+  { value: 'Outside', label: 'Outside the mask' },
+  { value: 'Inside', label: 'Inside the mask' },
+]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 
 type TransformKind = 'Translate' | 'Rotate' | 'Scale'
@@ -111,17 +119,17 @@ const NEW_TRANSFORMS: Record<TransformKind, Transform> = {
 }
 
 /** The scene's viewport and layers */
-export default function ConfigPanel(props: { openLayer: Signal<number | null> }) {
+export default function ConfigPanel(props: { selection: Signal<Selection | null> }) {
   return (
     <div class="scene-config">
       <ViewportEditor />
-      <LayerList open={props.openLayer} />
+      <LayerList open={props.selection} />
     </div>
   )
 }
 
 /** The scene's layers, with one open at a time */
-function LayerList(props: { open: Signal<number | null> }) {
+function LayerList(props: { open: Signal<Selection | null> }) {
   const scene = useContext(SceneContext)!
   const layers = field(scene, 'layers')
   // by position, so this follows the open layer as layers around it move and go
@@ -129,19 +137,23 @@ function LayerList(props: { open: Signal<number | null> }) {
 
   const add = () => {
     layers.set([...layers.get(), { fill: { base: { Solid: { Fixed: WHITE } } } }])
-    setOpen(layers.get().length - 1)
+    setOpen({ layer: layers.get().length - 1, mask: false })
   }
 
   const move = (index: number, by: number) => {
     layers.set(moved(layers.get(), index, by))
-    setOpen((current) => (current === index ? index + by : current === index + by ? index : current))
+    setOpen((current) => {
+      if (current === null) return null
+      const layer = current.layer === index ? index + by : current.layer === index + by ? index : current.layer
+      return { ...current, layer }
+    })
   }
 
   const remove = (index: number) => {
     layers.set(removed(layers.get(), index))
     setOpen((current) => {
-      if (current === null || current === index) return null
-      return current > index ? current - 1 : current
+      if (current === null || current.layer === index) return null
+      return current.layer > index ? { ...current, layer: current.layer - 1 } : current
     })
   }
 
@@ -152,8 +164,11 @@ function LayerList(props: { open: Signal<number | null> }) {
         collapsible
         lazyMount
         unmountOnExit
-        value={open() === null ? [] : [String(open())]}
-        onValueChange={(details) => setOpen(details.value.length > 0 ? Number(details.value[0]) : null)}
+        value={open() === null ? [] : [String(open()!.layer)]}
+        onValueChange={(details) => {
+          const layer = details.value.length > 0 ? Number(details.value[0]) : null
+          setOpen((current) => (layer === null ? null : current?.layer === layer ? current : { layer, mask: false }))
+        }}
       >
         <Index each={layers.get()}>
           {(layer, index) => (
@@ -180,7 +195,12 @@ function LayerList(props: { open: Signal<number | null> }) {
               </header>
               <Accordion.ItemContent>
                 <div class="scene-config">
-                  <LayerEditor lens={item(layers, index)} index={index} />
+                  <LayerEditor
+                    lens={item(layers, index)}
+                    index={index}
+                    mask={open()?.mask === true}
+                    onMask={(mask) => setOpen({ layer: index, mask })}
+                  />
                 </div>
               </Accordion.ItemContent>
             </Accordion.Item>
@@ -212,34 +232,85 @@ function ViewportEditor() {
   )
 }
 
-/** A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to covering all of it. */
+/** A shape is measured in its viewport's units, so it would land somewhere else on another. Each layer goes back to covering all of it, unmasked. */
 function onViewport(scene: Scene, viewport: Scene['viewport']): Scene {
-  return { ...scene, viewport, layers: scene.layers.map(({ shape, ...layer }) => layer) }
+  return { ...scene, viewport, layers: scene.layers.map(({ shape, mask, ...layer }) => layer) }
 }
 
-function LayerEditor(props: { lens: Lens<Layer>; index: number }) {
+function LayerEditor(props: { lens: Lens<Layer>; index: number; mask: boolean; onMask: (mask: boolean) => void }) {
   const name = field(props.lens, 'name')
 
   return (
     <>
+      <SegmentGroup.Root
+        class="scene-prop-kind"
+        aria-label="Editing"
+        value={props.mask ? 'Mask' : 'Layer'}
+        onValueChange={(details) => props.onMask(details.value === 'Mask')}
+      >
+        <SegmentGroup.Indicator />
+        <For each={EDITING}>
+          {(option) => (
+            <SegmentGroup.Item value={option}>
+              <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+              <SegmentGroup.ItemControl />
+              <SegmentGroup.ItemHiddenInput />
+            </SegmentGroup.Item>
+          )}
+        </For>
+      </SegmentGroup.Root>
+      <Show
+        when={props.mask}
+        fallback={
+          <>
+            <section class="scene-group">
+              <FieldRow label="Name">
+                <input
+                  class="scene-layer-name"
+                  aria-label="Layer name"
+                  placeholder={`Layer ${props.index + 1}`}
+                  spellcheck={false}
+                  value={name.get() ?? ''}
+                  onChange={(e) => {
+                    name.set(e.currentTarget.value.trim() || undefined)
+                    e.currentTarget.value = name.get() ?? ''
+                  }}
+                />
+              </FieldRow>
+            </section>
+            <ShapeEditor lens={field(props.lens, 'shape')} />
+            <FillEditor lens={field(props.lens, 'fill')} />
+          </>
+        }
+      >
+        <MaskEditor lens={field(props.lens, 'mask')} />
+      </Show>
+    </>
+  )
+}
+
+/** Where a layer shows. A new mask cuts a shape out of it, as with no shape a mask with the layer outside it hides all of it. */
+function MaskEditor(props: { lens: Lens<Mask | undefined> }) {
+  const surface = useContext(SurfaceContext)!
+  const mask = props.lens as Lens<Mask>
+  const add = () => props.lens.set({ fill: { base: { Solid: { Fixed: WHITE } } }, shape: newShape('Circle', surface()), invert: true })
+
+  return (
+    <Show when={props.lens.get()} fallback={<AddButton onClick={add}>Add mask</AddButton>}>
       <section class="scene-group">
-        <FieldRow label="Name">
-          <input
-            class="scene-layer-name"
-            aria-label="Layer name"
-            placeholder={`Layer ${props.index + 1}`}
-            spellcheck={false}
-            value={name.get() ?? ''}
-            onChange={(e) => {
-              name.set(e.currentTarget.value.trim() || undefined)
-              e.currentTarget.value = name.get() ?? ''
-            }}
+        <FieldRow label="Show layer">
+          <Dropdown
+            label="Show layer"
+            options={MASK_SHOWS_OPTIONS}
+            value={mask.get().invert ? 'Outside' : 'Inside'}
+            onChange={(value) => field(mask, 'invert').set(value === 'Outside' || undefined)}
           />
         </FieldRow>
       </section>
-      <ShapeEditor lens={field(props.lens, 'shape')} />
-      <FillEditor lens={field(props.lens, 'fill')} />
-    </>
+      <ShapeEditor lens={field(mask, 'shape')} />
+      <FillEditor lens={field(mask, 'fill')} />
+      <AddButton onClick={() => props.lens.set(undefined)}>Remove mask</AddButton>
+    </Show>
   )
 }
 
@@ -423,23 +494,12 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
     return current ? (Object.keys(current.base)[0] as ShapeKind) : 'None'
   }
 
-  // placed so that it can be seen, at a size that fits
-  const newShape = (next: Exclude<ShapeKind, 'None'>): Shape => {
-    // a sequence runs from 0 to 1, with its points along the middle
-    const [width, height] = surface() ?? [1, 0]
-    const across = newShapeSize(surface())
-    return {
-      base: sizedShape(next, [across, across]),
-      transform: [{ Scale: { Fixed: [1, 1] } }, { Translate: { Fixed: [width / 2, height / 2] } }],
-    }
-  }
-
   const setKind = (next: ShapeKind) => {
     if (next === kind()) return
     if (next === 'None') return lens.set(undefined)
     // one shape turned into another takes up the same room
     if (lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get(), surface())))
-    else lens.set(newShape(next))
+    else lens.set(newShape(next, surface()))
   }
 
   const ranges = () => sizeRanges(surface())
@@ -483,6 +543,17 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
       </Show>
     </section>
   )
+}
+
+/** A new shape, placed so that it can be seen, at a size that fits */
+function newShape(kind: Exclude<ShapeKind, 'None'>, surface: Surface): Shape {
+  // a sequence runs from 0 to 1, with its points along the middle
+  const [width, height] = surface ?? [1, 0]
+  const across = newShapeSize(surface)
+  return {
+    base: sizedShape(kind, [across, across]),
+    transform: [{ Scale: { Fixed: [1, 1] } }, { Translate: { Fixed: [width / 2, height / 2] } }],
+  }
 }
 
 /** A shape this wide and tall */

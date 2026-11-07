@@ -61,12 +61,14 @@ pub(crate) fn render_scene(
     }
   };
   let area = rendered_area(covers);
-  let outlines = shown.outlines(&frame).iter().map(|outline| outline.iter().map(|p| p.to_array()).collect()).collect();
-  let shapes = shown.shape_poses(&frame).iter().map(|pose| pose.as_ref().map(rendered_shape)).collect();
+  let outlines = rendered_outlines(shown.outlines(&frame));
+  let shapes = rendered_shapes(shown.shape_poses(&frame));
+  let mask_outlines = rendered_outlines(shown.mask_outlines(&frame));
+  let mask_shapes = rendered_shapes(shown.mask_poses(&frame));
   let led_colors = led_colors(&shown, &target, &frame);
   let ron = file::save(&scene).map_err(|err| err.to_string())?;
 
-  Ok(RenderedScene { scene, ron, width, height, colors, area, outlines, shapes, led_colors })
+  Ok(RenderedScene { scene, ron, width, height, colors, area, outlines, shapes, mask_outlines, mask_shapes, led_colors })
 }
 
 /// Renders every frame of one cycle of a scene, for a client to play without coming back to the machine until the next.
@@ -171,6 +173,14 @@ fn points(scene: &Scene, size: SceneSize, target: &LedTarget) -> Result<(usize, 
 fn rendered_area(covers: Bounds) -> RenderedArea {
   let size = covers.size();
   RenderedArea { x: covers.min.x, y: covers.min.y, width: size.x, height: size.y }
+}
+
+fn rendered_outlines(outlines: Vec<Vec<Vec2>>) -> Vec<Vec<[f32; 2]>> {
+  outlines.iter().map(|outline| outline.iter().map(|p| p.to_array()).collect()).collect()
+}
+
+fn rendered_shapes(poses: Vec<Option<ShapePose>>) -> Vec<Option<RenderedShape>> {
+  poses.iter().map(|pose| pose.as_ref().map(rendered_shape)).collect()
 }
 
 fn rendered_shape(pose: &ShapePose) -> RenderedShape {
@@ -591,6 +601,33 @@ mod tests {
 
   const IMAGE: &str = r#"(version: 1, viewport: Area, layers: [(fill: (base: Image(name: "art/a.png")))])"#;
   const TWO_POINTS: SceneSize = SceneSize { leds: 0, width: 2, height: 1 };
+
+  #[test]
+  fn a_render_shows_a_mask_and_says_where_it_is() {
+    let source = r#"(
+      version: 11,
+      viewport: Area,
+      layers: [
+        (fill: (base: Solid(Fixed(0, 0, 255, 255)))),
+        (
+          fill: (base: Solid(Fixed(255, 0, 0, 255))),
+          mask: (
+            fill: (base: Solid(Fixed(0, 0, 0, 255))),
+            shape: (base: Ellipse(r1: Fixed(0.5), r2: Fixed(0.5)), transform: [Scale(Fixed(40.0, 40.0)), Translate(Fixed(50.0, 25.0))]),
+          ),
+        ),
+      ],
+    )"#;
+    let target = LedTarget { plane: Some(&WIDE), ..no_leds() };
+    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 10, height: 5 }, target, None, 0.0, None).unwrap();
+    let pixel = |x: usize, y: usize| &rendered.colors[(y * 10 + x) * 4..][..4];
+    assert_eq!(pixel(5, 2), [255, 0, 0, 255]);
+    assert_eq!(pixel(0, 2), [0, 0, 255, 255]);
+    assert!(rendered.mask_shapes[0].is_none());
+    assert!(rendered.mask_shapes[1].is_some());
+    assert!(rendered.mask_outlines[0].is_empty());
+    assert!(!rendered.mask_outlines[1].is_empty());
+  }
 
   #[test]
   fn a_scene_draws_its_images_from_the_content_folder() {

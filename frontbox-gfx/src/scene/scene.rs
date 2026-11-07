@@ -90,7 +90,7 @@ impl Scene {
 
   /// The names of the images it draws, which can repeat
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
-    self.layers.iter().filter_map(|layer| layer.fill.base.image_name())
+    self.layers.iter().flat_map(Layer::image_names)
   }
 
   /// The color at a sample. Transparent outside the viewport.
@@ -119,6 +119,21 @@ impl Scene {
   pub fn shape_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
     self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
+  }
+
+  /// Where each layer's mask is drawn, in the same order and terms as [`Scene::outlines`]. A layer with no mask has no
+  /// points.
+  pub fn mask_outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
+    let env = self.env(frame);
+    let viewport = self.viewport.bounds(frame.size);
+    self.layers.iter().map(|layer| layer.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(viewport, &env))).collect()
+  }
+
+  /// Each layer's mask's shape as it stands at a moment. `None` for a layer with no such shape, or one that a transform
+  /// collapses.
+  pub fn mask_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
+    let env = self.env(frame);
+    self.layers.iter().map(|layer| layer.mask.as_ref()?.shape.as_ref()?.pose(&env)).collect()
   }
 
   /// How far it is around a `Sequence` of points this far across: the line and the gap that closes it, which spaces the
@@ -171,8 +186,8 @@ mod tests {
   use crate::animation::{Curve, Cycle};
   use crate::layout::{Grid, Line};
   use crate::scene::{
-    Color, ColorAdjust, ColorSpace, Fill, FillNode, GradientStyle, Images, Key, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread, Stop,
-    Track, Transform,
+    Color, ColorAdjust, ColorSpace, Fill, FillNode, GradientStyle, Images, Key, Mask, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread,
+    Stop, Track, Transform,
   };
 
   const SIZE: Vec2 = Vec2::new(100.0, 50.0);
@@ -512,6 +527,81 @@ mod tests {
     assert!((lit as f32 - area).abs() < 2.0 * std::f32::consts::PI * 20.0, "{lit} vs {area}");
     assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 5.0, 5.0, 0.5), DARK);
+  }
+
+  /// A circle of diameter 40 at (50, 25)
+  fn middle_circle() -> Shape {
+    Shape::new(ShapeNode::circle(0.5))
+      .transform(Transform::Scale(Vec2::splat(40.0).into()))
+      .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
+  }
+
+  /// A red layer over a dark one, with a mask on the red
+  fn masked(mask: Mask) -> Scene {
+    Scene::new(Viewport::Area, vec![Layer::new(solid(DARK)), Layer::new(solid(RED)).mask(mask)])
+  }
+
+  #[test]
+  fn a_mask_shows_its_layer_only_inside_it_and_leaves_the_layer_below() {
+    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
+    assert_eq!(sample(&scene, 5.0, 5.0, 0.5), DARK);
+  }
+
+  #[test]
+  fn an_inverted_mask_shows_its_layer_only_outside_it() {
+    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()).inverted());
+    assert_eq!(sample(&scene, 50.0, 25.0, 0.5), DARK);
+    assert_eq!(sample(&scene, 5.0, 5.0, 0.5), RED);
+  }
+
+  #[test]
+  fn a_mask_with_no_shape_covers_the_viewport() {
+    assert_eq!(sample(&masked(Mask::new(solid(BLUE))), 5.0, 5.0, 0.5), RED);
+    assert_eq!(sample(&masked(Mask::new(solid(BLUE)).inverted()), 5.0, 5.0, 0.5), DARK);
+  }
+
+  #[test]
+  fn a_mask_fades_its_layer_by_its_own_opacity() {
+    let half = solid(BLUE).adjust(ColorAdjust::Opacity(0.5.into()));
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).mask(Mask::new(half))]);
+    let alpha = sample(&scene, 50.0, 25.0, 0.5)[3];
+    assert!((alpha as i16 - 128).abs() <= 1, "{alpha}");
+  }
+
+  #[test]
+  fn a_mask_stays_put_as_its_layer_moves() {
+    let moved = middle_circle().transform(Transform::Translate(Vec2::new(20.0, 0.0).into()));
+    let mask = Mask::new(solid(BLUE)).shape(middle_circle());
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(moved).mask(mask)]);
+    // in both, in the layer alone, and in the mask alone
+    assert_eq!(sample(&scene, 60.0, 25.0, 0.5), RED);
+    assert_eq!(sample(&scene, 85.0, 25.0, 0.5)[3], 0);
+    assert_eq!(sample(&scene, 35.0, 25.0, 0.5)[3], 0);
+  }
+
+  #[test]
+  fn an_animated_mask_needs_a_timing() {
+    let changing = solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(Track { keys: vec![], cycle: Cycle::Once })));
+    assert_eq!(masked(Mask::new(changing)).check(), Err(no_timing("layer 2")));
+  }
+
+  #[test]
+  fn a_masks_image_is_one_the_scene_draws() {
+    let image = Fill::new(FillNode::Image { name: "stencil.png".into(), frame: None });
+    let scene = masked(Mask::new(image));
+    assert_eq!(scene.image_names().collect::<Vec<_>>(), ["stencil.png"]);
+  }
+
+  #[test]
+  fn a_masks_outline_and_pose_line_up_with_the_layers() {
+    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    let params = Params::new();
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
+    assert!(scene.mask_outlines(&frame)[0].is_empty());
+    assert!(!scene.mask_outlines(&frame)[1].is_empty());
+    assert!(scene.mask_poses(&frame)[0].is_none());
+    assert!(scene.mask_poses(&frame)[1].is_some());
   }
 
   #[test]
