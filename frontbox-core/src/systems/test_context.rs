@@ -15,12 +15,12 @@ pub struct TestContext {
 }
 
 impl TestContext {
-  pub fn insert_system(&mut self, system: impl Into<SystemContainer>) {
-    self
-      .groups
-      .get_mut(&ROOT_GROUP)
-      .unwrap()
-      .insert(system.into());
+  /// Puts the system in the root group, returning its handle
+  pub fn insert_system(&mut self, system: impl Into<SystemContainer>) -> SystemHandle {
+    let system = system.into();
+    let handle = SystemHandle::new(system.id(), ROOT_GROUP);
+    self.groups.get_mut(&ROOT_GROUP).unwrap().insert(system);
+    handle
   }
 
   pub fn insert_switch(&mut self, switch: Switch) {

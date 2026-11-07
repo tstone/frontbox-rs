@@ -81,7 +81,12 @@
 //! `ctx.grant_tilt_warning()` (`TiltExt`).
 //!
 //! `SlamTiltSystem` (at the root) ends the game at once on the slam tilt switch, with `GameEndReason::SlamTilted`.
+//!
+//! ## Attract Mode
+//! `AttractSystem` (at the root) plays a list of scenes on every LED, one after another, for as long as `GamePhase` is
+//! `None`.
 
+mod attract_system;
 pub mod ball_management;
 mod ball_save;
 pub mod configs;
@@ -91,6 +96,7 @@ mod high_scores;
 pub mod metrics;
 mod tilt;
 
+pub use attract_system::*;
 pub use ball_management::*;
 pub use ball_save::*;
 pub use game_management::*;

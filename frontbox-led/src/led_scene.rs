@@ -86,6 +86,15 @@ impl LedScene {
     Ok(Self::targeting(targets, scene))
   }
 
+  /// Plays on every LED however the scene's viewport calls for: along all of them on a `Sequence`, or across `plane` on
+  /// an `Area`, where [`LedScene::on_plane`] says which take part
+  pub fn on_every_led(plane: &ReferencePlane, scene: Scene) -> Result<Self, PlaneSceneError> {
+    match scene.viewport {
+      Viewport::Sequence => Ok(Self::targeting(Targets::Sequence(Box::new(LedQ::every())), scene)),
+      Viewport::Area => Self::on_plane(plane, LedQ::every(), scene),
+    }
+  }
+
   fn targeting(targets: Targets, scene: Scene) -> Self {
     Self {
       targets,

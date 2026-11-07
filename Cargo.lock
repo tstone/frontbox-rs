@@ -1120,6 +1120,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "frontbox-core",
+ "frontbox-gfx",
  "frontbox-led",
  "log",
  "serde",

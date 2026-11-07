@@ -123,6 +123,11 @@ impl LedSystem {
       .unwrap_or(Vec::new())
   }
 
+  /// The colors declared for an LED by any system, in no particular order
+  pub fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>> {
+    self.declarations_for(addr).iter().map(|d| d.color).collect()
+  }
+
   pub fn reset(&mut self) {
     self.declarations.clear();
     self.prior_render.clear();
