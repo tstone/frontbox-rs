@@ -13,15 +13,19 @@ transforms: Array<[number, number, number, number, number, number]>,
  */
 min: [number, number], max: [number, number], 
 /**
- * A polygon's points in its own space
+ * The points of a polygon, route or bezier in its own space
  */
 points: Array<[number, number]>, 
+/**
+ * A bezier's handles, each from its point
+ */
+handles: Array<[number, number]>, 
 /**
  * How far a ring's hole reaches from its center, in its own space
  */
 hole: number, 
 /**
- * Its edge in the scene, as a closed loop of points
+ * Its edge in the scene, as a closed loop of points, or its line for a route or bezier, which doesn't close
  */
 outline: Array<[number, number]>, 
 /**

@@ -12,7 +12,11 @@ export type Layer = {
 /**
  * What people call it. It changes nothing about how it's drawn, and two layers can share one.
  */
-name?: string, fill: Node<FillNode, ColorAdjust>, 
+name?: string, 
+/**
+ * Left out when the scene is drawn. It's still there to go back to, and still has to be something the scene can play.
+ */
+hidden?: boolean, fill: Node<FillNode, ColorAdjust>, 
 /**
  * `None` covers the whole viewport
  */

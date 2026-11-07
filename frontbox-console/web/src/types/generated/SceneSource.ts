@@ -4,4 +4,4 @@ import type { Scene } from "./Scene";
 /**
  * A scene to render, as either of the forms the console edits it in
  */
-export type SceneSource = { "Ron": string } | { "Definition": Scene };
+export type SceneSource = { "Ron": string } | { "Definition": Scene } | { "Preview": { scene: Scene, shown: Scene, } };

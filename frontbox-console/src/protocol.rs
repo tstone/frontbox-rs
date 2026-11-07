@@ -145,11 +145,13 @@ pub struct RenderedShape {
   /// The corners of its bounds in its own space
   pub min: [f32; 2],
   pub max: [f32; 2],
-  /// A polygon's points in its own space
+  /// The points of a polygon, route or bezier in its own space
   pub points: Vec<[f32; 2]>,
+  /// A bezier's handles, each from its point
+  pub handles: Vec<[f32; 2]>,
   /// How far a ring's hole reaches from its center, in its own space
   pub hole: f32,
-  /// Its edge in the scene, as a closed loop of points
+  /// Its edge in the scene, as a closed loop of points, or its line for a route or bezier, which doesn't close
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that
   /// doesn't.
@@ -247,6 +249,8 @@ pub enum SceneSource {
   Ron(String),
   /// As edited field by field
   Definition(Scene),
+  /// Drawn as `shown`, for trying a change out without making it. `scene` is what's given back in both forms.
+  Preview { scene: Scene, shown: Scene },
 }
 
 /// How many points to sample a scene at. The scene's viewport decides which of these applies.

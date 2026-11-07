@@ -12,7 +12,7 @@ use serde::Deserialize;
 use crate::scene::{Scene, SceneError};
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 
 /// Reads a scene from RON
 pub fn load(source: &str) -> Result<Scene, FormatError> {
@@ -108,7 +108,10 @@ mod tests {
             style: GradientStyle::Radial,
           })
           .transform(Transform::Rotate(90.0.into()))
-          .adjust(ColorAdjust::HueShift(Prop::Param("hue".into()))),
+          .adjust(ColorAdjust::HueShift(Prop::Param("hue".into())))
+          .adjust(ColorAdjust::Opacity(0.75.into()))
+          .adjust(ColorAdjust::Brightness(1.25.into()))
+          .adjust(ColorAdjust::Contrast(1.5.into())),
         )
         .shape(
           Shape::new(ShapeNode::circle(0.5))
@@ -129,10 +132,32 @@ mod tests {
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
           ShapeNode::Ring { radius: 3.0.into(), thickness: 1.0.into() },
         )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
+          .hidden()
+          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into() })),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
             0.25,
+            1.0,
+          )))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::Route { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
+            0.0,
+            1.0,
+          )))),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).shape(
+          Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
+            Shape::new(ShapeNode::Bezier {
+              points: vec![
+                BezierPoint { point: Vec2::ZERO.into(), handle: Vec2::new(0.0, 5.0).into() },
+                BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
+              ],
+            }),
+            0.0,
             1.0,
           )))),
         ),
@@ -354,8 +379,15 @@ mod tests {
   }
 
   #[test]
+  fn a_layer_is_only_hidden_if_it_says_so() {
+    let scene = load("(version: 9, viewport: Area, layers: [(fill: (base: Gradient(stops: [])))])").unwrap();
+    assert!(!scene.layers[0].hidden);
+    assert!(!save(&scene).unwrap().contains("hidden"));
+  }
+
+  #[test]
   fn rejects_a_newer_version() {
-    let result = load("(version: 10, layers: [(fill: (base: SomethingNew))])");
-    assert!(matches!(result, Err(FormatError::Newer { version: 10 })), "{result:?}");
+    let result = load("(version: 11, layers: [(fill: (base: SomethingNew))])");
+    assert!(matches!(result, Err(FormatError::Newer { version: 11 })), "{result:?}");
   }
 }

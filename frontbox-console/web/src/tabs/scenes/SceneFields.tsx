@@ -3,7 +3,7 @@ import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
-import { createContext, createSignal, For, Match, Show, Switch, useContext, type Accessor } from 'solid-js'
+import { createContext, createEffect, createSignal, For, Match, Show, Switch, useContext, type Accessor, type Signal } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import InfoTip from '../../components/InfoTip'
 import { ShapeEditor } from './ConfigPanel'
@@ -19,6 +19,9 @@ export const SceneContext = createContext<Lens<Scene>>()
 /** The size the scene is being edited for */
 export const SurfaceContext = createContext<Accessor<Surface>>()
 
+/** The prop waiting to be shown to whoever asked, until its field comes up and takes it */
+export const RevealContext = createContext<Signal<Prop<SceneValue> | null>>()
+
 function useScene() {
   return useContext(SceneContext)!
 }
@@ -30,6 +33,28 @@ export function FieldRow(props: { label: string; children: any }) {
       <span class="scene-field-label">{props.label}</span>
       {props.children}
     </div>
+  )
+}
+
+/** Shows or hides a layer or a track */
+export function EyeButton(props: { label: string; hidden: boolean; onChange: (hidden: boolean) => void }) {
+  const action = () => `${props.hidden ? 'Show' : 'Hide'} ${props.label}`
+  return (
+    <button
+      type="button"
+      class="scene-eye"
+      aria-label={action()}
+      aria-pressed={props.hidden}
+      title={action()}
+      onClick={() => props.onChange(!props.hidden)}
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+        <Show when={props.hidden} fallback={<circle cx="8" cy="8" r="1.75" />}>
+          <path d="M3 13 13 3" />
+        </Show>
+      </svg>
+    </button>
   )
 }
 
@@ -379,6 +404,9 @@ export function PropField<T extends SceneValue>(props: {
   ranges: Ranges
 }) {
   const scene = useScene()
+  const [revealing, setRevealing] = useContext(RevealContext)!
+  const [pinged, setPinged] = createSignal(false)
+  let element!: HTMLDivElement
   const prop = () => props.lens.get()
   const kind = () => Object.keys(prop())[0] as PropKind
   const value = () => startingValue(prop(), scene.get(), props.fallback)
@@ -411,6 +439,14 @@ export function PropField<T extends SceneValue>(props: {
     }
   }
 
+  // a field can come up for this, in a layer that's only now opening
+  createEffect(() => {
+    if (revealing() === null || revealing() !== prop()) return
+    setRevealing(null)
+    setPinged(true)
+    requestAnimationFrame(() => element.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+  })
+
   const rename = (name: string) => {
     if (name === '' || name === paramName()) return
     if (scene.get().params?.[name] === undefined) scene.set(withParam(scene.get(), name, value()))
@@ -418,7 +454,14 @@ export function PropField<T extends SceneValue>(props: {
   }
 
   return (
-    <div class="scene-field scene-prop">
+    <div
+      class="scene-field scene-prop"
+      classList={{ 'scene-ping': pinged() }}
+      ref={element}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) setPinged(false)
+      }}
+    >
       <div class="scene-prop-header">
         <span class="scene-field-label">{props.label}</span>
         <SegmentGroup.Root

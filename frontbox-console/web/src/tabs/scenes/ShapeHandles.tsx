@@ -6,7 +6,7 @@ import type { Scene } from '../../types/generated/Scene'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
-import { field, item, orEmpty, paramFits, variant, withKey, withParam, type Lens, type SceneValue, type Vec2 } from './sceneModel'
+import { field, isHidden, isOpen, item, orEmpty, paramFits, shapePoints, variant, withKey, withParam, type Lens, type SceneValue, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['shape']>
 
@@ -16,19 +16,21 @@ type Affine = RenderedShape['transforms'][number]
 /** A grab handle: where it is, and what dragging it does */
 type Handle = {
   label: string
-  kind: 'move' | 'scale' | 'size' | 'point'
+  kind: 'move' | 'scale' | 'size' | 'point' | 'bezier'
   cursor: string
   /** Where it sits in the scene */
   at: Vec2
-  /** Set when it's held by something a drag can't change, such as a random value or a sweep */
+  /** Set when it's held by something a drag can't change, such as a random value, a sweep, or a hidden track */
   locked: boolean
   /** Moves what it holds so the handle lands on a point in the scene. `proportional` keeps a scale's shape. */
   drag(to: Vec2, proportional: boolean): void
   /** Set when it's on a path, which has a color of its own to tell it from the shape going along it */
   onPath?: boolean
+  /** Where a line to it comes from in the scene, for one that belongs to a point */
+  arm?: Vec2
 }
 
-/** What's drawn over a shape: its handles, and the paths it goes along as closed loops in the scene */
+/** What's drawn over a shape: its handles, and the paths it goes along as lines in the scene */
 type Overlay = { handles: Handle[]; paths: Vec2[][] }
 
 /** How the values a handle writes are rounded, so a drag doesn't leave long decimals in a scene */
@@ -59,12 +61,15 @@ export default function ShapeHandles(props: { space: PreviewSpace; layer: number
     return { handles: [...shapeHandles(shape, pose, write), ...handles], paths }
   })
 
-  const onScreen = (loop: Vec2[]) => loop.flatMap((point) => props.space.project(point) ?? []).join(' ')
+  const onScreen = (line: Vec2[]) => line.flatMap((point) => props.space.project(point) ?? []).join(' ')
 
   return (
     <div class="scene-handles">
       <svg class="scene-paths" aria-hidden="true">
-        <Index each={overlay().paths}>{(loop) => <polygon points={onScreen(loop())} />}</Index>
+        <Index each={overlay().paths}>{(line) => <polyline points={onScreen(line())} />}</Index>
+        <Index each={overlay().handles.filter(({ arm }) => arm)}>
+          {(handle) => <polyline class="scene-arm" points={onScreen([handle().arm!, handle().at])} />}
+        </Index>
       </svg>
       {/* by position, as the machine's every reply makes new handles and a held one has to stay put */}
       <Index each={overlay().handles}>{(handle) => <Grip handle={handle()} space={props.space} />}</Index>
@@ -74,7 +79,13 @@ export default function ShapeHandles(props: { space: PreviewSpace; layer: number
 
 /** Whether an edit that's on its way to the machine has left a shape and its pose out of step */
 function outOfStep(shape: Lens<Shape>, pose: RenderedShape) {
-  return (shape.get().transform ?? []).length !== pose.transforms.length
+  const { base, transform } = shape.get()
+  const handles = 'Bezier' in base ? base.Bezier.points.length : 0
+  return (
+    (transform ?? []).length !== pose.transforms.length ||
+    shapePoints(base).length !== pose.points.length ||
+    handles !== pose.handles.length
+  )
 }
 
 function Grip(props: { handle: Handle; space: PreviewSpace }) {
@@ -112,7 +123,7 @@ function Grip(props: { handle: Handle; space: PreviewSpace }) {
           class={`scene-handle scene-handle-${props.handle.kind}`}
           classList={{ 'scene-handle-locked': props.handle.locked, 'scene-handle-path': props.handle.onPath }}
           style={{ left: `${at()[0]}px`, top: `${at()[1]}px`, cursor: props.handle.locked ? 'not-allowed' : props.handle.cursor }}
-          title={props.handle.locked ? `${props.handle.label} can't be dragged while it's random or on a path` : props.handle.label}
+          title={props.handle.locked ? `${props.handle.label} can't be dragged while it's random, on a path, or hidden` : props.handle.label}
           onPointerDown={press}
         />
       )}
@@ -120,10 +131,11 @@ function Grip(props: { handle: Handle; space: PreviewSpace }) {
   )
 }
 
-/** The topmost layer with a shape at a point in the scene */
+/** The topmost layer showing a shape at a point in the scene */
 export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2) {
   for (let index = scene.layers.length - 1; index >= 0; index--) {
-    if (scene.layers[index].shape && encloses(outlines[index] ?? [], point)) return index
+    const { shape, hidden } = scene.layers[index]
+    if (shape && !hidden && encloses(outlines[index] ?? [], point)) return index
   }
   return null
 }
@@ -145,12 +157,14 @@ type Write = {
 
 /**
  * How a drag changes a prop: the value itself, a parameter's default, or a track's key at the playhead, which is added
- * if there isn't one so that the rest of the track stays as it was. A random value or a sweep has nothing to change.
+ * if there isn't one so that the rest of the track stays as it was. A random value or a sweep has nothing to change, and
+ * nor has a hidden track, as what it shows isn't what's at the playhead.
  */
 function writer(scene: Lens<Scene>, time: number): Write {
   const sameMoment = (at: number) => Math.abs(at - time) < SAME_MOMENT
   return {
     can(prop, like) {
+      if (isHidden(prop)) return false
       if ('Fixed' in prop) return true
       if ('Track' in prop) return prop.Track.keys.length > 0
       return 'Param' in prop && paramFits(scene.get().params?.[prop.Param], like)
@@ -190,6 +204,33 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
   const across = (local: Vec2) => Math.abs(local[0])
   const down = (local: Vec2) => Math.abs(local[1])
 
+  const pointHandle = (index: number, prop: Lens<Prop<Vec2>>): Handle => ({
+    label: `Point ${index + 1}`,
+    kind: 'point',
+    cursor: 'move',
+    at: apply(toScene, pose.points[index]),
+    locked: !write.can(prop.get(), [0, 0]),
+    drag: (to) => write.to(prop, roundedPoint(toLocal(to))),
+  })
+
+  /** One of the two ends of a bezier's handle, either side of its point, which move as one */
+  const curveHandle = (index: number, prop: Lens<Prop<Vec2>>, side: 1 | -1): Handle => {
+    const [x, y] = pose.points[index]
+    const [offsetX, offsetY] = pose.handles[index]
+    return {
+      label: `Point ${index + 1} handle`,
+      kind: 'bezier',
+      cursor: 'move',
+      at: apply(toScene, [x + offsetX * side, y + offsetY * side]),
+      arm: apply(toScene, [x, y]),
+      locked: !write.can(prop.get(), [0, 0]),
+      drag(to) {
+        const [toX, toY] = toLocal(to)
+        write.to(prop, roundedPoint([(toX - x) * side, (toY - y) * side]))
+      },
+    }
+  }
+
   const center = middle(pose)
   const handles = [moveHandle(list, pose, write, center), scaleHandle(list, pose, write, [right, top])]
   if ('Circle' in current) {
@@ -209,18 +250,18 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write): Ha
       size('Width', field(rect, 'width'), [right, 0], (local) => across(local) * 2),
       size('Height', field(rect, 'height'), [0, top], (local) => down(local) * 2),
     )
-  } else {
-    const points = field(variant(base, 'Polygon'), 'points')
-    pose.points.forEach((point, index) => {
-      const prop = item(points, index)
-      handles.push({
-        label: `Point ${index + 1}`,
-        kind: 'point',
-        cursor: 'move',
-        at: apply(toScene, point),
-        locked: !write.can(prop.get(), [0, 0]),
-        drag: (to) => write.to(prop, roundedPoint(toLocal(to))),
-      })
+  } else if ('Polygon' in current || 'Route' in current) {
+    const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Route'), 'points')
+    pose.points.forEach((_, index) => handles.push(pointHandle(index, item(points, index))))
+  } else if ('Bezier' in current) {
+    const points = field(variant(base, 'Bezier'), 'points')
+    const point = (index: number) => item(points, index)
+    pose.points.forEach((_, index) => handles.push(pointHandle(index, field(point(index), 'point'))))
+    // over the points, so a handle pulled back onto its point can still be pulled off it. The ends only have the one side.
+    pose.points.forEach((_, index) => {
+      const prop = field(point(index), 'handle')
+      if (index < pose.points.length - 1) handles.push(curveHandle(index, prop, 1))
+      if (index > 0) handles.push(curveHandle(index, prop, -1))
     })
   }
   return handles
@@ -245,11 +286,16 @@ function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view
     return [
       {
         handles: [...seenThrough(shapeHandles(path, pathPose, write), pathView), ...further.handles],
-        paths: [pathPose.outline.map((point) => apply(pathView, point)), ...further.paths],
+        paths: [traced(path.get().base, pathPose).map((point) => apply(pathView, point)), ...further.paths],
       },
     ]
   })
   return { handles: parts.flatMap(({ handles }) => handles), paths: parts.flatMap(({ paths }) => paths) }
+}
+
+/** The line that goes along a shape's edge, back to where it started if it's the kind that does */
+function traced(base: Shape['base'], { outline }: RenderedShape) {
+  return isOpen(base) ? outline : [...outline, ...outline.slice(0, 1)]
 }
 
 /** A path's handles as they are in the scene being shown */
@@ -261,6 +307,7 @@ function seenThrough(handles: Handle[], view: Affine): Handle[] {
     label: `Path ${handle.label.toLowerCase()}`,
     onPath: true,
     at: apply(view, handle.at),
+    arm: handle.arm && apply(view, handle.arm),
     drag: (to, proportional) => handle.drag(apply(back, to), proportional),
   }))
 }

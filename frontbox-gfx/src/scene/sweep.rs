@@ -4,18 +4,18 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::scene::{Animatable, Env, Shape};
 
-/// A position that goes once around the edge of a shape
+/// A position that goes once around the edge of a shape, or along a route or bezier from one end to the other
 ///
 /// The path is a whole [`Shape`], so its transforms say where it is: a circle moved to a point is an orbit of that point.
 /// It starts where the shape's outline does and goes the way that does, which is clockwise in a scene whose y runs down
-/// for everything but a polygon, whose points say. An ellipse goes at an even angle, and the others at an even speed.
+/// for everything but those made of points, which say. An ellipse goes at an even angle, and the others at an even speed.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sweep {
   pub path: Box<Shape>,
   /// Seconds. It waits at the start of the path until then.
   pub start: f32,
-  /// Seconds. It stays at the end of the path from then on, which is back where it started.
+  /// Seconds. It stays at the end of the path from then on, which for all but a route or bezier is back where it started.
   pub end: f32,
 }
 

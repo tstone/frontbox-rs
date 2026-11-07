@@ -12,6 +12,10 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub name: Option<String>,
+  /// Left out when the scene is drawn. It's still there to go back to, and still has to be something the scene can play.
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+  pub hidden: bool,
   pub fill: Fill,
   /// `None` covers the whole viewport
   #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -21,11 +25,16 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, fill, shape: None }
+    Self { name: None, hidden: false, fill, shape: None }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
     self.name = Some(name.into());
+    self
+  }
+
+  pub fn hidden(mut self) -> Self {
+    self.hidden = true;
     self
   }
 

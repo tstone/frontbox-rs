@@ -213,6 +213,13 @@
   border-radius: 50%;
 }
 
+.scene-handle-bezier {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 1px;
+}
+
 /* a color of its own, so it can't be taken for the shape going along it */
 .scene-handles {
   --scene-path: #ff4fd8;
@@ -247,11 +254,16 @@
   filter: drop-shadow(0 0 1px #000);
 }
 
-.scene-paths polygon {
+.scene-paths polyline {
   fill: none;
   stroke: var(--scene-path);
   stroke-dasharray: 6 4;
   stroke-width: 1.5;
+}
+
+.scene-paths .scene-arm {
+  stroke-dasharray: none;
+  stroke-width: 1;
 }
 
 /* the last good render, kept up while the source doesn't parse */
@@ -324,6 +336,29 @@
   font-size: 0.875rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.scene-ping {
+  border-radius: var(--radius-sm);
+  animation: scene-ping 1.6s ease-out;
+}
+
+/* around the field and not on it, in the room its item leaves, as a line on the field would run into its label */
+@keyframes scene-ping {
+  0%,
+  35% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow:
+      0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
+      0 0 0 6px var(--accent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow:
+      0 0 0 5px transparent,
+      0 0 0 6px transparent;
+  }
 }
 
 .scene-prop-header {
@@ -611,6 +646,44 @@
   min-width: 0;
   color: var(--text);
   font-weight: 600;
+}
+
+.scene-eye {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scene-eye:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-eye:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.scene-eye svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  margin: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.scene-item-hidden {
+  opacity: 0.5;
 }
 
 .scene-item-name {
@@ -1161,14 +1234,40 @@
   background: var(--bg);
 }
 
+.scene-timeline-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.scene-timeline-hidden .scene-timeline-label,
+.scene-timeline-hidden .scene-timeline-lane {
+  opacity: 0.45;
+}
+
 .scene-timeline-label {
+  flex: 1;
   overflow: hidden;
-  padding-right: 0.75rem;
+  min-width: 0;
+  padding: 0 0.75rem 0 0;
+  border: none;
+  background: none;
   color: var(--muted);
   font-size: 0.8125rem;
   line-height: 1.75rem;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-timeline-label:hover {
+  color: var(--text);
+}
+
+.scene-timeline-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .scene-timeline-ruler {

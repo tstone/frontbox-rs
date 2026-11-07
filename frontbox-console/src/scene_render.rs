@@ -35,13 +35,14 @@ pub(crate) fn render_scene(
   time: f32,
   cycle: Option<u32>,
 ) -> Result<RenderedScene, String> {
-  let scene = read(source)?;
-  let (width, height, device_size) = points(&scene, size, &target)?;
-  let images = images(&scene, content)?;
+  let (scene, preview) = read(source)?;
+  let drawn = preview.as_ref().unwrap_or(&scene);
+  let (width, height, device_size) = points(drawn, size, &target)?;
+  let images = images(drawn, content)?;
   let (shown, time) = match cycle {
-    Some(cycle) => (scene.clone(), scene.cycle_time(cycle, time)),
+    Some(cycle) => (drawn.clone(), drawn.cycle_time(cycle, time)),
     None => {
-      let middle = scene.middle_cycle();
+      let middle = drawn.middle_cycle();
       let time = middle.middle_cycle_time(time);
       (middle, time)
     }
@@ -78,7 +79,8 @@ pub(crate) fn render_clip(
   content: Option<Content>,
   cycle: u32,
 ) -> Result<Vec<u8>, String> {
-  let scene = read(source)?;
+  let (scene, preview) = read(source)?;
+  let scene = preview.unwrap_or(scene);
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
@@ -120,14 +122,17 @@ pub(crate) fn render_clip(
   Ok(clip)
 }
 
-fn read(source: SceneSource) -> Result<Scene, String> {
-  let scene = match source {
-    SceneSource::Ron(ron) => file::load(&ron).map_err(|err| err.to_string())?,
-    SceneSource::Definition(scene) => {
-      scene.check().map_err(|err| err.to_string())?;
-      scene
-    }
-  };
+/// The scene, and what to draw in its place if it's only being previewed
+fn read(source: SceneSource) -> Result<(Scene, Option<Scene>), String> {
+  match source {
+    SceneSource::Ron(ron) => Ok((file::load(&ron).map_err(|err| err.to_string())?, None)),
+    SceneSource::Definition(scene) => Ok((checked(scene)?, None)),
+    SceneSource::Preview { scene, shown } => Ok((checked(scene)?, Some(checked(shown)?))),
+  }
+}
+
+fn checked(scene: Scene) -> Result<Scene, String> {
+  scene.check().map_err(|err| err.to_string())?;
   Ok(scene)
 }
 
@@ -166,6 +171,7 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     min: pose.bounds.min.to_array(),
     max: pose.bounds.max.to_array(),
     points: pose.points.iter().map(|p| p.to_array()).collect(),
+    handles: pose.handles.iter().map(|p| p.to_array()).collect(),
     hole: pose.hole,
     outline: pose.outline.iter().map(|p| p.to_array()).collect(),
     paths: pose.paths.iter().map(|path| path.as_ref().map(rendered_shape)).collect(),
@@ -428,6 +434,45 @@ mod tests {
     let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), None, 0.0, None).unwrap();
     assert_eq!(from_definition.colors, from_ron.colors);
     assert_eq!(from_definition.ron, from_ron.ron);
+  }
+
+  fn solid(color: &str, timing: &str) -> Scene {
+    let source = format!("(version: 9, viewport: Sequence, {timing} layers: [(fill: (base: Solid(Fixed({color}))))])");
+    render_scene(ron(&source), SIZE, no_leds(), None, 0.0, None).unwrap().scene
+  }
+
+  #[test]
+  fn a_preview_draws_what_it_shows_and_gives_back_the_scene() {
+    let (scene, shown) = (solid("255, 0, 0, 255", ""), solid("0, 0, 255, 255", ""));
+    let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_leds(), None, 0.0, None).unwrap();
+    assert_eq!(preview.colors[0..3], [0, 0, 255]);
+    assert_eq!(preview.ron, from_definition.ron);
+  }
+
+  #[test]
+  fn a_clip_of_a_preview_is_of_what_it_shows() {
+    let timing = "timing: (duration: 1.0),";
+    let source = SceneSource::Preview { scene: solid("255, 0, 0, 255", timing), shown: solid("0, 0, 255, 255", timing) };
+    let clip = render_clip(0, source, SIZE, no_leds(), None, 0).unwrap();
+    let header = u32::from_le_bytes(clip[0..4].try_into().unwrap()) as usize;
+    assert_eq!(clip[4 + header..7 + header], [0, 0, 255]);
+  }
+
+  #[test]
+  fn what_a_client_keeps_on_a_track_for_itself_doesnt_reach_the_file() {
+    let source = r#"(
+      version: 9,
+      viewport: Sequence,
+      timing: (duration: 1.0),
+      layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (9, 8, 7, 255))]))))],
+    )"#;
+    let scene = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap().scene;
+    let mut json = serde_json::to_value(&scene).unwrap();
+    json["layers"][0]["fill"]["base"]["Solid"]["Track"]["hidden"] = true.into();
+    let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_leds(), None, 0.0, None);
+    let back = back.unwrap();
+    assert!(!back.ron.contains("hidden"), "{}", back.ron);
   }
 
   #[test]

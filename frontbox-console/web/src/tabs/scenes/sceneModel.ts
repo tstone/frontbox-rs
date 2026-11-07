@@ -1,5 +1,6 @@
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
+import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { Curve } from '../../types/generated/Curve'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
@@ -7,6 +8,8 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { Scene } from '../../types/generated/Scene'
+import type { SceneSource } from '../../types/generated/SceneSource'
+import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Spread } from '../../types/generated/Spread'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
@@ -167,6 +170,16 @@ export function freshParamName(scene: Scene, base: string) {
   return `${base}_${n}`
 }
 
+/** The points of a shape made of them, which is none for the others */
+export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
+  if ('Polygon' in base) return base.Polygon.points
+  if ('Route' in base) return base.Route.points
+  return 'Bezier' in base ? base.Bezier.points.map(({ point }) => point) : []
+}
+
+/** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
+export const isOpen = (base: ShapeNode) => 'Route' in base || 'Bezier' in base
+
 /** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
   const reach = Math.min(x.max - x.min, y.max - y.min) / 4
@@ -202,11 +215,12 @@ export function withParam(scene: Scene, name: string, value: SceneValue): Scene 
 
 type PropLens = Lens<Prop<SceneValue>>
 
-/** Every prop in a scene: where it is, what to call it, and the ranges its sliders use */
+/** Every prop in a scene: where it is, which layer it's in, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surface: Surface) {
-  const uses: { lens: PropLens; label: string; ranges: Ranges }[] = []
+  const uses: { lens: PropLens; layer: number; label: string; ranges: Ranges }[] = []
+  let layerIndex = 0
   const use = (lens: unknown, label: string, ranges: Ranges) => {
-    uses.push({ lens: lens as PropLens, label, ranges })
+    uses.push({ lens: lens as PropLens, layer: layerIndex, label, ranges })
     if ('Sweep' in (lens as PropLens).get()) {
       const path = `${label} · Path`
       shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
@@ -241,14 +255,23 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
       const rect = variant(base, 'Rect')
       use(field(rect, 'width'), `${label} · Width`, both(across))
       use(field(rect, 'height'), `${label} · Height`, both(down))
+    } else if ('Pinwheel' in current) {
+      use(field(variant(base, 'Pinwheel'), 'blades'), `${label} · Blades`, both(BLADES))
+    } else if ('Bezier' in current) {
+      const points = field(variant(base, 'Bezier'), 'points')
+      points.get().forEach((_, i) => {
+        use(field(item(points, i), 'point'), `${label} · Point ${i + 1}`, pointRanges(surface))
+        use(field(item(points, i), 'handle'), `${label} · Point ${i + 1} · Handle`, pointRanges(surface))
+      })
     } else {
-      const points = field(variant(base, 'Polygon'), 'points')
+      const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Route'), 'points')
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
   }
 
   const layers = field(scene, 'layers')
   layers.get().forEach(({ fill, shape: layerShape }, index) => {
+    layerIndex = index
     const layer = item(layers, index)
     const label = layerLabel(layers.get()[index], index)
 
@@ -265,7 +288,10 @@ function propUses(scene: Lens<Scene>, surface: Surface) {
       use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
     }
     const adjust = orEmpty(field(fillLens, 'adjust'))
-    adjust.get().forEach((_, i) => use(variant(item(adjust, i), 'HueShift'), `${label} · Hue shift`, both(HUE)))
+    adjust.get().forEach((current, i) => {
+      const { label: name, range } = ADJUSTS[adjustKind(current)]
+      use(adjustAmount(item(adjust, i)), `${label} · ${name}`, both(range))
+    })
 
     if (layerShape) shape(field(layer, 'shape') as Lens<Shape>, label, `${label} · Shape`)
   })
@@ -287,14 +313,58 @@ function referencedParams(scene: Scene) {
   return names
 }
 
-export type SceneTrack = { prop: PropLens; label: string; ranges: Ranges }
+export type SceneTrack = { prop: PropLens; layer: number; label: string; ranges: Ranges }
 
 /** Every prop in a scene that changes along the timeline */
 export function sceneTracks(scene: Lens<Scene>, surface: Surface): SceneTrack[] {
-  return propUses(scene, surface).flatMap(({ lens, label, ranges }) => {
+  return propUses(scene, surface).flatMap(({ lens, layer, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, label, ranges }] : []
+    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, label, ranges }] : []
   })
+}
+
+/** A time no scene gets to, which a sweep waits for at the start of its path */
+const NEVER = 1e30
+
+/**
+ * Whether a track is set to stay put. That's only for the editing and isn't part of the scene: it's on the track so that
+ * it goes where the track goes, the machine pays it no attention, and a scene read back from RON doesn't have it.
+ */
+export const isHidden = (prop: Prop<SceneValue>) => (Object.values(prop)[0] as { hidden?: boolean }).hidden === true
+
+/** `prop`, a track, shown or hidden */
+export function withHidden(prop: Prop<SceneValue>, hidden: boolean) {
+  const [[kind, track]] = Object.entries(prop)
+  return { [kind]: { ...track, hidden: hidden || undefined } } as Prop<SceneValue>
+}
+
+/** A spread that can only pick its middle */
+function middleOf(spread: Spread): Spread {
+  const middle = (range: [number, number]): [number, number] => [midpoint(range), midpoint(range)]
+  if ('Float' in spread) return { Float: middle(spread.Float) }
+  if ('Vec2' in spread) return { Vec2: { x: middle(spread.Vec2.x), y: middle(spread.Vec2.y) } }
+  const { hue, brightness, alpha } = spread.Color
+  return { Color: { hue: middle(hue), brightness: middle(brightness), alpha: middle(alpha) } }
+}
+
+/**
+ * A track that stays on its first value. Only the machine knows what a random prop's first pick comes to, so that stays
+ * on the middle of its spread, as it does for anything else that needs a value for it here.
+ */
+function held(prop: Prop<SceneValue>): Prop<SceneValue> {
+  if ('Sweep' in prop) return { Sweep: { ...prop.Sweep, start: NEVER, end: 2 * NEVER } }
+  if ('Random' in prop) return { Random: { ...prop.Random, spread: middleOf(prop.Random.spread), force_unique: false } }
+  return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
+}
+
+/** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
+export function sceneSource(scene: Scene): SceneSource {
+  let shown = scene
+  const tracks = sceneTracks({ get: () => shown, set: (edited) => (shown = edited) }, null)
+  for (const { prop } of tracks) {
+    if (isHidden(prop.get())) prop.set(held(prop.get()))
+  }
+  return shown === scene ? { Definition: scene } : { Preview: { scene, shown } }
 }
 
 /** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */
@@ -436,9 +506,39 @@ export const both = (range: Range): Ranges => [range, range]
 export const UNIT: Range = { min: 0, max: 1, step: 0.01, rest: 0 }
 export const ROTATION: Range = { min: -180, max: 180, step: 1, rest: 0 }
 export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
+const OPACITY: Range = { ...UNIT, rest: 1 }
+/** A multiplier that can go either way, and leaves things alone at 1 */
+const FACTOR: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
 const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
+/** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
+export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
+
+export type AdjustKind = KeysOf<ColorAdjust>
+
+/** What to call each kind of adjust, what to call its amount, and its range, which rests where it changes nothing */
+export const ADJUSTS: Record<AdjustKind, { label: string; amount: string; paramName: string; range: Range }> = {
+  HueShift: { label: 'Hue shift', amount: 'Degrees', paramName: 'hue_shift', range: HUE },
+  Opacity: { label: 'Opacity', amount: 'Opacity', paramName: 'opacity', range: OPACITY },
+  Brightness: { label: 'Brightness', amount: 'Brightness', paramName: 'brightness', range: FACTOR },
+  Contrast: { label: 'Contrast', amount: 'Contrast', paramName: 'contrast', range: FACTOR },
+}
+
+export const adjustKind = (adjust: ColorAdjust) => Object.keys(adjust)[0] as AdjustKind
+
+/** The amount of an adjust of any kind */
+export function adjustAmount(lens: Lens<ColorAdjust>): Lens<Prop<number>> {
+  return {
+    get: () => Object.values(lens.get())[0],
+    set: (value) => lens.set({ [adjustKind(lens.get())]: value } as ColorAdjust),
+  }
+}
+
+/** An adjust that changes nothing, until it's changed */
+export function newAdjust(kind: AdjustKind) {
+  return { [kind]: { Fixed: ADJUSTS[kind].range.rest } } as ColorAdjust
+}
 
 /**
  * Any of an animated image's frames, or a good many until it's known how many there are. A fraction of a frame is

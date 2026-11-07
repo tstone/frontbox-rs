@@ -1,7 +1,7 @@
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
+import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import {
@@ -13,6 +13,7 @@ import {
   sceneRender,
   type SceneClip,
 } from '../../state/sceneRender'
+import type { Prop } from '../../types/generated/Prop'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { Scene } from '../../types/generated/Scene'
 import type { SceneSource } from '../../types/generated/SceneSource'
@@ -21,8 +22,8 @@ import ConfigPanel from './ConfigPanel'
 import LedPicker, { EVERY_LED, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
-import { Dropdown, SceneContext, SurfaceContext } from './SceneFields'
-import { changesEachCycle, cycleCount, withoutDroppedParams, withoutDroppedTiming, type Lens, type Vec2 } from './sceneModel'
+import { Dropdown, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
+import { changesEachCycle, cycleCount, sceneSource, withoutDroppedParams, withoutDroppedTiming, type Lens, type SceneTrack, type SceneValue, type Vec2 } from './sceneModel'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 import './ScenesTab.css'
@@ -79,6 +80,8 @@ export default function ScenesTab() {
   const [chosenPlane, setChosenPlane] = createSignal<number | null>(null)
   const [ledPick, setLedPick] = createSignal<LedPick>(EVERY_LED)
   const openLayer = createSignal<number | null>(0)
+  const [sourceTab, setSourceTab] = createSignal('config')
+  const revealing = createSignal<Prop<SceneValue> | null>(null)
   // what's on show, which stays put while the source doesn't parse
   const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
 
@@ -175,7 +178,7 @@ export default function ScenesTab() {
     set: (next) => {
       const edited = withoutDroppedTiming(scene()!, withoutDroppedParams(scene()!, next))
       setScene(edited)
-      send({ Definition: edited })
+      send(sceneSource(edited))
     },
   }
 
@@ -225,6 +228,15 @@ export default function ScenesTab() {
     if (under !== null || hasShape(open())) setOpen(under)
   }
 
+  /** Brings a track's field up in the config, from wherever that's been left */
+  const reveal = ({ prop, layer }: SceneTrack) => {
+    batch(() => {
+      setSourceTab('config')
+      openLayer[1](layer)
+      revealing[1](prop.get())
+    })
+  }
+
   const handles = (space: PreviewSpace) => <ShapeHandles space={space} layer={selected()} pose={selectedPose()} time={playback.position()} />
 
   const [rawSize, setRawSize] = createSignal<Vec2>([0, 0])
@@ -251,6 +263,7 @@ export default function ScenesTab() {
   return (
     <SceneContext.Provider value={editing}>
       <SurfaceContext.Provider value={surface}>
+        <RevealContext.Provider value={revealing}>
         <Splitter.Root
           class="scenes-tab"
           orientation="vertical"
@@ -275,7 +288,7 @@ export default function ScenesTab() {
                       <div class="scene-editing" inert={error() !== null}>
                         <ParametersPanel />
                       </div>
-                      <Tabs.Root class="scene-tabs" defaultValue="config">
+                      <Tabs.Root class="scene-tabs" value={sourceTab()} onValueChange={(details) => setSourceTab(details.value)}>
                         <Tabs.List>
                           <Tabs.Trigger value="config">Config</Tabs.Trigger>
                           <Tabs.Trigger value="raw">Raw</Tabs.Trigger>
@@ -397,11 +410,12 @@ export default function ScenesTab() {
           <Splitter.Panel id="timeline">
             <Show when={scene() !== null}>
               <div class="scene-editing" inert={error() !== null}>
-                <Timeline playback={playback} rendering={playback.playing() && sceneClipRendering()} error={sceneClipError()} />
+                <Timeline playback={playback} rendering={playback.playing() && sceneClipRendering()} error={sceneClipError()} reveal={reveal} />
               </div>
             </Show>
           </Splitter.Panel>
         </Splitter.Root>
+        </RevealContext.Provider>
       </SurfaceContext.Provider>
     </SceneContext.Provider>
   )

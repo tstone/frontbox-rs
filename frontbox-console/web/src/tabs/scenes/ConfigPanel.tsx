@@ -1,6 +1,7 @@
 import { Accordion } from '@ark-ui/solid/accordion'
 import { Index, Match, Show, Switch, useContext, type Signal } from 'solid-js'
 import { contentImageInfo } from '../../state/contentImages'
+import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { ColorSpace } from '../../types/generated/ColorSpace'
@@ -14,15 +15,19 @@ import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
 import { ImagePicker } from './ImagePicker'
-import { Dropdown, FieldRow, NumberField, PropField, SceneContext, SurfaceContext } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, NumberField, PropField, SceneContext, SurfaceContext } from './SceneFields'
 import {
+  adjustAmount,
+  adjustKind,
+  ADJUSTS,
+  BLADES,
   both,
   field,
   frameRanges,
-  HUE,
   item,
   layerLabel,
   moved,
+  newAdjust,
   newShapeSize,
   orElse,
   radius,
@@ -32,13 +37,16 @@ import {
   ROTATION,
   roundRange,
   scaleRanges,
+  shapePoints,
   sizeRanges,
   startingValue,
   translateRanges,
   UNIT,
   variant,
+  type AdjustKind,
   type Lens,
   type Range,
+  type Surface,
   type Vec2,
   type TransformSpace,
 } from './sceneModel'
@@ -47,7 +55,7 @@ type Fill = Layer['fill']
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type Shape = NonNullable<Layer['shape']>
-type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon'
+type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Route' | 'Bezier'
 
 /** How much of a new ring's reach is its hole */
 const RING_HOLE = 0.75
@@ -78,13 +86,20 @@ const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
   { value: 'Ellipse', label: 'Ellipse' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Polygon', label: 'Polygon' },
+  { value: 'Pinwheel', label: 'Pinwheel' },
+]
+/** A path has to be something, and can also be a line, which has no inside to draw as a shape */
+const PATH_OPTIONS: { value: ShapeKind; label: string }[] = [
+  ...SHAPE_OPTIONS.slice(1),
+  { value: 'Route', label: 'Route' },
+  { value: 'Bezier', label: 'Bezier' },
 ]
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
   { value: 'Translate', label: 'Translate' },
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
 ]
-const ADJUST_OPTIONS: { value: 'HueShift'; label: string }[] = [{ value: 'HueShift', label: 'Hue shift' }]
+const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 
 type TransformKind = 'Translate' | 'Rotate' | 'Scale'
 
@@ -146,10 +161,15 @@ function LayerList(props: { open: Signal<number | null> }) {
               <header>
                 <Accordion.ItemTrigger>
                   <Accordion.ItemIndicator>›</Accordion.ItemIndicator>
-                  <span class="scene-item-name" title={layerLabel(layer(), index)}>
+                  <span class="scene-item-name" classList={{ 'scene-item-hidden': layer().hidden }} title={layerLabel(layer(), index)}>
                     {layerLabel(layer(), index)}
                   </span>
                 </Accordion.ItemTrigger>
+                <EyeButton
+                  label={layerLabel(layer(), index)}
+                  hidden={layer().hidden === true}
+                  onChange={(hidden) => field(item(layers, index), 'hidden').set(hidden || undefined)}
+                />
                 <ItemButtons
                   title={layerLabel(layer(), index)}
                   list={layers}
@@ -342,7 +362,8 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[]; space: ColorSpace }
       if (list[i].at - list[i - 1].at > list[index].at - list[index - 1].at) index = i
     }
     const [before, after] = [list[index - 1], list[index]]
-    const added: Stop = { at: ((before?.at ?? 0) + (after?.at ?? 1)) / 2, color: before?.color ?? { Fixed: WHITE } }
+    // its own copy, as a prop is told from another by which one it is
+    const added: Stop = { at: ((before?.at ?? 0) + (after?.at ?? 1)) / 2, color: before ? structuredClone(before.color) : { Fixed: WHITE } }
     stops.set([...list.slice(0, index), added, ...list.slice(index)])
   }
 
@@ -417,7 +438,7 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
     if (next === kind()) return
     if (next === 'None') return lens.set(undefined)
     // one shape turned into another takes up the same room
-    if (lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get())))
+    if (lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get(), surface())))
     else lens.set(newShape(next))
   }
 
@@ -426,7 +447,7 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
   return (
     <section class="scene-group">
       <FieldRow label={label}>
-        <Dropdown label={label} options={path ? SHAPE_OPTIONS.slice(1) : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
+        <Dropdown label={label} options={path ? PATH_OPTIONS : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
       </FieldRow>
       <Switch>
         <Match when={kind() === 'Circle'}>
@@ -444,8 +465,17 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
           <PropField label="Width" paramName="width" fallback={0} ranges={both(ranges()[0])} lens={field(variant(base, 'Rect'), 'width')} />
           <PropField label="Height" paramName="height" fallback={0} ranges={both(ranges()[1])} lens={field(variant(base, 'Rect'), 'height')} />
         </Match>
+        <Match when={kind() === 'Pinwheel'}>
+          <PropField label="Blades" paramName="blades" fallback={0} ranges={both(BLADES)} lens={field(variant(base, 'Pinwheel'), 'blades')} />
+        </Match>
         <Match when={kind() === 'Polygon'}>
           <PolygonEditor lens={field(variant(base, 'Polygon'), 'points')} />
+        </Match>
+        <Match when={kind() === 'Route'}>
+          <PolygonEditor open lens={field(variant(base, 'Route'), 'points')} />
+        </Match>
+        <Match when={kind() === 'Bezier'}>
+          <BezierEditor lens={field(variant(base, 'Bezier'), 'points')} />
         </Match>
       </Switch>
       <Show when={kind() !== 'None'}>
@@ -462,6 +492,17 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ring') return { Ring: { radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { r1: { Fixed: height / 2 }, r2: { Fixed: width / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
+  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! } } }
+  // a wave across it, level through each of its points
+  const wave: Vec2[] = [
+    [-width / 2, height / 2],
+    [0, -height / 2],
+    [width / 2, height / 2],
+  ]
+  if (kind === 'Route') return { Route: { points: wave.map((point) => ({ Fixed: point })) } }
+  if (kind === 'Bezier') {
+    return { Bezier: { points: wave.map((point) => ({ point: { Fixed: point }, handle: { Fixed: [width / 4, 0] } })) } }
+  }
   const corners: Vec2[] = [
     [-width / 2, -height / 2],
     [width / 2, -height / 2],
@@ -471,8 +512,8 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   return { Polygon: { points: corners.map((corner) => ({ Fixed: corner })) } }
 }
 
-/** How wide and tall a shape is in its own space */
-function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
+/** How wide and tall a shape is in its own space. A pinwheel runs past the edges, so what comes after it is a new size. */
+function shapeSize(base: ShapeNode, scene: Scene, surface: Surface): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
   if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
   if ('Ring' in base) {
@@ -481,21 +522,24 @@ function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   }
   if ('Ellipse' in base) return [value(base.Ellipse.r2) * 2, value(base.Ellipse.r1) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
-  const points = base.Polygon.points.map((point) => startingValue(point, scene, [0, 0] as Vec2))
+  if ('Pinwheel' in base) return [newShapeSize(surface), newShapeSize(surface)]
+  const points = shapePoints(base).map((point) => startingValue(point, scene, [0, 0] as Vec2))
   const reach = (axis: 0 | 1) => Math.max(...points.map((p) => p[axis])) - Math.min(...points.map((p) => p[axis]))
   return [reach(0), reach(1)]
 }
 
-function PolygonEditor(props: { lens: Lens<Prop<Vec2>[]> }) {
+/** The points of a polygon, or with `open` of a line that doesn't come back around */
+function PolygonEditor(props: { lens: Lens<Prop<Vec2>[]>; open?: boolean }) {
   const scene = useContext(SceneContext)!
   const surface = useContext(SurfaceContext)!
   const points = props.lens
 
-  // halfway back to the first point, so the polygon keeps its outline
+  // halfway back to the first point, so the polygon keeps its outline. A line carries on from its end.
   const addPoint = () => {
     const list = points.get()
     const at = (point: Prop<Vec2>) => startingValue(point, scene.get(), [0, 0])
     const [first, last] = [at(list[0]), at(list[list.length - 1])]
+    if (props.open) return points.set([...list, { Fixed: pastEnd(at(list[list.length - 2] ?? list[0]), last) }])
     points.set([...list, { Fixed: [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2] }])
   }
 
@@ -503,7 +547,7 @@ function PolygonEditor(props: { lens: Lens<Prop<Vec2>[]> }) {
     <>
       <Index each={points.get()}>
         {(_, index) => (
-          <ListItem title={`Point ${index + 1}`} list={points} index={index} canRemove={points.get().length > 3}>
+          <ListItem title={`Point ${index + 1}`} list={points} index={index} canRemove={points.get().length > (props.open ? 2 : 3)}>
             <PropField
               label="Position"
               paramName="point"
@@ -517,6 +561,52 @@ function PolygonEditor(props: { lens: Lens<Prop<Vec2>[]> }) {
       <AddButton onClick={addPoint}>Add point</AddButton>
     </>
   )
+}
+
+function BezierEditor(props: { lens: Lens<BezierPoint[]> }) {
+  const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
+  const points = props.lens
+
+  // carrying on from the end the same way, with the end's handle
+  const addPoint = () => {
+    const list = points.get()
+    const at = ({ point }: BezierPoint) => startingValue(point, scene.get(), [0, 0])
+    const last = list[list.length - 1]
+    const point = pastEnd(at(list[list.length - 2] ?? last), at(last))
+    points.set([...list, { point: { Fixed: point }, handle: { Fixed: startingValue(last.handle, scene.get(), [0, 0]) } }])
+  }
+
+  return (
+    <>
+      <Index each={points.get()}>
+        {(_, index) => (
+          <ListItem title={`Point ${index + 1}`} list={points} index={index} canRemove={points.get().length > 2}>
+            <PropField
+              label="Position"
+              paramName="point"
+              fallback={[0, 0] as Vec2}
+              ranges={pointRanges(surface())}
+              lens={field(item(points, index), 'point')}
+            />
+            <PropField
+              label="Handle"
+              paramName="handle"
+              fallback={[0, 0] as Vec2}
+              ranges={pointRanges(surface())}
+              lens={field(item(points, index), 'handle')}
+            />
+          </ListItem>
+        )}
+      </Index>
+      <AddButton onClick={addPoint}>Add point</AddButton>
+    </>
+  )
+}
+
+/** Half as far again along a line's last stretch */
+function pastEnd(before: Vec2, end: Vec2): Vec2 {
+  return [end[0] + (end[0] - before[0]) / 2, end[1] + (end[1] - before[1]) / 2]
 }
 
 function TransformList(props: { lens: Lens<Transform[]>; space: TransformSpace }) {
@@ -586,18 +676,35 @@ function AdjustList(props: { lens: Lens<ColorAdjust[]> }) {
       <Index each={props.lens.get()}>
         {(_, index) => (
           <ListItem title="Adjust" list={props.lens} index={index}>
-            <Dropdown label="Kind of adjust" options={ADJUST_OPTIONS} value="HueShift" onChange={() => {}} />
-            <PropField
-              label="Degrees"
-              paramName="hue_shift"
-              fallback={0}
-              ranges={both(HUE)}
-              lens={variant(item(props.lens, index), 'HueShift')}
-            />
+            <AdjustEditor lens={item(props.lens, index)} />
           </ListItem>
         )}
       </Index>
-      <AddButton onClick={() => props.lens.set([...props.lens.get(), { HueShift: { Fixed: 0 } }])}>Add adjust</AddButton>
+      <AddButton onClick={() => props.lens.set([...props.lens.get(), newAdjust('HueShift')])}>Add adjust</AddButton>
+    </>
+  )
+}
+
+function AdjustEditor(props: { lens: Lens<ColorAdjust> }) {
+  const kind = () => adjustKind(props.lens.get())
+  const adjust = () => ADJUSTS[kind()]
+  return (
+    <>
+      <Dropdown
+        label="Kind of adjust"
+        options={ADJUST_OPTIONS}
+        value={kind()}
+        onChange={(next) => {
+          if (next !== kind()) props.lens.set(newAdjust(next))
+        }}
+      />
+      <PropField
+        label={adjust().amount}
+        paramName={adjust().paramName}
+        fallback={adjust().range.rest!}
+        ranges={both(adjust().range)}
+        lens={adjustAmount(props.lens)}
+      />
     </>
   )
 }

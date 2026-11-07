@@ -103,11 +103,12 @@ impl Scene {
     self
       .layers
       .iter()
+      .filter(|layer| !layer.hidden)
       .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, viewport, &env).composite_over(below))
   }
 
   /// Where each layer is drawn, as a closed loop of points in scene units. A layer with no shape outlines the viewport,
-  /// and one that draws nothing has no points.
+  /// and one that draws nothing has no points. A hidden layer has its outline all the same, for going back to edit it.
   pub fn outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
     let env = self.env(frame);
     let viewport = self.viewport.bounds(frame.size);
@@ -138,6 +139,7 @@ impl Scene {
       params: frame.params,
       defaults: &self.params,
       images: frame.images,
+      viewport: self.viewport.bounds(frame.size),
       lap: self.lap(0.0),
     }
   }
@@ -209,6 +211,16 @@ mod tests {
     assert_eq!(error, no_timing("layer \"sparkle\""));
     assert_eq!(error.to_string(), "layer \"sparkle\" changes over time, so the scene needs a timing");
     assert_eq!(scene(Layer::new(changing())).check(), Err(no_timing("layer 2")));
+  }
+
+  #[test]
+  fn a_hidden_layer_isnt_drawn_and_keeps_its_place() {
+    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).hidden()]);
+    assert_eq!(sample(&scene, 1.0, 1.0, 0.5), RED);
+
+    let params = Params::new();
+    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE };
+    assert_eq!(scene.outlines(&frame).len(), 2);
   }
 
   fn turned(degrees: f32) -> Scene {

@@ -9,8 +9,8 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Playback } from './playback'
-import { Dropdown, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
-import { field, item, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
+import { Dropdown, EyeButton, FieldRow, NumberField, SceneContext, SurfaceContext, ValueField } from './SceneFields'
+import { field, isHidden, item, removed, repeats, sceneTracks, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -76,7 +76,7 @@ function along(e: PointerEvent, element: HTMLElement) {
 }
 
 /** A scene's timing, and a track for each keyframed prop, along the bottom of the editor */
-export default function Timeline(props: { playback: Playback; rendering: boolean; error: string | null }) {
+export default function Timeline(props: { playback: Playback; rendering: boolean; error: string | null; reveal: (track: SceneTrack) => void }) {
   const scene = useContext(SceneContext)!
   const surface = useContext(SurfaceContext)!
   const timing = () => scene.get().timing
@@ -164,7 +164,7 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
             </div>
             {/* by position, so an edit doesn't tear down the editor it was made in */}
             <Index each={tracks()} fallback={<p class="scene-note">Set any value to Track to give it a track here.</p>}>
-              {(track) => <TrackRow track={track()} percent={percent} span={span()} />}
+              {(track) => <TrackRow track={track()} percent={percent} span={span()} reveal={props.reveal} />}
             </Index>
             <div class="scene-timeline-playhead" />
           </div>
@@ -303,8 +303,8 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
   )
 }
 
-/** A prop's name and its keys, its picks, or its sweep along the timeline, with a button that follows the mouse for adding a key or a pick */
-function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number }) {
+/** A prop's name and its keys, its picks, or its sweep along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
+function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number; reveal: (track: SceneTrack) => void }) {
   // read through `props`, as a row goes to whichever prop comes to be at its position
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
@@ -333,10 +333,13 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   }
 
   return (
-    <div class="scene-timeline-row">
-      <span class="scene-timeline-label" title={props.track.label}>
-        {props.track.label}
-      </span>
+    <div class="scene-timeline-row" classList={{ 'scene-timeline-hidden': isHidden(prop.get()) }}>
+      <div class="scene-timeline-name">
+        <EyeButton label={props.track.label} hidden={isHidden(prop.get())} onChange={(hidden) => prop.set(withHidden(prop.get(), hidden))} />
+        <button type="button" class="scene-timeline-label" title={`Find ${props.track.label} in Config`} onClick={() => props.reveal(props.track)}>
+          {props.track.label}
+        </button>
+      </div>
       <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
         <Show when={hovering() !== null}>
           <button

@@ -5,7 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Images, Timing};
+use crate::scene::{Bounds, Images, Timing};
 
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
@@ -77,6 +77,8 @@ pub(crate) struct Env<'a> {
   pub params: &'a Params,
   pub defaults: &'a Params,
   pub images: &'a Images,
+  /// What's seen of the scene
+  pub viewport: Bounds,
   /// How far it is around a `Sequence`, in the space being drawn, or `None` in an `Area`
   pub lap: Option<f32>,
 }
@@ -92,6 +94,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none(), lap: None }
+    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None }
   }
 }
