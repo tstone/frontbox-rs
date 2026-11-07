@@ -12,7 +12,8 @@ use palette::{FromColor, Hsl, IntoColor, Srgb};
 /// let red = Rgba([255, 0, 0, 255]);
 /// ```
 ///
-/// Or by using a handful of named colors.
+/// Or by using a handful of named colors. These are tuned for RGB LEDs rather than matched to their web values: LEDs have
+/// no display gamma and the green diode is the strongest, so green is held back and pastels stay well saturated.
 ///
 /// ```rust
 /// # use frontbox_gfx::prelude::*;
@@ -44,6 +45,16 @@ pub trait RgbaColor {
   fn turquoise() -> Self;
   fn lime() -> Self;
   fn orange() -> Self;
+  fn navy() -> Self;
+  fn mint() -> Self;
+  fn gold() -> Self;
+  fn maroon() -> Self;
+  fn olive() -> Self;
+  fn bronze() -> Self;
+  fn coral() -> Self;
+  fn indigo() -> Self;
+  fn peach() -> Self;
+  fn plum() -> Self;
   fn transparent() -> Self;
 
   fn off() -> Self;
@@ -241,25 +252,55 @@ impl RgbaColor for Rgba<u8> {
     Rgba([255, 255, 0, 255])
   }
   fn pink() -> Self {
-    Rgba([255, 192, 203, 255])
+    Rgba([255, 40, 140, 255])
   }
   fn purple() -> Self {
-    Rgba([127, 0, 210, 255])
+    Rgba([120, 0, 255, 255])
   }
   fn cyan() -> Self {
     Rgba([0, 255, 255, 255])
   }
   fn turquoise() -> Self {
-    Rgba([64, 224, 208, 255])
+    Rgba([10, 210, 150, 255])
   }
   fn magenta() -> Self {
     Rgba([255, 0, 255, 255])
   }
   fn lime() -> Self {
-    Rgba([50, 205, 50, 255])
+    Rgba([140, 255, 0, 255])
   }
   fn orange() -> Self {
-    Rgba([255, 165, 0, 255])
+    Rgba([255, 70, 0, 255])
+  }
+  fn navy() -> Self {
+    Rgba([0, 10, 120, 255])
+  }
+  fn mint() -> Self {
+    Rgba([40, 255, 90, 255])
+  }
+  fn gold() -> Self {
+    Rgba([255, 155, 0, 255])
+  }
+  fn maroon() -> Self {
+    Rgba([130, 0, 18, 255])
+  }
+  fn olive() -> Self {
+    Rgba([110, 100, 0, 255])
+  }
+  fn bronze() -> Self {
+    Rgba([140, 40, 5, 255])
+  }
+  fn coral() -> Self {
+    Rgba([255, 50, 35, 255])
+  }
+  fn indigo() -> Self {
+    Rgba([50, 0, 255, 255])
+  }
+  fn peach() -> Self {
+    Rgba([255, 105, 60, 255])
+  }
+  fn plum() -> Self {
+    Rgba([140, 0, 80, 255])
   }
 
   fn default() -> Self {

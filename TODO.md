@@ -46,6 +46,8 @@
 
 ## Scenes/Editor
 
+- Color picker has weird bug where hue isn't selectable if color hasn't first been picked
+- Color picker needs to also show named colors
 - Needs a grid + snap to grid option for everything with points
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
 - Curve preview (static) pop out in timeline
@@ -65,7 +67,7 @@
 - Because of the way LedScene is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
 - Single channel flasher support
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?
-- Expand named color library // related: Declare library colors with FAST and reference by ID
+- Evaluate if declaring named colors with FAST and reference by ID is worth it
 - NeoSeg support
 - Alternate resolver doesn't work with animated inputs
 - FirstWins isn't first. Hashmap does not guarantee order
