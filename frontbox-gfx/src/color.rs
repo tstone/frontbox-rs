@@ -291,7 +291,7 @@ impl RgbaColor for Rgba<u8> {
     Rgba([140, 40, 5, 255])
   }
   fn coral() -> Self {
-    Rgba([255, 50, 35, 255])
+    Rgba([255, 80, 50, 255])
   }
   fn indigo() -> Self {
     Rgba([50, 0, 255, 255])
