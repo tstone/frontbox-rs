@@ -12,6 +12,8 @@ use crate::sound_manager::{SoundManager, SoundManagerCmds};
 pub struct SoundSystem {
   tx: mpsc::UnboundedSender<SoundManagerCmds>,
   completed_rx: mpsc::UnboundedReceiver<CalloutCompleted>,
+  /// Lines asked for that haven't been reported done with
+  callouts_pending: usize,
 }
 
 impl SoundSystem {
@@ -23,7 +25,11 @@ impl SoundSystem {
         tokio::spawn(async move {
           manager.run().await;
         });
-        Ok(Self { tx, completed_rx })
+        Ok(Self {
+          tx,
+          completed_rx,
+          callouts_pending: 0,
+        })
       }
       Err(err) => Err(err),
     }
@@ -37,7 +43,11 @@ impl SoundSystem {
         tokio::spawn(async move {
           manager.run().await;
         });
-        Ok(Self { tx, completed_rx })
+        Ok(Self {
+          tx,
+          completed_rx,
+          callouts_pending: 0,
+        })
       }
       Err(err) => Err(err),
     }
@@ -66,7 +76,14 @@ impl SoundSystem {
   /// Play the wave AND duck any music that is currently playing, then restore the music volume after the sound finishes.
   /// Lines play one at a time, and [`CalloutCompleted`] says when this one is done with.
   pub fn play_callout(&mut self, request: impl Into<CalloutRequest>) {
+    self.callouts_pending += 1;
     let _ = self.tx.send(PlayCallout(request.into()));
+  }
+
+  /// Whether a line is being said or waiting to be, to keep other sounds from talking over it. Known as of the last
+  /// tick, so a line that just ended can still count for up to one.
+  pub fn callout_pending(&self) -> bool {
+    self.callouts_pending > 0
   }
 
   /// Turn callouts up or down relative to everything else, in decibels. 0 is as recorded, and above it boosts them, which
@@ -89,6 +106,7 @@ impl SoundSystem {
 impl System for SoundSystem {
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
     while let Ok(completed) = self.completed_rx.try_recv() {
+      self.callouts_pending = self.callouts_pending.saturating_sub(1);
       ctx.emit(completed);
     }
   }

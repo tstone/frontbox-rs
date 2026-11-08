@@ -226,7 +226,8 @@ impl SoundManager {
     Self::unduck_track(&mut self.music_track);
   }
 
-  /// Start a line, with its lead-in unless it follows on from a line that already had it
+  /// Start a line, with its lead-in unless it follows on from a line that already had it. Returns the handle of the
+  /// line's last sound, which says when the line is over.
   fn start_callout(
     &mut self,
     request: &CalloutRequest,
@@ -236,31 +237,45 @@ impl SoundManager {
       log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", request.key());
       return None;
     };
+    let mut sounds = vec![sound];
+    for key in request.then_keys() {
+      match self.sounds.get(key) {
+        Some(sound) => sounds.push(sound.clone()),
+        None => {
+          log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found, in line '{}'", key, request.key())
+        }
+      }
+    }
 
-    // the line is scheduled on the audio clock, as waiting for a tick to start it would leave a gap of up to 100ms
+    // each sound is scheduled on the audio clock, as waiting for a tick to start it would leave a gap of up to 100ms
+    let mut delay = Duration::ZERO;
     let lead_in = request
       .lead_in_key()
       .filter(|_| !follows_on)
       .and_then(|key| self.sounds.get(key))
       .cloned();
-    let sound = match lead_in {
-      Some(lead_in) => {
-        let delay = lead_in.duration();
-        if let Err(e) = self.callout_track.play(lead_in) {
-          log::error!(target: "frontbox_core::sound", "Failed to play callout lead-in: {:?}", e);
-        }
-        sound.start_time(StartTime::Delayed(delay))
-      }
-      None => sound,
-    };
-
-    match self.callout_track.play(sound) {
-      Ok(handle) => Some(handle),
-      Err(e) => {
-        log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e);
-        None
+    if let Some(lead_in) = lead_in {
+      delay = lead_in.duration();
+      if let Err(e) = self.callout_track.play(lead_in) {
+        log::error!(target: "frontbox_core::sound", "Failed to play callout lead-in: {:?}", e);
       }
     }
+
+    let mut last = None;
+    for sound in sounds {
+      let duration = sound.duration();
+      match self
+        .callout_track
+        .play(sound.start_time(StartTime::Delayed(delay)))
+      {
+        Ok(handle) => last = Some(handle),
+        Err(e) => {
+          log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e)
+        }
+      }
+      delay += duration;
+    }
+    last
   }
 
   fn set_callout_volume(&mut self, db: f32) {

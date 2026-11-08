@@ -8,6 +8,8 @@ pub trait SoundSystemExt {
   fn preload_sound(&self, name: &'static str, path: impl AsRef<Path>);
   fn play_sfx(&self, key: &'static str);
   fn play_callout(&self, request: impl Into<CalloutRequest>);
+  /// See [`SoundSystem::callout_pending`]
+  fn callout_pending(&self) -> bool;
 }
 
 impl<'a> SoundSystemExt for SystemContext<'a> {
@@ -27,6 +29,13 @@ impl<'a> SoundSystemExt for SystemContext<'a> {
     with_snd_system(self, |snd_system| {
       snd_system.play_callout(request);
     });
+  }
+
+  fn callout_pending(&self) -> bool {
+    self
+      .systems
+      .get::<SoundSystem>()
+      .is_some_and(|system| system.callout_pending())
   }
 }
 

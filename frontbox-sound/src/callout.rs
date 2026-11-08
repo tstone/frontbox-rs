@@ -12,11 +12,14 @@ use frontbox_core::prelude::*;
 /// ctx.play_callout("nice_shot");
 /// ctx.play_callout(CalloutRequest::new("multiball").priority(1).lead_in("chime"));
 /// ctx.play_callout(CalloutRequest::new("nice_shot").max_wait(Duration::from_secs(2)));
+/// ctx.play_callout(CalloutRequest::new("four").then("of").then("six"));
 /// # }
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CalloutRequest {
   key: &'static str,
+  /// Said straight after `key`, in order, as part of the same line
+  then: Vec<&'static str>,
   priority: u8,
   lead_in: Option<&'static str>,
   max_wait: Option<Duration>,
@@ -26,10 +29,18 @@ impl CalloutRequest {
   pub fn new(key: &'static str) -> Self {
     Self {
       key,
+      then: Vec::new(),
       priority: 0,
       lead_in: None,
       max_wait: None,
     }
+  }
+
+  /// Say another sound straight after, as part of the line, to build one from words such as "four", "of", "six". The
+  /// line is still known by its first key.
+  pub fn then(mut self, key: &'static str) -> Self {
+    self.then.push(key);
+    self
   }
 
   /// Queuing this replaces any waiting lines of a lower priority. The line already playing always plays out.
@@ -53,6 +64,10 @@ impl CalloutRequest {
 
   pub(crate) fn key(&self) -> &'static str {
     self.key
+  }
+
+  pub(crate) fn then_keys(&self) -> &[&'static str] {
+    &self.then
   }
 
   pub(crate) fn lead_in_key(&self) -> Option<&'static str> {

@@ -47,6 +47,7 @@ pub trait RgbaColor {
   fn orange() -> Self;
   fn navy() -> Self;
   fn mint() -> Self;
+  fn amber() -> Self;
   fn gold() -> Self;
   fn maroon() -> Self;
   fn olive() -> Self;
@@ -278,6 +279,9 @@ impl RgbaColor for Rgba<u8> {
   fn mint() -> Self {
     Rgba([40, 255, 90, 255])
   }
+  fn amber() -> Self {
+    Rgba([255, 115, 0, 255])
+  }
   fn gold() -> Self {
     Rgba([255, 155, 0, 255])
   }
@@ -288,7 +292,7 @@ impl RgbaColor for Rgba<u8> {
     Rgba([110, 100, 0, 255])
   }
   fn bronze() -> Self {
-    Rgba([140, 40, 5, 255])
+    Rgba([134, 86, 40, 255])
   }
   fn coral() -> Self {
     Rgba([255, 80, 50, 255])
@@ -323,6 +327,7 @@ pub fn named_colors() -> Vec<(&'static str, Rgba<u8>)> {
     ("coral", Rgba::coral()),
     ("orange", Rgba::orange()),
     ("peach", Rgba::peach()),
+    ("amber", Rgba::amber()),
     ("gold", Rgba::gold()),
     ("yellow", Rgba::yellow()),
     ("olive", Rgba::olive()),
