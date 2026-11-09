@@ -10,16 +10,17 @@ pub trait Animatable: Lerp + Clone + Default + PartialEq {
   /// Reads a param value. `None` if it's a different type.
   fn from_value(value: &Value) -> Option<Self>;
 
-  /// Picks a value within a spread, using `rolls` (random numbers, each 0 to 1) for where in each range. `None` if the
+  /// Picks a value within a spread, using `rnd` (random numbers, each 0 to 1) for where in each range. `None` if the
   /// spread is a different type.
-  fn from_spread(spread: &Spread, rolls: [f32; 3]) -> Option<Self>;
+  fn from_spread(spread: &Spread, rnd: [f32; 3]) -> Option<Self>;
 
   /// Converts a point from a `Sweep`. `None` for types that aren't positions.
   fn from_point(point: Vec2) -> Option<Self>;
 }
 
-fn between((low, high): (f32, f32), roll: f32) -> f32 {
-  low + (high - low) * roll
+/// Maps `rnd`, from 0 to 1, into `low..=high`
+fn rng_range((low, high): (f32, f32), rnd: f32) -> f32 {
+  low + (high - low) * rnd
 }
 
 impl Animatable for f32 {
@@ -30,9 +31,9 @@ impl Animatable for f32 {
     }
   }
 
-  fn from_spread(spread: &Spread, [roll, ..]: [f32; 3]) -> Option<Self> {
+  fn from_spread(spread: &Spread, [rnd, ..]: [f32; 3]) -> Option<Self> {
     match *spread {
-      Spread::Float(low, high) => Some(between((low, high), roll)),
+      Spread::Float(low, high) => Some(rng_range((low, high), rnd)),
       _ => None,
     }
   }
@@ -50,9 +51,9 @@ impl Animatable for Vec2 {
     }
   }
 
-  fn from_spread(spread: &Spread, [x_roll, y_roll, _]: [f32; 3]) -> Option<Self> {
+  fn from_spread(spread: &Spread, [x_rnd, y_rnd, _]: [f32; 3]) -> Option<Self> {
     match *spread {
-      Spread::Vec2 { x, y } => Some(Vec2::new(between(x, x_roll), between(y, y_roll))),
+      Spread::Vec2 { x, y } => Some(Vec2::new(rng_range(x, x_rnd), rng_range(y, y_rnd))),
       _ => None,
     }
   }
@@ -70,12 +71,12 @@ impl Animatable for Color {
     }
   }
 
-  fn from_spread(spread: &Spread, [hue_roll, brightness_roll, alpha_roll]: [f32; 3]) -> Option<Self> {
+  fn from_spread(spread: &Spread, [hue_rnd, brightness_rnd, alpha_rnd]: [f32; 3]) -> Option<Self> {
     match *spread {
       Spread::Color { hue, brightness, alpha } => {
-        let picked = Hsv::new(between(hue, hue_roll), 1.0, between(brightness, brightness_roll));
+        let picked = Hsv::new(rng_range(hue, hue_rnd), 1.0, rng_range(brightness, brightness_rnd));
         let (r, g, b) = Srgb::from_color(picked).into_format::<u8>().into_components();
-        Some(Color(Rgba([r, g, b, (between(alpha, alpha_roll) * 255.0).round() as u8])))
+        Some(Color(Rgba([r, g, b, (rng_range(alpha, alpha_rnd) * 255.0).round() as u8])))
       }
       _ => None,
     }

@@ -3,14 +3,14 @@ import type { Cycle } from "./Cycle";
 import type { Key } from "./Key";
 
 /**
- * Keyframes, played from time zero
+ * Keyframes, timed from the start of each scene cycle
  */
 export type Track<T> = { 
 /**
- * In order of `at`
+ * Sorted by `at`
  */
 keys: Array<Key<T>>, 
 /**
- * How many times to play the keys. A track that loops ends at its last key and jumps back to its first.
+ * How many times the keys play. Each loop jumps from the last key straight back to the first.
  */
 cycle: Cycle, };

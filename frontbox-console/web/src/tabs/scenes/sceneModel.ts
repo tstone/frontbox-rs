@@ -183,12 +183,12 @@ export function freshParamName(scene: Scene, base: string) {
 /** The points of a shape made of them, which is none for the others */
 export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
   if ('Polygon' in base) return base.Polygon.points
-  if ('Route' in base) return base.Route.points
+  if ('Polyline' in base) return base.Polyline.points
   return 'Bezier' in base ? base.Bezier.points.map(({ point }) => point) : []
 }
 
 /** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
-export const isOpen = (base: ShapeNode) => 'Route' in base || 'Bezier' in base
+export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base
 
 /** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
@@ -315,12 +315,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       use(field(variant(base, 'Circle'), 'radius'), `${label} · Radius`, both(roundRange(surface)))
     } else if ('Ring' in current) {
       const ring = variant(base, 'Ring')
-      use(field(ring, 'radius'), `${label} · Radius`, both(roundRange(surface)))
+      use(field(ring, 'inner_radius'), `${label} · Inner radius`, both(roundRange(surface)))
       use(field(ring, 'thickness'), `${label} · Thickness`, both(roundRange(surface)))
     } else if ('Ellipse' in current) {
       const ellipse = variant(base, 'Ellipse')
-      use(field(ellipse, 'r1'), `${label} · R1`, both(radius(down)))
-      use(field(ellipse, 'r2'), `${label} · R2`, both(radius(across)))
+      use(field(ellipse, 'rx'), `${label} · RX`, both(radius(across)))
+      use(field(ellipse, 'ry'), `${label} · RY`, both(radius(down)))
     } else if ('Rect' in current) {
       const rect = variant(base, 'Rect')
       use(field(rect, 'width'), `${label} · Width`, both(across))
@@ -328,7 +328,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     } else if ('Pinwheel' in current) {
       const pinwheel = variant(base, 'Pinwheel')
       use(field(pinwheel, 'blades'), `${label} · Blades`, both(BLADES))
-      use(field(pinwheel, 'balance'), `${label} · Balance`, both(BALANCE))
+      use(field(pinwheel, 'blade_fraction'), `${label} · Blade fraction`, both(BLADE_FRACTION))
     } else if ('Bezier' in current) {
       const points = field(variant(base, 'Bezier'), 'points')
       points.get().forEach((_, i) => {
@@ -336,7 +336,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
         use(field(item(points, i), 'handle'), `${label} · Point ${i + 1} · Handle`, pointRanges(surface))
       })
     } else {
-      const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Route'), 'points')
+      const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
   }
@@ -635,7 +635,7 @@ const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
 export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
 /** How much of each of a pinwheel's shares is blade. Past these ends, its blades or its gaps are too thin to make out. */
-export const BALANCE: Range = { min: 0.1, max: 0.9, step: 0.01, rest: 0.5 }
+export const BLADE_FRACTION: Range = { min: 0.1, max: 0.9, step: 0.01, rest: 0.5 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 

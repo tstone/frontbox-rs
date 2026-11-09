@@ -4,18 +4,20 @@ import type { GradientStyle } from "./GradientStyle";
 import type { Prop } from "./Prop";
 import type { Stop } from "./Stop";
 
+/**
+ * The base content of a fill
+ */
 export type FillNode = { "Solid": Prop<Color> } | { "Gradient": { 
 /**
- * In order of `at`
+ * Sorted by `at`
  */
 stops: Array<Stop>, style: GradientStyle, } } | { "Image": { 
 /**
- * As it is in the [`Content`](crate::scene::Content) folder. An empty name draws nothing, for an image that's yet
- * to be chosen.
+ * Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
  */
 name: string, 
 /**
- * Which of an animated image's frames to draw, from 0, or the first if there's none. A fraction is dropped, so
- * a value moving from 0 to the number of frames spends the same time on each, and past the last is the last.
+ * FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+ * count gives each frame equal time. Clamped to the last frame.
  */
 frame?: Prop<number>, } };

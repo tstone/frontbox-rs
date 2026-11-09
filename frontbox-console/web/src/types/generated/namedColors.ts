@@ -2,9 +2,10 @@
 
 export const NAMED_COLORS = [
   { name: 'red', hex: '#ff0000' },
-  { name: 'coral', hex: '#ff3223' },
+  { name: 'coral', hex: '#ff5032' },
   { name: 'orange', hex: '#ff4600' },
   { name: 'peach', hex: '#ff693c' },
+  { name: 'amber', hex: '#ff7300' },
   { name: 'gold', hex: '#ff9b00' },
   { name: 'yellow', hex: '#ffff00' },
   { name: 'olive', hex: '#6e6400' },
@@ -21,7 +22,7 @@ export const NAMED_COLORS = [
   { name: 'magenta', hex: '#ff00ff' },
   { name: 'pink', hex: '#ff288c' },
   { name: 'maroon', hex: '#820012' },
-  { name: 'bronze', hex: '#8c2805' },
+  { name: 'bronze', hex: '#865628' },
   { name: 'white', hex: '#ffffff' },
   { name: 'black', hex: '#000000' },
 ]

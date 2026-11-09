@@ -19,7 +19,7 @@ const MAX_IMAGE_SIDE: u32 = 8192;
 /// decode to huge sizes.
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Frame cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
+/// FrameContext cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
 /// around the byte cap.
 const MAX_FRAMES: usize = 10_000;
 

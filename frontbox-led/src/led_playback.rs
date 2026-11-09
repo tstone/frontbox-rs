@@ -4,7 +4,7 @@ use std::fmt;
 use frontbox_core::prelude::*;
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::Line;
-use frontbox_gfx::scene::{Frame, GfxComposition, Images, Params, Sample, Value, Viewport};
+use frontbox_gfx::scene::{self, FrameContext, GfxComposition, Images, Params, Sample, Value};
 
 use crate::*;
 
@@ -53,7 +53,7 @@ pub struct LedPlayback {
   elapsed: Duration,
   /// How much of the scene plays in a second
   speed: f32,
-  take: u32,
+  playback_seed: u32,
   playing: bool,
   end_behavior: EndBehavior,
   undeclared: bool,
@@ -72,7 +72,7 @@ impl LedPlayback {
       images: Images::new(),
       elapsed: Duration::ZERO,
       speed: 1.0,
-      take: rand::random(),
+      playback_seed: rand::random(),
       playing: true,
       end_behavior: EndBehavior::Clear,
       undeclared: false,
@@ -114,7 +114,7 @@ impl LedPlayback {
     self
   }
 
-  /// Plays a cycle of the scene in `duration`, however long it was written to take, for when how long it lasts is only
+  /// Plays a cycle of the scene in `duration`, however long it was written to playback_seed, for when how long it lasts is only
   /// known once it's played
   pub fn over(mut self, duration: Duration) -> Self {
     if let Some(timing) = self.scene.timing {
@@ -151,7 +151,7 @@ impl LedPlayback {
     let time = self.elapsed.as_secs_f32();
     let scene = &self.scene;
     for placement in self.placements.get_or_insert_with(|| place(scene, ctx)) {
-      let colors = placement.colors(time, self.take, &self.params, &self.images);
+      let colors = placement.colors(time, self.playback_seed, &self.params, &self.images);
 
       // a transparent declaration could still beat another system's on the same layer, so LEDs the scene isn't reaching
       // right now are given up instead
@@ -188,7 +188,7 @@ impl LedPlayback {
   /// Back to the start of the scene
   pub fn reset(&mut self) {
     self.elapsed = Duration::ZERO;
-    self.take = rand::random();
+    self.playback_seed = rand::random();
     self.undeclared = false;
   }
 
@@ -223,26 +223,26 @@ impl fmt::Display for PlaybackError {
 
 impl std::error::Error for PlaybackError {}
 
-/// The LEDs matching `query` that a scene on `viewport` lands on, each with where it samples the scene. This is what
+/// The LEDs matching `query` that a scene on `surface` lands on, each with where it samples the scene. This is what
 /// [`LedPlayback`] does, for anything that wants to know what it would show without playing it.
 ///
 /// On a `Sequence` they spread along it in order. An `Area` needs a `plane` to put them on, and without one reaches no
 /// LEDs.
 pub fn place_leds<'a>(
-  viewport: Viewport,
+  surface: scene::Surface,
   leds: &'a LedLookup,
   plane: Option<&ReferencePlane>,
   query: &'a LedQ,
   radius: f32,
 ) -> Vec<(&'a LED, Sample)> {
-  match (viewport, plane) {
-    (Viewport::Sequence, _) => {
+  match (surface, plane) {
+    (scene::Surface::Sequence, _) => {
       let matching: Vec<_> = leds.query_iter(query).collect();
       let line = Line::new(matching.len());
       matching.into_iter().zip(line.samples()).collect()
     }
-    (Viewport::Area, Some(plane)) => place_on_plane(leds, plane, query, radius),
-    (Viewport::Area, None) => Vec::new(),
+    (scene::Surface::Area, Some(plane)) => place_on_plane(leds, plane, query, radius),
+    (scene::Surface::Area, None) => Vec::new(),
   }
 }
 
@@ -297,11 +297,11 @@ impl Placement {
       }
       found
     });
-    let viewport = layer.surface.viewport();
-    let placed = layer.leds.as_ref().map_or(Vec::new(), |leds| place_leds(viewport, &ctx.leds, plane, leds, ctx.led_radius));
+    let surface = layer.surface.scene_surface();
+    let placed = layer.leds.as_ref().map_or(Vec::new(), |leds| place_leds(surface, &ctx.leds, plane, leds, ctx.led_radius));
     let samples = placed.into_iter().map(|(led, sample)| (self.spot(&led.address), sample)).collect();
     let size = plane.map_or(Vec2::ZERO, |plane| plane.extent);
-    self.parts.push(Part { composition, viewport, size, samples });
+    self.parts.push(Part { composition, surface, size, samples });
   }
 
   fn spot(&mut self, led: &LedAddress) -> usize {
@@ -312,10 +312,10 @@ impl Placement {
   }
 
   /// The color of each LED in `ids`, with the layers on it drawn bottom to top
-  fn colors(&self, time: f32, take: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
+  fn colors(&self, time: f32, playback_seed: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
     let mut colors = vec![Rgba([0, 0, 0, 0]); self.ids.leds.len()];
     for part in &self.parts {
-      let frame = Frame { time, take, params, images, size: part.size, viewport: part.viewport };
+      let frame = FrameContext { time, playback_seed, params, images, size: part.size, surface: part.surface };
       for (spot, sample) in &part.samples {
         colors[*spot] = part.composition.sample(sample, &frame).composite_over(colors[*spot]);
       }
@@ -328,7 +328,7 @@ impl Placement {
 #[derive(Clone)]
 struct Part {
   composition: GfxComposition,
-  viewport: Viewport,
+  surface: scene::Surface,
   /// The size of what it's on
   size: Vec2,
   /// Its LEDs, by their spot in the [`Placement`], and where each samples it
@@ -344,6 +344,7 @@ mod tests {
   use frontbox_gfx::prelude::*;
 
   use super::*;
+  use crate::Surface;
 
   static PLANE: ReferencePlane = ReferencePlane::new("Plane").extent(Vec2::new(10.0, 10.0)).build();
   static WIDE: ReferencePlane = ReferencePlane::new("Wide").extent(Vec2::new(20.0, 10.0)).build();
@@ -779,7 +780,7 @@ mod tests {
   fn place_leds_spreads_a_sequence_along_the_leds_in_order() {
     let (context, _) = placed_leds(&[None, None, None]);
     let query = LedQ::names(vec!["led2", "led0", "led1"]);
-    let placed = place_leds(Viewport::Sequence, &context.base.leds, None, &query, DEFAULT_LED_RADIUS);
+    let placed = place_leds(scene::Surface::Sequence, &context.base.leds, None, &query, DEFAULT_LED_RADIUS);
     let names: Vec<_> = placed.iter().map(|(led, _)| led.name.as_str()).collect();
     let spots: Vec<_> = placed.iter().map(|(_, sample)| sample.pos.x).collect();
     assert_eq!(names, ["led2", "led0", "led1"]);
@@ -790,7 +791,7 @@ mod tests {
   fn place_leds_puts_an_area_on_the_plane_with_the_radius_its_given() {
     let (context, _) = placed_leds(&[at(2.0, 3.0), at(50.0, 3.0), None]);
     let query = LedQ::every();
-    let placed = place_leds(Viewport::Area, &context.base.leds, Some(&PLANE), &query, 0.25);
+    let placed = place_leds(scene::Surface::Area, &context.base.leds, Some(&PLANE), &query, 0.25);
     assert_eq!(placed.len(), 2);
     assert_eq!(placed[0].0.name, "led0");
     assert_eq!(placed[0].1, Sample::new(Vec2::new(2.0, 3.0), 0.25));
@@ -801,7 +802,7 @@ mod tests {
   fn place_leds_reaches_nothing_on_an_area_without_a_plane() {
     let (context, _) = placed_leds(&[at(2.0, 3.0)]);
     let query = LedQ::every();
-    assert!(place_leds(Viewport::Area, &context.base.leds, None, &query, DEFAULT_LED_RADIUS).is_empty());
+    assert!(place_leds(scene::Surface::Area, &context.base.leds, None, &query, DEFAULT_LED_RADIUS).is_empty());
   }
 
   #[test]

@@ -2,6 +2,6 @@
 import type { Prop } from "./Prop";
 
 /**
- * Changes where a node is drawn
+ * Moves, rotates, or scales a node
  */
 export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<[number, number]> };

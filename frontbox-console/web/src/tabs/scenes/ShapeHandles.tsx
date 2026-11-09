@@ -269,20 +269,20 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
   } else if ('Ring' in current) {
     const ring = variant(base, 'Ring')
     handles.push(
-      size('Radius', field(ring, 'radius'), [pose.hole, 0], across),
+      size('Inner radius', field(ring, 'inner_radius'), [pose.hole, 0], across),
       size('Thickness', field(ring, 'thickness'), [right, 0], (local) => Math.max(across(local) - pose.hole, 0)),
     )
   } else if ('Ellipse' in current) {
-    const { r1, r2 } = { r1: field(variant(base, 'Ellipse'), 'r1'), r2: field(variant(base, 'Ellipse'), 'r2') }
-    handles.push(size('R1', r1, [0, top], down), size('R2', r2, [right, 0], across))
+    const { rx, ry } = { rx: field(variant(base, 'Ellipse'), 'rx'), ry: field(variant(base, 'Ellipse'), 'ry') }
+    handles.push(size('RX', rx, [right, 0], across), size('RY', ry, [0, top], down))
   } else if ('Rect' in current) {
     const rect = variant(base, 'Rect')
     handles.push(
       size('Width', field(rect, 'width'), [right, 0], (local) => across(local) * 2),
       size('Height', field(rect, 'height'), [0, top], (local) => down(local) * 2),
     )
-  } else if ('Polygon' in current || 'Route' in current) {
-    const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Route'), 'points')
+  } else if ('Polygon' in current || 'Polyline' in current) {
+    const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
     pose.points.forEach((_, index) => handles.push(pointHandle(index, item(points, index))))
   } else if ('Bezier' in current) {
     const points = field(variant(base, 'Bezier'), 'points')

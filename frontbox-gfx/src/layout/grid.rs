@@ -2,7 +2,7 @@ use glam::Vec2;
 
 use crate::scene::{Bounds, Sample};
 
-/// A `width` by `height` grid of sample points fit to an [`Area`](crate::scene::Viewport::Area) viewport, such as the
+/// A `width` by `height` grid of sample points fit to an [`Area`](crate::scene::Surface::Area) viewport, such as the
 /// pixels of a DMD
 ///
 /// Cells are always square. If the grid's aspect ratio differs from `size`, it fills `size` along one axis and runs past

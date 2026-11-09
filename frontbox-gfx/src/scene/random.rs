@@ -6,12 +6,12 @@ use crate::animation::Curve;
 use crate::scene::{Animatable, Env};
 
 /// Attempts at a value that differs from its neighbors before giving up (the spread may not have one)
-const MAX_ROLLS: u32 = 64;
+const MAX_RETRIES: u32 = 64;
 
 /// Random values chosen at set times, each held until the next or blended into it
 ///
-/// There's no running random generator. Each value is a hash of the seed, take, cycle, and pick, so any moment can be
-/// sampled directly, in any order, with the same result. Values still differ every cycle and every take.
+/// There's no running random generator. Each value is a hash of the seed, playback seed, cycle, and pick, so any moment
+/// can be sampled directly, in any order, with the same result. Values still differ every cycle and every playback.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Random {
@@ -29,30 +29,30 @@ pub struct Random {
 
 impl Random {
   pub(crate) fn resolve<T: Animatable>(&self, env: &Env) -> T {
-    self.moving(env, |beat| self.unique(beat, env, false, |beat, attempt| self.roll::<T>(beat, attempt, env)))
+    self.blended(env, |instance| self.unique(instance, env, false, |instance, attempt| self.candidate::<T>(instance, attempt, env)))
   }
 
   /// Like [`Self::resolve`], but `force_unique` compares whole numbers, for values that get truncated. A spread of
   /// exactly two whole numbers needs special handling in [`Self::unique`].
-  pub(crate) fn resolve_whole(&self, env: &Env) -> f32 {
+  pub(crate) fn resolve_truncated(&self, env: &Env) -> f32 {
     let two_values = matches!(self.spread, Spread::Float(low, high) if high.ceil() - low.floor() == 2.0);
-    self.moving(env, |beat| self.unique(beat, env, two_values, |beat, attempt| self.roll::<f32>(beat, attempt, env).floor()))
+    self.blended(env, |instance| self.unique(instance, env, two_values, |instance, attempt| self.candidate::<f32>(instance, attempt, env).floor()))
   }
 
   /// The current value, blending between picks during their smoothing. `value` gives each pick's own value.
-  fn moving<T: Animatable>(&self, env: &Env, value: impl Fn(Beat) -> T) -> T {
+  fn blended<T: Animatable>(&self, env: &Env, value: impl Fn(PickInstance) -> T) -> T {
     let Some(here) = self.current(env) else {
       return T::default();
     };
 
     // one pick's smooth_out and the next one's smooth_in make up a single eased blend
-    let blend = |from: Beat, to: Beat| {
-      let start = self.at(to, env) - self.fades(from, env).1;
-      let end = self.at(to, env) + self.fades(to, env).0;
+    let blend = |from: PickInstance, to: PickInstance| {
+      let start = self.at(to, env) - self.blend_durations(from, env).1;
+      let end = self.at(to, env) + self.blend_durations(to, env).0;
       value(from).interpolate(&value(to), Curve::EaseInOut.sample((env.time - start) / (end - start)))
     };
 
-    let (fade_in, fade_out) = self.fades(here, env);
+    let (fade_in, fade_out) = self.blend_durations(here, env);
     match (self.before(here), self.after(here, env)) {
       (Some(before), _) if env.time < self.at(here, env) + fade_in => blend(before, here),
       (_, Some(after)) if env.time > self.at(after, env) - fade_out => blend(here, after),
@@ -63,75 +63,75 @@ impl Random {
   /// A pick's value, made to differ from its neighbors when `force_unique` is set
   ///
   /// Each pick is computed independently, so a pick can't know what the previous one ended up as. Instead, even picks
-  /// keep their first roll and odd picks re-roll until they differ from both even neighbors. With only two possible
-  /// values, an odd pick only has room if both neighbors match, so every even pick uses the same roll and the two values
-  /// alternate.
-  fn unique<T: PartialEq>(&self, beat: Beat, env: &Env, two_values: bool, roll: impl Fn(Beat, u32) -> T) -> T {
+  /// keep their first candidate and odd picks try more until one differs from both even neighbors. With only two
+  /// possible values, an odd pick only has room if both neighbors match, so every even pick uses the same candidate and
+  /// the two values alternate.
+  fn unique<T: PartialEq>(&self, instance: PickInstance, env: &Env, two_values: bool, candidate: impl Fn(PickInstance, u32) -> T) -> T {
     if !self.force_unique {
-      return roll(beat, 0);
+      return candidate(instance, 0);
     }
 
-    let kept = |beat: Beat| roll(if two_values { Beat { cycle: 0, pick: 0 } } else { beat }, 0);
-    if (beat.cycle as u64 * self.picks.len() as u64 + beat.pick as u64) % 2 == 0 {
-      return kept(beat);
+    let kept = |instance: PickInstance| candidate(if two_values { PickInstance { cycle: 0, pick: 0 } } else { instance }, 0);
+    if (instance.cycle as u64 * self.picks.len() as u64 + instance.pick as u64) % 2 == 0 {
+      return kept(instance);
     }
 
-    let (before, after) = (self.before(beat).map(kept), self.after(beat, env).map(kept));
-    (0..MAX_ROLLS)
-      .map(|attempt| roll(beat, attempt))
+    let (before, after) = (self.before(instance).map(kept), self.after(instance, env).map(kept));
+    (0..MAX_RETRIES)
+      .map(|attempt| candidate(instance, attempt))
       .find(|value| before.as_ref() != Some(value) && after.as_ref() != Some(value))
-      .unwrap_or_else(|| roll(beat, 0))
+      .unwrap_or_else(|| candidate(instance, 0))
   }
 
-  /// A random value for a pick. Each `attempt` gives a different value, for re-rolls.
-  fn roll<T: Animatable>(&self, beat: Beat, attempt: u32, env: &Env) -> T {
-    T::from_spread(&self.spread, rolls((self.seed, env.take, beat.cycle, beat.pick, attempt))).unwrap_or_default()
+  /// A random value for a pick. Each `attempt` gives a different value, for retries.
+  fn candidate<T: Animatable>(&self, instance: PickInstance, attempt: u32, env: &Env) -> T {
+    T::from_spread(&self.spread, rnd((self.seed, env.playback_seed, instance.cycle, instance.pick, attempt))).unwrap_or_default()
   }
 
   /// The pick that's in effect. `None` if there are none.
-  fn current(&self, env: &Env) -> Option<Beat> {
+  fn current(&self, env: &Env) -> Option<PickInstance> {
     let last = self.picks.len().checked_sub(1)?;
     Some(match self.picks.partition_point(|pick| pick.at <= env.time) {
-      0 if env.cycle == 0 => Beat { cycle: 0, pick: 0 },
-      0 => Beat { cycle: env.cycle - 1, pick: last },
-      passed => Beat { cycle: env.cycle, pick: passed - 1 },
+      0 if env.cycle == 0 => PickInstance { cycle: 0, pick: 0 },
+      0 => PickInstance { cycle: env.cycle - 1, pick: last },
+      passed => PickInstance { cycle: env.cycle, pick: passed - 1 },
     })
   }
 
-  fn before(&self, beat: Beat) -> Option<Beat> {
-    match beat {
-      Beat { cycle: 0, pick: 0 } => None,
-      Beat { cycle, pick: 0 } => Some(Beat { cycle: cycle - 1, pick: self.picks.len() - 1 }),
-      Beat { cycle, pick } => Some(Beat { cycle, pick: pick - 1 }),
+  fn before(&self, instance: PickInstance) -> Option<PickInstance> {
+    match instance {
+      PickInstance { cycle: 0, pick: 0 } => None,
+      PickInstance { cycle, pick: 0 } => Some(PickInstance { cycle: cycle - 1, pick: self.picks.len() - 1 }),
+      PickInstance { cycle, pick } => Some(PickInstance { cycle, pick: pick - 1 }),
     }
   }
 
-  fn after(&self, beat: Beat, env: &Env) -> Option<Beat> {
-    if beat.pick + 1 < self.picks.len() {
-      return Some(Beat { pick: beat.pick + 1, ..beat });
+  fn after(&self, instance: PickInstance, env: &Env) -> Option<PickInstance> {
+    if instance.pick + 1 < self.picks.len() {
+      return Some(PickInstance { pick: instance.pick + 1, ..instance });
     }
     let timing = env.timing?;
-    (!timing.is_last_cycle(beat.cycle)).then(|| Beat { cycle: beat.cycle + 1, pick: 0 })
+    (!timing.is_last_cycle(instance.cycle)).then(|| PickInstance { cycle: instance.cycle + 1, pick: 0 })
   }
 
   /// When a pick happens, in seconds from the start of the current cycle (negative for an earlier cycle)
-  fn at(&self, beat: Beat, env: &Env) -> f32 {
-    let cycles_away = beat.cycle as f32 - env.cycle as f32;
-    self.picks[beat.pick].at + cycles_away * env.timing.map_or(0.0, |timing| timing.duration)
+  fn at(&self, instance: PickInstance, env: &Env) -> f32 {
+    let cycles_away = instance.cycle as f32 - env.cycle as f32;
+    self.picks[instance.pick].at + cycles_away * env.timing.map_or(0.0, |timing| timing.duration)
   }
 
   /// Seconds a pick spends blending in and blending out. Both are fractions of the time until the next pick, scaled down
   /// to fit if they add up to more than it. The final pick has no blend out, and its time runs to the end of the cycle.
-  fn fades(&self, beat: Beat, env: &Env) -> (f32, f32) {
-    let pick = self.picks[beat.pick];
-    let after = self.after(beat, env);
+  fn blend_durations(&self, instance: PickInstance, env: &Env) -> (f32, f32) {
+    let pick = self.picks[instance.pick];
+    let after = self.after(instance, env);
     let end = after.map_or(env.timing.map_or(0.0, |timing| timing.duration), |after| self.at(after, env));
-    let stretch = (end - self.at(beat, env)).max(0.0);
+    let span = (end - self.at(instance, env)).max(0.0);
 
     let smooth_in = pick.smooth_in.clamp(0.0, 1.0);
     let smooth_out = if after.is_some() { pick.smooth_out.clamp(0.0, 1.0) } else { 0.0 };
     let shorten = (smooth_in + smooth_out).max(1.0);
-    (smooth_in * stretch / shorten, smooth_out * stretch / shorten)
+    (smooth_in * span / shorten, smooth_out * span / shorten)
   }
 }
 
@@ -187,13 +187,13 @@ fn opaque() -> (f32, f32) {
 
 /// One occurrence of a pick: the pick's index within a particular scene cycle
 #[derive(Clone, Copy)]
-struct Beat {
+struct PickInstance {
   cycle: u32,
   pick: usize,
 }
 
-/// Three pseudo-random numbers, each 0 to 1, hashed from `moment`
-fn rolls(moment: impl Hash) -> [f32; 3] {
+/// Three random numbers, each 0 to 1, hashed from `moment`
+fn rnd(moment: impl Hash) -> [f32; 3] {
   const MASK: u64 = (1 << 21) - 1;
   let mut hasher = DefaultHasher::new();
   moment.hash(&mut hasher);
@@ -260,7 +260,7 @@ mod tests {
     let random = random(vec![0.0]);
     let first: f32 = random.resolve(&env(0.0, &params));
     assert_ne!(random.resolve::<f32>(&Env { cycle: 1, ..env(0.0, &params) }), first);
-    assert_ne!(random.resolve::<f32>(&Env { take: 1, ..env(0.0, &params) }), first);
+    assert_ne!(random.resolve::<f32>(&Env { playback_seed: 1, ..env(0.0, &params) }), first);
   }
 
   #[test]
@@ -370,7 +370,7 @@ mod tests {
   fn smoothing_too_much_shortens_it_so_a_pick_still_arrives() {
     let picks = [pick(0.0, 0.0, 1.0), pick(1.0, 1.0, 1.0), pick(2.0, 1.0, 0.0)];
     let unsmoothed = [Pick::new(0.0), Pick::new(1.0), Pick::new(2.0)];
-    // all of its stretch was asked for twice over, so it arrives and starts to leave halfway through
+    // all of its span was asked for twice over, so it arrives and starts to leave halfway through
     assert_eq!(smoothed(&picks, Cycle::Once, 1.5), smoothed(&unsmoothed, Cycle::Once, 1.5));
   }
 
@@ -402,15 +402,15 @@ mod tests {
     assert_ne!(smoothed(&picks, twice, 3.0), smoothed(&picks, twice, 3.9));
   }
 
-  /// What each pick comes to, as whole numbers, over a scene looping through these picks for `beats` of them
-  fn whole_picks(random: &Random, beats: u32) -> Vec<f32> {
+  /// What each pick comes to, as whole numbers, over a scene looping through these picks for `instances` of them
+  fn whole_picks(random: &Random, instances: u32) -> Vec<f32> {
     let params = Params::new();
     let timing = Timing::new(1.0, Cycle::Forever);
     let count = random.picks.len() as u32;
-    (0..beats)
-      .map(|beat| {
-        let time = random.picks[(beat % count) as usize].at;
-        random.resolve_whole(&Env { cycle: beat / count, timing: Some(timing), ..env(time, &params) })
+    (0..instances)
+      .map(|instance| {
+        let time = random.picks[(instance % count) as usize].at;
+        random.resolve_truncated(&Env { cycle: instance / count, timing: Some(timing), ..env(time, &params) })
       })
       .collect()
   }

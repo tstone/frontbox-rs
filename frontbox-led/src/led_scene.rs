@@ -1,6 +1,6 @@
 use frontbox_core::prelude::*;
 use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::{GfxComposition, Layer, Params, SceneError, Timing, Viewport};
+use frontbox_gfx::scene::{self, GfxComposition, Layer, Params, SceneError, Timing};
 use serde::{Deserialize, Serialize};
 
 /// What LEDs show, as written to a `.scene` file: layers that each say which LEDs they're on, and how, joined together on
@@ -119,10 +119,10 @@ pub enum Surface {
 }
 
 impl Surface {
-  pub fn viewport(&self) -> Viewport {
+  pub fn scene_surface(&self) -> scene::Surface {
     match self {
-      Self::Sequence => Viewport::Sequence,
-      Self::Area(_) => Viewport::Area,
+      Self::Sequence => scene::Surface::Sequence,
+      Self::Area(_) => scene::Surface::Area,
     }
   }
 
@@ -151,6 +151,7 @@ mod tests {
   use frontbox_gfx::scene::*;
 
   use super::*;
+  use super::Surface;
 
   fn layer() -> Layer {
     Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into())))
@@ -217,9 +218,9 @@ mod tests {
 
   #[test]
   fn a_surface_says_how_a_layer_is_seen() {
-    assert_eq!(Surface::Sequence.viewport(), Viewport::Sequence);
+    assert_eq!(Surface::Sequence.scene_surface(), scene::Surface::Sequence);
     assert_eq!(Surface::Sequence.plane(), None);
-    assert_eq!(Surface::Area("Backbox".into()).viewport(), Viewport::Area);
+    assert_eq!(Surface::Area("Backbox".into()).scene_surface(), scene::Surface::Area);
     assert_eq!(Surface::Area("Backbox".into()).plane(), Some("Backbox"));
   }
 

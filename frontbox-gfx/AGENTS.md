@@ -43,7 +43,7 @@ allocates a buffer sized for a device. Devices decide where to sample.
 
 ## One model
 
-There is no separate 1d model. A `Viewport` is either a `Sequence` of points in order or an `Area`, and that's the only
+There is no separate 1d model. A `Surface` is either a `Sequence` of points in order or an `Area`, and that's the only
 difference: every layer, shape, fill, blend, mask, and filter works in both. Don't add a feature that only works in one;
 if a strip needs something, build it so it also works on a plane.
 

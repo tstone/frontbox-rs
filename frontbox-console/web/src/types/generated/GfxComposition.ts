@@ -4,9 +4,8 @@ import type { Timing } from "./Timing";
 import type { Value } from "./Value";
 
 /**
- * What's drawn and how it moves over time: layers, and the parameters the game can change. This is the part LED and DMD
- * scenes share, each adding what its own hardware needs and being what's written to a file. Ready to be sampled by any
- * device, which says what it's seen on with [`Frame::viewport`].
+ * Layers, params, and timing: the device-independent part of a scene. `LedScene` and `DmdScene` wrap this with their
+ * hardware settings.
  */
 export type GfxComposition = { 
 /**
@@ -14,10 +13,10 @@ export type GfxComposition = {
  */
 params?: { [key in string]: Value }, 
 /**
- * `None` is static, and its tracks stay on their first moment
+ * `None` for a static scene, whose tracks stay at time 0
  */
 timing?: Timing, 
 /**
- * Drawn bottom to top, alpha over
+ * Composited bottom to top
  */
 layers: Array<Layer>, };

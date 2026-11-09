@@ -49,7 +49,7 @@ pub enum FillNode {
   Image {
     /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
-    /// Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+    /// FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
     /// count gives each frame equal time. Clamped to the last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
@@ -122,7 +122,7 @@ impl FillNode {
       Self::Solid(color) => color.resolve(env).0,
       Self::Gradient { stops, style } => gradient(stops, style.at(p), env),
       Self::Image { name, frame } => env.images.get(name).map_or(Rgba([0, 0, 0, 0]), |image| {
-        image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_whole(env)), p, footprint)
+        image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)), p, footprint)
       }),
     }
   }

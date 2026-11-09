@@ -6,10 +6,10 @@ import type { ShapeAdjust } from "./ShapeAdjust";
 import type { ShapeNode } from "./ShapeNode";
 
 /**
- * Where a layer shows, as a fill in a shape of its own. The layer shows as much as the mask is opaque.
+ * Controls where a layer shows, using the alpha of the mask's own fill and shape. The layer is visible in proportion
+ * to the mask's opacity; the mask's colors are never drawn.
  *
- * It's drawn like a layer but stays where it is in the scene, rather than following the layer's shape, so a mask that
- * moves reveals a layer that doesn't. It only changes the layer it's on, and what's drawn in it is never seen.
+ * The mask is placed in the scene independently of the layer's shape, so a moving mask can reveal a still layer.
  */
 export type Mask = { fill: Node<FillNode, ColorAdjust>, 
 /**

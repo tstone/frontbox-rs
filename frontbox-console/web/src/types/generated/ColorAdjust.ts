@@ -2,6 +2,6 @@
 import type { Prop } from "./Prop";
 
 /**
- * Changes to a fill's colors, applied in order to whatever its kind produces
+ * Color adjustments, applied in order to a fill's output
  */
 export type ColorAdjust = { "HueShift": Prop<number> } | { "Opacity": Prop<number> } | { "Brightness": Prop<number> } | { "Contrast": Prop<number> };

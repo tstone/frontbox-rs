@@ -50,9 +50,9 @@ impl<T: Animatable> Prop<T> {
 impl Prop<f32> {
   /// Like `resolve`, for values that are truncated to a whole number where they're used (blade counts, frame numbers).
   /// For a `Random`, this makes `force_unique` compare whole numbers, so consecutive picks don't truncate to the same one.
-  pub(crate) fn resolve_whole(&self, env: &Env) -> f32 {
+  pub(crate) fn resolve_truncated(&self, env: &Env) -> f32 {
     match self {
-      Self::Random(random) => random.resolve_whole(env),
+      Self::Random(random) => random.resolve_truncated(env),
       other => other.resolve(env),
     }
   }
@@ -74,7 +74,7 @@ mod tests {
   fn param_prefers_the_games_value_over_the_default() {
     let defaults = Params::from([("size".into(), Value::Float(1.0)), ("other".into(), Value::Float(9.0))]);
     let params = Params::from([("size".into(), Value::Float(2.0))]);
-    let env = Env { time: 0.0, cycle: 0, timing: None, take: 0, params: &params, defaults: &defaults, images: Images::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None };
+    let env = Env { time: 0.0, cycle: 0, timing: None, playback_seed: 0, params: &params, defaults: &defaults, images: Images::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None };
     assert_eq!(Prop::<f32>::Param("size".into()).resolve(&env), 2.0);
     assert_eq!(Prop::<f32>::Param("other".into()).resolve(&env), 9.0);
   }

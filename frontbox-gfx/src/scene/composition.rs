@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
 use crate::color::RgbaColor;
-use crate::scene::{Env, Frame, Layer, Params, Sample, ShapePose, Timing, Viewport};
+use crate::scene::{Env, FrameContext, Layer, Params, Sample, ShapePose, Timing, Surface};
 
 /// How far [`GfxComposition::cycle_time`] keeps times from the edges of a cycle, as a fraction of it, so float rounding
 /// doesn't push them into the neighboring cycle
@@ -98,9 +98,9 @@ impl GfxComposition {
   }
 
   /// The color at a sample. Layers without a shape are clipped to the viewport; shapes can extend past it.
-  pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8> {
-    let env = Env { lap: lap(frame.viewport, at.radius), ..self.env(frame) };
-    let viewport = frame.viewport.bounds(frame.size);
+  pub fn sample(&self, at: &Sample, frame: &FrameContext) -> Rgba<u8> {
+    let env = Env { lap: lap(frame.surface, at.radius), ..self.env(frame) };
+    let viewport = frame.surface.viewport(frame.size);
     self
       .layers
       .iter()
@@ -110,54 +110,54 @@ impl GfxComposition {
 
   /// Each layer's outline as a closed polygon in scene units, for editor overlays. A layer with no shape outlines the
   /// viewport, and a collapsed shape has no points. Hidden layers are included.
-  pub fn outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
+  pub fn outlines(&self, frame: &FrameContext) -> Vec<Vec<Vec2>> {
     let env = self.env(frame);
-    let viewport = frame.viewport.bounds(frame.size);
+    let viewport = frame.surface.viewport(frame.size);
     self.layers.iter().map(|layer| layer.outline(viewport, &env)).collect()
   }
 
   /// Each layer's [`ShapePose`] at this frame, for editor handles. `None` for a layer with no shape, or a collapsed one.
-  pub fn shape_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
+  pub fn shape_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
     self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
   }
 
   /// Like [`Self::outlines`], for each layer's mask. A layer with no mask has no points.
-  pub fn mask_outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
+  pub fn mask_outlines(&self, frame: &FrameContext) -> Vec<Vec<Vec2>> {
     let env = self.env(frame);
-    let viewport = frame.viewport.bounds(frame.size);
+    let viewport = frame.surface.viewport(frame.size);
     self.layers.iter().map(|layer| layer.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(viewport, &env))).collect()
   }
 
   /// Like [`Self::shape_poses`], for each layer's mask shape
-  pub fn mask_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
+  pub fn mask_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
     self.layers.iter().map(|layer| layer.mask.as_ref()?.shape.as_ref()?.pose(&env)).collect()
   }
 
   /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
   /// spacing doesn't matter.
-  fn env<'a>(&'a self, frame: &Frame<'a>) -> Env<'a> {
+  fn env<'a>(&'a self, frame: &FrameContext<'a>) -> Env<'a> {
     let time = self.timing.map_or(0.0, |timing| timing.local_time(frame.time));
     let cycle = self.timing.map_or(0, |timing| timing.cycle_index(frame.time));
     Env {
       time,
       cycle,
       timing: self.timing,
-      take: frame.take,
+      playback_seed: frame.playback_seed,
       params: frame.params,
       defaults: &self.params,
       images: frame.images,
-      viewport: frame.viewport.bounds(frame.size),
-      lap: lap(frame.viewport, 0.0),
+      viewport: frame.surface.viewport(frame.size),
+      lap: lap(frame.surface, 0.0),
     }
   }
 }
 
 /// Lap length of a `Sequence` for `Rotate`: the line plus one point's width to close the loop, so the last point doesn't
 /// land on the first when the ends wrap.
-fn lap(viewport: Viewport, radius: f32) -> Option<f32> {
-  (viewport == Viewport::Sequence).then(|| 1.0 + 2.0 * radius)
+fn lap(surface: Surface, radius: f32) -> Option<f32> {
+  (surface == Surface::Sequence).then(|| 1.0 + 2.0 * radius)
 }
 
 /// Why a scene can't be played
@@ -209,7 +209,7 @@ mod tests {
 
   fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
@@ -220,7 +220,7 @@ mod tests {
   #[test]
   fn a_scene_that_cant_play_says_which_layer_is_why() {
     let changing = || solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(Track { keys: vec![], cycle: Cycle::Once })));
-    let scene = |top: Layer| Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), top]);
+    let scene = |top: Layer| Scene::new(Surface::Area, vec![Layer::new(solid(RED)), top]);
 
     let error = scene(Layer::new(changing()).name("sparkle")).check().unwrap_err();
     assert_eq!(error, no_timing("layer \"sparkle\""));
@@ -230,17 +230,17 @@ mod tests {
 
   #[test]
   fn a_hidden_layer_isnt_drawn_and_keeps_its_place() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).hidden()]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).hidden()]);
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5), RED);
 
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     assert_eq!(scene.outlines(&frame).len(), 2);
   }
 
   #[test]
   fn a_layer_with_no_shape_covers_the_viewport_and_no_further() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED))]);
     assert_eq!(sample(&scene, 100.0, 50.0, 0.5), RED);
     assert_eq!(sample(&scene, 100.5, 25.0, 0.5), Rgba([0, 0, 0, 0]));
     assert_eq!(sample(&scene, 50.0, -0.5, 0.5), Rgba([0, 0, 0, 0]));
@@ -249,13 +249,13 @@ mod tests {
   #[test]
   fn a_shape_runs_past_the_viewport() {
     let shape = Shape::new(ShapeNode::circle(10.0)).transform(Transform::Translate(Vec2::new(150.0, 25.0).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).shape(shape)]);
     assert_eq!(sample(&scene, 150.0, 25.0, 0.5), BLUE);
     assert_eq!(sample(&scene, 170.0, 25.0, 0.5), Rgba([0, 0, 0, 0]));
   }
 
   fn turned(degrees: f32) -> Scene {
-    Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue().transform(Transform::Rotate(degrees.into())))])
+    Scene::new(Surface::Sequence, vec![Layer::new(red_to_blue().transform(Transform::Rotate(degrees.into())))])
   }
 
   #[test]
@@ -278,7 +278,7 @@ mod tests {
   fn rotate_runs_a_shape_past_the_end_of_a_sequence_to_its_start() {
     let lit = |transform: Vec<Transform>| -> Vec<bool> {
       let shape = transform.into_iter().fold(Shape::new(ShapeNode::Rect { width: 0.1.into(), height: 1.0.into() }), Shape::transform);
-      line(&Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(shape)]), 5).iter().map(|color| color[3] > 0).collect()
+      line(&Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(shape)]), 5).iter().map(|color| color[3] > 0).collect()
     };
     let place = || Transform::Translate(Vec2::new(0.75, 0.0).into());
     let turn = |degrees: f32| Transform::Rotate(degrees.into());
@@ -293,7 +293,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Rotate(90.0.into()))
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -303,7 +303,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
       .transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -314,14 +314,14 @@ mod tests {
       points: [(10.0, 4.0), (30.0, 4.0), (30.0, 6.0), (10.0, 6.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
     };
     let shape = Shape::new(bar).transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(shape)]);
     assert_eq!(sample(&scene, 20.0, 12.0, 0.1), RED);
     assert_eq!(sample(&scene, 12.0, 5.0, 0.1)[3], 0);
   }
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
   }
 
@@ -329,18 +329,18 @@ mod tests {
   fn random_color(cycle: Cycle) -> Scene {
     let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
     let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 1, force_unique: true });
-    Scene::new(Viewport::Sequence, vec![Layer::new(Fill::new(FillNode::Solid(color)))]).timing(Timing::new(1.0, cycle))
+    Scene::new(Surface::Sequence, vec![Layer::new(Fill::new(FillNode::Solid(color)))]).timing(Timing::new(1.0, cycle))
   }
 
-  fn random_color_at(scene: &Scene, time: f32, take: u32) -> Rgba<u8> {
+  fn random_color_at(scene: &Scene, time: f32, playback_seed: u32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = Frame { time, take, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time, playback_seed, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
   }
 
   #[test]
   fn a_scene_that_repeats_has_a_cycle_either_side_of_its_middle() {
-    let middle = |cycle| Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
+    let middle = |cycle| Scene::new(Surface::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
     assert_eq!(middle(Cycle::Forever).timing.unwrap().cycle, Cycle::Times(3));
     assert_eq!(middle(Cycle::Times(2)).timing.unwrap().cycle, Cycle::Times(3));
     assert_eq!(middle(Cycle::Forever).middle_cycle_time(0.5), 1.5);
@@ -349,7 +349,7 @@ mod tests {
   #[test]
   fn a_scene_of_one_cycle_stays_as_it_is_in_its_middle() {
     for cycle in [Cycle::Once, Cycle::Times(1)] {
-      let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
+      let scene = Scene::new(Surface::Sequence, vec![]).timing(Timing::new(1.0, cycle)).middle_cycle();
       assert_eq!(scene.timing.unwrap().cycle, cycle);
       assert_eq!(scene.middle_cycle_time(0.5), 0.5);
     }
@@ -357,7 +357,7 @@ mod tests {
 
   #[test]
   fn the_end_of_a_middle_cycle_is_still_that_cycle() {
-    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(0.1, Cycle::Forever)).middle_cycle();
+    let scene = Scene::new(Surface::Sequence, vec![]).timing(Timing::new(0.1, Cycle::Forever)).middle_cycle();
     assert_eq!(scene.timing.unwrap().cycle_index(scene.middle_cycle_time(0.1)), 1);
   }
 
@@ -365,7 +365,7 @@ mod tests {
   fn a_time_in_a_cycle_stays_in_that_cycle() {
     for duration in [0.1, 0.7, 2.0] {
       let timing = Timing::new(duration, Cycle::Forever);
-      let scene = Scene::new(Viewport::Sequence, vec![]).timing(timing);
+      let scene = Scene::new(Surface::Sequence, vec![]).timing(timing);
       for cycle in 0..1000 {
         assert_eq!(timing.cycle_index(scene.cycle_time(cycle, 0.0)), cycle, "start of {cycle} of {duration}");
         assert_eq!(timing.cycle_index(scene.cycle_time(cycle, duration)), cycle, "end of {cycle} of {duration}");
@@ -375,13 +375,13 @@ mod tests {
 
   #[test]
   fn a_cycle_past_the_last_is_the_last() {
-    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Times(3)));
+    let scene = Scene::new(Surface::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Times(3)));
     assert_eq!(scene.cycle_time(7, 0.5), 2.5);
   }
 
   #[test]
   fn a_scene_of_one_cycle_has_only_that_one() {
-    let scene = Scene::new(Viewport::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Once));
+    let scene = Scene::new(Surface::Sequence, vec![]).timing(Timing::new(1.0, Cycle::Once));
     assert_eq!(scene.cycle_time(3, 1.0), 1.0);
   }
 
@@ -391,7 +391,7 @@ mod tests {
       let spread = Spread::Float(0.0, 360.0);
       let pick = Pick { at: 0.0, smooth_in: 1.0, smooth_out: 0.0 };
       let shift = Prop::Random(Random { picks: vec![pick], spread, seed: 1, force_unique: true });
-      Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED).adjust(ColorAdjust::HueShift(shift)))])
+      Scene::new(Surface::Sequence, vec![Layer::new(solid(RED).adjust(ColorAdjust::HueShift(shift)))])
         .timing(Timing::new(1.0, cycle))
     };
     let looping = smoothed(Cycle::Forever);
@@ -431,7 +431,7 @@ mod tests {
 
   /// A circle of diameter 40 at (50, 25) in a 100 x 50 viewport, over a dark background
   fn circle(fill: Fill) -> Scene {
-    Scene::new(Viewport::Area, vec![
+    Scene::new(Surface::Area, vec![
       Layer::new(solid(DARK)),
       Layer::new(fill).shape(
         Shape::new(ShapeNode::circle(0.5))
@@ -443,26 +443,26 @@ mod tests {
 
   fn outlines(layer: Layer) -> Vec<Vec2> {
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
-    Scene::new(Viewport::Area, vec![layer]).outlines(&frame).remove(0)
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    Scene::new(Surface::Area, vec![layer]).outlines(&frame).remove(0)
   }
 
   #[test]
   fn a_device_decides_the_size_of_an_area() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED))]);
     let params = Params::new();
     let at = Sample::new(Vec2::new(150.0, 25.0), 0.0);
-    let color = |size: Vec2| scene.sample(&at, &Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size, viewport: Viewport::Area });
+    let color = |size: Vec2| scene.sample(&at, &FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size, surface: Surface::Area });
     assert_eq!(color(Vec2::new(200.0, 50.0)), RED);
     assert_eq!(color(SIZE), Rgba([0, 0, 0, 0]));
   }
 
   #[test]
   fn a_gradient_with_no_shape_stretches_to_the_device() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(red_to_blue())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue())]);
     let params = Params::new();
     let far_edge = |width: f32| {
-      let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), viewport: Viewport::Area };
+      let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), surface: Surface::Area };
       scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
     };
     assert_eq!(far_edge(100.0), BLUE);
@@ -510,7 +510,7 @@ mod tests {
 
   #[test]
   fn solid_on_a_line() {
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED))]);
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED))]);
     assert_eq!(line(&scene, 4), vec![RED; 4]);
   }
 
@@ -519,7 +519,7 @@ mod tests {
     use crate::prelude::*;
 
     for count in [1, 2, 5, 16, 33] {
-      let scene = Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue())]);
+      let scene = Scene::new(Surface::Sequence, vec![Layer::new(red_to_blue())]);
       let expected = ColorSequence::fade(RED, BLUE).generate(count);
       let actual = line(&scene, count);
       for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
@@ -554,7 +554,7 @@ mod tests {
 
   /// A red layer over a dark one, with a mask on the red
   fn masked(mask: Mask) -> Scene {
-    Scene::new(Viewport::Area, vec![Layer::new(solid(DARK)), Layer::new(solid(RED)).mask(mask)])
+    Scene::new(Surface::Area, vec![Layer::new(solid(DARK)), Layer::new(solid(RED)).mask(mask)])
   }
 
   #[test]
@@ -580,7 +580,7 @@ mod tests {
   #[test]
   fn a_mask_fades_its_layer_by_its_own_opacity() {
     let half = solid(BLUE).adjust(ColorAdjust::Opacity(0.5.into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).mask(Mask::new(half))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).mask(Mask::new(half))]);
     let alpha = sample(&scene, 50.0, 25.0, 0.5)[3];
     assert!((alpha as i16 - 128).abs() <= 1, "{alpha}");
   }
@@ -589,7 +589,7 @@ mod tests {
   fn a_mask_stays_put_as_its_layer_moves() {
     let moved = middle_circle().transform(Transform::Translate(Vec2::new(20.0, 0.0).into()));
     let mask = Mask::new(solid(BLUE)).shape(middle_circle());
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)).shape(moved).mask(mask)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(moved).mask(mask)]);
     // in both, in the layer alone, and in the mask alone
     assert_eq!(sample(&scene, 60.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 85.0, 25.0, 0.5)[3], 0);
@@ -613,7 +613,7 @@ mod tests {
   fn a_masks_outline_and_pose_line_up_with_the_layers() {
     let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     assert!(scene.mask_outlines(&frame)[0].is_empty());
     assert!(!scene.mask_outlines(&frame)[1].is_empty());
     assert!(scene.mask_poses(&frame)[0].is_none());
@@ -650,7 +650,7 @@ mod tests {
   #[test]
   fn shape_on_a_line_is_measured_along_it() {
     // on 5 LEDs, a circle most of the way across centered on the middle lights all but the end LEDs
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.75).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -661,7 +661,7 @@ mod tests {
 
   #[test]
   fn a_sequence_plays_on_any_number_of_leds() {
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(red_to_blue())]);
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(red_to_blue())]);
     for count in [2, 6, 8, 60] {
       let colors = line(&scene, count);
       assert_eq!(colors[0], RED, "{count} LEDs");
@@ -671,7 +671,7 @@ mod tests {
 
   #[test]
   fn a_shape_covers_the_same_part_of_any_strip() {
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.5).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -694,7 +694,7 @@ mod tests {
   #[test]
   fn a_shape_larger_than_the_viewport_can_move_under_it() {
     // a 300 wide gradient, moved so its middle is in view
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(red_to_blue()).shape(
+    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).shape(
       Shape::new(ShapeNode::Polygon {
         points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
       })
@@ -709,7 +709,7 @@ mod tests {
     // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
     let scene = circle(solid(RED));
     let params = Params::new();
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     let pixels: Vec<_> =
       Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
     let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
@@ -727,7 +727,7 @@ mod tests {
       ],
       cycle: Cycle::Once,
     });
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(Fill::new(FillNode::Solid(track)))]);
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(Fill::new(FillNode::Solid(track)))]);
     match timing {
       Some(timing) => scene.timing(timing),
       None => scene,
@@ -736,7 +736,7 @@ mod tests {
 
   fn level_at(scene: &Scene, time: f32) -> u8 {
     let params = Params::new();
-    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &Frame { time, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area })[0]
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area })[0]
   }
 
   #[test]
@@ -782,7 +782,7 @@ mod tests {
   fn keyframes_need_a_timing() {
     assert_eq!(rising(None).check(), Err(no_timing("layer 1")));
     assert_eq!(rising(Some(Timing::new(1.0, Cycle::Once))).check(), Ok(()));
-    assert_eq!(Scene::new(Viewport::Sequence, vec![Layer::new(solid(RED))]).check(), Ok(()));
+    assert_eq!(Scene::new(Surface::Sequence, vec![Layer::new(solid(RED))]).check(), Ok(()));
   }
 
   #[test]
@@ -798,14 +798,14 @@ mod tests {
     }));
     let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));
     for layer in [in_transform, in_point, in_stop, in_adjust] {
-      assert_eq!(Scene::new(Viewport::Area, vec![layer]).check(), Err(no_timing("layer 1")));
+      assert_eq!(Scene::new(Surface::Area, vec![layer]).check(), Err(no_timing("layer 1")));
     }
   }
 
   #[test]
   fn a_timing_needs_a_length() {
     for duration in [0.0, -1.0, f32::NAN, f32::INFINITY] {
-      let scene = Scene::new(Viewport::Area, vec![]).timing(Timing::new(duration, Cycle::Once));
+      let scene = Scene::new(Surface::Area, vec![]).timing(Timing::new(duration, Cycle::Once));
       assert_eq!(scene.check(), Err(SceneError::NoDuration), "{duration}");
     }
   }
@@ -815,14 +815,14 @@ mod tests {
     use crate::scene::Value;
 
     let mut scene = Scene::new(
-      Viewport::Sequence,
+      Surface::Sequence,
       vec![Layer::new(Fill::new(FillNode::Solid(Prop::Param("color".into()))))],
     );
     scene.params.insert("color".into(), Value::Color(Color(RED)));
     assert_eq!(line(&scene, 1), vec![RED]);
 
     let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
     assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
   }
 
@@ -845,16 +845,16 @@ mod tests {
 
   fn drawn(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let (params, images) = (Params::new(), images());
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), surface: Surface::Area };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
   #[test]
   fn an_image_shows_its_pixels_on_a_grid_of_the_same_size() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(image_fill())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
     let size = Vec2::new(4.0, 3.0);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area };
     let colors: Vec<_> = Grid::new(4, 3, size).samples().map(|at| scene.sample(&at, &frame)).collect();
 
     let green = Rgba([0, 255, 0, 255]);
@@ -864,7 +864,7 @@ mod tests {
   #[test]
   fn an_image_stretches_over_a_shape_and_moves_with_it() {
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(2.0).into())).transform(Transform::Translate(Vec2::new(2.0, 1.5).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
     assert_eq!(drawn(&scene, 1.5, 0.7, 0.01), RED);
     assert_eq!(drawn(&scene, 2.5, 0.7, 0.01), BLUE);
     assert_eq!(drawn(&scene, 0.1, 0.1, 0.01)[3], 0);
@@ -872,9 +872,9 @@ mod tests {
 
   #[test]
   fn a_strip_runs_along_the_middle_of_an_image() {
-    let scene = Scene::new(Viewport::Sequence, vec![Layer::new(image_fill())]);
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size: SIZE, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: SIZE, surface: Surface::Area };
     for at in Line::new(5).samples() {
       assert_eq!(scene.sample(&Sample::new(at.pos, 0.0), &frame), Rgba([0, 255, 0, 255]));
     }
@@ -886,15 +886,15 @@ mod tests {
     let mut images = Images::new();
     images.insert("art.png", Picture::new(checkers));
     let (params, size) = (Params::new(), Vec2::new(64.0, 64.0));
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: Viewport::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area };
 
     // a whole viewport of it shows each pixel, and the same image in a shape of 4 units has 16 pixels to each unit
     let at = Sample::new(Vec2::new(32.0, 32.0), 0.5);
-    let whole = Scene::new(Viewport::Area, vec![Layer::new(image_fill())]);
+    let whole = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
     assert!([RED, BLUE].contains(&whole.sample(&at, &frame)));
 
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(4.0).into())).transform(Transform::Translate(Vec2::splat(32.0).into()));
-    let small = Scene::new(Viewport::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
     let color = small.sample(&at, &frame);
     assert!((100..=155).contains(&color[0]) && (100..=155).contains(&color[2]), "{color:?}");
   }
@@ -902,41 +902,41 @@ mod tests {
   #[test]
   fn transforms_and_adjusts_work_on_an_image_like_any_fill() {
     let flipped = image_fill().transform(Transform::Rotate(180.0.into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(flipped)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(flipped)]);
     assert_eq!(drawn(&scene, 0.5, 0.5, 0.01), BLUE);
     assert_eq!(drawn(&scene, 3.5, 0.5, 0.01), RED);
 
     let tinted = image_fill().adjust(ColorAdjust::HueShift(120.0.into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(tinted)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(tinted)]);
     assert_ne!(drawn(&scene, 0.5, 0.5, 0.01), RED);
   }
 
   #[test]
   fn an_image_shrunk_by_a_transform_leaves_the_rest_clear() {
     let shrunk = image_fill().transform(Transform::Scale(Vec2::splat(0.5).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(shrunk), ]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(shrunk), ]);
     assert_eq!(drawn(&scene, 0.2, 0.2, 0.01)[3], 0);
     assert_eq!(drawn(&scene, 1.5, 1.0, 0.01), RED);
   }
 
   #[test]
   fn a_scene_lists_the_images_it_draws() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(image_fill())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(image_fill())]);
     assert_eq!(scene.image_names().collect::<Vec<_>>(), ["art.png"]);
   }
 
   /// A scene of an animated image, one pixel for each frame number
   fn playing(frame: Prop<f32>) -> Scene {
     let image = FillNode::Image { name: "a.gif".into(), frame: Some(frame) };
-    Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Forever))
+    Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Forever))
   }
 
   /// Which of 4 frames is drawn. Each frame's red is its number.
-  fn frame_at(scene: &Scene, time: f32, take: u32, params: &Params) -> u8 {
+  fn frame_at(scene: &Scene, time: f32, playback_seed: u32, params: &Params) -> u8 {
     let art = (0..4).map(|n| image::RgbaImage::from_pixel(1, 1, Rgba([n, 0, 0, 255])));
     let mut images = Images::new();
     images.insert("a.gif", Picture::animated(art, 0.4));
-    let frame = Frame { time, take, params, images: &images, size: Vec2::ONE, viewport: Viewport::Area };
+    let frame = FrameContext { time, playback_seed, params, images: &images, size: Vec2::ONE, surface: Surface::Area };
     scene.sample(&Sample::new(Vec2::splat(0.5), 0.1), &frame)[0]
   }
 
@@ -960,8 +960,8 @@ mod tests {
     let random = Random { picks: vec![Pick::new(0.0)], spread: Spread::Float(0.0, 4.0), seed: 1, force_unique: true };
     let scene = playing(Prop::Random(random));
     let mut times = [0; 4];
-    for take in 0..4000 {
-      times[frame_at(&scene, 0.5, take, &Params::new()) as usize] += 1;
+    for playback_seed in 0..4000 {
+      times[frame_at(&scene, 0.5, playback_seed, &Params::new()) as usize] += 1;
     }
     assert!(times.iter().all(|times| (900..1100).contains(times)), "{times:?}");
   }
@@ -978,32 +978,32 @@ mod tests {
   fn a_frame_that_changes_needs_timing() {
     let track = Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once };
     let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(track)) };
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]);
     assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
   }
 
   #[test]
   fn an_image_yet_to_be_chosen_is_not_listed() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(FillNode::image("")))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(FillNode::image("")))]);
     assert_eq!(scene.image_names().count(), 0);
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5)[3], 0);
   }
 
   #[test]
   fn an_image_with_nothing_to_draw_it_is_clear_and_needs_no_timing() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(image_fill())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
     assert!(scene.check().is_ok());
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5)[3], 0);
   }
   #[test]
   fn a_layer_on_its_own_keeps_the_timeline_and_the_parameters() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE))]).timing(Timing::new(1.0, Cycle::Forever));
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE))]).timing(Timing::new(1.0, Cycle::Forever));
     let mut composition = scene.composition.clone();
     composition.params.insert("size".into(), 2.0.into());
 
     let only = composition.only(1);
     assert_eq!(only.timing, composition.timing);
     assert_eq!(only.params.len(), 1);
-    assert_eq!(sample(&Scene::with_composition(Viewport::Area, only), 1.0, 1.0, 0.5), BLUE);
+    assert_eq!(sample(&Scene::with_composition(Surface::Area, only), 1.0, 1.0, 0.5), BLUE);
   }
 }

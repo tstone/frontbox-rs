@@ -20,18 +20,29 @@ pub type Shape = Node<ShapeNode, ShapeAdjust>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
   Circle { radius: Prop<f32> },
-  /// An annulus: `radius` is the hole's radius and `thickness` the band's width outward from it. A `radius` of 0 makes a
-  /// filled circle.
-  Ring { radius: Prop<f32>, thickness: Prop<f32> },
-  /// `r1` is the vertical radius and `r2` the horizontal
-  Ellipse { r1: Prop<f32>, r2: Prop<f32> },
+  /// An annulus: `thickness` is the band's width outward from the hole. An `inner_radius` of 0 makes a filled circle.
+  Ring {
+    #[serde(alias = "radius")]
+    inner_radius: Prop<f32>,
+    thickness: Prop<f32>,
+  },
+  Ellipse {
+    #[serde(alias = "r2")]
+    rx: Prop<f32>,
+    #[serde(alias = "r1")]
+    ry: Prop<f32>,
+  },
   Rect { width: Prop<f32>, height: Prop<f32> },
   /// Wedge-shaped blades radiating from the origin out past the viewport edges.
   ///
-  /// Each blade plus the gap after it is an equal slice of the circle, and `balance` (0 to 1) is the blade's share of
-  /// its slice, so at 0.5 blades and gaps are equal. The first blade starts at 3 o'clock and they go clockwise. `blades`
-  /// is truncated to a whole number. The fill is stretched over a viewport-sized box centered on the origin.
-  Pinwheel { blades: Prop<f32>, balance: Prop<f32> },
+  /// Each blade plus the gap after it is an equal slice of the circle, and `blade_fraction` (0 to 1) is the blade's share
+  /// of its slice, so at 0.5 blades and gaps are equal. The first blade starts at 3 o'clock and they go clockwise.
+  /// `blades` is truncated to a whole number. The fill is stretched over a viewport-sized box centered on the origin.
+  Pinwheel {
+    blades: Prop<f32>,
+    #[serde(alias = "balance")]
+    blade_fraction: Prop<f32>,
+  },
   /// A closed polygon
   Polygon {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
@@ -40,11 +51,12 @@ pub enum ShapeNode {
   /// An open polyline. It has no inside, so it draws nothing as a layer's shape; it's only for a [`Sweep`] to follow.
   ///
   /// [`Sweep`]: crate::scene::Sweep
-  Route {
+  #[serde(alias = "Route")]
+  Polyline {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
-  /// An open, smooth curve through points. Like [`ShapeNode::Route`], it's only for a sweep to follow.
+  /// An open, smooth curve through points. Like [`ShapeNode::Polyline`], it's only for a sweep to follow.
   Bezier { points: Vec<BezierPoint> },
 }
 
@@ -67,13 +79,13 @@ pub struct ShapePose {
   pub transforms: Vec<Affine2>,
   /// Bounds in local space, before transforms
   pub bounds: Bounds,
-  /// Local-space points of a polygon, route, or bezier. Empty for other shapes.
+  /// Local-space points of a polygon, polyline, or bezier. Empty for other shapes.
   pub points: Vec<Vec2>,
   /// Bezier handles, relative to their points. Empty for other shapes.
   pub handles: Vec<Vec2>,
   /// A ring's hole radius in local space. 0 for other shapes.
   pub hole: f32,
-  /// Outline in scene space. Closed, except for routes and beziers. A ring's is its outer edge.
+  /// Outline in scene space. Closed, except for polylines and beziers. A ring's is its outer edge.
   pub outline: Vec<Vec2>,
   /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
   pub paths: Vec<Option<ShapePose>>,
@@ -110,7 +122,7 @@ impl Shape {
     let bounds = self.base.bounds(env);
     self.to_scene(bounds.center(), env)?;
     let points = match &self.base {
-      ShapeNode::Polygon { points } | ShapeNode::Route { points } => points.iter().map(|p| p.resolve(env)).collect(),
+      ShapeNode::Polygon { points } | ShapeNode::Polyline { points } => points.iter().map(|p| p.resolve(env)).collect(),
       ShapeNode::Bezier { points } => points.iter().map(|p| p.point.resolve(env)).collect(),
       _ => Vec::new(),
     };
@@ -119,7 +131,7 @@ impl Shape {
       _ => Vec::new(),
     };
     let hole = match &self.base {
-      ShapeNode::Ring { radius, .. } => radius.resolve(env).max(0.0),
+      ShapeNode::Ring { inner_radius, .. } => inner_radius.resolve(env).max(0.0),
       _ => 0.0,
     };
     Some(ShapePose {
@@ -154,13 +166,13 @@ impl ShapeNode {
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
-      Self::Ring { radius: a, thickness: b }
-      | Self::Ellipse { r1: a, r2: b }
+      Self::Ring { inner_radius: a, thickness: b }
+      | Self::Ellipse { rx: a, ry: b }
       | Self::Rect { width: a, height: b }
-      | Self::Pinwheel { blades: a, balance: b } => {
+      | Self::Pinwheel { blades: a, blade_fraction: b } => {
         a.is_animated() || b.is_animated()
       }
-      Self::Polygon { points } | Self::Route { points } => points.iter().any(Prop::is_animated),
+      Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
     }
   }
@@ -172,7 +184,7 @@ impl ShapeNode {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
       }
-      Self::Polygon { points } | Self::Route { points } => bounds_of(points.iter().map(|p| p.resolve(env))),
+      Self::Polygon { points } | Self::Polyline { points } => bounds_of(points.iter().map(|p| p.resolve(env))),
       // points only, so dragging a handle doesn't move the center that `Rotate` pivots on
       Self::Bezier { points } => bounds_of(points.iter().map(|p| p.point.resolve(env))),
     }
@@ -188,12 +200,12 @@ impl ShapeNode {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Pinwheel { blades, balance } => {
-        pinwheel_outline(whole_blades(blades, env), unit_balance(balance, env), self.reach(env).length())
+      Self::Pinwheel { blades, blade_fraction } => {
+        pinwheel_outline(whole_blades(blades, env), unit_fraction(blade_fraction, env), self.reach(env).length())
       }
       // too few points to enclose anything, so it draws nothing
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
-      Self::Polygon { points } | Self::Route { points } => points.iter().map(|p| p.resolve(env)).collect(),
+      Self::Polygon { points } | Self::Polyline { points } => points.iter().map(|p| p.resolve(env)).collect(),
       Self::Bezier { points } => bezier_line(points, env),
     }
   }
@@ -205,7 +217,7 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => {
         Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env)
       }
-      Self::Route { .. } | Self::Bezier { .. } => along_line(&self.outline(env), phase),
+      Self::Polyline { .. } | Self::Bezier { .. } => along_line(&self.outline(env), phase),
       _ => along_loop(&self.outline(env), phase),
     }
   }
@@ -214,11 +226,11 @@ impl ShapeNode {
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
       Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
-      Self::Ring { radius, thickness } => Vec2::splat(radius.resolve(env).max(0.0) + thickness.resolve(env)),
-      Self::Ellipse { r1, r2 } => Vec2::new(r2.resolve(env), r1.resolve(env)),
+      Self::Ring { inner_radius, thickness } => Vec2::splat(inner_radius.resolve(env).max(0.0) + thickness.resolve(env)),
+      Self::Ellipse { rx, ry } => Vec2::new(rx.resolve(env), ry.resolve(env)),
       Self::Rect { width, height } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
       Self::Pinwheel { .. } => env.viewport.size() / 2.0,
-      Self::Polygon { .. } | Self::Route { .. } | Self::Bezier { .. } => Vec2::ZERO,
+      Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
     }
   }
 
@@ -226,14 +238,14 @@ impl ShapeNode {
   fn distance(&self, p: Vec2, env: &Env) -> (f32, Vec2) {
     match self {
       Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
-      Self::Ring { radius, thickness } => ring_distance(radius.resolve(env), thickness.resolve(env), p),
+      Self::Ring { inner_radius, thickness } => ring_distance(inner_radius.resolve(env), thickness.resolve(env), p),
       Self::Rect { .. } => rect_distance(self.reach(env), p),
-      Self::Pinwheel { blades, balance } => pinwheel_distance(whole_blades(blades, env), unit_balance(balance, env), p),
+      Self::Pinwheel { blades, blade_fraction } => pinwheel_distance(whole_blades(blades, env), unit_fraction(blade_fraction, env), p),
       Self::Polygon { points } => {
         let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
         polygon_distance(&points, p)
       }
-      Self::Route { .. } | Self::Bezier { .. } => (f32::INFINITY, Vec2::X),
+      Self::Polyline { .. } | Self::Bezier { .. } => (f32::INFINITY, Vec2::X),
     }
   }
 }
@@ -318,17 +330,17 @@ fn ring_distance(hole: f32, thickness: f32, p: Vec2) -> (f32, Vec2) {
 }
 
 fn whole_blades(blades: &Prop<f32>, env: &Env) -> u32 {
-  blades.resolve_whole(env).floor().clamp(0.0, MAX_BLADES) as u32
+  blades.resolve_truncated(env).floor().clamp(0.0, MAX_BLADES) as u32
 }
 
-fn unit_balance(balance: &Prop<f32>, env: &Env) -> f32 {
-  balance.resolve(env).clamp(0.0, 1.0)
+fn unit_fraction(blade_fraction: &Prop<f32>, env: &Env) -> f32 {
+  blade_fraction.resolve(env).clamp(0.0, 1.0)
 }
 
 /// Each blade as a wedge: out from the center, along an arc, and back
-fn pinwheel_outline(blades: u32, balance: f32, reach: f32) -> Vec<Vec2> {
+fn pinwheel_outline(blades: u32, blade_fraction: f32, reach: f32) -> Vec<Vec2> {
   let share = std::f32::consts::TAU / blades.max(1) as f32;
-  let width = share * balance;
+  let width = share * blade_fraction;
   let steps = (ROUND_OUTLINE_POINTS as u32 / (2 * blades.max(1))).max(1);
   (0..blades)
     .flat_map(|blade| {
@@ -341,12 +353,12 @@ fn pinwheel_outline(blades: u32, balance: f32, reach: f32) -> Vec<Vec2> {
 
 /// Signed distance to the nearest blade edge. Each edge is a ray from the center: within 90° of the ray the distance is
 /// `r * sin(angle)`, and beyond that the nearest point is the center itself.
-fn pinwheel_distance(blades: u32, balance: f32, p: Vec2) -> (f32, Vec2) {
+fn pinwheel_distance(blades: u32, blade_fraction: f32, p: Vec2) -> (f32, Vec2) {
   if blades == 0 {
     return (f32::INFINITY, Vec2::X);
   }
   let share = std::f32::consts::TAU / blades as f32;
-  let width = share * balance;
+  let width = share * blade_fraction;
   // angle from the center line of the nearest blade
   let around = (p.y.atan2(p.x) - width / 2.0 + share / 2.0).rem_euclid(share) - share / 2.0;
   let right = std::f32::consts::FRAC_PI_2;
@@ -477,7 +489,7 @@ mod tests {
 
   #[test]
   fn an_ellipses_radii_are_up_and_down_then_side_to_side() {
-    let ellipse = Shape::new(ShapeNode::Ellipse { r1: 2.0.into(), r2: 10.0.into() });
+    let ellipse = Shape::new(ShapeNode::Ellipse { rx: 10.0.into(), ry: 2.0.into() });
     assert_eq!(covered(&ellipse, 9.0, 0.0, 0.1), 1.0);
     assert_eq!(covered(&ellipse, 0.0, 3.0, 0.1), 0.0);
     assert!((covered(&ellipse, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
@@ -486,12 +498,12 @@ mod tests {
 
   #[test]
   fn an_ellipse_with_no_radius_draws_nothing() {
-    let ellipse = Shape::new(ShapeNode::Ellipse { r1: 0.0.into(), r2: 10.0.into() });
+    let ellipse = Shape::new(ShapeNode::Ellipse { rx: 10.0.into(), ry: 0.0.into() });
     assert_eq!(covered(&ellipse, 0.0, 0.0, 0.5), 0.0);
   }
 
   fn ring(radius: f32, thickness: f32) -> Shape {
-    Shape::new(ShapeNode::Ring { radius: radius.into(), thickness: thickness.into() })
+    Shape::new(ShapeNode::Ring { inner_radius: radius.into(), thickness: thickness.into() })
   }
 
   #[test]
@@ -542,11 +554,11 @@ mod tests {
   }
 
   fn pinwheel(blades: f32) -> Shape {
-    balanced_pinwheel(blades, 0.5)
+    pinwheel_with(blades, 0.5)
   }
 
-  fn balanced_pinwheel(blades: f32, balance: f32) -> Shape {
-    Shape::new(ShapeNode::Pinwheel { blades: blades.into(), balance: balance.into() })
+  fn pinwheel_with(blades: f32, blade_fraction: f32) -> Shape {
+    Shape::new(ShapeNode::Pinwheel { blades: blades.into(), blade_fraction: blade_fraction.into() })
   }
 
   /// How much of a point this many degrees clockwise from the right is covered, far from the middle
@@ -594,8 +606,8 @@ mod tests {
   }
 
   #[test]
-  fn a_pinwheels_balance_is_how_much_of_each_share_is_blade() {
-    let shape = balanced_pinwheel(4.0, 0.25);
+  fn a_pinwheels_blade_fraction_is_its_share_of_each_slice() {
+    let shape = pinwheel_with(4.0, 0.25);
     for (degrees, filled) in [(5.0, 1.0), (17.0, 1.0), (30.0, 0.0), (85.0, 0.0), (95.0, 1.0), (120.0, 0.0)] {
       assert_eq!(covered_at(&shape, degrees), filled, "at {degrees} degrees");
     }
@@ -604,12 +616,12 @@ mod tests {
 
   #[test]
   fn past_a_right_angle_from_a_blades_edge_the_middle_is_nearest() {
-    let behind = |balance: f32| Vec2::from_angle(std::f32::consts::PI * (balance + 1.0)) * 10.0;
-    let middle = |balance: f32| Vec2::from_angle(std::f32::consts::PI * balance) * 10.0;
+    let behind = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * (blade_fraction + 1.0)) * 10.0;
+    let middle = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * blade_fraction) * 10.0;
     assert!((pinwheel_distance(1, 0.1, behind(0.1)).0 - 10.0).abs() < 1e-4);
     assert!((pinwheel_distance(1, 0.9, middle(0.9)).0 + 10.0).abs() < 1e-4);
-    assert_eq!(covered(&balanced_pinwheel(1.0, 0.9), 10.0, -0.1, 0.05), 0.0);
-    assert_eq!(covered(&balanced_pinwheel(1.0, 0.9), -10.0, 0.0, 0.05), 1.0);
+    assert_eq!(covered(&pinwheel_with(1.0, 0.9), 10.0, -0.1, 0.05), 0.0);
+    assert_eq!(covered(&pinwheel_with(1.0, 0.9), -10.0, 0.0, 0.05), 1.0);
   }
 
   #[test]
@@ -642,8 +654,8 @@ mod tests {
     assert_eq!(pinwheel(1e9).pose(&env(0.0, &params)).unwrap().outline.len(), MAX_BLADES as usize * 3);
   }
 
-  fn route(points: &[(f32, f32)]) -> ShapeNode {
-    ShapeNode::Route { points: points.iter().map(|(x, y)| Vec2::new(*x, *y).into()).collect() }
+  fn polyline(points: &[(f32, f32)]) -> ShapeNode {
+    ShapeNode::Polyline { points: points.iter().map(|(x, y)| Vec2::new(*x, *y).into()).collect() }
   }
 
   fn bezier(points: &[((f32, f32), (f32, f32))]) -> ShapeNode {
@@ -652,28 +664,28 @@ mod tests {
   }
 
   #[test]
-  fn a_route_goes_from_its_first_point_to_its_last_at_an_even_speed() {
+  fn a_polyline_goes_from_its_first_point_to_its_last_at_an_even_speed() {
     let params = Params::new();
     let frame = env(0.0, &params);
-    let path = Shape::new(route(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)]));
+    let path = Shape::new(polyline(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)]));
     for (phase, x, y) in [(0.0, 0.0, 0.0), (0.5, 20.0, 0.0), (0.75, 30.0, 0.0), (1.0, 30.0, 10.0)] {
       assert!(path.along(phase, &frame).abs_diff_eq(Vec2::new(x, y), 1e-4), "at {phase}");
     }
   }
 
   #[test]
-  fn a_route_of_one_point_stays_on_it_and_one_of_none_at_the_origin() {
+  fn a_polyline_of_one_point_stays_on_it_and_one_of_none_at_the_origin() {
     let params = Params::new();
     let frame = env(0.0, &params);
-    assert_eq!(Shape::new(route(&[(3.0, 4.0)])).along(0.5, &frame), Vec2::new(3.0, 4.0));
-    assert_eq!(Shape::new(route(&[])).along(0.5, &frame), Vec2::ZERO);
+    assert_eq!(Shape::new(polyline(&[(3.0, 4.0)])).along(0.5, &frame), Vec2::new(3.0, 4.0));
+    assert_eq!(Shape::new(polyline(&[])).along(0.5, &frame), Vec2::ZERO);
   }
 
   #[test]
   fn a_line_has_no_inside_to_draw() {
     let square = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)];
-    assert_eq!(covered(&Shape::new(route(&square)), 5.0, 5.0, 0.5), 0.0);
-    assert_eq!(covered(&Shape::new(route(&square)), 5.0, 0.0, 0.5), 0.0);
+    assert_eq!(covered(&Shape::new(polyline(&square)), 5.0, 5.0, 0.5), 0.0);
+    assert_eq!(covered(&Shape::new(polyline(&square)), 5.0, 0.0, 0.5), 0.0);
     let curve = bezier(&[((0.0, 0.0), (0.0, 10.0)), ((10.0, 0.0), (0.0, -10.0))]);
     assert_eq!(covered(&Shape::new(curve), 5.0, 5.0, 0.5), 0.0);
   }
@@ -682,7 +694,7 @@ mod tests {
   fn a_line_does_not_close() {
     let params = Params::new();
     let frame = env(0.0, &params);
-    let pose = Shape::new(route(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)])).pose(&frame).unwrap();
+    let pose = Shape::new(polyline(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)])).pose(&frame).unwrap();
     assert_eq!(pose.outline.len(), 3);
     assert_eq!(pose.points, pose.outline);
     assert_eq!(pose.bounds, Bounds::new(Vec2::ZERO, Vec2::new(30.0, 10.0)));
@@ -690,7 +702,7 @@ mod tests {
   }
 
   #[test]
-  fn a_bezier_with_no_handles_is_a_route() {
+  fn a_bezier_with_no_handles_is_a_polyline() {
     let params = Params::new();
     let frame = env(0.0, &params);
     let path = Shape::new(bezier(&[((0.0, 0.0), (0.0, 0.0)), ((30.0, 0.0), (0.0, 0.0)), ((30.0, 10.0), (0.0, 0.0))]));

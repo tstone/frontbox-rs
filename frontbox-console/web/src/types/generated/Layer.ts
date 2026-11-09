@@ -11,11 +11,11 @@ import type { ShapeNode } from "./ShapeNode";
  */
 export type Layer = { 
 /**
- * What people call it. It changes nothing about how it's drawn, and two layers can share one.
+ * Display name for editors and error messages. Doesn't need to be unique.
  */
 name?: string, 
 /**
- * Left out when the scene is drawn. It's still there to go back to, and still has to be something the scene can play.
+ * Skipped when drawing, but still validated by `check`
  */
 hidden?: boolean, fill: Node<FillNode, ColorAdjust>, 
 /**
@@ -23,6 +23,6 @@ hidden?: boolean, fill: Node<FillNode, ColorAdjust>,
  */
 shape?: Node<ShapeNode, ShapeAdjust>, 
 /**
- * Where the layer shows. `None` leaves it all showing.
+ * `None` shows the whole layer
  */
 mask?: Mask, };

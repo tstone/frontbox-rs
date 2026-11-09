@@ -2,11 +2,11 @@
 import type { Prop } from "./Prop";
 
 /**
- * A point a [`ShapeNode::Bezier`] goes through
+ * A point a [`ShapeNode::Bezier`] passes through
  */
 export type BezierPoint = { point: Prop<[number, number]>, 
 /**
- * Which way the line goes through the point and how hard it holds to that, from the point. It leaves toward this and
- * arrives from the opposite way, so it's smooth at every point.
+ * Tangent handle, relative to `point`. The curve leaves toward `point + handle` and arrives from `point - handle`, so
+ * it's always smooth through the point.
  */
 handle: Prop<[number, number]>, };

@@ -3,26 +3,22 @@ import type { Pick } from "./Pick";
 import type { Spread } from "./Spread";
 
 /**
- * Values picked at random, each held until the next pick or smoothed into it
+ * Random values chosen at set times, each held until the next or blended into it
  *
- * A pick is worked out from the moment it's for rather than drawn from a running generator, so that a scene reads the
- * same however a moment is reached and every point sampled in a frame agrees. It still comes out differently on each
- * cycle of the scene and each time the scene is played.
+ * There's no running random generator. Each value is a hash of the seed, playback seed, cycle, and pick, so any moment
+ * can be sampled directly, in any order, with the same result. Values still differ every cycle and every playback.
  */
 export type Random = { 
 /**
- * In order of `at`. The time before the first belongs to the last of the cycle before, or if there isn't one, the first.
+ * Sorted by `at`. Before the first pick, the previous cycle's last pick is in effect (or the first pick, in the first
+ * cycle).
  */
-picks: Array<Pick>, 
+picks: Array<Pick>, spread: Spread, 
 /**
- * What can be picked
- */
-spread: Spread, 
-/**
- * Keeps these picks apart from those of another prop picking at the same times
+ * Distinguishes this prop's values from another random prop with the same picks
  */
 seed: number, 
 /**
- * Whether a pick has to differ from the one before it. On by default.
+ * Require each pick to differ from the one before. On by default.
  */
 force_unique: boolean, };

@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Images, Params, Viewport};
+use crate::scene::{Images, Params, Surface};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -20,11 +20,11 @@ impl Sample {
 
 /// Inputs shared by every sample in one frame
 #[derive(Debug, Clone, Copy)]
-pub struct Frame<'a> {
+pub struct FrameContext<'a> {
   /// Seconds since the scene started
   pub time: f32,
   /// Seed for random props. Players use a new one each time they restart a scene, so it doesn't repeat the same picks.
-  pub take: u32,
+  pub playback_seed: u32,
   /// Values from the game, overriding the scene's param defaults
   pub params: &'a Params,
   /// Decoded images by name. A layer whose image is missing draws nothing; get these from
@@ -32,5 +32,5 @@ pub struct Frame<'a> {
   pub images: &'a Images,
   /// Device size in its own units, which the scene's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,
-  pub viewport: Viewport,
+  pub surface: Surface,
 }

@@ -2,15 +2,14 @@
 import type { Transform } from "./Transform";
 
 /**
- * A function of position, with the changes made to it: transforms change the position going in, adjusts change the
- * output coming out
+ * A base shape or fill, with transforms that change where it's drawn and adjusts that change its output
  *
- * Shapes and fills are both nodes ([`Shape`](crate::scene::Shape), [`Fill`](crate::scene::Fill)). Anything
- * that changes one is an item in one of these lists, never a new field or wrapper.
+ * [`Shape`](crate::scene::Shape) and [`Fill`](crate::scene::Fill) are both nodes. New ways of modifying one belong as
+ * items in these lists, not as new fields or wrapper types.
  */
 export type Node<N, A> = { 
 /**
- * Applied to the drawing in order. Sampling undoes them in reverse on the sample point.
+ * Applied in order. Sampling applies the inverse to the sample point.
  */
 transform?: Array<Transform>, base: N, 
 /**

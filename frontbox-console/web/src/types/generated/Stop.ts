@@ -3,6 +3,6 @@ import type { Color } from "./Color";
 import type { Prop } from "./Prop";
 
 /**
- * A color at a point along a gradient, from 0 to 1
+ * A gradient color stop. `at` runs from 0 to 1.
  */
 export type Stop = { at: number, color: Prop<Color>, };

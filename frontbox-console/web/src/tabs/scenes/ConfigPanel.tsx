@@ -25,7 +25,7 @@ import {
   adjustAmount,
   adjustKind,
   ADJUSTS,
-  BALANCE,
+  BLADE_FRACTION,
   BLADES,
   both,
   field,
@@ -68,7 +68,7 @@ type Fill = Layer['fill']
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type Shape = NonNullable<Layer['shape']>
-type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Route' | 'Bezier'
+type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Polyline' | 'Bezier'
 
 /** How much of a new ring's reach is its hole */
 const RING_HOLE = 0.75
@@ -99,7 +99,7 @@ const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
 /** A path has to be something, and can also be a line, which has no inside to draw as a shape */
 const PATH_OPTIONS: { value: ShapeKind; label: string }[] = [
   ...SHAPE_OPTIONS.slice(1),
-  { value: 'Route', label: 'Route' },
+  { value: 'Polyline', label: 'Polyline' },
   { value: 'Bezier', label: 'Bezier' },
 ]
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
@@ -604,12 +604,12 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
           <PropField label="Radius" paramName="radius" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Circle'), 'radius')} />
         </Match>
         <Match when={kind() === 'Ring'}>
-          <PropField label="Radius" paramName="radius" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Ring'), 'radius')} />
+          <PropField label="Inner radius" paramName="inner_radius" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Ring'), 'inner_radius')} />
           <PropField label="Thickness" paramName="thickness" fallback={0} ranges={both(roundRange(surface()))} lens={field(variant(base, 'Ring'), 'thickness')} />
         </Match>
         <Match when={kind() === 'Ellipse'}>
-          <PropField label="R1" paramName="r1" fallback={0} ranges={both(radius(ranges()[1]))} lens={field(variant(base, 'Ellipse'), 'r1')} />
-          <PropField label="R2" paramName="r2" fallback={0} ranges={both(radius(ranges()[0]))} lens={field(variant(base, 'Ellipse'), 'r2')} />
+          <PropField label="RX" paramName="rx" fallback={0} ranges={both(radius(ranges()[0]))} lens={field(variant(base, 'Ellipse'), 'rx')} />
+          <PropField label="RY" paramName="ry" fallback={0} ranges={both(radius(ranges()[1]))} lens={field(variant(base, 'Ellipse'), 'ry')} />
         </Match>
         <Match when={kind() === 'Rect'}>
           <PropField label="Width" paramName="width" fallback={0} ranges={both(ranges()[0])} lens={field(variant(base, 'Rect'), 'width')} />
@@ -617,13 +617,13 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
         </Match>
         <Match when={kind() === 'Pinwheel'}>
           <PropField label="Blades" paramName="blades" fallback={0} ranges={both(BLADES)} lens={field(variant(base, 'Pinwheel'), 'blades')} />
-          <PropField label="Balance" paramName="balance" fallback={BALANCE.rest!} ranges={both(BALANCE)} lens={field(variant(base, 'Pinwheel'), 'balance')} />
+          <PropField label="Blade fraction" paramName="blade_fraction" fallback={BLADE_FRACTION.rest!} ranges={both(BLADE_FRACTION)} lens={field(variant(base, 'Pinwheel'), 'blade_fraction')} />
         </Match>
         <Match when={kind() === 'Polygon'}>
           <PolygonEditor lens={field(variant(base, 'Polygon'), 'points')} />
         </Match>
-        <Match when={kind() === 'Route'}>
-          <PolygonEditor open lens={field(variant(base, 'Route'), 'points')} />
+        <Match when={kind() === 'Polyline'}>
+          <PolygonEditor open lens={field(variant(base, 'Polyline'), 'points')} />
         </Match>
         <Match when={kind() === 'Bezier'}>
           <BezierEditor lens={field(variant(base, 'Bezier'), 'points')} />
@@ -651,17 +651,17 @@ function newShape(kind: Exclude<ShapeKind, 'None'>, surface: Surface): Shape {
 function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): ShapeNode {
   const reach = Math.max(width, height) / 2
   if (kind === 'Circle') return { Circle: { radius: { Fixed: reach } } }
-  if (kind === 'Ring') return { Ring: { radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
-  if (kind === 'Ellipse') return { Ellipse: { r1: { Fixed: height / 2 }, r2: { Fixed: width / 2 } } }
+  if (kind === 'Ring') return { Ring: { inner_radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
+  if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
-  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! }, balance: { Fixed: BALANCE.rest! } } }
+  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! }, blade_fraction: { Fixed: BLADE_FRACTION.rest! } } }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
     [-width / 2, height / 2],
     [0, -height / 2],
     [width / 2, height / 2],
   ]
-  if (kind === 'Route') return { Route: { points: wave.map((point) => ({ Fixed: point })) } }
+  if (kind === 'Polyline') return { Polyline: { points: wave.map((point) => ({ Fixed: point })) } }
   if (kind === 'Bezier') {
     return { Bezier: { points: wave.map((point) => ({ point: { Fixed: point }, handle: { Fixed: [width / 4, 0] } })) } }
   }
@@ -679,10 +679,10 @@ function shapeSize(base: ShapeNode, scene: Scene, surface: Surface): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
   if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
   if ('Ring' in base) {
-    const across = (value(base.Ring.radius) + value(base.Ring.thickness)) * 2
+    const across = (value(base.Ring.inner_radius) + value(base.Ring.thickness)) * 2
     return [across, across]
   }
-  if ('Ellipse' in base) return [value(base.Ellipse.r2) * 2, value(base.Ellipse.r1) * 2]
+  if ('Ellipse' in base) return [value(base.Ellipse.rx) * 2, value(base.Ellipse.ry) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
   if ('Pinwheel' in base) return [newShapeSize(surface), newShapeSize(surface)]
   const points = shapePoints(base).map((point) => startingValue(point, scene, [0, 0] as Vec2))

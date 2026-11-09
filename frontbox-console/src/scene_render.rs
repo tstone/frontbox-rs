@@ -1,7 +1,7 @@
 use frontbox_core::prelude::{LedLookup, LedQ, Rgb, Vec2};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
-use frontbox_gfx::scene::{Bounds, Content, Frame, GfxComposition, Images, Params, Sample, ShapePose, Viewport};
+use frontbox_gfx::scene::{Bounds, Content, FrameContext, GfxComposition, Images, Params, Sample, ShapePose, Surface};
 use frontbox_led::{LedLayer, led_color, place_leds};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -149,7 +149,7 @@ fn images(scene: &GfxComposition, content: Option<Content>) -> Result<Images, St
 /// One layer of a scene with what it's drawn on, on the scene's timeline
 struct Part {
   composition: GfxComposition,
-  viewport: Viewport,
+  surface: Surface,
   /// The size of what it's on, in its own units
   size: Vec2,
   z: i8,
@@ -165,8 +165,8 @@ struct Moment<'a> {
 }
 
 impl<'a> Moment<'a> {
-  fn on(&self, part: &Part) -> Frame<'a> {
-    Frame { time: self.time, take: 0, params: self.params, images: self.images, size: part.size, viewport: part.viewport }
+  fn on(&self, part: &Part) -> FrameContext<'a> {
+    FrameContext { time: self.time, playback_seed: 0, params: self.params, images: self.images, size: part.size, surface: part.surface }
   }
 }
 
@@ -181,13 +181,13 @@ fn parts(scene: &SceneDefinition, shown: &GfxComposition, size: SceneSize, machi
   let part = |(index, layer): (usize, Option<&LedLayer>)| {
     let composition = shown.only(index);
     let Some(layer) = layer else {
-      return Part { composition, viewport: Viewport::Area, size: render_size, z: 0, placed: Vec::new() };
+      return Part { composition, surface: Surface::Area, size: render_size, z: 0, placed: Vec::new() };
     };
-    let viewport = layer.surface.viewport();
+    let surface = layer.surface.scene_surface();
     let plane = layer.surface.plane().and_then(|plane| machine.leds.plane(plane));
-    let placed = place_leds(viewport, &machine.leds, plane, layer.leds.as_ref().unwrap_or(&LedQ::Every), machine.radius);
+    let placed = place_leds(surface, &machine.leds, plane, layer.leds.as_ref().unwrap_or(&LedQ::Every), machine.radius);
     let placed = placed.into_iter().map(|(led, at)| (led.name.clone(), at)).collect();
-    Part { composition, viewport, size: plane.map_or(render_size, |plane| plane.extent), z: layer.z, placed }
+    Part { composition, surface, size: plane.map_or(render_size, |plane| plane.extent), z: layer.z, placed }
   };
   layers.into_iter().enumerate().map(part).collect()
 }
@@ -256,7 +256,7 @@ fn strips(layers: &[LedLayer]) -> Vec<Vec<usize>> {
 }
 
 /// What a part says about its one layer, for every layer
-fn each_layer<T>(parts: &[Part], moment: &Moment, read: impl Fn(&GfxComposition, &Frame) -> Vec<T>) -> Vec<T> {
+fn each_layer<T>(parts: &[Part], moment: &Moment, read: impl Fn(&GfxComposition, &FrameContext) -> Vec<T>) -> Vec<T> {
   parts.iter().flat_map(|part| read(&part.composition, &moment.on(part))).collect()
 }
 
@@ -442,7 +442,7 @@ mod tests {
   fn leds_past_the_edge_of_the_plane_show_the_shapes_that_reach_them() {
     let source = r#"Led(
       version: 1, layers: [(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))), (surface: Area("Square"), layer: (
-          shape: (base: Ellipse(r1: Fixed(0.5), r2: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(15.0, 5.0))]),
+          shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(15.0, 5.0))]),
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
         ))],)"#;
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
@@ -456,7 +456,7 @@ mod tests {
   fn shape_edges_on_leds_fade_across_the_radius_the_machine_was_booted_with() {
     let source = r#"Led(
       version: 1, layers: [(surface: Area("Square"), layer: (
-        shape: (base: Ellipse(r1: Fixed(0.5), r2: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
+        shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
     let brightness = |radius| {
@@ -590,7 +590,7 @@ mod tests {
   fn grid_fits_a_dmd() {
     let source = r#"Dmd(version: 1, composition: (
       layers: [(
-        shape: (base: Ellipse(r1: Fixed(0.5), r2: Fixed(0.5)), transform: [Scale(Fixed(3.0, 3.0)), Translate(Fixed(2.5, 2.5))]),
+        shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(3.0, 3.0)), Translate(Fixed(2.5, 2.5))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       )],
     ))"#;
@@ -765,7 +765,7 @@ mod tests {
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
           mask: (
             fill: (base: Solid(Fixed(0, 0, 0, 255))),
-            shape: (base: Ellipse(r1: Fixed(0.5), r2: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 2.5))]),
+            shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 2.5))]),
           ),
         ),
       ],
@@ -952,7 +952,7 @@ mod tests {
       version: 1, timing: (duration: 2.0, cycle: Forever),
       layers: [(surface: Area("Square"), layer: (
         shape: (
-          base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0)),
+          base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0)),
           transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), start: 0.5, end: 1.5))],
         ),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
@@ -965,7 +965,7 @@ mod tests {
     let path = rendered.shapes[0].as_ref().unwrap().paths[0].as_ref().unwrap();
     assert_eq!(path.outline[0], [3.0, 4.0]);
 
-    let on_a_size = json.replace(r#""r1":{"Fixed":1.0}"#, &format!(r#""r1":{}"#, sweep_of(&json)));
+    let on_a_size = json.replace(r#""ry":{"Fixed":1.0}"#, &format!(r#""ry":{}"#, sweep_of(&json)));
     let error = serde_json::from_str::<SceneDefinition>(&on_a_size).unwrap_err().to_string();
     assert!(error.contains("only a position"), "{error}");
   }

@@ -2,7 +2,7 @@ use glam::Vec2;
 
 use crate::scene::{Bounds, Sample};
 
-/// `count` points evenly spaced along a [`Sequence`](crate::scene::Viewport::Sequence) viewport, such as a strip of
+/// `count` points evenly spaced along a [`Sequence`](crate::scene::Surface::Sequence) viewport, such as a strip of
 /// LEDs
 ///
 /// The first point is always at 0 and the last at 1, whatever the count, so a gradient's end colors land exactly on the

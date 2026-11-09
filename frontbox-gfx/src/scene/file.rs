@@ -86,7 +86,7 @@ mod tests {
   fn load(source: &str) -> Result<Scene, FormatError> {
     let composition: GfxComposition = super::load(source)?;
     composition.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
-    Ok(Scene::with_composition(Viewport::Area, composition))
+    Ok(Scene::with_composition(Surface::Area, composition))
   }
 
   fn save(scene: &Scene) -> Result<String, FormatError> {
@@ -98,7 +98,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport };
+        let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -108,7 +108,7 @@ mod tests {
 
   /// Uses every type in a definition
   fn everything() -> Scene {
-    let mut scene = Scene::new(Viewport::Area, vec![
+    let mut scene = Scene::new(Surface::Area, vec![
         Layer::new(Fill::new(FillNode::Solid(Prop::Param("background".into())))),
         Layer::new(
           Fill::new(FillNode::Gradient {
@@ -141,11 +141,11 @@ mod tests {
           },
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
-          ShapeNode::Ring { radius: 3.0.into(), thickness: 1.0.into() },
+          ShapeNode::Ring { inner_radius: 3.0.into(), thickness: 1.0.into() },
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), balance: 0.25.into() })),
+          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
@@ -155,7 +155,7 @@ mod tests {
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).shape(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
-            Shape::new(ShapeNode::Route { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
+            Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
             0.0,
             1.0,
           )))),
@@ -179,11 +179,11 @@ mod tests {
 
   #[test]
   fn a_sweep_only_loads_on_a_position() {
-    let sweep = "Sweep(path: (base: Ellipse(r1: Fixed(1.0), r2: Fixed(1.0))), start: 0.0, end: 1.0)";
+    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), start: 0.0, end: 1.0)";
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
-          shape: (transform: [{transform}], base: Ellipse(r1: {radius}, r2: Fixed(1.0))),
+          shape: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
           fill: (base: Solid({color})),
         )])"
       )
@@ -269,11 +269,11 @@ mod tests {
       )"#,
     )
     .unwrap();
-    scene.viewport = Viewport::Sequence;
+    scene.surface = Surface::Sequence;
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), viewport: scene.viewport };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -297,13 +297,34 @@ mod tests {
   }
 
   #[test]
+  fn shapes_from_before_their_fields_were_renamed_still_read() {
+    let scene = load(
+      "(layers: [
+        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ellipse(r1: Fixed(2.0), r2: Fixed(10.0)))),
+        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ring(radius: Fixed(3.0), thickness: Fixed(1.0)))),
+        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Pinwheel(blades: Fixed(4.0), balance: Fixed(0.25)))),
+        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Route(points: []))),
+      ])",
+    )
+    .unwrap();
+    let base = |index: usize| &scene.layers[index].shape.as_ref().unwrap().base;
+    assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
+    assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
+    assert!(matches!(base(2), ShapeNode::Pinwheel { blade_fraction: Prop::Fixed(0.25), .. }));
+    assert!(matches!(base(3), ShapeNode::Polyline { .. }));
+
+    let written = save(&scene).unwrap();
+    assert!(["rx:", "inner_radius:", "blade_fraction:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
+  }
+
+  #[test]
   fn an_animated_image_keeps_its_frame_when_written_and_read() {
     let frame = Track {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
       cycle: Default::default(),
     };
     let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(frame)) };
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
     let read = load(&save(&scene).unwrap()).unwrap();
 
     let first = Rgba([255, 0, 0, 255]);
@@ -314,7 +335,7 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &Frame { time, take: 0, params: &params, images: &images, size, viewport: scene.viewport });
+    let color = |scene: &Scene, time| scene.sample(&at, &FrameContext { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -324,7 +345,7 @@ mod tests {
 
   #[test]
   fn an_image_is_written_and_read_by_its_name() {
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(FillNode::image("dmd/title.png")))]);
     let written = save(&scene).unwrap();
     assert!(written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"), "{written}");
 
@@ -335,7 +356,7 @@ mod tests {
     let (mut images, params) = (Images::new(), Params::new());
     images.insert("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = Frame { time: 0.0, take: 0, params: &params, images: &images, size, viewport: scene.viewport };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -353,7 +374,7 @@ mod tests {
 
   #[test]
   fn a_static_scene_writes_no_timing() {
-    let written = save(&Scene::new(Viewport::Area, vec![])).unwrap();
+    let written = save(&Scene::new(Surface::Area, vec![])).unwrap();
     assert!(!written.contains("timing"), "{written}");
     assert_eq!(load(&written).unwrap().timing, None);
   }
@@ -371,7 +392,7 @@ mod tests {
   #[test]
   fn a_layer_keeps_its_name_and_only_writes_one_it_has() {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).name("sky"), Layer::new(fill())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).name("sky"), Layer::new(fill())]);
 
     let written = save(&scene).unwrap();
     assert_eq!(written.matches("name:").count(), 1, "{written}");
@@ -396,7 +417,7 @@ mod tests {
   #[test]
   fn a_mask_survives_a_save() {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
-    let scene = Scene::new(Viewport::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
     let read = load(&save(&scene).unwrap()).unwrap();
     assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.shape.is_none()));
   }

@@ -91,8 +91,8 @@ pub(crate) struct Env<'a> {
   pub cycle: u32,
   /// The scene's timing, so random picks can look into the neighboring cycles
   pub timing: Option<Timing>,
-  /// See [`Frame::take`](crate::scene::Frame::take)
-  pub take: u32,
+  /// See [`FrameContext::take`](crate::scene::FrameContext::playback_seed)
+  pub playback_seed: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,
   pub images: &'a Images,
@@ -114,6 +114,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, take: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None }
+    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None }
   }
 }

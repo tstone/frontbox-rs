@@ -2,15 +2,15 @@
 import type { Cycle } from "./Cycle";
 
 /**
- * How long an animated scene runs. A scene without one is static: it can change through its parameters, but not on its
- * own.
+ * How long an animated scene runs, and how many times. A scene without a timing is static: only its params can change
+ * it.
  */
 export type Timing = { 
 /**
- * Seconds in one cycle of the scene
+ * Seconds per cycle
  */
 duration: number, 
 /**
- * How many times to play it. Tracks have their own cycles within this.
+ * How many times to play. Each track can also loop on its own within a cycle.
  */
 cycle: Cycle, };

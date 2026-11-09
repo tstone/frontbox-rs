@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::scene::{Animatable, Env, Shape};
 
-/// A position that travels once around a shape's outline, or end to end along a route or bezier
+/// A position that travels once around a shape's outline, or end to end along a polyline or bezier
 ///
 /// The path is a full [`Shape`] with its own transforms, so a circle translated to a point becomes an orbit around it.
 /// Built-in shapes go clockwise from where their outline starts (3 o'clock for round ones); shapes made of points follow
@@ -46,7 +46,7 @@ mod tests {
   use crate::animation::Cycle;
   use crate::layout::Line;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Fill, FillNode, Frame, Images, Layer, Params, Prop, ShapeNode, Timing, Transform, Viewport};
+  use crate::scene::{Color, Fill, FillNode, FrameContext, Images, Layer, Params, Prop, ShapeNode, Timing, Transform, Surface};
   use crate::scene::test_scene::Scene;
 
   fn orbit(path: ShapeNode, start: f32, end: f32) -> Prop<Vec2> {
@@ -106,12 +106,12 @@ mod tests {
     let moved = Transform::Translate(Prop::Sweep(Sweep::new(path, 0.0, 2.0)));
     let tall = ShapeNode::Rect { width: 0.1.into(), height: 2.0.into() };
     let layer = Layer::new(Fill::new(FillNode::Solid(Color(image::Rgba([255, 0, 0, 255])).into())));
-    let scene = Scene::new(Viewport::Sequence, vec![layer.shape(Shape::new(tall).transform(moved))]);
+    let scene = Scene::new(Surface::Sequence, vec![layer.shape(Shape::new(tall).transform(moved))]);
     let scene = scene.timing(Timing::new(2.0, Cycle::Forever));
 
     let lit = |time: f32| {
       let params = Params::new();
-      let frame = Frame { time, take: 0, params: &params, images: Images::none(), size: Vec2::ZERO, viewport: Viewport::Area };
+      let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area };
       let line = Line::new(5);
       line.samples().map(|sample| scene.sample(&sample, &frame)[0] > 0).collect::<Vec<_>>()
     };

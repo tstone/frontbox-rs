@@ -4,18 +4,19 @@ import type { ShapeAdjust } from "./ShapeAdjust";
 import type { ShapeNode } from "./ShapeNode";
 
 /**
- * A position that goes once around the edge of a shape, or along a route or bezier from one end to the other
+ * A position that travels once around a shape's outline, or end to end along a polyline or bezier
  *
- * The path is a whole [`Shape`], so its transforms say where it is: a circle moved to a point is an orbit of that point.
- * It starts where the shape's outline does and goes the way that does, which is clockwise in a scene whose y runs down
- * for everything but those made of points, which say. An ellipse goes at an even angle, and the others at an even speed.
+ * The path is a full [`Shape`] with its own transforms, so a circle translated to a point becomes an orbit around it.
+ * Built-in shapes go clockwise from where their outline starts (3 o'clock for round ones); shapes made of points follow
+ * their point order. Circles and ellipses move at a constant angular speed, everything else at a constant speed.
  */
 export type Sweep = { path: Node<ShapeNode, ShapeAdjust>, 
 /**
- * Seconds. It waits at the start of the path until then.
+ * Seconds into the scene cycle when it starts moving. It holds at the path's start until then.
  */
 start: number, 
 /**
- * Seconds. It stays at the end of the path from then on, which for all but a route or bezier is back where it started.
+ * Seconds into the scene cycle when it stops. It holds at the path's end after that, which for a closed shape is back
+ * at the start.
  */
 end: number, };
