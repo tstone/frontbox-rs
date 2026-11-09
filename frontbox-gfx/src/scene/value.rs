@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use glam::Vec2;
+use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Bounds, Images, Timing};
+use crate::scene::{Bounds, Images, NodeVisits, Timing};
 
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
@@ -84,6 +84,7 @@ impl Lerp for Color {
 }
 
 /// Everything a prop needs to resolve: time, params, images, and the viewport
+#[derive(Clone, Copy)]
 pub(crate) struct Env<'a> {
   /// Seconds into the current scene cycle
   pub time: f32,
@@ -101,6 +102,10 @@ pub(crate) struct Env<'a> {
   /// On a `Sequence`, the length of one wrap-around lap for `Rotate`, in the units of whatever is being drawn. `None`
   /// on an `Area`.
   pub lap: Option<f32>,
+  /// At a graph node, its visits from the layer's traversals, for [`Prop::Visit`](crate::scene::Prop::Visit)
+  pub visits: Option<NodeVisits<'a>>,
+  /// Scene units to the unit box of the fill being drawn, for `Transform::Fit`. Identity outside a fill.
+  pub fill_frame: Affine2,
 }
 
 impl Env<'_> {
@@ -114,6 +119,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None }
+    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
   }
 }

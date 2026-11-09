@@ -1,4 +1,4 @@
-use glam::Vec2;
+use glam::{Affine2, Vec2};
 
 /// An axis-aligned rectangle in scene units, such as a viewport or a shape's extent
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -36,6 +36,13 @@ impl Bounds {
     let offset = p - self.center();
     let axis = |offset: f32, size: f32| if size.abs() > f32::EPSILON { offset / size } else { -0.5 };
     Vec2::new(axis(offset.x, size.x), axis(offset.y, size.y))
+  }
+
+  /// [`Self::to_unit`] as an affine, except that a zero-length axis maps to 0
+  pub fn to_unit_affine(&self) -> Affine2 {
+    let size = self.size();
+    let axis = |size: f32| if size.abs() > f32::EPSILON { 1.0 / size } else { 0.0 };
+    Affine2::from_scale(Vec2::new(axis(size.x), axis(size.y))) * Affine2::from_translation(-self.center())
   }
 
   /// Converts a length to unit box units on each axis. A zero-length axis gives 0.

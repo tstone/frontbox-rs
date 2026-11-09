@@ -315,7 +315,7 @@ impl Placement {
   fn colors(&self, time: f32, playback_seed: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
     let mut colors = vec![Rgba([0, 0, 0, 0]); self.ids.leds.len()];
     for part in &self.parts {
-      let frame = FrameContext { time, playback_seed, params, images, size: part.size, surface: part.surface };
+      let frame = FrameContext { time, playback_seed, params, images, size: part.size, surface: part.surface, visits: None };
       for (spot, sample) in &part.samples {
         colors[*spot] = part.composition.sample(sample, &frame).composite_over(colors[*spot]);
       }

@@ -14,6 +14,14 @@ pub enum Transform {
   /// 360 degrees is one full lap.
   Rotate(Prop<f32>),
   Scale(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
+  /// Lays the node along a traversal of the layer's graph, by name: `(-0.5, 0)` on the node it starts from and
+  /// `(0.5, 0)` on the node it visits last, scaled evenly on both axes. A gradient then runs from start to end at
+  /// whatever angle the traversal takes.
+  ///
+  /// Transforms before it are in that frame, where start to end is 1 long, so `[Translate(Fixed(-0.5, 0.0)), Fit("bolt")]`
+  /// centers a radial gradient on the start. Changes nothing outside a layer with a graph, or while the traversal visits
+  /// nothing or ends where it started.
+  Fit(String),
 }
 
 impl Transform {
@@ -29,6 +37,15 @@ impl Transform {
         }
       },
       Self::Scale(scale) => Affine2::from_scale(scale.resolve(env)),
+      Self::Fit(traversal) => {
+        let ends = env.visits.and_then(|visits| visits.ends(traversal)).filter(|(start, end)| start.distance(*end) > f32::EPSILON);
+        let Some((start, end)) = ends else {
+          return Affine2::IDENTITY;
+        };
+        let along = end - start;
+        let fit = Affine2::from_scale_angle_translation(Vec2::splat(along.length()), along.to_angle(), (start + end) / 2.0);
+        env.fill_frame * fit
+      }
     }
   }
 
@@ -44,6 +61,7 @@ impl Transform {
     match self {
       Self::Translate(prop) | Self::Scale(prop) => prop.is_animated(),
       Self::Rotate(prop) => prop.is_animated(),
+      Self::Fit(_) => true,
     }
   }
 }

@@ -111,7 +111,7 @@ mod tests {
 
     let lit = |time: f32| {
       let params = Params::new();
-      let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area };
+      let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None };
       let line = Line::new(5);
       line.samples().map(|sample| scene.sample(&sample, &frame)[0] > 0).collect::<Vec<_>>()
     };

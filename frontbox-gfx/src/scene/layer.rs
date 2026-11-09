@@ -1,8 +1,8 @@
-use glam::Vec2;
+use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Fill, Bounds, Mask, Sample, Shape};
+use crate::scene::{Env, Fill, Bounds, GraphMask, Mask, Sample, Shape, Transform};
 
 /// A fill drawn in a shape
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -25,11 +25,15 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub mask: Option<Mask>,
+  /// Limits the layer to a graph's nodes, with traversals over it. `None` draws at every sample.
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  #[cfg_attr(feature = "ts", ts(optional))]
+  pub graph: Option<GraphMask>,
 }
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, hidden: false, fill, shape: None, mask: None }
+    Self { name: None, hidden: false, fill, shape: None, mask: None, graph: None }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -52,6 +56,11 @@ impl Layer {
     self
   }
 
+  pub fn graph(mut self, graph: GraphMask) -> Self {
+    self.graph = Some(graph);
+    self
+  }
+
   /// How logs and errors refer to the layer at `index`: its name, or else its 1-based position from the bottom (as the
   /// console numbers them)
   pub fn label(&self, index: usize) -> String {
@@ -65,6 +74,7 @@ impl Layer {
     self.fill.is_animated()
       || self.shape.as_ref().is_some_and(Shape::is_animated)
       || self.mask.as_ref().is_some_and(Mask::is_animated)
+      || self.graph.as_ref().is_some_and(GraphMask::is_animated)
   }
 
   /// Names of the images the layer and its mask use
@@ -74,6 +84,9 @@ impl Layer {
   }
 
   pub(crate) fn sample(&self, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
+    if self.graph.is_some() && at.node.is_none() {
+      return Rgba([0, 0, 0, 0]);
+    }
     let mut color = sample_fill(&self.fill, self.shape.as_ref(), at, viewport, env);
     if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
       color[3] = (color[3] as f32 * mask.amount(at, viewport, env)).round() as u8;
@@ -100,9 +113,24 @@ pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewp
     },
   };
 
+  let env = &Env { fill_frame: fill_frame(fill, shape, viewport, env), ..*env };
   let mut color = fill.color(fill_pos, footprint, env);
   color[3] = (color[3] as f32 * coverage).round() as u8;
   color
+}
+
+/// Scene units to the unit box the fill is stretched over, for `Transform::Fit`. Identity for a fill that doesn't use it.
+fn fill_frame(fill: &Fill, shape: Option<&Shape>, viewport: Bounds, env: &Env) -> Affine2 {
+  if !fill.transform.iter().any(|transform| matches!(transform, Transform::Fit(_))) {
+    return Affine2::IDENTITY;
+  }
+  match shape {
+    None => viewport.to_unit_affine(),
+    Some(shape) => {
+      let bounds = shape.base.bounds(env);
+      shape.to_local(bounds.center(), env).map_or(Affine2::IDENTITY, |to_local| bounds.to_unit_affine() * to_local)
+    }
+  }
 }
 
 /// The area a fill is drawn in, as a closed polygon in scene units

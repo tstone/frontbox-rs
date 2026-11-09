@@ -166,7 +166,7 @@ struct Moment<'a> {
 
 impl<'a> Moment<'a> {
   fn on(&self, part: &Part) -> FrameContext<'a> {
-    FrameContext { time: self.time, playback_seed: 0, params: self.params, images: self.images, size: part.size, surface: part.surface }
+    FrameContext { time: self.time, playback_seed: 0, params: self.params, images: self.images, size: part.size, surface: part.surface, visits: None }
   }
 }
 
