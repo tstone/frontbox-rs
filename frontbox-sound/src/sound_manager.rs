@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait};
 use frontbox_core::prelude::*;
+use kira::StartTime;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::{TrackBuilder, TrackHandle};
@@ -15,36 +17,51 @@ use kira::{
 use kira::{Decibels, Tween};
 use tokio::sync::{mpsc, watch};
 
+use crate::CalloutCompleted;
+use crate::callout::{CalloutQueue, CalloutRequest};
+
+/// How far the music drops while a callout plays
+const CALLOUT_DUCK_DB: f32 = -12.0;
+
 pub struct SoundManager {
   rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
+  completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
   manager: AudioManager,
   sounds: HashMap<&'static str, StaticSoundData>,
   music_track: TrackHandle,
   callout_track: TrackHandle,
   // callouts can only play one at a time. If multiple are triggered in quick succession, they will be queued up and played one after another
-  callout_queue: Vec<&'static str>,
-  active_callout: Option<StaticSoundHandle>,
+  callout_queue: CalloutQueue,
+  active_callout: Option<ActiveCallout>,
   active_music: Option<StaticSoundHandle>,
 }
 
 impl SoundManager {
-  fn raw(mut manager: AudioManager, rx: mpsc::UnboundedReceiver<SoundManagerCmds>) -> Self {
+  fn raw(
+    mut manager: AudioManager,
+    rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
+    completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
+  ) -> Self {
     let music_track = manager.add_sub_track(TrackBuilder::default()).unwrap();
     let callout_track = manager.add_sub_track(TrackBuilder::default()).unwrap();
 
     Self {
       rx,
+      completed_tx,
       manager,
       sounds: HashMap::new(),
       music_track,
       callout_track,
       active_callout: None,
-      callout_queue: Vec::new(),
+      callout_queue: CalloutQueue::default(),
       active_music: None,
     }
   }
 
-  pub fn default(rx: mpsc::UnboundedReceiver<SoundManagerCmds>) -> Result<Self, Error> {
+  pub fn default(
+    rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
+    completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
+  ) -> Result<Self, Error> {
     let device = cpal::default_host().default_output_device();
     let manager = AudioManager::<CpalBackend>::new(AudioManagerSettings {
       backend_settings: CpalBackendSettings {
@@ -54,12 +71,13 @@ impl SoundManager {
       ..Default::default()
     })?;
 
-    Ok(Self::raw(manager, rx))
+    Ok(Self::raw(manager, rx, completed_tx))
   }
 
   pub fn new(
     device_name: &'static str,
     rx: mpsc::UnboundedReceiver<SoundManagerCmds>,
+    completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
   ) -> Result<Self, Error> {
     let host = cpal::default_host();
     let devices: Vec<_> = host.output_devices().unwrap().collect();
@@ -99,7 +117,7 @@ impl SoundManager {
       ..Default::default()
     })?;
 
-    Ok(Self::raw(manager, rx))
+    Ok(Self::raw(manager, rx, completed_tx))
   }
 
   pub async fn run(&mut self) {
@@ -121,7 +139,8 @@ impl SoundManager {
             SoundManagerCmds::PreloadPath(name, path) => self.preload(name, path),
             SoundManagerCmds::PreloadEmbedded(name, bytes) => self.preload_embedded(name, bytes),
             SoundManagerCmds::PlaySfx(key) => self.play_sfx(key),
-            SoundManagerCmds::PlayCallout(key) => self.play_callout(key),
+            SoundManagerCmds::PlayCallout(request) => self.play_callout(request),
+            SoundManagerCmds::SetCalloutVolume(db) => self.set_callout_volume(db),
             SoundManagerCmds::PlayMusic(path, crossfade) => self.crossfade_music(path, crossfade),
             SoundManagerCmds::StopMusic(crossfade) => self.stop_music(crossfade),
           }
@@ -175,26 +194,98 @@ impl SoundManager {
     }
   }
 
-  fn play_callout(&mut self, key: &'static str) {
-    if let Some(sound) = self.sounds.get(key) {
-      if self.active_callout.is_some() {
-        self.callout_queue.push(key);
-      } else {
-        Self::duck_track(&mut self.music_track, -10.0);
-        self.play_callout_sound(sound.clone());
-      }
-    } else {
-      log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", key);
+  fn play_callout(&mut self, request: CalloutRequest) {
+    for key in self.callout_queue.push(request, Instant::now()) {
+      self.report_callout(key, false);
+    }
+    if self.active_callout.is_none() {
+      Self::duck_track(&mut self.music_track, CALLOUT_DUCK_DB);
+      self.start_next_callout();
     }
   }
 
-  pub fn play_callout_sound(&mut self, sound: StaticSoundData) {
-    match self.callout_track.play(sound) {
-      Ok(handle) => {
-        self.active_callout = Some(handle);
+  /// Say the next line that can be said, or give the music its volume back if there's none
+  fn start_next_callout(&mut self) {
+    let previous_lead_in = self
+      .active_callout
+      .as_ref()
+      .and_then(|active| active.lead_in);
+    while let Some(request) = self.callout_queue.pop() {
+      let follows_on = previous_lead_in.is_some() && previous_lead_in == request.lead_in_key();
+      if let Some(handle) = self.start_callout(&request, follows_on) {
+        self.active_callout = Some(ActiveCallout {
+          key: request.key(),
+          lead_in: request.lead_in_key(),
+          handle,
+        });
+        return;
       }
-      Err(e) => log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e),
+      self.report_callout(request.key(), false);
     }
+    self.active_callout = None;
+    Self::unduck_track(&mut self.music_track);
+  }
+
+  /// Start a line, with its lead-in unless it follows on from a line that already had it. Returns the handle of the
+  /// line's last sound, which says when the line is over.
+  fn start_callout(
+    &mut self,
+    request: &CalloutRequest,
+    follows_on: bool,
+  ) -> Option<StaticSoundHandle> {
+    let Some(sound) = self.sounds.get(request.key()).cloned() else {
+      log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", request.key());
+      return None;
+    };
+    let mut sounds = vec![sound];
+    for key in request.then_keys() {
+      match self.sounds.get(key) {
+        Some(sound) => sounds.push(sound.clone()),
+        None => {
+          log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found, in line '{}'", key, request.key())
+        }
+      }
+    }
+
+    // each sound is scheduled on the audio clock, as waiting for a tick to start it would leave a gap of up to 100ms
+    let mut delay = Duration::ZERO;
+    let lead_in = request
+      .lead_in_key()
+      .filter(|_| !follows_on)
+      .and_then(|key| self.sounds.get(key))
+      .cloned();
+    if let Some(lead_in) = lead_in {
+      delay = lead_in.duration();
+      if let Err(e) = self.callout_track.play(lead_in) {
+        log::error!(target: "frontbox_core::sound", "Failed to play callout lead-in: {:?}", e);
+      }
+    }
+
+    let mut last = None;
+    for sound in sounds {
+      let duration = sound.duration();
+      match self
+        .callout_track
+        .play(sound.start_time(StartTime::Delayed(delay)))
+      {
+        Ok(handle) => last = Some(handle),
+        Err(e) => {
+          log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e)
+        }
+      }
+      delay += duration;
+    }
+    last
+  }
+
+  fn set_callout_volume(&mut self, db: f32) {
+    self
+      .callout_track
+      .set_volume(Decibels(db), Tween::default());
+  }
+
+  fn report_callout(&self, key: &'static str, played: bool) {
+    let _ = self.completed_tx.send(CalloutCompleted { key, played });
   }
 
   fn crossfade_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
@@ -228,25 +319,16 @@ impl SoundManager {
   }
 
   fn on_tick(&mut self) {
-    let Self {
-      active_callout,
-      music_track,
-      ..
-    } = self;
+    for key in self.callout_queue.take_stale(Instant::now()) {
+      self.report_callout(key, false);
+    }
 
-    // un-duck music if callout finished
-    if active_callout.is_some()
-      && active_callout.as_ref().unwrap().state() == PlaybackState::Stopped
+    // check if there are any queued callouts, and if so play the next one instead of un-ducking music
+    if let Some(active) = &self.active_callout
+      && active.handle.state() == PlaybackState::Stopped
     {
-      // check if there are any queued callouts, and if so play the next one instead of un-ducking music
-      if let Some(next_key) = self.callout_queue.pop() {
-        if let Some(sound) = self.sounds.get(next_key) {
-          self.play_callout_sound(sound.clone());
-        }
-      } else {
-        self.active_callout = None;
-        Self::unduck_track(music_track);
-      }
+      self.report_callout(active.key, true);
+      self.start_next_callout();
     }
   }
 
@@ -271,11 +353,18 @@ impl SoundManager {
   }
 }
 
+struct ActiveCallout {
+  key: &'static str,
+  lead_in: Option<&'static str>,
+  handle: StaticSoundHandle,
+}
+
 pub enum SoundManagerCmds {
   PreloadPath(&'static str, PathBuf),
   PreloadEmbedded(&'static str, &'static [u8]),
   PlaySfx(&'static str),
-  PlayCallout(&'static str),
+  PlayCallout(CalloutRequest),
+  SetCalloutVolume(f32),
   PlayMusic(PathBuf, Duration),
   StopMusic(Duration),
 }

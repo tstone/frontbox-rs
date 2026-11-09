@@ -4,12 +4,15 @@ use frontbox_gfx::prelude::*;
 use crate::*;
 
 pub trait LedSystemExt {
-  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, colors: ColorSequence);
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(
+  /// Declare one color for every LED the targets resolve to
+  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
+  /// Declare colors for the targets, given by `colors` from the number of LEDs they resolve to
+  fn declare_led_colors<T: Contextual<LedIdentifications>>(
     &self,
     targets: &T,
-    colors: ColorSequence,
+    colors: impl FnOnce(usize) -> Vec<Rgba<u8>>,
   );
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
   fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T);
   fn activate_led_declarations(&self);
   fn deactivate_led_declarations(&self);
@@ -21,10 +24,18 @@ pub trait LedSystemExt {
 }
 
 impl<'a> LedSystemExt for SystemContext<'a> {
-  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, seq: ColorSequence) {
+  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
+    self.declare_led_colors(targets, |count| vec![color; count]);
+  }
+
+  fn declare_led_colors<T: Contextual<LedIdentifications>>(
+    &self,
+    targets: &T,
+    colors: impl FnOnce(usize) -> Vec<Rgba<u8>>,
+  ) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      let colors = seq.generate(targets.leds.len());
+      let colors = colors(targets.leds.len());
       let declarations = LedDeclarations {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,
@@ -33,14 +44,10 @@ impl<'a> LedSystemExt for SystemContext<'a> {
     });
   }
 
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(
-    &self,
-    targets: &T,
-    seq: ColorSequence,
-  ) {
+  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      let colors = seq.generate(targets.leds.len());
+      let colors = vec![color; targets.leds.len()];
       let declarations = LedDeclarations {
         pairings: targets.leds.iter().zip(colors).collect(),
         z_index: targets.z_index,

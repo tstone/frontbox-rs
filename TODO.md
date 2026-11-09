@@ -2,8 +2,7 @@
 
 - tests for run_loop (should this get refactored to more than bare functions?)
 - Can we do some end-to-end tests around game management, turn ending/game ending?
-- Cue naming: `ctx.cues.start_cycling` cycles between signal values, not the cue itself, which reads as if the cue
-  loops (the `Cue` parameter already controls that). Find a name that says it alternates values.
+- Cue naming: `ctx.cues.start_cycling` cycles between signal values, not the cue itself, which reads as if the cue loops (the `Cue` parameter already controls that). Find a name that says it alternates values.
 - Should a "hold" (like how BallSave uses them) be a framework feature?
 - Better identify which systems need interfaces (ball management, game management, rand system). Watchdog, LedSystem,
   Machine, etc. need to be configurable/swappable, which possibly means they need interfaces.
@@ -11,21 +10,18 @@
 - Need to have a RandSystem that manages seed per game. Needed by event replay.
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
-- Evaluate RON for operator configs (and other stored data like leaderboards). frontbox-gfx stores effects in RON, and
-  one format across the project may be simpler than TOML for some files and RON for others.
-- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers.
+- Evaluate RON for operator configs (and other stored data like leaderboards)
+- Hardware/Switch/LedDefinition should have a load from JSON functionality so that they can be edited via the console. Needed by the console LED designers. (maybe?)
 - Revisit if `Synchronize` event still makes sense or not
 - Implement a proper LampDriver that also supports flashing
 - Stability: Robust handling for USB disconnects/reconnects
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
+- Reference planes should allow polygons so that cabinet sides don't look weird
 
 ## Pinball features
 
-- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens
-  to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are
-  participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a
-  ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant
-  check.
+- Reference plane builder for standard pinball forms (Stern, Williams, Custom)
+- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant check.
 - A generalized "StartupEject" system which takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
@@ -46,28 +42,29 @@
 - FAST protocol
 - Update Machine to support motor commands
 
-## LEDs and animation
+## Scenes/Editor
 
-- Really should revert name back to "effect" which is so much more natural LedEffect1d, LedEffect2d
-- Should "timeline" be renamed "keyframe"?
-- LedQ::any naming is weird, because it's basically saying "all of these" but it's written like a query "any of these
-  are true"
-- While LedProgram makes things feel normal, it's still a little weird how sometimes things are still manually declared.
-  Feels like there needs to be a unified API.
-- Because of the way LedProgram1d is "owned" by the system, the system has to hang around to let the effect complete.
-  This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there
-  could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect`
-  could be called it places through, then removes itself independent of the system starting it. This would need to be
-  ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages
-  these and doesn't auto-remove on despawn?).
+- Need to probably move pixel font rendering into gfx (real TTF rendering?)
+- Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
+- Curve preview (static) pop out in timeline
+- New curves for flame/flicker, stutter, glitch
+- Ability to compose curves in editor
+- Feather/soften edges of layer shape
+- Noise and noise masks
+- Blend modes (needed?)
+- Layer grouping (needed?)
+- Plane stitching for playback
+- SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
+- Proper BPM sync between music+scenes
+
+## LEDs
+
+- Because of the way LedScene is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
 - Single channel flasher support
 - Defining an LED grid like strip, but with rows/cols and serpentine directions -- ColorMatrix instead of ColorSequence?
-- Expand named color library
-- Maybe: Declare library colors with FAST and reference by ID
+- Evaluate if declaring named colors with FAST and reference by ID is worth it
 - NeoSeg support
-- LedSystem should maybe break away to be it's own crate? maybe animation too, and implement palette for HSL/color
-  modifications
 - Alternate resolver doesn't work with animated inputs
 - FirstWins isn't first. Hashmap does not guarantee order
 
@@ -75,6 +72,7 @@
 
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
+- music track repeat
 - apply-able effects (warble, reverb, glitch)
 - legacy hardware emulation? e.g. YM2610 FM
 
@@ -87,6 +85,7 @@
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
+- Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
 
 ## Canvas
 

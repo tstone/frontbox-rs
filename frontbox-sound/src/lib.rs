@@ -13,8 +13,9 @@
 //! 
 //! - Must be preloaded
 //! - Can play one at a time
-//! - Overlapping requests will queue
+//! - Overlapping requests queue in the order they were asked for, unless a [`CalloutRequest`] says otherwise
 //! - Automatically lowers volume on music track when playing
+//! - [`CalloutCompleted`] says when a line is done with
 //! 
 //! ## Music
 //! 
@@ -41,9 +42,21 @@
 //! # }
 //! ```
 
+mod callout;
 mod sound_system;
 mod sound_system_ext;
 mod sound_manager;
 
+pub use callout::CalloutRequest;
 pub use sound_system::*;
 pub use sound_system_ext::*;
+
+use frontbox_core::prelude::*;
+
+/// A callout is done with, whether it was said or not. It isn't said if a higher priority replaced it, it waited longer
+/// than its `max_wait`, or it couldn't be played. So anything waiting on a line, like a mode's intro, always hears back.
+#[derive(serde::Serialize, Event, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CalloutCompleted {
+  pub key: &'static str,
+  pub played: bool,
+}

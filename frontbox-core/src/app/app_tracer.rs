@@ -5,11 +5,12 @@ use crate::metrics::MetricsDb;
 use crate::prelude::*;
 
 pub trait AppTracer {
-  /// Called once at boot. `metrics` is the database flushed metrics are written to, for reading their history; `None`
+  /// Called once at boot. `config` is what the app was booted with. `metrics` is the database flushed metrics are written to, for reading their history; `None`
   /// when the app has no `metrics_path`, or it couldn't be opened.
   fn init(
     &mut self,
     hardware: &Hardware,
+    config: &AppConfig,
     tx: mpsc::UnboundedSender<TracerControlEvent>,
     metrics: Option<MetricsDb>,
   );

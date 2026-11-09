@@ -1,4 +1,3 @@
-use std::any::TypeId;
 
 use crate::prelude::*;
 
@@ -21,11 +20,8 @@ impl LED {
       .any(|tag| <dyn Tag>::as_any(tag.as_ref()).is::<T>())
   }
 
-  pub(crate) fn has_typed_tag(&self, type_id: TypeId) -> bool {
-    self
-      .tags
-      .iter()
-      .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
+  pub(crate) fn has_tag_named(&self, name: &str) -> bool {
+    self.tags.iter().any(|tag| tag.tag_name() == name)
   }
 }
 

@@ -1,10 +1,20 @@
 use glam::Vec2;
 use num_traits::Pow;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Region {
-  Circle { center: Vec2, radius: f32 },
-  Rect { top_left: Vec2, bottom_right: Vec2 },
+  Circle {
+    #[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))]
+    center: Vec2,
+    radius: f32,
+  },
+  Rect {
+    #[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))]
+    top_left: Vec2,
+    #[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))]
+    bottom_right: Vec2,
+  },
 }
 
 impl Region {

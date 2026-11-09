@@ -2,6 +2,9 @@ use std::{path::PathBuf, time::Duration};
 
 use crate::hardware::{ExpNetwork, IoNetwork};
 
+/// Half the width of a common 5050 addressable LED (5mm square), in inches
+pub const DEFAULT_LED_RADIUS: f32 = 0.1;
+
 /// Immutable values used by App to run everything
 ///
 /// # Examples
@@ -36,12 +39,29 @@ pub struct BootConfig {
   ///
   /// Defaults to `metrics.db` in the working directory. `None` counts metrics in memory and drops them.
   pub metrics_path: Option<PathBuf>,
+  /// Folder of what scenes use, such as images. It's scanned whatever is inside it, so organize it any way you like.
+  /// Scenes name images by their path from here, so the folder can move without changing them. Process must have read
+  /// access, and write access for the console to add to it.
+  ///
+  /// A relative path is resolved from the working directory, which depends on how the game is started: `cargo run` uses
+  /// wherever it was run from and a service uses whatever it was configured with. `env!("CARGO_MANIFEST_DIR")` is the
+  /// folder the game was built in, which is only there on the machine that built it. For a game that's built and run in
+  /// different ways, give this an absolute path chosen at startup, as with the other paths here. Debug and release builds
+  /// run from different places, so an absolute path is also how they share a folder. See the README for an example.
+  ///
+  /// Defaults to `content` in the working directory. `None` means there isn't one, so a scene can't draw images.
+  pub content_path: Option<PathBuf>,
   /// The interval at which `tick` and `render` run. This affects both the resolution of timers and LED + display render speed.
   /// Higher values result in higher resolution and smoother animation but additional CPU load. If this value is set too high
   /// it will introduce latency in responding to events.
   ///
   /// Defaults to 83ms / 12Hz / 12 FPS, which is probably overly conservative for most hardware
   pub system_interval: Duration,
+  /// The radius of the area an LED lights, in the units of its location. This is how far a scene's shape edges fade
+  /// across an LED.
+  ///
+  /// Defaults to [`DEFAULT_LED_RADIUS`]
+  pub led_radius: f32,
 }
 
 impl Default for BootConfig {
@@ -51,7 +71,9 @@ impl Default for BootConfig {
       exp_network: ExpNetwork::empty(),
       config_path: Some(PathBuf::from("operator_config.toml")),
       metrics_path: Some(PathBuf::from("metrics.db")),
+      content_path: Some(PathBuf::from("content")),
       system_interval: Duration::from_millis(83), // 12 fps
+      led_radius: DEFAULT_LED_RADIUS,
       // watchdog_interval: Duration::from_millis(1500),
       platform: Platform::Virtual,
     }

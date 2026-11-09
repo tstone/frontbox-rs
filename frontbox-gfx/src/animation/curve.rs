@@ -1,11 +1,12 @@
-use std::{f32::consts::PI, fmt, sync::Arc};
+use std::f32::consts::PI;
 
 /// Overshoot amount for the Back curves
 const BACK_C1: f32 = 1.70158;
 const BACK_C2: f32 = BACK_C1 * 1.525;
 const BACK_C3: f32 = BACK_C1 + 1.0;
 
-#[derive(Debug, Default, Clone)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Curve {
   #[default]
   Linear,
@@ -38,8 +39,6 @@ pub enum Curve {
   Multiply(Box<Self>, Box<Self>),
   /// Feeds the output of the first curve into the second, `second(first(phase))`
   Compose(Box<Self>, Box<Self>),
-  /// A curve the built-in list doesn't cover; see [`Curve::custom`]
-  Custom(CustomCurve),
 }
 
 impl Curve {
@@ -65,7 +64,6 @@ impl Curve {
       Self::Reflect(other) => 1.0 - other.sample(1.0 - phase),
       Self::Multiply(a, b) => a.sample(phase) * b.sample(phase),
       Self::Compose(first, second) => second.sample(first.sample(phase)),
-      Self::Custom(f) => (f.0)(phase),
     }
   }
 
@@ -88,26 +86,6 @@ impl Curve {
     Curve::Compose(Box::new(self), Box::new(next))
   }
 
-  /// A curve from a function of phase, usually returning 0 at phase 0 and 1 at phase 1
-  ///
-  /// ```rust
-  /// # use frontbox_gfx::animation::*;
-  /// let smoothstep = Curve::custom(|x| x * x * (3.0 - 2.0 * x));
-  /// assert_eq!(smoothstep.sample(0.5), 0.5);
-  /// ```
-  pub fn custom(f: impl Fn(f32) -> f32 + Send + Sync + 'static) -> Self {
-    Curve::Custom(CustomCurve(Arc::new(f)))
-  }
-}
-
-/// The function behind [`Curve::Custom`], made with [`Curve::custom`]
-#[derive(Clone)]
-pub struct CustomCurve(Arc<dyn Fn(f32) -> f32 + Send + Sync>);
-
-impl fmt::Debug for CustomCurve {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    f.write_str("CustomCurve")
-  }
 }
 
 #[inline]
@@ -252,13 +230,5 @@ mod tests {
     assert_eq!(curve.sample(0.5), 0.25);
     assert_eq!(curve.sample(0.6), 0.25);
     assert_eq!(curve.sample(0.7), 0.5625);
-  }
-
-  #[test]
-  fn custom_samples_the_function() {
-    let curve = Curve::custom(|x| 1.0 - x);
-    assert_eq!(curve.sample(0.0), 1.0);
-    assert_eq!(curve.sample(0.25), 0.75);
-    assert_eq!(format!("{:?}", curve.clone()), "Custom(CustomCurve)");
   }
 }

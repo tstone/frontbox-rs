@@ -50,7 +50,7 @@ pub struct Off;
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     ctx.cues.start_cycling(events![On, Off], Cue::Forever(Duration::from_secs(4)));
-    ctx.declare_leds(&leds::DEMO1.q(), ColorSequence::solid(Rgba::red()));
+    ctx.declare_leds(&leds::DEMO1.q(), Rgba::red());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -66,6 +66,6 @@ struct System2;
 
 impl System for System2 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.declare_leds(&leds::DEMO1.q(), ColorSequence::solid(Rgba::blue()));
+    ctx.declare_leds(&leds::DEMO1.q(), Rgba::blue());
   }
 }

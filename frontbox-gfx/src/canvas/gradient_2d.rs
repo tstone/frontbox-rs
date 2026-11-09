@@ -1,7 +1,6 @@
-use crate::color_sequence::GradientStop;
 use crate::prelude::*;
 
-use crate::canvas::Size;
+use crate::canvas::{GradientStop, Size};
 
 #[derive(Debug, Default, Clone)]
 pub struct Gradient2d {

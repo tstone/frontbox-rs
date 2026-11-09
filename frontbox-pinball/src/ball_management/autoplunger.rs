@@ -8,7 +8,7 @@ use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
 pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,
   pub(super) launch_button: Option<SwitchQ>,
-  pub(super) launch_ready_effect: Option<LedProgram1d>,
+  pub(super) launch_ready_effect: Option<LedPlayback>,
 }
 
 impl AutoPlungerConfig {
@@ -26,7 +26,7 @@ pub struct AutoPlungerSystem {
   handle: SystemHandle,
   coil_name: &'static str,
   launch_button: Option<SwitchQ>,
-  launch_ready_effect: Option<LedProgram1d>,
+  launch_ready_effect: Option<LedPlayback>,
   armed: bool,
 }
 

@@ -86,16 +86,17 @@ impl LedExample {
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Declare individually
-    ctx.declare_leds(&leds::DEMO1.q(), ColorSequence::solid(Rgba::blue()));
-    ctx.declare_leds(
-      &leds::DEMO2.q().at_z(3),
-      ColorSequence::solid(Rgba::yellow().with_alpha(127)),
-    );
+    ctx.declare_leds(&leds::DEMO1.q(), Rgba::blue());
+    ctx.declare_leds(&leds::DEMO2.q().at_z(3), Rgba::yellow().with_alpha(127));
 
-    // Or declare as a sequence
-    ctx.declare_leds(
+    // Or declare a color per LED
+    ctx.declare_led_colors(
       &vec![leds::DEMO1.q(), leds::DEMO2.q(), leds::DEMO3.q()].at_z(5),
-      ColorSequence::fade(Rgba::blue(), Rgba::red()),
+      |count| {
+        (0..count)
+          .map(|i| Rgba::blue().mix_with(Rgba::red(), i as f32 / count as f32))
+          .collect()
+      },
     );
   }
 
@@ -105,7 +106,7 @@ impl System for LedExample {
     self.seq.accumulate(delta);
 
     // re-declare LEDs with updated animated colors
-    ctx.declare_leds(&leds::DEMO3.q(), ColorSequence::solid(self.flash.sample()));
-    ctx.declare_leds(&leds::DEMO4.q(), ColorSequence::solid(self.seq.sample()));
+    ctx.declare_leds(&leds::DEMO3.q(), self.flash.sample());
+    ctx.declare_leds(&leds::DEMO4.q(), self.seq.sample());
   }
 }

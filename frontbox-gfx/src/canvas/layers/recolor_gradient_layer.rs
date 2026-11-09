@@ -1,4 +1,3 @@
-use crate::color_sequence::GradientStop;
 use crate::prelude::*;
 
 use crate::canvas::*;

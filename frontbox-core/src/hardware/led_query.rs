@@ -1,19 +1,22 @@
-use std::any::TypeId;
+use std::any::type_name;
 
 use indexmap::IndexSet;
 
 use crate::prelude::*;
 
-/// An LED Query
-#[derive(Debug, Clone, PartialEq)]
+/// An LED Query. Scene files hold these, so tags and planes are by name.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum LedQ {
   Every,
   Name(String),
-  Names(IndexSet<String>),
-  Tag(TypeId),
+  Names(#[cfg_attr(feature = "ts", ts(as = "Vec<String>"))] IndexSet<String>),
+  /// A tag, by the name it goes by in [`Tag::tag_name`]
+  Tag(String),
   And(Vec<LedQ>),
   Or(Vec<LedQ>),
-  Location(ReferencePlane, Region),
+  /// Within a region of a plane, by the name it was added to the app under
+  Location(String, Region),
   Skip(Box<LedQ>, usize),
   Take(Box<LedQ>, usize),
   Reverse(Box<LedQ>),
@@ -53,7 +56,8 @@ impl LedQ {
 
   /// Query that matches any driver with the specified tag type.
   pub fn tag<'a, T: Tag + 'static>() -> Self {
-    Self::Tag(TypeId::of::<T>())
+    let name = type_name::<T>();
+    Self::Tag(name.rsplit("::").next().unwrap_or(name).to_string())
   }
 
   /// Query that matches if either sub-selection matches.
@@ -79,7 +83,7 @@ impl LedQ {
   /// All matching within the given rectangle, on the given plane
   pub fn within_rect(plane: &ReferencePlane, top_left: Vec2, bottom_right: Vec2) -> Self {
     Self::Location(
-      plane.clone(),
+      plane.name.to_string(),
       Region::Rect {
         top_left,
         bottom_right,
@@ -89,7 +93,7 @@ impl LedQ {
 
   /// All matching within the given circle, on the given plane
   pub fn within_radius(plane: &ReferencePlane, center: Vec2, radius: f32) -> Self {
-    Self::Location(plane.clone(), Region::Circle { center, radius })
+    Self::Location(plane.name.to_string(), Region::Circle { center, radius })
   }
 
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.

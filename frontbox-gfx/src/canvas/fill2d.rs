@@ -1,3 +1,4 @@
+use crate::canvas::GradientStop;
 use crate::prelude::*;
 
 #[derive(Debug, Clone)]

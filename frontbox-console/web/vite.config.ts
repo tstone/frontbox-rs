@@ -7,6 +7,7 @@ export default defineConfig({
     // in dev, the page is served by vite but the data still comes from the running machine
     proxy: {
       '/ws': { target: 'ws://localhost:3000', ws: true },
+      '/content': 'http://localhost:3000',
     },
   },
 })

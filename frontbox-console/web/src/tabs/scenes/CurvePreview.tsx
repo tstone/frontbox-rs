@@ -1,0 +1,127 @@
+import { Dialog } from '@ark-ui/solid/dialog'
+import { For } from 'solid-js'
+import { Portal } from 'solid-js/web'
+import type { Curve } from '../../types/generated/Curve'
+
+export const CURVES: Extract<Curve, string>[] = [
+  'Linear',
+  'EaseIn',
+  'EaseOut',
+  'EaseInOut',
+  'ExponentialIn',
+  'ExponentialOut',
+  'ExponentialInOut',
+  'Sinusoid',
+  'BackIn',
+  'BackOut',
+  'BackInOut',
+  'BounceIn',
+  'BounceOut',
+  'BounceInOut',
+  'Random',
+]
+
+/** How many points along each curve are drawn */
+const SAMPLES = 120
+
+/** How far below 0 and above 1 a box shows, as the Back curves go past both */
+const OVERSHOOT = 0.2
+
+/** Overshoot amount for the Back curves */
+const BACK_C1 = 1.70158
+const BACK_C2 = BACK_C1 * 1.525
+const BACK_C3 = BACK_C1 + 1
+
+/** A box for each curve a key can take into it, drawn from 0 to 1. Only for reference; nothing here changes the scene. */
+export default function CurvePreview() {
+  return (
+    <Dialog.Root lazyMount unmountOnExit>
+      <Dialog.Trigger aria-label="Show the curves" title="Curves">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 13.5C8 13.5 8 2.5 14 2.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </Dialog.Trigger>
+      <Portal>
+        <Dialog.Backdrop class="scene-dialog-backdrop" />
+        <Dialog.Positioner class="scene-dialog-positioner">
+          <Dialog.Content class="scene-dialog">
+            <header>
+              <Dialog.Title>Curves</Dialog.Title>
+              <Dialog.CloseTrigger aria-label="Close">×</Dialog.CloseTrigger>
+            </header>
+            <div class="scene-curve-list">
+              <For each={CURVES}>{(curve) => <CurveBox curve={curve} />}</For>
+            </div>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
+  )
+}
+
+/** One curve, with lines where it starts from and goes to */
+function CurveBox(props: { curve: Extract<Curve, string> }) {
+  const y = (value: number) => 1 + OVERSHOOT - value
+  const points = Array.from({ length: SAMPLES + 1 }, (_, index) => {
+    const phase = index / SAMPLES
+    return `${phase},${y(sample(props.curve, phase))}`
+  }).join(' ')
+
+  return (
+    <figure class="scene-curve">
+      <svg viewBox={`0 0 1 ${1 + 2 * OVERSHOOT}`} preserveAspectRatio="none" aria-hidden="true">
+        <line class="scene-curve-guide" x1="0" x2="1" y1={y(0)} y2={y(0)} />
+        <line class="scene-curve-guide" x1="0" x2="1" y1={y(1)} y2={y(1)} />
+        <polyline class="scene-curve-line" points={points} />
+      </svg>
+      <figcaption>{props.curve}</figcaption>
+    </figure>
+  )
+}
+
+/** Where a curve is at a phase from 0 to 1, as `Curve::sample` in frontbox-gfx has it */
+function sample(curve: Extract<Curve, string>, phase: number): number {
+  switch (curve) {
+    case 'Linear':
+      return phase
+    case 'EaseIn':
+      return phase ** 2
+    case 'EaseOut':
+      return 1 - (1 - phase) ** 2
+    case 'EaseInOut':
+      return phase < 0.5 ? 2 * phase ** 2 : 1 - (-2 * phase + 2) ** 2 / 2
+    case 'ExponentialIn':
+      return 2 ** (10 * phase - 10)
+    case 'ExponentialOut':
+      return 1 - 2 ** (-10 * phase)
+    case 'ExponentialInOut':
+      return phase < 0.5 ? 2 ** (20 * phase - 10) / 2 : (2 - 2 ** (-20 * phase + 10)) / 2
+    case 'Sinusoid':
+      return 1 - (Math.cos(phase * 2 * Math.PI) + 1) / 2
+    case 'BackIn':
+      return BACK_C3 * phase ** 3 - BACK_C1 * phase ** 2
+    case 'BackOut':
+      return 1 + BACK_C3 * (phase - 1) ** 3 + BACK_C1 * (phase - 1) ** 2
+    case 'BackInOut':
+      return phase < 0.5
+        ? ((2 * phase) ** 2 * ((BACK_C2 + 1) * 2 * phase - BACK_C2)) / 2
+        : ((2 * phase - 2) ** 2 * ((BACK_C2 + 1) * (2 * phase - 2) + BACK_C2) + 2) / 2
+    case 'BounceIn':
+      return 1 - bounceOut(1 - phase)
+    case 'BounceOut':
+      return bounceOut(phase)
+    case 'BounceInOut':
+      return phase < 0.5 ? (1 - bounceOut(1 - 2 * phase)) / 2 : (1 + bounceOut(2 * phase - 1)) / 2
+    case 'Random':
+      return Math.random()
+  }
+}
+
+function bounceOut(phase: number) {
+  const n1 = 7.5625
+  const d1 = 2.75
+  if (phase < 1 / d1) return n1 * phase * phase
+  if (phase < 2 / d1) return n1 * (phase - 1.5 / d1) ** 2 + 0.75
+  if (phase < 2.5 / d1) return n1 * (phase - 2.25 / d1) ** 2 + 0.9375
+  return n1 * (phase - 2.625 / d1) ** 2 + 0.984375
+}

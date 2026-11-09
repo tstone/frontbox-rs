@@ -20,6 +20,12 @@ function toRgb({ r: first, g: second, b: third }: Rgb, channels: LedChannels): R
 
 const hex = (n: number) => n.toString(16).padStart(2, '0')
 
+/** A color in red, green, blue order as CSS (`#rrggbb`), or `null` if it's off */
+export function cssColor({ r, g, b }: Rgb): string | null {
+  if (r === 0 && g === 0 && b === 0) return null
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+
 /**
  * The color an LED is showing, as CSS (`#rrggbb`), or `null` if the console hasn't seen one yet or it's off.
  */
@@ -27,9 +33,7 @@ export function ledColor(name: string): string | null {
   const wire = machine.led_colors[name]
   if (!wire) return null
   const channels = machine.hardware?.leds.configs[name]?.channels ?? 'RGB'
-  const { r, g, b } = toRgb(wire, channels)
-  if (r === 0 && g === 0 && b === 0) return null
-  return `#${hex(r)}${hex(g)}${hex(b)}`
+  return cssColor(toRgb(wire, channels))
 }
 
 /** Whether the console has seen a color for this LED, so "off" can be told apart from "unknown" */

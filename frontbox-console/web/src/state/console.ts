@@ -7,6 +7,7 @@ import { groupLabel, shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
+import { receiveSceneClip, receiveSceneClipFailed, receiveSceneRender } from './sceneRender'
 import { type Connection, connect, type ConnectionStatus } from './socket'
 
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
@@ -49,7 +50,7 @@ let connection: Connection | null = null
 
 /** Returns a cleanup function */
 export function startConsole(): () => void {
-  connection = connect(handleMessage, (status) => setState('connection', status))
+  connection = connect(handleMessage, receiveSceneClip, (status) => setState('connection', status))
   return () => {
     connection?.close()
     connection = null
@@ -97,6 +98,15 @@ function handleMessage(message: ServerMessage) {
       break
     case 'MetricTotals':
       receiveMetricTotals(message)
+      break
+    case 'SceneRendered':
+      receiveSceneRender({ rendered: message })
+      break
+    case 'SceneRenderFailed':
+      receiveSceneRender({ error: message.error })
+      break
+    case 'SceneClipFailed':
+      receiveSceneClipFailed(message.id, message.error)
       break
   }
 }

@@ -1,6 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::color_sequence::GradientStop;
 use crate::prelude::{Extent, Rgba};
 
 use crate::canvas::*;
