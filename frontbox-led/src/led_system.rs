@@ -39,13 +39,19 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// // declare LEDs by name...
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(3),
-///   ColorSequence::solid(Rgba::yellow())
+///   Rgba::yellow()
 /// );
 ///
 /// // ...or by group
 /// ctx.declare_leds(
 ///   &vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
-///   ColorSequence::fade(Rgba::red(), Rgba::yellow())
+///   Rgba::red()
+/// );
+///
+/// // ...or with a color per LED
+/// ctx.declare_led_colors(
+///   &vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
+///   |count| (0..count).map(|i| Rgba::red().mix_with(Rgba::yellow(), i as f32 / count as f32)).collect(),
 /// );
 /// # }
 /// ```
@@ -81,11 +87,11 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// // higher layer declares 50% transparent red
 /// ctx.declare_leds(
 ///   &leds::EXAMPLE.q().at_z(1),
-///   ColorSequence::solid(Rgba::red().with_alpha_f32(0.5))
+///   Rgba::red().with_alpha_f32(0.5)
 /// );
 ///
 /// // over top of white
-/// ctx.declare_leds(&leds::EXAMPLE.q(), ColorSequence::solid(Rgba::white()));
+/// ctx.declare_leds(&leds::EXAMPLE.q(), Rgba::white());
 ///
 /// // final color renders as pink [255, 127, 127, 255]
 /// # }

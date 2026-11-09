@@ -58,7 +58,7 @@ A device maps its points into the viewport, so a composition never changes with 
 
 ## Building alongside the old modules
 
-`color_sequence`, `canvas`, and the trait-object parts of `animation` are being replaced. New work goes in new modules
+`canvas` and the trait-object parts of `animation` are being replaced. New work goes in new modules
 next to them. Don't reshape the old modules to fit the new design; additive changes (like a `serde` derive) are fine.
 The old modules are deleted in one migration once the new ones cover them.
 

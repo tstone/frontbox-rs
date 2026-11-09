@@ -515,16 +515,16 @@ mod tests {
   }
 
   #[test]
-  fn gradient_on_a_line_matches_color_sequence() {
+  fn a_gradient_on_a_line_runs_from_the_first_led_to_the_last() {
     use crate::prelude::*;
 
     for count in [1, 2, 5, 16, 33] {
       let scene = Scene::new(Surface::Sequence, vec![Layer::new(red_to_blue())]);
-      let expected = ColorSequence::fade(RED, BLUE).generate(count);
+      let expected = (0..count).map(|i| RED.mix_with(BLUE, i as f32 / (count - 1).max(1) as f32));
       let actual = line(&scene, count);
-      for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
+      for (i, (a, e)) in actual.iter().zip(expected).enumerate() {
         let close = (0..4).all(|c| (a[c] as i16 - e[c] as i16).abs() <= 1);
-        assert!(close, "{count} LEDs, LED {i}: {a:?} vs ColorSequence {e:?}");
+        assert!(close, "{count} LEDs, LED {i}: {a:?} vs {e:?}");
       }
     }
   }

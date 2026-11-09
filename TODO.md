@@ -85,6 +85,7 @@
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
+- Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
 
 ## Canvas
 

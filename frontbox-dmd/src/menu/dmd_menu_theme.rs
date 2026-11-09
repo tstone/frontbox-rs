@@ -1,5 +1,4 @@
 use frontbox_gfx::canvas::*;
-use frontbox_gfx::color_sequence::GradientStop;
 use frontbox_gfx::prelude::*;
 
 pub struct DmdMenuTheme {

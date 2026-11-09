@@ -1,6 +1,6 @@
 //! # Scenes
 //!
-//! <div class="warning">Stability Level: Low. This is the start of the replacement for `color_sequence` and `canvas`.</div>
+//! <div class="warning">Stability Level: Low. This is the start of the replacement for `canvas`.</div>
 //!
 //! A [`GfxComposition`] describes a graphic and how it moves over time, as data. It's sampled rather than rendered into a
 //! buffer: a device maps its points into the scene's viewport and asks for a color at each one. Where a device's points
