@@ -6,10 +6,12 @@ import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
+import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { GfxComposition } from '../../types/generated/GfxComposition'
+import type { GraphMask } from '../../types/generated/GraphMask'
 import type { LedLayer } from '../../types/generated/LedLayer'
 import type { SceneDefinition } from '../../types/generated/SceneDefinition'
 import type { SceneSource } from '../../types/generated/SceneSource'
@@ -20,11 +22,13 @@ import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
+import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
+import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 
 export type Vec2 = [number, number]
 
-type Shape = NonNullable<Layer['shape']>
+type Shape = NonNullable<Layer['region']>
 
 /** The size of what a layer is being edited for, in that device's units. A `Sequence` has none. */
 export type Surface = Vec2 | null
@@ -158,9 +162,10 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
 
-/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, or where a path was moved to */
+/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a path was moved to, or a visit response at rest */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
+  if ('Visit' in prop) return prop.Visit.from
   if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
   if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadMiddle(prop.Random.spread) as T) : fallback
   if ('Sweep' in prop) {
@@ -245,11 +250,34 @@ export function layerPlane({ surface }: SceneLayer) {
 }
 
 /**
- * Layer on something else. A shape is measured in the units of what it's on, so it would land somewhere else on another
- * kind of surface. The layer goes back to covering all of it, unmasked.
+ * Layer on something else. A region is measured in the units of what it's on, so it would land somewhere else on another
+ * kind of surface. The layer goes back to covering all of it, unmasked. A graph stays, as its traversals start from LEDs.
  */
-export function withLayerSurface({ shape, mask, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
+export function withLayerSurface({ region, mask, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
   return { ...layer, surface }
+}
+
+/** Where an algorithm that goes to a node is going, which is `null` for the others */
+export function traversalTarget(algorithm: Lens<TraversalAlgorithm>): Lens<NodeRef> | null {
+  const current = algorithm.get()
+  if (typeof current === 'string') return null
+  const [[kind, settings]] = Object.entries(current)
+  return {
+    get: () => (Object.values(algorithm.get())[0] as { to: NodeRef }).to,
+    set: (to) => algorithm.set({ [kind]: { ...settings, to } } as TraversalAlgorithm),
+  }
+}
+
+/** The names of a layer's traversals, which is what a visit response or a fit refers to them by */
+export const traversalNames = (layer: SceneLayer | undefined) => layer?.graph?.traversals.map(({ name }) => name) ?? []
+
+/** `base`, or `base_2` and so on if one of the layer's traversals already has that name */
+export function freshTraversalName(layer: SceneLayer, base: string) {
+  const taken = new Set(traversalNames(layer))
+  if (!taken.has(base)) return base
+  let n = 2
+  while (taken.has(`${base}_${n}`)) n++
+  return `${base}_${n}`
 }
 
 /** Where a new layer goes: where the one under it is, so that stacking is the easy thing to do */
@@ -271,16 +299,16 @@ type PropLens = Lens<Prop<SceneValue>>
 /** The layer open in the config, and whether it's the layer's mask being edited rather than the layer */
 export type Selection = { layer: number; mask: boolean }
 
-/** The shape of what's selected, if it has one */
+/** The region of what's selected, if it has one */
 export function selectedShape(scene: Scene | null | undefined, { layer, mask }: Selection) {
   const current = scene?.layers[layer]
-  return (mask ? current?.mask : current)?.shape
+  return (mask ? current?.mask : current)?.region
 }
 
-/** Where to change the shape of what's selected, which has to have one */
+/** Where to change the region of what's selected, which has to have one */
 export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection) {
   const lens = item(field(scene, 'layers'), layer)
-  return (mask ? field(field(lens, 'mask') as Lens<Mask>, 'shape') : field(lens, 'shape')) as Lens<Shape>
+  return (mask ? field(field(lens, 'mask') as Lens<Mask>, 'region') : field(lens, 'region')) as Lens<Shape>
 }
 
 /** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
@@ -302,7 +330,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
       else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
-      else use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
+      else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
     })
   }
 
@@ -361,8 +389,21 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     })
   }
 
+  const graph = (lens: Lens<GraphMask>, label: string) => {
+    const traversals = field(lens, 'traversals')
+    traversals.get().forEach(({ name, from }, i) => {
+      const traversal = item(traversals, i)
+      const named = `${label} · ${name}`
+      use(field(traversal, 'rate'), `${named} · Rate`, both(RATE))
+      if ('Nearest' in from) use(variant(field(traversal, 'from'), 'Nearest'), `${named} · From`, translateRanges(surface, 'shape'))
+      const target = traversalTarget(field(traversal, 'algorithm'))
+      const to = target?.get()
+      if (target && to && 'Nearest' in to) use(variant(target, 'Nearest'), `${named} · To`, translateRanges(surface, 'shape'))
+    })
+  }
+
   const layers = field(scene, 'layers')
-  layers.get().forEach(({ shape: layerShape, mask }, index) => {
+  layers.get().forEach(({ region, mask, graph: layerGraph }, index) => {
     layerIndex = index
     inMask = false
     surface = surfaces(layers.get()[index])
@@ -370,14 +411,15 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     const label = layerLabel(layers.get()[index], index)
 
     fill(field(layer, 'fill'), label)
-    if (layerShape) shape(field(layer, 'shape') as Lens<Shape>, label, `${label} · Shape`)
+    if (region) shape(field(layer, 'region') as Lens<Shape>, label, `${label} · Region`)
+    if (layerGraph) graph(field(layer, 'graph') as Lens<GraphMask>, `${label} · Graph`)
 
     if (mask) {
       inMask = true
       const lens = field(layer, 'mask') as Lens<Mask>
       const maskLabel = `${label} · Mask`
       fill(field(lens, 'fill'), maskLabel)
-      if (mask.shape) shape(field(lens, 'shape') as Lens<Shape>, maskLabel, `${maskLabel} · Shape`)
+      if (mask.region) shape(field(lens, 'region') as Lens<Shape>, maskLabel, `${maskLabel} · Region`)
     }
   })
   return uses
@@ -544,9 +586,14 @@ export function withTimesScaled(scene: Scene, by: number): Scene {
  */
 export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
   const tracks = (scene: Scene) => sceneTracks(reading(scene)).length
-  if (!next.timing || tracks(current) === 0 || tracks(next) > 0) return next
+  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next)) return next
   const { timing: _, ...rest } = next
   return rest
+}
+
+/** Whether a scene has traversals or responds to them, which plays out over time as keyframes do */
+function traverses(scene: Scene) {
+  return scene.layers.some((layer) => traversalNames(layer).length > 0) || propUses(reading(scene)).some(({ lens }) => 'Visit' in lens.get())
 }
 
 function lerp(a: SceneValue, b: SceneValue, by: number): SceneValue {
@@ -586,6 +633,52 @@ export function moveMoment<T extends { at: number }>(moments: Lens<T[]>, index: 
 /** `keys` with a copy of the one at `index` at another time */
 export function withKeyCopy(keys: Key<SceneValue>[], index: number, at: number): Key<SceneValue>[] {
   return [...keys, { ...keys[index], at }].sort((a, b) => a.at - b.at)
+}
+
+/**
+ * A response to `traversal` that rests at `from` and goes to the top of a number's range on each visit, fading back over
+ * a step. A position or a color goes nowhere until it's given somewhere to go.
+ */
+export function newVisit(traversal: string, from: SceneValue, [range]: Ranges): VisitResponse<SceneValue> {
+  const to = typeof from === 'number' ? range.max : from
+  return { traversal, from, to, smooth_in: 0, hold: 0, smooth_out: 1, curve_in: 'Linear', curve_out: 'Linear', overlap: 'Max' }
+}
+
+/**
+ * `layer` with every visit response and fit that refers to a traversal by `from` referring to it by `to` instead, for
+ * when a traversal is renamed
+ */
+export function withTraversalRenamed(layer: SceneLayer, from: string, to: string): SceneLayer {
+  const renamed = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(renamed)
+    if (value === null || typeof value !== 'object') return value
+    const entries = Object.entries(value).map(([key, inner]) => {
+      if (key === 'Fit' && inner === from) return [key, to]
+      if (key === 'Visit' && (inner as VisitResponse<SceneValue>).traversal === from) return [key, { ...(inner as object), traversal: to }]
+      return [key, renamed(inner)]
+    })
+    return Object.fromEntries(entries)
+  }
+  const { graph, ...rest } = layer
+  const traversals = graph?.traversals.map((traversal) => (traversal.name === from ? { ...traversal, name: to } : traversal))
+  return { ...(renamed(rest) as SceneLayer), ...(graph && { graph: { ...graph, traversals: traversals! } }) }
+}
+
+/** The traversals something in `layer` responds to or fits to */
+export function usedTraversals(layer: SceneLayer): Set<string> {
+  const used = new Set<string>()
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit)
+    if (value === null || typeof value !== 'object') return
+    for (const [key, inner] of Object.entries(value)) {
+      if (key === 'Fit' && typeof inner === 'string') used.add(inner)
+      if (key === 'Visit') used.add((inner as VisitResponse<SceneValue>).traversal)
+      visit(inner)
+    }
+  }
+  const { graph: _, ...rest } = layer
+  visit(rest)
+  return used
 }
 
 /** A moment to pick a value, held until the next one */
@@ -632,6 +725,10 @@ const FACTOR: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
 const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
+/** Steps a second, or for a traversal that goes by distance, scene units a second */
+export const RATE: Range = { min: 0.1, max: 60, step: 0.1, rest: 10 }
+/** Steps of a visit response's timing */
+export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
 export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
 /** How much of each of a pinwheel's shares is blade. Past these ends, its blades or its gaps are too thin to make out. */

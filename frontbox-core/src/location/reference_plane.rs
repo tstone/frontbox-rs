@@ -108,9 +108,13 @@ impl ReferencePlane {
 
   /// Map a given absolute point to its coordinates on this plane
   pub fn to_relative(&self, point_world: Vec3) -> Vec2 {
+    self.to_local(point_world).truncate()
+  }
+
+  /// Like [`Self::to_relative`], keeping z: how far the point is off the plane, along its normal
+  pub fn to_local(&self, point_world: Vec3) -> Vec3 {
     let (origin, rotation) = self.world_transform();
-    let local = rotation.inverse() * (point_world - origin);
-    Vec2::new(local.x, local.y)
+    rotation.inverse() * (point_world - origin)
   }
 }
 

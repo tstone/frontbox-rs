@@ -25,7 +25,7 @@ handles: Array<[number, number]>,
  */
 hole: number, 
 /**
- * Its edge in the scene, as a closed loop of points, or its line for a route or bezier, which doesn't close
+ * Its edge in the scene, as a closed loop of points, or its line for a polyline or bezier, which doesn't close
  */
 outline: Array<[number, number]>, 
 /**

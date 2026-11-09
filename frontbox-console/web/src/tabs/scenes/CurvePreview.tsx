@@ -3,6 +3,9 @@ import { For } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { Curve } from '../../types/generated/Curve'
 
+/** Written for the scene file by hand, and not something this list can make */
+export const CUSTOM_CURVE = 'Custom'
+
 export const CURVES: Extract<Curve, string>[] = [
   'Linear',
   'EaseIn',

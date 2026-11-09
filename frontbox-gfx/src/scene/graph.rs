@@ -96,7 +96,7 @@ pub struct Edges {
 
 /// Which pairs of nodes get an edge. Both are subgraphs of the Delaunay triangulation, so edges don't cross.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EdgeRule {
   /// Relative neighborhood graph: no other node is closer to both ends than they are to each other. Sparse and branching,
   /// like a tree.

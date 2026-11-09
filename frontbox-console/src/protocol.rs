@@ -142,6 +142,18 @@ pub struct RenderedScene {
   /// What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
   /// order, however the LED is wired.
   pub led_colors: BTreeMap<String, Rgb>,
+  /// The graph each layer is limited to, built from the LEDs it lands on. `None` for a layer without one.
+  pub graphs: Vec<Option<RenderedGraph>>,
+}
+
+/// A layer's graph: its nodes, where each samples the scene in scene units, and its edges
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedGraph {
+  /// The LED each node is, by name
+  pub names: Vec<String>,
+  pub nodes: Vec<[f32; 2]>,
+  /// Each edge once, by the indexes of its two nodes
+  pub edges: Vec<[usize; 2]>,
 }
 
 /// A shape as it stands at a moment

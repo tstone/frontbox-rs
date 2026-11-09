@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Fill, Bounds, GraphMask, Mask, Sample, Shape, Transform};
 
-/// A fill drawn in a shape
+/// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
@@ -17,10 +17,10 @@ pub struct Layer {
   #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
   pub hidden: bool,
   pub fill: Fill,
-  /// `None` covers the whole viewport
-  #[serde(default, skip_serializing_if = "Option::is_none")]
+  /// Where the layer draws, and what its fill is stretched over. `None` covers the whole viewport.
+  #[serde(default, alias = "shape", skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
-  pub shape: Option<Shape>,
+  pub region: Option<Shape>,
   /// `None` shows the whole layer
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
@@ -33,7 +33,7 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, hidden: false, fill, shape: None, mask: None, graph: None }
+    Self { name: None, hidden: false, fill, region: None, mask: None, graph: None }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -46,8 +46,8 @@ impl Layer {
     self
   }
 
-  pub fn shape(mut self, shape: Shape) -> Self {
-    self.shape = Some(shape);
+  pub fn region(mut self, region: Shape) -> Self {
+    self.region = Some(region);
     self
   }
 
@@ -72,7 +72,7 @@ impl Layer {
 
   pub(crate) fn is_animated(&self) -> bool {
     self.fill.is_animated()
-      || self.shape.as_ref().is_some_and(Shape::is_animated)
+      || self.region.as_ref().is_some_and(Shape::is_animated)
       || self.mask.as_ref().is_some_and(Mask::is_animated)
       || self.graph.as_ref().is_some_and(GraphMask::is_animated)
   }
@@ -87,7 +87,7 @@ impl Layer {
     if self.graph.is_some() && at.node.is_none() {
       return Rgba([0, 0, 0, 0]);
     }
-    let mut color = sample_fill(&self.fill, self.shape.as_ref(), at, viewport, env);
+    let mut color = sample_fill(&self.fill, self.region.as_ref(), at, viewport, env);
     if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
       color[3] = (color[3] as f32 * mask.amount(at, viewport, env)).round() as u8;
     }
@@ -95,13 +95,13 @@ impl Layer {
   }
 
   pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec2> {
-    fill_outline(self.shape.as_ref(), viewport, env)
+    fill_outline(self.region.as_ref(), viewport, env)
   }
 }
 
-/// The fill's color at a sample, clipped to the shape (or the viewport, with no shape). Edge coverage goes into alpha.
-pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
-  let (coverage, fill_pos, footprint) = match shape {
+/// The fill's color at a sample, clipped to the region (or the viewport, with none). Edge coverage goes into alpha.
+pub(crate) fn sample_fill(fill: &Fill, region: Option<&Shape>, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
+  let (coverage, fill_pos, footprint) = match region {
     None if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
     None => (1.0, viewport.to_unit(at.pos), viewport.to_unit_length(at.radius)),
     Some(shape) => match shape.cover(at, env) {
@@ -113,7 +113,7 @@ pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewp
     },
   };
 
-  let env = &Env { fill_frame: fill_frame(fill, shape, viewport, env), ..*env };
+  let env = &Env { fill_frame: fill_frame(fill, region, viewport, env), ..*env };
   let mut color = fill.color(fill_pos, footprint, env);
   color[3] = (color[3] as f32 * coverage).round() as u8;
   color

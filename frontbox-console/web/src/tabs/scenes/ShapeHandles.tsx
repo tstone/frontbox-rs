@@ -7,13 +7,13 @@ import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
 import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
-type Shape = NonNullable<Layer['shape']>
+type Shape = NonNullable<Layer['region']>
 
 /** A transform as the machine sends it: where it takes x's axis, y's axis, and the origin */
 type Affine = RenderedShape['transforms'][number]
 
 /** A grab handle: where it is, and what dragging it does */
-type Handle = {
+export type Handle = {
   label: string
   kind: 'move' | 'scale' | 'size' | 'point' | 'bezier'
   cursor: string
@@ -114,7 +114,7 @@ function outOfStep(shape: Lens<Shape>, pose: RenderedShape) {
   )
 }
 
-function Grip(props: { handle: Handle; space: PreviewSpace }) {
+export function Grip(props: { handle: Handle; space: PreviewSpace }) {
   const spot = () => props.space.project(props.handle.at)
 
   const press = (e: PointerEvent) => {
@@ -157,11 +157,11 @@ function Grip(props: { handle: Handle; space: PreviewSpace }) {
   )
 }
 
-/** The topmost layer showing a shape at a point on what's on show, which only some of a scene's layers may be on */
+/** The topmost layer with a region at a point on what's on show, which only some of a scene's layers may be on */
 export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean) {
   for (let index = scene.layers.length - 1; index >= 0; index--) {
-    const { shape, hidden } = scene.layers[index]
-    if (shape && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
+    const { region, hidden } = scene.layers[index]
+    if (region && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
   }
   return null
 }

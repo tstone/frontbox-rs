@@ -147,7 +147,7 @@ impl GfxComposition {
   /// Each layer's [`ShapePose`] at this frame, for editor handles. `None` for a layer with no shape, or a collapsed one.
   pub fn shape_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
-    self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
+    self.layers.iter().map(|layer| layer.region.as_ref().and_then(|shape| shape.pose(&env))).collect()
   }
 
   /// Like [`Self::outlines`], for each layer's mask. A layer with no mask has no points.
@@ -160,7 +160,7 @@ impl GfxComposition {
   /// Like [`Self::shape_poses`], for each layer's mask shape
   pub fn mask_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
-    self.layers.iter().map(|layer| layer.mask.as_ref()?.shape.as_ref()?.pose(&env)).collect()
+    self.layers.iter().map(|layer| layer.mask.as_ref()?.region.as_ref()?.pose(&env)).collect()
   }
 
   /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
@@ -285,7 +285,7 @@ mod tests {
   #[test]
   fn a_shape_runs_past_the_viewport() {
     let shape = Shape::new(ShapeNode::circle(10.0)).transform(Transform::Translate(Vec2::new(150.0, 25.0).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).region(shape)]);
     assert_eq!(sample(&scene, 150.0, 25.0, 0.5), BLUE);
     assert_eq!(sample(&scene, 170.0, 25.0, 0.5), Rgba([0, 0, 0, 0]));
   }
@@ -314,7 +314,7 @@ mod tests {
   fn rotate_runs_a_shape_past_the_end_of_a_sequence_to_its_start() {
     let lit = |transform: Vec<Transform>| -> Vec<bool> {
       let shape = transform.into_iter().fold(Shape::new(ShapeNode::Rect { width: 0.1.into(), height: 1.0.into() }), Shape::transform);
-      line(&Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(shape)]), 5).iter().map(|color| color[3] > 0).collect()
+      line(&Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(shape)]), 5).iter().map(|color| color[3] > 0).collect()
     };
     let place = || Transform::Translate(Vec2::new(0.75, 0.0).into());
     let turn = |degrees: f32| Transform::Rotate(degrees.into());
@@ -329,7 +329,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Rotate(90.0.into()))
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -339,7 +339,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
       .transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -350,7 +350,7 @@ mod tests {
       points: [(10.0, 4.0), (30.0, 4.0), (30.0, 6.0), (10.0, 6.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
     };
     let shape = Shape::new(bar).transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]);
     assert_eq!(sample(&scene, 20.0, 12.0, 0.1), RED);
     assert_eq!(sample(&scene, 12.0, 5.0, 0.1)[3], 0);
   }
@@ -469,7 +469,7 @@ mod tests {
   fn circle(fill: Fill) -> Scene {
     Scene::new(Surface::Area, vec![
       Layer::new(solid(DARK)),
-      Layer::new(fill).shape(
+      Layer::new(fill).region(
         Shape::new(ShapeNode::circle(0.5))
           .transform(Transform::Scale(Vec2::splat(40.0).into()))
           .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
@@ -520,7 +520,7 @@ mod tests {
       .transform(Transform::Scale(Vec2::new(2.0, 4.0).into()))
       .transform(Transform::Translate(Vec2::new(10.0, 20.0).into()));
     let corners = [(10.0, 20.0), (12.0, 20.0), (12.0, 24.0), (10.0, 24.0)].map(|(x, y)| Vec2::new(x, y));
-    assert_eq!(outlines(Layer::new(solid(RED)).shape(shape)), corners);
+    assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), corners);
   }
 
   #[test]
@@ -528,7 +528,7 @@ mod tests {
     let shape = Shape::new(ShapeNode::circle(0.5))
       .transform(Transform::Scale(Vec2::new(40.0, 20.0).into()))
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let outline = outlines(Layer::new(solid(RED)).shape(shape));
+    let outline = outlines(Layer::new(solid(RED)).region(shape));
     assert!(outline.len() > 16);
     for point in outline {
       let offset = (point - Vec2::new(50.0, 25.0)) / Vec2::new(20.0, 10.0);
@@ -539,9 +539,9 @@ mod tests {
   #[test]
   fn a_shape_that_draws_nothing_has_no_outline() {
     let collapsed = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::ZERO.into()));
-    assert!(outlines(Layer::new(solid(RED)).shape(collapsed)).is_empty());
+    assert!(outlines(Layer::new(solid(RED)).region(collapsed)).is_empty());
     let line = Shape::new(ShapeNode::Polygon { points: vec![Vec2::ZERO.into(), Vec2::ONE.into()] });
-    assert!(outlines(Layer::new(solid(RED)).shape(line)).is_empty());
+    assert!(outlines(Layer::new(solid(RED)).region(line)).is_empty());
   }
 
   #[test]
@@ -595,14 +595,14 @@ mod tests {
 
   #[test]
   fn a_mask_shows_its_layer_only_inside_it_and_leaves_the_layer_below() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
     assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 5.0, 5.0, 0.5), DARK);
   }
 
   #[test]
   fn an_inverted_mask_shows_its_layer_only_outside_it() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()).inverted());
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()).inverted());
     assert_eq!(sample(&scene, 50.0, 25.0, 0.5), DARK);
     assert_eq!(sample(&scene, 5.0, 5.0, 0.5), RED);
   }
@@ -624,8 +624,8 @@ mod tests {
   #[test]
   fn a_mask_stays_put_as_its_layer_moves() {
     let moved = middle_circle().transform(Transform::Translate(Vec2::new(20.0, 0.0).into()));
-    let mask = Mask::new(solid(BLUE)).shape(middle_circle());
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(moved).mask(mask)]);
+    let mask = Mask::new(solid(BLUE)).region(middle_circle());
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(moved).mask(mask)]);
     // in both, in the layer alone, and in the mask alone
     assert_eq!(sample(&scene, 60.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 85.0, 25.0, 0.5)[3], 0);
@@ -647,7 +647,7 @@ mod tests {
 
   #[test]
   fn a_masks_outline_and_pose_line_up_with_the_layers() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
     let params = Params::new();
     let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     assert!(scene.mask_outlines(&frame)[0].is_empty());
@@ -676,7 +676,7 @@ mod tests {
   #[test]
   fn gradient_turns_with_its_shape() {
     let mut scene = circle(red_to_blue());
-    let Some(shape) = &mut scene.layers[1].shape else { unreachable!() };
+    let Some(shape) = &mut scene.layers[1].region else { unreachable!() };
     shape.transform.insert(1, Transform::Rotate(90.0.into()));
     // the red end is now at the top, and the blue end at the bottom
     assert_eq!(sample(&scene, 50.0, 5.5, 0.0), Rgba([252, 0, 3, 255]));
@@ -686,7 +686,7 @@ mod tests {
   #[test]
   fn shape_on_a_line_is_measured_along_it() {
     // on 5 LEDs, a circle most of the way across centered on the middle lights all but the end LEDs
-    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.75).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -707,7 +707,7 @@ mod tests {
 
   #[test]
   fn a_shape_covers_the_same_part_of_any_strip() {
-    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.5).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -730,7 +730,7 @@ mod tests {
   #[test]
   fn a_shape_larger_than_the_viewport_can_move_under_it() {
     // a 300 wide gradient, moved so its middle is in view
-    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).shape(
+    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).region(
       Shape::new(ShapeNode::Polygon {
         points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
       })
@@ -826,8 +826,8 @@ mod tests {
     fn track<T>() -> Track<T> {
       Track { keys: vec![], cycle: Cycle::Once }
     }
-    let in_transform = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Track(track()))));
-    let in_point = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
+    let in_transform = Layer::new(solid(RED)).region(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Track(track()))));
+    let in_point = Layer::new(solid(RED)).region(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
     let in_stop = Layer::new(Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Prop::Track(track()))],
       style: GradientStyle::Linear,
@@ -900,7 +900,7 @@ mod tests {
   #[test]
   fn an_image_stretches_over_a_shape_and_moves_with_it() {
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(2.0).into())).transform(Transform::Translate(Vec2::new(2.0, 1.5).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
     assert_eq!(drawn(&scene, 1.5, 0.7, 0.01), RED);
     assert_eq!(drawn(&scene, 2.5, 0.7, 0.01), BLUE);
     assert_eq!(drawn(&scene, 0.1, 0.1, 0.01)[3], 0);
@@ -930,7 +930,7 @@ mod tests {
     assert!([RED, BLUE].contains(&whole.sample(&at, &frame)));
 
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(4.0).into())).transform(Transform::Translate(Vec2::splat(32.0).into()));
-    let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
     let color = small.sample(&at, &frame);
     assert!((100..=155).contains(&color[0]) && (100..=155).contains(&color[2]), "{color:?}");
   }
@@ -1106,7 +1106,7 @@ mod tests {
   fn fit_colors(fill: Fill, shape: Option<Shape>, from: &str, to: &str) -> Vec<Rgba<u8>> {
     let bolt = Traversal::new("bolt", NodeRef::name(from), TraversalAlgorithm::ShortestPath { to: NodeRef::name(to), jitter: 0.0 }, 10.0);
     let mut layer = Layer::new(fill).graph(GraphMask::new(vec![bolt]));
-    layer.shape = shape;
+    layer.region = shape;
     let scene = Scene::new(Surface::Area, vec![layer]).timing(Timing::new(10.0, Cycle::Once));
 
     let samples: Vec<Sample> = (0..5).map(|i| Sample::new(Vec2::splat(10.0 + 7.5 * i as f32), 0.5).at_node(i)).collect();

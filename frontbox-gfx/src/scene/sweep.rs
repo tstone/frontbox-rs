@@ -106,7 +106,7 @@ mod tests {
     let moved = Transform::Translate(Prop::Sweep(Sweep::new(path, 0.0, 2.0)));
     let tall = ShapeNode::Rect { width: 0.1.into(), height: 2.0.into() };
     let layer = Layer::new(Fill::new(FillNode::Solid(Color(image::Rgba([255, 0, 0, 255])).into())));
-    let scene = Scene::new(Surface::Sequence, vec![layer.shape(Shape::new(tall).transform(moved))]);
+    let scene = Scene::new(Surface::Sequence, vec![layer.region(Shape::new(tall).transform(moved))]);
     let scene = scene.timing(Timing::new(2.0, Cycle::Forever));
 
     let lit = |time: f32| {

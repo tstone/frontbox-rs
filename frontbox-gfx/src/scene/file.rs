@@ -124,7 +124,7 @@ mod tests {
           .adjust(ColorAdjust::Brightness(1.25.into()))
           .adjust(ColorAdjust::Contrast(1.5.into())),
         )
-        .shape(
+        .region(
           Shape::new(ShapeNode::circle(0.5))
             .transform(Transform::Scale(Vec2::splat(40.0).into()))
             .transform(Transform::Translate(Prop::Track(Track {
@@ -135,32 +135,32 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).shape(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).region(Shape::new(
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(Shape::new(
           ShapeNode::Ring { inner_radius: 3.0.into(), thickness: 1.0.into() },
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
+          .region(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
             0.25,
             1.0,
           )))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).shape(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
             0.0,
             1.0,
           )))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).shape(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Bezier {
               points: vec![
@@ -183,7 +183,7 @@ mod tests {
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
-          shape: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
+          region: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
           fill: (base: Solid({color})),
         )])"
       )
@@ -307,7 +307,7 @@ mod tests {
       ])",
     )
     .unwrap();
-    let base = |index: usize| &scene.layers[index].shape.as_ref().unwrap().base;
+    let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
     assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
     assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
     assert!(matches!(base(2), ShapeNode::Pinwheel { blade_fraction: Prop::Fixed(0.25), .. }));
@@ -419,7 +419,7 @@ mod tests {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
     let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
     let read = load(&save(&scene).unwrap()).unwrap();
-    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.shape.is_none()));
+    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.region.is_none()));
   }
 
   /// A layer on a graph using every algorithm, with responses to two of them

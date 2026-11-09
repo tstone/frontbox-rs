@@ -60,6 +60,12 @@
 //! An `Area` surface covers a plane, and the LEDs on it light up from where they physically are. These can be used for playfield sweeps,
 //! explosions, and the like, and are often what are behind attract mode style animations.
 //!
+//! ### Graphs
+//! A layer with a [`GraphMask`](frontbox_gfx::scene::GraphMask) only lights the LEDs of a graph built from where they
+//! are, joining each to its neighbors, and runs traversals over it: a wave spreading out from an LED, a bolt along a
+//! path, a random walk. Props respond to their visits with [`Prop::Visit`](frontbox_gfx::scene::Prop::Visit). On a
+//! plane, LEDs more than [`GRAPH_PLANE_TOLERANCE`] off it, such as those on ramps, are left out. See [`place_graph`].
+//!
 //! ## LED Rendering Stack
 //!
 //! Generally, setting LEDs happens by way of scenes, but understanding the stack can be useful when choosing which approach to use or building your own from scratch.
@@ -71,6 +77,7 @@
 
 mod alternate_resolver;
 mod end_behavior;
+mod led_graph;
 mod led_playback;
 mod led_declarations;
 mod led_scene;
@@ -82,6 +89,7 @@ mod led_system_ext;
 pub(crate) use alternate_resolver::*;
 pub(crate) use led_declarations::*;
 pub use end_behavior::*;
+pub use led_graph::*;
 pub use led_playback::*;
 pub use led_scene::*;
 pub use led_identifications::*;
@@ -91,6 +99,7 @@ pub use led_system_ext::*;
 
 pub mod prelude {
   pub use crate::end_behavior::*;
+  pub use crate::led_graph::*;
   pub use crate::led_playback::*;
   pub use crate::led_scene::*;
   pub use crate::led_identifications::*;

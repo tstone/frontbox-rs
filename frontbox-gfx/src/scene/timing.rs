@@ -28,7 +28,7 @@ impl Timing {
     self.cycle.local_time(time, self.duration)
   }
 
-  pub(crate) fn cycle_index(&self, time: f32) -> u32 {
+  pub fn cycle_index(&self, time: f32) -> u32 {
     self.cycle.index(time, self.duration)
   }
 

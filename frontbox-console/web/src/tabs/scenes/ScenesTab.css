@@ -2128,3 +2128,36 @@ label.scene-button:hover {
   color: var(--muted);
   cursor: default;
 }
+
+/* a layer's graph: solid, so it isn't taken for a path, and under the handles */
+.scene-paths.scene-graph line {
+  stroke: var(--scene-path);
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.scene-paths.scene-graph circle {
+  fill: var(--scene-path);
+}
+
+/* the node a field names, while it's hovered */
+.scene-paths.scene-graph circle.scene-graph-highlighted {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+/* a click anywhere on the preview chooses the nearest node */
+.scene-choosing-node,
+.scene-choosing-node * {
+  cursor: crosshair !important;
+}
+
+.scene-node-pick {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.scene-node-pick .scene-button[aria-pressed='true'] {
+  border-color: var(--accent);
+}

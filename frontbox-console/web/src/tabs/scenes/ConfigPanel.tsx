@@ -3,24 +3,30 @@ import { Editable } from '@ark-ui/solid/editable'
 import { Menu } from '@ark-ui/solid/menu'
 import { Popover } from '@ark-ui/solid/popover'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { createEffect, createSignal, For, Index, Match, on, Show, Switch, useContext, type Signal } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, useContext, type Signal } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { contentImageInfo } from '../../state/contentImages'
+
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
+import type { EdgeRule } from '../../types/generated/EdgeRule'
 import type { FillNode } from '../../types/generated/FillNode'
 import type { GradientStyle } from '../../types/generated/GradientStyle'
+import type { GraphMask } from '../../types/generated/GraphMask'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
+import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
+import type { Traversal } from '../../types/generated/Traversal'
+import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import { ImagePicker } from './ImagePicker'
 import LayerPlace from './LayerPlace'
-import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberField, PropField, RevealContext, SceneContext, SurfaceContext } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NodePickingContext, NumberField, PropField, RevealContext, SceneContext, SurfaceContext, TraversalsContext } from './SceneFields'
 import {
   adjustAmount,
   adjustKind,
@@ -31,6 +37,7 @@ import {
   field,
   frameRanges,
   framesTrack,
+  freshTraversalName,
   imageLength,
   item,
   layerLabel,
@@ -40,6 +47,7 @@ import {
   newShapeSize,
   orElse,
   radius,
+  RATE,
   orEmpty,
   pointRanges,
   removed,
@@ -49,12 +57,17 @@ import {
   shapePoints,
   sizeRanges,
   startingValue,
+  TIME_STEP,
   translateRanges,
+  traversalNames,
+  traversalTarget,
   UNIT,
   variant,
   type Scene,
   type SceneLayer,
   withTiming,
+  usedTraversals,
+  withTraversalRenamed,
   type AdjustKind,
   type Lens,
   type Range,
@@ -67,7 +80,7 @@ import {
 type Fill = Layer['fill']
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
-type Shape = NonNullable<Layer['shape']>
+type Shape = NonNullable<Layer['region']>
 type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Polyline' | 'Bezier'
 
 /** How much of a new ring's reach is its hole */
@@ -107,6 +120,30 @@ const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
 ]
+/** Only for a layer with traversals to fit to */
+const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: 'Fit to traversal' }
+const EDGE_RULE_OPTIONS: { value: EdgeRule; label: string }[] = [
+  { value: 'RelativeNeighborhood', label: 'Sparse, branching' },
+  { value: 'Gabriel', label: 'Dense, meshed' },
+]
+type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'AStar' | 'RandomWalk'
+const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
+  { value: 'BreadthFirst', label: 'Breadth first' },
+  { value: 'Dijkstra', label: 'By distance (Dijkstra)' },
+  { value: 'DepthFirst', label: 'Depth first' },
+  { value: 'ShortestPath', label: 'Shortest path' },
+  { value: 'AStar', label: 'A* search' },
+  { value: 'RandomWalk', label: 'Random walk' },
+]
+/** Algorithms whose rate is a distance a second, rather than a number of steps */
+const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath']
+const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
+const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
+  { value: 'Name', label: 'LED' },
+  { value: 'Nearest', label: 'Nearest to a position' },
+]
+/** How much longer a shortest path's edges can be made at random, as a fraction of each */
+const JITTER: Range = { min: 0, max: 2, step: 0.01, rest: 0 }
 const EDITING = ['Layer', 'Mask'] as const
 const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
   { value: 'Outside', label: 'Outside the mask' },
@@ -114,13 +151,14 @@ const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 
-type TransformKind = 'Translate' | 'Rotate' | 'Scale'
+type TransformKind = 'Translate' | 'Rotate' | 'Scale' | 'Fit'
 
-/** A transform that leaves things where they are, until it's changed */
-const NEW_TRANSFORMS: Record<TransformKind, Transform> = {
-  Translate: { Translate: { Fixed: [0, 0] } },
-  Rotate: { Rotate: { Fixed: 0 } },
-  Scale: { Scale: { Fixed: [1, 1] } },
+/** A transform that leaves things where they are, until it's changed. A fit starts on the layer's first traversal. */
+function newTransform(kind: TransformKind, traversals: string[]): Transform {
+  if (kind === 'Translate') return { Translate: { Fixed: [0, 0] } }
+  if (kind === 'Rotate') return { Rotate: { Fixed: 0 } }
+  if (kind === 'Scale') return { Scale: { Fixed: [1, 1] } }
+  return { Fit: traversals[0] ?? '' }
 }
 
 /** The scene's layers */
@@ -253,8 +291,10 @@ function LayerName(props: { lens: Lens<string | undefined>; placeholder: string;
 /** Measures what's in it against what the layer is on */
 function LayerEditor(props: { lens: Lens<SceneLayer>; mask: boolean; onMask: (mask: boolean) => void }) {
   const surfaces = useContext(LayerSurfacesContext)!
+  const scene = useContext(SceneContext)!
   return (
     <SurfaceContext.Provider value={() => surfaces(props.lens.get())}>
+      <TraversalsContext.Provider value={() => traversalNames(props.lens.get())}>
       <SegmentGroup.Root
         class="scene-prop-kind"
         aria-label="Editing"
@@ -277,22 +317,26 @@ function LayerEditor(props: { lens: Lens<SceneLayer>; mask: boolean; onMask: (ma
         fallback={
           <>
             <LayerPlace lens={props.lens} />
-            <ShapeEditor lens={field(props.lens, 'shape')} />
+            <ShapeEditor lens={field(props.lens, 'region')} />
+            <Show when={scene.get().kind === 'Led'}>
+              <GraphEditor lens={field(props.lens, 'graph')} layer={props.lens} />
+            </Show>
             <FillEditor lens={field(props.lens, 'fill')} />
           </>
         }
       >
         <MaskEditor lens={field(props.lens, 'mask')} />
       </Show>
+      </TraversalsContext.Provider>
     </SurfaceContext.Provider>
   )
 }
 
-/** Where a layer shows. A new mask cuts a shape out of it, as with no shape a mask with the layer outside it hides all of it. */
+/** Where a layer shows. A new mask cuts a region out of it, as with no region a mask with the layer outside it hides all of it. */
 function MaskEditor(props: { lens: Lens<Mask | undefined> }) {
   const surface = useContext(SurfaceContext)!
   const mask = props.lens as Lens<Mask>
-  const add = () => props.lens.set({ fill: { base: { Solid: { Fixed: WHITE } } }, shape: newShape('Circle', surface()), invert: true })
+  const add = () => props.lens.set({ fill: { base: { Solid: { Fixed: WHITE } } }, region: newShape('Circle', surface()), invert: true })
 
   return (
     <Show when={props.lens.get()} fallback={<AddButton onClick={add}>Add mask</AddButton>}>
@@ -306,10 +350,233 @@ function MaskEditor(props: { lens: Lens<Mask | undefined> }) {
           />
         </FieldRow>
       </section>
-      <ShapeEditor lens={field(mask, 'shape')} />
+      <ShapeEditor lens={field(mask, 'region')} />
       <FillEditor lens={field(mask, 'fill')} />
       <AddButton onClick={() => props.lens.set(undefined)}>Remove mask</AddButton>
     </Show>
+  )
+}
+
+/** Limits a layer to a graph built from its LEDs, with traversals over it that props can respond to */
+function GraphEditor(props: { lens: Lens<GraphMask | undefined>; layer: Lens<SceneLayer> }) {
+  const graphNodes = useGraphNodes()
+  const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
+  const graph = props.lens as Lens<GraphMask>
+  const edges = () => field(graph, 'edges')
+  const traversals = () => field(graph, 'traversals')
+  const add = () => props.lens.set({ edges: { rule: 'RelativeNeighborhood' }, traversals: [] })
+  const used = createMemo(() => usedTraversals(props.layer.get()))
+
+  const addTraversal = () => {
+    scene.set(withTiming(scene.get()))
+    const name = freshTraversalName(props.layer.get(), 'walk')
+    // from the first LED in the graph, as one that isn't in it reaches nothing
+    const from = { Name: graphNodes()[0] ?? '' }
+    traversals().set([...traversals().get(), { name, from, algorithm: 'BreadthFirst', rate: { Fixed: RATE.rest! }, start: 0 }])
+  }
+
+  // its responses and fits follow it to its new name
+  const rename = (from: string, to: string) => {
+    if (to === '' || to === from || traversalNames(props.layer.get()).includes(to)) return
+    props.layer.set(withTraversalRenamed(props.layer.get(), from, to))
+  }
+
+  return (
+    <Show when={props.lens.get()} fallback={<AddButton onClick={add}>Add graph</AddButton>}>
+      <section class="scene-group">
+        <FieldRow label="Graph edges">
+          <Dropdown label="Graph edges" options={EDGE_RULE_OPTIONS} value={graph.get().edges.rule} onChange={field(edges(), 'rule').set} />
+        </FieldRow>
+        <FieldRow label="Longest edge">
+          <NumberField
+            label="Longest edge"
+            range={edgeRange(surface())}
+            value={graph.get().edges.max_length ?? 0}
+            onChange={(length) => field(edges(), 'max_length').set(length > 0 ? length : undefined)}
+          />
+        </FieldRow>
+        <p class="scene-note">LEDs further apart than this aren't joined. 0 is no limit.</p>
+        <p class="scene-note">
+          Only LEDs in the graph light up on this layer. On a plane, LEDs more than half a unit above or below it, such as on ramps, aren't in the
+          graph.
+        </p>
+        {/* visits are what's being set up here, so these fields don't respond to them */}
+        <TraversalsContext.Provider value={() => []}>
+          <Index each={traversals().get()}>
+            {(traversal, index) => (
+              <ListItem title={`Traversal ${traversal().name}`} heading={<span>Traversal</span>} list={traversals()} index={index}>
+                <TraversalEditor lens={item(traversals(), index)} used={used().has(traversal().name)} onRename={(to) => rename(traversal().name, to)} />
+              </ListItem>
+            )}
+          </Index>
+        </TraversalsContext.Provider>
+        <AddButton onClick={addTraversal}>Add traversal</AddButton>
+        <AddButton onClick={() => props.lens.set(undefined)}>Remove graph</AddButton>
+      </section>
+      <datalist id={LED_NAMES}>
+        <For each={graphNodes()}>{(name) => <option value={name} />}</For>
+      </datalist>
+    </Show>
+  )
+}
+
+const LED_NAMES = 'scene-led-names'
+
+
+/** The longest edge a graph's slider goes to: the width of what it's on, or for a sequence the whole of it */
+function edgeRange(surface: Surface): Range {
+  const max = surface ? Math.max(...surface) : 1
+  return { min: 0, max, step: max / 200, rest: 0 }
+}
+
+function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename: (name: string) => void }) {
+  const graphNodes = useGraphNodes()
+  const scene = useContext(SceneContext)!
+  const traversal = () => props.lens.get()
+  const algorithm = () => field(props.lens, 'algorithm')
+  const kind = () => algorithmKind(traversal().algorithm)
+  const target = () => traversalTarget(algorithm())
+
+  // a traversal going somewhere keeps going there as its algorithm changes
+  const setKind = (next: AlgorithmKind) => {
+    if (next === kind()) return
+    // or to the far end of the graph, so a new one has somewhere to go
+    const to = target()?.get() ?? { Name: graphNodes().at(-1) ?? '' }
+    if (next === 'ShortestPath') algorithm().set({ ShortestPath: { to, jitter: 0 } })
+    else if (next === 'AStar') algorithm().set({ AStar: { to } })
+    else algorithm().set(next)
+  }
+
+  return (
+    <>
+      <FieldRow label="Name">
+        <input
+          class="scene-param-name"
+          aria-label="Traversal name"
+          spellcheck={false}
+          value={traversal().name}
+          onChange={(e) => {
+            props.onRename(e.currentTarget.value.trim())
+            e.currentTarget.value = traversal().name
+          }}
+        />
+      </FieldRow>
+      <NodeRefField label="From" lens={field(props.lens, 'from')} />
+      <FieldRow label="Algorithm">
+        <Dropdown label="Algorithm" options={ALGORITHM_OPTIONS} value={kind()} onChange={setKind} />
+      </FieldRow>
+      <Show when={target()} fallback={<p class="scene-note">Goes on to every LED in the graph. Shortest path and A* search go to one LED.</p>}>
+        {(to) => <NodeRefField label="To" lens={to()} />}
+      </Show>
+      <Show when={kind() === 'ShortestPath'}>
+        <FieldRow label="Jitter">
+          <NumberField
+            label="Jitter"
+            range={JITTER}
+            value={(traversal().algorithm as { ShortestPath: { jitter: number } }).ShortestPath.jitter}
+            onChange={field(variant(algorithm() as Lens<Extract<TraversalAlgorithm, { ShortestPath: unknown }>>, 'ShortestPath'), 'jitter').set}
+          />
+        </FieldRow>
+      </Show>
+      <PropField label={BY_DISTANCE.includes(kind()) ? 'Units a second' : 'Steps a second'} paramName="rate" fallback={RATE.rest!} ranges={both(RATE)} lens={field(props.lens, 'rate')} />
+      <FieldRow label="Start">
+        <NumberField
+          label="Start"
+          range={{ min: 0, max: scene.get().timing?.duration ?? 1, step: TIME_STEP, rest: 0 }}
+          value={traversal().start}
+          onChange={field(props.lens, 'start').set}
+        />
+      </FieldRow>
+      <Show when={!props.used}>
+        <p class="scene-note scene-note-warn">
+          Nothing responds to {traversal().name} yet, so it doesn't change how the layer looks. Set a color, opacity or other value to Visit to light
+          LEDs as it reaches them.
+        </p>
+      </Show>
+    </>
+  )
+}
+
+/** The LEDs in the open layer's graph, by name, which are the only ones a traversal can start from or go to */
+function useGraphNodes() {
+  const picking = useContext(NodePickingContext)
+  return () => picking?.nodes() ?? []
+}
+
+/**
+ * A node of a graph: an LED by name, or whichever is nearest a position. An LED can be chosen by clicking it in the
+ * preview, and is pointed out there while this is hovered.
+ */
+function NodeRefField(props: { label: string; lens: Lens<NodeRef> }) {
+  const surface = useContext(SurfaceContext)!
+  const picking = useContext(NodePickingContext)
+  const graphNodes = useGraphNodes()
+  const kind = () => ('Name' in props.lens.get() ? 'Name' : 'Nearest')
+  const name = () => (props.lens.get() as { Name: string }).Name
+  const setKind = (next: 'Name' | 'Nearest') => {
+    if (next === kind()) return
+    const [width, height] = surface() ?? [1, 0]
+    props.lens.set(next === 'Name' ? { Name: graphNodes()[0] ?? '' } : { Nearest: { Fixed: [width / 2, height / 2] } })
+  }
+
+  // this field's own choosing, as another field's may be under way
+  let mine: { choose: (name: string) => void } | null = null
+  const choosing = () => picking !== undefined && picking.choosing[0]() !== null && picking.choosing[0]() === mine
+  const toggleChoosing = () => {
+    if (!picking) return
+    const [, setChoosing] = picking.choosing
+    if (choosing()) return setChoosing(null)
+    mine = { choose: (chosen) => props.lens.set({ Name: chosen }) }
+    setChoosing(mine)
+  }
+  onCleanup(() => {
+    if (choosing()) picking!.choosing[1](null)
+  })
+
+  const point = (shown: boolean) => picking?.highlighted[1](shown && kind() === 'Name' ? name() : null)
+
+  return (
+    <div onMouseEnter={() => point(true)} onMouseLeave={() => point(false)} onFocusIn={() => point(true)} onFocusOut={() => point(false)}>
+      <FieldRow label={props.label}>
+        <Dropdown label={`${props.label} node`} options={NODE_OPTIONS} value={kind()} onChange={setKind} />
+      </FieldRow>
+      <Show
+        when={kind() === 'Name'}
+        fallback={
+          <PropField
+            label={`${props.label} position`}
+            paramName="position"
+            fallback={[0, 0] as Vec2}
+            ranges={translateRanges(surface(), 'shape')}
+            lens={variant(props.lens, 'Nearest')}
+          />
+        }
+      >
+        <div class="scene-node-pick">
+          <input
+            class="scene-param-name"
+            aria-label={`${props.label} LED`}
+            list={LED_NAMES}
+            spellcheck={false}
+            value={name()}
+            onChange={(e) => props.lens.set({ Name: e.currentTarget.value.trim() })}
+          />
+          <button
+            type="button"
+            class="scene-button"
+            aria-pressed={choosing()}
+            title={choosing() ? 'Stop choosing' : `Choose the ${props.label.toLowerCase()} LED by clicking it in the preview`}
+            onClick={toggleChoosing}
+          >
+            {choosing() ? 'Selecting…' : 'Select'}
+          </button>
+        </div>
+        <Show when={graphNodes().length > 0 && !graphNodes().includes(name())}>
+          <p class="scene-note scene-note-warn">This LED isn't in the layer's graph, so the traversal reaches nothing from it.</p>
+        </Show>
+      </Show>
+    </div>
   )
 }
 
@@ -570,10 +837,10 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[] }> }) {
 
 const cssColor = ([r, g, b, a]: Color) => `rgb(${r} ${g} ${b} / ${a / 255})`
 
-/** A layer's shape, or with `path` the shape a sweep goes around, which can't be left out */
+/** A layer's region, or with `path` the shape a sweep goes around, which can't be left out */
 export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: Lens<Shape>; path: true }) {
   const path = 'path' in props
-  const label = path ? 'Path' : 'Shape'
+  const label = path ? 'Path' : 'Region'
   const surface = useContext(SurfaceContext)!
   const scene = useContext(SceneContext)!
   const lens = props.lens as Lens<Shape | undefined>
@@ -772,6 +1039,7 @@ function pastEnd(before: Vec2, end: Vec2): Vec2 {
 }
 
 function TransformList(props: { lens: Lens<Transform[]>; space: TransformSpace }) {
+  const traversals = useContext(TraversalsContext)
   return (
     <>
       <Index each={props.lens.get()}>
@@ -781,7 +1049,7 @@ function TransformList(props: { lens: Lens<Transform[]>; space: TransformSpace }
           </ListItem>
         )}
       </Index>
-      <AddMenu options={TRANSFORM_OPTIONS} onPick={(kind) => props.lens.set([...props.lens.get(), NEW_TRANSFORMS[kind]])}>
+      <AddMenu options={transformOptions(traversals())} onPick={(kind) => props.lens.set([...props.lens.get(), newTransform(kind, traversals())])}>
         Add transform
       </AddMenu>
     </>
@@ -790,16 +1058,21 @@ function TransformList(props: { lens: Lens<Transform[]>; space: TransformSpace }
 
 const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
 
+/** What a transform can be, which is only a fit with traversals to fit to, or for one that already is */
+const transformOptions = (traversals: string[], kind?: TransformKind) =>
+  traversals.length > 0 || kind === 'Fit' ? [...TRANSFORM_OPTIONS, FIT_OPTION] : TRANSFORM_OPTIONS
+
 /** Heads a transform, saying which kind it is and changing it */
 function TransformPicker(props: { lens: Lens<Transform> }) {
+  const traversals = useContext(TraversalsContext)
   const kind = () => transformKind(props.lens.get())
   return (
     <Dropdown
       label="Kind of transform"
-      options={TRANSFORM_OPTIONS}
+      options={transformOptions(traversals(), kind())}
       value={kind()}
       onChange={(next) => {
-        if (next !== kind()) props.lens.set(NEW_TRANSFORMS[next])
+        if (next !== kind()) props.lens.set(newTransform(next, traversals()))
       }}
     />
   )
@@ -807,7 +1080,11 @@ function TransformPicker(props: { lens: Lens<Transform> }) {
 
 function TransformEditor(props: { lens: Lens<Transform>; space: TransformSpace }) {
   const surface = useContext(SurfaceContext)!
+  const traversals = useContext(TraversalsContext)
   const kind = () => transformKind(props.lens.get())
+  const fitted = () => (props.lens.get() as { Fit: string }).Fit
+  // one the layer doesn't have anymore stays chosen, so it can be seen and changed
+  const fitOptions = () => [...new Set([...traversals(), fitted()])].filter((name) => name !== '').map((name) => ({ value: name, label: name }))
   return (
     <Switch>
       <Match when={kind() === 'Translate'}>
@@ -837,6 +1114,19 @@ function TransformEditor(props: { lens: Lens<Transform>; space: TransformSpace }
           lens={variant(props.lens, 'Scale')}
           notPosition
         />
+      </Match>
+      <Match when={kind() === 'Fit'}>
+        <FieldRow label="Traversal">
+          <Show when={fitOptions().length > 0} fallback={<p class="scene-note scene-note-warn">The layer has no traversals to fit to.</p>}>
+            <Dropdown label="Traversal to fit to" options={fitOptions()} value={fitted()} onChange={(name) => props.lens.set({ Fit: name })} />
+          </Show>
+        </FieldRow>
+        <Show when={fitted() !== '' && !traversals().includes(fitted())}>
+          <p class="scene-note scene-note-warn">The layer has no traversal by this name, so this changes nothing.</p>
+        </Show>
+        <p class="scene-note">
+          Runs from where the traversal starts, at -0.5 across, to the LED it reaches last, at 0.5. Transforms above this one are measured that way.
+        </p>
       </Match>
     </Switch>
   )
