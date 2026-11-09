@@ -3,15 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Transform};
 
-/// A function of position, with the changes made to it: transforms change the position going in, adjusts change the
-/// output coming out
+/// A base shape or fill, with transforms that change where it's drawn and adjusts that change its output
 ///
-/// Shapes and fills are both nodes ([`Shape`](crate::scene::Shape), [`Fill`](crate::scene::Fill)). Anything
-/// that changes one is an item in one of these lists, never a new field or wrapper.
+/// [`Shape`](crate::scene::Shape) and [`Fill`](crate::scene::Fill) are both nodes. New ways of modifying one belong as
+/// items in these lists, not as new fields or wrapper types.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node<N, A> {
-  /// Applied to the drawing in order. Sampling undoes them in reverse on the sample point.
+  /// Applied in order. Sampling applies the inverse to the sample point.
   #[serde(default = "Vec::new", skip_serializing_if = "Vec::is_empty")]
   #[cfg_attr(feature = "ts", ts(as = "Option<Vec<Transform>>", optional))]
   pub transform: Vec<Transform>,
@@ -39,7 +38,8 @@ impl<N, A> Node<N, A> {
     self
   }
 
-  /// What each of the transforms does in order, to a drawing whose middle is `center` in its own space
+  /// The affine for each transform, in order. `center` is the node's center in local space, which `Rotate` pivots
+  /// around after the earlier transforms move it.
   pub(crate) fn affines(&self, center: Vec2, env: &Env) -> Vec<Affine2> {
     let step = |center: &mut Vec2, transform: &Transform| {
       let affine = transform.affine(*center, env);
@@ -49,15 +49,15 @@ impl<N, A> Node<N, A> {
     self.transform.iter().scan(center, step).collect()
   }
 
-  /// Maps a point in the node's own space into the scene, applying its transforms to a drawing whose middle is `center`.
-  /// `None` when a transform collapses the drawing (a scale of zero), so nothing is drawn.
+  /// The combined local-to-scene transform. `None` if it collapses to zero area (such as a zero scale), in which case
+  /// nothing is drawn.
   pub(crate) fn to_scene(&self, center: Vec2, env: &Env) -> Option<Affine2> {
     let forward = self.affines(center, env).into_iter().fold(Affine2::IDENTITY, |acc, affine| affine * acc);
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
-  /// Where to draw `at` from when `Rotate` runs this node around a `Sequence`: the place that is on the lap nearest the
-  /// drawing, whose middle is `center` in its own space, so it's whole wherever its transforms have put it.
+  /// On a `Sequence` with a `Rotate`, shifts `at` by whole laps to whichever copy is nearest the node, so a node
+  /// scrolled off one end reappears at the other
   pub(crate) fn on_lap(&self, at: Vec2, center: Vec2, env: &Env) -> Vec2 {
     let Some(lap) = env.lap.filter(|_| self.transform.iter().any(|transform| matches!(transform, Transform::Rotate(_)))) else {
       return at;
@@ -69,8 +69,7 @@ impl<N, A> Node<N, A> {
     Vec2::new(at.x + laps * lap, at.y)
   }
 
-  /// What maps a point in the scene into the node's own space, undoing its transforms to a drawing whose middle is
-  /// `center`. `None` when a transform collapses the drawing.
+  /// The inverse of [`Self::to_scene`]
   pub(crate) fn to_local(&self, center: Vec2, env: &Env) -> Option<Affine2> {
     self.to_scene(center, env).map(|to_scene| to_scene.inverse())
   }

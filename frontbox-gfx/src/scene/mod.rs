@@ -6,8 +6,8 @@
 //! buffer: a device maps its points into a [`Viewport`] and asks for a color at each one. Where a device's points sit is
 //! up to the device; see [`layout`](crate::layout).
 //!
-//! What's written to a file is a scene: a composition with what its hardware needs, which live with the hardware in
-//! `frontbox-led` and `frontbox-dmd`. This crate knows nothing about either.
+//! A scene file holds a composition plus hardware-specific settings. Those types (`LedScene`, `DmdScene`) live in
+//! `frontbox-led` and `frontbox-dmd`; this crate knows nothing about either.
 //!
 //! ```rust
 //! # use frontbox_gfx::scene::*;
@@ -28,12 +28,12 @@
 //!
 //! - [`GfxComposition`], [`Layer`] -- Layers of fill in shapes, composited bottom to top
 //! - [`Mask`] -- Where a layer shows, apart from what its shape covers
-//! - [`Viewport`] -- What kind of surface it's seen on, either points in order or an area the device gives the size of
-//! - [`Node`] -- Shapes and fills, each a base kind with [`Transform`]s going in and adjusts coming out
+//! - [`Viewport`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
+//! - [`Node`] -- The structure shared by shapes and fills: a base, plus [`Transform`]s and adjusts
 //! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, or swept along a path ([`Sweep`])
 //! - [`Timing`] -- How long an animated scene runs, and how many times
-//! - [`file`] -- Reading and writing scene files as RON
-//! - [`Content`], [`Images`] -- The folder of what scenes use, and the images it decodes for one to play with
+//! - [`file`](mod@file) -- Reading and writing scene files as RON
+//! - [`Content`], [`Images`] -- The folder of scenes and images, and the decoded images a scene draws from
 
 mod animatable;
 mod bounds;

@@ -12,29 +12,26 @@ use std::time::SystemTime;
 use crate::scene::file;
 use crate::scene::{GfxComposition, Images, Picture};
 
-/// The longest side of an image that will be decoded. A picture bigger than this costs the machine more memory than
-/// anything it can show is worth.
+/// Largest width or height that will be decoded
 const MAX_IMAGE_SIDE: u32 = 8192;
 
-/// The most memory one image's frames can take up, and the most that decoded images are kept in. A small file can
-/// decode to far more than a machine has, and it's a machine that has a game to run.
+/// Memory cap for one image's decoded frames, and for the whole decoded image cache. Guards against small files that
+/// decode to huge sizes.
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 
-/// The most frames an animated image can have. The cost of a frame goes beyond its pixels, so a file of many tiny ones
-/// would get around the limit above.
+/// Frame cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
+/// around the byte cap.
 const MAX_FRAMES: usize = 10_000;
 
-/// The extensions of the files that are images, in lower case
+/// Image file extensions, in lowercase
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
-
-/// A folder of what scenes use
+/// The content folder, holding scenes and the images they use
 ///
-/// It's scanned whatever is inside it, so it can be organized any way that suits and can hold other files too. A scene
-/// names an image by its path from the root with forward slashes, such as `dmd/title.png`, so the name is the same on
-/// any machine the folder is on. Scenes are kept in it too, as RON files named the same way.
+/// The folder is scanned recursively, so it can be organized freely and hold other files too. Images and scenes are
+/// named by their path from the root with forward slashes, such as `dmd/title.png`, so names are the same on every OS.
 ///
-/// Decoded images are kept until their file changes. Clones share them.
+/// Decoded images are cached until their file changes. Clones share the cache.
 #[derive(Debug, Clone)]
 pub struct Content {
   root: PathBuf,
@@ -50,12 +47,12 @@ impl Content {
     &self.root
   }
 
-  /// The name of every image in the folder, in order. A folder that isn't there has none.
+  /// Every image name, sorted. Empty if the folder doesn't exist.
   pub fn image_names(&self) -> Vec<String> {
     self.names(is_image_name)
   }
 
-  /// The name of every scene in the folder, in order. A folder that isn't there has none.
+  /// Every scene name, sorted. Empty if the folder doesn't exist.
   pub fn scene_names(&self) -> Vec<String> {
     self.names(is_scene_name)
   }
@@ -67,7 +64,7 @@ impl Content {
     names
   }
 
-  /// Where the file of a named image is, which doesn't mean it's there
+  /// The file path for an image name. Doesn't check that the file exists.
   pub fn image_path(&self, name: &str) -> Result<PathBuf, ContentError> {
     if !is_image_name(name) {
       return Err(ContentError::BadName(name.into()));
@@ -75,8 +72,7 @@ impl Content {
     Ok(self.root.join(name))
   }
 
-  /// A decoded image. This reads and decodes the file unless that's already been done, which is too slow for the middle
-  /// of a frame.
+  /// A decoded image, from the cache unless its file has changed. Decoding is slow, so don't call this mid-frame.
   pub fn picture(&self, name: &str) -> Result<Arc<Picture>, ContentError> {
     let path = self.image_path(name)?;
     let stamp = fs::metadata(&path).and_then(|metadata| Ok((metadata.modified()?, metadata.len())));
@@ -98,8 +94,7 @@ impl Content {
     Ok(picture)
   }
 
-  /// The images a scene draws, to play it with. An image that can't be had is an error here, rather than a layer that's
-  /// quietly missing when the scene plays.
+  /// Loads every image a scene uses. A missing image is an error here, rather than a layer silently drawing nothing.
   pub fn images_for(&self, scene: &GfxComposition) -> Result<Images, LayerImageError> {
     let mut images = Images::new();
     for (index, layer) in scene.layers.iter().enumerate() {
@@ -111,8 +106,7 @@ impl Content {
     Ok(images)
   }
 
-  /// Adds an image to the folder. It has to decode, and an image that's already there is left as it is, since scenes
-  /// could be using it.
+  /// Adds a new image. It must decode, and an existing image is never overwritten, since scenes may be using it.
   pub fn add_image(&self, name: &str, bytes: &[u8]) -> Result<(), ContentError> {
     let path = self.image_path(name)?;
     decode(name, bytes)?;
@@ -123,7 +117,7 @@ impl Content {
     })
   }
 
-  /// Where the file of a named scene is, which doesn't mean it's there
+  /// The file path for a scene name. Doesn't check that the file exists.
   pub fn scene_path(&self, name: &str) -> Result<PathBuf, SceneFileError> {
     if !is_scene_name(name) {
       return Err(SceneFileError::BadName(name.into()));
@@ -131,13 +125,13 @@ impl Content {
     Ok(self.root.join(name))
   }
 
-  /// A scene's file as it's written. This doesn't check that it's a scene, so that one that isn't can be opened and fixed.
+  /// A scene file's raw text. It isn't parsed, so a broken file can still be opened and fixed.
   pub fn read_scene(&self, name: &str) -> Result<String, SceneFileError> {
     let path = self.scene_path(name)?;
     fs::read_to_string(path).map_err(|error| SceneFileError::Read { name: name.into(), error })
   }
 
-  /// Adds a scene to the folder. A scene that's already there is left as it is.
+  /// Adds a new scene. Fails if one by that name exists.
   pub fn add_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
 
@@ -147,7 +141,8 @@ impl Content {
     })
   }
 
-  /// Writes a scene to the folder over any by that name. The file is replaced all at once, so a machine reading it gets one version or the other and a failed save loses nothing.
+  /// Writes a scene, replacing any by that name. It writes a temp file and renames it into place, so readers never see a
+  /// partial file and a failed save loses nothing.
   pub fn save_scene(&self, name: &str, source: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
 
@@ -158,22 +153,23 @@ impl Content {
     })
   }
 
-  /// Removes a scene from the folder, leaving the folders it was in
+  /// Deletes a scene file. Its parent folders are left, even if empty.
   pub fn delete_scene(&self, name: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
     fs::remove_file(path).map_err(|error| SceneFileError::Delete { name: name.into(), error })
   }
 }
 
-/// A decoded image, and which version of its file it came from
+/// A cached decoded image
 #[derive(Debug)]
 struct Decoded {
+  /// The file's modified time and size when it was decoded
   stamp: (SystemTime, u64),
   picture: Arc<Picture>,
 }
 
-/// Adds to the decoded images, letting go of the others if that makes more than `limit` bytes. Whatever is playing them
-/// still has them, and any that are asked for again are decoded again.
+/// Adds to the cache, clearing everything else if the total would exceed `limit` bytes. Cleared images stay alive for
+/// anything still holding them.
 fn keep(decoded: &mut HashMap<String, Decoded>, name: &str, added: Decoded, limit: u64) {
   decoded.remove(name);
   let total = decoded.values().map(|decoded| decoded.picture.bytes()).sum::<u64>() + added.picture.bytes();
@@ -186,13 +182,12 @@ fn keep(decoded: &mut HashMap<String, Decoded>, name: &str, added: Decoded, limi
 /// Why something in a [`Content`] folder can't be used
 #[derive(Debug)]
 pub enum ContentError {
-  /// Not a path inside the folder with the extension of an image
+  /// Not a valid image path inside the folder
   BadName(String),
-  /// The file couldn't be read, which includes it not being there
+  /// Couldn't read the file, including when it doesn't exist
   Read { name: String, error: io::Error },
-  /// The file isn't an image that can be decoded
   Decode { name: String, error: image::ImageError },
-  /// There's already an image by this name
+  /// An image by this name already exists
   Taken(String),
   Write { name: String, error: io::Error },
 }
@@ -214,7 +209,7 @@ impl fmt::Display for ContentError {
 
 impl std::error::Error for ContentError {}
 
-/// Why a layer of a scene can't have its image
+/// A layer's image failed to load
 #[derive(Debug)]
 pub struct LayerImageError {
   pub layer: String,
@@ -232,14 +227,14 @@ impl std::error::Error for LayerImageError {}
 /// Why a scene file in a [`Content`] folder can't be used
 #[derive(Debug)]
 pub enum SceneFileError {
-  /// Not a path inside the folder with the extension of a scene
+  /// Not a valid scene path inside the folder
   BadName(String),
-  /// The file couldn't be read, which includes it not being there
+  /// Couldn't read the file, including when it doesn't exist
   Read { name: String, error: io::Error },
-  /// There's already a scene by this name
+  /// A scene by this name already exists
   Taken(String),
   Write { name: String, error: io::Error },
-  /// The file couldn't be removed, which includes it not being there
+  /// Couldn't delete the file, including when it doesn't exist
   Delete { name: String, error: io::Error },
 }
 
@@ -260,7 +255,7 @@ impl fmt::Display for SceneFileError {
 
 impl std::error::Error for SceneFileError {}
 
-/// Symbolic links aren't followed, as one can lead back to a folder this is already in
+/// Recursively collects the names of matching files. Symlinks aren't followed, to avoid cycles.
 fn scan(folder: &Path, prefix: &str, wanted: fn(&str) -> bool, names: &mut Vec<String>) {
   let Ok(entries) = fs::read_dir(folder) else {
     return;
@@ -286,8 +281,8 @@ fn is_scene_name(name: &str) -> bool {
   is_inside(name) && extension(name).is_some_and(|extension| extension == file::EXTENSION)
 }
 
-/// A path going down from the root with `/` between its parts, and nothing that can lead out of it on any platform. A
-/// scene can be written by anyone who can reach the console, so its names can't be trusted to stay in the folder.
+/// Whether a name is a relative, `/`-separated path that can't escape the folder on any OS. Names come from scene files,
+/// which anyone with console access can write, so they're untrusted.
 fn is_inside(name: &str) -> bool {
   let safe = |part: &str| !part.is_empty() && part != "." && part != ".." && !part.contains(['\\', ':']);
   name.split('/').all(safe)
@@ -297,7 +292,7 @@ fn extension(name: &str) -> Option<String> {
   name.rsplit_once('.').map(|(_, extension)| extension.to_ascii_lowercase())
 }
 
-/// Makes a file that has to be new, along with the folders it's in, leaving nothing behind if that fails partway
+/// Creates a new file, failing if it exists, along with any missing parent folders. Removes the file if the write fails.
 fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
   if let Some(folder) = path.parent() {
     fs::create_dir_all(folder)?;
@@ -308,7 +303,7 @@ fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
   })
 }
 
-/// Writes `saving` beside a file, then moves it into the file's place
+/// Writes to `saving`, then renames it over `path`
 fn replace(path: &Path, saving: &Path, bytes: &[u8]) -> io::Result<()> {
   if let Some(folder) = path.parent() {
     fs::create_dir_all(folder)?;
@@ -333,7 +328,7 @@ fn decode(name: &str, bytes: &[u8]) -> Result<Picture, ContentError> {
   reader.decode().map(|image| Picture::new(image.into_rgba8())).map_err(failed)
 }
 
-/// Stops at the limits, rather than decoding it all to find out it's too much
+/// Decodes a GIF frame by frame, stopping as soon as it passes a limit
 fn gif(bytes: &[u8], limits: Limits) -> ImageResult<Picture> {
   let mut decoder = GifDecoder::new(Cursor::new(bytes))?;
   decoder.set_limits(limits)?;

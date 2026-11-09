@@ -5,17 +5,16 @@ use serde::{Deserialize, Serialize};
 use crate::animation::Lerp;
 use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Transform};
 
-/// What a layer is drawn with
+/// The colors a layer is drawn with
 ///
-/// A fill is drawn in its own space, a unit box from `-0.5` to `0.5`. The layer stretches that box over its
-/// shape's own bounds, so a fill fills its shape and moves and turns with it. With no shape, the box is the viewport.
+/// A fill is defined over a unit box from `-0.5` to `0.5`, which is stretched over the shape's local bounds (or the
+/// viewport, with no shape). So a fill always fits its shape, and moves and rotates with it.
 pub type Fill = Node<FillNode, ColorAdjust>;
 
 impl Fill {
-  /// The color at a point in the fill's box, before its transforms. `footprint` is how far the sample reaches from the
-  /// point along each axis, in the same box.
+  /// The color at a point in the unit box. `footprint` is the sample's radius along each axis, in unit box units.
   pub(crate) fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
-    // the fill's own box runs around, and it's a point's width more than the box as the points reach past both ends
+    // on a Sequence, the lap is the unit box plus one sample's width, as samples reach half a width past each end
     let env = &Env { lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x), ..*env };
     let p = self.on_lap(p, Vec2::ZERO, env);
     let Some(to_local) = self.to_local(Vec2::ZERO, env) else {
@@ -33,33 +32,32 @@ impl Fill {
   }
 }
 
+/// The base content of a fill
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum FillNode {
   Solid(Prop<Color>),
-  /// A vertical or diagonal gradient is a gradient with a `Rotate` transform, which also turns where a `Conical` one
-  /// starts.
+  /// Runs left to right. Add a `Rotate` transform for other directions, or to move where a `Conical` one starts.
   Gradient {
-    /// In order of `at`
+    /// Sorted by `at`
     stops: Vec<Stop>,
     #[serde(default)]
     style: GradientStyle,
   },
-  /// An image stretched over the fill's space. Past its edges nothing is drawn, as an image has no colors to go on with.
-  /// A `Sequence` runs along its middle row.
+  /// An image stretched over the unit box, and transparent outside it. On a `Sequence`, samples run along its middle
+  /// row.
   Image {
-    /// As it is in the [`Content`](crate::scene::Content) folder. An empty name draws nothing, for an image that's yet
-    /// to be chosen.
+    /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
-    /// Which of an animated image's frames to draw, from 0, or the first if there's none. A fraction is dropped, so
-    /// a value moving from 0 to the number of frames spends the same time on each, and past the last is the last.
+    /// Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+    /// count gives each frame equal time. Clamped to the last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     frame: Option<Prop<f32>>,
   },
 }
 
-/// A color at a point along a gradient, from 0 to 1
+/// A gradient color stop. `at` runs from 0 to 1.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stop {
@@ -73,22 +71,22 @@ impl Stop {
   }
 }
 
-/// The way a gradient runs across its fill's space
+/// How a gradient maps across the unit box
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GradientStyle {
-  /// Left to right. Past the ends, it stays on the end colors.
+  /// Left to right, holding the end colors past either end
   #[default]
   Linear,
-  /// Out from the middle, reaching 1 at the middle of each side of the space and staying on the last color past that
+  /// Out from the center, reaching 1 at the middle of each edge of the box and holding the last color past that
   Radial,
-  /// Clockwise around the middle, starting and ending at the right. The colors at 0 and 1 meet there, with a hard edge
-  /// unless they're the same.
+  /// Clockwise around the center, starting at 3 o'clock. 0 and 1 meet there, so there's a hard edge unless their colors
+  /// match.
   Conical,
 }
 
 impl GradientStyle {
-  /// How far along a gradient a point in the fill's space is, from 0 to 1
+  /// Position along the gradient, 0 to 1, of a point in the unit box
   fn at(self, p: Vec2) -> f32 {
     match self {
       Self::Linear => (p.x + 0.5).clamp(0.0, 1.0),

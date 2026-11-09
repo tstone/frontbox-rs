@@ -4,19 +4,17 @@ use serde::{Deserialize, Serialize};
 use crate::color::RgbaColor;
 use crate::scene::{Env, Prop};
 
-/// Changes to a fill's colors, applied in order to whatever its kind produces
+/// Color adjustments, applied in order to a fill's output
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ColorAdjust {
-  /// Turns the hue by degrees, keeping saturation, lightness, and alpha
+  /// Rotates the hue by degrees, keeping saturation, lightness, and alpha
   HueShift(Prop<f32>),
-  /// Multiplies alpha: 0 is see-through, 1 leaves it alone
+  /// Multiplies alpha (0 is transparent, 1 is unchanged)
   Opacity(Prop<f32>),
-  /// Multiplies red, green, and blue: 0 is black, 1 leaves them alone, and past that they run out at full. Black stays
-  /// black, so a fade to it is a move to 0.
+  /// Multiplies RGB (0 is black, 1 is unchanged). Above 1 it brightens until channels clip.
   Brightness(Prop<f32>),
-  /// Multiplies how far red, green, and blue are from the middle of their range: 0 is all mid gray, 1 leaves them alone,
-  /// and past that they run out at either end
+  /// Scales RGB away from mid gray (0 is flat gray, 1 is unchanged). Above 1 it adds contrast until channels clip.
   Contrast(Prop<f32>),
 }
 
@@ -47,10 +45,10 @@ impl ColorAdjust {
   }
 }
 
-/// The middle of a channel's range
+/// Mid gray, as a channel value
 const MIDDLE: f32 = 255.0 / 2.0;
 
-/// The nearest a channel can come to a value, as a cast stops at either end of its range
+/// Rounds to a channel value. The cast saturates at 0 and 255.
 fn to_channel(value: f32) -> u8 {
   value.round() as u8
 }

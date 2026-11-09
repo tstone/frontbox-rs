@@ -5,11 +5,10 @@ use std::sync::{Arc, LazyLock};
 
 static NONE: LazyLock<Images> = LazyLock::new(Images::default);
 
-/// Decoded images for a scene to draw, by the names it uses for them
+/// Decoded images by name, passed to sampling through [`Frame::images`](crate::scene::Frame::images)
 ///
-/// A scene holds only names, so this is what's given to whatever plays it, through
-/// [`Frame::images`](crate::scene::Frame::images). [`Content`](crate::scene::Content) makes one for a scene from a
-/// folder. Clones share the pixels.
+/// Scenes refer to images by name only. [`Content::images_for`](crate::scene::Content::images_for) builds this for a
+/// scene. Clones share pixel data.
 #[derive(Debug, Clone, Default)]
 pub struct Images(HashMap<String, Arc<Picture>>);
 
@@ -18,7 +17,7 @@ impl Images {
     Self::default()
   }
 
-  /// For a scene that draws no images
+  /// An empty set, for scenes with no images
   pub fn none() -> &'static Self {
     &NONE
   }
@@ -32,18 +31,16 @@ impl Images {
   }
 }
 
-/// An image ready to sample
+/// A decoded image, possibly animated, ready to sample
 ///
-/// A sample can cover many of an image's pixels, as an LED on a playfield does. Reading one of them would make an image
-/// sparkle as it moves, so this keeps the image at each halving of its size, to read from the one with pixels about the
-/// size of the sample. A sample the size of a pixel or smaller, as on a DMD, gets the exact pixel.
-///
-/// An animated image is one of these with many frames, and every one is kept decoded, as a sample can ask for any of them.
+/// Each frame is stored as a mipmap chain, each level half the size of the one before. A sample that covers many pixels,
+/// like a playfield LED, reads from the level whose pixels best match its size, so the image doesn't shimmer as it
+/// moves. A sample the size of a pixel or smaller, like on a DMD, reads the exact pixel. All frames stay decoded.
 #[derive(Debug)]
 pub struct Picture {
-  /// Each frame's image, the full size first and each one after half the size of the one before
+  /// Mipmap levels for each frame, full size first
   frames: Vec<Vec<RgbaImage>>,
-  /// Seconds the image says it takes to play
+  /// Total playback time in seconds, from the file
   duration: f32,
 }
 
@@ -52,7 +49,7 @@ impl Picture {
     Self::animated([image], 0.0)
   }
 
-  /// Frames the same size as each other, and the seconds they take to play
+  /// Frames of equal size, and their total duration in seconds
   pub fn animated(frames: impl IntoIterator<Item = RgbaImage>, duration: f32) -> Self {
     Self { frames: frames.into_iter().map(levels).collect(), duration }
   }
@@ -65,25 +62,25 @@ impl Picture {
     self.frames.first().map_or(0, |levels| levels[0].height())
   }
 
-  /// How many frames it has, which is 1 for an image that isn't animated
+  /// Frame count, 1 for a still image
   pub fn frames(&self) -> usize {
     self.frames.len()
   }
 
-  /// The seconds it takes to play, which the frames may not share evenly. 0 for an image that isn't animated.
+  /// Total duration in seconds (frames may not be evenly timed). 0 for a still image.
   pub fn duration(&self) -> f32 {
     self.duration
   }
 
-  /// The memory its pixels take up
+  /// Memory used by pixel data, including every mipmap level
   pub(crate) fn bytes(&self) -> u64 {
     self.frames.iter().flatten().map(|image| image.as_raw().len() as u64).sum()
   }
 
-  /// The color of a frame at a point in the unit box, `-0.5..=0.5` on each axis with the image's top left at `-0.5`.
-  /// A fraction of a frame is dropped, and past the last is the last. `footprint` is how far the sample reaches from the
-  /// point along each axis, in the same units. Outside the box is transparent, but a sample that still reaches it gets
-  /// the nearest pixel, as a shape's soft edge needs a color to fade.
+  /// The color of a frame at a point in the unit box, with the image's top left at `-0.5`. `frame` is truncated and
+  /// clamped to the frame count. `footprint` is the sample's radius on each axis in unit box units, and picks the mipmap
+  /// level. Outside the box is transparent, except that a sample still overlapping it gets the nearest edge pixel, so an
+  /// anti-aliased shape edge has a color to fade.
   pub(crate) fn color(&self, frame: f32, p: Vec2, footprint: Vec2) -> Rgba<u8> {
     let at = p + 0.5;
     let reaches = (at.cmpge(-footprint) & at.cmple(Vec2::ONE + footprint)).all();
@@ -101,6 +98,7 @@ impl Picture {
   }
 }
 
+/// The mipmap chain for an image, down to 1 pixel
 fn levels(image: RgbaImage) -> Vec<RgbaImage> {
   let mut levels = vec![image];
   while let Some(smaller) = levels.last().and_then(halved) {
@@ -109,7 +107,7 @@ fn levels(image: RgbaImage) -> Vec<RgbaImage> {
   levels
 }
 
-/// `None` once there's no smaller to go
+/// Half the size, averaging each 2x2 block. `None` once it's 1 pixel.
 fn halved(image: &RgbaImage) -> Option<RgbaImage> {
   let (width, height) = image.dimensions();
   if width.max(height) <= 1 || width == 0 || height == 0 {
@@ -122,7 +120,7 @@ fn halved(image: &RgbaImage) -> Option<RgbaImage> {
   }))
 }
 
-/// Weighted by alpha, so what's under a transparent pixel doesn't bleed into the color
+/// Weighted by alpha, so a transparent pixel's RGB doesn't bleed into the color
 fn average(pixels: [Rgba<u8>; 4]) -> Rgba<u8> {
   let alpha: u32 = pixels.iter().map(|pixel| pixel[3] as u32).sum();
   if alpha == 0 {

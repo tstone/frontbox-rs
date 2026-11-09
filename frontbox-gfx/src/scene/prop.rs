@@ -11,15 +11,14 @@ use crate::scene::{Animatable, Env, Random, Sweep, Track};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(deserialize = "T: Animatable + Deserialize<'de>"))]
 pub enum Prop<T> {
-  /// A value that doesn't change
   Fixed(T),
   /// Read from a parameter. A missing parameter, or one of the wrong type, gives the type's default.
   Param(String),
   /// Keyframes over time
   Track(Track<T>),
-  /// A new value at set times, from within a range
+  /// Picked at random at set times
   Random(Random),
-  /// Goes around the edge of a shape. Only a position can do this, and a file with any other kind of value doesn't load.
+  /// Moves along a shape's outline. Only valid for positions (`Vec2`); a file using it for anything else fails to load.
   #[serde(deserialize_with = "only_for_positions::<T, _>")]
   Sweep(Sweep),
 }
@@ -49,7 +48,8 @@ impl<T: Animatable> Prop<T> {
 }
 
 impl Prop<f32> {
-  /// For a value that drops its fraction where it's used, so that random picks are different once that's happened
+  /// Like `resolve`, for values that are truncated to a whole number where they're used (blade counts, frame numbers).
+  /// For a `Random`, this makes `force_unique` compare whole numbers, so consecutive picks don't truncate to the same one.
   pub(crate) fn resolve_whole(&self, env: &Env) -> f32 {
     match self {
       Self::Random(random) => random.resolve_whole(env),

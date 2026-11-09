@@ -8,11 +8,11 @@ use crate::scene::{Env, Fill, Bounds, Mask, Sample, Shape};
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Layer {
-  /// What people call it. It changes nothing about how it's drawn, and two layers can share one.
+  /// Display name for editors and error messages. Doesn't need to be unique.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub name: Option<String>,
-  /// Left out when the scene is drawn. It's still there to go back to, and still has to be something the scene can play.
+  /// Skipped when drawing, but still validated by `check`
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
   #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
   pub hidden: bool,
@@ -21,7 +21,7 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub shape: Option<Shape>,
-  /// Where the layer shows. `None` leaves it all showing.
+  /// `None` shows the whole layer
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub mask: Option<Mask>,
@@ -52,8 +52,8 @@ impl Layer {
     self
   }
 
-  /// How logs and errors should refer to the layer at `index` of a scene: by its name, or else its place from the bottom,
-  /// counted from 1 as the console counts them
+  /// How logs and errors refer to the layer at `index`: its name, or else its 1-based position from the bottom (as the
+  /// console numbers them)
   pub fn label(&self, index: usize) -> String {
     match &self.name {
       Some(name) => format!("layer \"{name}\""),
@@ -67,7 +67,7 @@ impl Layer {
       || self.mask.as_ref().is_some_and(Mask::is_animated)
   }
 
-  /// The images the layer draws, its mask's included
+  /// Names of the images the layer and its mask use
   pub(crate) fn image_names(&self) -> impl Iterator<Item = &str> {
     let masked = self.mask.as_ref().and_then(|mask| mask.fill.base.image_name());
     self.fill.base.image_name().into_iter().chain(masked)
@@ -86,7 +86,7 @@ impl Layer {
   }
 }
 
-/// A fill drawn in a shape at a sample, or over the whole viewport with no shape
+/// The fill's color at a sample, clipped to the shape (or the viewport, with no shape). Edge coverage goes into alpha.
 pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
   let (coverage, fill_pos, footprint) = match shape {
     None if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
@@ -105,7 +105,7 @@ pub(crate) fn sample_fill(fill: &Fill, shape: Option<&Shape>, at: &Sample, viewp
   color
 }
 
-/// Where a fill is drawn, as a closed loop of points in scene units
+/// The area a fill is drawn in, as a closed polygon in scene units
 pub(crate) fn fill_outline(shape: Option<&Shape>, viewport: Bounds, env: &Env) -> Vec<Vec2> {
   match shape {
     None => {

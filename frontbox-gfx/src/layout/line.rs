@@ -5,8 +5,8 @@ use crate::scene::{Bounds, Sample};
 /// `count` points evenly spaced along a [`Sequence`](crate::scene::Viewport::Sequence) viewport, such as a strip of
 /// LEDs
 ///
-/// The first point lands at 0 and the last at 1, whatever the count, so a gradient puts its end colors exactly on the
-/// end LEDs, and a shape covers the same part of any strip. A lone point sits at the start.
+/// The first point is always at 0 and the last at 1, whatever the count, so a gradient's end colors land exactly on the
+/// end LEDs and a shape covers the same part of any strip. A single point sits at 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Line {
   pub count: usize,
@@ -17,7 +17,7 @@ impl Line {
     Self { count }
   }
 
-  /// The part of a `Sequence` the points show when each is given the same room, which reaches past both ends
+  /// The span the points cover when each gets an equal share. Extends half a spacing past each end.
   pub fn covers(&self) -> Bounds {
     let steps = self.count.saturating_sub(1) as f32;
     let radius = if steps > 0.0 { 0.5 / steps } else { 0.5 };

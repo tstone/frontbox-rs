@@ -58,7 +58,7 @@
 //!
 //! While in the example above the animation was accumulating time by way of `Duration`, it's possible to accumulate anything that is, well, accumulatable. There are a few trait restrictions, like it must have a default value and be comparable (`PartialOrd`), summable, etc. but beyond that any accumulatable value can be accumulated.
 //!
-//! This means that animations work, not just on time, by for integers that represent hit counts or switch counts. For example, to change the color of LED based on how many time a spinner has spun, an animation can be used for this.
+//! This means that animations work not just on time, but also on integers that represent hit counts or switch counts. For example, to change the color of LED based on how many time a spinner has spun, an animation can be used for this.
 //!
 //! ```rust
 //! # use frontbox_gfx::animation::*;

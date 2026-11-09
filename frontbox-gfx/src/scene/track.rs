@@ -3,13 +3,13 @@ use serde::{Deserialize, Serialize};
 use crate::animation::{Curve, Cycle};
 use crate::scene::Animatable;
 
-/// Keyframes, played from time zero
+/// Keyframes, timed from the start of each scene cycle
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track<T> {
-  /// In order of `at`
+  /// Sorted by `at`
   pub keys: Vec<Key<T>>,
-  /// How many times to play the keys. A track that loops ends at its last key and jumps back to its first.
+  /// How many times the keys play. Each loop jumps from the last key straight back to the first.
   #[serde(default)]
   pub cycle: Cycle,
 }
@@ -45,7 +45,7 @@ pub struct Key<T> {
   /// Seconds
   pub at: f32,
   pub value: T,
-  /// How to get here from the key before. The first key has none before it, so this does nothing there.
+  /// Easing from the previous key to this one. Ignored on the first key.
   #[serde(default)]
   pub curve: Curve,
 }

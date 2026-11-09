@@ -5,25 +5,24 @@ use serde::{Deserialize, Serialize};
 use crate::animation::Curve;
 use crate::scene::{Animatable, Env};
 
-/// How many times a pick rolls for a value unlike its neighbors' before giving up, as there may not be one
+/// Attempts at a value that differs from its neighbors before giving up (the spread may not have one)
 const MAX_ROLLS: u32 = 64;
 
-/// Values picked at random, each held until the next pick or smoothed into it
+/// Random values chosen at set times, each held until the next or blended into it
 ///
-/// A pick is worked out from the moment it's for rather than drawn from a running generator, so that a scene reads the
-/// same however a moment is reached and every point sampled in a frame agrees. It still comes out differently on each
-/// cycle of the scene and each time the scene is played.
+/// There's no running random generator. Each value is a hash of the seed, take, cycle, and pick, so any moment can be
+/// sampled directly, in any order, with the same result. Values still differ every cycle and every take.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Random {
-  /// In order of `at`. The time before the first belongs to the last of the cycle before, or if there isn't one, the first.
+  /// Sorted by `at`. Before the first pick, the previous cycle's last pick is in effect (or the first pick, in the first
+  /// cycle).
   pub picks: Vec<Pick>,
-  /// What can be picked
   pub spread: Spread,
-  /// Keeps these picks apart from those of another prop picking at the same times
+  /// Distinguishes this prop's values from another random prop with the same picks
   #[serde(default)]
   pub seed: u32,
-  /// Whether a pick has to differ from the one before it. On by default.
+  /// Require each pick to differ from the one before. On by default.
   #[serde(default = "on")]
   pub force_unique: bool,
 }
@@ -33,21 +32,20 @@ impl Random {
     self.moving(env, |beat| self.unique(beat, env, false, |beat, attempt| self.roll::<T>(beat, attempt, env)))
   }
 
-  /// [`Self::resolve`] for a number that drops its fraction where it's used, so that picks only count as different if
-  /// their whole numbers are. Two whole numbers is the one spread with too few values for [`Self::unique`] to work out
-  /// for itself.
+  /// Like [`Self::resolve`], but `force_unique` compares whole numbers, for values that get truncated. A spread of
+  /// exactly two whole numbers needs special handling in [`Self::unique`].
   pub(crate) fn resolve_whole(&self, env: &Env) -> f32 {
     let two_values = matches!(self.spread, Spread::Float(low, high) if high.ceil() - low.floor() == 2.0);
     self.moving(env, |beat| self.unique(beat, env, two_values, |beat, attempt| self.roll::<f32>(beat, attempt, env).floor()))
   }
 
-  /// The value now, given the value of each pick
+  /// The current value, blending between picks during their smoothing. `value` gives each pick's own value.
   fn moving<T: Animatable>(&self, env: &Env, value: impl Fn(Beat) -> T) -> T {
     let Some(here) = self.current(env) else {
       return T::default();
     };
 
-    // both picks' smoothing is one blend, so it's eased as one however much of it each gave
+    // one pick's smooth_out and the next one's smooth_in make up a single eased blend
     let blend = |from: Beat, to: Beat| {
       let start = self.at(to, env) - self.fades(from, env).1;
       let end = self.at(to, env) + self.fades(to, env).0;
@@ -62,12 +60,12 @@ impl Random {
     }
   }
 
-  /// The value of a pick
+  /// A pick's value, made to differ from its neighbors when `force_unique` is set
   ///
-  /// Picks are worked out from their moments, so one can't follow every pick before it to learn what the last came to.
-  /// It only has to look next door instead: every other pick keeps its first roll, and those between roll until they
-  /// differ from both sides. With only two values those between have no room unless the others agree, so they all take
-  /// the first pick's roll, and the two values take turns.
+  /// Each pick is computed independently, so a pick can't know what the previous one ended up as. Instead, even picks
+  /// keep their first roll and odd picks re-roll until they differ from both even neighbors. With only two possible
+  /// values, an odd pick only has room if both neighbors match, so every even pick uses the same roll and the two values
+  /// alternate.
   fn unique<T: PartialEq>(&self, beat: Beat, env: &Env, two_values: bool, roll: impl Fn(Beat, u32) -> T) -> T {
     if !self.force_unique {
       return roll(beat, 0);
@@ -85,6 +83,7 @@ impl Random {
       .unwrap_or_else(|| roll(beat, 0))
   }
 
+  /// A random value for a pick. Each `attempt` gives a different value, for re-rolls.
   fn roll<T: Animatable>(&self, beat: Beat, attempt: u32, env: &Env) -> T {
     T::from_spread(&self.spread, rolls((self.seed, env.take, beat.cycle, beat.pick, attempt))).unwrap_or_default()
   }
@@ -115,14 +114,14 @@ impl Random {
     (!timing.is_last_cycle(beat.cycle)).then(|| Beat { cycle: beat.cycle + 1, pick: 0 })
   }
 
-  /// When a pick happens, in seconds from the start of the current cycle
+  /// When a pick happens, in seconds from the start of the current cycle (negative for an earlier cycle)
   fn at(&self, beat: Beat, env: &Env) -> f32 {
     let cycles_away = beat.cycle as f32 - env.cycle as f32;
     self.picks[beat.pick].at + cycles_away * env.timing.map_or(0.0, |timing| timing.duration)
   }
 
-  /// How long in seconds a pick takes to arrive and to leave. When they'd take up more than its stretch, they're shortened
-  /// to meet. One with nothing after it has nothing to leave for, and its stretch is what's left of the scene.
+  /// Seconds a pick spends blending in and blending out. Both are fractions of the time until the next pick, scaled down
+  /// to fit if they add up to more than it. The final pick has no blend out, and its time runs to the end of the cycle.
   fn fades(&self, beat: Beat, env: &Env) -> (f32, f32) {
     let pick = self.picks[beat.pick];
     let after = self.after(beat, env);
@@ -136,20 +135,18 @@ impl Random {
   }
 }
 
-/// A moment a new value is picked
+/// A time at which a new random value is picked
 ///
-/// It runs until the next pick, that pick's stretch. By default its value holds for all of that, changing at once at each
-/// end. Smoothing blends it with the values either side instead, the way a fade does across a cut.
+/// The value holds until the next pick, switching instantly at each end. Smoothing blends into and out of it instead.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Pick {
-  /// Seconds into a cycle of the scene
+  /// Seconds into the scene cycle
   pub at: f32,
-  /// How much of the stretch the value takes to arrive after this, from 0 for at once to 1 for all of it
+  /// Fraction of the time until the next pick spent blending in from the previous value (0 is instant)
   #[serde(default)]
   pub smooth_in: f32,
-  /// How much of the stretch the value spends leaving for the next pick, from 0 for not until it gets there to 1 for all
-  /// of it
+  /// Fraction of the time until the next pick spent blending out toward the next value (0 is instant)
   #[serde(default)]
   pub smooth_out: f32,
 }
@@ -160,7 +157,8 @@ impl Pick {
   }
 }
 
-/// What a [`Random`] can pick from. Each pair is the lowest and highest. One of the wrong type gives the type's default.
+/// The range a [`Random`] picks from. Each pair is `(min, max)`. A spread that doesn't match the prop's type gives the
+/// type's default.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Spread {
@@ -169,8 +167,8 @@ pub enum Spread {
     x: (f32, f32),
     y: (f32, f32),
   },
-  /// Fully saturated colors. Hues are in degrees, so `(330.0, 390.0)` is the reds on both sides of 0. Brightness runs
-  /// from 0 for black to 1, and alpha from 0 for transparent to 1.
+  /// Fully saturated HSV colors. Hue is in degrees and can wrap past 360, so `(330.0, 390.0)` covers the reds on both
+  /// sides of 0. Brightness (HSV value) and alpha are 0 to 1.
   Color {
     hue: (f32, f32),
     brightness: (f32, f32),
@@ -187,14 +185,14 @@ fn opaque() -> (f32, f32) {
   (1.0, 1.0)
 }
 
-/// One pick, in one cycle of the scene
+/// One occurrence of a pick: the pick's index within a particular scene cycle
 #[derive(Clone, Copy)]
 struct Beat {
   cycle: u32,
   pick: usize,
 }
 
-/// Three numbers from 0 to 1 that stand for `moment`
+/// Three pseudo-random numbers, each 0 to 1, hashed from `moment`
 fn rolls(moment: impl Hash) -> [f32; 3] {
   const MASK: u64 = (1 << 21) - 1;
   let mut hasher = DefaultHasher::new();

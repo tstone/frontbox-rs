@@ -4,18 +4,19 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::scene::{Animatable, Env, Shape};
 
-/// A position that goes once around the edge of a shape, or along a route or bezier from one end to the other
+/// A position that travels once around a shape's outline, or end to end along a route or bezier
 ///
-/// The path is a whole [`Shape`], so its transforms say where it is: a circle moved to a point is an orbit of that point.
-/// It starts where the shape's outline does and goes the way that does, which is clockwise in a scene whose y runs down
-/// for everything but those made of points, which say. An ellipse goes at an even angle, and the others at an even speed.
+/// The path is a full [`Shape`] with its own transforms, so a circle translated to a point becomes an orbit around it.
+/// Built-in shapes go clockwise from where their outline starts (3 o'clock for round ones); shapes made of points follow
+/// their point order. Circles and ellipses move at a constant angular speed, everything else at a constant speed.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sweep {
   pub path: Box<Shape>,
-  /// Seconds. It waits at the start of the path until then.
+  /// Seconds into the scene cycle when it starts moving. It holds at the path's start until then.
   pub start: f32,
-  /// Seconds. It stays at the end of the path from then on, which for all but a route or bezier is back where it started.
+  /// Seconds into the scene cycle when it stops. It holds at the path's end after that, which for a closed shape is back
+  /// at the start.
   pub end: f32,
 }
 
@@ -31,7 +32,7 @@ impl Sweep {
   }
 }
 
-/// Reads the sweep of a `Prop<T>`, refusing one where `T` isn't a position
+/// Deserializes `Prop::Sweep`, rejecting it unless `T` is a position type
 pub(crate) fn only_for_positions<'de, T: Animatable, D: Deserializer<'de>>(deserializer: D) -> Result<Sweep, D::Error> {
   if T::from_point(Vec2::ZERO).is_none() {
     return Err(D::Error::custom("only a position (Vec2) can be a Sweep"));

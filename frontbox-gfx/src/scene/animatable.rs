@@ -7,12 +7,14 @@ use crate::scene::{Color, Spread, Value};
 
 /// A type a `Prop` can hold
 pub trait Animatable: Lerp + Clone + Default + PartialEq {
+  /// Reads a param value. `None` if it's a different type.
   fn from_value(value: &Value) -> Option<Self>;
 
-  /// A value from a spread, with `rolls` from 0 to 1 saying where in it. `None` if the spread is of another type.
+  /// Picks a value within a spread, using `rolls` (random numbers, each 0 to 1) for where in each range. `None` if the
+  /// spread is a different type.
   fn from_spread(spread: &Spread, rolls: [f32; 3]) -> Option<Self>;
 
-  /// A position in the scene as this type, for a `Sweep`. `None` if this isn't a type of position.
+  /// Converts a point from a `Sweep`. `None` for types that aren't positions.
   fn from_point(point: Vec2) -> Option<Self>;
 }
 

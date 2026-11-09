@@ -3,8 +3,8 @@
 //! Files are written with RON's `implicit_some` and `unwrap_variant_newtypes` extensions, so they only state what
 //! they change and avoid double parentheses. Fields that aren't written take their default.
 //!
-//! What's in a file is up to the scene that's written to it, such as `LedScene` or `DmdScene`. Each is held in a variant
-//! with the name of its kind, so a file says what it is, and one kind can't be read as another.
+//! The top-level type, such as `LedScene` or `DmdScene`, is defined by the crate that owns it. Each is wrapped in a
+//! variant named for its kind, so a file says what it is and one kind can't be loaded as another.
 
 use std::fmt;
 
@@ -16,21 +16,22 @@ use serde::de::DeserializeOwned;
 /// The format version this build writes, and the newest it reads
 pub const VERSION: u32 = 1;
 
-/// The extension of the files that are scenes, in lower case
+/// Scene file extension, in lowercase
 pub const EXTENSION: &str = "scene";
 
-/// Reads a scene file. What it says still needs checking.
+/// Parses a scene file without validating it. Call [`GfxComposition::check`](crate::scene::GfxComposition::check) on
+/// the result.
 pub fn load<T: DeserializeOwned>(source: &str) -> Result<T, FormatError> {
   options().from_str(source).map_err(FormatError::Read)
 }
 
-/// Writes a scene file
+/// Serializes a scene to RON text
 pub fn save<T: Serialize>(scene: &T) -> Result<String, FormatError> {
   let config = PrettyConfig::new().indentor("  ").extensions(extensions());
   options().to_string_pretty(scene, config).map_err(FormatError::Write)
 }
 
-/// Whether this build can read a file of a version
+/// Errors if `version` is newer than this build can read
 pub fn check_version(version: u32) -> Result<(), FormatError> {
   if version > VERSION {
     return Err(FormatError::Newer { version });
@@ -52,7 +53,7 @@ pub enum FormatError {
   Write(ron::Error),
   /// The file was written by a newer version of the format
   Newer { version: u32 },
-  /// The file reads as a scene, but not one that can be played
+  /// Parsed, but failed validation
   Invalid(String),
 }
 

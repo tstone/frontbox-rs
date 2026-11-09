@@ -2,10 +2,10 @@ use glam::Vec2;
 
 use crate::scene::{Images, Params, Viewport};
 
-/// A point a device wants a color for: a position in scene units and the radius of the area it covers
+/// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
-/// `radius` is the footprint of what's being lit (half the pixel pitch on a DMD, the size of an insert on the
-/// playfield). Shape edges use it for coverage, so an edge passing through a sample lights it partially.
+/// `radius` is the size of what's being lit (half the pixel pitch on a DMD, the size of an insert on the playfield).
+/// Shape edges use it for anti-aliasing: an edge passing through a sample covers it partially.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Sample {
   pub pos: Vec2,
@@ -18,20 +18,19 @@ impl Sample {
   }
 }
 
-/// What's the same for every sample in one frame
+/// Inputs shared by every sample in one frame
 #[derive(Debug, Clone, Copy)]
 pub struct Frame<'a> {
   /// Seconds since the scene started
   pub time: f32,
-  /// Which set of random picks to show. Anything that plays a scene takes a new one each time it starts it over.
+  /// Seed for random props. Players use a new one each time they restart a scene, so it doesn't repeat the same picks.
   pub take: u32,
-  /// Parameters supplied by the game, which take the place of the scene's defaults
+  /// Values from the game, overriding the scene's param defaults
   pub params: &'a Params,
-  /// The images the scene draws, by name. A layer naming one that isn't here draws nothing, so
-  /// [`Content::images_for`](crate::scene::Content::images_for) is the way to get these, as it says so.
+  /// Decoded images by name. A layer whose image is missing draws nothing; get these from
+  /// [`Content::images_for`](crate::scene::Content::images_for), which reports missing images up front.
   pub images: &'a Images,
-  /// The size of the device, in its own units. A scene's numbers are in these units. A `Sequence` doesn't use this.
+  /// Device size in its own units, which the scene's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,
-  /// What the device's points are spread over
   pub viewport: Viewport,
 }

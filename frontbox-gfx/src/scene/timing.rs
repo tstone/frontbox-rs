@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
 
-/// How long an animated scene runs. A scene without one is static: it can change through its parameters, but not on its
-/// own.
+/// How long an animated scene runs, and how many times. A scene without a timing is static: only its params can change
+/// it.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Timing {
-  /// Seconds in one cycle of the scene
+  /// Seconds per cycle
   pub duration: f32,
-  /// How many times to play it. Tracks have their own cycles within this.
+  /// How many times to play. Each track can also loop on its own within a cycle.
   #[serde(default)]
   pub cycle: Cycle,
 }

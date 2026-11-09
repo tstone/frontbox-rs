@@ -3,96 +3,90 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform};
 
-/// How many points the outline of a round shape has. Enough that it looks round on screen.
+/// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
 
-/// The most blades a pinwheel draws, which is well past where they can be told apart
+/// Cap on pinwheel blades, well past where they can be told apart
 const MAX_BLADES: f32 = 360.0;
 
-/// How many straight pieces each stretch of a bezier is followed as. Enough that it looks smooth on screen.
+/// Line segments per bezier span when flattening it to a polyline
 const BEZIER_STEPS: usize = 24;
 
-/// Where a layer is drawn
+/// The area a layer is drawn in
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
 
-/// Shapes sit around the origin; transforms put them in the scene. The sizes here are in the shape's own space, so a
-/// `Scale` multiplies them.
+/// Base shapes, defined around the origin in local space. Transforms place them in the scene.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
-  /// A circle centered on the origin
   Circle { radius: Prop<f32> },
-  /// A band around the origin, its hole `radius` across from its center and `thickness` wide from there out. With no
-  /// `radius` it has no hole, and is a circle.
+  /// An annulus: `radius` is the hole's radius and `thickness` the band's width outward from it. A `radius` of 0 makes a
+  /// filled circle.
   Ring { radius: Prop<f32>, thickness: Prop<f32> },
-  /// An ellipse centered on the origin, `r1` up and down from its center and `r2` side to side
+  /// `r1` is the vertical radius and `r2` the horizontal
   Ellipse { r1: Prop<f32>, r2: Prop<f32> },
-  /// A rectangle centered on the origin
   Rect { width: Prop<f32>, height: Prop<f32> },
-  /// Blades coming out of the origin and running past the edges of the viewport, so there are two lines out of the
-  /// middle for every one. Each blade and the gap after it take an even share of the way around, `balance` (0 to 1) of
-  /// which is the blade, so at 0.5 a blade is as wide as its gap. The first starts at the right and they go clockwise. A
-  /// fraction of a blade is dropped. Its fill stretches over a box the size of the viewport around the origin.
+  /// Wedge-shaped blades radiating from the origin out past the viewport edges.
+  ///
+  /// Each blade plus the gap after it is an equal slice of the circle, and `balance` (0 to 1) is the blade's share of
+  /// its slice, so at 0.5 blades and gaps are equal. The first blade starts at 3 o'clock and they go clockwise. `blades`
+  /// is truncated to a whole number. The fill is stretched over a viewport-sized box centered on the origin.
   Pinwheel { blades: Prop<f32>, balance: Prop<f32> },
-  /// A closed polygon through points
+  /// A closed polygon
   Polygon {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
-  /// A line from point to point that doesn't come back to the first. It has no inside, so it's only for a [`Sweep`] to
-  /// follow, and draws nothing as a layer's shape.
+  /// An open polyline. It has no inside, so it draws nothing as a layer's shape; it's only for a [`Sweep`] to follow.
   ///
   /// [`Sweep`]: crate::scene::Sweep
   Route {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
     points: Vec<Prop<Vec2>>,
   },
-  /// A smooth line through points that doesn't come back to the first. Like a [`ShapeNode::Route`], it's only for a sweep
-  /// to follow.
+  /// An open, smooth curve through points. Like [`ShapeNode::Route`], it's only for a sweep to follow.
   Bezier { points: Vec<BezierPoint> },
 }
 
-/// A point a [`ShapeNode::Bezier`] goes through
+/// A point a [`ShapeNode::Bezier`] passes through
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BezierPoint {
   #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
   pub point: Prop<Vec2>,
-  /// Which way the line goes through the point and how hard it holds to that, from the point. It leaves toward this and
-  /// arrives from the opposite way, so it's smooth at every point.
+  /// Tangent handle, relative to `point`. The curve leaves toward `point + handle` and arrives from `point - handle`, so
+  /// it's always smooth through the point.
   #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
   pub handle: Prop<Vec2>,
 }
 
-/// A shape as it stands at a moment, for an editor to draw over
+/// A snapshot of a shape at one moment, with what an editor needs to draw it and its handles
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapePose {
-  /// What each of the shape's transforms does, in the order they apply
+  /// The affine for each transform, in order
   pub transforms: Vec<Affine2>,
-  /// The shape's bounds in its own space, before its transforms
+  /// Bounds in local space, before transforms
   pub bounds: Bounds,
-  /// The points of a polygon, route or bezier in its own space. Empty for the other shapes.
+  /// Local-space points of a polygon, route, or bezier. Empty for other shapes.
   pub points: Vec<Vec2>,
-  /// A bezier's handles, each from its point. Empty for the other shapes.
+  /// Bezier handles, relative to their points. Empty for other shapes.
   pub handles: Vec<Vec2>,
-  /// How far a ring's hole reaches from its center, in its own space. 0 for the other shapes.
+  /// A ring's hole radius in local space. 0 for other shapes.
   pub hole: f32,
-  /// The shape's edge in the scene, as a closed loop of points. A ring's is its outside edge. A route's or bezier's is its
-  /// line, which doesn't close.
+  /// Outline in scene space. Closed, except for routes and beziers. A ring's is its outer edge.
   pub outline: Vec<Vec2>,
-  /// For each of the shape's transforms, the path it moves the shape along, if it does and that path has a pose. Its
-  /// scene is the values the transform takes.
+  /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
   pub paths: Vec<Option<ShapePose>>,
 }
 
-/// Changes to a shape's edge. None yet.
+/// Changes to a shape's edge. There are none yet.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeAdjust {}
 
 impl Shape {
-  /// How much of the sample's footprint the shape covers (0 to 1), and the sample's position in the shape's own
-  /// space. `None` when the shape draws nothing.
+  /// How much of the sample the shape covers (0 to 1), the sample's position in local space, and its radius in local
+  /// space along each axis. `None` if the sample is outside the shape or the shape is collapsed.
   pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2, Vec2)> {
     let center = self.base.bounds(env).center();
     let pos = self.on_lap(at.pos, center, env);
@@ -103,7 +97,7 @@ impl Shape {
     (coverage > 0.0).then(|| (coverage, local, to_local.matrix2.abs() * Vec2::splat(at.radius)))
   }
 
-  /// The shape's edge in the scene, as a closed loop of points. Empty when it draws nothing.
+  /// Outline in scene space. Empty if the shape is collapsed.
   pub(crate) fn outline(&self, env: &Env) -> Vec<Vec2> {
     let Some(to_scene) = self.to_scene(self.base.bounds(env).center(), env) else {
       return Vec::new();
@@ -111,7 +105,7 @@ impl Shape {
     self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
   }
 
-  /// The shape as it stands at a moment. `None` when a transform collapses it.
+  /// `None` if a transform collapses the shape
   pub(crate) fn pose(&self, env: &Env) -> Option<ShapePose> {
     let bounds = self.base.bounds(env);
     self.to_scene(bounds.center(), env)?;
@@ -139,7 +133,7 @@ impl Shape {
     })
   }
 
-  /// The point in the scene a fraction of the way around the shape's edge. The origin when it has no edge to go around.
+  /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
   pub(crate) fn along(&self, phase: f32, env: &Env) -> Vec2 {
     match self.to_scene(self.base.bounds(env).center(), env) {
       Some(to_scene) => to_scene.transform_point2(self.base.along(phase, env)),
@@ -171,7 +165,7 @@ impl ShapeNode {
     }
   }
 
-  /// The shape's bounds in its own space, before its transforms
+  /// Bounds in local space, before transforms
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {
       Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } | Self::Rect { .. } | Self::Pinwheel { .. } => {
@@ -179,12 +173,12 @@ impl ShapeNode {
         Bounds::new(-reach, reach)
       }
       Self::Polygon { points } | Self::Route { points } => bounds_of(points.iter().map(|p| p.resolve(env))),
-      // of its points alone, so that moving a handle doesn't move the middle that its transforms work around
+      // points only, so dragging a handle doesn't move the center that `Rotate` pivots on
       Self::Bezier { points } => bounds_of(points.iter().map(|p| p.point.resolve(env))),
     }
   }
 
-  /// The shape's edge in its own space, before its transforms
+  /// Outline in local space, before transforms
   fn outline(&self, env: &Env) -> Vec<Vec2> {
     match self {
       Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => (0..ROUND_OUTLINE_POINTS)
@@ -204,8 +198,8 @@ impl ShapeNode {
     }
   }
 
-  /// The point a fraction of the way around the shape's edge, in its own space. A round shape needs no outline for this,
-  /// as a prop can resolve once for every point being drawn.
+  /// The local-space point `phase` of the way along the outline. Round shapes use the angle directly instead of building
+  /// the outline polygon, since a sweep runs this for every sample.
   fn along(&self, phase: f32, env: &Env) -> Vec2 {
     match self {
       Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => {
@@ -216,7 +210,7 @@ impl ShapeNode {
     }
   }
 
-  /// How far a shape not made of points reaches from its center along each axis
+  /// Half-extents of a shape that isn't made of points. Zero for those that are.
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
       Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
@@ -228,7 +222,7 @@ impl ShapeNode {
     }
   }
 
-  /// Signed distance to the edge (negative inside) in the shape's own space, and the direction it grows in
+  /// Signed distance to the edge in local space (negative inside), and its gradient
   fn distance(&self, p: Vec2, env: &Env) -> (f32, Vec2) {
     match self {
       Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
@@ -251,13 +245,13 @@ fn bounds_of(mut points: impl Iterator<Item = Vec2>) -> Bounds {
   points.fold(Bounds::new(first, first), |rect, p| Bounds::new(rect.min.min(p), rect.max.max(p)))
 }
 
-/// The point a fraction of the distance around a closed loop of points
+/// The point `phase` of the way around a closed polygon, by distance
 fn along_loop(points: &[Vec2], phase: f32) -> Vec2 {
   let closed: Vec<Vec2> = points.iter().chain(points.first()).copied().collect();
   along_line(&closed, phase)
 }
 
-/// The point a fraction of the distance along a line through points
+/// The point `phase` of the way along an open polyline, by distance
 fn along_line(points: &[Vec2], phase: f32) -> Vec2 {
   let edges = || points.windows(2).map(|edge| (edge[0], edge[1]));
   let mut left = phase * edges().map(|(a, b)| a.distance(b)).sum::<f32>();
@@ -271,7 +265,7 @@ fn along_line(points: &[Vec2], phase: f32) -> Vec2 {
   points.last().copied().unwrap_or_default()
 }
 
-/// A bezier as a line of short straight pieces
+/// Flattens a bezier into a polyline
 fn bezier_line(points: &[BezierPoint], env: &Env) -> Vec<Vec2> {
   let resolved: Vec<(Vec2, Vec2)> = points.iter().map(|p| (p.point.resolve(env), p.handle.resolve(env))).collect();
   let stretches = resolved.windows(2).flat_map(|stretch| {
@@ -281,20 +275,20 @@ fn bezier_line(points: &[BezierPoint], env: &Env) -> Vec<Vec2> {
   resolved.first().map(|(first, _)| *first).into_iter().chain(stretches).collect()
 }
 
-/// The point a fraction of the way along a cubic bezier
+/// The point at `t` on a cubic bezier (de Casteljau)
 fn cubic([a, b, c, d]: [Vec2; 4], t: f32) -> Vec2 {
   let (e, f, g) = (a.lerp(b, t), b.lerp(c, t), c.lerp(d, t));
   e.lerp(f, t).lerp(f.lerp(g, t), t)
 }
 
-/// Converts a distance in the shape's own space to scene units. Exact under uniform scale, and close to the edge
-/// under non-uniform scale, which is where coverage needs it.
+/// Converts a local-space signed distance to scene units, using its gradient. Exact under uniform scale; under
+/// non-uniform scale it's only accurate near the edge, which is all coverage needs.
 fn scene_distance(distance: f32, gradient: Vec2, to_local: &Affine2) -> f32 {
   let stretch = (to_local.matrix2.transpose() * gradient).length();
   if stretch > f32::EPSILON { distance / stretch } else { distance }
 }
 
-/// A linear ramp across the sample's footprint: a sample centered on the edge is half covered
+/// Anti-aliased coverage: a linear ramp across the sample's radius, so a sample centered on the edge is half covered
 fn coverage(distance: f32, radius: f32) -> f32 {
   if radius <= 0.0 {
     return if distance <= 0.0 { 1.0 } else { 0.0 };
@@ -302,8 +296,8 @@ fn coverage(distance: f32, radius: f32) -> f32 {
   (0.5 - distance / (2.0 * radius)).clamp(0.0, 1.0)
 }
 
-/// How far `p` is from the edge of an ellipse as a fraction of its radius there, and how fast that changes. The two
-/// together give the distance close to the edge, which is where coverage needs it.
+/// Approximate signed distance to an ellipse's edge, as a fraction of its radius, with its gradient. Accurate near the
+/// edge once divided by the gradient's length (see `scene_distance`).
 fn ellipse_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
   if reach.min_element() <= 0.0 {
     return (f32::INFINITY, Vec2::X);
@@ -331,7 +325,7 @@ fn unit_balance(balance: &Prop<f32>, env: &Env) -> f32 {
   balance.resolve(env).clamp(0.0, 1.0)
 }
 
-/// Each blade as a loop out of the middle and around its far end
+/// Each blade as a wedge: out from the center, along an arc, and back
 fn pinwheel_outline(blades: u32, balance: f32, reach: f32) -> Vec<Vec2> {
   let share = std::f32::consts::TAU / blades.max(1) as f32;
   let width = share * balance;
@@ -345,15 +339,15 @@ fn pinwheel_outline(blades: u32, balance: f32, reach: f32) -> Vec<Vec2> {
     .collect()
 }
 
-/// Signed distance to the nearer edge of the nearest blade. Within a right angle of that edge it's the angle's sine; past
-/// one, the nearest point of the edge is the middle.
+/// Signed distance to the nearest blade edge. Each edge is a ray from the center: within 90° of the ray the distance is
+/// `r * sin(angle)`, and beyond that the nearest point is the center itself.
 fn pinwheel_distance(blades: u32, balance: f32, p: Vec2) -> (f32, Vec2) {
   if blades == 0 {
     return (f32::INFINITY, Vec2::X);
   }
   let share = std::f32::consts::TAU / blades as f32;
   let width = share * balance;
-  // how far around from the middle of the nearest blade
+  // angle from the center line of the nearest blade
   let around = (p.y.atan2(p.x) - width / 2.0 + share / 2.0).rem_euclid(share) - share / 2.0;
   let right = std::f32::consts::FRAC_PI_2;
   let (sin, cos) = (around.abs() - width / 2.0).clamp(-right, right).sin_cos();

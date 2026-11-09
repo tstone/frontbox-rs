@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-/// An axis-aligned area in scene units: a viewport, or a shape's extent
+/// An axis-aligned rectangle in scene units, such as a viewport or a shape's extent
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bounds {
   pub min: Vec2,
@@ -29,8 +29,8 @@ impl Bounds {
     (self.min + self.max) / 2.0
   }
 
-  /// Maps a point in this rectangle to the unit box, `-0.5..=0.5` on each axis. An axis with no length puts
-  /// everything at its start (`-0.5`).
+  /// Normalizes a point to the unit box, `-0.5..=0.5` on each axis with the center at 0. A zero-length axis maps to
+  /// `-0.5`.
   pub fn to_unit(&self, p: Vec2) -> Vec2 {
     let size = self.size();
     let offset = p - self.center();
@@ -38,7 +38,7 @@ impl Bounds {
     Vec2::new(axis(offset.x, size.x), axis(offset.y, size.y))
   }
 
-  /// How far a distance in this rectangle reaches in the unit box, along each axis. An axis with no length has none.
+  /// Converts a length to unit box units on each axis. A zero-length axis gives 0.
   pub fn to_unit_length(&self, length: f32) -> Vec2 {
     let size = self.size();
     let axis = |size: f32| if size.abs() > f32::EPSILON { length / size.abs() } else { 0.0 };

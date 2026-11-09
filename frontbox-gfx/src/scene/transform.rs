@@ -3,20 +3,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Env, Prop, Shape};
 
-/// Changes where a node is drawn
+/// Moves, rotates, or scales a node
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
   Translate(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
-  /// Degrees, clockwise in a scene whose y runs down, around the middle of the drawing wherever the transforms before
-  /// this have put it. A `Sequence` has no second axis to turn into, so there it runs the drawing around the line as if
-  /// its ends met, toward the last point: 360 is one lap.
+  /// Degrees clockwise (y points down), around the node's center as placed by the transforms before this one.
+  ///
+  /// A `Sequence` has no second axis, so there it scrolls the drawing along the line with the ends wrapped together:
+  /// 360 degrees is one full lap.
   Rotate(Prop<f32>),
   Scale(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
 }
 
 impl Transform {
-  /// What this does to a point of the drawing, whose middle the transforms before this have put at `center`
+  /// The affine for this step, given where the transforms before it put the node's center
   pub(crate) fn affine(&self, center: Vec2, env: &Env) -> Affine2 {
     match self {
       Self::Translate(offset) => Affine2::from_translation(offset.resolve(env)),
@@ -31,7 +32,7 @@ impl Transform {
     }
   }
 
-  /// The path this moves the drawing along, if it does
+  /// The path of a `Sweep` translate, if this is one
   pub(crate) fn path(&self) -> Option<&Shape> {
     match self {
       Self::Translate(Prop::Sweep(sweep)) => Some(&sweep.path),

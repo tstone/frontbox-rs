@@ -5,7 +5,7 @@ use image::Rgba;
 
 use crate::scene::{Frame, GfxComposition, Layer, Sample, ShapePose, Timing, Viewport};
 
-/// A composition and what it's seen on, as LED and DMD scenes hold one, for tests to sample without saying which each time
+/// A composition paired with a viewport, like `LedScene` and `DmdScene`, so tests don't pass the viewport every time
 #[derive(Debug, Clone)]
 pub(crate) struct Scene {
   pub viewport: Viewport,

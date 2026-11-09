@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::{Bounds, Env, Fill, Sample, Shape, fill_outline, sample_fill};
 
-/// Where a layer shows, as a fill in a shape of its own. The layer shows as much as the mask is opaque.
+/// Controls where a layer shows, using the alpha of the mask's own fill and shape. The layer is visible in proportion
+/// to the mask's opacity; the mask's colors are never drawn.
 ///
-/// It's drawn like a layer but stays where it is in the scene, rather than following the layer's shape, so a mask that
-/// moves reveals a layer that doesn't. It only changes the layer it's on, and what's drawn in it is never seen.
+/// The mask is placed in the scene independently of the layer's shape, so a moving mask can reveal a still layer.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mask {
@@ -40,7 +40,7 @@ impl Mask {
     self.fill.is_animated() || self.shape.as_ref().is_some_and(Shape::is_animated)
   }
 
-  /// How much of the layer shows at a sample, from 0 to 1
+  /// How visible the layer is at a sample, 0 to 1
   pub(crate) fn amount(&self, at: &Sample, viewport: Bounds, env: &Env) -> f32 {
     let opacity = sample_fill(&self.fill, self.shape.as_ref(), at, viewport, env)[3] as f32 / 255.0;
     if self.invert { 1.0 - opacity } else { opacity }

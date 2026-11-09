@@ -2,13 +2,16 @@ use glam::Vec2;
 
 use crate::scene::{Bounds, Sample};
 
-/// A `width` by `height` grid of points fit to an [`Area`](crate::scene::Viewport::Area) viewport, such as the pixels
-/// of a DMD
+/// A `width` by `height` grid of sample points fit to an [`Area`](crate::scene::Viewport::Area) viewport, such as the
+/// pixels of a DMD
+///
+/// Cells are always square. If the grid's aspect ratio differs from `size`, it fills `size` along one axis and runs past
+/// it, centered, along the other.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Grid {
   pub width: usize,
   pub height: usize,
-  /// The size of the viewport
+  /// Size of the viewport, in scene units
   pub size: Vec2,
 }
 
@@ -32,8 +35,7 @@ impl Grid {
     })
   }
 
-  /// The part of the scene the grid shows, in scene units. Cells are square, so this matches `size` along one axis and
-  /// runs past it, centered, along the other.
+  /// The area the grid spans, in scene units. This can extend past `size` on one axis (see [`Grid`]).
   pub fn covers(&self) -> Bounds {
     let Fit { origin, cell } = self.fit();
     Bounds::new(origin, origin + self.cells() * cell)
@@ -50,11 +52,11 @@ impl Grid {
   }
 }
 
-/// How a grid lays over its viewport
+/// Where the grid sits over its viewport, in scene units
 struct Fit {
-  /// The grid's top left, in scene units
+  /// Top left corner
   origin: Vec2,
-  /// The size of a cell, in scene units
+  /// Side length of a cell
   cell: f32,
 }
 

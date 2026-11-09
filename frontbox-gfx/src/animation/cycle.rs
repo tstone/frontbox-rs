@@ -1,3 +1,4 @@
+/// How many times something plays
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Cycle {
@@ -11,7 +12,7 @@ pub enum Cycle {
 }
 
 impl Cycle {
-  /// Where `time` falls in a cycle `length` long: wrapped while it repeats, and at the end once it's complete
+  /// Time within the current cycle: wraps while repeating, and holds at `length` once complete
   pub(crate) fn local_time(self, time: f32, length: f32) -> f32 {
     if length <= 0.0 {
       return time;

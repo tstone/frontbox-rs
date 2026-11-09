@@ -83,21 +83,23 @@ impl Lerp for Color {
   }
 }
 
-/// What props resolve against: the time, the game's parameters, and the scene's defaults
+/// Everything a prop needs to resolve: time, params, images, and the viewport
 pub(crate) struct Env<'a> {
-  /// Seconds into the current cycle of the scene
+  /// Seconds into the current scene cycle
   pub time: f32,
-  /// Which cycle of the scene that is, counting from zero
+  /// Index of the current scene cycle, from 0
   pub cycle: u32,
-  /// The scene's timing, for looking past the ends of a cycle
+  /// The scene's timing, so random picks can look into the neighboring cycles
   pub timing: Option<Timing>,
+  /// See [`Frame::take`](crate::scene::Frame::take)
   pub take: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,
   pub images: &'a Images,
-  /// What's seen of the scene
+  /// The visible region, in scene units
   pub viewport: Bounds,
-  /// How far it is around a `Sequence`, in the space being drawn, or `None` in an `Area`
+  /// On a `Sequence`, the length of one wrap-around lap for `Rotate`, in the units of whatever is being drawn. `None`
+  /// on an `Area`.
   pub lap: Option<f32>,
 }
 

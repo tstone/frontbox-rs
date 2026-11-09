@@ -3,19 +3,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::Bounds;
 
-/// What kind of surface a scene is seen on. How big it is comes from the device playing the scene, through
+/// The kind of surface a scene is drawn on. Its size comes from the device, through
 /// [`Frame::size`](crate::scene::Frame::size).
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Viewport {
-  /// Points in order, such as a list of LEDs (1D space)
+  /// A 1D line of points, such as an LED strip. Runs from x = 0 to x = 1 however many points there are.
   Sequence,
-  /// A rectangle from the origin, measured in the device's units: pixels on a DMD, a plane's units on LEDs (2D space)
+  /// A 2D rectangle from the origin to the device's size, in its units: pixels on a DMD, playfield units for LEDs
   Area,
 }
 
 impl Viewport {
-  /// What's seen on a device of this size. A `Sequence` is the same on any device.
+  /// The visible region in scene units. A `Sequence` is the same on every device.
   pub(crate) fn bounds(&self, size: Vec2) -> Bounds {
     match self {
       Self::Sequence => Bounds::new(Vec2::new(0.0, -0.5), Vec2::new(1.0, 0.5)),

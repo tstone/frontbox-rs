@@ -8,13 +8,12 @@ use crate::animation::Cycle;
 use crate::color::RgbaColor;
 use crate::scene::{Env, Frame, Layer, Params, Sample, ShapePose, Timing, Viewport};
 
-/// How far inside a cycle in a repeating scene its first and last moments are, as a fraction of the cycle. Any nearer and
-/// the time rounds into the cycle next to it.
+/// How far [`GfxComposition::cycle_time`] keeps times from the edges of a cycle, as a fraction of it, so float rounding
+/// doesn't push them into the neighboring cycle
 const CYCLE_MARGIN: f32 = 1e-4;
 
-/// What's drawn and how it moves over time: layers, and the parameters the game can change. This is the part LED and DMD
-/// scenes share, each adding what its own hardware needs and being what's written to a file. Ready to be sampled by any
-/// device, which says what it's seen on with [`Frame::viewport`].
+/// Layers, params, and timing: the device-independent part of a scene. `LedScene` and `DmdScene` wrap this with their
+/// hardware settings.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GfxComposition {
@@ -22,11 +21,11 @@ pub struct GfxComposition {
   #[serde(default, skip_serializing_if = "Params::is_empty")]
   #[cfg_attr(feature = "ts", ts(as = "Option<Params>", optional))]
   pub params: Params,
-  /// `None` is static, and its tracks stay on their first moment
+  /// `None` for a static scene, whose tracks stay at time 0
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub timing: Option<Timing>,
-  /// Drawn bottom to top, alpha over
+  /// Composited bottom to top
   #[serde(default)]
   pub layers: Vec<Layer>,
 }
@@ -41,7 +40,8 @@ impl GfxComposition {
     self
   }
 
-  /// One of its layers on its own, on the same timeline, for a device that puts each of them somewhere different
+  /// A copy with only the layer at `index`, keeping params and timing. For devices that send each layer to different
+  /// hardware.
   pub fn only(&self, index: usize) -> Self {
     Self { params: self.params.clone(), timing: self.timing, layers: vec![self.layers[index].clone()] }
   }
@@ -51,8 +51,8 @@ impl GfxComposition {
     self.timing.is_some_and(|timing| timing.is_complete(time))
   }
 
-  /// This scene for showing a cycle as it looks partway through play, with a cycle either side to reach into, such as for
-  /// random picks to smooth across. A scene that plays one cycle has none either side, and stays as it is.
+  /// A copy set to play 3 cycles, for previewing a typical cycle with neighbors on both sides (so random picks can blend
+  /// across its edges). A scene that only plays once is returned unchanged. Use with [`Self::middle_cycle_time`].
   pub fn middle_cycle(&self) -> Self {
     let mut scene = self.clone();
     if let Some(timing) = scene.timing.as_mut().filter(|timing| timing.repeats()) {
@@ -61,13 +61,13 @@ impl GfxComposition {
     scene
   }
 
-  /// The time in a scene from [`GfxComposition::middle_cycle`] of a time in the cycle it shows, up to and including the end
+  /// Converts a time within a cycle to scene time in the middle cycle of [`Self::middle_cycle`]
   pub fn middle_cycle_time(&self, time: f32) -> f32 {
     self.cycle_time(1, time)
   }
 
-  /// The time in the scene of a time in one of its cycles, up to and including the end of it. A cycle past the scene's
-  /// last is its last.
+  /// Converts a time within cycle number `cycle` to scene time. `time` can be the cycle's full duration and still land in
+  /// that cycle. A cycle past the scene's last is treated as the last.
   pub fn cycle_time(&self, cycle: u32, time: f32) -> f32 {
     match self.timing {
       Some(timing) if timing.repeats() => {
@@ -81,8 +81,8 @@ impl GfxComposition {
     }
   }
 
-  /// Checks what a definition's types can't say for themselves. Scenes from outside the program need this; [`file::load`]
-  /// already does it.
+  /// Validates what the types can't enforce. Call this on any scene that comes from outside the program;
+  /// [`file::load`](crate::scene::file::load) doesn't.
   pub fn check(&self) -> Result<(), SceneError> {
     match (self.timing, self.layers.iter().position(Layer::is_animated)) {
       (Some(timing), _) if !(timing.duration.is_finite() && timing.duration > 0.0) => return Err(SceneError::NoDuration),
@@ -92,12 +92,12 @@ impl GfxComposition {
     Ok(())
   }
 
-  /// The names of the images it draws, which can repeat
+  /// Names of the images it uses, possibly with repeats
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
     self.layers.iter().flat_map(Layer::image_names)
   }
 
-  /// The color at a sample. Outside the viewport, only shapes show: a layer with no shape covers the viewport and stops.
+  /// The color at a sample. Layers without a shape are clipped to the viewport; shapes can extend past it.
   pub fn sample(&self, at: &Sample, frame: &Frame) -> Rgba<u8> {
     let env = Env { lap: lap(frame.viewport, at.radius), ..self.env(frame) };
     let viewport = frame.viewport.bounds(frame.size);
@@ -108,36 +108,35 @@ impl GfxComposition {
       .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, viewport, &env).composite_over(below))
   }
 
-  /// Where each layer is drawn, as a closed loop of points in scene units. A layer with no shape outlines the viewport,
-  /// and one that draws nothing has no points. A hidden layer has its outline all the same, for going back to edit it.
+  /// Each layer's outline as a closed polygon in scene units, for editor overlays. A layer with no shape outlines the
+  /// viewport, and a collapsed shape has no points. Hidden layers are included.
   pub fn outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
     let env = self.env(frame);
     let viewport = frame.viewport.bounds(frame.size);
     self.layers.iter().map(|layer| layer.outline(viewport, &env)).collect()
   }
 
-  /// Each layer's shape as it stands at a moment. `None` for a layer with no shape, or one that a transform collapses.
+  /// Each layer's [`ShapePose`] at this frame, for editor handles. `None` for a layer with no shape, or a collapsed one.
   pub fn shape_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
     self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
   }
 
-  /// Where each layer's mask is drawn, in the same order and terms as [`GfxComposition::outlines`]. A layer with no mask has no
-  /// points.
+  /// Like [`Self::outlines`], for each layer's mask. A layer with no mask has no points.
   pub fn mask_outlines(&self, frame: &Frame) -> Vec<Vec<Vec2>> {
     let env = self.env(frame);
     let viewport = frame.viewport.bounds(frame.size);
     self.layers.iter().map(|layer| layer.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(viewport, &env))).collect()
   }
 
-  /// Each layer's mask's shape as it stands at a moment. `None` for a layer with no such shape, or one that a transform
-  /// collapses.
+  /// Like [`Self::shape_poses`], for each layer's mask shape
   pub fn mask_poses(&self, frame: &Frame) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
     self.layers.iter().map(|layer| layer.mask.as_ref()?.shape.as_ref()?.pose(&env)).collect()
   }
 
-  /// Without a sample to go by, a `Sequence` is taken to be too many points for their spacing to matter
+  /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
+  /// spacing doesn't matter.
   fn env<'a>(&'a self, frame: &Frame<'a>) -> Env<'a> {
     let time = self.timing.map_or(0.0, |timing| timing.local_time(frame.time));
     let cycle = self.timing.map_or(0, |timing| timing.cycle_index(frame.time));
@@ -155,8 +154,8 @@ impl GfxComposition {
   }
 }
 
-/// How far it is around a `Sequence` of points this far across: the line and the gap that closes it, which spaces the
-/// points evenly around a ring, so that the last never lands on the first.
+/// Lap length of a `Sequence` for `Rotate`: the line plus one point's width to close the loop, so the last point doesn't
+/// land on the first when the ends wrap.
 fn lap(viewport: Viewport, radius: f32) -> Option<f32> {
   (viewport == Viewport::Sequence).then(|| 1.0 + 2.0 * radius)
 }
@@ -166,7 +165,7 @@ fn lap(viewport: Viewport, radius: f32) -> Option<f32> {
 pub enum SceneError {
   /// A layer has props that change over time, but there's no timing to play them in
   NoTiming { layer: String },
-  /// Its timing has no length
+  /// The timing's duration isn't a positive number
   NoDuration,
 }
 
