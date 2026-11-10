@@ -414,6 +414,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
           use(field(fan, 'angle'), `${named} · Arc angle`, both(FAN_ANGLE))
           use(field(fan, 'count'), `${named} · Additional paths`, both(FAN_COUNT))
         }
+        if ('Growth' in current) {
+          const growth = variant(algorithm as Lens<Extract<TraversalAlgorithm, { Growth: unknown }>>, 'Growth')
+          use(field(growth, 'reach'), `${named} · Reach`, both(reachRange(surface)))
+          use(field(growth, 'density'), `${named} · Density`, both(GROWTH_DENSITY))
+          use(field(growth, 'branching'), `${named} · Branching`, both(BRANCHING))
+        }
       }
       const target = traversalTarget(algorithm)
       const to = target?.get()
@@ -792,6 +798,10 @@ export const WANDER: Range = { min: 0, max: 5, step: 0.01, rest: 0 }
 export const FAN_ANGLE: Range = { min: 0, max: 360, step: 1, rest: 80 }
 /** How many nodes a fan out goes to besides its target */
 export const FAN_COUNT: Range = { min: 0, max: 16, step: 1, rest: 3 }
+/** How many offshoots a growth sends out from its path */
+export const GROWTH_DENSITY: Range = { min: 0, max: 32, step: 1, rest: 4 }
+/** The chance a growth's offshoot sends out one of its own */
+export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
@@ -864,6 +874,12 @@ export function radius(size: Range): Range {
 export function roundRange(surface: Surface): Range {
   const [across, down] = sizeRanges(surface)
   return radius(across.max > down.max ? across : down)
+}
+
+/** How far a growth's offshoots can end from its path, which can be as far as `roundRange` goes */
+export function reachRange(surface: Surface): Range {
+  const range = roundRange(surface)
+  return { ...range, rest: Math.round(newShapeSize(surface) / 4 / range.step) * range.step }
 }
 
 /** A polygon's points, in the shape's own space around its center */

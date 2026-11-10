@@ -30,4 +30,17 @@ angle: Prop<number>,
 /**
  * How many more nodes to go to besides `to`, rounded
  */
-count: Prop<number>, wander: Prop<number>, } } | { "AStar": { to: NodeRef, } } | "RandomWalk";
+count: Prop<number>, wander: Prop<number>, } } | { "Growth": { to: NodeRef, 
+/**
+ * Scene units along the graph from the path that an offshoot can end. Read once a cycle, at its start, as
+ * `density`, `branching` and `wander` are.
+ */
+reach: Prop<number>, 
+/**
+ * How many offshoots the path sends out, rounded
+ */
+density: Prop<number>, 
+/**
+ * The chance from 0 to 1 that an offshoot sends one out of its own
+ */
+branching: Prop<number>, wander: Prop<number>, } } | { "AStar": { to: NodeRef, } } | "RandomWalk";

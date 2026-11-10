@@ -8,6 +8,8 @@ use crate::scene::{Env, Graph, Prop, TraversalVisits, rnd};
 
 /// Most steps a random walk takes in one frame, so a huge rate can't stall playback
 const MAX_WALK_STEPS: usize = 100_000;
+/// Most offshoots a growth sends out, so a branching chance near 1 can't go on forever
+const MAX_OFFSHOOTS: usize = 64;
 
 /// Limits a layer to the nodes of a graph, with traversals moving over it
 ///
@@ -78,11 +80,11 @@ impl Traversal {
         let by_steps = matches!(self.algorithm, TraversalAlgorithm::BreadthFirst { .. });
         let edge = |length| if by_steps { 1.0 } else { length };
         let wander = wander.resolve(&cycle_start);
-        let (mut arrivals, _) = shortest_paths(graph, from, |_, _, length| edge(length));
+        let (mut arrivals, _) = shortest_paths(graph, &[from], |_, _, length| edge(length));
         if wander > 0.0 {
           let last = |arrivals: &[f32]| arrivals.iter().copied().filter(|at| at.is_finite()).fold(0.0, f32::max);
           let factor = edge_factor(wander, seed);
-          let (wandering, _) = shortest_paths(graph, from, |a, b, length| edge(length) * factor(a, b));
+          let (wandering, _) = shortest_paths(graph, &[from], |a, b, length| edge(length) * factor(a, b));
           // quick edges make it finish early, so it's stretched to end when the even fill would
           let stretch = last(&arrivals) / last(&wandering).max(f32::EPSILON);
           arrivals = wandering.into_iter().map(|at| at * stretch).collect();
@@ -108,6 +110,13 @@ impl Traversal {
         // paths that start out the same visit those nodes at the same moment, which is one visit
         steps.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
         steps.dedup();
+      }
+      TraversalAlgorithm::Growth { to, reach, density, branching, wander } => {
+        let wander = wander.resolve(&cycle_start);
+        let path = to.resolve(graph, env).map_or(Vec::new(), |to| path_steps(graph, &wandering_path(graph, from, to, wander, seed)));
+        let (reach, density, branching) = (reach.resolve(&cycle_start), density.resolve(&cycle_start), branching.resolve(&cycle_start));
+        steps.extend(offshoots(graph, &path, reach, density, branching, wander, seed));
+        steps.extend(path);
       }
       TraversalAlgorithm::AStar { to } => {
         let to = to.resolve(graph, env);
@@ -229,6 +238,22 @@ pub enum TraversalAlgorithm {
     #[serde(default = "no_wander")]
     wander: Prop<f32>,
   },
+  /// A [`TraversalAlgorithm::ShortestPath`] to `to`, with offshoots to `density` random nodes within `reach` of it. Each
+  /// offshoot leaves from the node on the path nearest its end, as the path gets there, and has a `branching` chance of
+  /// sending one out of its own, which can too. Offshoots wander as the path does, and only go to nodes nothing has
+  /// visited yet. Goes by distance. Nothing is visited if `to` can't be reached.
+  Growth {
+    to: NodeRef,
+    /// Scene units along the graph from the path that an offshoot can end. Read once a cycle, at its start, as
+    /// `density`, `branching` and `wander` are.
+    reach: Prop<f32>,
+    /// How many offshoots the path sends out, rounded
+    density: Prop<f32>,
+    /// The chance from 0 to 1 that an offshoot sends one out of its own
+    branching: Prop<f32>,
+    #[serde(default = "no_wander")]
+    wander: Prop<f32>,
+  },
   /// The nodes an A* search for `to` explores, one per step in the order it settles them, ending at `to`. Without a
   /// reachable `to`, it explores everything reachable.
   AStar { to: NodeRef },
@@ -287,13 +312,13 @@ fn depth_first(graph: &Graph, from: usize, seed: impl std::hash::Hash + Copy) ->
   order
 }
 
-/// Dijkstra from `from`, with each edge weighted by `weight(a, b, length)`: each node's distance (infinite where it
-/// can't be reached) and the node before it on its shortest path
-fn shortest_paths(graph: &Graph, from: usize, weight: impl Fn(usize, usize, f32) -> f32) -> (Vec<f32>, Vec<Option<usize>>) {
+/// Dijkstra from the nearest of `from`, with each edge weighted by `weight(a, b, length)`: each node's distance
+/// (infinite where it can't be reached) and the node before it on its shortest path
+fn shortest_paths(graph: &Graph, from: &[usize], weight: impl Fn(usize, usize, f32) -> f32) -> (Vec<f32>, Vec<Option<usize>>) {
   let mut distances = vec![f32::INFINITY; graph.nodes().len()];
   let mut previous = vec![None; graph.nodes().len()];
-  let mut queue = BinaryHeap::from([Queued { cost: 0.0, node: from }]);
-  distances[from] = 0.0;
+  let mut queue: BinaryHeap<Queued> = from.iter().map(|&node| Queued { cost: 0.0, node }).collect();
+  from.iter().for_each(|&node| distances[node] = 0.0);
   while let Some(Queued { cost, node }) = queue.pop() {
     if cost > distances[node] {
       continue;
@@ -337,6 +362,48 @@ fn fan_ends(graph: &Graph, from: usize, to: usize, angle: f32, count: f32, seed:
   ends
 }
 
+/// A [`TraversalAlgorithm::Growth`]'s visits besides `path`, each at its distance from the start: offshoots to `count`
+/// random unvisited nodes within `reach` of it, and their own offshoots
+fn offshoots(graph: &Graph, path: &[(usize, f32)], reach: f32, count: f32, branching: f32, wander: f32, seed: impl std::hash::Hash + Copy) -> Vec<(usize, f32)> {
+  let mut visited = vec![false; graph.nodes().len()];
+  path.iter().for_each(|&(node, _)| visited[node] = true);
+  let mut steps = Vec::new();
+  // paths still to send offshoots out from, with how many each sends
+  let mut growing = vec![(path.to_vec(), count.round().max(0.0) as usize)];
+  let mut sent = 0;
+  while let Some((path, count)) = growing.pop() {
+    let nodes: Vec<usize> = path.iter().map(|&(node, _)| node).collect();
+    let (distances, previous) = shortest_paths(graph, &nodes, |_, _, length| length);
+    let mut near: Vec<usize> = (0..graph.nodes().len()).filter(|&node| !visited[node] && distances[node] <= reach).collect();
+    near.sort_by(|&a, &b| rnd((seed, "near", sent, a))[0].total_cmp(&rnd((seed, "near", sent, b))[0]));
+    let last = (sent + count).min(MAX_OFFSHOOTS);
+    for end in near {
+      if sent == last {
+        break;
+      }
+      // an earlier offshoot can have gone through here
+      if visited[end] {
+        continue;
+      }
+      let mut start = end;
+      while let Some(node) = previous[start] {
+        start = node;
+      }
+      let at = path.iter().find(|&&(node, _)| node == start).map_or(0.0, |&(_, at)| at);
+      let offshoot = path_steps(graph, &wandering_path(graph, start, end, wander, (seed, "offshoot", sent)));
+      let offshoot: Vec<(usize, f32)> = offshoot.into_iter().map(|(node, along)| (node, at + along)).collect();
+      offshoot.iter().for_each(|&(node, _)| visited[node] = true);
+      // its start is already visited, by the path it leaves from
+      steps.extend(offshoot.iter().skip(1));
+      if rnd((seed, "branching", sent))[0] < branching {
+        growing.push((offshoot, 1));
+      }
+      sent += 1;
+    }
+  }
+  steps
+}
+
 /// The nodes from `from` to `to`, following `previous` back. Empty if `to` can't be reached.
 fn path_to(previous: &[Option<usize>], from: usize, to: usize) -> Vec<usize> {
   let mut path = vec![to];
@@ -354,12 +421,12 @@ fn path_to(previous: &[Option<usize>], from: usize, to: usize) -> Vec<usize> {
 /// toward `to`. Each step's chance falls off exponentially with the detour it adds, over `wander²` average edge
 /// lengths. Falls back to the shortest path if the walk runs too long. Empty if `to` can't be reached.
 fn wandering_path(graph: &Graph, from: usize, to: usize, wander: f32, seed: impl std::hash::Hash + Copy) -> Vec<usize> {
-  let (_, previous) = shortest_paths(graph, from, |_, _, length| length);
+  let (_, previous) = shortest_paths(graph, &[from], |_, _, length| length);
   let shortest = path_to(&previous, from, to);
   if wander <= 0.0 || shortest.is_empty() {
     return shortest;
   }
-  let (remaining, _) = shortest_paths(graph, to, |_, _, length| length);
+  let (remaining, _) = shortest_paths(graph, &[to], |_, _, length| length);
   let lengths: Vec<f32> = (0..graph.nodes().len()).flat_map(|node| graph.neighbors(node).iter().map(|&(_, length)| length)).collect();
   let scale = wander * wander * lengths.iter().sum::<f32>() / lengths.len().max(1) as f32;
 
@@ -630,6 +697,31 @@ mod tests {
     let ends: Vec<Vec2> = (0..441).filter(|&node| spread[node].first().is_some_and(|&at| at >= 9.0)).map(at).collect();
     assert!(ends.iter().all(|&end| (end - at(10)).angle_to(Vec2::Y).abs() <= 46f32.to_radians()), "{ends:?}");
     assert!(ends.iter().any(|end| end.x < 6.0) && ends.iter().any(|end| end.x > 14.0), "{ends:?}");
+  }
+
+  #[test]
+  fn a_growth_sends_offshoots_near_its_path_as_the_path_reaches_them() {
+    let grid = Graph::build((0..441).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 21) as f32, (i / 21) as f32))).collect());
+    let params = Params::new();
+    let grow = |name: &str, density: f32, branching: f32| {
+      let algorithm = TraversalAlgorithm::Growth { to: NodeRef::name("430"), reach: 3.0.into(), density: density.into(), branching: branching.into(), wander: 0.0.into() };
+      // up the middle column, one unit a second
+      Traversal::new(name, NodeRef::name("10"), algorithm, 1.0).visits(&grid, &env(0.0, &params)).by_node
+    };
+    let visited = |visits: &[Vec<f32>]| (0..441).filter(|&node| !visits[node].is_empty()).collect::<Vec<_>>();
+    let path: Vec<usize> = (0..21).map(|row| row * 21 + 10).collect();
+    assert_eq!(visited(&grow("t", 0.0, 0.0)), path);
+
+    let grown = grow("t", 5.0, 0.0);
+    assert!(grown.iter().all(|times| times.len() <= 1));
+    let off: Vec<usize> = visited(&grown).into_iter().filter(|node| !path.contains(node)).collect();
+    // each offshoot leaves its row of the path as the path gets there and goes straight out, at most 3 across
+    assert!(off.iter().all(|&node| (node % 21).abs_diff(10) <= 3 && grown[node][0] == (node / 21) as f32 + (node % 21).abs_diff(10) as f32), "{off:?}");
+    assert!(off.len() >= 5, "{off:?}");
+
+    // offshoots of offshoots reach farther from the path than the reach
+    let branched: Vec<usize> = (0..10).flat_map(|seed| visited(&grow(&seed.to_string(), 5.0, 1.0))).collect();
+    assert!(branched.iter().any(|&node| (node % 21).abs_diff(10) > 3));
   }
 
   #[test]

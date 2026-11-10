@@ -34,12 +34,14 @@ import {
   BLADE_FRACTION,
   BLADES,
   both,
+  BRANCHING,
   FAN_ANGLE,
   FAN_COUNT,
   field,
   frameRanges,
   framesTrack,
   freshTraversalName,
+  GROWTH_DENSITY,
   imageLength,
   item,
   layerLabel,
@@ -51,6 +53,7 @@ import {
   orElse,
   radius,
   RATE,
+  reachRange,
   WANDER,
   orEmpty,
   pointRanges,
@@ -134,20 +137,21 @@ const GRAPH_REGION_OPTIONS: { value: RegionKind; label: string }[] = [
 ]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: 'Fit to traversal' }
-type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut' | 'AStar' | 'RandomWalk'
+type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut' | 'Growth' | 'AStar' | 'RandomWalk'
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
   { value: 'DepthFirst', label: 'Depth first' },
   { value: 'ShortestPath', label: 'Direct path (targeted)' },
   { value: 'AStar', label: 'Exploratory path (targeted)' },
   { value: 'FanOut', label: 'Fan out (targeted)' },
+  { value: 'Growth', label: 'Growth (targeted)' },
   { value: 'Dijkstra', label: 'Fill by distance' },
   { value: 'BreadthFirst', label: 'Fill by steps' },
   { value: 'RandomWalk', label: 'Random walk' },
 ]
-type Wandering = 'BreadthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut'
-const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'ShortestPath', 'FanOut']
+type Wandering = 'BreadthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut' | 'Growth'
+const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'ShortestPath', 'FanOut', 'Growth']
 /** Algorithms whose rate is a distance a second, rather than a number of steps */
-const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut']
+const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut', 'Growth']
 const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
 const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
   { value: 'Name', label: 'LED' },
@@ -431,6 +435,8 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
   const wander = () =>
     field(variant(algorithm() as unknown as Lens<Record<Wandering, { wander: Prop<number> }>>, kind() as Wandering), 'wander')
   const fan = () => variant(algorithm() as Lens<Extract<TraversalAlgorithm, { FanOut: unknown }>>, 'FanOut')
+  const growth = () => variant(algorithm() as Lens<Extract<TraversalAlgorithm, { Growth: unknown }>>, 'Growth')
+  const surface = useContext(SurfaceContext)!
   const speed = () => field(props.lens, 'speed')
   const speedKind = (): SpeedKind => ('Rate' in traversal().speed ? 'Rate' : 'Duration')
   const setSpeedKind = (next: SpeedKind) => {
@@ -448,7 +454,10 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
     else if (next === 'BreadthFirst') algorithm().set({ BreadthFirst: { wander: keptWander } })
     else if (next === 'Dijkstra') algorithm().set({ Dijkstra: { wander: keptWander } })
     else if (next === 'FanOut') algorithm().set({ FanOut: { to, angle: { Fixed: FAN_ANGLE.rest! }, count: { Fixed: FAN_COUNT.rest! }, wander: keptWander } })
-    else if (next === 'AStar') algorithm().set({ AStar: { to } })
+    else if (next === 'Growth') {
+      const growing = { reach: { Fixed: reachRange(surface()).rest! }, density: { Fixed: GROWTH_DENSITY.rest! }, branching: { Fixed: BRANCHING.rest! } }
+      algorithm().set({ Growth: { to, ...growing, wander: keptWander } })
+    } else if (next === 'AStar') algorithm().set({ AStar: { to } })
     else algorithm().set(next)
   }
 
@@ -477,6 +486,15 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
         <PropField label="Arc angle" paramName="angle" fallback={FAN_ANGLE.rest!} ranges={both(FAN_ANGLE)} lens={field(fan(), 'angle')} />
         <PropField label="Additional paths" paramName="count" fallback={FAN_COUNT.rest!} ranges={both(FAN_COUNT)} lens={field(fan(), 'count')} />
         <p class="scene-note">Also goes to random LEDs along an arc around From, through To, spread across it.</p>
+      </Show>
+      <Show when={kind() === 'Growth'}>
+        <PropField label="Reach" paramName="reach" fallback={reachRange(surface()).rest!} ranges={both(reachRange(surface()))} lens={field(growth(), 'reach')} />
+        <PropField label="Density" paramName="density" fallback={GROWTH_DENSITY.rest!} ranges={both(GROWTH_DENSITY)} lens={field(growth(), 'density')} />
+        <PropField label="Branching" paramName="branching" fallback={BRANCHING.rest!} ranges={both(BRANCHING)} lens={field(growth(), 'branching')} />
+        <p class="scene-note">
+          Sends offshoots from the path to as many random LEDs within Reach of it as Density. Branching is the chance an offshoot sends out one of its
+          own.
+        </p>
       </Show>
       <Show when={WANDERING.includes(kind())}>
         <PropField label="Wander" paramName="wander" fallback={WANDER.rest!} ranges={both(WANDER)} lens={wander()} />
