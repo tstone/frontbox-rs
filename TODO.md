@@ -44,7 +44,7 @@
 
 ## Scenes/Editor
 
-- Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
+- Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Noise and noise masks
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
