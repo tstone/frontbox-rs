@@ -95,14 +95,19 @@ impl Traversal {
       TraversalAlgorithm::ShortestPath { to, wander } => {
         let wander = wander.resolve(&cycle_start);
         let path = to.resolve(graph, env).map_or(Vec::new(), |to| wandering_path(graph, from, to, wander, seed));
-        let mut distance = 0.0;
-        if let Some(&node) = path.first() {
-          steps.push((node, 0.0));
+        steps.extend(path_steps(graph, &path));
+      }
+      TraversalAlgorithm::FanOut { to, angle, count, wander } => {
+        let wander = wander.resolve(&cycle_start);
+        let ends = to.resolve(graph, env).map_or(Vec::new(), |to| {
+          fan_ends(graph, from, to, angle.resolve(&cycle_start), count.resolve(&cycle_start), seed)
+        });
+        for (index, end) in ends.into_iter().enumerate() {
+          steps.extend(path_steps(graph, &wandering_path(graph, from, end, wander, (seed, index))));
         }
-        for pair in path.windows(2) {
-          distance += graph.nodes()[pair[0]].pos.distance(graph.nodes()[pair[1]].pos);
-          steps.push((pair[1], distance));
-        }
+        // paths that start out the same visit those nodes at the same moment, which is one visit
+        steps.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        steps.dedup();
       }
       TraversalAlgorithm::AStar { to } => {
         let to = to.resolve(graph, env);
@@ -211,6 +216,19 @@ pub enum TraversalAlgorithm {
     #[serde(default = "no_wander")]
     wander: Prop<f32>,
   },
+  /// Paths out from the start to `to` and `count` more nodes, all at once. The others are picked at random along an arc
+  /// around the start through `to`, `angle` degrees wide and centered on it, each nearest a point in its own equal part
+  /// of the arc so they spread across it. Each path is a [`TraversalAlgorithm::ShortestPath`] with `wander`. Goes by
+  /// distance. Nothing is visited if `to` can't be found.
+  FanOut {
+    to: NodeRef,
+    /// Degrees the arc spans. Read once a cycle, at its start, as `count` and `wander` are.
+    angle: Prop<f32>,
+    /// How many more nodes to go to besides `to`, rounded
+    count: Prop<f32>,
+    #[serde(default = "no_wander")]
+    wander: Prop<f32>,
+  },
   /// The nodes an A* search for `to` explores, one per step in the order it settles them, ending at `to`. Without a
   /// reachable `to`, it explores everything reachable.
   AStar { to: NodeRef },
@@ -290,6 +308,33 @@ fn shortest_paths(graph: &Graph, from: usize, weight: impl Fn(usize, usize, f32)
     }
   }
   (distances, previous)
+}
+
+/// Each node on `path` with its distance along it
+fn path_steps(graph: &Graph, path: &[usize]) -> Vec<(usize, f32)> {
+  let mut distance = 0.0;
+  let mut steps: Vec<(usize, f32)> = path.first().map(|&node| (node, 0.0)).into_iter().collect();
+  for pair in path.windows(2) {
+    distance += graph.nodes()[pair[0]].pos.distance(graph.nodes()[pair[1]].pos);
+    steps.push((pair[1], distance));
+  }
+  steps
+}
+
+/// Where a [`TraversalAlgorithm::FanOut`] goes: `to`, then a node in each of `count` parts of the arc, without repeats
+fn fan_ends(graph: &Graph, from: usize, to: usize, angle: f32, count: f32, seed: impl std::hash::Hash + Copy) -> Vec<usize> {
+  let center = graph.nodes()[from].pos;
+  let reach = graph.nodes()[to].pos - center;
+  let count = count.round().max(0.0) as usize;
+  let mut ends = vec![to];
+  for part in 0..count {
+    let along = (part as f32 + rnd((seed, "fan", part))[0]) / count as f32 - 0.5;
+    let end = graph.nearest(center + Vec2::from_angle(along * angle.to_radians()).rotate(reach));
+    if let Some(end) = end.filter(|end| !ends.contains(end)) {
+      ends.push(end);
+    }
+  }
+  ends
 }
 
 /// The nodes from `from` to `to`, following `previous` back. Empty if `to` can't be reached.
@@ -559,6 +604,32 @@ mod tests {
   fn wander_still_reaches_the_end() {
     let visits = visits(&row(5), TraversalAlgorithm::ShortestPath { to: NodeRef::name("4"), wander: 2.0.into() }, 0.0);
     assert_eq!(first(&visits), [0.0, 0.5, 1.0, 1.5, 2.0].map(Some));
+  }
+
+  #[test]
+  fn a_fan_out_goes_to_the_target_and_spreads_across_the_arc() {
+    let grid = Graph::build((0..441).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 21) as f32, (i / 21) as f32))).collect());
+    let at = |node: usize| Vec2::new((node % 21) as f32, (node / 21) as f32);
+    let params = Params::new();
+    let fan = |count: f32| {
+      let algorithm = TraversalAlgorithm::FanOut { to: NodeRef::name("430"), angle: 90.0.into(), count: count.into(), wander: 0.0.into() };
+      // from the middle of the bottom row to the middle of the top
+      Traversal::new("t", NodeRef::name("10"), algorithm, 2.0).visits(&grid, &env(0.0, &params)).by_node
+    };
+    let visited = |visits: &[Vec<f32>]| visits.iter().filter(|times| !times.is_empty()).count();
+    let straight = TraversalAlgorithm::ShortestPath { to: NodeRef::name("430"), wander: 0.0.into() };
+    let straight = Traversal::new("t", NodeRef::name("10"), straight, 2.0).visits(&grid, &env(0.0, &params)).by_node;
+    assert_eq!(visited(&fan(0.0)), visited(&straight));
+
+    let spread = fan(4.0);
+    assert!(!spread[430].is_empty());
+    // each node is visited once, the start the paths share included
+    assert!(spread.iter().all(|times| times.len() <= 1));
+    assert_eq!(spread[10], [0.0]);
+    // the far ends are within 45° either side of straight up, and some are well off to each side
+    let ends: Vec<Vec2> = (0..441).filter(|&node| spread[node].first().is_some_and(|&at| at >= 9.0)).map(at).collect();
+    assert!(ends.iter().all(|&end| (end - at(10)).angle_to(Vec2::Y).abs() <= 46f32.to_radians()), "{ends:?}");
+    assert!(ends.iter().any(|end| end.x < 6.0) && ends.iter().any(|end| end.x > 14.0), "{ends:?}");
   }
 
   #[test]

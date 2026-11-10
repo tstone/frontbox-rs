@@ -430,6 +430,7 @@ mod tests {
       traversal("depth", TraversalAlgorithm::DepthFirst),
       traversal("distance", TraversalAlgorithm::Dijkstra { wander: 0.5.into() }),
       traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
+      traversal("fan", TraversalAlgorithm::FanOut { to: NodeRef::name("7"), angle: 90.0.into(), count: 2.0.into(), wander: 0.5.into() }),
       Traversal::new("search", NodeRef::Nearest(Prop::Param("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Param("speed".into())),
       Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
     ];

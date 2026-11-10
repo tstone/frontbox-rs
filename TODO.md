@@ -46,6 +46,7 @@
 
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
 - Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
+- Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
 - Curve preview (static) pop out in timeline
 - New curves for flame/flicker, stutter, glitch
 - Ability to compose curves in editor

@@ -253,10 +253,11 @@ export function layerPlane({ surface }: SceneLayer) {
 
 /**
  * Layer on something else. A region is measured in the units of what it's on, so it would land somewhere else on another
- * kind of surface. The layer goes back to covering all of it, unmasked. A graph stays, as its traversals start from LEDs.
+ * kind of surface. The layer goes back to covering all of it, unmasked. A graph stays on another plane, as its traversals
+ * start from LEDs, but not on a `Sequence`, which has no graph.
  */
-export function withLayerSurface({ region, mask, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
-  return { ...layer, surface }
+export function withLayerSurface({ region, mask, graph, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
+  return { ...layer, surface, ...(surface !== 'Sequence' && { graph }) }
 }
 
 /** Where an algorithm that goes to a node is going, which is `null` for the others */
@@ -408,6 +409,11 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
         const [kind, settings] = Object.entries(current)[0]
         const wandering = algorithm as unknown as Lens<Record<string, { wander: Prop<number> }>>
         if ('wander' in settings) use(field(variant(wandering, kind), 'wander'), `${named} · Wander`, both(WANDER))
+        if ('FanOut' in current) {
+          const fan = variant(algorithm as Lens<Extract<TraversalAlgorithm, { FanOut: unknown }>>, 'FanOut')
+          use(field(fan, 'angle'), `${named} · Arc angle`, both(FAN_ANGLE))
+          use(field(fan, 'count'), `${named} · Additional paths`, both(FAN_COUNT))
+        }
       }
       const target = traversalTarget(algorithm)
       const to = target?.get()
@@ -782,6 +788,10 @@ const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 export const RATE: Range = { min: 0.1, max: 60, step: 0.1, rest: 10 }
 /** How much longer a traversal's edges can be made at random, as a fraction of each */
 export const WANDER: Range = { min: 0, max: 5, step: 0.01, rest: 0 }
+/** Degrees a fan out's arc spans */
+export const FAN_ANGLE: Range = { min: 0, max: 360, step: 1, rest: 80 }
+/** How many nodes a fan out goes to besides its target */
+export const FAN_COUNT: Range = { min: 0, max: 16, step: 1, rest: 3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */

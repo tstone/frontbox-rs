@@ -93,11 +93,11 @@ export function Dropdown<T extends string>(props: {
   value: T
   onChange: (value: T) => void
 }) {
-  const collection = createListCollection({ items: props.options })
+  const collection = createMemo(() => createListCollection({ items: props.options }))
   return (
     <Select.Root
       class="scene-dropdown"
-      collection={collection}
+      collection={collection()}
       value={[props.value]}
       onValueChange={(details) => props.onChange(details.value[0] as T)}
       positioning={{ sameWidth: true }}
@@ -115,7 +115,7 @@ export function Dropdown<T extends string>(props: {
       <Portal>
         <Select.Positioner>
           <Select.Content class="scene-dropdown-list">
-            <For each={collection.items}>
+            <For each={collection().items}>
               {(option) => (
                 <Select.Item item={option}>
                   <Select.ItemText>{option.label}</Select.ItemText>

@@ -34,6 +34,8 @@ import {
   BLADE_FRACTION,
   BLADES,
   both,
+  FAN_ANGLE,
+  FAN_COUNT,
   field,
   frameRanges,
   framesTrack,
@@ -41,6 +43,7 @@ import {
   imageLength,
   item,
   layerLabel,
+  layerPlane,
   moved,
   newAdjust,
   newLayerPlace,
@@ -131,19 +134,20 @@ const GRAPH_REGION_OPTIONS: { value: RegionKind; label: string }[] = [
 ]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: 'Fit to traversal' }
-type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'AStar' | 'RandomWalk'
+type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut' | 'AStar' | 'RandomWalk'
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
   { value: 'DepthFirst', label: 'Depth first' },
   { value: 'ShortestPath', label: 'Direct path (targeted)' },
   { value: 'AStar', label: 'Exploratory path (targeted)' },
+  { value: 'FanOut', label: 'Fan out (targeted)' },
   { value: 'Dijkstra', label: 'Fill by distance' },
   { value: 'BreadthFirst', label: 'Fill by steps' },
   { value: 'RandomWalk', label: 'Random walk' },
 ]
-type Wandering = 'BreadthFirst' | 'Dijkstra' | 'ShortestPath'
-const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'ShortestPath']
+type Wandering = 'BreadthFirst' | 'Dijkstra' | 'ShortestPath' | 'FanOut'
+const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'ShortestPath', 'FanOut']
 /** Algorithms whose rate is a distance a second, rather than a number of steps */
-const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath']
+const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut']
 const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
 const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
   { value: 'Name', label: 'LED' },
@@ -426,6 +430,7 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
   const target = () => traversalTarget(algorithm())
   const wander = () =>
     field(variant(algorithm() as unknown as Lens<Record<Wandering, { wander: Prop<number> }>>, kind() as Wandering), 'wander')
+  const fan = () => variant(algorithm() as Lens<Extract<TraversalAlgorithm, { FanOut: unknown }>>, 'FanOut')
   const speed = () => field(props.lens, 'speed')
   const speedKind = (): SpeedKind => ('Rate' in traversal().speed ? 'Rate' : 'Duration')
   const setSpeedKind = (next: SpeedKind) => {
@@ -442,6 +447,7 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
     if (next === 'ShortestPath') algorithm().set({ ShortestPath: { to, wander: keptWander } })
     else if (next === 'BreadthFirst') algorithm().set({ BreadthFirst: { wander: keptWander } })
     else if (next === 'Dijkstra') algorithm().set({ Dijkstra: { wander: keptWander } })
+    else if (next === 'FanOut') algorithm().set({ FanOut: { to, angle: { Fixed: FAN_ANGLE.rest! }, count: { Fixed: FAN_COUNT.rest! }, wander: keptWander } })
     else if (next === 'AStar') algorithm().set({ AStar: { to } })
     else algorithm().set(next)
   }
@@ -466,6 +472,11 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
       <NodeRefField label="From" lens={field(props.lens, 'from')} />
       <Show when={target()} fallback={<p class="scene-note">Goes on to every LED in the graph. The targeted algorithms go to one LED.</p>}>
         {(to) => <NodeRefField label="To" lens={to()} />}
+      </Show>
+      <Show when={kind() === 'FanOut'}>
+        <PropField label="Arc angle" paramName="angle" fallback={FAN_ANGLE.rest!} ranges={both(FAN_ANGLE)} lens={field(fan(), 'angle')} />
+        <PropField label="Additional paths" paramName="count" fallback={FAN_COUNT.rest!} ranges={both(FAN_COUNT)} lens={field(fan(), 'count')} />
+        <p class="scene-note">Also goes to random LEDs along an arc around From, through To, spread across it.</p>
       </Show>
       <Show when={WANDERING.includes(kind())}>
         <PropField label="Wander" paramName="wander" fallback={WANDER.rest!} ranges={both(WANDER)} lens={wander()} />
@@ -858,7 +869,8 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined>; layer?: Lens
   const lens = props.lens as Lens<Shape | undefined>
   const shape = props.lens as Lens<Shape>
   const base = field(shape, 'base') as Lens<ShapeNode>
-  const graphs = () => layer !== undefined && scene.get().kind === 'Led'
+  // a graph's nodes are where its LEDs are on a plane, so a sequence has none
+  const graphs = () => layer !== undefined && scene.get().kind === 'Led' && layerPlane(layer.get()) !== null
   const kind = (): RegionKind => {
     if (layer?.get().graph) return 'Graph'
     const current = lens.get()

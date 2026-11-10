@@ -22,4 +22,12 @@ wander: Prop<number>, } } | { "ShortestPath": { to: NodeRef,
  * walk toward `to` with its loops cut out, steered less the higher it is. Around 5 it's barely steered at all. Read
  * once a cycle, at its start, so a track or random value gives each cycle its own amount.
  */
-wander: Prop<number>, } } | { "AStar": { to: NodeRef, } } | "RandomWalk";
+wander: Prop<number>, } } | { "FanOut": { to: NodeRef, 
+/**
+ * Degrees the arc spans. Read once a cycle, at its start, as `count` and `wander` are.
+ */
+angle: Prop<number>, 
+/**
+ * How many more nodes to go to besides `to`, rounded
+ */
+count: Prop<number>, wander: Prop<number>, } } | { "AStar": { to: NodeRef, } } | "RandomWalk";
