@@ -20,7 +20,7 @@
 //!
 //! let line = Line::new(8);
 //! let params = Params::new();
-//! let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Default::default(), surface: Surface::Sequence };
+//! let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Default::default(), surface: Surface::Sequence, visits: None };
 //! let colors: Vec<Rgba<u8>> = line.samples().map(|s| composition.sample(&s, &frame)).collect();
 //! # assert_eq!(colors[0], Rgba::red());
 //! # assert_eq!(colors[7], Rgba::blue());
@@ -28,6 +28,8 @@
 //!
 //! - [`GfxComposition`], [`Layer`] -- Layers of fill in shapes, composited bottom to top
 //! - [`Mask`] -- Where a layer shows, apart from what its shape covers
+//! - [`GraphMask`], [`Graph`] -- Limits a layer to the nodes of a graph built from the device's points, with traversals
+//!   over it that [`Prop::Visit`] responds to
 //! - [`Surface`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
 //! - [`Node`] -- The structure shared by shapes and fills: a base, plus [`Transform`]s and adjusts
 //! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, or swept along a path ([`Sweep`])
@@ -42,6 +44,8 @@ mod composition;
 mod content;
 pub mod file;
 mod fill;
+mod graph;
+mod graph_mask;
 mod images;
 mod layer;
 mod mask;
@@ -56,6 +60,8 @@ pub(crate) mod test_scene;
 mod timing;
 mod track;
 mod value;
+mod visit_response;
+mod visits;
 mod surface;
 mod transform;
 
@@ -65,6 +71,8 @@ pub use color_adjust::*;
 pub use composition::*;
 pub use content::*;
 pub use fill::*;
+pub use graph::*;
+pub use graph_mask::*;
 pub use images::*;
 pub use layer::*;
 pub use mask::*;
@@ -77,5 +85,7 @@ pub use sweep::*;
 pub use timing::*;
 pub use track::*;
 pub use value::*;
+pub use visit_response::*;
+pub use visits::*;
 pub use surface::*;
 pub use transform::*;

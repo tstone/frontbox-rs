@@ -7,8 +7,8 @@ use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Transform};
 
 /// The colors a layer is drawn with
 ///
-/// A fill is defined over a unit box from `-0.5` to `0.5`, which is stretched over the shape's local bounds (or the
-/// viewport, with no shape). So a fill always fits its shape, and moves and rotates with it.
+/// A fill is defined over a unit box from `-0.5` to `0.5`, which is stretched over its region's local bounds (or the
+/// viewport, with no region). So a fill always fits its region, and moves and rotates with it.
 pub type Fill = Node<FillNode, ColorAdjust>;
 
 impl Fill {

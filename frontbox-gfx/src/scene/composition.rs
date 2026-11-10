@@ -1,12 +1,12 @@
 use std::fmt;
 
-use glam::Vec2;
+use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
 use crate::color::RgbaColor;
-use crate::scene::{Env, FrameContext, Layer, Params, Sample, ShapePose, Timing, Surface};
+use crate::scene::{Env, FrameContext, Graph, Layer, Params, Prop, Sample, ShapePose, Speed, Surface, Timing, Visits};
 
 /// How far [`GfxComposition::cycle_time`] keeps times from the edges of a cycle, as a fraction of it, so float rounding
 /// doesn't push them into the neighboring cycle
@@ -89,6 +89,20 @@ impl GfxComposition {
       (None, Some(index)) => return Err(SceneError::NoTiming { layer: self.layers[index].label(index) }),
       _ => {}
     }
+    for (index, layer) in self.layers.iter().enumerate() {
+      let traversals = layer.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
+      for (i, traversal) in traversals.iter().enumerate() {
+        let layer = || layer.label(index);
+        if traversals[..i].iter().any(|other| other.name == traversal.name) {
+          return Err(SceneError::SameTraversalName { layer: layer(), traversal: traversal.name.clone() });
+        }
+        if let Speed::Rate(Prop::Fixed(amount)) | Speed::Duration(Some(amount)) = traversal.speed
+          && !(amount.is_finite() && amount > 0.0)
+        {
+          return Err(SceneError::NoSpeed { layer: layer(), traversal: traversal.name.clone() });
+        }
+      }
+    }
     Ok(())
   }
 
@@ -101,11 +115,24 @@ impl GfxComposition {
   pub fn sample(&self, at: &Sample, frame: &FrameContext) -> Rgba<u8> {
     let env = Env { lap: lap(frame.surface, at.radius), ..self.env(frame) };
     let viewport = frame.surface.viewport(frame.size);
-    self
-      .layers
-      .iter()
-      .filter(|layer| !layer.hidden)
-      .fold(Rgba([0, 0, 0, 0]), |below, layer| layer.sample(at, viewport, &env).composite_over(below))
+    self.layers.iter().enumerate().filter(|(_, layer)| !layer.hidden).fold(Rgba([0, 0, 0, 0]), |below, (index, layer)| {
+      let visits = frame.visits.zip(at.node).and_then(|(visits, node)| visits.at(index, node));
+      layer.sample(at, viewport, &Env { visits, ..env }).composite_over(below)
+    })
+  }
+
+  /// Each layer's traversals for the current cycle, to pass in [`FrameContext::visits`]. Every layer with a graph uses
+  /// `graph`, built from the samples; layers that need different graphs are sampled one at a time, with [`Self::only`].
+  ///
+  /// Traversals are planned a cycle at a time, so with fixed starts and rates this only changes from one cycle (or
+  /// playback seed) to the next, and can be kept for the rest of the cycle.
+  pub fn visits(&self, graph: &Graph, frame: &FrameContext) -> Visits {
+    let env = self.env(frame);
+    let layers = self.layers.iter().map(|layer| {
+      let traversals = layer.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
+      traversals.iter().map(|traversal| traversal.visits(graph, &env)).collect()
+    });
+    Visits { layers: layers.collect() }
   }
 
   /// Each layer's outline as a closed polygon in scene units, for editor overlays. A layer with no shape outlines the
@@ -119,7 +146,7 @@ impl GfxComposition {
   /// Each layer's [`ShapePose`] at this frame, for editor handles. `None` for a layer with no shape, or a collapsed one.
   pub fn shape_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
-    self.layers.iter().map(|layer| layer.shape.as_ref().and_then(|shape| shape.pose(&env))).collect()
+    self.layers.iter().map(|layer| layer.region.as_ref().and_then(|shape| shape.pose(&env))).collect()
   }
 
   /// Like [`Self::outlines`], for each layer's mask. A layer with no mask has no points.
@@ -132,7 +159,7 @@ impl GfxComposition {
   /// Like [`Self::shape_poses`], for each layer's mask shape
   pub fn mask_poses(&self, frame: &FrameContext) -> Vec<Option<ShapePose>> {
     let env = self.env(frame);
-    self.layers.iter().map(|layer| layer.mask.as_ref()?.shape.as_ref()?.pose(&env)).collect()
+    self.layers.iter().map(|layer| layer.mask.as_ref()?.region.as_ref()?.pose(&env)).collect()
   }
 
   /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
@@ -150,6 +177,8 @@ impl GfxComposition {
       images: frame.images,
       viewport: frame.surface.viewport(frame.size),
       lap: lap(frame.surface, 0.0),
+      visits: None,
+      fill_frame: Affine2::IDENTITY,
     }
   }
 }
@@ -167,6 +196,10 @@ pub enum SceneError {
   NoTiming { layer: String },
   /// The timing's duration isn't a positive number
   NoDuration,
+  /// Two traversals in a layer's graph have the same name
+  SameTraversalName { layer: String, traversal: String },
+  /// A traversal's fixed rate isn't a positive number
+  NoSpeed { layer: String, traversal: String },
 }
 
 impl fmt::Display for SceneError {
@@ -174,6 +207,8 @@ impl fmt::Display for SceneError {
     match self {
       Self::NoTiming { layer } => write!(f, "{layer} changes over time, so the scene needs a timing"),
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
+      Self::SameTraversalName { layer, traversal } => write!(f, "{layer} has more than one traversal named \"{traversal}\""),
+      Self::NoSpeed { layer, traversal } => write!(f, "traversal \"{traversal}\" in {layer} needs a rate or duration more than zero"),
     }
   }
 }
@@ -187,8 +222,8 @@ mod tests {
   use crate::layout::{Grid, Line};
   use crate::scene::test_scene::Scene;
   use crate::scene::{
-    Color, ColorAdjust, Fill, FillNode, GradientStyle, Images, Key, Mask, Pick, Picture, Prop, Random, Shape, ShapeNode, Spread,
-    Stop, Track, Transform,
+    Color, ColorAdjust, Fill, FillNode, GradientStyle, GraphMask, GraphNode, Images, Key, Mask, NodeRef, Pick, Picture, Prop,
+    Random, Shape, ShapeNode, Speed, Spread, Stop, Track, Transform, Traversal, TraversalAlgorithm, VisitResponse,
   };
 
   const SIZE: Vec2 = Vec2::new(100.0, 50.0);
@@ -209,7 +244,7 @@ mod tests {
 
   fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
@@ -234,7 +269,7 @@ mod tests {
     assert_eq!(sample(&scene, 1.0, 1.0, 0.5), RED);
 
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     assert_eq!(scene.outlines(&frame).len(), 2);
   }
 
@@ -249,7 +284,7 @@ mod tests {
   #[test]
   fn a_shape_runs_past_the_viewport() {
     let shape = Shape::new(ShapeNode::circle(10.0)).transform(Transform::Translate(Vec2::new(150.0, 25.0).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)), Layer::new(solid(BLUE)).region(shape)]);
     assert_eq!(sample(&scene, 150.0, 25.0, 0.5), BLUE);
     assert_eq!(sample(&scene, 170.0, 25.0, 0.5), Rgba([0, 0, 0, 0]));
   }
@@ -278,7 +313,7 @@ mod tests {
   fn rotate_runs_a_shape_past_the_end_of_a_sequence_to_its_start() {
     let lit = |transform: Vec<Transform>| -> Vec<bool> {
       let shape = transform.into_iter().fold(Shape::new(ShapeNode::Rect { width: 0.1.into(), height: 1.0.into() }), Shape::transform);
-      line(&Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(shape)]), 5).iter().map(|color| color[3] > 0).collect()
+      line(&Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(shape)]), 5).iter().map(|color| color[3] > 0).collect()
     };
     let place = || Transform::Translate(Vec2::new(0.75, 0.0).into());
     let turn = |degrees: f32| Transform::Rotate(degrees.into());
@@ -293,7 +328,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Rotate(90.0.into()))
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -303,7 +338,7 @@ mod tests {
     let bar = Shape::new(ShapeNode::Rect { width: 40.0.into(), height: 2.0.into() })
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
       .transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(bar)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(bar)]);
     assert_eq!(sample(&scene, 50.0, 10.0, 0.1), RED);
     assert_eq!(sample(&scene, 65.0, 25.0, 0.1)[3], 0);
   }
@@ -314,14 +349,14 @@ mod tests {
       points: [(10.0, 4.0), (30.0, 4.0), (30.0, 6.0), (10.0, 6.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
     };
     let shape = Shape::new(bar).transform(Transform::Rotate(90.0.into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]);
     assert_eq!(sample(&scene, 20.0, 12.0, 0.1), RED);
     assert_eq!(sample(&scene, 12.0, 5.0, 0.1)[3], 0);
   }
 
   fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
   }
 
@@ -334,7 +369,7 @@ mod tests {
 
   fn random_color_at(scene: &Scene, time: f32, playback_seed: u32) -> Rgba<u8> {
     let params = Params::new();
-    let frame = FrameContext { time, playback_seed, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time, playback_seed, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
   }
 
@@ -433,7 +468,7 @@ mod tests {
   fn circle(fill: Fill) -> Scene {
     Scene::new(Surface::Area, vec![
       Layer::new(solid(DARK)),
-      Layer::new(fill).shape(
+      Layer::new(fill).region(
         Shape::new(ShapeNode::circle(0.5))
           .transform(Transform::Scale(Vec2::splat(40.0).into()))
           .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
@@ -443,7 +478,7 @@ mod tests {
 
   fn outlines(layer: Layer) -> Vec<Vec2> {
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     Scene::new(Surface::Area, vec![layer]).outlines(&frame).remove(0)
   }
 
@@ -452,7 +487,7 @@ mod tests {
     let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED))]);
     let params = Params::new();
     let at = Sample::new(Vec2::new(150.0, 25.0), 0.0);
-    let color = |size: Vec2| scene.sample(&at, &FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size, surface: Surface::Area });
+    let color = |size: Vec2| scene.sample(&at, &FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size, surface: Surface::Area, visits: None });
     assert_eq!(color(Vec2::new(200.0, 50.0)), RED);
     assert_eq!(color(SIZE), Rgba([0, 0, 0, 0]));
   }
@@ -462,7 +497,7 @@ mod tests {
     let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue())]);
     let params = Params::new();
     let far_edge = |width: f32| {
-      let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), surface: Surface::Area };
+      let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), surface: Surface::Area, visits: None };
       scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
     };
     assert_eq!(far_edge(100.0), BLUE);
@@ -484,7 +519,7 @@ mod tests {
       .transform(Transform::Scale(Vec2::new(2.0, 4.0).into()))
       .transform(Transform::Translate(Vec2::new(10.0, 20.0).into()));
     let corners = [(10.0, 20.0), (12.0, 20.0), (12.0, 24.0), (10.0, 24.0)].map(|(x, y)| Vec2::new(x, y));
-    assert_eq!(outlines(Layer::new(solid(RED)).shape(shape)), corners);
+    assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), corners);
   }
 
   #[test]
@@ -492,7 +527,7 @@ mod tests {
     let shape = Shape::new(ShapeNode::circle(0.5))
       .transform(Transform::Scale(Vec2::new(40.0, 20.0).into()))
       .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    let outline = outlines(Layer::new(solid(RED)).shape(shape));
+    let outline = outlines(Layer::new(solid(RED)).region(shape));
     assert!(outline.len() > 16);
     for point in outline {
       let offset = (point - Vec2::new(50.0, 25.0)) / Vec2::new(20.0, 10.0);
@@ -503,9 +538,9 @@ mod tests {
   #[test]
   fn a_shape_that_draws_nothing_has_no_outline() {
     let collapsed = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::ZERO.into()));
-    assert!(outlines(Layer::new(solid(RED)).shape(collapsed)).is_empty());
+    assert!(outlines(Layer::new(solid(RED)).region(collapsed)).is_empty());
     let line = Shape::new(ShapeNode::Polygon { points: vec![Vec2::ZERO.into(), Vec2::ONE.into()] });
-    assert!(outlines(Layer::new(solid(RED)).shape(line)).is_empty());
+    assert!(outlines(Layer::new(solid(RED)).region(line)).is_empty());
   }
 
   #[test]
@@ -559,14 +594,14 @@ mod tests {
 
   #[test]
   fn a_mask_shows_its_layer_only_inside_it_and_leaves_the_layer_below() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
     assert_eq!(sample(&scene, 50.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 5.0, 5.0, 0.5), DARK);
   }
 
   #[test]
   fn an_inverted_mask_shows_its_layer_only_outside_it() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()).inverted());
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()).inverted());
     assert_eq!(sample(&scene, 50.0, 25.0, 0.5), DARK);
     assert_eq!(sample(&scene, 5.0, 5.0, 0.5), RED);
   }
@@ -588,8 +623,8 @@ mod tests {
   #[test]
   fn a_mask_stays_put_as_its_layer_moves() {
     let moved = middle_circle().transform(Transform::Translate(Vec2::new(20.0, 0.0).into()));
-    let mask = Mask::new(solid(BLUE)).shape(middle_circle());
-    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).shape(moved).mask(mask)]);
+    let mask = Mask::new(solid(BLUE)).region(middle_circle());
+    let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(moved).mask(mask)]);
     // in both, in the layer alone, and in the mask alone
     assert_eq!(sample(&scene, 60.0, 25.0, 0.5), RED);
     assert_eq!(sample(&scene, 85.0, 25.0, 0.5)[3], 0);
@@ -611,9 +646,9 @@ mod tests {
 
   #[test]
   fn a_masks_outline_and_pose_line_up_with_the_layers() {
-    let scene = masked(Mask::new(solid(BLUE)).shape(middle_circle()));
+    let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     assert!(scene.mask_outlines(&frame)[0].is_empty());
     assert!(!scene.mask_outlines(&frame)[1].is_empty());
     assert!(scene.mask_poses(&frame)[0].is_none());
@@ -640,7 +675,7 @@ mod tests {
   #[test]
   fn gradient_turns_with_its_shape() {
     let mut scene = circle(red_to_blue());
-    let Some(shape) = &mut scene.layers[1].shape else { unreachable!() };
+    let Some(shape) = &mut scene.layers[1].region else { unreachable!() };
     shape.transform.insert(1, Transform::Rotate(90.0.into()));
     // the red end is now at the top, and the blue end at the bottom
     assert_eq!(sample(&scene, 50.0, 5.5, 0.0), Rgba([252, 0, 3, 255]));
@@ -650,7 +685,7 @@ mod tests {
   #[test]
   fn shape_on_a_line_is_measured_along_it() {
     // on 5 LEDs, a circle most of the way across centered on the middle lights all but the end LEDs
-    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.75).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -671,7 +706,7 @@ mod tests {
 
   #[test]
   fn a_shape_covers_the_same_part_of_any_strip() {
-    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).shape(
+    let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
       Shape::new(ShapeNode::circle(0.5))
         .transform(Transform::Scale(Vec2::splat(0.5).into()))
         .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
@@ -694,7 +729,7 @@ mod tests {
   #[test]
   fn a_shape_larger_than_the_viewport_can_move_under_it() {
     // a 300 wide gradient, moved so its middle is in view
-    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).shape(
+    let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).region(
       Shape::new(ShapeNode::Polygon {
         points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
       })
@@ -709,7 +744,7 @@ mod tests {
     // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
     let scene = circle(solid(RED));
     let params = Params::new();
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     let pixels: Vec<_> =
       Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
     let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
@@ -736,7 +771,7 @@ mod tests {
 
   fn level_at(scene: &Scene, time: f32) -> u8 {
     let params = Params::new();
-    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area })[0]
+    scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None })[0]
   }
 
   #[test]
@@ -790,8 +825,8 @@ mod tests {
     fn track<T>() -> Track<T> {
       Track { keys: vec![], cycle: Cycle::Once }
     }
-    let in_transform = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Track(track()))));
-    let in_point = Layer::new(solid(RED)).shape(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
+    let in_transform = Layer::new(solid(RED)).region(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Track(track()))));
+    let in_point = Layer::new(solid(RED)).region(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
     let in_stop = Layer::new(Fill::new(FillNode::Gradient {
       stops: vec![Stop::new(0.0, Prop::Track(track()))],
       style: GradientStyle::Linear,
@@ -822,7 +857,7 @@ mod tests {
     assert_eq!(line(&scene, 1), vec![RED]);
 
     let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
   }
 
@@ -845,7 +880,7 @@ mod tests {
 
   fn drawn(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
     let (params, images) = (Params::new(), images());
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), surface: Surface::Area, visits: None };
     scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
   }
 
@@ -854,7 +889,7 @@ mod tests {
     let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
     let size = Vec2::new(4.0, 3.0);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area, visits: None };
     let colors: Vec<_> = Grid::new(4, 3, size).samples().map(|at| scene.sample(&at, &frame)).collect();
 
     let green = Rgba([0, 255, 0, 255]);
@@ -864,7 +899,7 @@ mod tests {
   #[test]
   fn an_image_stretches_over_a_shape_and_moves_with_it() {
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(2.0).into())).transform(Transform::Translate(Vec2::new(2.0, 1.5).into()));
-    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
     assert_eq!(drawn(&scene, 1.5, 0.7, 0.01), RED);
     assert_eq!(drawn(&scene, 2.5, 0.7, 0.01), BLUE);
     assert_eq!(drawn(&scene, 0.1, 0.1, 0.01)[3], 0);
@@ -874,7 +909,7 @@ mod tests {
   fn a_strip_runs_along_the_middle_of_an_image() {
     let scene = Scene::new(Surface::Sequence, vec![Layer::new(image_fill())]);
     let (params, images) = (Params::new(), images());
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: SIZE, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size: SIZE, surface: Surface::Area, visits: None };
     for at in Line::new(5).samples() {
       assert_eq!(scene.sample(&Sample::new(at.pos, 0.0), &frame), Rgba([0, 255, 0, 255]));
     }
@@ -886,7 +921,7 @@ mod tests {
     let mut images = Images::new();
     images.insert("art.png", Picture::new(checkers));
     let (params, size) = (Params::new(), Vec2::new(64.0, 64.0));
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area, visits: None };
 
     // a whole viewport of it shows each pixel, and the same image in a shape of 4 units has 16 pixels to each unit
     let at = Sample::new(Vec2::new(32.0, 32.0), 0.5);
@@ -894,7 +929,7 @@ mod tests {
     assert!([RED, BLUE].contains(&whole.sample(&at, &frame)));
 
     let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(4.0).into())).transform(Transform::Translate(Vec2::splat(32.0).into()));
-    let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).shape(shape)]);
+    let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
     let color = small.sample(&at, &frame);
     assert!((100..=155).contains(&color[0]) && (100..=155).contains(&color[2]), "{color:?}");
   }
@@ -936,7 +971,7 @@ mod tests {
     let art = (0..4).map(|n| image::RgbaImage::from_pixel(1, 1, Rgba([n, 0, 0, 255])));
     let mut images = Images::new();
     images.insert("a.gif", Picture::animated(art, 0.4));
-    let frame = FrameContext { time, playback_seed, params, images: &images, size: Vec2::ONE, surface: Surface::Area };
+    let frame = FrameContext { time, playback_seed, params, images: &images, size: Vec2::ONE, surface: Surface::Area, visits: None };
     scene.sample(&Sample::new(Vec2::splat(0.5), 0.1), &frame)[0]
   }
 
@@ -1005,5 +1040,150 @@ mod tests {
     assert_eq!(only.timing, composition.timing);
     assert_eq!(only.params.len(), 1);
     assert_eq!(sample(&Scene::with_composition(Surface::Area, only), 1.0, 1.0, 0.5), BLUE);
+  }
+
+  /// A red layer on a graph, its opacity responding where traversal "wave" has just been: out from the first node one
+  /// edge a second, each node fading out over one step
+  fn wave() -> Scene {
+    let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
+    let wave = Traversal::new("wave", NodeRef::name("0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
+    let layer = Layer::new(solid(RED).adjust(ColorAdjust::Opacity(shown))).graph(GraphMask::new(vec![wave]));
+    Scene::new(Surface::Sequence, vec![layer]).timing(Timing::new(10.0, Cycle::Once))
+  }
+
+  /// Alpha along a line of 5, with the samples numbered as graph nodes
+  fn graph_alphas(scene: &Scene, time: f32) -> Vec<u8> {
+    let params = Params::new();
+    let samples: Vec<Sample> = Line::new(5).samples().enumerate().map(|(i, sample)| sample.at_node(i)).collect();
+    let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
+    let graph = Graph::build(nodes);
+    let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None };
+    let visits = scene.visits(&graph, &frame);
+    let frame = FrameContext { visits: Some(&visits), ..frame };
+    samples.iter().map(|sample| scene.sample(sample, &frame)[3]).collect()
+  }
+
+  #[test]
+  fn visits_set_off_responses_at_their_nodes() {
+    assert_eq!(graph_alphas(&wave(), 0.0), [255, 0, 0, 0, 0]);
+    assert_eq!(graph_alphas(&wave(), 2.0), [0, 0, 255, 0, 0]);
+    assert_eq!(graph_alphas(&wave(), 2.5), [0, 0, 128, 0, 0]);
+  }
+
+
+  /// A red layer on a graph, its opacity responding to traversal "line": from the first node to the last within the
+  /// 10 second cycle, reaching the last at 8 seconds
+  fn revealed(smooth_out: Option<f32>) -> Scene {
+    let line = Traversal::new("line", NodeRef::name("0"), TraversalAlgorithm::ShortestPath { to: NodeRef::name("4"), wander: 0.0.into() }, Speed::Duration(None));
+    let shown = Prop::Visit(VisitResponse { smooth_out, ..VisitResponse::new("line", 0.0, 1.0) });
+    let layer = Layer::new(solid(RED).adjust(ColorAdjust::Opacity(shown))).graph(GraphMask::new(vec![line]));
+    Scene::new(Surface::Sequence, vec![layer]).timing(Timing::new(10.0, Cycle::Once))
+  }
+
+  #[test]
+  fn an_opacity_responding_to_visits_shows_the_path_as_it_grows() {
+    let scene = revealed(None);
+    assert_eq!(graph_alphas(&scene, 0.0), [255, 0, 0, 0, 0]);
+    assert_eq!(graph_alphas(&scene, 5.0), [255, 255, 255, 0, 0]);
+    assert_eq!(graph_alphas(&scene, 10.0), [255; 5]);
+  }
+
+  #[test]
+  fn an_opacity_with_a_smooth_out_leaves_a_trail() {
+    // nodes 0.25 apart, one every 2 seconds, each fading over 0.5: two nodes behind the newest
+    let scene = revealed(Some(0.5));
+    assert_eq!(graph_alphas(&scene, 5.0), [0, 64, 191, 0, 0]);
+  }
+  #[test]
+  fn a_graph_layer_leaves_out_samples_that_arent_nodes() {
+    let mut scene = wave();
+    scene.layers.insert(0, Layer::new(solid(BLUE)));
+    scene.layers[1].fill.adjust.clear();
+    let params = Params::new();
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None };
+    assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1), &frame), BLUE);
+    assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1).at_node(0), &frame), RED);
+  }
+
+  #[test]
+  fn without_visits_a_graph_layer_rests() {
+    let scene = wave();
+    let params = Params::new();
+    let frame = FrameContext { time: 2.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None };
+    assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1).at_node(0), &frame)[3], 0);
+  }
+
+  #[test]
+  fn traversals_need_their_own_names_and_a_rate() {
+    let traversal = |name: &str, rate: f32| Traversal::new(name, NodeRef::name("0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, rate);
+    let scene = |traversals| Scene::new(Surface::Area, vec![Layer::new(solid(RED)).graph(GraphMask::new(traversals))]).timing(Timing::new(1.0, Cycle::Once));
+    assert!(scene(vec![traversal("a", 1.0), traversal("b", 1.0)]).check().is_ok());
+    assert_eq!(
+      scene(vec![traversal("a", 1.0), traversal("a", 1.0)]).check(),
+      Err(SceneError::SameTraversalName { layer: "layer 1".into(), traversal: "a".into() })
+    );
+    assert_eq!(scene(vec![traversal("a", 0.0)]).check(), Err(SceneError::NoSpeed { layer: "layer 1".into(), traversal: "a".into() }));
+  }
+
+  /// Colors at 5 nodes on a diagonal from (10, 10) to (40, 40), with a fill fit to the shortest path between two of them
+  fn fit_colors(fill: Fill, shape: Option<Shape>, from: &str, to: &str) -> Vec<Rgba<u8>> {
+    let bolt = Traversal::new("bolt", NodeRef::name(from), TraversalAlgorithm::ShortestPath { to: NodeRef::name(to), wander: 0.0.into() }, 10.0);
+    let mut layer = Layer::new(fill).graph(GraphMask::new(vec![bolt]));
+    layer.region = shape;
+    let scene = Scene::new(Surface::Area, vec![layer]).timing(Timing::new(10.0, Cycle::Once));
+
+    let samples: Vec<Sample> = (0..5).map(|i| Sample::new(Vec2::splat(10.0 + 7.5 * i as f32), 0.5).at_node(i)).collect();
+    let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
+    let graph = Graph::build(nodes);
+    let params = Params::new();
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
+    let visits = scene.visits(&graph, &frame);
+    let frame = FrameContext { visits: Some(&visits), ..frame };
+    samples.iter().map(|sample| scene.sample(sample, &frame)).collect()
+  }
+
+  fn is_between_red_and_blue(color: Rgba<u8>) -> bool {
+    (100..=155).contains(&color[0]) && (100..=155).contains(&color[2])
+  }
+
+  #[test]
+  fn fit_runs_a_gradient_from_where_a_traversal_starts_to_where_it_ends() {
+    let colors = fit_colors(red_to_blue().transform(Transform::Fit("bolt".into())), None, "0", "4");
+    assert_eq!((colors[0], colors[4]), (RED, BLUE));
+    assert!(is_between_red_and_blue(colors[2]), "{:?}", colors[2]);
+
+    let backwards = fit_colors(red_to_blue().transform(Transform::Fit("bolt".into())), None, "4", "0");
+    assert_eq!((backwards[0], backwards[4]), (BLUE, RED));
+  }
+
+  #[test]
+  fn transforms_before_fit_move_the_fill_along_the_traversal() {
+    let radial = Fill::new(FillNode::Gradient { stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))], style: GradientStyle::Radial })
+      .transform(Transform::Scale(Vec2::splat(2.0).into()))
+      .transform(Transform::Translate(Vec2::new(-0.5, 0.0).into()))
+      .transform(Transform::Fit("bolt".into()));
+    let colors = fit_colors(radial, None, "0", "4");
+    assert_eq!((colors[0], colors[4]), (RED, BLUE));
+    assert!(is_between_red_and_blue(colors[2]), "{:?}", colors[2]);
+  }
+
+  #[test]
+  fn fit_works_inside_a_shape() {
+    let rect = Shape::new(ShapeNode::Rect { width: 60.0.into(), height: 60.0.into() }).transform(Transform::Translate(Vec2::new(25.0, 25.0).into()));
+    let colors = fit_colors(red_to_blue().transform(Transform::Fit("bolt".into())), Some(rect), "0", "4");
+    assert_eq!((colors[0], colors[4]), (RED, BLUE));
+    assert!(is_between_red_and_blue(colors[2]), "{:?}", colors[2]);
+  }
+
+  #[test]
+  fn fit_changes_nothing_without_a_traversal_to_follow() {
+    let fitted = fit_colors(red_to_blue().transform(Transform::Fit("nope".into())), None, "0", "4");
+    assert_eq!(fitted, fit_colors(red_to_blue(), None, "0", "4"));
+  }
+
+  #[test]
+  fn a_graph_with_traversals_needs_a_timing() {
+    let scene = Scene::new(Surface::Area, vec![wave().composition.layers[0].clone()]);
+    assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
   }
 }

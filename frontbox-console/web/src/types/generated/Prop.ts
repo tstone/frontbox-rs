@@ -2,11 +2,14 @@
 import type { Random } from "./Random";
 import type { Sweep } from "./Sweep";
 import type { Track } from "./Track";
+import type { VisitResponse } from "./VisitResponse";
 
 /**
- * A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, or swept along a path
+ * A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, swept along a path, or
+ * set off by a traversal's visits
  *
- * In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`, or
- * `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`.
+ * In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
+ * `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`, or
+ * `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`.
  */
-export type Prop<T> = { "Fixed": T } | { "Param": string } | { "Track": Track<T> } | { "Random": Random } | { "Sweep": Sweep };
+export type Prop<T> = { "Fixed": T } | { "Param": string } | { "Track": Track<T> } | { "Random": Random } | { "Sweep": Sweep } | { "Visit": VisitResponse<T> };

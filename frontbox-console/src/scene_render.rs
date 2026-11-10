@@ -1,11 +1,12 @@
 use frontbox_core::prelude::{LedLookup, LedQ, Rgb, Vec2};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
-use frontbox_gfx::scene::{Bounds, Content, FrameContext, GfxComposition, Images, Params, Sample, ShapePose, Surface};
-use frontbox_led::{LedLayer, led_color, place_leds};
+use frontbox_gfx::scene::{Bounds, Content, FrameContext, GfxComposition, Graph, Images, Params, Sample, ShapePose, Surface, Visits};
+use frontbox_led::{LedLayer, led_color, place_graph, place_leds};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
-use crate::protocol::{RenderedArea, RenderedClip, RenderedScene, RenderedShape, SceneDefinition, SceneSize, SceneSource};
+use crate::protocol::{RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, SceneDefinition, SceneSize, SceneSource};
 
 /// The most points one render will sample. A render costs the machine time and anything on the network can ask for
 /// one. This is far more than any DMD or list of LEDs.
@@ -48,7 +49,8 @@ pub(crate) fn render_scene(
   };
   let params = Params::new();
   let moment = Moment { time, params: &params, images: &images };
-  let parts = parts(drawn, &shown, size, &machine);
+  let mut parts = parts(drawn, &shown, size, &machine);
+  visit(&mut parts, &moment);
 
   let colors = canvas.colors(&parts, &moment).collect();
   let area = rendered_area(canvas.covers);
@@ -57,9 +59,10 @@ pub(crate) fn render_scene(
   let mask_outlines = each_layer(&parts, &moment, GfxComposition::mask_outlines).iter().map(|outline| rendered_outline(outline)).collect();
   let mask_shapes = rendered_shapes(each_layer(&parts, &moment, GfxComposition::mask_poses));
   let led_colors = led_colors(&parts, &moment);
+  let graphs = parts.iter().map(rendered_graph).collect();
   let ron = scene.save().map_err(|err| err.to_string())?;
 
-  Ok(RenderedScene { scene, ron, width: canvas.width, height: canvas.height, colors, area, outlines, shapes, mask_outlines, mask_shapes, led_colors })
+  Ok(RenderedScene { scene, ron, width: canvas.width, height: canvas.height, colors, area, outlines, shapes, mask_outlines, mask_shapes, led_colors, graphs })
 }
 
 /// Renders every frame of one cycle of a scene, for a client to play without coming back to the machine until the next.
@@ -79,7 +82,7 @@ pub(crate) fn render_clip(
     return Err("a static scene has nothing to play".into());
   };
   let canvas = Canvas::of(&scene, size)?;
-  let parts = parts(&scene, &composition, size, &machine);
+  let mut parts = parts(&scene, &composition, size, &machine);
   let leds: BTreeSet<_> = parts.iter().flat_map(|part| part.placed.iter().map(|(name, _)| name.clone())).collect();
   // a frame at each end, so that a clip finishes on the scene's last moment
   let frames = ((timing.duration * CLIP_FRAMES_PER_SECOND).ceil() as usize).saturating_add(1);
@@ -103,6 +106,10 @@ pub(crate) fn render_clip(
   for index in 0..frames {
     let time = composition.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
     let moment = Moment { time, params: &params, images: &images };
+    // a clip is one cycle, so its traversals are the same in every frame
+    if index == 0 {
+      visit(&mut parts, &moment);
+    }
     clip.extend(canvas.colors(&parts, &moment));
     // every LED is shown every frame, and in name order, as `leds` has them
     led_colors.extend(self::led_colors(&parts, &moment).into_values().flat_map(|Rgb { r, g, b }| [r, g, b]));
@@ -155,6 +162,10 @@ struct Part {
   z: i8,
   /// The LEDs it lands on, by name, with where each samples it
   placed: Vec<(String, Sample)>,
+  /// For a layer with a graph, the one built from those LEDs
+  graph: Option<Arc<Graph>>,
+  /// The graph's traversals at the moment being drawn, from [`visit`]
+  visits: Option<Visits>,
 }
 
 /// What's the same for every part in one frame
@@ -165,8 +176,19 @@ struct Moment<'a> {
 }
 
 impl<'a> Moment<'a> {
-  fn on(&self, part: &Part) -> FrameContext<'a> {
-    FrameContext { time: self.time, playback_seed: 0, params: self.params, images: self.images, size: part.size, surface: part.surface }
+  fn on<'p>(&self, part: &'p Part) -> FrameContext<'p>
+  where
+    'a: 'p,
+  {
+    let visits = part.visits.as_ref();
+    FrameContext { time: self.time, playback_seed: 0, params: self.params, images: self.images, size: part.size, surface: part.surface, visits }
+  }
+}
+
+/// Works out the traversals of each part with a graph, for drawing them at `moment`
+fn visit(parts: &mut [Part], moment: &Moment) {
+  for part in parts {
+    part.visits = part.graph.as_ref().map(|graph| part.composition.visits(graph, &moment.on(part)));
   }
 }
 
@@ -181,13 +203,20 @@ fn parts(scene: &SceneDefinition, shown: &GfxComposition, size: SceneSize, machi
   let part = |(index, layer): (usize, Option<&LedLayer>)| {
     let composition = shown.only(index);
     let Some(layer) = layer else {
-      return Part { composition, surface: Surface::Area, size: render_size, z: 0, placed: Vec::new() };
+      return Part { composition, surface: Surface::Area, size: render_size, z: 0, placed: Vec::new(), graph: None, visits: None };
     };
     let surface = layer.surface.scene_surface();
     let plane = layer.surface.plane().and_then(|plane| machine.leds.plane(plane));
     let placed = place_leds(surface, &machine.leds, plane, layer.leds.as_ref().unwrap_or(&LedQ::Every), machine.radius);
+    let (placed, graph) = match &layer.layer.graph {
+      Some(_) => {
+        let (placed, graph) = place_graph(placed, plane);
+        (placed, Some(graph))
+      }
+      None => (placed, None),
+    };
     let placed = placed.into_iter().map(|(led, at)| (led.name.clone(), at)).collect();
-    Part { composition, surface, size: plane.map_or(render_size, |plane| plane.extent), z: layer.z, placed }
+    Part { composition, surface, size: plane.map_or(render_size, |plane| plane.extent), z: layer.z, placed, graph, visits: None }
   };
   layers.into_iter().enumerate().map(part).collect()
 }
@@ -231,7 +260,10 @@ impl Canvas {
     self.rows.iter().flat_map(move |row| {
       self.samples.iter().flat_map(move |at| {
         let color = row.iter().map(|&index| &parts[index]).fold(Rgba([0, 0, 0, 0]), |below, part| {
-          part.composition.sample(at, &moment.on(part)).composite_over(below)
+          // the strip has as many points as asked for, not one per LED, so each shows its nearest node
+          let node = part.graph.as_ref().and_then(|graph| graph.nearest(at.pos));
+          let at = node.map_or(*at, |node| at.at_node(node));
+          part.composition.sample(&at, &moment.on(part)).composite_over(below)
         });
         color.0
       })
@@ -267,6 +299,17 @@ fn rendered_area(covers: Bounds) -> RenderedArea {
 
 fn rendered_outline(outline: &[Vec2]) -> Vec<[f32; 2]> {
   outline.iter().map(|p| p.to_array()).collect()
+}
+
+fn rendered_graph(part: &Part) -> Option<RenderedGraph> {
+  let graph = part.graph.as_ref()?;
+  Some(RenderedGraph {
+    names: graph.nodes().iter().map(|node| node.name.clone()).collect(),
+    nodes: graph.nodes().iter().map(|node| node.pos.to_array()).collect(),
+    edges: graph.edges().map(|(a, b)| [a, b]).collect(),
+    // a part has the one layer
+    lengths: part.visits.as_ref().map_or(Vec::new(), |visits| visits.lengths(0)),
+  })
 }
 
 fn rendered_shapes(poses: Vec<Option<ShapePose>>) -> Vec<Option<RenderedShape>> {
@@ -429,6 +472,44 @@ mod tests {
     assert_eq!(clip[clip.len() - 6..], [255, 0, 0, 0, 0, 255]);
   }
 
+  /// Red where a wave has just been, going one edge a second from `led0`, each LED fading over a step
+  const WAVE: &str = r#"Led(
+    version: 1, timing: (duration: 10.0, cycle: Once), layers: [(surface: Area("Square"), layer: (
+      fill: (base: Solid(Fixed(255, 0, 0, 255)), adjust: [Opacity(Visit(traversal: "wave", from: 0.0, to: 1.0, smooth_out: 1.0))]),
+      graph: (traversals: [(name: "wave", from: Name("led0"), algorithm: BreadthFirst(), speed: Rate(Fixed(1.0)))]),
+    ))],)"#;
+
+  #[test]
+  fn a_graph_is_built_from_the_leds_a_layer_lands_on_and_traversed() {
+    let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
+    let target = MachineLeds { leds: leds(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_leds() };
+    let rendered = render_scene(ron(WAVE), SIZE, target, None, 2.0, Some(0)).unwrap();
+    let lit: Vec<bool> = (0..4).map(|i| rendered.led_colors[&format!("led{i}")] != Rgb::new(0, 0, 0)).collect();
+    assert_eq!(lit, [false, false, true, false]);
+
+    let graph = rendered.graphs[0].as_ref().unwrap();
+    assert_eq!(graph.names, ["led0", "led1", "led2", "led3"]);
+    assert_eq!(graph.nodes[1], [2.0, 5.0]);
+    assert_eq!(graph.edges, [[0, 1], [1, 2], [2, 3]]);
+    // three edges at one a second
+    assert_eq!(graph.lengths, [Some(3.0)]);
+  }
+
+  #[test]
+  fn a_layer_without_a_graph_has_none() {
+    let rendered = render_scene(ron(AREA), SIZE, three(), None, 0.0, None).unwrap();
+    assert!(rendered.graphs[0].is_none());
+  }
+
+  #[test]
+  fn a_strip_shows_a_graph_on_a_sequence_at_its_nearest_nodes() {
+    let source = WAVE.replace(r#"Area("Square")"#, "Sequence");
+    let rendered = render_scene(ron(&source), SceneSize { leds: 5, ..SIZE }, three(), None, 1.0, Some(0)).unwrap();
+    // three LEDs in a chain, seen on a strip of five: points halfway between two LEDs show the first of them
+    let alphas: Vec<u8> = rendered.colors.chunks(4).map(|color| color[3]).collect();
+    assert_eq!(alphas, [0, 0, 255, 255, 0]);
+  }
+
   #[test]
   fn an_area_colors_leds_by_where_they_are_on_the_plane() {
     let at = |x: f32| Some(Vec3::new(100.0 + x, 5.0, 0.0));
@@ -442,7 +523,7 @@ mod tests {
   fn leds_past_the_edge_of_the_plane_show_the_shapes_that_reach_them() {
     let source = r#"Led(
       version: 1, layers: [(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))), (surface: Area("Square"), layer: (
-          shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(15.0, 5.0))]),
+          region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(15.0, 5.0))]),
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
         ))],)"#;
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
@@ -456,7 +537,7 @@ mod tests {
   fn shape_edges_on_leds_fade_across_the_radius_the_machine_was_booted_with() {
     let source = r#"Led(
       version: 1, layers: [(surface: Area("Square"), layer: (
-        shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
+        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
     let brightness = |radius| {
@@ -515,7 +596,7 @@ mod tests {
   fn each_layer_is_seen_on_its_own_plane() {
     let gradient = |leds: &str, plane: &str| {
       format!(
-        r#"(leds: Name("{leds}"), surface: Area("{plane}"), layer: (shape: (base: Rect(width: Fixed(2.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), fill: (base: Solid(Fixed(255, 0, 0, 255)))))"#
+        r#"(leds: Name("{leds}"), surface: Area("{plane}"), layer: (region: (base: Rect(width: Fixed(2.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), fill: (base: Solid(Fixed(255, 0, 0, 255)))))"#
       )
     };
     let source = format!("Led(version: 1, layers: [{}, {}])", gradient("led0", "Square"), gradient("led1", "Plane"));
@@ -549,7 +630,7 @@ mod tests {
     let target = no_leds();
     let source = r#"Led(
       version: 1, layers: [(surface: Area("Square"), layer: (
-        shape: (base: Polygon(points: [Fixed(0.0, 0.0), Fixed(1.0, 0.0), Fixed(0.0, 1.0)]), transform: [Translate(Fixed(2.0, 3.0))]),
+        region: (base: Polygon(points: [Fixed(0.0, 0.0), Fixed(1.0, 0.0), Fixed(0.0, 1.0)]), transform: [Translate(Fixed(2.0, 3.0))]),
         fill: (base: Solid(Fixed(1, 2, 3, 255))),
       ))],)"#;
     let outlines = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().outlines;
@@ -568,7 +649,7 @@ mod tests {
       version: 1, timing: (duration: 2.0),
       layers: [(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))), (surface: Sequence, layer: (
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
-          shape: (
+          region: (
             base: Rect(width: Fixed(0.5), height: Fixed(0.25)),
             transform: [Translate(Track(keys: [(at: 0.0, value: (0.0, 0.0)), (at: 2.0, value: (1.0, 0.0))], cycle: Once))],
           ),
@@ -590,7 +671,7 @@ mod tests {
   fn grid_fits_a_dmd() {
     let source = r#"Dmd(version: 1, composition: (
       layers: [(
-        shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(3.0, 3.0)), Translate(Fixed(2.5, 2.5))]),
+        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(3.0, 3.0)), Translate(Fixed(2.5, 2.5))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       )],
     ))"#;
@@ -765,7 +846,7 @@ mod tests {
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
           mask: (
             fill: (base: Solid(Fixed(0, 0, 0, 255))),
-            shape: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 2.5))]),
+            region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 2.5))]),
           ),
         ),
       ],
@@ -934,7 +1015,7 @@ mod tests {
       
       timing: (duration: 2.0, cycle: Forever),
       layers: [(surface: Area("Square"), layer: (
-        shape: (
+        region: (
           base: Polygon(points: [Fixed(0.0, 0.0), Param("at"), Fixed(1.0, 0.0)]),
           transform: [Rotate(Track(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 90.0, curve: Steps(4))], cycle: Times(2)))],
         ),
@@ -951,7 +1032,7 @@ mod tests {
     let source = r#"Led(
       version: 1, timing: (duration: 2.0, cycle: Forever),
       layers: [(surface: Area("Square"), layer: (
-        shape: (
+        region: (
           base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0)),
           transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), start: 0.5, end: 1.5))],
         ),
@@ -973,6 +1054,6 @@ mod tests {
   /// The first sweep in a scene as JSON
   fn sweep_of(json: &str) -> String {
     let scene: serde_json::Value = serde_json::from_str(json).unwrap();
-    scene["Led"]["layers"][0]["layer"]["shape"]["transform"][0]["Translate"].to_string()
+    scene["Led"]["layers"][0]["layer"]["region"]["transform"][0]["Translate"].to_string()
   }
 }

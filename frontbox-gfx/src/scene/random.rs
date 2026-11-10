@@ -193,7 +193,7 @@ struct PickInstance {
 }
 
 /// Three random numbers, each 0 to 1, hashed from `moment`
-fn rnd(moment: impl Hash) -> [f32; 3] {
+pub(crate) fn rnd(moment: impl Hash) -> [f32; 3] {
   const MASK: u64 = (1 << 21) - 1;
   let mut hasher = DefaultHasher::new();
   moment.hash(&mut hasher);

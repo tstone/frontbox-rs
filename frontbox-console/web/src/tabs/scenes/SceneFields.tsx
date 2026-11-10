@@ -10,8 +10,12 @@ import { ShapeEditor } from './ConfigPanel'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
+import type { Curve } from '../../types/generated/Curve'
+import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
-import { field, freshParamName, fullSpread, HUE, newPick, newSweep, paramFits, spreadFits, startingValue, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import type { VisitResponse } from '../../types/generated/VisitResponse'
+import CurvePicker, { CURVES, CUSTOM_CURVE } from './CurvePicker'
+import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -22,6 +26,29 @@ export const LayerSurfacesContext = createContext<LayerSurfaces>()
 
 /** The prop waiting to be shown to whoever asked, until its field comes up and takes it */
 export const RevealContext = createContext<Signal<Prop<SceneValue> | null>>()
+
+/** The names of the traversals in the layer being edited, which a prop can respond to the visits of */
+export const TraversalsContext = createContext<Accessor<string[]>>(() => [])
+
+/** Choosing a node of the open layer's graph by clicking it in the preview */
+export type NodePicking = {
+  /** The LEDs in the open layer's graph, by name, as the machine last built it */
+  nodes: Accessor<string[]>
+  /** What a click in the preview chooses a node for, while one is being chosen */
+  choosing: Signal<{ choose: (name: string) => void } | null>
+  /** The node to point out in the preview */
+  highlighted: Signal<string | null>
+}
+
+export const NodePickingContext = createContext<NodePicking>()
+
+/**
+ * Whether the open layer's or mask's region, or its graph, is drawn over the preview. Only for the editing, so it isn't
+ * part of the scene and hiding it changes nothing the scene shows.
+ */
+export type RegionVisibility = { shown: Accessor<boolean>; show: (shown: boolean) => void }
+
+export const RegionVisibilityContext = createContext<RegionVisibility>()
 
 function useScene() {
   return useContext(SceneContext)!
@@ -66,11 +93,11 @@ export function Dropdown<T extends string>(props: {
   value: T
   onChange: (value: T) => void
 }) {
-  const collection = createListCollection({ items: props.options })
+  const collection = createMemo(() => createListCollection({ items: props.options }))
   return (
     <Select.Root
       class="scene-dropdown"
-      collection={collection}
+      collection={collection()}
       value={[props.value]}
       onValueChange={(details) => props.onChange(details.value[0] as T)}
       positioning={{ sameWidth: true }}
@@ -88,7 +115,7 @@ export function Dropdown<T extends string>(props: {
       <Portal>
         <Select.Positioner>
           <Select.Content class="scene-dropdown-list">
-            <For each={collection.items}>
+            <For each={collection().items}>
               {(option) => (
                 <Select.Item item={option}>
                   <Select.ItemText>{option.label}</Select.ItemText>
@@ -418,10 +445,10 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Sweep'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Sweep']
+type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Sweep' | 'Visit'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Sweep', 'Visit']
 
-/** A prop: whether it's fixed, read from a parameter, keyframed, picked at random, or swept along a path, and the control for that */
+/** A prop: whether it's fixed, read from a parameter, keyframed, picked at random, swept along a path, or set off by visits, and the control for that */
 export function PropField<T extends SceneValue>(props: {
   label: string
   /** What to call a parameter made from this prop */
@@ -443,7 +470,10 @@ export function PropField<T extends SceneValue>(props: {
   const paramName = () => (prop() as { Param: string }).Param
   // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
   const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2 && !props.notPosition
-  const kinds = () => PROP_KINDS.filter((option) => option !== 'Sweep' || isPosition() || kind() === 'Sweep')
+  // visits are only there to respond to in a layer with traversals
+  const traversals = useContext(TraversalsContext)
+  const kinds = () =>
+    PROP_KINDS.filter((option) => (option !== 'Sweep' || isPosition() || kind() === 'Sweep') && (option !== 'Visit' || traversals().length > 0 || kind() === 'Visit'))
 
   const choose = (next: PropKind) => {
     if (next === kind()) return
@@ -467,6 +497,10 @@ export function PropField<T extends SceneValue>(props: {
       const name = freshParamName(scene.get(), props.paramName)
       scene.set(withParam(scene.get(), name, current))
       props.lens.set({ Param: name })
+    }
+    if (next === 'Visit') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Visit: newVisit(traversals()[0] ?? '', current, props.ranges) as VisitResponse<T> })
     }
   }
 
@@ -555,8 +589,98 @@ export function PropField<T extends SceneValue>(props: {
           <ShapeEditor path lens={field(variant(props.lens, 'Sweep'), 'path')} />
           <p class="scene-note">When it goes around is on the timeline below.</p>
         </Match>
+        <Match when={kind() === 'Visit'}>
+          <VisitField label={props.label} ranges={props.ranges} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Visit')} />
+        </Match>
       </Switch>
     </div>
+  )
+}
+
+const OVERLAP_OPTIONS: { value: Overlap; label: string }[] = [
+  { value: 'Max', label: 'Strongest' },
+  { value: 'Add', label: 'Add up' },
+]
+
+/** A curve from the list, or from the curves drawn out beside it. One written by hand in the file shows as Custom. */
+export function CurveField(props: { label: string; lens: Lens<Curve> }) {
+  const chosen = () => {
+    const value = props.lens.get()
+    return typeof value === 'string' ? value : CUSTOM_CURVE
+  }
+  return (
+    <div class="scene-field-line">
+      <Dropdown
+        label={props.label}
+        options={[...CURVES, ...(chosen() === CUSTOM_CURVE ? [CUSTOM_CURVE] : [])].map((value) => ({ value, label: value }))}
+        value={chosen()}
+        onChange={(next) => {
+          if (next !== CUSTOM_CURVE) props.lens.set(next as Curve)
+        }}
+      />
+      <CurvePicker label={props.label} value={props.lens.get()} onPick={props.lens.set} />
+    </div>
+  )
+}
+
+/** A response to a traversal's visits, from `from` to `to` and back, timed in the traversal's steps */
+function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>>; ranges: Ranges }) {
+  const traversals = useContext(TraversalsContext)
+  const response = () => props.lens.get()
+  // one the layer doesn't have anymore stays chosen, so it can be seen and changed
+  const options = () => [...new Set([...traversals(), response().traversal])].filter((name) => name !== '').map((name) => ({ value: name, label: name }))
+  const stays = () => response().smooth_out === undefined
+  const curveField = (key: 'curve_in' | 'curve_out', label: string) => (
+    <FieldRow label={label}>
+      <CurveField label={`${props.label} ${label.toLowerCase()}`} lens={field(props.lens, key)} />
+    </FieldRow>
+  )
+
+  return (
+    <>
+      <FieldRow label="Traversal">
+        <Show when={options().length > 0} fallback={<p class="scene-note scene-note-warn">The layer has no traversals to respond to.</p>}>
+          <Dropdown label={`${props.label} traversal`} options={options()} value={response().traversal} onChange={field(props.lens, 'traversal').set} />
+        </Show>
+      </FieldRow>
+      <Show when={response().traversal !== '' && !traversals().includes(response().traversal)}>
+        <p class="scene-note scene-note-warn">The layer has no traversal by this name, so this stays at From.</p>
+      </Show>
+      <FieldRow label="From">
+        <ValueField label={`${props.label} from`} ranges={props.ranges} lens={field(props.lens, 'from')} />
+      </FieldRow>
+      <FieldRow label="To">
+        <ValueField label={`${props.label} to`} ranges={props.ranges} lens={field(props.lens, 'to')} />
+      </FieldRow>
+      <FieldRow label="Smooth in">
+        <NumberField label={`${props.label} smooth in`} range={STEPS} value={response().smooth_in} onChange={field(props.lens, 'smooth_in').set} />
+      </FieldRow>
+      <FieldRow label="Hold">
+        <NumberField label={`${props.label} hold`} range={STEPS} value={response().hold} onChange={field(props.lens, 'hold').set} />
+      </FieldRow>
+      <div class="scene-unique">
+        <Toggle.Root class="scene-switch" checked={stays()} onCheckedChange={(details) => field(props.lens, 'smooth_out').set(details.checked ? undefined : 1)}>
+          <Toggle.Control>
+            <Toggle.Thumb />
+          </Toggle.Control>
+          <Toggle.Label>Stays at To</Toggle.Label>
+          <Toggle.HiddenInput aria-label={`${props.label} stays at To`} />
+        </Toggle.Root>
+      </div>
+      <Show when={!stays()}>
+        <FieldRow label="Smooth out">
+          <NumberField label={`${props.label} smooth out`} range={STEPS} value={response().smooth_out ?? 0} onChange={field(props.lens, 'smooth_out').set} />
+        </FieldRow>
+      </Show>
+      {curveField('curve_in', 'Curve in')}
+      <Show when={!stays()}>{curveField('curve_out', 'Curve out')}</Show>
+      <p class="scene-note">
+        Times are in the traversal's steps, so they keep their shape at any speed. For a traversal that goes by distance, a step is one unit of travel.
+      </p>
+      <FieldRow label="Overlapping visits">
+        <Dropdown label={`${props.label} overlapping visits`} options={OVERLAP_OPTIONS} value={response().overlap} onChange={field(props.lens, 'overlap').set} />
+      </FieldRow>
+    </>
   )
 }
 

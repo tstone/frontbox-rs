@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::fmt;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::Line;
-use frontbox_gfx::scene::{self, FrameContext, GfxComposition, Images, Params, Sample, Value};
+use frontbox_gfx::scene::{self, FrameContext, GfxComposition, Graph, Images, Params, Sample, Value, Visits};
 
 use crate::*;
 
@@ -299,9 +300,16 @@ impl Placement {
     });
     let surface = layer.surface.scene_surface();
     let placed = layer.leds.as_ref().map_or(Vec::new(), |leds| place_leds(surface, &ctx.leds, plane, leds, ctx.led_radius));
+    let (placed, graph) = match &layer.layer.graph {
+      Some(_) => {
+        let (placed, graph) = place_graph(placed, plane);
+        (placed, Some(graph))
+      }
+      None => (placed, None),
+    };
     let samples = placed.into_iter().map(|(led, sample)| (self.spot(&led.address), sample)).collect();
     let size = plane.map_or(Vec2::ZERO, |plane| plane.extent);
-    self.parts.push(Part { composition, surface, size, samples });
+    self.parts.push(Part { composition, surface, size, samples, graph, visits: None });
   }
 
   fn spot(&mut self, led: &LedAddress) -> usize {
@@ -312,10 +320,12 @@ impl Placement {
   }
 
   /// The color of each LED in `ids`, with the layers on it drawn bottom to top
-  fn colors(&self, time: f32, playback_seed: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
+  fn colors(&mut self, time: f32, playback_seed: u32, params: &Params, images: &Images) -> Vec<Rgba<u8>> {
     let mut colors = vec![Rgba([0, 0, 0, 0]); self.ids.leds.len()];
-    for part in &self.parts {
-      let frame = FrameContext { time, playback_seed, params, images, size: part.size, surface: part.surface };
+    for part in &mut self.parts {
+      let frame = FrameContext { time, playback_seed, params, images, size: part.size, surface: part.surface, visits: None };
+      part.update_visits(&frame);
+      let frame = FrameContext { visits: part.visits.as_ref().map(|(_, visits)| visits), ..frame };
       for (spot, sample) in &part.samples {
         colors[*spot] = part.composition.sample(sample, &frame).composite_over(colors[*spot]);
       }
@@ -333,6 +343,32 @@ struct Part {
   size: Vec2,
   /// Its LEDs, by their spot in the [`Placement`], and where each samples it
   samples: Vec<(usize, Sample)>,
+  /// For a layer with a graph, the one built from its LEDs
+  graph: Option<Arc<Graph>>,
+  /// The traversals of the cycle being played, kept until the cycle, playback seed, or params change
+  visits: Option<(VisitsFor, Visits)>,
+}
+
+impl Part {
+  /// Works out the traversals for this frame's cycle, for a layer with a graph, if they aren't kept already
+  fn update_visits(&mut self, frame: &FrameContext) {
+    let Some(graph) = &self.graph else {
+      return;
+    };
+    let cycle = self.composition.timing.map_or(0, |timing| timing.cycle_index(frame.time));
+    let current = VisitsFor { cycle, playback_seed: frame.playback_seed, params: frame.params.clone() };
+    if self.visits.as_ref().is_none_or(|(kept, _)| *kept != current) {
+      self.visits = Some((current, self.composition.visits(graph, frame)));
+    }
+  }
+}
+
+/// What a cycle's visits were worked out for
+#[derive(Clone, PartialEq)]
+struct VisitsFor {
+  cycle: u32,
+  playback_seed: u32,
+  params: Params,
 }
 
 #[cfg(test)]
@@ -713,7 +749,7 @@ mod tests {
   fn a_shape_reaches_leds_past_the_edge_of_the_plane() {
     let (context, addresses) = placed_leds(&[at(11.0, 5.0), at(20.0, 5.0)]);
     let fill = Fill::new(FillNode::Solid(Color(Rgba::red()).into()));
-    let scene = GfxComposition::new(vec![Layer::new(fill).shape(red_circle(Vec2::new(11.0, 5.0).into()))]);
+    let scene = GfxComposition::new(vec![Layer::new(fill).region(red_circle(Vec2::new(11.0, 5.0).into()))]);
     let program = on_plane(LedQ::every(), scene);
 
     assert_eq!(played(&context, &addresses, program), vec![Some(Rgba::red()), None]);
@@ -727,7 +763,7 @@ mod tests {
       keys: vec![Key::new(0.0, Vec2::new(5.0, 5.0), Curve::Linear), Key::new(1.0, Vec2::new(50.0, 5.0), Curve::Linear)],
       cycle: Cycle::Once,
     };
-    let scene = GfxComposition::new(vec![Layer::new(fill).shape(red_circle(Prop::Track(path)))])
+    let scene = GfxComposition::new(vec![Layer::new(fill).region(red_circle(Prop::Track(path)))])
       .timing(Timing::new(1.0, Cycle::Once));
     let mut program = on_plane(LedQ::every(), scene).end_behavior(EndBehavior::Hold);
 
@@ -761,7 +797,7 @@ mod tests {
     let coverage = |radius: f32| {
       let (mut context, addresses) = placed_leds(&[at(5.0, 6.95)]);
       context.set_led_radius(radius);
-      let circle = Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into()))).shape(
+      let circle = Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into()))).region(
         Shape::new(ShapeNode::circle(0.5))
           .transform(Transform::Scale(Vec2::splat(4.0).into()))
           .transform(Transform::Translate(Vec2::new(5.0, 5.0).into())),
@@ -933,7 +969,7 @@ mod tests {
     let far_away = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(Vec2::new(50.0, 50.0).into()));
     let scene = LedScene::new(vec![
       LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::red())),
-      LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::blue()).shape(far_away)),
+      LedLayer::area(LedQ::every(), "Plane", solid_layer(Rgba::blue()).region(far_away)),
     ]);
     assert_eq!(played(&context, &addresses, LedPlayback::new(scene).unwrap()), vec![Some(Rgba::red())]);
   }
@@ -993,5 +1029,91 @@ mod tests {
     program.apply(Duration::from_millis(16), &context.sys_ctx());
     assert_eq!(colors(&context, &[address])[0], Some(Rgba::red()));
     assert_eq!(colors(&context, &addresses)[0], None);
+  }
+}
+
+#[cfg(test)]
+mod graph_tests {
+  use frontbox_gfx::animation::Cycle;
+  use frontbox_gfx::scene::*;
+  use frontbox_gfx::prelude::*;
+
+  use super::*;
+  use crate::Surface;
+
+  static PLANE: ReferencePlane = ReferencePlane::new("Plane").extent(Vec2::new(10.0, 10.0)).build();
+
+  /// LEDs "led0".. at these places, on a 10 by 10 plane
+  fn leds(locations: &[Vec3]) -> (TestContext, Vec<LedAddress>) {
+    let mut context = TestContext::default();
+    context.insert_system(LedSystem::new());
+    let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), i as u8)).collect();
+    for (i, address) in addresses.iter().enumerate() {
+      context.insert_led(LED { name: format!("led{i}"), address: address.clone(), location: Some(locations[i]), ..Default::default() });
+    }
+    context.add_plane(&PLANE);
+    (context, addresses)
+  }
+
+  /// Four LEDs in a row on the plane, one apart
+  fn row() -> (TestContext, Vec<LedAddress>) {
+    leds(&(0..4).map(|x| Vec3::new(x as f32 + 1.0, 5.0, 0.0)).collect::<Vec<_>>())
+  }
+
+  /// Red where traversal "wave" has just been: one edge a second out from `from`, fading over a step
+  fn wave(from: &str, surface: Surface) -> LedPlayback {
+    let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
+    let wave = Traversal::new("wave", NodeRef::name(from), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
+    let fill = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::Opacity(shown));
+    let layer = LedLayer { leds: Some(LedQ::every()), z: 0, surface, layer: Layer::new(fill).graph(GraphMask::new(vec![wave])) };
+    LedPlayback::new(LedScene::new(vec![layer]).timing(Timing::new(10.0, Cycle::Once))).unwrap()
+  }
+
+  fn lit(context: &TestContext, addresses: &[LedAddress]) -> Vec<bool> {
+    let ctx = context.sys_ctx();
+    let led_system = ctx.systems.expect::<LedSystem>();
+    addresses.iter().map(|address| led_system.declarations_for(address).first().is_some_and(|d| d.color[3] > 127)).collect()
+  }
+
+  #[test]
+  fn a_traversal_moves_across_the_leds_it_reaches() {
+    let (context, addresses) = row();
+    let mut program = wave("led0", Surface::Area("Plane".into()));
+    program.apply(Duration::ZERO, &context.sys_ctx());
+    assert_eq!(lit(&context, &addresses), [true, false, false, false]);
+    program.apply(Duration::from_secs(2), &context.sys_ctx());
+    assert_eq!(lit(&context, &addresses), [false, false, true, false]);
+  }
+
+  #[test]
+  fn leds_off_the_plane_are_left_out_of_its_graph() {
+    // the third is raised above the plane, so the wave can't go through it to the fourth
+    let (context, addresses) = leds(&[Vec3::new(1.0, 5.0, 0.0), Vec3::new(2.0, 5.0, 0.4), Vec3::new(3.0, 5.0, 2.0), Vec3::new(4.0, 5.0, 0.0)]);
+    let mut program = wave("led0", Surface::Area("Plane".into()));
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    assert_eq!(lit(&context, &addresses), [false, true, false, false]);
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    assert_eq!(lit(&context, &addresses), [false, false, false, true]);
+  }
+
+  #[test]
+  fn a_sequence_is_a_chain_in_its_order() {
+    let (context, addresses) = row();
+    let mut program = wave("led3", Surface::Sequence);
+    program.apply(Duration::from_secs(1), &context.sys_ctx());
+    assert_eq!(lit(&context, &addresses), [false, false, true, false]);
+  }
+
+  #[test]
+  fn the_same_leds_share_a_graph() {
+    let (context, _) = row();
+    let ctx = context.sys_ctx();
+    let graph = || {
+      let every = LedQ::every();
+      let placed = place_leds(scene::Surface::Area, &ctx.leds, Some(&PLANE), &every, DEFAULT_LED_RADIUS);
+      place_graph(placed, Some(&PLANE)).1
+    };
+    assert!(Arc::ptr_eq(&graph(), &graph()));
+    assert_eq!(graph().edges().count(), 3);
   }
 }

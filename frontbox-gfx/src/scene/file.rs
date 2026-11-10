@@ -98,7 +98,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface };
+        let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -124,7 +124,7 @@ mod tests {
           .adjust(ColorAdjust::Brightness(1.25.into()))
           .adjust(ColorAdjust::Contrast(1.5.into())),
         )
-        .shape(
+        .region(
           Shape::new(ShapeNode::circle(0.5))
             .transform(Transform::Scale(Vec2::splat(40.0).into()))
             .transform(Transform::Translate(Prop::Track(Track {
@@ -135,32 +135,32 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).shape(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).region(Shape::new(
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).shape(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(Shape::new(
           ShapeNode::Ring { inner_radius: 3.0.into(), thickness: 1.0.into() },
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .shape(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).shape(
+          .region(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
             0.25,
             1.0,
           )))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).shape(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
             0.0,
             1.0,
           )))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).shape(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Bezier {
               points: vec![
@@ -183,7 +183,7 @@ mod tests {
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
-          shape: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
+          region: (transform: [{transform}], base: Ellipse(rx: Fixed(1.0), ry: {radius})),
           fill: (base: Solid({color})),
         )])"
       )
@@ -273,7 +273,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -307,7 +307,7 @@ mod tests {
       ])",
     )
     .unwrap();
-    let base = |index: usize| &scene.layers[index].shape.as_ref().unwrap().base;
+    let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
     assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
     assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
     assert!(matches!(base(2), ShapeNode::Pinwheel { blade_fraction: Prop::Fixed(0.25), .. }));
@@ -335,7 +335,7 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &FrameContext { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface });
+    let color = |scene: &Scene, time| scene.sample(&at, &FrameContext { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -356,7 +356,7 @@ mod tests {
     let (mut images, params) = (Images::new(), Params::new());
     images.insert("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface };
+    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -419,7 +419,84 @@ mod tests {
     let fill = || Fill::new(FillNode::Solid(Color(Rgba([0, 0, 0, 255])).into()));
     let scene = Scene::new(Surface::Area, vec![Layer::new(fill()).mask(Mask::new(fill()).inverted())]);
     let read = load(&save(&scene).unwrap()).unwrap();
-    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.shape.is_none()));
+    assert!(read.layers[0].mask.as_ref().is_some_and(|mask| mask.invert && mask.region.is_none()));
+  }
+
+  /// A layer on a graph using every algorithm, with responses to two of them
+  fn on_a_graph() -> Scene {
+    let traversal = |name: &str, algorithm| Traversal::new(name, NodeRef::name("0"), algorithm, 4.0);
+    let traversals = vec![
+      traversal("breadth", TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }).start(0.5),
+      traversal("depth", TraversalAlgorithm::DepthFirst),
+      traversal("distance", TraversalAlgorithm::Dijkstra { wander: 0.5.into() }),
+      traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
+      traversal("fan", TraversalAlgorithm::FanOut { to: NodeRef::name("7"), angle: 90.0.into(), count: 2.0.into(), wander: 0.5.into() }),
+      traversal("growth", TraversalAlgorithm::Growth { to: NodeRef::name("6"), reach: 25.0.into(), density: 2.0.into(), branching: 0.5.into(), wander: 0.5.into() }),
+      Traversal::new("search", NodeRef::Nearest(Prop::Param("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Param("speed".into())),
+      Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
+    ];
+    let shown = VisitResponse {
+      smooth_in: 0.5,
+      hold: 1.0,
+      smooth_out: Some(3.0),
+      curve_in: Curve::EaseOut,
+      curve_out: Curve::EaseIn,
+      ..VisitResponse::new("path", 0.0, 1.0)
+    };
+    let counted = VisitResponse { overlap: Overlap::Add, ..VisitResponse::new("walk", 0.0, 20.0) };
+    let stops = vec![Stop::new(0.0, Color(Rgba([255, 220, 0, 255]))), Stop::new(1.0, Color(Rgba([255, 255, 255, 255])))];
+    let fill = Fill::new(FillNode::Gradient { stops, style: GradientStyle::Linear })
+      .transform(Transform::Translate(Vec2::new(-0.5, 0.0).into()))
+      .transform(Transform::Fit("path".into()))
+      .adjust(ColorAdjust::Opacity(Prop::Visit(shown)))
+      .adjust(ColorAdjust::HueShift(Prop::Visit(counted)));
+    let layer = Layer::new(fill).graph(GraphMask::new(traversals));
+    Scene::new(Surface::Area, vec![layer]).timing(Timing::new(4.0, Cycle::Forever))
+  }
+
+  /// Colors on a 3 by 3 graph of nodes "0" to "8", 20 apart, over a few moments
+  fn sample_graph(scene: &Scene) -> Vec<Rgba<u8>> {
+    let params = Params::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
+    let samples: Vec<Sample> = (0..9).map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i)).collect();
+    let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
+    let graph = Graph::build(nodes);
+    [0.0, 0.3, 0.8, 1.5, 2.6]
+      .into_iter()
+      .flat_map(|time| {
+        let frame = FrameContext { time, playback_seed: 3, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+        let visits = scene.visits(&graph, &frame);
+        let frame = FrameContext { visits: Some(&visits), ..frame };
+        samples.iter().map(|sample| scene.sample(sample, &frame)).collect::<Vec<_>>()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn a_graph_round_trip_samples_the_same() {
+    let scene = on_a_graph();
+    let written = save(&scene).unwrap();
+    let read = load(&written).unwrap();
+    let colors = sample_graph(&read);
+    assert_eq!(colors, sample_graph(&scene), "written as:\n{written}");
+    assert!(colors.iter().any(|color| color[3] > 0), "nothing was shown");
+    assert_eq!(save(&read).unwrap(), written);
+  }
+
+  #[test]
+  fn reads_a_hand_written_graph() {
+    let scene = load(
+      r#"(timing: (duration: 2.0), layers: [(
+        fill: (base: Solid(Fixed(255, 0, 0, 255)), adjust: [Opacity(Visit(traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))]),
+        graph: (edges: (rule: RelativeNeighborhood, max_length: 3.0), traversals: [(name: "bolt", from: Name("0"), algorithm: ShortestPath(to: Nearest(Fixed(40.0, 40.0))), speed: Rate(Fixed(30.0)))]),
+      )])"#,
+    )
+    .unwrap();
+    let mask = scene.layers[0].graph.as_ref().unwrap();
+    assert!(matches!(&mask.traversals[0].algorithm, TraversalAlgorithm::ShortestPath { wander: Prop::Fixed(wander), .. } if *wander == 0.0));
+    let ColorAdjust::Opacity(Prop::Visit(response)) = &scene.layers[0].fill.adjust[0] else {
+      panic!("{scene:?}");
+    };
+    assert_eq!((response.smooth_in, response.smooth_out, response.overlap), (0.0, Some(3.0), Overlap::Max));
   }
 
   #[test]

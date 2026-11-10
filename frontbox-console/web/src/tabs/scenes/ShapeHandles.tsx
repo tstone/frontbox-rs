@@ -7,13 +7,13 @@ import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
 import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
-type Shape = NonNullable<Layer['shape']>
+type Shape = NonNullable<Layer['region']>
 
 /** A transform as the machine sends it: where it takes x's axis, y's axis, and the origin */
 type Affine = RenderedShape['transforms'][number]
 
 /** A grab handle: where it is, and what dragging it does */
-type Handle = {
+export type Handle = {
   label: string
   kind: 'move' | 'scale' | 'size' | 'point' | 'bezier'
   cursor: string
@@ -52,6 +52,9 @@ const MAX_GRID_LINES = 400
 
 /** The fewest pixels apart a grid's lines are drawn, as any closer they'd hide the scene under them */
 const MIN_GRID_SPACING = 6
+
+/** How many points a ring's hole is drawn with */
+const HOLE_POINTS = 64
 
 const IDENTITY: Affine = [1, 0, 0, 1, 0, 0]
 
@@ -114,7 +117,7 @@ function outOfStep(shape: Lens<Shape>, pose: RenderedShape) {
   )
 }
 
-function Grip(props: { handle: Handle; space: PreviewSpace }) {
+export function Grip(props: { handle: Handle; space: PreviewSpace }) {
   const spot = () => props.space.project(props.handle.at)
 
   const press = (e: PointerEvent) => {
@@ -157,11 +160,11 @@ function Grip(props: { handle: Handle; space: PreviewSpace }) {
   )
 }
 
-/** The topmost layer showing a shape at a point on what's on show, which only some of a scene's layers may be on */
+/** The topmost layer with a region at a point on what's on show, which only some of a scene's layers may be on */
 export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean) {
   for (let index = scene.layers.length - 1; index >= 0; index--) {
-    const { shape, hidden } = scene.layers[index]
-    if (shape && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
+    const { region, hidden } = scene.layers[index]
+    if (region && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
   }
   return null
 }
@@ -353,6 +356,16 @@ function shapeGrid(pose: RenderedShape, grid: number | null, view: Affine): Grid
 /** The line that goes along a shape's edge, back to where it started if it's the kind that does */
 function traced(base: Shape['base'], { outline }: RenderedShape) {
   return isOpen(base) ? outline : [...outline, ...outline.slice(0, 1)]
+}
+
+/** A ring's hole as a closed loop in the scene, or none for a shape without one */
+export function holeOutline(pose: RenderedShape): Vec2[] {
+  if (pose.hole <= 0) return []
+  const toScene = chain(pose.transforms)
+  return Array.from({ length: HOLE_POINTS }, (_, index) => {
+    const angle = (index / HOLE_POINTS) * 2 * Math.PI
+    return apply(toScene, [Math.cos(angle) * pose.hole, Math.sin(angle) * pose.hole])
+  })
 }
 
 /** A path's handles as they are in the scene being shown */

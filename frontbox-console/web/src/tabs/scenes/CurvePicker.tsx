@@ -1,7 +1,10 @@
 import { Dialog } from '@ark-ui/solid/dialog'
-import { For } from 'solid-js'
+import { createSignal, For } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { Curve } from '../../types/generated/Curve'
+
+/** Written for the scene file by hand, and not something this list can make */
+export const CUSTOM_CURVE = 'Custom'
 
 export const CURVES: Extract<Curve, string>[] = [
   'Linear',
@@ -32,13 +35,19 @@ const BACK_C1 = 1.70158
 const BACK_C2 = BACK_C1 * 1.525
 const BACK_C3 = BACK_C1 + 1
 
-/** A box for each curve a key can take into it, drawn from 0 to 1. Only for reference; nothing here changes the scene. */
-export default function CurvePreview() {
+/** A button that opens every curve drawn from 0 to 1, for picking `label`'s curve by how it looks */
+export default function CurvePicker(props: { label: string; value: Curve; onPick: (curve: Extract<Curve, string>) => void }) {
+  const [open, setOpen] = createSignal(false)
+  const pick = (curve: Extract<Curve, string>) => {
+    props.onPick(curve)
+    setOpen(false)
+  }
+
   return (
-    <Dialog.Root lazyMount unmountOnExit>
-      <Dialog.Trigger aria-label="Show the curves" title="Curves">
+    <Dialog.Root lazyMount unmountOnExit open={open()} onOpenChange={(details) => setOpen(details.open)}>
+      <Dialog.Trigger class="scene-eye" aria-label={`Pick ${props.label} from the curves drawn out`} title="Show the curves">
         <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2 13.5C8 13.5 8 2.5 14 2.5" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path d="M2 13.5C8 13.5 8 2.5 14 2.5" />
         </svg>
       </Dialog.Trigger>
       <Portal>
@@ -46,11 +55,11 @@ export default function CurvePreview() {
         <Dialog.Positioner class="scene-dialog-positioner">
           <Dialog.Content class="scene-dialog">
             <header>
-              <Dialog.Title>Curves</Dialog.Title>
+              <Dialog.Title>{props.label}</Dialog.Title>
               <Dialog.CloseTrigger aria-label="Close">×</Dialog.CloseTrigger>
             </header>
             <div class="scene-curve-list">
-              <For each={CURVES}>{(curve) => <CurveBox curve={curve} />}</For>
+              <For each={CURVES}>{(curve) => <CurveBox curve={curve} chosen={props.value === curve} onClick={() => pick(curve)} />}</For>
             </div>
           </Dialog.Content>
         </Dialog.Positioner>
@@ -60,7 +69,7 @@ export default function CurvePreview() {
 }
 
 /** One curve, with lines where it starts from and goes to */
-function CurveBox(props: { curve: Extract<Curve, string> }) {
+function CurveBox(props: { curve: Extract<Curve, string>; chosen: boolean; onClick: () => void }) {
   const y = (value: number) => 1 + OVERSHOOT - value
   const points = Array.from({ length: SAMPLES + 1 }, (_, index) => {
     const phase = index / SAMPLES
@@ -68,14 +77,14 @@ function CurveBox(props: { curve: Extract<Curve, string> }) {
   }).join(' ')
 
   return (
-    <figure class="scene-curve">
+    <button type="button" class="scene-curve" aria-pressed={props.chosen} onClick={props.onClick}>
       <svg viewBox={`0 0 1 ${1 + 2 * OVERSHOOT}`} preserveAspectRatio="none" aria-hidden="true">
         <line class="scene-curve-guide" x1="0" x2="1" y1={y(0)} y2={y(0)} />
         <line class="scene-curve-guide" x1="0" x2="1" y1={y(1)} y2={y(1)} />
         <polyline class="scene-curve-line" points={points} />
       </svg>
-      <figcaption>{props.curve}</figcaption>
-    </figure>
+      <span>{props.curve}</span>
+    </button>
   )
 }
 

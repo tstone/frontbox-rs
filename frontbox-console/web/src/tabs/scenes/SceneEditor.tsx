@@ -2,7 +2,7 @@ import { Checkbox } from '@ark-ui/solid/checkbox'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
 import { Tabs } from '@ark-ui/solid/tabs'
-import { batch, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from 'solid-js'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import { addContentScene, deleteContentScene, saveContentScene } from '../../state/contentScenes'
@@ -25,10 +25,11 @@ import ConfirmDialog from './ConfirmDialog'
 import { LedsNote } from './LayerPlace'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
-import { NumberBox, LayerSurfacesContext, RevealContext, SceneContext } from './SceneFields'
+import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, type NodePicking, type RegionVisibility } from './SceneFields'
 import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
-import ShapeHandles, { layerUnder } from './ShapeHandles'
+import GraphOverlay from './GraphOverlay'
+import ShapeHandles, { holeOutline, layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
 /** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
@@ -343,12 +344,33 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     return color ? cssColor(color) : null
   }
 
+  /** Regions that aren't drawn over the preview, by layer and whether it's the layer's or its mask's */
+  const [hiddenRegions, setHiddenRegions] = createSignal<ReadonlySet<string>>(new Set())
+  const regionKey = ({ layer, mask }: Selection) => `${layer}${mask ? ' mask' : ''}`
+  const regionVisibility: RegionVisibility = {
+    shown: () => {
+      const open = selection[0]()
+      return open === null || !hiddenRegions().has(regionKey(open))
+    },
+    show(shown) {
+      const open = selection[0]()
+      if (open === null) return
+      const next = new Set(hiddenRegions())
+      if (shown) next.delete(regionKey(open))
+      else next.add(regionKey(open))
+      setHiddenRegions(next)
+    },
+  }
+
   /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
-  const outline = (): Vec2[] => {
+  const outline = (): Vec2[][] => {
     const open = selection[0]()
     const rendered = drawn()
-    if (playback.playing() || open === null || !rendered) return []
-    return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
+    if (playback.playing() || open === null || !rendered || !regionVisibility.shown()) return []
+    const edge = (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
+    // a ring has its hole outlined too
+    const pose = (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer]
+    return [edge, pose ? holeOutline(pose) : []].filter((loop) => loop.length > 0)
   }
 
   /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */
@@ -356,15 +378,26 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const selectedPose = () => {
     const open = selected()
     const rendered = drawn()
-    if (open === null || !rendered) return null
+    if (open === null || !rendered || !regionVisibility.shown()) return null
     return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
   }
   const hasShape = (open: Selection | null) => open !== null && selectedShape(scene(), open) !== undefined
 
-  /** Selects the shape at a point, or leaves it with nothing selected. A layer with no shape isn't selected this way. */
+  /**
+   * Selects the region at a point, or leaves it with nothing selected. A layer with no region isn't selected this way.
+   * While a field is choosing a node of the open layer's graph, it gets the one nearest the point instead.
+   */
   const pick = (point: Vec2 | null) => {
     const [open, setOpen] = selection
     if (playback.playing() || error() !== null || !drawn()) return
+    const choosing = nodePicking.choosing[0]()
+    const graph = selectedGraph()
+    if (choosing && graph && point) {
+      const nearest = graph.nodes.reduce((best, node, index) => (distance(node, point) < distance(graph.nodes[best], point) ? index : best), 0)
+      if (graph.names[nearest] !== undefined) choosing.choose(graph.names[nearest])
+      nodePicking.choosing[1](null)
+      return
+    }
     const under = point && layerUnder(scene()!, drawn()!.outlines, point, onShownSurface)
     if (under !== null) setOpen({ layer: under, mask: false })
     else if (hasShape(open())) setOpen(null)
@@ -379,8 +412,41 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     })
   }
 
+  /** Brings a layer up in the config, as for a traversal, which is under its graph */
+  const openLayer = (layer: number) => {
+    batch(() => {
+      setSourceTab('config')
+      selection[1]({ layer, mask: false })
+    })
+  }
+
+  /** The open layer's graph. Left out while playing, as its outline is. */
+  const selectedGraph = () => {
+    const open = selected()
+    return open === null ? null : (drawn()?.graphs[open.layer] ?? null)
+  }
+
+  const nodePicking: NodePicking = {
+    nodes: () => selectedGraph()?.names ?? [],
+    choosing: createSignal<{ choose: (name: string) => void } | null>(null),
+    highlighted: createSignal<string | null>(null),
+  }
+
+  // a choice is for the layer it started in
+  createEffect(on(() => selection[0]()?.layer, () => nodePicking.choosing[1](null), { defer: true }))
+
   const handles = (space: PreviewSpace) => (
-    <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} grid={snap().on ? snap().size : null} />
+    <>
+      <GraphOverlay
+        space={space}
+        // still there to click on while choosing one of its LEDs
+        graph={regionVisibility.shown() || nodePicking.choosing[0]() !== null ? selectedGraph() : null}
+        layer={selected()?.layer ?? null}
+        highlighted={nodePicking.highlighted[0]()}
+        choosing={nodePicking.choosing[0]() !== null}
+      />
+      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} grid={snap().on ? snap().size : null} />
+    </>
   )
 
   const [screenSize, setScreenSize] = createSignal<Vec2>([0, 0])
@@ -412,8 +478,10 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   return (
     <SceneContext.Provider value={editing}>
+      <NodePickingContext.Provider value={nodePicking}>
       <LayerSurfacesContext.Provider value={layerSurface}>
         <RevealContext.Provider value={revealing}>
+        <RegionVisibilityContext.Provider value={regionVisibility}>
         <div class="scene-editor" ref={root}>
         <header class="scene-file">
           <button type="button" class="scene-button" onClick={close}>
@@ -569,7 +637,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
               <Splitter.Panel id="output" class="scene-output">
                 <Show when={error()}>{(text) => <pre class="scene-error">{text()}</pre>}</Show>
                 {/* both stay up, so the camera and the last render are still there on the way back */}
-                <div class="scene-machine" classList={{ stale: error() !== null }} hidden={!onMachine()}>
+                <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()}>
                   <PlayfieldView
                     ledColor={ledColor}
                     plane={() => (isSequence() ? null : plane())}
@@ -578,13 +646,13 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                     overlay={(space) => <Show when={!isSequence() && plane()}>{handles(space)}</Show>}
                   />
                 </div>
-                <div class="scene-dmd" classList={{ stale: error() !== null }} hidden={onMachine()}>
+                <div class="scene-dmd" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={onMachine()}>
                   <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}>
                     <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
                     <Show when={drawn()?.area}>
                       {(area) => (
                         <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
-                          <polygon points={outline().join(' ')} />
+                          <For each={outline()}>{(loop) => <polygon points={loop.join(' ')} />}</For>
                         </svg>
                       )}
                     </Show>
@@ -598,7 +666,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           <Splitter.Panel id="timeline">
             <Show when={scene() !== null}>
               <div class="scene-editing" inert={error() !== null}>
-                <Timeline playback={playback} rendering={playback.playing() && sceneClipRendering()} error={sceneClipError()} reveal={reveal} />
+                <Timeline playback={playback} rendering={playback.playing() && sceneClipRendering()} error={sceneClipError()} graphs={drawn()?.graphs ?? []} reveal={reveal} openLayer={openLayer} />
               </div>
             </Show>
           </Splitter.Panel>
@@ -631,8 +699,12 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           onConfirm={remove}
         />
         </div>
+        </RegionVisibilityContext.Provider>
         </RevealContext.Provider>
       </LayerSurfacesContext.Provider>
+      </NodePickingContext.Provider>
     </SceneContext.Provider>
   )
 }
+
+const distance = ([ax, ay]: Vec2, [bx, by]: Vec2) => Math.hypot(ax - bx, ay - by)

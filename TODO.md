@@ -44,16 +44,16 @@
 
 ## Scenes/Editor
 
+- Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
+- Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
+- Noise and noise masks
 - Need to probably move pixel font rendering into gfx (real TTF rendering?)
-- Line-based fills (polyline, spiral, logarithmic spiral, tree/branch/lightning ("growth"), etc.)
-- Curve preview (static) pop out in timeline
 - New curves for flame/flicker, stutter, glitch
 - Ability to compose curves in editor
-- Feather/soften edges of layer shape
-- Noise and noise masks
+- Feather/soften edges of layer shape (still needed?)
 - Blend modes (needed?)
 - Layer grouping (needed?)
-- Plane stitching for playback
+- Plane stitching for playback (or should this jsut be real 3d rendering?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
 - Proper BPM sync between music+scenes

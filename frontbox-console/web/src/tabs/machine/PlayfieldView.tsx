@@ -215,8 +215,8 @@ export default function PlayfieldView(props: {
   ledColor?: (name: string) => string | null
   /** The plane a preview works on */
   plane?: () => PlaneView | null
-  /** A closed loop of points to outline on the plane, in the plane's units */
-  outline?: () => [number, number][]
+  /** Closed loops of points to outline on the plane, in the plane's units, such as a ring's edge and its hole */
+  outline?: () => [number, number][][]
   /** Drawn over a preview, with the plane as the space to work in */
   overlay?: (space: PreviewSpace) => JSX.Element
   /** A click on a preview that didn't move the camera, with the point it landed on, if any, on the plane */
@@ -305,10 +305,10 @@ export default function PlayfieldView(props: {
 
     // kept out of `content` for the same reason. Drawn on top, as it often runs along the plane's own edges.
     const dashedMaterial = new THREE.LineDashedMaterial({ dashSize: OUTLINE_DASH, gapSize: OUTLINE_GAP, depthTest: false })
-    const dashedLine = new THREE.Line(new THREE.BufferGeometry(), dashedMaterial)
-    dashedLine.renderOrder = 3
+    // placed on the plane, with a dashed line for each loop of the outline in it
+    const outlineFrame = new THREE.Group()
     const dashedGroup = cabinetGroup()
-    dashedGroup.add(dashedLine)
+    dashedGroup.add(outlineFrame)
     scene.add(dashedGroup)
 
     // everything drawn for the current data, so it can be torn down on a rebuild
@@ -526,19 +526,29 @@ export default function PlayfieldView(props: {
       controls.update()
     }
 
+    function clearOutline() {
+      for (const line of [...outlineFrame.children] as THREE.Line[]) {
+        line.geometry.dispose()
+        outlineFrame.remove(line)
+      }
+    }
+
     function applyOutline() {
       const plane = props.plane?.()
-      const points = props.outline?.() ?? []
-      dashedLine.visible = !!plane && points.length > 0
+      const loops = (props.outline?.() ?? []).filter((points) => points.length > 0)
       if (plane) {
-        dashedLine.position.set(...plane.origin)
-        dashedLine.quaternion.set(...plane.rotation)
+        outlineFrame.position.set(...plane.origin)
+        outlineFrame.quaternion.set(...plane.rotation)
       }
-      if (dashedLine.visible) {
-        const loop = [...points, points[0]].map(([x, y]) => new THREE.Vector3(x, y, 0))
-        dashedLine.geometry.dispose()
-        dashedLine.geometry = new THREE.BufferGeometry().setFromPoints(loop)
-        dashedLine.computeLineDistances()
+      clearOutline()
+      if (plane) {
+        for (const points of loops) {
+          const loop = [...points, points[0]].map(([x, y]) => new THREE.Vector3(x, y, 0))
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(loop), dashedMaterial)
+          line.renderOrder = 3
+          line.computeLineDistances()
+          outlineFrame.add(line)
+        }
       }
       setViewMoved((moves) => moves + 1)
       render()
@@ -546,21 +556,21 @@ export default function PlayfieldView(props: {
 
     toScreen = ([x, y]) => {
       const { clientWidth, clientHeight } = canvas
-      dashedLine.updateWorldMatrix(true, false)
+      outlineFrame.updateWorldMatrix(true, false)
       camera.updateMatrixWorld()
-      const at = dashedLine.localToWorld(new THREE.Vector3(x, y, 0)).project(camera)
+      const at = outlineFrame.localToWorld(new THREE.Vector3(x, y, 0)).project(camera)
       if (at.z > 1) return null
       return [((at.x + 1) / 2) * clientWidth, ((1 - at.y) / 2) * clientHeight]
     }
 
     fromScreen = (clientX, clientY) => {
       aim({ clientX, clientY } as MouseEvent)
-      dashedLine.updateWorldMatrix(true, false)
-      const corners = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => dashedLine.localToWorld(new THREE.Vector3(x, y, 0)))
+      outlineFrame.updateWorldMatrix(true, false)
+      const corners = [[0, 0], [1, 0], [0, 1]].map(([x, y]) => outlineFrame.localToWorld(new THREE.Vector3(x, y, 0)))
       const surface = new THREE.Plane().setFromCoplanarPoints(corners[0], corners[1], corners[2])
       const hit = raycaster.ray.intersectPlane(surface, new THREE.Vector3())
       if (!hit) return null
-      const { x, y } = dashedLine.worldToLocal(hit)
+      const { x, y } = outlineFrame.worldToLocal(hit)
       return [x, y]
     }
 
@@ -770,7 +780,7 @@ export default function PlayfieldView(props: {
       textures.forEach((t) => t.dispose())
       shapeGeometries.forEach((geometry) => geometry.dispose())
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
-      dashedLine.geometry.dispose()
+      clearOutline()
       dashedMaterial.dispose()
       ghostMaterial.dispose()
       outlineMaterial.dispose()

@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Images, Params, Surface};
+use crate::scene::{Images, Params, Surface, Visits};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -10,11 +10,19 @@ use crate::scene::{Images, Params, Surface};
 pub struct Sample {
   pub pos: Vec2,
   pub radius: f32,
+  /// Its index in the [`Graph`](crate::scene::Graph) built from the samples, for layers with a graph. Those layers leave
+  /// out samples without one.
+  pub node: Option<usize>,
 }
 
 impl Sample {
   pub fn new(pos: Vec2, radius: f32) -> Self {
-    Self { pos, radius }
+    Self { pos, radius, node: None }
+  }
+
+  pub fn at_node(mut self, node: usize) -> Self {
+    self.node = Some(node);
+    self
   }
 }
 
@@ -33,4 +41,7 @@ pub struct FrameContext<'a> {
   /// Device size in its own units, which the scene's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,
   pub surface: Surface,
+  /// This frame's [`GfxComposition::visits`](crate::scene::GfxComposition::visits), for layers with a graph. Without
+  /// it, their visit responses stay at rest.
+  pub visits: Option<&'a Visits>,
 }
