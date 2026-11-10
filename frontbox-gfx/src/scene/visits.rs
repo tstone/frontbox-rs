@@ -14,6 +14,13 @@ impl Visits {
   pub(crate) fn at(&self, layer: usize, node: usize) -> Option<NodeVisits<'_>> {
     self.layers.get(layer).map(|traversals| NodeVisits { traversals, node })
   }
+
+  /// Seconds from the first visit to the last for each of a layer's traversals, in its order. `None` for one that
+  /// visits nothing.
+  pub fn lengths(&self, layer: usize) -> Vec<Option<f32>> {
+    let traversals = self.layers.get(layer).map_or(&[][..], Vec::as_slice);
+    traversals.iter().map(TraversalVisits::length).collect()
+  }
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +33,14 @@ pub(crate) struct TraversalVisits {
   /// Positions of the start node and the node visited last, for [`Transform::Fit`](crate::scene::Transform::Fit).
   /// `None` if nothing is visited.
   pub ends: Option<(Vec2, Vec2)>,
+}
+
+impl TraversalVisits {
+  fn length(&self) -> Option<f32> {
+    let first = self.by_node.iter().filter_map(|times| times.first()).copied().reduce(f32::min)?;
+    let last = self.by_node.iter().filter_map(|times| times.last()).copied().fold(first, f32::max);
+    Some(last - first)
+  }
 }
 
 /// One layer's visits at one node

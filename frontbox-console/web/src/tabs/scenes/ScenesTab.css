@@ -505,6 +505,19 @@
   min-width: 0;
 }
 
+/* a field's control with a button beside it */
+.scene-field-line {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.scene-field-line > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .scene-field-label {
   overflow: hidden;
   color: var(--muted);
@@ -776,6 +789,27 @@ label.scene-button:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.scene-curve:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.scene-curve:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the curve it's set to now */
+.scene-curve[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .scene-curve svg {
@@ -796,12 +830,6 @@ label.scene-button:hover {
   stroke-width: 2;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
-}
-
-.scene-curve figcaption {
-  color: var(--muted);
-  font-size: 0.8125rem;
-  text-align: center;
 }
 
 .scene-image {
@@ -1490,10 +1518,6 @@ label.scene-button:hover {
   fill: currentColor;
 }
 
-.scene-timeline-end {
-  margin-left: auto;
-}
-
 .scene-timeline > header label {
   display: flex;
   align-items: center;
@@ -1658,6 +1682,14 @@ label.scene-button:hover {
   pointer-events: none;
 }
 
+/* near the end, the time goes left of its line so the edge doesn't cut it off */
+.scene-timeline-tick-end {
+  padding: 0 0.1875rem 0 0;
+  border-right: 1px solid var(--border);
+  border-left: none;
+  translate: -100%;
+}
+
 .scene-timeline-lane {
   position: relative;
   height: 1.75rem;
@@ -1806,6 +1838,29 @@ label.scene-button:hover {
 .scene-sweep .scene-sweep-grip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* the part of a traversal past the end of the scene, which never plays */
+.scene-traversal-over {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: repeating-linear-gradient(-45deg, var(--warn) 0 3px, transparent 3px 6px) var(--bg);
+}
+
+/* where a row without an eye button says what's wrong with it */
+.scene-timeline-mark {
+  flex: none;
+  width: 1.75rem;
+  color: var(--warn);
+  font-weight: 700;
+  text-align: center;
+}
+
+.scene-timeline-over {
+  cursor: help;
 }
 
 .scene-key:hover,

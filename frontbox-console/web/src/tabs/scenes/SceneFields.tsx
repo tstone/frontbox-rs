@@ -14,7 +14,7 @@ import type { Curve } from '../../types/generated/Curve'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
-import { CURVES, CUSTOM_CURVE } from './CurvePreview'
+import CurvePicker, { CURVES, CUSTOM_CURVE } from './CurvePicker'
 import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
@@ -41,6 +41,14 @@ export type NodePicking = {
 }
 
 export const NodePickingContext = createContext<NodePicking>()
+
+/**
+ * Whether the open layer's or mask's region, or its graph, is drawn over the preview. Only for the editing, so it isn't
+ * part of the scene and hiding it changes nothing the scene shows.
+ */
+export type RegionVisibility = { shown: Accessor<boolean>; show: (shown: boolean) => void }
+
+export const RegionVisibilityContext = createContext<RegionVisibility>()
 
 function useScene() {
   return useContext(SceneContext)!
@@ -594,6 +602,27 @@ const OVERLAP_OPTIONS: { value: Overlap; label: string }[] = [
   { value: 'Add', label: 'Add up' },
 ]
 
+/** A curve from the list, or from the curves drawn out beside it. One written by hand in the file shows as Custom. */
+export function CurveField(props: { label: string; lens: Lens<Curve> }) {
+  const chosen = () => {
+    const value = props.lens.get()
+    return typeof value === 'string' ? value : CUSTOM_CURVE
+  }
+  return (
+    <div class="scene-field-line">
+      <Dropdown
+        label={props.label}
+        options={[...CURVES, ...(chosen() === CUSTOM_CURVE ? [CUSTOM_CURVE] : [])].map((value) => ({ value, label: value }))}
+        value={chosen()}
+        onChange={(next) => {
+          if (next !== CUSTOM_CURVE) props.lens.set(next as Curve)
+        }}
+      />
+      <CurvePicker label={props.label} value={props.lens.get()} onPick={props.lens.set} />
+    </div>
+  )
+}
+
 /** A response to a traversal's visits, from `from` to `to` and back, timed in the traversal's steps */
 function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>>; ranges: Ranges }) {
   const traversals = useContext(TraversalsContext)
@@ -601,20 +630,9 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
   // one the layer doesn't have anymore stays chosen, so it can be seen and changed
   const options = () => [...new Set([...traversals(), response().traversal])].filter((name) => name !== '').map((name) => ({ value: name, label: name }))
   const stays = () => response().smooth_out === undefined
-  const curve = (key: 'curve_in' | 'curve_out') => {
-    const value = response()[key]
-    return typeof value === 'string' ? value : CUSTOM_CURVE
-  }
   const curveField = (key: 'curve_in' | 'curve_out', label: string) => (
     <FieldRow label={label}>
-      <Dropdown
-        label={`${props.label} ${label.toLowerCase()}`}
-        options={[...CURVES, ...(curve(key) === CUSTOM_CURVE ? [CUSTOM_CURVE] : [])].map((value) => ({ value, label: value }))}
-        value={curve(key)}
-        onChange={(next) => {
-          if (next !== CUSTOM_CURVE) field(props.lens, key).set(next as Curve)
-        }}
-      />
+      <CurveField label={`${props.label} ${label.toLowerCase()}`} lens={field(props.lens, key)} />
     </FieldRow>
   )
 
@@ -646,7 +664,7 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
             <Toggle.Thumb />
           </Toggle.Control>
           <Toggle.Label>Stays at To</Toggle.Label>
-          <Toggle.HiddenInput aria-label={`${props.label} stays at to`} />
+          <Toggle.HiddenInput aria-label={`${props.label} stays at To`} />
         </Toggle.Root>
       </div>
       <Show when={!stays()}>
@@ -656,12 +674,12 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
       </Show>
       {curveField('curve_in', 'Curve in')}
       <Show when={!stays()}>{curveField('curve_out', 'Curve out')}</Show>
+      <p class="scene-note">
+        Times are in the traversal's steps, so they keep their shape at any speed. For a traversal that goes by distance, a step is one unit of travel.
+      </p>
       <FieldRow label="Overlapping visits">
         <Dropdown label={`${props.label} overlapping visits`} options={OVERLAP_OPTIONS} value={response().overlap} onChange={field(props.lens, 'overlap').set} />
       </FieldRow>
-      <p class="scene-note">
-        Times are in the traversal's steps, so a response keeps its shape at any rate. For a traversal that goes by distance, a step is one unit of travel.
-      </p>
     </>
   )
 }

@@ -1,17 +1,17 @@
 import { Popover } from '@ark-ui/solid/popover'
 import { batch, createMemo, createSignal, For, Index, onCleanup, Show, useContext } from 'solid-js'
 import { Portal } from 'solid-js/web'
-import type { Curve } from '../../types/generated/Curve'
 import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
+import type { RenderedGraph } from '../../types/generated/RenderedGraph'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
-import CurvePreview, { CURVES, CUSTOM_CURVE } from './CurvePreview'
+import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
-import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, snap, TIME_STEP, trackTimes, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneValue } from './sceneModel'
+import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, sceneTraversals, snap, TIME_STEP, trackTimes, traversalLength, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -53,16 +53,34 @@ function along(e: PointerEvent, element: HTMLElement) {
   return clamp((e.clientX - left) / width, 0, 1)
 }
 
-/** A scene's timing, and a track for each keyframed prop, along the bottom of the editor */
-export default function Timeline(props: { playback: Playback; rendering: boolean; error: string | null; reveal: (track: SceneTrack) => void }) {
+/**
+ * A scene's timing, with a track for each keyframed prop and a bar for each traversal, along the bottom of the editor.
+ * `graphs` are the layers' graphs as last drawn, which measure how long a traversal with a rate takes.
+ */
+export default function Timeline(props: {
+  playback: Playback
+  rendering: boolean
+  error: string | null
+  graphs: (RenderedGraph | null)[]
+  reveal: (track: SceneTrack) => void
+  openLayer: (layer: number) => void
+}) {
   const scene = useContext(SceneContext)!
   const surfaces = useContext(LayerSurfacesContext)!
   const timing = () => scene.get().timing
   const tracks = createMemo(() => sceneTracks(scene, surfaces))
+  const traversals = createMemo(() => sceneTraversals(scene))
 
-  /** How much time the view shows. A key past the end is still there to be found and moved. */
+  const length = ({ traversal, layer, index }: SceneTraversal) =>
+    traversalLength(traversal.get(), scene.get(), props.graphs[layer]?.lengths[index] ?? null)
+
+  /** How much time the view shows. A key or a traversal past the end is still there to be found and moved. */
   const span = createMemo(() =>
-    Math.max(timing()?.duration ?? 1, ...tracks().map(({ prop }) => trackTimes(prop.get()).at(-1) ?? 0)),
+    Math.max(
+      timing()?.duration ?? 1,
+      ...tracks().map(({ prop }) => trackTimes(prop.get()).at(-1) ?? 0),
+      ...traversals().map((run) => run.traversal.get().start + (length(run) ?? 0)),
+    ),
   )
 
   const percent = (seconds: number) => `${(seconds / span()) * 100}%`
@@ -112,9 +130,6 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
         <Show when={props.error}>
           <span class="scene-note scene-note-warn">{props.error}</span>
         </Show>
-        <span class="scene-timeline-end">
-          <CurvePreview />
-        </span>
       </header>
       <Show
         when={timing()}
@@ -136,15 +151,22 @@ export default function Timeline(props: { playback: Playback; rendering: boolean
               >
                 <For each={ticks()}>
                   {(tick) => (
-                    <span class="scene-timeline-tick" style={{ left: percent(tick) }}>
+                    <span
+                      class="scene-timeline-tick"
+                      classList={{ 'scene-timeline-tick-end': tick / span() > 0.9 }}
+                      style={{ left: percent(tick) }}
+                    >
                       {Number(tick.toFixed(2))}
                     </span>
                   )}
                 </For>
               </div>
             </div>
+            <Index each={traversals()}>
+              {(run) => <TraversalRow run={run()} length={length(run())} end={timing()!.duration} percent={percent} span={span()} open={props.openLayer} />}
+            </Index>
             {/* by position, so an edit doesn't tear down the editor it was made in */}
-            <Index each={tracks()} fallback={<p class="scene-note">Set any value to Track to give it a track here.</p>}>
+            <Index each={tracks()} fallback={traversals().length === 0 && <p class="scene-note">Set any value to Track to give it a track here.</p>}>
               {(track) => <TrackRow track={track()} percent={percent} span={span()} reveal={props.reveal} />}
             </Index>
             <div class="scene-timeline-playhead" />
@@ -441,6 +463,91 @@ function SweepBar(props: { label: string; lens: Lens<Sweep>; percent: (seconds: 
   )
 }
 
+/**
+ * A traversal's name and when it plays out: a bar from its start for as long as it takes, marking the part past the end
+ * of the scene, where it's cut off. `length` is `null` while that isn't known.
+ */
+function TraversalRow(props: { run: SceneTraversal; length: number | null; end: number; percent: (seconds: number) => string; span: number; open: (layer: number) => void }) {
+  // read through `props`, as a row goes to whichever traversal comes to be at its position
+  const traversal: Lens<Traversal> = { get: () => props.run.traversal.get(), set: (next) => props.run.traversal.set(next) }
+  const over = () => (props.length === null ? 0 : traversal.get().start + props.length - props.end)
+  const overText = () => (over() > TIME_STEP / 2 ? `${props.run.label} runs ${over().toFixed(2)} s past the end of the scene, so it's cut off before it finishes` : null)
+
+  return (
+    <div class="scene-timeline-row">
+      <div class="scene-timeline-name">
+        <span class="scene-timeline-mark" classList={{ 'scene-timeline-over': overText() !== null }} title={overText() ?? undefined}>
+          <Show when={overText()}>!</Show>
+        </span>
+        <button type="button" class="scene-timeline-label" title={`Find ${props.run.label} in Config`} onClick={() => props.open(props.run.layer)}>
+          {props.run.label}
+        </button>
+      </div>
+      <div class="scene-timeline-lane">
+        <TraversalBar label={props.run.label} lens={traversal} length={props.length} end={props.end} over={overText()} percent={props.percent} span={props.span} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * When a traversal plays out, with a grip for moving its start and, for one that finishes in a time, an arrow for
+ * changing that time. The part past `end` is marked, with `over` saying what that means.
+ */
+function TraversalBar(props: {
+  label: string
+  lens: Lens<Traversal>
+  length: number | null
+  end: number
+  over: string | null
+  percent: (seconds: number) => string
+  span: number
+}) {
+  const traversal = () => props.lens.get()
+  const length = () => props.length ?? 0
+  let bar!: HTMLDivElement
+
+  /** Dragging something that changes the traversal by how far it's come, from how it was when it was pressed */
+  const dragged = (moved: (by: number, pressed: { start: number; length: number; span: number }) => Partial<Traversal>) => {
+    // kept from the press, as the view's length can change with where the bar is
+    let press: { x: number; start: number; length: number; span: number } | null = null
+    const lane = () => bar.parentElement!
+    return {
+      onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+        e.currentTarget.setPointerCapture(e.pointerId)
+        press = { x: along(e, lane()), start: traversal().start, length: length(), span: props.span }
+      },
+      onPointerMove(e: PointerEvent) {
+        if (!press) return
+        props.lens.set({ ...traversal(), ...moved((along(e, lane()) - press.x) * press.span, press) })
+      },
+      onPointerUp: () => (press = null),
+      onPointerCancel: () => (press = null),
+    }
+  }
+
+  // made once, as each of these holds its own press
+  const grip = dragged((by, { start }) => ({ start: clamp(snap(start + by), 0, Math.max(props.end - TIME_STEP, 0)) }))
+  const endArrow = dragged((by, { start, length, span }) => ({ speed: { Duration: clamp(snap(length + by), TIME_STEP, span - start) } }))
+
+  /** Where the end of the scene falls along the bar, as a share of it */
+  const endAlong = () => (length() > 0 ? clamp((props.end - traversal().start) / length(), 0, 1) : 0)
+
+  return (
+    <div class="scene-sweep scene-traversal" ref={bar} style={{ left: props.percent(traversal().start), width: props.percent(length()) }} title={props.over ?? undefined}>
+      <Show when={props.over}>
+        <span class="scene-traversal-over" style={{ left: `${endAlong() * 100}%` }} />
+      </Show>
+      <button type="button" class="scene-sweep-grip" aria-label={`Move ${props.label} along the timeline, starting at ${traversal().start.toFixed(2)} seconds`} {...grip} />
+      <Show when={'Duration' in traversal().speed}>
+        <button type="button" class="scene-sweep-end scene-sweep-finish" aria-label={`${props.label} finishes in ${length().toFixed(2)} seconds`} {...endArrow}>
+          ›
+        </button>
+      </Show>
+    </div>
+  )
+}
+
 /** Where a dot sits among the others on its track */
 type DotPlace = { index: number; left: string; times: number[]; span: number }
 
@@ -539,11 +646,6 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
   const at = () => key().get().at
   const room = () => roomNear(props)
 
-  const curve = () => {
-    const value = key().get().curve
-    return typeof value === 'string' ? value : CUSTOM_CURVE
-  }
-
   const background = () => {
     const value = key().get().value
     return Array.isArray(value) && value.length === 4 ? `rgb(${value.slice(0, 3).join(' ')})` : undefined
@@ -556,14 +658,7 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
       </FieldRow>
       <Show when={props.index > 0}>
         <FieldRow label="Curve into this key">
-          <Dropdown
-            label="Curve into this key"
-            options={[...CURVES, ...(curve() === CUSTOM_CURVE ? [CUSTOM_CURVE] : [])].map((value) => ({ value, label: value }))}
-            value={curve()}
-            onChange={(next) => {
-              if (next !== CUSTOM_CURVE) field(key(), 'curve').set(next as Curve)
-            }}
-          />
+          <CurveField label="Curve into this key" lens={field(key(), 'curve')} />
         </FieldRow>
       </Show>
       <div class="scene-key-actions">

@@ -154,6 +154,9 @@ pub struct RenderedGraph {
   pub nodes: Vec<[f32; 2]>,
   /// Each edge once, by the indexes of its two nodes
   pub edges: Vec<[usize; 2]>,
+  /// Seconds each of the layer's traversals takes from leaving `from` to its last visit, in the layer's order, however
+  /// long the cycle is. `None` for one that visits nothing.
+  pub lengths: Vec<Option<f32>>,
 }
 
 /// A shape as it stands at a moment

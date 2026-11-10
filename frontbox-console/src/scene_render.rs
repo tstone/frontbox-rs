@@ -209,8 +209,8 @@ fn parts(scene: &SceneDefinition, shown: &GfxComposition, size: SceneSize, machi
     let plane = layer.surface.plane().and_then(|plane| machine.leds.plane(plane));
     let placed = place_leds(surface, &machine.leds, plane, layer.leds.as_ref().unwrap_or(&LedQ::Every), machine.radius);
     let (placed, graph) = match &layer.layer.graph {
-      Some(mask) => {
-        let (placed, graph) = place_graph(placed, plane, &mask.edges);
+      Some(_) => {
+        let (placed, graph) = place_graph(placed, plane);
         (placed, Some(graph))
       }
       None => (placed, None),
@@ -307,6 +307,8 @@ fn rendered_graph(part: &Part) -> Option<RenderedGraph> {
     names: graph.nodes().iter().map(|node| node.name.clone()).collect(),
     nodes: graph.nodes().iter().map(|node| node.pos.to_array()).collect(),
     edges: graph.edges().map(|(a, b)| [a, b]).collect(),
+    // a part has the one layer
+    lengths: part.visits.as_ref().map_or(Vec::new(), |visits| visits.lengths(0)),
   })
 }
 
@@ -470,11 +472,11 @@ mod tests {
     assert_eq!(clip[clip.len() - 6..], [255, 0, 0, 0, 0, 255]);
   }
 
-  /// Red where a wave has just been, going one edge a second from `led0`
+  /// Red where a wave has just been, going one edge a second from `led0`, each LED fading over a step
   const WAVE: &str = r#"Led(
     version: 1, timing: (duration: 10.0, cycle: Once), layers: [(surface: Area("Square"), layer: (
       fill: (base: Solid(Fixed(255, 0, 0, 255)), adjust: [Opacity(Visit(traversal: "wave", from: 0.0, to: 1.0, smooth_out: 1.0))]),
-      graph: (traversals: [(name: "wave", from: Name("led0"), algorithm: BreadthFirst, rate: Fixed(1.0))]),
+      graph: (traversals: [(name: "wave", from: Name("led0"), algorithm: BreadthFirst(), speed: Rate(Fixed(1.0)))]),
     ))],)"#;
 
   #[test]
@@ -489,6 +491,8 @@ mod tests {
     assert_eq!(graph.names, ["led0", "led1", "led2", "led3"]);
     assert_eq!(graph.nodes[1], [2.0, 5.0]);
     assert_eq!(graph.edges, [[0, 1], [1, 2], [2, 3]]);
+    // three edges at one a second
+    assert_eq!(graph.lengths, [Some(3.0)]);
   }
 
   #[test]

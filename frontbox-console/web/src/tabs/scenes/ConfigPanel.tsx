@@ -10,7 +10,6 @@ import { contentImageInfo } from '../../state/contentImages'
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
-import type { EdgeRule } from '../../types/generated/EdgeRule'
 import type { FillNode } from '../../types/generated/FillNode'
 import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { GraphMask } from '../../types/generated/GraphMask'
@@ -19,6 +18,7 @@ import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
+import type { Speed } from '../../types/generated/Speed'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
@@ -26,7 +26,7 @@ import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import { ImagePicker } from './ImagePicker'
 import LayerPlace from './LayerPlace'
-import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NodePickingContext, NumberField, PropField, RevealContext, SceneContext, SurfaceContext, TraversalsContext } from './SceneFields'
+import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NodePickingContext, NumberField, PropField, RegionVisibilityContext, RevealContext, SceneContext, SurfaceContext, TraversalsContext } from './SceneFields'
 import {
   adjustAmount,
   adjustKind,
@@ -48,6 +48,7 @@ import {
   orElse,
   radius,
   RATE,
+  WANDER,
   orEmpty,
   pointRanges,
   removed,
@@ -57,7 +58,6 @@ import {
   shapePoints,
   sizeRanges,
   startingValue,
-  TIME_STEP,
   translateRanges,
   traversalNames,
   traversalTarget,
@@ -82,6 +82,8 @@ type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
 type Shape = NonNullable<Layer['region']>
 type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Polyline' | 'Bezier'
+/** What a layer's region can be: a shape, or on an LED scene its graph */
+type RegionKind = ShapeKind | 'Graph'
 
 /** How much of a new ring's reach is its hole */
 const RING_HOLE = 0.75
@@ -100,41 +102,46 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Conical', label: 'Conical gradient' },
   { value: 'Image', label: 'Image' },
 ]
+const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
+/** "All" first, then by label */
 const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
   { value: 'None', label: 'All' },
   { value: 'Circle', label: 'Circle' },
-  { value: 'Ring', label: 'Ring' },
   { value: 'Ellipse', label: 'Ellipse' },
-  { value: 'Rect', label: 'Rectangle' },
-  { value: 'Polygon', label: 'Polygon' },
   { value: 'Pinwheel', label: 'Pinwheel' },
+  { value: 'Polygon', label: 'Polygon' },
+  { value: 'Rect', label: 'Rectangle' },
+  { value: 'Ring', label: 'Ring' },
 ]
 /** A path has to be something, and can also be a line, which has no inside to draw as a shape */
-const PATH_OPTIONS: { value: ShapeKind; label: string }[] = [
+const PATH_OPTIONS = ([
   ...SHAPE_OPTIONS.slice(1),
   { value: 'Polyline', label: 'Polyline' },
   { value: 'Bezier', label: 'Bezier' },
-]
+] as { value: ShapeKind; label: string }[]).sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [
   { value: 'Translate', label: 'Translate' },
   { value: 'Rotate', label: 'Rotate' },
   { value: 'Scale', label: 'Scale' },
 ]
+/** Only for a layer on an LED scene */
+const GRAPH_REGION_OPTIONS: { value: RegionKind; label: string }[] = [
+  SHAPE_OPTIONS[0],
+  ...[...SHAPE_OPTIONS.slice(1), { value: 'Graph' as const, label: 'Graph' }].sort(byLabel),
+]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: 'Fit to traversal' }
-const EDGE_RULE_OPTIONS: { value: EdgeRule; label: string }[] = [
-  { value: 'RelativeNeighborhood', label: 'Sparse, branching' },
-  { value: 'Gabriel', label: 'Dense, meshed' },
-]
 type AlgorithmKind = 'BreadthFirst' | 'DepthFirst' | 'Dijkstra' | 'ShortestPath' | 'AStar' | 'RandomWalk'
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
-  { value: 'BreadthFirst', label: 'Breadth first' },
-  { value: 'Dijkstra', label: 'By distance (Dijkstra)' },
   { value: 'DepthFirst', label: 'Depth first' },
-  { value: 'ShortestPath', label: 'Shortest path' },
-  { value: 'AStar', label: 'A* search' },
+  { value: 'ShortestPath', label: 'Direct path (targeted)' },
+  { value: 'AStar', label: 'Exploratory path (targeted)' },
+  { value: 'Dijkstra', label: 'Fill by distance' },
+  { value: 'BreadthFirst', label: 'Fill by steps' },
   { value: 'RandomWalk', label: 'Random walk' },
 ]
+type Wandering = 'BreadthFirst' | 'Dijkstra' | 'ShortestPath'
+const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'ShortestPath']
 /** Algorithms whose rate is a distance a second, rather than a number of steps */
 const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath']
 const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
@@ -142,8 +149,6 @@ const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
   { value: 'Name', label: 'LED' },
   { value: 'Nearest', label: 'Nearest to a position' },
 ]
-/** How much longer a shortest path's edges can be made at random, as a fraction of each */
-const JITTER: Range = { min: 0, max: 2, step: 0.01, rest: 0 }
 const EDITING = ['Layer', 'Mask'] as const
 const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
   { value: 'Outside', label: 'Outside the mask' },
@@ -291,7 +296,6 @@ function LayerName(props: { lens: Lens<string | undefined>; placeholder: string;
 /** Measures what's in it against what the layer is on */
 function LayerEditor(props: { lens: Lens<SceneLayer>; mask: boolean; onMask: (mask: boolean) => void }) {
   const surfaces = useContext(LayerSurfacesContext)!
-  const scene = useContext(SceneContext)!
   return (
     <SurfaceContext.Provider value={() => surfaces(props.lens.get())}>
       <TraversalsContext.Provider value={() => traversalNames(props.lens.get())}>
@@ -317,10 +321,7 @@ function LayerEditor(props: { lens: Lens<SceneLayer>; mask: boolean; onMask: (ma
         fallback={
           <>
             <LayerPlace lens={props.lens} />
-            <ShapeEditor lens={field(props.lens, 'region')} />
-            <Show when={scene.get().kind === 'Led'}>
-              <GraphEditor lens={field(props.lens, 'graph')} layer={props.lens} />
-            </Show>
+            <ShapeEditor lens={field(props.lens, 'region')} layer={props.lens} />
             <FillEditor lens={field(props.lens, 'fill')} />
           </>
         }
@@ -357,23 +358,18 @@ function MaskEditor(props: { lens: Lens<Mask | undefined> }) {
   )
 }
 
-/** Limits a layer to a graph built from its LEDs, with traversals over it that props can respond to */
-function GraphEditor(props: { lens: Lens<GraphMask | undefined>; layer: Lens<SceneLayer> }) {
+/** A graph built from a layer's LEDs, as its region, with traversals over it that props can respond to */
+function GraphEditor(props: { lens: Lens<GraphMask>; layer: Lens<SceneLayer> }) {
   const graphNodes = useGraphNodes()
   const scene = useContext(SceneContext)!
   const surface = useContext(SurfaceContext)!
-  const graph = props.lens as Lens<GraphMask>
-  const edges = () => field(graph, 'edges')
-  const traversals = () => field(graph, 'traversals')
-  const add = () => props.lens.set({ edges: { rule: 'RelativeNeighborhood' }, traversals: [] })
+  const traversals = () => field(props.lens, 'traversals')
   const used = createMemo(() => usedTraversals(props.layer.get()))
 
   const addTraversal = () => {
     scene.set(withTiming(scene.get()))
     const name = freshTraversalName(props.layer.get(), 'walk')
-    // from the first LED in the graph, as one that isn't in it reaches nothing
-    const from = { Name: graphNodes()[0] ?? '' }
-    traversals().set([...traversals().get(), { name, from, algorithm: 'BreadthFirst', rate: { Fixed: RATE.rest! }, start: 0 }])
+    traversals().set([...traversals().get(), newTraversal(name, graphNodes(), surface())])
   }
 
   // its responses and fits follow it to its new name
@@ -383,67 +379,69 @@ function GraphEditor(props: { lens: Lens<GraphMask | undefined>; layer: Lens<Sce
   }
 
   return (
-    <Show when={props.lens.get()} fallback={<AddButton onClick={add}>Add graph</AddButton>}>
-      <section class="scene-group">
-        <FieldRow label="Graph edges">
-          <Dropdown label="Graph edges" options={EDGE_RULE_OPTIONS} value={graph.get().edges.rule} onChange={field(edges(), 'rule').set} />
-        </FieldRow>
-        <FieldRow label="Longest edge">
-          <NumberField
-            label="Longest edge"
-            range={edgeRange(surface())}
-            value={graph.get().edges.max_length ?? 0}
-            onChange={(length) => field(edges(), 'max_length').set(length > 0 ? length : undefined)}
-          />
-        </FieldRow>
-        <p class="scene-note">LEDs further apart than this aren't joined. 0 is no limit.</p>
-        <p class="scene-note">
-          Only LEDs in the graph light up on this layer. On a plane, LEDs more than half a unit above or below it, such as on ramps, aren't in the
-          graph.
-        </p>
-        {/* visits are what's being set up here, so these fields don't respond to them */}
-        <TraversalsContext.Provider value={() => []}>
-          <Index each={traversals().get()}>
-            {(traversal, index) => (
-              <ListItem title={`Traversal ${traversal().name}`} heading={<span>Traversal</span>} list={traversals()} index={index}>
-                <TraversalEditor lens={item(traversals(), index)} used={used().has(traversal().name)} onRename={(to) => rename(traversal().name, to)} />
-              </ListItem>
-            )}
-          </Index>
-        </TraversalsContext.Provider>
-        <AddButton onClick={addTraversal}>Add traversal</AddButton>
-        <AddButton onClick={() => props.lens.set(undefined)}>Remove graph</AddButton>
-      </section>
+    <>
+      <p class="scene-note">
+        Only LEDs in the graph light up on this layer. To show them as a traversal reaches them, set the layer's opacity to Visit. On a plane, LEDs
+        more than half a unit above or below it, such as on ramps, aren't in the graph.
+      </p>
+      <Show when={props.layer.get().region}>
+        <p class="scene-note scene-note-warn">This layer also has a region, set in its file, which still limits where it shows.</p>
+        <AddButton onClick={() => field(props.layer, 'region').set(undefined)}>Remove region</AddButton>
+      </Show>
+      {/* visits are what's being set up here, so these fields don't respond to them */}
+      <TraversalsContext.Provider value={() => []}>
+        <Index each={traversals().get()}>
+          {(traversal, index) => (
+            <ListItem title={`Traversal ${traversal().name}`} heading={<span>Traversal</span>} list={traversals()} index={index}>
+              <TraversalEditor lens={item(traversals(), index)} used={used().has(traversal().name)} onRename={(to) => rename(traversal().name, to)} />
+            </ListItem>
+          )}
+        </Index>
+      </TraversalsContext.Provider>
+      <AddButton onClick={addTraversal}>Add traversal</AddButton>
       <datalist id={LED_NAMES}>
         <For each={graphNodes()}>{(name) => <option value={name} />}</For>
       </datalist>
-    </Show>
+    </>
   )
 }
 
 const LED_NAMES = 'scene-led-names'
 
-
-/** The longest edge a graph's slider goes to: the width of what it's on, or for a sequence the whole of it */
-function edgeRange(surface: Surface): Range {
-  const max = surface ? Math.max(...surface) : 1
-  return { min: 0, max, step: max / 200, rest: 0 }
+/**
+ * A traversal from the first LED in the graph out to all the others, over the rest of the cycle.
+ * Before the graph has been drawn there are no LEDs to name, so it starts from whichever is nearest the middle.
+ */
+function newTraversal(name: string, nodes: string[], surface: Surface): Traversal {
+  const [width, height] = surface ?? [1, 0]
+  const from: NodeRef = nodes.length > 0 ? { Name: nodes[0] } : { Nearest: { Fixed: [width / 2, height / 2] } }
+  return { name, from, algorithm: { BreadthFirst: { wander: { Fixed: 0 } } }, speed: { Duration: null }, start: 0 }
 }
 
 function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename: (name: string) => void }) {
   const graphNodes = useGraphNodes()
-  const scene = useContext(SceneContext)!
   const traversal = () => props.lens.get()
   const algorithm = () => field(props.lens, 'algorithm')
   const kind = () => algorithmKind(traversal().algorithm)
   const target = () => traversalTarget(algorithm())
+  const wander = () =>
+    field(variant(algorithm() as unknown as Lens<Record<Wandering, { wander: Prop<number> }>>, kind() as Wandering), 'wander')
+  const speed = () => field(props.lens, 'speed')
+  const speedKind = (): SpeedKind => ('Rate' in traversal().speed ? 'Rate' : 'Duration')
+  const setSpeedKind = (next: SpeedKind) => {
+    if (next === speedKind()) return
+    speed().set(next === 'Rate' ? { Rate: { Fixed: RATE.rest! } } : { Duration: null })
+  }
 
-  // a traversal going somewhere keeps going there as its algorithm changes
+  // a traversal going somewhere keeps going there as its algorithm changes, and keeps its wander
   const setKind = (next: AlgorithmKind) => {
     if (next === kind()) return
     // or to the far end of the graph, so a new one has somewhere to go
     const to = target()?.get() ?? { Name: graphNodes().at(-1) ?? '' }
-    if (next === 'ShortestPath') algorithm().set({ ShortestPath: { to, jitter: 0 } })
+    const keptWander: Prop<number> = WANDERING.includes(kind()) ? wander().get() : { Fixed: WANDER.rest! }
+    if (next === 'ShortestPath') algorithm().set({ ShortestPath: { to, wander: keptWander } })
+    else if (next === 'BreadthFirst') algorithm().set({ BreadthFirst: { wander: keptWander } })
+    else if (next === 'Dijkstra') algorithm().set({ Dijkstra: { wander: keptWander } })
     else if (next === 'AStar') algorithm().set({ AStar: { to } })
     else algorithm().set(next)
   }
@@ -462,41 +460,48 @@ function TraversalEditor(props: { lens: Lens<Traversal>; used: boolean; onRename
           }}
         />
       </FieldRow>
-      <NodeRefField label="From" lens={field(props.lens, 'from')} />
       <FieldRow label="Algorithm">
         <Dropdown label="Algorithm" options={ALGORITHM_OPTIONS} value={kind()} onChange={setKind} />
       </FieldRow>
-      <Show when={target()} fallback={<p class="scene-note">Goes on to every LED in the graph. Shortest path and A* search go to one LED.</p>}>
+      <NodeRefField label="From" lens={field(props.lens, 'from')} />
+      <Show when={target()} fallback={<p class="scene-note">Goes on to every LED in the graph. The targeted algorithms go to one LED.</p>}>
         {(to) => <NodeRefField label="To" lens={to()} />}
       </Show>
-      <Show when={kind() === 'ShortestPath'}>
-        <FieldRow label="Jitter">
-          <NumberField
-            label="Jitter"
-            range={JITTER}
-            value={(traversal().algorithm as { ShortestPath: { jitter: number } }).ShortestPath.jitter}
-            onChange={field(variant(algorithm() as Lens<Extract<TraversalAlgorithm, { ShortestPath: unknown }>>, 'ShortestPath'), 'jitter').set}
-          />
-        </FieldRow>
+      <Show when={WANDERING.includes(kind())}>
+        <PropField label="Wander" paramName="wander" fallback={WANDER.rest!} ranges={both(WANDER)} lens={wander()} />
       </Show>
-      <PropField label={BY_DISTANCE.includes(kind()) ? 'Units a second' : 'Steps a second'} paramName="rate" fallback={RATE.rest!} ranges={both(RATE)} lens={field(props.lens, 'rate')} />
-      <FieldRow label="Start">
-        <NumberField
-          label="Start"
-          range={{ min: 0, max: scene.get().timing?.duration ?? 1, step: TIME_STEP, rest: 0 }}
-          value={traversal().start}
-          onChange={field(props.lens, 'start').set}
-        />
+      <FieldRow label="Speed">
+        <Dropdown label="Speed" options={SPEED_OPTIONS} value={speedKind()} onChange={setSpeedKind} />
       </FieldRow>
+      <Show when={speedKind() === 'Rate'}>
+        <PropField
+          label={BY_DISTANCE.includes(kind()) ? 'Units a second' : 'Steps a second'}
+          paramName="rate"
+          fallback={RATE.rest!}
+          ranges={both(RATE)}
+          lens={variant(speed() as Lens<Extract<Speed, { Rate: unknown }>>, 'Rate')}
+        />
+      </Show>
+      <p class="scene-note">
+        {speedKind() === 'Duration'
+          ? 'Its start and how long it takes are set by its bar on the timeline.'
+          : 'Its start is set by its bar on the timeline.'}
+      </p>
       <Show when={!props.used}>
         <p class="scene-note scene-note-warn">
-          Nothing responds to {traversal().name} yet, so it doesn't change how the layer looks. Set a color, opacity or other value to Visit to light
-          LEDs as it reaches them.
+          Nothing responds to {traversal().name}, so it doesn't change how the layer looks. Set an opacity, color or other value to Visit.
         </p>
       </Show>
     </>
   )
 }
+
+const SPEED_OPTIONS: { value: SpeedKind; label: string }[] = [
+  { value: 'Duration', label: 'Finish in a time' },
+  { value: 'Rate', label: 'Rate' },
+]
+
+type SpeedKind = 'Rate' | 'Duration'
 
 /** The LEDs in the open layer's graph, by name, which are the only ones a traversal can start from or go to */
 function useGraphNodes() {
@@ -837,22 +842,41 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[] }> }) {
 
 const cssColor = ([r, g, b, a]: Color) => `rgb(${r} ${g} ${b} / ${a / 255})`
 
-/** A layer's region, or with `path` the shape a sweep goes around, which can't be left out */
-export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: Lens<Shape>; path: true }) {
+/**
+ * A mask's region, a layer's, or with `path` the shape a sweep goes around, which can't be left out. On an LED scene, a
+ * `layer`'s region can also be its graph. In the file the two are separate, and a layer could have both, but the graph
+ * already says which LEDs it shows on.
+ */
+export function ShapeEditor(props: { lens: Lens<Shape | undefined>; layer?: Lens<SceneLayer> } | { lens: Lens<Shape>; path: true }) {
   const path = 'path' in props
+  const layer = 'layer' in props ? props.layer : undefined
   const label = path ? 'Path' : 'Region'
   const surface = useContext(SurfaceContext)!
   const scene = useContext(SceneContext)!
+  const graphNodes = useGraphNodes()
+  const visibility = useContext(RegionVisibilityContext)
   const lens = props.lens as Lens<Shape | undefined>
   const shape = props.lens as Lens<Shape>
   const base = field(shape, 'base') as Lens<ShapeNode>
-  const kind = (): ShapeKind => {
+  const graphs = () => layer !== undefined && scene.get().kind === 'Led'
+  const kind = (): RegionKind => {
+    if (layer?.get().graph) return 'Graph'
     const current = lens.get()
     return current ? (Object.keys(current.base)[0] as ShapeKind) : 'None'
   }
 
-  const setKind = (next: ShapeKind) => {
+  const setKind = (next: RegionKind) => {
     if (next === kind()) return
+    if (next === 'Graph') {
+      // only offered for a layer. A graph is there to be traversed, so it comes with a traversal.
+      if (!layer) return
+      scene.set(withTiming(scene.get()))
+      const graph = { traversals: [newTraversal(freshTraversalName(layer.get(), 'walk'), graphNodes(), surface())] }
+      return layer.set({ ...layer.get(), region: undefined, graph })
+    }
+    if (layer && kind() === 'Graph') {
+      return layer.set({ ...layer.get(), graph: undefined, region: next === 'None' ? undefined : newShape(next, surface()) })
+    }
     if (next === 'None') return lens.set(undefined)
     // one shape turned into another takes up the same room
     if (lens.get()) base.set(sizedShape(next, shapeSize(base.get(), scene.get(), surface())))
@@ -864,7 +888,13 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
   return (
     <section class="scene-group">
       <FieldRow label={label}>
-        <Dropdown label={label} options={path ? PATH_OPTIONS : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
+        <div class="scene-field-line">
+          <Dropdown<RegionKind> label={label} options={path ? PATH_OPTIONS : graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS} value={kind()} onChange={setKind} />
+          {/* the region of what's open is the one drawn over the preview */}
+          <Show when={!path && visibility && kind() !== 'None'}>
+            <EyeButton label="the region in the preview" hidden={!visibility!.shown()} onChange={(hidden) => visibility!.show(!hidden)} />
+          </Show>
+        </div>
       </FieldRow>
       <Switch>
         <Match when={kind() === 'Circle'}>
@@ -896,8 +926,11 @@ export function ShapeEditor(props: { lens: Lens<Shape | undefined> } | { lens: L
           <BezierEditor lens={field(variant(base, 'Bezier'), 'points')} />
         </Match>
       </Switch>
-      <Show when={kind() !== 'None'}>
+      <Show when={kind() !== 'None' && kind() !== 'Graph'}>
         <TransformList lens={orEmpty(field(shape, 'transform'))} space="shape" />
+      </Show>
+      <Show when={layer && kind() === 'Graph'}>
+        <GraphEditor lens={field(layer!, 'graph') as Lens<GraphMask>} layer={layer!} />
       </Show>
     </section>
   )

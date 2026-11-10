@@ -16,6 +16,7 @@ import type { LedLayer } from '../../types/generated/LedLayer'
 import type { SceneDefinition } from '../../types/generated/SceneDefinition'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
+import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
 import type { Surface as LedSurface } from '../../types/generated/Surface'
 import type { Sweep } from '../../types/generated/Sweep'
@@ -24,6 +25,7 @@ import type { Track } from '../../types/generated/Track'
 import type { Value } from '../../types/generated/Value'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
+import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 
 export type Vec2 = [number, number]
@@ -262,9 +264,12 @@ export function traversalTarget(algorithm: Lens<TraversalAlgorithm>): Lens<NodeR
   const current = algorithm.get()
   if (typeof current === 'string') return null
   const [[kind, settings]] = Object.entries(current)
+  // the wandering algorithms have settings too, but nowhere to go
+  if (!('to' in settings)) return null
+  const now = () => Object.values(algorithm.get())[0] as { to: NodeRef }
   return {
-    get: () => (Object.values(algorithm.get())[0] as { to: NodeRef }).to,
-    set: (to) => algorithm.set({ [kind]: { ...settings, to } } as TraversalAlgorithm),
+    get: () => now().to,
+    set: (to) => algorithm.set({ [kind]: { ...now(), to } } as TraversalAlgorithm),
   }
 }
 
@@ -394,9 +399,17 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     traversals.get().forEach(({ name, from }, i) => {
       const traversal = item(traversals, i)
       const named = `${label} · ${name}`
-      use(field(traversal, 'rate'), `${named} · Rate`, both(RATE))
+      const speed = field(traversal, 'speed')
+      if ('Rate' in speed.get()) use(variant(speed as Lens<Extract<Speed, { Rate: unknown }>>, 'Rate'), `${named} · Rate`, both(RATE))
       if ('Nearest' in from) use(variant(field(traversal, 'from'), 'Nearest'), `${named} · From`, translateRanges(surface, 'shape'))
-      const target = traversalTarget(field(traversal, 'algorithm'))
+      const algorithm = field(traversal, 'algorithm')
+      const current = algorithm.get()
+      if (typeof current !== 'string') {
+        const [kind, settings] = Object.entries(current)[0]
+        const wandering = algorithm as unknown as Lens<Record<string, { wander: Prop<number> }>>
+        if ('wander' in settings) use(field(variant(wandering, kind), 'wander'), `${named} · Wander`, both(WANDER))
+      }
+      const target = traversalTarget(algorithm)
       const to = target?.get()
       if (target && to && 'Nearest' in to) use(variant(target, 'Nearest'), `${named} · To`, translateRanges(surface, 'shape'))
     })
@@ -441,6 +454,30 @@ function referencedParams(scene: Scene) {
 }
 
 export type SceneTrack = { prop: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }
+
+/** A traversal on the timeline: its layer, and its place among the layer's traversals */
+export type SceneTraversal = { traversal: Lens<Traversal>; layer: number; index: number; label: string }
+
+/** Every traversal in a scene, as each plays out along the timeline */
+export function sceneTraversals(scene: Lens<Scene>): SceneTraversal[] {
+  const layers = field(scene, 'layers')
+  return layers.get().flatMap((layer, layerIndex) => {
+    if (!layer.graph) return []
+    const traversals = field(field(item(layers, layerIndex), 'graph') as Lens<GraphMask>, 'traversals')
+    const label = `${layerLabel(layer, layerIndex)} · Graph`
+    return layer.graph.traversals.map(({ name }, index) => ({ traversal: item(traversals, index), layer: layerIndex, index, label: `${label} · ${name}` }))
+  })
+}
+
+/**
+ * Seconds a traversal takes from its start: its time to finish in, or for one with a rate, `measured` by the machine
+ * from the graph. `null` with nothing measured, as for one that visits nothing.
+ */
+export function traversalLength(traversal: Traversal, scene: Scene, measured: number | null): number | null {
+  const { speed, start } = traversal
+  if ('Rate' in speed) return measured
+  return speed.Duration ?? Math.max((scene.timing?.duration ?? 0) - start, 0)
+}
 
 /** Every prop in a scene that changes along the timeline */
 export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
@@ -545,6 +582,13 @@ function withTimes(
   return next
 }
 
+/** `scene` with each traversal changed by `edit` */
+function withTraversals(scene: Scene, edit: (traversal: Traversal) => Traversal): Scene {
+  let next = scene
+  for (const { traversal } of sceneTraversals({ get: () => next, set: (edited) => (next = edited) })) traversal.set(edit(traversal.get()))
+  return next
+}
+
 /** `moments` with the last of them at `length` if any are past it, and those it comes up against kept a step apart */
 function pulledBack<T extends { at: number }>(moments: T[], length: number): T[] {
   if (moments.every(({ at }) => at <= length)) return moments
@@ -562,20 +606,28 @@ function pulledBack<T extends { at: number }>(moments: T[], length: number): T[]
 export function withTimesInLength(scene: Scene): Scene {
   const length = scene.timing?.duration
   if (length === undefined) return scene
-  return withTimes(
+  const timed = withTimes(
     scene,
     (moments) => pulledBack(moments, length),
     ({ start, end }) => (end <= length ? [start, end] : [Math.min(start, Math.max(length - TIME_STEP, 0)), length]),
   )
+  // one that runs past the end is left to show that it does
+  return withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
 }
 
 /** `scene` with its length and everything on its timeline scaled by `by`. What's past the end stays past a longer one. */
 export function withTimesScaled(scene: Scene, by: number): Scene {
-  const scaled = withTimes(
+  const timed = withTimes(
     scene,
     (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })),
     ({ start, end }) => [start * by, end * by],
   )
+  // a rate is left as it is, as it's in steps and not seconds
+  const scaled = withTraversals(timed, ({ start, speed, ...traversal }) => ({
+    ...traversal,
+    start: start * by,
+    speed: 'Duration' in speed && speed.Duration !== null ? { Duration: speed.Duration * by } : speed,
+  }))
   const next = { ...scaled, timing: scaled.timing && { ...scaled.timing, duration: scaled.timing.duration * by } }
   return by < 1 ? withTimesInLength(next) : next
 }
@@ -636,12 +688,13 @@ export function withKeyCopy(keys: Key<SceneValue>[], index: number, at: number):
 }
 
 /**
- * A response to `traversal` that rests at `from` and goes to the top of a number's range on each visit, fading back over
- * a step. A position or a color goes nowhere until it's given somewhere to go.
+ * A response to `traversal` where a number rests at 0 and goes to the top of its range on each visit, taking a step to
+ * get there, a step there, and a step back. A position or a color rests at `current`, and goes nowhere until it's given
+ * somewhere to go.
  */
-export function newVisit(traversal: string, from: SceneValue, [range]: Ranges): VisitResponse<SceneValue> {
-  const to = typeof from === 'number' ? range.max : from
-  return { traversal, from, to, smooth_in: 0, hold: 0, smooth_out: 1, curve_in: 'Linear', curve_out: 'Linear', overlap: 'Max' }
+export function newVisit(traversal: string, current: SceneValue, [range]: Ranges): VisitResponse<SceneValue> {
+  const [from, to] = typeof current === 'number' ? [0, range.max] : [current, current]
+  return { traversal, from, to, smooth_in: 1, hold: 1, smooth_out: 1, curve_in: 'Linear', curve_out: 'Linear', overlap: 'Max' }
 }
 
 /**
@@ -727,6 +780,8 @@ const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 /** Steps a second, or for a traversal that goes by distance, scene units a second */
 export const RATE: Range = { min: 0.1, max: 60, step: 0.1, rest: 10 }
+/** How much longer a traversal's edges can be made at random, as a fraction of each */
+export const WANDER: Range = { min: 0, max: 5, step: 0.01, rest: 0 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */

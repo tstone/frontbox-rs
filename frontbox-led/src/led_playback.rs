@@ -301,8 +301,8 @@ impl Placement {
     let surface = layer.surface.scene_surface();
     let placed = layer.leds.as_ref().map_or(Vec::new(), |leds| place_leds(surface, &ctx.leds, plane, leds, ctx.led_radius));
     let (placed, graph) = match &layer.layer.graph {
-      Some(mask) => {
-        let (placed, graph) = place_graph(placed, plane, &mask.edges);
+      Some(_) => {
+        let (placed, graph) = place_graph(placed, plane);
         (placed, Some(graph))
       }
       None => (placed, None),
@@ -1063,7 +1063,7 @@ mod graph_tests {
   /// Red where traversal "wave" has just been: one edge a second out from `from`, fading over a step
   fn wave(from: &str, surface: Surface) -> LedPlayback {
     let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
-    let wave = Traversal::new("wave", NodeRef::name(from), TraversalAlgorithm::BreadthFirst, 1.0);
+    let wave = Traversal::new("wave", NodeRef::name(from), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
     let fill = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::Opacity(shown));
     let layer = LedLayer { leds: Some(LedQ::every()), z: 0, surface, layer: Layer::new(fill).graph(GraphMask::new(vec![wave])) };
     LedPlayback::new(LedScene::new(vec![layer]).timing(Timing::new(10.0, Cycle::Once))).unwrap()
@@ -1111,7 +1111,7 @@ mod graph_tests {
     let graph = || {
       let every = LedQ::every();
       let placed = place_leds(scene::Surface::Area, &ctx.leds, Some(&PLANE), &every, DEFAULT_LED_RADIUS);
-      place_graph(placed, Some(&PLANE), &Edges::default()).1
+      place_graph(placed, Some(&PLANE)).1
     };
     assert!(Arc::ptr_eq(&graph(), &graph()));
     assert_eq!(graph().edges().count(), 3);

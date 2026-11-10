@@ -67,18 +67,22 @@ impl<T: Animatable> VisitResponse<T> {
     let Some((visits, rate)) = env.visits.and_then(|visits| visits.of(&self.traversal)) else {
       return self.from.clone();
     };
-    let length = self.smooth_out.map_or(f32::INFINITY, |out| self.smooth_in + self.hold + out);
-    let passed = &visits[..visits.partition_point(|&at| at <= env.time)];
-    let levels = passed.iter().rev().map(|&at| (env.time - at) * rate).take_while(|&steps| steps < length).map(|steps| self.level(steps));
-    let level = match self.overlap {
-      Overlap::Max => levels.fold(0.0, f32::max),
-      Overlap::Add => levels.sum(),
-    };
-    self.from.interpolate(&self.to, level)
+    self.from.interpolate(&self.to, self.level(visits, rate, env.time))
   }
 
-  /// How far toward `to` a single visit has moved it, `steps` after the visit
-  fn level(&self, steps: f32) -> f32 {
+  /// The response at `time` to visits at the sorted times `visits`, from 0 to 1, or more where `Add` stacks them
+  fn level(&self, visits: &[f32], rate: f32, time: f32) -> f32 {
+    let length = self.smooth_out.map_or(f32::INFINITY, |out| self.smooth_in + self.hold + out);
+    let passed = &visits[..visits.partition_point(|&at| at <= time)];
+    let levels = passed.iter().rev().map(|&at| (time - at) * rate).take_while(|&steps| steps < length).map(|steps| self.single(steps));
+    match self.overlap {
+      Overlap::Max => levels.fold(0.0, f32::max),
+      Overlap::Add => levels.sum(),
+    }
+  }
+
+  /// The response to one visit, `steps` after it
+  fn single(&self, steps: f32) -> f32 {
     if steps < self.smooth_in {
       return self.curve_in.sample(steps / self.smooth_in);
     }

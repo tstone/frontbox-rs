@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
 use crate::color::RgbaColor;
-use crate::scene::{Env, FrameContext, Graph, Layer, Params, Prop, Sample, ShapePose, Surface, Timing, Visits};
+use crate::scene::{Env, FrameContext, Graph, Layer, Params, Prop, Sample, ShapePose, Speed, Surface, Timing, Visits};
 
 /// How far [`GfxComposition::cycle_time`] keeps times from the edges of a cycle, as a fraction of it, so float rounding
 /// doesn't push them into the neighboring cycle
@@ -96,10 +96,10 @@ impl GfxComposition {
         if traversals[..i].iter().any(|other| other.name == traversal.name) {
           return Err(SceneError::SameTraversalName { layer: layer(), traversal: traversal.name.clone() });
         }
-        if let Prop::Fixed(rate) = traversal.rate
-          && !(rate.is_finite() && rate > 0.0)
+        if let Speed::Rate(Prop::Fixed(amount)) | Speed::Duration(Some(amount)) = traversal.speed
+          && !(amount.is_finite() && amount > 0.0)
         {
-          return Err(SceneError::NoRate { layer: layer(), traversal: traversal.name.clone() });
+          return Err(SceneError::NoSpeed { layer: layer(), traversal: traversal.name.clone() });
         }
       }
     }
@@ -122,8 +122,7 @@ impl GfxComposition {
   }
 
   /// Each layer's traversals for the current cycle, to pass in [`FrameContext::visits`]. Every layer with a graph uses
-  /// `graph`, built from the samples with that layer's [`Edges`](crate::scene::Edges); layers that need different
-  /// graphs are sampled one at a time, with [`Self::only`].
+  /// `graph`, built from the samples; layers that need different graphs are sampled one at a time, with [`Self::only`].
   ///
   /// Traversals are planned a cycle at a time, so with fixed starts and rates this only changes from one cycle (or
   /// playback seed) to the next, and can be kept for the rest of the cycle.
@@ -200,7 +199,7 @@ pub enum SceneError {
   /// Two traversals in a layer's graph have the same name
   SameTraversalName { layer: String, traversal: String },
   /// A traversal's fixed rate isn't a positive number
-  NoRate { layer: String, traversal: String },
+  NoSpeed { layer: String, traversal: String },
 }
 
 impl fmt::Display for SceneError {
@@ -209,7 +208,7 @@ impl fmt::Display for SceneError {
       Self::NoTiming { layer } => write!(f, "{layer} changes over time, so the scene needs a timing"),
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
       Self::SameTraversalName { layer, traversal } => write!(f, "{layer} has more than one traversal named \"{traversal}\""),
-      Self::NoRate { layer, traversal } => write!(f, "traversal \"{traversal}\" in {layer} needs a rate more than zero"),
+      Self::NoSpeed { layer, traversal } => write!(f, "traversal \"{traversal}\" in {layer} needs a rate or duration more than zero"),
     }
   }
 }
@@ -223,8 +222,8 @@ mod tests {
   use crate::layout::{Grid, Line};
   use crate::scene::test_scene::Scene;
   use crate::scene::{
-    Color, ColorAdjust, Edges, Fill, FillNode, GradientStyle, GraphMask, GraphNode, Images, Key, Mask, NodeRef, Pick, Picture, Prop,
-    Random, Shape, ShapeNode, Spread, Stop, Track, Transform, Traversal, TraversalAlgorithm, VisitResponse,
+    Color, ColorAdjust, Fill, FillNode, GradientStyle, GraphMask, GraphNode, Images, Key, Mask, NodeRef, Pick, Picture, Prop,
+    Random, Shape, ShapeNode, Speed, Spread, Stop, Track, Transform, Traversal, TraversalAlgorithm, VisitResponse,
   };
 
   const SIZE: Vec2 = Vec2::new(100.0, 50.0);
@@ -1043,11 +1042,11 @@ mod tests {
     assert_eq!(sample(&Scene::with_composition(Surface::Area, only), 1.0, 1.0, 0.5), BLUE);
   }
 
-  /// A red layer on a graph, shown where traversal "wave" has just been: out from the first node one edge a second,
-  /// each node fading out over one step
+  /// A red layer on a graph, its opacity responding where traversal "wave" has just been: out from the first node one
+  /// edge a second, each node fading out over one step
   fn wave() -> Scene {
     let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
-    let wave = Traversal::new("wave", NodeRef::name("0"), TraversalAlgorithm::BreadthFirst, 1.0);
+    let wave = Traversal::new("wave", NodeRef::name("0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
     let layer = Layer::new(solid(RED).adjust(ColorAdjust::Opacity(shown))).graph(GraphMask::new(vec![wave]));
     Scene::new(Surface::Sequence, vec![layer]).timing(Timing::new(10.0, Cycle::Once))
   }
@@ -1057,7 +1056,7 @@ mod tests {
     let params = Params::new();
     let samples: Vec<Sample> = Line::new(5).samples().enumerate().map(|(i, sample)| sample.at_node(i)).collect();
     let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
-    let graph = Graph::build(nodes, &Edges::default());
+    let graph = Graph::build(nodes);
     let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None };
     let visits = scene.visits(&graph, &frame);
     let frame = FrameContext { visits: Some(&visits), ..frame };
@@ -1071,6 +1070,30 @@ mod tests {
     assert_eq!(graph_alphas(&wave(), 2.5), [0, 0, 128, 0, 0]);
   }
 
+
+  /// A red layer on a graph, its opacity responding to traversal "line": from the first node to the last within the
+  /// 10 second cycle, reaching the last at 8 seconds
+  fn revealed(smooth_out: Option<f32>) -> Scene {
+    let line = Traversal::new("line", NodeRef::name("0"), TraversalAlgorithm::ShortestPath { to: NodeRef::name("4"), wander: 0.0.into() }, Speed::Duration(None));
+    let shown = Prop::Visit(VisitResponse { smooth_out, ..VisitResponse::new("line", 0.0, 1.0) });
+    let layer = Layer::new(solid(RED).adjust(ColorAdjust::Opacity(shown))).graph(GraphMask::new(vec![line]));
+    Scene::new(Surface::Sequence, vec![layer]).timing(Timing::new(10.0, Cycle::Once))
+  }
+
+  #[test]
+  fn an_opacity_responding_to_visits_shows_the_path_as_it_grows() {
+    let scene = revealed(None);
+    assert_eq!(graph_alphas(&scene, 0.0), [255, 0, 0, 0, 0]);
+    assert_eq!(graph_alphas(&scene, 5.0), [255, 255, 255, 0, 0]);
+    assert_eq!(graph_alphas(&scene, 10.0), [255; 5]);
+  }
+
+  #[test]
+  fn an_opacity_with_a_smooth_out_leaves_a_trail() {
+    // nodes 0.25 apart, one every 2 seconds, each fading over 0.5: two nodes behind the newest
+    let scene = revealed(Some(0.5));
+    assert_eq!(graph_alphas(&scene, 5.0), [0, 64, 191, 0, 0]);
+  }
   #[test]
   fn a_graph_layer_leaves_out_samples_that_arent_nodes() {
     let mut scene = wave();
@@ -1092,26 +1115,26 @@ mod tests {
 
   #[test]
   fn traversals_need_their_own_names_and_a_rate() {
-    let traversal = |name: &str, rate: f32| Traversal::new(name, NodeRef::name("0"), TraversalAlgorithm::BreadthFirst, rate);
+    let traversal = |name: &str, rate: f32| Traversal::new(name, NodeRef::name("0"), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, rate);
     let scene = |traversals| Scene::new(Surface::Area, vec![Layer::new(solid(RED)).graph(GraphMask::new(traversals))]).timing(Timing::new(1.0, Cycle::Once));
     assert!(scene(vec![traversal("a", 1.0), traversal("b", 1.0)]).check().is_ok());
     assert_eq!(
       scene(vec![traversal("a", 1.0), traversal("a", 1.0)]).check(),
       Err(SceneError::SameTraversalName { layer: "layer 1".into(), traversal: "a".into() })
     );
-    assert_eq!(scene(vec![traversal("a", 0.0)]).check(), Err(SceneError::NoRate { layer: "layer 1".into(), traversal: "a".into() }));
+    assert_eq!(scene(vec![traversal("a", 0.0)]).check(), Err(SceneError::NoSpeed { layer: "layer 1".into(), traversal: "a".into() }));
   }
 
   /// Colors at 5 nodes on a diagonal from (10, 10) to (40, 40), with a fill fit to the shortest path between two of them
   fn fit_colors(fill: Fill, shape: Option<Shape>, from: &str, to: &str) -> Vec<Rgba<u8>> {
-    let bolt = Traversal::new("bolt", NodeRef::name(from), TraversalAlgorithm::ShortestPath { to: NodeRef::name(to), jitter: 0.0 }, 10.0);
+    let bolt = Traversal::new("bolt", NodeRef::name(from), TraversalAlgorithm::ShortestPath { to: NodeRef::name(to), wander: 0.0.into() }, 10.0);
     let mut layer = Layer::new(fill).graph(GraphMask::new(vec![bolt]));
     layer.region = shape;
     let scene = Scene::new(Surface::Area, vec![layer]).timing(Timing::new(10.0, Cycle::Once));
 
     let samples: Vec<Sample> = (0..5).map(|i| Sample::new(Vec2::splat(10.0 + 7.5 * i as f32), 0.5).at_node(i)).collect();
     let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
-    let graph = Graph::build(nodes, &Edges::default());
+    let graph = Graph::build(nodes);
     let params = Params::new();
     let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None };
     let visits = scene.visits(&graph, &frame);

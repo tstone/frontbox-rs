@@ -426,14 +426,13 @@ mod tests {
   fn on_a_graph() -> Scene {
     let traversal = |name: &str, algorithm| Traversal::new(name, NodeRef::name("0"), algorithm, 4.0);
     let traversals = vec![
-      traversal("breadth", TraversalAlgorithm::BreadthFirst).start(0.5),
+      traversal("breadth", TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }).start(0.5),
       traversal("depth", TraversalAlgorithm::DepthFirst),
-      traversal("distance", TraversalAlgorithm::Dijkstra),
-      traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), jitter: 0.5 }),
+      traversal("distance", TraversalAlgorithm::Dijkstra { wander: 0.5.into() }),
+      traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
       Traversal::new("search", NodeRef::Nearest(Prop::Param("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Param("speed".into())),
-      traversal("walk", TraversalAlgorithm::RandomWalk),
+      Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
     ];
-    let edges = Edges { rule: EdgeRule::Gabriel, max_length: Some(30.0) };
     let shown = VisitResponse {
       smooth_in: 0.5,
       hold: 1.0,
@@ -449,7 +448,7 @@ mod tests {
       .transform(Transform::Fit("path".into()))
       .adjust(ColorAdjust::Opacity(Prop::Visit(shown)))
       .adjust(ColorAdjust::HueShift(Prop::Visit(counted)));
-    let layer = Layer::new(fill).graph(GraphMask::new(traversals).edges(edges));
+    let layer = Layer::new(fill).graph(GraphMask::new(traversals));
     Scene::new(Surface::Area, vec![layer]).timing(Timing::new(4.0, Cycle::Forever))
   }
 
@@ -458,7 +457,7 @@ mod tests {
     let params = Params::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
     let samples: Vec<Sample> = (0..9).map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i)).collect();
     let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
-    let graph = Graph::build(nodes, &scene.layers[0].graph.as_ref().unwrap().edges);
+    let graph = Graph::build(nodes);
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
@@ -486,13 +485,12 @@ mod tests {
     let scene = load(
       r#"(timing: (duration: 2.0), layers: [(
         fill: (base: Solid(Fixed(255, 0, 0, 255)), adjust: [Opacity(Visit(traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))]),
-        graph: (traversals: [(name: "bolt", from: Name("0"), algorithm: ShortestPath(to: Nearest(Fixed(40.0, 40.0))), rate: Fixed(30.0))]),
+        graph: (edges: (rule: RelativeNeighborhood, max_length: 3.0), traversals: [(name: "bolt", from: Name("0"), algorithm: ShortestPath(to: Nearest(Fixed(40.0, 40.0))), speed: Rate(Fixed(30.0)))]),
       )])"#,
     )
     .unwrap();
     let mask = scene.layers[0].graph.as_ref().unwrap();
-    assert_eq!(mask.edges, Edges::default());
-    assert!(matches!(&mask.traversals[0].algorithm, TraversalAlgorithm::ShortestPath { jitter: 0.0, .. }));
+    assert!(matches!(&mask.traversals[0].algorithm, TraversalAlgorithm::ShortestPath { wander: Prop::Fixed(wander), .. } if *wander == 0.0));
     let ColorAdjust::Opacity(Prop::Visit(response)) = &scene.layers[0].fill.adjust[0] else {
       panic!("{scene:?}");
     };

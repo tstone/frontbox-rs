@@ -11,4 +11,9 @@ names: Array<string>, nodes: Array<[number, number]>,
 /**
  * Each edge once, by the indexes of its two nodes
  */
-edges: Array<[number, number]>, };
+edges: Array<[number, number]>, 
+/**
+ * Seconds each of the layer's traversals takes from leaving `from` to its last visit, in the layer's order, however
+ * long the cycle is. `None` for one that visits nothing.
+ */
+lengths: Array<number | null>, };
