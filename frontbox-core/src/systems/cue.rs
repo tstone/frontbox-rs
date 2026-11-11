@@ -58,7 +58,7 @@
 //! # struct Off;
 //! # fn example(ctx: &SystemContext) {
 //! // note the use of `events!` here rather than `vec!`
-//! ctx.cues.start_cycling(
+//! ctx.cues.start_multi(
 //!   events![On, Off],
 //!   Cue::Forever(Duration::from_secs(1))
 //! );
