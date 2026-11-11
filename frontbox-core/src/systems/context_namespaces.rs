@@ -114,8 +114,8 @@ impl<'a> ContextCues<'a> {
     self.ctx.cue(self.handle, signal, cue)
   }
 
-  /// Start a cue that sends each of `signals` in turn
-  pub fn start_cycling(&self, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
+  /// Start a cue that sends multiple `signals`, in turn, cycling through each
+  pub fn start_multi(&self, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
     self.ctx.cue_cycling(self.handle, signals, cue)
   }
 

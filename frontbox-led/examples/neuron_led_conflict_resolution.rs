@@ -49,7 +49,7 @@ pub struct Off;
 
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.cues.start_cycling(events![On, Off], Cue::Forever(Duration::from_secs(4)));
+    ctx.cues.start_multi(events![On, Off], Cue::Forever(Duration::from_secs(4)));
     ctx.declare_leds(&leds::DEMO1.q(), Rgba::red());
   }
 
