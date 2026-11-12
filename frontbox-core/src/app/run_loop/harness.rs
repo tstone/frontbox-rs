@@ -4,9 +4,6 @@
 //!
 //! Built for the run loop's own tests and, with the `testing` feature, for test support built on it.
 
-// until test support outside the run loop's own tests uses it
-#![cfg_attr(not(test), allow(dead_code))]
-
 use super::*;
 
 pub(crate) struct Harness {
@@ -29,22 +26,29 @@ impl std::ops::DerefMut for Harness {
 }
 
 impl Harness {
+  #[cfg(test)]
   pub(crate) fn new() -> Self {
     Self::with_state(AppState::default())
   }
 
   /// A harness over the given app state, e.g. one with switches
-  pub(crate) fn with_state(mut base: AppState) -> Self {
-    let (tx, rx) = mpsc::unbounded_channel();
+  #[cfg(test)]
+  pub(crate) fn with_state(base: AppState) -> Self {
+    Self::with(base, Routines::new(Default::default()), 0, mpsc::unbounded_channel())
+  }
+
+  /// A harness over the given app state and routines, as `App::run` sets them up. `machine_system_id` is the system
+  /// switch changes are reported as coming from, and `channel` is the one the loop reads, whose sender systems get.
+  pub(crate) fn with(
+    mut base: AppState,
+    routines: Routines,
+    machine_system_id: u64,
+    channel: (mpsc::UnboundedSender<AppMessage>, mpsc::UnboundedReceiver<AppMessage>),
+  ) -> Self {
+    let (tx, rx) = channel;
     // as in `App::run`, so config changes emit `ConfigChanged`
     base.config.app_sender = Some(tx.clone());
-    let run_loop = RunLoop::new(
-      base,
-      tx,
-      TracerSenders::new(Vec::new()),
-      Routines::new(Default::default()),
-      0,
-    );
+    let run_loop = RunLoop::new(base, tx, TracerSenders::new(Vec::new()), routines, machine_system_id);
     Self { run_loop, rx }
   }
 
@@ -94,6 +98,7 @@ impl Harness {
   }
 
   /// Spawn a group owned by `owner`, then settle
+  #[cfg(test)]
   pub(crate) fn spawn_group_of(
     &mut self,
     owner: SystemHandle,
@@ -106,6 +111,17 @@ impl Harness {
     self.spawn_system_group(owner, group, members, active);
     self.settle();
     id
+  }
+
+  /// A context over the loop's state, for calling into systems from outside the loop. What it sends is handled on the
+  /// next settle.
+  pub(crate) fn service_context(&self) -> ServiceContext<'_> {
+    ServiceContext::new(&self.base, &self.groups, &self.app_sender)
+  }
+
+  /// How often the loop ticks
+  pub(crate) fn tick_interval(&self) -> Duration {
+    self.base.system_interval
   }
 
   pub(crate) fn is_running(&self, handle: SystemHandle) -> bool {

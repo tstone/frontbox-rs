@@ -85,6 +85,18 @@ impl VirtualHardware {
       .collect()
   }
 
+  /// Configure every driver from its mode, as the Neuron does before the app starts
+  pub(crate) fn configure_drivers(&mut self, state: &AppState) {
+    for driver in state.drivers.values() {
+      if let Some(mode) = state.drivers.mode(driver.name) {
+        self.apply(&MachineMessage::ConfigureDriver {
+          driver_id: driver.id,
+          config: mode.to_config(state),
+        });
+      }
+    }
+  }
+
   /// Apply a message as the hardware would, returning what the hardware sends back to the app
   pub(crate) fn apply(&mut self, message: &MachineMessage) -> Vec<AppMessage> {
     match message {
@@ -115,7 +127,7 @@ impl VirtualHardware {
 
   /// Change a switch, as a ball or a player would, returning the event the hardware reports to the app. Nothing is
   /// reported if the switch is unknown or already in that state.
-  #[allow(unused)] // until the scenario harness drives it
+  #[cfg(any(test, feature = "testing"))]
   pub(crate) fn set_switch(&mut self, switch_id: usize, state: SwitchState) -> Option<AppMessage> {
     let switch = self.switches.get_mut(&switch_id)?;
     let closed = matches!(state, SwitchState::Closed);

@@ -20,6 +20,8 @@ mod macros;
 pub mod operator_config;
 pub mod provided;
 pub mod systems;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod toml;
 
 pub use hardware::tags;

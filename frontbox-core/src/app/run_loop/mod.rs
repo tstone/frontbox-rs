@@ -8,7 +8,7 @@
 
 mod delivery;
 #[cfg(any(test, feature = "testing"))]
-mod harness;
+pub(crate) mod harness;
 mod lifecycle;
 mod switches;
 #[cfg(test)]

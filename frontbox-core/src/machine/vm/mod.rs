@@ -36,33 +36,7 @@ impl MachineBoot for VirtualMachine {
   ) -> (Self::Machine, Hardware) {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
     let virtual_hardware = VirtualHardware::new(&boot_config.io_network);
-
-    let io_network_boards = boot_config
-      .io_network
-      .boards
-      .iter()
-      .enumerate()
-      .map(|(idx, board)| ResolvedIoBoard {
-        node_id: idx as u8,
-        description: board.description,
-        name: format!("Board {}", idx),
-        firmware_version: "0.0.virtual".to_string(),
-        board_revision: 0,
-        switch_count: board.switch_count,
-        driver_count: board.driver_count,
-      })
-      .collect::<Vec<_>>();
-
-    let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
-
-    let hardware = Hardware::new(
-      // read at boot, as from real hardware
-      SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
-      DriverLookup::new(boot_config.io_network.drivers),
-      LedLookup::new(&expansion_boards),
-      io_network_boards,
-      expansion_boards,
-    );
+    let hardware = read_hardware(boot_config, &virtual_hardware);
 
     (
       Self {
@@ -81,16 +55,8 @@ impl Machine for VirtualMachine {
     self.machine_sender.clone()
   }
 
-  /// Configure every driver from its mode, as the Neuron does before the app starts
   async fn on_pre_run(&mut self, state: &AppState) {
-    for driver in state.drivers.values() {
-      if let Some(mode) = state.drivers.mode(driver.name) {
-        self.hardware.apply(&MachineMessage::ConfigureDriver {
-          driver_id: driver.id,
-          config: mode.to_config(state),
-        });
-      }
-    }
+    self.hardware.configure_drivers(state);
   }
 
   async fn run(&mut self) {
@@ -98,6 +64,36 @@ impl Machine for VirtualMachine {
       self.process_message(msg);
     }
   }
+}
+
+/// The app's view of the hardware the boot config describes, read from the virtual hardware at boot as it would be
+/// from real boards
+pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualHardware) -> Hardware {
+  let io_network_boards = boot_config
+    .io_network
+    .boards
+    .iter()
+    .enumerate()
+    .map(|(idx, board)| ResolvedIoBoard {
+      node_id: idx as u8,
+      description: board.description,
+      name: format!("Board {}", idx),
+      firmware_version: "0.0.virtual".to_string(),
+      board_revision: 0,
+      switch_count: board.switch_count,
+      driver_count: board.driver_count,
+    })
+    .collect::<Vec<_>>();
+
+  let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
+
+  Hardware::new(
+    SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
+    DriverLookup::new(boot_config.io_network.drivers),
+    LedLookup::new(&expansion_boards),
+    io_network_boards,
+    expansion_boards,
+  )
 }
 
 fn log_message(msg: &MachineMessage) {

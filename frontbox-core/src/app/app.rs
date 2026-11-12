@@ -82,6 +82,18 @@ impl App {
     self
   }
 
+  /// What the app is built from, for test support that runs it without a platform
+  #[cfg(any(test, feature = "testing"))]
+  pub(crate) fn into_parts(self) -> AppParts {
+    AppParts {
+      systems: self.systems,
+      configs: self.configs,
+      boot_config: self.boot_config,
+      routines: self.routines,
+      planes: self.planes,
+    }
+  }
+
   pub async fn run(mut self) {
     let app_config = AppConfig { planes: std::mem::take(&mut self.planes), ..AppConfig::from_boot_config(&self.boot_config) };
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
@@ -179,6 +191,16 @@ impl App {
       std::panic::resume_unwind(payload);
     }
   }
+}
+
+/// An [`App`] taken apart, from [`App::into_parts`]
+#[cfg(any(test, feature = "testing"))]
+pub(crate) struct AppParts {
+  pub systems: Vec<SystemContainer>,
+  pub configs: ConfigCollection,
+  pub boot_config: BootConfig,
+  pub routines: HashMap<TypeId, RoutineDefinition>,
+  pub planes: Vec<AppPlane>,
 }
 
 /// What to send the machine if the run loop dies: expire the watchdog, which cuts power to the coils, and reset the
