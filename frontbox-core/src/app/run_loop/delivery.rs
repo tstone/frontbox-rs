@@ -171,41 +171,131 @@ pub(super) fn emit_activity_changed(
 
 #[cfg(test)]
 mod tests {
+  use std::cell::{Cell, RefCell};
+  use std::rc::Rc;
+
+  use futures_util::FutureExt;
+
   use super::*;
   use crate::app::run_loop::test_support::*;
 
-  /// Active while its flag is set
-  struct Toggled(std::rc::Rc<std::cell::Cell<bool>>);
+  #[test]
+  fn an_event_reaches_every_active_system_in_every_active_group() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Probe::<1>(log.clone()));
+    h.spawn_group_of(owner, "group", vec![Probe::<2>(log.clone()).into()], true);
+    log.take();
+
+    h.emit(Poke);
+
+    assert_eq!(log.take(), ["1 heard Poke", "2 heard Poke"]);
+  }
+
+  #[test]
+  fn an_event_skips_systems_in_an_inactive_group() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], false);
+    log.take();
+
+    h.emit(Poke);
+
+    assert_eq!(log.take(), Vec::<String>::new());
+  }
+
+  /// Active while its flag is set. Counts the `Poke`s it hears.
+  struct Toggled {
+    active: Rc<Cell<bool>>,
+    pokes: Rc<Cell<u32>>,
+  }
 
   impl System for Toggled {
     fn is_active(&self, _ctx: &SystemContext) -> bool {
-      self.0.get()
+      self.active.get()
+    }
+
+    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes.set(self.pokes.get() + 1);
+      }
+    }
+  }
+
+  /// Only the activity changes among what was heard
+  fn activity(heard: Vec<Heard>) -> Vec<Heard> {
+    heard
+      .into_iter()
+      .filter(|heard| matches!(heard, Heard::Deactivated(_) | Heard::Reactivated(_)))
+      .collect()
+  }
+
+  #[test]
+  fn a_system_changing_its_own_activity_is_broadcast_once() {
+    let mut h = Harness::new();
+    let heard = h.listen();
+    let (active, pokes) = (Rc::new(Cell::new(true)), Rc::new(Cell::new(0)));
+    let id = h.spawn(Toggled { active: active.clone(), pokes: pokes.clone() }).id;
+
+    h.emit(Poke);
+    assert_eq!(activity(heard.take()), []);
+
+    active.set(false);
+    h.emit(Poke);
+    h.emit(Poke);
+    assert_eq!(activity(heard.take()), [Heard::Deactivated(id)]);
+    assert_eq!(pokes.get(), 1, "it doesn't hear events while inactive");
+
+    active.set(true);
+    h.emit(Poke);
+    assert_eq!(activity(heard.take()), [Heard::Reactivated(id)]);
+    assert_eq!(pokes.get(), 2);
+  }
+
+  #[derive(serde::Serialize, Event)]
+  struct Answered;
+
+  /// Answers each `Poke` with `Answered`, counting the `Poke`s it hears
+  struct Answerer(Rc<Cell<u32>>);
+
+  impl System for Answerer {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.0.set(self.0.get() + 1);
+        ctx.emit(Answered);
+      }
     }
   }
 
   #[test]
-  fn a_system_changing_its_own_activity_is_broadcast() {
+  fn an_origin_first_event_reaches_the_origin_and_its_answer_goes_out_before_the_event() {
     let mut h = Harness::new();
-    let active = std::rc::Rc::new(std::cell::Cell::new(true));
-    let id = h.spawn(Toggled(active.clone())).id;
-    h.activity_events();
-    let check = |h: &Harness| apply_to_systems(&h.groups, &h.base, &h.app_sender, &h.tracers, |_, _| ());
+    let heard = h.listen();
+    let pokes = Rc::new(Cell::new(0));
+    let origin = h.spawn(Answerer(pokes.clone()));
+    heard.take();
 
-    check(&h);
-    assert_eq!(h.activity_events(), vec![]);
+    h.send(AppMessage::EmitEventOriginFirst(origin, EventBox::new(Poke)));
+    h.settle();
 
-    active.set(false);
-    check(&h);
-    check(&h);
-    assert_eq!(h.activity_events(), vec![(id, false)]);
+    // the listener was spawned first, but hears the origin's answer before the event itself
+    assert_eq!(heard.take(), [Heard::Other, Heard::Poke]);
+    assert_eq!(pokes.get(), 1, "the origin hears it once");
+  }
 
-    active.set(true);
-    check(&h);
-    assert_eq!(h.activity_events(), vec![(id, true)]);
+  #[test]
+  fn synchronize_restarts_the_tick_timer() {
+    let mut h = Harness::new();
+    h.emit(Poke);
+    assert!(h.resync.notified().now_or_never().is_none());
+
+    h.emit(Synchronize);
+    assert!(h.resync.notified().now_or_never().is_some());
   }
 
   /// Records, on each `Poke`, whether it could look itself up
-  struct SelfLookup(std::rc::Rc<std::cell::RefCell<Vec<bool>>>);
+  struct SelfLookup(Rc<RefCell<Vec<bool>>>);
 
   impl System for SelfLookup {
     fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -229,7 +319,7 @@ mod tests {
 
   struct Callee {
     handle: SystemHandle,
-    found_caller: std::rc::Rc<std::cell::RefCell<Vec<bool>>>,
+    found_caller: Rc<RefCell<Vec<bool>>>,
   }
 
   impl Callee {
@@ -249,10 +339,10 @@ mod tests {
   #[test]
   fn a_system_looking_itself_up_gets_none() {
     let mut h = Harness::new();
-    let found = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let found = Rc::new(RefCell::new(Vec::new()));
     h.spawn(SelfLookup(found.clone()));
 
-    h.poke();
+    h.emit(Poke);
 
     assert_eq!(*found.borrow(), vec![false]);
   }
@@ -260,14 +350,14 @@ mod tests {
   #[test]
   fn a_lookup_that_closes_a_cycle_gets_none() {
     let mut h = Harness::new();
-    let found = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let found = Rc::new(RefCell::new(Vec::new()));
     h.spawn(Caller);
     h.spawn(Callee {
       handle: SystemHandle::default(),
       found_caller: found.clone(),
     });
 
-    h.poke();
+    h.emit(Poke);
 
     assert_eq!(*found.borrow(), vec![false]);
   }
@@ -283,32 +373,23 @@ mod tests {
     }
   }
 
-  /// Counts the `Poke`s it hears
-  struct Counter(std::rc::Rc<std::cell::Cell<u32>>);
-
-  impl System for Counter {
-    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
-      if event.is::<Poke>() {
-        self.0.set(self.0.get() + 1);
-      }
-    }
-  }
-
   #[test]
-  fn a_panicking_system_is_retired_and_the_rest_carry_on() {
+  fn a_panicking_system_is_despawned_and_the_rest_carry_on() {
     let mut h = Harness::new();
-    let heard = std::rc::Rc::new(std::cell::Cell::new(0));
-    let before = h.spawn(Counter(heard.clone()));
+    let heard = h.listen();
+    let log = Log::default();
     let panicky = h.spawn(Panicky);
-    h.despawns_requested();
+    h.spawn(Probe::<1>(log.clone()));
+    log.take();
 
-    h.poke();
-    h.poke();
+    // both are handled before the despawn the first one queues
+    h.send(AppMessage::EmitEvent(None, EventBox::new(Poke)));
+    h.send(AppMessage::EmitEvent(None, EventBox::new(Poke)));
+    h.settle();
 
-    // systems after it still hear the event, and it's only despawned once
-    assert_eq!(heard.get(), 2);
-    assert_eq!(h.despawns_requested(), vec![panicky]);
-    assert!(h.groups.system(panicky).unwrap().is_faulted());
-    assert!(!h.groups.system(before).unwrap().is_faulted());
+    assert!(!h.is_running(panicky));
+    assert_eq!(log.take(), ["1 heard Poke", "1 heard Poke"], "systems after it still hear both");
+    let despawns = heard.take().into_iter().filter(|heard| *heard == Heard::Despawned(panicky.id)).count();
+    assert_eq!(despawns, 1, "it's skipped once faulted, so it panics and is despawned only once");
   }
 }

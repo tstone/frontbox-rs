@@ -10,7 +10,6 @@
 - Can we do some end-to-end tests around game management, turn ending/game ending? Virtual machine is already allowing some of this to happen. That should probably be expanded.
 - Generalized systems: Scoop, lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - CrashPowerDown -- Verify that this still maeks sense
-- tests for run_loop
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Config: No extra balls/points instead
 - With fb-pin centralized, maybe events should be centralized too
@@ -23,7 +22,6 @@
 - Implement a proper LampDriver that also supports flashing
 - Revisit if `Synchronize` event still makes sense or not
 - Should a "hold" (like how BallSave uses them) be a framework feature?
-- Should run_loop be refactored to be contained in a struct?
 - Clean up hardware exports
 
 ## Requires hardware/sensory QA

@@ -284,20 +284,9 @@ impl RunLoop {
     }
   }
 
-  /// Call `on_despawn` on every system, regardless of whether it was active, in reverse spawn order
+  /// Despawn every system, then close the metrics store and, if asked, shut down the OS
   async fn shutdown(self, scope: ShutdownScope) {
-    for (key, group) in self.groups.iter().rev() {
-      for cell in group.values().rev() {
-        let mut system = cell.borrow_mut();
-        let ctx = SystemContext::new(
-          &self.base,
-          SystemHandle::new(system.id(), *key),
-          &self.groups,
-          &self.app_sender,
-        );
-        system.catch_panic(|system| system.on_despawn(&ctx));
-      }
-    }
+    self.despawn_all();
 
     // after despawning, so anything systems record on their way out is kept
     self.base.metrics.close().await;
@@ -308,6 +297,23 @@ impl RunLoop {
     if scope == ShutdownScope::OperatingSystem {
       if let Err(e) = Command::new("sudo").args(["shutdown"]).status() {
         log::error!(target: "frontbox_core::run_loop", "Failed to invoke OS shutdown: {e}");
+      }
+    }
+  }
+
+  /// Call `on_despawn` on every system, regardless of whether it was active, in reverse spawn order. The systems
+  /// stay in place: the loop is about to end, so nothing else will be handed to them.
+  fn despawn_all(&self) {
+    for (key, group) in self.groups.iter().rev() {
+      for cell in group.values().rev() {
+        let mut system = cell.borrow_mut();
+        let ctx = SystemContext::new(
+          &self.base,
+          SystemHandle::new(system.id(), *key),
+          &self.groups,
+          &self.app_sender,
+        );
+        system.catch_panic(|system| system.on_despawn(&ctx));
       }
     }
   }
@@ -338,3 +344,44 @@ impl RunLoop {
 pub struct Synchronize;
 
 static SYNCHRONIZE_TYPE_ID: TypeId = TypeId::of::<Synchronize>();
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::app::run_loop::test_support::*;
+
+  #[test]
+  fn a_shutdown_message_stops_the_loop() {
+    let mut h = Harness::new();
+
+    let flow = h.handle(AppMessage::Shutdown(ShutdownScope::OperatingSystem));
+
+    assert_eq!(flow, ControlFlow::Break(ShutdownScope::OperatingSystem));
+  }
+
+  #[test]
+  fn shutting_down_despawns_every_system_in_reverse_including_inactive_ones() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Probe::<1>(log.clone()));
+    h.spawn_group_of(owner, "group", vec![Probe::<2>(log.clone()).into()], false);
+    h.spawn(Probe::<3>(log.clone()));
+    log.take();
+
+    h.despawn_all();
+
+    // groups last spawned first, and within each group, systems last spawned first
+    assert_eq!(log.take(), ["2 on_despawn", "3 on_despawn", "1 on_despawn"]);
+  }
+
+  #[test]
+  fn a_config_change_is_broadcast() {
+    let mut h = Harness::new();
+    let heard = h.listen();
+
+    h.send(AppMessage::ConfigChanged("volume"));
+    h.settle();
+
+    assert_eq!(heard.take(), [Heard::ConfigChanged("volume")]);
+  }
+}

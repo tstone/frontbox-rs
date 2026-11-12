@@ -223,11 +223,118 @@ mod tests {
   use super::*;
   use crate::app::run_loop::test_support::*;
 
+  /// Put the probe in `group` through all its handlers: an event, a tick, the group deactivating and reactivating, and
+  /// a despawn. Returns what it logged.
+  fn run_through_every_handler(h: &mut Harness, probe: SystemHandle, log: &Log<String>) -> Vec<String> {
+    h.emit(Poke);
+    h.tick_by(Duration::from_millis(10));
+    h.send(AppMessage::DeactivateSystemGroup(probe.group));
+    h.send(AppMessage::ActivateSystemGroup(probe.group));
+    h.send(AppMessage::DespawnSystem(probe));
+    h.settle();
+    log.take()
+  }
+
+  const EVERY_HANDLER: [&str; 7] =
+    ["1 on_spawn", "1 heard Poke", "1 on_tick", "1 on_render", "1 on_deactivate", "1 on_reactivate", "1 on_despawn"];
+
+  #[test]
+  fn a_system_spawned_by_message_gets_every_handler() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let group = h.spawn_group_of(owner, "group", vec![], true);
+
+    h.send(AppMessage::SpawnSystem(group, Probe::<1>(log.clone()).into()));
+    h.settle();
+    let probe = h.groups.handles_in(group)[0];
+
+    assert_eq!(run_through_every_handler(&mut h, probe, &log), EVERY_HANDLER);
+  }
+
+  #[test]
+  fn a_group_member_gets_every_handler() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
+    let probe = h.groups.handles_in(group)[0];
+
+    assert_eq!(run_through_every_handler(&mut h, probe, &log), EVERY_HANDLER);
+  }
+
+  #[test]
+  fn spawning_is_announced() {
+    let mut h = Harness::new();
+    let heard = h.listen();
+
+    let probe = h.spawn(Probe::<1>(Log::default()));
+
+    assert_eq!(heard.take(), [Heard::Spawned(probe.id)]);
+  }
+
+  #[test]
+  fn a_second_system_of_a_type_in_a_group_is_refused() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    h.spawn(Probe::<1>(log.clone()));
+
+    h.send(AppMessage::SpawnSystem(ROOT_GROUP, Probe::<1>(log.clone()).into()));
+    h.settle();
+
+    assert_eq!(log.take(), ["1 on_spawn"]);
+    assert_eq!(h.groups.handles_in(ROOT_GROUP).len(), 1);
+  }
+
+  #[test]
+  fn spawning_into_a_missing_group_is_refused() {
+    let mut h = Harness::new();
+    let log = Log::default();
+
+    h.send(AppMessage::SpawnSystem(GroupId::next(), Probe::<1>(log.clone()).into()));
+    h.settle();
+
+    assert_eq!(log.take(), Vec::<String>::new());
+  }
+
+  #[test]
+  fn despawning_runs_on_despawn_and_is_announced() {
+    let mut h = Harness::new();
+    let heard = h.listen();
+    let log = Log::default();
+    let probe = h.spawn(Probe::<1>(log.clone()));
+    (heard.take(), log.take());
+
+    h.send(AppMessage::DespawnSystem(probe));
+    h.settle();
+
+    assert!(!h.is_running(probe));
+    assert_eq!(log.take(), ["1 on_despawn"]);
+    assert_eq!(heard.take(), [Heard::Despawned(probe.id)]);
+  }
+
+  #[test]
+  fn replacing_a_system_puts_the_new_one_in_its_group() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
+    let old = h.groups.handles_in(group)[0];
+    log.take();
+
+    h.send(AppMessage::ReplaceSystem(old, Probe::<2>(log.clone()).into()));
+    h.settle();
+
+    assert_eq!(log.take(), ["1 on_despawn", "2 on_spawn"]);
+    assert!(!h.is_running(old));
+    assert_eq!(h.groups.handles_in(group).len(), 1);
+  }
+
   #[test]
   fn despawning_an_owner_despawns_its_groups() {
     let mut h = Harness::new();
-    let owner = h.spawn_owner();
-    let other = h.spawn_owner();
+    let owner = h.spawn(Owner::<1>);
+    let other = h.spawn(Owner::<2>);
     let player1 = h.spawn_group(owner, "player1");
     let player2 = h.spawn_group(owner, "player2");
     let others = h.spawn_group(other, "other");
@@ -236,7 +343,7 @@ mod tests {
       .flat_map(|group| h.groups.handles_in(group))
       .collect();
 
-    let despawned = h.despawn(owner);
+    let despawned = h.despawn_system(owner);
 
     assert!(!h.groups.contains_key(&player1));
     assert!(!h.groups.contains_key(&player2));
@@ -247,12 +354,12 @@ mod tests {
   #[test]
   fn groups_with_the_same_name_are_separate() {
     let mut h = Harness::new();
-    let first_owner = h.spawn_owner();
-    let second_owner = h.spawn_owner();
+    let first_owner = h.spawn(Owner::<1>);
+    let second_owner = h.spawn(Owner::<2>);
     let first = h.spawn_group(first_owner, "player1");
     let second = h.spawn_group(second_owner, "player1");
 
-    h.despawn(first_owner);
+    h.despawn_system(first_owner);
 
     assert!(!h.groups.contains_key(&first));
     assert_eq!(h.groups[&second].owner, Some(second_owner));
@@ -260,24 +367,45 @@ mod tests {
   }
 
   #[test]
+  fn a_group_spawned_inactive_deactivates_its_systems() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+
+    h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], false);
+
+    assert_eq!(log.take(), ["1 on_spawn", "1 on_deactivate"]);
+  }
+
+  #[test]
   fn a_group_changing_activity_is_broadcast_for_its_systems() {
     let mut h = Harness::new();
-    let owner = h.spawn_owner();
+    let owner = h.spawn(Owner::<1>);
     let group = h.spawn_group(owner, "group");
-    let members: Vec<(u64, bool)> = h
-      .groups
-      .handles_in(group)
-      .iter()
-      .map(|m| (m.id, false))
-      .collect();
-    h.activity_events();
+    let member = h.groups.handles_in(group)[0];
+    let heard = h.listen();
 
-    h.deactivate_system_group(group);
-    assert_eq!(h.activity_events(), members);
+    h.send(AppMessage::DeactivateSystemGroup(group));
+    h.settle();
+    assert_eq!(heard.take(), [Heard::Deactivated(member.id)]);
 
-    h.activate_system_group(group);
-    let reactivated: Vec<(u64, bool)> = members.iter().map(|(id, _)| (*id, true)).collect();
-    assert_eq!(h.activity_events(), reactivated);
+    h.send(AppMessage::ActivateSystemGroup(group));
+    h.settle();
+    assert_eq!(heard.take(), [Heard::Reactivated(member.id)]);
+  }
+
+  #[test]
+  fn activating_an_active_group_does_nothing() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
+    log.take();
+
+    h.send(AppMessage::ActivateSystemGroup(group));
+    h.settle();
+
+    assert_eq!(log.take(), Vec::<String>::new());
   }
 
   /// Panics on its way out
@@ -294,7 +422,7 @@ mod tests {
     let mut h = Harness::new();
     let handle = h.spawn(PanicsOnDespawn);
 
-    assert_eq!(h.despawn(handle), vec![handle]);
-    assert!(!h.groups.contains_system(handle));
+    assert_eq!(h.despawn_system(handle), vec![handle]);
+    assert!(!h.is_running(handle));
   }
 }

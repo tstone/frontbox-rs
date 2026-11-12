@@ -68,7 +68,82 @@ pub(super) fn spawn_system_ticker(tick: Duration, sender: watch::Sender<()>, res
 
 #[cfg(test)]
 mod tests {
+  use std::cell::Cell;
+  use std::rc::Rc;
+
   use super::*;
+  use crate::app::run_loop::test_support::*;
+
+  fn ms(millis: u64) -> Duration {
+    Duration::from_millis(millis)
+  }
+
+  #[test]
+  fn every_system_ticks_before_any_renders() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    h.spawn(Probe::<1>(log.clone()));
+    h.spawn(Probe::<2>(log.clone()));
+    log.take();
+
+    h.tick_by(ms(10));
+
+    assert_eq!(log.take(), ["1 on_tick", "2 on_tick", "1 on_render", "2 on_render"]);
+  }
+
+  /// Cues a `Poke` to itself 100ms after it spawns, and counts the `Poke`s it hears
+  struct Cued {
+    cue: Rc<Cell<u64>>,
+    pokes: Rc<Cell<u32>>,
+  }
+
+  impl System for Cued {
+    fn on_spawn(&mut self, ctx: &SystemContext) {
+      self.cue.set(ctx.cues.start(Poke, Cue::Once(ms(100))));
+    }
+
+    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes.set(self.pokes.get() + 1);
+      }
+    }
+  }
+
+  fn spawn_cued(h: &mut Harness) -> (SystemHandle, u64, Rc<Cell<u32>>) {
+    let (cue, pokes) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+    let handle = h.spawn(Cued { cue: cue.clone(), pokes: pokes.clone() });
+    (handle, cue.get(), pokes)
+  }
+
+  #[test]
+  fn a_cue_signals_its_own_system_once_its_time_has_passed() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    h.spawn(Probe::<1>(log.clone()));
+    let (_, _, pokes) = spawn_cued(&mut h);
+
+    h.tick_by(ms(60));
+    assert_eq!(pokes.get(), 0);
+
+    h.tick_by(ms(60));
+    assert_eq!(pokes.get(), 1);
+
+    h.tick_by(ms(200));
+    assert_eq!(pokes.get(), 1, "a `Cue::Once` fires once");
+    assert!(!log.take().contains(&"1 heard Poke".to_string()), "only the system that cued it hears it");
+  }
+
+  #[test]
+  fn a_cancelled_cue_never_signals() {
+    let mut h = Harness::new();
+    let (handle, cue, pokes) = spawn_cued(&mut h);
+
+    h.send(AppMessage::CancelCue(handle, cue));
+    h.settle();
+    h.tick_by(ms(200));
+
+    assert_eq!(pokes.get(), 0);
+  }
 
   #[test]
   fn tick_delta_is_the_measured_time_clamped_to_a_few_intervals() {
