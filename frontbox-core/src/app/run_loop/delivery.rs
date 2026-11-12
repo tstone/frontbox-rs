@@ -7,7 +7,7 @@ impl RunLoop {
     }
 
     // notify any monitoring tracers
-    self.tracers.send(TraceEvent::Event {
+    self.tracers.send_lazy(|| TraceEvent::Event {
       type_name: event_box.type_name,
       event: event_box.try_json(),
       sender,
@@ -105,7 +105,7 @@ pub(crate) fn emit_event_to_origin(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  tracer_txs.send(TraceEvent::Event {
+  tracer_txs.send_lazy(|| TraceEvent::Event {
     type_name: event_box.type_name,
     event: event_box.try_json(),
     sender: Some(origin.id),
