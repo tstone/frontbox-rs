@@ -524,10 +524,12 @@ async fn handle_system_tick(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
-    // Tick first is where most systems should do any time-based processing
+  // Tick first is where most systems should do any time-based processing
+  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {    
     system.on_tick(delta, ctx);
-    // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
+  });
+  // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
+  apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {    
     system.on_render(ctx);
   });
 }
