@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use tokio::sync::{Notify, mpsc, watch};
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
 
 use crate::app::GroupsExt;
 use crate::app::app_message::AppMessage::EmitEvent;
@@ -70,6 +70,7 @@ pub async fn run(
 
   log::info!(target: "frontbox_core::run_loop", "⟳ Run loop started.");
   let shutdown_scope;
+  let mut last_tick = Instant::now();
 
   loop {
     tokio::select! {
@@ -190,7 +191,10 @@ pub async fn run(
       }
 
       Ok(_) = tick_rx.changed() => {
-        handle_system_tick(&mut groups, &base, &app_sender, &tracer_txs).await;
+        let now = Instant::now();
+        let delta = tick_delta(now - last_tick, base.system_interval);
+        last_tick = now;
+        handle_system_tick(delta, &mut groups, &base, &app_sender, &tracer_txs).await;
       }
 
       _ = metrics_flush.tick() => {
@@ -506,17 +510,26 @@ fn get_native_switch_id(switch_id: &usize, base: &AppState) -> Option<(usize, us
   None
 }
 
+/// The most ticks' worth of time a single tick may pass to systems. A longer stall still advances game time, but by
+/// at most this many intervals, so systems don't see one enormous step.
+const MAX_TICK_INTERVALS: u32 = 4;
+
+/// The `delta` passed to systems for a tick: the measured time since the previous tick, clamped to
+/// `MAX_TICK_INTERVALS` intervals.
+fn tick_delta(elapsed: Duration, interval: Duration) -> Duration {
+  elapsed.min(interval * MAX_TICK_INTERVALS)
+}
+
 async fn handle_system_tick(
+  delta: Duration,
   groups: &Groups,
   base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) {
-  let tick_duration = base.system_interval;
-
   apply_to_systems(groups, base, app_sender, tracer_txs, |system, ctx| {
     // Tick first is where most systems should do any time-based processing
-    system.on_tick(tick_duration, ctx);
+    system.on_tick(delta, ctx);
     // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
     system.on_render(ctx);
   });
@@ -1028,5 +1041,13 @@ mod tests {
     activate_system_group(group, &mut h.groups, &h.base, h.tx.clone(), &h.tracers);
     let reactivated: Vec<(u64, bool)> = members.iter().map(|(id, _)| (*id, true)).collect();
     assert_eq!(h.activity_events(), reactivated);
+  }
+
+  #[test]
+  fn tick_delta_is_the_measured_time_clamped_to_a_few_intervals() {
+    let interval = Duration::from_millis(80);
+    assert_eq!(tick_delta(Duration::from_millis(95), interval), Duration::from_millis(95));
+    assert_eq!(tick_delta(Duration::from_millis(40), interval), Duration::from_millis(40));
+    assert_eq!(tick_delta(Duration::from_secs(3), interval), interval * MAX_TICK_INTERVALS);
   }
 }

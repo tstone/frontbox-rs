@@ -25,7 +25,7 @@ pub trait System: Any {
   /// re-activated (activation bubbles). [`SystemReactivated`] is broadcast afterwards.
   fn on_reactivate(&mut self, ctx: &SystemContext) {}
 
-  /// On tick is called every system tick, which is typically 30-60Hz, but can be configured by the app. This is where most of the game logic should go.
+  /// On tick is called every system tick. `delta` is the real time measured since the previous tick
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {}
   /// On render is called every system tick after on_tick, and is where rendering (LEDs, DMD, screen, etc.) should be handled since on_tick processed all state needed for rendering.
   fn on_render(&mut self, ctx: &SystemContext) {}
