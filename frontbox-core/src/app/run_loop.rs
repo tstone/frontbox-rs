@@ -544,16 +544,30 @@ fn spawn_system(
 ) {
   let system_id = system.id();
 
-  let was_spawned = if let Some(parent) = groups.get_mut(&group) {
-    parent.insert(system);
-    true
-  } else {
-    log::warn!(
-      "Could not spawn system {} because group {} does not exist.",
-      system.name(),
-      group
-    );
-    false
+  let was_spawned = match groups.get_mut(&group) {
+    Some(parent) => match parent.id_by_type_id(&system.type_id()) {
+      Some(existing_id) => {
+        log::warn!(
+          "Could not spawn system {} because group {} already has one ({}). Only one system of a type may run per group.",
+          system.name(),
+          group,
+          existing_id
+        );
+        false
+      }
+      None => {
+        parent.insert(system);
+        true
+      }
+    },
+    None => {
+      log::warn!(
+        "Could not spawn system {} because group {} does not exist.",
+        system.name(),
+        group
+      );
+      false
+    }
   };
 
   if was_spawned {

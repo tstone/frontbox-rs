@@ -237,7 +237,11 @@ impl Systems {
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
     let result = self.systems.shift_remove(&system_id);
     if let Some(system_type) = self.id_to_type.remove(&system_id) {
-      self.type_to_id.remove(&system_type);
+      // Only clear the mapping if it still points at this system, so removing an older system of the same type
+      // doesn't orphan a newer one.
+      if self.type_to_id.get(&system_type) == Some(&system_id) {
+        self.type_to_id.remove(&system_type);
+      }
     }
     result
   }
