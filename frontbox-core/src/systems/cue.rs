@@ -66,31 +66,9 @@
 //! ```
 //!
 //! Cycling works by rotating through the list of values each time the cue is complete. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On` would be cued. Another second would elapse and `Off` would be cued. Another second would elapse and `On` would be cued, and so on.
-//!
-//! ### Timelines
-//!
-//! Sometimes it's easier to express things as a linear timeline. The same example as above could also be expressed as...
-//!
-//! ```rust
-//! # use frontbox_core::prelude::*;
-//! # #[derive(Serialize, Event)]
-//! # struct SomethingImportant(u16);
-//! # fn example(ctx: &SystemContext) {
-//! ctx.cues.start_timeline(CueTimeline::new()
-//!   .cue_at(Duration::from_secs(3), SomethingImportant(5))
-//!   .cue_at(Duration::from_millis(4150), SomethingImportant(50))
-//!   .cue_at(Duration::from_secs(9), SomethingImportant(500))
-//! );
-//! # }
-//! ```
-//!
-//! Timelines are a way to group a bunch of one-off cues into a sequence. Canceling a timeline cancels all remaining cues within it.
-//!
 
 use std::sync::Arc;
 use std::time::Duration;
-
-use itertools::Itertools;
 
 use crate::prelude::Event;
 
@@ -107,7 +85,6 @@ pub(crate) enum CueInternal {
   Once(Duration),
   Times(u16, Duration),
   Loop(Duration),
-  Timeline(Vec<CueAccumulator>),
 }
 
 #[derive(Clone)]
@@ -131,27 +108,6 @@ impl CueAccumulator {
     Self::new(cue_internal, signals)
   }
 
-  pub fn from_points(points: Vec<(Duration, Box<dyn Event>)>) -> Self {
-    // assert that there are no duplicated durations since two points cannot resolve at the same time
-    let mut seen_durations = std::collections::HashSet::new();
-    for (duration, _) in &points {
-      if !seen_durations.insert(*duration) {
-        panic!(
-          "Duplicate duration {} in timeline cue",
-          duration.as_secs_f32()
-        );
-      }
-    }
-
-    let cue_points = points
-      .into_iter()
-      // sort by least duration to greatest so that the timeline can process them in order
-      .sorted_by_key(|(target, _)| *target)
-      .map(|(time, event)| CueAccumulator::new(CueInternal::Once(time), vec![event]))
-      .collect();
-    Self::new(CueInternal::Timeline(cue_points), vec![])
-  }
-
   fn new(cue: CueInternal, signals: Vec<Box<dyn Event>>) -> Self {
     // start with index at end of signals so that first increment will roll it over to 0
     let cycle_index = signals.iter().len();
@@ -168,24 +124,10 @@ impl CueAccumulator {
 
   /// Get the current signal to trigger for this cue
   pub fn signal(&self) -> Option<&dyn Event> {
-    match &self.cue {
-      CueInternal::Timeline(points) => {
-        // only check the first point since only one point can be complete at a time
-        if let Some(first_point) = points.first() {
-          if first_point.is_complete() {
-            return first_point.signal();
-          }
-        }
-        None
-      }
-      _ => {
-        // default: use the signal index (cycling)
-        if self.cycle_index >= self.signal.len() {
-          return None;
-        }
-        Some(&*self.signal[self.cycle_index].as_ref())
-      }
+    if self.cycle_index >= self.signal.len() {
+      return None;
     }
+    Some(&*self.signal[self.cycle_index].as_ref())
   }
 
   pub fn target(&self) -> Duration {
@@ -193,14 +135,6 @@ impl CueAccumulator {
       CueInternal::Once(duration) => *duration,
       CueInternal::Times(_, duration) => *duration,
       CueInternal::Loop(duration) => *duration,
-      CueInternal::Timeline(points) => {
-        // timeline target is the duration of the longest point
-        points
-          .iter()
-          .map(|point| point.target())
-          .max()
-          .unwrap_or(Duration::ZERO)
-      }
     }
   }
 
@@ -224,30 +158,6 @@ impl CueAccumulator {
     }
 
     self.elapsed += delta;
-
-    match &mut self.cue {
-      CueInternal::Timeline(points) => {
-        // check if the first point has completed, and remove it if so
-        if let Some(first) = points.first() {
-          if first.is_complete() {
-            points.remove(0);
-          }
-        }
-
-        // save the result of the (now) first point as that will be the return of this function
-        let first_completed = points.first_mut().map(|point| point.accumulate(delta));
-
-        // accumulate time to remaining points so they are ready to trigger when their time comes
-        for point in points.iter_mut().skip(1) {
-          point.accumulate(delta);
-        }
-
-        if let Some(completed) = first_completed {
-          return completed;
-        }
-      }
-      _ => {}
-    }
 
     if self.elapsed >= self.target() {
       // don't reset to 0 if exactly at the target. This will happen the next cycle but doing so too early
@@ -284,9 +194,6 @@ impl CueAccumulator {
       CueInternal::Once(_) => self.completed,
       CueInternal::Times(t, _) => self.loop_count >= *t,
       CueInternal::Loop(_) => false,
-      CueInternal::Timeline(points) => {
-        points.len() == 0 || (points.len() == 1 && points[0].is_complete())
-      }
     }
   }
 }
@@ -299,8 +206,6 @@ mod test {
   struct Signal;
   #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
   struct Signal2;
-  #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
-  struct Signal3;
 
   pub use super::*;
 
@@ -446,43 +351,6 @@ mod test {
     assert_eq!(
       cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
       Some(&Signal)
-    );
-  }
-
-  #[test]
-  fn timeline_cue() {
-    let mut cue = CueAccumulator::from_points(vec![
-      (Duration::from_secs(1), Box::new(Signal)),
-      (Duration::from_secs(2), Box::new(Signal2)),
-      (Duration::from_secs(3), Box::new(Signal3)),
-    ]);
-
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_none(), true);
-
-    // Advance 1 second, should trigger first signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-
-    // Advance another second, should trigger second signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
-      Some(&Signal2)
-    );
-
-    // Advance another second, should trigger third signal and complete
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal3>()),
-      Some(&Signal3)
     );
   }
 }

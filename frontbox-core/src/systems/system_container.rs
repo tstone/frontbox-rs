@@ -158,12 +158,6 @@ impl SystemContainer {
     self.cues.insert(id, CueAccumulator::from_cue(cue, signals));
   }
 
-  pub(crate) fn create_cue_timeline(&mut self, timeline: CueTimeline, id: u64) {
-    self
-      .cues
-      .insert(id, CueAccumulator::from_points(timeline.points()));
-  }
-
   pub(crate) fn cancel_cue(&mut self, cue_id: u64) {
     self.cues.remove(&cue_id);
   }

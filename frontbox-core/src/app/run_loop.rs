@@ -140,9 +140,6 @@ pub async fn run(
           AppMessage::CreateCue(handle, cue_id, cue, signals) => {
             create_cue(handle, cue_id, cue, signals, &groups);
           }
-          AppMessage::CreateCueTimeline(handle, cue_id, timeline) => {
-            create_cue_timeline(handle, cue_id, timeline, &groups);
-          }
           AppMessage::CancelCue(handle, cue_id) => {
             cancel_cue(handle, cue_id, &groups);
           }
@@ -801,18 +798,6 @@ fn create_cue(
       "Cueing: No system found with ID {}, cannot create cue {:?}",
       handle.id,
       cue
-    );
-  }
-}
-
-fn create_cue_timeline(handle: SystemHandle, cue_id: u64, timeline: CueTimeline, groups: &Groups) {
-  if let Some(mut system) = groups.system(handle) {
-    system.create_cue_timeline(timeline, cue_id);
-  } else {
-    log::warn!(
-      "No system found with ID {}, cannot create cue timeline {:?}",
-      handle.id,
-      cue_id
     );
   }
 }

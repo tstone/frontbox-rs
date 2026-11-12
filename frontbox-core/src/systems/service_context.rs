@@ -194,15 +194,6 @@ impl<'a> ServiceContext<'a> {
     cue_id
   }
 
-  pub(crate) fn cue_timeline(&self, handle: SystemHandle, timeline: CueTimeline) -> u64 {
-    let cue_id = SystemContainer::next_id();
-    self
-      .app_sender
-      .send(AppMessage::CreateCueTimeline(handle, cue_id, timeline))
-      .ok();
-    cue_id
-  }
-
   pub(crate) fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
     let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
   }

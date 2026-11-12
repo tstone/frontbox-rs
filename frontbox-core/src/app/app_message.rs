@@ -29,7 +29,6 @@ pub enum AppMessage {
   ActivateSystemGroup(GroupId),
   DeactivateSystemGroup(GroupId),
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
-  CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
   StartRoutine(RoutineStart),
   CompleteRoutineStep(SystemHandle, TypeId),
@@ -94,9 +93,6 @@ impl Debug for AppMessage {
       AppMessage::DeactivateSystemGroup(id) => write!(f, "DeactivateSystemGroup({})", id),
       AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
         write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
-      }
-      AppMessage::CreateCueTimeline(handle, cue_id, _timeline) => {
-        write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
       AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),

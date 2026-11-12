@@ -119,10 +119,6 @@ impl<'a> ContextCues<'a> {
     self.ctx.cue_cycling(self.handle, signals, cue)
   }
 
-  pub fn start_timeline(&self, timeline: CueTimeline) -> u64 {
-    self.ctx.cue_timeline(self.handle, timeline)
-  }
-
   pub fn cancel(&self, cue_id: u64) {
     self.ctx.cancel_cue(self.handle, cue_id);
   }
