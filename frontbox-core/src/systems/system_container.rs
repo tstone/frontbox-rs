@@ -1,6 +1,7 @@
 use std::any::{Any, TypeId, type_name_of_val};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
@@ -53,8 +54,42 @@ impl SystemContainer {
     self.faulted
   }
 
-  pub(crate) fn fault(&mut self) {
-    self.faulted = true;
+  /// Calls `f`, catching a panic so it can't unwind out of the run loop and end the process. A panic is logged and
+  /// returns `None`. Use [`retire_on_panic`](Self::retire_on_panic) unless the system is already on its way out.
+  ///
+  /// The system may be left half-updated by the panic, which is why `retire_on_panic` retires it. Anything else `f`
+  /// borrowed is released as the panic unwinds; `RefCell`s aren't poisoned.
+  pub(crate) fn catch_panic<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    match catch_unwind(AssertUnwindSafe(|| f(self))) {
+      Ok(result) => Some(result),
+      Err(payload) => {
+        log::error!(
+          target: "frontbox_core::systems::lifecycle",
+          "💥 System {} ({}) panicked: {}",
+          self.name(),
+          self.id(),
+          panic_message(payload.as_ref())
+        );
+        None
+      }
+    }
+  }
+
+  /// [`catch_panic`](Self::catch_panic), and if `f` panics, retire the system: mark it faulted so nothing more is
+  /// handed to it, and queue its despawn. `ctx` must be this system's context.
+  pub(crate) fn retire_on_panic<T>(&mut self, ctx: &SystemContext, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    let result = self.catch_panic(f);
+    if result.is_none() && !self.faulted {
+      log::error!(
+        target: "frontbox_core::systems::lifecycle",
+        "💥 Despawning system {} ({}) after it panicked",
+        self.name(),
+        self.id()
+      );
+      self.faulted = true;
+      ctx.systems.despawn_self();
+    }
+    result
   }
 
   pub(crate) fn next_id() -> u64 {
@@ -276,6 +311,15 @@ impl<T: ChildSystem + 'static> From<T> for ChildSystemContainer {
   fn from(system: T) -> Self {
     Self::new(system)
   }
+}
+
+/// The message a panic was raised with, when it's a string (as `panic!` and `expect` make it)
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
+  payload
+    .downcast_ref::<&str>()
+    .copied()
+    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+    .unwrap_or("<non-string panic payload>")
 }
 
 #[cfg(test)]

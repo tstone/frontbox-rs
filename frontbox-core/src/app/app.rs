@@ -173,7 +173,7 @@ impl App {
     if let Err(payload) = AssertUnwindSafe(run).catch_unwind().await {
       log::error!(
         "💥 Run loop panicked: {}. Powering down the machine.",
-        run_loop::panic_message(payload.as_ref())
+        crate::systems::panic_message(payload.as_ref())
       );
       crash_power_down.run().await;
       std::panic::resume_unwind(payload);
