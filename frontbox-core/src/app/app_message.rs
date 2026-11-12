@@ -112,6 +112,18 @@ impl Debug for AppMessage {
         write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
       }
       AppMessage::SetState(state) => write!(f, "SetState({:?})", state),
+      // An LED batch holds every changed LED and is sent several times a tick, so for performance simplify it
+      AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
+        expansion,
+        breakout,
+        states,
+      }) => write!(
+        f,
+        "TracerEvent(LedsRGBChange {{ expansion: {}, breakout: {:?}, {} leds }})",
+        expansion,
+        breakout,
+        states.len()
+      ),
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }
