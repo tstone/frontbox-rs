@@ -178,6 +178,9 @@ impl RunLoop {
       AppMessage::SyncSwitchStates(switch_states) => {
         self.base.switches.update_switch_states(switch_states);
       }
+      AppMessage::MachineDisconnected => {
+        self.emit_event(Some(self.machine_system_id), EventBox::new(MachineDisconnected));
+      }
       AppMessage::ConfigChanged(key) => {
         self.base.config.save();
         self.emit_event(None, EventBox::new(ConfigChanged(key)));

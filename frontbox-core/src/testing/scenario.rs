@@ -67,6 +67,14 @@ impl Scenario {
     self.open_switch(switch);
   }
 
+  /// Lose the connection to the machine, as pulling its USB cable would. The app is told, and from then on nothing it
+  /// sends reaches the hardware and switch changes aren't reported. Panics if it's already disconnected.
+  pub fn disconnect_machine(&mut self) {
+    let disconnected = self.hardware.disconnect().unwrap_or_else(|| panic!("The machine is already disconnected"));
+    self.harness.send(disconnected);
+    self.settle();
+  }
+
   /// Let time pass, ticking at the app's interval as the machine would, so cues and timers run as they would there
   pub fn advance(&mut self, duration: Duration) {
     let interval = self.harness.tick_interval();
@@ -118,11 +126,13 @@ impl Scenario {
       .hardware
       .switch_id(name)
       .unwrap_or_else(|| panic!("There's no switch named {name}"));
-    let change = self
-      .hardware
-      .set_switch(id, state)
-      .unwrap_or_else(|| panic!("Switch {name} is already {state:?}"));
-    self.harness.send(change);
+    if self.hardware.is_closed(name) == Some(matches!(state, SwitchState::Closed)) {
+      panic!("Switch {name} is already {state:?}");
+    }
+    // a disconnected machine doesn't report it
+    if let Some(change) = self.hardware.set_switch(id, state) {
+      self.harness.send(change);
+    }
     self.settle();
   }
 
@@ -360,6 +370,40 @@ mod tests {
     s.hit_switch("start");
     assert_eq!(kicked.take(), [7, 1]);
     assert!(kicked.take().is_empty());
+  }
+
+  #[test]
+  fn a_disconnect_reaches_the_systems() {
+    let mut s = Scenario::new(app()).start();
+    let disconnected = s.record(|_: &MachineDisconnected| ());
+    assert!(s.act(|ctx| ctx.systems.expect::<MachineSystem>().is_connected()));
+
+    s.disconnect_machine();
+    assert_eq!(disconnected.take().len(), 1);
+    assert!(!s.act(|ctx| ctx.systems.expect::<MachineSystem>().is_connected()));
+    assert!(!s.hardware().watchdog_enabled());
+  }
+
+  #[test]
+  fn once_disconnected_switches_and_drivers_dont_get_through() {
+    let mut s = Scenario::new(app()).start();
+    let kicked = s.record(|e: &Kicked| e.0);
+    s.disconnect_machine();
+
+    s.close_switch("start");
+    assert!(kicked.take().is_empty());
+    assert_eq!(s.act(|ctx| ctx.switches.is_closed("start")), Some(false));
+
+    s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::Tap));
+    assert_eq!(s.hardware().driver("kicker").unwrap().taps, 0);
+  }
+
+  #[test]
+  #[should_panic(expected = "already disconnected")]
+  fn disconnecting_twice_is_a_mistake() {
+    let mut s = Scenario::new(app()).start();
+    s.disconnect_machine();
+    s.disconnect_machine();
   }
 
   #[test]

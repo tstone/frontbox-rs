@@ -7,7 +7,6 @@
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be
   resolved.
-- Can we do some end-to-end tests around game management, turn ending/game ending? Virtual machine is already allowing some of this to happen. That should probably be expanded.
 - Generalized systems: Scoop, lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - CrashPowerDown -- Verify that this still maeks sense
 - Operator metrics can be reset (e.g. when a coil is replaced)
@@ -72,6 +71,7 @@
 - DmdSystem becomes an interface
 - DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
+- DmdSystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
 - Need a better pattern/more generalized UI DSP to do the following:
 - Transition left/right ease between sections
@@ -86,9 +86,6 @@
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a
   replayed game is deterministic.
-- Canvas designer: I want to be able to lay out a DMD screen visually (hot reload? JSON eval?)
-- LedEffect1d web based designer: uses an API to render actual colors. Needs: load from JSON, LED renames.
-- LedEffect2d web based designer: same as above, but also uses LED config
 
 ## Docs and tooling
 

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use crate::machine::driver_triggers::DriverTriggers;
 use crate::machine::neuron::boot;
-use crate::machine::serial_interface::SerialInterface;
+use crate::machine::serial_interface::{SerialError, SerialInterface};
 use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
@@ -17,10 +17,15 @@ pub struct Neuron {
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
+  /// Failures in a row of the watchdog command being sent, to stop resending it after `WATCHDOG_ATTEMPTS`
+  watchdog_failures: u32,
   driver_triggers: DriverTriggers,
 }
 
 impl Neuron {
+  /// How many times in a row a watchdog command is sent before giving up until the next one
+  const WATCHDOG_ATTEMPTS: u32 = 3;
+
   fn port_for(&mut self, port: MachinePort) -> &mut SerialInterface {
     match port {
       MachinePort::Io => &mut self.io_port,
@@ -32,11 +37,16 @@ impl Neuron {
     match msg {
       MachineMessage::WatchdogPing => {
         self
-          .send_watchdog(WatchdogCommand::set(self.watchdog_interval))
+          .send_watchdog(
+            WatchdogCommand::set(self.watchdog_interval),
+            MachineMessage::WatchdogPing,
+          )
           .await;
       }
       MachineMessage::WatchdogClear => {
-        self.send_watchdog(WatchdogCommand::disable()).await;
+        self
+          .send_watchdog(WatchdogCommand::disable(), MachineMessage::WatchdogClear)
+          .await;
       }
       MachineMessage::RefreshSwitchState => {
         self.refresh_switch_state().await;
@@ -128,13 +138,51 @@ impl Neuron {
     }
   }
 
-  async fn send_watchdog(&mut self, cmd: WatchdogCommand) {
+  /// Send a watchdog command. If it fails or times out, `again` is queued to send it again behind whatever else is
+  /// waiting, as the watchdog is critical to keeping the machine running, up to `WATCHDOG_ATTEMPTS` times in a row.
+  async fn send_watchdog(&mut self, cmd: WatchdogCommand, again: MachineMessage) {
     match self.io_port.query(&cmd, Duration::from_millis(100)).await {
-      // retry if failed or timed out (watchdog is critical to keeping the machine running)
-      Ok(WatchdogResponse::Failed) | Err(_) => {
-        let _ = self.machine_sender.send(MachineMessage::WatchdogPing);
+      // the port is gone, so there's nothing to send it on
+      Err(SerialError::Lost) => {}
+      Ok(WatchdogResponse::Failed) | Err(SerialError::Response(_)) => {
+        self.watchdog_failures += 1;
+        if self.watchdog_failures < Self::WATCHDOG_ATTEMPTS {
+          let _ = self.machine_sender.send(again);
+        } else {
+          log::warn!(
+            "🐶 The watchdog command failed {} times in a row, waiting for the next one",
+            self.watchdog_failures
+          );
+          self.watchdog_failures = 0;
+        }
       }
-      _ => {}
+      Ok(_) => self.watchdog_failures = 0,
+    }
+  }
+
+  /// Whether both ports are still connected. They're on the same USB connection, so losing either (e.g. because the
+  /// cable was pulled) means the machine is gone.
+  fn is_connected(&self) -> bool {
+    self.io_port.is_connected() && self.exp_port.is_connected()
+  }
+
+  /// Read events and handle messages until a port is lost
+  async fn run_connected(&mut self) {
+    loop {
+      tokio::select! {
+        event = self.io_port.read_event() => match event {
+          Ok(event) => Self::handle_event(&self.app_sender, event),
+          Err(_) => return,
+        },
+
+        Some(msg) = self.machine_receiver.recv() => {
+          self.process_messages(msg).await;
+          self.flush_queued_events();
+          if !self.is_connected() {
+            return;
+          }
+        }
+      }
     }
   }
 }
@@ -151,18 +199,15 @@ impl Machine for Neuron {
   }
 
   async fn run(&mut self) {
-    loop {
-      tokio::select! {
-        Some(event) = self.io_port.read_event() => {
-          Self::handle_event(&self.app_sender, event);
-        }
+    self.run_connected().await;
 
-        Some(msg) = self.machine_receiver.recv() => {
-          self.process_messages(msg).await;
-          self.flush_queued_events();
-        }
-      }
-    }
+    log::error!(
+      "🔌 Lost the connection to the machine. Switches and drivers are unavailable until it restarts."
+    );
+    self.app_sender.send(AppMessage::MachineDisconnected).ok();
+
+    // Nothing can reach the hardware any more. Keep draining what's sent so it doesn't pile up.
+    while self.machine_receiver.recv().await.is_some() {}
   }
 }
 
@@ -239,6 +284,7 @@ impl MachineBoot for Neuron {
       machine_sender,
       machine_receiver,
       watchdog_interval: app_config.watchdog_interval.unwrap(),
+      watchdog_failures: 0,
       driver_triggers: DriverTriggers::default(),
     };
 

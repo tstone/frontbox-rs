@@ -26,3 +26,7 @@ impl SwitchOpened {
     Self { switch }
   }
 }
+
+/// Emitted when the connection to the machine's hardware is lost
+#[derive(serde::Serialize, Event, Debug, Clone)]
+pub struct MachineDisconnected;

@@ -18,7 +18,8 @@ pub async fn retry<T>(step: impl AsyncFnMut() -> Result<T, BootError>) -> Result
 }
 
 /// Run a boot step until it succeeds, up to `max_attempts` times. Gives up with the last error once the attempts run
-/// out, or straight away if the hardware doesn't match the configuration, as trying again won't change that.
+/// out, or straight away if trying again won't help (the hardware doesn't match the configuration, or the port is
+/// gone).
 pub async fn retry_up_to<T>(
   max_attempts: u32,
   mut step: impl AsyncFnMut() -> Result<T, BootError>,
@@ -27,8 +28,7 @@ pub async fn retry_up_to<T>(
   loop {
     match step().await {
       Ok(value) => return Ok(value),
-      Err(e @ BootError::Misconfigured(_)) => return Err(e),
-      Err(e) if attempt >= max_attempts => return Err(e),
+      Err(e) if !e.is_retryable() || attempt >= max_attempts => return Err(e),
       Err(e) => {
         log::warn!("🥾 {e} (attempt {attempt} of {max_attempts}), retrying...");
         attempt += 1;
@@ -54,10 +54,7 @@ pub async fn handshake(io_port: &mut SerialInterface) -> Result<String, BootErro
     Ok(IdResponse::Report { mainboard_name, .. }) => mainboard_name,
     Ok(IdResponse::Failed) => return Err(BootError::Failed { step: STEP.into() }),
     Err(error) => {
-      return Err(BootError::NoResponse {
-        step: STEP.into(),
-        error,
-      });
+      return Err(BootError::no_response(STEP.into(), error));
     }
   };
 
@@ -165,10 +162,7 @@ pub async fn read_switch_states(
   {
     Ok(SwitchReportResponse::SwitchReport { switches }) => Ok(switches),
     Ok(SwitchReportResponse::Failed) => Err(BootError::Failed { step: STEP.into() }),
-    Err(error) => Err(BootError::NoResponse {
-      step: STEP.into(),
-      error,
-    }),
+    Err(error) => Err(BootError::no_response(STEP.into(), error)),
   }
 }
 
@@ -266,10 +260,7 @@ pub async fn resolve_io_network(
       }
       Ok(NodeInfo::Failed) => return Err(BootError::Failed { step: step() }),
       Err(error) => {
-        return Err(BootError::NoResponse {
-          step: step(),
-          error,
-        });
+        return Err(BootError::no_response(step(), error));
       }
     }
   }

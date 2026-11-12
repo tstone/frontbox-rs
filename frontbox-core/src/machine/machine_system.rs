@@ -27,6 +27,8 @@ pub struct MachineSystem {
   triggers: DriverTriggers,
   /// Running time not yet counted toward `MINUTES_ON`
   uncounted: Duration,
+  /// Cleared once the machine reports it lost its connection to the hardware
+  connected: bool,
 }
 
 #[allow(unused)]
@@ -41,7 +43,13 @@ impl MachineSystem {
       driver_modes: HashMap::new(),
       triggers: DriverTriggers::default(),
       uncounted: Duration::ZERO,
+      connected: true,
     }
+  }
+
+  /// Whether the machine is connected to the hardware. See [`MachineDisconnected`].
+  pub fn is_connected(&self) -> bool {
+    self.connected
   }
 
   /// Ping the watchdog to prevent it from triggering a reset (WD)
@@ -373,7 +381,9 @@ impl System for MachineSystem {
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>() {
+    if event.is::<MachineDisconnected>() {
+      self.connected = false;
+    } else if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>() {
       self.update_drivers_on_config_change(key, ctx);
     } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
       self.count_switch_fires(switch.id, SwitchState::Closed, ctx);

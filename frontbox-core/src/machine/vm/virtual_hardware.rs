@@ -22,6 +22,8 @@ pub struct VirtualHardware {
   driver_ids: HashMap<&'static str, usize>,
   triggers: DriverTriggers,
   watchdog_enabled: bool,
+  /// Cleared once the app's connection to the hardware is lost, after which nothing passes either way
+  connected: bool,
 }
 
 impl VirtualHardware {
@@ -46,6 +48,7 @@ impl VirtualHardware {
       driver_ids: io_network.drivers.iter().map(|d| (d.definition.name, d.id)).collect(),
       triggers: DriverTriggers::default(),
       watchdog_enabled: false,
+      connected: true,
     }
   }
 
@@ -75,6 +78,11 @@ impl VirtualHardware {
     self.watchdog_enabled
   }
 
+  /// Whether the app is still connected to the hardware
+  pub fn connected(&self) -> bool {
+    self.connected
+  }
+
   /// Every switch's state as FAST reports it (SA): one per slot, before inversion
   pub fn switch_report(&self) -> Vec<SwitchState> {
     (0..self.switch_slots)
@@ -99,6 +107,10 @@ impl VirtualHardware {
 
   /// Apply a message as the hardware would, returning what the hardware sends back to the app
   pub(crate) fn apply(&mut self, message: &MachineMessage) -> Vec<AppMessage> {
+    if !self.connected {
+      return Vec::new();
+    }
+
     match message {
       MachineMessage::WatchdogPing => self.watchdog_enabled = true,
       MachineMessage::WatchdogClear => self.watchdog_enabled = false,
@@ -126,7 +138,7 @@ impl VirtualHardware {
   }
 
   /// Change a switch, as a ball or a player would, returning the event the hardware reports to the app. Nothing is
-  /// reported if the switch is unknown or already in that state.
+  /// reported if the switch is unknown or already in that state, or the app is disconnected.
   #[cfg(any(test, feature = "testing"))]
   pub(crate) fn set_switch(&mut self, switch_id: usize, state: SwitchState) -> Option<AppMessage> {
     let switch = self.switches.get_mut(&switch_id)?;
@@ -135,7 +147,20 @@ impl VirtualHardware {
       return None;
     }
     switch.closed = closed;
-    Some(AppMessage::SwitchStateChange(switch_id, state))
+    self.connected.then_some(AppMessage::SwitchStateChange(switch_id, state))
+  }
+
+  /// Lose the connection to the app, as pulling the USB cable would, returning what the machine tells the app. From
+  /// then on the app's messages don't reach the hardware and switch changes aren't reported. The watchdog stops being
+  /// fed, so it expires. Nothing is reported if it's already disconnected.
+  #[cfg(any(test, feature = "testing"))]
+  pub(crate) fn disconnect(&mut self) -> Option<AppMessage> {
+    if !self.connected {
+      return None;
+    }
+    self.connected = false;
+    self.watchdog_enabled = false;
+    Some(AppMessage::MachineDisconnected)
   }
 }
 
@@ -356,6 +381,35 @@ mod tests {
     trigger(&mut hw, DriverTriggerControlMode::Automatic, Some(START_ID));
     trigger(&mut hw, DriverTriggerControlMode::Manual, None);
     assert_eq!(eject(&hw).trigger, DriverTrigger::Automatic { switch: Some(START_ID) });
+  }
+
+  #[test]
+  fn a_disconnect_is_reported_once_and_expires_the_watchdog() {
+    let mut hw = hardware();
+    hw.apply(&MachineMessage::WatchdogPing);
+    assert!(matches!(hw.disconnect(), Some(AppMessage::MachineDisconnected)));
+    assert!(hw.disconnect().is_none());
+    assert!(!hw.connected());
+    assert!(!hw.watchdog_enabled());
+  }
+
+  #[test]
+  fn once_disconnected_messages_dont_reach_the_hardware() {
+    let mut hw = hardware();
+    hw.disconnect();
+    configure(&mut hw, pulse());
+    hw.apply(&MachineMessage::WatchdogPing);
+    assert!(eject(&hw).config.is_none());
+    assert!(!hw.watchdog_enabled());
+    assert!(hw.apply(&MachineMessage::RefreshSwitchState).is_empty());
+  }
+
+  #[test]
+  fn once_disconnected_switch_changes_arent_reported() {
+    let mut hw = hardware();
+    hw.disconnect();
+    assert!(hw.set_switch(START_ID, SwitchState::Closed).is_none());
+    assert_eq!(hw.is_closed("start"), Some(true));
   }
 
   #[test]
