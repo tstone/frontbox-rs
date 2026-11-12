@@ -118,44 +118,25 @@ impl SystemContainer {
   }
 
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    let mut cues_to_remove = Vec::new();
-    for (id, cue) in &mut self.cues {
-      let completed_cycle = cue.accumulate(delta);
-      if completed_cycle {
-        log::trace!("Cue {} cycle completed, triggering signal", id);
+    let system_id = self.id;
+    self.cues.retain(|id, cue| {
+      cue.accumulate(delta, |signal| {
+        log::trace!("Cue {} @ system {} fired", id, system_id);
+        self.inner.on_event(signal, ctx);
+      });
 
-        if let Some(signal) = cue.signal() {
-          self.inner.on_event(signal, ctx);
-        }
-
-        if cue.is_complete() {
-          log::trace!(
-            "Cue {} @ system {} is entirely completed, removing",
-            self.id,
-            id
-          );
-          cues_to_remove.push(*id);
-        }
+      if cue.is_complete() {
+        log::trace!("Cue {} @ system {} completed, removing", id, system_id);
       }
-    }
-
-    if cues_to_remove.len() > 0 {
-      for id in cues_to_remove {
-        self.cues.remove(&id);
-      }
-      log::trace!(
-        "Remaining cue count for system {}: {}",
-        self.id,
-        self.cues.len()
-      )
-    }
+      !cue.is_complete()
+    });
 
     // bubble tick to inner system after processing timers
     self.inner.on_tick(delta, ctx);
   }
 
   pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
-    self.cues.insert(id, CueAccumulator::from_cue(cue, signals));
+    self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 
   pub(crate) fn cancel_cue(&mut self, cue_id: u64) {

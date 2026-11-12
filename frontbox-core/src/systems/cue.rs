@@ -65,7 +65,7 @@
 //! # }
 //! ```
 //!
-//! Cycling works by rotating through the list of values each time the cue is complete. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On` would be cued. Another second would elapse and `Off` would be cued. Another second would elapse and `On` would be cued, and so on.
+//! Cycling works by rotating through the list of values each time the cue fires. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On` would be cued. Another second would elapse and `Off` would be cued. Another second would elapse and `On` would be cued, and so on.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,126 +80,68 @@ pub enum Cue {
   Forever(Duration),
 }
 
+/// A running cue: how far it is through its interval, how many times it has left to fire, and which of its signals
+/// goes next
 #[derive(Clone)]
-pub(crate) enum CueInternal {
-  Once(Duration),
-  Times(u16, Duration),
-  Loop(Duration),
-}
-
-#[derive(Clone)]
-pub struct CueAccumulator {
-  cue: CueInternal,
+pub(crate) struct CueAccumulator {
+  interval: Duration,
+  /// Fires left, or `None` for a cue that runs until canceled
+  remaining: Option<u16>,
   elapsed: Duration,
-  signal: Arc<Vec<Box<dyn Event>>>,
-  cycle_index: usize,
-  loop_count: u16,
-  completed: bool,
+  signals: Arc<Vec<Box<dyn Event>>>,
+  /// The signal the next fire sends, cycling through `signals`
+  next_signal: usize,
 }
 
 impl CueAccumulator {
-  pub fn from_cue(cue: Cue, signals: Vec<Box<dyn Event>>) -> Self {
-    let cue_internal = match cue {
-      Cue::Now => CueInternal::Once(Duration::ZERO),
-      Cue::Once(duration) => CueInternal::Once(duration),
-      Cue::Times(t, duration) => CueInternal::Times(t, duration),
-      Cue::Forever(duration) => CueInternal::Loop(duration),
+  pub(crate) fn new(cue: Cue, signals: Vec<Box<dyn Event>>) -> Self {
+    let (interval, remaining) = match cue {
+      Cue::Now => (Duration::ZERO, Some(1)),
+      Cue::Once(interval) => (interval, Some(1)),
+      Cue::Times(times, interval) => (interval, Some(times)),
+      Cue::Forever(interval) => (interval, None),
     };
-    Self::new(cue_internal, signals)
-  }
-
-  fn new(cue: CueInternal, signals: Vec<Box<dyn Event>>) -> Self {
-    // start with index at end of signals so that first increment will roll it over to 0
-    let cycle_index = signals.iter().len();
 
     Self {
-      cue,
+      interval,
+      remaining,
       elapsed: Duration::ZERO,
-      cycle_index,
-      signal: Arc::new(signals),
-      loop_count: 0,
-      completed: false,
+      signals: Arc::new(signals),
+      next_signal: 0,
     }
   }
 
-  /// Get the current signal to trigger for this cue
-  pub fn signal(&self) -> Option<&dyn Event> {
-    if self.cycle_index >= self.signal.len() {
-      return None;
-    }
-    Some(&*self.signal[self.cycle_index].as_ref())
-  }
-
-  pub fn target(&self) -> Duration {
-    match &self.cue {
-      CueInternal::Once(duration) => *duration,
-      CueInternal::Times(_, duration) => *duration,
-      CueInternal::Loop(duration) => *duration,
-    }
-  }
-
-  fn increment_signal_index(&mut self) {
-    self.cycle_index += 1;
-    if self.cycle_index >= self.signal.len() {
-      self.cycle_index = 0;
-    }
-  }
-
-  /// Move the cue forward in time, returning whether it completed a cycle (and so should fire its signal)
-  pub fn accumulate(&mut self, delta: Duration) -> bool {
-    if self.is_complete() {
-      return false;
-    }
-
-    // If we're exactly at the target, we need to roll back to 0 before adding delta
-    // This can happen when the cycle completes and we don't reset to 0 immediately (see below)
-    if self.elapsed == self.target() {
-      self.elapsed -= self.target();
-    }
-
+  /// Move the cue forward in time, calling `fire` with the signal for each time it came due, in order. A cue with
+  /// a zero interval fires at most once per call.
+  pub(crate) fn accumulate(&mut self, delta: Duration, mut fire: impl FnMut(&dyn Event)) {
     self.elapsed += delta;
 
-    if self.elapsed >= self.target() {
-      // don't reset to 0 if exactly at the target. This will happen the next cycle but doing so too early
-      // makes `sample` incorrect for the last frame of the cycle. Since once never cycles, don't reset elapsed
-      // in that case either.
-      let loops = !matches!(self.cue, CueInternal::Once(_));
-      if self.elapsed > self.target() && loops {
-        self.elapsed -= self.target();
+    while !self.is_complete() && self.elapsed >= self.interval {
+      self.elapsed -= self.interval;
+      if let Some(remaining) = &mut self.remaining {
+        *remaining -= 1;
       }
 
-      self.increment_signal_index();
-
-      if matches!(self.cue, CueInternal::Once(_)) {
-        // for Once cues, keep track of if the cue fires
-        // this avoids an edge case of Duration::ZERO never firing
-        self.completed = true;
+      if !self.signals.is_empty() {
+        fire(self.signals[self.next_signal].as_ref());
+        self.next_signal = (self.next_signal + 1) % self.signals.len();
       }
 
-      match self.cue {
-        CueInternal::Times(_, _) => {
-          self.loop_count += 1;
-        }
-        _ => {}
+      if self.interval.is_zero() {
+        self.elapsed = Duration::ZERO;
+        break;
       }
-
-      return true;
     }
-
-    false
   }
 
-  pub fn is_complete(&self) -> bool {
-    match &self.cue {
-      CueInternal::Once(_) => self.completed,
-      CueInternal::Times(t, _) => self.loop_count >= *t,
-      CueInternal::Loop(_) => false,
-    }
+  pub(crate) fn is_complete(&self) -> bool {
+    self.remaining == Some(0)
   }
 }
 
 #[cfg(test)]
 mod test {
+  use super::*;
   use crate::{events, prelude::EventExt};
 
   #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
@@ -207,150 +149,115 @@ mod test {
   #[derive(Debug, serde::Serialize, Event, PartialEq, Eq)]
   struct Signal2;
 
-  pub use super::*;
-
-  #[test]
-  fn once_cue() {
-    let mut cue = CueAccumulator::new(
-      CueInternal::Once(Duration::from_secs(1)),
-      vec![Box::new(Signal)],
-    );
-
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_none(), true);
-
-    // Advance 1 second, should trigger signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-
-    // Verify that accumulating more time doesn't change the state
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(!completed_cycle);
-    assert_eq!(cue.is_complete(), true);
+  fn ms(ms: u64) -> Duration {
+    Duration::from_millis(ms)
   }
 
-  /// A Once cue that goes over the exact accumulated time
-  #[test]
-  fn once_over_cue() {
-    let mut cue = CueAccumulator::new(
-      CueInternal::Once(Duration::from_secs(1)),
-      vec![Box::new(Signal)],
-    );
-
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_none(), true);
-
-    // Advance 1 second, should trigger signal
-    let completed_cycle = cue.accumulate(Duration::from_millis(1100));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-
-    // Verify that accumulating more time doesn't change the state
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(!completed_cycle);
-    assert_eq!(cue.is_complete(), true);
+  /// Advance `cue` by `delta` and name the signals it fired, in order
+  fn advance(cue: &mut CueAccumulator, delta: Duration) -> Vec<&'static str> {
+    let mut fired = vec![];
+    cue.accumulate(delta, |signal| {
+      fired.push(if signal.downcast_ref::<Signal>().is_some() {
+        "Signal"
+      } else if signal.downcast_ref::<Signal2>().is_some() {
+        "Signal2"
+      } else {
+        "unknown"
+      })
+    });
+    fired
   }
 
   #[test]
-  fn times_cue() {
-    let mut cue = CueAccumulator::new(
-      CueInternal::Times(3, Duration::from_secs(1)),
-      vec![Box::new(Signal)],
-    );
+  fn once_fires_when_its_interval_is_up_and_then_never_again() {
+    let mut cue = CueAccumulator::new(Cue::Once(ms(1000)), events![Signal]);
 
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_none(), true);
-
-    // Advance 1 second, should trigger first signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-
-    // Advance another second, should trigger second signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_some(), true);
-
-    // Advance another second, should trigger third signal and complete
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(cue.signal().is_some(), true);
+    assert!(advance(&mut cue, ms(999)).is_empty());
+    assert_eq!(advance(&mut cue, ms(1)), ["Signal"]);
+    assert!(cue.is_complete());
+    assert!(advance(&mut cue, ms(1000)).is_empty());
   }
 
   #[test]
-  fn loop_cue() {
-    let mut cue = CueAccumulator::new(
-      CueInternal::Loop(Duration::from_secs(1)),
-      vec![Box::new(Signal)],
-    );
+  fn once_fires_when_a_tick_overshoots_its_interval() {
+    let mut cue = CueAccumulator::new(Cue::Once(ms(1000)), events![Signal]);
 
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_none(), true);
-
-    // Advance 1 second, should trigger first signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
-
-    // Advance another second, should trigger second signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(cue.signal().is_some(), true);
+    assert_eq!(advance(&mut cue, ms(1100)), ["Signal"]);
+    assert!(cue.is_complete());
   }
 
   #[test]
-  fn times_cue_with_multiple_signals() {
-    let mut cue = CueAccumulator::new(
-      CueInternal::Times(3, Duration::from_secs(1)),
-      events![Signal, Signal2],
-    );
+  fn now_fires_on_the_first_tick_even_with_no_time_passed() {
+    let mut cue = CueAccumulator::new(Cue::Now, events![Signal]);
 
-    // Advance 1 second, should trigger first signal
-    let completed_cycle = cue.accumulate(Duration::from_millis(500));
-    assert!(!completed_cycle);
-    let completed_cycle = cue.accumulate(Duration::from_millis(500));
-    assert!(completed_cycle);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
+    assert_eq!(advance(&mut cue, Duration::ZERO), ["Signal"]);
+    assert!(cue.is_complete());
+  }
 
-    // Advance another second, should trigger second signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), false);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal2>()),
-      Some(&Signal2)
-    );
+  #[test]
+  fn times_fires_that_many_times_then_completes() {
+    let mut cue = CueAccumulator::new(Cue::Times(3, ms(1000)), events![Signal]);
 
-    // Advance another second, should loop back around to the first signal
-    let completed_cycle = cue.accumulate(Duration::from_secs(1));
-    assert!(completed_cycle);
-    assert_eq!(cue.is_complete(), true);
-    assert_eq!(
-      cue.signal().and_then(|s| s.downcast_ref::<Signal>()),
-      Some(&Signal)
-    );
+    for _ in 0..2 {
+      assert_eq!(advance(&mut cue, ms(1000)), ["Signal"]);
+      assert!(!cue.is_complete());
+    }
+    assert_eq!(advance(&mut cue, ms(1000)), ["Signal"]);
+    assert!(cue.is_complete());
+    assert!(advance(&mut cue, ms(1000)).is_empty());
+  }
+
+  #[test]
+  fn zero_times_is_complete_from_the_start() {
+    let mut cue = CueAccumulator::new(Cue::Times(0, ms(1000)), events![Signal]);
+
+    assert!(cue.is_complete());
+    assert!(advance(&mut cue, ms(1000)).is_empty());
+  }
+
+  #[test]
+  fn forever_keeps_firing() {
+    let mut cue = CueAccumulator::new(Cue::Forever(ms(1000)), events![Signal]);
+
+    for _ in 0..10 {
+      assert_eq!(advance(&mut cue, ms(1000)), ["Signal"]);
+    }
+    assert!(!cue.is_complete());
+  }
+
+  #[test]
+  fn multiple_signals_cycle_in_order() {
+    let mut cue = CueAccumulator::new(Cue::Times(3, ms(1000)), events![Signal, Signal2]);
+
+    assert!(advance(&mut cue, ms(500)).is_empty());
+    assert_eq!(advance(&mut cue, ms(500)), ["Signal"]);
+    assert_eq!(advance(&mut cue, ms(1000)), ["Signal2"]);
+    assert_eq!(advance(&mut cue, ms(1000)), ["Signal"]);
+    assert!(cue.is_complete());
+  }
+
+  #[test]
+  fn a_long_tick_fires_every_interval_that_came_due() {
+    let mut cue = CueAccumulator::new(Cue::Forever(ms(100)), events![Signal, Signal2]);
+
+    assert_eq!(advance(&mut cue, ms(350)), ["Signal", "Signal2", "Signal"]);
+    // the 50ms left over carries into the next interval
+    assert_eq!(advance(&mut cue, ms(50)), ["Signal2"]);
+  }
+
+  #[test]
+  fn a_long_tick_fires_times_no_more_than_its_count() {
+    let mut cue = CueAccumulator::new(Cue::Times(2, ms(100)), events![Signal]);
+
+    assert_eq!(advance(&mut cue, ms(1000)), ["Signal", "Signal"]);
+    assert!(cue.is_complete());
+  }
+
+  #[test]
+  fn a_zero_interval_fires_once_per_tick() {
+    let mut cue = CueAccumulator::new(Cue::Forever(Duration::ZERO), events![Signal]);
+
+    assert_eq!(advance(&mut cue, ms(100)), ["Signal"]);
+    assert_eq!(advance(&mut cue, Duration::ZERO), ["Signal"]);
   }
 }
