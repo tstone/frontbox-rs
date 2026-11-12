@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::app::{BootConfig, DEFAULT_LED_RADIUS};
+use crate::app::{BootConfig, DEFAULT_LED_RADIUS, PlatformKind};
 use crate::location::AppPlane;
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+  /// See [`Platform::kind`](crate::app::Platform::kind)
+  pub platform: PlatformKind,
   pub system_interval: Duration,
   pub watchdog_interval: Option<Duration>,
   pub led_radius: f32,
@@ -18,6 +20,7 @@ pub struct AppConfig {
 impl AppConfig {
   pub fn from_boot_config(boot: &BootConfig) -> Self {
     Self {
+      platform: boot.platform.kind(),
       system_interval: boot.system_interval,
       watchdog_interval: boot.platform.watchdog_interval(),
       led_radius: boot.led_radius,
@@ -30,6 +33,7 @@ impl AppConfig {
 impl Default for AppConfig {
   fn default() -> Self {
     Self {
+      platform: PlatformKind::Virtual,
       system_interval: Duration::ZERO,
       watchdog_interval: None,
       led_radius: DEFAULT_LED_RADIUS,
