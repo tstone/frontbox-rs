@@ -91,7 +91,8 @@ impl GradientStyle {
     match self {
       Self::Linear => (p.x + 0.5).clamp(0.0, 1.0),
       Self::Radial => (p.length() * 2.0).clamp(0.0, 1.0),
-      Self::Conical => (p.y.atan2(p.x) / std::f32::consts::TAU).rem_euclid(1.0),
+      // in f64, as f32 `atan2` is off by one step on some platforms (macOS gives just under pi for 9 o'clock)
+      Self::Conical => ((p.y as f64).atan2(p.x as f64) / std::f64::consts::TAU).rem_euclid(1.0) as f32,
     }
   }
 }
