@@ -1,129 +1,11 @@
-//! The harness and systems shared by the run loop's tests.
-//!
-//! The harness drives a real [`RunLoop`] without tokio, ticks or hardware. Tests send it messages and
-//! [`settle`](Harness::settle) it, which handles everything queued, and whatever that queues in turn, in the order the
-//! loop would. What happened is then read from the loop's state, or from a [`Log`] that test systems write to.
+//! The systems shared by the run loop's tests, and helpers for driving them through the [`Harness`]. Test systems
+//! write what they did or heard to a [`Log`] for the test to read.
 
 use std::sync::{Arc, Mutex};
 
 use super::*;
 
-pub(super) struct Harness {
-  run_loop: RunLoop,
-  rx: mpsc::UnboundedReceiver<AppMessage>,
-}
-
-impl std::ops::Deref for Harness {
-  type Target = RunLoop;
-
-  fn deref(&self) -> &RunLoop {
-    &self.run_loop
-  }
-}
-
-impl std::ops::DerefMut for Harness {
-  fn deref_mut(&mut self) -> &mut RunLoop {
-    &mut self.run_loop
-  }
-}
-
-impl Harness {
-  pub(super) fn new() -> Self {
-    Self::with_state(AppState::default())
-  }
-
-  /// A harness over the given app state, e.g. one with switches
-  pub(super) fn with_state(mut base: AppState) -> Self {
-    let (tx, rx) = mpsc::unbounded_channel();
-    // as in `App::run`, so config changes emit `ConfigChanged`
-    base.config.app_sender = Some(tx.clone());
-    let run_loop = RunLoop::new(
-      base,
-      tx,
-      TracerSenders::new(Vec::new()),
-      Routines::new(Default::default()),
-      0,
-    );
-    Self { run_loop, rx }
-  }
-
-  /// Queue a message, as a system or the machine would. Nothing happens until the harness settles.
-  pub(super) fn send(&self, message: AppMessage) {
-    let _ = self.app_sender.send(message);
-  }
-
-  /// Handle every queued message, and whatever handling them queues, until nothing is left
-  pub(super) fn settle(&mut self) {
-    for _ in 0..10_000 {
-      let Ok(message) = self.rx.try_recv() else {
-        return;
-      };
-      if self.run_loop.handle(message).is_break() {
-        panic!("Settled a shutdown; test it by calling `handle` instead");
-      }
-    }
-    panic!("The run loop never settled: handling messages keeps queueing more");
-  }
-
-  /// Broadcast the event, as the machine or a system would, and settle
-  pub(super) fn emit(&mut self, event: impl Event) {
-    self.send(AppMessage::EmitEvent(None, EventBox::new(event)));
-    self.settle();
-  }
-
-  /// Tick, then settle
-  pub(super) fn tick_by(&mut self, delta: Duration) {
-    self.run_loop.tick(delta);
-    self.settle();
-  }
-
-  /// Spawn the system into the root group, then settle
-  pub(super) fn spawn(&mut self, system: impl Into<SystemContainer>) -> SystemHandle {
-    self.spawn_in(ROOT_GROUP, system)
-  }
-
-  /// Spawn the system into the group, then settle. Panics if it couldn't be spawned.
-  pub(super) fn spawn_in(&mut self, group: GroupId, system: impl Into<SystemContainer>) -> SystemHandle {
-    let system = system.into();
-    let (handle, name) = (SystemHandle::new(system.id(), group), system.name());
-    self.spawn_system(system, group);
-    assert!(self.is_running(handle), "{name} wasn't spawned");
-    self.settle();
-    handle
-  }
-
-  /// Spawn an active group owned by `owner`, holding one [`Member`], then settle
-  pub(super) fn spawn_group(&mut self, owner: SystemHandle, name: &'static str) -> GroupId {
-    self.spawn_group_of(owner, name, vec![Member.into()], true)
-  }
-
-  /// Spawn a group owned by `owner`, then settle
-  pub(super) fn spawn_group_of(
-    &mut self,
-    owner: SystemHandle,
-    name: &'static str,
-    members: Vec<ChildSystemContainer>,
-    active: bool,
-  ) -> GroupId {
-    let group = GroupHandle::new(GroupId::next(), name);
-    let id = group.id();
-    self.spawn_system_group(owner, group, members, active);
-    self.settle();
-    id
-  }
-
-  /// Spawn a [`Listener`] into the root group, returning what it hears from then on
-  pub(super) fn listen(&mut self) -> Log<Heard> {
-    let heard = Log::default();
-    self.spawn(Listener(heard.clone()));
-    heard.take(); // its own spawn
-    heard
-  }
-
-  pub(super) fn is_running(&self, handle: SystemHandle) -> bool {
-    self.groups.contains_system(handle)
-  }
-}
+pub(super) use super::harness::Harness;
 
 /// What test systems did or heard, in order. Shared by the systems and the test, and `Send` so the systems can also be
 /// spawned by message.
@@ -258,3 +140,19 @@ impl System for Member {}
 /// An event with no meaning, for tests to send
 #[derive(serde::Serialize, Event, Clone)]
 pub(super) struct Poke;
+
+/// Helpers for the systems above
+impl Harness {
+  /// Spawn an active group owned by `owner`, holding one [`Member`], then settle
+  pub(super) fn spawn_group(&mut self, owner: SystemHandle, name: &'static str) -> GroupId {
+    self.spawn_group_of(owner, name, vec![Member.into()], true)
+  }
+
+  /// Spawn a [`Listener`] into the root group, returning what it hears from then on
+  pub(super) fn listen(&mut self) -> Log<Heard> {
+    let heard = Log::default();
+    self.spawn(Listener(heard.clone()));
+    heard.take(); // its own spawn
+    heard
+  }
+}

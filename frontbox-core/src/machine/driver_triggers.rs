@@ -2,14 +2,16 @@ use std::collections::HashMap;
 
 use fast_protocol::{DriverTriggerControlMode, TriggerDriverCommand};
 
-/// The last TL that left each driver live: automatic on a switch, or held on.
+/// How each driver is triggered on the hardware right now, as far as we know. FAST never reports this, so it's kept
+/// from the TLs and DLs sent to each driver.
 ///
 /// FAST disconnects a driver's switch whenever the driver is sent a DL, so the Neuron machine uses this to trigger a
-/// live driver again after its configuration is updated. `MachineSystem` uses it to know which drivers the hardware
-/// fires on its own when their switch changes.
+/// driver again the way it was after its configuration is updated. `MachineSystem` uses it to know which drivers the
+/// hardware fires on its own when their switch changes.
 #[derive(Default)]
 pub(crate) struct DriverTriggers {
-  standing: HashMap<usize, (DriverTriggerControlMode, Option<usize>)>,
+  /// A driver missing here is `Off`
+  triggers: HashMap<usize, DriverTrigger>,
 }
 
 impl DriverTriggers {
@@ -20,11 +22,14 @@ impl DriverTriggers {
     switch: Option<usize>,
   ) {
     match mode {
-      DriverTriggerControlMode::Automatic | DriverTriggerControlMode::On => {
-        self.standing.insert(driver_id, (mode, switch));
+      DriverTriggerControlMode::Automatic => {
+        self.triggers.insert(driver_id, DriverTrigger::Automatic { switch });
+      }
+      DriverTriggerControlMode::On => {
+        self.triggers.insert(driver_id, DriverTrigger::On);
       }
       DriverTriggerControlMode::Off => {
-        self.standing.remove(&driver_id);
+        self.triggers.remove(&driver_id);
       }
       // a tap is one-shot, so it leaves the driver as it was
       DriverTriggerControlMode::Manual => {}
@@ -33,27 +38,45 @@ impl DriverTriggers {
 
   /// The driver was given a new configuration, which leaves it disconnected until it's activated again
   pub fn cleared(&mut self, driver_id: usize) {
-    self.standing.remove(&driver_id);
+    self.triggers.remove(&driver_id);
   }
 
-  /// The TL that puts the driver back the way it was after a DL, if it was live
+  pub fn current_trigger(&self, driver_id: usize) -> DriverTrigger {
+    self.triggers.get(&driver_id).copied().unwrap_or(DriverTrigger::Off)
+  }
+
+  /// The TL that puts the driver back the way it was after a DL, unless it was off
   pub fn restore(&self, driver_id: usize) -> Option<TriggerDriverCommand> {
-    self
-      .standing
-      .get(&driver_id)
-      .map(|(mode, switch)| TriggerDriverCommand::new(driver_id, *mode, *switch))
+    match self.current_trigger(driver_id) {
+      DriverTrigger::Automatic { switch } => Some(TriggerDriverCommand::new(
+        driver_id,
+        DriverTriggerControlMode::Automatic,
+        switch,
+      )),
+      DriverTrigger::On => Some(TriggerDriverCommand::new(driver_id, DriverTriggerControlMode::On, None)),
+      DriverTrigger::Off => None,
+    }
   }
 
   /// Drivers the hardware fires on its own when this switch changes
   pub fn automatic_on(&self, switch_id: usize) -> impl Iterator<Item = usize> + '_ {
     self
-      .standing
+      .triggers
       .iter()
-      .filter(move |(_, (mode, switch))| {
-        matches!(mode, DriverTriggerControlMode::Automatic) && *switch == Some(switch_id)
-      })
+      .filter(move |(_, trigger)| **trigger == DriverTrigger::Automatic { switch: Some(switch_id) })
       .map(|(driver_id, _)| *driver_id)
   }
+}
+
+/// How a driver is triggered on the hardware
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriverTrigger {
+  /// Never triggered, turned off, or configured again since
+  Off,
+  /// The hardware fires it on its own when its switch changes, as its configuration says
+  Automatic { switch: Option<usize> },
+  /// Held on
+  On,
 }
 
 #[cfg(test)]
@@ -71,7 +94,7 @@ mod tests {
   }
 
   #[test]
-  fn a_live_driver_is_restored() {
+  fn an_automatic_driver_is_restored() {
     let mut triggers = DriverTriggers::default();
     triggers.triggered(COIL, DriverTriggerControlMode::Automatic, Some(0x12));
     assert_eq!(restored(&triggers).as_deref(), Some("TL:A,0,12\r"));
@@ -100,7 +123,7 @@ mod tests {
   }
 
   #[test]
-  fn a_tap_leaves_a_live_driver_live() {
+  fn a_tap_leaves_an_automatic_driver_automatic() {
     let mut triggers = DriverTriggers::default();
     triggers.triggered(COIL, DriverTriggerControlMode::Automatic, Some(0x12));
     triggers.triggered(COIL, DriverTriggerControlMode::Manual, None);

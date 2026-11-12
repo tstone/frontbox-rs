@@ -1,11 +1,14 @@
 //! The app's main loop
 //!
 //! - `delivery`: handing events and handler calls to systems, respecting their activity
+//! - `harness`: driving the loop synchronously, for tests (with the `testing` feature, or in this crate's tests)
 //! - `lifecycle`: spawning, despawning, activating and deactivating systems and groups
 //! - `switches`: switch state changes, from the machine or a tracer
 //! - `timing`: ticks, the tick timer and cues
 
 mod delivery;
+#[cfg(any(test, feature = "testing"))]
+mod harness;
 mod lifecycle;
 mod switches;
 #[cfg(test)]

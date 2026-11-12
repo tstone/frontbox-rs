@@ -31,4 +31,7 @@ frontbox-metrics = { path = "../frontbox-metrics" }
 env_logger = "0.11.9"
 
 [features]
+# Exports Typescript types of internal types for use with web interfaces
 ts = ["dep:ts-rs", "fast-protocol/ts", "frontbox-metrics/ts"]
+# Test support for crates built on core (`TestContext`, harness, virtual machine, etc.)
+testing = []

@@ -179,6 +179,7 @@ mod system_container;
 mod system_context;
 pub mod system_group;
 mod system_handle;
+#[cfg(any(test, feature = "testing"))]
 mod test_context;
 
 pub use context_namespaces::*;
@@ -195,6 +196,7 @@ pub use system_container::*;
 pub use system_context::*;
 pub use system_group::*;
 pub use system_handle::*;
+#[cfg(any(test, feature = "testing"))]
 pub use test_context::*;
 
 use std::any::TypeId;

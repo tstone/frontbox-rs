@@ -1,41 +1,28 @@
+//! A machine with no hardware behind it. It keeps the state real hardware would in a [`VirtualHardware`], and answers
+//! the app as the hardware would.
+
+mod virtual_hardware;
+
 use tokio::sync::mpsc;
 
 use crate::machine::*;
+use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
 
+pub use virtual_hardware::*;
+
 pub struct VirtualMachine {
+  hardware: VirtualHardware,
+  app_sender: mpsc::UnboundedSender<AppMessage>,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
 }
 
 impl VirtualMachine {
-  async fn process_messages(&mut self, msg: MachineMessage) {
-    match msg {
-      MachineMessage::Dispatch { port, command } => {
-        log::info!("VM: Dispatch on {:?} => {:?}", port, command);
-      }
-      MachineMessage::Command { port, command, .. } => {
-        log::info!("VM: Request on {:?} => {:?}", port, command);
-      }
-      MachineMessage::ConfigureDriver { driver_id, config }
-      | MachineMessage::UpdateDriverConfig { driver_id, config } => {
-        log::info!("VM: Configure driver {} => {:?}", driver_id, config);
-      }
-      MachineMessage::TriggerDriver {
-        driver_id,
-        mode,
-        switch,
-      } => {
-        log::info!(
-          "VM: Trigger driver {} => {:?} {:?}",
-          driver_id,
-          mode,
-          switch
-        );
-      }
-      // switches here only change through the tracer, so there's nothing newer to read
-      MachineMessage::RefreshSwitchState => {}
-      _ => {} // watchdog, etc.
+  fn process_message(&mut self, msg: MachineMessage) {
+    log_message(&msg);
+    for reply in self.hardware.apply(&msg) {
+      self.app_sender.send(reply).ok();
     }
   }
 }
@@ -45,9 +32,10 @@ impl MachineBoot for VirtualMachine {
 
   async fn boot(
     boot_config: BootConfig,
-    _app_sender: mpsc::UnboundedSender<app_message::AppMessage>,
+    app_sender: mpsc::UnboundedSender<AppMessage>,
   ) -> (Self::Machine, Hardware) {
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
+    let virtual_hardware = VirtualHardware::new(&boot_config.io_network);
 
     let io_network_boards = boot_config
       .io_network
@@ -68,7 +56,8 @@ impl MachineBoot for VirtualMachine {
     let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
 
     let hardware = Hardware::new(
-      SwitchLookup::new(boot_config.io_network.switches, Vec::new()),
+      // read at boot, as from real hardware
+      SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
       DriverLookup::new(boot_config.io_network.drivers),
       LedLookup::new(&expansion_boards),
       io_network_boards,
@@ -77,6 +66,8 @@ impl MachineBoot for VirtualMachine {
 
     (
       Self {
+        hardware: virtual_hardware,
+        app_sender,
         machine_receiver,
         machine_sender,
       },
@@ -90,15 +81,44 @@ impl Machine for VirtualMachine {
     self.machine_sender.clone()
   }
 
-  async fn on_pre_run(&mut self, _snapshot: &AppState) {}
-
-  async fn run(&mut self) {
-    loop {
-      tokio::select! {
-        Some(msg) = self.machine_receiver.recv() => {
-          self.process_messages(msg).await;
-        }
+  /// Configure every driver from its mode, as the Neuron does before the app starts
+  async fn on_pre_run(&mut self, state: &AppState) {
+    for driver in state.drivers.values() {
+      if let Some(mode) = state.drivers.mode(driver.name) {
+        self.hardware.apply(&MachineMessage::ConfigureDriver {
+          driver_id: driver.id,
+          config: mode.to_config(state),
+        });
       }
     }
+  }
+
+  async fn run(&mut self) {
+    while let Some(msg) = self.machine_receiver.recv().await {
+      self.process_message(msg);
+    }
+  }
+}
+
+fn log_message(msg: &MachineMessage) {
+  match msg {
+    MachineMessage::Dispatch { port, command } => {
+      log::info!("VM: Dispatch on {:?} => {:?}", port, command);
+    }
+    MachineMessage::Command { port, command, .. } => {
+      log::info!("VM: Request on {:?} => {:?}", port, command);
+    }
+    MachineMessage::ConfigureDriver { driver_id, config }
+    | MachineMessage::UpdateDriverConfig { driver_id, config } => {
+      log::info!("VM: Configure driver {} => {:?}", driver_id, config);
+    }
+    MachineMessage::TriggerDriver {
+      driver_id,
+      mode,
+      switch,
+    } => {
+      log::info!("VM: Trigger driver {} => {:?} {:?}", driver_id, mode, switch);
+    }
+    _ => {} // watchdog, switch refresh
   }
 }
