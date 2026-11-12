@@ -17,6 +17,7 @@ pub struct SystemContainer {
   inner: Box<dyn System>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
+  faulted: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
 }
@@ -29,6 +30,7 @@ impl SystemContainer {
       inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,
+      faulted: false,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
     }
@@ -44,6 +46,15 @@ impl SystemContainer {
 
   pub fn type_id(&self) -> TypeId {
     (self.as_any)(self.inner.as_ref()).type_id()
+  }
+
+  /// Whether one of the system's handlers has panicked
+  pub(crate) fn is_faulted(&self) -> bool {
+    self.faulted
+  }
+
+  pub(crate) fn fault(&mut self) {
+    self.faulted = true;
   }
 
   pub(crate) fn next_id() -> u64 {
@@ -210,6 +221,7 @@ impl SpawnableSystemContainer {
       inner: self.inner,
       cues: self.cues,
       last_active_state: self.last_active_state,
+      faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
     }
@@ -253,6 +265,7 @@ impl ChildSystemContainer {
       inner: self.inner,
       cues: self.cues,
       last_active_state: self.last_active_state,
+      faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
     }

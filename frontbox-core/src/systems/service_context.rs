@@ -89,15 +89,23 @@ impl<'a> ServiceContext<'a> {
   pub(crate) fn get<T: System + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, T>> {
     // Priority is given to nearness: siblings are searched first, then global
     let found = self.groups.nearest(handle.group, TypeId::of::<T>())?;
-    self.groups.get(&found.group)?.get_by_type::<T>()
+    match self.groups.get(&found.group)?.borrow_by_type::<T>() {
+      Ok(system) => system,
+      Err(busy) => {
+        let caller = self.groups.system_name(handle).unwrap_or("<unknown>");
+        log::error!("{caller} looked up {}, which is already in use: {busy}", busy.name);
+        None
+      }
+    }
   }
 
-  /// Lookup a system by type; panic if does not exist
+  /// Lookup a system by type; panic if it does not exist or is already in use
   pub(crate) fn expect<T: System + 'static>(&self, handle: SystemHandle) -> RefMut<'_, T> {
     let system_name = type_name::<T>();
     self.get::<T>(handle).expect(
       format!(
-        "Expected system {} was not found. Make sure it was added to the App.",
+        "Expected system {} was not found, or is already in use (see the error above). Make sure it was added to the \
+         App.",
         system_name
       )
       .as_str(),

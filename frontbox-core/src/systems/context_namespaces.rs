@@ -18,18 +18,18 @@ impl<'a> ContextSystems<'a> {
     Self { handle, ctx }
   }
 
-  /// Lookup a system by type: the nearest instance, in this system's group, then the root
+  /// Lookup a system by type: the nearest instance matches firs
   pub fn get<T: System + 'static>(&self) -> Option<RefMut<'_, T>> {
     self.ctx.get::<T>(self.handle)
   }
 
-  /// Lookup a system by type; panic if does not exist
+  /// Lookup a system by type; panic if it does not exist or is already in use
   pub fn expect<T: System + 'static>(&self) -> RefMut<'_, T> {
     self.ctx.expect::<T>(self.handle)
   }
 
   /// Run `f` on the system `T`, looked up as [`get`](Self::get) does. Logs a warning and returns `None` if `T` isn't
-  /// running.
+  /// running, or an error if it's already in use.
   ///
   /// ```rust,ignore
   /// ctx.systems.with::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), duration, ctx.into()));
@@ -38,7 +38,8 @@ impl<'a> ContextSystems<'a> {
     match self.get::<T>() {
       Some(mut system) => Some(f(&mut system)),
       None => {
-        log::warn!("{} is not running.", type_name::<T>());
+        // `get` has already logged an error if it's in use
+        log::warn!("{} is not running or is in use.", type_name::<T>());
         None
       }
     }

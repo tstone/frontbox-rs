@@ -51,7 +51,9 @@ impl GroupsExt for Groups {
   }
 
   fn system_name(&self, handle: SystemHandle) -> Option<&'static str> {
-    self.system(handle).map(|system| system.name())
+    self
+      .get(&handle.group)
+      .and_then(|group| group.name_of(&handle.id))
   }
 
   fn handles_in(&self, group: GroupId) -> Vec<SystemHandle> {

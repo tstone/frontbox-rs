@@ -8,8 +8,12 @@ use crate::prelude::app_tracer::TracerControlEvent;
 use crate::prelude::*;
 use crate::provided::WatchdogSystem;
 use crate::systems::routine::Routines;
+use fast_protocol::BoardResetCommand;
+use futures_util::FutureExt;
 use std::any::{TypeId, type_name};
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// Main runnable of Frontbox
@@ -141,6 +145,8 @@ impl App {
       app_state.metrics.begin_store_task(db);
     }
 
+    let crash_power_down = CrashPowerDown::new(machine_sender.clone(), &app_state);
+
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = SystemContainer::new(MachineSystem::new(machine_sender, app_sender.clone()));
     let machine_system_id = bridge.id();
@@ -150,7 +156,7 @@ impl App {
       .push(SystemContainer::new(WatchdogSystem::new()));
 
     log::debug!("Starting main run loop");
-    run_loop::run(
+    let run = run_loop::run(
       app_state,
       self.systems,
       self.tracers,
@@ -159,7 +165,50 @@ impl App {
       tracer_ctl_receiver,
       machine_system_id,
       Routines::new(self.routines),
-    )
-    .await;
+    );
+
+    // A panic in a system's handler is caught in the run loop. One that gets here came from the framework itself, so
+    // nothing is left to run the game: leave the machine powered down and dark rather than frozen, then carry on
+    // unwinding.
+    if let Err(payload) = AssertUnwindSafe(run).catch_unwind().await {
+      log::error!(
+        "💥 Run loop panicked: {}. Powering down the machine.",
+        run_loop::panic_message(payload.as_ref())
+      );
+      crash_power_down.run().await;
+      std::panic::resume_unwind(payload);
+    }
+  }
+}
+
+/// What to send the machine if the run loop dies: expire the watchdog, which cuts power to the coils, and reset the
+/// expansion boards, which blanks the LEDs. Built before the run loop takes the app state.
+struct CrashPowerDown {
+  machine_sender: mpsc::UnboundedSender<MachineMessage>,
+  exp_addresses: Vec<u8>,
+}
+
+impl CrashPowerDown {
+  /// How long the machine task gets to send the power down messages before the process goes
+  const FLUSH_TIME: Duration = Duration::from_millis(500);
+
+  fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>, state: &AppState) -> Self {
+    Self {
+      machine_sender,
+      exp_addresses: state.exp_network.iter().map(|board| board.address).collect(),
+    }
+  }
+
+  async fn run(&self) {
+    let _ = self.machine_sender.send(MachineMessage::WatchdogClear);
+    for address in &self.exp_addresses {
+      let _ = self.machine_sender.send(MachineMessage::Command {
+        port: MachinePort::Exp,
+        command: Box::new(BoardResetCommand::new(*address)),
+        timeout: COMMAND_TIMEOUT,
+      });
+    }
+    // the machine runs on its own task, which keeps going while this one waits
+    tokio::time::sleep(Self::FLUSH_TIME).await;
   }
 }

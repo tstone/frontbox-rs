@@ -208,6 +208,8 @@ pub struct Systems {
   systems: IndexMap<u64, RefCell<SystemContainer>>,
   type_to_id: HashMap<TypeId, u64>,
   id_to_type: HashMap<u64, TypeId>,
+  // Kept outside the cells, so a system can be named while it's borrowed (e.g. running a handler)
+  id_to_name: HashMap<u64, &'static str>,
 }
 
 impl Systems {
@@ -216,6 +218,7 @@ impl Systems {
       systems: IndexMap::new(),
       type_to_id: HashMap::new(),
       id_to_type: HashMap::new(),
+      id_to_name: HashMap::new(),
     }
   }
 
@@ -224,18 +227,25 @@ impl Systems {
   }
 
   pub fn names(&self) -> Vec<&'static str> {
-    self.systems.values().map(|s| s.borrow().name()).collect()
+    self.systems.keys().filter_map(|id| self.name_of(id)).collect()
+  }
+
+  /// The system's name, readable even while the system is borrowed
+  pub fn name_of(&self, system_id: &u64) -> Option<&'static str> {
+    self.id_to_name.get(system_id).copied()
   }
 
   pub(crate) fn insert(&mut self, system: impl Into<SystemContainer>) {
     let system = system.into();
     self.type_to_id.insert(system.type_id(), system.id());
     self.id_to_type.insert(system.id(), system.type_id());
+    self.id_to_name.insert(system.id(), system.name());
     self.systems.insert(system.id(), RefCell::new(system));
   }
 
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
     let result = self.systems.shift_remove(&system_id);
+    self.id_to_name.remove(&system_id);
     if let Some(system_type) = self.id_to_type.remove(&system_id) {
       // Only clear the mapping if it still points at this system, so removing an older system of the same type
       // doesn't orphan a newer one.
@@ -255,20 +265,51 @@ impl Systems {
     self.type_to_id.get(type_id).copied()
   }
 
+  /// Borrow the system. `None` if there's no such system, or if it's already borrowed, which logs an error: the run
+  /// loop borrows a system for as long as one of its handlers runs, so a system can't reach itself this way.
   pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
-    self.systems.get(system_id).map(|cell| cell.borrow_mut())
+    self.borrow_by_id(system_id).unwrap_or_else(|busy| {
+      log::error!("{busy}");
+      None
+    })
   }
 
+  /// Borrow the system of type `T`. `None` if there isn't one, or if it's already borrowed, which logs an error (see
+  /// [`get_by_id`](Self::get_by_id)).
   pub fn get_by_type<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
-    let type_id = TypeId::of::<T>();
-    let system_id = self.type_to_id.get(&type_id)?;
-    self.systems.get(system_id).map(|cell| {
-      RefMut::map(cell.borrow_mut(), |container| {
+    self.borrow_by_type::<T>().unwrap_or_else(|busy| {
+      log::error!("{busy}");
+      None
+    })
+  }
+
+  /// Like [`get_by_id`](Self::get_by_id), but hands back the busy case for the caller to report
+  pub(crate) fn borrow_by_id(
+    &'_ self,
+    system_id: &u64,
+  ) -> Result<Option<RefMut<'_, SystemContainer>>, SystemBusy> {
+    let Some(cell) = self.systems.get(system_id) else {
+      return Ok(None);
+    };
+    cell.try_borrow_mut().map(Some).map_err(|_| SystemBusy {
+      name: self.name_of(system_id).unwrap_or("<unnamed>"),
+    })
+  }
+
+  /// Like [`get_by_type`](Self::get_by_type), but hands back the busy case for the caller to report
+  pub(crate) fn borrow_by_type<T: System + 'static>(
+    &'_ self,
+  ) -> Result<Option<RefMut<'_, T>>, SystemBusy> {
+    let Some(system_id) = self.type_to_id.get(&TypeId::of::<T>()) else {
+      return Ok(None);
+    };
+    Ok(self.borrow_by_id(system_id)?.map(|system| {
+      RefMut::map(system, |container| {
         container
           .downcast_mut::<T>()
           .expect("type_to_id mapping was incorrect")
       })
-    })
+    }))
   }
 
   pub fn contains<T: System + 'static>(&self) -> bool {
@@ -293,9 +334,26 @@ impl Debug for Systems {
         &self
           .systems
           .iter()
-          .map(|(id, cell)| (id, cell.borrow().name().to_string()))
+          .map(|(id, _)| (id, self.name_of(id).unwrap_or("<unnamed>")))
           .collect::<IndexMap<_, _>>(),
       )
       .finish()
+  }
+}
+
+/// A system lookup found the system already borrowed: it's running a handler, or another lookup holds it
+#[derive(Debug)]
+pub(crate) struct SystemBusy {
+  pub name: &'static str,
+}
+
+impl std::fmt::Display for SystemBusy {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "System {} was looked up while already in use (it's running a handler, or something up the call chain holds \
+       it). The lookup returns None.",
+      self.name
+    )
   }
 }

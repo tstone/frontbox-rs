@@ -1,5 +1,6 @@
 use fast_protocol::SwitchState;
-use std::any::TypeId;
+use std::any::{Any, TypeId};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::process::Command;
 use std::sync::Arc;
 
@@ -234,7 +235,7 @@ pub async fn run(
         &groups,
         &app_sender,
       );
-      system.on_despawn(&ctx);
+      call_system(&mut system, "on_despawn", |system| system.on_despawn(&ctx));
     }
   }
 
@@ -267,13 +268,18 @@ where
 
   if groups.get(&handle.group).is_some_and(|group| group.active)
     && let Some(mut system) = groups.system(handle)
+    && !system.is_faulted()
   {
     let mut ctx = SystemContext::new(base, handle, groups, &app_sender);
-    if handle_active(&mut system, &ctx, app_sender, tracer_txs) {
-      result = Some(handler(&mut system, &mut ctx));
-    } else {
-      log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
-    }
+    result = guard_system(&mut system, handle, app_sender, "handler", |system| {
+      if handle_active(system, &ctx, app_sender, tracer_txs) {
+        Some(handler(system, &mut ctx))
+      } else {
+        log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
+        None
+      }
+    })
+    .flatten();
   }
 
   result
@@ -305,20 +311,78 @@ pub(crate) fn apply_to_systems<F>(
     if group.active {
       for cell in group.values() {
         let mut system = cell.borrow_mut();
-        let mut ctx = SystemContext::new(
-          base,
-          SystemHandle::new(system.id(), *key),
-          groups,
-          app_sender,
-        );
-        if handle_active(&mut system, &ctx, app_sender, tracer_txs) {
-          handler(&mut system, &mut ctx);
-        } else {
-          log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
+        if system.is_faulted() {
+          continue;
         }
+        let handle = SystemHandle::new(system.id(), *key);
+        let mut ctx = SystemContext::new(base, handle, groups, app_sender);
+        guard_system(&mut system, handle, app_sender, "handler", |system| {
+          if handle_active(system, &ctx, app_sender, tracer_txs) {
+            handler(system, &mut ctx);
+          } else {
+            log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
+          }
+        });
       }
     }
   }
+}
+
+/// Call into the system, catching a panic so it doesn't unwind out of the run loop and end the process. A panic is
+/// logged and returns `None`. Use [`guard_system`] unless the system is already on its way out.
+///
+/// The system may be left half-updated by the panic, which is why `guard_system` retires it. Anything else the
+/// handler borrowed is released as the panic unwinds; `RefCell`s aren't poisoned.
+fn call_system<T>(
+  system: &mut SystemContainer,
+  handler: &'static str,
+  f: impl FnOnce(&mut SystemContainer) -> T,
+) -> Option<T> {
+  match catch_unwind(AssertUnwindSafe(|| f(system))) {
+    Ok(result) => Some(result),
+    Err(payload) => {
+      log::error!(
+        target: "frontbox_core::systems::lifecycle",
+        "💥 System {} ({}) panicked in {}: {}",
+        system.name(),
+        system.id(),
+        handler,
+        panic_message(payload.as_ref())
+      );
+      None
+    }
+  }
+}
+
+/// [`call_system`], and if the system panics, mark it faulted so nothing more is handed to it, and queue its despawn
+fn guard_system<T>(
+  system: &mut SystemContainer,
+  handle: SystemHandle,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  handler: &'static str,
+  f: impl FnOnce(&mut SystemContainer) -> T,
+) -> Option<T> {
+  let result = call_system(system, handler, f);
+  if result.is_none() && !system.is_faulted() {
+    log::error!(
+      target: "frontbox_core::systems::lifecycle",
+      "💥 Despawning system {} ({}) after it panicked",
+      system.name(),
+      system.id()
+    );
+    system.fault();
+    let _ = app_sender.send(AppMessage::DespawnSystem(handle));
+  }
+  result
+}
+
+/// The message a panic was raised with, when it's a string (as `panic!` and `expect` make it)
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
+  payload
+    .downcast_ref::<&str>()
+    .copied()
+    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+    .unwrap_or("<non-string panic payload>")
 }
 
 /// Whether the system is active, firing its deactivate/reactivate handler and broadcasting the change if its activity
@@ -581,7 +645,7 @@ fn spawn_system(
       "🌐 Spawned system {} ({})", system.name(), system.id());
 
     let ctx = SystemContext::new(base, handle, groups, &app_sender);
-    system.initialize(&ctx);
+    guard_system(&mut system, handle, &app_sender, "on_spawn", |system| system.initialize(&ctx));
 
     tracer_txs.send(TraceEvent::SystemSpawned {
       id: system_id,
@@ -633,7 +697,8 @@ fn despawn_system(
   {
     let mut system = cell.borrow_mut();
     let ctx = SystemContext::new(base, handle, groups, &app_sender);
-    system.on_despawn(&ctx);
+    // already removed, so a panic here only needs logging
+    call_system(&mut system, "on_despawn", |system| system.on_despawn(&ctx));
 
     log::info!(
       target: "frontbox_core::systems::lifecycle",
@@ -763,10 +828,19 @@ fn activate_system_group(
 
   for handle in groups.handles_in(id) {
     let mut system = groups.system(handle).unwrap();
+    if system.is_faulted() {
+      continue;
+    }
     let ctx = SystemContext::new(base, handle, groups, &app_sender);
 
-    if system.is_active(&ctx) {
-      system.on_reactivate(&ctx);
+    let reactivated = guard_system(&mut system, handle, &app_sender, "on_reactivate", |system| {
+      let active = system.is_active(&ctx);
+      if active {
+        system.on_reactivate(&ctx);
+      }
+      active
+    });
+    if reactivated == Some(true) {
       emit_activity_changed(handle, true, &app_sender);
     }
   }
@@ -794,9 +868,13 @@ fn deactivate_system_group(
 
   for handle in groups.handles_in(id) {
     let mut system = groups.system(handle).unwrap();
+    if system.is_faulted() {
+      continue;
+    }
     let ctx = SystemContext::new(base, handle, groups, &app_sender);
-    system.on_deactivate(&ctx);
-    emit_activity_changed(handle, false, &app_sender);
+    if guard_system(&mut system, handle, &app_sender, "on_deactivate", |system| system.on_deactivate(&ctx)).is_some() {
+      emit_activity_changed(handle, false, &app_sender);
+    }
   }
 
   tracer_txs.send(TraceEvent::SystemGroupActiveStateChange { id, active: false });
@@ -1045,6 +1123,160 @@ mod tests {
     activate_system_group(group, &mut h.groups, &h.base, h.tx.clone(), &h.tracers);
     let reactivated: Vec<(u64, bool)> = members.iter().map(|(id, _)| (*id, true)).collect();
     assert_eq!(h.activity_events(), reactivated);
+  }
+
+  #[derive(serde::Serialize, Event)]
+  struct Poke;
+
+  /// Records, on each `Poke`, whether it could look itself up
+  struct SelfLookup(std::rc::Rc<std::cell::RefCell<Vec<bool>>>);
+
+  impl System for SelfLookup {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        let found = ctx.systems.get::<SelfLookup>().is_some();
+        self.0.borrow_mut().push(found);
+      }
+    }
+  }
+
+  /// Calls into `Callee`, which looks this system up again
+  struct Caller;
+
+  impl System for Caller {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        ctx.systems.with::<Callee, _>(|callee| callee.call_back(ctx.into()));
+      }
+    }
+  }
+
+  struct Callee {
+    handle: SystemHandle,
+    found_caller: std::rc::Rc<std::cell::RefCell<Vec<bool>>>,
+  }
+
+  impl Callee {
+    fn call_back(&mut self, ctx: &ServiceContext) {
+      let ctx = ctx.for_system(self.handle);
+      let found = ctx.systems.get::<Caller>().is_some();
+      self.found_caller.borrow_mut().push(found);
+    }
+  }
+
+  impl System for Callee {
+    fn on_spawn(&mut self, ctx: &SystemContext) {
+      self.handle = ctx.handle();
+    }
+  }
+
+  /// Panics on `Poke`
+  struct Panicky;
+
+  impl System for Panicky {
+    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        panic!("poked");
+      }
+    }
+  }
+
+  /// Panics on its way out
+  struct PanicsOnDespawn;
+
+  impl System for PanicsOnDespawn {
+    fn on_despawn(&mut self, _ctx: &SystemContext) {
+      panic!("despawned");
+    }
+  }
+
+  /// Counts the `Poke`s it hears
+  struct Counter(std::rc::Rc<std::cell::Cell<u32>>);
+
+  impl System for Counter {
+    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.0.set(self.0.get() + 1);
+      }
+    }
+  }
+
+  impl Harness {
+    fn spawn(&mut self, system: impl Into<SystemContainer>) -> SystemHandle {
+      let container = system.into();
+      let handle = SystemHandle::new(container.id(), ROOT_GROUP);
+      spawn_system(container, ROOT_GROUP, &mut self.groups, &self.base, self.tx.clone(), &self.tracers);
+      handle
+    }
+
+    fn poke(&self) {
+      let notifier = Arc::new(Notify::new());
+      emit_event(None, EventBox::new(Poke), &self.groups, &self.base, &self.tx, &self.tracers, &notifier);
+    }
+
+    /// The handles of the `DespawnSystem` messages sent so far
+    fn despawns_requested(&mut self) -> Vec<SystemHandle> {
+      let mut handles = Vec::new();
+      while let Ok(message) = self.rx.try_recv() {
+        if let AppMessage::DespawnSystem(handle) = message {
+          handles.push(handle);
+        }
+      }
+      handles
+    }
+  }
+
+  #[test]
+  fn a_system_looking_itself_up_gets_none() {
+    let mut h = Harness::new();
+    let found = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    h.spawn(SelfLookup(found.clone()));
+
+    h.poke();
+
+    assert_eq!(*found.borrow(), vec![false]);
+  }
+
+  #[test]
+  fn a_lookup_that_closes_a_cycle_gets_none() {
+    let mut h = Harness::new();
+    let found = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    h.spawn(Caller);
+    h.spawn(Callee {
+      handle: SystemHandle::default(),
+      found_caller: found.clone(),
+    });
+
+    h.poke();
+
+    assert_eq!(*found.borrow(), vec![false]);
+  }
+
+  #[test]
+  fn a_panicking_system_is_retired_and_the_rest_carry_on() {
+    let mut h = Harness::new();
+    let heard = std::rc::Rc::new(std::cell::Cell::new(0));
+    let before = h.spawn(Counter(heard.clone()));
+    let panicky = h.spawn(Panicky);
+    h.despawns_requested();
+
+    h.poke();
+    h.poke();
+
+    // systems after it still hear the event, and it's only despawned once
+    assert_eq!(heard.get(), 2);
+    assert_eq!(h.despawns_requested(), vec![panicky]);
+    assert!(h.groups.system(panicky).unwrap().is_faulted());
+    assert!(!h.groups.system(before).unwrap().is_faulted());
+  }
+
+  #[test]
+  fn a_panic_while_despawning_still_despawns() {
+    let mut h = Harness::new();
+    let handle = h.spawn(PanicsOnDespawn);
+
+    assert_eq!(h.despawn(handle), vec![handle]);
+    assert!(!h.groups.contains_system(handle));
   }
 
   #[test]
