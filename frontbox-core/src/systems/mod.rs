@@ -280,7 +280,7 @@ impl Systems {
     self.systems.contains_key(system_id)
   }
 
-  pub(crate) fn values(&self) -> impl Iterator<Item = &RefCell<SystemContainer>> {
+  pub(crate) fn values(&self) -> impl DoubleEndedIterator<Item = &RefCell<SystemContainer>> {
     self.systems.values()
   }
 }

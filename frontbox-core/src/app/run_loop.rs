@@ -224,16 +224,19 @@ pub async fn run(
     }
   }
 
-  // Shutdown sequence
-  apply_to_systems(
-    &mut groups,
-    &base,
-    &app_sender,
-    &tracer_txs,
-    |system, ctx| {
-      system.on_despawn(ctx);
-    },
-  );
+  // Shutdown sequence: Call `on_despawn` on every system, regardless of whether it was active, in reverse spawn order
+  for (key, group) in groups.iter().rev() {
+    for cell in group.values().rev() {
+      let mut system = cell.borrow_mut();
+      let ctx = SystemContext::new(
+        &base,
+        SystemHandle::new(system.id(), *key),
+        &groups,
+        &app_sender,
+      );
+      system.on_despawn(&ctx);
+    }
+  }
 
   // after despawning, so anything systems record on their way out is kept
   base.metrics.close().await;
