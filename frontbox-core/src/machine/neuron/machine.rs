@@ -145,7 +145,9 @@ impl Machine for Neuron {
   }
 
   async fn on_pre_run(&mut self, state: &AppState) {
-    boot::configure_drivers(&mut self.io_port, &state).await;
+    boot::retry(async || boot::configure_drivers(&mut self.io_port, state).await)
+      .await
+      .unwrap_or_else(boot::boot_failed);
   }
 
   async fn run(&mut self) {
@@ -192,17 +194,26 @@ impl MachineBoot for Neuron {
       .expect("Failed to open IO NET port");
     log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
 
-    boot::handshake(&mut io_port).await;
+    boot::retry_up_to(boot::MAINBOARD_HANDSHAKE_ATTEMPTS, async || {
+      boot::handshake(&mut io_port).await
+    })
+    .await
+    .unwrap_or_else(boot::boot_failed);
 
     // Verify user-configuration and load firmware/board versions
     let io_network = boot_config.io_network;
-    let resolved_io_network = boot::resolve_io_network(&mut io_port, &io_network).await;
+    let resolved_io_network =
+      boot::retry(async || boot::resolve_io_network(&mut io_port, &io_network).await)
+        .await
+        .unwrap_or_else(boot::boot_failed);
 
     boot::verify_watchdog(&mut io_port).await;
     boot::configure_switches(&mut io_port, &io_network.switches).await;
 
     // Initialize switch context which Machine will use to maintain current state
-    let initial_switch_state = boot::get_initial_switch_states(&mut io_port).await;
+    let initial_switch_state = boot::retry(async || boot::read_switch_states(&mut io_port).await)
+      .await
+      .unwrap_or_else(boot::boot_failed);
     let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
 
     // open EXP port
@@ -212,7 +223,9 @@ impl MachineBoot for Neuron {
     log::info!("🥾 Opened EXP port at {}", exp_port_path);
 
     let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
-    boot::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
+    boot::retry(async || boot::reset_expansion_boards(&mut exp_port, &expansion_boards).await)
+      .await
+      .unwrap_or_else(boot::boot_failed);
     boot::configure_led_ports(&mut exp_port, &expansion_boards).await;
 
     // Insert hardware definitions into store for systems to reference
