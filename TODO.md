@@ -9,6 +9,7 @@
   resolved.
 - Can we do some end-to-end tests around game management, turn ending/game ending? Virtual machine is already allowing some of this to happen. That should probably be expanded.
 - Generalized systems: Scoop, lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
+- CrashPowerDown -- Verify that this still maeks sense
 - tests for run_loop
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Config: No extra balls/points instead

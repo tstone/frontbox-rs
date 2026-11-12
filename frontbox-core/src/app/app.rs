@@ -156,7 +156,7 @@ impl App {
       .push(SystemContainer::new(WatchdogSystem::new()));
 
     log::debug!("Starting main run loop");
-    let run = run_loop::run(
+    let run = run_loop::RunLoop::run(
       app_state,
       self.systems,
       self.tracers,
