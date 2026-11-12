@@ -75,6 +75,14 @@ impl Scenario {
     self.settle();
   }
 
+  /// Bring the connection to the machine back after `disconnect_machine`. The hardware comes back as if it lost power,
+  /// and the app is told along with the switches' states. Panics if it's still connected.
+  pub fn reconnect_machine(&mut self) {
+    let reconnected = self.hardware.reconnect().unwrap_or_else(|| panic!("The machine is still connected"));
+    self.harness.send(reconnected);
+    self.settle();
+  }
+
   /// Let time pass, ticking at the app's interval as the machine would, so cues and timers run as they would there
   pub fn advance(&mut self, duration: Duration) {
     let interval = self.harness.tick_interval();
@@ -396,6 +404,57 @@ mod tests {
 
     s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::Tap));
     assert_eq!(s.hardware().driver("kicker").unwrap().taps, 0);
+  }
+
+  #[test]
+  fn a_reconnect_reaches_the_systems() {
+    let mut s = Scenario::new(app()).start();
+    let reconnected = s.record(|_: &MachineReconnected| ());
+    s.disconnect_machine();
+
+    s.reconnect_machine();
+    assert_eq!(reconnected.take().len(), 1);
+    assert!(s.act(|ctx| ctx.systems.expect::<MachineSystem>().is_connected()));
+    assert!(s.hardware().watchdog_enabled());
+  }
+
+  #[test]
+  fn a_reconnect_configures_and_triggers_drivers_as_they_were() {
+    let mut s = Scenario::new(app()).start();
+    s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::VirtualSwitchOn));
+    s.disconnect_machine();
+
+    s.reconnect_machine();
+    let kicker = s.hardware().driver("kicker").unwrap();
+    assert!(matches!(kicker.config, Some(fast_protocol::DriverConfig::Pulse { .. })));
+    assert_eq!(kicker.trigger, DriverTrigger::On);
+
+    s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::Tap));
+    assert_eq!(s.hardware().driver("kicker").unwrap().taps, 1);
+  }
+
+  #[test]
+  fn switches_that_changed_while_disconnected_are_read_without_events() {
+    let mut s = Scenario::new(app()).start();
+    let kicked = s.record(|e: &Kicked| e.0);
+    s.disconnect_machine();
+    s.close_switch("start");
+
+    s.reconnect_machine();
+    assert_eq!(s.act(|ctx| ctx.switches.is_closed("start")), Some(true));
+    assert!(kicked.take().is_empty());
+
+    // and from then on it's reported as usual
+    s.open_switch("start");
+    s.close_switch("start");
+    assert_eq!(kicked.take(), [1]);
+  }
+
+  #[test]
+  #[should_panic(expected = "still connected")]
+  fn reconnecting_while_connected_is_a_mistake() {
+    let mut s = Scenario::new(app()).start();
+    s.reconnect_machine();
   }
 
   #[test]

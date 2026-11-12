@@ -59,6 +59,9 @@ impl System for WatchdogSystem {
     if event.is::<WatchdogPing>() {
       log::trace!(target: "frontbox_core::watchdog", "🐶 Watchdog event => Ping");
       ctx.systems.expect::<MachineSystem>().ping_watchdog();
+    } else if event.is::<MachineReconnected>() && self.cue_handle.is_some() {
+      // feed it now rather than at the next ping, as the hardware's has been running down since it was brought up
+      ctx.systems.expect::<MachineSystem>().ping_watchdog();
     }
   }
 

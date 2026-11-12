@@ -190,9 +190,6 @@ impl MachineSystem {
 
   /// FAST never reports fires it makes from hardware rules (flippers, slings, pops), so they're counted from the
   /// switch change that caused them, for each driver left automatic on that switch whose mode fires on this state.
-  ///
-  /// Counted from the switch event rather than where it's emitted, to keep this out of the run loop. A system that
-  /// halted a switch event would hide its fires too; nothing does today.
   fn count_switch_fires(&self, switch_id: usize, state: SwitchState, ctx: &SystemContext) {
     for driver_id in self.triggers.automatic_on(switch_id) {
       let fires = self
@@ -203,6 +200,29 @@ impl MachineSystem {
       if fires && let Some(counters) = ctx.drivers.fire_counters(driver_id) {
         ctx.metrics.inc(&counters.switched);
       }
+    }
+  }
+
+  /// Send every driver its mode and trigger again (primarily for after the machine reconnects)
+  fn restore_drivers(&self, ctx: &SystemContext) {
+    for (driver_id, mode) in &self.driver_modes {
+      self
+        .machine_sender
+        .send(MachineMessage::ConfigureDriver {
+          driver_id: *driver_id,
+          config: mode.to_config(ctx),
+        })
+        .ok();
+    }
+    for (driver_id, mode, switch) in self.triggers.live() {
+      self
+        .machine_sender
+        .send(MachineMessage::TriggerDriver {
+          driver_id,
+          mode,
+          switch,
+        })
+        .ok();
     }
   }
 
@@ -383,6 +403,9 @@ impl System for MachineSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<MachineDisconnected>() {
       self.connected = false;
+    } else if event.is::<MachineReconnected>() {
+      self.connected = true;
+      self.restore_drivers(ctx);
     } else if let Some(ConfigChanged(key)) = event.downcast_ref::<ConfigChanged>() {
       self.update_drivers_on_config_change(key, ctx);
     } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {

@@ -30,3 +30,7 @@ impl SwitchOpened {
 /// Emitted when the connection to the machine's hardware is lost
 #[derive(serde::Serialize, Event, Debug, Clone)]
 pub struct MachineDisconnected;
+
+/// Emitted when the connection to the machine's hardware comes back after a [`MachineDisconnected`].
+#[derive(serde::Serialize, Event, Debug, Clone)]
+pub struct MachineReconnected;

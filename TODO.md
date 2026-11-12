@@ -17,7 +17,6 @@
 
 ## Design Choices/Core
 
-- Stability: Robust handling for USB disconnects/reconnects
 - Implement a proper LampDriver that also supports flashing
 - Revisit if `Synchronize` event still makes sense or not
 - Should a "hold" (like how BallSave uses them) be a framework feature?

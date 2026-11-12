@@ -338,6 +338,9 @@ impl System for LedSystem {
       self.deactivate_by_system(*id);
     } else if let Some(SystemReactivated { id, .. }) = event.downcast_ref::<SystemReactivated>() {
       self.activate_by_system(*id);
+    } else if event.is::<MachineReconnected>() {
+      // the expansion boards were reset, so send every LED on the next render rather than only those that change
+      self.prior_render.clear();
     }
   }
 

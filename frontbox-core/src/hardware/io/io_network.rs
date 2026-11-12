@@ -7,7 +7,7 @@ use crate::prelude::*;
 /// Hardware can also be tagged `.tag(Playfield)`. This serves to _classify_ something about the switch, possibly location or purpose. This makes it easy to implement modes that need to say things like "if any playfield switch has been hit, then...". These tags are arbitrary. Frontbox comes with several, but they can be user-defined as well.
 ///
 /// Lastly, depending on the type of hardware being defined, an optional config (`.config(...)`) or mode (`.mode(...)`) can be given.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct IoNetwork {
   pub boards: Vec<IoBoard>,
   pub switches: Vec<IoAddressed<SwitchDefinition>>,

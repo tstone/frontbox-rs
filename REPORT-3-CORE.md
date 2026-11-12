@@ -1,13 +1,5 @@
 # Report 3: Core architecture (run loop and systems)
 
-### A8. A serial disconnect leaves the game running without switches
-
-`TODO.md` already lists USB reconnect handling. For the record, the current failure is quiet: `Neuron::run` selects
-on `io_port.read_event()`, which returns `None` on a read error. That disables the branch until the next machine
-message, when the read is retried and fails again. So the game carries on with no switch input, logging one read
-error per outgoing message, and nothing tells the systems. Until reconnect exists, emitting an event or shutting
-down when a port dies would make the state visible.
-
 ## B. Optimizations
 
 ### B1. Every message is formatted to a string

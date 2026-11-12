@@ -162,6 +162,22 @@ impl VirtualHardware {
     self.watchdog_enabled = false;
     Some(AppMessage::MachineDisconnected)
   }
+
+  /// Reconnect to the app after a `disconnect`, returning what the machine tells the app. The hardware comes back as if
+  /// it lost power while it was gone, the most it could have lost: no driver is configured or triggered. The machine
+  /// brings it up again as it does at boot, which starts the watchdog and reads the switches. Nothing is reported if
+  /// it's still connected.
+  #[cfg(any(test, feature = "testing"))]
+  pub(crate) fn reconnect(&mut self) -> Option<AppMessage> {
+    if self.connected {
+      return None;
+    }
+    self.connected = true;
+    self.drivers.values_mut().for_each(|driver| driver.config = None);
+    self.triggers = DriverTriggers::default();
+    self.watchdog_enabled = true;
+    Some(AppMessage::MachineReconnected(self.switch_report()))
+  }
 }
 
 /// A driver's state on the virtual hardware
@@ -410,6 +426,26 @@ mod tests {
     hw.disconnect();
     assert!(hw.set_switch(START_ID, SwitchState::Closed).is_none());
     assert_eq!(hw.is_closed("start"), Some(true));
+  }
+
+  #[test]
+  fn a_reconnect_comes_back_as_after_a_power_loss_and_reports_the_switches() {
+    let mut hw = hardware();
+    configure(&mut hw, pulse());
+    trigger(&mut hw, DriverTriggerControlMode::On, None);
+    assert!(hw.reconnect().is_none(), "still connected");
+
+    hw.disconnect();
+    hw.set_switch(START_ID, SwitchState::Closed);
+    let Some(AppMessage::MachineReconnected(states)) = hw.reconnect() else {
+      panic!("expected a reconnect");
+    };
+    assert_eq!(states, hw.switch_report());
+    assert_eq!(states[START_ID], SwitchState::Closed);
+    assert!(hw.connected());
+    assert!(hw.watchdog_enabled());
+    assert!(eject(&hw).config.is_none());
+    assert_eq!(eject(&hw).trigger, DriverTrigger::Off);
   }
 
   #[test]

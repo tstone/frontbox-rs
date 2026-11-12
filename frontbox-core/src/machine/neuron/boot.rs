@@ -5,37 +5,50 @@ use fast_protocol::net::prelude::*;
 use fast_protocol::{ProcessedResponse, SwitchState};
 
 use crate::machine::neuron::BootError;
-use crate::machine::serial_interface::SerialInterface;
+use crate::machine::serial_interface::{SerialError, SerialInterface};
 use crate::prelude::*;
 
 const RETRY_DELAY: Duration = Duration::from_millis(500);
-const MAX_RETRY_ATTEMPTS: u32 = 5;
+pub(crate) const MAX_RETRY_ATTEMPTS: u32 = 5;
 pub const MAINBOARD_HANDSHAKE_ATTEMPTS: u32 = 60;
 
-/// Run a boot step until it succeeds, up to `MAX_ATTEMPTS` times
-pub async fn retry<T>(step: impl AsyncFnMut() -> Result<T, BootError>) -> Result<T, BootError> {
-  retry_up_to(MAX_RETRY_ATTEMPTS, step).await
-}
-
-/// Run a boot step until it succeeds, up to `max_attempts` times. Gives up with the last error once the attempts run
-/// out, or straight away if trying again won't help (the hardware doesn't match the configuration, or the port is
-/// gone).
-pub async fn retry_up_to<T>(
-  max_attempts: u32,
-  mut step: impl AsyncFnMut() -> Result<T, BootError>,
-) -> Result<T, BootError> {
-  let mut attempt = 1;
-  loop {
-    match step().await {
-      Ok(value) => return Ok(value),
-      Err(e) if !e.is_retryable() || attempt >= max_attempts => return Err(e),
-      Err(e) => {
-        log::warn!("🥾 {e} (attempt {attempt} of {max_attempts}), retrying...");
-        attempt += 1;
-        tokio::time::sleep(RETRY_DELAY).await;
+/// Run a boot step until it succeeds, up to `MAX_RETRY_ATTEMPTS` times or the number given first
+macro_rules! retry {
+  ($step:expr) => {
+    $crate::machine::neuron::boot::retry!($crate::machine::neuron::boot::MAX_RETRY_ATTEMPTS, $step)
+  };
+  ($max_attempts:expr, $step:expr) => {{
+    let mut attempt = 1;
+    loop {
+      match $step.await {
+        Ok(value) => break Ok(value),
+        Err(error) => {
+          match $crate::machine::neuron::boot::after_failed_attempt(error, attempt, $max_attempts)
+            .await
+          {
+            Ok(()) => attempt += 1,
+            Err(error) => break Err(error),
+          }
+        }
       }
     }
+  }};
+}
+pub(crate) use retry;
+
+/// After a boot step fails: wait to try it again, or give back the error if it's out of attempts or trying again won't
+/// help
+pub(crate) async fn after_failed_attempt(
+  error: BootError,
+  attempt: u32,
+  max_attempts: u32,
+) -> Result<(), BootError> {
+  if !error.is_retryable() || attempt >= max_attempts {
+    return Err(error);
   }
+  log::warn!("🥾 {error} (attempt {attempt} of {max_attempts}), retrying...");
+  tokio::time::sleep(RETRY_DELAY).await;
+  Ok(())
 }
 
 /// For the first boot, where there's no running game to fall back to: stop with the error
@@ -43,8 +56,67 @@ pub fn boot_failed<T>(error: BootError) -> T {
   panic!("🥾 {error}")
 }
 
+/// What's needed to bring up the hardware, kept to bring it up again after the connection is lost
+pub struct NeuronSetup {
+  pub io_net_port_path: &'static str,
+  pub exp_port_path: &'static str,
+  pub io_network: IoNetwork,
+  pub expansion_boards: Vec<ResolvedExpansionBoard>,
+}
+
+/// The hardware brought up and ready to run, and what was read from it on the way
+pub struct NeuronConnection {
+  pub io_port: SerialInterface,
+  pub exp_port: SerialInterface,
+  pub io_network: ResolvedIoNetwork,
+  pub switch_states: Vec<SwitchState>,
+}
+
+pub async fn connect(setup: &NeuronSetup) -> Result<NeuronConnection, BootError> {
+  let mut io_port = open(setup.io_net_port_path).await?;
+  retry!(MAINBOARD_HANDSHAKE_ATTEMPTS, handshake(&mut io_port))?;
+
+  // Verify user-configuration and load firmware/board versions
+  let io_network = retry!(resolve_io_network(&mut io_port, &setup.io_network))?;
+  verify_watchdog(&mut io_port).await?;
+  configure_switches(&mut io_port, &setup.io_network.switches).await;
+  let switch_states = retry!(read_switch_states(&mut io_port))?;
+
+  let mut exp_port = open(setup.exp_port_path).await?;
+  retry!(reset_expansion_boards(
+    &mut exp_port,
+    &setup.expansion_boards
+  ))?;
+  configure_led_ports(&mut exp_port, &setup.expansion_boards).await;
+
+  // the steps that only warn carry on past a lost port, so check nothing was lost along the way
+  if !io_port.is_connected() || !exp_port.is_connected() {
+    return Err(BootError::PortLost {
+      step: "Bringing up the hardware".into(),
+    });
+  }
+
+  Ok(NeuronConnection {
+    io_port,
+    exp_port,
+    io_network,
+    switch_states,
+  })
+}
+
+async fn open(port_path: &'static str) -> Result<SerialInterface, BootError> {
+  let port = SerialInterface::new(port_path)
+    .await
+    .map_err(|e| BootError::OpenFailed {
+      port: port_path.into(),
+      reason: e.to_string(),
+    })?;
+  log::info!("🥾 Opened port {}", port_path);
+  Ok(port)
+}
+
 /// Check the mainboard is ready to respond (ID), then set it up for this platform (CH). Run it with
-/// `retry_up_to(HANDSHAKE_ATTEMPTS, ..)` to wait for a mainboard that's still powering up.
+/// `retry!(MAINBOARD_HANDSHAKE_ATTEMPTS, ..)` to wait for a mainboard that's still powering up.
 pub async fn handshake(io_port: &mut SerialInterface) -> Result<String, BootError> {
   const STEP: &str = "Reaching the mainboard";
   let mainboard_name = match io_port
@@ -73,8 +145,8 @@ pub async fn handshake(io_port: &mut SerialInterface) -> Result<String, BootErro
   Ok(mainboard_name)
 }
 
-/// Verify the watchdog is responsive. Sometimes the first few commands will fail.
-pub async fn verify_watchdog(io_port: &mut SerialInterface) {
+/// Verify the watchdog is responsive. Sometimes the first few commands will fail. Only gives up if the port is lost.
+pub async fn verify_watchdog(io_port: &mut SerialInterface) -> Result<(), BootError> {
   loop {
     match io_port
       .query(
@@ -85,7 +157,12 @@ pub async fn verify_watchdog(io_port: &mut SerialInterface) {
     {
       Ok(WatchdogResponse::Processed) => {
         log::info!("🥾 Watchdog is ready");
-        break;
+        return Ok(());
+      }
+      Err(SerialError::Lost) => {
+        return Err(BootError::PortLost {
+          step: "Verifying the watchdog".into(),
+        });
       }
       _ => {
         tokio::time::sleep(Duration::from_millis(500)).await;

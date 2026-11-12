@@ -16,6 +16,8 @@ pub enum BootError {
   Misconfigured(String),
   /// The serial port went away during the step. Retrying on the same port won't help.
   PortLost { step: String },
+  /// The serial port couldn't be opened, e.g. because the hardware isn't plugged in
+  OpenFailed { port: String, reason: String },
 }
 
 impl BootError {
@@ -55,6 +57,7 @@ impl Display for BootError {
       BootError::Failed { step } => write!(f, "{step}: the hardware reported a failure"),
       BootError::Misconfigured(reason) => write!(f, "{reason}"),
       BootError::PortLost { step } => write!(f, "{step}: the port was lost"),
+      BootError::OpenFailed { port, reason } => write!(f, "Opening port {port}: {reason}"),
     }
   }
 }

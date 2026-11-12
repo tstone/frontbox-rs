@@ -58,6 +58,15 @@ impl DriverTriggers {
     }
   }
 
+  /// Every driver that isn't off, with the mode and switch to trigger it the way it is again
+  pub fn live(&self) -> impl Iterator<Item = (usize, DriverTriggerControlMode, Option<usize>)> + '_ {
+    self.triggers.iter().filter_map(|(driver_id, trigger)| match trigger {
+      DriverTrigger::Automatic { switch } => Some((*driver_id, DriverTriggerControlMode::Automatic, *switch)),
+      DriverTrigger::On => Some((*driver_id, DriverTriggerControlMode::On, None)),
+      DriverTrigger::Off => None,
+    })
+  }
+
   /// Drivers the hardware fires on its own when this switch changes
   pub fn automatic_on(&self, switch_id: usize) -> impl Iterator<Item = usize> + '_ {
     self

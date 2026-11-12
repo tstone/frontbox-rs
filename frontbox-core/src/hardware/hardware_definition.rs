@@ -61,6 +61,16 @@ pub struct IoAddressed<T: HardwareDefinition + 'static> {
   pub id: usize,
 }
 
+impl<T: HardwareDefinition + 'static> Clone for IoAddressed<T> {
+  fn clone(&self) -> Self {
+    Self {
+      definition: self.definition,
+      assignment: self.assignment.clone(),
+      id: self.id,
+    }
+  }
+}
+
 // -- Exp --
 
 /// An address on the expansion network

@@ -19,16 +19,12 @@ const BAUD_RATE: u32 = 921_600;
 
 pub struct SerialInterface {
   port_name: String,
-  reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
-  writer: WriteHalf<SerialStream>,
+  stream: Option<PortStream>,
   // if events are encountered while attempting to read a response, they are queued here for later retrieval
   event_queue: VecDeque<EventResponse>,
   // if a response is encountered that is not the expected response, it is queued here for later retrieval
   response_queue: VecDeque<QueuedResponse>,
   response_ttl: Duration,
-  /// Cleared once a read or write fails. The port is gone (e.g. its USB cable was pulled), so nothing more is read
-  /// from or written to it.
-  connected: bool,
 }
 
 impl SerialInterface {
@@ -62,25 +58,30 @@ impl SerialInterface {
 
     Ok(SerialInterface {
       port_name: port_path.to_string(),
-      reader: framed_reader,
-      writer,
+      stream: Some(PortStream {
+        reader: framed_reader,
+        writer,
+      }),
       response_queue: VecDeque::new(),
       event_queue: VecDeque::new(),
       response_ttl: Duration::from_secs(4), // after this time unclaimed messages fall out of the queue
-      connected: true,
     })
   }
 
-  /// Whether the port can still be used. Once a read or write on it fails, it can't.
+  /// Whether the port can still be used. Once a read or write on it fails, or it's closed, it can't.
   pub fn is_connected(&self) -> bool {
-    self.connected
+    self.stream.is_some()
+  }
+
+  /// Close the port, so it can be opened again
+  pub fn close(&mut self) {
+    self.stream = None;
   }
 
   /// Give up on the port after a read or write failed
   fn disconnected(&mut self, reason: impl Display) {
-    if self.connected {
+    if self.stream.take().is_some() {
       log::error!(target: "frontbox_core::serial", "🔌 Lost {}: {}", self.port_name, reason);
-      self.connected = false;
     }
   }
 
@@ -137,11 +138,11 @@ impl SerialInterface {
   /// Read the next response. A read error or the end of the stream means the port is gone, and once it is this
   /// fails straight away.
   async fn read_from_port(&mut self) -> Result<RawResponse, SerialError> {
-    if !self.connected {
+    let Some(stream) = &mut self.stream else {
       return Err(SerialError::Lost);
-    }
+    };
 
-    match self.reader.next().await {
+    match stream.reader.next().await {
       Some(Ok(raw)) => {
         if raw.prefix == "WD" {
           log::trace!(target: "frontbox_core::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
@@ -163,10 +164,10 @@ impl SerialInterface {
 
   // Send off a command without concern for a response. A failed write means the port is gone.
   async fn send(&mut self, cmd: &[u8]) {
-    if !self.connected {
+    let Some(stream) = &mut self.stream else {
       return;
-    }
-    if let Err(e) = self.writer.write_all(cmd).await {
+    };
+    if let Err(e) = stream.writer.write_all(cmd).await {
       self.disconnected(format!("write failed ({e})"));
     }
   }
@@ -189,7 +190,7 @@ impl SerialInterface {
     timeout: Duration,
     parse: impl Fn(RawResponse) -> Result<R, FastResponseError>,
   ) -> Result<R, SerialError> {
-    if !self.connected {
+    if !self.is_connected() {
       return Err(SerialError::Lost);
     }
 
@@ -246,6 +247,11 @@ impl SerialInterface {
       .query_inner(cmd.prefix(), timeout, |raw| cmd.parse(raw))
       .await
   }
+}
+
+struct PortStream {
+  reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
+  writer: WriteHalf<SerialStream>,
 }
 
 struct QueuedResponse {

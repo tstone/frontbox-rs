@@ -19,6 +19,8 @@ pub enum AppMessage {
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
   MachineDisconnected,
+  /// The machine reconnected to the hardware, which reported these switch states
+  MachineReconnected(Vec<SwitchState>),
   ConfigChanged(&'static str),
   DriverModeChange(usize, DriverMode),
   SpawnSystem(GroupId, SpawnableSystemContainer),
@@ -68,6 +70,7 @@ impl Debug for AppMessage {
       }
       AppMessage::SyncSwitchStates(states) => write!(f, "SwitchStates({:?})", states),
       AppMessage::MachineDisconnected => write!(f, "MachineDisconnected"),
+      AppMessage::MachineReconnected(states) => write!(f, "MachineReconnected({:?})", states),
       AppMessage::ConfigChanged(key) => write!(f, "ConfigChanged({})", key),
       AppMessage::DriverModeChange(driver, mode) => {
         write!(f, "DriverModeChange({}, {:?})", driver, mode)
