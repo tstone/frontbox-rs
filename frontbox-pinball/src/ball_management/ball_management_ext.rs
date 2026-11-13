@@ -75,7 +75,7 @@ fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) ->
   if let Some(mut system) = ctx.systems.get::<BallManager>() {
     Some(f(&mut system))
   } else {
-    log::error!("BallManager not running.");
+    log::error!(target: "frontbox::ball_management", "BallManager not running.");
     None
   }
 }

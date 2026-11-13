@@ -47,7 +47,7 @@ impl AlternateResolver {
         return entry.colors[entry.idx];
       }
     } else {
-      log::trace!("Creating new alternating state");
+      log::trace!(target: "frontbox::led", "Creating new alternating state");
       // no existing record of colors, create a new one
       self.states.insert(
         led.clone(),

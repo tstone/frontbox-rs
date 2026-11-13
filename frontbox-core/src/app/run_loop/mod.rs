@@ -106,7 +106,7 @@ impl RunLoop {
       tokio::signal::ctrl_c()
         .await
         .expect("failed to listen for ctrl-c");
-      log::info!("Ctrl+C signal received.");
+      log::info!(target: "frontbox::run_loop", "Ctrl+C signal received.");
       let _ = app_sender.send(AppMessage::Shutdown(ShutdownScope::Process));
     });
 
@@ -115,14 +115,14 @@ impl RunLoop {
       metrics::FLUSH_INTERVAL,
     );
 
-    log::info!(target: "frontbox_core::run_loop", "⟳ Run loop started.");
+    log::info!(target: "frontbox::run_loop", "⟳ Run loop started.");
     let mut last_tick = Instant::now();
 
     let shutdown_scope = loop {
       tokio::select! {
         Some(message) = app_receiver.recv() => {
-          log::trace!(target: "frontbox_core::run_loop", "Run loop: AppMessage queue depth: {}", app_receiver.len());
-          log::trace!(target: "frontbox_core::run_loop", "Run loop: Now handling {:?}", message);
+          log::trace!(target: "frontbox::run_loop", "Run loop: AppMessage queue depth: {}", app_receiver.len());
+          log::trace!(target: "frontbox::run_loop", "Run loop: Now handling {:?}", message);
           let message_text = format!("{:?}", message);
           let start = std::time::Instant::now();
 
@@ -130,9 +130,9 @@ impl RunLoop {
 
           let duration = start.elapsed().as_micros();
           if duration > 1000 {
-            log::warn!(target: "frontbox_core::run_loop", "Run loop Took {}μ to process {}", duration, message_text);
+            log::warn!(target: "frontbox::run_loop", "Run loop Took {}μ to process {}", duration, message_text);
           } else {
-            log::trace!(target: "frontbox_core::run_loop", "Run loop: Took {}μ", duration);
+            log::trace!(target: "frontbox::run_loop", "Run loop: Took {}μ", duration);
           }
 
           if let ControlFlow::Break(scope) = flow {
@@ -195,7 +195,7 @@ impl RunLoop {
         self.tracers.send(TraceEvent::DriverModeChange { driver_id, mode });
       }
       AppMessage::Shutdown(scope) => {
-        log::warn!(target: "frontbox_core::run_loop", "⏹️ Shutdown command received, shutting down...");
+        log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
         return ControlFlow::Break(scope);
       }
       AppMessage::SpawnSystem(group, system) => {
@@ -278,21 +278,21 @@ impl RunLoop {
     match command {
       TracerControlEvent::OpenSwitch { switch_id } => {
         if self.base.switches.is_closed_by_id(switch_id).unwrap_or(false) {
-          log::warn!(target: "frontbox_core::run_loop", "Tracer forcibly opening switch {switch_id}...");
+          log::warn!(target: "frontbox::console", "Tracer forcibly opening switch {switch_id}...");
           self.switch_state_changed(None, switch_id, SwitchState::Open);
         }
       }
       TracerControlEvent::CloseSwitch { switch_id } => {
         if self.base.switches.is_open_by_id(switch_id).unwrap_or(false) {
-          log::warn!(target: "frontbox_core::run_loop", "Tracer forcibly closing switch {switch_id}...");
+          log::warn!(target: "frontbox::console", "Tracer forcibly closing switch {switch_id}...");
           self.switch_state_changed(None, switch_id, SwitchState::Closed);
         }
       }
       TracerControlEvent::SetConfig { key, value } => {
         // saved, emitted and applied to hardware through `AppMessage::ConfigChanged`, like a menu edit
         match self.base.config.set_by_key(&key, value) {
-          Ok(()) => log::info!(target: "frontbox_core::run_loop", "Tracer set config '{key}' to {value:?}"),
-          Err(err) => log::warn!(target: "frontbox_core::run_loop", "Tracer couldn't set config: {err}"),
+          Ok(()) => log::info!(target: "frontbox::console", "Tracer set config '{key}' to {value:?}"),
+          Err(err) => log::warn!(target: "frontbox::console", "Tracer couldn't set config: {err}"),
         }
       }
     }
@@ -310,7 +310,7 @@ impl RunLoop {
 
     if scope == ShutdownScope::OperatingSystem {
       if let Err(e) = Command::new("sudo").args(["shutdown"]).status() {
-        log::error!(target: "frontbox_core::run_loop", "Failed to invoke OS shutdown: {e}");
+        log::error!(target: "frontbox::run_loop", "Failed to invoke OS shutdown: {e}");
       }
     }
   }

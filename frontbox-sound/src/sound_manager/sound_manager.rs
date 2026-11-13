@@ -126,7 +126,7 @@ impl SoundManager {
     match &mut self.connection {
       Connection::Connected(output) => {
         if let Err(reason) = output.check_health(now) {
-          log::warn!(target: "frontbox_core::sound", "🔇 Lost the audio output ({}), reconnecting", reason);
+          log::warn!(target: "frontbox::sound", "🔇 Lost the audio output ({}), reconnecting", reason);
           self.close_output();
           self.connect(0);
         }
@@ -160,10 +160,10 @@ impl SoundManager {
       }
     };
     if failures == 0 {
-      log::info!(target: "frontbox_core::sound", "🔊 Audio output open on '{}'", opened.name);
+      log::info!(target: "frontbox::sound", "🔊 Audio output open on '{}'", opened.name);
     } else {
       log::info!(
-        target: "frontbox_core::sound",
+        target: "frontbox::sound",
         "🔊 Audio output open on '{}', after {} failed attempts",
         opened.name,
         failures
@@ -182,7 +182,7 @@ impl SoundManager {
     // the first failure is worth knowing about, then once in a while so a device that never turns up isn't silent
     if failures == 1 || failures.is_multiple_of(12) {
       log::warn!(
-        target: "frontbox_core::sound",
+        target: "frontbox::sound",
         "🔇 Couldn't open the audio output ({}), attempt {}. Retrying in {:?}",
         reason,
         failures,
@@ -190,7 +190,7 @@ impl SoundManager {
       );
     } else {
       log::debug!(
-        target: "frontbox_core::sound",
+        target: "frontbox::sound",
         "🔇 Couldn't open the audio output ({}), attempt {}. Retrying in {:?}",
         reason,
         failures,
@@ -229,13 +229,13 @@ impl SoundManager {
   // --- Messages ---
 
   fn preload(&mut self, name: &'static str, path: impl AsRef<Path>) {
-    log::debug!(target: "frontbox_core::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
+    log::debug!(target: "frontbox::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
         self.sounds.insert(name, sound);
       }
       Err(e) => log::error!(
-        target: "frontbox_core::sound",
+        target: "frontbox::sound",
         "Failed to preload sound {}: {:?}",
         path.as_ref().display(),
         e
@@ -245,7 +245,7 @@ impl SoundManager {
 
   fn preload_embedded(&mut self, name: &'static str, bytes: &'static [u8]) {
     log::debug!(
-      target: "frontbox_core::sound",
+      target: "frontbox::sound",
       "Preloading embedded sound '{}' ({} bytes)",
       name,
       bytes.len()
@@ -255,18 +255,18 @@ impl SoundManager {
         self.sounds.insert(name, sound);
       }
       Err(e) => {
-        log::error!(target: "frontbox_core::sound", "Failed to preload embedded sound {}: {:?}", name, e)
+        log::error!(target: "frontbox::sound", "Failed to preload embedded sound {}: {:?}", name, e)
       }
     }
   }
 
   fn play_sfx(&mut self, key: &'static str) {
     let Some(sound) = self.sounds.get(key) else {
-      log::error!(target: "frontbox_core::sound", "🔊 Sound with key '{}' not found", key);
+      log::error!(target: "frontbox::sound", "🔊 Sound with key '{}' not found", key);
       return;
     };
     let Connection::Connected(output) = &mut self.connection else {
-      log::debug!(target: "frontbox_core::sound", "🔇 No audio output, skipped SFX '{}'", key);
+      log::debug!(target: "frontbox::sound", "🔇 No audio output, skipped SFX '{}'", key);
       return;
     };
     output.play_sfx(key, sound.clone());
@@ -275,7 +275,7 @@ impl SoundManager {
   fn play_callout(&mut self, request: CalloutRequest) {
     // lines wait while an attempt is under way, as the output is likely moments off, but not once one has failed
     if let Connection::Waiting { .. } = self.connection {
-      log::debug!(target: "frontbox_core::sound", "🔇 No audio output, skipped callout '{}'", request.key());
+      log::debug!(target: "frontbox::sound", "🔇 No audio output, skipped callout '{}'", request.key());
       report(&self.completed_tx, request.key(), false);
       return;
     }
@@ -334,7 +334,7 @@ impl SoundManager {
       self.start_music(&path, crossfade);
     } else {
       log::info!(
-        target: "frontbox_core::sound",
+        target: "frontbox::sound",
         "🎵 No audio output yet, music {} will start once there is one",
         path.display()
       );
@@ -359,9 +359,9 @@ impl SoundManager {
       _ => false,
     };
     if stopped {
-      log::info!(target: "frontbox_core::sound", "🎵 Stopping music");
+      log::info!(target: "frontbox::sound", "🎵 Stopping music");
     } else if !had_music {
-      log::info!(target: "frontbox_core::sound", "Stop music requested, but no music track was active");
+      log::info!(target: "frontbox::sound", "Stop music requested, but no music track was active");
     }
   }
 }

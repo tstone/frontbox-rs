@@ -128,6 +128,7 @@ impl MachineSystem {
     let switch = ctx.switches.by_name(name).map(|sw| sw.id);
     if switch.is_none() {
       log::error!(
+        target: "frontbox::machine",
         "Driver {:X} is triggered by unknown switch \"{}\"",
         driver_id,
         name

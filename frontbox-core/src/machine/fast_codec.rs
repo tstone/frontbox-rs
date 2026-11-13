@@ -20,6 +20,7 @@ impl Decoder for FastRawCodec {
   fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
     if src.len() > 1024 {
       log::warn!(
+        target: "frontbox::machine",
         "Codec buffer has {} bytes without \\r terminator!",
         src.len()
       );

@@ -273,7 +273,7 @@ impl Systems {
   /// loop borrows a system for as long as one of its handlers runs, so a system can't reach itself this way.
   pub fn get_by_id(&'_ self, system_id: &u64) -> Option<RefMut<'_, SystemContainer>> {
     self.borrow_by_id(system_id).unwrap_or_else(|busy| {
-      log::error!("{busy}");
+      log::error!(target: "frontbox::systems", "{busy}");
       None
     })
   }
@@ -282,7 +282,7 @@ impl Systems {
   /// [`get_by_id`](Self::get_by_id)).
   pub fn get_by_type<T: System + 'static>(&'_ self) -> Option<RefMut<'_, T>> {
     self.borrow_by_type::<T>().unwrap_or_else(|busy| {
-      log::error!("{busy}");
+      log::error!(target: "frontbox::systems", "{busy}");
       None
     })
   }

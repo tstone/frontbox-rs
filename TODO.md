@@ -1,6 +1,5 @@
 ## Headless
 
-- Establish (and document) consistent log targets
 - Reference planes should allow polygons so that cabinet sides don't look weird
 - RandSystem (interface) that manages seed per game.
 - LedSystem becomes the implementation of an interface
@@ -16,9 +15,11 @@
 - Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
 - Some kind of bundle that makes all the pinball things start up
+- ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit effect)
 
 ## Design Choices/Core
 
+- I think scenes probably need to also include an audio definition
 - Implement a proper LampDriver that also supports flashing
 - Revisit if `Synchronize` event still makes sense or not
 - Should a "hold" (like how BallSave uses them) be a framework feature?
@@ -92,3 +93,4 @@
 
 - Have a Claude skill that's ready to go for people (how can this not duplicate docs?). Last, so it describes the API
   after the renames and cleanups above.
+- There seems to be a layering emerging: setup hardware + verify that works; setup systems for hardware (Scoop) and shots (ShotSystem); build modes on top of that

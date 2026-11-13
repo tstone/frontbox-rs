@@ -194,7 +194,7 @@ impl<S: 'static> ScoopSystem<S> {
       ScoopEntry::Direct
     };
     ctx.cues.cancel(self.lower_entrance_cue.take());
-    log::info!(target: "frontbox_core::scoop", "Ball entered {} scoop ({:?})", self.name, entry);
+    log::info!(target: "frontbox::scoop", "Ball entered {} scoop ({:?})", self.name, entry);
 
     self.ball_waiting = true;
     ctx.set_balls_held(1);
@@ -262,7 +262,7 @@ impl<S: 'static> ScoopSystem<S> {
   fn on_vacancy_check_due(&mut self, ctx: &SystemContext) {
     // a ball that's waiting came in since the kick, and ejects in its own time
     if !self.ball_waiting && self.holds.is_empty() && self.is_occupied(ctx) {
-      log::warn!(target: "frontbox_core::scoop", "Ball still in {} scoop after a kick. Kicking again.", self.name);
+      log::warn!(target: "frontbox::scoop", "Ball still in {} scoop after a kick. Kicking again.", self.name);
       self.kick(ctx);
     }
   }
@@ -290,7 +290,7 @@ impl<S: 'static> System for ScoopSystem<S> {
     self.handle = ctx.handle();
 
     if self.is_occupied(ctx) {
-      log::debug!(target: "frontbox_core::scoop", "{} scoop is occupied. Ejecting.", self.name);
+      log::debug!(target: "frontbox::scoop", "{} scoop is occupied. Ejecting.", self.name);
       ctx.set_balls_held(1);
       self.kick(ctx);
     }

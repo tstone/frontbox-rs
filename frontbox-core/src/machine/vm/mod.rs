@@ -99,21 +99,21 @@ pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualH
 fn log_message(msg: &MachineMessage) {
   match msg {
     MachineMessage::Dispatch { port, command } => {
-      log::info!("VM: Dispatch on {:?} => {:?}", port, command);
+      log::info!(target: "frontbox::machine::vm", "VM: Dispatch on {:?} => {:?}", port, command);
     }
     MachineMessage::Command { port, command, .. } => {
-      log::info!("VM: Request on {:?} => {:?}", port, command);
+      log::info!(target: "frontbox::machine::vm", "VM: Request on {:?} => {:?}", port, command);
     }
     MachineMessage::ConfigureDriver { driver_id, config }
     | MachineMessage::UpdateDriverConfig { driver_id, config } => {
-      log::info!("VM: Configure driver {} => {:?}", driver_id, config);
+      log::info!(target: "frontbox::machine::vm", "VM: Configure driver {} => {:?}", driver_id, config);
     }
     MachineMessage::TriggerDriver {
       driver_id,
       mode,
       switch,
     } => {
-      log::info!("VM: Trigger driver {} => {:?} {:?}", driver_id, mode, switch);
+      log::info!(target: "frontbox::machine::vm", "VM: Trigger driver {} => {:?} {:?}", driver_id, mode, switch);
     }
     _ => {} // watchdog, switch refresh
   }

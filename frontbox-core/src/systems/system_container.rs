@@ -64,7 +64,7 @@ impl SystemContainer {
       Ok(result) => Some(result),
       Err(payload) => {
         log::error!(
-          target: "frontbox_core::systems::lifecycle",
+          target: "frontbox::systems",
           "💥 System {} ({}) panicked: {}",
           self.name(),
           self.id(),
@@ -81,7 +81,7 @@ impl SystemContainer {
     let result = self.catch_panic(f);
     if result.is_none() && !self.faulted {
       log::error!(
-        target: "frontbox_core::systems::lifecycle",
+        target: "frontbox::systems",
         "💥 Despawning system {} ({}) after it panicked",
         self.name(),
         self.id()
@@ -100,7 +100,7 @@ impl SystemContainer {
   /// [`SystemDeactivated`] afterwards.
   pub(crate) fn on_deactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox_core::systems::lifecycle",
+      target: "frontbox::systems",
       "🌐 System {} ({}) is now inactive",
       self.name(),
       self.id()
@@ -112,7 +112,7 @@ impl SystemContainer {
   /// loop broadcasts [`SystemReactivated`] afterwards.
   pub(crate) fn on_reactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox_core::systems::lifecycle",
+      target: "frontbox::systems",
       "🌐 System {} ({}) is now active",
       self.name(),
       self.id()
@@ -167,12 +167,12 @@ impl SystemContainer {
     let system_id = self.id;
     self.cues.retain(|id, cue| {
       cue.accumulate(delta, |signal| {
-        log::trace!("Cue {} @ system {} fired", id, system_id);
+        log::trace!(target: "frontbox::cues", "Cue {} @ system {} fired", id, system_id);
         self.inner.on_event(signal, ctx);
       });
 
       if cue.is_complete() {
-        log::trace!("Cue {} @ system {} completed, removing", id, system_id);
+        log::trace!(target: "frontbox::cues", "Cue {} @ system {} completed, removing", id, system_id);
       }
       !cue.is_complete()
     });

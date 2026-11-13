@@ -57,6 +57,7 @@ impl App {
       .is_some()
     {
       log::warn!(
+        target: "frontbox::app",
         "Routine {} was defined twice; the last definition wins",
         type_name::<E>()
       );
@@ -108,7 +109,7 @@ impl App {
     // opened before tracers start, so they can read history from it
     let metrics_db = self.boot_config.metrics_path.as_ref().and_then(|path| {
       MetricsDb::open(path)
-        .inspect_err(|e| log::error!("Failed to open metrics store at {}: {e}", path.display()))
+        .inspect_err(|e| log::error!(target: "frontbox::app", "Failed to open metrics store at {}: {e}", path.display()))
         .ok()
     });
 
@@ -167,7 +168,7 @@ impl App {
       .systems
       .push(SystemContainer::new(WatchdogSystem::new()));
 
-    log::debug!("Starting main run loop");
+    log::debug!(target: "frontbox::app", "Starting main run loop");
     let run = run_loop::RunLoop::run(
       app_state,
       self.systems,
@@ -184,6 +185,7 @@ impl App {
     // unwinding.
     if let Err(payload) = AssertUnwindSafe(run).catch_unwind().await {
       log::error!(
+        target: "frontbox::app",
         "💥 Run loop panicked: {}. Powering down the machine.",
         crate::systems::panic_message(payload.as_ref())
       );

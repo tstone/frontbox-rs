@@ -5,6 +5,11 @@
 A file leads with its main type: the struct, then its `impl` blocks. Private helper types (internal structs, enums)
 go below the main type's `impl`, never between the struct and its `impl`.
 
+## Logging
+
+Every log call names a target from `doc/logging.md` (`log::info!(target: "frontbox::scoop", ...)`). A new subject
+gets a new target, added to that doc.
+
 ## Systems
 
 ### Public system methods take `ServiceContext`

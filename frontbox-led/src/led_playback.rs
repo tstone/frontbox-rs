@@ -301,7 +301,7 @@ impl Placement {
     let plane = layer.surface.plane().and_then(|plane| {
       let found = ctx.leds.plane(plane);
       if found.is_none() {
-        log::error!("LedPlayback: there's no plane \"{plane}\" added to the app");
+        log::error!(target: "frontbox::led", "LedPlayback: there's no plane \"{plane}\" added to the app");
       }
       found
     });

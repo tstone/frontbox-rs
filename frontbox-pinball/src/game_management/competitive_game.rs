@@ -138,7 +138,7 @@ impl CompetitiveGame {
 
   fn start_game(&mut self, ctx: &ServiceContext) {
     let sys_ctx = ctx.for_system(self.handle);
-    log::info!(target: "frontbox_core::game_manager", "Starting game with max players: {}", self.max_players);
+    log::info!(target: "frontbox::game_manager", "Starting game with max players: {}", self.max_players);
     self.game_state = Some(GameState::competitive(self.max_players));
     self.set_game_phase(GamePhase::Starting, ctx);
 
@@ -155,7 +155,7 @@ impl CompetitiveGame {
 
   /// `GameStarting` completed: the first turn begins
   fn start_first_turn(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Game started, beginning the first turn");
+    log::info!(target: "frontbox::game_manager", "Game started, beginning the first turn");
     self.set_game_phase(GamePhase::Active, ctx);
     self.start_turn(TurnStartReason::Ordered, ctx);
   }
@@ -168,7 +168,7 @@ impl CompetitiveGame {
     ctx.metrics.set_player(player);
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
-    log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to starting");
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to starting");
     self.set_turn_phase(TurnPhase::Starting, ctx.into());
     self.update_player_entry(ctx.into());
     self.ball_served = false;
@@ -236,7 +236,7 @@ impl CompetitiveGame {
   }
 
   fn serve_ball(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Serving the ball");
+    log::info!(target: "frontbox::game_manager", "Serving the ball");
     self.ball_served = true;
     let ctx = &ctx.for_system(self.handle);
     if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
@@ -246,7 +246,7 @@ impl CompetitiveGame {
 
   /// The last ball in play was lost (a ball search couldn't find it). The player didn't lose it, so they keep the turn.
   fn replace_lost_ball(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Last ball in play was lost, putting another into play");
+    log::info!(target: "frontbox::game_manager", "Last ball in play was lost, putting another into play");
     let ctx = &ctx.for_system(self.handle);
     if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
       ball_manager.eject(Launch::Auto, ctx.into());
@@ -254,7 +254,7 @@ impl CompetitiveGame {
   }
 
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to active");
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     self.set_turn_phase(TurnPhase::Active, ctx);
     self.found_no_ball_in_play = false;
     self.in_play_check_cue = Some(
@@ -275,7 +275,7 @@ impl CompetitiveGame {
   fn drained(&mut self, count: u8, in_play: u8, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     if ctx.states.is(CoinDoor::Open) && ctx.config.get(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN) {
-      log::info!(target: "frontbox_core::game_manager", "{} ball(s) drained with the coin door open, putting them back into play", count);
+      log::info!(target: "frontbox::game_manager", "{} ball(s) drained with the coin door open, putting them back into play", count);
       if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
         ball_manager.eject_many(count, Launch::Auto, ctx.into());
       }
@@ -291,7 +291,7 @@ impl CompetitiveGame {
       in_play,
     };
     if self.draining {
-      log::info!(target: "frontbox_core::game_manager", "{} ball(s) drained while deciding another drain, waiting", count);
+      log::info!(target: "frontbox::game_manager", "{} ball(s) drained while deciding another drain, waiting", count);
       self.pending_drains.push_back(draining);
     } else {
       self.start_ball_draining(draining, ctx);
@@ -307,7 +307,7 @@ impl CompetitiveGame {
       && !self.ejects_pending(ctx)
       && self.balls_held(ctx) == 0;
     if none_in_play && self.found_no_ball_in_play {
-      log::warn!(target: "frontbox_core::game_manager", "No ball in play and no drain reported, treating it as a drain");
+      log::warn!(target: "frontbox::game_manager", "No ball in play and no drain reported, treating it as a drain");
       self.found_no_ball_in_play = false;
       self.drained(1, 0, ctx);
     } else {
@@ -316,7 +316,7 @@ impl CompetitiveGame {
   }
 
   fn start_ball_draining(&mut self, draining: BallDraining, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "{} ball(s) drained, {} left in play", draining.count, draining.in_play);
+    log::info!(target: "frontbox::game_manager", "{} ball(s) drained, {} left in play", draining.count, draining.in_play);
     self.draining = true;
     let group = &self.player_groups[draining.current_player as usize];
     ctx
@@ -331,7 +331,7 @@ impl CompetitiveGame {
     self.draining = false;
     match done.completion {
       RoutineCompletion::Halted => {
-        log::info!(target: "frontbox_core::game_manager", "Drain was saved")
+        log::info!(target: "frontbox::game_manager", "Drain was saved")
       }
       RoutineCompletion::AllSteps if done.routine.in_play == 0 => {
         self.pending_drains.clear();
@@ -347,7 +347,7 @@ impl CompetitiveGame {
   }
 
   fn transition_turn_to_ending(&mut self, reason: TurnEndReason, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to ending ({:?})", reason);
+    log::info!(target: "frontbox::game_manager", "Transitioning current turn to ending ({:?})", reason);
     self.set_turn_phase(TurnPhase::Ending, ctx);
     self.cancel_ejects(ctx);
     if let Some(active_at) = self.turn_active_at.take() {
@@ -372,7 +372,7 @@ impl CompetitiveGame {
   fn turn_ended(&mut self, ctx: &ServiceContext) {
     let in_play = self.balls_in_play(ctx);
     if in_play > 0 {
-      log::info!(target: "frontbox_core::game_manager", "Waiting for {} ball(s) to leave play before advancing", in_play);
+      log::info!(target: "frontbox::game_manager", "Waiting for {} ball(s) to leave play before advancing", in_play);
       self.waiting_for_balls = true;
     } else {
       self.advance_turn(ctx);
@@ -415,14 +415,14 @@ impl CompetitiveGame {
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {
-      log::error!(target: "frontbox_core::game_manager", "Game state should have been initialized when starting the game");
+      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
     let player = game_state.current_player();
     if game_state.use_extra_ball(player) {
       let remaining = game_state.extra_balls(player);
-      log::info!(target: "frontbox_core::game_manager", "Using an extra ball, {} unused", remaining);
+      log::info!(target: "frontbox::game_manager", "Using an extra ball, {} unused", remaining);
       ctx.metrics.inc(&metrics::EXTRA_BALLS);
       ctx.metrics.flush();
       ctx.for_system(self.handle).emit(ExtraBallUsed {
@@ -448,7 +448,7 @@ impl CompetitiveGame {
     }
 
     log::info!(
-      target: "frontbox_core::game_manager",
+      target: "frontbox::game_manager",
       "Advancing turn (player: {}, turn: {})",
       game_state.current_player(),
       game_state.current_player_turn()
@@ -459,7 +459,7 @@ impl CompetitiveGame {
 
   /// Play is over. The game stays started until `GameEnding` completes.
   fn start_game_ending(&mut self, reason: GameEndReason, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Game ending ({:?})", reason);
+    log::info!(target: "frontbox::game_manager", "Game ending ({:?})", reason);
     self.set_game_phase(GamePhase::Ending, ctx);
     self.update_player_entry(ctx);
     self.draining = false;
@@ -483,7 +483,7 @@ impl CompetitiveGame {
 
   /// `GameEnding` completed: the game is over
   fn end_game(&mut self, ctx: &ServiceContext) {
-    log::info!(target: "frontbox_core::game_manager", "Game ended");
+    log::info!(target: "frontbox::game_manager", "Game ended");
     for group in self.player_groups.drain(..) {
       ctx.despawn_system_group(group);
     }
@@ -494,7 +494,7 @@ impl CompetitiveGame {
     // A game started now would count too few balls, so another can't start until these come home
     let in_play = self.balls_in_play(ctx);
     if in_play > 0 {
-      log::info!(target: "frontbox_core::game_manager", "Waiting for {} ball(s) to come home before another game can start", in_play);
+      log::info!(target: "frontbox::game_manager", "Waiting for {} ball(s) to come home before another game can start", in_play);
       self.ball_return_cue = Some(
         ctx
           .for_system(self.handle)
@@ -554,7 +554,7 @@ impl System for CompetitiveGame {
           self.balls_returned(ctx.into());
         } else if event.is::<BallReturnTimedOut>() {
           // they're left out of the next game's count (see `establish_ball_count`)
-          log::warn!(target: "frontbox_core::game_manager", "Balls from the last game didn't come home, no longer waiting for them");
+          log::warn!(target: "frontbox::game_manager", "Balls from the last game didn't come home, no longer waiting for them");
           self.ball_return_cue = None;
           self.balls_returned(ctx.into());
         }
@@ -572,17 +572,17 @@ impl System for CompetitiveGame {
       }
       TurnPhase::Starting => {
         if event.is::<BallEnteredPlay>() {
-          log::debug!(target: "frontbox_core::game_manager", "Active caused by ball entering play");
+          log::debug!(target: "frontbox::game_manager", "Active caused by ball entering play");
           self.transition_turn_to_active(ctx.into());
         } else if let Some(e) = event.downcast_ref::<SwitchClosed>()
           && self.ball_in_play_switches.matches(&e.switch)
         {
-          log::debug!(target: "frontbox_core::game_manager", "Active caused by switch: {}", e.switch.name);
+          log::debug!(target: "frontbox::game_manager", "Active caused by switch: {}", e.switch.name);
           self.transition_turn_to_active(ctx.into());
         } else if is_last_ball_gone(event) {
           // The served ball came back before the turn went active (e.g. straight down the drain from a weak plunge), or
           // was lost
-          log::info!(target: "frontbox_core::game_manager", "Served ball gone before the turn went active, serving again");
+          log::info!(target: "frontbox::game_manager", "Served ball gone before the turn went active, serving again");
           self.serve_ball(ctx.into());
         }
       }
@@ -615,7 +615,7 @@ impl GameManagement for CompetitiveGame {
   fn add_player(&mut self, ctx: &ServiceContext) {
     // checked here as well as through `PlayerEntry`, which reads as its old value until the run loop gets to it
     if !self.is_player_addable() {
-      log::warn!(target: "frontbox_core::game_manager", "A player can't be added now, ignored");
+      log::warn!(target: "frontbox::game_manager", "A player can't be added now, ignored");
       return;
     }
     if !self.is_game_started() {
@@ -625,13 +625,13 @@ impl GameManagement for CompetitiveGame {
     let game_state = if let Some(game_state) = &mut self.game_state {
       game_state
     } else {
-      log::error!(target: "frontbox_core::game_manager", "Game state should have been initialized when starting the game");
+      log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
     game_state.increment_player_count();
     log::info!(
-      target: "frontbox_core::game_manager",
+      target: "frontbox::game_manager",
       "Adding player to game (current count: {})",
       game_state.player_count()
     );
@@ -653,11 +653,11 @@ impl GameManagement for CompetitiveGame {
       return;
     };
     if self.game_phase == GamePhase::Ending {
-      log::info!(target: "frontbox_core::game_manager", "Quit while the game is already ending, ignored");
+      log::info!(target: "frontbox::game_manager", "Quit while the game is already ending, ignored");
       return;
     }
 
-    log::info!(target: "frontbox_core::game_manager", "Quitting game ({:?})", reason);
+    log::info!(target: "frontbox::game_manager", "Quitting game ({:?})", reason);
     if reason == GameEndReason::Quit {
       ctx.metrics.inc(&metrics::GAMES_QUIT);
     }
@@ -679,14 +679,14 @@ impl GameManagement for CompetitiveGame {
       TurnPhase::None | TurnPhase::Ending => false,
     };
     if self.game_phase != GamePhase::Active || !playing {
-      log::info!(target: "frontbox_core::game_manager", "Tilt while no ball is being played, ignored");
+      log::info!(target: "frontbox::game_manager", "Tilt while no ball is being played, ignored");
       return;
     }
     let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
       return;
     };
 
-    log::info!(target: "frontbox_core::game_manager", "Player {} tilted", player + 1);
+    log::info!(target: "frontbox::game_manager", "Player {} tilted", player + 1);
     ctx.metrics.inc(&metrics::TILTS);
     self.tilted = true;
     // a drain being decided completes on its own, and is ignored as the turn is ending
@@ -720,7 +720,7 @@ impl GameManagement for CompetitiveGame {
 
   fn add_points(&mut self, points: u64, ctx: &ServiceContext) {
     if self.tilted {
-      log::debug!(target: "frontbox_core::game_manager", "{} points ignored, the turn was tilted", points);
+      log::debug!(target: "frontbox::game_manager", "{} points ignored, the turn was tilted", points);
       return;
     }
     if let Some(game_state) = &mut self.game_state {
@@ -743,7 +743,7 @@ impl GameManagement for CompetitiveGame {
 
   fn grant_extra_ball(&mut self, ctx: &ServiceContext) -> bool {
     if self.game_phase != GamePhase::Active {
-      log::warn!(target: "frontbox_core::game_manager", "An extra ball can only be granted during play, ignored");
+      log::warn!(target: "frontbox::game_manager", "An extra ball can only be granted during play, ignored");
       return false;
     }
     let Some(game_state) = &mut self.game_state else {
@@ -753,13 +753,13 @@ impl GameManagement for CompetitiveGame {
     let player = game_state.current_player();
     let max = ctx.config.get(&configs::MAX_EXTRA_BALLS);
     if game_state.extra_balls_granted(player) >= max {
-      log::info!(target: "frontbox_core::game_manager", "Extra ball limit of {} reached, not granted", max);
+      log::info!(target: "frontbox::game_manager", "Extra ball limit of {} reached, not granted", max);
       return false;
     }
 
     game_state.grant_extra_ball(player);
     let count = game_state.extra_balls(player);
-    log::info!(target: "frontbox_core::game_manager", "Extra ball granted, {} unused", count);
+    log::info!(target: "frontbox::game_manager", "Extra ball granted, {} unused", count);
     ctx.for_system(self.handle).emit(ExtraBallGranted {
       player_index: player,
       count,

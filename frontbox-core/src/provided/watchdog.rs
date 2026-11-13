@@ -19,7 +19,7 @@ impl WatchdogSystem {
 impl WatchdogSystem {
   pub fn enable(&mut self, ctx: &ServiceContext) {
     let ctx = ctx.for_system(self.handle);
-    log::info!(target: "frontbox_core::watchdog", "🐶 Enabling watchdog with {:?}", ctx.watchdog_interval);
+    log::info!(target: "frontbox::watchdog", "🐶 Enabling watchdog with {:?}", ctx.watchdog_interval);
 
     // renew watchdog slightly before it expires
     self.cue_handle = Some(ctx.cues.start(
@@ -35,7 +35,7 @@ impl WatchdogSystem {
   pub fn disable(&mut self, ctx: &ServiceContext) {
     let ctx = ctx.for_system(self.handle);
 
-    log::info!(target: "frontbox_core::watchdog", "🐶 Disabling watchdog");
+    log::info!(target: "frontbox::watchdog", "🐶 Disabling watchdog");
     ctx.systems.expect::<MachineSystem>().clear_watchdog();
 
     ctx.cues.cancel(self.cue_handle.take());
@@ -54,7 +54,7 @@ impl System for WatchdogSystem {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<WatchdogPing>() {
-      log::trace!(target: "frontbox_core::watchdog", "🐶 Watchdog event => Ping");
+      log::trace!(target: "frontbox::watchdog", "🐶 Watchdog event => Ping");
       ctx.systems.expect::<MachineSystem>().ping_watchdog();
     } else if event.is::<MachineReconnected>() && self.cue_handle.is_some() {
       // feed it now rather than at the next ping, as the hardware's has been running down since it was brought up

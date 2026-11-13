@@ -84,7 +84,7 @@ fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) ->
   if let Some(mut system) = ctx.systems.get::<GameManager>() {
     Some(f(&mut system))
   } else {
-    log::error!("GameManager not running.");
+    log::error!(target: "frontbox::game_manager", "GameManager not running.");
     None
   }
 }

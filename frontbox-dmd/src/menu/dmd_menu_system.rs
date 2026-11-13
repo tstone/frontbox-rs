@@ -162,7 +162,7 @@ impl DmdMenuSystem {
         .value_mut()
       {
         *value = row.increment(ctx);
-        log::debug!("increment: {}", value);
+        log::debug!(target: "frontbox::dmd", "increment: {}", value);
       }
       self.requires_render = true;
     } else {

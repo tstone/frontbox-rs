@@ -60,6 +60,7 @@ impl MultiLedDefinitionBuilder {
     let count = match self.count {
       Some(count) if located > 0 && count != located => {
         log::warn!(
+          target: "frontbox::hardware",
           "LED definition \"{}\" has a count of {} but {} locations",
           self.name,
           count,

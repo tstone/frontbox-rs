@@ -138,9 +138,9 @@ impl StandardBallManagement {
     self.balls_found += delta;
     let installed = self.balls_installed(ctx);
     if self.balls_found > installed {
-      log::warn!(target: "frontbox_core::ball_management", "{} ball(s) not counted turned up, now {} found but only {} installed (check the Balls Installed setting)", delta, self.balls_found, installed);
+      log::warn!(target: "frontbox::ball_management", "{} ball(s) not counted turned up, now {} found but only {} installed (check the Balls Installed setting)", delta, self.balls_found, installed);
     } else {
-      log::info!(target: "frontbox_core::ball_management", "{} ball(s) not counted turned up, now {} of {} found", delta, self.balls_found, installed);
+      log::info!(target: "frontbox::ball_management", "{} ball(s) not counted turned up, now {} of {} found", delta, self.balls_found, installed);
     }
   }
 
@@ -238,7 +238,7 @@ impl StandardBallManagement {
 
   fn on_trough_eject_failed(&mut self, ctx: &SystemContext) {
     // TODO: re-queue with backoff and report it to the game, rather than dropping the ball (see TODO.md)
-    log::warn!(target: "frontbox_core::ball_management", "Trough eject failed, abandoning the ball");
+    log::warn!(target: "frontbox::ball_management", "Trough eject failed, abandoning the ball");
     let trough_eject_id = self.trough_ejecting.take();
     let en_route = self.end_en_route(ctx);
     // With a plunge lane, a ball that already reached it isn't abandoned
@@ -301,13 +301,13 @@ impl StandardBallManagement {
     let kicked = *kicked;
 
     if !kicked && let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
-      log::warn!(target: "frontbox_core::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
+      log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, firing the autoplunger to knock it loose");
       autoplunger.launch(ctx.into());
       self.start_arrival_wait(true, ctx);
       return;
     }
 
-    log::warn!(target: "frontbox_core::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
+    log::warn!(target: "frontbox::ball_management", "Ejected ball never reached the plunge lane, assuming it went into play (is the plunge lane switch working?)");
     let en_route = self.end_en_route(ctx);
     ctx.emit(BallEnteredPlay {
       method: if kicked {
@@ -413,10 +413,10 @@ impl StandardBallManagement {
     let launch = ball.map_or(Launch::Auto, |ball| ball.launch);
     if launch == Launch::Auto && self.launch_retries < retries_max {
       self.launch_retries += 1;
-      log::info!(target: "frontbox_core::ball_management", "Autoplunger didn't launch the ball, retrying ({}/{})", self.launch_retries, retries_max);
+      log::info!(target: "frontbox::ball_management", "Autoplunger didn't launch the ball, retrying ({}/{})", self.launch_retries, retries_max);
       self.launch_from_lane(ctx);
     } else if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
-      log::warn!(target: "frontbox_core::ball_management", "Autoplunger didn't launch the ball, leaving it for the player to launch");
+      log::warn!(target: "frontbox::ball_management", "Autoplunger didn't launch the ball, leaving it for the player to launch");
       autoplunger.arm_launch_button();
     }
   }
@@ -559,7 +559,7 @@ impl BallManagement for StandardBallManagement {
 
     let installed = self.balls_installed(ctx);
     if self.balls_found < installed {
-      log::warn!(target: "frontbox_core::ball_management", "Only {} of {} installed balls found", self.balls_found, installed);
+      log::warn!(target: "frontbox::ball_management", "Only {} of {} installed balls found", self.balls_found, installed);
     }
   }
 
@@ -575,7 +575,7 @@ impl BallManagement for StandardBallManagement {
       return;
     }
     self.balls_found -= 1;
-    log::warn!(target: "frontbox_core::ball_management", "A ball is lost, playing on with {} of {} installed", self.balls_found, self.balls_installed(ctx));
+    log::warn!(target: "frontbox::ball_management", "A ball is lost, playing on with {} of {} installed", self.balls_found, self.balls_installed(ctx));
     ctx.metrics.inc(&metrics::BALLS_LOST);
     ctx.emit(MaxBallsInPlayChanged {
       max_in_play: self.max_in_play(),

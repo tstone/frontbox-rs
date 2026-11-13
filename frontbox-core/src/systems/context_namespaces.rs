@@ -39,7 +39,7 @@ impl<'a> ContextSystems<'a> {
       Some(mut system) => Some(f(&mut system)),
       None => {
         // `get` has already logged an error if it's in use
-        log::warn!("{} is not running or is in use.", type_name::<T>());
+        log::warn!(target: "frontbox::systems", "{} is not running or is in use.", type_name::<T>());
         None
       }
     }

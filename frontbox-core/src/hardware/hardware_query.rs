@@ -131,7 +131,7 @@ impl HardwareQuery {
       .filter(|led| self.matches_led(led))
       .collect::<Vec<_>>();
 
-    log::trace!(target: "frontbox_core::query", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", leds.len(), self, leds);
+    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", leds.len(), self, leds);
     leds
   }
 
@@ -181,7 +181,7 @@ impl HardwareQuery {
       }
     };
 
-    log::trace!(target: "frontbox_core::query", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", addrs.len(), self, addrs);
+    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", addrs.len(), self, addrs);
     addrs
   }
 }

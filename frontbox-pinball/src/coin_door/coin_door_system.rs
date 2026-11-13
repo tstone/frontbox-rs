@@ -34,12 +34,12 @@ impl System for CoinDoorSystem {
     if let Some(SwitchOpened { switch }) = event.downcast_ref::<SwitchOpened>()
       && switch.name == self.switch
     {
-      log::info!(target: "frontbox_core::coin_door", "Coin door opened");
+      log::info!(target: "frontbox::coin_door", "Coin door opened");
       ctx.states.set(CoinDoor::Open);
     } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>()
       && switch.name == self.switch
     {
-      log::info!(target: "frontbox_core::coin_door", "Coin door closed");
+      log::info!(target: "frontbox::coin_door", "Coin door closed");
       ctx.states.set(CoinDoor::Closed);
     }
   }

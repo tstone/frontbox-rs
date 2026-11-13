@@ -33,6 +33,7 @@ pub(crate) fn nearest_state<S: State>(groups: &Groups, from: GroupId) -> S {
 pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<EventBox> {
   if !groups.contains_system(state.owner) {
     log::warn!(
+      target: "frontbox::systems",
       "System {} set {} after it was despawned, ignored",
       state.owner.id,
       state.name
@@ -44,6 +45,7 @@ pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<Event
   match group.states.get_mut(&state.type_id) {
     Some(stored) if stored.owner != state.owner => {
       log::warn!(
+        target: "frontbox::systems",
         "{} belongs to system {}, so system {} can't set it, ignored",
         state.name,
         stored.owner.id,

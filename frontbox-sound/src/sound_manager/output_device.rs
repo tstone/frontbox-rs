@@ -34,7 +34,7 @@ impl OutputDevice {
           .filter(|device| {
             device.description().is_ok_and(|description| {
               log::trace!(
-                target: "frontbox_core::sound",
+                target: "frontbox::sound",
                 "Found audio device: {:?}",
                 description.extended()
               );

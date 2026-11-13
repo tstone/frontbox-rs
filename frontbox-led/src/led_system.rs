@@ -170,12 +170,13 @@ impl LedSystem {
     active: bool,
   ) {
     let declarations: LedDeclarations = declarations.into();
-    log::trace!(target: "frontbox_core::leds", "LED declarations declared: {:?}", declarations);
+    log::trace!(target: "frontbox::led", "LED declarations declared: {:?}", declarations);
 
     for (led, color) in declarations.pairings {
       let declaration = StatefulLedDeclaration { active, color };
       if self.monitored.contains(led) {
         log::info!(
+          target: "frontbox::led",
           "Declaration by system {} for monitored LED {:?}: {:?}",
           owning_system,
           led,
@@ -208,6 +209,7 @@ impl LedSystem {
     for led in identifications.leds {
       if self.monitored.contains(&led) {
         log::info!(
+          target: "frontbox::led",
           "Undeclare by system {} of monitored LED {:?}",
           system_id,
           led
@@ -225,7 +227,7 @@ impl LedSystem {
 
   /// Entirely remove all declarations by the given system
   pub fn undeclare_by_system(&mut self, system_id: &u64) {
-    log::debug!(target: "frontbox_core::leds", "Removing all LED declarations for {}", system_id);
+    log::debug!(target: "frontbox::led", "Removing all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       declarations.retain(|id, _| &id.system_id != system_id);
     }
@@ -233,7 +235,7 @@ impl LedSystem {
 
   /// Keep declarations but mark them as inactive so they don't render
   pub fn deactivate_by_system(&mut self, system_id: u64) {
-    log::debug!(target: "frontbox_core::leds", "Deactivating all LED declarations for {}", system_id);
+    log::debug!(target: "frontbox::led", "Deactivating all LED declarations for {}", system_id);
     for declarations in self.declarations.values_mut() {
       for (id, declaration) in declarations.iter_mut() {
         if id.system_id == system_id {
@@ -286,7 +288,7 @@ impl LedSystem {
         .unwrap_or(&LedConflictResolution::FirstWins);
 
       log::debug!(
-        target: "frontbox_core::leds",
+        target: "frontbox::led",
         "Resolving LED declaration conflict on {:?} with {:?}",
         led,
         resolution_strategy
@@ -354,7 +356,7 @@ impl System for LedSystem {
     for led in self.all_addresses.iter() {
       if let Some(declarations) = self.declarations.get(led) {
         if self.monitored.contains(&led) {
-          log::info!(target: "frontbox_core::leds", "Current declarations for LED {:?}: {:?}", led, declarations);
+          log::info!(target: "frontbox::led", "Current declarations for LED {:?}: {:?}", led, declarations);
         }
 
         // assemble a list of unique z-indexes which are defined for this LED
@@ -375,14 +377,14 @@ impl System for LedSystem {
         );
 
         if self.monitored.contains(&led) {
-          log::info!(target: "frontbox_core::leds", "Setting led {:?} to {:?}", led, final_color);
+          log::info!(target: "frontbox::led", "Setting led {:?} to {:?}", led, final_color);
         }
 
         leds_to_set.push((led.clone(), led_color(final_color)));
       } else {
         // no declarations for this LED = turn it off
         // if it's already off this will get filtered out below
-        log::trace!(target: "frontbox_core::leds", "Turning off LED at {:?}", led);
+        log::trace!(target: "frontbox::led", "Turning off LED at {:?}", led);
         leds_to_set.push((led.clone(), Rgb::black()));
       }
     }
@@ -396,7 +398,7 @@ impl System for LedSystem {
         }
       }
       self.prior_render.insert(led.clone(), *color);
-      log::debug!(target: "frontbox_core::leds", "Setting LED at {:?} to {:?}", led, color);
+      log::debug!(target: "frontbox::led", "Setting LED at {:?} to {:?}", led, color);
       true
     });
 

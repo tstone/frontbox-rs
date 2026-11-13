@@ -46,7 +46,7 @@ pub(crate) async fn after_failed_attempt(
   if !error.is_retryable() || attempt >= max_attempts {
     return Err(error);
   }
-  log::warn!("🥾 {error} (attempt {attempt} of {max_attempts}), retrying...");
+  log::warn!(target: "frontbox::machine::boot", "🥾 {error} (attempt {attempt} of {max_attempts}), retrying...");
   tokio::time::sleep(RETRY_DELAY).await;
   Ok(())
 }
@@ -111,7 +111,7 @@ async fn open(port_path: &'static str) -> Result<SerialInterface, BootError> {
       port: port_path.into(),
       reason: e.to_string(),
     })?;
-  log::info!("🥾 Opened port {}", port_path);
+  log::info!(target: "frontbox::machine::boot", "🥾 Opened port {}", port_path);
   Ok(port)
 }
 
@@ -138,10 +138,10 @@ pub async fn handshake(io_port: &mut SerialInterface) -> Result<String, BootErro
     )
     .await;
   if let Err(e) = BootError::processed(|| "Configuring the mainboard".into(), result) {
-    log::warn!("{e}");
+    log::warn!(target: "frontbox::machine::boot", "{e}");
   }
 
-  log::info!("🥾 Mainboard is ready");
+  log::info!(target: "frontbox::machine::boot", "🥾 Mainboard is ready");
   Ok(mainboard_name)
 }
 
@@ -156,7 +156,7 @@ pub async fn verify_watchdog(io_port: &mut SerialInterface) -> Result<(), BootEr
       .await
     {
       Ok(WatchdogResponse::Processed) => {
-        log::info!("🥾 Watchdog is ready");
+        log::info!(target: "frontbox::machine::boot", "🥾 Watchdog is ready");
         return Ok(());
       }
       Err(SerialError::Lost) => {
@@ -183,6 +183,7 @@ pub async fn configure_switches(
         SwitchReportingMode::ReportNormal
       };
       log::info!(
+        target: "frontbox::machine::boot",
         "Configuring switch {} with {:?}",
         switch.definition.name,
         config
@@ -202,7 +203,7 @@ pub async fn configure_switches(
         || format!("Configuring switch {}", switch.definition.name),
         result,
       ) {
-        log::warn!("{e}");
+        log::warn!(target: "frontbox::machine::boot", "{e}");
       }
     }
   }
@@ -214,7 +215,7 @@ pub async fn configure_drivers(
 ) -> Result<(), BootError> {
   for driver in state.drivers.values() {
     if let Some(mode) = state.drivers.mode(driver.name) {
-      log::info!("Configuring driver {} with {:?}", driver.name, mode);
+      log::info!(target: "frontbox::machine::boot", "Configuring driver {} with {:?}", driver.name, mode);
       let result = io_port
         .command(
           &ConfigureDriverCommand::new(driver.id, mode.to_config(state)),
@@ -222,7 +223,7 @@ pub async fn configure_drivers(
         )
         .await;
       BootError::processed(|| format!("Configuring driver {}", driver.name), result)?;
-      log::debug!("Driver {} configured successfully", driver.name);
+      log::debug!(target: "frontbox::machine::boot", "Driver {} configured successfully", driver.name);
     }
   }
   Ok(())
@@ -258,7 +259,7 @@ pub async fn reset_expansion_board(
   board: &ResolvedExpansionBoard,
 ) -> Result<(), BootError> {
   if board.breakout.is_none() {
-    log::info!("Resetting expansion board at address {:X}", board.address);
+    log::info!(target: "frontbox::machine::boot", "Resetting expansion board at address {:X}", board.address);
     let result = exp_port
       .command(
         &BoardResetCommand::new(board.address),
@@ -274,7 +275,7 @@ pub async fn reset_expansion_board(
       },
       result,
     )?;
-    log::debug!("Expansion board {:X} reset successfully", board.address);
+    log::debug!(target: "frontbox::machine::boot", "Expansion board {:X} reset successfully", board.address);
   }
   Ok(())
 }
@@ -318,6 +319,7 @@ pub async fn resolve_io_network(
         }
 
         log::info!(
+          target: "frontbox::machine::boot",
           "Confirmed I/O node board {} {} v{} ({})",
           node_id,
           name,
@@ -381,6 +383,7 @@ pub async fn configure_led_port(
   match exp_port.command(&cmd, Duration::from_millis(250)).await {
     Ok(ProcessedResponse::Processed) => {
       log::debug!(
+        target: "frontbox::machine::boot",
         "LED port {} on board {:X} configured with {} LEDs from {}",
         port_index + 1,
         board.address,
@@ -390,6 +393,7 @@ pub async fn configure_led_port(
     }
     Ok(ProcessedResponse::Failed) => {
       log::warn!(
+        target: "frontbox::machine::boot",
         "LED port {} on board {:X} configuration ({} LEDs from {}) failed; its LEDs may be misaddressed",
         port_index + 1,
         board.address,
@@ -399,6 +403,7 @@ pub async fn configure_led_port(
     }
     Err(e) => {
       log::warn!(
+        target: "frontbox::machine::boot",
         "Error configuring LED port {} on board {:X}: {}; its LEDs may be misaddressed",
         port_index + 1,
         board.address,

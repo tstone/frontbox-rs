@@ -37,7 +37,7 @@ pub trait System: Any {
   /// step is done, now or later. See [routines](crate::systems::routine)
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
     log::error!(
-      target: "frontbox_core::routines",
+      target: "frontbox::routines",
       "{} is listed in a routine but doesn't implement `on_routine`; completing its step",
       type_name::<Self>()
     );

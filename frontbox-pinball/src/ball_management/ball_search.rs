@@ -85,7 +85,7 @@ impl BallSearchSystem {
 
   fn ball_seen(&mut self, ctx: &SystemContext) {
     if self.is_searching() {
-      log::info!(target: "frontbox_core::ball_search", "Ball found, ending the search");
+      log::info!(target: "frontbox::ball_management::ball_search", "Ball found, ending the search");
       self.stop_search(ctx);
     }
     self.restart_delay(ctx);
@@ -132,7 +132,7 @@ impl BallSearchSystem {
       self.restart_delay(ctx);
       return;
     }
-    log::info!(target: "frontbox_core::ball_search", "No switch hit with a ball in play, starting a ball search");
+    log::info!(target: "frontbox::ball_management::ball_search", "No switch hit with a ball in play, starting a ball search");
     ctx.metrics.inc(&metrics::BALL_SEARCHES);
     self.start_round(ctx);
   }
@@ -196,7 +196,7 @@ impl BallSearchSystem {
   }
 
   fn give_up(&mut self, ctx: &SystemContext) {
-    log::warn!(target: "frontbox_core::ball_search", "Ball search gave up after {} rounds", self.rounds);
+    log::warn!(target: "frontbox::ball_management::ball_search", "Ball search gave up after {} rounds", self.rounds);
     let in_play = ctx
       .systems
       .get::<BallManager>()

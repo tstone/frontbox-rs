@@ -157,6 +157,7 @@ impl Neuron {
           let _ = self.machine_sender.send(again);
         } else {
           log::warn!(
+            target: "frontbox::machine",
             "🐶 The watchdog command failed {} times in a row, waiting for the next one",
             self.watchdog_failures
           );
@@ -212,9 +213,9 @@ impl Neuron {
           Err(e) => {
             // the first failure says why, and the rest repeat it until the hardware is back
             if attempt == 1 {
-              log::warn!("🔌 Couldn't reconnect to the machine ({e}), retrying until it's back");
+              log::warn!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), retrying until it's back");
             } else {
-              log::debug!("🔌 Couldn't reconnect to the machine ({e}), attempt {attempt}");
+              log::debug!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), attempt {attempt}");
             }
             attempt += 1;
             tokio::time::sleep(delay).await;
@@ -258,12 +259,12 @@ impl Machine for Neuron {
     loop {
       self.run_connected().await;
 
-      log::error!("🔌 Lost the connection to the machine, reconnecting...");
+      log::error!(target: "frontbox::machine", "🔌 Lost the connection to the machine, reconnecting...");
       self.app_sender.send(AppMessage::MachineDisconnected).ok();
 
       match self.reconnect().await {
         Ok(switch_states) => {
-          log::info!("🔌 Reconnected to the machine");
+          log::info!(target: "frontbox::machine", "🔌 Reconnected to the machine");
           self
             .app_sender
             .send(AppMessage::MachineReconnected(switch_states))
@@ -271,6 +272,7 @@ impl Machine for Neuron {
         }
         Err(e) => {
           log::error!(
+            target: "frontbox::machine",
             "🔌 The machine came back different from its configuration, shutting down: {e}"
           );
           self
@@ -320,7 +322,7 @@ impl MachineBoot for Neuron {
       .unwrap_or_else(boot::boot_failed);
 
     // Insert hardware definitions into store for systems to reference
-    log::debug!("Initializing Store with hardware definitions");
+    log::debug!(target: "frontbox::machine", "Initializing Store with hardware definitions");
     let hardware = Hardware::new(
       SwitchLookup::new(setup.io_network.switches.clone(), connection.switch_states),
       DriverLookup::new(setup.io_network.drivers.clone()),

@@ -7,14 +7,14 @@ impl RunLoop {
 
     let outgoing_event = match (self.base.switches.by_id(&switch_id), state) {
       (Some(switch), SwitchState::Closed) => {
-        log::debug!(target: "frontbox_core::switches", "🎚️  Switch {} closed", switch.name);
+        log::debug!(target: "frontbox::switches", "🎚️  Switch {} closed", switch.name);
         if let Some(hits) = self.base.switches.hits_counter(switch_id) {
           self.base.metrics.inc(hits);
         }
         Some(EventBox::new(SwitchClosed::new(switch.clone())))
       }
       (Some(switch), SwitchState::Open) => {
-        log::debug!(target: "frontbox_core::switches", "🎚️  Switch {} opened", switch.name);
+        log::debug!(target: "frontbox::switches", "🎚️  Switch {} opened", switch.name);
         Some(EventBox::new(SwitchOpened::new(switch.clone())))
       }
       (None, _) => {
@@ -22,7 +22,7 @@ impl RunLoop {
         match get_native_switch_id(&switch_id, &self.base) {
           Some((board_id, local_id)) => {
             log::warn!(
-              target: "frontbox_core::switches",
+              target: "frontbox::switches",
               "Received event for unknown switch -- board: {}, id: {} -- {:?}",
               board_id,
               local_id,
@@ -32,7 +32,7 @@ impl RunLoop {
           }
           None => {
             log::warn!(
-              target: "frontbox_core::switches",
+              target: "frontbox::switches",
               "Received event for unknown switch on unknown board {} -- {:?}",
               switch_id,
               state

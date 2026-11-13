@@ -42,7 +42,7 @@ where
       if handle_active(system, &ctx, app_sender, tracer_txs) {
         Some(handler(system, &ctx))
       } else {
-        log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
+        log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
         None
       }
     })
@@ -87,7 +87,7 @@ pub(crate) fn apply_to_systems<F>(
           if handle_active(system, &ctx, app_sender, tracer_txs) {
             handler(system, &ctx);
           } else {
-            log::trace!(target: "frontbox_core::inactive", "System {} is inactive, skipping", system.id());
+            log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
           }
         });
       }

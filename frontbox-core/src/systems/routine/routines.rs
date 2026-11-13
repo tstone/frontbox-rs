@@ -50,7 +50,7 @@ impl Routines {
 
     if let Some(existing) = self.running.get(&type_id) {
       log::warn!(
-        target: "frontbox_core::routines",
+        target: "frontbox::routines",
         "Routine {} was started by {} while already running (started by {}); ignoring the second start",
         name,
         Self::describe(groups, origin),
@@ -65,10 +65,10 @@ impl Routines {
     }
 
     if !self.definitions.contains_key(&type_id) {
-      log::debug!(target: "frontbox_core::routines", "Routine {} has no definition, so it completes immediately", name);
+      log::debug!(target: "frontbox::routines", "Routine {} has no definition, so it completes immediately", name);
     }
 
-    log::debug!(target: "frontbox_core::routines", "Routine {} started by {}", name, Self::describe(groups, origin));
+    log::debug!(target: "frontbox::routines", "Routine {} started by {}", name, Self::describe(groups, origin));
     let started = into_started(event.as_ref());
     self.running.insert(
       type_id,
@@ -145,7 +145,7 @@ impl Routines {
     };
 
     log::debug!(
-      target: "frontbox_core::routines",
+      target: "frontbox::routines",
       "Routine {} halted by {}",
       routine.name,
       Self::describe(groups, caller)
@@ -171,7 +171,7 @@ impl Routines {
   ) {
     let Some((&type_id, routine)) = self.running.iter().find(|(_, routine)| routine.id == routine_id) else {
       log::debug!(
-        target: "frontbox_core::routines",
+        target: "frontbox::routines",
         "Ignoring a cancel of routine {} from system {}: it isn't running",
         routine_id,
         caller.id
@@ -181,7 +181,7 @@ impl Routines {
 
     if routine.origin != caller {
       log::warn!(
-        target: "frontbox_core::routines",
+        target: "frontbox::routines",
         "Ignoring a cancel of routine {} from {}: only its origin ({}) can cancel it",
         routine.name,
         Self::describe(groups, caller),
@@ -190,7 +190,7 @@ impl Routines {
       return;
     }
 
-    log::debug!(target: "frontbox_core::routines", "Routine {} cancelled", routine.name);
+    log::debug!(target: "frontbox::routines", "Routine {} cancelled", routine.name);
     self.complete(type_id, RoutineCompletion::Cancelled, app_sender, tracer_txs);
   }
 
@@ -198,7 +198,7 @@ impl Routines {
   fn end_step(&mut self, caller: SystemHandle, type_id: TypeId, what: &str) -> Option<&mut RunningRoutine> {
     let Some(routine) = self.running.get_mut(&type_id) else {
       log::debug!(
-        target: "frontbox_core::routines",
+        target: "frontbox::routines",
         "Ignoring a routine {} from system {}: that routine isn't running",
         what,
         caller.id
@@ -208,7 +208,7 @@ impl Routines {
 
     if !routine.current.is_some_and(|current| current == caller) {
       log::debug!(
-        target: "frontbox_core::routines",
+        target: "frontbox::routines",
         "Ignoring a {} of routine {} from system {}: it isn't the current participant",
         what,
         routine.name,
@@ -283,7 +283,7 @@ impl Routines {
           continue;
         }
         log::debug!(
-          target: "frontbox_core::routines",
+          target: "frontbox::routines",
           "Routine {}: system {} stopped mid-step, so its step counts as complete",
           routine.name,
           current.id
@@ -317,7 +317,7 @@ impl Routines {
       match Self::origin_state(routine.origin, groups, base, app_sender, tracer_txs) {
         OriginState::Despawned => {
           log::warn!(
-            target: "frontbox_core::routines",
+            target: "frontbox::routines",
             "Routine {} abandoned: its origin (system {}) was despawned",
             routine.name,
             routine.origin.id
@@ -331,7 +331,7 @@ impl Routines {
         }
         OriginState::Inactive => {
           if !routine.paused {
-            log::debug!(target: "frontbox_core::routines", "Routine {} paused: its origin is inactive", routine.name);
+            log::debug!(target: "frontbox::routines", "Routine {} paused: its origin is inactive", routine.name);
             routine.paused = true;
             tracer_txs.send(TraceEvent::RoutinePaused {
               routine: routine.name,
@@ -341,7 +341,7 @@ impl Routines {
         }
         OriginState::Active => {
           if routine.paused {
-            log::debug!(target: "frontbox_core::routines", "Routine {} resumed", routine.name);
+            log::debug!(target: "frontbox::routines", "Routine {} resumed", routine.name);
             routine.paused = false;
             tracer_txs.send(TraceEvent::RoutineResumed {
               routine: routine.name,
@@ -368,7 +368,7 @@ impl Routines {
 
       let Some(handle) = groups.nearest(routine.scope, participant.type_id) else {
         log::debug!(
-          target: "frontbox_core::routines",
+          target: "frontbox::routines",
           "Routine {}: skipping {}, which has no instance in reach of the routine's group",
           routine.name,
           participant.name
@@ -383,7 +383,7 @@ impl Routines {
 
       if !is_system_active(handle, groups, base, app_sender, tracer_txs) {
         log::debug!(
-          target: "frontbox_core::routines",
+          target: "frontbox::routines",
           "Routine {}: skipping {}, which is inactive",
           routine.name,
           participant.name
@@ -405,7 +405,7 @@ impl Routines {
         return;
       }
 
-      log::debug!(target: "frontbox_core::routines", "Routine {}: handing to {}", routine.name, participant.name);
+      log::debug!(target: "frontbox::routines", "Routine {}: handing to {}", routine.name, participant.name);
       routine.current = Some(handle);
       tracer_txs.send(TraceEvent::RoutineStep {
         routine: routine.name,
@@ -443,7 +443,7 @@ impl Routines {
       return;
     };
 
-    log::debug!(target: "frontbox_core::routines", "Routine {} completed ({:?})", routine.name, completion);
+    log::debug!(target: "frontbox::routines", "Routine {} completed ({:?})", routine.name, completion);
     tracer_txs.send(TraceEvent::RoutineCompleted {
       routine: routine.name,
       origin: routine.origin.id,

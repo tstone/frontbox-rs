@@ -8,6 +8,7 @@ impl RunLoop {
       Some(parent) => match parent.id_by_type_id(&system.type_id()) {
         Some(existing_id) => {
           log::warn!(
+            target: "frontbox::systems",
             "Could not spawn system {} because group {} already has one ({}). Only one system of a type may run per group.",
             system.name(),
             group,
@@ -22,6 +23,7 @@ impl RunLoop {
       },
       None => {
         log::warn!(
+          target: "frontbox::systems",
           "Could not spawn system {} because group {} does not exist.",
           system.name(),
           group
@@ -34,7 +36,7 @@ impl RunLoop {
       let handle = SystemHandle::new(system_id, group);
       let mut system = self.groups.system(handle).unwrap();
       log::info!(
-        target: "frontbox_core::systems::lifecycle",
+        target: "frontbox::systems",
         "🌐 Spawned system {} ({})", system.name(), system.id());
 
       let ctx = SystemContext::new(&self.base, handle, &self.groups, &self.app_sender);
@@ -75,7 +77,7 @@ impl RunLoop {
       system.catch_panic(|system| system.on_despawn(&ctx));
 
       log::info!(
-        target: "frontbox_core::systems::lifecycle",
+        target: "frontbox::systems",
         "🌐 Despawned system {} ({})", system.name(), system.id());
 
       self.tracers.send(TraceEvent::SystemDespawned {
@@ -120,7 +122,7 @@ impl RunLoop {
   ) {
     let id = group.id();
     self.groups.insert(id, SystemGroup::owned_by(group.name(), owner));
-    log::info!("🌐 Spawned system group {} ({})", group.name(), id);
+    log::info!(target: "frontbox::systems", "🌐 Spawned system group {} ({})", group.name(), id);
 
     self.tracers.send(TraceEvent::SystemGroupSpawned {
       id,
@@ -139,7 +141,7 @@ impl RunLoop {
   /// Despawns the group and its systems, returning the handles of every system despawned
   pub(super) fn despawn_system_group(&mut self, id: GroupId) -> Vec<SystemHandle> {
     let Some(name) = self.groups.get(&id).map(|group| group.name) else {
-      log::warn!("No system group {} found, cannot despawn", id);
+      log::warn!(target: "frontbox::systems", "No system group {} found, cannot despawn", id);
       return Vec::new();
     };
 
@@ -151,13 +153,13 @@ impl RunLoop {
     self.tracers.send(TraceEvent::SystemGroupDespawned { id, name });
 
     let _ = self.groups.shift_remove(&id);
-    log::info!("🌐 Despawned system group {} ({})", name, id);
+    log::info!(target: "frontbox::systems", "🌐 Despawned system group {} ({})", name, id);
     despawned
   }
 
   pub(super) fn activate_system_group(&mut self, id: GroupId) {
     let Some(group) = self.groups.get_mut(&id) else {
-      log::warn!("No system group {} found, cannot activate", id);
+      log::warn!(target: "frontbox::systems", "No system group {} found, cannot activate", id);
       return;
     };
 
@@ -191,7 +193,7 @@ impl RunLoop {
 
   pub(super) fn deactivate_system_group(&mut self, id: GroupId) {
     let Some(group) = self.groups.get_mut(&id) else {
-      log::warn!("No system group {} found, cannot deactivate", id);
+      log::warn!(target: "frontbox::systems", "No system group {} found, cannot deactivate", id);
       return;
     };
 

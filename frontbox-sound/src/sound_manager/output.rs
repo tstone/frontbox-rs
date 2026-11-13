@@ -59,10 +59,10 @@ impl Output {
           return Err(error.to_string());
         }
         StreamError::BufferUnderrun => {
-          log::trace!(target: "frontbox_core::sound", "Audio buffer underrun")
+          log::trace!(target: "frontbox::sound", "Audio buffer underrun")
         }
         StreamError::BackendSpecific { .. } => {
-          log::warn!(target: "frontbox_core::sound", "Audio stream error: {}", error)
+          log::warn!(target: "frontbox::sound", "Audio stream error: {}", error)
         }
       }
     }
@@ -79,9 +79,9 @@ impl Output {
   }
 
   pub fn play_sfx(&mut self, key: &'static str, sound: StaticSoundData) {
-    log::debug!(target: "frontbox_core::sound", "🔊 Playing SFX '{}'", key);
+    log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
     if let Err(e) = self.manager.play(sound) {
-      log::error!(target: "frontbox_core::sound", "Failed to play SFX '{}': {:?}", key, e);
+      log::error!(target: "frontbox::sound", "Failed to play SFX '{}': {:?}", key, e);
     }
   }
 
@@ -94,7 +94,7 @@ impl Output {
     follows_on: bool,
   ) -> Option<StaticSoundHandle> {
     let Some(sound) = sounds.get(request.key()).cloned() else {
-      log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found", request.key());
+      log::error!(target: "frontbox::sound", "🗣️ Callout with key '{}' not found", request.key());
       return None;
     };
     let mut line = vec![sound];
@@ -102,7 +102,7 @@ impl Output {
       match sounds.get(key) {
         Some(sound) => line.push(sound.clone()),
         None => {
-          log::error!(target: "frontbox_core::sound", "🗣️ Callout with key '{}' not found, in line '{}'", key, request.key())
+          log::error!(target: "frontbox::sound", "🗣️ Callout with key '{}' not found, in line '{}'", key, request.key())
         }
       }
     }
@@ -117,7 +117,7 @@ impl Output {
     if let Some(lead_in) = lead_in {
       delay = lead_in.duration();
       if let Err(e) = self.callout_track.play(lead_in) {
-        log::error!(target: "frontbox_core::sound", "Failed to play callout lead-in: {:?}", e);
+        log::error!(target: "frontbox::sound", "Failed to play callout lead-in: {:?}", e);
       }
     }
 
@@ -130,7 +130,7 @@ impl Output {
       {
         Ok(handle) => last = Some(handle),
         Err(e) => {
-          log::error!(target: "frontbox_core::sound", "Failed to play callout sound: {:?}", e)
+          log::error!(target: "frontbox::sound", "Failed to play callout sound: {:?}", e)
         }
       }
       delay += duration;
@@ -149,13 +149,13 @@ impl Output {
     let sound = match StaticSoundData::from_file(path) {
       Ok(sound) => sound,
       Err(e) => {
-        log::error!(target: "frontbox_core::sound", "🎵 Failed to load music {}: {:?}", path.display(), e);
+        log::error!(target: "frontbox::sound", "🎵 Failed to load music {}: {:?}", path.display(), e);
         return false;
       }
     };
     match self.music_track.play(sound) {
       Ok(music) => {
-        log::info!(target: "frontbox_core::sound", "🎵 Playing music {}", path.display());
+        log::info!(target: "frontbox::sound", "🎵 Playing music {}", path.display());
         if let Some(mut old_music) = self.active_music.replace(music) {
           old_music.stop(Tween {
             duration: crossfade,
@@ -165,7 +165,7 @@ impl Output {
         true
       }
       Err(e) => {
-        log::error!(target: "frontbox_core::sound", "🎵 Failed to play music {}: {:?}", path.display(), e);
+        log::error!(target: "frontbox::sound", "🎵 Failed to play music {}: {:?}", path.display(), e);
         false
       }
     }

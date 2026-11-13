@@ -73,6 +73,7 @@ impl<'a> ServiceContext<'a> {
   /// `SystemContext`
   pub(crate) fn emit<E: Event>(&self, sender: u64, event: E) {
     log::debug!(
+      target: "frontbox::events",
       "📨 Emitting event {} {:?}",
       type_name::<E>(),
       event.type_id()
@@ -93,7 +94,7 @@ impl<'a> ServiceContext<'a> {
       Ok(system) => system,
       Err(busy) => {
         let caller = self.groups.system_name(handle).unwrap_or("<unknown>");
-        log::error!("{caller} looked up {}, which is already in use: {busy}", busy.name);
+        log::error!(target: "frontbox::events", "{caller} looked up {}, which is already in use: {busy}", busy.name);
         None
       }
     }

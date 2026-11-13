@@ -81,7 +81,7 @@ impl HighScoresSystem {
 
   fn write(&self) {
     if let Err(e) = toml::save(&self.path, self) {
-      log::error!("Failed to save high scores to {}: {e}", self.path);
+      log::error!(target: "frontbox::high_scores", "Failed to save high scores to {}: {e}", self.path);
     }
   }
 }

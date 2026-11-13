@@ -15,10 +15,11 @@ impl RunLoop {
 
   pub(super) fn create_cue(&self, handle: SystemHandle, cue_id: u64, cue: Cue, signals: Vec<Box<dyn Event>>) {
     if let Some(mut system) = self.groups.system(handle) {
-      log::debug!("Creating cue for {} ({})", system.name(), handle.id);
+      log::debug!(target: "frontbox::cues", "Creating cue for {} ({})", system.name(), handle.id);
       system.create_cue(cue, cue_id, signals);
     } else {
       log::warn!(
+        target: "frontbox::cues",
         "Cueing: No system found with ID {}, cannot create cue {:?}",
         handle.id,
         cue
@@ -31,6 +32,7 @@ impl RunLoop {
       system.cancel_cue(cue_id);
     } else {
       log::warn!(
+        target: "frontbox::cues",
         "No system found with ID {}, cannot cancel cue with ID {}",
         handle.id,
         cue_id

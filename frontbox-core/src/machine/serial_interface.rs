@@ -47,7 +47,7 @@ impl SerialInterface {
 
     // poll reader until there is no unexpected messages
     // this also clears out anything that was from a prior run
-    log::trace!("Draining serial buffer on {} before continuing", port_path);
+    log::trace!(target: "frontbox::machine::serial", "Draining serial buffer on {} before continuing", port_path);
     let drain_timeout = Duration::from_millis(300); // Adjust as needed
     loop {
       match tokio::time::timeout(drain_timeout, framed_reader.next()).await {
@@ -81,7 +81,7 @@ impl SerialInterface {
   /// Give up on the port after a read or write failed
   fn disconnected(&mut self, reason: impl Display) {
     if self.stream.take().is_some() {
-      log::error!(target: "frontbox_core::serial", "🔌 Lost {}: {}", self.port_name, reason);
+      log::error!(target: "frontbox::machine::serial", "🔌 Lost {}: {}", self.port_name, reason);
     }
   }
 
@@ -125,7 +125,7 @@ impl SerialInterface {
       let expired = now.duration_since(r.received_at) > self.response_ttl;
       if expired {
         log::trace!(
-          target: "frontbox_core::serial",
+          target: "frontbox::machine::serial",
           "Expiring unclaimed queue response: {}:{}",
           r.raw.prefix,
           r.raw.payload
@@ -145,9 +145,9 @@ impl SerialInterface {
     match stream.reader.next().await {
       Some(Ok(raw)) => {
         if raw.prefix == "WD" {
-          log::trace!(target: "frontbox_core::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+          log::trace!(target: "frontbox::machine::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
         } else {
-          log::debug!(target: "frontbox_core::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+          log::debug!(target: "frontbox::machine::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
         }
         Ok(raw)
       }
@@ -176,9 +176,9 @@ impl SerialInterface {
     let bytes = cmd.to_bytes();
     // Logged via describe() since binary commands don't print; the log macros only evaluate it when enabled
     if bytes.starts_with(b"WD:") || bytes.starts_with(b"R") {
-      log::trace!(target: "frontbox_core::serial", "🖥️ -> 👾 : {}", cmd.describe());
+      log::trace!(target: "frontbox::machine::serial", "🖥️ -> 👾 : {}", cmd.describe());
     } else {
-      log::debug!(target: "frontbox_core::serial", "🖥️ -> 👾 : {}", cmd.describe());
+      log::debug!(target: "frontbox::machine::serial", "🖥️ -> 👾 : {}", cmd.describe());
     }
 
     self.send(&bytes).await
