@@ -230,7 +230,7 @@ mod tests {
     fn game_state(&self) -> Option<&GameState> {
       None
     }
-    fn add_points(&mut self, _points: u32, _ctx: &ServiceContext) {}
+    fn add_points(&mut self, _points: u64, _ctx: &ServiceContext) {}
     fn set_multiplier(&mut self, _multiplier: f32) {}
     fn clear_multiplier(&mut self) {}
     fn grant_extra_ball(&mut self, _ctx: &ServiceContext) -> bool {

@@ -31,7 +31,7 @@ pub static BALL_TIME: LazyLock<Sample<Duration>> = LazyLock::new(|| {
   .category("Games")
 });
 
-pub static FINAL_SCORE: LazyLock<Sample<u32>> = LazyLock::new(|| {
+pub static FINAL_SCORE: LazyLock<Sample<u64>> = LazyLock::new(|| {
   Sample::new("Final Score", "Each player's score at the end of a game")
     .key("final_score")
     .category("Games")

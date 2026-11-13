@@ -29,7 +29,7 @@ impl HighScoresSystem {
     &self.custom_scores
   }
 
-  pub fn set_custom_score(&mut self, key: impl Into<String>, name: String, score: u32) {
+  pub fn set_custom_score(&mut self, key: impl Into<String>, name: String, score: u64) {
     self
       .custom_scores
       .insert(key.into(), ScoreEntry { name, score });
@@ -40,7 +40,7 @@ impl HighScoresSystem {
     &self.high_scores
   }
 
-  pub fn set_high_score(&mut self, slot: HighScoreSlot, name: String, score: u32) {
+  pub fn set_high_score(&mut self, slot: HighScoreSlot, name: String, score: u64) {
     let entry = ScoreEntry { name, score };
     match slot {
       HighScoreSlot::GrandChampion => self.high_scores[0] = entry,
@@ -53,7 +53,7 @@ impl HighScoresSystem {
   }
 
   /// Check if the given score is a new high score
-  pub fn is_high_score(&self, score: u32) -> Option<HighScoreSlot> {
+  pub fn is_high_score(&self, score: u64) -> Option<HighScoreSlot> {
     let scores = (0..4)
       .map(|i| {
         self
@@ -130,7 +130,7 @@ pub enum HighScoreSlot {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ScoreEntry {
   pub name: String,
-  pub score: u32,
+  pub score: u64,
 }
 
 #[cfg(test)]

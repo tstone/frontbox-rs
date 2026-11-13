@@ -11,7 +11,7 @@ pub trait GameManagementExt {
   fn tilt(&self);
 
   /// Add points to the current player/team
-  fn add_points(&self, points: u32);
+  fn add_points(&self, points: u64);
   /// Set points multiplier for current player/team
   fn set_multiplier(&self, multiplier: f32);
   /// Clear points multiplier for current player/team
@@ -31,7 +31,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
     });
   }
 
-  fn add_points(&self, points: u32) {
+  fn add_points(&self, points: u64) {
     let ctx = self;
     with_game_manager(self, |manager| {
       manager.add_points(points, ctx.into());

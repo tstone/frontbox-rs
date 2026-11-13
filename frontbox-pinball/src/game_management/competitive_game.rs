@@ -506,7 +506,7 @@ impl CompetitiveGame {
   }
 
   /// Each player's score, in player order
-  fn scores(&self) -> Vec<(&'static str, u32)> {
+  fn scores(&self) -> Vec<(&'static str, u64)> {
     match &self.game_state {
       Some(GameState::Competitive {
         player_scores,
@@ -713,16 +713,17 @@ impl GameManagement for CompetitiveGame {
     }
   }
 
-  fn add_points(&mut self, points: u32, ctx: &ServiceContext) {
+  fn add_points(&mut self, points: u64, ctx: &ServiceContext) {
     if self.tilted {
       log::debug!(target: "frontbox_core::game_manager", "{} points ignored, the turn was tilted", points);
       return;
     }
     if let Some(game_state) = &mut self.game_state {
       let multiplier = game_state.current_player_multiplier();
-      let points_received = (points as f32 * multiplier) as u32;
+      // f64 holds integers exactly up to 2^53, so an award isn't rounded at a multiplier of 1.0
+      let points_received = (points as f64 * multiplier as f64) as u64;
       if let Some(score) = game_state.player_score_mut(game_state.current_player()) {
-        *score += points_received;
+        *score = score.saturating_add(points_received);
         let total_points = *score;
 
         // Emit event with points added information
@@ -930,7 +931,7 @@ mod tests {
         .collect()
     }
 
-    fn score(&self) -> u32 {
+    fn score(&self) -> u64 {
       self.game.scores()[0].1
     }
 
@@ -1335,6 +1336,21 @@ mod tests {
     f.serve();
     f.game.add_points(10, &f.ctx.svc_ctx());
     assert_eq!(f.score(), 110, "the next turn scores");
+  }
+
+  #[test]
+  fn a_large_award_is_not_rounded() {
+    let mut f = Fixture::playing(3);
+    f.game.add_points(5_000_000_001, &f.ctx.svc_ctx());
+    assert_eq!(f.score(), 5_000_000_001);
+  }
+
+  #[test]
+  fn the_score_stops_at_the_maximum() {
+    let mut f = Fixture::playing(3);
+    f.game.add_points(u64::MAX, &f.ctx.svc_ctx());
+    f.game.add_points(100, &f.ctx.svc_ctx());
+    assert_eq!(f.score(), u64::MAX);
   }
 
   #[test]

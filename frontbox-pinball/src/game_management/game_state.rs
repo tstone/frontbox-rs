@@ -7,7 +7,7 @@ pub enum GameState {
     current_player: u8,
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
-    player_scores: Vec<u32>,
+    player_scores: Vec<u64>,
     player_extra_balls: Vec<u8>,
     player_extra_balls_granted: Vec<u8>,
   },
@@ -20,7 +20,7 @@ pub enum GameState {
     current_team: u8,
     player_turns: Vec<u8>,
     player_multiplier: Vec<f32>,
-    player_scores: Vec<u32>,
+    player_scores: Vec<u64>,
     player_extra_balls: Vec<u8>,
     player_extra_balls_granted: Vec<u8>,
   },
@@ -47,7 +47,7 @@ impl GameState {
     }
   }
 
-  pub fn current_player_score(&self) -> Option<u32> {
+  pub fn current_player_score(&self) -> Option<u64> {
     match self {
       GameState::Competitive {
         current_player,
@@ -175,14 +175,14 @@ impl GameState {
     }
   }
 
-  pub fn player_score(&self, player_index: u8) -> Option<&u32> {
+  pub fn player_score(&self, player_index: u8) -> Option<&u64> {
     match self {
       GameState::Competitive { player_scores, .. } => player_scores.get(player_index as usize),
       GameState::Cooperative { player_scores, .. } => player_scores.get(player_index as usize),
     }
   }
 
-  pub(crate) fn player_score_mut(&mut self, player_index: u8) -> Option<&mut u32> {
+  pub(crate) fn player_score_mut(&mut self, player_index: u8) -> Option<&mut u64> {
     match self {
       GameState::Competitive { player_scores, .. } => player_scores.get_mut(player_index as usize),
       GameState::Cooperative { player_scores, .. } => player_scores.get_mut(player_index as usize),
@@ -196,7 +196,7 @@ impl GameState {
     }
   }
 
-  pub fn team_score(&self, team_index: u8) -> Option<u32> {
+  pub fn team_score(&self, team_index: u8) -> Option<u64> {
     match self {
       GameState::Competitive { .. } => None,
       GameState::Cooperative {
@@ -204,7 +204,7 @@ impl GameState {
         player_scores,
         ..
       } => {
-        let team_score: u32 = player_team_map
+        let team_score: u64 = player_team_map
           .iter()
           .filter(|(_, team)| *team == &team_index)
           .filter_map(|(&player_index, _)| player_scores.get(player_index as usize))

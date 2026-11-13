@@ -34,7 +34,7 @@ pub struct GameStarting;
 #[derive(serde::Serialize, Event, Clone)]
 pub struct GameEnding {
   /// Each player's final score, in player order
-  pub scores: Vec<(&'static str, u32)>,
+  pub scores: Vec<(&'static str, u64)>,
   pub reason: GameEndReason,
 }
 
@@ -172,12 +172,12 @@ pub struct PlayerAdded;
 #[derive(serde::Serialize, Event)]
 pub struct PointsAdded {
   pub player_index: u8,
-  pub points_received: u32,
-  pub total_points: u32,
+  pub points_received: u64,
+  pub total_points: u64,
 }
 
 impl PointsAdded {
-  pub fn new(player_index: u8, points_received: u32, total_points: u32) -> Self {
+  pub fn new(player_index: u8, points_received: u64, total_points: u64) -> Self {
     Self {
       player_index,
       points_received,
