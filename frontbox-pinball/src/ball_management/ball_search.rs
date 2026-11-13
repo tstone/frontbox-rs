@@ -78,9 +78,7 @@ impl BallSearchSystem {
   }
 
   fn restart_delay(&mut self, ctx: &SystemContext) {
-    if let Some(cue_id) = self.delay_cue.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.delay_cue.take());
     let delay = ctx.config.get(&configs::BALL_SEARCH_DELAY);
     self.delay_cue = Some(ctx.cues.start(SearchDelayElapsed, delay.once()));
   }
@@ -96,15 +94,9 @@ impl BallSearchSystem {
   /// Also stops the round in progress, wherever it's at: in the routine, or firing coils
   fn stop_search(&mut self, ctx: &SystemContext) {
     self.rounds = 0;
-    if let Some(cue_id) = self.round_cue.take() {
-      ctx.cues.cancel(cue_id);
-    }
-    if let Some(routine_id) = self.routine_id.take() {
-      ctx.routines.cancel(routine_id);
-    }
-    if let Some(cue_id) = self.coil_cue.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.round_cue.take());
+    ctx.routines.cancel(self.routine_id.take());
+    ctx.cues.cancel(self.coil_cue.take());
     self.coils_to_fire.clear();
   }
 

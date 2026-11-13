@@ -188,10 +188,8 @@ impl CompetitiveGame {
 
   fn set_turn_phase(&mut self, turn_phase: TurnPhase, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    if turn_phase != TurnPhase::Active
-      && let Some(cue_id) = self.in_play_check_cue.take()
-    {
-      ctx.cues.cancel(cue_id);
+    if turn_phase != TurnPhase::Active {
+      ctx.cues.cancel(self.in_play_check_cue.take());
     }
     self.turn_phase = turn_phase;
     ctx.states.set(turn_phase);
@@ -503,9 +501,7 @@ impl CompetitiveGame {
 
   /// The balls from the last game came home, or stopped being waited for
   fn balls_returned(&mut self, ctx: &ServiceContext) {
-    if let Some(cue_id) = self.ball_return_cue.take() {
-      ctx.for_system(self.handle).cues.cancel(cue_id);
-    }
+    ctx.for_system(self.handle).cues.cancel(self.ball_return_cue.take());
     self.update_player_entry(ctx);
   }
 

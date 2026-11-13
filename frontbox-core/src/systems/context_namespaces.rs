@@ -120,8 +120,11 @@ impl<'a> ContextCues<'a> {
     self.ctx.cue_cycling(self.handle, signals, cue)
   }
 
-  pub fn cancel(&self, cue_id: u64) {
-    self.ctx.cancel_cue(self.handle, cue_id);
+  /// Cancel a cue this system started. Takes an id or an `Option` of one, and does nothing for `None`.
+  pub fn cancel(&self, cue_id: impl Into<Option<u64>>) {
+    if let Some(cue_id) = cue_id.into() {
+      self.ctx.cancel_cue(self.handle, cue_id);
+    }
   }
 }
 
@@ -153,9 +156,12 @@ impl<'a> ContextRoutines<'a> {
 
   /// Stop a routine this system started, wherever it's at. The participant whose step is in progress isn't told, and
   /// no one after it takes a step. [`RoutineCompleted<E>`] is broadcast with `RoutineCompletion::Cancelled`. Does
-  /// nothing once the routine has completed, or if another system started it.
-  pub fn cancel(&self, routine_id: u64) {
-    self.ctx.cancel_routine(self.handle, routine_id);
+  /// nothing once the routine has completed, or if another system started it. Takes an id or an `Option` of one, and
+  /// does nothing for `None`.
+  pub fn cancel(&self, routine_id: impl Into<Option<u64>>) {
+    if let Some(routine_id) = routine_id.into() {
+      self.ctx.cancel_routine(self.handle, routine_id);
+    }
   }
 
   /// End this system's step in the routine for `E`, handing it to the next participant

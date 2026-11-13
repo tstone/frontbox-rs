@@ -97,15 +97,11 @@ impl SwitchComboSystem {
 
   fn on_member_opened(&mut self, ctx: &SystemContext) {
     self.fired = false;
-    if let Some(cue_id) = self.hold_cue.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.hold_cue.take());
 
     if self.closed_count(ctx) == 0 {
       self.window_started = false;
-      if let Some(cue_id) = self.window_cue.take() {
-        ctx.cues.cancel(cue_id);
-      }
+      ctx.cues.cancel(self.window_cue.take());
     }
   }
 

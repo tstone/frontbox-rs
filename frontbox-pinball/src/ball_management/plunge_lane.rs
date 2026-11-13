@@ -71,10 +71,7 @@ impl PlungeLaneSystem {
   }
 
   fn cancel_cue(&mut self, ctx: &SystemContext) {
-    if let Some(cue_id) = self.wait_cue_id {
-      ctx.cues.cancel(cue_id);
-      self.wait_cue_id = None;
-    }
+    ctx.cues.cancel(self.wait_cue_id.take());
   }
 
   fn on_lane_switch_closed(&mut self, ctx: &SystemContext) {

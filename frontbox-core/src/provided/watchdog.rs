@@ -38,10 +38,7 @@ impl WatchdogSystem {
     log::info!(target: "frontbox_core::watchdog", "🐶 Disabling watchdog");
     ctx.systems.expect::<MachineSystem>().clear_watchdog();
 
-    if let Some(handle) = &self.cue_handle {
-      ctx.cues.cancel(*handle);
-      self.cue_handle = None;
-    }
+    ctx.cues.cancel(self.cue_handle.take());
   }
 }
 

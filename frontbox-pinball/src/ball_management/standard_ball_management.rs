@@ -261,9 +261,7 @@ impl StandardBallManagement {
       ..
     } = &mut self.eject_state
     {
-      if let Some(cue_id) = arrival_cue_id.take() {
-        ctx.cues.cancel(cue_id);
-      }
+      ctx.cues.cancel(arrival_cue_id.take());
       *arrival_cue_id = Some(ctx.cues.start(LaneArrivalTimedOut, timeout.once()));
       *was_kicked = kicked;
     }
@@ -279,9 +277,7 @@ impl StandardBallManagement {
     else {
       return None;
     };
-    if let Some(cue_id) = arrival_cue_id {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(arrival_cue_id);
     self.eject_state = EjectState::Idle;
     ball
   }
@@ -390,9 +386,7 @@ impl StandardBallManagement {
     else {
       return;
     };
-    if let Some(cue_id) = self.launch_verify_cue_id.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.launch_verify_cue_id.take());
     self.launch_verify_cue_id = Some(ctx.cues.start(VerifyLaunch, time.once()));
   }
 
@@ -428,9 +422,7 @@ impl StandardBallManagement {
   }
 
   fn end_launch_verification(&mut self, ctx: &SystemContext) {
-    if let Some(cue_id) = self.launch_verify_cue_id.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.launch_verify_cue_id.take());
     self.launch_retries = 0;
   }
 
