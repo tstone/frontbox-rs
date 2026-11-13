@@ -1,3 +1,5 @@
+mod dmd_device;
+mod dmd_manager;
 mod dmd_scene;
 mod dmd_system;
 mod initials_entry_system;
@@ -7,6 +9,7 @@ mod pixel_font;
 mod sprite_sheet;
 mod text_formatting;
 
+pub use dmd_device::*;
 pub use dmd_scene::*;
 pub use dmd_system::*;
 pub use initials_entry_system::*;

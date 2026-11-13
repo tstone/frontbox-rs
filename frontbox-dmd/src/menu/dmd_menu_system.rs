@@ -539,6 +539,7 @@ impl System for DmdMenuSystem {
     {
       let size = *dmd.size();
       dmd.insert_layer(0, self.draw(&size).default_position());
+      self.requires_render = false;
     }
   }
 

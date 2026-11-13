@@ -11,6 +11,7 @@
 //! 6. [Choreograph](mod@crate::systems::cue) something.
 
 pub mod app;
+mod connection_retry;
 mod duration_ext;
 pub mod hardware;
 pub mod location;
@@ -24,6 +25,7 @@ pub mod systems;
 pub mod testing;
 pub mod toml;
 
+pub use connection_retry::connection_retry_wait;
 pub use hardware::tags;
 
 // frontbox-core/src/lib.rs

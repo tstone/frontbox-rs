@@ -69,7 +69,6 @@
 
 ## DMD
 
-- DmdSystem becomes an interface
 - DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
 - DmdSystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)

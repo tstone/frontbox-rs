@@ -1,6 +1,15 @@
-use frontbox_gfx::canvas::Size;
-use rusb::UsbContext;
 use std::time::Duration;
+
+use frontbox_gfx::canvas::Size;
+use image::Rgb;
+use rusb::UsbContext;
+
+use crate::DmdDevice;
+
+const VENDOR_ID: u16 = 0x0314;
+const PRODUCT_ID: u16 = 0xE457;
+/// A frame takes a few milliseconds to send. Longer than this means the device has stalled.
+const WRITE_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Derived from Mission Pinball Framework PIN2DMD driver
 /// https://github.com/missionpinball/mpf
@@ -24,59 +33,28 @@ pub enum PanelType {
   Rgb,
   Rbg,
 }
+
+/// A PIN2DMD display connected over USB
 pub struct Pin2Dmd {
-  handle: rusb::DeviceHandle<rusb::Context>,
+  handle: Option<rusb::DeviceHandle<rusb::Context>>,
   panel: PanelType,
-  pub size: Size<u32>,
+  size: Size<u32>,
   elements: usize,
 }
 
 impl Pin2Dmd {
-  pub fn connect(width: u32, height: u32, panel: PanelType) -> rusb::Result<Self> {
-    let context = rusb::Context::new()?;
-    let device = context
-      .devices()?
-      .iter()
-      .find(|d| {
-        let desc = d.device_descriptor().unwrap();
-        desc.vendor_id() == 0x0314 && desc.product_id() == 0xE457
-      })
-      .expect("PIN2DMD not found");
-
-    let handle = device.open()?;
-    handle.claim_interface(0)?;
-    Ok(Self {
-      handle,
+  /// The device is opened once [`DmdSystem`](crate::DmdSystem) spawns
+  pub fn new(width: u32, height: u32, panel: PanelType) -> Self {
+    Self {
+      handle: None,
       panel,
       size: Size::new(width, height),
       elements: width as usize * height as usize / 2,
-    })
+    }
   }
 
-  /// `pixels` is WIDTH*HEIGHT*3 bytes, RGB order, row-major, top-left to bottom-right.
-  pub fn render(&mut self, pixels: &[u8]) -> rusb::Result<()> {
-    let buf = self.pack_rgb24(pixels, self.panel);
-    self
-      .handle
-      .write_bulk(0x01, &buf, Duration::from_millis(2000))?;
-    Ok(())
-  }
-
-  pub fn clear(&mut self) -> rusb::Result<()> {
-    let pixels = vec![0u8; self.size.width as usize * self.size.height as usize * 3];
-    self.render(&pixels)
-  }
-
-  /// pack an RGB24 frame into the PIN2DMD wire format
-  pub fn pack_rgb24(&self, pixels: &[u8], panel: PanelType) -> Vec<u8> {
-    let expected_len = self.size.width * self.size.height * 3;
-    assert_eq!(
-      pixels.len() as u32,
-      expected_len,
-      "Expected {} pixels to render PIN2DMD but received {}",
-      expected_len,
-      pixels.len()
-    );
+  /// Pack a frame into the PIN2DMD wire format
+  fn pack(&self, pixels: &[Rgb<u8>]) -> Vec<u8> {
     let mut buf = vec![0u8; self.elements * 6 + 4];
     buf[0] = 0x81;
     buf[1] = 0xC3;
@@ -84,26 +62,14 @@ impl Pin2Dmd {
     buf[3] = 18;
 
     for i in 0..self.elements {
-      let idx = i * 3;
+      // each element carries a pixel from the top half and the one at the same place in the bottom half
+      let Rgb([r, g, b]) = pixels[i];
+      let Rgb([rl, gl, bl]) = pixels[self.elements + i];
 
       // Select channel order based on panel type, matching MPF rgb/rbg logic
-      let (pr, pg, pb, prl, pgl, pbl) = match panel {
-        PanelType::Rgb => (
-          pixels[idx],
-          pixels[idx + 1],
-          pixels[idx + 2],
-          pixels[self.elements * 3 + idx],
-          pixels[self.elements * 3 + idx + 1],
-          pixels[self.elements * 3 + idx + 2],
-        ),
-        PanelType::Rbg => (
-          pixels[idx],
-          pixels[idx + 2],
-          pixels[idx + 1],
-          pixels[self.elements * 3 + idx],
-          pixels[self.elements * 3 + idx + 2],
-          pixels[self.elements * 3 + idx + 1],
-        ),
+      let (pr, pg, pb, prl, pgl, pbl) = match self.panel {
+        PanelType::Rgb => (r, g, b, rl, gl, bl),
+        PanelType::Rbg => (r, b, g, rl, bl, gl),
       };
 
       // Gamma correction
@@ -136,5 +102,44 @@ impl Pin2Dmd {
     }
 
     buf
+  }
+}
+
+impl DmdDevice for Pin2Dmd {
+  fn size(&self) -> Size<u32> {
+    self.size
+  }
+
+  fn open(&mut self) -> Result<(), String> {
+    self.handle = None;
+    let context = rusb::Context::new().map_err(|e| e.to_string())?;
+    let device = context
+      .devices()
+      .map_err(|e| format!("couldn't list USB devices: {}", e))?
+      .iter()
+      .find(|device| {
+        device
+          .device_descriptor()
+          .is_ok_and(|desc| desc.vendor_id() == VENDOR_ID && desc.product_id() == PRODUCT_ID)
+      })
+      .ok_or("no PIN2DMD connected")?;
+
+    let handle = device.open().map_err(|e| e.to_string())?;
+    handle.claim_interface(0).map_err(|e| e.to_string())?;
+    self.handle = Some(handle);
+    Ok(())
+  }
+
+  fn write(&mut self, frame: &[Rgb<u8>]) -> Result<(), String> {
+    let expected = self.size.width as usize * self.size.height as usize;
+    if frame.len() != expected {
+      return Err(format!("a frame of {} pixels, where the display has {}", frame.len(), expected));
+    }
+    let buf = self.pack(frame);
+    let handle = self.handle.as_ref().ok_or("not open")?;
+    handle
+      .write_bulk(0x01, &buf, WRITE_TIMEOUT)
+      .map_err(|e| e.to_string())?;
+    Ok(())
   }
 }

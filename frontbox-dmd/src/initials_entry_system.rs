@@ -70,16 +70,18 @@ impl InitialsEntrySystem {
     self.name.push(last_char as char);
   }
 
+  /// Accept the letter being chosen, and move on to the next or finish with the third
   fn accept(&mut self, ctx: &SystemContext) {
-    self.name.push('A');
-
-    if self.name.len() == 3 {
-      log::info!(target: "frontbox::dmd", "Initials entered: {}", self.name);
-      ctx.emit(InitialsEntered {
-        initials: self.name.clone(),
-      });
-      ctx.systems.despawn_self();
+    if self.name.len() < 3 {
+      self.name.push('A');
+      return;
     }
+
+    log::info!(target: "frontbox::dmd", "Initials entered: {}", self.name);
+    ctx.emit(InitialsEntered {
+      initials: self.name.clone(),
+    });
+    ctx.systems.despawn_self();
   }
 
   fn draw(&self) -> Container {

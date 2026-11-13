@@ -3,6 +3,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use frontbox_core::connection_retry_wait;
 use frontbox_core::prelude::*;
 use kira::sound::PlaybackState;
 use kira::sound::static_sound::StaticSoundData;
@@ -10,7 +11,7 @@ use tokio::sync::oneshot::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::MissedTickBehavior;
 
-use super::connection::{Connection, retry_wait};
+use super::connection::Connection;
 use super::output::{ActiveCallout, Output};
 use super::output_device::{Opened, OutputDevice};
 use super::sound_manager_message::SoundManagerMessage;
@@ -178,7 +179,7 @@ impl SoundManager {
   }
 
   fn retry_later(&mut self, failures: u32, reason: String, now: Instant) {
-    let wait = retry_wait(failures);
+    let wait = connection_retry_wait(failures);
     // the first failure is worth knowing about, then once in a while so a device that never turns up isn't silent
     if failures == 1 || failures.is_multiple_of(12) {
       log::warn!(
