@@ -9,46 +9,19 @@ Everything was found by reading.
 
 The turn lifecycle is in good shape. Routines for the turn's stages, `BallDraining` as the place drains are decided,
 extra balls as another turn, and per-player system groups all hold up, and the trough's occupancy logic is careful and
-well tested. Most of what's wrong sits in two places: where the game manager and ball management meet (no test covers
-the two together), and where ball counts stop being derived and become a guess.
+well tested. Most of what's wrong sits in two places: where the game manager and ball management meet (now covered by
+`tests/game_flow.rs`), and where ball counts stop being derived and become a guess.
 
 | # | Finding | Effect | Size of fix |
 |---|---|---|---|
-| A3 | Nothing waits for balls to come home when a game ends or starts | A turn that never ends, or a turn ended under a live ball | Small to medium |
 | A5 | The autoplunger fires once and never checks | A ball left in the lane stalls the turn or multiball | Small |
 | A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
 | A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
-| B3 | Ball counts are half derived | Root of A3; `locked_balls` is a running counter | Medium |
+| B3 | Ball counts are half derived | The game works around a guessed count; `locked_balls` is a running counter; no ball search | Medium |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
 | C | Missing pinball behavior | Credits, ball search, bonus, match, multiball, and more | Varies |
 
 ## A. Bugs
-
-### A3. Nothing waits for balls to come home
-
-`turn_ended` waits for `balls_in_play() == 0` before advancing, which is right. `quit_game` and `end_game` don't:
-the game ends with balls still rolling, and the next `start_game` establishes a count that is short by however many
-are out. From there:
-
-- A stray ball that drains while the new turn is `Starting` with its ball served is dropped: that phase handles only
-  `BallEnteredPlay` and the ball in play switches, not `BallsExitedPlay`. The count is now off by one in the other
-  direction, and the real ball's drain is reconciled as an unexpected ball, with no `BallsExitedPlay`, so the turn
-  never ends.
-- A stray ball that drains during `Active` is reported as the drain of the ball in play, and ends the turn (or uses
-  the ball save) while that ball is still live.
-
-The second is ambiguous on any machine. The first is avoidable.
-
-`waiting_for_balls` also has no time limit. A ball stuck on the playfield after a tilt, or held somewhere when
-`TurnEnding` completes, stops the game until someone opens the machine. That is the ball search item in `TODO.md`;
-this is one more place it has to run.
-
-**Fixes.**
-
-- `end_game` waits for balls the same way `turn_ended` does, with a limit, then a ball search.
-- Handle `BallsExitedPlay` in `Starting` once the ball is served.
-- A check that can't be skipped: if the turn is `Active`, no drain is being decided, and ball management reports
-  nothing in play, treat it as a drain. This closes the whole class, whatever caused the count to slip.
 
 ### A5. The autoplunger fires once and never checks
 
@@ -71,8 +44,9 @@ have left the trough, not balls requested and still queued. So `in_play == 0` at
 - A mode asks for multiball balls, and the one live ball drains before the first of them leaves the trough. Requesting
   a ball save alongside, as the docs recommend, covers this, but nothing enforces it.
 
-**Fix.** Decide on current numbers: in `drain_decided`, end the turn only if `balls_in_play() + balls_pending() == 0`,
-where `balls_pending()` is a new count of queued and unfinished ejects. Keep the snapshot in the event for display.
+**Fix.** Decide on current numbers: in `drain_decided`, end the turn only if `balls_in_play() == 0` and
+`!ejects_pending()`. `BallManagement::ejects_pending` already exists, for the game manager's check for nothing in
+play. Keep the snapshot in the event for display.
 
 ### A7. Scoring
 
@@ -121,8 +95,8 @@ variant) has to rewrite about 600 lines to change one of them. `GameState` shows
 
 `CompetitiveGame` has `turn_phase` and `game_phase`, plus `ball_served`, `draining`, `tilted`, and
 `waiting_for_balls`. Each flag only means something in one phase, and `start_turn`, `tilt`, and `start_game_ending`
-each reset a different subset. The dropped drain in A3 lives in one of those combinations (`Starting` with
-`ball_served`).
+each reset a different subset. Since then, `in_play_check_cue`, `found_no_ball_in_play`, and `ball_return_cue`
+have joined them.
 
 **Suggestion.** Keep the public `TurnPhase` state as it is, and hold a private enum with the detail inside it:
 `Starting { served }`, `Active { deciding_drain }`, `Ending { routine_completed }`. The match in `on_event` then
@@ -132,8 +106,9 @@ has to say what each one does with each event.
 
 `AGENTS.md` says counts are derived from what the hardware reports. Two inputs to `in_play` aren't:
 
-- `max_balls_in_play` is whatever the trough held when the game started. That is a guess, and A3 is what happens when
-  it's wrong.
+- `max_balls_in_play` is whatever the trough held when the game started. That is a guess. The game manager now works
+  around it rather than relying on it: another game waits for the last one's balls to come home, and an active turn
+  with nothing in play is treated as a drain.
 - `locked_balls` is a running counter that any system can move, with no owner and no link to hardware. Lotko never
   calls it: its scoop holds balls without telling ball management, so a held ball counts as in play.
 
@@ -150,7 +125,10 @@ has to say what each one does with each event.
      held or locked ball is derived, so `locked_balls` goes away;
    - "Generalized systems: Scoop, lane, StartupEject" in `TODO.md`: lotko's `StartupEject` becomes "every holder
      with a ball at boot ejects it";
-   - the `BallSearching` routine's participants are the holders, plus anything else that can pulse;
+   - the `BallSearching` routine's participants are the holders, plus anything else that can pulse. The game manager
+     has two waits for it to run in: `waiting_for_balls` after `TurnEnding`, which has no limit, so a ball stuck
+     after a tilt stops the game until someone opens the machine; and the wait for balls after a game, which gives
+     up after 30 seconds;
    - timers can pause while a ball is held (section C).
 
    Lotko's `LowerScoopSystem` is most of a generic holder already: a switch, an eject coil, and holds keyed by
@@ -269,18 +247,17 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
   balls before the next turn.
 
 One thing about the tests. Game management is tested against a fake ball manager, and ball management against events
-delivered by hand. A3 and A6 are both in the gap between them. The end-to-end item in `TODO.md` is the most
-useful testing work in this crate: a real `CompetitiveGame`, `StandardBallManagement`, trough, and lane, driven only
-by switch changes. First scenarios: quit with a ball in the lane; tilt during a multiball start; a ball stuck through
-a game start; boot with a ball in the lane.
+delivered by hand. `tests/game_flow.rs` fills the gap between them: a real `CompetitiveGame`, `StandardBallManagement`,
+trough, and lane, driven only by switch changes. It now covers the lane, tilt, quit, and multiball cases. A5 and A6
+are the next scenarios for it.
 
 ## Suggested order
 
 1. The small items in A8.
 2. **A5**, with an end-to-end test that shows it first. It is contained in
    `standard_ball_management.rs` and the game manager's `on_event`.
-3. **B3** (known ball count, ball holders), then **A3** and the ball search item from `TODO.md` on top of it. This is
-   the largest piece and the one the others lean on.
-4. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
-5. **A6**, once `balls_pending()` exists from step 3.
+3. **A6**, with `ejects_pending()`.
+4. **B3** (known ball count, ball holders), then the ball search item from `TODO.md` on top of it, run from the game
+   manager's two waits for balls. This is the largest piece and the one the others lean on.
+5. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
 6. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.

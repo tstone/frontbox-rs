@@ -407,3 +407,77 @@ fn quitting_with_the_ball_in_the_lane_leaves_it_for_the_next_game() {
   assert_eq!(turns.take(), [1]);
   assert_eq!(g.ejects(), 2);
 }
+
+#[test]
+fn after_quitting_a_multiball_another_game_waits_for_the_balls_to_come_home() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+  g.hit_switch(LOCK);
+  g.serve();
+  g.serve();
+  turns.take();
+
+  g.act(|ctx| ctx.quit_game(GameEndReason::Quit));
+  assert!(g.act(|ctx| ctx.states.is(GamePhase::None)));
+  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Closed)), "three balls are still in play");
+
+  g.drain();
+  g.drain();
+  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Closed)));
+  g.drain();
+  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Open)));
+
+  g.hit_switch(START);
+  assert_eq!(turns.take(), [0]);
+  assert_eq!(g.ejects(), 4);
+}
+
+#[test]
+fn a_ball_that_never_comes_home_stops_being_waited_for() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  g.act(|ctx| ctx.quit_game(GameEndReason::Quit));
+  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Closed)));
+
+  g.advance(Duration::from_secs(31));
+  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Open)));
+}
+
+#[test]
+fn a_served_ball_that_drains_before_the_turn_goes_active_is_served_again() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let drains = g.record(|e: &RoutineStarted<BallDraining>| e.routine.count);
+
+  // A weak plunge goes straight down the drain, before the lane counts the ball as gone
+  g.hit_switch(START);
+  g.eject_into_lane();
+  g.open_switch(PLUNGE);
+  g.drain();
+  assert!(drains.take().is_empty(), "not a drain of the turn's ball");
+  g.advance(ms(1000));
+  assert_eq!(g.ejects(), 2, "served again");
+
+  g.serve();
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(turns.take(), [0, 1], "the turn wasn't used up");
+}
+
+#[test]
+fn a_turn_with_nothing_in_play_ends_even_without_a_drain_reported() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  // A lock that claims the ball without holding it leaves the count with nothing in play, and no drain to report
+  g.act(|ctx| ctx.ball_temporarily_removed_from_play());
+  g.advance(Duration::from_secs(3));
+  assert_eq!(turns.take(), [0, 1]);
+}

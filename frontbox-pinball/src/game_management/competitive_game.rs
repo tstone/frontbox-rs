@@ -10,6 +10,11 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
   "player1", "player2", "player3", "player4", "player5", "player6",
 ];
 
+/// How often an active turn checks for no ball in play without a drain having been reported
+const IN_PLAY_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+/// How long, after a game ends, another waits for balls still in play to come home
+const BALL_RETURN_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// CompetitiveGame manages the game state against players competing against each other
 ///
 ///   1. Systems are organized by player, so that each player can have their own set of systems that are active only during their turn.
@@ -24,11 +29,14 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// Each turn goes through these, in order. The routines are started in the current player's group, so their
 /// participants can be in the player template as well as at the root.
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
-///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display).
+///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display). A served ball that
+///   drains before the turn goes active is served again.
 /// - Event: `TurnActive` - Emitted once per turn, when the served ball enters play (`BallEnteredPlay`), or on the first
 ///   ball in play switch hit, whichever comes first.
 /// - Routine: `BallDraining` - Started for each drain (`BallsExitedPlay`), so its participants can save the ball. A
-///   participant halting it saves the drain. A drain while another is being decided waits its turn.
+///   participant halting it saves the drain. A drain while another is being decided waits its turn. Also started if
+///   nothing is in play for a couple of seconds and no drain was reported, so a count that slipped can't leave the
+///   turn stuck.
 /// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted, or at once
 ///   on a tilt (`tilt`, `TurnEndReason::Tilted`). Modes clean up on its `RoutineStarted`. Once it completes and no ball
 ///   is left in play, the turn advances: to the same player, if they have an extra ball to use
@@ -38,7 +46,8 @@ static PLAYER_GROUP_NAMES: [&str; 6] = [
 /// - Routine: `GameEnding` - Started at the root. The game stays started while it runs, so its participants
 ///   (high-score entry, say) can take their time without a new game starting.
 /// The game ends on `GameEnding`'s `RoutineCompleted`: the player groups are despawned and the states reset before
-/// anyone else hears it, so systems that only run outside a game hear it too.
+/// anyone else hears it, so systems that only run outside a game hear it too. If balls from it are still in play (e.g.
+/// after a quit during multiball), `PlayerEntry` stays closed until they come home, or for 30 seconds at most.
 ///
 /// ## States
 /// Set at the root, so every group reads them:
@@ -74,6 +83,13 @@ pub struct CompetitiveGame {
   tilted: bool,
   /// Whether `TurnEnding` has completed, and the turn advances once no ball is left in play
   waiting_for_balls: bool,
+  /// While the turn is active, the cue that checks for no ball in play without a drain having been reported
+  in_play_check_cue: Option<u64>,
+  /// Whether the last of those checks found no ball in play
+  found_no_ball_in_play: bool,
+  /// Set when a game ends with balls from it still in play. Player entry stays closed until they come home, or this
+  /// cue times out.
+  ball_return_cue: Option<u64>,
   /// The phase of the game, kept here for the same reason as `turn_phase`. While it's `Starting` or `Ending`, no turn
   /// moves on.
   game_phase: GamePhase,
@@ -99,6 +115,9 @@ impl CompetitiveGame {
       pending_drains: VecDeque::new(),
       tilted: false,
       waiting_for_balls: false,
+      in_play_check_cue: None,
+      found_no_ball_in_play: false,
+      ball_return_cue: None,
       game_phase: GamePhase::None,
     }
   }
@@ -162,8 +181,14 @@ impl CompetitiveGame {
   }
 
   fn set_turn_phase(&mut self, turn_phase: TurnPhase, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    if turn_phase != TurnPhase::Active
+      && let Some(cue_id) = self.in_play_check_cue.take()
+    {
+      ctx.cues.cancel(cue_id);
+    }
     self.turn_phase = turn_phase;
-    ctx.for_system(self.handle).states.set(turn_phase);
+    ctx.states.set(turn_phase);
   }
 
   fn set_game_phase(&mut self, game_phase: GamePhase, ctx: &ServiceContext) {
@@ -177,7 +202,7 @@ impl CompetitiveGame {
 
   /// Whether a player can be added right now. Others read this as `PlayerEntry`, published by `update_player_entry`.
   fn is_player_addable(&self) -> bool {
-    if self.game_phase == GamePhase::Ending {
+    if self.game_phase == GamePhase::Ending || self.ball_return_cue.is_some() {
       return false;
     }
     // if the game is started, then it must be the first player's turn on their first ball
@@ -213,6 +238,12 @@ impl CompetitiveGame {
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to active");
     self.set_turn_phase(TurnPhase::Active, ctx);
+    self.found_no_ball_in_play = false;
+    self.in_play_check_cue = Some(
+      ctx
+        .for_system(self.handle)
+        .cues.start(CheckBallsInPlay, Cue::Forever(IN_PLAY_CHECK_INTERVAL)),
+    );
     let game_state = self.game_state.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
     ctx.for_system(self.handle).emit(TurnActive::new(
@@ -236,6 +267,19 @@ impl CompetitiveGame {
       self.pending_drains.push_back(draining);
     } else {
       self.start_ball_draining(draining, ctx);
+    }
+  }
+
+  /// Catches a drain that was never reported (e.g. after the ball count slipped). With no drain being decided and no
+  /// ball on its way into play, finding nothing in play on two checks in a row is treated as a drain.
+  fn check_balls_in_play(&mut self, ctx: &ServiceContext) {
+    let none_in_play = !self.draining && self.balls_in_play(ctx) == 0 && !self.ejects_pending(ctx);
+    if none_in_play && self.found_no_ball_in_play {
+      log::warn!(target: "frontbox_core::game_manager", "No ball in play and no drain reported, treating it as a drain");
+      self.found_no_ball_in_play = false;
+      self.drained(1, 0, ctx);
+    } else {
+      self.found_no_ball_in_play = none_in_play;
     }
   }
 
@@ -311,6 +355,13 @@ impl CompetitiveGame {
       .systems.get::<BallManager>()
       .map(|ball_manager| ball_manager.balls_in_play(ctx.into()))
       .unwrap_or(0)
+  }
+
+  fn ejects_pending(&self, ctx: &ServiceContext) -> bool {
+    ctx
+      .for_system(self.handle)
+      .systems.get::<BallManager>()
+      .is_some_and(|ball_manager| ball_manager.ejects_pending())
   }
 
   fn advance_turn(&mut self, ctx: &ServiceContext) {
@@ -394,6 +445,25 @@ impl CompetitiveGame {
     self.game_state = None;
     self.set_game_phase(GamePhase::None, ctx);
     self.set_turn_phase(TurnPhase::None, ctx);
+
+    // A game started now would count too few balls, so another can't start until these come home
+    let in_play = self.balls_in_play(ctx);
+    if in_play > 0 {
+      log::info!(target: "frontbox_core::game_manager", "Waiting for {} ball(s) to come home before another game can start", in_play);
+      self.ball_return_cue = Some(
+        ctx
+          .for_system(self.handle)
+          .cues.start(BallReturnTimedOut, BALL_RETURN_TIMEOUT.once()),
+      );
+    }
+    self.update_player_entry(ctx);
+  }
+
+  /// The balls from the last game came home, or stopped being waited for
+  fn balls_returned(&mut self, ctx: &ServiceContext) {
+    if let Some(cue_id) = self.ball_return_cue.take() {
+      ctx.for_system(self.handle).cues.cancel(cue_id);
+    }
     self.update_player_entry(ctx);
   }
 
@@ -436,6 +506,17 @@ impl System for CompetitiveGame {
         }
         return;
       }
+      GamePhase::None if self.ball_return_cue.is_some() => {
+        if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>() {
+          self.balls_returned(ctx.into());
+        } else if event.is::<BallReturnTimedOut>() {
+          // they're left out of the next game's count (see `establish_ball_count`)
+          log::warn!(target: "frontbox_core::game_manager", "Balls from the last game didn't come home, no longer waiting for them");
+          self.ball_return_cue = None;
+          self.balls_returned(ctx.into());
+        }
+        return;
+      }
       GamePhase::None | GamePhase::Active => {}
     }
 
@@ -455,6 +536,10 @@ impl System for CompetitiveGame {
         {
           log::debug!(target: "frontbox_core::game_manager", "Active caused by switch: {}", e.switch.name);
           self.transition_turn_to_active(ctx.into());
+        } else if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>() {
+          // The served ball came back before the turn went active (e.g. straight down the drain from a weak plunge)
+          log::info!(target: "frontbox_core::game_manager", "Served ball drained before the turn went active, serving again");
+          self.serve_ball(ctx.into());
         }
       }
       TurnPhase::Active => {
@@ -462,6 +547,8 @@ impl System for CompetitiveGame {
           self.drained(*count, *in_play, ctx.into());
         } else if let Some(done) = event.downcast_ref::<RoutineCompleted<BallDraining>>() {
           self.drain_decided(done, ctx.into());
+        } else if event.is::<CheckBallsInPlay>() {
+          self.check_balls_in_play(ctx.into());
         }
       }
       TurnPhase::Ending => {
@@ -635,6 +722,14 @@ impl GameManagement for CompetitiveGame {
   }
 }
 
+// -- Cues --
+
+#[derive(serde::Serialize, Event)]
+struct CheckBallsInPlay;
+
+#[derive(serde::Serialize, Event)]
+struct BallReturnTimedOut;
+
 #[cfg(test)]
 mod tests {
   use std::sync::Arc;
@@ -675,6 +770,9 @@ mod tests {
       true
     }
     fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
+    fn ejects_pending(&self) -> bool {
+      false
+    }
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       self.in_play.load(Ordering::SeqCst)
     }

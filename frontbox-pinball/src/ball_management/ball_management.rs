@@ -50,6 +50,8 @@ pub trait BallManagement: SpawnableSystem {
   /// far. A ball resting in the plunge lane is no longer in play, and serves the next request. Typically called when
   /// play stops (e.g. a turn ending or a tilt), so balls aren't launched onto a dead playfield or into the next turn.
   fn cancel_ejects(&mut self, ctx: &ServiceContext);
+  /// True while a requested ball hasn't left the trough yet. Once it has, it counts toward `balls_in_play`.
+  fn ejects_pending(&self) -> bool;
 
   /// Balls currently in play, not counting balls that have been temporarily removed from play
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8;

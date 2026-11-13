@@ -479,6 +479,10 @@ impl BallManagement for StandardBallManagement {
     }
   }
 
+  fn ejects_pending(&self) -> bool {
+    !self.queue.is_empty() || self.trough_ejecting.is_some()
+  }
+
   fn establish_ball_count(&mut self, ctx: &ServiceContext) {
     let occupancy = ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy();
     self.max_balls_in_play = occupancy + self.available_balls();

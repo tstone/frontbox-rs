@@ -290,6 +290,9 @@ mod tests {
       true
     }
     fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
+    fn ejects_pending(&self) -> bool {
+      false
+    }
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       0
     }
