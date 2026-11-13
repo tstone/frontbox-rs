@@ -7,7 +7,7 @@
 //! [`frontbox_gfx::scene`]; this crate adds where they go, and playing them.
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
-//! - [`SceneContext`] -- A scene and how to play it: its params, images, and how long it takes
+//! - [`PlayableScene`] -- A scene with values from the game bound to it: its params, and how long it takes
 //! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LedSystem`, read each [`Playback`] from
 //!   it each frame.
 //! - [`ScenePlayer`] -- A scene a system turns on and off
@@ -25,24 +25,22 @@
 //! )"#).unwrap();
 //!
 //! // plays to its end even if this system goes away
-//! ctx.play_scene(&SceneContext::completing(scene).unwrap());
+//! ctx.play_scene(&PlayableScene::completing(scene).unwrap());
 //! # }
 //! ```
 
-mod end_behavior;
 mod moment;
+mod playable_scene;
 mod playback;
 mod scene;
-mod scene_context;
 mod scene_player;
 mod scene_system;
 mod scene_system_ext;
 
-pub use end_behavior::*;
 pub use moment::*;
+pub use playable_scene::*;
 pub use playback::*;
 pub use scene::*;
-pub use scene_context::*;
 pub use scene_player::*;
 pub use scene_system::*;
 pub use scene_system_ext::*;
@@ -56,5 +54,7 @@ pub struct ScenePlaybackCompleted {
 }
 
 pub mod prelude {
-  pub use crate::{Completes, EndBehavior, Scene, SceneContext, SceneLayer, LedLayer, LedSurface, DisplayLayer, ScenePlayer, SceneSystem, SceneSystemExt, ScenePlaybackCompleted};
+  pub use frontbox_gfx::scene::EndBehavior;
+
+  pub use crate::{Completes, Scene, PlayableScene, SceneLayer, LedLayer, LedSurface, DisplayLayer, ScenePlayer, SceneSystem, SceneSystemExt, ScenePlaybackCompleted};
 }

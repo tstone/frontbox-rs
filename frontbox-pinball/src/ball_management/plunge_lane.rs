@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_scene::{SceneContext, ScenePlayer};
+use frontbox_scene::{PlayableScene, ScenePlayer};
 
 use crate::GamePhase;
 use crate::ball_management::{
@@ -13,7 +13,7 @@ pub struct PlungeLaneConfig {
   /// How long the lane switch must stay open before the ball is considered gone, as a weak plunge can roll back
   pub(super) re_enter_timeout: Duration,
   /// Plays while a ball is in the lane during a game
-  pub(super) ball_present_scene: Option<SceneContext>,
+  pub(super) ball_present_scene: Option<PlayableScene>,
   /// How long ball management waits for an ejected ball to reach the lane, before trying to knock it loose and then
   /// giving up on it
   pub(super) arrival_timeout: Duration,
@@ -101,7 +101,11 @@ impl PlungeLaneSystem {
   fn update_ball_present_scene(&mut self, ctx: &SystemContext) {
     let show = self.ball_present && ctx.states.is(GamePhase::Active);
     if let Some(scene) = self.ball_present_scene.as_mut() {
-      scene.set_playing(show, ctx);
+      if show {
+        scene.start(ctx);
+      } else {
+        scene.stop(ctx);
+      }
     }
   }
 }
@@ -170,14 +174,14 @@ mod tests {
   impl System for GameOwner {}
 
   /// A scene on an LED the machine doesn't have, that plays until stopped
-  fn scene() -> SceneContext {
+  fn scene() -> PlayableScene {
     let scene = frontbox_scene::Scene::load(
       r#"Scene(
         version: 2,
         layers: [Leds(leds: Name("plunge_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
       )"#,
     );
-    SceneContext::new(scene.unwrap())
+    PlayableScene::new(scene.unwrap())
   }
 
   impl Fixture {

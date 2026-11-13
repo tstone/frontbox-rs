@@ -4,7 +4,7 @@ pub use ball_save_ext::*;
 use std::collections::HashMap;
 
 use frontbox_core::prelude::*;
-use frontbox_scene::{SceneContext, ScenePlayer};
+use frontbox_scene::{PlayableScene, ScenePlayer};
 
 use crate::ball_management::{BallManager, Launch};
 use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
@@ -104,7 +104,7 @@ impl BallSaveSystem {
   }
 
   /// A scene to play while there are requests
-  pub fn scene(mut self, scene: impl Into<SceneContext>) -> Self {
+  pub fn scene(mut self, scene: impl Into<PlayableScene>) -> Self {
     self.scene = Some(ScenePlayer::new(scene));
     self
   }

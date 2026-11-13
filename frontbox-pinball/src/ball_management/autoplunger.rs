@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_scene::{Completes, SceneContext, ScenePlayer, SceneSystemExt};
+use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
 
@@ -8,9 +8,9 @@ use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
 pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,
   pub(super) launch_button: Option<SwitchQ>,
-  pub(super) launch_ready_scene: Option<SceneContext>,
-  pub(super) before_launch_scene: Option<SceneContext<Completes>>,
-  pub(super) after_launch_scene: Option<SceneContext<Completes>>,
+  pub(super) launch_ready_scene: Option<PlayableScene>,
+  pub(super) before_launch_scene: Option<PlayableScene<Completes>>,
+  pub(super) after_launch_scene: Option<PlayableScene<Completes>>,
   /// How long after firing ball management checks that the ball has left the lane switch, before firing again
   pub(super) launch_verification_time: Duration,
 }
@@ -35,7 +35,7 @@ pub struct AutoPlungerSystem {
   launch_button: Option<SwitchQ>,
   launch_ready_scene: Option<ScenePlayer>,
   before_launch_scene: Option<ScenePlayer<Completes>>,
-  after_launch_scene: Option<SceneContext<Completes>>,
+  after_launch_scene: Option<PlayableScene<Completes>>,
   armed: bool,
   /// A launch waiting for the before-launch scene to play through, with the cue that ends the wait
   pending_launch: Option<(LaunchMethod, u64)>,
@@ -146,8 +146,8 @@ impl AutoPlungerSystem {
       return;
     };
 
-    scene.start(ctx);
-    let length = scene.context().length();
+    scene.restart(ctx);
+    let length = scene.scene().length();
     let cue = ctx.cues.start(BeforeLaunchSceneCompleted, length.once());
     self.pending_launch = Some((method, cue));
   }
@@ -206,7 +206,7 @@ impl System for AutoPlungerSystem {
     if self.armed
       && let Some(scene) = self.launch_ready_scene.as_mut()
     {
-      scene.set_playing(true, ctx);
+      scene.start(ctx);
     }
   }
 }
@@ -221,7 +221,7 @@ mod tests {
   use super::*;
 
   /// A one second scene on an LED the machine doesn't have
-  fn scene() -> SceneContext<Completes> {
+  fn scene() -> PlayableScene<Completes> {
     let scene = frontbox_scene::Scene::load(
       r#"Scene(
         version: 2,
@@ -229,7 +229,7 @@ mod tests {
         layers: [Leds(leds: Name("launch_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
       )"#,
     );
-    SceneContext::completing(scene.unwrap()).unwrap()
+    PlayableScene::completing(scene.unwrap()).unwrap()
   }
 
   fn spawn(config: AutoPlungerConfig) -> (AutoPlungerSystem, TestContext) {

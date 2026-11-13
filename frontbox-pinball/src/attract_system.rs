@@ -7,8 +7,8 @@ use crate::GamePhase;
 /// the list
 ///
 /// Each plays on whichever LEDs and plane it says. A scene that never completes (static, or repeating forever) plays until
-/// the system goes inactive, and the scenes after it aren't reached. Scenes play without images, so a layer that draws one
-/// shows nothing.
+/// the system goes inactive, and the scenes after it aren't reached. A scene that draws images needs them loaded with
+/// [`Scene::with_images`].
 ///
 /// ```rust,ignore
 /// app.system(AttractSystem::new(vec![Scene::load(SWEEP)?, Scene::load(RAINBOW)?]));
@@ -45,7 +45,7 @@ impl System for AttractSystem {
       self.scenes[self.current].stop(ctx);
       self.current = (self.current + 1) % self.scenes.len();
     }
-    self.scenes[self.current].set_playing(true, ctx);
+    self.scenes[self.current].start(ctx);
   }
 }
 

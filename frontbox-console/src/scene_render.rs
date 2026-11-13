@@ -1,7 +1,7 @@
 use frontbox_core::prelude::{LedLookup, LedQ, Rgb, Vec2};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
-use frontbox_gfx::scene::{Bounds, Content, LayerFrame, Images, Params, Sample, ShapePose, Surface, Timing};
+use frontbox_gfx::scene::{Bounds, Content, LayerFrame, Params, Sample, ShapePose, Surface, Timing};
 use frontbox_led::{LedPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,9 +35,8 @@ pub(crate) fn render_scene(
   cycle: Option<u32>,
 ) -> Result<RenderedScene, String> {
   let (scene, preview) = read(source)?;
-  let drawn = preview.as_ref().unwrap_or(&scene);
+  let drawn = &with_images(preview.unwrap_or_else(|| scene.clone()), content)?;
   let canvas = Canvas::of(drawn, size)?;
-  let images = images(drawn, content)?;
   let (shown, time) = match cycle {
     Some(cycle) => (drawn.clone(), drawn.timing.map_or(time, |timing| timing.cycle_time(cycle, time))),
     None => {
@@ -47,7 +46,7 @@ pub(crate) fn render_scene(
     }
   };
   let params = Params::new();
-  let moment = Moment { time, playback_seed: 0, params: &params, images: &images };
+  let moment = Moment { time, playback_seed: 0, params: &params };
   let mut views = Views::of(&shown, size, &machine);
   views.placement.update_visits(&shown, &moment);
 
@@ -76,7 +75,7 @@ pub(crate) fn render_clip(
   cycle: u32,
 ) -> Result<Vec<u8>, String> {
   let (scene, preview) = read(source)?;
-  let scene = preview.unwrap_or(scene);
+  let scene = with_images(preview.unwrap_or(scene), content)?;
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
@@ -91,7 +90,6 @@ pub(crate) fn render_clip(
     return Err(format!("this clip is {total} points, more than the {MAX_CLIP_SAMPLES} one can sample"));
   }
 
-  let images = images(&scene, content)?;
   let led_count = leds.len();
   let header = RenderedClip { id, frames, width: canvas.width, height: canvas.height, leds: leds.into_iter().collect() };
   let header = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
@@ -104,7 +102,7 @@ pub(crate) fn render_clip(
   let params = Params::new();
   for index in 0..frames {
     let time = timing.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
-    let moment = Moment { time, playback_seed: 0, params: &params, images: &images };
+    let moment = Moment { time, playback_seed: 0, params: &params };
     // a clip is one cycle, so its traversals are the same in every frame
     if index == 0 {
       views.placement.update_visits(&scene, &moment);
@@ -144,12 +142,13 @@ fn checked(scene: Scene) -> Result<Scene, String> {
   Ok(scene)
 }
 
-/// The images a scene draws. Each is only decoded the first time, so this is cheap for every frame the client asks for.
-fn images(scene: &Scene, content: Option<Content>) -> Result<Images, String> {
+/// The scene with the images it draws. Each is only decoded the first time, so this is cheap for every frame the client
+/// asks for.
+fn with_images(scene: Scene, content: Option<Content>) -> Result<Scene, String> {
   match content {
-    Some(content) => content.images_for(scene.layers.iter().map(SceneLayer::layer)).map_err(|err| err.to_string()),
+    Some(content) => scene.with_images(&content).map_err(|err| err.to_string()),
     None if scene.image_names().next().is_some() => Err("this machine has no content folder".into()),
-    None => Ok(Images::new()),
+    None => Ok(scene),
   }
 }
 

@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_scene::{Completes, SceneContext};
+use frontbox_scene::{Completes, PlayableScene};
 
 use crate::ball_management::{
   AutoPlungerConfig, BallManager, PlungeLaneConfig, StandardBallManagement, TroughManagementConfig,
@@ -126,7 +126,7 @@ impl StandardAutoPlungerBuilder {
   }
 
   /// A scene to play while a launch button press would launch the ball
-  pub fn launch_ready_scene(mut self, scene: impl Into<SceneContext>) -> Self {
+  pub fn launch_ready_scene(mut self, scene: impl Into<PlayableScene>) -> Self {
     self.autoplunger.launch_ready_scene = Some(scene.into());
     self
   }
@@ -135,13 +135,13 @@ impl StandardAutoPlungerBuilder {
   /// fires right away.
   ///
   /// It has to be a scene that completes, as the ball would otherwise never launch.
-  pub fn before_launch_scene(mut self, scene: SceneContext<Completes>) -> Self {
+  pub fn before_launch_scene(mut self, scene: PlayableScene<Completes>) -> Self {
     self.autoplunger.before_launch_scene = Some(scene);
     self
   }
 
   /// A scene to play each time the autoplunger fires. It plays to its end, whatever happens next.
-  pub fn after_launch_scene(mut self, scene: SceneContext<Completes>) -> Self {
+  pub fn after_launch_scene(mut self, scene: PlayableScene<Completes>) -> Self {
     self.autoplunger.after_launch_scene = Some(scene);
     self
   }
@@ -212,7 +212,7 @@ macro_rules! plunge_lane_settings {
       }
 
       /// A scene to play while a ball is in the plunge lane
-      pub fn ball_present_scene(mut self, scene: impl Into<SceneContext>) -> Self {
+      pub fn ball_present_scene(mut self, scene: impl Into<PlayableScene>) -> Self {
         self.lane.ball_present_scene = Some(scene.into());
         self
       }

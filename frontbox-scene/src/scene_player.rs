@@ -4,8 +4,8 @@ use frontbox_gfx::scene::Value;
 
 use crate::*;
 
-/// A scene a system turns on and off, played by the [`SceneSystem`] and owned by the system that starts it. It's shown
-/// while that system is active, and goes when the system despawns.
+/// Start and stop playback of a scene, played by the [`SceneSystem`] and owned by the system that starts it. It's shown
+/// while that system is active, and goes away when the system despawns or goes inactive.
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
@@ -17,27 +17,42 @@ use crate::*;
 ///
 /// impl System for ShotLit {
 ///   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
-///     self.scene.set_playing(self.lit, ctx);
+///     if self.lit {
+///       self.scene.start(ctx);
+///     } else {
+///       self.scene.stop(ctx);
+///     }
 ///   }
 /// }
 /// ```
 #[derive(Debug, Clone)]
 pub struct ScenePlayer<C = Unchecked> {
-  context: SceneContext<C>,
-  /// What was started last, until it's stopped
+  scene: PlayableScene<C>,
   playing: Option<PlaybackId>,
 }
 
 impl<C> ScenePlayer<C> {
-  pub fn new(scene: impl Into<SceneContext<C>>) -> Self {
-    Self { context: scene.into(), playing: None }
+  pub fn new(scene: impl Into<PlayableScene<C>>) -> Self {
+    Self {
+      scene: scene.into(),
+      playing: None,
+    }
   }
 
-  /// Plays from the top, stopping it first if it's still playing
+  /// [`ScenePlayer::new`], started
+  pub fn started(scene: impl Into<PlayableScene<C>>, ctx: &SystemContext) -> Self {
+    let mut player = Self::new(scene);
+    player.start(ctx);
+    player
+  }
+
+  /// Plays from the top, unless it's already started. Safe to call every tick.
   pub fn start(&mut self, ctx: &SystemContext) {
-    self.stop(ctx);
+    if self.is_started() {
+      return;
+    }
     let id = match ctx.systems.get::<SceneSystem>() {
-      Some(mut scenes) => scenes.start(ctx.id(), &self.context),
+      Some(mut scenes) => scenes.start(ctx.id(), &self.scene),
       None => {
         log::error!(target: "frontbox::scene", "SceneSystem not running.");
         PlaybackId::none()
@@ -46,18 +61,26 @@ impl<C> ScenePlayer<C> {
     self.playing = Some(id);
   }
 
+  /// Plays from the top, whether or not it's started
+  pub fn restart(&mut self, ctx: &SystemContext) {
+    self.stop(ctx);
+    self.start(ctx);
+  }
+
+  /// Takes it off, unless it's already stopped. Safe to call every tick.
   pub fn stop(&mut self, ctx: &SystemContext) {
     if let Some(id) = self.playing.take() {
-      ctx.systems.with::<SceneSystem, _>(|scenes| scenes.remove(id));
+      ctx
+        .systems
+        .with::<SceneSystem, _>(|scenes| scenes.remove(id));
     }
   }
 
-  /// Starts it if it should be playing and isn't started, and stops it if it shouldn't be
-  pub fn set_playing(&mut self, playing: bool, ctx: &SystemContext) {
-    match (playing, self.is_started()) {
-      (true, false) => self.start(ctx),
-      (false, true) => self.stop(ctx),
-      _ => {}
+  /// Plays `scene` in place of the one it has: from the top now if it's started, otherwise once it's started
+  pub fn replace_scene(&mut self, scene: impl Into<PlayableScene<C>>, ctx: &SystemContext) {
+    self.scene = scene.into();
+    if self.is_started() {
+      self.restart(ctx);
     }
   }
 
@@ -72,33 +95,53 @@ impl<C> ScenePlayer<C> {
       return false;
     };
     // one that's gone has completed, as stopping it would have cleared `playing`
-    let complete = ctx.systems.with::<SceneSystem, _>(|scenes| scenes.playback(id).is_none_or(|playback| playback.is_complete()));
+    let complete = ctx.systems.with::<SceneSystem, _>(|scenes| {
+      scenes
+        .playback(id)
+        .is_none_or(|playback| playback.is_complete())
+    });
     complete.unwrap_or(false)
   }
 
   /// Sets a parameter, now if it's playing, and for each time it starts from here on
-  pub fn set_param(&mut self, name: impl Into<String>, value: impl Into<Value>, ctx: &SystemContext) {
+  pub fn set_param(
+    &mut self,
+    name: impl Into<String>,
+    value: impl Into<Value>,
+    ctx: &SystemContext,
+  ) {
     let (name, value) = (name.into(), value.into());
     self.with_playback(ctx, |playback| playback.set_param(name.clone(), value));
-    self.context.set_param(name, value);
+    self.scene.set_param(name, value);
   }
 
   /// Moves a parameter to `to` over `duration`, along `curve`, if it's playing: see [`Playback::ease_param`]. Each time
   /// it starts from here on, the parameter is `to` from the top.
-  pub fn ease_param(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve, ctx: &SystemContext) {
+  pub fn ease_param(
+    &mut self,
+    name: impl Into<String>,
+    to: impl Into<Value>,
+    duration: Duration,
+    curve: Curve,
+    ctx: &SystemContext,
+  ) {
     let (name, to) = (name.into(), to.into());
-    self.with_playback(ctx, |playback| playback.ease_param(name.clone(), to, duration, curve));
-    self.context.set_param(name, to);
+    self.with_playback(ctx, |playback| {
+      playback.ease_param(name.clone(), to, duration, curve)
+    });
+    self.scene.set_param(name, to);
   }
 
-  /// The scene and how it's played, such as its [`length`](SceneContext::length)
-  pub fn context(&self) -> &SceneContext<C> {
-    &self.context
+  /// The scene and the values bound to it, such as its [`length`](PlayableScene::length)
+  pub fn scene(&self) -> &PlayableScene<C> {
+    &self.scene
   }
 
   fn with_playback(&self, ctx: &SystemContext, f: impl FnOnce(&mut Playback)) {
     if let Some(id) = self.playing {
-      ctx.systems.with::<SceneSystem, _>(|scenes| scenes.playback(id).map(f));
+      ctx
+        .systems
+        .with::<SceneSystem, _>(|scenes| scenes.playback(id).map(f));
     }
   }
 }
@@ -106,7 +149,7 @@ impl<C> ScenePlayer<C> {
 #[cfg(test)]
 mod tests {
   use frontbox_gfx::animation::Cycle;
-  use frontbox_gfx::scene::Timing;
+  use frontbox_gfx::scene::{EndBehavior, Timing};
 
   use super::*;
 
@@ -121,16 +164,33 @@ mod tests {
   }
 
   fn tick(context: &TestContext, delta: Duration) {
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
   }
 
   /// The time of each playback shown
   fn times(context: &TestContext) -> Vec<f32> {
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.shown().map(|(_, playback)| playback.moment().time).collect()).unwrap()
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| {
+        scenes
+          .shown()
+          .map(|(_, playback)| playback.moment().time)
+          .collect()
+      })
+      .unwrap()
   }
 
   fn float(context: &TestContext, name: &str) -> Option<f32> {
-    let value = context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.shown().next().and_then(|(_, playback)| playback.moment().params.get(name).copied()));
+    let value = context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| {
+      scenes
+        .shown()
+        .next()
+        .and_then(|(_, playback)| playback.moment().params.get(name).copied())
+    });
     match value.unwrap() {
       Some(Value::Float(value)) => Some(value),
       _ => None,
@@ -149,14 +209,14 @@ mod tests {
   }
 
   #[test]
-  fn starting_again_plays_from_the_top() {
+  fn restarting_plays_from_the_top() {
     let context = context();
     let mut player: ScenePlayer = ScenePlayer::new(timed(1.0, Cycle::Forever));
     player.start(&context.sys_ctx());
     tick(&context, Duration::from_millis(500));
     assert_eq!(times(&context), [0.5]);
 
-    player.start(&context.sys_ctx());
+    player.restart(&context.sys_ctx());
     assert_eq!(times(&context), [0.0]);
   }
 
@@ -170,16 +230,30 @@ mod tests {
   }
 
   #[test]
-  fn set_playing_only_starts_one_that_isnt_started() {
+  fn starting_one_thats_started_leaves_it_playing() {
     let context = context();
     let mut player: ScenePlayer = ScenePlayer::new(timed(1.0, Cycle::Forever));
-    player.set_playing(true, &context.sys_ctx());
+    player.start(&context.sys_ctx());
     tick(&context, Duration::from_millis(500));
-    player.set_playing(true, &context.sys_ctx());
+    player.start(&context.sys_ctx());
     assert_eq!(times(&context), [0.5]);
 
-    player.set_playing(false, &context.sys_ctx());
+    player.stop(&context.sys_ctx());
+    player.stop(&context.sys_ctx());
     assert!(times(&context).is_empty());
+  }
+
+  #[test]
+  fn a_new_scene_plays_from_the_top_in_place_of_the_old_one() {
+    let context = context();
+    let mut player: ScenePlayer = ScenePlayer::new(timed(1.0, Cycle::Forever));
+    player.replace_scene(timed(2.0, Cycle::Forever), &context.sys_ctx());
+    assert!(times(&context).is_empty(), "not started");
+
+    player.start(&context.sys_ctx());
+    tick(&context, Duration::from_millis(500));
+    player.replace_scene(timed(1.0, Cycle::Forever), &context.sys_ctx());
+    assert_eq!(times(&context), [0.0]);
   }
 
   #[test]
@@ -197,7 +271,9 @@ mod tests {
   #[test]
   fn one_that_holds_completes_while_still_shown() {
     let context = context();
-    let mut player = ScenePlayer::new(SceneContext::new(timed(1.0, Cycle::Once)).end_behavior(EndBehavior::Hold));
+    let mut player = ScenePlayer::new(
+      Scene::new(vec![]).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold)),
+    );
     player.start(&context.sys_ctx());
     tick(&context, Duration::from_secs(2));
     assert!(player.is_complete(&context.sys_ctx()));
@@ -219,13 +295,20 @@ mod tests {
   #[test]
   fn an_eased_param_moves_while_playing() {
     let context = context();
-    let mut player = ScenePlayer::new(SceneContext::new(timed(1.0, Cycle::Forever)).param("y", 0.0));
+    let mut player =
+      ScenePlayer::new(PlayableScene::new(timed(1.0, Cycle::Forever)).param("y", 0.0));
     player.start(&context.sys_ctx());
-    player.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear, &context.sys_ctx());
+    player.ease_param(
+      "y",
+      10.0,
+      Duration::from_secs(1),
+      Curve::Linear,
+      &context.sys_ctx(),
+    );
     tick(&context, Duration::from_millis(500));
     assert_eq!(float(&context, "y"), Some(5.0));
 
-    player.start(&context.sys_ctx());
+    player.restart(&context.sys_ctx());
     assert_eq!(float(&context, "y"), Some(10.0));
   }
 

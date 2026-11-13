@@ -1,4 +1,4 @@
-use frontbox_gfx::scene::{Images, Params};
+use frontbox_gfx::scene::Params;
 
 /// What's the same for every layer of a scene at one moment of playing it. A [`Playback`](crate::Playback) gives its
 /// own with [`Playback::moment`](crate::Playback::moment), and [`Scene::frame`](crate::Scene::frame) turns it into what a
@@ -11,6 +11,4 @@ pub struct Moment<'a> {
   pub playback_seed: u32,
   /// Values from the game, overriding the scene's param defaults
   pub params: &'a Params,
-  /// Decoded images by name
-  pub images: &'a Images,
 }

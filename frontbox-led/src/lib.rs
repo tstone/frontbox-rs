@@ -49,7 +49,11 @@
 //!
 //! impl System for Example {
 //!   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
-//!     self.scene.set_playing(self.lit, ctx);
+//!     if self.lit {
+//!       self.scene.start(ctx);
+//!     } else {
+//!       self.scene.stop(ctx);
+//!     }
 //!   }
 //! }
 //! ```
@@ -59,12 +63,12 @@
 //! the LEDs aren't communicating a persistent state, but instead playing out a sequence or animation as a reaction. The
 //! system hands the scene to the `SceneSystem` and is done with it: it plays to its end even if the system goes away.
 //! Only a scene that completes can be handed off, which a
-//! [`SceneContext<Completes>`](frontbox_scene::SceneContext) says.
+//! [`PlayableScene<Completes>`](frontbox_scene::PlayableScene) says.
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
 //! # use frontbox_led::prelude::*;
-//! # fn example(ctx: &SystemContext, hit: SceneContext<Completes>) {
+//! # fn example(ctx: &SystemContext, hit: PlayableScene<Completes>) {
 //! ctx.play_scene(&hit);
 //! # }
 //! ```

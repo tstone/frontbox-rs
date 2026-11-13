@@ -1,6 +1,6 @@
 use frontbox_core::prelude::*;
 use frontbox_core::tags::Cabinet;
-use frontbox_scene::{SceneContext, ScenePlayer};
+use frontbox_scene::{PlayableScene, ScenePlayer};
 
 use crate::{GamePhase, GameStarting, PlayerEntry};
 
@@ -26,7 +26,7 @@ impl GameStartable {
     self
   }
 
-  pub fn scene(mut self, scene: impl Into<SceneContext>) -> Self {
+  pub fn scene(mut self, scene: impl Into<PlayableScene>) -> Self {
     self.scene = Some(ScenePlayer::new(scene));
     self
   }
@@ -94,7 +94,7 @@ impl System for GameStartable {
     if ctx.states.is(GamePhase::None)
       && let Some(scene) = &mut self.scene
     {
-      scene.set_playing(true, ctx);
+      scene.start(ctx);
     }
   }
 }

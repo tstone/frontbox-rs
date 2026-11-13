@@ -42,11 +42,11 @@ fn at(x: f32, y: f32) -> Option<Vec3> {
   Some(Vec3::new(x, y, 0.0))
 }
 
-fn play_as(context: &TestContext, owner: u64, scene: impl Into<SceneContext>) -> PlaybackId {
+fn play_as(context: &TestContext, owner: u64, scene: impl Into<PlayableScene>) -> PlaybackId {
   context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.start(owner, &scene.into())).unwrap()
 }
 
-fn play(context: &TestContext, scene: impl Into<SceneContext>) -> PlaybackId {
+fn play(context: &TestContext, scene: impl Into<PlayableScene>) -> PlaybackId {
   play_as(context, OWNER, scene)
 }
 
@@ -106,11 +106,9 @@ fn timed(cycle: Cycle) -> Scene {
 fn an_image_runs_along_the_leds() {
   let (context, addresses) = three_leds();
   let art = image::RgbaImage::from_fn(8, 1, |x, _| if x < 4 { Rgba::red() } else { Rgba::blue() });
-  let mut images = Images::new();
-  images.insert("art.png", Picture::new(art));
-
-  let scene = on(LedQ::names(vec!["led0", "led1", "led2"]), Layer::new(Fill::new(FillNode::image("art.png"))));
-  play(&context, SceneContext::new(scene).images(images));
+  let mut scene = on(LedQ::names(vec!["led0", "led1", "led2"]), Layer::new(Fill::new(FillNode::image("art.png"))));
+  scene.images.insert("art.png", Picture::new(art));
+  play(&context, PlayableScene::new(scene));
   let shown = shown(&context, &addresses);
   assert_eq!((shown[0], shown[2]), (Some(Rgba::red()), Some(Rgba::blue())));
 }
@@ -130,7 +128,7 @@ fn time_moves_tracks() {
     cycle: Cycle::Once,
   });
   let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(track)))).timing(Timing::new(1.0, Cycle::Once));
-  play(&context, SceneContext::new(scene));
+  play(&context, PlayableScene::new(scene));
 
   tick(&context, Duration::from_millis(500));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba([100, 0, 0, 255])));
@@ -139,7 +137,7 @@ fn time_moves_tracks() {
 #[test]
 fn clears_the_leds_once_complete() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(timed(Cycle::Once)));
+  play(&context, PlayableScene::new(timed(Cycle::Once)));
 
   tick(&context, Duration::from_millis(500));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
@@ -150,7 +148,7 @@ fn clears_the_leds_once_complete() {
 #[test]
 fn can_hold_its_last_moment() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(timed(Cycle::Once)).end_behavior(EndBehavior::Hold));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red())).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold))));
   tick(&context, Duration::from_secs(2));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
@@ -164,7 +162,7 @@ fn each_play_picks_its_own_random_values() {
 
   let mut shots = vec![];
   for _ in 0..8 {
-    let id = play(&context, SceneContext::new(scene.clone()));
+    let id = play(&context, PlayableScene::new(scene.clone()));
     shots.push(shown(&context, &addresses)[0]);
     with_scenes(&context, |scenes| scenes.remove(id));
   }
@@ -174,7 +172,7 @@ fn each_play_picks_its_own_random_values() {
 #[test]
 fn a_scene_that_repeats_forever_keeps_playing() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(timed(Cycle::Forever)));
+  play(&context, PlayableScene::new(timed(Cycle::Forever)));
   tick(&context, Duration::from_secs(100));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
@@ -182,7 +180,7 @@ fn a_scene_that_repeats_forever_keeps_playing() {
 #[test]
 fn a_static_scene_keeps_playing() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
   tick(&context, Duration::from_secs(100));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
@@ -190,7 +188,7 @@ fn a_static_scene_keeps_playing() {
 #[test]
 fn stop_clears_the_leds() {
   let (context, addresses) = three_leds();
-  let id = play(&context, SceneContext::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+  let id = play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
   with_scenes(&context, |scenes| scenes.remove(id));
@@ -201,7 +199,7 @@ fn stop_clears_the_leds() {
 fn params_set_by_the_game() {
   let (context, addresses) = three_leds();
   let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(Prop::Param("color".into())))));
-  let id = play(&context, SceneContext::new(scene).param("color", Rgba::red()));
+  let id = play(&context, PlayableScene::new(scene).param("color", Rgba::red()));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
   with_scenes(&context, |scenes| scenes.playback(id).unwrap().set_param("color", Rgba::green()));
@@ -262,8 +260,8 @@ fn an_led_a_shape_moves_off_is_given_up() {
     keys: vec![Key::new(0.0, Vec2::new(5.0, 5.0), Curve::Linear), Key::new(1.0, Vec2::new(50.0, 5.0), Curve::Linear)],
     cycle: Cycle::Once,
   };
-  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Prop::Track(path)))).timing(Timing::new(1.0, Cycle::Once));
-  play(&context, SceneContext::new(scene).end_behavior(EndBehavior::Hold));
+  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Prop::Track(path)))).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold));
+  play(&context, PlayableScene::new(scene));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
   tick(&context, Duration::from_secs(1));
@@ -307,8 +305,8 @@ fn a_layer_on_a_plane_the_app_doesnt_have_shows_nothing() {
 #[test]
 fn a_higher_z_is_drawn_over_a_lower_one() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(on(LedQ::name("led0"), solid(Rgba::red()))));
-  let over = play(&context, SceneContext::new(Scene::new(vec![LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).at_z(1).into()])));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+  let over = play(&context, PlayableScene::new(Scene::new(vec![LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).at_z(1).into()])));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::blue()));
 
   with_scenes(&context, |scenes| scenes.remove(over));
@@ -329,7 +327,7 @@ fn layers_play_on_their_own_leds() {
 #[test]
 fn layers_run_on_one_clock_and_clear_together() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(two_layers("led0", "led1")));
+  play(&context, PlayableScene::new(two_layers("led0", "led1")));
   tick(&context, Duration::from_secs(1));
   assert_eq!(shown(&context, &addresses), vec![None, None, None]);
 }
@@ -388,8 +386,8 @@ fn a_layer_that_misses_an_led_leaves_it_to_the_others_on_its_z() {
 fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
   let (context, addresses) = placed_leds(&[at(2.0, 5.0), at(8.0, 5.0)]);
   let left_half = Shape::new(ShapeNode::Rect { width: 5.0.into(), height: 10.0.into() }).transform(Transform::Translate(Vec2::new(2.5, 5.0).into()));
-  play(&context, SceneContext::new(on_plane(LedQ::every(), solid(Rgba::blue()))));
-  play(&context, SceneContext::new(on_plane(LedQ::every(), see_through(Rgba::red()).region(left_half))));
+  play(&context, PlayableScene::new(on_plane(LedQ::every(), solid(Rgba::blue()))));
+  play(&context, PlayableScene::new(on_plane(LedQ::every(), see_through(Rgba::red()).region(left_half))));
 
   let shown = shown(&context, &addresses);
   let blended = shown[0].unwrap();
@@ -402,7 +400,7 @@ fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
 fn a_playback_is_drawn_over_declarations_on_its_z() {
   let (context, addresses) = three_leds();
   context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.declare(OWNER + 1, (&addresses[0], Rgba::blue())));
-  play(&context, SceneContext::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
 }
@@ -410,7 +408,7 @@ fn a_playback_is_drawn_over_declarations_on_its_z() {
 #[test]
 fn an_inactive_owners_playback_gives_its_leds_back() {
   let (context, addresses) = three_leds();
-  play(&context, SceneContext::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
   with_scenes(&context, |scenes| scenes.on_event(&SystemDeactivated::new(OWNER, ROOT_GROUP), &context.sys_ctx()));
   assert_eq!(shown(&context, &addresses)[0], None);
 
@@ -425,7 +423,7 @@ fn a_moved_scene_plays_on_the_new_leds_keeping_its_zs() {
     LedLayer::sequence(LedQ::name("led0"), solid(Rgba::red())).into(),
     LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).at_z(3).into(),
   ]);
-  play(&context, SceneContext::new(scene).on_leds(LedQ::name("led1")).unwrap());
+  play(&context, PlayableScene::new(scene).on_leds(LedQ::name("led1")).unwrap());
   let shown = shown(&context, &addresses);
   assert_eq!(shown, vec![None, Some(Rgba::blue()), None]);
 }
@@ -437,7 +435,7 @@ fn a_tag_finds_the_leds_that_have_it() {
   context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(frontbox_core::tags::Playfield)], ..Default::default() });
   context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.on_spawn(&context.sys_ctx()));
 
-  play(&context, SceneContext::new(on(LedQ::tag::<frontbox_core::tags::Playfield>(), solid(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LedQ::tag::<frontbox_core::tags::Playfield>(), solid(Rgba::red()))));
   assert_eq!(shown(&context, &[address])[0], Some(Rgba::red()));
   assert_eq!(shown(&context, &addresses)[0], None);
 }
@@ -463,7 +461,7 @@ fn row() -> (TestContext, Vec<LedAddress>) {
 #[test]
 fn a_traversal_moves_across_the_leds_it_reaches() {
   let (context, addresses) = row();
-  play(&context, SceneContext::new(wave("led0", LedSurface::Area("Plane".into()))));
+  play(&context, PlayableScene::new(wave("led0", LedSurface::Area("Plane".into()))));
   assert_eq!(lit(&context, &addresses), [true, false, false, false]);
   tick(&context, Duration::from_secs(2));
   assert_eq!(lit(&context, &addresses), [false, false, true, false]);
@@ -473,7 +471,7 @@ fn a_traversal_moves_across_the_leds_it_reaches() {
 fn leds_off_the_plane_are_left_out_of_its_graph() {
   // the third is raised above the plane, so the wave can't go through it to the fourth
   let (context, addresses) = placed_leds(&[Some(Vec3::new(1.0, 5.0, 0.0)), Some(Vec3::new(2.0, 5.0, 0.4)), Some(Vec3::new(3.0, 5.0, 2.0)), Some(Vec3::new(4.0, 5.0, 0.0))]);
-  play(&context, SceneContext::new(wave("led0", LedSurface::Area("Plane".into()))));
+  play(&context, PlayableScene::new(wave("led0", LedSurface::Area("Plane".into()))));
   tick(&context, Duration::from_secs(1));
   assert_eq!(lit(&context, &addresses), [false, true, false, false]);
   tick(&context, Duration::from_secs(1));
@@ -483,7 +481,7 @@ fn leds_off_the_plane_are_left_out_of_its_graph() {
 #[test]
 fn a_sequence_is_a_chain_in_its_order() {
   let (context, addresses) = row();
-  play(&context, SceneContext::new(wave("led3", LedSurface::Sequence)));
+  play(&context, PlayableScene::new(wave("led3", LedSurface::Sequence)));
   tick(&context, Duration::from_secs(1));
   assert_eq!(lit(&context, &addresses), [false, false, true, false]);
 }
@@ -491,8 +489,8 @@ fn a_sequence_is_a_chain_in_its_order() {
 #[test]
 fn a_playback_from_another_owner_composites_the_same() {
   let (context, addresses) = three_leds();
-  play_as(&context, OWNER + 1, SceneContext::new(on(LedQ::name("led0"), solid(Rgba::blue()))));
-  play(&context, SceneContext::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
+  play_as(&context, OWNER + 1, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::blue()))));
+  play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
 }

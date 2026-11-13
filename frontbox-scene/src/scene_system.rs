@@ -19,7 +19,7 @@ use crate::*;
 /// ```rust
 /// # use frontbox_core::prelude::*;
 /// # use frontbox_scene::*;
-/// # fn example(ctx: &SystemContext, flash: SceneContext<Completes>) {
+/// # fn example(ctx: &SystemContext, flash: PlayableScene<Completes>) {
 /// ctx.play_scene(&flash);
 /// # }
 /// ```
@@ -34,7 +34,7 @@ impl SceneSystem {
   }
 
   /// Plays a scene to its end, owned by no system
-  pub fn play(&mut self, scene: &SceneContext<Completes>) -> PlaybackId {
+  pub fn play(&mut self, scene: &PlayableScene<Completes>) -> PlaybackId {
     let id = PlaybackId::next();
     log::debug!(target: "frontbox::scene", "Playing {id:?} to its end");
     self.playbacks.push(HeldPlayback { id, owner: None, owner_active: true, playback: Playback::new(scene) });
@@ -42,7 +42,7 @@ impl SceneSystem {
   }
 
   /// Starts a scene for `owner`, the id of the system it belongs to. [`ScenePlayer`] does this for a system.
-  pub fn start<C>(&mut self, owner: u64, scene: &SceneContext<C>) -> PlaybackId {
+  pub fn start<C>(&mut self, owner: u64, scene: &PlayableScene<C>) -> PlaybackId {
     let id = PlaybackId::next();
     log::debug!(target: "frontbox::scene", "System {owner} started {id:?}");
     self.playbacks.push(HeldPlayback { id, owner: Some(owner), owner_active: true, playback: Playback::new(scene) });
@@ -125,18 +125,18 @@ struct HeldPlayback {
 #[cfg(test)]
 mod tests {
   use frontbox_gfx::animation::Cycle;
-  use frontbox_gfx::scene::Timing;
+  use frontbox_gfx::scene::{EndBehavior, Timing};
 
   use super::*;
 
   const OWNER: u64 = 7;
 
-  fn timed(duration: f32, cycle: Cycle) -> SceneContext {
-    SceneContext::new(Scene::new(vec![]).timing(Timing::new(duration, cycle)))
+  fn timed(duration: f32, cycle: Cycle) -> PlayableScene {
+    PlayableScene::new(Scene::new(vec![]).timing(Timing::new(duration, cycle)))
   }
 
-  fn completing(duration: f32) -> SceneContext<Completes> {
-    SceneContext::completing(Scene::new(vec![]).timing(Timing::new(duration, Cycle::Once))).unwrap()
+  fn completing(duration: f32) -> PlayableScene<Completes> {
+    PlayableScene::completing(Scene::new(vec![]).timing(Timing::new(duration, Cycle::Once))).unwrap()
   }
 
   fn tick(context: &TestContext, delta: Duration) {
@@ -151,7 +151,7 @@ mod tests {
     context.sys_ctx().systems.with::<SceneSystem, _>(f).unwrap()
   }
 
-  fn start(context: &TestContext, owner: u64, scene: SceneContext) -> PlaybackId {
+  fn start(context: &TestContext, owner: u64, scene: PlayableScene) -> PlaybackId {
     with_scenes(context, |scenes| scenes.start(owner, &scene))
   }
 
@@ -187,7 +187,7 @@ mod tests {
   #[test]
   fn one_that_holds_stays_until_removed() {
     let context = context();
-    let id = start(&context, OWNER, timed(0.5, Cycle::Once).end_behavior(EndBehavior::Hold));
+    let id = start(&context, OWNER, Scene::new(vec![]).timing(Timing::new(0.5, Cycle::Once).end(EndBehavior::Hold)).into());
     tick(&context, Duration::from_secs(1));
     assert_eq!(shown(&context), [id]);
     with_scenes(&context, |scenes| scenes.remove(id));

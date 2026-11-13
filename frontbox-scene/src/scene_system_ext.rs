@@ -6,11 +6,11 @@ use crate::*;
 pub trait SceneSystemExt {
   /// Plays a scene to its end. Nothing owns it, so it keeps playing if this system deactivates or despawns, and playing
   /// it again while it's still going plays both.
-  fn play_scene(&self, scene: &SceneContext<Completes>);
+  fn play_scene(&self, scene: &PlayableScene<Completes>);
 }
 
 impl<'a> SceneSystemExt for SystemContext<'a> {
-  fn play_scene(&self, scene: &SceneContext<Completes>) {
+  fn play_scene(&self, scene: &PlayableScene<Completes>) {
     match self.systems.get::<SceneSystem>() {
       Some(mut scenes) => {
         scenes.play(scene);

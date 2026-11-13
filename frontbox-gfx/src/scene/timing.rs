@@ -17,11 +17,20 @@ pub struct Timing {
   /// How many times to play. Each track can also loop on its own within a cycle.
   #[serde(default)]
   pub cycle: Cycle,
+  /// What's shown once every cycle has played
+  #[serde(default, skip_serializing_if = "EndBehavior::is_clear")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<EndBehavior>", optional))]
+  pub end: EndBehavior,
 }
 
 impl Timing {
   pub fn new(duration: f32, cycle: Cycle) -> Self {
-    Self { duration, cycle }
+    Self { duration, cycle, end: EndBehavior::Clear }
+  }
+
+  pub fn end(mut self, end: EndBehavior) -> Self {
+    self.end = end;
+    self
   }
 
   /// Errors if the duration isn't a positive number
@@ -87,6 +96,23 @@ impl Timing {
       _ => cycle,
     };
     self.duration * (cycle as f32 + (time / self.duration).clamp(CYCLE_MARGIN, 1.0 - CYCLE_MARGIN))
+  }
+}
+
+/// What's shown once a scene has played every cycle
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EndBehavior {
+  /// Nothing: it goes away
+  #[default]
+  Clear,
+  /// Its last moment, until it's stopped
+  Hold,
+}
+
+impl EndBehavior {
+  fn is_clear(&self) -> bool {
+    *self == Self::Clear
   }
 }
 

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use frontbox_core::prelude::*;
-use frontbox_scene::{Completes, SceneContext, ScenePlayer, SceneSystemExt};
+use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::scoop::{ScoopBallEntered, ScoopEjectStarted, ScoopEjected, ScoopEntry};
 use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
@@ -81,7 +81,7 @@ pub struct ScoopSystem<S> {
   lower_entrance_timeout: Duration,
   verify_delay: Duration,
   before_eject_scene: Option<ScenePlayer<Completes>>,
-  after_eject_scene: Option<SceneContext<Completes>>,
+  after_eject_scene: Option<PlayableScene<Completes>>,
   /// Who's holding the ball, by `ctx.id()`
   holds: HashSet<u64>,
   /// There's a ball that hasn't been ejected yet
@@ -142,13 +142,13 @@ impl<S: 'static> ScoopSystem<S> {
   /// is emitted as it starts. Without one, the coil fires right away.
   ///
   /// It has to be a scene that completes, as the ball would otherwise never eject.
-  pub fn before_eject_scene(mut self, scene: SceneContext<Completes>) -> Self {
+  pub fn before_eject_scene(mut self, scene: PlayableScene<Completes>) -> Self {
     self.before_eject_scene = Some(ScenePlayer::new(scene));
     self
   }
 
   /// A scene to play each time the coil fires. It plays to its end, whatever the scoop does next.
-  pub fn after_eject_scene(mut self, scene: SceneContext<Completes>) -> Self {
+  pub fn after_eject_scene(mut self, scene: PlayableScene<Completes>) -> Self {
     self.after_eject_scene = Some(scene);
     self
   }
@@ -218,8 +218,8 @@ impl<S: 'static> ScoopSystem<S> {
       return;
     };
 
-    scene.start(ctx);
-    let length = scene.context().length();
+    scene.restart(ctx);
+    let length = scene.scene().length();
     self.eject_cue = Some(ctx.cues.start(
       ScoopCue::<S>::new(Step::EjectSceneCompleted),
       length.once(),

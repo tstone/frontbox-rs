@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::animation::{Curve, Lerp};
-use frontbox_gfx::scene::{Images, Params, Value};
+use frontbox_gfx::scene::{EndBehavior, Params, Value};
 
 use crate::*;
 
 /// A [`Scene`] being played: the clock, parameters, and everything else that's only true while it plays, none of which is
-/// written to a file. The [`SceneSystem`] makes one from a [`SceneContext`] for each scene it's given to play, and
+/// written to a file. The [`SceneSystem`] makes one from a [`PlayableScene`] for each scene it's given to play, and
 /// systems that draw a kind of layer read them from it.
 #[derive(Debug, Clone)]
 pub struct Playback {
@@ -16,26 +16,22 @@ pub struct Playback {
   params: Params,
   /// Params moving toward a value, by name
   easing: BTreeMap<String, Ease>,
-  images: Images,
   elapsed: Duration,
   /// How much of the scene plays in a second
   speed: f32,
   playback_seed: u32,
-  end_behavior: EndBehavior,
 }
 
 impl Playback {
   /// At the start of the scene, with a seed of its own
-  pub(crate) fn new<C>(context: &SceneContext<C>) -> Self {
+  pub(crate) fn new<C>(playable: &PlayableScene<C>) -> Self {
     Self {
-      scene: context.scene().clone(),
-      params: context.params().clone(),
+      scene: playable.scene().clone(),
+      params: playable.params().clone(),
       easing: BTreeMap::new(),
-      images: context.scene_images().clone(),
       elapsed: Duration::ZERO,
-      speed: context.speed(),
+      speed: playable.speed(),
       playback_seed: rand::random(),
-      end_behavior: context.scene_end_behavior(),
     }
   }
 
@@ -81,7 +77,7 @@ impl Playback {
 
   /// Whether there's anything to show: it hasn't completed, or it holds its last moment
   pub fn is_shown(&self) -> bool {
-    self.end_behavior == EndBehavior::Hold || !self.is_complete()
+    self.scene.timing.is_some_and(|timing| timing.end == EndBehavior::Hold) || !self.is_complete()
   }
 
   pub fn scene(&self) -> &Scene {
@@ -90,7 +86,7 @@ impl Playback {
 
   /// Where it is now, for sampling the scene's layers with [`Scene::frame`]
   pub fn moment(&self) -> Moment<'_> {
-    Moment { time: self.elapsed.as_secs_f32(), playback_seed: self.playback_seed, params: &self.params, images: &self.images }
+    Moment { time: self.elapsed.as_secs_f32(), playback_seed: self.playback_seed, params: &self.params }
   }
 }
 
@@ -118,8 +114,8 @@ mod tests {
 
   use super::*;
 
-  fn timed(duration: f32, cycle: Cycle) -> SceneContext {
-    SceneContext::new(Scene::new(vec![]).timing(Timing::new(duration, cycle)))
+  fn timed(duration: f32, cycle: Cycle) -> PlayableScene {
+    PlayableScene::new(Scene::new(vec![]).timing(Timing::new(duration, cycle)))
   }
 
   fn float(playback: &Playback, name: &str) -> Option<f32> {
@@ -148,21 +144,21 @@ mod tests {
 
   #[test]
   fn one_that_holds_is_still_shown_once_complete() {
-    let mut playback = Playback::new(&timed(0.5, Cycle::Once).end_behavior(EndBehavior::Hold));
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![]).timing(Timing::new(0.5, Cycle::Once).end(EndBehavior::Hold))));
     playback.advance(Duration::from_secs(1));
     assert!(playback.is_complete() && playback.is_shown());
   }
 
   #[test]
   fn each_one_has_a_seed_of_its_own() {
-    let context = timed(0.5, Cycle::Once);
-    let seeds: Vec<_> = (0..8).map(|_| Playback::new(&context).moment().playback_seed).collect();
+    let playable = timed(0.5, Cycle::Once);
+    let seeds: Vec<_> = (0..8).map(|_| Playback::new(&playable).moment().playback_seed).collect();
     assert!(seeds.iter().any(|seed| *seed != seeds[0]), "{seeds:?}");
   }
 
   #[test]
   fn an_eased_param_moves_from_where_it_was() {
-    let mut playback = Playback::new(&SceneContext::new(Scene::new(vec![])).param("y", 0.0));
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).param("y", 0.0));
     playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
     playback.advance(Duration::from_millis(250));
     assert_eq!(float(&playback, "y"), Some(2.5));
@@ -174,7 +170,7 @@ mod tests {
   fn an_eased_param_starts_from_the_scenes_default() {
     let mut scene = Scene::new(vec![]);
     scene.params.insert("y".into(), Value::Float(4.0));
-    let mut playback = Playback::new(&SceneContext::new(scene));
+    let mut playback = Playback::new(&PlayableScene::new(scene));
     playback.ease_param("y", 8.0, Duration::from_secs(1), Curve::Linear);
     playback.advance(Duration::from_millis(500));
     assert_eq!(float(&playback, "y"), Some(6.0));
@@ -182,7 +178,7 @@ mod tests {
 
   #[test]
   fn setting_an_eased_param_ends_the_ease() {
-    let mut playback = Playback::new(&SceneContext::new(Scene::new(vec![])).param("y", 0.0));
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).param("y", 0.0));
     playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
     playback.set_param("y", 3.0);
     playback.advance(Duration::from_millis(500));
@@ -191,7 +187,7 @@ mod tests {
 
   #[test]
   fn a_param_with_nowhere_to_ease_from_is_set() {
-    let mut playback = Playback::new(&SceneContext::new(Scene::new(vec![])));
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])));
     playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
     assert_eq!(float(&playback, "y"), Some(10.0));
   }
