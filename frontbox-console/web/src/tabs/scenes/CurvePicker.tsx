@@ -21,7 +21,6 @@ export const CURVES: Extract<Curve, string>[] = [
   'BounceIn',
   'BounceOut',
   'BounceInOut',
-  'Random',
 ]
 
 /** How many points along each curve are drawn */
@@ -121,8 +120,6 @@ function sample(curve: Extract<Curve, string>, phase: number): number {
       return bounceOut(phase)
     case 'BounceInOut':
       return phase < 0.5 ? (1 - bounceOut(1 - 2 * phase)) / 2 : (1 + bounceOut(2 * phase - 1)) / 2
-    case 'Random':
-      return Math.random()
   }
 }
 

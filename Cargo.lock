@@ -1079,7 +1079,6 @@ dependencies = [
  "log",
  "num-traits",
  "palette",
- "rand 0.10.0",
  "ron",
  "serde",
  "ts-rs",

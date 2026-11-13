@@ -26,8 +26,6 @@ pub enum Curve {
   BounceIn,
   BounceOut,
   BounceInOut,
-  /// A new random value on every sample, ignoring phase
-  Random,
   /// Discrete steps instead of a continuous curve, with the given number of steps. Compose another curve into it to
   /// quantize that curve instead, e.g. `Curve::EaseIn.compose(Curve::Steps(4))`
   Steps(usize),
@@ -35,7 +33,7 @@ pub enum Curve {
   /// Runs the curve backwards in time and flips it, `1 - c(1 - phase)`, turning an ease-in into an ease-out. Over
   /// reversed stops this plays the original curve backwards; see [`Tween::reverse`](crate::animation::Tween::reverse).
   Reflect(Box<Self>),
-  /// Multiplies the outputs of two curves, e.g. `Multiply(Random, EaseIn)` for a flicker that grows in intensity
+  /// Multiplies the outputs of two curves, e.g. `Multiply(Sinusoid, EaseIn)` for a pulse that grows in intensity
   Multiply(Box<Self>, Box<Self>),
   /// Feeds the output of the first curve into the second, `second(first(phase))`
   Compose(Box<Self>, Box<Self>),
@@ -59,7 +57,6 @@ impl Curve {
       Self::BackIn => BACK_C3 * phase.powi(3) - BACK_C1 * phase.powi(2),
       Self::BackOut => 1.0 + BACK_C3 * (phase - 1.0).powi(3) + BACK_C1 * (phase - 1.0).powi(2),
       Self::BackInOut => sample_back_inout(phase),
-      Self::Random => rand::random::<f32>(),
       Self::Steps(steps) => sample_steps(steps.saturating_sub(1).clamp(1, usize::MAX), phase),
       Self::Reflect(other) => 1.0 - other.sample(1.0 - phase),
       Self::Multiply(a, b) => a.sample(phase) * b.sample(phase),
