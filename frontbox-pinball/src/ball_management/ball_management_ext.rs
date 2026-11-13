@@ -11,16 +11,17 @@ pub trait BallManagementExt {
   fn eject_balls(&self, count: u8, launch: Launch) -> Option<u64>;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
+  /// Drops queued balls, completes open requests, and keeps a ball resting in the plunge lane for the next request
+  fn cancel_ejects(&self);
 
-  /// Balls currently in play, not counting balls that have been temporarily removed from play
+  /// Balls currently in play, not counting balls resting in holders
   fn balls_in_play(&self) -> u8;
-  /// Takes the balls currently present as all of the balls there are, and clears any temporarily removed from play
+  /// Takes the balls currently present (in the trough, the plunge lane and holders) as all of the balls there are
   fn establish_ball_count(&self);
 
-  /// When a ball is locked, held, or otherwise should no longer be expected to drain
-  fn ball_temporarily_removed_from_play(&self);
-  /// When a ball is unlocked, released, or otherwise should now be expected to drain
-  fn ball_returned_to_play(&self);
+  /// Reports how many balls are resting in this system right now (a scoop, a VUK, a lock), from its own switches.
+  /// Report every change, including back to 0.
+  fn set_balls_held(&self, count: u8);
 }
 
 impl<'a> BallManagementExt for SystemContext<'a> {
@@ -43,6 +44,11 @@ impl<'a> BallManagementExt for SystemContext<'a> {
       .unwrap_or(false)
   }
 
+  fn cancel_ejects(&self) {
+    let ctx = self;
+    with_ball_manager(self, |manager| manager.cancel_ejects(ctx.into()));
+  }
+
   fn balls_in_play(&self) -> u8 {
     self
       .systems.get::<BallManager>()
@@ -57,17 +63,10 @@ impl<'a> BallManagementExt for SystemContext<'a> {
     });
   }
 
-  fn ball_temporarily_removed_from_play(&self) {
+  fn set_balls_held(&self, count: u8) {
     let ctx = self;
     with_ball_manager(self, |manager| {
-      manager.ball_temporarily_removed_from_play(ctx.into());
-    });
-  }
-
-  fn ball_returned_to_play(&self) {
-    let ctx = self;
-    with_ball_manager(self, |manager| {
-      manager.ball_returned_to_play(ctx.into());
+      manager.set_balls_held(ctx.id(), count, ctx.into());
     });
   }
 }
@@ -76,7 +75,7 @@ fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) ->
   if let Some(mut system) = ctx.systems.get::<BallManager>() {
     Some(f(&mut system))
   } else {
-    log::error!("BallManager not running.");
+    log::error!(target: "frontbox::ball_management", "BallManager not running.");
     None
   }
 }

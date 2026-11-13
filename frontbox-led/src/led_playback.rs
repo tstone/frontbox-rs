@@ -202,6 +202,13 @@ impl LedPlayback {
   pub fn is_complete(&self) -> bool {
     self.scene.timing.is_some_and(|timing| timing.is_complete(self.elapsed.as_secs_f32()))
   }
+
+  /// How long the scene takes to play through, at the speed it's played at. `None` for a scene that never completes:
+  /// one that's static or repeats forever.
+  pub fn length(&self) -> Option<Duration> {
+    let length = self.scene.timing?.length()?;
+    Some(Duration::from_secs_f32(length / self.speed))
+  }
 }
 
 /// Why a scene can't be played as it was asked to
@@ -294,7 +301,7 @@ impl Placement {
     let plane = layer.surface.plane().and_then(|plane| {
       let found = ctx.leds.plane(plane);
       if found.is_none() {
-        log::error!("LedPlayback: there's no plane \"{plane}\" added to the app");
+        log::error!(target: "frontbox::led", "LedPlayback: there's no plane \"{plane}\" added to the app");
       }
       found
     });
@@ -492,6 +499,15 @@ mod tests {
     assert!(!program.is_complete());
     program.apply(Duration::from_secs(2), &context.sys_ctx());
     assert!(program.is_complete());
+  }
+
+  #[test]
+  fn length_is_how_long_the_scene_takes_to_play_through() {
+    let leds = || LedQ::name("led1");
+    assert_eq!(on(leds(), timed(Cycle::Times(3))).length(), Some(Duration::from_secs(3)));
+    assert_eq!(on(leds(), timed(Cycle::Once)).over(Duration::from_secs(20)).length(), Some(Duration::from_secs(20)));
+    assert_eq!(on(leds(), timed(Cycle::Forever)).length(), None);
+    assert_eq!(on(leds(), scene(FillNode::Solid(Color(Rgba::red()).into()))).length(), None, "static");
   }
 
   #[test]

@@ -67,6 +67,7 @@ impl Hardware {
     for board in expansion_boards {
       if board.model == FastExpansionBoardModels::Neuron {
         log::warn!(
+          target: "frontbox::hardware",
           "Remapping Neuron LED ports to default 32-LED configuration for backwards compatibility"
         );
       }
@@ -153,7 +154,7 @@ impl Hardware {
       port_led_total_count += multi_def.children().len();
     }
 
-    log::trace!("Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
+    log::trace!(target: "frontbox::hardware", "Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
 
     // only ports too long for a u8 are caught here; resolve_expansion_boards checks the port fits on its breakout
     let length = match port_count_override {

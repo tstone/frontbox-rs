@@ -11,7 +11,7 @@ pub trait GameManagementExt {
   fn tilt(&self);
 
   /// Add points to the current player/team
-  fn add_points(&self, points: u32);
+  fn add_points(&self, points: u64);
   /// Set points multiplier for current player/team
   fn set_multiplier(&self, multiplier: f32);
   /// Clear points multiplier for current player/team
@@ -31,7 +31,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
     });
   }
 
-  fn add_points(&self, points: u32) {
+  fn add_points(&self, points: u64) {
     let ctx = self;
     with_game_manager(self, |manager| {
       manager.add_points(points, ctx.into());
@@ -84,7 +84,7 @@ fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) ->
   if let Some(mut system) = ctx.systems.get::<GameManager>() {
     Some(f(&mut system))
   } else {
-    log::error!("GameManager not running.");
+    log::error!(target: "frontbox::game_manager", "GameManager not running.");
     None
   }
 }

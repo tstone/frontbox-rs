@@ -1,62 +1,39 @@
 use std::path::Path;
 
 use frontbox_core::prelude::*;
-use kira::backend::cpal::Error;
 use tokio::sync::mpsc;
 
 use crate::CalloutCompleted;
 use crate::callout::CalloutRequest;
-use crate::sound_manager::SoundManagerCmds::*;
-use crate::sound_manager::{SoundManager, SoundManagerCmds};
+use crate::sound_manager::SoundManagerMessage::*;
+use crate::sound_manager::{OutputDevice, SoundManager, SoundManagerMessage};
 
 pub struct SoundSystem {
-  tx: mpsc::UnboundedSender<SoundManagerCmds>,
+  device_name: &'static str,
+  tx: mpsc::UnboundedSender<SoundManagerMessage>,
   completed_rx: mpsc::UnboundedReceiver<CalloutCompleted>,
+  /// The manager's ends of the channels, until the system spawns and knows which device to play on
+  manager_channels: Option<(
+    mpsc::UnboundedReceiver<SoundManagerMessage>,
+    mpsc::UnboundedSender<CalloutCompleted>,
+  )>,
   /// Lines asked for that haven't been reported done with
   callouts_pending: usize,
 }
 
 impl SoundSystem {
-  pub fn by_name(device_name: &'static str) -> Result<Self, Error> {
-    let (tx, rx) = mpsc::unbounded_channel::<SoundManagerCmds>();
+  /// Play through the audio device whose name contains `device_name` on a hardware platform, or the computer's default
+  /// output on a virtual one. The device is opened once the system spawns. Until it opens, and whenever it's lost after,
+  /// it's tried again with a growing wait. Sounds can be preloaded and music asked for in the meantime, and carry over.
+  pub fn new(device_name: &'static str) -> Self {
+    let (tx, rx) = mpsc::unbounded_channel();
     let (completed_tx, completed_rx) = mpsc::unbounded_channel();
-    match SoundManager::new(device_name, rx, completed_tx) {
-      Ok(mut manager) => {
-        tokio::spawn(async move {
-          manager.run().await;
-        });
-        Ok(Self {
-          tx,
-          completed_rx,
-          callouts_pending: 0,
-        })
-      }
-      Err(err) => Err(err),
-    }
-  }
-
-  pub fn default() -> Result<Self, Error> {
-    let (tx, rx) = mpsc::unbounded_channel::<SoundManagerCmds>();
-    let (completed_tx, completed_rx) = mpsc::unbounded_channel();
-    match SoundManager::default(rx, completed_tx) {
-      Ok(mut manager) => {
-        tokio::spawn(async move {
-          manager.run().await;
-        });
-        Ok(Self {
-          tx,
-          completed_rx,
-          callouts_pending: 0,
-        })
-      }
-      Err(err) => Err(err),
-    }
-  }
-
-  pub fn by_name_or_default(device_name: &'static str) -> Self {
-    match Self::by_name(device_name) {
-      Ok(system) => system,
-      Err(_) => Self::default().expect("Could not initialize SoundSystem"),
+    Self {
+      device_name,
+      tx,
+      completed_rx,
+      manager_channels: Some((rx, completed_tx)),
+      callouts_pending: 0,
     }
   }
 
@@ -104,6 +81,17 @@ impl SoundSystem {
 }
 
 impl System for SoundSystem {
+  fn on_spawn(&mut self, ctx: &SystemContext) {
+    let Some((rx, completed_tx)) = self.manager_channels.take() else {
+      return;
+    };
+    let device = match ctx.platform {
+      PlatformKind::Hardware => OutputDevice::Named(self.device_name),
+      PlatformKind::Virtual => OutputDevice::SystemDefault,
+    };
+    tokio::spawn(SoundManager::new(device, rx, completed_tx).run());
+  }
+
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
     while let Ok(completed) = self.completed_rx.try_recv() {
       self.callouts_pending = self.callouts_pending.saturating_sub(1);

@@ -62,7 +62,7 @@ impl<'a> SystemContext<'a> {
       systems: ContextSystems::new(handle, ctx),
       groups: ContextGroups::new(handle, ctx),
       cues: ContextCues::new(handle, ctx),
-      routines: ContextRoutines::new(handle, ctx),
+      routines: ContextRoutines::for_system(handle, ctx),
       states: ContextStates::new(handle, ctx),
       drivers: ctx.drivers,
       switches: ctx.switches,

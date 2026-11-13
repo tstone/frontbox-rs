@@ -97,15 +97,11 @@ impl SwitchComboSystem {
 
   fn on_member_opened(&mut self, ctx: &SystemContext) {
     self.fired = false;
-    if let Some(cue_id) = self.hold_cue.take() {
-      ctx.cues.cancel(cue_id);
-    }
+    ctx.cues.cancel(self.hold_cue.take());
 
     if self.closed_count(ctx) == 0 {
       self.window_started = false;
-      if let Some(cue_id) = self.window_cue.take() {
-        ctx.cues.cancel(cue_id);
-      }
+      ctx.cues.cancel(self.window_cue.take());
     }
   }
 
@@ -126,7 +122,7 @@ impl System for SwitchComboSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.switch_names = self.query.query_names(ctx.into());
     if self.switch_names.is_empty() {
-      log::warn!(target: "frontbox_core::switch_combo", "Switch combo query {:?} matched no switches; it will never fire", self.query);
+      log::warn!(target: "frontbox::switches", "Switch combo query {:?} matched no switches; it will never fire", self.query);
     }
   }
 

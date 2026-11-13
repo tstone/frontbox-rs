@@ -47,9 +47,10 @@
 //! 1. [`RoutineStarted<E>`] is broadcast, before the first participant is handed the routine. Anything its listeners
 //!    emit lands before the first step.
 //! 2. The participants take their steps, in order.
-//! 3. [`RoutineCompleted<E>`] is broadcast once the last participant is done, or one of them halts the routine. The
-//!    origin watches this to carry on, and hears it first: everyone else hears it after whatever the origin queued in
-//!    response (events, state changes, spawns), so a system that the origin's carrying on makes active hears it too.
+//! 3. [`RoutineCompleted<E>`] is broadcast once the last participant is done, one of them halts the routine, or the
+//!    origin cancels it. The origin watches this to carry on, and hears it first: everyone else hears it after whatever
+//!    the origin queued in response (events, state changes, spawns), so a system that the origin's carrying on makes
+//!    active hears it too.
 //!
 //! Both events carry the routine as it was started. `RoutineCompleted` also carries how it came to be done
 //! ([`RoutineCompletion`]).
@@ -109,13 +110,40 @@
 //! the others are left alone. The origin sees `RoutineCompletion::Halted` and doesn't carry on as it would have (e.g.
 //! ending the turn).
 //!
+//! ### Cancelling
+//!
+//! `ctx.routines.start` returns the routine's id, which its origin can pass to `ctx.routines.cancel` to stop it
+//! wherever it's at, like a cue. The participant whose step is in progress isn't told, and anything it does to
+//! complete its step afterwards is ignored. No one after it takes a step. `RoutineCompleted<E>` is still broadcast, with
+//! `RoutineCompletion::Cancelled`, so listeners that reacted to `RoutineStarted<E>` see it end. This is for an origin
+//! whose reason to run the routine has gone, such as a ball search stopping when the coin door opens.
+//!
+//! ### Setting how it runs
+//!
+//! `ctx.routines.start(routine)` runs it with the defaults. `ctx.routines.new(routine)` returns a [`RoutineBuilder`]
+//! for setting how it runs, which does nothing until its `start`:
+//!
+//! - [`RoutineBuilder::group`] looks participants up from a group other than the origin's own (see "Nearest wins").
+//! - [`RoutineBuilder::interval`] waits between one participant completing its step and the next being handed the
+//!   routine, so participants that each fire a coil don't fire at once. The origin decides the timing, and
+//!   participants complete as soon as they're done.
+//!
+//! ```rust
+//! # use frontbox_core::prelude::*;
+//! # #[derive(Serialize, Event, Clone)]
+//! # struct TurnEnding { player: u8 }
+//! # fn example(ctx: &SystemContext, player: &GroupHandle) {
+//! ctx.routines.new(TurnEnding { player: 1 }).group(player).start();
+//! # }
+//! ```
+//!
 //! ## Rules
 //!
 //! - **One per type** -- Only one routine of a given type runs at a time. A second start is ignored with a warning, and
 //!   broadcasts nothing.
 //! - **Empty or undefined** routines complete immediately, still broadcasting both events.
 //! - **Nearest wins** -- Each listed type resolves to one instance, searched for from the routine's group and then the
-//!   root, the same as `ctx.get`. That's the origin's own group, or the group given to `start_routine_in`, so the
+//!   root, the same as `ctx.get`. That's the origin's own group, or the group given to `RoutineBuilder::group`, so the
 //!   owner of a player's group can start a routine meant for that player's systems.
 //! - **Inactive or missing participants are skipped.**
 //! - **Only the current participant can complete its step or halt** -- Both are keyed to the caller, so a system that
@@ -127,7 +155,7 @@
 //!   can't complete the old step.
 //! - **Paused while the origin is inactive** -- Like a cue, a routine doesn't move on while its origin is inactive. The
 //!   step in progress carries on, but the next participant isn't handed the routine, nor `RoutineCompleted`
-//!   broadcast, until the origin is active again. That includes a halted routine. A routine whose origin is despawned
+//!   broadcast, until the origin is active again. That includes a halted routine, but not a cancelled one. A routine whose origin is despawned
 //!   is abandoned, and never completes.
 
 mod definition;
@@ -140,4 +168,4 @@ mod tests;
 pub use definition::RoutineDefinition;
 pub use events::{RoutineCompleted, RoutineCompletion, RoutineStarted};
 pub(crate) use routines::Routines;
-pub use start::RoutineStart;
+pub use start::{RoutineBuilder, RoutineStart};

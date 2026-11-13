@@ -1,6 +1,7 @@
 use std::any::{Any, TypeId, type_name_of_val};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ pub struct SystemContainer {
   inner: Box<dyn System>,
   cues: HashMap<u64, CueAccumulator>,
   last_active_state: bool,
+  faulted: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
 }
@@ -29,6 +31,7 @@ impl SystemContainer {
       inner: Box::new(system),
       cues: HashMap::new(),
       last_active_state: true,
+      faulted: false,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
     }
@@ -46,6 +49,49 @@ impl SystemContainer {
     (self.as_any)(self.inner.as_ref()).type_id()
   }
 
+  /// Whether one of the system's handlers has panicked
+  pub(crate) fn is_faulted(&self) -> bool {
+    self.faulted
+  }
+
+  /// Calls `f`, catching a panic so it can't unwind out of the run loop and end the process. A panic is logged and
+  /// returns `None`. Use [`retire_on_panic`](Self::retire_on_panic) unless the system is already on its way out.
+  ///
+  /// The system may be left half-updated by the panic, which is why `retire_on_panic` retires it. Anything else `f`
+  /// borrowed is released as the panic unwinds; `RefCell`s aren't poisoned.
+  pub(crate) fn catch_panic<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    match catch_unwind(AssertUnwindSafe(|| f(self))) {
+      Ok(result) => Some(result),
+      Err(payload) => {
+        log::error!(
+          target: "frontbox::systems",
+          "💥 System {} ({}) panicked: {}",
+          self.name(),
+          self.id(),
+          panic_message(payload.as_ref())
+        );
+        None
+      }
+    }
+  }
+
+  /// [`catch_panic`](Self::catch_panic), and if `f` panics, retire the system: mark it faulted so nothing more is
+  /// handed to it, and queue its despawn. `ctx` must be this system's context.
+  pub(crate) fn retire_on_panic<T>(&mut self, ctx: &SystemContext, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+    let result = self.catch_panic(f);
+    if result.is_none() && !self.faulted {
+      log::error!(
+        target: "frontbox::systems",
+        "💥 Despawning system {} ({}) after it panicked",
+        self.name(),
+        self.id()
+      );
+      self.faulted = true;
+      ctx.systems.despawn_self();
+    }
+    result
+  }
+
   pub(crate) fn next_id() -> u64 {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
@@ -54,7 +100,7 @@ impl SystemContainer {
   /// [`SystemDeactivated`] afterwards.
   pub(crate) fn on_deactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox_core::systems::lifecycle",
+      target: "frontbox::systems",
       "🌐 System {} ({}) is now inactive",
       self.name(),
       self.id()
@@ -66,7 +112,7 @@ impl SystemContainer {
   /// loop broadcasts [`SystemReactivated`] afterwards.
   pub(crate) fn on_reactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
-      target: "frontbox_core::systems::lifecycle",
+      target: "frontbox::systems",
       "🌐 System {} ({}) is now active",
       self.name(),
       self.id()
@@ -118,50 +164,25 @@ impl SystemContainer {
   }
 
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    let mut cues_to_remove = Vec::new();
-    for (id, cue) in &mut self.cues {
-      let completed_cycle = cue.accumulate(delta);
-      if completed_cycle {
-        log::trace!("Cue {} cycle completed, triggering signal", id);
+    let system_id = self.id;
+    self.cues.retain(|id, cue| {
+      cue.accumulate(delta, |signal| {
+        log::trace!(target: "frontbox::cues", "Cue {} @ system {} fired", id, system_id);
+        self.inner.on_event(signal, ctx);
+      });
 
-        if let Some(signal) = cue.signal() {
-          self.inner.on_event(signal, ctx);
-        }
-
-        if cue.is_complete() {
-          log::trace!(
-            "Cue {} @ system {} is entirely completed, removing",
-            self.id,
-            id
-          );
-          cues_to_remove.push(*id);
-        }
+      if cue.is_complete() {
+        log::trace!(target: "frontbox::cues", "Cue {} @ system {} completed, removing", id, system_id);
       }
-    }
-
-    if cues_to_remove.len() > 0 {
-      for id in cues_to_remove {
-        self.cues.remove(&id);
-      }
-      log::trace!(
-        "Remaining cue count for system {}: {}",
-        self.id,
-        self.cues.len()
-      )
-    }
+      !cue.is_complete()
+    });
 
     // bubble tick to inner system after processing timers
     self.inner.on_tick(delta, ctx);
   }
 
   pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
-    self.cues.insert(id, CueAccumulator::from_cue(cue, signals));
-  }
-
-  pub(crate) fn create_cue_timeline(&mut self, timeline: CueTimeline, id: u64) {
-    self
-      .cues
-      .insert(id, CueAccumulator::from_points(timeline.points()));
+    self.cues.insert(id, CueAccumulator::new(cue, signals));
   }
 
   pub(crate) fn cancel_cue(&mut self, cue_id: u64) {
@@ -235,6 +256,7 @@ impl SpawnableSystemContainer {
       inner: self.inner,
       cues: self.cues,
       last_active_state: self.last_active_state,
+      faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
     }
@@ -278,6 +300,7 @@ impl ChildSystemContainer {
       inner: self.inner,
       cues: self.cues,
       last_active_state: self.last_active_state,
+      faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
     }
@@ -288,6 +311,15 @@ impl<T: ChildSystem + 'static> From<T> for ChildSystemContainer {
   fn from(system: T) -> Self {
     Self::new(system)
   }
+}
+
+/// The message a panic was raised with, when it's a string (as `panic!` and `expect` make it)
+pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> &str {
+  payload
+    .downcast_ref::<&str>()
+    .copied()
+    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+    .unwrap_or("<non-string panic payload>")
 }
 
 #[cfg(test)]

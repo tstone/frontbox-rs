@@ -69,7 +69,7 @@ impl TiltSystem {
   /// Give the player another warning, until warnings are next given back
   pub fn grant_warning(&mut self, _ctx: &ServiceContext) {
     self.warnings = self.warnings.saturating_add(1);
-    log::info!(target: "frontbox_core::tilt", "Tilt warning granted, {} left", self.warnings);
+    log::info!(target: "frontbox::tilt", "Tilt warning granted, {} left", self.warnings);
   }
 
   fn bob_swung(&mut self, ctx: &SystemContext) {
@@ -77,14 +77,14 @@ impl TiltSystem {
       return;
     }
     if self.warnings == 0 {
-      log::info!(target: "frontbox_core::tilt", "Tilted");
+      log::info!(target: "frontbox::tilt", "Tilted");
       ctx.tilt();
       return;
     }
 
     self.warnings -= 1;
     self.ignoring = self.settle_time;
-    log::info!(target: "frontbox_core::tilt", "Tilt warning, {} left", self.warnings);
+    log::info!(target: "frontbox::tilt", "Tilt warning, {} left", self.warnings);
     ctx.metrics.inc(&metrics::TILT_WARNINGS);
     ctx.emit(TiltWarned {
       remaining: self.warnings,
@@ -230,7 +230,7 @@ mod tests {
     fn game_state(&self) -> Option<&GameState> {
       None
     }
-    fn add_points(&mut self, _points: u32, _ctx: &ServiceContext) {}
+    fn add_points(&mut self, _points: u64, _ctx: &ServiceContext) {}
     fn set_multiplier(&mut self, _multiplier: f32) {}
     fn clear_multiplier(&mut self) {}
     fn grant_extra_ball(&mut self, _ctx: &ServiceContext) -> bool {

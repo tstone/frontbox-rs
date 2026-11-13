@@ -99,6 +99,14 @@ pub enum Platform {
 }
 
 impl Platform {
+  /// Whether this platform drives a real machine
+  pub fn kind(&self) -> PlatformKind {
+    match self {
+      Platform::Neuron { .. } => PlatformKind::Hardware,
+      Platform::Virtual => PlatformKind::Virtual,
+    }
+  }
+
   pub fn watchdog_interval(&self) -> Option<Duration> {
     match self {
       Platform::Neuron {
@@ -107,4 +115,12 @@ impl Platform {
       _ => None,
     }
   }
+}
+
+/// Whether the app is driving a real machine or a virtual one, without the details of which hardware. Systems that act
+/// differently off the machine, such as sound picking an output device, look at this rather than at [`Platform`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PlatformKind {
+  Hardware,
+  Virtual,
 }

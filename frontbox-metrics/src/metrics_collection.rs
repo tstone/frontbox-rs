@@ -42,11 +42,11 @@ impl MetricsCollection {
           Ok((returned, result)) => {
             store = returned;
             if let Err(e) = result {
-              log::error!("Failed to write metrics: {e}");
+              log::error!(target: "frontbox::metrics", "Failed to write metrics: {e}");
             }
           }
           Err(e) => {
-            log::error!("Metrics store panicked; no more metrics will be saved: {e}");
+            log::error!(target: "frontbox::metrics", "Metrics store panicked; no more metrics will be saved: {e}");
             return;
           }
         }
@@ -77,7 +77,7 @@ impl MetricsCollection {
     };
     drop(writer.sender); // the task ends once it has written what's queued
     if tokio::time::timeout(CLOSE_TIMEOUT, writer.task).await.is_err() {
-      log::error!("Timed out writing the last metrics at shutdown");
+      log::error!(target: "frontbox::metrics", "Timed out writing the last metrics at shutdown");
     }
   }
 
@@ -122,6 +122,7 @@ impl MetricsCollection {
       *recorded += 1;
       if *recorded == SAMPLES_PER_GAME_WARNING {
         log::warn!(
+          target: "frontbox::metrics",
           "metric '{}' has recorded {SAMPLES_PER_GAME_WARNING} samples this game; a `Counter` may suit it better",
           definition.key
         );
@@ -142,7 +143,7 @@ impl MetricsCollection {
   pub fn begin_game(&self) {
     let mut state = self.state.borrow_mut();
     if state.game.is_some() {
-      log::warn!("a game began before the previous one ended; ending it now");
+      log::warn!(target: "frontbox::metrics", "a game began before the previous one ended; ending it now");
       state.end_game();
     }
 
@@ -285,6 +286,7 @@ impl State {
       panic!("{message}. Give one a distinct `.key(...)`");
     }
     log::error!(
+      target: "frontbox::metrics",
       "{message}; '{}' is not recorded until fixed",
       definition.label
     );

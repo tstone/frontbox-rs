@@ -52,6 +52,7 @@ impl ReferencePlaneBuilder {
     let path = path.into();
     if !path.exists() {
       log::warn!(
+        target: "frontbox::hardware",
         "Image for reference plane \"{}\" not found at {}",
         self.plane.name,
         path.display()

@@ -71,6 +71,7 @@ fn log_completion(log: &Log, event: &dyn Event) {
     let entry = match done.completion {
       RoutineCompletion::AllSteps => "completed",
       RoutineCompletion::Halted => "halted",
+      RoutineCompletion::Cancelled => "cancelled",
     };
     log.borrow_mut().push(entry.to_string());
   }
@@ -237,6 +238,11 @@ impl Harness {
           &self.tx,
           &self.tracers,
         ),
+        AppMessage::CancelRoutine(caller, routine_id) => {
+          self
+            .routines
+            .cancel(caller, routine_id, &self.groups, &self.tx, &self.tracers)
+        }
         AppMessage::HaltRoutine(caller, type_id) => self.routines.halt(
           caller,
           type_id,
@@ -303,8 +309,35 @@ impl Harness {
     self.changed(&[handle]);
   }
 
-  fn start(&mut self, origin: SystemHandle) {
-    self.ctx(origin).routines.start(Sequencing);
+  /// Returns the routine's id
+  fn start(&mut self, origin: SystemHandle) -> u64 {
+    let routine_id = self.ctx(origin).routines.start(Sequencing);
+    self.pump();
+    routine_id
+  }
+
+  /// Returns the routine's id
+  fn start_with_interval(&mut self, origin: SystemHandle, interval: Duration) -> u64 {
+    let routine_id = self
+      .ctx(origin)
+      .routines
+      .new(Sequencing)
+      .interval(interval)
+      .start();
+    self.pump();
+    routine_id
+  }
+
+  fn cancel(&mut self, caller: SystemHandle, routine_id: u64) {
+    self.ctx(caller).routines.cancel(routine_id);
+    self.pump();
+  }
+
+  /// Time passes, as the run loop's tick tells routines
+  fn tick(&mut self, delta: Duration) {
+    self
+      .routines
+      .tick(delta, &self.groups, &self.base, &self.tx, &self.tracers);
     self.pump();
   }
 
@@ -427,7 +460,7 @@ fn started_in_a_group_reaches_its_participants() {
   let origin = h.origin(ROOT_GROUP_NAME);
   let player = GroupHandle::new(h.group("player"), "player");
 
-  h.ctx(origin).routines.start_in(&player, Sequencing);
+  h.ctx(origin).routines.new(Sequencing).group(&player).start();
   h.pump();
 
   assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
@@ -886,4 +919,142 @@ fn test_context_records_halts() {
   let mut test_ctx = TestContext::default();
   test_ctx.sys_ctx().routines.halt::<Sequencing>();
   assert!(test_ctx.routine_halted::<Sequencing>());
+}
+
+#[test]
+fn an_interval_waits_between_steps() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>, Step<3>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  h.step::<1>(ROOT_GROUP_NAME, true);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+  h.step::<3>(ROOT_GROUP_NAME, true);
+
+  h.start_with_interval(origin, Duration::from_millis(250));
+  assert_eq!(h.log(), ["step 1 in root"]);
+  h.tick(Duration::from_millis(200));
+  assert_eq!(h.log(), ["step 1 in root"]);
+  h.tick(Duration::from_millis(50));
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root"]);
+
+  // no wait after the last step
+  h.tick(Duration::from_millis(250));
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root", "step 3 in root", "completed"]);
+}
+
+#[test]
+fn skipped_participants_add_no_wait() {
+  let mut h = Harness::new(routine![Step<1>, Toggled, Step<2>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  h.step::<1>(ROOT_GROUP_NAME, true);
+  h.spawn(
+    ROOT_GROUP_NAME,
+    Toggled {
+      active: Rc::new(Cell::new(false)),
+    },
+  );
+  h.step::<2>(ROOT_GROUP_NAME, true);
+
+  h.start_with_interval(origin, Duration::from_millis(250));
+  h.tick(Duration::from_millis(250));
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root", "completed"]);
+}
+
+#[test]
+fn the_origin_coming_back_doesnt_cut_the_wait_short() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let origin = h.origin("player");
+  h.step::<1>(ROOT_GROUP_NAME, true);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+
+  h.start_with_interval(origin, Duration::from_millis(250));
+  h.set_group_active("player", false);
+  h.set_group_active("player", true);
+  assert_eq!(h.log(), ["step 1 in root"]);
+
+  h.tick(Duration::from_millis(250));
+  assert_eq!(h.log(), ["step 1 in root", "step 2 in root", "completed"]);
+}
+
+#[test]
+fn a_cancel_skips_the_step_in_progress_and_the_rest() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+
+  let routine_id = h.start(origin);
+  h.cancel(origin, routine_id);
+  assert_eq!(h.log(), ["step 1 in root", "cancelled"]);
+  assert!(!h.is_running());
+
+  // the participant completing afterwards is ignored
+  h.complete(first);
+  assert_eq!(h.log(), ["step 1 in root", "cancelled"]);
+}
+
+#[test]
+fn only_the_origin_can_cancel() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+
+  let routine_id = h.start(origin);
+  h.cancel(first, routine_id);
+  assert!(h.is_running());
+
+  h.complete(first);
+  assert_eq!(h.log(), ["step 1 in root", "completed"]);
+}
+
+#[test]
+fn a_cancel_ends_the_wait_between_steps() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  h.step::<1>(ROOT_GROUP_NAME, true);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+
+  let routine_id = h.start_with_interval(origin, Duration::from_millis(250));
+  h.cancel(origin, routine_id);
+  h.tick(Duration::from_millis(250));
+  assert_eq!(h.log(), ["step 1 in root", "cancelled"]);
+}
+
+#[test]
+fn a_cancel_doesnt_wait_for_the_origin() {
+  let mut h = Harness::new(routine![Step<1>, Step<2>]);
+  let active = Rc::new(Cell::new(true));
+  let origin = h.spawn(
+    ROOT_GROUP_NAME,
+    OriginToggled {
+      log: h.log.clone(),
+      active: active.clone(),
+    },
+  );
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+  h.step::<2>(ROOT_GROUP_NAME, true);
+  h.watcher(false);
+
+  let routine_id = h.start(origin);
+  active.set(false);
+  h.complete(first);
+  assert!(h.is_running(), "paused");
+
+  h.cancel(origin, routine_id);
+  assert!(!h.is_running());
+  // the inactive origin doesn't hear it, but everyone else does
+  assert_eq!(h.log(), ["saw started", "step 1 in root", "saw completed"]);
+}
+
+#[test]
+fn a_cancel_with_an_old_id_does_nothing() {
+  let mut h = Harness::new(routine![Step<1>]);
+  let origin = h.origin(ROOT_GROUP_NAME);
+  let first = h.step::<1>(ROOT_GROUP_NAME, false);
+
+  let old_id = h.start(origin);
+  h.complete(first);
+  h.start(origin);
+  h.cancel(origin, old_id);
+  assert!(h.is_running());
+  assert_eq!(h.log(), ["step 1 in root", "completed", "step 1 in root"]);
 }

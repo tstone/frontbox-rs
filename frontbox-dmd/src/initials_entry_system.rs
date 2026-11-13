@@ -74,7 +74,7 @@ impl InitialsEntrySystem {
     self.name.push('A');
 
     if self.name.len() == 3 {
-      log::info!("Initials entered: {}", self.name);
+      log::info!(target: "frontbox::dmd", "Initials entered: {}", self.name);
       ctx.emit(InitialsEntered {
         initials: self.name.clone(),
       });

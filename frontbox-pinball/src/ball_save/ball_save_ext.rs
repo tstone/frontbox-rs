@@ -45,6 +45,6 @@ fn with_ball_save(ctx: &SystemContext, f: impl FnOnce(&mut BallSaveSystem)) {
   if let Some(mut system) = ctx.systems.get::<BallSaveSystem>() {
     f(&mut system);
   } else {
-    log::warn!(target: "frontbox_core::ballsave", "BallSaveSystem not running.");
+    log::warn!(target: "frontbox::ball_save", "BallSaveSystem not running.");
   }
 }

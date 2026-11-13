@@ -16,13 +16,13 @@ impl FreePlay {
   }
 
   fn on_start_button_pressed(&mut self, ctx: &SystemContext) {
-    log::info!("Free play: Start button => add player");
+    log::info!(target: "frontbox::game_manager", "Free play: Start button => add player");
 
     // only active while `PlayerEntry` is open, and the game manager ignores a press that comes in as it closes
     if let Some(mut game_management) = ctx.systems.get::<GameManager>() {
       game_management.add_player(ctx.into());
     } else {
-      log::warn!("Free play: GameManagement system not found, cannot start turn");
+      log::warn!(target: "frontbox::game_manager", "Free play: GameManagement system not found, cannot start turn");
     }
   }
 }

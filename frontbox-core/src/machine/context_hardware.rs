@@ -233,7 +233,7 @@ impl MachineAccess<'_> {
     match machine {
       Some(mut machine) => Some(f(&mut machine, &ctx)),
       None => {
-        log::error!("Machine not running.");
+        log::error!(target: "frontbox::machine", "Machine not running.");
         None
       }
     }

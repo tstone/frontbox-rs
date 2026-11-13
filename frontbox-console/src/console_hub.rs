@@ -110,7 +110,7 @@ impl ConsoleHub {
       .as_ref()
       .is_some_and(|hw| hw.switches.by_id(&switch_id).is_some());
     if !known {
-      log::warn!(target: "frontbox_core::console", "Ignoring a request to set unknown switch {switch_id}");
+      log::warn!(target: "frontbox::console", "Ignoring a request to set unknown switch {switch_id}");
       return;
     }
     let Some(control) = &state.control else {
@@ -123,7 +123,7 @@ impl ConsoleHub {
   pub fn set_config(&self, key: String, value: ConfigDomainValue) {
     let state = self.state.lock().unwrap();
     if !state.snapshot.configs.contains_key(key.as_str()) {
-      log::warn!(target: "frontbox_core::console", "Ignoring a request to set unknown config '{key}'");
+      log::warn!(target: "frontbox::console", "Ignoring a request to set unknown config '{key}'");
       return;
     }
     let Some(control) = &state.control else {
@@ -150,7 +150,7 @@ impl ConsoleHub {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
-        log::error!(target: "frontbox_core::console", "Scene render stopped: {err}");
+        log::error!(target: "frontbox::console", "Scene render stopped: {err}");
         return None;
       }
     };
@@ -172,7 +172,7 @@ impl ConsoleHub {
       Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
-        log::error!(target: "frontbox_core::console", "Scene clip stopped: {err}");
+        log::error!(target: "frontbox::console", "Scene clip stopped: {err}");
         failed("The clip stopped rendering".into())
       }
     }
@@ -185,7 +185,7 @@ impl ConsoleHub {
   pub fn set_content(&self, path: Option<PathBuf>) {
     if let Some(path) = &path {
       if !path.is_dir() {
-        log::warn!(target: "frontbox_core::console", "Content folder {} isn't there yet", path.display());
+        log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
       }
     }
     self.state.lock().unwrap().content = path.map(Content::new);
@@ -221,11 +221,11 @@ impl ConsoleHub {
           counters,
         },
         Ok(Err(err)) => {
-          log::error!(target: "frontbox_core::console", "Unable to read metric totals: {err}");
+          log::error!(target: "frontbox::console", "Unable to read metric totals: {err}");
           return None;
         }
         Err(err) => {
-          log::error!(target: "frontbox_core::console", "Reading metric totals panicked: {err}");
+          log::error!(target: "frontbox::console", "Reading metric totals panicked: {err}");
           return None;
         }
       },
@@ -550,7 +550,7 @@ fn serialize(message: &ServerMessage) -> Option<Utf8Bytes> {
   match serde_json::to_string(message) {
     Ok(json) => Some(json.into()),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Unable to serialize console message: {err}");
+      log::error!(target: "frontbox::console", "Unable to serialize console message: {err}");
       None
     }
   }

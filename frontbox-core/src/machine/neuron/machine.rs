@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use crate::machine::driver_triggers::DriverTriggers;
-use crate::machine::neuron::boot;
-use crate::machine::serial_interface::SerialInterface;
+use crate::machine::neuron::BootError;
+use crate::machine::neuron::boot::{self, NeuronSetup};
+use crate::machine::serial_interface::{SerialError, SerialInterface};
 use crate::machine::*;
 use crate::prelude::app_message::AppMessage;
 use crate::prelude::*;
@@ -13,14 +14,25 @@ use tokio::sync::mpsc;
 pub struct Neuron {
   io_port: SerialInterface,
   exp_port: SerialInterface,
+  /// To bring the hardware up again after the connection is lost
+  setup: NeuronSetup,
   app_sender: mpsc::UnboundedSender<AppMessage>,
   machine_sender: mpsc::UnboundedSender<MachineMessage>,
   machine_receiver: mpsc::UnboundedReceiver<MachineMessage>,
   watchdog_interval: Duration,
+  /// Failures in a row of the watchdog command being sent, to stop resending it after `WATCHDOG_ATTEMPTS`
+  watchdog_failures: u32,
   driver_triggers: DriverTriggers,
 }
 
 impl Neuron {
+  /// How many times in a row a watchdog command is sent before giving up until the next one
+  const WATCHDOG_ATTEMPTS: u32 = 3;
+  /// How long to wait after the first failed attempt to reconnect. It doubles with each failure, up to
+  /// `RECONNECT_MAX_DELAY`.
+  const RECONNECT_DELAY: Duration = Duration::from_millis(500);
+  const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(2);
+
   fn port_for(&mut self, port: MachinePort) -> &mut SerialInterface {
     match port {
       MachinePort::Io => &mut self.io_port,
@@ -32,11 +44,16 @@ impl Neuron {
     match msg {
       MachineMessage::WatchdogPing => {
         self
-          .send_watchdog(WatchdogCommand::set(self.watchdog_interval))
+          .send_watchdog(
+            WatchdogCommand::set(self.watchdog_interval),
+            MachineMessage::WatchdogPing,
+          )
           .await;
       }
       MachineMessage::WatchdogClear => {
-        self.send_watchdog(WatchdogCommand::disable()).await;
+        self
+          .send_watchdog(WatchdogCommand::disable(), MachineMessage::WatchdogClear)
+          .await;
       }
       MachineMessage::RefreshSwitchState => {
         self.refresh_switch_state().await;
@@ -128,14 +145,103 @@ impl Neuron {
     }
   }
 
-  async fn send_watchdog(&mut self, cmd: WatchdogCommand) {
+  /// Send a watchdog command. If it fails or times out, `again` is queued to send it again behind whatever else is
+  /// waiting, as the watchdog is critical to keeping the machine running, up to `WATCHDOG_ATTEMPTS` times in a row.
+  async fn send_watchdog(&mut self, cmd: WatchdogCommand, again: MachineMessage) {
     match self.io_port.query(&cmd, Duration::from_millis(100)).await {
-      // retry if failed or timed out (watchdog is critical to keeping the machine running)
-      Ok(WatchdogResponse::Failed) | Err(_) => {
-        let _ = self.machine_sender.send(MachineMessage::WatchdogPing);
+      // the port is gone, so there's nothing to send it on
+      Err(SerialError::Lost) => {}
+      Ok(WatchdogResponse::Failed) | Err(SerialError::Response(_)) => {
+        self.watchdog_failures += 1;
+        if self.watchdog_failures < Self::WATCHDOG_ATTEMPTS {
+          let _ = self.machine_sender.send(again);
+        } else {
+          log::warn!(
+            target: "frontbox::machine",
+            "🐶 The watchdog command failed {} times in a row, waiting for the next one",
+            self.watchdog_failures
+          );
+          self.watchdog_failures = 0;
+        }
       }
-      _ => {}
+      Ok(_) => self.watchdog_failures = 0,
     }
+  }
+
+  /// Whether both ports are still connected. They're on the same USB connection, so losing either (e.g. because the
+  /// cable was pulled) means the machine is gone.
+  fn is_connected(&self) -> bool {
+    self.io_port.is_connected() && self.exp_port.is_connected()
+  }
+
+  /// Read events and handle messages until a port is lost
+  async fn run_connected(&mut self) {
+    loop {
+      tokio::select! {
+        event = self.io_port.read_event() => match event {
+          Ok(event) => Self::handle_event(&self.app_sender, event),
+          Err(_) => return,
+        },
+
+        Some(msg) = self.machine_receiver.recv() => {
+          self.process_messages(msg).await;
+          self.flush_queued_events();
+          if !self.is_connected() {
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  /// Bring the hardware up again, trying until it's back. What's sent in the meantime can't reach the hardware, so
+  /// it's dropped: the app sends what the hardware needs again once it hears the machine reconnected. Returns the
+  /// switch states read from the hardware, or the error if it no longer matches the configuration.
+  async fn reconnect(&mut self) -> Result<Vec<SwitchState>, BootError> {
+    // close both, so the device can come back under the same paths
+    self.io_port.close();
+    self.exp_port.close();
+
+    let setup = &self.setup;
+    let connecting = async {
+      let mut delay = Self::RECONNECT_DELAY;
+      let mut attempt = 1;
+      loop {
+        match boot::connect(setup).await {
+          Ok(connection) => return Ok(connection),
+          Err(e @ BootError::Misconfigured(_)) => return Err(e),
+          Err(e) => {
+            // the first failure says why, and the rest repeat it until the hardware is back
+            if attempt == 1 {
+              log::warn!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), retrying until it's back");
+            } else {
+              log::debug!(target: "frontbox::machine", "🔌 Couldn't reconnect to the machine ({e}), attempt {attempt}");
+            }
+            attempt += 1;
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(Self::RECONNECT_MAX_DELAY);
+          }
+        }
+      }
+    };
+    tokio::pin!(connecting);
+
+    let receiver = &mut self.machine_receiver;
+    let connection = loop {
+      tokio::select! {
+        result = &mut connecting => break result?,
+        Some(_) = receiver.recv() => {}
+      }
+    };
+
+    self.io_port = connection.io_port;
+    self.exp_port = connection.exp_port;
+    // the hardware may have lost power, which leaves every driver untriggered
+    self.driver_triggers = DriverTriggers::default();
+    self.watchdog_failures = 0;
+    while self.machine_receiver.try_recv().is_ok() {}
+
+    Ok(connection.switch_states)
   }
 }
 
@@ -145,19 +251,37 @@ impl Machine for Neuron {
   }
 
   async fn on_pre_run(&mut self, state: &AppState) {
-    boot::configure_drivers(&mut self.io_port, &state).await;
+    boot::retry!(boot::configure_drivers(&mut self.io_port, state))
+      .unwrap_or_else(boot::boot_failed);
   }
 
   async fn run(&mut self) {
     loop {
-      tokio::select! {
-        Some(event) = self.io_port.read_event() => {
-          Self::handle_event(&self.app_sender, event);
-        }
+      self.run_connected().await;
 
-        Some(msg) = self.machine_receiver.recv() => {
-          self.process_messages(msg).await;
-          self.flush_queued_events();
+      log::error!(target: "frontbox::machine", "🔌 Lost the connection to the machine, reconnecting...");
+      self.app_sender.send(AppMessage::MachineDisconnected).ok();
+
+      match self.reconnect().await {
+        Ok(switch_states) => {
+          log::info!(target: "frontbox::machine", "🔌 Reconnected to the machine");
+          self
+            .app_sender
+            .send(AppMessage::MachineReconnected(switch_states))
+            .ok();
+        }
+        Err(e) => {
+          log::error!(
+            target: "frontbox::machine",
+            "🔌 The machine came back different from its configuration, shutting down: {e}"
+          );
+          self
+            .app_sender
+            .send(AppMessage::Shutdown(ShutdownScope::Process))
+            .ok();
+          // Nothing can reach the hardware any more. Keep draining what's sent so it doesn't pile up.
+          while self.machine_receiver.recv().await.is_some() {}
+          return;
         }
       }
     }
@@ -186,56 +310,39 @@ impl MachineBoot for Neuron {
     };
 
     let app_config = AppConfig::from_boot_config(&boot_config);
+    let setup = NeuronSetup {
+      io_net_port_path,
+      exp_port_path,
+      expansion_boards: Hardware::resolve_expansion_boards(&boot_config.exp_network.boards),
+      io_network: boot_config.io_network,
+    };
 
-    let mut io_port = SerialInterface::new(io_net_port_path)
+    let connection = boot::connect(&setup)
       .await
-      .expect("Failed to open IO NET port");
-    log::info!("🥾 Opened IO NET port at {}", io_net_port_path);
-
-    boot::handshake(&mut io_port).await;
-
-    // Verify user-configuration and load firmware/board versions
-    let io_network = boot_config.io_network;
-    let resolved_io_network = boot::resolve_io_network(&mut io_port, &io_network).await;
-
-    boot::verify_watchdog(&mut io_port).await;
-    boot::configure_switches(&mut io_port, &io_network.switches).await;
-
-    // Initialize switch context which Machine will use to maintain current state
-    let initial_switch_state = boot::get_initial_switch_states(&mut io_port).await;
-    let switch_lookup = SwitchLookup::new(io_network.switches, initial_switch_state);
-
-    // open EXP port
-    let mut exp_port = SerialInterface::new(exp_port_path)
-      .await
-      .expect("Failed to open EXP port");
-    log::info!("🥾 Opened EXP port at {}", exp_port_path);
-
-    let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
-    boot::reset_expansion_boards(&mut exp_port, &expansion_boards).await;
-    boot::configure_led_ports(&mut exp_port, &expansion_boards).await;
+      .unwrap_or_else(boot::boot_failed);
 
     // Insert hardware definitions into store for systems to reference
-    log::debug!("Initializing Store with hardware definitions");
+    log::debug!(target: "frontbox::machine", "Initializing Store with hardware definitions");
+    let hardware = Hardware::new(
+      SwitchLookup::new(setup.io_network.switches.clone(), connection.switch_states),
+      DriverLookup::new(setup.io_network.drivers.clone()),
+      LedLookup::new(&setup.expansion_boards),
+      connection.io_network.boards,
+      setup.expansion_boards.clone(),
+    );
 
     let (machine_sender, machine_receiver) = mpsc::unbounded_channel::<MachineMessage>();
     let neuron = Self {
-      io_port,
-      exp_port,
+      io_port: connection.io_port,
+      exp_port: connection.exp_port,
+      setup,
       app_sender,
       machine_sender,
       machine_receiver,
       watchdog_interval: app_config.watchdog_interval.unwrap(),
+      watchdog_failures: 0,
       driver_triggers: DriverTriggers::default(),
     };
-
-    let hardware = Hardware::new(
-      switch_lookup,
-      DriverLookup::new(io_network.drivers),
-      LedLookup::new(&expansion_boards),
-      resolved_io_network.boards,
-      expansion_boards,
-    );
 
     (neuron, hardware)
   }

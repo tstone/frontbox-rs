@@ -62,7 +62,7 @@ impl WebTracer {
       while let Some(event) = rx.recv().await {
         recv_hub.ingest(event);
       }
-      log::info!(target: "frontbox_core::console", "Trace event channel closed");
+      log::info!(target: "frontbox::console", "Trace event channel closed");
     });
     tokio::spawn(server::serve(self.hub.clone(), self.addr));
 

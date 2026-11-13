@@ -35,7 +35,8 @@ pub struct BallsExitedPlay {
   /// Balls that left play
   pub count: u8,
   /// Balls still in play afterwards. Balls are in play once they have left the trough and aren't locked, which
-  /// includes a ball waiting in the plunge lane.
+  /// includes a ball in the plunge lane waiting to be launched for a request, but not one kept there for the next
+  /// request (see `BallManagement::cancel_ejects`).
   pub in_play: u8,
 }
 
@@ -64,16 +65,9 @@ pub struct EjectCompleted {
 
 // -- Plunge Lane Events --
 
+/// A ball came to rest on the plunge lane switch. Ball management decides which request, if any, it serves.
 #[derive(serde::Serialize, Event)]
-pub struct BallEnteredPlungeLane {
-  pub state: PlungeLaneState,
-}
-
-impl BallEnteredPlungeLane {
-  pub fn new(state: PlungeLaneState) -> Self {
-    Self { state }
-  }
-}
+pub struct BallEnteredPlungeLane;
 
 /// Emitted once the ball has been gone from the plunge lane for the re-enter timeout
 #[derive(serde::Serialize, Event)]
@@ -112,5 +106,30 @@ pub struct TroughEjectFailed;
 
 // -- Ball Search Events --
 
+/// Routine run for each round of a ball search (`BallSearchSystem`). Its participants are whatever can knock a stuck
+/// ball loose: a scoop that kicks (unless it's holding its ball on purpose), a drop bank that resets, a diverter that
+/// toggles. Each fires and completes its step right away. The routine waits between steps, so coils fire one at a
+/// time and the power supply's capacitors recharge in between. The app lists them in firing order. Coils with nothing
+/// to decide, like pop bumpers and slingshots, are fired by `BallSearchSystem` itself (`BallSearchSystem::coils`).
+///
+/// ```rust,ignore
+/// app.routine::<BallSearching>(routine![LowerScoop, DropBank]);
+/// ```
+///
+/// It's started at the root, so participants are systems there (the ones running the hardware), not in a player's
+/// group.
+#[derive(serde::Serialize, Event, Clone)]
+pub struct BallSearching {
+  /// Starting at 1
+  pub round: u8,
+}
+
+/// Emitted when a ball search gives up after its last round without finding a ball. One ball is taken out of the count
+/// as lost (`remove_missing_ball`), so play doesn't wait for it; the game manager serves another if it was the last.
+/// A ball still in play after that is searched for in turn.
 #[derive(serde::Serialize, Event)]
-pub struct PerformBallSearch;
+pub struct BallSearchFailed {
+  pub rounds: u8,
+  /// Balls left in play, without the lost one
+  pub in_play: u8,
+}

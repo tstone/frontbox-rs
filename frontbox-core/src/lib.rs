@@ -20,6 +20,8 @@ mod macros;
 pub mod operator_config;
 pub mod provided;
 pub mod systems;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 pub mod toml;
 
 pub use hardware::tags;
@@ -35,7 +37,10 @@ pub mod prelude {
   pub use crate::hardware::*;
   pub use crate::hardware_defs;
   pub use crate::location::*;
-  pub use crate::machine::{ContextDrivers, ContextLeds, ContextSwitches, MachineSystem, SwitchClosed, SwitchOpened};
+  pub use crate::machine::{
+    ContextDrivers, ContextLeds, ContextSwitches, MachineDisconnected, MachineReconnected, MachineSystem, SwitchClosed,
+    SwitchOpened,
+  };
   pub use crate::metrics::{
     Counter, GameId, MetricDefinition, MetricKind, MetricsCollection, Sample, SampleType,
   };

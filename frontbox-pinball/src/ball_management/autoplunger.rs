@@ -9,6 +9,10 @@ pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,
   pub(super) launch_button: Option<SwitchQ>,
   pub(super) launch_ready_effect: Option<LedPlayback>,
+  pub(super) before_launch_effect: Option<LedPlayback>,
+  pub(super) after_launch_effect: Option<LedPlayback>,
+  /// How long after firing ball management checks that the ball has left the lane switch, before firing again
+  pub(super) launch_verification_time: Duration,
 }
 
 impl AutoPlungerConfig {
@@ -17,6 +21,9 @@ impl AutoPlungerConfig {
       coil_name,
       launch_button: None,
       launch_ready_effect: None,
+      before_launch_effect: None,
+      after_launch_effect: None,
+      launch_verification_time: Duration::from_millis(1000),
     }
   }
 }
@@ -27,7 +34,11 @@ pub struct AutoPlungerSystem {
   coil_name: &'static str,
   launch_button: Option<SwitchQ>,
   launch_ready_effect: Option<LedPlayback>,
+  before_launch_effect: Option<LedPlayback>,
+  after_launch_effect: Option<LedPlayback>,
   armed: bool,
+  /// A launch waiting for the before-launch effect to play through, with the cue that ends the wait
+  pending_launch: Option<(LaunchMethod, u64)>,
 }
 
 impl AutoPlungerSystem {
@@ -37,6 +48,9 @@ impl AutoPlungerSystem {
       coil_name: config.coil_name,
       launch_button: config.launch_button.clone(),
       launch_ready_effect: config.launch_ready_effect.clone(),
+      before_launch_effect: config.before_launch_effect.clone(),
+      after_launch_effect: config.after_launch_effect.clone(),
+      pending_launch: None,
       armed: false,
     }
   }
@@ -83,10 +97,23 @@ impl AutoPlungerSystem {
     self.armed
   }
 
-  /// Launch the ball resting in the plunge lane now
+  /// Launch the ball resting in the plunge lane. With a before-launch effect, the coil fires once the effect has
+  /// played through; otherwise it fires now. `AutoPlungerFired` is emitted when the coil fires.
   pub fn launch(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    self.fire(LaunchMethod::Auto, ctx);
+    self.begin_launch(LaunchMethod::Auto, ctx);
+  }
+
+  /// Call off a launch that's waiting for the before-launch effect, e.g. because the ball has left the lane
+  pub fn cancel_launch(&mut self, ctx: &ServiceContext) {
+    let Some((_, cue)) = self.pending_launch.take() else {
+      return;
+    };
+    let ctx = &ctx.for_system(self.handle);
+    ctx.cues.cancel(cue);
+    if let Some(effect) = self.before_launch_effect.as_mut() {
+      effect.stop(ctx);
+    }
   }
 
   /// Let a launch button press launch the ball. Does nothing if no launch button is configured.
@@ -94,7 +121,7 @@ impl AutoPlungerSystem {
     if self.launch_button.is_none() || self.armed {
       return;
     }
-    log::debug!(target: "frontbox_core::autoplunger", "Launch button armed");
+    log::debug!(target: "frontbox::ball_management::autoplunger", "Launch button armed");
     self.armed = true;
     if let Some(effect) = self.launch_ready_effect.as_mut() {
       effect.reset();
@@ -113,10 +140,42 @@ impl AutoPlungerSystem {
     }
   }
 
+  /// Play the before-launch effect and then fire, or fire now if there isn't one
+  fn begin_launch(&mut self, method: LaunchMethod, ctx: &SystemContext) {
+    if self.pending_launch.is_some() {
+      return;
+    }
+    let Some(effect) = self.before_launch_effect.as_mut() else {
+      self.fire(method, ctx);
+      return;
+    };
+
+    effect.reset();
+    effect.play();
+    // checked to have a length when it was set
+    let length = effect.length().unwrap_or_default();
+    let cue = ctx.cues.start(BeforeLaunchEffectCompleted, length.once());
+    self.pending_launch = Some((method, cue));
+  }
+
+  fn on_before_launch_effect_completed(&mut self, ctx: &SystemContext) {
+    let Some((method, _)) = self.pending_launch.take() else {
+      return;
+    };
+    if let Some(effect) = self.before_launch_effect.as_mut() {
+      effect.stop(ctx);
+    }
+    self.fire(method, ctx);
+  }
+
   fn fire(&mut self, method: LaunchMethod, ctx: &SystemContext) {
-    log::info!(target: "frontbox_core::autoplunger", "Firing auto plunger ({:?})", method);
+    log::info!(target: "frontbox::ball_management::autoplunger", "Firing auto plunger ({:?})", method);
     ctx.drivers.activate(self.coil_name, ActivationMode::Tap);
     ctx.emit(AutoPlungerFired { method });
+    if let Some(effect) = self.after_launch_effect.as_mut() {
+      effect.reset();
+      effect.play();
+    }
   }
 
   fn is_ball_resting(&self, ctx: &SystemContext) -> bool {
@@ -140,10 +199,12 @@ impl System for AutoPlungerSystem {
     {
       // A ball still rolling (e.g. a half plunge) isn't launched; the button stays armed until it settles
       if self.is_ball_resting(ctx) {
-        log::info!(target: "frontbox_core::autoplunger", "Launching ball via launch button");
+        log::info!(target: "frontbox::ball_management::autoplunger", "Launching ball via launch button");
         self.disarm_launch_button(ctx.into());
-        self.fire(LaunchMethod::Button, ctx);
+        self.begin_launch(LaunchMethod::Button, ctx);
       }
+    } else if event.is::<BeforeLaunchEffectCompleted>() {
+      self.on_before_launch_effect_completed(ctx);
     }
   }
 
@@ -153,5 +214,86 @@ impl System for AutoPlungerSystem {
     {
       effect.apply(delta, ctx);
     }
+    if let Some(effect) = self.before_launch_effect.as_mut() {
+      effect.apply(delta, ctx);
+    }
+    if let Some(effect) = self.after_launch_effect.as_mut() {
+      effect.apply(delta, ctx);
+    }
+  }
+}
+
+// -- Cues --
+
+#[derive(serde::Serialize, Event)]
+struct BeforeLaunchEffectCompleted;
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// A one second scene on an LED the machine doesn't have
+  fn effect() -> LedPlayback {
+    let scene = LedScene::load(
+      r#"Led(
+        version: 1,
+        timing: (duration: 1.0),
+        layers: [(
+          leds: Name("launch_led"),
+          surface: Sequence,
+          layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))),
+        )],
+      )"#,
+    );
+    LedPlayback::new(scene.unwrap()).unwrap()
+  }
+
+  fn spawn(config: AutoPlungerConfig) -> (AutoPlungerSystem, TestContext) {
+    let ctx = TestContext::default();
+    let mut autoplunger = AutoPlungerSystem::new(&config);
+    autoplunger.on_spawn(&ctx.sys_ctx());
+    (autoplunger, ctx)
+  }
+
+  fn fires(ctx: &mut TestContext) -> usize {
+    ctx
+      .events_emitted()
+      .iter()
+      .filter(|e| e.event.is::<AutoPlungerFired>())
+      .count()
+  }
+
+  #[test]
+  fn without_a_before_launch_effect_it_fires_at_once() {
+    let (mut autoplunger, mut ctx) = spawn(AutoPlungerConfig::new("autoplunger"));
+    autoplunger.launch(&ctx.svc_ctx());
+    assert_eq!(fires(&mut ctx), 1);
+  }
+
+  #[test]
+  fn with_a_before_launch_effect_it_fires_once_the_effect_has_played() {
+    let mut config = AutoPlungerConfig::new("autoplunger");
+    config.before_launch_effect = Some(effect().stopped());
+    let (mut autoplunger, mut ctx) = spawn(config);
+
+    autoplunger.launch(&ctx.svc_ctx());
+    autoplunger.launch(&ctx.svc_ctx()); // already launching
+    assert_eq!(fires(&mut ctx), 0);
+
+    autoplunger.on_event(&BeforeLaunchEffectCompleted, &ctx.sys_ctx());
+    assert_eq!(fires(&mut ctx), 1);
+  }
+
+  #[test]
+  fn a_cancelled_launch_doesnt_fire() {
+    let mut config = AutoPlungerConfig::new("autoplunger");
+    config.before_launch_effect = Some(effect().stopped());
+    let (mut autoplunger, mut ctx) = spawn(config);
+
+    autoplunger.launch(&ctx.svc_ctx());
+    autoplunger.cancel_launch(&ctx.svc_ctx());
+    // a cue that was already on its way
+    autoplunger.on_event(&BeforeLaunchEffectCompleted, &ctx.sys_ctx());
+    assert_eq!(fires(&mut ctx), 0);
   }
 }

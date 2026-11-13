@@ -18,6 +18,9 @@ pub enum AppMessage {
   Shutdown(ShutdownScope),
   SwitchStateChange(usize, SwitchState),
   SyncSwitchStates(Vec<SwitchState>),
+  MachineDisconnected,
+  /// The machine reconnected to the hardware, which reported these switch states
+  MachineReconnected(Vec<SwitchState>),
   ConfigChanged(&'static str),
   DriverModeChange(usize, DriverMode),
   SpawnSystem(GroupId, SpawnableSystemContainer),
@@ -29,9 +32,10 @@ pub enum AppMessage {
   ActivateSystemGroup(GroupId),
   DeactivateSystemGroup(GroupId),
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
-  CreateCueTimeline(SystemHandle, u64, CueTimeline),
   CancelCue(SystemHandle, u64),
   StartRoutine(RoutineStart),
+  /// The origin cancels the routine with this id
+  CancelRoutine(SystemHandle, u64),
   CompleteRoutineStep(SystemHandle, TypeId),
   HaltRoutine(SystemHandle, TypeId),
   /// Hand a started routine to its first participant, once its `RoutineStarted` has gone out
@@ -67,6 +71,8 @@ impl Debug for AppMessage {
         write!(f, "SingleSwitchState({}, {:?})", index, state)
       }
       AppMessage::SyncSwitchStates(states) => write!(f, "SwitchStates({:?})", states),
+      AppMessage::MachineDisconnected => write!(f, "MachineDisconnected"),
+      AppMessage::MachineReconnected(states) => write!(f, "MachineReconnected({:?})", states),
       AppMessage::ConfigChanged(key) => write!(f, "ConfigChanged({})", key),
       AppMessage::DriverModeChange(driver, mode) => {
         write!(f, "DriverModeChange({}, {:?})", driver, mode)
@@ -95,11 +101,11 @@ impl Debug for AppMessage {
       AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
         write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
       }
-      AppMessage::CreateCueTimeline(handle, cue_id, _timeline) => {
-        write!(f, "CreateCueTimeline({}:{})", handle.id, cue_id)
-      }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
       AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
+      AppMessage::CancelRoutine(handle, routine_id) => {
+        write!(f, "CancelRoutine({}:{})", handle.id, routine_id)
+      }
       AppMessage::CompleteRoutineStep(handle, type_id) => {
         write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
       }
@@ -111,6 +117,18 @@ impl Debug for AppMessage {
         write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
       }
       AppMessage::SetState(state) => write!(f, "SetState({:?})", state),
+      // An LED batch holds every changed LED and is sent several times a tick, so for performance simplify it
+      AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
+        expansion,
+        breakout,
+        states,
+      }) => write!(
+        f,
+        "TracerEvent(LedsRGBChange {{ expansion: {}, breakout: {:?}, {} leds }})",
+        expansion,
+        breakout,
+        states.len()
+      ),
       AppMessage::TracerEvent(event) => write!(f, "TracerEvent({:?})", event),
     }
   }

@@ -27,10 +27,28 @@
 //! 2. Each participant of the routine (player-up or shoot-again display, skill shot selection, etc.) takes its turn before the ball comes out.
 //! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
 //! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `TurnActive` is emitted. This happens once per turn, unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play.
-//! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn.
+//! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn. See "Overview: A Drain" below.
 //! 6. When a drain that left no ball in play completes without being halted, or at once when the player tilts, the game manager starts the `TurnEnding` routine, with a `TurnEndReason`. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
 //! 7. Each participant of the routine (bonus, etc.) takes its turn at the end-of-ball display, animations, etc. On `TurnEndReason::Tilted`, participants such as bonus skip.
 //! 8. Once the last participant completes its step, `RoutineCompleted<TurnEnding>` is broadcast. Once no ball is left in play (balls still rolling down after a tilt, or released during the routine, are waited for, and can't be saved), the game manager advances to the next turn, or ends the game after the last one. If the player has an extra ball, they use it, and the next turn is theirs again.
+//!
+//! # Overview: A Drain
+//! Ball management reports a drain, and the game manager decides what it means.
+//! 1. A ball comes home to the trough. Once the trough settles, ball management emits `BallsExitedPlay` with how many balls drained and how many are still in play, worked out from the trough's switches and what holders report (`set_balls_held`), not from a running count. Every drain is reported and counted in the `BALLS_DRAINED` audit, including ones that are then saved or ignored.
+//! 2. What the game manager does with it depends on the `TurnPhase`:
+//!    - `None`: nothing. No game is being played.
+//!    - `Starting`: the served ball came back before the turn went active (e.g. a weak plunge), so it's served again.
+//!    - `Active`: steps 3 to 5.
+//!    - `Ending`: it's waited for, and can't be saved. Once no ball is left in play and `TurnEnding` has completed, the turn advances.
+//! 3. If the coin door is open (`CoinDoor::Open`) and `configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN` is on, the drain doesn't count: no `BallDraining` is started, so no ball save is used and the turn doesn't end, and the balls are put back into play (`Launch::Auto`). An operator is most likely taking out a stuck ball.
+//! 4. Otherwise the game manager starts the `BallDraining` routine in the current player's group. Its participants, in the order the app lists them, each get the chance to save the drain (ball save puts a ball back into play), and one that does halts the routine. Only one drain is decided at a time; the next waits its turn.
+//! 5. The game manager hears `RoutineCompleted<BallDraining>` first. `RoutineCompletion::Halted` means the drain was saved. `RoutineCompletion::AllSteps` means it stands, and if it left no ball in play, `TurnEnding` starts with `TurnEndReason::Drained`. Everyone else hears it next: a multiball ends on a drain that stands with one ball left (`in_play`).
+//!
+//! Systems that should only react to drains that stand watch `RoutineCompleted<BallDraining>`, not `BallsExitedPlay`.
+//!
+//! Two cases have no drain reported, and are handled during an active turn:
+//! - **A drain that's never reported** (e.g. a ball save's replacement that never left the trough): with nothing in play, nothing on its way and nothing held on two checks in a row, the game manager treats it as a drain, from step 3.
+//! - **A ball nobody can find**: with no switch hit for `configs::BALL_SEARCH_DELAY`, `BallSearchSystem` runs the `BallSearching` routine, up to 3 rounds. If that finds nothing, one ball is taken out of the count as lost, and `BallSearchFailed` is emitted. If no ball is left in play, the game manager puts another into play without ending the turn. There's no search while the coin door is open, or while a flipper button is held (`hold_switches`).
 //!
 //! # Overview: Game End
 //! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo` or a slam tilt), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).
@@ -82,6 +100,11 @@
 //!
 //! `SlamTiltSystem` (at the root) ends the game at once on the slam tilt switch, with `GameEndReason::SlamTilted`.
 //!
+//! ## Scoops
+//! `ScoopSystem<S>` (at the root) runs one scoop: it ejects a ball that lands in it, unless another system is holding
+//! the ball there (`hold`, `release`). `S` is a marker type naming the scoop, so a machine has one system per scoop,
+//! each with its own `ScoopBallEntered<S>` and `ScoopEjected<S>`.
+//!
 //! ## Attract Mode
 //! `AttractSystem` (at the root) plays a list of scenes on every LED, one after another, for as long as `GamePhase` is
 //! `None`.
@@ -89,17 +112,21 @@
 mod attract_system;
 pub mod ball_management;
 mod ball_save;
+mod coin_door;
 pub mod configs;
 mod game_management;
 mod game_start;
 mod high_scores;
 pub mod metrics;
+mod scoop;
 mod tilt;
 
 pub use attract_system::*;
 pub use ball_management::*;
 pub use ball_save::*;
+pub use coin_door::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
+pub use scoop::*;
 pub use tilt::*;

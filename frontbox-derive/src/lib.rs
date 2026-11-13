@@ -65,13 +65,32 @@ fn to_camel_case(s: &str) -> String {
 }
 
 /// Turn any object in a Frontbox Event. Child data must implement serde::Serialize
+///
+/// A generic event is one for each of its type parameters, which must be `'static`:
+/// ```ignore
+///   #[derive(Serialize, Event)]
+///   struct Ejected<S> {
+///     #[serde(skip)]
+///     scoop: PhantomData<fn() -> S>,
+///   }
+/// ```
 #[proc_macro_derive(Event)]
 pub fn derive_event(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   let name = &input.ident;
+  let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+
+  let mut where_clause = input
+    .generics
+    .where_clause
+    .clone()
+    .unwrap_or_else(|| syn::parse_quote!(where));
+  where_clause
+    .predicates
+    .push(syn::parse_quote!(Self: serde::Serialize + Send + Sync + 'static));
 
   let expanded = quote! {
-      impl frontbox_core::systems::Event for #name {
+      impl #impl_generics frontbox_core::systems::Event for #name #ty_generics #where_clause {
           fn as_any(&self) -> &dyn std::any::Any {
               self
           }

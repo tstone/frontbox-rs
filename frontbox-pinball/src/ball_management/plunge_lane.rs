@@ -1,6 +1,7 @@
 use frontbox_core::prelude::*;
 use frontbox_led::prelude::*;
 
+use crate::GamePhase;
 use crate::ball_management::{
   BallEnteredPlungeLane, BallExitedPlungeLane, BallReenteredPlungeLane,
 };
@@ -11,6 +12,7 @@ pub struct PlungeLaneConfig {
   pub(super) switch_name: &'static str,
   /// How long the lane switch must stay open before the ball is considered gone, as a weak plunge can roll back
   pub(super) re_enter_timeout: Duration,
+  /// Plays while a ball is in the lane during a game
   pub(super) ball_present_effect: Option<LedPlayback>,
   /// How long ball management waits for an ejected ball to reach the lane, before trying to knock it loose and then
   /// giving up on it
@@ -31,9 +33,9 @@ impl PlungeLaneConfig {
 pub struct PlungeLaneSystem {
   handle: SystemHandle,
   plunge_lane_switch_name: &'static str,
-  expect_ball: bool,
   re_enter_timeout: Duration,
-  state: PlungeLaneState,
+  /// From the ball entering the lane until it is considered gone
+  ball_present: bool,
   wait_cue_id: Option<u64>,
   ball_present_program: Option<LedPlayback>,
 }
@@ -43,11 +45,10 @@ impl PlungeLaneSystem {
     Self {
       handle: SystemHandle::default(),
       plunge_lane_switch_name: config.switch_name,
-      expect_ball: false,
       re_enter_timeout: config.re_enter_timeout,
-      state: PlungeLaneState::NoBall,
+      ball_present: false,
       wait_cue_id: None,
-      ball_present_program: config.ball_present_effect.clone(),
+      ball_present_program: config.ball_present_effect.clone().map(LedPlayback::stopped),
     }
   }
 
@@ -57,18 +58,9 @@ impl PlungeLaneSystem {
       .debounce_close(Duration::from_millis(100))
   }
 
-  /// The next ball to enter the lane was ejected on purpose
-  pub fn expect_ball(&mut self) {
-    self.expect_ball = true;
-  }
-
-  pub fn current_state(&self) -> &PlungeLaneState {
-    &self.state
-  }
-
   /// True from the ball entering the lane until it is considered gone (including the re-enter timeout)
   pub fn is_ball_present(&self) -> bool {
-    self.state != PlungeLaneState::NoBall
+    self.ball_present
   }
 
   /// True if a ball is sitting on the lane switch right now
@@ -81,40 +73,45 @@ impl PlungeLaneSystem {
   }
 
   fn cancel_cue(&mut self, ctx: &SystemContext) {
-    if let Some(cue_id) = self.wait_cue_id {
-      ctx.cues.cancel(cue_id);
-      self.wait_cue_id = None;
-    }
+    ctx.cues.cancel(self.wait_cue_id.take());
   }
 
   fn on_lane_switch_closed(&mut self, ctx: &SystemContext) {
     // If a pending wait cue is running, then the ball has rolled back in rather than a new ball entering
     if self.wait_cue_id.is_some() {
       self.cancel_cue(ctx);
-      log::info!(target: "frontbox_core::plunge_lane", "Ball re-entered");
+      log::info!(target: "frontbox::ball_management::plunge_lane", "Ball re-entered");
       ctx.emit(BallReenteredPlungeLane);
       return;
     }
 
-    if self.expect_ball {
-      self.state = PlungeLaneState::ExpectedBallPresent;
-    } else {
-      self.state = PlungeLaneState::UnexpectedBallPresent;
-    }
-
-    log::info!(target: "frontbox_core::plunge_lane", "Ball entered ({:?})", self.state);
-    ctx.emit(BallEnteredPlungeLane::new(self.state));
-    self.expect_ball = false;
-
-    if let Some(effect) = self.ball_present_program.as_mut() {
-      effect.play();
-    }
+    self.ball_present = true;
+    log::info!(target: "frontbox::ball_management::plunge_lane", "Ball entered");
+    ctx.emit(BallEnteredPlungeLane);
   }
 
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
-    log::info!(target: "frontbox_core::plunge_lane", "Ball exited ({:?})", self.state);
+    log::info!(target: "frontbox::ball_management::plunge_lane", "Ball exited");
     self.cancel_cue(ctx);
     self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+  }
+
+  /// Plays the ball present effect while a ball is in the lane during a game, and stops it otherwise (e.g. a game quit
+  /// with the ball still in the lane)
+  fn update_ball_present_effect(&mut self, delta: Duration, ctx: &SystemContext) {
+    let show = self.ball_present && ctx.states.is(GamePhase::Active);
+    let Some(effect) = self.ball_present_program.as_mut() else {
+      return;
+    };
+
+    if show {
+      if !effect.is_playing() {
+        effect.play();
+      }
+      effect.apply(delta, ctx);
+    } else if effect.is_playing() {
+      effect.stop(ctx);
+    }
   }
 }
 
@@ -127,8 +124,8 @@ impl System for PlungeLaneSystem {
       .is_closed(self.plunge_lane_switch_name)
       .unwrap_or(false)
     {
-      self.state = PlungeLaneState::UnexpectedBallPresent;
-      ctx.emit(BallEnteredPlungeLane::new(self.state));
+      self.ball_present = true;
+      ctx.emit(BallEnteredPlungeLane);
     }
   }
 
@@ -136,18 +133,13 @@ impl System for PlungeLaneSystem {
     if event.is::<TimesUpBallsGone>() {
       self.wait_cue_id = None;
       ctx.emit(BallExitedPlungeLane);
-      self.state = PlungeLaneState::NoBall;
-
-      if let Some(effect) = self.ball_present_program.as_mut() {
-        effect.stop(ctx);
-      }
-    } else if self.state == PlungeLaneState::NoBall
+      self.ball_present = false;
+    } else if !self.ball_present
       && let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
       self.on_lane_switch_closed(ctx);
-    } else if (self.state == PlungeLaneState::ExpectedBallPresent
-      || self.state == PlungeLaneState::UnexpectedBallPresent)
+    } else if self.ball_present
       && let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
@@ -161,18 +153,8 @@ impl System for PlungeLaneSystem {
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    let ball_present = self.is_ball_present();
-    if ball_present && let Some(effect) = self.ball_present_program.as_mut() {
-      effect.apply(delta, ctx);
-    }
+    self.update_ball_present_effect(delta, ctx);
   }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum PlungeLaneState {
-  NoBall,
-  ExpectedBallPresent,
-  UnexpectedBallPresent,
 }
 
 // -- Cues --
@@ -189,10 +171,34 @@ mod tests {
   struct Fixture {
     lane: PlungeLaneSystem,
     ctx: TestContext,
+    /// Sets the game phase, once one is set
+    game_owner: Option<SystemHandle>,
+  }
+
+  struct GameOwner;
+  impl System for GameOwner {}
+
+  /// A scene on an LED the machine doesn't have, that plays until stopped
+  fn effect() -> LedPlayback {
+    let scene = LedScene::load(
+      r#"Led(
+        version: 1,
+        layers: [(
+          leds: Name("plunge_led"),
+          surface: Sequence,
+          layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))),
+        )],
+      )"#,
+    );
+    LedPlayback::new(scene.unwrap()).unwrap()
   }
 
   impl Fixture {
     fn spawn() -> Self {
+      Self::spawn_with(PlungeLaneConfig::new(PLUNGE))
+    }
+
+    fn spawn_with(config: PlungeLaneConfig) -> Self {
       let mut ctx = TestContext::default();
       ctx.insert_switch(Switch {
         name: PLUNGE,
@@ -201,9 +207,13 @@ mod tests {
       });
       ctx.update_switch_states(vec![SwitchState::Open]);
 
-      let mut lane = PlungeLaneSystem::new(&PlungeLaneConfig::new(PLUNGE));
+      let mut lane = PlungeLaneSystem::new(&config);
       lane.on_spawn(&ctx.sys_ctx());
-      Self { lane, ctx }
+      Self {
+        lane,
+        ctx,
+        game_owner: None,
+      }
     }
 
     fn set_lane_switch(&mut self, closed: bool) {
@@ -225,6 +235,17 @@ mod tests {
       }
     }
 
+    fn set_game_phase(&mut self, phase: GamePhase) {
+      let owner = *self.game_owner.get_or_insert_with(|| self.ctx.insert_system(GameOwner));
+      self.ctx.svc_ctx().for_system(owner).states.set(phase);
+      self.ctx.apply_states();
+    }
+
+    fn effect_playing(&mut self) -> bool {
+      self.lane.on_tick(Duration::from_millis(10), &self.ctx.sys_ctx());
+      self.lane.ball_present_program.as_ref().unwrap().is_playing()
+    }
+
     fn timeout_elapsed(&mut self) {
       self.lane.on_event(&TimesUpBallsGone, &self.ctx.sys_ctx());
     }
@@ -240,15 +261,11 @@ mod tests {
   }
 
   #[test]
-  fn expected_ball_entering_reports_expected() {
+  fn ball_entering_reports_entered() {
     let mut f = Fixture::spawn();
-    f.lane.expect_ball();
     f.set_lane_switch(true);
     assert_eq!(f.events(), vec!["BallEnteredPlungeLane"]);
-    assert_eq!(
-      *f.lane.current_state(),
-      PlungeLaneState::ExpectedBallPresent
-    );
+    assert!(f.lane.is_ball_present());
   }
 
   #[test]
@@ -277,6 +294,38 @@ mod tests {
     assert_eq!(f.events(), vec!["BallReenteredPlungeLane"]);
     assert!(f.lane.wait_cue_id.is_none(), "timeout cancelled");
     assert!(f.lane.is_ball_present());
+  }
+
+  #[test]
+  fn ball_present_effect_only_plays_during_a_game() {
+    let mut config = PlungeLaneConfig::new(PLUNGE);
+    config.ball_present_effect = Some(effect());
+    let mut f = Fixture::spawn_with(config);
+
+    f.set_lane_switch(true);
+    assert!(!f.effect_playing(), "no game");
+
+    f.set_game_phase(GamePhase::Active);
+    assert!(f.effect_playing());
+
+    // quit with the ball still in the lane
+    f.set_game_phase(GamePhase::Ending);
+    assert!(!f.effect_playing());
+  }
+
+  #[test]
+  fn ball_present_effect_stops_once_the_ball_is_gone() {
+    let mut config = PlungeLaneConfig::new(PLUNGE);
+    config.ball_present_effect = Some(effect());
+    let mut f = Fixture::spawn_with(config);
+    f.set_game_phase(GamePhase::Active);
+
+    f.set_lane_switch(true);
+    assert!(f.effect_playing());
+
+    f.set_lane_switch(false);
+    f.timeout_elapsed();
+    assert!(!f.effect_playing());
   }
 
   #[test]

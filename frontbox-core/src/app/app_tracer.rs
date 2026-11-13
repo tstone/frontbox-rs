@@ -188,6 +188,13 @@ impl TracerSenders {
       tracer.send(event.clone()).ok();
     }
   }
+
+  /// Send the event `build` returns, calling it only when a tracer is attached. For events that are costly to build.
+  pub fn send_lazy(&self, build: impl FnOnce() -> TraceEvent) {
+    if !self.txs.is_empty() {
+      self.send(build());
+    }
+  }
 }
 
 /// Events (commands, really) which are sent from Tracer clients to the main application

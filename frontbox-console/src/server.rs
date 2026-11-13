@@ -47,13 +47,13 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
   let listener = match tokio::net::TcpListener::bind(addr).await {
     Ok(listener) => listener,
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Unable to bind web console to {addr}: {err}");
+      log::error!(target: "frontbox::console", "Unable to bind web console to {addr}: {err}");
       return;
     }
   };
-  log::info!(target: "frontbox_core::console", "Web console listening on http://{addr}");
+  log::info!(target: "frontbox::console", "Web console listening on http://{addr}");
   if let Err(err) = axum::serve(listener, app).await {
-    log::error!(target: "frontbox_core::console", "Web console stopped: {err}");
+    log::error!(target: "frontbox::console", "Web console stopped: {err}");
   }
 }
 
@@ -90,7 +90,7 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           // client fell too far behind; start it over from a fresh snapshot
           Err(RecvError::Lagged(missed)) => {
             log::warn!(
-              target: "frontbox_core::console",
+              target: "frontbox::console",
               "A console client fell {missed} messages behind; sending it everything again"
             );
             continue 'resync;
@@ -145,7 +145,7 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
               });
             }
             Ok(message) => held.handle(message),
-            Err(err) => log::warn!(target: "frontbox_core::console", "Ignoring a message from a console client: {err}"),
+            Err(err) => log::warn!(target: "frontbox::console", "Ignoring a message from a console client: {err}"),
           },
           Some(Ok(_)) => {}
           _ => return,
@@ -166,7 +166,7 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
       ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
     }
     Err(err) => {
-      log::warn!(target: "frontbox_core::console", "Unable to read plane image {}: {err}", path.display());
+      log::warn!(target: "frontbox::console", "Unable to read plane image {}: {err}", path.display());
       StatusCode::NOT_FOUND.into_response()
     }
   }
@@ -180,7 +180,7 @@ async fn content_images(State(hub): State<ConsoleHub>) -> Response {
   match tokio::task::spawn_blocking(move || content.image_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Scanning the content folder stopped: {err}");
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -219,7 +219,7 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
     }
     Ok(Err(err)) => (StatusCode::NOT_FOUND, err.to_string()).into_response(),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Reading an image stopped: {err}");
+      log::error!(target: "frontbox::console", "Reading an image stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -242,7 +242,7 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
       (status, err.to_string()).into_response()
     }
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Adding an image stopped: {err}");
+      log::error!(target: "frontbox::console", "Adding an image stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -256,7 +256,7 @@ async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
   match tokio::task::spawn_blocking(move || content.scene_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Scanning the content folder stopped: {err}");
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -272,7 +272,7 @@ async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
     Ok(Ok(ron)) => ron.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Reading a scene stopped: {err}");
+      log::error!(target: "frontbox::console", "Reading a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -298,7 +298,7 @@ async fn delete_content_scene(Path(name): Path<String>, State(hub): State<Consol
     Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Deleting a scene stopped: {err}");
+      log::error!(target: "frontbox::console", "Deleting a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }
@@ -322,7 +322,7 @@ async fn write_scene(
     Ok(Ok(ron)) => (written, ron).into_response(),
     Ok(Err(err)) => scene_file_failure(err),
     Err(err) => {
-      log::error!(target: "frontbox_core::console", "Writing a scene stopped: {err}");
+      log::error!(target: "frontbox::console", "Writing a scene stopped: {err}");
       StatusCode::INTERNAL_SERVER_ERROR.into_response()
     }
   }

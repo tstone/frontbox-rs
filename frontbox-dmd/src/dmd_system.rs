@@ -64,13 +64,13 @@ impl System for DmdSystem {
       let start = std::time::Instant::now();
 
       if !self.canvas.is_empty() {
-        log::trace!("canvas layer count: {}", self.canvas.len());
+        log::trace!(target: "frontbox::dmd", "canvas layer count: {}", self.canvas.len());
         let pixels = self.canvas.to_pixels();
         let _ = self.dmd.render(&pixels);
       }
 
       self.needs_render = false;
-      log::trace!("DMDSystem on_render took {}μs", start.elapsed().as_micros());
+      log::trace!(target: "frontbox::dmd", "DMDSystem on_render took {}μs", start.elapsed().as_micros());
     }
   }
 }

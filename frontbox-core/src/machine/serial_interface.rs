@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Display;
 use std::time::Duration;
 
 use fast_protocol::FastBinaryDispatch;
@@ -18,8 +19,7 @@ const BAUD_RATE: u32 = 921_600;
 
 pub struct SerialInterface {
   port_name: String,
-  reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
-  writer: WriteHalf<SerialStream>,
+  stream: Option<PortStream>,
   // if events are encountered while attempting to read a response, they are queued here for later retrieval
   event_queue: VecDeque<EventResponse>,
   // if a response is encountered that is not the expected response, it is queued here for later retrieval
@@ -47,7 +47,7 @@ impl SerialInterface {
 
     // poll reader until there is no unexpected messages
     // this also clears out anything that was from a prior run
-    log::trace!("Draining serial buffer on {} before continuing", port_path);
+    log::trace!(target: "frontbox::machine::serial", "Draining serial buffer on {} before continuing", port_path);
     let drain_timeout = Duration::from_millis(300); // Adjust as needed
     loop {
       match tokio::time::timeout(drain_timeout, framed_reader.next()).await {
@@ -58,39 +58,51 @@ impl SerialInterface {
 
     Ok(SerialInterface {
       port_name: port_path.to_string(),
-      reader: framed_reader,
-      writer,
+      stream: Some(PortStream {
+        reader: framed_reader,
+        writer,
+      }),
       response_queue: VecDeque::new(),
       event_queue: VecDeque::new(),
       response_ttl: Duration::from_secs(4), // after this time unclaimed messages fall out of the queue
     })
   }
 
-  pub async fn read_event(&mut self) -> Option<EventResponse> {
+  /// Whether the port can still be used. Once a read or write on it fails, or it's closed, it can't.
+  pub fn is_connected(&self) -> bool {
+    self.stream.is_some()
+  }
+
+  /// Close the port, so it can be opened again
+  pub fn close(&mut self) {
+    self.stream = None;
+  }
+
+  /// Give up on the port after a read or write failed
+  fn disconnected(&mut self, reason: impl Display) {
+    if self.stream.take().is_some() {
+      log::error!(target: "frontbox::machine::serial", "🔌 Lost {}: {}", self.port_name, reason);
+    }
+  }
+
+  /// Wait for the next event, e.g. a switch changing. Fails only once the port is lost.
+  pub async fn read_event(&mut self) -> Result<EventResponse, SerialError> {
     // First check if there is an event already in the queue. This may have happened by a prior call to
     // query or command that attempted to get a response but actually received an event
     if let Some(event) = self.event_queue.pop_front() {
-      return Some(event);
+      return Ok(event);
     }
 
     // If none queued, read from the serial port until an event arrives
     loop {
-      match self.read_from_port().await {
-        Some(Ok(raw)) => {
-          if let Some(event) = EventResponse::parse(&raw).ok() {
-            return Some(event);
-          } else {
-            self.response_queue.push_back(QueuedResponse {
-              raw,
-              received_at: std::time::Instant::now(),
-            });
-          }
-        }
-        Some(Err(e)) => {
-          log::error!(target: "frontbox_core::serial", "Serial read error: {}", e);
-          return None;
-        }
-        None => return None,
+      let raw = self.read_from_port().await?;
+      if let Some(event) = EventResponse::parse(&raw).ok() {
+        return Ok(event);
+      } else {
+        self.response_queue.push_back(QueuedResponse {
+          raw,
+          received_at: std::time::Instant::now(),
+        });
       }
     }
   }
@@ -113,7 +125,7 @@ impl SerialInterface {
       let expired = now.duration_since(r.received_at) > self.response_ttl;
       if expired {
         log::trace!(
-          target: "frontbox_core::serial",
+          target: "frontbox::machine::serial",
           "Expiring unclaimed queue response: {}:{}",
           r.raw.prefix,
           r.raw.payload
@@ -123,35 +135,40 @@ impl SerialInterface {
     });
   }
 
-  async fn read_from_port(&mut self) -> Option<tokio_serial::Result<RawResponse>> {
-    let resp = {
-      self.reader.next().await.map(|result| {
-        result.map_err(|e| {
-          tokio_serial::Error::new(tokio_serial::ErrorKind::Io(e.kind()), e.to_string())
-        })
-      })
+  /// Read the next response. A read error or the end of the stream means the port is gone, and once it is this
+  /// fails straight away.
+  async fn read_from_port(&mut self) -> Result<RawResponse, SerialError> {
+    let Some(stream) = &mut self.stream else {
+      return Err(SerialError::Lost);
     };
 
-    match &resp {
-      Some(Ok(raw)) if raw.prefix == "WD" => {
-        log::trace!(target: "frontbox_core::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
-      }
+    match stream.reader.next().await {
       Some(Ok(raw)) => {
-        log::debug!(target: "frontbox_core::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+        if raw.prefix == "WD" {
+          log::trace!(target: "frontbox::machine::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+        } else {
+          log::debug!(target: "frontbox::machine::serial", "👾 -> 🖥️ : {}:{}", raw.prefix, raw.payload)
+        }
+        Ok(raw)
       }
-      _ => {}
+      Some(Err(e)) => {
+        self.disconnected(format!("read failed ({e})"));
+        Err(SerialError::Lost)
+      }
+      None => {
+        self.disconnected("the stream ended");
+        Err(SerialError::Lost)
+      }
     }
-
-    resp
   }
 
-  // Send off a command without concern for a response
+  // Send off a command without concern for a response. A failed write means the port is gone.
   async fn send(&mut self, cmd: &[u8]) {
-    match self.writer.write_all(cmd).await {
-      Ok(_) => (),
-      Err(e) => {
-        log::error!(target: "frontbox_core::serial", "Failed to send on {}: {:?}", self.port_name, e);
-      }
+    let Some(stream) = &mut self.stream else {
+      return;
+    };
+    if let Err(e) = stream.writer.write_all(cmd).await {
+      self.disconnected(format!("write failed ({e})"));
     }
   }
 
@@ -159,9 +176,9 @@ impl SerialInterface {
     let bytes = cmd.to_bytes();
     // Logged via describe() since binary commands don't print; the log macros only evaluate it when enabled
     if bytes.starts_with(b"WD:") || bytes.starts_with(b"R") {
-      log::trace!(target: "frontbox_core::serial", "🖥️ -> 👾 : {}", cmd.describe());
+      log::trace!(target: "frontbox::machine::serial", "🖥️ -> 👾 : {}", cmd.describe());
     } else {
-      log::debug!(target: "frontbox_core::serial", "🖥️ -> 👾 : {}", cmd.describe());
+      log::debug!(target: "frontbox::machine::serial", "🖥️ -> 👾 : {}", cmd.describe());
     }
 
     self.send(&bytes).await
@@ -172,7 +189,11 @@ impl SerialInterface {
     prefix: &str,
     timeout: Duration,
     parse: impl Fn(RawResponse) -> Result<R, FastResponseError>,
-  ) -> Result<R, FastResponseError> {
+  ) -> Result<R, SerialError> {
+    if !self.is_connected() {
+      return Err(SerialError::Lost);
+    }
+
     let prefix = prefix.to_lowercase();
     self.prune_queue(&prefix);
 
@@ -182,37 +203,26 @@ impl SerialInterface {
       .position(|r| r.raw.prefix.to_lowercase() == prefix)
     {
       let response = self.response_queue.remove(pos).unwrap();
-      return parse(response.raw);
+      return parse(response.raw).map_err(SerialError::Response);
     }
 
     tokio::time::timeout(timeout, async {
       loop {
-        match self.read_from_port().await {
-          Some(Ok(response)) => {
-            if response.prefix.to_lowercase() == prefix {
-              return parse(response);
-            } else if let Some(event) = EventResponse::parse(&response).ok() {
-              self.event_queue.push_back(event);
-            } else {
-              self.response_queue.push_back(QueuedResponse {
-                raw: response,
-                received_at: std::time::Instant::now(),
-              });
-            }
-          }
-          Some(Err(e)) => {
-            log::error!(target: "frontbox_core::serial", "Error reading response: {:?}", e);
-            return Err(FastResponseError::UnknownResponse);
-          }
-          None => {
-            log::error!(target: "frontbox_core::serial", "Serial stream ended unexpectedly");
-            return Err(FastResponseError::UnknownResponse);
-          }
+        let response = self.read_from_port().await?;
+        if response.prefix.to_lowercase() == prefix {
+          return parse(response).map_err(SerialError::Response);
+        } else if let Some(event) = EventResponse::parse(&response).ok() {
+          self.event_queue.push_back(event);
+        } else {
+          self.response_queue.push_back(QueuedResponse {
+            raw: response,
+            received_at: std::time::Instant::now(),
+          });
         }
       }
     })
     .await
-    .unwrap_or_else(|_| Err(FastResponseError::Timeout))
+    .unwrap_or_else(|_| Err(SerialError::Response(FastResponseError::Timeout)))
   }
 
   /// Dispatch a command and wait for a response
@@ -220,7 +230,7 @@ impl SerialInterface {
     &mut self,
     cmd: &C,
     timeout: Duration,
-  ) -> Result<C::Response, FastResponseError> {
+  ) -> Result<C::Response, SerialError> {
     self.dispatch(cmd).await;
     self
       .query_inner(cmd.prefix(), timeout, |raw| cmd.parse(raw))
@@ -231,7 +241,7 @@ impl SerialInterface {
     &mut self,
     cmd: &C,
     timeout: Duration,
-  ) -> Result<ProcessedResponse, FastResponseError> {
+  ) -> Result<ProcessedResponse, SerialError> {
     self.dispatch(cmd).await;
     self
       .query_inner(cmd.prefix(), timeout, |raw| cmd.parse(raw))
@@ -239,7 +249,30 @@ impl SerialInterface {
   }
 }
 
+struct PortStream {
+  reader: FramedRead<ReadHalf<SerialStream>, FastRawCodec>,
+  writer: WriteHalf<SerialStream>,
+}
+
 struct QueuedResponse {
   raw: RawResponse,
   received_at: std::time::Instant,
+}
+
+/// Why a query or command on a serial port didn't get a usable response
+#[derive(Debug, Clone, PartialEq)]
+pub enum SerialError {
+  /// The port is gone, e.g. its USB cable was pulled. Nothing more can be sent or read on it.
+  Lost,
+  /// The hardware didn't respond in time, or responded with something that couldn't be used
+  Response(FastResponseError),
+}
+
+impl Display for SerialError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      SerialError::Lost => write!(f, "the port was lost"),
+      SerialError::Response(error) => write!(f, "{error}"),
+    }
+  }
 }

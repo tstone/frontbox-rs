@@ -88,9 +88,12 @@ pub enum RoutineCompletion {
   AllSteps,
   /// A participant halted it with `ctx.routines.halt`, so the participants after it didn't take a step
   Halted,
+  /// Its origin cancelled it with `ctx.routines.cancel`, cutting short the step in progress, so the participants after
+  /// it didn't take a step
+  Cancelled,
 }
 
-// by hand: the derive doesn't handle generics
+// by hand: the JSON names the routine type
 impl<E: Event> Event for RoutineStarted<E> {
   fn as_any(&self) -> &dyn Any {
     self

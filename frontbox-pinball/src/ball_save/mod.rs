@@ -167,9 +167,9 @@ impl BallSaveSystem {
     if saving != self.was_saving {
       self.was_saving = saving;
       if saving {
-        log::info!(target: "frontbox_core::ballsave", "Ball save started");
+        log::info!(target: "frontbox::ball_save", "Ball save started");
       } else {
-        log::info!(target: "frontbox_core::ballsave", "Ball save ended");
+        log::info!(target: "frontbox::ball_save", "Ball save ended");
       }
     }
   }
@@ -209,12 +209,12 @@ impl System for BallSaveSystem {
       return;
     }
     let Some(mut ball_manager) = ctx.systems.get::<BallManager>() else {
-      log::error!(target: "frontbox_core::ballsave", "No BallManager to relaunch the saved ball(s); letting the drain stand");
+      log::error!(target: "frontbox::ball_save", "No BallManager to relaunch the saved ball(s); letting the drain stand");
       ctx.routines.complete_step::<BallDraining>();
       return;
     };
 
-    log::info!(target: "frontbox_core::ballsave", "Saving {} ball(s)", count);
+    log::info!(target: "frontbox::ball_save", "Saving {} ball(s)", count);
     ball_manager.eject_many(*count, Launch::Auto, ctx.into());
     ctx.metrics.add(&metrics::BALL_SAVES, *count as u64);
     ctx.emit(BallSaved { count: *count });
@@ -289,12 +289,25 @@ mod tests {
     fn can_auto_launch(&self) -> bool {
       true
     }
+    fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
+    fn ejects_pending(&self) -> bool {
+      false
+    }
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       0
     }
+    fn is_ball_in_plunge_lane(&self, _ctx: &ServiceContext) -> bool {
+      false
+    }
     fn establish_ball_count(&mut self, _ctx: &ServiceContext) {}
-    fn ball_temporarily_removed_from_play(&mut self, _ctx: &ServiceContext) {}
-    fn ball_returned_to_play(&mut self, _ctx: &ServiceContext) {}
+    fn remove_missing_ball(&mut self, _ctx: &ServiceContext) {}
+    fn balls_missing(&self, _ctx: &ServiceContext) -> u8 {
+      0
+    }
+    fn set_balls_held(&mut self, _holder: u64, _count: u8, _ctx: &ServiceContext) {}
+    fn balls_held(&self) -> u8 {
+      0
+    }
   }
 
   struct Fixture {

@@ -94,6 +94,17 @@ impl TroughSystem {
     }
   }
 
+  /// Drops ejects waiting to start, including a retry waiting for the trough to settle. An eject already verifying
+  /// carries on. Returns true if any were dropped.
+  pub fn cancel_queued_ejects(&mut self) -> bool {
+    let dropped = self.eject_queue > 0;
+    self.eject_queue = 0;
+    if dropped {
+      self.eject_retries = 0;
+    }
+    dropped
+  }
+
   /// True if the jam switch is configured and currently closed
   pub fn is_jammed(&self, ctx: &ServiceContext) -> bool {
     let ctx = &ctx.for_system(self.handle);
@@ -109,16 +120,22 @@ impl TroughSystem {
     self.last_occupancy
   }
 
+  /// Settle on `occupancy` without reading the switches, for tests of the systems that use the trough
+  #[cfg(test)]
+  pub(super) fn set_occupancy(&mut self, occupancy: u8) {
+    self.last_occupancy = occupancy;
+  }
+
   fn retry_eject(&mut self, ctx: &SystemContext) {
     let retries_max = ctx.config.get(&configs::TROUGH_EJECT_RETRIES);
     if self.eject_retries >= retries_max {
-      log::warn!(target: "frontbox_core::trough", "Eject failed after {} retries", self.eject_retries);
+      log::warn!(target: "frontbox::ball_management::trough", "Eject failed after {} retries", self.eject_retries);
       ctx.metrics.inc(&metrics::TROUGH_EJECT_FAILURES);
       ctx.emit(TroughEjectFailed);
       self.eject_ready(ctx);
     } else {
       self.eject_retries += 1;
-      log::info!(target: "frontbox_core::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, retries_max);
+      log::info!(target: "frontbox::ball_management::trough", "Eject not verified, retrying ({}/{})", self.eject_retries, retries_max);
 
       if matches!(self.occupancy_state, OccupancyState::Settling { .. }) {
         // Balls are still moving; defer the retry until settled. Ready (without resetting retries) lets the queue run it.
@@ -145,7 +162,7 @@ impl TroughSystem {
       .config
       .trough_switch_names
       .iter()
-      .filter(|name| ctx.switches.is_closed(**name).unwrap())
+      .filter(|name| ctx.switches.is_closed(**name).unwrap_or(false))
       .count() as u8
   }
 

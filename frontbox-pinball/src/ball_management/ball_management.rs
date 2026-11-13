@@ -9,10 +9,10 @@ use crate::ball_management::StandardBuilder;
 /// It spawns whatever child systems it needs to run it. Other systems talk to ball management directly, not child systems.
 ///
 /// ## Responsibilities
-/// - **Counting balls.** Knows how many balls are in play, accounting for balls temporarily removed from play (e.g.
-///   locked). Counts are derived from what the hardware reports, not from running counters, so that a halted event,
-///   failed eject, or missed drain can't make them drift. Balls that appear unexpectedly are reconciled, not reported
-///   as drains.
+/// - **Counting balls.** Knows how many balls are in play, in the trough, and resting in holders (scoops, locks). Counts
+///   are derived from what the hardware reports, not from running counters, so that a halted event, failed eject, or
+///   missed drain can't make them drift. Balls that appear unexpectedly are reconciled, not reported as drains.
+///   Comparing against the balls installed (`configs::BALLS_INSTALLED`) tells it which are missing.
 /// - **Reporting drains.** Emits `BallsExitedPlay` with how many balls are still in play. It does not decide what a drain
 ///   means: saving a ball is up to the participants of the game manager's `BallDraining` routine, and ending a turn
 ///   or a multiball to the systems watching how it completes.
@@ -20,6 +20,9 @@ use crate::ball_management::StandardBuilder;
 ///   hardware can receive each (e.g. waiting for the plunge lane to clear). Callers state intent with `Launch`, and the
 ///   implementation adapts it to the hardware, so callers never need to know what the machine has. Each request
 ///   returns an id, and `EjectCompleted` carries it once all of that request's balls are in play.
+/// - **Stopping on request.** `cancel_ejects` drops balls not yet ejected and completes their requests. A ball resting
+///   in the plunge lane stops being in play and serves the next request instead. It is called explicitly (e.g. when a
+///   turn ends), as with `establish_ball_count`.
 /// - **Reporting launches.** Emits `BallEnteredPlay` once a ball has actually gone into play, which can be well after it
 ///   was requested (e.g. a player waiting to plunge). Anything timed from a ball entering play should start here.
 /// - **Establishing the ball count on request.** `establish_ball_count` takes the balls present as all there are. It
@@ -28,14 +31,14 @@ use crate::ball_management::StandardBuilder;
 ///
 /// ## Not responsible for
 /// - Game rules: turns, ball save, multiball, extra balls. These are built on ball management's events and calls.
-/// - Physically holding or releasing locked balls. Ball management is told about them through
-///   `ball_temporarily_removed_from_play` and `ball_returned_to_play`.
+/// - Physically holding or releasing balls in scoops and locks. The systems running them report what they hold with
+///   `set_balls_held`.
 ///
 /// ## Events
 /// - `BallsExitedPlay` - Emitted when one or more balls leave play
 /// - `BallEnteredPlay` - Emitted when a ball has been launched into play
 /// - `EjectCompleted` - Emitted when every ball from an `eject` or `eject_many` request is in play or given up on
-/// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked)
+/// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is held)
 pub trait BallManagement: SpawnableSystem {
   /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry.
   fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64;
@@ -43,17 +46,34 @@ pub trait BallManagement: SpawnableSystem {
   fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext) -> u64;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
+  /// Stops putting balls into play: drops queued balls and completes every open request with the balls launched so
+  /// far. A ball resting in the plunge lane is no longer in play, and serves the next request. Typically called when
+  /// play stops (e.g. a turn ending or a tilt), so balls aren't launched onto a dead playfield or into the next turn.
+  fn cancel_ejects(&mut self, ctx: &ServiceContext);
+  /// True while a requested ball hasn't left the trough yet. Once it has, it counts toward `balls_in_play`.
+  fn ejects_pending(&self) -> bool;
 
-  /// Balls currently in play, not counting balls that have been temporarily removed from play
+  /// Balls currently in play, not counting balls resting in holders
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8;
-  /// Takes the balls currently present as all of the balls there are, and clears any temporarily removed from play.
-  /// Typically called at the start of a game, so that a ball lost in a previous game isn't waited on forever.
+  /// True while a ball is resting in the plunge lane, e.g. waiting for the player to plunge it
+  fn is_ball_in_plunge_lane(&self, ctx: &ServiceContext) -> bool;
+  /// Takes the balls currently present (in the trough, the plunge lane and holders) as all of the balls there are.
+  /// Typically called at the start of a game, so that a ball lost in a previous game isn't waited on forever. Balls
+  /// installed but not found are then `balls_missing`.
   fn establish_ball_count(&mut self, ctx: &ServiceContext);
+  /// Balls installed (`configs::BALLS_INSTALLED`) but not found when the count was last established, less any that
+  /// turned up since
+  fn balls_missing(&self, ctx: &ServiceContext) -> u8;
+  /// Takes a ball in play out of the count, as lost (e.g. a ball search couldn't find it), so play doesn't wait for it.
+  /// It's counted again if it turns up. Does nothing with no ball in play.
+  fn remove_missing_ball(&mut self, ctx: &ServiceContext);
 
-  /// When a ball is locked, held, or otherwise should no longer be expected to drain
-  fn ball_temporarily_removed_from_play(&mut self, ctx: &ServiceContext);
-  /// When a ball is unlocked, released, or otherwise should now be expected to drain
-  fn ball_returned_to_play(&mut self, ctx: &ServiceContext);
+  /// Reports how many balls are resting in `holder` (its `ctx.id()`) right now: a scoop, a VUK, a lock. Read from the
+  /// holder's own switches, and reported on every change, including back to 0. Held balls aren't in play, so they
+  /// aren't waited for to drain.
+  fn set_balls_held(&mut self, holder: u64, count: u8, ctx: &ServiceContext);
+  /// Balls resting in holders
+  fn balls_held(&self) -> u8;
 }
 
 pub struct BallManager {

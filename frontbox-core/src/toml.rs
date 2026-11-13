@@ -36,7 +36,7 @@ pub fn load<T: DeserializeOwned>(path: impl AsRef<Path>) -> Option<T> {
     Ok(text) => text,
     Err(e) if e.kind() == io::ErrorKind::NotFound => return None,
     Err(e) => {
-      log::error!("Failed to read {}: {e}", path.display());
+      log::error!(target: "frontbox::config", "Failed to read {}: {e}", path.display());
       return None;
     }
   };
@@ -46,12 +46,13 @@ pub fn load<T: DeserializeOwned>(path: impl AsRef<Path>) -> Option<T> {
     Err(e) => {
       let bad = with_suffix(path, "bad");
       log::error!(
+        target: "frontbox::config",
         "Failed to parse {}, moving it to {}: {e}",
         path.display(),
         bad.display()
       );
       if let Err(e) = fs::rename(path, &bad) {
-        log::error!("Failed to move {} aside: {e}", path.display());
+        log::error!(target: "frontbox::config", "Failed to move {} aside: {e}", path.display());
       }
       None
     }

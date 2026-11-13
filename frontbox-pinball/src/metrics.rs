@@ -31,7 +31,7 @@ pub static BALL_TIME: LazyLock<Sample<Duration>> = LazyLock::new(|| {
   .category("Games")
 });
 
-pub static FINAL_SCORE: LazyLock<Sample<u32>> = LazyLock::new(|| {
+pub static FINAL_SCORE: LazyLock<Sample<u64>> = LazyLock::new(|| {
   Sample::new("Final Score", "Each player's score at the end of a game")
     .key("final_score")
     .category("Games")
@@ -97,7 +97,13 @@ pub static BALL_SEARCHES: LazyLock<Counter> = LazyLock::new(|| {
     .category("Ball Management")
 });
 
-pub static EXTRA_BALLS: LazyLock<Counter> = LazyLock::new(|| {
+pub static BALLS_LOST: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Balls Lost", "Balls a ball search couldn't find, and play went on without")
+    .key("balls_lost")
+    .category("Ball Management")
+});
+
+pub static EXTRA_BALLS:LazyLock<Counter> = LazyLock::new(|| {
   Counter::new("Extra Balls", "Extra balls used for another turn")
     .key("extra_balls")
     .category("Games")

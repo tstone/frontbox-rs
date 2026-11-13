@@ -20,6 +20,21 @@ pub struct TroughManagementConfig {
   pub(super) occupancy_settling_max: Duration,
 }
 
+impl TroughManagementConfig {
+  /// Panics if a trough or jam switch name isn't a switch on the machine
+  pub(super) fn check_switch_names(&self, ctx: &ServiceContext) {
+    let unknown: Vec<_> = self
+      .trough_switch_names
+      .iter()
+      .chain(self.jam_switch_name.iter())
+      .filter(|name| ctx.switches.by_name(name).is_none())
+      .collect();
+    if !unknown.is_empty() {
+      panic!("The trough is configured with switches that don't exist: {unknown:?}");
+    }
+  }
+}
+
 impl Default for TroughManagementConfig {
   fn default() -> Self {
     Self {

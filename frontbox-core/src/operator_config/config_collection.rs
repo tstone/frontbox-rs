@@ -41,7 +41,7 @@ impl ConfigCollection {
         let path = path.clone();
         let saved = tokio::task::spawn_blocking(move || crate::toml::save(&path, &table)).await;
         if let Ok(Err(e)) = saved {
-          log::error!("Failed to save operator config: {e}");
+          log::error!(target: "frontbox::config", "Failed to save operator config: {e}");
         }
       }
     });
@@ -187,6 +187,7 @@ impl ConfigCollection {
           panic!("{message}. Give one a distinct `.key(...)`");
         }
         log::error!(
+          target: "frontbox::config",
           "{message}; '{}' uses its own default until fixed",
           config.label
         );
@@ -205,6 +206,7 @@ impl ConfigCollection {
     match self.pending_disk.get(config.key) {
       Some(raw) => config.domain.from_toml(raw).unwrap_or_else(|| {
         log::warn!(
+          target: "frontbox::config",
           "config '{}': saved value {raw} doesn't fit, using default",
           config.key
         );
