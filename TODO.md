@@ -8,13 +8,14 @@
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be
   resolved.
 - Generalized systems: Scoop, lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
-- CrashPowerDown -- Verify that this still maeks sense
+- CrashPowerDown -- Verify that this still makes sense
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Config: No extra balls/points instead
 - With fb-pin centralized, maybe events should be centralized too
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
+- Some kind of bundle that makes all the pinball things start up
 
 ## Design Choices/Core
 
@@ -25,7 +26,6 @@
 
 ## Requires hardware/sensory QA
 
-- Ball search as a `BallSearching` routine. Today `BallSearchSystem` emits `PerformBallSearch`, which nothing listens to, and its `ball_searchable_q` is unused. Instead, the devices that can hold a ball (scoops, VUKs, drop targets) are participants that each pulse in turn, in the order the app lists them. Open question: the search should stop once a ball turns up, but only participants can halt a routine; either let the origin cancel it, or have each participant check.
 - Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.) that user systems can declare statically. A board has a name, direction (higher or lower is better), capacity (5, or 1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a pending entry per player; at game end, initials entry runs once per player and the initials go on every board they made. That single end-of-game pass should also fix high scores being janky and needing too much system switching. Stored as TOML via `frontbox_core::toml`.
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`

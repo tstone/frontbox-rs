@@ -17,9 +17,9 @@ well tested. Most of what's wrong sits in two places: where the game manager and
 | A5 | The autoplunger fires once and never checks | A ball left in the lane stalls the turn or multiball | Small |
 | A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
 | A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
-| B3 | Ball counts are half derived | The game works around a guessed count; `locked_balls` is a running counter; no ball search | Medium |
+| B3 | What ball search leaves open | Lotko taking part | Small |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
-| C | Missing pinball behavior | Credits, ball search, bonus, match, multiball, and more | Varies |
+| C | Missing pinball behavior | Credits, bonus, match, multiball, and more | Varies |
 
 ## A. Bugs
 
@@ -71,7 +71,7 @@ together, each removed when its owner despawns or releases it. Keep the math in 
 - `GameManager` forwards eight `System` methods by hand and misses `on_render`. `BallManager` uses
   `delegate_system!`. Same trap as Report 3, section C.
 - Docs that describe things that don't exist: `CreditsPlay` and cooperative play in `lib.rs`, `GameStartState` in
-  `game_start/mod.rs`, and the README still titled "Frontbox Turn Based". `BallSearchSystem`'s doc is a note to self.
+  `game_start/mod.rs`, and the README still titled "Frontbox Turn Based".
 - Every log target here is `frontbox_core::...`. The log target item in `TODO.md` covers it.
 
 ## B. Architecture and types
@@ -102,37 +102,24 @@ have joined them.
 `Starting { served }`, `Active { deciding_drain }`, `Ending { routine_completed }`. The match in `on_event` then
 has to say what each one does with each event.
 
-### B3. Ball counts are half derived
+### B3. What ball search leaves open
 
-`AGENTS.md` says counts are derived from what the hardware reports. Two inputs to `in_play` aren't:
+`BallSearchSystem` runs the `BallSearching` routine: after `BALL_SEARCH_DELAY` with a ball in play (not resting in
+the plunge lane) and none of its switches hit, for 3 rounds. If that finds nothing, one ball is taken out of the count
+as lost (`remove_missing_ball`, the `BALLS_LOST` audit) and `BallSearchFailed` says how many are left in play. With
+none left, the game manager puts another into play during a turn, and stops waiting for it between turns and after a
+game. Ball management knows the balls installed (`configs::BALLS_INSTALLED`), and locks and scoops report what they
+hold with `set_balls_held` (lotko's two scoops do). With the coin door open (`CoinDoorSystem`) there's no search, and
+with `IGNORE_DRAINS_WITH_COIN_DOOR_OPEN` a drain starts no `BallDraining` and the ball is put back into play. What's
+left:
 
-- `max_balls_in_play` is whatever the trough held when the game started. That is a guess. The game manager now works
-  around it rather than relying on it: another game waits for the last one's balls to come home, and an active turn
-  with nothing in play is treated as a drain.
-- `locked_balls` is a running counter that any system can move, with no owner and no link to hardware. Lotko never
-  calls it: its scoop holds balls without telling ball management, so a held ball counts as in play.
-
-**Suggestion.** Two changes that fit together.
-
-1. **A known ball count.** An operator config for balls installed, defaulting to the number of trough switches.
-   `in_play` is then `installed - balls accounted for`, and a ball that isn't accounted for is known to be missing,
-   not silently left out. That gives ball search a trigger at game start, and a place for the usual "play with one
-   fewer" fallback when the search fails.
-2. **Ball holders.** A small trait for anything that can hold a ball and report it from its switches: the trough,
-   the plunge lane, scoops, locks, a VUK. Holders register with ball management, which sums their occupancy. This
-   one idea covers several open items:
-   - the lane's ball is counted like any other holder's, not as a special state in `StandardBallManagement`, and a
-     held or locked ball is derived, so `locked_balls` goes away;
-   - "Generalized systems: Scoop, lane, StartupEject" in `TODO.md`: lotko's `StartupEject` becomes "every holder
-     with a ball at boot ejects it";
-   - the `BallSearching` routine's participants are the holders, plus anything else that can pulse. The game manager
-     has two waits for it to run in: `waiting_for_balls` after `TurnEnding`, which has no limit, so a ball stuck
-     after a tilt stops the game until someone opens the machine; and the wait for balls after a game, which gives
-     up after 30 seconds;
-   - timers can pause while a ball is held (section C).
-
-   Lotko's `LowerScoopSystem` is most of a generic holder already: a switch, an eject coil, and holds keyed by
-   owner.
+- **Nobody takes part in the search in lotko yet**, and it doesn't add `BallSearchSystem`. `RearScoopSystem` and
+  `LowerScoopSystem` are the obvious first participants. The lower scoop would kick only while nothing holds its ball.
+- **A lost ball that turns up** into the trough while its replacement is in play is counted as the replacement
+  draining, as the trough can't tell them apart. The turn can end one ball early. The replacement is then counted
+  when it comes home.
+- **No search at game start** when `balls_missing` is more than 0.
+- **Holding a flipper** doesn't put off a search, so a player cradling the ball for 15 seconds gets one.
 
 ### B4. The interface wrapper is written by hand each time
 
@@ -166,11 +153,10 @@ copies, and each one today handles despawn and deactivation slightly differently
 
 - **Fire, verify, retry is written three times**, or will be: trough ejects, the lane arrival kick, and the autoplunger
   (A5). Lotko's scoop has a fourth. One helper (coil, verifying switch, timeout, retry limit, optional stronger
-  kick) belongs with the ball holder trait in B3, and gives the failed eject item in `TODO.md` one place to add
+  kick) belongs in a shared helper, and gives the failed eject item in `TODO.md` one place to add
   backoff.
 - **Unused**: `TroughEjectStarted` is emitted and nothing listens; `TroughSystem::eject_many` has no caller;
-  `BallSearchSystem` and `PerformBallSearch` are the stub `TODO.md` describes; `HighScoresSystem.custom_scores`
-  goes with the leaderboards item.
+  `HighScoresSystem.custom_scores` goes with the leaderboards item.
 - **`GameStartable`** flashes a lamp through a cue pair and plays an LED effect, each with its own rule for when it
   runs. The lamp half is waiting on the `LampDriver` item in `TODO.md`.
 
@@ -182,7 +168,7 @@ Lotko is the evidence for what the crate is missing, since it had to write these
 |---|---|
 | `EffectsSystem` | The one-shot LED effect item in `TODO.md` (Report 1, 5.3) |
 | Multiball start and end, written twice (`heartwood_multiball`, `mini_wizards/run.rs`) | A multiball helper (section C) |
-| `LowerScoopSystem`, `StartupEject` | Ball holders (B3) |
+| `LowerScoopSystem`, `RearScoopSystem` | A generic scoop that ejects a ball found at boot, reports `set_balls_held`, and takes part in ball search (B3) |
 | `ComboSystem`'s "time in the scoop doesn't count" | A timer that pauses while a ball is held (section C) |
 | `cabinet::double_flip_combo` to skip bonus screens | A standard "skip" for routine participants |
 | `AttractModeDmdSystem` beside `AttractSystem` | One attract rotation (below) |
@@ -201,10 +187,10 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
 | Missing | Notes |
 |---|---|
 | Credits and coins | `lib.rs` names `CreditsPlay`; it doesn't exist. Coin switches, pricing, saved credits, service credits. The toggle group item in `TODO.md` is how free play and credit play would switch |
-| Missing ball handling | Known ball count, search at game start, play on with fewer (B3). Beyond the ball search item |
+| Missing ball handling | Search at game start (B3) |
 | Faulty switch tolerance | A trough or lane switch stuck closed changes every count. Report switches not seen in N games, and let the operator mark one as ignored |
 | Tilt bob settling between players | The bob is ignored until the serve plus a grace period. A bob still swinging from the last player's tilt can warn the next one. Hold the serve until it has been quiet |
-| Coin door and tests | Door-open handling for coil power, and switch, coil, lamp, and trough tests. These probably live with the DMD menu, but need hooks here (trough test, ball holder test) |
+| Coin door and tests | Door-open handling for coil power (`CoinDoorSystem` knows the door), and switch, coil, lamp, and trough tests. These probably live with the DMD menu, but need hooks here (trough test, scoop test) |
 | Lane ball left waiting | Operator option to launch after N seconds, and a reminder effect |
 
 **Rules building blocks**
@@ -212,10 +198,10 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
 | Missing | Notes |
 |---|---|
 | Multiball helper | The recipe in the `BallSaveSystem` docs as a type: eject N, save until launched, then timed save, end on `RoutineCompleted<BallDraining>` with one left, add-a-ball. Lotko has it twice |
-| Locks | Physical and virtual locks, counted per player, on top of ball holders |
+| Locks | Physical and virtual locks, counted per player, reporting `set_balls_held` |
 | Bonus | Named counters, a multiplier, optional carry-over, and a `TurnEnding` participant that skips on tilt. The presentation stays with the game |
 | Match, replay, special | `GameEnding` participants and score thresholds, with the award configurable. "Config: No extra balls/points instead" in `TODO.md` is one case |
-| Timers that pause | Mode timers, hurry-ups, and ball save should stop while a ball is held or waiting in the lane. One clock that systems read, driven by ball holders |
+| Timers that pause | Mode timers, hurry-ups, and ball save should stop while a ball is held or waiting in the lane. One clock that systems read, paused by `set_balls_held` and the lane |
 | Shots and sequences | Ordered switch hits within a window (orbits, ramps, combos). Core has `SwitchComboSystem` for held buttons only; lotko has an orbit system per orbit |
 | Playfield devices | Drop target bank, kickback, lane change, spinner, and standard driver definitions for flippers, slings, and pops. The crate defines coils only for the trough and autoplunger |
 | Status report | Flipper held during play shows a status page; needs a way for systems to contribute lines |
@@ -257,7 +243,6 @@ are the next scenarios for it.
 2. **A5**, with an end-to-end test that shows it first. It is contained in
    `standard_ball_management.rs` and the game manager's `on_event`.
 3. **A6**, with `ejects_pending()`.
-4. **B3** (known ball count, ball holders), then the ball search item from `TODO.md` on top of it, run from the game
-   manager's two waits for balls. This is the largest piece and the one the others lean on.
+4. **B3**: lotko's scoops taking part in ball search.
 5. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
 6. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.

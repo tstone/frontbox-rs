@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use frontbox_core::prelude::*;
 
-use crate::ball_management::{BallEnteredPlay, BallManager, BallsExitedPlay, Launch};
+use crate::ball_management::{BallEnteredPlay, BallManager, BallSearchFailed, BallsExitedPlay, Launch};
 use crate::*;
 
 static PLAYER_GROUP_NAMES: [&str; 6] = [
@@ -35,8 +35,13 @@ const BALL_RETURN_TIMEOUT: Duration = Duration::from_secs(30);
 ///   ball in play switch hit, whichever comes first.
 /// - Routine: `BallDraining` - Started for each drain (`BallsExitedPlay`), so its participants can save the ball. A
 ///   participant halting it saves the drain. A drain while another is being decided waits its turn. Also started if
-///   nothing is in play for a couple of seconds and no drain was reported, so a count that slipped can't leave the
-///   turn stuck.
+///   nothing is in play or held for a couple of seconds and no drain was reported, so a ball that never made it into
+///   play (e.g. a failed trough eject) can't leave the turn stuck.
+/// - A lost ball (`BallSearchFailed` with nothing left in play) is replaced from the trough during a turn, and isn't
+///   waited for after one.
+/// - A drain while the coin door is open (`CoinDoor`) starts no `BallDraining`, with
+///   `configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN`: the ball is put back into play, as it was most likely an operator
+///   taking out a stuck ball.
 /// - Routine: `TurnEnding` - Started once a drain that left no ball in play completes without being halted, or at once
 ///   on a tilt (`tilt`, `TurnEndReason::Tilted`). Modes clean up on its `RoutineStarted`. Once it completes and no ball
 ///   is left in play, the turn advances: to the same player, if they have an extra ball to use
@@ -235,6 +240,15 @@ impl CompetitiveGame {
     }
   }
 
+  /// The last ball in play was lost (a ball search couldn't find it). The player didn't lose it, so they keep the turn.
+  fn replace_lost_ball(&mut self, ctx: &ServiceContext) {
+    log::info!(target: "frontbox_core::game_manager", "Last ball in play was lost, putting another into play");
+    let ctx = &ctx.for_system(self.handle);
+    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+      ball_manager.eject(Launch::Auto, ctx.into());
+    }
+  }
+
   fn transition_turn_to_active(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to active");
     self.set_turn_phase(TurnPhase::Active, ctx);
@@ -255,6 +269,16 @@ impl CompetitiveGame {
   /// Balls left play. The routine's participants decide whether the drain stands; one that's already being decided
   /// goes first, as only one routine of a type runs at a time.
   fn drained(&mut self, count: u8, in_play: u8, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    if ctx.states.is(CoinDoor::Open) && ctx.config.get(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN) {
+      log::info!(target: "frontbox_core::game_manager", "{} ball(s) drained with the coin door open, putting them back into play", count);
+      if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+        ball_manager.eject_many(count, Launch::Auto, ctx.into());
+      }
+      return;
+    }
+
+    let ctx: &ServiceContext = ctx.into();
     let game_state = self.game_state.as_ref().unwrap();
     let draining = BallDraining {
       current_player: game_state.current_player(),
@@ -270,10 +294,14 @@ impl CompetitiveGame {
     }
   }
 
-  /// Catches a drain that was never reported (e.g. after the ball count slipped). With no drain being decided and no
-  /// ball on its way into play, finding nothing in play on two checks in a row is treated as a drain.
+  /// Catches a drain that was never reported (e.g. a ball save's replacement that never left the trough). With no drain
+  /// being decided, no ball on its way into play and none held (a scoop holding the only ball), finding nothing in play
+  /// on two checks in a row is treated as a drain.
   fn check_balls_in_play(&mut self, ctx: &ServiceContext) {
-    let none_in_play = !self.draining && self.balls_in_play(ctx) == 0 && !self.ejects_pending(ctx);
+    let none_in_play = !self.draining
+      && self.balls_in_play(ctx) == 0
+      && !self.ejects_pending(ctx)
+      && self.balls_held(ctx) == 0;
     if none_in_play && self.found_no_ball_in_play {
       log::warn!(target: "frontbox_core::game_manager", "No ball in play and no drain reported, treating it as a drain");
       self.found_no_ball_in_play = false;
@@ -362,6 +390,13 @@ impl CompetitiveGame {
       .for_system(self.handle)
       .systems.get::<BallManager>()
       .is_some_and(|ball_manager| ball_manager.ejects_pending())
+  }
+
+  fn balls_held(&self, ctx: &ServiceContext) -> u8 {
+    ctx
+      .for_system(self.handle)
+      .systems.get::<BallManager>()
+      .map_or(0, |ball_manager| ball_manager.balls_held())
   }
 
   fn advance_turn(&mut self, ctx: &ServiceContext) {
@@ -507,7 +542,7 @@ impl System for CompetitiveGame {
         return;
       }
       GamePhase::None if self.ball_return_cue.is_some() => {
-        if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>() {
+        if is_last_ball_gone(event) {
           self.balls_returned(ctx.into());
         } else if event.is::<BallReturnTimedOut>() {
           // they're left out of the next game's count (see `establish_ball_count`)
@@ -536,9 +571,10 @@ impl System for CompetitiveGame {
         {
           log::debug!(target: "frontbox_core::game_manager", "Active caused by switch: {}", e.switch.name);
           self.transition_turn_to_active(ctx.into());
-        } else if let Some(BallsExitedPlay { in_play: 0, .. }) = event.downcast_ref::<BallsExitedPlay>() {
-          // The served ball came back before the turn went active (e.g. straight down the drain from a weak plunge)
-          log::info!(target: "frontbox_core::game_manager", "Served ball drained before the turn went active, serving again");
+        } else if is_last_ball_gone(event) {
+          // The served ball came back before the turn went active (e.g. straight down the drain from a weak plunge), or
+          // was lost
+          log::info!(target: "frontbox_core::game_manager", "Served ball gone before the turn went active, serving again");
           self.serve_ball(ctx.into());
         }
       }
@@ -549,16 +585,17 @@ impl System for CompetitiveGame {
           self.drain_decided(done, ctx.into());
         } else if event.is::<CheckBallsInPlay>() {
           self.check_balls_in_play(ctx.into());
+        } else if let Some(BallSearchFailed { in_play: 0, .. }) = event.downcast_ref::<BallSearchFailed>()
+          && !self.draining
+        {
+          self.replace_lost_ball(ctx.into());
         }
       }
       TurnPhase::Ending => {
         // drains while the turn is ending (balls rolling down after a tilt) start no BallDraining: they can't be saved
         if event.is::<RoutineCompleted<TurnEnding>>() {
           self.turn_ended(ctx.into());
-        } else if let Some(BallsExitedPlay { in_play: 0, .. }) =
-          event.downcast_ref::<BallsExitedPlay>()
-          && self.waiting_for_balls
-        {
+        } else if is_last_ball_gone(event) && self.waiting_for_balls {
           self.advance_turn(ctx.into());
         }
       }
@@ -722,6 +759,12 @@ impl GameManagement for CompetitiveGame {
   }
 }
 
+/// No ball is left in play: the last one drained, or was lost
+fn is_last_ball_gone(event: &dyn Event) -> bool {
+  matches!(event.downcast_ref::<BallsExitedPlay>(), Some(BallsExitedPlay { in_play: 0, .. }))
+    || matches!(event.downcast_ref::<BallSearchFailed>(), Some(BallSearchFailed { in_play: 0, .. }))
+}
+
 // -- Cues --
 
 #[derive(serde::Serialize, Event)]
@@ -776,9 +819,18 @@ mod tests {
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       self.in_play.load(Ordering::SeqCst)
     }
+    fn is_ball_in_plunge_lane(&self, _ctx: &ServiceContext) -> bool {
+      false
+    }
     fn establish_ball_count(&mut self, _ctx: &ServiceContext) {}
-    fn ball_temporarily_removed_from_play(&mut self, _ctx: &ServiceContext) {}
-    fn ball_returned_to_play(&mut self, _ctx: &ServiceContext) {}
+    fn remove_missing_ball(&mut self, _ctx: &ServiceContext) {}
+    fn balls_missing(&self, _ctx: &ServiceContext) -> u8 {
+      0
+    }
+    fn set_balls_held(&mut self, _holder: u64, _count: u8, _ctx: &ServiceContext) {}
+    fn balls_held(&self) -> u8 {
+      0
+    }
   }
 
   impl Fixture {

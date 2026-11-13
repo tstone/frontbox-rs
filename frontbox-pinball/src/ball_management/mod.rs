@@ -106,5 +106,30 @@ pub struct TroughEjectFailed;
 
 // -- Ball Search Events --
 
+/// Routine run for each round of a ball search (`BallSearchSystem`). Its participants are whatever can knock a stuck
+/// ball loose: a scoop that kicks (unless it's holding its ball on purpose), a drop bank that resets, a diverter that
+/// toggles. Each fires, then completes its step once its coil has had time to recover (around 250ms), so coils fire
+/// one at a time and the power supply's capacitors recharge in between. One with nothing to do completes its step
+/// right away. The app lists them in firing order.
+///
+/// ```rust,ignore
+/// app.routine::<BallSearching>(routine![LowerScoop, DropBank]);
+/// ```
+///
+/// It's started at the root, so participants are systems there (the ones running the hardware), not in a player's
+/// group. A round runs to the end even if a ball turns up partway through.
+#[derive(serde::Serialize, Event, Clone)]
+pub struct BallSearching {
+  /// Starting at 1
+  pub round: u8,
+}
+
+/// Emitted when a ball search gives up after its last round without finding a ball. One ball is taken out of the count
+/// as lost (`remove_missing_ball`), so play doesn't wait for it; the game manager serves another if it was the last.
+/// Nothing searches again until a ball shows up.
 #[derive(serde::Serialize, Event)]
-pub struct PerformBallSearch;
+pub struct BallSearchFailed {
+  pub rounds: u8,
+  /// Balls left in play, without the lost one
+  pub in_play: u8,
+}

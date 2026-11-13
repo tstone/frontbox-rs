@@ -74,7 +74,27 @@ pub static BALL_SEARCH_DELAY: LazyLock<Config<Duration>> = LazyLock::new(|| {
   .key("ball_search_delay")
 });
 
-pub static TROUGH_EJECT_RETRIES: LazyLock<Config<u8>> = LazyLock::new(|| {
+pub static IGNORE_DRAINS_WITH_COIN_DOOR_OPEN: LazyLock<Config<bool>> = LazyLock::new(|| {
+  Config::new(
+    "Ignore Drains With Door Open",
+    "Whether a ball that drains while the coin door is open is put back into play, rather than ending the turn or being saved",
+    true,
+    Toggle,
+  )
+  .key("ignore_drains_with_coin_door_open")
+});
+
+pub static BALLS_INSTALLED: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Balls Installed",
+    "How many balls are in the machine (0 for one per trough switch)",
+    0,
+    Ranges::u8(0, 10),
+  )
+  .key("balls_installed")
+});
+
+pub static TROUGH_EJECT_RETRIES:LazyLock<Config<u8>> = LazyLock::new(|| {
   Config::new(
     "Trough Eject Retries",
     "How many times a failed trough eject is retried before giving up",

@@ -29,8 +29,8 @@ pub struct GameStarting;
 /// It's started at the root, as no player is up. The playfield drivers are turned off on its `RoutineStarted`.
 ///
 /// Balls the game is holding (locks, scoops) should be released by a participant, so they're home before the next
-/// game. Another game can't start until no ball is in play, but a ball removed from play
-/// (`ball_temporarily_removed_from_play`) isn't waited for.
+/// game. Another game can't start until no ball is in play, but a ball resting in a holder (`set_balls_held`) isn't
+/// waited for.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct GameEnding {
   /// Each player's final score, in player order

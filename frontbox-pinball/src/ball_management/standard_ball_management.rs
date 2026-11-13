@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use frontbox_core::prelude::*;
 
@@ -9,15 +9,17 @@ use crate::ball_management::{
   Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
   StandardBallManagementConfig, TroughEjectFailed, TroughOccupancyChanged,
 };
-use crate::metrics;
+use crate::{configs, metrics};
 
 /// Ball management for machines where every ball not in play comes to rest in a single trough, optionally ejecting
 /// into a plunge lane (with or without an autoplunger). Set up with `BallManager::standard`.
 pub struct StandardBallManagement {
   handle: SystemHandle,
   config: StandardBallManagementConfig,
-  max_balls_in_play: u8,
-  locked_balls: u8,
+  /// Balls found when the count was last established, plus any that turned up since
+  balls_found: u8,
+  /// Balls resting in each holder, by the holder's id, as it last reported
+  balls_held: HashMap<u64, u8>,
   /// Balls requested but not yet ejected from the trough
   queue: VecDeque<RequestedBall>,
   /// Requests with balls not yet in play or given up on
@@ -76,9 +78,9 @@ impl StandardBallManagement {
   pub fn new(config: StandardBallManagementConfig) -> Self {
     StandardBallManagement {
       handle: SystemHandle::default(),
-      max_balls_in_play: 0, // set on spawn
+      balls_found: 0, // set on spawn
       config,
-      locked_balls: 0,
+      balls_held: HashMap::new(),
       queue: VecDeque::new(),
       requests: Vec::new(),
       last_eject_id: 0,
@@ -89,10 +91,18 @@ impl StandardBallManagement {
 
   fn in_play(&self, occupancy: u8) -> u8 {
     self
-      .max_balls_in_play
+      .balls_found
       .saturating_sub(occupancy)
-      .saturating_sub(self.locked_balls)
+      .saturating_sub(self.balls_held())
       .saturating_sub(self.available_balls())
+  }
+
+  /// `configs::BALLS_INSTALLED`, where 0 means one per trough switch
+  fn balls_installed(&self, ctx: &SystemContext) -> u8 {
+    match ctx.config.get(&configs::BALLS_INSTALLED) {
+      0 => self.config.trough.trough_switch_names.len() as u8,
+      installed => installed,
+    }
   }
 
   /// Balls waiting in the plunge lane to serve the next request, which are neither in the trough nor in play
@@ -105,32 +115,26 @@ impl StandardBallManagement {
   }
 
   fn max_in_play(&self) -> u8 {
-    self.max_balls_in_play.saturating_sub(self.locked_balls)
+    self.balls_found.saturating_sub(self.balls_held())
   }
 
-  /// If somehow the trough reports more balls than we were expecting
-  /// attempt to figure out where it came from and account for it
+  /// Balls turned up that weren't counted (e.g. one stuck on the playfield since before the count was established),
+  /// so they're counted now
   fn reconcile_appearing_ball(&mut self, delta: u8, ctx: &SystemContext) {
-    let mut rem = delta;
+    self.count_balls_found(delta, ctx);
+    ctx.emit(MaxBallsInPlayChanged {
+      max_in_play: self.max_in_play(),
+      delta: delta as i8,
+    });
+  }
 
-    // first reduce it from locked balls
-    loop {
-      if rem > 0 && self.locked_balls > 0 {
-        self.ball_returned_to_play(ctx.into());
-        rem -= 1;
-      } else {
-        break;
-      }
-    }
-
-    // then increment max balls
-    if rem > 0 {
-      log::warn!(target: "frontbox_core::ball_management", "{} unexpected ball(s) entered the trough, increasing max balls in play", rem);
-      self.max_balls_in_play += rem;
-      ctx.emit(MaxBallsInPlayChanged {
-        max_in_play: self.max_in_play(),
-        delta: rem as i8,
-      });
+  fn count_balls_found(&mut self, delta: u8, ctx: &SystemContext) {
+    self.balls_found += delta;
+    let installed = self.balls_installed(ctx);
+    if self.balls_found > installed {
+      log::warn!(target: "frontbox_core::ball_management", "{} ball(s) not counted turned up, now {} found but only {} installed (check the Balls Installed setting)", delta, self.balls_found, installed);
+    } else {
+      log::info!(target: "frontbox_core::ball_management", "{} ball(s) not counted turned up, now {} of {} found", delta, self.balls_found, installed);
     }
   }
 
@@ -441,6 +445,10 @@ impl BallManagement for StandardBallManagement {
     self.in_play(ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy())
   }
 
+  fn is_ball_in_plunge_lane(&self, ctx: &ServiceContext) -> bool {
+    self.is_lane_ball_resting(&ctx.for_system(self.handle))
+  }
+
   fn cancel_ejects(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     self.queue.clear();
@@ -484,33 +492,69 @@ impl BallManagement for StandardBallManagement {
   }
 
   fn establish_ball_count(&mut self, ctx: &ServiceContext) {
-    let occupancy = ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy();
-    self.max_balls_in_play = occupancy + self.available_balls();
-    self.locked_balls = 0;
+    let ctx = &ctx.for_system(self.handle);
+    let occupancy = ctx.systems.expect::<TroughSystem>().occupancy();
+    self.balls_found = occupancy + self.available_balls() + self.balls_held();
+
+    let installed = self.balls_installed(ctx);
+    if self.balls_found < installed {
+      log::warn!(target: "frontbox_core::ball_management", "Only {} of {} installed balls found", self.balls_found, installed);
+    }
   }
 
-  fn ball_temporarily_removed_from_play(&mut self, ctx: &ServiceContext) {
-    let prior = self.locked_balls.clone();
-    self.locked_balls = self.locked_balls.saturating_add(1);
+  fn balls_missing(&self, ctx: &ServiceContext) -> u8 {
+    self
+      .balls_installed(&ctx.for_system(self.handle))
+      .saturating_sub(self.balls_found)
+  }
 
-    if self.locked_balls > prior {
-      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
-        max_in_play: self.max_in_play(),
-        delta: -1,
+  fn remove_missing_ball(&mut self, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    if self.current_in_play(ctx) == 0 {
+      return;
+    }
+    self.balls_found -= 1;
+    log::warn!(target: "frontbox_core::ball_management", "A ball is lost, playing on with {} of {} installed", self.balls_found, self.balls_installed(ctx));
+    ctx.metrics.inc(&metrics::BALLS_LOST);
+    ctx.emit(MaxBallsInPlayChanged {
+      max_in_play: self.max_in_play(),
+      delta: -1,
+    });
+  }
+
+  fn set_balls_held(&mut self, holder: u64, count: u8, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    let before = self.balls_held.get(&holder).copied().unwrap_or(0);
+    if count == before {
+      return;
+    }
+
+    // More balls held than were in play weren't counted (e.g. one sitting in a scoop at boot)
+    let uncounted = count
+      .saturating_sub(before)
+      .saturating_sub(self.current_in_play(ctx));
+    if uncounted > 0 {
+      self.count_balls_found(uncounted, ctx);
+    }
+
+    let max_before = self.max_in_play();
+    if count == 0 {
+      self.balls_held.remove(&holder);
+    } else {
+      self.balls_held.insert(holder, count);
+    }
+    let max_after = self.max_in_play();
+    let delta = max_after as i8 - max_before as i8 + uncounted as i8;
+    if delta != 0 {
+      ctx.emit(MaxBallsInPlayChanged {
+        max_in_play: max_after,
+        delta,
       });
     }
   }
 
-  fn ball_returned_to_play(&mut self, ctx: &ServiceContext) {
-    let prior = self.locked_balls.clone();
-    self.locked_balls = self.locked_balls.saturating_sub(1);
-
-    if prior > self.locked_balls {
-      ctx.for_system(self.handle).emit(MaxBallsInPlayChanged {
-        max_in_play: self.max_in_play(),
-        delta: 1,
-      });
-    }
+  fn balls_held(&self) -> u8 {
+    self.balls_held.values().sum()
   }
 }
 
@@ -528,7 +572,7 @@ impl System for StandardBallManagement {
 
     let trough = TroughSystem::new(trough_config);
     // Until the ball count is established (e.g. at game start), assume the balls in the trough now are all the balls there are
-    self.max_balls_in_play = trough.read_switch_occupancy(ctx.into());
+    self.balls_found = trough.read_switch_occupancy(ctx.into());
     ctx.systems.spawn(trough);
 
     if let Some(autoplunger) = self.config.autoplunger() {
@@ -754,6 +798,11 @@ mod tests {
 
     /// Simulate the trough reporting a settled occupancy change
     fn trough_changed(&mut self, current_occupancy: u8, entered: u8, exited: u8) {
+      self
+        .ctx
+        .sys_ctx()
+        .systems.expect::<TroughSystem>()
+        .set_occupancy(current_occupancy);
       self.deliver(&TroughOccupancyChanged {
         current_occupancy,
         entered,
@@ -761,14 +810,9 @@ mod tests {
       });
     }
 
-    fn lock(&mut self) {
-      self
-        .system
-        .ball_temporarily_removed_from_play(&self.ctx.svc_ctx());
-    }
-
-    fn unlock(&mut self) {
-      self.system.ball_returned_to_play(&self.ctx.svc_ctx());
+    /// Simulate `holder` reporting how many balls are resting in it
+    fn hold(&mut self, holder: u64, count: u8) {
+      self.system.set_balls_held(holder, count, &self.ctx.svc_ctx());
     }
 
     fn balls_in_play(&self) -> u8 {
@@ -819,9 +863,9 @@ mod tests {
   // -- Spawn --
 
   #[test]
-  fn spawn_establishes_max_from_balls_present() {
+  fn spawn_counts_the_balls_in_the_trough() {
     let f = Fixture::spawn(4);
-    assert_eq!(f.system.max_balls_in_play, 4);
+    assert_eq!(f.system.balls_found, 4);
     assert_eq!(
       f.balls_in_play(),
       0,
@@ -887,67 +931,92 @@ mod tests {
     assert_eq!(f.drained_events(), vec![(1, 1)]);
   }
 
-  // -- Locked balls --
+  // -- Held balls --
 
   #[test]
-  fn lock_emits_max_changed() {
-    let mut f = Fixture::spawn(5);
-    f.lock();
-    assert_eq!(f.max_changed_events(), vec![(4, -1)]);
-  }
-
-  #[test]
-  fn unlock_emits_max_changed() {
-    let mut f = Fixture::spawn(5);
-    f.lock();
-    f.events();
-    f.unlock();
-    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
-  }
-
-  #[test]
-  fn unlock_with_nothing_locked_emits_nothing() {
-    let mut f = Fixture::spawn(5);
-    f.unlock();
-    assert!(f.events().is_empty());
-    assert_eq!(f.system.locked_balls, 0);
-  }
-
-  #[test]
-  fn locked_ball_is_not_counted_as_in_play() {
+  fn holding_a_ball_in_play_takes_it_out_of_play() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
-    f.lock(); // ball in play goes into the lock
+    f.hold(1, 1);
+    assert_eq!(f.max_changed_events(), vec![(4, -1)]);
+    assert_eq!(f.balls_in_play(), 0);
+  }
+
+  #[test]
+  fn releasing_a_held_ball_puts_it_back_in_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.hold(1, 1);
+    f.events();
+    f.hold(1, 0);
+    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
+    assert_eq!(f.balls_in_play(), 1);
+  }
+
+  #[test]
+  fn reporting_an_unchanged_hold_emits_nothing() {
+    let mut f = Fixture::spawn(5);
+    f.hold(1, 0);
+    assert!(f.events().is_empty());
+  }
+
+  #[test]
+  fn holders_are_counted_separately() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(3, 0, 2);
+    f.hold(1, 1);
+    f.hold(2, 1);
+    f.hold(1, 0);
+    assert_eq!(f.system.balls_held(), 1);
+    assert_eq!(f.balls_in_play(), 1);
+  }
+
+  #[test]
+  fn held_ball_is_not_counted_as_in_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.hold(1, 1); // ball in play goes into the lock
     f.trough_changed(3, 0, 1); // replacement ball ejected
     f.trough_changed(4, 1, 0);
+    assert_eq!(f.drained_events(), vec![(1, 0)]);
+  }
+
+  #[test]
+  fn ball_released_from_a_holder_during_multiball_is_counted_as_in_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.hold(1, 1);
+    f.trough_changed(2, 0, 2); // 2 balls in play
+    f.hold(1, 0); // the held ball is kicked out
+    f.trough_changed(3, 1, 0);
+    assert_eq!(f.drained_events(), vec![(1, 2)]);
+  }
+
+  #[test]
+  fn held_ball_that_was_never_in_play_is_counted() {
+    // e.g. one sitting in a scoop at boot
+    let mut f = Fixture::spawn(4);
+    f.hold(1, 1);
+    assert_eq!(f.system.balls_found, 5);
+    assert_eq!(f.balls_in_play(), 0);
+    assert!(f.max_changed_events().is_empty(), "nothing more could be in play");
+
+    // once kicked out, it's in play and its drain is counted
+    f.hold(1, 0);
+    assert_eq!(f.balls_in_play(), 1);
+    f.trough_changed(5, 1, 0);
     assert_eq!(f.drained_events(), vec![(1, 0)]);
   }
 
   // -- Unexpected balls --
 
   #[test]
-  fn unexpected_ball_with_ball_locked_is_treated_as_released() {
-    let mut f = Fixture::spawn(5);
-    f.trough_changed(4, 0, 1);
-    f.lock();
-    f.trough_changed(3, 0, 1);
-    f.trough_changed(4, 1, 0); // last ball in play drains
-    f.events();
-
-    // the locked ball comes loose without being returned to play, and drains
-    f.trough_changed(5, 1, 0);
-    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
-    assert_eq!(f.system.locked_balls, 0);
-    assert_eq!(f.system.max_balls_in_play, 5);
-  }
-
-  #[test]
-  fn unexpected_ball_with_nothing_locked_raises_max() {
+  fn unexpected_ball_is_counted() {
     let mut f = Fixture::spawn(4);
     // a ball that was stuck on the playfield comes home
     f.trough_changed(5, 1, 0);
     assert_eq!(f.max_changed_events(), vec![(5, 1)]);
-    assert_eq!(f.system.max_balls_in_play, 5);
+    assert_eq!(f.system.balls_found, 5);
   }
 
   #[test]
@@ -976,17 +1045,35 @@ mod tests {
   // -- Establishing ball count --
 
   #[test]
-  fn establish_ball_count_resets_max_from_trough_and_clears_locks() {
-    let mut f = Fixture::spawn(5);
-    f.lock();
-    f.system.max_balls_in_play = 6; // drifted during the previous game
+  fn establish_ball_count_counts_the_trough_and_holders() {
+    let mut f = Fixture::spawn(4);
+    f.hold(1, 1);
+    f.system.balls_found = 7; // drifted during the previous game
     f.events();
 
     f.system.establish_ball_count(&f.ctx.svc_ctx());
-    assert_eq!(f.system.max_balls_in_play, 5);
-    assert_eq!(f.system.locked_balls, 0);
+    assert_eq!(f.system.balls_found, 5);
     assert_eq!(f.balls_in_play(), 0);
     assert!(f.events().is_empty());
+  }
+
+  #[test]
+  fn balls_installed_defaults_to_one_per_trough_switch() {
+    let mut f = Fixture::spawn(3);
+    f.system.establish_ball_count(&f.ctx.svc_ctx());
+    assert_eq!(f.system.balls_missing(&f.ctx.svc_ctx()), 2);
+  }
+
+  #[test]
+  fn balls_missing_follows_the_balls_installed_setting() {
+    let mut f = Fixture::spawn(3);
+    f.ctx.svc_ctx().config.set(&configs::BALLS_INSTALLED, 4);
+    f.system.establish_ball_count(&f.ctx.svc_ctx());
+    assert_eq!(f.system.balls_missing(&f.ctx.svc_ctx()), 1);
+
+    // the missing ball turns up
+    f.trough_changed(4, 1, 0);
+    assert_eq!(f.system.balls_missing(&f.ctx.svc_ctx()), 0);
   }
 
   // -- Launching without a plunge lane --
@@ -1336,7 +1423,7 @@ mod tests {
     assert_eq!(f.balls_in_play(), 0, "waiting for a request, not in play");
 
     f.system.establish_ball_count(&f.ctx.svc_ctx());
-    assert_eq!(f.system.max_balls_in_play, 5, "trough and lane");
+    assert_eq!(f.system.balls_found, 5, "trough and lane");
 
     f.eject_many(1, Launch::Player);
     assert!(f.system.trough_ejecting.is_none(), "served by the lane ball");
@@ -1350,7 +1437,7 @@ mod tests {
   #[test]
   fn ball_rolling_back_into_lane_while_in_play_stays_in_play() {
     let mut f = Fixture::with_lane(4, false, false);
-    f.system.max_balls_in_play = 5; // one ball on the playfield
+    f.system.balls_found = 5; // one ball on the playfield
     f.lane_entered();
     assert_eq!(
       f.system.eject_state,
@@ -1439,23 +1526,5 @@ mod tests {
     );
     assert!(!Fixture::with_lane(5, false, false).system.can_auto_launch());
     assert!(Fixture::with_lane(5, true, false).system.can_auto_launch());
-  }
-
-  // -- Known limitations --
-
-  #[test]
-  fn locked_ball_draining_unannounced_during_multiball_undercounts_in_play() {
-    // Known limitation: without lock switches, a locked ball that comes loose looks like an ordinary drain until the
-    // trough holds more balls than expected
-    let mut f = Fixture::spawn(5);
-    f.trough_changed(4, 0, 1);
-    f.lock();
-    f.trough_changed(2, 0, 2); // 2 balls in play
-    f.trough_changed(3, 1, 0); // the locked ball comes loose and drains
-    assert_eq!(
-      f.drained_events(),
-      vec![(1, 1)],
-      "2 are actually still in play"
-    );
   }
 }

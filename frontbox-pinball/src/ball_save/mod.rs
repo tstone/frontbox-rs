@@ -296,9 +296,18 @@ mod tests {
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       0
     }
+    fn is_ball_in_plunge_lane(&self, _ctx: &ServiceContext) -> bool {
+      false
+    }
     fn establish_ball_count(&mut self, _ctx: &ServiceContext) {}
-    fn ball_temporarily_removed_from_play(&mut self, _ctx: &ServiceContext) {}
-    fn ball_returned_to_play(&mut self, _ctx: &ServiceContext) {}
+    fn remove_missing_ball(&mut self, _ctx: &ServiceContext) {}
+    fn balls_missing(&self, _ctx: &ServiceContext) -> u8 {
+      0
+    }
+    fn set_balls_held(&mut self, _holder: u64, _count: u8, _ctx: &ServiceContext) {}
+    fn balls_held(&self) -> u8 {
+      0
+    }
   }
 
   struct Fixture {

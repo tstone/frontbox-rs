@@ -9,8 +9,8 @@ use frontbox_core::prelude::*;
 use frontbox_core::testing::Scenario;
 use frontbox_pinball::*;
 
-// The machine: a three-ball trough ejecting into a plunge lane, a start button, a playfield switch, a tilt bob, and a
-// lock that starts a multiball.
+// The machine: a three-ball trough ejecting into a plunge lane, a start button, a playfield switch, a tilt bob, a
+// lock that starts a multiball, a drop target bank that a ball search resets, and a coin door.
 
 const TROUGH: [&str; 3] = ["trough_1", "trough_2", "trough_3"];
 const EJECT: &str = "trough_eject";
@@ -19,6 +19,9 @@ const START: &str = "start";
 const PLAYFIELD: &str = "playfield";
 const TILT_BOB: &str = "tilt_bob";
 const LOCK: &str = "lock";
+const DROP_RESET: &str = "drop_reset";
+/// Closed while the door is shut
+const COIN_DOOR: &str = "coin_door";
 
 static TROUGH_SWITCHES: LazyLock<Vec<SwitchDefinition>> = LazyLock::new(|| {
   TROUGH
@@ -28,11 +31,23 @@ static TROUGH_SWITCHES: LazyLock<Vec<SwitchDefinition>> = LazyLock::new(|| {
 });
 static PLUNGE_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| PlungeLaneSystem::switch_definition(PLUNGE).build());
-static START_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(START).build());
-static PLAYFIELD_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(PLAYFIELD).build());
-static TILT_BOB_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(TILT_BOB).build());
-static LOCK_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(LOCK).build());
-static EJECT_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
+static START_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(START).build());
+static PLAYFIELD_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(PLAYFIELD).build());
+static TILT_BOB_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(TILT_BOB).build());
+static LOCK_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(LOCK).build());
+static COIN_DOOR_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(COIN_DOOR).build());
+static EJECT_COIL: LazyLock<DriverDefinition> =
+  LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
+static DROP_RESET_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
+  DriverDefinitionBuilder::new(DROP_RESET)
+    .mode(DriverMode::pulse_kick().build())
+    .build()
+});
 
 fn app() -> App {
   let mut board = IoBoard::custom(16, 8)
@@ -41,7 +56,9 @@ fn app() -> App {
     .wire_switch(5, &PLAYFIELD_SWITCH)
     .wire_switch(6, &TILT_BOB_SWITCH)
     .wire_switch(7, &LOCK_SWITCH)
-    .wire_driver(0, &EJECT_COIL);
+    .wire_switch(8, &COIN_DOOR_SWITCH)
+    .wire_driver(0, &EJECT_COIL)
+    .wire_driver(1, &DROP_RESET_COIL);
   for (pin, switch) in TROUGH_SWITCHES.iter().enumerate() {
     board = board.wire_switch(pin as u16, switch);
   }
@@ -54,7 +71,11 @@ fn app() -> App {
     ..BootConfig::default()
   });
   app
-    .system(BallManager::standard(TROUGH, EJECT).plunge_lane(PLUNGE).build())
+    .system(
+      BallManager::standard(TROUGH, EJECT)
+        .plunge_lane(PLUNGE)
+        .build(),
+    )
     .system(GameManager::competitive(
       1,
       vec![
@@ -65,8 +86,34 @@ fn app() -> App {
       SwitchQ::name(PLAYFIELD),
     ))
     .system(FreePlay::new(SwitchQ::name(START)))
-    .routine::<BallDraining>(routine![BallSaveSystem]);
+    .system(BallSearchSystem::new(SwitchQ::name(PLAYFIELD)))
+    .system(DropBank)
+    .system(CoinDoorSystem::new(COIN_DOOR))
+    .routine::<BallDraining>(routine![BallSaveSystem])
+    .routine::<BallSearching>(routine![DropBank]);
   app
+}
+
+/// A drop target bank. A ball search resets it, which knocks loose a ball resting on a standing target.
+#[derive(Clone)]
+struct DropBank;
+
+#[derive(serde::Serialize, Event)]
+struct DropBankRecovered;
+
+impl System for DropBank {
+  fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
+    if routine.is::<BallSearching>() {
+      ctx.drivers.activate(DROP_RESET, ActivationMode::Tap);
+      ctx.cues.start(DropBankRecovered, Cue::Once(ms(250)));
+    }
+  }
+
+  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+    if event.is::<DropBankRecovered>() {
+      ctx.routines.complete_step::<BallSearching>();
+    }
+  }
 }
 
 /// A two-ball multiball, as a game's mode would write one: hitting the lock puts two more balls into play with a ball
@@ -111,7 +158,9 @@ struct Game {
 impl Game {
   fn start() -> Self {
     Self {
-      scenario: Scenario::new(app()).closed(TROUGH).start(),
+      scenario: Scenario::new(app())
+        .closed(TROUGH.iter().copied().chain([COIN_DOOR]))
+        .start(),
       in_trough: TROUGH.len(),
     }
   }
@@ -119,7 +168,10 @@ impl Game {
   /// Boots with one ball left in the plunge lane, e.g. from a game the machine was switched off during
   fn start_with_ball_in_lane() -> Self {
     let in_trough = TROUGH.len() - 1;
-    let closed = TROUGH[..in_trough].iter().copied().chain([PLUNGE]);
+    let closed = TROUGH[..in_trough]
+      .iter()
+      .copied()
+      .chain([PLUNGE, COIN_DOOR]);
     Self {
       scenario: Scenario::new(app()).closed(closed).start(),
       in_trough,
@@ -160,6 +212,10 @@ impl Game {
 
   fn ejects(&self) -> u32 {
     self.hardware().driver(EJECT).unwrap().taps
+  }
+
+  fn drop_resets(&self) -> u32 {
+    self.hardware().driver(DROP_RESET).unwrap().taps
   }
 }
 
@@ -270,7 +326,11 @@ fn a_multiball_ends_on_the_drain_that_stands_with_one_ball_left() {
   g.hit_switch(LOCK);
   assert_eq!(g.ejects(), 2);
   g.serve();
-  assert_eq!(g.ejects(), 3, "the second ball is ejected once the first leaves the lane");
+  assert_eq!(
+    g.ejects(),
+    3,
+    "the second ball is ejected once the first leaves the lane"
+  );
   g.serve();
 
   // A drain under the multiball's ball save is saved, so it doesn't count toward ending the multiball
@@ -300,7 +360,8 @@ fn a_multiball_ends_on_the_drain_that_stands_with_one_ball_left() {
 fn the_game_ends_after_the_last_turn_and_another_can_start() {
   let mut g = Game::start();
   let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
-  let endings = g.record(|e: &RoutineCompleted<GameEnding>| (e.routine.reason, e.routine.scores.len()));
+  let endings =
+    g.record(|e: &RoutineCompleted<GameEnding>| (e.routine.reason, e.routine.scores.len()));
 
   g.hit_switch(START);
   assert!(g.act(|ctx| ctx.states.is(GamePhase::Active)));
@@ -422,7 +483,10 @@ fn after_quitting_a_multiball_another_game_waits_for_the_balls_to_come_home() {
 
   g.act(|ctx| ctx.quit_game(GameEndReason::Quit));
   assert!(g.act(|ctx| ctx.states.is(GamePhase::None)));
-  assert!(g.act(|ctx| ctx.states.is(PlayerEntry::Closed)), "three balls are still in play");
+  assert!(
+    g.act(|ctx| ctx.states.is(PlayerEntry::Closed)),
+    "three balls are still in play"
+  );
 
   g.drain();
   g.drain();
@@ -474,10 +538,172 @@ fn a_turn_with_nothing_in_play_ends_even_without_a_drain_reported() {
   let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
   g.hit_switch(START);
   g.serve();
+
+  // The ball save's replacement jams in the trough: the eject fails, leaving nothing in play and no drain to report
+  g.drain();
+  assert_eq!(g.ejects(), 2);
+  g.advance(Duration::from_secs(20));
+  assert_eq!(turns.take(), [0, 1]);
+}
+
+#[test]
+fn a_held_ball_is_not_taken_for_a_drain() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
   g.outlast_ball_save();
 
-  // A lock that claims the ball without holding it leaves the count with nothing in play, and no drain to report
-  g.act(|ctx| ctx.ball_temporarily_removed_from_play());
-  g.advance(Duration::from_secs(3));
+  // A scoop holds the only ball, for a mode's intro say
+  g.act(|ctx| ctx.set_balls_held(1));
+  g.advance(Duration::from_secs(5));
+  assert_eq!(turns.take(), [0], "the turn goes on");
+
+  // Kicked back out, it's in play again, and its drain ends the turn
+  g.act(|ctx| ctx.set_balls_held(0));
+  g.drain();
+  assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn a_ball_stuck_after_a_tilt_is_searched_for_and_the_game_goes_on() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.act(|ctx| ctx.tilt());
+  assert_eq!(turns.take(), [0], "the next turn waits for the ball");
+
+  // The ball comes to rest on a drop target, so nothing is hit until the search resets the bank
+  g.advance(Duration::from_secs(14));
+  assert_eq!(g.drop_resets(), 0);
+  g.advance(Duration::from_secs(2));
+  assert_eq!(g.drop_resets(), 1);
+
+  // Knocked loose, it drains, and the next turn begins
+  g.drain();
+  assert_eq!(turns.take(), [1]);
+  assert_eq!(g.drop_resets(), 1);
+}
+
+#[test]
+fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let failed = g.record(|e: &BallSearchFailed| (e.rounds, e.in_play));
+  g.hit_switch(START);
+  g.serve();
+
+  // Three rounds find nothing, so the ball is given up on and another put into play, without using up the turn
+  g.advance(Duration::from_secs(25));
+  g.advance(ms(1500));
+  assert_eq!(g.drop_resets(), 3);
+  assert_eq!(failed.take(), [(3, 0)]);
+  assert_eq!(g.ejects(), 2);
+  assert_eq!(turns.take(), [0]);
+
+  g.serve();
+  g.drain();
+  assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn a_ball_lost_after_a_tilt_does_not_hold_up_the_next_turn() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.act(|ctx| ctx.tilt());
+
+  g.advance(Duration::from_secs(40));
+  assert_eq!(g.drop_resets(), 3);
   assert_eq!(turns.take(), [0, 1]);
+}
+
+#[test]
+fn playfield_switch_hits_put_off_a_ball_search() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  g.advance(Duration::from_secs(10));
+  g.hit_switch(PLAYFIELD);
+  g.advance(Duration::from_secs(10));
+  assert_eq!(g.drop_resets(), 0);
+  g.advance(Duration::from_secs(6));
+  assert_eq!(g.drop_resets(), 1);
+}
+
+#[test]
+fn a_ball_waiting_in_the_plunge_lane_is_not_searched_for() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.eject_into_lane();
+  g.advance(Duration::from_secs(60));
+  assert_eq!(g.drop_resets(), 0);
+}
+
+#[test]
+fn a_drain_with_the_coin_door_open_is_put_back_into_play() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let saves = g.record(|e: &BallSaved| e.count);
+  let drains = g.record(|e: &RoutineStarted<BallDraining>| e.routine.in_play);
+  g.hit_switch(START);
+  g.serve();
+
+  // An operator opens the door and takes out a stuck ball, during the ball save: it's neither saved nor a drain
+  g.open_switch(COIN_DOOR);
+  g.drain();
+  assert!(drains.take().is_empty());
+  assert!(saves.take().is_empty());
+  assert_eq!(g.ejects(), 2);
+  assert_eq!(turns.take(), [0], "the turn goes on");
+
+  // With the door closed, drains count again
+  g.serve();
+  g.close_switch(COIN_DOOR);
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(drains.take(), [0]);
+  assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn a_drain_with_the_coin_door_open_counts_with_the_setting_off() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.act(|ctx| {
+    ctx
+      .config
+      .set(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN, false)
+  });
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  g.open_switch(COIN_DOOR);
+  g.drain();
+  assert_eq!(turns.take(), [0, 1]);
+}
+
+#[test]
+fn there_is_no_ball_search_while_the_coin_door_is_open() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  g.open_switch(COIN_DOOR);
+  g.advance(Duration::from_secs(60));
+  assert_eq!(g.drop_resets(), 0);
+
+  // Closing the door starts the delay over
+  g.close_switch(COIN_DOOR);
+  g.advance(Duration::from_secs(14));
+  assert_eq!(g.drop_resets(), 0);
+  g.advance(Duration::from_secs(2));
+  assert_eq!(g.drop_resets(), 1);
+
+  // Opening it partway through a search ends the search
+  g.open_switch(COIN_DOOR);
+  g.advance(Duration::from_secs(30));
+  assert_eq!(g.drop_resets(), 1);
 }

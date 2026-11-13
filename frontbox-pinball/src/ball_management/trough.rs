@@ -120,6 +120,12 @@ impl TroughSystem {
     self.last_occupancy
   }
 
+  /// Settle on `occupancy` without reading the switches, for tests of the systems that use the trough
+  #[cfg(test)]
+  pub(super) fn set_occupancy(&mut self, occupancy: u8) {
+    self.last_occupancy = occupancy;
+  }
+
   fn retry_eject(&mut self, ctx: &SystemContext) {
     let retries_max = ctx.config.get(&configs::TROUGH_EJECT_RETRIES);
     if self.eject_retries >= retries_max {
