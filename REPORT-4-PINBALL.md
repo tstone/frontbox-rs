@@ -24,26 +24,8 @@ have left the trough, not balls requested and still queued. So `in_play == 0` at
 `!ejects_pending()`. `BallManagement::ejects_pending` already exists, for the game manager's check for nothing in
 play. Keep the snapshot in the event for display.
 
-### A7. Scoring
-
-`add_points` computes `(points as f32 * multiplier) as u32` and adds it to a `u32`.
-
-- `f32` holds integers exactly only up to 16,777,216. A larger award is rounded even at a multiplier of 1.0.
-- `*score += points_received` overflows at 4.29 billion: a panic in debug builds, a wrap in release.
-- There is one multiplier per player and the framework never resets it. A system that sets it and goes inactive at
-  the end of the turn leaves it set for the player's next turn.
-- Two systems that each want a multiplier (a 2x playfield award and a mode's 3x) overwrite each other, and the first
-  to call `clear_multiplier` clears both.
-- Points added during `GameEnding` go to player 1: `advance_turn` has already wrapped `current_player` to 0.
-
-**Fix.** `u64` scores with `saturating_add`. Make the multiplier a set of requests keyed by owner (B5), multiplied
-together, each removed when its owner despawns or releases it. Keep the math in integers (hundredths, say).
-
 ### A8. Smaller items
 
-- `TroughSystem::read_switch_occupancy` unwraps `is_closed`. A misspelled trough switch name panics at spawn with only an
-  unwrap message. Check the names when the config is built.
-- `PLAYER_GROUP_NAMES` has six entries and `max_players` is unchecked; a seventh player panics.
 - `GameManager` forwards eight `System` methods by hand and misses `on_render`. `BallManager` uses
   `delegate_system!`. Same trap as Report 3, section C.
 - Docs that describe things that don't exist: `CreditsPlay` and cooperative play in `lib.rs`, `GameStartState` in

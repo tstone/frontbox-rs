@@ -162,7 +162,7 @@ impl TroughSystem {
       .config
       .trough_switch_names
       .iter()
-      .filter(|name| ctx.switches.is_closed(**name).unwrap())
+      .filter(|name| ctx.switches.is_closed(**name).unwrap_or(false))
       .count() as u8
   }
 

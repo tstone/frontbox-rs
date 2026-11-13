@@ -622,6 +622,7 @@ impl System for StandardBallManagement {
     self.handle = ctx.handle();
 
     let mut trough_config = self.config.trough.clone();
+    trough_config.check_switch_names(ctx.into());
     if let Some(lane) = self.config.plunge_lane()
       && trough_config.eject_verification_switches.is_none()
     {
@@ -933,6 +934,15 @@ mod tests {
       0,
       "an empty trough switch is not a ball in play"
     );
+  }
+
+  #[test]
+  #[should_panic(expected = "switches that don't exist: [\"t9\", \"jam\"]")]
+  fn spawn_panics_naming_trough_switches_that_dont_exist() {
+    let config = BallManager::standard(["t1", "t9"], "eject")
+      .jam_switch("jam")
+      .config();
+    Fixture::build(1, config);
   }
 
   // -- Drains --

@@ -106,6 +106,11 @@ impl CompetitiveGame {
     player_template: Vec<ChildSystemContainer>,
     ball_in_play_switches: SwitchQ,
   ) -> Self {
+    assert!(
+      (1..=PLAYER_GROUP_NAMES.len()).contains(&(max_players as usize)),
+      "max_players must be between 1 and {}, but was {max_players}",
+      PLAYER_GROUP_NAMES.len()
+    );
     Self {
       systems_template: player_template,
       max_players,
@@ -1019,6 +1024,12 @@ mod tests {
       .collect();
     assert_eq!(granted, vec![(0, 1), (0, 2)]);
     assert_eq!(used, vec![(0, 1)]);
+  }
+
+  #[test]
+  #[should_panic(expected = "max_players must be between 1 and 6")]
+  fn more_players_than_there_are_player_groups_panics() {
+    CompetitiveGame::new(7, Vec::new(), SwitchQ::names([]));
   }
 
   #[test]
