@@ -100,6 +100,11 @@
 //!
 //! `SlamTiltSystem` (at the root) ends the game at once on the slam tilt switch, with `GameEndReason::SlamTilted`.
 //!
+//! ## Scoops
+//! `ScoopSystem<S>` (at the root) runs one scoop: it ejects a ball that lands in it, unless another system is holding
+//! the ball there (`hold`, `release`). `S` is a marker type naming the scoop, so a machine has one system per scoop,
+//! each with its own `ScoopBallEntered<S>` and `ScoopEjected<S>`.
+//!
 //! ## Attract Mode
 //! `AttractSystem` (at the root) plays a list of scenes on every LED, one after another, for as long as `GamePhase` is
 //! `None`.
@@ -113,6 +118,7 @@ mod game_management;
 mod game_start;
 mod high_scores;
 pub mod metrics;
+mod scoop;
 mod tilt;
 
 pub use attract_system::*;
@@ -122,4 +128,5 @@ pub use coin_door::*;
 pub use game_management::*;
 pub use game_start::*;
 pub use high_scores::*;
+pub use scoop::*;
 pub use tilt::*;

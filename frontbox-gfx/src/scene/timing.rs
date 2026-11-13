@@ -39,4 +39,25 @@ impl Timing {
   pub fn is_complete(&self, time: f32) -> bool {
     self.cycle.is_complete(time, self.duration)
   }
+
+  /// Seconds for every cycle to play, or `None` if it repeats forever
+  pub fn length(&self) -> Option<f32> {
+    match self.cycle {
+      Cycle::Once => Some(self.duration),
+      Cycle::Times(n) => Some(self.duration * n as f32),
+      Cycle::Forever => None,
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn length_is_every_cycle() {
+    assert_eq!(Timing::new(0.5, Cycle::Once).length(), Some(0.5));
+    assert_eq!(Timing::new(0.5, Cycle::Times(4)).length(), Some(2.0));
+    assert_eq!(Timing::new(0.5, Cycle::Forever).length(), None);
+  }
 }

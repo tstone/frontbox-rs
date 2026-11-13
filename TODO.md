@@ -29,7 +29,7 @@
 - Leaderboards: generalize high scores so the top 5 is one board among many (mode scores, fastest completions, etc.) that user systems can declare statically. A board has a name, direction (higher or lower is better), capacity (5, or 1 for a champion), value kind (points, time, count) for display, and default entries. Mid-game achievements record a pending entry per player; at game end, initials entry runs once per player and the initials go on every board they made. That single end-of-game pass should also fix high scores being janky and needing too much system switching. Stored as TOML via `frontbox_core::toml`.
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
-- Motos support: new MotorDefinition w/ FAST protocol + Machine support for motor commands
+- Motor support: new MotorDefinition w/ FAST protocol + Machine support for motor commands
 
 ### Scenes/Editor
 

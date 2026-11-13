@@ -26,10 +26,6 @@ play. Keep the snapshot in the event for display.
 
 ### A8. Smaller items
 
-- `GameManager` forwards eight `System` methods by hand and misses `on_render`. `BallManager` uses
-  `delegate_system!`. Same trap as Report 3, section C.
-- Docs that describe things that don't exist: `CreditsPlay` and cooperative play in `lib.rs`, `GameStartState` in
-  `game_start/mod.rs`, and the README still titled "Frontbox Turn Based".
 - Every log target here is `frontbox_core::...`. The log target item in `TODO.md` covers it.
 
 ## B. Architecture and types

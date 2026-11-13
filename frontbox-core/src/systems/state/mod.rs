@@ -94,7 +94,7 @@ pub struct StateChanged<S: State> {
   pub to: S,
 }
 
-// by hand: the derive doesn't handle generics
+// by hand: the JSON names the state type
 impl<S: State> Event for StateChanged<S> {
   fn as_any(&self) -> &dyn Any {
     self

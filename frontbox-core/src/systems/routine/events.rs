@@ -93,7 +93,7 @@ pub enum RoutineCompletion {
   Cancelled,
 }
 
-// by hand: the derive doesn't handle generics
+// by hand: the JSON names the routine type
 impl<E: Event> Event for RoutineStarted<E> {
   fn as_any(&self) -> &dyn Any {
     self
