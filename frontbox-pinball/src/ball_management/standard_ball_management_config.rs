@@ -131,6 +131,26 @@ impl StandardAutoPlungerBuilder {
     self
   }
 
+  /// An effect to play before the autoplunger fires, which it does once the effect has played through. Without one, it
+  /// fires right away.
+  ///
+  /// Panics if the effect never completes (a scene that's static or repeats forever), as the ball would never launch.
+  pub fn before_launch_effect(mut self, effect: LedPlayback) -> Self {
+    assert!(
+      effect.length().is_some(),
+      "The autoplunger's before-launch effect never completes, so there's no telling when to launch. Give its scene \
+       a timing that plays a set number of times."
+    );
+    self.autoplunger.before_launch_effect = Some(effect.stopped());
+    self
+  }
+
+  /// An effect to play each time the autoplunger fires
+  pub fn after_launch_effect(mut self, effect: LedPlayback) -> Self {
+    self.autoplunger.after_launch_effect = Some(effect.stopped());
+    self
+  }
+
   /// How long after the autoplunger fires to check that the ball has left the lane switch, before firing again
   pub fn launch_verification_time(mut self, time: Duration) -> Self {
     self.autoplunger.launch_verification_time = time;

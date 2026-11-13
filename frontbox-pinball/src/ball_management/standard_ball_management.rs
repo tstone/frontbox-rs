@@ -441,6 +441,7 @@ impl StandardBallManagement {
     self.end_launch_verification(ctx);
     if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
       autoplunger.disarm_launch_button(ctx.into());
+      autoplunger.cancel_launch(ctx.into());
     }
     ctx.emit(BallEnteredPlay {
       method: launched_by.unwrap_or(LaunchMethod::Manual),
@@ -535,6 +536,7 @@ impl BallManagement for StandardBallManagement {
     self.end_launch_verification(ctx);
     if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
       autoplunger.disarm_launch_button(ctx.into());
+      autoplunger.cancel_launch(ctx.into());
     }
 
     for request in std::mem::take(&mut self.requests) {
