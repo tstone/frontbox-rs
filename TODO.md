@@ -15,7 +15,7 @@
 - Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
 - Some kind of bundle that makes all the pinball things start up
-- ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit effect)
+- ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 
 ## Design Choices/Core
 
@@ -46,13 +46,13 @@
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
 - Proper BPM sync between music+scenes
+- Keyframes show more like Ableton automation, visually displaying the curve between points, and allowing the dots to be movable as today
 
 ### LEDs
 
 - Alternate resolver doesn't work with animated inputs
-- FirstWins isn't first. Hashmap does not guarantee order
 - LedSystem becomes an interface
-- Because of the way LedScene is "owned" by the system, the system has to hang around to let the effect complete. This makes system replacement unnecessarily difficult, and creates weird "lag" feeling in the software. Instead there could perhaps be a "LedProgramOneShot" system which works more play `play_sfx` where something like `play_effect` could be called it places through, then removes itself independent of the system starting it. This would need to be ServiceContext to keep it alive and that may result in overlapping declarations (perhaps LedSystem itself manages these and doesn't auto-remove on despawn?).
+- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for LEDs
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
 - Single channel flasher support
 - NeoSeg support

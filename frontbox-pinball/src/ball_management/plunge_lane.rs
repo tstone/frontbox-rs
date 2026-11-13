@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_led::prelude::*;
+use frontbox_scene::{SceneContext, ScenePlayer};
 
 use crate::GamePhase;
 use crate::ball_management::{
@@ -13,7 +13,7 @@ pub struct PlungeLaneConfig {
   /// How long the lane switch must stay open before the ball is considered gone, as a weak plunge can roll back
   pub(super) re_enter_timeout: Duration,
   /// Plays while a ball is in the lane during a game
-  pub(super) ball_present_effect: Option<LedPlayback>,
+  pub(super) ball_present_scene: Option<SceneContext>,
   /// How long ball management waits for an ejected ball to reach the lane, before trying to knock it loose and then
   /// giving up on it
   pub(super) arrival_timeout: Duration,
@@ -24,7 +24,7 @@ impl PlungeLaneConfig {
     Self {
       switch_name,
       re_enter_timeout: Duration::from_millis(1000),
-      ball_present_effect: None,
+      ball_present_scene: None,
       arrival_timeout: Duration::from_millis(5000),
     }
   }
@@ -37,7 +37,7 @@ pub struct PlungeLaneSystem {
   /// From the ball entering the lane until it is considered gone
   ball_present: bool,
   wait_cue_id: Option<u64>,
-  ball_present_program: Option<LedPlayback>,
+  ball_present_scene: Option<ScenePlayer>,
 }
 
 impl PlungeLaneSystem {
@@ -48,7 +48,7 @@ impl PlungeLaneSystem {
       re_enter_timeout: config.re_enter_timeout,
       ball_present: false,
       wait_cue_id: None,
-      ball_present_program: config.ball_present_effect.clone().map(LedPlayback::stopped),
+      ball_present_scene: config.ball_present_scene.clone().map(ScenePlayer::new),
     }
   }
 
@@ -96,21 +96,12 @@ impl PlungeLaneSystem {
     self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
   }
 
-  /// Plays the ball present effect while a ball is in the lane during a game, and stops it otherwise (e.g. a game quit
+  /// Plays the ball present scene while a ball is in the lane during a game, and stops it otherwise (e.g. a game quit
   /// with the ball still in the lane)
-  fn update_ball_present_effect(&mut self, delta: Duration, ctx: &SystemContext) {
+  fn update_ball_present_scene(&mut self, ctx: &SystemContext) {
     let show = self.ball_present && ctx.states.is(GamePhase::Active);
-    let Some(effect) = self.ball_present_program.as_mut() else {
-      return;
-    };
-
-    if show {
-      if !effect.is_playing() {
-        effect.play();
-      }
-      effect.apply(delta, ctx);
-    } else if effect.is_playing() {
-      effect.stop(ctx);
+    if let Some(scene) = self.ball_present_scene.as_mut() {
+      scene.set_playing(show, ctx);
     }
   }
 }
@@ -152,8 +143,8 @@ impl System for PlungeLaneSystem {
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    self.update_ball_present_effect(delta, ctx);
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    self.update_ball_present_scene(ctx);
   }
 }
 
@@ -179,18 +170,14 @@ mod tests {
   impl System for GameOwner {}
 
   /// A scene on an LED the machine doesn't have, that plays until stopped
-  fn effect() -> LedPlayback {
-    let scene = LedScene::load(
-      r#"Led(
-        version: 1,
-        layers: [(
-          leds: Name("plunge_led"),
-          surface: Sequence,
-          layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))),
-        )],
+  fn scene() -> SceneContext {
+    let scene = frontbox_scene::Scene::load(
+      r#"Scene(
+        version: 2,
+        layers: [Leds(leds: Name("plunge_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
       )"#,
     );
-    LedPlayback::new(scene.unwrap()).unwrap()
+    SceneContext::new(scene.unwrap())
   }
 
   impl Fixture {
@@ -241,9 +228,9 @@ mod tests {
       self.ctx.apply_states();
     }
 
-    fn effect_playing(&mut self) -> bool {
+    fn scene_playing(&mut self) -> bool {
       self.lane.on_tick(Duration::from_millis(10), &self.ctx.sys_ctx());
-      self.lane.ball_present_program.as_ref().unwrap().is_playing()
+      self.lane.ball_present_scene.as_ref().unwrap().is_started()
     }
 
     fn timeout_elapsed(&mut self) {
@@ -297,35 +284,35 @@ mod tests {
   }
 
   #[test]
-  fn ball_present_effect_only_plays_during_a_game() {
+  fn ball_present_scene_only_plays_during_a_game() {
     let mut config = PlungeLaneConfig::new(PLUNGE);
-    config.ball_present_effect = Some(effect());
+    config.ball_present_scene = Some(scene());
     let mut f = Fixture::spawn_with(config);
 
     f.set_lane_switch(true);
-    assert!(!f.effect_playing(), "no game");
+    assert!(!f.scene_playing(), "no game");
 
     f.set_game_phase(GamePhase::Active);
-    assert!(f.effect_playing());
+    assert!(f.scene_playing());
 
     // quit with the ball still in the lane
     f.set_game_phase(GamePhase::Ending);
-    assert!(!f.effect_playing());
+    assert!(!f.scene_playing());
   }
 
   #[test]
-  fn ball_present_effect_stops_once_the_ball_is_gone() {
+  fn ball_present_scene_stops_once_the_ball_is_gone() {
     let mut config = PlungeLaneConfig::new(PLUNGE);
-    config.ball_present_effect = Some(effect());
+    config.ball_present_scene = Some(scene());
     let mut f = Fixture::spawn_with(config);
     f.set_game_phase(GamePhase::Active);
 
     f.set_lane_switch(true);
-    assert!(f.effect_playing());
+    assert!(f.scene_playing());
 
     f.set_lane_switch(false);
     f.timeout_elapsed();
-    assert!(!f.effect_playing());
+    assert!(!f.scene_playing());
   }
 
   #[test]

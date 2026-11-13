@@ -49,7 +49,7 @@ pub enum FillNode {
   Image {
     /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
-    /// FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+    /// Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
     /// count gives each frame equal time. Clamped to the last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]

@@ -102,12 +102,12 @@ mod tests {
 
   /// Visits at these seconds to node 0 from traversal "t", stepping twice a second
   fn visited(at: &[f32]) -> Visits {
-    Visits { layers: vec![vec![TraversalVisits { name: "t".into(), rate: 2.0, by_node: vec![at.to_vec()], ends: None }]] }
+    Visits { traversals: vec![TraversalVisits { name: "t".into(), rate: 2.0, by_node: vec![at.to_vec()], ends: None }] }
   }
 
   fn at(response: &VisitResponse<f32>, visits: &Visits, time: f32) -> f32 {
     let params = Params::new();
-    response.resolve(&Env { visits: visits.at(0, 0), ..env(time, &params) })
+    response.resolve(&Env { visits: Some(visits.at(0)), ..env(time, &params) })
   }
 
   fn response() -> VisitResponse<f32> {

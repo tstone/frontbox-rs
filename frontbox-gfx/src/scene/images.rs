@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock};
 
 static NONE: LazyLock<Images> = LazyLock::new(Images::default);
 
-/// Decoded images by name, passed to sampling through [`FrameContext::images`](crate::scene::FrameContext::images)
+/// Decoded images by name, passed to sampling through [`LayerFrame::images`](crate::scene::LayerFrame::images)
 ///
 /// Scenes refer to images by name only. [`Content::images_for`](crate::scene::Content::images_for) builds this for a
 /// scene. Clones share pixel data.
@@ -62,7 +62,7 @@ impl Picture {
     self.frames.first().map_or(0, |levels| levels[0].height())
   }
 
-  /// FrameContext count, 1 for a still image
+  /// LayerFrame count, 1 for a still image
   pub fn frames(&self) -> usize {
     self.frames.len()
   }

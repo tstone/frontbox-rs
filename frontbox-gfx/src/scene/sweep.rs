@@ -46,7 +46,7 @@ mod tests {
   use crate::animation::Cycle;
   use crate::layout::Line;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Fill, FillNode, FrameContext, Images, Layer, Params, Prop, ShapeNode, Timing, Transform, Surface};
+  use crate::scene::{Color, Fill, FillNode, LayerFrame, Images, Layer, Params, Prop, ShapeNode, Timing, Transform, Surface, no_params};
   use crate::scene::test_scene::Scene;
 
   fn orbit(path: ShapeNode, start: f32, end: f32) -> Prop<Vec2> {
@@ -111,7 +111,7 @@ mod tests {
 
     let lit = |time: f32| {
       let params = Params::new();
-      let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None };
+      let frame = LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
       let line = Line::new(5);
       line.samples().map(|sample| scene.sample(&sample, &frame)[0] > 0).collect::<Vec<_>>()
     };

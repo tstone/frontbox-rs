@@ -10,6 +10,13 @@ use crate::scene::{Bounds, Images, NodeVisits, Timing};
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
 
+static NO_PARAMS: Params = BTreeMap::new();
+
+/// An empty set, for a scene with no param defaults, or a frame that sets none
+pub fn no_params() -> &'static Params {
+  &NO_PARAMS
+}
+
 /// A parameter value the game supplies at runtime
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -17,6 +24,18 @@ pub enum Value {
   Float(f32),
   Vec2(#[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))] Vec2),
   Color(Color),
+}
+
+impl Lerp for Value {
+  /// Between two values of the same type. Between different types, it's `other` the whole way.
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    match (self, other) {
+      (Self::Float(from), Self::Float(to)) => Self::Float(from.interpolate(to, t)),
+      (Self::Vec2(from), Self::Vec2(to)) => Self::Vec2(from.interpolate(to, t)),
+      (Self::Color(from), Self::Color(to)) => Self::Color(from.interpolate(to, t)),
+      _ => *other,
+    }
+  }
 }
 
 impl From<f32> for Value {
@@ -92,7 +111,7 @@ pub(crate) struct Env<'a> {
   pub cycle: u32,
   /// The scene's timing, so random picks can look into the neighboring cycles
   pub timing: Option<Timing>,
-  /// See [`FrameContext::take`](crate::scene::FrameContext::playback_seed)
+  /// See [`LayerFrame::take`](crate::scene::LayerFrame::playback_seed)
   pub playback_seed: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,

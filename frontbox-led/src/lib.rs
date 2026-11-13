@@ -12,45 +12,67 @@
 //!
 //! ## LED Usage
 //!
-//! An arcade machine typically uses LEDs in two ways:
+//! A system lights LEDs one of three ways, by what the LEDs are doing for the player.
 //!
-//! ### 1. Communication
-//! A mode or system may need to specifically set LEDs to a particular state in order to communicate with the player
-//! about game state, for example, signaling "hit this shot" or "extra ball available". In this case, the communicating system
-//! owns and applies the effect. This is done by the system keeping the effect as an instance value of the system, applying it
-//! `on_tick`, then using `play` and `stop` to control the effect.
+//! ### 1. Status
+//! A system may need to set LEDs to a color to say something is true, for example "this lane is lit". That isn't a
+//! scene. The system declares the color with the [`LedSystem`], and it stays until the system undeclares it or goes
+//! inactive.
 //!
-//! This also causes the owning system to owns all the declarations (see below), such that when the owning system goes inactive, the
-//! corresponding LEDs can lose that effect automatically.
+//! ```rust
+//! # use frontbox_core::prelude::*;
+//! # use frontbox_led::prelude::*;
+//! # mod leds {
+//! #   use frontbox_core::prelude::*;
+//! #   hardware_defs! {
+//! #     pub LANE: LedDefinition = LedDefinition::single("lane");
+//! #   }
+//! # }
+//! # fn example(ctx: &SystemContext) {
+//! ctx.declare_leds(&leds::LANE.q(), Rgba::green());
+//! # }
+//! ```
+//!
+//! ### 2. A scene the system owns
+//! What's drawn in the editor is a [`Scene`](frontbox_scene::Scene), played by the
+//! [`SceneSystem`](frontbox_scene::SceneSystem). A system that turns one on and off, for example to pulse a shot while
+//! it's lit, holds a [`ScenePlayer`](frontbox_scene::ScenePlayer). When the system goes inactive the scene pauses and its
+//! LEDs are given up, and when the system despawns the scene goes with it.
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
 //! # use frontbox_led::prelude::*;
 //! pub struct Example {
-//!   effect: LedPlayback
+//!   lit: bool,
+//!   scene: ScenePlayer,
 //! }
 //!
 //! impl System for Example {
-//!   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-//!     self.effect.apply(delta, ctx);
+//!   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+//!     self.scene.set_playing(self.lit, ctx);
 //!   }
 //! }
 //! ```
 //!
-//! ### 2. Response
-//! Other times the LEDs indicates a _response_ to the player, such as a hit effect or transition effect. In these cases the LEDs aren't
-//! communicating a persistent state, but instead playing out a sequence or animation as a reaction. From the perspective of the system that
-//! starts the effect, it doesn't need to babysit the effect and manually turn it on and off. Responses are temporary, one-shot type effects
-//! The method of interaction here is more akin to playing a sound effect: "Just play this and I'm not worried about it".
+//! ### 3. A scene handed off
+//! Other times the LEDs indicates a _response_ to the player, such as a hit or a transition. In these cases
+//! the LEDs aren't communicating a persistent state, but instead playing out a sequence or animation as a reaction. The
+//! system hands the scene to the `SceneSystem` and is done with it: it plays to its end even if the system goes away.
+//! Only a scene that completes can be handed off, which a
+//! [`SceneContext<Completes>`](frontbox_scene::SceneContext) says.
 //!
-//! ```rust,ignore
-//! // TODO: a way to play a scene that outlives the system starting it
+//! ```rust
+//! # use frontbox_core::prelude::*;
+//! # use frontbox_led::prelude::*;
+//! # fn example(ctx: &SystemContext, hit: SceneContext<Completes>) {
+//! ctx.play_scene(&hit);
+//! # }
 //! ```
 //!
 //! ## LED Identification (dimensions)
 //!
-//! What LEDs show is an [`LedScene`], written to a `.scene` file: layers on one timeline, each saying which LEDs it's on, its
-//! z, and how it lands on them with its [`Surface`].
+//! Each [`LedLayer`](frontbox_scene::LedLayer) of a scene says which LEDs it's on, its z, and how it lands on them with
+//! its [`LedSurface`](frontbox_scene::LedSurface).
 //!
 //! ### Sequence
 //! A `Sequence` surface spreads over one or more LEDs in a list, typically by name, tag, or definition. These can be used for a variety of
@@ -70,41 +92,39 @@
 //!
 //! Generally, setting LEDs happens by way of scenes, but understanding the stack can be useful when choosing which approach to use or building your own from scratch.
 //!
-//! - [`LedPlayback`] - Plays an [`LedScene`] (Requires `LedSystem`)
-//! - [`LedSystem`] - Manages declarations, prioritization, and layers. Sets the final color with `Machine`. Typically not interacted with directly.
+//! - [`SceneSystem`](frontbox_scene::SceneSystem) - Holds the scenes playing
+//! - [`LedSystem`] - Draws the LED layers of those scenes with [`LedPlacement`], along with direct declarations, and
+//!   resolves priority and layers. Sets the final color with `Machine`.
 //! - [`Machine`](frontbox_core::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
 //!
 
 mod alternate_resolver;
-mod end_behavior;
 mod led_graph;
-mod led_playback;
 mod led_declarations;
-mod led_scene;
 mod led_identifications;
 mod led_identifications_ext;
+mod led_placement;
 mod led_system;
 mod led_system_ext;
+#[cfg(test)]
+mod scene_tests;
 
 pub(crate) use alternate_resolver::*;
 pub(crate) use led_declarations::*;
-pub use end_behavior::*;
 pub use led_graph::*;
-pub use led_playback::*;
-pub use led_scene::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
+pub use led_placement::*;
 pub use led_system::*;
 pub use led_system_ext::*;
 
 pub mod prelude {
-  pub use crate::end_behavior::*;
   pub use crate::led_graph::*;
-  pub use crate::led_playback::*;
-  pub use crate::led_scene::*;
   pub use crate::led_identifications::*;
   pub use crate::led_identifications_ext::*;
+  pub use crate::led_placement::*;
   pub use crate::led_system::*;
   pub use crate::led_system_ext::*;
   pub use frontbox_gfx::prelude::*;
+  pub use frontbox_scene::prelude::*;
 }

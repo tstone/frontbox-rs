@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Images, Params, Surface, Visits};
+use crate::scene::{Images, Params, Surface, Timing, Visits};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -26,22 +26,26 @@ impl Sample {
   }
 }
 
-/// Inputs shared by every sample in one frame
+/// Inputs shared by every sample of a layer in one frame
 #[derive(Debug, Clone, Copy)]
-pub struct FrameContext<'a> {
+pub struct LayerFrame<'a> {
   /// Seconds since the scene started
   pub time: f32,
+  /// The scene's timing. `None` for a static scene, whose tracks stay at time 0.
+  pub timing: Option<Timing>,
   /// Seed for random props. Players use a new one each time they restart a scene, so it doesn't repeat the same picks.
   pub playback_seed: u32,
   /// Values from the game, overriding the scene's param defaults
   pub params: &'a Params,
+  /// The scene's param defaults
+  pub defaults: &'a Params,
   /// Decoded images by name. A layer whose image is missing draws nothing; get these from
   /// [`Content::images_for`](crate::scene::Content::images_for), which reports missing images up front.
   pub images: &'a Images,
-  /// Device size in its own units, which the scene's coordinates are in. Unused by a `Sequence`.
+  /// Size of what the layer is drawn on, in its own units, which the layer's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,
   pub surface: Surface,
-  /// This frame's [`GfxComposition::visits`](crate::scene::GfxComposition::visits), for layers with a graph. Without
-  /// it, their visit responses stay at rest.
+  /// The layer's [`Layer::visits`](crate::scene::Layer::visits) this frame, for a layer with a graph. Without it, its
+  /// visit responses stay at rest.
   pub visits: Option<&'a Visits>,
 }

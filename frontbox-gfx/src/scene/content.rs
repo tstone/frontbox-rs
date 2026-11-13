@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use crate::scene::file;
-use crate::scene::{GfxComposition, Images, Picture};
+use crate::scene::{Images, Layer, Picture};
 
 /// Largest width or height that will be decoded
 const MAX_IMAGE_SIDE: u32 = 8192;
@@ -19,7 +19,7 @@ const MAX_IMAGE_SIDE: u32 = 8192;
 /// decode to huge sizes.
 const MAX_DECODED_BYTES: u64 = 512 * 1024 * 1024;
 
-/// FrameContext cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
+/// LayerFrame cap for animated images. Each frame has a cost beyond its pixels, so many tiny frames could otherwise get
 /// around the byte cap.
 const MAX_FRAMES: usize = 10_000;
 
@@ -94,10 +94,11 @@ impl Content {
     Ok(picture)
   }
 
-  /// Loads every image a scene uses. A missing image is an error here, rather than a layer silently drawing nothing.
-  pub fn images_for(&self, scene: &GfxComposition) -> Result<Images, LayerImageError> {
+  /// Loads every image a scene's layers use, given in the scene's order. A missing image is an error here, rather than
+  /// a layer silently drawing nothing.
+  pub fn images_for<'a>(&self, layers: impl IntoIterator<Item = &'a Layer>) -> Result<Images, LayerImageError> {
     let mut images = Images::new();
-    for (index, layer) in scene.layers.iter().enumerate() {
+    for (index, layer) in layers.into_iter().enumerate() {
       for name in layer.image_names() {
         let picture = self.picture(name).map_err(|error| LayerImageError { layer: layer.label(index), error })?;
         images.insert(name, picture);
@@ -352,7 +353,7 @@ fn gif(bytes: &[u8], limits: Limits) -> ImageResult<Picture> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::{Fill, FillNode, Layer};
+  use crate::scene::{Fill, FillNode};
   use image::codecs::gif::GifEncoder;
   use image::{Delay, Rgba, RgbaImage};
   use std::sync::atomic::{AtomicU32, Ordering};
@@ -405,8 +406,8 @@ mod tests {
     bytes
   }
 
-  fn drawing(name: &str) -> GfxComposition {
-    GfxComposition::new(vec![Layer::new(Fill::new(FillNode::image(name)))])
+  fn drawing(name: &str) -> Vec<Layer> {
+    vec![Layer::new(Fill::new(FillNode::image(name)))]
   }
 
   #[test]
@@ -478,7 +479,7 @@ mod tests {
     let mut scene = drawing("logo.png");
     assert_eq!(Content::new(&folder.0).images_for(&scene).unwrap_err().layer, "layer 1");
 
-    scene.layers[0].name = Some("title".into());
+    scene[0].name = Some("title".into());
     let error = Content::new(&folder.0).images_for(&scene).unwrap_err();
     assert_eq!(error.to_string(), "layer \"title\": there's no image \"logo.png\" in the content folder");
   }

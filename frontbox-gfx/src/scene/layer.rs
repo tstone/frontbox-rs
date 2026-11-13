@@ -2,7 +2,7 @@ use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Fill, Bounds, GraphMask, Mask, Sample, Shape, Transform};
+use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
 
 /// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -78,25 +78,102 @@ impl Layer {
   }
 
   /// Names of the images the layer and its mask use
-  pub(crate) fn image_names(&self) -> impl Iterator<Item = &str> {
+  pub fn image_names(&self) -> impl Iterator<Item = &str> {
     let masked = self.mask.as_ref().and_then(|mask| mask.fill.base.image_name());
     self.fill.base.image_name().into_iter().chain(masked)
   }
 
-  pub(crate) fn sample(&self, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
-    if self.graph.is_some() && at.node.is_none() {
+  /// Validates what the types can't enforce, for the layer at `index` in a scene with `timing`
+  pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
+    if timing.is_none() && self.is_animated() {
+      return Err(SceneError::NoTiming { layer: self.label(index) });
+    }
+    let traversals = self.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
+    for (i, traversal) in traversals.iter().enumerate() {
+      if traversals[..i].iter().any(|other| other.name == traversal.name) {
+        return Err(SceneError::SameTraversalName { layer: self.label(index), traversal: traversal.name.clone() });
+      }
+      if let Speed::Rate(Prop::Fixed(amount)) | Speed::Duration(Some(amount)) = traversal.speed
+        && !(amount.is_finite() && amount > 0.0)
+      {
+        return Err(SceneError::NoSpeed { layer: self.label(index), traversal: traversal.name.clone() });
+      }
+    }
+    Ok(())
+  }
+
+  /// The color at a sample. A hidden layer draws nothing. Without a shape it's clipped to the viewport; a shape can
+  /// extend past it.
+  pub fn sample(&self, at: &Sample, frame: &LayerFrame) -> Rgba<u8> {
+    if self.hidden || (self.graph.is_some() && at.node.is_none()) {
       return Rgba([0, 0, 0, 0]);
     }
-    let mut color = sample_fill(&self.fill, self.region.as_ref(), at, viewport, env);
+    let visits = frame.visits.zip(at.node).map(|(visits, node)| visits.at(node));
+    let env = Env { lap: lap(frame.surface, at.radius), visits, ..env(frame) };
+    let mut color = sample_fill(&self.fill, self.region.as_ref(), at, env.viewport, &env);
     if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
-      color[3] = (color[3] as f32 * mask.amount(at, viewport, env)).round() as u8;
+      color[3] = (color[3] as f32 * mask.amount(at, env.viewport, &env)).round() as u8;
     }
     color
   }
 
-  pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec2> {
-    fill_outline(self.region.as_ref(), viewport, env)
+  /// The traversals of the layer's graph for the current cycle, to pass in [`LayerFrame::visits`]. `graph` is built
+  /// from the points the layer is sampled at.
+  ///
+  /// Traversals are planned a cycle at a time, so with fixed starts and rates this only changes from one cycle (or
+  /// playback seed) to the next, and can be kept for the rest of the cycle.
+  pub fn visits(&self, graph: &Graph, frame: &LayerFrame) -> Visits {
+    let env = env(frame);
+    let traversals = self.graph.as_ref().map_or(&[][..], |mask| &mask.traversals);
+    Visits { traversals: traversals.iter().map(|traversal| traversal.visits(graph, &env)).collect() }
   }
+
+  /// The area the layer draws in, as a closed polygon in scene units, for editor overlays. With no shape, that's the
+  /// viewport. A collapsed shape has no points.
+  pub fn outline(&self, frame: &LayerFrame) -> Vec<Vec2> {
+    let env = env(frame);
+    fill_outline(self.region.as_ref(), env.viewport, &env)
+  }
+
+  /// The [`ShapePose`] of the layer's shape, for editor handles. `None` with no shape, or a collapsed one.
+  pub fn shape_pose(&self, frame: &LayerFrame) -> Option<ShapePose> {
+    self.region.as_ref()?.pose(&env(frame))
+  }
+
+  /// Like [`Self::outline`], for the layer's mask. No points with no mask.
+  pub fn mask_outline(&self, frame: &LayerFrame) -> Vec<Vec2> {
+    let env = env(frame);
+    self.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(env.viewport, &env))
+  }
+
+  /// Like [`Self::shape_pose`], for the mask's shape
+  pub fn mask_pose(&self, frame: &LayerFrame) -> Option<ShapePose> {
+    self.mask.as_ref()?.region.as_ref()?.pose(&env(frame))
+  }
+}
+
+/// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
+/// spacing doesn't matter.
+fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
+  Env {
+    time: frame.timing.map_or(0.0, |timing| timing.local_time(frame.time)),
+    cycle: frame.timing.map_or(0, |timing| timing.cycle_index(frame.time)),
+    timing: frame.timing,
+    playback_seed: frame.playback_seed,
+    params: frame.params,
+    defaults: frame.defaults,
+    images: frame.images,
+    viewport: frame.surface.viewport(frame.size),
+    lap: lap(frame.surface, 0.0),
+    visits: None,
+    fill_frame: Affine2::IDENTITY,
+  }
+}
+
+/// Lap length of a `Sequence` for `Rotate`: the line plus one point's width to close the loop, so the last point doesn't
+/// land on the first when the ends wrap.
+fn lap(surface: Surface, radius: f32) -> Option<f32> {
+  (surface == Surface::Sequence).then_some(1.0 + 2.0 * radius)
 }
 
 /// The fill's color at a sample, clipped to the region (or the viewport, with none). Edge coverage goes into alpha.

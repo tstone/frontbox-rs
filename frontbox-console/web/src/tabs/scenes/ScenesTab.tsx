@@ -15,14 +15,14 @@ const STARTING_LAYER = `(fill: (base: Gradient(stops: [
 
 /** A new scene of each kind. Which LEDs an LED scene's layers are on is chosen in the editor. */
 const STARTING_SCENES = {
-  LED: `Led(
-  version: 1,
-  layers: [(surface: Sequence, layer: ${STARTING_LAYER})],
+  LED: `Scene(
+  version: 2,
+  layers: [Leds(surface: Sequence, layer: ${STARTING_LAYER})],
 )
 `,
-  DMD: `Dmd(
-  version: 1,
-  composition: (layers: [${STARTING_LAYER}]),
+  DMD: `Scene(
+  version: 2,
+  layers: [Display(display: "Dmd", layer: ${STARTING_LAYER})],
 )
 `,
 }

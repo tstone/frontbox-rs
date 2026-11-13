@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_led::prelude::*;
+use frontbox_scene::{Completes, SceneContext};
 
 use crate::ball_management::{
   AutoPlungerConfig, BallManager, PlungeLaneConfig, StandardBallManagement, TroughManagementConfig,
@@ -125,29 +125,24 @@ impl StandardAutoPlungerBuilder {
     self
   }
 
-  /// An effect to play while a launch button press would launch the ball
-  pub fn launch_ready_effect(mut self, effect: LedPlayback) -> Self {
-    self.autoplunger.launch_ready_effect = Some(effect.stopped());
+  /// A scene to play while a launch button press would launch the ball
+  pub fn launch_ready_scene(mut self, scene: impl Into<SceneContext>) -> Self {
+    self.autoplunger.launch_ready_scene = Some(scene.into());
     self
   }
 
-  /// An effect to play before the autoplunger fires, which it does once the effect has played through. Without one, it
+  /// A scene to play before the autoplunger fires, which it does once the scene has played through. Without one, it
   /// fires right away.
   ///
-  /// Panics if the effect never completes (a scene that's static or repeats forever), as the ball would never launch.
-  pub fn before_launch_effect(mut self, effect: LedPlayback) -> Self {
-    assert!(
-      effect.length().is_some(),
-      "The autoplunger's before-launch effect never completes, so there's no telling when to launch. Give its scene \
-       a timing that plays a set number of times."
-    );
-    self.autoplunger.before_launch_effect = Some(effect.stopped());
+  /// It has to be a scene that completes, as the ball would otherwise never launch.
+  pub fn before_launch_scene(mut self, scene: SceneContext<Completes>) -> Self {
+    self.autoplunger.before_launch_scene = Some(scene);
     self
   }
 
-  /// An effect to play each time the autoplunger fires
-  pub fn after_launch_effect(mut self, effect: LedPlayback) -> Self {
-    self.autoplunger.after_launch_effect = Some(effect.stopped());
+  /// A scene to play each time the autoplunger fires. It plays to its end, whatever happens next.
+  pub fn after_launch_scene(mut self, scene: SceneContext<Completes>) -> Self {
+    self.autoplunger.after_launch_scene = Some(scene);
     self
   }
 
@@ -216,9 +211,9 @@ macro_rules! plunge_lane_settings {
         self
       }
 
-      /// An effect to play while a ball is in the plunge lane
-      pub fn ball_present_effect(mut self, effect: LedPlayback) -> Self {
-        self.lane.ball_present_effect = Some(effect);
+      /// A scene to play while a ball is in the plunge lane
+      pub fn ball_present_scene(mut self, scene: impl Into<SceneContext>) -> Self {
+        self.lane.ball_present_scene = Some(scene.into());
         self
       }
 

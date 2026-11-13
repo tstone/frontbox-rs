@@ -3,8 +3,7 @@
 //! Files are written with RON's `implicit_some` and `unwrap_variant_newtypes` extensions, so they only state what
 //! they change and avoid double parentheses. Fields that aren't written take their default.
 //!
-//! The top-level type, such as `LedScene` or `DmdScene`, is defined by the crate that owns it. Each is wrapped in a
-//! variant named for its kind, so a file says what it is and one kind can't be loaded as another.
+//! The top-level type, `Scene`, is defined in `frontbox-scene`.
 
 use std::fmt;
 
@@ -14,13 +13,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Scene file extension, in lowercase
 pub const EXTENSION: &str = "scene";
 
-/// Parses a scene file without validating it. Call [`GfxComposition::check`](crate::scene::GfxComposition::check) on
-/// the result.
+/// Parses a scene file without validating it. The scene type has a `check` to call on the result.
 pub fn load<T: DeserializeOwned>(source: &str) -> Result<T, FormatError> {
   options().from_str(source).map_err(FormatError::Read)
 }
@@ -80,11 +78,11 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::layout::Line;
-  use crate::scene::test_scene::Scene;
+  use crate::scene::test_scene::{Composition, Scene};
   use crate::scene::*;
 
   fn load(source: &str) -> Result<Scene, FormatError> {
-    let composition: GfxComposition = super::load(source)?;
+    let composition: Composition = super::load(source)?;
     composition.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
     Ok(Scene::with_composition(Surface::Area, composition))
   }
@@ -98,7 +96,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+        let frame = LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -273,7 +271,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -335,7 +333,7 @@ mod tests {
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &FrameContext { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None });
+    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -356,7 +354,7 @@ mod tests {
     let (mut images, params) = (Images::new(), Params::new());
     images.insert("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -463,10 +461,9 @@ mod tests {
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
-        let frame = FrameContext { time, playback_seed: 3, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+        let frame = LayerFrame { time, playback_seed: 3, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
         let visits = scene.visits(&graph, &frame);
-        let frame = FrameContext { visits: Some(&visits), ..frame };
-        samples.iter().map(|sample| scene.sample(sample, &frame)).collect::<Vec<_>>()
+        samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect::<Vec<_>>()
       })
       .collect()
   }

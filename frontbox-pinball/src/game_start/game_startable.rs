@@ -1,20 +1,21 @@
 use frontbox_core::prelude::*;
 use frontbox_core::tags::Cabinet;
-use frontbox_led::prelude::*;
+use frontbox_scene::{SceneContext, ScenePlayer};
 
-use crate::{GameEnding, GamePhase, GameStarting, PlayerEntry};
+use crate::{GamePhase, GameStarting, PlayerEntry};
 
 /// A system to flash elements the start button and/or action button when the game is startable or player addable
 pub struct GameStartable {
   lamp_driver_name: Option<&'static str>,
-  led_program: Option<LedPlayback>,
+  /// Plays while no game is running
+  scene: Option<ScenePlayer>,
   flash_duration: Duration,
 }
 
 impl GameStartable {
   pub fn new() -> Self {
     Self {
-      led_program: None,
+      scene: None,
       lamp_driver_name: None,
       flash_duration: Duration::from_millis(185),
     }
@@ -25,8 +26,8 @@ impl GameStartable {
     self
   }
 
-  pub fn effect(mut self, effect: LedPlayback) -> Self {
-    self.led_program = Some(effect);
+  pub fn scene(mut self, scene: impl Into<SceneContext>) -> Self {
+    self.scene = Some(ScenePlayer::new(scene));
     self
   }
 
@@ -81,21 +82,19 @@ impl System for GameStartable {
       self.start_btn_on(ctx);
     } else if event.is::<LampOff>() {
       self.start_btn_off(ctx);
-    } else if let Some(effect) = &mut self.led_program {
-      if event.is::<RoutineStarted<GameStarting>>() {
-        effect.stop(ctx);
-      } else if event.is::<RoutineCompleted<GameEnding>>() {
-        effect.play();
-      }
+    } else if event.is::<RoutineStarted<GameStarting>>()
+      && let Some(scene) = &mut self.scene
+    {
+      scene.stop(ctx);
     }
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    // only apply effects if a game hasn't started
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    // only played while a game hasn't started, and again once one has ended
     if ctx.states.is(GamePhase::None)
-      && let Some(effect) = &mut self.led_program
+      && let Some(scene) = &mut self.scene
     {
-      effect.apply(delta, ctx);
+      scene.set_playing(true, ctx);
     }
   }
 }

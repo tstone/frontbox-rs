@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Cycle;
+use crate::scene::SceneError;
+
+/// How far [`Timing::cycle_time`] keeps times from the edges of a cycle, as a fraction of it, so float rounding doesn't
+/// push them into the neighboring cycle
+const CYCLE_MARGIN: f32 = 1e-4;
 
 /// How long an animated scene runs, and how many times. A scene without a timing is static: only its params can change
 /// it.
@@ -17,6 +22,14 @@ pub struct Timing {
 impl Timing {
   pub fn new(duration: f32, cycle: Cycle) -> Self {
     Self { duration, cycle }
+  }
+
+  /// Errors if the duration isn't a positive number
+  pub fn check(&self) -> Result<(), SceneError> {
+    match self.duration.is_finite() && self.duration > 0.0 {
+      true => Ok(()),
+      false => Err(SceneError::NoDuration),
+    }
   }
 
   /// Whether more than one cycle plays
@@ -47,6 +60,33 @@ impl Timing {
       Cycle::Times(n) => Some(self.duration * n as f32),
       Cycle::Forever => None,
     }
+  }
+
+  /// Set to play 3 cycles, for previewing a typical cycle with neighbors on both sides (so random picks can blend across
+  /// its edges). One that only plays once is unchanged. Use with [`Self::middle_cycle_time`].
+  pub fn middle_cycle(self) -> Self {
+    match self.repeats() {
+      true => Self { cycle: Cycle::Times(3), ..self },
+      false => self,
+    }
+  }
+
+  /// Converts a time within a cycle to scene time in the middle cycle of [`Self::middle_cycle`]
+  pub fn middle_cycle_time(&self, time: f32) -> f32 {
+    self.cycle_time(1, time)
+  }
+
+  /// Converts a time within cycle number `cycle` to scene time. `time` can be the cycle's full duration and still land in
+  /// that cycle. A cycle past the last is treated as the last. One that only plays once has only the one.
+  pub fn cycle_time(&self, cycle: u32, time: f32) -> f32 {
+    if !self.repeats() {
+      return time;
+    }
+    let cycle = match self.cycle {
+      Cycle::Times(times) => cycle.min(times - 1),
+      _ => cycle,
+    };
+    self.duration * (cycle as f32 + (time / self.duration).clamp(CYCLE_MARGIN, 1.0 - CYCLE_MARGIN))
   }
 }
 

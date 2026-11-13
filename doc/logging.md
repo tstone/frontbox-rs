@@ -76,6 +76,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 
 | Target | Covers |
 |---|---|
+| `frontbox::scene` | Scene playbacks starting and ending |
 | `frontbox::led` | LED declarations and rendering |
 | `frontbox::sound` | Audio output, sound effects, callouts, music |
 | `frontbox::dmd` | DMD rendering, menus, initials entry |

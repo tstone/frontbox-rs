@@ -10,15 +10,15 @@ import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
-import type { GfxComposition } from '../../types/generated/GfxComposition'
 import type { GraphMask } from '../../types/generated/GraphMask'
 import type { LedLayer } from '../../types/generated/LedLayer'
-import type { SceneDefinition } from '../../types/generated/SceneDefinition'
+import type { Scene as SceneFile } from '../../types/generated/Scene'
+import type { SceneLayer as SceneFileLayer } from '../../types/generated/SceneLayer'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
-import type { Surface as LedSurface } from '../../types/generated/Surface'
+import type { LedSurface } from '../../types/generated/LedSurface'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
@@ -287,14 +287,15 @@ export function freshTraversalName(layer: SceneLayer, base: string) {
 }
 
 /** Where a new layer goes: where the one under it is, so that stacking is the easy thing to do */
-export function newLayerPlace(scene: Scene): Partial<LedLayer> {
-  if (scene.kind === 'Dmd') return {}
+export function newLayerPlace(scene: Scene): Omit<SceneLayer, keyof Layer> {
   const under = scene.layers.at(-1)
+  if (scene.kind === 'Dmd') return { display: under?.display ?? 'Dmd', z: under?.z }
   return { leds: under?.leds, z: under?.z, surface: under?.surface ?? 'Sequence' }
 }
 
 /** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */
-export function ledsCase({ layers }: Scene) {
+export function ledsCase(scene: Scene) {
+  const layers = scene.layers.filter((layer) => layer.display === undefined)
   if (layers.some((layer) => layer.leds === undefined)) return 'None'
   const leds = new Set(layers.map((layer) => JSON.stringify(layer.leds)))
   return leds.size <= 1 ? 'Replaceable' : 'Fixed'
@@ -533,25 +534,35 @@ function held(prop: Prop<SceneValue>): Prop<SceneValue> {
   return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
 }
 
-/** A layer as the editor works on it, with where it happens alongside what it draws. A DMD's layers don't say where. */
-export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>>
+/**
+ * A layer as the editor works on it, with what it's drawn on alongside what it draws: LEDs, with `leds`, `surface`, and
+ * `z`, or a display, named by `display`.
+ */
+export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>> & { display?: string }
 
-/** A scene as the editor works on it, which is everything in one place whichever kind of file it's from */
-export type Scene = Omit<GfxComposition, 'layers'> & { kind: 'Led' | 'Dmd'; version: number; layers: SceneLayer[] }
+/**
+ * A scene as the editor works on it, with everything about a layer in one place. `kind` is what the editor shows it on:
+ * one with display layers is edited as a display's, and one without as the LEDs'.
+ */
+export type Scene = Omit<SceneFile, 'layers'> & { kind: 'Led' | 'Dmd'; layers: SceneLayer[] }
 
-export function editedScene(definition: SceneDefinition): Scene {
-  if ('Led' in definition) {
-    const { layers, ...scene } = definition.Led
-    return { ...scene, kind: 'Led', layers: layers.map(({ layer, ...place }) => ({ ...layer, ...place })) }
-  }
-  const { composition, version } = definition.Dmd
-  return { ...composition, version, kind: 'Dmd' }
+export function editedScene({ layers, ...scene }: SceneFile): Scene {
+  const edited = layers.map((on): SceneLayer => {
+    if ('Display' in on) {
+      const { layer, ...place } = on.Display
+      return { ...layer, ...place }
+    }
+    const { layer, ...place } = on.Leds
+    return { ...layer, ...place }
+  })
+  return { ...scene, kind: layers.some((on) => 'Display' in on) ? 'Dmd' : 'Led', layers: edited }
 }
 
-function sceneDefinition({ kind, version, layers, ...scene }: Scene): SceneDefinition {
-  if (kind === 'Dmd') return { Dmd: { version, composition: { ...scene, layers } } }
-  const placed = layers.map(({ leds, z, surface, ...layer }) => ({ leds, z, surface: surface!, layer }))
-  return { Led: { version, ...scene, layers: placed } }
+function sceneFile({ kind, layers, ...scene }: Scene): SceneFile {
+  const placed = layers.map(({ leds, z, surface, display, ...layer }): SceneFileLayer =>
+    display !== undefined ? { Display: { display, z, layer } } : { Leds: { leds, z, surface: surface ?? 'Sequence', layer } },
+  )
+  return { ...scene, layers: placed }
 }
 
 /** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
@@ -561,8 +572,8 @@ export function sceneSource(scene: Scene): SceneSource {
   for (const { prop } of tracks) {
     if (isHidden(prop.get())) prop.set(held(prop.get()))
   }
-  const definition = sceneDefinition(scene)
-  return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneDefinition(shown) } }
+  const definition = sceneFile(scene)
+  return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneFile(shown) } }
 }
 
 /** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */

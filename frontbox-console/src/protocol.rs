@@ -5,10 +5,7 @@ use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
 use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
-use frontbox_dmd::DmdScene;
-use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::GfxComposition;
-use frontbox_led::LedScene;
+use frontbox_scene::Scene;
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
@@ -122,7 +119,7 @@ pub struct LedColors {
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
   /// The scene that was rendered
-  pub scene: SceneDefinition,
+  pub scene: Scene,
   /// The same scene as RON
   pub ron: String,
   pub width: usize,
@@ -268,62 +265,20 @@ pub enum SceneSource {
   /// As written in a file
   Ron(String),
   /// As edited field by field
-  Definition(SceneDefinition),
+  Definition(Scene),
   /// Drawn as `shown`, for trying a change out without making it. `scene` is what's given back in both forms.
-  Preview { scene: SceneDefinition, shown: SceneDefinition },
+  Preview { scene: Scene, shown: Scene },
 }
 
-/// A scene file, whichever kind it says it is
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
-pub enum SceneDefinition {
-  Led(LedScene),
-  Dmd(DmdScene),
-}
-
-impl SceneDefinition {
-  pub fn load(source: &str) -> Result<Self, FormatError> {
-    let scene: Self = file::load(source)?;
-    file::check_version(scene.version())?;
-    scene.check().map_err(FormatError::Invalid)?;
-    Ok(scene)
-  }
-
-  pub fn save(&self) -> Result<String, FormatError> {
-    file::save(self)
-  }
-
-  /// Checks what a definition's types can't say for themselves
-  pub fn check(&self) -> Result<(), String> {
-    match self {
-      Self::Led(scene) => scene.check().map_err(|err| err.to_string()),
-      Self::Dmd(scene) => scene.check().map_err(|err| err.to_string()),
-    }
-  }
-
-  fn version(&self) -> u32 {
-    match self {
-      Self::Led(scene) => scene.version,
-      Self::Dmd(scene) => scene.version,
-    }
-  }
-
-  /// What's drawn, leaving out where
-  pub fn composition(&self) -> GfxComposition {
-    match self {
-      Self::Led(scene) => scene.composition(),
-      Self::Dmd(scene) => scene.composition.clone(),
-    }
-  }
-}
-
-/// How many points to sample a scene at. The kind of scene decides which of these applies.
+/// How many points to sample a scene at. A scene with display layers is drawn at the width and height; one without draws
+/// a strip of its `Sequence` LED layers, `leds` long.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
 pub struct SceneSize {
-  /// LEDs along the strip, for an LED scene's `Sequence` layers
+  /// Points along the strip of `Sequence` LED layers
   pub leds: usize,
-  /// Points across, for an `Area` viewport
+  /// Points across a display, and the width of an LED layer on a plane the machine doesn't have
   pub width: usize,
-  /// Points down, for an `Area` viewport
+  /// Points down a display, and the height of an LED layer on a plane the machine doesn't have
   pub height: usize,
 }
 

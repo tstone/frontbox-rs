@@ -1005,6 +1005,7 @@ dependencies = [
  "frontbox-led",
  "frontbox-metrics",
  "frontbox-pinball",
+ "frontbox-scene",
  "image",
  "log",
  "mime_guess",
@@ -1066,7 +1067,6 @@ dependencies = [
  "rusb",
  "serde",
  "serde_json",
- "ts-rs",
 ]
 
 [[package]]
@@ -1093,14 +1093,13 @@ dependencies = [
  "fast-protocol",
  "frontbox-core",
  "frontbox-gfx",
+ "frontbox-scene",
  "image",
  "itertools",
  "log",
- "rand 0.10.0",
  "serde",
  "serde_json",
  "tokio",
- "ts-rs",
 ]
 
 [[package]]
@@ -1124,10 +1123,24 @@ dependencies = [
  "frontbox-core",
  "frontbox-gfx",
  "frontbox-led",
+ "frontbox-scene",
  "log",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "frontbox-scene"
+version = "0.1.0"
+dependencies = [
+ "frontbox-core",
+ "frontbox-gfx",
+ "log",
+ "rand 0.10.0",
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]
