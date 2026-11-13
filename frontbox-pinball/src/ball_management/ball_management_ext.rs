@@ -11,6 +11,8 @@ pub trait BallManagementExt {
   fn eject_balls(&self, count: u8, launch: Launch) -> Option<u64>;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
+  /// Drops queued balls, completes open requests, and keeps a ball resting in the plunge lane for the next request
+  fn cancel_ejects(&self);
 
   /// Balls currently in play, not counting balls that have been temporarily removed from play
   fn balls_in_play(&self) -> u8;
@@ -41,6 +43,11 @@ impl<'a> BallManagementExt for SystemContext<'a> {
       .systems.get::<BallManager>()
       .map(|manager| manager.can_auto_launch())
       .unwrap_or(false)
+  }
+
+  fn cancel_ejects(&self) {
+    let ctx = self;
+    with_ball_manager(self, |manager| manager.cancel_ejects(ctx.into()));
   }
 
   fn balls_in_play(&self) -> u8 {

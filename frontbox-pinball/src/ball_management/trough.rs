@@ -94,6 +94,17 @@ impl TroughSystem {
     }
   }
 
+  /// Drops ejects waiting to start, including a retry waiting for the trough to settle. An eject already verifying
+  /// carries on. Returns true if any were dropped.
+  pub fn cancel_queued_ejects(&mut self) -> bool {
+    let dropped = self.eject_queue > 0;
+    self.eject_queue = 0;
+    if dropped {
+      self.eject_retries = 0;
+    }
+    dropped
+  }
+
   /// True if the jam switch is configured and currently closed
   pub fn is_jammed(&self, ctx: &ServiceContext) -> bool {
     let ctx = &ctx.for_system(self.handle);

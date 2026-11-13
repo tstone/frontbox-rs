@@ -20,6 +20,9 @@ use crate::ball_management::StandardBuilder;
 ///   hardware can receive each (e.g. waiting for the plunge lane to clear). Callers state intent with `Launch`, and the
 ///   implementation adapts it to the hardware, so callers never need to know what the machine has. Each request
 ///   returns an id, and `EjectCompleted` carries it once all of that request's balls are in play.
+/// - **Stopping on request.** `cancel_ejects` drops balls not yet ejected and completes their requests. A ball resting
+///   in the plunge lane stops being in play and serves the next request instead. It is called explicitly (e.g. when a
+///   turn ends), as with `establish_ball_count`.
 /// - **Reporting launches.** Emits `BallEnteredPlay` once a ball has actually gone into play, which can be well after it
 ///   was requested (e.g. a player waiting to plunge). Anything timed from a ball entering play should start here.
 /// - **Establishing the ball count on request.** `establish_ball_count` takes the balls present as all there are. It
@@ -43,6 +46,10 @@ pub trait BallManagement: SpawnableSystem {
   fn eject_many(&mut self, count: u8, launch: Launch, ctx: &ServiceContext) -> u64;
   /// True if `Launch::Auto` can launch a ball without the player
   fn can_auto_launch(&self) -> bool;
+  /// Stops putting balls into play: drops queued balls and completes every open request with the balls launched so
+  /// far. A ball resting in the plunge lane is no longer in play, and serves the next request. Typically called when
+  /// play stops (e.g. a turn ending or a tilt), so balls aren't launched onto a dead playfield or into the next turn.
+  fn cancel_ejects(&mut self, ctx: &ServiceContext);
 
   /// Balls currently in play, not counting balls that have been temporarily removed from play
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8;

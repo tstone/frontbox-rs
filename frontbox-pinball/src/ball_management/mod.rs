@@ -35,7 +35,8 @@ pub struct BallsExitedPlay {
   /// Balls that left play
   pub count: u8,
   /// Balls still in play afterwards. Balls are in play once they have left the trough and aren't locked, which
-  /// includes a ball waiting in the plunge lane.
+  /// includes a ball in the plunge lane waiting to be launched for a request, but not one kept there for the next
+  /// request (see `BallManagement::cancel_ejects`).
   pub in_play: u8,
 }
 

@@ -269,6 +269,7 @@ impl CompetitiveGame {
   fn transition_turn_to_ending(&mut self, reason: TurnEndReason, ctx: &ServiceContext) {
     log::info!(target: "frontbox_core::game_manager", "Transitioning current turn to ending ({:?})", reason);
     self.set_turn_phase(TurnPhase::Ending, ctx);
+    self.cancel_ejects(ctx);
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
@@ -293,6 +294,14 @@ impl CompetitiveGame {
       self.waiting_for_balls = true;
     } else {
       self.advance_turn(ctx);
+    }
+  }
+
+  /// Play has stopped: no more balls are launched, and a ball left in the plunge lane serves the next turn
+  fn cancel_ejects(&self, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+      ball_manager.cancel_ejects(ctx.into());
     }
   }
 
@@ -361,6 +370,7 @@ impl CompetitiveGame {
     self.pending_drains.clear();
     self.waiting_for_balls = false;
     self.turn_active_at = None;
+    self.cancel_ejects(ctx);
 
     let scores = self.scores();
     for (player, (_, score)) in scores.iter().enumerate() {
@@ -664,6 +674,7 @@ mod tests {
     fn can_auto_launch(&self) -> bool {
       true
     }
+    fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       self.in_play.load(Ordering::SeqCst)
     }

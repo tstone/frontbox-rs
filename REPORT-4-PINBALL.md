@@ -3,8 +3,7 @@
 Scope: all of `frontbox-pinball` (game management, ball management, ball save, tilt, game start, attract, high scores,
 configs, metrics), read alongside lotko as its one consumer. Items already in `TODO.md` are referred to, not repeated.
 
-Everything was found by reading. Three items (A1, and both ways into A2) were also confirmed by running tests in a
-copy of the crate outside the repo.
+Everything was found by reading.
 
 ## Summary
 
@@ -15,59 +14,15 @@ the two together), and where ball counts stop being derived and become a guess.
 
 | # | Finding | Effect | Size of fix |
 |---|---|---|---|
-| A1 | `is_high_score` indexes past its list (confirmed) | Panic at game end for any score outside the top 4 | Tiny |
-| A2 | A ball in the plunge lane isn't counted at game start (confirmed) | A turn that never ends, or two balls served | Small |
-| A3 | Nothing waits for balls to come home when a game ends or starts | Same failures as A2, by another route | Small to medium |
-| A4 | Queued ejects can't be cancelled | Balls keep launching after a tilt, turn end, or quit | Small |
+| A3 | Nothing waits for balls to come home when a game ends or starts | A turn that never ends, or a turn ended under a live ball | Small to medium |
 | A5 | The autoplunger fires once and never checks | A ball left in the lane stalls the turn or multiball | Small |
 | A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
 | A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
-| B3 | Ball counts are half derived | Root of A2 and A3; `locked_balls` is a running counter | Medium |
+| B3 | Ball counts are half derived | Root of A3; `locked_balls` is a running counter | Medium |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
 | C | Missing pinball behavior | Credits, ball search, bonus, match, multiball, and more | Varies |
 
 ## A. Bugs
-
-### A1. High scores (confirmed)
-
-In [high_scores.rs](frontbox-pinball/src/high_scores.rs), `is_high_score` collects `(0..4)` into a list of four scores
-and then reads `scores[4]`. Any score that doesn't beat the fourth entry panics with an index out of bounds. I ran
-`HighScoresSystem::default().is_high_score(5)` and got exactly that. Lotko calls it for every player at every game
-end (`end_of_ball.rs`), so with the default table any game that ends under 20,000,000 takes the process down
-(Report 3, A7).
-
-Three more problems in the same file:
-
-- `set_high_score` replaces the entry in the slot. A new grand champion erases the old one; nothing moves down.
-- Slots are worked out for all players against the table as it was before the game. Two players who both beat the
-  grand champion get the same slot, and the second overwrites the first.
-- `set_high_score` indexes `high_scores[0..=4]` directly, so a saved file with fewer than five entries panics.
-
-**Fix.** One method that inserts in order and truncates, `record(name, score) -> Option<usize>`, plus
-`rank_of(score)` for deciding who enters initials. The leaderboards item in `TODO.md` replaces this file, but the
-panic is worth fixing now since it's on the path of every game.
-
-### A2. A ball in the plunge lane isn't counted at game start (confirmed)
-
-`establish_ball_count` sets `max_balls_in_play` to the trough's occupancy. The docs on `BallsExitedPlay` say a ball
-waiting in the plunge lane is in play, but this count doesn't know about it, so `in_play` reads one low for the whole
-game. There are two ways in.
-
-**A ball in the lane at boot, on a machine without an autoplunger.** The first serve claims that ball, as designed.
-When the player plunges it, `BallEnteredPlay` reports `in_play: 0`. When it drains, the trough holds more balls than
-`max_in_play`, so `on_trough_entered` treats it as an unexpected ball, raises the max, and emits no
-`BallsExitedPlay`. The game manager stays in `TurnPhase::Active` with nothing in play, and nothing will move it on.
-My test of this sequence printed `in_play reported at launch: [0]` and `drains reported: []`.
-
-**A game quit or slam tilted with the served ball still in the lane.** This one applies to lotko. The lane ball keeps
-its old request id, so the next game's serve doesn't claim it and waits for the lane to clear. The player launches the
-old ball (the button is still armed), the turn goes active on it with `in_play: 0`, and the queued serve then ejects a
-second ball behind it. My test printed `a second ball ejecting after the launch: true`. To see it on the machine: hold
-the quit combo with a ball in the shooter lane, then start a game.
-
-**Fix.** Count the lane: `max = trough occupancy + 1` when `eject_state` is `InLane` or `EnRoute`. When a game ends,
-drop the lane ball's request id so the next serve claims it, or launch it if there's an autoplunger. B3 removes the
-cause.
 
 ### A3. Nothing waits for balls to come home
 
@@ -77,8 +32,8 @@ are out. From there:
 
 - A stray ball that drains while the new turn is `Starting` with its ball served is dropped: that phase handles only
   `BallEnteredPlay` and the ball in play switches, not `BallsExitedPlay`. The count is now off by one in the other
-  direction, and the real ball's drain is reconciled as an unexpected ball, with no `BallsExitedPlay`. Same stuck
-  turn as A2.
+  direction, and the real ball's drain is reconciled as an unexpected ball, with no `BallsExitedPlay`, so the turn
+  never ends.
 - A stray ball that drains during `Active` is reported as the drain of the ball in play, and ends the turn (or uses
   the ball save) while that ball is still live.
 
@@ -94,25 +49,6 @@ this is one more place it has to run.
 - Handle `BallsExitedPlay` in `Starting` once the ball is served.
 - A check that can't be skipped: if the turn is `Active`, no drain is being decided, and ball management reports
   nothing in play, treat it as a drain. This closes the whole class, whatever caused the count to slip.
-
-### A4. Queued ejects can't be cancelled
-
-`StandardBallManagement.queue` is only ever emptied by ejecting, and `TroughSystem.eject_queue` likewise. A request
-for more balls than the trough holds waits for drains, by design. Nothing clears either queue when the turn ends, so:
-
-- A tilt during a multiball start keeps feeding balls onto a dead playfield.
-- A quit leaves the remaining balls queued, and they launch into attract mode or ahead of the next game's serve.
-- A request still waiting for a ball when the last one drains ejects that ball as the turn is ending.
-
-Counts stay right, since they're derived, and `turn_ended` waits the balls out. But each one is seconds of a dead
-machine, and after a quit they land in the next game.
-
-A served ball waiting on `Launch::Player` when the player tilts has the same shape: the turn can't advance until
-someone launches it, and with only a launch button nothing says to.
-
-**Fix.** `BallManagement::cancel_ejects()`, which empties both queues, completes the open requests (`EjectCompleted`
-already carries `launched < requested`), and launches a ball waiting in the lane when it can. The game manager calls
-it when `TurnEnding` or `GameEnding` starts.
 
 ### A5. The autoplunger fires once and never checks
 
@@ -160,8 +96,6 @@ together, each removed when its owner despawns or releases it. Keep the math in 
 - `PLAYER_GROUP_NAMES` has six entries and `max_players` is unchecked; a seventh player panics.
 - `GameManager` forwards eight `System` methods by hand and misses `on_render`. `BallManager` uses
   `delegate_system!`. Same trap as Report 3, section C.
-- `PlungeLaneSystem.expect_ball` stays set when the ball never arrives, so the next ball that wanders in is reported
-  as expected. Nothing reads it today (B7).
 - Docs that describe things that don't exist: `CreditsPlay` and cooperative play in `lib.rs`, `GameStartState` in
   `game_start/mod.rs`, and the README still titled "Frontbox Turn Based". `BallSearchSystem`'s doc is a note to self.
 - Every log target here is `frontbox_core::...`. The log target item in `TODO.md` covers it.
@@ -198,8 +132,8 @@ has to say what each one does with each event.
 
 `AGENTS.md` says counts are derived from what the hardware reports. Two inputs to `in_play` aren't:
 
-- `max_balls_in_play` is whatever the trough held when the game started. That is a guess, and A2 and A3 are what
-  happens when it's wrong.
+- `max_balls_in_play` is whatever the trough held when the game started. That is a guess, and A3 is what happens when
+  it's wrong.
 - `locked_balls` is a running counter that any system can move, with no owner and no link to hardware. Lotko never
   calls it: its scoop holds balls without telling ball management, so a held ball counts as in play.
 
@@ -212,7 +146,8 @@ has to say what each one does with each event.
 2. **Ball holders.** A small trait for anything that can hold a ball and report it from its switches: the trough,
    the plunge lane, scoops, locks, a VUK. Holders register with ball management, which sums their occupancy. This
    one idea covers several open items:
-   - the lane is counted, so A2 goes away, and a held or locked ball is derived, so `locked_balls` goes away;
+   - the lane's ball is counted like any other holder's, not as a special state in `StandardBallManagement`, and a
+     held or locked ball is derived, so `locked_balls` goes away;
    - "Generalized systems: Scoop, lane, StartupEject" in `TODO.md`: lotko's `StartupEject` becomes "every holder
      with a ball at boot ejects it";
    - the `BallSearching` routine's participants are the holders, plus anything else that can pulse;
@@ -246,14 +181,11 @@ copies, and each one today handles despawn and deactivation slightly differently
 - `GameEnding.scores` is `Vec<(&'static str, u32)>`, where the string is the system group's name. Pass the index, or a
   `Player`, and let presenters name it.
 - The same value is `current_player` in the routines and `player_index` in the events.
-- `TurnActive::new`, `PointsAdded::new`, and `BallEnteredPlungeLane::new` add nothing over the public fields.
+- `TurnActive::new` and `PointsAdded::new` add nothing over the public fields.
 - `AGENTS.md` puts a module's public events in `mod.rs`. Game management keeps them in `game_events.rs`.
 
 ### B7. Redundancy
 
-- **Whether a lane ball was expected is tracked twice**: `PlungeLaneSystem.expect_ball` with
-  `PlungeLaneState::{Expected, Unexpected}BallPresent`, and `StandardBallManagement`'s `EjectState::EnRoute`. Only the
-  second is read. The lane needs to say only "a ball is here" and "it's gone".
 - **Fire, verify, retry is written three times**, or will be: trough ejects, the lane arrival kick, and the autoplunger
   (A5). Lotko's scoop has a fourth. One helper (coil, verifying switch, timeout, retry limit, optional stronger
   kick) belongs with the ball holder trait in B3, and gives the failed eject item in `TODO.md` one place to add
@@ -337,15 +269,15 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
   balls before the next turn.
 
 One thing about the tests. Game management is tested against a fake ball manager, and ball management against events
-delivered by hand. A2, A3, A4, and A6 are all in the gap between them. The end-to-end item in `TODO.md` is the most
+delivered by hand. A3 and A6 are both in the gap between them. The end-to-end item in `TODO.md` is the most
 useful testing work in this crate: a real `CompetitiveGame`, `StandardBallManagement`, trough, and lane, driven only
 by switch changes. First scenarios: quit with a ball in the lane; tilt during a multiball start; a ball stuck through
 a game start; boot with a ball in the lane.
 
 ## Suggested order
 
-1. **A1**, and the small items in A8. An hour, and it removes a crash from every game.
-2. **A2, A4, A5**, with the end-to-end tests that show each one first. These are contained in
+1. The small items in A8.
+2. **A5**, with an end-to-end test that shows it first. It is contained in
    `standard_ball_management.rs` and the game manager's `on_event`.
 3. **B3** (known ball count, ball holders), then **A3** and the ball search item from `TODO.md` on top of it. This is
    the largest piece and the one the others lean on.

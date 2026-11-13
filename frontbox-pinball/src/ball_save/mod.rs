@@ -289,6 +289,7 @@ mod tests {
     fn can_auto_launch(&self) -> bool {
       true
     }
+    fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       0
     }

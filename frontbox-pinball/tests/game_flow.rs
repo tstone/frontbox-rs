@@ -116,6 +116,16 @@ impl Game {
     }
   }
 
+  /// Boots with one ball left in the plunge lane, e.g. from a game the machine was switched off during
+  fn start_with_ball_in_lane() -> Self {
+    let in_trough = TROUGH.len() - 1;
+    let closed = TROUGH[..in_trough].iter().copied().chain([PLUNGE]);
+    Self {
+      scenario: Scenario::new(app()).closed(closed).start(),
+      in_trough,
+    }
+  }
+
   /// The ball the trough ejected rolls up into the plunge lane
   fn eject_into_lane(&mut self) {
     self.in_trough -= 1;
@@ -310,4 +320,90 @@ fn the_game_ends_after_the_last_turn_and_another_can_start() {
   assert!(g.act(|ctx| ctx.states.is(GamePhase::Active)));
   assert_eq!(turns.take(), [0]);
   assert_eq!(g.ejects(), 4);
+}
+
+#[test]
+fn a_ball_left_in_the_lane_at_boot_serves_the_first_turn() {
+  let mut g = Game::start_with_ball_in_lane();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let drains = g.record(|e: &RoutineCompleted<BallDraining>| (e.completion, e.routine.in_play));
+
+  g.hit_switch(START);
+  assert_eq!(turns.take(), [0]);
+  assert_eq!(g.ejects(), 0, "the lane ball is served");
+
+  // It's counted, so its drain ends the turn
+  g.plunge();
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(drains.take(), [(RoutineCompletion::AllSteps, 0)]);
+  assert_eq!(turns.take(), [1]);
+  assert_eq!(g.ejects(), 1);
+}
+
+#[test]
+fn tilting_with_the_ball_in_the_lane_leaves_it_for_the_next_turn() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let active = g.record(|e: &TurnActive| e.turn);
+
+  g.hit_switch(START);
+  g.eject_into_lane();
+  g.act(|ctx| ctx.tilt());
+
+  // Nothing is in play, so the next turn starts at once, and is served the ball still in the lane
+  assert_eq!(turns.take(), [0, 1]);
+  assert_eq!(g.ejects(), 1);
+
+  g.plunge();
+  assert_eq!(active.take(), [1]);
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(turns.take(), [2]);
+  assert_eq!(g.ejects(), 2);
+}
+
+#[test]
+fn tilting_during_a_multiball_start_stops_the_balls_still_to_come() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  // The lock asks for two balls; the first is in the lane when the player tilts
+  g.hit_switch(LOCK);
+  g.eject_into_lane();
+  assert_eq!(g.ejects(), 2);
+  g.act(|ctx| ctx.tilt());
+
+  // The ball on the playfield drains, and the next turn is served the one left in the lane. The second multiball
+  // ball is never ejected.
+  g.drain();
+  assert_eq!(turns.take(), [0, 1]);
+  assert_eq!(g.ejects(), 2);
+}
+
+#[test]
+fn quitting_with_the_ball_in_the_lane_leaves_it_for_the_next_game() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let drains = g.record(|e: &RoutineCompleted<BallDraining>| (e.completion, e.routine.in_play));
+
+  g.hit_switch(START);
+  g.eject_into_lane();
+  g.act(|ctx| ctx.quit_game(GameEndReason::Quit));
+  assert!(g.act(|ctx| ctx.states.is(GamePhase::None)));
+
+  // The new game is served the ball still in the lane, rather than a second one behind it
+  g.hit_switch(START);
+  assert_eq!(turns.take(), [0, 0]);
+  assert_eq!(g.ejects(), 1);
+
+  g.plunge();
+  g.outlast_ball_save();
+  g.drain();
+  assert_eq!(drains.take(), [(RoutineCompletion::AllSteps, 0)]);
+  assert_eq!(turns.take(), [1]);
+  assert_eq!(g.ejects(), 2);
 }
