@@ -9,6 +9,8 @@ pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,
   pub(super) launch_button: Option<SwitchQ>,
   pub(super) launch_ready_effect: Option<LedPlayback>,
+  /// How long after firing ball management checks that the ball has left the lane switch, before firing again
+  pub(super) launch_verification_time: Duration,
 }
 
 impl AutoPlungerConfig {
@@ -17,6 +19,7 @@ impl AutoPlungerConfig {
       coil_name,
       launch_button: None,
       launch_ready_effect: None,
+      launch_verification_time: Duration::from_millis(1000),
     }
   }
 }

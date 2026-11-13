@@ -103,3 +103,13 @@ pub static TROUGH_EJECT_RETRIES:LazyLock<Config<u8>> = LazyLock::new(|| {
   )
   .key("trough_eject_retries")
 });
+
+pub static AUTOPLUNGER_RETRIES: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Autoplunger Retries",
+    "How many times the autoplunger fires again at a ball it didn't launch before giving up",
+    3,
+    Ranges::u8(0, 10),
+  )
+  .key("autoplunger_retries")
+});

@@ -23,6 +23,7 @@ const LOCK: &str = "lock";
 const DROP_RESET: &str = "drop_reset";
 const POP: &str = "pop";
 const FLIPPER: &str = "flipper";
+const AUTOPLUNGER: &str = "autoplunger";
 /// Closed while the door is shut
 const COIN_DOOR: &str = "coin_door";
 
@@ -58,8 +59,28 @@ static POP_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
     .mode(DriverMode::pulse().build())
     .build()
 });
+static AUTOPLUNGER_COIL: LazyLock<DriverDefinition> =
+  LazyLock::new(|| AutoPlungerSystem::coil_definition(AUTOPLUNGER).build());
 
 fn app() -> App {
+  app_with(
+    BallManager::standard(TROUGH, EJECT)
+      .plunge_lane(PLUNGE)
+      .build(),
+  )
+}
+
+/// The machine with an autoplunger in its plunge lane, and no launch button
+fn app_with_autoplunger() -> App {
+  app_with(
+    BallManager::standard(TROUGH, EJECT)
+      .plunge_lane(PLUNGE)
+      .autoplunger(AUTOPLUNGER)
+      .build(),
+  )
+}
+
+fn app_with(ball_manager: BallManager) -> App {
   let mut board = IoBoard::custom(16, 8)
     .wire_switch(3, &PLUNGE_SWITCH)
     .wire_switch(4, &START_SWITCH)
@@ -70,7 +91,8 @@ fn app() -> App {
     .wire_switch(9, &FLIPPER_SWITCH)
     .wire_driver(0, &EJECT_COIL)
     .wire_driver(1, &DROP_RESET_COIL)
-    .wire_driver(2, &POP_COIL);
+    .wire_driver(2, &POP_COIL)
+    .wire_driver(3, &AUTOPLUNGER_COIL);
   for (pin, switch) in TROUGH_SWITCHES.iter().enumerate() {
     board = board.wire_switch(pin as u16, switch);
   }
@@ -83,11 +105,7 @@ fn app() -> App {
     ..BootConfig::default()
   });
   app
-    .system(
-      BallManager::standard(TROUGH, EJECT)
-        .plunge_lane(PLUNGE)
-        .build(),
-    )
+    .system(ball_manager)
     .system(GameManager::competitive(
       1,
       vec![
@@ -172,6 +190,15 @@ impl Game {
     }
   }
 
+  fn start_with_autoplunger() -> Self {
+    Self {
+      scenario: Scenario::new(app_with_autoplunger())
+        .closed(TROUGH.iter().copied().chain([COIN_DOOR]))
+        .start(),
+      in_trough: TROUGH.len(),
+    }
+  }
+
   /// Boots with one ball left in the plunge lane, e.g. from a game the machine was switched off during
   fn start_with_ball_in_lane() -> Self {
     let in_trough = TROUGH.len() - 1;
@@ -219,6 +246,10 @@ impl Game {
 
   fn ejects(&self) -> u32 {
     self.hardware().driver(EJECT).unwrap().taps
+  }
+
+  fn autoplunges(&self) -> u32 {
+    self.hardware().driver(AUTOPLUNGER).unwrap().taps
   }
 
   fn drop_resets(&self) -> u32 {
@@ -835,4 +866,39 @@ fn opening_the_coin_door_stops_the_round_in_progress() {
   g.open_switch(COIN_DOOR);
   g.advance(Duration::from_secs(5));
   assert_eq!((g.drop_resets(), g.pops()), (1, 0));
+}
+
+#[test]
+fn an_autoplunge_that_doesnt_move_the_ball_is_repeated() {
+  let mut g = Game::start_with_autoplunger();
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  // The lock asks for two balls. The first is still on the lane switch after the autoplunger fires (e.g. it wasn't
+  // seated yet), so the autoplunger fires again.
+  g.hit_switch(LOCK);
+  g.eject_into_lane();
+  assert_eq!(g.autoplunges(), 1);
+  g.advance(ms(1100));
+  assert_eq!(g.autoplunges(), 2);
+
+  // That launches it, and the second ball is ejected behind it
+  g.plunge();
+  assert_eq!(g.ejects(), 3);
+  g.advance(Duration::from_secs(5));
+  assert_eq!(g.autoplunges(), 2);
+}
+
+#[test]
+fn an_autoplunger_that_cant_move_the_ball_stops_firing() {
+  let mut g = Game::start_with_autoplunger();
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  g.hit_switch(LOCK);
+  g.eject_into_lane();
+  g.advance(Duration::from_secs(30));
+  assert_eq!(g.autoplunges(), 4, "the first launch and three retries");
 }

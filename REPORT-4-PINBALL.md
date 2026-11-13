@@ -1,36 +1,13 @@
 # Report 4: frontbox-pinball
 
-Scope: all of `frontbox-pinball` (game management, ball management, ball save, tilt, game start, attract, high scores,
-configs, metrics), read alongside lotko as its one consumer. Items already in `TODO.md` are referred to, not repeated.
-
-Everything was found by reading.
-
-## Summary
-
-The turn lifecycle is in good shape. Routines for the turn's stages, `BallDraining` as the place drains are decided,
-extra balls as another turn, and per-player system groups all hold up, and the trough's occupancy logic is careful and
-well tested. Most of what's wrong sits in two places: where the game manager and ball management meet (now covered by
-`tests/game_flow.rs`), and where ball counts stop being derived and become a guess.
-
 | # | Finding | Effect | Size of fix |
 |---|---|---|---|
-| A5 | The autoplunger fires once and never checks | A ball left in the lane stalls the turn or multiball | Small |
 | A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
 | A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
 | C | Missing pinball behavior | Credits, bonus, match, multiball, and more | Varies |
 
 ## A. Bugs
-
-### A5. The autoplunger fires once and never checks
-
-`launch_from_lane` fires for `Launch::Auto` and returns. It runs again only on `BallReenteredPlungeLane`, which needs
-the lane switch to open first. If the kick doesn't move the ball off the switch (weak coil, ball not seated yet),
-nothing fires again, and for `Launch::Auto` the launch button isn't armed either. A ball save or multiball ball then
-sits in the lane, with every later eject queued behind it.
-
-**Fix.** After firing, start a cue; when it fires, if `is_ball_resting`, fire again, up to a limit. The trough already
-does this (fire, verify, retry, give up) and the arrival timeout does a version of it. See B7 for sharing it.
 
 ### A6. A drain is decided on a count taken earlier
 

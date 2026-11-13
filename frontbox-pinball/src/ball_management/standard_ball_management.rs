@@ -31,6 +31,10 @@ pub struct StandardBallManagement {
   /// Where the ball being ejected is on its way into play, or the ball waiting in the plunge lane. Only one ball at a
   /// time.
   eject_state: EjectState,
+  /// Set from the autoplunger firing at the ball in the lane until it's checked that the ball left
+  launch_verify_cue_id: Option<u64>,
+  /// Times the autoplunger has fired again at the ball in the lane without moving it
+  launch_retries: u8,
 }
 
 /// A ball for a request, and how the request wants it launched
@@ -86,6 +90,8 @@ impl StandardBallManagement {
       last_eject_id: 0,
       trough_ejecting: None,
       eject_state: EjectState::Idle,
+      launch_verify_cue_id: None,
+      launch_retries: 0,
     }
   }
 
@@ -350,6 +356,8 @@ impl StandardBallManagement {
     if let EjectState::InLane { launched_by, .. } = &mut self.eject_state {
       *launched_by = None;
     }
+    // The last launch did move it
+    self.end_launch_verification(ctx);
     self.launch_from_lane(ctx);
   }
 
@@ -369,6 +377,63 @@ impl StandardBallManagement {
     }
   }
 
+  fn on_autoplunger_fired(&mut self, method: LaunchMethod, ctx: &SystemContext) {
+    let EjectState::InLane { launched_by, .. } = &mut self.eject_state else {
+      return;
+    };
+    *launched_by = Some(method);
+
+    let Some(time) = self
+      .config
+      .autoplunger()
+      .map(|autoplunger| autoplunger.launch_verification_time)
+    else {
+      return;
+    };
+    if let Some(cue_id) = self.launch_verify_cue_id.take() {
+      ctx.cues.cancel(cue_id);
+    }
+    self.launch_verify_cue_id = Some(ctx.cues.start(VerifyLaunch, time.once()));
+  }
+
+  /// The autoplunger fired a while ago. A ball still resting in the lane wasn't moved by it (e.g. a weak coil, or the
+  /// ball wasn't seated yet), so an automatic launch is fired again, up to `configs::AUTOPLUNGER_RETRIES` times. Past
+  /// that, or for a ball the player launches, the launch button (if any) is armed.
+  fn verify_launch(&mut self, ctx: &SystemContext) {
+    if self.launch_verify_cue_id.take().is_none() {
+      return;
+    }
+    let EjectState::InLane { ball, .. } = self.eject_state else {
+      return;
+    };
+    // A ball off the switch is either gone, or rolling back and launched again when it re-enters
+    if !self.is_lane_ball_resting(ctx) {
+      return;
+    }
+    self.eject_state = EjectState::InLane {
+      ball,
+      launched_by: None,
+    };
+
+    let retries_max = ctx.config.get(&configs::AUTOPLUNGER_RETRIES);
+    let launch = ball.map_or(Launch::Auto, |ball| ball.launch);
+    if launch == Launch::Auto && self.launch_retries < retries_max {
+      self.launch_retries += 1;
+      log::info!(target: "frontbox_core::ball_management", "Autoplunger didn't launch the ball, retrying ({}/{})", self.launch_retries, retries_max);
+      self.launch_from_lane(ctx);
+    } else if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
+      log::warn!(target: "frontbox_core::ball_management", "Autoplunger didn't launch the ball, leaving it for the player to launch");
+      autoplunger.arm_launch_button();
+    }
+  }
+
+  fn end_launch_verification(&mut self, ctx: &SystemContext) {
+    if let Some(cue_id) = self.launch_verify_cue_id.take() {
+      ctx.cues.cancel(cue_id);
+    }
+    self.launch_retries = 0;
+  }
+
   fn on_ball_exited_lane(&mut self, ctx: &SystemContext) {
     let (ball, launched_by) = match self.eject_state {
       EjectState::InLane { ball, launched_by } => (ball, launched_by),
@@ -381,6 +446,7 @@ impl StandardBallManagement {
     };
 
     self.eject_state = EjectState::Idle;
+    self.end_launch_verification(ctx);
     if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
       autoplunger.disarm_launch_button(ctx.into());
     }
@@ -474,6 +540,7 @@ impl BallManagement for StandardBallManagement {
       }
       EjectState::Idle | EjectState::Available => {}
     }
+    self.end_launch_verification(ctx);
     if let Some(mut autoplunger) = ctx.systems.get::<AutoPlungerSystem>() {
       autoplunger.disarm_launch_button(ctx.into());
     }
@@ -602,14 +669,14 @@ impl System for StandardBallManagement {
       self.on_ball_entered_lane(ctx);
     } else if event.is::<BallReenteredPlungeLane>() {
       self.on_ball_reentered_lane(ctx);
-    } else if let Some(AutoPlungerFired { method }) = event.downcast_ref::<AutoPlungerFired>()
-      && let EjectState::InLane { launched_by, .. } = &mut self.eject_state
-    {
-      *launched_by = Some(*method);
+    } else if let Some(AutoPlungerFired { method }) = event.downcast_ref::<AutoPlungerFired>() {
+      self.on_autoplunger_fired(*method, ctx);
     } else if event.is::<BallExitedPlungeLane>() {
       self.on_ball_exited_lane(ctx);
     } else if event.is::<LaneArrivalTimedOut>() {
       self.on_lane_arrival_timed_out(ctx);
+    } else if event.is::<VerifyLaunch>() {
+      self.verify_launch(ctx);
     }
   }
 }
@@ -618,6 +685,9 @@ impl System for StandardBallManagement {
 
 #[derive(serde::Serialize, Event)]
 struct LaneArrivalTimedOut;
+
+#[derive(serde::Serialize, Event)]
+struct VerifyLaunch;
 
 #[cfg(test)]
 mod tests {
@@ -1271,6 +1341,75 @@ mod tests {
 
     f.deliver(&BallReenteredPlungeLane);
     assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+  }
+
+  // -- Autoplunger not moving the ball --
+
+  #[test]
+  fn auto_launch_that_doesnt_move_the_ball_is_fired_again() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(1, Launch::Auto);
+    f.lane_entered();
+    f.forward_autoplunger_fires();
+
+    f.deliver(&VerifyLaunch);
+    assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+  }
+
+  #[test]
+  fn auto_launch_that_moved_the_ball_is_not_fired_again() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(1, Launch::Auto);
+    f.lane_entered();
+    f.forward_autoplunger_fires();
+    f.set_switch(PLUNGE, false);
+
+    f.deliver(&VerifyLaunch);
+    assert!(f.forward_autoplunger_fires().is_empty());
+  }
+
+  #[test]
+  fn auto_launch_out_of_retries_arms_the_launch_button() {
+    let mut f = Fixture::with_lane(5, true, true);
+    let retries_max = f.ctx.svc_ctx().config.get(&configs::AUTOPLUNGER_RETRIES);
+    f.eject_many(1, Launch::Auto);
+    f.lane_entered();
+    for _ in 0..retries_max {
+      f.forward_autoplunger_fires();
+      f.deliver(&VerifyLaunch);
+    }
+    assert_eq!(f.forward_autoplunger_fires(), vec![LaunchMethod::Auto]);
+    assert!(!f.is_launch_button_armed());
+
+    f.deliver(&VerifyLaunch);
+    assert!(f.forward_autoplunger_fires().is_empty());
+    assert!(f.is_launch_button_armed());
+  }
+
+  #[test]
+  fn button_launch_that_doesnt_move_the_ball_rearms_the_button() {
+    let mut f = Fixture::with_lane(5, true, true);
+    f.eject_many(1, Launch::Player);
+    f.lane_entered();
+    f.press_launch_button();
+    f.forward_autoplunger_fires();
+
+    f.deliver(&VerifyLaunch);
+    assert!(f.forward_autoplunger_fires().is_empty());
+    assert!(f.is_launch_button_armed());
+  }
+
+  #[test]
+  fn cancel_stops_launching_the_ball_resting_in_the_lane() {
+    let mut f = Fixture::with_lane(5, true, false);
+    f.eject_many(1, Launch::Auto);
+    f.lane_entered();
+    f.forward_autoplunger_fires();
+    f.system.cancel_ejects(&f.ctx.svc_ctx());
+
+    f.deliver(&VerifyLaunch);
+    assert!(f.forward_autoplunger_fires().is_empty());
+    assert_eq!(f.system.eject_state, EjectState::Available);
   }
 
   // -- Ball never reaching the plunge lane --

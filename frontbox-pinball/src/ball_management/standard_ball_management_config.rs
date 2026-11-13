@@ -131,6 +131,12 @@ impl StandardAutoPlungerBuilder {
     self
   }
 
+  /// How long after the autoplunger fires to check that the ball has left the lane switch, before firing again
+  pub fn launch_verification_time(mut self, time: Duration) -> Self {
+    self.autoplunger.launch_verification_time = time;
+    self
+  }
+
   pub fn build(self) -> BallManager {
     BallManager::new(StandardBallManagement::new(self.config()))
   }
