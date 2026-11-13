@@ -31,9 +31,9 @@ impl PlungeLaneConfig {
 pub struct PlungeLaneSystem {
   handle: SystemHandle,
   plunge_lane_switch_name: &'static str,
-  expect_ball: bool,
   re_enter_timeout: Duration,
-  state: PlungeLaneState,
+  /// From the ball entering the lane until it is considered gone
+  ball_present: bool,
   wait_cue_id: Option<u64>,
   ball_present_program: Option<LedPlayback>,
 }
@@ -43,9 +43,8 @@ impl PlungeLaneSystem {
     Self {
       handle: SystemHandle::default(),
       plunge_lane_switch_name: config.switch_name,
-      expect_ball: false,
       re_enter_timeout: config.re_enter_timeout,
-      state: PlungeLaneState::NoBall,
+      ball_present: false,
       wait_cue_id: None,
       ball_present_program: config.ball_present_effect.clone(),
     }
@@ -57,18 +56,9 @@ impl PlungeLaneSystem {
       .debounce_close(Duration::from_millis(100))
   }
 
-  /// The next ball to enter the lane was ejected on purpose
-  pub fn expect_ball(&mut self) {
-    self.expect_ball = true;
-  }
-
-  pub fn current_state(&self) -> &PlungeLaneState {
-    &self.state
-  }
-
   /// True from the ball entering the lane until it is considered gone (including the re-enter timeout)
   pub fn is_ball_present(&self) -> bool {
-    self.state != PlungeLaneState::NoBall
+    self.ball_present
   }
 
   /// True if a ball is sitting on the lane switch right now
@@ -96,15 +86,9 @@ impl PlungeLaneSystem {
       return;
     }
 
-    if self.expect_ball {
-      self.state = PlungeLaneState::ExpectedBallPresent;
-    } else {
-      self.state = PlungeLaneState::UnexpectedBallPresent;
-    }
-
-    log::info!(target: "frontbox_core::plunge_lane", "Ball entered ({:?})", self.state);
-    ctx.emit(BallEnteredPlungeLane::new(self.state));
-    self.expect_ball = false;
+    self.ball_present = true;
+    log::info!(target: "frontbox_core::plunge_lane", "Ball entered");
+    ctx.emit(BallEnteredPlungeLane);
 
     if let Some(effect) = self.ball_present_program.as_mut() {
       effect.play();
@@ -112,7 +96,7 @@ impl PlungeLaneSystem {
   }
 
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
-    log::info!(target: "frontbox_core::plunge_lane", "Ball exited ({:?})", self.state);
+    log::info!(target: "frontbox_core::plunge_lane", "Ball exited");
     self.cancel_cue(ctx);
     self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
   }
@@ -127,8 +111,8 @@ impl System for PlungeLaneSystem {
       .is_closed(self.plunge_lane_switch_name)
       .unwrap_or(false)
     {
-      self.state = PlungeLaneState::UnexpectedBallPresent;
-      ctx.emit(BallEnteredPlungeLane::new(self.state));
+      self.ball_present = true;
+      ctx.emit(BallEnteredPlungeLane);
     }
   }
 
@@ -136,18 +120,17 @@ impl System for PlungeLaneSystem {
     if event.is::<TimesUpBallsGone>() {
       self.wait_cue_id = None;
       ctx.emit(BallExitedPlungeLane);
-      self.state = PlungeLaneState::NoBall;
+      self.ball_present = false;
 
       if let Some(effect) = self.ball_present_program.as_mut() {
         effect.stop(ctx);
       }
-    } else if self.state == PlungeLaneState::NoBall
+    } else if !self.ball_present
       && let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
       self.on_lane_switch_closed(ctx);
-    } else if (self.state == PlungeLaneState::ExpectedBallPresent
-      || self.state == PlungeLaneState::UnexpectedBallPresent)
+    } else if self.ball_present
       && let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
@@ -166,13 +149,6 @@ impl System for PlungeLaneSystem {
       effect.apply(delta, ctx);
     }
   }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-pub enum PlungeLaneState {
-  NoBall,
-  ExpectedBallPresent,
-  UnexpectedBallPresent,
 }
 
 // -- Cues --
@@ -240,15 +216,11 @@ mod tests {
   }
 
   #[test]
-  fn expected_ball_entering_reports_expected() {
+  fn ball_entering_reports_entered() {
     let mut f = Fixture::spawn();
-    f.lane.expect_ball();
     f.set_lane_switch(true);
     assert_eq!(f.events(), vec!["BallEnteredPlungeLane"]);
-    assert_eq!(
-      *f.lane.current_state(),
-      PlungeLaneState::ExpectedBallPresent
-    );
+    assert!(f.lane.is_ball_present());
   }
 
   #[test]

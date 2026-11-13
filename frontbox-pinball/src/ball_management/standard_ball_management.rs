@@ -198,9 +198,6 @@ impl StandardBallManagement {
         arrival_cue_id: None,
         kicked: false,
       };
-      if let Some(mut lane) = ctx.systems.get::<PlungeLaneSystem>() {
-        lane.expect_ball();
-      }
     }
     ctx.systems.expect::<TroughSystem>().eject(ctx.into());
   }
@@ -511,7 +508,7 @@ struct LaneArrivalTimedOut;
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ball_management::{BallManager, PlungeLaneState};
+  use crate::ball_management::BallManager;
 
   // Ids: t1..t5 = 0..4, plunge = 5, launch = 6
   const TROUGH: [&str; 5] = ["t1", "t2", "t3", "t4", "t5"];
@@ -618,9 +615,7 @@ mod tests {
     /// Simulate the plunge lane reporting a ball resting in it
     fn lane_entered(&mut self) {
       self.set_switch(PLUNGE, true);
-      self.deliver(&BallEnteredPlungeLane::new(
-        PlungeLaneState::ExpectedBallPresent,
-      ));
+      self.deliver(&BallEnteredPlungeLane);
     }
 
     /// Simulate the plunge lane reporting the ball gone for good

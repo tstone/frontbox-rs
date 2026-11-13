@@ -64,16 +64,9 @@ pub struct EjectCompleted {
 
 // -- Plunge Lane Events --
 
+/// A ball came to rest on the plunge lane switch. Ball management decides which request, if any, it serves.
 #[derive(serde::Serialize, Event)]
-pub struct BallEnteredPlungeLane {
-  pub state: PlungeLaneState,
-}
-
-impl BallEnteredPlungeLane {
-  pub fn new(state: PlungeLaneState) -> Self {
-    Self { state }
-  }
-}
+pub struct BallEnteredPlungeLane;
 
 /// Emitted once the ball has been gone from the plunge lane for the re-enter timeout
 #[derive(serde::Serialize, Event)]
