@@ -188,7 +188,9 @@ pub use cue::*;
 pub use cue_ext::*;
 pub use event::*;
 pub use group_handle::*;
-pub use routine::{RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted};
+pub use routine::{
+  RoutineBuilder, RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted,
+};
 pub use service_context::*;
 pub use state::{State, StateChanged};
 pub use system::*;

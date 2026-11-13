@@ -10,7 +10,8 @@ use frontbox_core::testing::Scenario;
 use frontbox_pinball::*;
 
 // The machine: a three-ball trough ejecting into a plunge lane, a start button, a playfield switch, a tilt bob, a
-// lock that starts a multiball, a drop target bank that a ball search resets, and a coin door.
+// lock that starts a multiball, a drop target bank and a pop bumper that a ball search fires, a coin door, and a
+// flipper button.
 
 const TROUGH: [&str; 3] = ["trough_1", "trough_2", "trough_3"];
 const EJECT: &str = "trough_eject";
@@ -20,6 +21,8 @@ const PLAYFIELD: &str = "playfield";
 const TILT_BOB: &str = "tilt_bob";
 const LOCK: &str = "lock";
 const DROP_RESET: &str = "drop_reset";
+const POP: &str = "pop";
+const FLIPPER: &str = "flipper";
 /// Closed while the door is shut
 const COIN_DOOR: &str = "coin_door";
 
@@ -41,11 +44,18 @@ static LOCK_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| SwitchDefinition::new(LOCK).build());
 static COIN_DOOR_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| SwitchDefinition::new(COIN_DOOR).build());
+static FLIPPER_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(FLIPPER).build());
 static EJECT_COIL: LazyLock<DriverDefinition> =
   LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
 static DROP_RESET_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
   DriverDefinitionBuilder::new(DROP_RESET)
     .mode(DriverMode::pulse_kick().build())
+    .build()
+});
+static POP_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
+  DriverDefinitionBuilder::new(POP)
+    .mode(DriverMode::pulse().build())
     .build()
 });
 
@@ -57,8 +67,10 @@ fn app() -> App {
     .wire_switch(6, &TILT_BOB_SWITCH)
     .wire_switch(7, &LOCK_SWITCH)
     .wire_switch(8, &COIN_DOOR_SWITCH)
+    .wire_switch(9, &FLIPPER_SWITCH)
     .wire_driver(0, &EJECT_COIL)
-    .wire_driver(1, &DROP_RESET_COIL);
+    .wire_driver(1, &DROP_RESET_COIL)
+    .wire_driver(2, &POP_COIL);
   for (pin, switch) in TROUGH_SWITCHES.iter().enumerate() {
     board = board.wire_switch(pin as u16, switch);
   }
@@ -86,7 +98,11 @@ fn app() -> App {
       SwitchQ::name(PLAYFIELD),
     ))
     .system(FreePlay::new(SwitchQ::name(START)))
-    .system(BallSearchSystem::new(SwitchQ::name(PLAYFIELD)))
+    .system(
+      BallSearchSystem::new(SwitchQ::name(PLAYFIELD))
+        .hold_switches(SwitchQ::name(FLIPPER))
+        .coils(DriverQ::name(POP)),
+    )
     .system(DropBank)
     .system(CoinDoorSystem::new(COIN_DOOR))
     .routine::<BallDraining>(routine![BallSaveSystem])
@@ -98,19 +114,10 @@ fn app() -> App {
 #[derive(Clone)]
 struct DropBank;
 
-#[derive(serde::Serialize, Event)]
-struct DropBankRecovered;
-
 impl System for DropBank {
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
     if routine.is::<BallSearching>() {
       ctx.drivers.activate(DROP_RESET, ActivationMode::Tap);
-      ctx.cues.start(DropBankRecovered, Cue::Once(ms(250)));
-    }
-  }
-
-  fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<DropBankRecovered>() {
       ctx.routines.complete_step::<BallSearching>();
     }
   }
@@ -216,6 +223,10 @@ impl Game {
 
   fn drop_resets(&self) -> u32 {
     self.hardware().driver(DROP_RESET).unwrap().taps
+  }
+
+  fn pops(&self) -> u32 {
+    self.hardware().driver(POP).unwrap().taps
   }
 }
 
@@ -587,6 +598,23 @@ fn a_ball_stuck_after_a_tilt_is_searched_for_and_the_game_goes_on() {
 }
 
 #[test]
+fn a_ball_search_fires_its_coils_one_at_a_time() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  while g.drop_resets() == 0 {
+    g.advance(ms(50));
+  }
+
+  // The pop waits for the drop bank's coil to recover
+  assert_eq!(g.pops(), 0);
+  g.advance(ms(300));
+  assert_eq!(g.pops(), 1);
+  g.advance(ms(300));
+  assert_eq!((g.drop_resets(), g.pops()), (1, 1), "once per round");
+}
+
+#[test]
 fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
   let mut g = Game::start();
   let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
@@ -595,9 +623,10 @@ fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
   g.serve();
 
   // Three rounds find nothing, so the ball is given up on and another put into play, without using up the turn
-  g.advance(Duration::from_secs(25));
-  g.advance(ms(1500));
+  g.advance(Duration::from_secs(27));
   assert_eq!(g.drop_resets(), 3);
+  assert!(failed.take().is_empty(), "the last round gets its pause too");
+  g.advance(Duration::from_secs(5));
   assert_eq!(failed.take(), [(3, 0)]);
   assert_eq!(g.ejects(), 2);
   assert_eq!(turns.take(), [0]);
@@ -605,6 +634,57 @@ fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
   g.serve();
   g.drain();
   assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn a_ball_knocked_loose_by_the_last_round_is_not_given_up_on() {
+  let mut g = Game::start();
+  let failed = g.record(|e: &BallSearchFailed| e.rounds);
+  g.hit_switch(START);
+  g.serve();
+  while g.drop_resets() < 3 {
+    g.advance(ms(50));
+  }
+
+  g.advance(ms(1000));
+  g.hit_switch(PLAYFIELD);
+  g.advance(Duration::from_secs(10));
+  assert!(failed.take().is_empty());
+  assert_eq!(g.ejects(), 1, "no replacement");
+}
+
+#[test]
+fn balls_stuck_together_are_given_up_on_one_search_after_another() {
+  let mut g = Game::start();
+  let failed = g.record(|e: &BallSearchFailed| e.in_play);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+  g.hit_switch(LOCK);
+  g.serve();
+  g.serve();
+
+  // All three wedge somewhere. Each search gives up on one, and the next goes looking for the rest.
+  g.advance(Duration::from_secs(35));
+  assert_eq!(failed.take(), [2]);
+  g.advance(Duration::from_secs(70));
+  assert_eq!(failed.take(), [1, 0]);
+}
+
+#[test]
+fn a_held_ball_being_released_puts_off_a_ball_search() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+
+  // A scoop holds the ball for most of the delay, then kicks it out
+  g.act(|ctx| ctx.set_balls_held(1));
+  g.advance(Duration::from_secs(14));
+  g.act(|ctx| ctx.set_balls_held(0));
+  g.advance(Duration::from_secs(2));
+  assert_eq!(g.drop_resets(), 0, "it hasn't had the chance to hit a switch");
+  g.advance(Duration::from_secs(14));
+  assert_eq!(g.drop_resets(), 1);
 }
 
 #[test]
@@ -630,6 +710,25 @@ fn playfield_switch_hits_put_off_a_ball_search() {
   g.advance(Duration::from_secs(10));
   assert_eq!(g.drop_resets(), 0);
   g.advance(Duration::from_secs(6));
+  assert_eq!(g.drop_resets(), 1);
+}
+
+#[test]
+fn holding_a_flipper_puts_off_a_ball_search() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+
+  // The player cradles the ball for a long time
+  g.close_switch(FLIPPER);
+  g.advance(Duration::from_secs(30));
+  assert_eq!(g.drop_resets(), 0);
+
+  // Letting go starts the delay over
+  g.open_switch(FLIPPER);
+  g.advance(Duration::from_secs(14));
+  assert_eq!(g.drop_resets(), 0);
+  g.advance(Duration::from_secs(2));
   assert_eq!(g.drop_resets(), 1);
 }
 
@@ -706,4 +805,34 @@ fn there_is_no_ball_search_while_the_coin_door_is_open() {
   g.open_switch(COIN_DOOR);
   g.advance(Duration::from_secs(30));
   assert_eq!(g.drop_resets(), 1);
+}
+
+#[test]
+fn a_ball_found_stops_the_round_in_progress() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  while g.drop_resets() == 0 {
+    g.advance(ms(50));
+  }
+
+  // Knocked loose by the drop bank, so the pop has no need to fire
+  g.hit_switch(PLAYFIELD);
+  g.advance(Duration::from_secs(5));
+  assert_eq!((g.drop_resets(), g.pops()), (1, 0));
+}
+
+#[test]
+fn opening_the_coin_door_stops_the_round_in_progress() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  while g.drop_resets() == 0 {
+    g.advance(ms(50));
+  }
+
+  // The pop would fire next, but an operator may have a hand on the playfield
+  g.open_switch(COIN_DOOR);
+  g.advance(Duration::from_secs(5));
+  assert_eq!((g.drop_resets(), g.pops()), (1, 0));
 }

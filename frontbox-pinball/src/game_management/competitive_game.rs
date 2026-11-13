@@ -173,14 +173,15 @@ impl CompetitiveGame {
     self.waiting_for_balls = false;
     let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
-    ctx.routines.start_in(
-      group,
-      TurnStarting {
+    ctx
+      .routines
+      .new(TurnStarting {
         current_player: game_state.current_player(),
         turn: game_state.current_player_turn(),
         reason,
-      },
-    );
+      })
+      .group(group)
+      .start();
 
     ctx.emit(Synchronize);
   }
@@ -317,7 +318,10 @@ impl CompetitiveGame {
     let group = &self.player_groups[draining.current_player as usize];
     ctx
       .for_system(self.handle)
-      .routines.start_in(group, draining);
+      .routines
+      .new(draining)
+      .group(group)
+      .start();
   }
 
   fn drain_decided(&mut self, done: &RoutineCompleted<BallDraining>, ctx: &ServiceContext) {
@@ -331,7 +335,8 @@ impl CompetitiveGame {
         self.transition_turn_to_ending(TurnEndReason::Drained, ctx);
         return;
       }
-      RoutineCompletion::AllSteps => {}
+      // never cancelled
+      RoutineCompletion::AllSteps | RoutineCompletion::Cancelled => {}
     }
     if let Some(next) = self.pending_drains.pop_front() {
       self.start_ball_draining(next, ctx);
@@ -347,14 +352,16 @@ impl CompetitiveGame {
     }
     let game_state = self.game_state.as_ref().unwrap();
     let group = &self.player_groups[game_state.current_player() as usize];
-    ctx.for_system(self.handle).routines.start_in(
-      group,
-      TurnEnding {
+    ctx
+      .for_system(self.handle)
+      .routines
+      .new(TurnEnding {
         current_player: game_state.current_player(),
         turn: game_state.current_player_turn(),
         reason,
-      },
-    );
+      })
+      .group(group)
+      .start();
   }
 
   /// `TurnEnding` completed. The turn advances once no ball is left in play: balls released during the routine, or

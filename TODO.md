@@ -78,6 +78,7 @@
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
 - Support a virtual DMD that renders to the preview console, for developing and testing without hardware. Needed by the DMD menu animation and transition items.
+- DmdMatch system that takes a DMD scene or something
 
 ## Console
 

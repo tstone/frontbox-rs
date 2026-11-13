@@ -34,6 +34,8 @@ pub enum AppMessage {
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CancelCue(SystemHandle, u64),
   StartRoutine(RoutineStart),
+  /// The origin cancels the routine with this id
+  CancelRoutine(SystemHandle, u64),
   CompleteRoutineStep(SystemHandle, TypeId),
   HaltRoutine(SystemHandle, TypeId),
   /// Hand a started routine to its first participant, once its `RoutineStarted` has gone out
@@ -101,6 +103,9 @@ impl Debug for AppMessage {
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
       AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
+      AppMessage::CancelRoutine(handle, routine_id) => {
+        write!(f, "CancelRoutine({}:{})", handle.id, routine_id)
+      }
       AppMessage::CompleteRoutineStep(handle, type_id) => {
         write!(f, "CompleteRoutineStep({}, {:?})", handle.id, type_id)
       }

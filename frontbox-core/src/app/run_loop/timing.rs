@@ -1,11 +1,12 @@
 use super::*;
 
 impl RunLoop {
-  pub(super) fn tick(&self, delta: Duration) {
+  pub(super) fn tick(&mut self, delta: Duration) {
     // Tick first is where most systems should do any time-based processing
     apply_to_systems(&self.groups, &self.base, &self.app_sender, &self.tracers, |system, ctx| {
       system.on_tick(delta, ctx);
     });
+    self.routines.tick(delta, &self.groups, &self.base, &self.app_sender, &self.tracers);
     // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
     apply_to_systems(&self.groups, &self.base, &self.app_sender, &self.tracers, |system, ctx| {
       system.on_render(ctx);

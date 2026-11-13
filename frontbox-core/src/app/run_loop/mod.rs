@@ -240,6 +240,9 @@ impl RunLoop {
           let _ = self.app_sender.send(AppMessage::BeginRoutine(type_id));
         }
       }
+      AppMessage::CancelRoutine(handle, routine_id) => {
+        self.routines.cancel(handle, routine_id, &self.groups, &self.app_sender, &self.tracers);
+      }
       AppMessage::BeginRoutine(type_id) => {
         self.routines.begin(type_id, &self.groups, &self.base, &self.app_sender, &self.tracers);
       }

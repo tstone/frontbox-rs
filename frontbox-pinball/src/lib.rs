@@ -48,7 +48,7 @@
 //!
 //! Two cases have no drain reported, and are handled during an active turn:
 //! - **A drain that's never reported** (e.g. a ball save's replacement that never left the trough): with nothing in play, nothing on its way and nothing held on two checks in a row, the game manager treats it as a drain, from step 3.
-//! - **A ball nobody can find**: with no switch hit for `configs::BALL_SEARCH_DELAY`, `BallSearchSystem` runs the `BallSearching` routine, up to 3 rounds. If that finds nothing, one ball is taken out of the count as lost, and `BallSearchFailed` is emitted. If no ball is left in play, the game manager puts another into play without ending the turn. There's no search while the coin door is open.
+//! - **A ball nobody can find**: with no switch hit for `configs::BALL_SEARCH_DELAY`, `BallSearchSystem` runs the `BallSearching` routine, up to 3 rounds. If that finds nothing, one ball is taken out of the count as lost, and `BallSearchFailed` is emitted. If no ball is left in play, the game manager puts another into play without ending the turn. There's no search while the coin door is open, or while a flipper button is held (`hold_switches`).
 //!
 //! # Overview: Game End
 //! After the last turn, or when the game is quit (`quit_game`, e.g. from `quit_game_combo` or a slam tilt), the game manager starts the `GameEnding` routine at the root. It carries the final scores and why the game ended (`GameEndReason`).

@@ -3,4 +3,4 @@
 /**
  * How a routine came to be done
  */
-export type RoutineCompletion = "AllSteps" | "Halted";
+export type RoutineCompletion = "AllSteps" | "Halted" | "Cancelled";

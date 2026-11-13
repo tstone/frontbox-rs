@@ -110,7 +110,8 @@ function summary(record: TraceRecord): string {
   }
   if ('RoutineCompleted' in event) {
     const { routine, origin, completion } = event.RoutineCompleted
-    return `${shortName(routine)} for ${systemName(origin)}${completion === 'Halted' ? ' (halted)' : ''}`
+    const how = completion === 'Halted' ? ' (halted)' : completion === 'Cancelled' ? ' (cancelled)' : ''
+    return `${shortName(routine)} for ${systemName(origin)}${how}`
   }
   if ('RoutineAbandoned' in event) {
     const { routine, origin } = event.RoutineAbandoned

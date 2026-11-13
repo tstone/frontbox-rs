@@ -133,24 +133,29 @@ pub struct ContextRoutines<'a> {
 }
 
 impl<'a> ContextRoutines<'a> {
-  pub(crate) fn new(handle: SystemHandle, ctx: ServiceContext<'a>) -> Self {
+  // not `new`, which is taken by `ctx.routines.new(routine)`
+  pub(crate) fn for_system(handle: SystemHandle, ctx: ServiceContext<'a>) -> Self {
     Self { handle, ctx }
   }
 
-  /// Start the routine for `E`. [`RoutineStarted<E>`] is broadcast before the first participant is handed the routine,
-  /// and [`RoutineCompleted<E>`] once the last one is done.
-  pub fn start<E: Event + Clone>(&self, routine: E) {
-    self
-      .ctx
-      .start_routine(self.handle, self.handle.group, routine);
+  /// Start a routine. [`RoutineStarted<E>`] is broadcast before the first participant is handed the routine, and
+  /// [`RoutineCompleted<E>`] once the last one is done. Participants are looked up from this system's group. Returns
+  /// its id, for [`cancel`](Self::cancel). Short for `ctx.routines.new(routine).start()`.
+  pub fn start<E: Event + Clone>(&self, routine: E) -> u64 {
+    self.new(routine).start()
   }
 
-  /// Start the routine for `E`, with its participants looked up from `group` rather than this system's own group: the
-  /// nearest instance of each, in `group` itself, then the root. This system is still the origin, so it's the one whose
-  /// activity pauses the routine. Taking the handle means only the group's owner (or whoever it shares the handle with)
-  /// can start a routine in it.
-  pub fn start_in<E: Event + Clone>(&self, group: &GroupHandle, routine: E) {
-    self.ctx.start_routine(self.handle, group.id(), routine);
+  /// A routine to start, for setting how it runs (e.g. [`RoutineBuilder::group`], [`RoutineBuilder::interval`])
+  /// before calling [`RoutineBuilder::start`]
+  pub fn new<E: Event + Clone>(&self, routine: E) -> RoutineBuilder<'a> {
+    RoutineBuilder::new(self.handle, self.ctx, routine)
+  }
+
+  /// Stop a routine this system started, wherever it's at. The participant whose step is in progress isn't told, and
+  /// no one after it takes a step. [`RoutineCompleted<E>`] is broadcast with `RoutineCompletion::Cancelled`. Does
+  /// nothing once the routine has completed, or if another system started it.
+  pub fn cancel(&self, routine_id: u64) {
+    self.ctx.cancel_routine(self.handle, routine_id);
   }
 
   /// End this system's step in the routine for `E`, handing it to the next participant

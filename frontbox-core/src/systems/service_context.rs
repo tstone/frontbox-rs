@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
 use crate::prelude::*;
-use crate::systems::routine::RoutineStart;
+use crate::systems::routine::RoutineBuilder;
 use crate::systems::state::{StoredState, nearest_state};
 
 /// If you're building a service (a System which can be called by other Systems) and you need context, you want to accept _this_ type, then create a system context scoped to your service.
@@ -208,23 +208,20 @@ impl<'a> ServiceContext<'a> {
 
   // --- Routines ---
 
-  /// Starting, completing and halting need the caller's identity, so they're only public through `SystemContext`
-  /// Participants are looked up from `scope`.
-  pub(crate) fn start_routine<E: Event + Clone>(
-    &self,
-    origin: SystemHandle,
-    scope: GroupId,
-    routine: E,
-  ) {
-    let _ = self.app_sender.send(AppMessage::StartRoutine(RoutineStart {
-      origin,
-      scope,
-      type_id: TypeId::of::<E>(),
-      name: type_name::<E>(),
-      routine: Box::new(routine),
-      into_started: RoutineStarted::<E>::from_routine,
-      into_completed: RoutineCompleted::<E>::from_routine,
-    }));
+  /// Starting, cancelling, completing and halting need the caller's identity, so they're only public through
+  /// `SystemContext`
+  pub(crate) fn start_routine(&self, routine: RoutineBuilder) -> u64 {
+    let routine_id = SystemContainer::next_id();
+    let _ = self
+      .app_sender
+      .send(AppMessage::StartRoutine(routine.into_start(routine_id)));
+    routine_id
+  }
+
+  pub(crate) fn cancel_routine(&self, origin: SystemHandle, routine_id: u64) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::CancelRoutine(origin, routine_id));
   }
 
   // --- States ---

@@ -17,7 +17,6 @@ well tested. Most of what's wrong sits in two places: where the game manager and
 | A5 | The autoplunger fires once and never checks | A ball left in the lane stalls the turn or multiball | Small |
 | A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
 | A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
-| B3 | What ball search leaves open | Lotko taking part | Small |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
 | C | Missing pinball behavior | Credits, bonus, match, multiball, and more | Varies |
 
@@ -102,25 +101,6 @@ have joined them.
 `Starting { served }`, `Active { deciding_drain }`, `Ending { routine_completed }`. The match in `on_event` then
 has to say what each one does with each event.
 
-### B3. What ball search leaves open
-
-`BallSearchSystem` runs the `BallSearching` routine: after `BALL_SEARCH_DELAY` with a ball in play (not resting in
-the plunge lane) and none of its switches hit, for 3 rounds. If that finds nothing, one ball is taken out of the count
-as lost (`remove_missing_ball`, the `BALLS_LOST` audit) and `BallSearchFailed` says how many are left in play. With
-none left, the game manager puts another into play during a turn, and stops waiting for it between turns and after a
-game. Ball management knows the balls installed (`configs::BALLS_INSTALLED`), and locks and scoops report what they
-hold with `set_balls_held` (lotko's two scoops do). With the coin door open (`CoinDoorSystem`) there's no search, and
-with `IGNORE_DRAINS_WITH_COIN_DOOR_OPEN` a drain starts no `BallDraining` and the ball is put back into play. What's
-left:
-
-- **Nobody takes part in the search in lotko yet**, and it doesn't add `BallSearchSystem`. `RearScoopSystem` and
-  `LowerScoopSystem` are the obvious first participants. The lower scoop would kick only while nothing holds its ball.
-- **A lost ball that turns up** into the trough while its replacement is in play is counted as the replacement
-  draining, as the trough can't tell them apart. The turn can end one ball early. The replacement is then counted
-  when it comes home.
-- **No search at game start** when `balls_missing` is more than 0.
-- **Holding a flipper** doesn't put off a search, so a player cradling the ball for 15 seconds gets one.
-
 ### B4. The interface wrapper is written by hand each time
 
 `GameManager` and `BallManager` are each a `Box<dyn Trait>`, a `Deref`, forwarding of `System`, an `Ext` trait on
@@ -187,7 +167,6 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
 | Missing | Notes |
 |---|---|
 | Credits and coins | `lib.rs` names `CreditsPlay`; it doesn't exist. Coin switches, pricing, saved credits, service credits. The toggle group item in `TODO.md` is how free play and credit play would switch |
-| Missing ball handling | Search at game start (B3) |
 | Faulty switch tolerance | A trough or lane switch stuck closed changes every count. Report switches not seen in N games, and let the operator mark one as ignored |
 | Tilt bob settling between players | The bob is ignored until the serve plus a grace period. A bob still swinging from the last player's tilt can warn the next one. Hold the serve until it has been quiet |
 | Coin door and tests | Door-open handling for coil power (`CoinDoorSystem` knows the door), and switch, coil, lamp, and trough tests. These probably live with the DMD menu, but need hooks here (trough test, scoop test) |
@@ -243,6 +222,5 @@ are the next scenarios for it.
 2. **A5**, with an end-to-end test that shows it first. It is contained in
    `standard_ball_management.rs` and the game manager's `on_event`.
 3. **A6**, with `ejects_pending()`.
-4. **B3**: lotko's scoops taking part in ball search.
-5. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
-6. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.
+4. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
+5. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.
