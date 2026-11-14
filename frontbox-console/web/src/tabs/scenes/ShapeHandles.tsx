@@ -284,6 +284,16 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
       size('Width', field(rect, 'width'), [right, 0], (local) => across(local) * 2),
       size('Height', field(rect, 'height'), [0, top], (local) => down(local) * 2),
     )
+  } else if ('Pinwheel' in current) {
+    handles.push(size('Radius', field(variant(base, 'Pinwheel'), 'radius'), [right, 0], across))
+  } else if ('Propeller' in current) {
+    const propeller = variant(base, 'Propeller')
+    // the first blade runs out along x, and its outline's fourth point is the far corner of its side below
+    const side = pose.outline.length > 3 ? Math.abs(toLocal(pose.outline[3])[1]) : 0
+    handles.push(
+      size('Radius', field(propeller, 'radius'), [right, 0], across),
+      { ...size('Blade width', field(propeller, 'blade_width'), [right / 2, side], (local) => down(local) * 2), cursor: 'ns-resize' },
+    )
   } else if ('Polygon' in current || 'Polyline' in current) {
     const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
     pose.points.forEach((_, index) => handles.push(pointHandle(index, item(points, index))))

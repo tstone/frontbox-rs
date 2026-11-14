@@ -394,8 +394,14 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       use(field(rect, 'height'), `${label} · Height`, both(down))
     } else if ('Pinwheel' in current) {
       const pinwheel = variant(base, 'Pinwheel')
+      use(field(pinwheel, 'radius'), `${label} · Radius`, both(roundRange(surface)))
       use(field(pinwheel, 'blades'), `${label} · Blades`, both(BLADES))
       use(field(pinwheel, 'blade_fraction'), `${label} · Blade fraction`, both(BLADE_FRACTION))
+    } else if ('Propeller' in current) {
+      const propeller = variant(base, 'Propeller')
+      use(field(propeller, 'radius'), `${label} · Radius`, both(roundRange(surface)))
+      use(field(propeller, 'blades'), `${label} · Blades`, both(BLADES))
+      use(field(propeller, 'blade_width'), `${label} · Blade width`, both(across))
     } else if ('Bezier' in current) {
       const points = field(variant(base, 'Bezier'), 'points')
       points.get().forEach((_, i) => {

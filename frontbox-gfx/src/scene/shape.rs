@@ -6,7 +6,7 @@ use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform};
 /// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
 
-/// Cap on pinwheel blades, well past where they can be told apart
+/// Cap on pinwheel and propeller blades, well past where they can be told apart
 const MAX_BLADES: f32 = 360.0;
 
 /// Line segments per bezier span when flattening it to a polyline
@@ -33,15 +33,23 @@ pub enum ShapeNode {
     ry: Prop<f32>,
   },
   Rect { width: Prop<f32>, height: Prop<f32> },
-  /// Wedge-shaped blades radiating from the origin out past the viewport edges.
+  /// Wedge-shaped blades radiating from the origin out to `radius`.
   ///
   /// Each blade plus the gap after it is an equal slice of the circle, and `blade_fraction` (0 to 1) is the blade's share
   /// of its slice, so at 0.5 blades and gaps are equal. The first blade starts at 3 o'clock and they go clockwise.
-  /// `blades` is truncated to a whole number. The fill is stretched over a viewport-sized box centered on the origin.
+  /// `blades` is truncated to a whole number.
   Pinwheel {
+    radius: Prop<f32>,
     blades: Prop<f32>,
     #[serde(alias = "balance")]
     blade_fraction: Prop<f32>,
+  },
+  /// Rectangular blades radiating from the origin out to `radius`, each `blade_width` wide and spaced evenly around the
+  /// circle. The first blade points to 3 o'clock and they go clockwise. `blades` is truncated to a whole number.
+  Propeller {
+    radius: Prop<f32>,
+    blades: Prop<f32>,
+    blade_width: Prop<f32>,
   },
   /// A closed polygon
   Polygon {
@@ -168,9 +176,11 @@ impl ShapeNode {
       Self::Circle { radius } => radius.is_animated(),
       Self::Ring { inner_radius: a, thickness: b }
       | Self::Ellipse { rx: a, ry: b }
-      | Self::Rect { width: a, height: b }
-      | Self::Pinwheel { blades: a, blade_fraction: b } => {
+      | Self::Rect { width: a, height: b } => {
         a.is_animated() || b.is_animated()
+      }
+      Self::Pinwheel { radius: a, blades: b, blade_fraction: c } | Self::Propeller { radius: a, blades: b, blade_width: c } => {
+        a.is_animated() || b.is_animated() || c.is_animated()
       }
       Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
@@ -180,7 +190,12 @@ impl ShapeNode {
   /// Bounds in local space, before transforms
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {
-      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } | Self::Rect { .. } | Self::Pinwheel { .. } => {
+      Self::Circle { .. }
+      | Self::Ring { .. }
+      | Self::Ellipse { .. }
+      | Self::Rect { .. }
+      | Self::Pinwheel { .. }
+      | Self::Propeller { .. } => {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
       }
@@ -200,8 +215,11 @@ impl ShapeNode {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Pinwheel { blades, blade_fraction } => {
-        pinwheel_outline(whole_blades(blades, env), unit_fraction(blade_fraction, env), self.reach(env).length())
+      Self::Pinwheel { radius, blades, blade_fraction } => {
+        pinwheel_outline(whole_blades(blades, env), unit_fraction(blade_fraction, env), radius.resolve(env).max(0.0))
+      }
+      Self::Propeller { radius, blades, blade_width } => {
+        propeller_outline(whole_blades(blades, env), Vec2::new(radius.resolve(env), blade_width.resolve(env)).max(Vec2::ZERO))
       }
       // too few points to enclose anything, so it draws nothing
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
@@ -229,7 +247,7 @@ impl ShapeNode {
       Self::Ring { inner_radius, thickness } => Vec2::splat(inner_radius.resolve(env).max(0.0) + thickness.resolve(env)),
       Self::Ellipse { rx, ry } => Vec2::new(rx.resolve(env), ry.resolve(env)),
       Self::Rect { width, height } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
-      Self::Pinwheel { .. } => env.viewport.size() / 2.0,
+      Self::Pinwheel { radius, .. } | Self::Propeller { radius, .. } => Vec2::splat(radius.resolve(env).max(0.0)),
       Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
     }
   }
@@ -240,7 +258,12 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
       Self::Ring { inner_radius, thickness } => ring_distance(inner_radius.resolve(env), thickness.resolve(env), p),
       Self::Rect { .. } => rect_distance(self.reach(env), p),
-      Self::Pinwheel { blades, blade_fraction } => pinwheel_distance(whole_blades(blades, env), unit_fraction(blade_fraction, env), p),
+      Self::Pinwheel { radius, blades, blade_fraction } => {
+        pinwheel_distance(radius.resolve(env), whole_blades(blades, env), unit_fraction(blade_fraction, env), p)
+      }
+      Self::Propeller { radius, blades, blade_width } => {
+        propeller_distance(whole_blades(blades, env), Vec2::new(radius.resolve(env), blade_width.resolve(env)), p)
+      }
       Self::Polygon { points } => {
         let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
         polygon_distance(&points, p)
@@ -351,10 +374,10 @@ fn pinwheel_outline(blades: u32, blade_fraction: f32, reach: f32) -> Vec<Vec2> {
     .collect()
 }
 
-/// Signed distance to the nearest blade edge. Each edge is a ray from the center: within 90° of the ray the distance is
-/// `r * sin(angle)`, and beyond that the nearest point is the center itself.
-fn pinwheel_distance(blades: u32, blade_fraction: f32, p: Vec2) -> (f32, Vec2) {
-  if blades == 0 {
+/// Signed distance to the nearest blade edge, cut off at the rim. Each side edge is a ray from the center: within 90° of
+/// the ray the distance is `r * sin(angle)`, and beyond that the nearest point is the center itself.
+fn pinwheel_distance(radius: f32, blades: u32, blade_fraction: f32, p: Vec2) -> (f32, Vec2) {
+  if blades == 0 || radius <= 0.0 {
     return (f32::INFINITY, Vec2::X);
   }
   let share = std::f32::consts::TAU / blades as f32;
@@ -364,7 +387,45 @@ fn pinwheel_distance(blades: u32, blade_fraction: f32, p: Vec2) -> (f32, Vec2) {
   let right = std::f32::consts::FRAC_PI_2;
   let (sin, cos) = (around.abs() - width / 2.0).clamp(-right, right).sin_cos();
   let out = p.normalize_or(Vec2::X);
-  (p.length() * sin, out * sin + out.perp() * around.signum() * cos)
+  let sides = (p.length() * sin, out * sin + out.perp() * around.signum() * cos);
+  // inside both the wedge and the circle, so the farther of the two edges
+  let rim = (p.length() - radius, out);
+  if rim.0 > sides.0 { rim } else { sides }
+}
+
+/// Each blade as a rectangle: out from the center along one side, across the end, and back along the other.
+/// `size` is a blade's length and width.
+fn propeller_outline(blades: u32, size: Vec2) -> Vec<Vec2> {
+  let share = std::f32::consts::TAU / blades.max(1) as f32;
+  let side = size.y / 2.0;
+  (0..blades)
+    .flat_map(|blade| {
+      let turn = Vec2::from_angle(blade as f32 * share);
+      let corners = [(0.0, -side), (size.x, -side), (size.x, side), (0.0, side)].map(|(x, y)| turn.rotate(Vec2::new(x, y)));
+      std::iter::once(Vec2::ZERO).chain(corners)
+    })
+    .collect()
+}
+
+/// Signed distance to the nearest blade. The blades nearest by angle, and the ones either side where they overlap near
+/// the center, are each a rectangle from the center out along their angle. `size` is a blade's length and width.
+fn propeller_distance(blades: u32, size: Vec2, p: Vec2) -> (f32, Vec2) {
+  if blades == 0 || size.min_element() <= 0.0 {
+    return (f32::INFINITY, Vec2::X);
+  }
+  let share = std::f32::consts::TAU / blades as f32;
+  let nearest = (p.y.atan2(p.x) / share).round();
+  [-1.0, 0.0, 1.0]
+    .map(|step| {
+      let turn = Vec2::from_angle((nearest + step) * share);
+      // into the blade's own space, where it runs along x from the center
+      let local = Vec2::new(turn.dot(p), turn.perp_dot(p)) - Vec2::new(size.x / 2.0, 0.0);
+      let (distance, gradient) = rect_distance(size / 2.0, local);
+      (distance, turn.rotate(gradient))
+    })
+    .into_iter()
+    .min_by(|a, b| a.0.total_cmp(&b.0))
+    .unwrap()
 }
 
 fn rect_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
@@ -562,7 +623,7 @@ mod tests {
   }
 
   fn pinwheel_with(blades: f32, blade_fraction: f32) -> Shape {
-    Shape::new(ShapeNode::Pinwheel { blades: blades.into(), blade_fraction: blade_fraction.into() })
+    Shape::new(ShapeNode::Pinwheel { radius: 2000.0.into(), blades: blades.into(), blade_fraction: blade_fraction.into() })
   }
 
   /// How much of a point this many degrees clockwise from the right is covered, far from the middle
@@ -622,8 +683,8 @@ mod tests {
   fn past_a_right_angle_from_a_blades_edge_the_middle_is_nearest() {
     let behind = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * (blade_fraction + 1.0)) * 10.0;
     let middle = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * blade_fraction) * 10.0;
-    assert!((pinwheel_distance(1, 0.1, behind(0.1)).0 - 10.0).abs() < 1e-4);
-    assert!((pinwheel_distance(1, 0.9, middle(0.9)).0 + 10.0).abs() < 1e-4);
+    assert!((pinwheel_distance(100.0, 1, 0.1, behind(0.1)).0 - 10.0).abs() < 1e-4);
+    assert!((pinwheel_distance(100.0, 1, 0.9, middle(0.9)).0 + 10.0).abs() < 1e-4);
     assert_eq!(covered(&pinwheel_with(1.0, 0.9), 10.0, -0.1, 0.05), 0.0);
     assert_eq!(covered(&pinwheel_with(1.0, 0.9), -10.0, 0.0, 0.05), 1.0);
   }
@@ -643,13 +704,71 @@ mod tests {
   }
 
   #[test]
-  fn a_pinwheel_is_as_big_as_the_viewport_around_its_middle() {
+  fn a_pinwheel_is_as_big_as_its_radius() {
     let params = Params::new();
-    let frame = Env { viewport: Bounds::sized(Vec2::new(100.0, 50.0)), ..env(0.0, &params) };
-    let pose = pinwheel(4.0).pose(&frame).unwrap();
-    assert_eq!(pose.bounds, Bounds::new(Vec2::new(-50.0, -25.0), Vec2::new(50.0, 25.0)));
+    let shape = Shape::new(ShapeNode::Pinwheel { radius: 20.0.into(), blades: 4.0.into(), blade_fraction: 0.5.into() });
+    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-20.0), Vec2::splat(20.0)));
     assert_eq!(pose.outline.iter().filter(|point| **point == Vec2::ZERO).count(), 4);
-    assert!(pose.outline.iter().all(|point| *point == Vec2::ZERO || (point.length() - 55.9017).abs() < 1e-3));
+    assert!(pose.outline.iter().all(|point| *point == Vec2::ZERO || (point.length() - 20.0).abs() < 1e-3));
+    let out = |length: f32| Vec2::from_angle(22.5f32.to_radians()) * length;
+    assert_eq!(covered(&shape, out(19.0).x, out(19.0).y, 0.5), 1.0);
+    assert_eq!(covered(&shape, out(21.0).x, out(21.0).y, 0.5), 0.0);
+    assert!((covered(&shape, out(20.0).x, out(20.0).y, 0.5) - 0.5).abs() < 1e-3);
+  }
+
+  #[test]
+  fn a_pinwheel_with_no_radius_draws_nothing() {
+    let shape = Shape::new(ShapeNode::Pinwheel { radius: 0.0.into(), blades: 4.0.into(), blade_fraction: 0.5.into() });
+    assert_eq!(covered(&shape, 0.0, 0.0, 0.5), 0.0);
+  }
+
+  fn propeller(blades: f32, length: f32, width: f32) -> Shape {
+    Shape::new(ShapeNode::Propeller { radius: length.into(), blades: blades.into(), blade_width: width.into() })
+  }
+
+  #[test]
+  fn a_propellers_blades_are_rectangles_out_from_the_middle() {
+    let shape = propeller(4.0, 20.0, 4.0);
+    // along each blade, and to either side of one
+    for (x, y) in [(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0), (0.0, -10.0), (10.0, 1.5), (19.0, -1.5)] {
+      assert_eq!(covered(&shape, x, y, 0.5), 1.0, "at ({x}, {y})");
+    }
+    // past a blade's side, past its end, and between blades
+    for (x, y) in [(10.0, 3.0), (21.0, 0.0), (10.0, 10.0)] {
+      assert_eq!(covered(&shape, x, y, 0.5), 0.0, "at ({x}, {y})");
+    }
+    assert!((covered(&shape, 10.0, 2.0, 0.5) - 0.5).abs() < 1e-3);
+    assert!((covered(&shape, 20.0, 0.0, 0.5) - 0.5).abs() < 1e-3);
+  }
+
+  #[test]
+  fn a_propellers_blade_keeps_its_width_however_far_out() {
+    let shape = propeller(3.0, 100.0, 2.0);
+    let along = Vec2::from_angle(120f32.to_radians());
+    for length in [5.0, 50.0, 95.0] {
+      let side = along * length + along.perp() * 0.8;
+      assert_eq!(covered(&shape, side.x, side.y, 0.1), 1.0, "at {length}");
+      let past = along * length + along.perp() * 1.2;
+      assert_eq!(covered(&shape, past.x, past.y, 0.1), 0.0, "at {length}");
+    }
+  }
+
+  #[test]
+  fn a_propeller_is_as_big_as_its_radius() {
+    let params = Params::new();
+    let pose = propeller(2.0, 20.0, 4.0).pose(&env(0.0, &params)).unwrap();
+    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-20.0), Vec2::splat(20.0)));
+    assert_eq!(pose.outline.len(), 10);
+    assert!(pose.outline.iter().all(|point| point.x.abs() <= 20.0 + 1e-4 && point.y.abs() <= 2.0 + 1e-4));
+  }
+
+  #[test]
+  fn a_propeller_with_no_blades_or_width_draws_nothing() {
+    let params = Params::new();
+    assert_eq!(covered(&propeller(0.0, 20.0, 4.0), 10.0, 0.0, 0.5), 0.0);
+    assert_eq!(covered(&propeller(4.0, 20.0, 0.0), 10.0, 0.0, 0.5), 0.0);
+    assert_eq!(propeller(0.0, 20.0, 4.0).pose(&env(0.0, &params)).unwrap().outline, vec![]);
   }
 
   #[test]

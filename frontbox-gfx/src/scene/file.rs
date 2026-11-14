@@ -146,7 +146,9 @@ mod tests {
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .region(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
+          .region(Shape::new(ShapeNode::Pinwheel { radius: 20.0.into(), blades: 4.0.into(), blade_fraction: 0.25.into() })),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into())))
+          .region(Shape::new(ShapeNode::Propeller { radius: 20.0.into(), blades: 3.0.into(), blade_width: 4.0.into() })),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
@@ -336,7 +338,7 @@ mod tests {
       "(layers: [
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ellipse(r1: Fixed(2.0), r2: Fixed(10.0)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ring(radius: Fixed(3.0), thickness: Fixed(1.0)))),
-        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Pinwheel(blades: Fixed(4.0), balance: Fixed(0.25)))),
+        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Pinwheel(radius: Fixed(20.0), blades: Fixed(4.0), balance: Fixed(0.25)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Route(points: []))),
       ])",
     )

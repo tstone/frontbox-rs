@@ -309,9 +309,18 @@ function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface): ConfigN
   }
   if ('Pinwheel' in current) {
     const pinwheel = variant(base, 'Pinwheel')
+    sizes.push(prop('radius', 'Radius', round, field(pinwheel, 'radius')))
     sizes.push(prop('blades', 'Blades', both(BLADES), field(pinwheel, 'blades')))
     sizes.push(
       propNode(`${id}/blade_fraction`, 'Blade fraction', { lens: field(pinwheel, 'blade_fraction') as Lens<Prop<SceneValue>>, paramName: 'blade_fraction', fallback: BLADE_FRACTION.rest!, ranges: both(BLADE_FRACTION) }, surface),
+    )
+  }
+  if ('Propeller' in current) {
+    const propeller = variant(base, 'Propeller')
+    sizes.push(
+      prop('radius', 'Radius', round, field(propeller, 'radius')),
+      prop('blades', 'Blades', both(BLADES), field(propeller, 'blades')),
+      prop('blade_width', 'Blade width', both(width), field(propeller, 'blade_width')),
     )
   }
   if ('Polygon' in current) sizes.push(pointsNode(`${id}/points`, 'Polygon', field(variant(base, 'Polygon'), 'points'), surface))

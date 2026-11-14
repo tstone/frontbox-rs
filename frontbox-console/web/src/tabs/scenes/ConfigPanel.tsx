@@ -110,13 +110,15 @@ import {
 
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
-type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Polyline' | 'Bezier'
+type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Propeller' | 'Polyline' | 'Bezier'
 /** What a layer's region can be: a shape, or on an LED scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
 
 /** How much of a new ring's reach is its hole */
 const RING_HOLE = 0.75
+/** How wide a new propeller's blades are, as a share of their length */
+const PROPELLER_BLADE_WIDTH = 0.25
 
 const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
@@ -136,6 +138,7 @@ const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
   { value: 'Ellipse', label: 'Ellipse' },
   { value: 'Pinwheel', label: 'Pinwheel' },
   { value: 'Polygon', label: 'Polygon' },
+  { value: 'Propeller', label: 'Propeller' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Ring', label: 'Ring' },
 ]
@@ -185,6 +188,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Rect: icons.Square,
   Polygon: icons.Pentagon,
   Pinwheel: icons.Fan,
+  Propeller: icons.Asterisk,
   Polyline: icons.Activity,
   Bezier: icons.Spline,
   Graph: icons.Network,
@@ -1348,7 +1352,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
     }
     if (next === 'None') return lens().set(undefined)
     // one shape turned into another takes up the same room
-    if (lens().get()) base().set(sizedShape(next, shapeSize(base().get(), scene.get(), surface())))
+    if (lens().get()) base().set(sizedShape(next, shapeSize(base().get(), scene.get())))
     else lens().set(newShape(next, surface()))
   }
 
@@ -1381,7 +1385,7 @@ function newShape(kind: Exclude<ShapeKind, 'None'>, surface: Surface): Shape {
   const across = newShapeSize(surface)
   return {
     base: sizedShape(kind, [across, across]),
-    transform: [{ Scale: { Fixed: 1 } }, { Translate: { Fixed: [width / 2, height / 2] } }],
+    transform: [{ Translate: { Fixed: [width / 2, height / 2] } }],
   }
 }
 
@@ -1392,7 +1396,12 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ring') return { Ring: { inner_radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
-  if (kind === 'Pinwheel') return { Pinwheel: { blades: { Fixed: BLADES.rest! }, blade_fraction: { Fixed: BLADE_FRACTION.rest! } } }
+  if (kind === 'Pinwheel') {
+    return { Pinwheel: { radius: { Fixed: reach }, blades: { Fixed: BLADES.rest! }, blade_fraction: { Fixed: BLADE_FRACTION.rest! } } }
+  }
+  if (kind === 'Propeller') {
+    return { Propeller: { radius: { Fixed: reach }, blades: { Fixed: BLADES.rest! }, blade_width: { Fixed: reach * PROPELLER_BLADE_WIDTH } } }
+  }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
     [-width / 2, height / 2],
@@ -1412,8 +1421,8 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   return { Polygon: { points: corners.map((corner) => ({ Fixed: corner })) } }
 }
 
-/** How wide and tall a shape is in its own space. A pinwheel runs past the edges, so what comes after it is a new size. */
-function shapeSize(base: ShapeNode, scene: Scene, surface: Surface): Vec2 {
+/** How wide and tall a shape is in its own space */
+function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
   if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
   if ('Ring' in base) {
@@ -1422,7 +1431,8 @@ function shapeSize(base: ShapeNode, scene: Scene, surface: Surface): Vec2 {
   }
   if ('Ellipse' in base) return [value(base.Ellipse.rx) * 2, value(base.Ellipse.ry) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
-  if ('Pinwheel' in base) return [newShapeSize(surface), newShapeSize(surface)]
+  if ('Pinwheel' in base) return [value(base.Pinwheel.radius) * 2, value(base.Pinwheel.radius) * 2]
+  if ('Propeller' in base) return [value(base.Propeller.radius) * 2, value(base.Propeller.radius) * 2]
   const points = shapePoints(base).map((point) => startingValue(point, scene, [0, 0] as Vec2))
   const reach = (axis: 0 | 1) => Math.max(...points.map((p) => p[axis])) - Math.min(...points.map((p) => p[axis]))
   return [reach(0), reach(1)]
