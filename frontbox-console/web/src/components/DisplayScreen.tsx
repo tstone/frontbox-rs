@@ -3,7 +3,7 @@ import { displayFrame } from '../state/displays'
 import type { DisplayView } from '../types/generated/DisplayView'
 
 /** How many screen pixels wide each of a display's pixels is drawn */
-const SCALE = 3
+const SCALE = 5
 
 /** A display's frames, drawn flat with each pixel a crisp square */
 export default function DisplayScreen(props: { display: DisplayView; index: number }) {

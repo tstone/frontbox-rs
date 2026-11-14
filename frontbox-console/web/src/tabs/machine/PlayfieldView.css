@@ -153,7 +153,7 @@
   outline-offset: 1px;
 }
 
-/* displays without a place on the machine, drawn on their own */
+/* every display, drawn flat over the view */
 .playfield-view .display-screens {
   position: absolute;
   top: 0.75rem;
@@ -164,6 +164,11 @@
   gap: 0.5rem;
   max-width: calc(100% - 1.5rem);
   pointer-events: none;
+}
+
+.playfield-view .display-screens .view-toggle {
+  align-self: flex-start;
+  pointer-events: auto;
 }
 
 .display-screen {

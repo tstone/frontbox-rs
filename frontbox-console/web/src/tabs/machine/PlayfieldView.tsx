@@ -24,8 +24,8 @@ type SceneData = {
   points: Point[]
   /** Displays drawn on their plane */
   placed: PlacedDisplay[]
-  /** Displays drawn on their own: those without a place, or on a plane that wasn't added */
-  unplaced: ShownDisplay[]
+  /** Every display, drawn flat over the view */
+  screens: ShownDisplay[]
   /** Every switch, driver and LED, located or not, by key */
   items: Map<string, Item>
   unlocated: number
@@ -76,18 +76,16 @@ function sceneData(state: ConsoleState): SceneData {
     if (location) points.push({ ...item, location, moved: moved !== undefined })
   }
   const placed: PlacedDisplay[] = []
-  const unplaced: ShownDisplay[] = []
   state.displays.forEach((display, index) => {
     const placement = display.placement
     const plane = placement && planes.find((p) => p.name === placement.plane)
     if (placement && plane) placed.push({ index, display, plane, origin: placement.origin, size: placement.size })
-    else unplaced.push({ index, display })
   })
   return {
     planes,
     points,
     placed,
-    unplaced,
+    screens: state.displays.map((display, index) => ({ index, display })),
     items: new Map(all.map((item) => [item.key, item])),
     unlocated: all.length - points.length,
     signature: JSON.stringify([planes, points.map((p) => [p.key, p.location]), state.displays]),
@@ -105,7 +103,7 @@ function cabinetGroup() {
   return group
 }
 
-type Layer = 'axes' | 'planes' | 'artwork' | 'displays' | 'switches' | 'leds' | 'drivers'
+type Layer = 'axes' | 'planes' | 'artwork' | 'displays' | 'screens' | 'switches' | 'leds' | 'drivers'
 
 const LAYERS: { layer: Layer; label: string; title: string }[] = [
   { layer: 'axes', label: 'Axes', title: "The X/Y/Z axes at the cabinet's origin (0, 0, 0)" },
@@ -120,7 +118,7 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
 /** A preview is about the LEDs, so what it shows is fixed */
-const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, displays: false, switches: false, leds: true, drivers: false }
+const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, displays: false, screens: false, switches: false, leds: true, drivers: false }
 
 // which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
@@ -267,7 +265,7 @@ export default function PlayfieldView(props: {
   let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
   const [layers, setLayers] = createSignal(
-    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, displays: true, switches: true, leds: true, drivers: true }),
+    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, displays: true, screens: true, switches: true, leds: true, drivers: true }),
   )
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
@@ -879,12 +877,17 @@ export default function PlayfieldView(props: {
           </For>
         </div>
       </Show>
-      <Show when={!preview && layers().displays && data().unplaced.length > 0}>
+      <Show when={!preview && data().screens.length > 0}>
         <div class="display-screens">
-          <For each={data().unplaced}>{({ index, display }) => <DisplayScreen display={display} index={index} />}</For>
+          <button type="button" class="view-toggle" aria-pressed={layers().screens} onClick={() => toggleLayer('screens')}>
+            {layers().screens ? 'Hide displays' : 'Show displays'}
+          </button>
+          <Show when={layers().screens}>
+            <For each={data().screens}>{({ index, display }) => <DisplayScreen display={display} index={index} />}</For>
+          </Show>
         </div>
       </Show>
-      <Show when={data().planes.length === 0 && data().points.length === 0 && data().unplaced.length === 0}>
+      <Show when={data().planes.length === 0 && data().points.length === 0 && data().screens.length === 0}>
         <p class="notice empty">
           Nothing to draw yet. Give hardware a <code>location</code>, or add planes with <code>WebTracer::plane</code>.
         </p>
