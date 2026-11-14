@@ -37,6 +37,8 @@
 //! ```
 //!
 //! - [`Layer`] -- A fill in a shape, sampled on its own, given a [`LayerFrame`]
+//! - [`PreparedLayer`] -- A layer resolved once for a frame, for sampling many points. [`Layer::sample_grid`] uses one
+//!   to draw a grid, such as a display's pixels.
 //! - [`Mask`] -- Where a layer shows, apart from what its shape covers
 //! - [`GraphMask`], [`Graph`] -- Limits a layer to the nodes of a graph built from the device's points, with traversals
 //!   over it that [`Prop::Visit`] responds to

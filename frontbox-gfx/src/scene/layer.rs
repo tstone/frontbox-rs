@@ -2,7 +2,9 @@ use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
+use crate::color::RgbaColor;
+use crate::layout::Grid;
+use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
 
 /// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -104,17 +106,32 @@ impl Layer {
 
   /// The color at a sample. A hidden layer draws nothing. Without a shape it's clipped to the viewport; a shape can
   /// extend past it.
+  ///
+  /// To sample many points in one frame, [`Self::prepare`] once and sample that.
   pub fn sample(&self, at: &Sample, frame: &LayerFrame) -> Rgba<u8> {
-    if self.hidden || (self.graph.is_some() && at.node.is_none()) {
-      return Rgba([0, 0, 0, 0]);
+    self.prepare(frame, at.radius).sample(at)
+  }
+
+  /// The layer resolved for `frame`, for samples of `radius`. Its props are resolved here rather than at each sample,
+  /// except for a layer with a graph, whose visits differ from node to node.
+  pub fn prepare<'a>(&'a self, frame: &LayerFrame<'a>, radius: f32) -> PreparedLayer<'a> {
+    let by_node = self.graph.is_some() && frame.visits.is_some();
+    let env = Env { lap: lap(frame.surface, radius), ..env(frame) };
+    let drawn = (!self.hidden && !by_node).then(|| Drawn::new(self, radius, &env));
+    PreparedLayer { layer: self, frame: *frame, radius, drawn }
+  }
+
+  /// Draws the layer over `pixels`, a row at a time from the top left of `grid`
+  pub fn sample_grid(&self, grid: &Grid, frame: &LayerFrame, pixels: &mut [Rgba<u8>]) {
+    debug_assert_eq!(pixels.len(), grid.width * grid.height);
+    let mut samples = grid.samples().peekable();
+    let Some(first) = samples.peek() else {
+      return;
+    };
+    let layer = self.prepare(frame, first.radius);
+    for (pixel, at) in pixels.iter_mut().zip(samples) {
+      *pixel = layer.sample(&at).composite_over(*pixel);
     }
-    let visits = frame.visits.zip(at.node).map(|(visits, node)| visits.at(node));
-    let env = Env { lap: lap(frame.surface, at.radius), visits, ..env(frame) };
-    let mut color = sample_fill(&self.fill, self.region.as_ref(), at, env.viewport, &env);
-    if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
-      color[3] = (color[3] as f32 * mask.amount(at, env.viewport, &env)).round() as u8;
-    }
-    color
   }
 
   /// The traversals of the layer's graph for the current cycle, to pass in [`LayerFrame::visits`]. `graph` is built
@@ -152,6 +169,90 @@ impl Layer {
   }
 }
 
+/// A [`Layer`] resolved for one frame, from [`Layer::prepare`]
+pub struct PreparedLayer<'a> {
+  layer: &'a Layer,
+  frame: LayerFrame<'a>,
+  /// The sample radius it was prepared for
+  radius: f32,
+  /// `None` for a hidden layer, or one prepared again at each node
+  drawn: Option<Drawn<'a>>,
+}
+
+impl PreparedLayer<'_> {
+  /// The color at a sample, as [`Layer::sample`] gives it. A sample of a radius other than the one prepared for is
+  /// drawn too, but slower.
+  pub fn sample(&self, at: &Sample) -> Rgba<u8> {
+    if self.layer.hidden || (self.layer.graph.is_some() && at.node.is_none()) {
+      return Rgba([0, 0, 0, 0]);
+    }
+    match &self.drawn {
+      Some(drawn) if at.radius == self.radius => drawn.sample(at),
+      _ => {
+        let visits = self.frame.visits.zip(at.node).map(|(visits, node)| visits.at(node));
+        let env = Env { lap: lap(self.frame.surface, at.radius), visits, ..env(&self.frame) };
+        Drawn::new(self.layer, at.radius, &env).sample(at)
+      }
+    }
+  }
+}
+
+/// What a layer draws, resolved for samples of one radius
+struct Drawn<'a> {
+  /// `None` if the region is collapsed
+  fill: Option<PreparedArea<'a>>,
+  mask: Option<PreparedMask<'a>>,
+}
+
+impl<'a> Drawn<'a> {
+  fn new(layer: &'a Layer, radius: f32, env: &Env<'a>) -> Self {
+    Self {
+      fill: prepare_area(&layer.fill, layer.region.as_ref(), env.viewport, radius, env),
+      mask: layer.mask.as_ref().map(|mask| mask.prepare(env.viewport, radius, env)),
+    }
+  }
+
+  fn sample(&self, at: &Sample) -> Rgba<u8> {
+    let Some(fill) = &self.fill else {
+      return Rgba([0, 0, 0, 0]);
+    };
+    let mut color = fill.color(at);
+    if let Some(mask) = self.mask.as_ref().filter(|_| color[3] > 0) {
+      color[3] = (color[3] as f32 * mask.amount(at)).round() as u8;
+    }
+    color
+  }
+}
+
+/// A fill clipped to its region, or to the viewport with none, resolved for samples of one radius
+pub(crate) struct PreparedArea<'a> {
+  clip: Clip,
+  fill: PreparedFill<'a>,
+}
+
+impl PreparedArea<'_> {
+  /// The fill's color at a sample, with edge coverage in alpha
+  pub(crate) fn color(&self, at: &Sample) -> Rgba<u8> {
+    let (coverage, fill_pos) = match &self.clip {
+      Clip::Viewport(viewport) if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
+      Clip::Viewport(viewport) => (1.0, viewport.to_unit(at.pos)),
+      Clip::Shape(shape) => match shape.cover(at) {
+        Some((coverage, local)) => (coverage, shape.bounds.to_unit(local)),
+        None => return Rgba([0, 0, 0, 0]),
+      },
+    };
+    let mut color = self.fill.color(fill_pos);
+    color[3] = (color[3] as f32 * coverage).round() as u8;
+    color
+  }
+}
+
+/// What a fill is clipped to
+enum Clip {
+  Viewport(Bounds),
+  Shape(PreparedShape),
+}
+
 /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
 /// spacing doesn't matter.
 pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
@@ -176,37 +277,29 @@ fn lap(surface: Surface, radius: f32) -> Option<f32> {
   (surface == Surface::Sequence).then_some(1.0 + 2.0 * radius)
 }
 
-/// The fill's color at a sample, clipped to the region (or the viewport, with none). Edge coverage goes into alpha.
-pub(crate) fn sample_fill(fill: &Fill, region: Option<&Shape>, at: &Sample, viewport: Bounds, env: &Env) -> Rgba<u8> {
-  let (coverage, fill_pos, footprint) = match region {
-    None if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
-    None => (1.0, viewport.to_unit(at.pos), viewport.to_unit_length(at.radius)),
-    Some(shape) => match shape.cover(at, env) {
-      Some((coverage, local, reach)) => {
-        let bounds = shape.base.bounds(env);
-        (coverage, bounds.to_unit(local), reach * bounds.to_unit_length(1.0))
-      }
-      None => return Rgba([0, 0, 0, 0]),
-    },
+/// The fill clipped to the region (or the viewport, with none), for samples of `radius`. `None` if either is collapsed,
+/// so it draws nothing.
+pub(crate) fn prepare_area<'a>(fill: &'a Fill, region: Option<&Shape>, viewport: Bounds, radius: f32, env: &Env<'a>) -> Option<PreparedArea<'a>> {
+  let (clip, footprint) = match region {
+    None => (Clip::Viewport(viewport), viewport.to_unit_length(radius)),
+    Some(shape) => {
+      let shape = shape.prepare(env)?;
+      let footprint = shape.to_local.matrix2.abs() * Vec2::splat(radius) * shape.bounds.to_unit_length(1.0);
+      (Clip::Shape(shape), footprint)
+    }
   };
-
-  let env = &Env { fill_frame: fill_frame(fill, region, viewport, env), ..*env };
-  let mut color = fill.color(fill_pos, footprint, env);
-  color[3] = (color[3] as f32 * coverage).round() as u8;
-  color
+  let env = &Env { fill_frame: fill_frame(fill, &clip), ..*env };
+  Some(PreparedArea { fill: fill.prepare(footprint, env)?, clip })
 }
 
 /// Scene units to the unit box the fill is stretched over, for `Transform::Fit`. Identity for a fill that doesn't use it.
-fn fill_frame(fill: &Fill, shape: Option<&Shape>, viewport: Bounds, env: &Env) -> Affine2 {
+fn fill_frame(fill: &Fill, clip: &Clip) -> Affine2 {
   if !fill.transform.iter().any(|transform| matches!(transform, Transform::Fit(_))) {
     return Affine2::IDENTITY;
   }
-  match shape {
-    None => viewport.to_unit_affine(),
-    Some(shape) => {
-      let bounds = shape.base.bounds(env);
-      shape.to_local(bounds.center(), env).map_or(Affine2::IDENTITY, |to_local| bounds.to_unit_affine() * to_local)
-    }
+  match clip {
+    Clip::Viewport(viewport) => viewport.to_unit_affine(),
+    Clip::Shape(shape) => shape.bounds.to_unit_affine() * shape.to_local,
   }
 }
 

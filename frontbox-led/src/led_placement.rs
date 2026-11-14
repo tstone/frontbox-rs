@@ -55,13 +55,13 @@ impl LedPlacement {
   pub fn colors(&self, scene: &Scene, moment: &Moment) -> Vec<(i8, &PlacedLed, Rgba<u8>)> {
     let mut by_z: BTreeMap<i8, HashMap<&LedAddress, (&PlacedLed, Rgba<u8>)>> = BTreeMap::new();
     for placed in &self.layers {
-      let Some(layer) = placed.layer(scene) else {
+      let (Some(layer), Some(first)) = (placed.layer(scene), placed.placed.first()) else {
         continue;
       };
-      let frame = placed.frame(scene, moment);
+      let layer = layer.prepare(&placed.frame(scene, moment), first.at.radius);
       let colors = by_z.entry(placed.z).or_default();
       for led in &placed.placed {
-        let color = layer.sample(&led.at, &frame);
+        let color = layer.sample(&led.at);
         let entry = colors.entry(&led.address).or_insert((led, Rgba([0, 0, 0, 0])));
         entry.1 = color.composite_over(entry.1);
       }

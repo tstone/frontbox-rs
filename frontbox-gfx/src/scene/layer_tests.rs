@@ -4,6 +4,7 @@ use glam::Vec2;
 use image::Rgba;
 
 use crate::animation::{Curve, Cycle};
+use crate::color::RgbaColor;
 use crate::layout::{Grid, Line};
 use crate::scene::test_scene::Scene;
 use crate::scene::*;
@@ -954,4 +955,30 @@ fn fit_changes_nothing_without_a_traversal_to_follow() {
 fn a_graph_with_traversals_needs_a_timing() {
   let scene = Scene::new(Surface::Area, vec![wave().composition.layers[0].clone()]);
   assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
+}
+
+#[test]
+fn a_grid_is_drawn_over_what_is_already_in_it() {
+  let layer = Layer::new(solid(Rgba([255, 0, 0, 128]))).region(Shape::new(ShapeNode::circle(5.0)).transform(Transform::Translate(Vec2::new(16.0, 8.0).into())));
+  let grid = Grid::new(32, 16, Vec2::new(32.0, 16.0));
+  let params = Params::new();
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: grid.size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let mut pixels = vec![BLUE; 32 * 16];
+  layer.sample_grid(&grid, &frame, &mut pixels);
+  let alone: Vec<_> = grid.samples().map(|at| layer.sample(&at, &frame).composite_over(BLUE)).collect();
+  assert_eq!(pixels, alone);
+  assert_ne!(pixels[8 * 32 + 16], BLUE);
+  assert_eq!(pixels[0], BLUE);
+}
+
+#[test]
+fn a_prepared_layer_draws_samples_of_another_radius_as_they_are_drawn_alone() {
+  // on a Sequence, how far a Rotate turns depends on the radius of the samples
+  let scene = turned(45.0);
+  let params = Params::new();
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
+  let prepared = scene.layers[0].prepare(&frame, 0.25);
+  for at in Line::new(8).samples() {
+    assert_eq!(prepared.sample(&at), scene.layers[0].sample(&at, &frame));
+  }
 }

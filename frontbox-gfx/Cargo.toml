@@ -16,3 +16,10 @@ ts-rs = { version = "12.0.1", optional = true }
 
 [features]
 ts = ["dep:ts-rs"]
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "sample_grid"
+harness = false

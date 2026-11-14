@@ -56,22 +56,27 @@ impl<N, A> Node<N, A> {
     (forward.matrix2.determinant().abs() > f32::EPSILON).then_some(forward)
   }
 
-  /// On a `Sequence` with a `Rotate`, shifts `at` by whole laps to whichever copy is nearest the node, so a node
-  /// scrolled off one end reappears at the other
-  pub(crate) fn on_lap(&self, at: Vec2, center: Vec2, env: &Env) -> Vec2 {
-    let Some(lap) = env.lap.filter(|_| self.transform.iter().any(|transform| matches!(transform, Transform::Rotate(_)))) else {
-      return at;
-    };
-    let Some(to_scene) = self.to_scene(center, env) else {
-      return at;
-    };
-    let laps = ((to_scene.transform_point2(center).x - at.x) / lap).round();
-    Vec2::new(at.x + laps * lap, at.y)
+  /// How a `Sequence` wraps around for a node with a `Rotate`, given its `to_scene`. `None` on an `Area`, or without a
+  /// `Rotate`.
+  pub(crate) fn wrap(&self, center: Vec2, to_scene: Affine2, env: &Env) -> Option<Wrap> {
+    let lap = env.lap.filter(|_| self.transform.iter().any(|transform| matches!(transform, Transform::Rotate(_))))?;
+    Some(Wrap { lap, center: to_scene.transform_point2(center).x })
   }
+}
 
-  /// The inverse of [`Self::to_scene`]
-  pub(crate) fn to_local(&self, center: Vec2, env: &Env) -> Option<Affine2> {
-    self.to_scene(center, env).map(|to_scene| to_scene.inverse())
+/// Where a node on a `Sequence` repeats: once every `lap`, around its `center` along the line
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Wrap {
+  lap: f32,
+  center: f32,
+}
+
+impl Wrap {
+  /// Shifts `at` by whole laps to whichever copy is nearest the node, so a node scrolled off one end reappears at the
+  /// other
+  pub(crate) fn apply(&self, at: Vec2) -> Vec2 {
+    let laps = ((self.center - at.x) / self.lap).round();
+    Vec2::new(at.x + laps * self.lap, at.y)
   }
 }
 
@@ -94,7 +99,7 @@ mod tests {
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
-    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
     // move then scale: the same point is drawn at 2 * (0.5 + 10)
@@ -103,7 +108,7 @@ mod tests {
       Transform::Scale(2.0.into()),
     ]);
     let at = Vec2::new(21.0, 0.0);
-    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
   }
 
@@ -112,7 +117,7 @@ mod tests {
     let params = Params::new();
     let n = node(vec![Transform::Rotate(90.0.into())]);
     let at = Vec2::new(0.0, 1.0);
-    let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
   }
 
@@ -127,7 +132,7 @@ mod tests {
     assert!(to_scene.transform_point2(Vec2::new(2.0, 0.0)).abs_diff_eq(Vec2::new(11.0, 1.0), 1e-5));
 
     let at = Vec2::new(11.0, 1.0);
-    let local = n.to_local(center, &env(0.0, &params)).unwrap();
+    let local = n.to_scene(center, &env(0.0, &params)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(2.0, 0.0), 1e-5));
   }
 
@@ -135,6 +140,6 @@ mod tests {
   fn zero_scale_draws_nothing() {
     let params = Params::new();
     let n = node(vec![Transform::Scale(0.0.into())]);
-    assert!(n.to_local(Vec2::ZERO, &env(0.0, &params)).is_none());
+    assert!(n.to_scene(Vec2::ZERO, &env(0.0, &params)).is_none());
   }
 }

@@ -1,7 +1,7 @@
 use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform};
+use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform, Wrap};
 
 /// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
@@ -105,16 +105,14 @@ pub struct ShapePose {
 pub enum ShapeAdjust {}
 
 impl Shape {
-  /// How much of the sample the shape covers (0 to 1), the sample's position in local space, and its radius in local
-  /// space along each axis. `None` if the sample is outside the shape or the shape is collapsed.
-  pub(crate) fn cover(&self, at: &Sample, env: &Env) -> Option<(f32, Vec2, Vec2)> {
-    let center = self.base.bounds(env).center();
-    let pos = self.on_lap(at.pos, center, env);
-    let to_local = self.to_local(center, env)?;
-    let local = to_local.transform_point2(pos);
-    let (distance, gradient) = self.base.distance(local, env);
-    let coverage = coverage(scene_distance(distance, gradient, &to_local), at.radius);
-    (coverage > 0.0).then(|| (coverage, local, to_local.matrix2.abs() * Vec2::splat(at.radius)))
+  /// The shape as it is in `env`, to cover any number of samples with. `None` if it's collapsed.
+  pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
+    let bounds = self.base.bounds(env);
+    let to_scene = self.to_scene(bounds.center(), env)?;
+    let edge = self.base.edge(env);
+    let wrap = self.wrap(bounds.center(), to_scene, env);
+    let reach = wrap.is_none().then(|| edge.extent().transformed(to_scene));
+    Some(PreparedShape { edge, bounds, to_local: to_scene.inverse(), wrap, reach })
   }
 
   /// Outline in scene space. Empty if the shape is collapsed.
@@ -252,23 +250,90 @@ impl ShapeNode {
     }
   }
 
-  /// Signed distance to the edge in local space (negative inside), and its gradient
-  fn distance(&self, p: Vec2, env: &Env) -> (f32, Vec2) {
+  /// The edge with its sizes resolved
+  fn edge(&self, env: &Env) -> Edge {
     match self {
-      Self::Circle { .. } | Self::Ellipse { .. } => ellipse_distance(self.reach(env), p),
-      Self::Ring { inner_radius, thickness } => ring_distance(inner_radius.resolve(env), thickness.resolve(env), p),
-      Self::Rect { .. } => rect_distance(self.reach(env), p),
-      Self::Pinwheel { radius, blades, blade_fraction } => {
-        pinwheel_distance(radius.resolve(env), whole_blades(blades, env), unit_fraction(blade_fraction, env), p)
-      }
+      Self::Circle { .. } | Self::Ellipse { .. } => Edge::Ellipse(self.reach(env)),
+      Self::Ring { inner_radius, thickness } => Edge::Ring { hole: inner_radius.resolve(env), thickness: thickness.resolve(env) },
+      Self::Rect { .. } => Edge::Rect(self.reach(env)),
+      Self::Pinwheel { radius, blades, blade_fraction } => Edge::Pinwheel {
+        radius: radius.resolve(env),
+        blades: whole_blades(blades, env),
+        blade_fraction: unit_fraction(blade_fraction, env),
+      },
       Self::Propeller { radius, blades, blade_width } => {
-        propeller_distance(whole_blades(blades, env), Vec2::new(radius.resolve(env), blade_width.resolve(env)), p)
+        Edge::Propeller { blades: whole_blades(blades, env), size: Vec2::new(radius.resolve(env), blade_width.resolve(env)) }
       }
-      Self::Polygon { points } => {
-        let points: Vec<Vec2> = points.iter().map(|p| p.resolve(env)).collect();
-        polygon_distance(&points, p)
-      }
-      Self::Polyline { .. } | Self::Bezier { .. } => (f32::INFINITY, Vec2::X),
+      Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
+      Self::Polyline { .. } | Self::Bezier { .. } => Edge::Open,
+    }
+  }
+}
+
+/// A [`Shape`] resolved for one frame, with what covering a sample needs
+pub(crate) struct PreparedShape {
+  edge: Edge,
+  /// Bounds in local space, before transforms
+  pub bounds: Bounds,
+  pub to_local: Affine2,
+  wrap: Option<Wrap>,
+  /// Everything it can cover, in scene space. `None` when it wraps around a `Sequence`.
+  reach: Option<Bounds>,
+}
+
+impl PreparedShape {
+  /// How much of the sample the shape covers (0 to 1), and the sample's position in local space. `None` if the sample is
+  /// outside the shape.
+  pub(crate) fn cover(&self, at: &Sample) -> Option<(f32, Vec2)> {
+    if self.reach.is_some_and(|reach| !reach.grown(at.radius).contains(at.pos)) {
+      return None;
+    }
+    let pos = self.wrap.map_or(at.pos, |wrap| wrap.apply(at.pos));
+    let local = self.to_local.transform_point2(pos);
+    let (distance, gradient) = self.edge.distance(local);
+    let coverage = coverage(scene_distance(distance, gradient, &self.to_local), at.radius);
+    (coverage > 0.0).then_some((coverage, local))
+  }
+}
+
+/// A shape's edge in local space, with its sizes resolved
+enum Edge {
+  Ellipse(Vec2),
+  Ring { hole: f32, thickness: f32 },
+  Rect(Vec2),
+  Pinwheel { radius: f32, blades: u32, blade_fraction: f32 },
+  /// `size` is a blade's length and width
+  Propeller { blades: u32, size: Vec2 },
+  Polygon(Vec<Vec2>),
+  /// A polyline or bezier, which has no inside
+  Open,
+}
+
+impl Edge {
+  /// Signed distance to the edge (negative inside), and its gradient
+  fn distance(&self, p: Vec2) -> (f32, Vec2) {
+    match self {
+      Self::Ellipse(reach) => ellipse_distance(*reach, p),
+      Self::Ring { hole, thickness } => ring_distance(*hole, *thickness, p),
+      Self::Rect(reach) => rect_distance(*reach, p),
+      Self::Pinwheel { radius, blades, blade_fraction } => pinwheel_distance(*radius, *blades, *blade_fraction, p),
+      Self::Propeller { blades, size } => propeller_distance(*blades, *size, p),
+      Self::Polygon(points) => polygon_distance(points, p),
+      Self::Open => (f32::INFINITY, Vec2::X),
+    }
+  }
+
+  /// A box around everything inside the edge. Wider than the shape's bounds for a propeller, whose blade corners reach
+  /// past its radius.
+  fn extent(&self) -> Bounds {
+    let around = |reach: Vec2| Bounds::new(-reach, reach);
+    match self {
+      Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
+      Self::Ring { hole, thickness } => around(Vec2::splat(hole.max(0.0) + thickness)),
+      Self::Pinwheel { radius, .. } => around(Vec2::splat(radius.max(0.0))),
+      Self::Propeller { size, .. } => around(Vec2::splat(size.x.hypot(size.y / 2.0))),
+      Self::Polygon(points) => bounds_of(points.iter().copied()),
+      Self::Open => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
   }
 }
@@ -497,9 +562,8 @@ mod tests {
 
   fn covered(shape: &Shape, x: f32, y: f32, radius: f32) -> f32 {
     let params = Params::new();
-    shape
-      .cover(&Sample::new(Vec2::new(x, y), radius), &env(0.0, &params))
-      .map_or(0.0, |(c, ..)| c)
+    let at = Sample::new(Vec2::new(x, y), radius);
+    shape.prepare(&env(0.0, &params)).and_then(|shape| shape.cover(&at)).map_or(0.0, |(c, ..)| c)
   }
 
   #[test]
@@ -761,6 +825,13 @@ mod tests {
     assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-20.0), Vec2::splat(20.0)));
     assert_eq!(pose.outline.len(), 10);
     assert!(pose.outline.iter().all(|point| point.x.abs() <= 20.0 + 1e-4 && point.y.abs() <= 2.0 + 1e-4));
+  }
+
+  #[test]
+  fn a_propeller_blade_wider_than_its_radius_is_drawn_all_the_way_across() {
+    // 10 long and 30 wide, so it reaches 15 to either side, past its radius
+    let shape = propeller(1.0, 10.0, 30.0);
+    assert_eq!(covered(&shape, 5.0, 14.0, 0.5), 1.0);
   }
 
   #[test]

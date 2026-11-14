@@ -254,16 +254,20 @@ impl Canvas {
 
   /// Red, green, blue, and alpha for each point. Every row of a display is in the one row of `rows`.
   fn colors<'a>(&'a self, scene: &'a Scene, views: &'a Views, moment: &'a Moment) -> impl Iterator<Item = u8> + 'a {
+    let radius = self.samples.first().map_or(0.0, |at| at.radius);
     self.rows.iter().flat_map(move |row| {
+      let layers: Vec<_> = row
+        .iter()
+        .filter_map(|&index| {
+          let layer = scene.layers[index].layer()?.prepare(&views.frame(scene, index, moment), radius);
+          Some((layer, views.placed(index).and_then(|placed| placed.graph.as_ref())))
+        })
+        .collect();
       self.samples.iter().flat_map(move |at| {
-        let color = row.iter().fold(Rgba([0, 0, 0, 0]), |below, &index| {
+        let color = layers.iter().fold(Rgba([0, 0, 0, 0]), |below, (layer, graph)| {
           // the strip has as many points as asked for, not one per LED, so each shows its nearest node
-          let graph = views.placed(index).and_then(|placed| placed.graph.as_ref());
           let at = graph.and_then(|graph| graph.nearest(at.pos)).map_or(*at, |node| at.at_node(node));
-          let Some(layer) = scene.layers[index].layer() else {
-            return below;
-          };
-          layer.sample(&at, &views.frame(scene, index, moment)).composite_over(below)
+          layer.sample(&at).composite_over(below)
         });
         color.0
       })
