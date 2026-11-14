@@ -3,7 +3,7 @@ use frontbox_gfx::animation::{Accumulator, Animation, Curve, Tween};
 use frontbox_gfx::canvas::*;
 use frontbox_gfx::prelude::*;
 
-use crate::{BOLD_PIXELS_10PX_REGULAR_FONT, DmdSystem, SIGI_BOLD_7PX_FONT};
+use crate::{BOLD_PIXELS_10PX_REGULAR_FONT, SIGI_BOLD_7PX_FONT};
 
 /// Accepts 3 letter initials form the player
 pub struct InitialsEntrySystem {
@@ -77,13 +77,15 @@ impl InitialsEntrySystem {
       return;
     }
 
-    log::info!(target: "frontbox::dmd", "Initials entered: {}", self.name);
+    log::info!(target: "frontbox::display", "Initials entered: {}", self.name);
     ctx.emit(InitialsEntered {
       initials: self.name.clone(),
     });
     ctx.systems.despawn_self();
   }
 
+  // TODO: draw this as a scene on the DisplaySystem. Until then nothing shows it.
+  #[allow(dead_code)]
   fn draw(&self) -> Container {
     let mut window = Container::transparent().with_padding_all(2);
 
@@ -126,12 +128,8 @@ impl InitialsEntrySystem {
 }
 
 impl System for InitialsEntrySystem {
-  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
-      self.cursor_flash.accumulate(delta);
-      let screen = self.draw();
-      dmd.insert_layer(0, screen.default_position());
-    }
+  fn on_tick(&mut self, delta: Duration, _ctx: &SystemContext) {
+    self.cursor_flash.accumulate(delta);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

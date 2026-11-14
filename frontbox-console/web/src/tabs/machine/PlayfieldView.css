@@ -152,3 +152,34 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* displays without a place on the machine, drawn on their own */
+.playfield-view .display-screens {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: calc(100% - 1.5rem);
+  pointer-events: none;
+}
+
+.display-screen {
+  margin: 0;
+}
+
+.display-screen canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  image-rendering: pixelated;
+}
+
+.display-screen figcaption {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}

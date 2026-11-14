@@ -4,13 +4,15 @@ use std::time::Instant;
 use frontbox_core::connection_retry_wait;
 use image::Rgb;
 
-use crate::DmdDevice;
+use crate::DisplayDevice;
 
-/// Writes the frames [`DmdSystem`](crate::DmdSystem) sends to the device, on a thread of its own so a slow or stalled
+/// Writes the frames [`DisplaySystem`](crate::DisplaySystem) sends to the device, on a thread of its own so a slow or stalled
 /// device never holds up the run loop. Only the newest frame matters: any that arrive while one is being written are
 /// skipped. It opens the device, retrying with a growing wait until it can, and opens it again whenever a write fails.
-pub(crate) struct DmdManager {
-  device: Box<dyn DmdDevice>,
+pub(crate) struct DisplayManager {
+  /// The display's name, for logs
+  name: String,
+  device: Box<dyn DisplayDevice>,
   frames: Receiver<Vec<Rgb<u8>>>,
   /// The newest frame, kept to show again on a new connection
   frame: Option<Vec<Rgb<u8>>>,
@@ -19,9 +21,10 @@ pub(crate) struct DmdManager {
   connection: Connection,
 }
 
-impl DmdManager {
-  pub fn new(device: Box<dyn DmdDevice>, frames: Receiver<Vec<Rgb<u8>>>) -> Self {
+impl DisplayManager {
+  pub fn new(name: String, device: Box<dyn DisplayDevice>, frames: Receiver<Vec<Rgb<u8>>>) -> Self {
     Self {
+      name,
       device,
       frames,
       frame: None,
@@ -33,7 +36,7 @@ impl DmdManager {
     }
   }
 
-  /// Runs until the [`DmdSystem`](crate::DmdSystem) is dropped, after writing the frames it sent before then
+  /// Runs until the [`DisplaySystem`](crate::DisplaySystem) is dropped, after writing the frames it sent before then
   pub fn run(mut self) {
     loop {
       let received = match self.connection {
@@ -65,7 +68,7 @@ impl DmdManager {
   fn connect(&mut self, failures: u32) {
     match self.device.open() {
       Ok(()) => {
-        log::info!(target: "frontbox::dmd", "🖥️ Opened the DMD");
+        log::info!(target: "frontbox::display", "🖥️ Opened {}", self.name);
         self.connection = Connection::Connected;
         self.unwritten = self.frame.is_some();
       }
@@ -75,16 +78,18 @@ impl DmdManager {
         // the first failure is worth knowing about, then once in a while so a device that never turns up isn't silent
         if failures == 1 || failures.is_multiple_of(12) {
           log::warn!(
-            target: "frontbox::dmd",
-            "🖥️ Couldn't open the DMD ({}), attempt {}. Retrying in {:?}",
+            target: "frontbox::display",
+            "🖥️ Couldn't open {} ({}), attempt {}. Retrying in {:?}",
+            self.name,
             reason,
             failures,
             wait
           );
         } else {
           log::debug!(
-            target: "frontbox::dmd",
-            "🖥️ Couldn't open the DMD ({}), attempt {}. Retrying in {:?}",
+            target: "frontbox::display",
+            "🖥️ Couldn't open {} ({}), attempt {}. Retrying in {:?}",
+            self.name,
             reason,
             failures,
             wait
@@ -105,7 +110,7 @@ impl DmdManager {
     match self.device.write(frame) {
       Ok(()) => self.unwritten = false,
       Err(reason) => {
-        log::warn!(target: "frontbox::dmd", "🖥️ Lost the DMD ({}), reconnecting", reason);
+        log::warn!(target: "frontbox::display", "🖥️ Lost {} ({}), reconnecting", self.name, reason);
         self.connection = Connection::Waiting {
           retry_at: Instant::now(),
           failures: 0,
@@ -115,7 +120,7 @@ impl DmdManager {
   }
 }
 
-/// Where the [`DmdManager`] is with the device
+/// Where the [`DisplayManager`] is with the device
 #[derive(Clone, Copy)]
 enum Connection {
   Connected,

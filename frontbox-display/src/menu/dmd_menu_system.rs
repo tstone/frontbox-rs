@@ -162,7 +162,7 @@ impl DmdMenuSystem {
         .value_mut()
       {
         *value = row.increment(ctx);
-        log::debug!(target: "frontbox::dmd", "increment: {}", value);
+        log::debug!(target: "frontbox::display", "increment: {}", value);
       }
       self.requires_render = true;
     } else {
@@ -517,10 +517,7 @@ impl System for DmdMenuSystem {
   }
 
   fn on_reactivate(&mut self, ctx: &SystemContext) {
-    if let Some(mut dmd) = ctx.systems.get::<DmdSystem>() {
-      dmd.clear();
-      self.requires_row_refresh = true;
-    }
+    self.requires_row_refresh = true;
     ctx.play_sfx(MENU_BEGIN_SND);
   }
 
@@ -534,11 +531,8 @@ impl System for DmdMenuSystem {
       self.requires_row_refresh = false;
     }
 
-    if self.requires_render
-      && let Some(mut dmd) = ctx.systems.get::<DmdSystem>()
-    {
-      let size = *dmd.size();
-      dmd.insert_layer(0, self.draw(&size).default_position());
+    // TODO: draw `self.draw` as a scene on the DisplaySystem. Until then nothing shows the menu.
+    if self.requires_render {
       self.requires_render = false;
     }
   }

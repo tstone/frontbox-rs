@@ -43,6 +43,8 @@ pub struct Snapshot {
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Rgb>,
   pub planes: Vec<PlaneView>,
+  /// Displays mirrored in the console. Their frames are binary messages naming them by their place here.
+  pub displays: Vec<DisplayView>,
   /// Operator configs in use, by key, with their current values
   pub configs: BTreeMap<&'static str, ConfigView>,
   #[ts(as = "Vec<TraceRecord>")]
@@ -108,6 +110,30 @@ pub struct PlaneView {
   pub image: Option<String>,
   /// e.g. `planes::PLAYFIELD`, when added with `app_plane!`
   pub code: Option<String>,
+}
+
+/// The first byte of a binary message, which says what the rest is
+pub const BINARY_CLIP: u8 = 0;
+/// A display's frame: then a byte for its place in `Snapshot::displays`, then red, green, and blue for each pixel,
+/// row-major from the top left
+pub const BINARY_DISPLAY_FRAME: u8 = 1;
+
+/// A display mirrored in the console
+#[derive(Clone, serde::Serialize, TS)]
+pub struct DisplayView {
+  pub name: String,
+  pub width: u32,
+  pub height: u32,
+  /// Where it is on the machine, to draw it there. `None` draws it on its own.
+  pub placement: Option<DisplayPlacement>,
+}
+
+/// A rectangle on a plane, in the plane's units, from `origin` to `origin + size`
+#[derive(Clone, serde::Serialize, TS)]
+pub struct DisplayPlacement {
+  pub plane: String,
+  pub origin: [f32; 2],
+  pub size: [f32; 2],
 }
 
 #[derive(Clone, serde::Serialize, TS)]

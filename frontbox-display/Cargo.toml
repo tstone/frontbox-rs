@@ -1,5 +1,5 @@
 [package]
-name = "frontbox-dmd"
+name = "frontbox-display"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,8 +7,8 @@ edition = "2024"
 log = "0.4.29"
 frontbox-core = { path = "../frontbox-core" }
 frontbox-gfx = { path = "../frontbox-gfx" }
+frontbox-scene = { path = "../frontbox-scene" }
 frontbox-sound = { path = "../frontbox-sound", optional = true }
-rusb = "0.9.4"
 image = "0.25.9"
 rand = "0.10.0"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -17,3 +17,6 @@ serde_json = "1.0.151"
 [features]
 default = ["sound"]
 sound = ["dep:frontbox-sound"]
+
+[dev-dependencies]
+frontbox-core = { path = "../frontbox-core", features = ["testing"] }

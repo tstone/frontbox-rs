@@ -1,0 +1,9 @@
+[package]
+name = "frontbox-dmd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frontbox-display = { path = "../frontbox-display" }
+image = "0.25.9"
+rusb = "0.9.4"

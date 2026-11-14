@@ -8,6 +8,7 @@ members = [
     "frontbox-led",
     "frontbox-metrics",
     "frontbox-console",
+    "frontbox-display",
     "frontbox-dmd",
     "frontbox-sound",
     "frontbox-pinball",

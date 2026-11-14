@@ -1,3 +1,5 @@
+// its drawing is unused until the menu is drawn as a scene
+#[allow(dead_code)]
 mod dmd_menu_system;
 mod dmd_menu_theme;
 mod menu_section;

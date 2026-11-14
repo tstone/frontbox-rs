@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use frontbox_core::prelude::*;
-use frontbox_dmd::menu::*;
+use frontbox_display::menu::*;
 
 fn main() {
   hardware_defs! {

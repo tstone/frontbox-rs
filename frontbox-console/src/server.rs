@@ -73,12 +73,18 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
       init,
       events: mut rx,
       mut leds,
+      mut displays,
     }) = hub.subscribe()
     else {
       return;
     };
     if socket.send(Message::Text(init)).await.is_err() {
       return;
+    }
+    for frame in hub.display_frames() {
+      if socket.send(Message::Binary(frame)).await.is_err() {
+        return;
+      }
     }
 
     loop {
@@ -111,6 +117,20 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
             && socket.send(Message::Text(text)).await.is_err()
           {
             return;
+          }
+        }
+
+        frame = displays.recv() => {
+          let frames = match frame {
+            Ok(frame) => vec![frame],
+            // each is a whole frame, so after skipping some, the newest of each display is all that's needed
+            Err(RecvError::Lagged(_)) => hub.display_frames(),
+            Err(RecvError::Closed) => return,
+          };
+          for frame in frames {
+            if socket.send(Message::Binary(frame)).await.is_err() {
+              return;
+            }
           }
         }
 

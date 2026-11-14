@@ -69,15 +69,13 @@
 
 ## DMD
 
-- DMD package probably needs to become frontbox-dmd since most of the code could support other DMDs
 - Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
-- DmdSystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
+- DisplaySystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
 - Need a better pattern/more generalized UI DSP to do the following:
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
-- Support a virtual DMD that renders to the preview console, for developing and testing without hardware. Needed by the DMD menu animation and transition items.
 - DmdMatch system that takes a DMD scene or something
 
 ## Console

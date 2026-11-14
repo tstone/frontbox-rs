@@ -149,7 +149,7 @@ function clipReplied(id: number) {
   sendMissingClip()
 }
 
-/** Called by the console for each binary message, which is always a clip */
+/** Called by the console for each clip: a binary message without its first byte */
 export function receiveSceneClip(message: ArrayBuffer) {
   const headerLength = new DataView(message).getUint32(0, true)
   const header: RenderedClip = JSON.parse(new TextDecoder().decode(new Uint8Array(message, 4, headerLength)))

@@ -1107,7 +1107,9 @@ name = "frontbox-console"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "env_logger",
  "frontbox-core",
+ "frontbox-display",
  "frontbox-dmd",
  "frontbox-gfx",
  "frontbox-led",
@@ -1163,18 +1165,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-dmd"
+name = "frontbox-display"
 version = "0.1.0"
 dependencies = [
  "frontbox-core",
  "frontbox-gfx",
+ "frontbox-scene",
  "frontbox-sound",
  "image",
  "log",
  "rand 0.10.0",
- "rusb",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "frontbox-dmd"
+version = "0.1.0"
+dependencies = [
+ "frontbox-display",
+ "image",
+ "rusb",
 ]
 
 [[package]]
