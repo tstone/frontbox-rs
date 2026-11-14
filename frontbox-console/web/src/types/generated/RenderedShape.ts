@@ -25,7 +25,18 @@ handles: Array<[number, number]>,
  */
 hole: number, 
 /**
- * Its edge in the scene, as a closed loop of points, or its line for a polyline or bezier, which doesn't close
+ * Where its center is going into each transform, in the space the ones before it put the shape in, then in the
+ * scene after the last. A rotate turns around it.
+ */
+pivots: Array<[number, number]>, 
+/**
+ * For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
+ * `None` for other transforms.
+ */
+centers: Array<[number, number] | null>, 
+/**
+ * Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
+ * points, or its line for a polyline or bezier, which doesn't close
  */
 outline: Array<[number, number]>, 
 /**

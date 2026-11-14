@@ -67,9 +67,10 @@ import {
 } from './SceneFields'
 import {
   ADJUSTS,
-  BLADE_FRACTION,
-  BLADES,
+  BOW,
   BRANCHING,
+  COPIES,
+  COPY_KINDS,
   FAN_ANGLE,
   FAN_COUNT,
   field,
@@ -78,13 +79,17 @@ import {
   GROWTH_DENSITY,
   imageLength,
   layerPlane,
+  LEG_WIDTH,
+  LEGS,
   moved,
   newAdjust,
   newLayerPlace,
   newShapeSize,
+  NOTCH,
   RATE,
   reachRange,
   removed,
+  REVOLVE_ANGLE,
   shapePoints,
   snap,
   soundEnd,
@@ -96,10 +101,12 @@ import {
   usedTraversals,
   variant,
   WANDER,
+  WIDEST_AT,
   withDuration,
   withTiming,
   withTraversalRenamed,
   type AdjustKind,
+  type CopyKind,
   type Lens,
   type Scene,
   type SceneLayer,
@@ -110,15 +117,23 @@ import {
 
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
-type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Polygon' | 'Pinwheel' | 'Propeller' | 'Polyline' | 'Bezier'
+type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Polygon' | 'Polyline' | 'Bezier'
+/** A shape set up from the others, which is a shape of their kind once it's picked */
+type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
 /** What a layer's region can be: a shape, or on an LED scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
 
 /** How much of a new ring's reach is its hole */
 const RING_HOLE = 0.75
-/** How wide a new propeller's blades are, as a share of their length */
-const PROPELLER_BLADE_WIDTH = 0.25
+/** How wide a triangle is, as a share of how tall it is, so that its sides are all the same length */
+const TRIANGLE_WIDTH = 2 / Math.sqrt(3)
+/** How wide a pinwheel's blades are where they're widest, as a share of how long they are */
+const PINWHEEL_BLADE_WIDTH = 0.8
+/** How wide a propeller's blades are, as a share of how long they are */
+const PROPELLER_BLADE_WIDTH = 0.125
+/** How many blades a template has */
+const TEMPLATE_BLADES = 4
 
 const WHITE: Color = [255, 255, 255, 255]
 const BLACK: Color = [0, 0, 0, 255]
@@ -131,29 +146,40 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Image', label: 'Image' },
 ]
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
-/** "All" first, then by label */
-const SHAPE_OPTIONS: { value: ShapeKind; label: string }[] = [
-  { value: 'None', label: 'All' },
+type ShapeOption = { value: RegionKind | TemplateKind; label: string; group?: string }
+const SHAPES: ShapeOption[] = ([
+  { value: 'Chevron', label: 'Chevron' },
   { value: 'Circle', label: 'Circle' },
+  { value: 'Diamond', label: 'Diamond' },
   { value: 'Ellipse', label: 'Ellipse' },
-  { value: 'Pinwheel', label: 'Pinwheel' },
   { value: 'Polygon', label: 'Polygon' },
-  { value: 'Propeller', label: 'Propeller' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Ring', label: 'Ring' },
+  { value: 'Star', label: 'Star' },
+] as ShapeOption[]).map((option) => ({ ...option, group: 'Shapes' }))
+const TEMPLATES: ShapeOption[] = [
+  { value: 'Pinwheel', label: 'Pinwheel', group: 'Templates' },
+  { value: 'Propeller', label: 'Propeller', group: 'Templates' },
+  { value: 'Triangle', label: 'Triangle', group: 'Templates' },
 ]
-/** A path has to be something, and can also be a line, which has no inside to draw as a shape */
-const PATH_OPTIONS = ([
-  ...SHAPE_OPTIONS.slice(1),
-  { value: 'Polyline', label: 'Polyline' },
-  { value: 'Bezier', label: 'Bezier' },
-] as { value: ShapeKind; label: string }[]).sort(byLabel)
+const isTemplate = (kind: RegionKind | TemplateKind): kind is TemplateKind => TEMPLATES.some((option) => option.value === kind)
+const ALL: ShapeOption = { value: 'None', label: 'All' }
+/** "All", then the shapes by label, then the templates made of them */
+const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES]
+/**
+ * A path has to be something, and can also be a line, which has no inside to draw as a shape. A sweep follows only a
+ * path's own outline, so it has no templates.
+ */
+const PATH_OPTIONS: ShapeOption[] = [
+  ...SHAPES,
+  { value: 'Polyline', label: 'Polyline', group: 'Shapes' } as ShapeOption,
+  { value: 'Bezier', label: 'Bezier', group: 'Shapes' } as ShapeOption,
+].sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
+/** Only for a shape that's drawn, rather than a sweep's path */
+const COPY_OPTIONS: { value: TransformKind; label: string }[] = COPY_KINDS.map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on an LED scene */
-const GRAPH_REGION_OPTIONS: { value: RegionKind; label: string }[] = [
-  SHAPE_OPTIONS[0],
-  ...[...SHAPE_OPTIONS.slice(1), { value: 'Graph' as const, label: 'Graph' }].sort(byLabel),
-]
+const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
 const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
@@ -187,8 +213,9 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Ellipse: icons.Egg,
   Rect: icons.Square,
   Polygon: icons.Pentagon,
-  Pinwheel: icons.Fan,
-  Propeller: icons.Asterisk,
+  Diamond: icons.Diamond,
+  Star: icons.Star,
+  Chevron: icons.ChevronUp,
   Polyline: icons.Activity,
   Bezier: icons.Spline,
   Graph: icons.Network,
@@ -200,6 +227,9 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Rotate: icons.RotateCw,
   Scale: icons.Scaling,
   Fit: icons.Maximize2,
+  Mirror: icons.SquareSplitHorizontal,
+  Revolve: icons.RefreshCw,
+  Divide: icons.Scissors,
   HueShift: icons.Palette,
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
@@ -1338,7 +1368,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
   const options = () => (path() ? PATH_OPTIONS : graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
   const of = () => selectionOf(props.node.id)
 
-  const change = (next: RegionKind) => {
+  const change = (next: RegionKind | TemplateKind) => {
     const owner = layer()
     if (next === 'Graph') {
       // only offered for a layer. A graph is there to be traversed, so it comes with a traversal.
@@ -1351,14 +1381,20 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
       return owner.set({ ...owner.get(), graph: undefined, region: next === 'None' ? undefined : newShape(next, surface()) })
     }
     if (next === 'None') return lens().set(undefined)
+    const current = lens().get()
+    if (!current) return lens().set(newShape(next, surface()))
     // one shape turned into another takes up the same room
-    if (lens().get()) base().set(sizedShape(next, shapeSize(base().get(), scene.get())))
-    else lens().set(newShape(next, surface()))
+    const size = shapeSize(base().get(), scene.get())
+    if (!isTemplate(next)) return base().set(sizedShape(next, size))
+    // a template's copies are made before the shape is placed, in place of any it had
+    const template = templateShape(next, Math.max(...size))
+    const placing = (current.transform ?? []).filter((transform) => !COPY_KINDS.some((copy) => copy in transform))
+    lens().set({ ...current, base: template.base, transform: [...template.transform, ...placing] })
   }
 
   return (
     <Controls node={props.node}>
-      <Dropdown<RegionKind>
+      <Dropdown<RegionKind | TemplateKind>
         label={props.node.label}
         options={options()}
         value={kind()}
@@ -1378,14 +1414,32 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
   )
 }
 
-/** A new shape, placed so that it can be seen, at a size that fits */
-function newShape(kind: Exclude<ShapeKind, 'None'>, surface: Surface): Shape {
+/** A new shape, placed so that it can be seen, at a size that fits. A template's transforms come before the one that places it. */
+function newShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, surface: Surface): Shape {
   // a sequence runs from 0 to 1, with its points along the middle
   const [width, height] = surface ?? [1, 0]
   const across = newShapeSize(surface)
+  const { base, transform } = isTemplate(kind) ? templateShape(kind, across) : { base: sizedShape(kind, [across, across]), transform: [] }
+  return { base, transform: [...transform, { Translate: { Fixed: [width / 2, height / 2] } }] }
+}
+
+/** A template `across` wide, around the origin */
+function templateShape(kind: TemplateKind, across: number): { base: ShapeNode; transform: Transform[] } {
+  const length = across / 2
+  // a star of one leg, pointing up from its base on the origin
+  const triangle = (width: number): ShapeNode => ({ Star: { radius: { Fixed: length }, legs: { Fixed: 1 }, leg_width: { Fixed: width }, bow: { Fixed: BOW.rest! } } })
+  if (kind === 'Triangle') return { base: triangle(TRIANGLE_WIDTH), transform: [] }
+  if (kind === 'Pinwheel') {
+    // its blades are triangles with their tips together
+    return {
+      base: triangle(PINWHEEL_BLADE_WIDTH),
+      transform: [{ Revolve: { center: { Fixed: [0, -length] }, angle: { Fixed: 360 }, count: { Fixed: TEMPLATE_BLADES } } }],
+    }
+  }
+  // each bar through the middle is two blades
   return {
-    base: sizedShape(kind, [across, across]),
-    transform: [{ Translate: { Fixed: [width / 2, height / 2] } }],
+    base: { Rect: { width: { Fixed: across }, height: { Fixed: across * PROPELLER_BLADE_WIDTH } } },
+    transform: [{ Revolve: { center: { Fixed: [0, 0] }, angle: { Fixed: 180 }, count: { Fixed: TEMPLATE_BLADES / 2 } } }],
   }
 }
 
@@ -1396,12 +1450,13 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ring') return { Ring: { inner_radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
-  if (kind === 'Pinwheel') {
-    return { Pinwheel: { radius: { Fixed: reach }, blades: { Fixed: BLADES.rest! }, blade_fraction: { Fixed: BLADE_FRACTION.rest! } } }
+  if (kind === 'Diamond') {
+    return { Diamond: { width: { Fixed: width }, height: { Fixed: height }, widest_at: { Fixed: WIDEST_AT.rest! }, bow: { Fixed: BOW.rest! } } }
   }
-  if (kind === 'Propeller') {
-    return { Propeller: { radius: { Fixed: reach }, blades: { Fixed: BLADES.rest! }, blade_width: { Fixed: reach * PROPELLER_BLADE_WIDTH } } }
+  if (kind === 'Star') {
+    return { Star: { radius: { Fixed: reach }, legs: { Fixed: LEGS.rest! }, leg_width: { Fixed: LEG_WIDTH.rest! }, bow: { Fixed: BOW.rest! } } }
   }
+  if (kind === 'Chevron') return { Chevron: { width: { Fixed: width }, height: { Fixed: height }, notch: { Fixed: NOTCH.rest! } } }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
     [-width / 2, height / 2],
@@ -1431,8 +1486,9 @@ function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   }
   if ('Ellipse' in base) return [value(base.Ellipse.rx) * 2, value(base.Ellipse.ry) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
-  if ('Pinwheel' in base) return [value(base.Pinwheel.radius) * 2, value(base.Pinwheel.radius) * 2]
-  if ('Propeller' in base) return [value(base.Propeller.radius) * 2, value(base.Propeller.radius) * 2]
+  if ('Diamond' in base) return [value(base.Diamond.width), value(base.Diamond.height)]
+  if ('Chevron' in base) return [value(base.Chevron.width), value(base.Chevron.height)]
+  if ('Star' in base) return [value(base.Star.radius) * 2, value(base.Star.radius) * 2]
   const points = shapePoints(base).map((point) => startingValue(point, scene, [0, 0] as Vec2))
   const reach = (axis: 0 | 1) => Math.max(...points.map((p) => p[axis])) - Math.min(...points.map((p) => p[axis]))
   return [reach(0), reach(1)]
@@ -1474,20 +1530,32 @@ function pastEnd(before: Vec2, end: Vec2): Vec2 {
   return [end[0] + (end[0] - before[0]) / 2, end[1] + (end[1] - before[1]) / 2]
 }
 
-/** A transform that leaves things where they are, until it's changed. A fit starts on the layer's first traversal. */
-function newTransform(kind: TransformKind, traversals: string[]): Transform {
+/**
+ * A transform that leaves things where they are, until it's changed. A fit starts on the layer's first traversal. A
+ * mirror's line starts along the right of a shape `size` across, so its reflection is beside it, and a revolve and a
+ * divide start on its middle.
+ */
+function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Transform {
   if (kind === 'Translate') return { Translate: { Fixed: [0, 0] } }
   if (kind === 'Rotate') return { Rotate: { Fixed: 0 } }
   if (kind === 'Scale') return { Scale: { Fixed: 1 } }
+  if (kind === 'Mirror') return { Mirror: { center: { Fixed: [size[0] / 2, 0] }, rotation: { Fixed: 0 } } }
+  if (kind === 'Revolve') return { Revolve: { center: { Fixed: [0, 0] }, angle: { Fixed: REVOLVE_ANGLE.rest! }, count: { Fixed: COPIES.rest! } } }
+  if (kind === 'Divide') return { Divide: { center: { Fixed: [0, 0] }, rotation: { Fixed: 0 } } }
   return { Fit: traversals[0] ?? '' }
 }
 
-/** Adds a transform or an adjust, listed together, after those already there */
+/**
+ * Adds a transform or an adjust, listed together, after those already there. A mirror, revolve, or divide goes before
+ * a shape's first translate instead, so that its center is in the shape's own space and it moves with the shape.
+ */
 function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }) {
   const tree = useContext(ConfigTreeContext)!
+  const scene = useContext(SceneContext)!
   const traversals = useContext(TraversalsContext)
   // a fit is only for a layer with traversals to fit to
-  const groups = () => [traversals().length > 0 ? [...TRANSFORM_OPTIONS, FIT_OPTION] : TRANSFORM_OPTIONS, ...(props.node.adjusts ? [ADJUST_OPTIONS] : [])]
+  const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? COPY_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
+  const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : [])]
   const owner = () => props.node.id.slice(0, props.node.id.lastIndexOf('/'))
   const add = (kind: TransformKind | AdjustKind) =>
     batch(() => {
@@ -1497,8 +1565,12 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
         tree.select(`${owner()}/adjust/${list.length}`)
       } else {
         const list = props.node.transforms.get()
-        props.node.transforms.set([...list, newTransform(kind as TransformKind, traversals())])
-        tree.select(`${owner()}/transform/${list.length}`)
+        const shape = props.node.shape?.get()
+        const size = shape ? shapeSize(shape.base, scene.get()) : ([0, 0] as Vec2)
+        const placed = list.findIndex((transform) => 'Translate' in transform)
+        const index = COPY_KINDS.includes(kind as CopyKind) && placed >= 0 ? placed : list.length
+        props.node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals(), size), ...list.slice(index)])
+        tree.select(`${owner()}/transform/${index}`)
       }
     })
   return (

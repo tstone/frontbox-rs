@@ -41,10 +41,16 @@ impl<N, A> Node<N, A> {
   /// The affine for each transform, in order. `center` is the node's center in local space, which `Rotate` pivots
   /// around after the earlier transforms move it.
   pub(crate) fn affines(&self, center: Vec2, env: &Env) -> Vec<Affine2> {
+    self.steps(center, env).into_iter().map(|(affine, _)| affine).collect()
+  }
+
+  /// The affine for each transform, in order, with where the node's center is going into it
+  pub(crate) fn steps(&self, center: Vec2, env: &Env) -> Vec<(Affine2, Vec2)> {
     let step = |center: &mut Vec2, transform: &Transform| {
-      let affine = transform.affine(*center, env);
-      *center = affine.transform_point2(*center);
-      Some(affine)
+      let before = *center;
+      let affine = transform.affine(before, env);
+      *center = transform.center(before, affine, env);
+      Some((affine, before))
     };
     self.transform.iter().scan(center, step).collect()
   }

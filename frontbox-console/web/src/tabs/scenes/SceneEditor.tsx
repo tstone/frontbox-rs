@@ -388,10 +388,10 @@ export default function SceneEditor(props: {
     const open = selection[0]()
     const rendered = drawn()
     if (playback.playing() || open === null || !rendered || !openShown()) return []
-    const edge = (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
-    // a ring has its hole outlined too
+    const edges = (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
+    // one loop for each copy of its shape, and a ring has its hole outlined too
     const pose = (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer]
-    return [edge, pose ? holeOutline(pose) : []].filter((loop) => loop.length > 0)
+    return [...edges, pose ? holeOutline(pose) : []].filter((loop) => loop.length > 0)
   }
 
   /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */

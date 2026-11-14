@@ -304,8 +304,8 @@ fn rendered_area(covers: Bounds) -> RenderedArea {
   RenderedArea { x: covers.min.x, y: covers.min.y, width: size.x, height: size.y }
 }
 
-fn rendered_outline(outline: &[Vec2]) -> Vec<[f32; 2]> {
-  outline.iter().map(|p| p.to_array()).collect()
+fn rendered_outline(outline: &[Vec<Vec2>]) -> Vec<Vec<[f32; 2]>> {
+  outline.iter().map(|points| points.iter().map(|p| p.to_array()).collect()).collect()
 }
 
 fn rendered_graph(placed: &PlacedLayer) -> Option<RenderedGraph> {
@@ -330,6 +330,8 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     points: pose.points.iter().map(|p| p.to_array()).collect(),
     handles: pose.handles.iter().map(|p| p.to_array()).collect(),
     hole: pose.hole,
+    pivots: pose.pivots.iter().map(|p| p.to_array()).collect(),
+    centers: pose.centers.iter().map(|center| center.map(|p| p.to_array())).collect(),
     outline: pose.outline.iter().map(|p| p.to_array()).collect(),
     paths: pose.paths.iter().map(|path| path.as_ref().map(rendered_shape)).collect(),
   }
@@ -601,8 +603,8 @@ mod tests {
     let on = |plane: &str| format!(r#"Leds(surface: Area("{plane}"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", on("Square"), on("Wide"));
     let outlines = render_scene(ron(&source), SIZE, no_leds(), None, 0.0, None).unwrap().outlines;
-    assert_eq!(outlines[0], [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]);
-    assert_eq!(outlines[1], [[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]]);
+    assert_eq!(outlines[0], [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
+    assert_eq!(outlines[1], [[[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]]]);
   }
 
   #[test]
@@ -610,7 +612,7 @@ mod tests {
     let target = no_leds();
     let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
     let outlines = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().outlines;
-    assert_eq!(outlines, [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
+    assert_eq!(outlines, [[[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]]);
   }
 
   #[test]
@@ -622,13 +624,13 @@ mod tests {
         fill: (base: Solid(Fixed(1, 2, 3, 255))),
       ))],)"#;
     let outlines = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().outlines;
-    assert_eq!(outlines, [[[2.0, 3.0], [3.0, 3.0], [2.0, 4.0]]]);
+    assert_eq!(outlines, [[[[2.0, 3.0], [3.0, 3.0], [2.0, 4.0]]]]);
   }
 
   #[test]
   fn a_layer_with_no_shape_outlines_a_whole_sequence() {
     let outlines = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).unwrap().outlines;
-    assert_eq!(outlines, [[[0.0, -0.5], [1.0, -0.5], [1.0, 0.5], [0.0, 0.5]]]);
+    assert_eq!(outlines, [[[[0.0, -0.5], [1.0, -0.5], [1.0, 0.5], [0.0, 0.5]]]]);
   }
 
   #[test]

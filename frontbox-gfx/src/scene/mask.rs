@@ -45,7 +45,7 @@ impl Mask {
     PreparedMask { area: prepare_area(&self.fill, self.region.as_ref(), viewport, radius, env), invert: self.invert }
   }
 
-  pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec2> {
+  pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec<Vec2>> {
     fill_outline(self.region.as_ref(), viewport, env)
   }
 }

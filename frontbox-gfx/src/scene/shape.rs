@@ -1,16 +1,22 @@
 use glam::{Affine2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Node, Prop, Bounds, Sample, Transform, Wrap};
+use crate::scene::{Bounds, Cut, Env, Node, Prop, Sample, Transform, Wrap};
 
 /// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
 
-/// Cap on pinwheel and propeller blades, well past where they can be told apart
-const MAX_BLADES: f32 = 360.0;
+/// Cap on a star's legs, well past where they can be told apart
+const MAX_LEGS: f32 = 360.0;
+
+/// Cap on the copies a shape's `Mirror`s and `Revolve`s make between them
+const MAX_COPIES: usize = 1024;
 
 /// Line segments per bezier span when flattening it to a polyline
 const BEZIER_STEPS: usize = 24;
+
+/// Line segments per bowed side of a star or diamond
+const BOW_STEPS: usize = 16;
 
 /// The area a layer is drawn in
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
@@ -33,24 +39,18 @@ pub enum ShapeNode {
     ry: Prop<f32>,
   },
   Rect { width: Prop<f32>, height: Prop<f32> },
-  /// Wedge-shaped blades radiating from the origin out to `radius`.
-  ///
-  /// Each blade plus the gap after it is an equal slice of the circle, and `blade_fraction` (0 to 1) is the blade's share
-  /// of its slice, so at 0.5 blades and gaps are equal. The first blade starts at 3 o'clock and they go clockwise.
-  /// `blades` is truncated to a whole number.
-  Pinwheel {
-    radius: Prop<f32>,
-    blades: Prop<f32>,
-    #[serde(alias = "balance")]
-    blade_fraction: Prop<f32>,
-  },
-  /// Rectangular blades radiating from the origin out to `radius`, each `blade_width` wide and spaced evenly around the
-  /// circle. The first blade points to 3 o'clock and they go clockwise. `blades` is truncated to a whole number.
-  Propeller {
-    radius: Prop<f32>,
-    blades: Prop<f32>,
-    blade_width: Prop<f32>,
-  },
+  /// Four corners: one at the top and one at the bottom, `height` apart, and one either side, `width` apart. `widest_at`
+  /// is how far down the side corners are, from 0 at the top to 1 at the bottom; at 0.5 it's a diamond. `bow` curves
+  /// all four sides, out when positive and in when negative, by that fraction of a side's length at its middle.
+  Diamond { width: Prop<f32>, height: Prop<f32>, widest_at: Prop<f32>, bow: Prop<f32> },
+  /// `legs` triangles out from the origin to `radius`, spaced evenly around it, each `leg_width` times `radius` across
+  /// where its base crosses the origin, so the legs keep their shape as the radius changes. The first points up and
+  /// they go clockwise, so one leg is a triangle with its base on the origin. `legs` is truncated to a whole number.
+  /// `bow` curves the legs' sides, as a [`ShapeNode::Diamond`]'s, and leaves one leg's base straight.
+  Star { radius: Prop<f32>, legs: Prop<f32>, leg_width: Prop<f32>, bow: Prop<f32> },
+  /// A triangle pointing up with a smaller one cut out of its base: `width` across, `height` from the bottom corners to
+  /// the tip, and the cut reaching `notch` (0 to 1) of the way up.
+  Chevron { width: Prop<f32>, height: Prop<f32>, notch: Prop<f32> },
   /// A closed polygon
   Polygon {
     #[cfg_attr(feature = "ts", ts(as = "Vec<Prop<[f32; 2]>>"))]
@@ -93,7 +93,14 @@ pub struct ShapePose {
   pub handles: Vec<Vec2>,
   /// A ring's hole radius in local space. 0 for other shapes.
   pub hole: f32,
-  /// Outline in scene space. Closed, except for polylines and beziers. A ring's is its outer edge.
+  /// Where the shape's center is going into each transform, in the space the ones before it put the shape in, then in
+  /// scene space after the last. A `Rotate` turns around it.
+  pub pivots: Vec<Vec2>,
+  /// For each transform, the center of a `Mirror`, `Revolve`, or `Divide`, in the space the ones before it put the shape
+  /// in. `None` for other transforms.
+  pub centers: Vec<Option<Vec2>>,
+  /// Outline of the shape itself in scene space, without what a `Mirror`, `Revolve`, or `Divide` does to it. Closed,
+  /// except for polylines and beziers. A ring's is its outer edge.
   pub outline: Vec<Vec2>,
   /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
   pub paths: Vec<Option<ShapePose>>,
@@ -111,22 +118,42 @@ impl Shape {
     let to_scene = self.to_scene(bounds.center(), env)?;
     let edge = self.base.edge(env);
     let wrap = self.wrap(bounds.center(), to_scene, env);
-    let reach = wrap.is_none().then(|| edge.extent().transformed(to_scene));
-    Some(PreparedShape { edge, bounds, to_local: to_scene.inverse(), wrap, reach })
+    let extent = edge.extent();
+    let copies = self
+      .placements(bounds.center(), env)
+      .into_iter()
+      .map(|placed| PreparedCopy {
+        to_local: placed.to_scene.inverse(),
+        reach: wrap.is_none().then(|| extent.transformed(placed.to_scene)),
+        cuts: placed.cuts,
+      })
+      .collect();
+    Some(PreparedShape { edge, bounds, to_local: to_scene.inverse(), wrap, copies })
   }
 
-  /// Outline in scene space. Empty if the shape is collapsed.
-  pub(crate) fn outline(&self, env: &Env) -> Vec<Vec2> {
-    let Some(to_scene) = self.to_scene(self.base.bounds(env).center(), env) else {
+  /// Outline in scene space, as a closed loop for each copy of the shape, with what's cut from it left off. A polyline
+  /// or bezier isn't cut, and its loops don't close. Empty if the shape is collapsed.
+  pub(crate) fn outline(&self, env: &Env) -> Vec<Vec<Vec2>> {
+    let bounds = self.base.bounds(env);
+    if self.to_scene(bounds.center(), env).is_none() {
       return Vec::new();
-    };
-    self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect()
+    }
+    let own = self.base.outline(env);
+    let open = matches!(self.base, ShapeNode::Polyline { .. } | ShapeNode::Bezier { .. });
+    let placed = self.placements(bounds.center(), env).into_iter().map(|placed| {
+      let outline: Vec<Vec2> = own.iter().map(|p| placed.to_scene.transform_point2(*p)).collect();
+      if open { outline } else { placed.cuts.iter().fold(outline, |outline, cut| clipped(&outline, cut)) }
+    });
+    placed.filter(|outline| !outline.is_empty()).collect()
   }
 
   /// `None` if a transform collapses the shape
   pub(crate) fn pose(&self, env: &Env) -> Option<ShapePose> {
     let bounds = self.base.bounds(env);
-    self.to_scene(bounds.center(), env)?;
+    let to_scene = self.to_scene(bounds.center(), env)?;
+    let steps = self.steps(bounds.center(), env);
+    let last = self.transform.last().zip(steps.last());
+    let end = last.map_or(bounds.center(), |(transform, (affine, center))| transform.center(*center, *affine, env));
     let points = match &self.base {
       ShapeNode::Polygon { points } | ShapeNode::Polyline { points } => points.iter().map(|p| p.resolve(env)).collect(),
       ShapeNode::Bezier { points } => points.iter().map(|p| p.point.resolve(env)).collect(),
@@ -141,14 +168,30 @@ impl Shape {
       _ => 0.0,
     };
     Some(ShapePose {
-      transforms: self.affines(bounds.center(), env),
+      transforms: steps.iter().map(|(affine, _)| *affine).collect(),
       bounds,
       points,
       handles,
       hole,
-      outline: self.outline(env),
+      pivots: steps.iter().map(|(_, center)| *center).chain([end]).collect(),
+      centers: self.transform.iter().map(|transform| transform.copy_center(env)).collect(),
+      outline: self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect(),
       paths: self.transform.iter().map(|transform| transform.path().and_then(|path| path.pose(env))).collect(),
     })
+  }
+
+  /// Each copy of the shape its `Mirror`s and `Revolve`s draw, the shape itself first, with what its `Divide`s cut from
+  /// it. Assumes the shape isn't collapsed.
+  fn placements(&self, center: Vec2, env: &Env) -> Vec<Placement> {
+    let mut placed = vec![Placement { to_scene: Affine2::IDENTITY, cuts: Vec::new() }];
+    for (transform, affine) in self.transform.iter().zip(self.affines(center, env)) {
+      let moves = transform.copies(env).unwrap_or_else(|| vec![affine]);
+      placed = placed.iter().flat_map(|placement| moves.iter().map(|moved| placement.moved(*moved))).take(MAX_COPIES).collect();
+      if let Some(cut) = transform.cut(env) {
+        placed.iter_mut().for_each(|placement| placement.cuts.push(cut));
+      }
+    }
+    placed
   }
 
   /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
@@ -177,8 +220,9 @@ impl ShapeNode {
       | Self::Rect { width: a, height: b } => {
         a.is_animated() || b.is_animated()
       }
-      Self::Pinwheel { radius: a, blades: b, blade_fraction: c } | Self::Propeller { radius: a, blades: b, blade_width: c } => {
-        a.is_animated() || b.is_animated() || c.is_animated()
+      Self::Chevron { width: a, height: b, notch: c } => a.is_animated() || b.is_animated() || c.is_animated(),
+      Self::Diamond { width: a, height: b, widest_at: c, bow: d } | Self::Star { radius: a, legs: b, leg_width: c, bow: d } => {
+        a.is_animated() || b.is_animated() || c.is_animated() || d.is_animated()
       }
       Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
@@ -192,8 +236,9 @@ impl ShapeNode {
       | Self::Ring { .. }
       | Self::Ellipse { .. }
       | Self::Rect { .. }
-      | Self::Pinwheel { .. }
-      | Self::Propeller { .. } => {
+      | Self::Diamond { .. }
+      | Self::Star { .. }
+      | Self::Chevron { .. } => {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
       }
@@ -213,11 +258,24 @@ impl ShapeNode {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Pinwheel { radius, blades, blade_fraction } => {
-        pinwheel_outline(whole_blades(blades, env), unit_fraction(blade_fraction, env), radius.resolve(env).max(0.0))
+      Self::Diamond { widest_at, bow, .. } => {
+        let Vec2 { x, y } = self.reach(env);
+        let (bow, side) = (bow.resolve(env), y * (2.0 * unit_fraction(widest_at, env) - 1.0));
+        let corners = [Vec2::new(0.0, -y), Vec2::new(x, side), Vec2::new(0.0, y), Vec2::new(-x, side)];
+        (0..4).flat_map(|i| bowed(corners[i], corners[(i + 1) % 4], bow)).collect()
       }
-      Self::Propeller { radius, blades, blade_width } => {
-        propeller_outline(whole_blades(blades, env), Vec2::new(radius.resolve(env), blade_width.resolve(env)).max(Vec2::ZERO))
+      Self::Star { radius, legs, leg_width, bow } => {
+        let (radius, legs, bow) = (radius.resolve(env), whole_legs(legs, env), bow.resolve(env));
+        let corners = star_outline(legs, radius, radius * leg_width.resolve(env) / 2.0);
+        // one leg's last side is its base, across the origin
+        let sides = if legs == 1 { 2 } else { corners.len() };
+        let side = |i: usize| if i < sides { bowed(corners[i], corners[(i + 1) % corners.len()], bow) } else { vec![corners[i]] };
+        (0..corners.len()).flat_map(side).collect()
+      }
+      Self::Chevron { notch, .. } => {
+        let Vec2 { x, y } = self.reach(env);
+        let notch = y - 2.0 * y * unit_fraction(notch, env);
+        vec![Vec2::new(0.0, -y), Vec2::new(x, y), Vec2::new(0.0, notch), Vec2::new(-x, y)]
       }
       // too few points to enclose anything, so it draws nothing
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
@@ -244,8 +302,10 @@ impl ShapeNode {
       Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
       Self::Ring { inner_radius, thickness } => Vec2::splat(inner_radius.resolve(env).max(0.0) + thickness.resolve(env)),
       Self::Ellipse { rx, ry } => Vec2::new(rx.resolve(env), ry.resolve(env)),
-      Self::Rect { width, height } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
-      Self::Pinwheel { radius, .. } | Self::Propeller { radius, .. } => Vec2::splat(radius.resolve(env).max(0.0)),
+      Self::Rect { width, height }
+      | Self::Diamond { width, height, .. }
+      | Self::Chevron { width, height, .. } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
+      Self::Star { radius, .. } => Vec2::splat(radius.resolve(env).max(0.0)),
       Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
     }
   }
@@ -256,14 +316,7 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ellipse { .. } => Edge::Ellipse(self.reach(env)),
       Self::Ring { inner_radius, thickness } => Edge::Ring { hole: inner_radius.resolve(env), thickness: thickness.resolve(env) },
       Self::Rect { .. } => Edge::Rect(self.reach(env)),
-      Self::Pinwheel { radius, blades, blade_fraction } => Edge::Pinwheel {
-        radius: radius.resolve(env),
-        blades: whole_blades(blades, env),
-        blade_fraction: unit_fraction(blade_fraction, env),
-      },
-      Self::Propeller { radius, blades, blade_width } => {
-        Edge::Propeller { blades: whole_blades(blades, env), size: Vec2::new(radius.resolve(env), blade_width.resolve(env)) }
-      }
+      Self::Diamond { .. } | Self::Star { .. } | Self::Chevron { .. } => Edge::Polygon(self.outline(env)),
       Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
       Self::Polyline { .. } | Self::Bezier { .. } => Edge::Open,
     }
@@ -275,24 +328,56 @@ pub(crate) struct PreparedShape {
   edge: Edge,
   /// Bounds in local space, before transforms
   pub bounds: Bounds,
+  /// Scene to local space for the shape itself, without the copies a `Mirror` or `Revolve` makes
   pub to_local: Affine2,
   wrap: Option<Wrap>,
+  /// Each copy that's drawn, the shape itself first
+  copies: Vec<PreparedCopy>,
+}
+
+impl PreparedShape {
+  /// How much of the sample the shape covers (0 to 1), and the sample's position in the local space of the copy nearest
+  /// it. `None` if the sample is outside every copy.
+  pub(crate) fn cover(&self, at: &Sample) -> Option<(f32, Vec2)> {
+    let pos = self.wrap.map_or(at.pos, |wrap| wrap.apply(at.pos));
+    let mut nearest: Option<(f32, Vec2)> = None;
+    for copy in &self.copies {
+      if copy.reach.is_some_and(|reach| !reach.grown(at.radius).contains(at.pos)) {
+        continue;
+      }
+      let local = copy.to_local.transform_point2(pos);
+      let (distance, gradient) = self.edge.distance(local);
+      // inside the edge and on the kept side of every cut, so the farthest of them
+      let distance = copy.cuts.iter().fold(scene_distance(distance, gradient, &copy.to_local), |distance, cut| distance.max(cut.distance(pos)));
+      if nearest.is_none_or(|(nearest, _)| distance < nearest) {
+        nearest = Some((distance, local));
+      }
+    }
+    let (distance, local) = nearest?;
+    let coverage = coverage(distance, at.radius);
+    (coverage > 0.0).then_some((coverage, local))
+  }
+}
+
+/// One copy of a [`PreparedShape`]
+struct PreparedCopy {
+  to_local: Affine2,
+  /// In scene space
+  cuts: Vec<Cut>,
   /// Everything it can cover, in scene space. `None` when it wraps around a `Sequence`.
   reach: Option<Bounds>,
 }
 
-impl PreparedShape {
-  /// How much of the sample the shape covers (0 to 1), and the sample's position in local space. `None` if the sample is
-  /// outside the shape.
-  pub(crate) fn cover(&self, at: &Sample) -> Option<(f32, Vec2)> {
-    if self.reach.is_some_and(|reach| !reach.grown(at.radius).contains(at.pos)) {
-      return None;
-    }
-    let pos = self.wrap.map_or(at.pos, |wrap| wrap.apply(at.pos));
-    let local = self.to_local.transform_point2(pos);
-    let (distance, gradient) = self.edge.distance(local);
-    let coverage = coverage(scene_distance(distance, gradient, &self.to_local), at.radius);
-    (coverage > 0.0).then_some((coverage, local))
+/// Where one copy of a shape is drawn, from local to scene space, and what's cut from it in scene space
+struct Placement {
+  to_scene: Affine2,
+  cuts: Vec<Cut>,
+}
+
+impl Placement {
+  /// The same copy, and its cuts, moved on by `affine`
+  fn moved(&self, affine: Affine2) -> Self {
+    Self { to_scene: affine * self.to_scene, cuts: self.cuts.iter().map(|cut| cut.transformed(affine)).collect() }
   }
 }
 
@@ -301,9 +386,6 @@ enum Edge {
   Ellipse(Vec2),
   Ring { hole: f32, thickness: f32 },
   Rect(Vec2),
-  Pinwheel { radius: f32, blades: u32, blade_fraction: f32 },
-  /// `size` is a blade's length and width
-  Propeller { blades: u32, size: Vec2 },
   Polygon(Vec<Vec2>),
   /// A polyline or bezier, which has no inside
   Open,
@@ -316,22 +398,18 @@ impl Edge {
       Self::Ellipse(reach) => ellipse_distance(*reach, p),
       Self::Ring { hole, thickness } => ring_distance(*hole, *thickness, p),
       Self::Rect(reach) => rect_distance(*reach, p),
-      Self::Pinwheel { radius, blades, blade_fraction } => pinwheel_distance(*radius, *blades, *blade_fraction, p),
-      Self::Propeller { blades, size } => propeller_distance(*blades, *size, p),
       Self::Polygon(points) => polygon_distance(points, p),
       Self::Open => (f32::INFINITY, Vec2::X),
     }
   }
 
-  /// A box around everything inside the edge. Wider than the shape's bounds for a propeller, whose blade corners reach
-  /// past its radius.
+  /// A box around everything inside the edge. Wider than the shape's bounds for a star or diamond with its sides
+  /// bowed out.
   fn extent(&self) -> Bounds {
     let around = |reach: Vec2| Bounds::new(-reach, reach);
     match self {
       Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
       Self::Ring { hole, thickness } => around(Vec2::splat(hole.max(0.0) + thickness)),
-      Self::Pinwheel { radius, .. } => around(Vec2::splat(radius.max(0.0))),
-      Self::Propeller { size, .. } => around(Vec2::splat(size.x.hypot(size.y / 2.0))),
       Self::Polygon(points) => bounds_of(points.iter().copied()),
       Self::Open => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
@@ -417,80 +495,71 @@ fn ring_distance(hole: f32, thickness: f32, p: Vec2) -> (f32, Vec2) {
   if hole <= 0.0 || to_outside > to_hole { (to_outside, out) } else { (to_hole, -out) }
 }
 
-fn whole_blades(blades: &Prop<f32>, env: &Env) -> u32 {
-  blades.resolve_truncated(env).floor().clamp(0.0, MAX_BLADES) as u32
+fn whole_legs(legs: &Prop<f32>, env: &Env) -> u32 {
+  legs.resolve_truncated(env).floor().clamp(0.0, MAX_LEGS) as u32
 }
 
-fn unit_fraction(blade_fraction: &Prop<f32>, env: &Env) -> f32 {
-  blade_fraction.resolve(env).clamp(0.0, 1.0)
+fn unit_fraction(fraction: &Prop<f32>, env: &Env) -> f32 {
+  fraction.resolve(env).clamp(0.0, 1.0)
 }
 
-/// Each blade as a wedge: out from the center, along an arc, and back
-fn pinwheel_outline(blades: u32, blade_fraction: f32, reach: f32) -> Vec<Vec2> {
-  let share = std::f32::consts::TAU / blades.max(1) as f32;
-  let width = share * blade_fraction;
-  let steps = (ROUND_OUTLINE_POINTS as u32 / (2 * blades.max(1))).max(1);
-  (0..blades)
-    .flat_map(|blade| {
-      let start = blade as f32 * share;
-      let end = (0..=steps).map(move |step| Vec2::from_angle(start + width * step as f32 / steps as f32) * reach);
-      std::iter::once(Vec2::ZERO).chain(end)
-    })
-    .collect()
-}
-
-/// Signed distance to the nearest blade edge, cut off at the rim. Each side edge is a ray from the center: within 90° of
-/// the ray the distance is `r * sin(angle)`, and beyond that the nearest point is the center itself.
-fn pinwheel_distance(radius: f32, blades: u32, blade_fraction: f32, p: Vec2) -> (f32, Vec2) {
-  if blades == 0 || radius <= 0.0 {
-    return (f32::INFINITY, Vec2::X);
+/// The points along a side from `from` toward `to`, leaving out `to` so that sides can be joined end to end. With a
+/// `bow`, the side curves away from the origin (or toward it, when negative) by that fraction of its length at its
+/// middle.
+fn bowed(from: Vec2, to: Vec2, bow: f32) -> Vec<Vec2> {
+  if bow == 0.0 {
+    return vec![from];
   }
-  let share = std::f32::consts::TAU / blades as f32;
-  let width = share * blade_fraction;
-  // angle from the center line of the nearest blade
-  let around = (p.y.atan2(p.x) - width / 2.0 + share / 2.0).rem_euclid(share) - share / 2.0;
-  let right = std::f32::consts::FRAC_PI_2;
-  let (sin, cos) = (around.abs() - width / 2.0).clamp(-right, right).sin_cos();
-  let out = p.normalize_or(Vec2::X);
-  let sides = (p.length() * sin, out * sin + out.perp() * around.signum() * cos);
-  // inside both the wedge and the circle, so the farther of the two edges
-  let rim = (p.length() - radius, out);
-  if rim.0 > sides.0 { rim } else { sides }
-}
-
-/// Each blade as a rectangle: out from the center along one side, across the end, and back along the other.
-/// `size` is a blade's length and width.
-fn propeller_outline(blades: u32, size: Vec2) -> Vec<Vec2> {
-  let share = std::f32::consts::TAU / blades.max(1) as f32;
-  let side = size.y / 2.0;
-  (0..blades)
-    .flat_map(|blade| {
-      let turn = Vec2::from_angle(blade as f32 * share);
-      let corners = [(0.0, -side), (size.x, -side), (size.x, side), (0.0, side)].map(|(x, y)| turn.rotate(Vec2::new(x, y)));
-      std::iter::once(Vec2::ZERO).chain(corners)
-    })
-    .collect()
-}
-
-/// Signed distance to the nearest blade. The blades nearest by angle, and the ones either side where they overlap near
-/// the center, are each a rectangle from the center out along their angle. `size` is a blade's length and width.
-fn propeller_distance(blades: u32, size: Vec2, p: Vec2) -> (f32, Vec2) {
-  if blades == 0 || size.min_element() <= 0.0 {
-    return (f32::INFINITY, Vec2::X);
-  }
-  let share = std::f32::consts::TAU / blades as f32;
-  let nearest = (p.y.atan2(p.x) / share).round();
-  [-1.0, 0.0, 1.0]
+  let middle = (from + to) / 2.0;
+  let across = (to - from).perp();
+  let out = if across.dot(middle) < 0.0 { -across } else { across };
+  // a quadratic bezier reaches halfway to its control point at its middle
+  let control = middle + out * bow * 2.0;
+  (0..BOW_STEPS)
     .map(|step| {
-      let turn = Vec2::from_angle((nearest + step) * share);
-      // into the blade's own space, where it runs along x from the center
-      let local = Vec2::new(turn.dot(p), turn.perp_dot(p)) - Vec2::new(size.x / 2.0, 0.0);
-      let (distance, gradient) = rect_distance(size / 2.0, local);
-      (distance, turn.rotate(gradient))
+      let t = step as f32 / BOW_STEPS as f32;
+      from.lerp(control, t).lerp(control.lerp(to, t), t)
     })
-    .into_iter()
-    .min_by(|a, b| a.0.total_cmp(&b.0))
-    .unwrap()
+    .collect()
+}
+
+/// Each leg's tip, then where its side meets the next leg's, going clockwise from the leg that points up. `side` is
+/// half a leg's width. One leg has no neighbor, so it's a triangle with its base across the origin.
+fn star_outline(legs: u32, radius: f32, side: f32) -> Vec<Vec2> {
+  if legs == 0 || radius <= 0.0 {
+    return Vec::new();
+  }
+  let up = -std::f32::consts::FRAC_PI_2;
+  let share = std::f32::consts::TAU / legs as f32;
+  if legs == 1 {
+    return vec![Vec2::new(-side, 0.0), Vec2::new(0.0, -radius), Vec2::new(side, 0.0)];
+  }
+  // a leg's side runs from `side` across the origin to its tip, so it crosses the line halfway to the next leg where
+  // `cos / radius + sin / side` reaches 1 over the distance out
+  let half = share / 2.0;
+  let between = if side > 0.0 { 1.0 / (half.cos() / radius + half.sin() / side) } else { 0.0 };
+  (0..legs)
+    .flat_map(|leg| {
+      let angle = up + leg as f32 * share;
+      [Vec2::from_angle(angle) * radius, Vec2::from_angle(angle + half) * between]
+    })
+    .collect()
+}
+
+/// A closed outline with the part on the far side of `cut` taken off (Sutherland–Hodgman)
+fn clipped(outline: &[Vec2], cut: &Cut) -> Vec<Vec2> {
+  let mut kept = Vec::with_capacity(outline.len() + 1);
+  for (i, &to) in outline.iter().enumerate() {
+    let from = outline[(i + outline.len() - 1) % outline.len()];
+    let (from_distance, to_distance) = (cut.distance(from), cut.distance(to));
+    if (from_distance <= 0.0) != (to_distance <= 0.0) {
+      kept.push(from.lerp(to, from_distance / (from_distance - to_distance)));
+    }
+    if to_distance <= 0.0 {
+      kept.push(to);
+    }
+  }
+  kept
 }
 
 fn rect_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
@@ -682,170 +751,230 @@ mod tests {
     assert!(pose.outline.iter().all(|p| (p.length() - 6.0).abs() < 1e-4));
   }
 
-  fn pinwheel(blades: f32) -> Shape {
-    pinwheel_with(blades, 0.5)
-  }
-
-  fn pinwheel_with(blades: f32, blade_fraction: f32) -> Shape {
-    Shape::new(ShapeNode::Pinwheel { radius: 2000.0.into(), blades: blades.into(), blade_fraction: blade_fraction.into() })
-  }
-
-  /// How much of a point this many degrees clockwise from the right is covered, far from the middle
-  fn covered_at(shape: &Shape, degrees: f32) -> f32 {
-    let at = Vec2::from_angle(degrees.to_radians()) * 1000.0;
-    covered(shape, at.x, at.y, 0.5)
+  fn diamond(widest_at: f32) -> Shape {
+    Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), widest_at: widest_at.into(), bow: 0.0.into() })
   }
 
   #[test]
-  fn every_other_stretch_of_a_pinwheel_is_a_blade() {
-    let shape = pinwheel(4.0);
-    for (degrees, filled) in [(22.5, 1.0), (67.5, 0.0), (112.5, 1.0), (157.5, 0.0), (202.5, 1.0), (247.5, 0.0), (292.5, 1.0), (337.5, 0.0)] {
-      assert_eq!(covered_at(&shape, degrees), filled, "at {degrees} degrees");
+  fn a_diamond_is_widest_halfway_down() {
+    let shape = diamond(0.5);
+    for (x, y) in [(0.0, 0.0), (9.0, 0.0), (-9.0, 0.0), (0.0, 9.0), (0.0, -9.0)] {
+      assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
     }
+    assert_eq!(covered(&shape, 6.0, 6.0, 0.1), 0.0);
+    assert_eq!(covered(&shape, -6.0, -6.0, 0.1), 0.0);
   }
 
   #[test]
-  fn a_pinwheels_edges_run_straight_out_of_the_middle() {
-    let shape = pinwheel(4.0);
-    for degrees in [0.0, 45.0, 90.0, 315.0] {
-      assert!((covered_at(&shape, degrees) - 0.5).abs() < 0.01, "at {degrees} degrees");
+  fn a_diamonds_widest_point_moves_up_and_down() {
+    let shape = diamond(0.25);
+    assert_eq!(covered(&shape, 9.0, -5.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 9.0, 0.0, 0.1), 0.0);
+    assert_eq!(covered(&shape, 0.0, 9.0, 0.1), 1.0);
+  }
+
+  #[test]
+  fn a_diamonds_sides_bow() {
+    let bowed = Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), widest_at: 0.5.into(), bow: 0.25.into() });
+    assert_eq!(covered(&diamond(0.5), 6.0, 6.0, 0.1), 0.0);
+    assert_eq!(covered(&bowed, 6.0, 6.0, 0.1), 1.0);
+  }
+
+  fn star(legs: f32) -> Shape {
+    bowed_star(legs, 0.0)
+  }
+
+  fn bowed_star(legs: f32, bow: f32) -> Shape {
+    Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: legs.into(), leg_width: 0.4.into(), bow: bow.into() })
+  }
+
+  #[test]
+  fn a_stars_first_leg_points_up_and_the_rest_go_around() {
+    let shape = star(5.0);
+    let at = |degrees: f32, length: f32| Vec2::from_angle((degrees - 90.0).to_radians()) * length;
+    for leg in 0..5 {
+      let tip = at(leg as f32 * 72.0, 18.0);
+      assert_eq!(covered(&shape, tip.x, tip.y, 0.1), 1.0, "leg {leg}");
+      let between = at(leg as f32 * 72.0 + 36.0, 18.0);
+      assert_eq!(covered(&shape, between.x, between.y, 0.1), 0.0, "after leg {leg}");
     }
-    // half a sample's width to one side of the edge, however far out that is
-    assert!((covered(&shape, 500.0, 0.25, 0.5) - 0.75).abs() < 0.01);
-    assert!((covered(&shape, 500.0, -0.25, 0.5) - 0.25).abs() < 0.01);
+    assert_eq!(covered(&shape, 0.0, 0.0, 0.1), 1.0);
   }
 
   #[test]
-  fn a_pinwheel_of_one_blade_is_half_of_everything() {
-    assert_eq!(covered_at(&pinwheel(1.0), 90.0), 1.0);
-    assert_eq!(covered_at(&pinwheel(1.0), 270.0), 0.0);
+  fn a_star_of_one_leg_is_a_triangle_on_the_origin() {
+    let shape = star(1.0);
+    assert_eq!(covered(&shape, 0.0, -10.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 3.5, -1.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, 5.0, 0.1), 0.0);
+    assert_eq!(covered(&shape, 5.0, -1.0, 0.1), 0.0);
   }
 
   #[test]
-  fn a_pinwheel_with_no_blades_draws_nothing() {
+  fn a_stars_sides_bow_out_and_in_but_one_legs_base_stays_straight() {
+    // either side of the middle of the one leg's right-hand side, which runs from the tip at (0, -20) to (4, 0)
+    let out = Vec2::new(20.0, -4.0).normalize();
+    let (beyond, within) = (Vec2::new(2.0, -10.0) + out * 2.0, Vec2::new(2.0, -10.0) - out);
+    assert_eq!(covered(&bowed_star(1.0, 0.0), beyond.x, beyond.y, 0.1), 0.0);
+    assert_eq!(covered(&bowed_star(1.0, 0.25), beyond.x, beyond.y, 0.1), 1.0);
+    assert_eq!(covered(&bowed_star(1.0, 0.0), within.x, within.y, 0.1), 1.0);
+    // any further in, and the two sides cross
+    assert_eq!(covered(&bowed_star(1.0, -0.07), within.x, within.y, 0.1), 0.0);
+    assert_eq!(covered(&bowed_star(1.0, 0.25), 0.0, 1.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_star_of_two_legs_meets_at_their_bases() {
+    let shape = star(2.0);
+    for (x, y) in [(3.5, 0.0), (-3.5, 0.0), (0.0, 19.0), (0.0, -19.0)] {
+      assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
+    }
+    assert_eq!(covered(&shape, 4.5, 0.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_star_with_no_legs_draws_nothing() {
     let params = Params::new();
-    assert_eq!(covered_at(&pinwheel(0.0), 22.5), 0.0);
-    assert_eq!(pinwheel(0.0).pose(&env(0.0, &params)).unwrap().outline, vec![]);
+    assert_eq!(covered(&star(0.0), 0.0, 0.0, 0.5), 0.0);
+    assert_eq!(star(0.0).pose(&env(0.0, &params)).unwrap().outline, vec![]);
+    assert_eq!(star(1e9).pose(&env(0.0, &params)).unwrap().outline.len(), MAX_LEGS as usize * 2);
   }
 
   #[test]
-  fn a_fraction_of_a_blade_is_dropped() {
-    assert_eq!(covered_at(&pinwheel(1.9), 90.0), 1.0);
-    assert_eq!(covered_at(&pinwheel(1.9), 270.0), 0.0);
-  }
-
-  #[test]
-  fn a_pinwheels_blade_fraction_is_its_share_of_each_slice() {
-    let shape = pinwheel_with(4.0, 0.25);
-    for (degrees, filled) in [(5.0, 1.0), (17.0, 1.0), (30.0, 0.0), (85.0, 0.0), (95.0, 1.0), (120.0, 0.0)] {
-      assert_eq!(covered_at(&shape, degrees), filled, "at {degrees} degrees");
+  fn a_chevron_is_a_triangle_with_its_base_cut_in() {
+    let shape = Shape::new(ShapeNode::Chevron { width: 20.0.into(), height: 20.0.into(), notch: 0.5.into() });
+    for (x, y) in [(0.0, -5.0), (9.0, 8.5), (-9.0, 8.5)] {
+      assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
     }
-    assert!((covered_at(&shape, 22.5) - 0.5).abs() < 0.01);
-  }
-
-  #[test]
-  fn past_a_right_angle_from_a_blades_edge_the_middle_is_nearest() {
-    let behind = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * (blade_fraction + 1.0)) * 10.0;
-    let middle = |blade_fraction: f32| Vec2::from_angle(std::f32::consts::PI * blade_fraction) * 10.0;
-    assert!((pinwheel_distance(100.0, 1, 0.1, behind(0.1)).0 - 10.0).abs() < 1e-4);
-    assert!((pinwheel_distance(100.0, 1, 0.9, middle(0.9)).0 + 10.0).abs() < 1e-4);
-    assert_eq!(covered(&pinwheel_with(1.0, 0.9), 10.0, -0.1, 0.05), 0.0);
-    assert_eq!(covered(&pinwheel_with(1.0, 0.9), -10.0, 0.0, 0.05), 1.0);
-  }
-
-  #[test]
-  fn a_pinwheel_turns_with_a_rotate() {
-    let shape = pinwheel(4.0).transform(Transform::Rotate(45.0.into()));
-    assert_eq!(covered_at(&shape, 22.5), 0.0);
-    assert_eq!(covered_at(&shape, 67.5), 1.0);
-  }
-
-  #[test]
-  fn a_pinwheel_can_be_moved_to_a_new_middle() {
-    let shape = pinwheel(4.0).transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-    assert_eq!(covered(&shape, 60.0, 29.0, 0.5), 1.0);
-    assert_eq!(covered(&shape, 54.0, 35.0, 0.5), 0.0);
-  }
-
-  #[test]
-  fn a_pinwheel_is_as_big_as_its_radius() {
-    let params = Params::new();
-    let shape = Shape::new(ShapeNode::Pinwheel { radius: 20.0.into(), blades: 4.0.into(), blade_fraction: 0.5.into() });
-    let pose = shape.pose(&env(0.0, &params)).unwrap();
-    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-20.0), Vec2::splat(20.0)));
-    assert_eq!(pose.outline.iter().filter(|point| **point == Vec2::ZERO).count(), 4);
-    assert!(pose.outline.iter().all(|point| *point == Vec2::ZERO || (point.length() - 20.0).abs() < 1e-3));
-    let out = |length: f32| Vec2::from_angle(22.5f32.to_radians()) * length;
-    assert_eq!(covered(&shape, out(19.0).x, out(19.0).y, 0.5), 1.0);
-    assert_eq!(covered(&shape, out(21.0).x, out(21.0).y, 0.5), 0.0);
-    assert!((covered(&shape, out(20.0).x, out(20.0).y, 0.5) - 0.5).abs() < 1e-3);
-  }
-
-  #[test]
-  fn a_pinwheel_with_no_radius_draws_nothing() {
-    let shape = Shape::new(ShapeNode::Pinwheel { radius: 0.0.into(), blades: 4.0.into(), blade_fraction: 0.5.into() });
-    assert_eq!(covered(&shape, 0.0, 0.0, 0.5), 0.0);
-  }
-
-  fn propeller(blades: f32, length: f32, width: f32) -> Shape {
-    Shape::new(ShapeNode::Propeller { radius: length.into(), blades: blades.into(), blade_width: width.into() })
-  }
-
-  #[test]
-  fn a_propellers_blades_are_rectangles_out_from_the_middle() {
-    let shape = propeller(4.0, 20.0, 4.0);
-    // along each blade, and to either side of one
-    for (x, y) in [(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0), (0.0, -10.0), (10.0, 1.5), (19.0, -1.5)] {
-      assert_eq!(covered(&shape, x, y, 0.5), 1.0, "at ({x}, {y})");
+    for (x, y) in [(0.0, 5.0), (0.0, 9.0), (8.0, -8.0)] {
+      assert_eq!(covered(&shape, x, y, 0.1), 0.0, "at ({x}, {y})");
     }
-    // past a blade's side, past its end, and between blades
-    for (x, y) in [(10.0, 3.0), (21.0, 0.0), (10.0, 10.0)] {
-      assert_eq!(covered(&shape, x, y, 0.5), 0.0, "at ({x}, {y})");
-    }
-    assert!((covered(&shape, 10.0, 2.0, 0.5) - 0.5).abs() < 1e-3);
-    assert!((covered(&shape, 20.0, 0.0, 0.5) - 0.5).abs() < 1e-3);
+  }
+
+  /// A circle of radius 2 moved to `at`, then `transform`
+  fn dot(at: (f32, f32), transform: Transform) -> Shape {
+    Shape::new(ShapeNode::circle(2.0)).transform(Transform::Translate(Vec2::from(at).into())).transform(transform)
+  }
+
+  fn mirror(center: (f32, f32), rotation: f32) -> Transform {
+    Transform::Mirror { center: Vec2::from(center).into(), rotation: rotation.into() }
+  }
+
+  fn revolve(center: (f32, f32), angle: f32, count: f32) -> Transform {
+    Transform::Revolve { center: Vec2::from(center).into(), angle: angle.into(), count: count.into() }
+  }
+
+  fn divide(center: (f32, f32), rotation: f32) -> Transform {
+    Transform::Divide { center: Vec2::from(center).into(), rotation: rotation.into() }
   }
 
   #[test]
-  fn a_propellers_blade_keeps_its_width_however_far_out() {
-    let shape = propeller(3.0, 100.0, 2.0);
-    let along = Vec2::from_angle(120f32.to_radians());
-    for length in [5.0, 50.0, 95.0] {
-      let side = along * length + along.perp() * 0.8;
-      assert_eq!(covered(&shape, side.x, side.y, 0.1), 1.0, "at {length}");
-      let past = along * length + along.perp() * 1.2;
-      assert_eq!(covered(&shape, past.x, past.y, 0.1), 0.0, "at {length}");
+  fn a_mirror_draws_the_shape_and_its_reflection() {
+    let shape = dot((10.0, 0.0), mirror((0.0, 0.0), 0.0));
+    assert_eq!(covered(&shape, 10.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, -10.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, 0.0, 0.1), 0.0);
+    // at 90 degrees, the line runs across
+    let turned = dot((0.0, 10.0), mirror((0.0, 0.0), 90.0));
+    assert_eq!(covered(&turned, 0.0, -10.0, 0.1), 1.0);
+    assert_eq!(covered(&turned, -10.0, 0.0, 0.1), 0.0);
+    // the line goes through its center
+    let moved = dot((10.0, 0.0), mirror((4.0, 0.0), 0.0));
+    assert_eq!(covered(&moved, -2.0, 0.0, 0.1), 1.0);
+  }
+
+  #[test]
+  fn a_revolve_spreads_its_copies_over_its_angle() {
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 180.0, 3.0));
+    let at = |degrees: f32| Vec2::from_angle(degrees.to_radians()) * 10.0;
+    for degrees in [0.0, 60.0, 120.0] {
+      assert_eq!(covered(&shape, at(degrees).x, at(degrees).y, 0.1), 1.0, "at {degrees} degrees");
+    }
+    for degrees in [30.0, 180.0, 240.0] {
+      assert_eq!(covered(&shape, at(degrees).x, at(degrees).y, 0.1), 0.0, "at {degrees} degrees");
     }
   }
 
   #[test]
-  fn a_propeller_is_as_big_as_its_radius() {
+  fn a_revolve_of_none_draws_nothing() {
     let params = Params::new();
-    let pose = propeller(2.0, 20.0, 4.0).pose(&env(0.0, &params)).unwrap();
-    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-20.0), Vec2::splat(20.0)));
-    assert_eq!(pose.outline.len(), 10);
-    assert!(pose.outline.iter().all(|point| point.x.abs() <= 20.0 + 1e-4 && point.y.abs() <= 2.0 + 1e-4));
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 0.0));
+    assert_eq!(covered(&shape, 10.0, 0.0, 0.1), 0.0);
+    assert_eq!(shape.outline(&env(0.0, &params)), Vec::<Vec<Vec2>>::new());
   }
 
   #[test]
-  fn a_propeller_blade_wider_than_its_radius_is_drawn_all_the_way_across() {
-    // 10 long and 30 wide, so it reaches 15 to either side, past its radius
-    let shape = propeller(1.0, 10.0, 30.0);
-    assert_eq!(covered(&shape, 5.0, 14.0, 0.5), 1.0);
+  fn a_divide_keeps_one_side_of_its_line() {
+    let shape = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0));
+    assert_eq!(covered(&shape, 5.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, -5.0, 0.0, 0.1), 0.0);
+    assert!((covered(&shape, 0.0, 0.0, 0.5) - 0.5).abs() < 1e-4);
+    // at 90 degrees the bottom is kept, and the edge of the circle still bounds it
+    let turned = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 90.0));
+    assert_eq!(covered(&turned, 0.0, 5.0, 0.1), 1.0);
+    assert_eq!(covered(&turned, 0.0, -5.0, 0.1), 0.0);
+    assert_eq!(covered(&turned, 0.0, 11.0, 0.1), 0.0);
   }
 
   #[test]
-  fn a_propeller_with_no_blades_or_width_draws_nothing() {
-    let params = Params::new();
-    assert_eq!(covered(&propeller(0.0, 20.0, 4.0), 10.0, 0.0, 0.5), 0.0);
-    assert_eq!(covered(&propeller(4.0, 20.0, 0.0), 10.0, 0.0, 0.5), 0.0);
-    assert_eq!(propeller(0.0, 20.0, 4.0).pose(&env(0.0, &params)).unwrap().outline, vec![]);
+  fn transforms_after_a_copy_or_cut_move_all_of_it() {
+    let copies = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).transform(Transform::Translate(Vec2::new(100.0, 0.0).into()));
+    assert_eq!(covered(&copies, 110.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&copies, 90.0, 0.0, 0.1), 1.0);
+
+    let cut = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0)).transform(Transform::Scale(2.0.into()));
+    assert_eq!(covered(&cut, 15.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&cut, -15.0, 0.0, 0.1), 0.0);
+    // still in scene units across the cut, however it's scaled
+    assert!((covered(&cut, 0.25, 0.0, 0.5) - 0.75).abs() < 1e-4);
   }
 
   #[test]
-  fn a_pinwheel_has_only_so_many_blades() {
+  fn a_divide_after_a_revolve_cuts_every_copy() {
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).transform(divide((10.0, 0.0), 0.0));
+    assert_eq!(covered(&shape, 11.0, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 9.0, 0.0, 0.1), 0.0);
+    assert_eq!(covered(&shape, -10.0, 0.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_rotate_after_a_revolve_turns_around_its_center() {
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).transform(Transform::Rotate(90.0.into()));
+    assert_eq!(covered(&shape, 0.0, 10.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, -10.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 10.0, 0.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_pose_has_where_each_transform_turns_around() {
     let params = Params::new();
-    assert_eq!(pinwheel(1e9).pose(&env(0.0, &params)).unwrap().outline.len(), MAX_BLADES as usize * 3);
+    let pose = dot((10.0, 5.0), mirror((0.0, 0.0), 0.0)).pose(&env(0.0, &params)).unwrap();
+    // into the translate, into the mirror, then on its line
+    let expected = [Vec2::ZERO, Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
+    assert_eq!(pose.pivots.len(), expected.len());
+    assert!(pose.pivots.iter().zip(expected).all(|(pivot, expected)| pivot.abs_diff_eq(expected, 1e-4)), "{:?}", pose.pivots);
+    assert_eq!(pose.transforms[1], Affine2::IDENTITY);
+    assert_eq!(pose.centers, vec![None, Some(Vec2::ZERO)]);
+    assert!(pose.outline.iter().all(|point| point.x > 0.0), "the shape itself, without its reflection");
+  }
+
+  #[test]
+  fn a_sample_takes_the_local_position_of_the_copy_it_is_in() {
+    let params = Params::new();
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).prepare(&env(0.0, &params)).unwrap();
+    let (_, local) = shape.cover(&Sample::new(Vec2::new(-10.0, 1.0), 0.1)).unwrap();
+    assert!(local.abs_diff_eq(Vec2::new(0.0, -1.0), 1e-4));
+  }
+
+  #[test]
+  fn an_outline_has_a_loop_for_each_copy_with_cuts_taken_off() {
+    let params = Params::new();
+    let frame = env(0.0, &params);
+    assert_eq!(dot((10.0, 0.0), revolve((0.0, 0.0), 180.0, 3.0)).outline(&frame).len(), 3);
+    let cut = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0)).outline(&frame);
+    assert_eq!(cut.len(), 1);
+    assert!(cut[0].iter().all(|point| point.x >= -1e-4));
+    assert!(cut[0].iter().any(|point| point.abs_diff_eq(Vec2::new(0.0, 10.0), 1e-3)));
   }
 
   fn polyline(points: &[(f32, f32)]) -> ShapeNode {

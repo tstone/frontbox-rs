@@ -197,7 +197,7 @@ fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::Params;
+  use crate::scene::{Params, Prop};
   use crate::scene::Transform;
   use crate::scene::value::tests::env;
 
@@ -272,6 +272,17 @@ mod tests {
       .transform(Transform::Rotate(90.0.into()));
     assert_eq!(color(&fill, 1.0, -0.5), RED);
     assert_eq!(color(&fill, 1.0, 0.5), BLUE);
+  }
+
+  #[test]
+  fn a_fill_ignores_transforms_that_copy_or_cut_a_shape() {
+    let center = || Prop::Fixed(Vec2::ZERO);
+    let fill = red_to_blue()
+      .transform(Transform::Mirror { center: center(), rotation: 0.0.into() })
+      .transform(Transform::Revolve { center: center(), angle: 180.0.into(), count: 3.0.into() })
+      .transform(Transform::Divide { center: center(), rotation: 0.0.into() });
+    assert_eq!(color(&fill, -0.5, 0.0), RED);
+    assert_eq!(color(&fill, 0.5, 0.0), BLUE);
   }
 
   #[test]

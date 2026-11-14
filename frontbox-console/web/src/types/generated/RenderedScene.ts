@@ -26,9 +26,9 @@ colors: Array<number>,
  */
 area: RenderedArea, 
 /**
- * Where each layer is drawn, as a closed loop of points in scene units
+ * Where each layer is drawn, as closed loops of points in scene units: one for each copy of its shape
  */
-outlines: Array<Array<[number, number]>>, 
+outlines: Array<Array<Array<[number, number]>>>, 
 /**
  * Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
  */
@@ -36,7 +36,7 @@ shapes: Array<RenderedShape | null>,
 /**
  * Where each layer's mask is drawn. Empty for a layer without one.
  */
-mask_outlines: Array<Array<[number, number]>>, 
+mask_outlines: Array<Array<Array<[number, number]>>>, 
 /**
  * Each layer's mask's shape as it stands. `None` for a layer without one.
  */

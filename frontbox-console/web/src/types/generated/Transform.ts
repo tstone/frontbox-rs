@@ -2,6 +2,10 @@
 import type { Prop } from "./Prop";
 
 /**
- * Moves, rotates, or scales a node
+ * Moves, rotates, scales, copies, or cuts a node
+ *
+ * `Mirror`, `Revolve`, and `Divide` are for shapes. Their `center` is in the space the transforms before them put the
+ * shape in, and the transforms after them apply to everything they leave, so `[Revolve(..), Translate(..)]` moves
+ * every copy. A sweep follows only the shape itself, and a fill ignores them.
  */
-export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<number> } | { "Fit": string };
+export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<number> } | { "Fit": string } | { "Mirror": { center: Prop<[number, number]>, rotation: Prop<number>, } } | { "Revolve": { center: Prop<[number, number]>, angle: Prop<number>, count: Prop<number>, } } | { "Divide": { center: Prop<[number, number]>, rotation: Prop<number>, } };

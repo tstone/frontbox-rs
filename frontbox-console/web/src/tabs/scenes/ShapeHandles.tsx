@@ -5,7 +5,7 @@ import type { RenderedShape } from '../../types/generated/RenderedShape'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { COPY_KINDS, field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type CopyKind, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['region']>
 
@@ -15,7 +15,7 @@ type Affine = RenderedShape['transforms'][number]
 /** A grab handle: where it is, and what dragging it does */
 export type Handle = {
   label: string
-  kind: 'move' | 'scale' | 'size' | 'point' | 'bezier'
+  kind: 'move' | 'scale' | 'size' | 'point' | 'bezier' | 'center'
   cursor: string
   /** Where it sits in the scene */
   at: Vec2
@@ -160,11 +160,14 @@ export function Grip(props: { handle: Handle; space: PreviewSpace }) {
   )
 }
 
-/** The topmost layer with a region at a point on what's on show, which only some of a scene's layers may be on */
-export function layerUnder(scene: Scene, outlines: Vec2[][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean) {
+/**
+ * The topmost layer with a region at a point on what's on show, which only some of a scene's layers may be on. Each
+ * layer's outline is a loop for each copy of its shape.
+ */
+export function layerUnder(scene: Scene, outlines: Vec2[][][], point: Vec2, shown: (layer: Scene['layers'][number]) => boolean) {
   for (let index = scene.layers.length - 1; index >= 0; index--) {
     const { region, hidden } = scene.layers[index]
-    if (region && !hidden && shown(scene.layers[index]) && encloses(outlines[index] ?? [], point)) return index
+    if (region && !hidden && shown(scene.layers[index]) && (outlines[index] ?? []).some((loop) => encloses(loop, point))) return index
   }
   return null
 }
@@ -265,8 +268,14 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
     }
   }
 
-  const center = middle(pose)
-  const handles = [moveHandle(list, pose, write, center), scaleHandle(list, pose, write, [right, top])]
+  /** Width and height of a shape that's drawn in a box, from the corner at the right of its base and from its top */
+  const boxed = (shaped: Lens<{ width: Prop<number>; height: Prop<number> }>, widest: number) => [
+    size('Width', field(shaped, 'width'), [right, widest], (local) => across(local) * 2),
+    size('Height', field(shaped, 'height'), [0, top], (local) => down(local) * 2),
+  ]
+  const bottom = pose.max[1]
+
+  const handles = [moveHandle(list, pose, write), scaleHandle(list, pose, write, [right, top]), ...centerHandles(list, pose, write)]
   if ('Circle' in current) {
     handles.push(size('Radius', field(variant(base, 'Circle'), 'radius'), [right, 0], across))
   } else if ('Ring' in current) {
@@ -284,16 +293,15 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
       size('Width', field(rect, 'width'), [right, 0], (local) => across(local) * 2),
       size('Height', field(rect, 'height'), [0, top], (local) => down(local) * 2),
     )
-  } else if ('Pinwheel' in current) {
-    handles.push(size('Radius', field(variant(base, 'Pinwheel'), 'radius'), [right, 0], across))
-  } else if ('Propeller' in current) {
-    const propeller = variant(base, 'Propeller')
-    // the first blade runs out along x, and its outline's fourth point is the far corner of its side below
-    const side = pose.outline.length > 3 ? Math.abs(toLocal(pose.outline[3])[1]) : 0
-    handles.push(
-      size('Radius', field(propeller, 'radius'), [right, 0], across),
-      { ...size('Blade width', field(propeller, 'blade_width'), [right / 2, side], (local) => down(local) * 2), cursor: 'ns-resize' },
-    )
+  } else if ('Chevron' in current) {
+    handles.push(...boxed(variant(base, 'Chevron'), bottom))
+  } else if ('Diamond' in current) {
+    // level with its side corner, which is the farthest right of its outline unless its sides bow
+    const widest = pose.outline.map(toLocal).reduce((far, point) => (point[0] > far[0] ? point : far), [-Infinity, 0])
+    handles.push(...boxed(variant(base, 'Diamond'), widest[1]))
+  } else if ('Star' in current) {
+    // the first leg points up
+    handles.push(size('Radius', field(variant(base, 'Star'), 'radius'), [0, top], down))
   } else if ('Polygon' in current || 'Polyline' in current) {
     const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
     pose.points.forEach((_, index) => handles.push(pointHandle(index, item(points, index))))
@@ -324,7 +332,7 @@ function pathOverlay(shape: Lens<Shape>, pose: RenderedShape, write: Write, view
     const path = field(variant(offset, 'Sweep'), 'path')
     if (outOfStep(path, pathPose)) return []
 
-    const [x, y] = apply(chain(pose.transforms.slice(0, index)), middle(pose))
+    const [x, y] = pose.pivots[index]
     const pathView = chain([[1, 0, 0, 1, x, y], ...movesAfter(list.get(), pose, index), view])
     const further = pathOverlay(path, pathPose, write, pathView, grid)
     return [
@@ -392,21 +400,18 @@ function seenThrough(handles: Handle[], view: Affine): Handle[] {
   }))
 }
 
-/** The middle of a shape's bounds, in its own space */
-function middle({ min, max }: RenderedShape): Vec2 {
-  return [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2]
-}
-
 /** What moves a shape's center after the transform at `index`. A turn stays on the center, so it's no part of that. */
 function movesAfter(transforms: Transform[], pose: RenderedShape, index: number) {
   return pose.transforms.slice(index + 1).filter((affine, i) => !turnsInPlace(transforms[index + 1 + i], affine))
 }
 
-/** The shape's last `Translate`, or one added after its other transforms the first time this is dragged */
-function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write, center: Vec2): Handle {
+/**
+ * The shape's last `Translate`, or one added after its other transforms the first time this is dragged. It's held by
+ * the shape's center, which a mirror or revolve moves to the middle of what it draws.
+ */
+function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle {
   const found = list.get().findLastIndex((transform) => 'Translate' in transform)
   const index = found < 0 ? pose.transforms.length : found
-  const before = chain(pose.transforms.slice(0, index))
   const undoAfter = invert(chain(movesAfter(list.get(), pose, index)))!
   const prop = () => {
     if (found < 0 && list.get().length === pose.transforms.length) list.set([...list.get(), { Translate: { Fixed: [0, 0] } }])
@@ -417,14 +422,38 @@ function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write, 
     label: 'Move',
     kind: 'move',
     cursor: 'move',
-    at: apply(chain(pose.transforms), center),
+    at: pose.pivots[pose.transforms.length],
     locked: found >= 0 && !write.can(prop().get(), [0, 0]),
     drag(to) {
       const [x, y] = apply(undoAfter, to)
-      const [fromX, fromY] = apply(before, center)
+      const [fromX, fromY] = pose.pivots[index]
       write.to(prop(), roundedPoint([x - fromX, y - fromY]))
     },
   }
+}
+
+/** The center of each mirror, revolve, and divide, which is in the space the transforms before it put the shape in */
+function centerHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle[] {
+  return list.get().flatMap((transform, index) => {
+    const kind = COPY_KINDS.find((kind) => kind in transform)
+    const center = pose.centers[index]
+    if (!kind || !center) return []
+    const copy = variant(item(list, index) as unknown as Lens<Record<CopyKind, { center: Prop<Vec2> }>>, kind)
+    const prop = field(copy, 'center')
+    // the transform itself leaves the shape where it is, so it's only those after it that place its center
+    const toScene = chain(pose.transforms.slice(index))
+    const fromScene = invert(toScene)
+    if (!fromScene) return []
+    const handle: Handle = {
+      label: `${kind} center`,
+      kind: 'center',
+      cursor: 'move',
+      at: apply(toScene, center),
+      locked: !write.can(prop.get(), [0, 0]),
+      drag: (to) => write.to(prop, roundedPoint(apply(fromScene, to))),
+    }
+    return [handle]
+  })
 }
 
 /** The shape's last `Scale`, or one added before its other transforms the first time this is dragged */

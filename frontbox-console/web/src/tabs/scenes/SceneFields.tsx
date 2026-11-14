@@ -85,16 +85,28 @@ export function EyeButton(props: { label: string; hidden: boolean; onChange: (hi
   )
 }
 
-/** Picks one of an enum's values */
+/** Picks one of an enum's values. Options with a `group` are listed under its name, with the groups in the order they first come. */
 export function Dropdown<T extends string>(props: {
   label: string
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; group?: string }[]
   value: T
   onChange: (value: T) => void
   /** As wide as its value rather than its row, with a list as wide as the options need */
   compact?: boolean
 }) {
   const collection = createMemo(() => createListCollection({ items: props.options }))
+  const groups = createMemo(() => [...new Set(props.options.map((option) => option.group))])
+  const inGroup = (group: string | undefined) => collection().items.filter((option) => option.group === group)
+  const item = (option: { value: T; label: string }) => (
+    <Select.Item item={option}>
+      <Select.ItemText>{option.label}</Select.ItemText>
+      <Select.ItemIndicator>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8.5l3.5 3.5L13 5" />
+        </svg>
+      </Select.ItemIndicator>
+    </Select.Item>
+  )
   return (
     <Select.Root
       class="scene-dropdown"
@@ -117,16 +129,14 @@ export function Dropdown<T extends string>(props: {
       <ScenePortal>
         <Select.Positioner>
           <Select.Content class="scene-dropdown-list">
-            <For each={collection().items}>
-              {(option) => (
-                <Select.Item item={option}>
-                  <Select.ItemText>{option.label}</Select.ItemText>
-                  <Select.ItemIndicator>
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M3 8.5l3.5 3.5L13 5" />
-                    </svg>
-                  </Select.ItemIndicator>
-                </Select.Item>
+            <For each={groups()}>
+              {(group) => (
+                <Show when={group !== undefined} fallback={<For each={inGroup(undefined)}>{item}</For>}>
+                  <Select.ItemGroup>
+                    <Select.ItemGroupLabel>{group}</Select.ItemGroupLabel>
+                    <For each={inGroup(group)}>{item}</For>
+                  </Select.ItemGroup>
+                </Show>
               )}
             </For>
           </Select.Content>

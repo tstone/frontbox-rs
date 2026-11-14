@@ -109,12 +109,12 @@ impl Scene {
     })
   }
 
-  pub fn outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
+  pub fn outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec<Vec2>>> {
     let frame = self.seen(frame);
     self.layers.iter().map(|layer| layer.outline(&frame)).collect()
   }
 
-  pub fn mask_outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
+  pub fn mask_outlines(&self, frame: &LayerFrame) -> Vec<Vec<Vec<Vec2>>> {
     let frame = self.seen(frame);
     self.layers.iter().map(|layer| layer.mask_outline(&frame)).collect()
   }

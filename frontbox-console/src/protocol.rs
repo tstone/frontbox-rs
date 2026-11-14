@@ -128,12 +128,12 @@ pub struct RenderedScene {
   pub colors: Vec<u8>,
   /// The part of the scene those points show, in scene units
   pub area: RenderedArea,
-  /// Where each layer is drawn, as a closed loop of points in scene units
-  pub outlines: Vec<Vec<[f32; 2]>>,
+  /// Where each layer is drawn, as closed loops of points in scene units: one for each copy of its shape
+  pub outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
   pub shapes: Vec<Option<RenderedShape>>,
   /// Where each layer's mask is drawn. Empty for a layer without one.
-  pub mask_outlines: Vec<Vec<[f32; 2]>>,
+  pub mask_outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's mask's shape as it stands. `None` for a layer without one.
   pub mask_shapes: Vec<Option<RenderedShape>>,
   /// What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
@@ -170,7 +170,14 @@ pub struct RenderedShape {
   pub handles: Vec<[f32; 2]>,
   /// How far a ring's hole reaches from its center, in its own space
   pub hole: f32,
-  /// Its edge in the scene, as a closed loop of points, or its line for a polyline or bezier, which doesn't close
+  /// Where its center is going into each transform, in the space the ones before it put the shape in, then in the
+  /// scene after the last. A rotate turns around it.
+  pub pivots: Vec<[f32; 2]>,
+  /// For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
+  /// `None` for other transforms.
+  pub centers: Vec<Option<[f32; 2]>>,
+  /// Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
+  /// points, or its line for a polyline or bezier, which doesn't close
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that
   /// doesn't.

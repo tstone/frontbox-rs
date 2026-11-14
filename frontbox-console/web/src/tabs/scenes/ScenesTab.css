@@ -388,6 +388,14 @@
   border-radius: 1px;
 }
 
+/* a mirror's, revolve's, or divide's center, turned so it can't be taken for a point */
+.scene-handle-center {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  rotate: 45deg;
+}
+
 /* a color of its own, so it can't be taken for the shape going along it */
 .scene-handles {
   --scene-path: #ff4fd8;
@@ -1641,6 +1649,27 @@ label.scene-button:hover {
 .scene-dropdown-list [data-part='item'][data-state='checked'] {
   background: var(--surface-selected);
   font-weight: 600;
+}
+
+.scene-dropdown-list [data-part='item-group'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scene-dropdown-list [data-part='item-group'] + [data-part='item-group'] {
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.scene-dropdown-list [data-part='item-group-label'] {
+  padding: 0.25rem 0.5rem 0.125rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .scene-dropdown-list [data-part='item-indicator'] {

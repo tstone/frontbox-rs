@@ -145,9 +145,9 @@ impl Layer {
     Visits { traversals: traversals.iter().map(|traversal| traversal.visits(graph, &env)).collect() }
   }
 
-  /// The area the layer draws in, as a closed polygon in scene units, for editor overlays. With no shape, that's the
-  /// viewport. A collapsed shape has no points.
-  pub fn outline(&self, frame: &LayerFrame) -> Vec<Vec2> {
+  /// The area the layer draws in, as closed polygons in scene units for editor overlays: one for each copy of its shape.
+  /// With no shape, that's the viewport. A collapsed shape has none.
+  pub fn outline(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
     let env = env(frame);
     fill_outline(self.region.as_ref(), env.viewport, &env)
   }
@@ -157,8 +157,8 @@ impl Layer {
     self.region.as_ref()?.pose(&env(frame))
   }
 
-  /// Like [`Self::outline`], for the layer's mask. No points with no mask.
-  pub fn mask_outline(&self, frame: &LayerFrame) -> Vec<Vec2> {
+  /// Like [`Self::outline`], for the layer's mask. None with no mask.
+  pub fn mask_outline(&self, frame: &LayerFrame) -> Vec<Vec<Vec2>> {
     let env = env(frame);
     self.mask.as_ref().map_or_else(Vec::new, |mask| mask.outline(env.viewport, &env))
   }
@@ -303,12 +303,12 @@ fn fill_frame(fill: &Fill, clip: &Clip) -> Affine2 {
   }
 }
 
-/// The area a fill is drawn in, as a closed polygon in scene units
-pub(crate) fn fill_outline(shape: Option<&Shape>, viewport: Bounds, env: &Env) -> Vec<Vec2> {
+/// The area a fill is drawn in, as closed polygons in scene units
+pub(crate) fn fill_outline(shape: Option<&Shape>, viewport: Bounds, env: &Env) -> Vec<Vec<Vec2>> {
   match shape {
     None => {
       let Bounds { min, max } = viewport;
-      vec![min, Vec2::new(max.x, min.y), max, Vec2::new(min.x, max.y)]
+      vec![vec![min, Vec2::new(max.x, min.y), max, Vec2::new(min.x, max.y)]]
     }
     Some(shape) => shape.outline(env),
   }

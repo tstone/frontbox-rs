@@ -381,6 +381,10 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
       else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
       else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
+      else {
+        const name = `${label} · ${Object.keys(w)[0]}`
+        copyProps(lens, surface).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
+      }
     })
   }
 
@@ -388,31 +392,9 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     transforms(orEmpty(field(lens, 'transform')), transformLabel, 'shape')
     const base = field(lens, 'base')
     const current = base.get()
-    const [across, down] = sizeRanges(surface)
-    if ('Circle' in current) {
-      use(field(variant(base, 'Circle'), 'radius'), `${label} · Radius`, both(roundRange(surface)))
-    } else if ('Ring' in current) {
-      const ring = variant(base, 'Ring')
-      use(field(ring, 'inner_radius'), `${label} · Inner radius`, both(roundRange(surface)))
-      use(field(ring, 'thickness'), `${label} · Thickness`, both(roundRange(surface)))
-    } else if ('Ellipse' in current) {
-      const ellipse = variant(base, 'Ellipse')
-      use(field(ellipse, 'rx'), `${label} · RX`, both(radius(across)))
-      use(field(ellipse, 'ry'), `${label} · RY`, both(radius(down)))
-    } else if ('Rect' in current) {
-      const rect = variant(base, 'Rect')
-      use(field(rect, 'width'), `${label} · Width`, both(across))
-      use(field(rect, 'height'), `${label} · Height`, both(down))
-    } else if ('Pinwheel' in current) {
-      const pinwheel = variant(base, 'Pinwheel')
-      use(field(pinwheel, 'radius'), `${label} · Radius`, both(roundRange(surface)))
-      use(field(pinwheel, 'blades'), `${label} · Blades`, both(BLADES))
-      use(field(pinwheel, 'blade_fraction'), `${label} · Blade fraction`, both(BLADE_FRACTION))
-    } else if ('Propeller' in current) {
-      const propeller = variant(base, 'Propeller')
-      use(field(propeller, 'radius'), `${label} · Radius`, both(roundRange(surface)))
-      use(field(propeller, 'blades'), `${label} · Blades`, both(BLADES))
-      use(field(propeller, 'blade_width'), `${label} · Blade width`, both(across))
+    const sizes = shapeProps(base as Lens<ShapeNode>, surface)
+    if (sizes.length > 0) {
+      sizes.forEach((prop) => use(prop.lens, `${label} · ${prop.label}`, prop.ranges))
     } else if ('Bezier' in current) {
       const points = field(variant(base, 'Bezier'), 'points')
       points.get().forEach((_, i) => {
@@ -890,10 +872,21 @@ export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** Waves per scene cycle. Fractions carry a wave on across cycles. */
 export const WAVE_RATE: Range = { min: 0, max: 16, step: 0.25, rest: 1 }
-/** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
-export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
-/** How much of each of a pinwheel's shares is blade: none at 0, the whole circle at 1 */
-export const BLADE_FRACTION: Range = { min: 0, max: 1, step: 0.01, rest: 0.5 }
+/** A fraction of a star's leg is dropped, so a spread goes one past the last, as it does for `frameRanges` */
+export const LEGS: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 5 }
+/** How many copies a revolve makes, which also drops a fraction */
+export const COPIES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
+/** Degrees a revolve spreads its copies over */
+export const REVOLVE_ANGLE: Range = { min: -360, max: 360, step: 1, rest: 360 }
+/** How far a side curves out, or in below 0, as a fraction of its length */
+export const BOW: Range = { min: -0.5, max: 0.5, step: 0.01, rest: 0 }
+/** How far down a diamond is widest, which is halfway for a diamond that's the same top and bottom */
+export const WIDEST_AT: Range = { ...UNIT, rest: 0.5 }
+/** How far up a chevron's notch reaches */
+export const NOTCH: Range = { ...UNIT, rest: 0.5 }
+/** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
+ * star's sides line up into a pentagram. */
+export const LEG_WIDTH: Range = { min: 0, max: 2, step: 0.01, rest: 0.65 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 
@@ -936,6 +929,87 @@ export function translateRanges(surface: Surface, space: TransformSpace): Ranges
 
 export function scaleRanges(): Ranges {
   return both(SCALE)
+}
+
+/** A transform that copies or cuts a shape, which has props of its own rather than being one */
+export type CopyKind = 'Mirror' | 'Revolve' | 'Divide'
+export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Divide']
+
+/** A prop of a shape or a transform, with what to call it, its value if it has nothing to take one from, and its ranges */
+export type PropField = { key: string; label: string; fallback: SceneValue; lens: Lens<Prop<SceneValue>>; ranges: Ranges }
+
+/**
+ * The props of a mirror, revolve, or divide: its center, which is in the space the transforms before it put the shape
+ * in, then how its line is turned or how its copies are spread. None for other transforms.
+ */
+export function copyProps(transform: Lens<Transform>, surface: Surface): PropField[] {
+  const current = transform.get()
+  const center = (lens: Lens<unknown>) => propField('center', 'Center', [0, 0], pointRanges(surface), lens)
+  if ('Revolve' in current) {
+    const revolve = variant(transform as Lens<Extract<Transform, { Revolve: unknown }>>, 'Revolve')
+    return [
+      center(field(revolve, 'center')),
+      propField('angle', 'Angle', REVOLVE_ANGLE.rest!, both(REVOLVE_ANGLE), field(revolve, 'angle')),
+      propField('count', 'Count', COPIES.rest!, both(COPIES), field(revolve, 'count')),
+    ]
+  }
+  if (!('Mirror' in current) && !('Divide' in current)) return []
+  // a mirror and a divide both have a line through their center
+  const line = variant(transform as Lens<Record<'Mirror' | 'Divide', Extract<Transform, { Mirror: unknown }>['Mirror']>>, 'Mirror' in current ? 'Mirror' : 'Divide')
+  return [center(field(line, 'center')), propField('rotation', 'Rotation', 0, both(ROTATION), field(line, 'rotation'))]
+}
+
+/** The sizes of a shape that isn't made of points, and the props that say how it's drawn. None for one that is. */
+export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[] {
+  const current = base.get()
+  const [across, down] = sizeRanges(surface)
+  const round = both(roundRange(surface))
+  const size = (key: string, label: string, ranges: Ranges, lens: Lens<unknown>) => propField(key, label, 0, ranges, lens)
+  const shaped = (key: string, label: string, range: Range, lens: Lens<unknown>) => propField(key, label, range.rest!, both(range), lens)
+  if ('Circle' in current) return [size('radius', 'Radius', round, field(variant(base, 'Circle'), 'radius'))]
+  if ('Ring' in current) {
+    const ring = variant(base, 'Ring')
+    return [size('inner_radius', 'Inner radius', round, field(ring, 'inner_radius')), size('thickness', 'Thickness', round, field(ring, 'thickness'))]
+  }
+  if ('Ellipse' in current) {
+    const ellipse = variant(base, 'Ellipse')
+    return [size('rx', 'RX', both(radius(across)), field(ellipse, 'rx')), size('ry', 'RY', both(radius(down)), field(ellipse, 'ry'))]
+  }
+  if ('Rect' in current) {
+    const rect = variant(base, 'Rect')
+    return [size('width', 'Width', both(across), field(rect, 'width')), size('height', 'Height', both(down), field(rect, 'height'))]
+  }
+  if ('Diamond' in current) {
+    const diamond = variant(base, 'Diamond')
+    return [
+      size('width', 'Width', both(across), field(diamond, 'width')),
+      size('height', 'Height', both(down), field(diamond, 'height')),
+      shaped('widest_at', 'Widest at', WIDEST_AT, field(diamond, 'widest_at')),
+      shaped('bow', 'Bow', BOW, field(diamond, 'bow')),
+    ]
+  }
+  if ('Star' in current) {
+    const star = variant(base, 'Star')
+    return [
+      size('radius', 'Radius', round, field(star, 'radius')),
+      shaped('legs', 'Legs', LEGS, field(star, 'legs')),
+      shaped('leg_width', 'Leg width', LEG_WIDTH, field(star, 'leg_width')),
+      shaped('bow', 'Bow', BOW, field(star, 'bow')),
+    ]
+  }
+  if ('Chevron' in current) {
+    const chevron = variant(base, 'Chevron')
+    return [
+      size('width', 'Width', both(across), field(chevron, 'width')),
+      size('height', 'Height', both(down), field(chevron, 'height')),
+      shaped('notch', 'Notch', NOTCH, field(chevron, 'notch')),
+    ]
+  }
+  return []
+}
+
+function propField(key: string, label: string, fallback: SceneValue, ranges: Ranges, lens: Lens<unknown>): PropField {
+  return { key, label, fallback, ranges, lens: lens as Lens<Prop<SceneValue>> }
 }
 
 /** How wide and tall a new shape is: half of what it's on, and a sequence runs from 0 to 1 */

@@ -259,7 +259,7 @@ fn circle(fill: Fill) -> Scene {
   ])
 }
 
-fn outlines(layer: Layer) -> Vec<Vec2> {
+fn outlines(layer: Layer) -> Vec<Vec<Vec2>> {
   let params = Params::new();
   let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   Scene::new(Surface::Area, vec![layer]).outlines(&frame).remove(0)
@@ -290,7 +290,7 @@ fn a_gradient_with_no_shape_stretches_to_the_device() {
 #[test]
 fn a_layer_with_no_shape_outlines_the_viewport() {
   let corners = [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)].map(|(x, y)| Vec2::new(x, y));
-  assert_eq!(outlines(Layer::new(solid(RED))), corners);
+  assert_eq!(outlines(Layer::new(solid(RED))), [corners]);
 }
 
 #[test]
@@ -302,7 +302,7 @@ fn an_outline_follows_a_shapes_transforms_in_order() {
     .transform(Transform::Scale(2.0.into()))
     .transform(Transform::Translate(Vec2::new(10.0, 20.0).into()));
   let corners = [(10.0, 20.0), (12.0, 20.0), (12.0, 24.0), (10.0, 24.0)].map(|(x, y)| Vec2::new(x, y));
-  assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), corners);
+  assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), [corners]);
 }
 
 #[test]
@@ -310,7 +310,7 @@ fn an_ellipse_outline_runs_around_its_edge() {
   let shape = Shape::new(ShapeNode::Ellipse { rx: 0.5.into(), ry: 0.25.into() })
     .transform(Transform::Scale(40.0.into()))
     .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
-  let outline = outlines(Layer::new(solid(RED)).region(shape));
+  let outline = outlines(Layer::new(solid(RED)).region(shape)).remove(0);
   assert!(outline.len() > 16);
   for point in outline {
     let offset = (point - Vec2::new(50.0, 25.0)) / Vec2::new(20.0, 10.0);

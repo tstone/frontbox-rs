@@ -19,10 +19,9 @@ import {
   ADJUSTS,
   adjustAmount,
   adjustKind,
-  BLADE_FRACTION,
-  BLADES,
   both,
   BRANCHING,
+  copyProps,
   FAN_ANGLE,
   FAN_COUNT,
   field,
@@ -34,13 +33,11 @@ import {
   orElse,
   orEmpty,
   pointRanges,
-  radius,
   RATE,
   reachRange,
   ROTATION,
-  roundRange,
   scaleRanges,
-  sizeRanges,
+  shapeProps,
   soundLabel,
   soundVolume,
   traversalTarget,
@@ -102,8 +99,10 @@ export type NodeData =
   | { kind: 'mask'; lens: Lens<Mask | undefined> }
   /** A fit transform, which picks its traversal in its row. Other transforms are props. */
   | { kind: 'fit'; lens: Lens<Transform> }
-  /** The row for adding a transform, or an adjust where there's `adjusts` */
-  | { kind: 'modifiers'; transforms: Lens<Transform[]>; adjusts?: Lens<ColorAdjust[]> }
+  /** A mirror, revolve, or divide, which has its props under it */
+  | { kind: 'copy'; lens: Lens<Transform> }
+  /** The row for adding a transform, or an adjust where there's `adjusts`. With `shape`, it also offers a mirror, revolve, or divide. */
+  | { kind: 'modifiers'; transforms: Lens<Transform[]>; adjusts?: Lens<ColorAdjust[]>; shape?: Lens<Shape> }
   | { kind: 'points'; shape: PointsShape; lens: Lens<Prop<Vec2>[]> | Lens<BezierPoint[]> }
   | { kind: 'bezier-point' }
   | { kind: 'traversals'; lens: Lens<Traversal[]>; layer: Lens<SceneLayer> }
@@ -142,7 +141,7 @@ export const WANDERING: AlgorithmKind[] = ['BreadthFirst', 'Dijkstra', 'Shortest
 export const BY_DISTANCE: AlgorithmKind[] = ['Dijkstra', 'ShortestPath', 'FanOut', 'Growth']
 export const algorithmKind = (algorithm: TraversalAlgorithm) => (typeof algorithm === 'string' ? algorithm : Object.keys(algorithm)[0]) as AlgorithmKind
 
-export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal' }
+export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scale: 'Scale', Fit: 'Fit to traversal', Mirror: 'Mirror', Revolve: 'Revolve', Divide: 'Divide' }
 export type TransformKind = keyof typeof TRANSFORM_LABELS
 export const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
 
@@ -281,53 +280,21 @@ function regionNode(id: string, lens: Lens<Shape | undefined>, surface: Surface,
 }
 
 function pathNode(id: string, lens: Lens<Shape>, surface: Surface): ConfigNode {
-  return branch({ id, label: 'Path', kind: 'path', lens, value: lens.get(), children: shapeChildren(id, lens, surface) })
+  return branch({ id, label: 'Path', kind: 'path', lens, value: lens.get(), children: shapeChildren(id, lens, surface, false) })
 }
 
-/** A shape's sizes, or its points, then its transforms */
-function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface): ConfigNode[] {
+/** A shape's sizes, or its points, then its transforms. A sweep follows only a path's own outline, so a path isn't offered a mirror, revolve, or divide. */
+function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface, copies = true): ConfigNode[] {
   const base = field(lens, 'base') as Lens<ShapeNode>
   const current = base.get()
-  const [width, height] = sizeRanges(surface)
-  const round = both(roundRange(surface))
-  const prop = (key: string, label: string, ranges: Ranges, propLens: Lens<Prop<number>>) =>
-    propNode(`${id}/${key}`, label, { lens: propLens as Lens<Prop<SceneValue>>, paramName: key, fallback: 0, ranges }, surface)
-
-  const sizes: ConfigNode[] = []
-  if ('Circle' in current) sizes.push(prop('radius', 'Radius', round, field(variant(base, 'Circle'), 'radius')))
-  if ('Ring' in current) {
-    const ring = variant(base, 'Ring')
-    sizes.push(prop('inner_radius', 'Inner radius', round, field(ring, 'inner_radius')), prop('thickness', 'Thickness', round, field(ring, 'thickness')))
-  }
-  if ('Ellipse' in current) {
-    const ellipse = variant(base, 'Ellipse')
-    sizes.push(prop('rx', 'RX', both(radius(width)), field(ellipse, 'rx')), prop('ry', 'RY', both(radius(height)), field(ellipse, 'ry')))
-  }
-  if ('Rect' in current) {
-    const rect = variant(base, 'Rect')
-    sizes.push(prop('width', 'Width', both(width), field(rect, 'width')), prop('height', 'Height', both(height), field(rect, 'height')))
-  }
-  if ('Pinwheel' in current) {
-    const pinwheel = variant(base, 'Pinwheel')
-    sizes.push(prop('radius', 'Radius', round, field(pinwheel, 'radius')))
-    sizes.push(prop('blades', 'Blades', both(BLADES), field(pinwheel, 'blades')))
-    sizes.push(
-      propNode(`${id}/blade_fraction`, 'Blade fraction', { lens: field(pinwheel, 'blade_fraction') as Lens<Prop<SceneValue>>, paramName: 'blade_fraction', fallback: BLADE_FRACTION.rest!, ranges: both(BLADE_FRACTION) }, surface),
-    )
-  }
-  if ('Propeller' in current) {
-    const propeller = variant(base, 'Propeller')
-    sizes.push(
-      prop('radius', 'Radius', round, field(propeller, 'radius')),
-      prop('blades', 'Blades', both(BLADES), field(propeller, 'blades')),
-      prop('blade_width', 'Blade width', both(width), field(propeller, 'blade_width')),
-    )
-  }
+  const sizes: ConfigNode[] = shapeProps(base, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
+    propNode(`${id}/${key}`, label, { lens: propLens, paramName: key, fallback, ranges }, surface),
+  )
   if ('Polygon' in current) sizes.push(pointsNode(`${id}/points`, 'Polygon', field(variant(base, 'Polygon'), 'points'), surface))
   if ('Polyline' in current) sizes.push(pointsNode(`${id}/points`, 'Polyline', field(variant(base, 'Polyline'), 'points'), surface))
   if ('Bezier' in current) sizes.push(pointsNode(`${id}/points`, 'Bezier', field(variant(base, 'Bezier'), 'points'), surface))
 
-  return [...sizes, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'shape', surface)]
+  return [...sizes, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'shape', surface, undefined, copies ? lens : undefined)]
 }
 
 /** A polygon has to have three points, and a line two */
@@ -358,9 +325,10 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
 
 /**
  * Transforms then adjusts, as rows beside the props of what they change, and a row for adding either. Translates,
- * rotates, scales, and adjusts are props of their own, and a fit picks its traversal in its row.
+ * rotates, scales, and adjusts are props of their own, a fit picks its traversal in its row, and a mirror, revolve, or
+ * divide has its props under it. With `shape`, the row for adding offers those too.
  */
-function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>): ConfigNode[] {
+function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>, shape?: Lens<Shape>): ConfigNode[] {
   const transformList = `${id}/transform`
   const transformNodes = transforms.get().map((transform, index): ConfigNode => {
     const transformId = `${transformList}/${index}`
@@ -368,6 +336,12 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const place = { list: transforms as Lens<unknown[]>, listId: transformList, index }
     const kind = transformKind(transform)
     if (kind === 'Fit') return { id: transformId, label: TRANSFORM_LABELS.Fit, kind: 'fit', lens, value: transform, place }
+    if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Divide') {
+      const children = copyProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
+        propNode(`${transformId}/${key}`, label, { lens: propLens, paramName: `${kind.toLowerCase()}_${key}`, fallback, ranges }, surface),
+      )
+      return branch({ id: transformId, label: TRANSFORM_LABELS[kind], kind: 'copy', lens, value: transform, place, modifier: kind, children })
+    }
     const spec: PropSpec =
       kind === 'Translate'
         ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, paramName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
@@ -385,7 +359,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const spec: PropSpec = { lens: adjustAmount(lens) as Lens<Prop<SceneValue>>, paramName, fallback: range.rest!, ranges: both(range) }
     return { ...propNode(`${adjustList}/${index}`, label, spec, surface), place: { list: adjusts as Lens<unknown[]>, listId: adjustList, index }, modifier: kind }
   })
-  const add: ConfigNode = { id: `${id}/modifiers`, label: 'Modifier', kind: 'modifiers', transforms, adjusts, value: undefined }
+  const add: ConfigNode = { id: `${id}/modifiers`, label: 'Modifier', kind: 'modifiers', transforms, adjusts, shape, value: undefined }
   return [...transformNodes, ...adjustNodes, add]
 }
 

@@ -146,9 +146,23 @@ mod tests {
         )),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .region(Shape::new(ShapeNode::Pinwheel { radius: 20.0.into(), blades: 4.0.into(), blade_fraction: 0.25.into() })),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into())))
-          .region(Shape::new(ShapeNode::Propeller { radius: 20.0.into(), blades: 3.0.into(), blade_width: 4.0.into() })),
+          .region(
+            Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: 1.0.into(), leg_width: 0.4.into(), bow: 0.1.into() })
+              .transform(Transform::Revolve { center: Vec2::new(0.0, -20.0).into(), angle: 360.0.into(), count: 4.0.into() })
+              .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+          ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into(), widest_at: 0.3.into(), bow: (-0.1).into() })
+            .transform(Transform::Mirror { center: Vec2::new(8.0, 0.0).into(), rotation: 20.0.into() })
+            .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 128, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into(), bow: 0.0.into() })
+            .transform(Transform::Divide { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
+            .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([128, 255, 0, 255])).into())))
+          .region(Shape::new(ShapeNode::Chevron { width: 20.0.into(), height: 10.0.into(), notch: 0.4.into() }).transform(Transform::Translate(Vec2::new(50.0, 40.0).into()))),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
@@ -340,7 +354,6 @@ mod tests {
       "(layers: [
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ellipse(r1: Fixed(2.0), r2: Fixed(10.0)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ring(radius: Fixed(3.0), thickness: Fixed(1.0)))),
-        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Pinwheel(radius: Fixed(20.0), blades: Fixed(4.0), balance: Fixed(0.25)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Route(points: []))),
       ])",
     )
@@ -348,11 +361,10 @@ mod tests {
     let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
     assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
     assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
-    assert!(matches!(base(2), ShapeNode::Pinwheel { blade_fraction: Prop::Fixed(0.25), .. }));
-    assert!(matches!(base(3), ShapeNode::Polyline { .. }));
+    assert!(matches!(base(2), ShapeNode::Polyline { .. }));
 
     let written = save(&scene).unwrap();
-    assert!(["rx:", "inner_radius:", "blade_fraction:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
+    assert!(["rx:", "inner_radius:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
   }
 
   #[test]
