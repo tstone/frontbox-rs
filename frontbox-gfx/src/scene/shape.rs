@@ -1,7 +1,8 @@
 use glam::{Affine2, Vec2};
+use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Bounds, Cut, Env, Node, Prop, Sample, Transform, Wrap};
+use crate::scene::{Bounds, Cut, Env, Node, PreparedStroke, Prop, Sample, ShapeAdjust, Transform, Wrap};
 
 /// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
@@ -26,12 +27,6 @@ pub type Shape = Node<ShapeNode, ShapeAdjust>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ShapeNode {
   Circle { radius: Prop<f32> },
-  /// An annulus: `thickness` is the band's width outward from the hole. An `inner_radius` of 0 makes a filled circle.
-  Ring {
-    #[serde(alias = "radius")]
-    inner_radius: Prop<f32>,
-    thickness: Prop<f32>,
-  },
   Ellipse {
     #[serde(alias = "r2")]
     rx: Prop<f32>,
@@ -91,8 +86,6 @@ pub struct ShapePose {
   pub points: Vec<Vec2>,
   /// Bezier handles, relative to their points. Empty for other shapes.
   pub handles: Vec<Vec2>,
-  /// A ring's hole radius in local space. 0 for other shapes.
-  pub hole: f32,
   /// Where the shape's center is going into each transform, in the space the ones before it put the shape in, then in
   /// scene space after the last. A `Rotate` turns around it.
   pub pivots: Vec<Vec2>,
@@ -100,16 +93,11 @@ pub struct ShapePose {
   /// in. `None` for other transforms.
   pub centers: Vec<Option<Vec2>>,
   /// Outline of the shape itself in scene space, without what a `Mirror`, `Revolve`, or `Divide` does to it. Closed,
-  /// except for polylines and beziers. A ring's is its outer edge.
+  /// except for polylines and beziers.
   pub outline: Vec<Vec2>,
   /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
   pub paths: Vec<Option<ShapePose>>,
 }
-
-/// Changes to a shape's edge. There are none yet.
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ShapeAdjust {}
 
 impl Shape {
   /// The shape as it is in `env`, to cover any number of samples with. `None` if it's collapsed.
@@ -119,16 +107,20 @@ impl Shape {
     let edge = self.base.edge(env);
     let wrap = self.wrap(bounds.center(), to_scene, env);
     let extent = edge.extent();
+    let strokes: Vec<PreparedStroke> = self.adjust.iter().map(|adjust| adjust.prepare(env)).collect();
+    // each band can reach past the edge of the one before
+    let stroke_reach = strokes.iter().map(PreparedStroke::reach).sum();
     let copies = self
       .placements(bounds.center(), env)
       .into_iter()
       .map(|placed| PreparedCopy {
         to_local: placed.to_scene.inverse(),
-        reach: wrap.is_none().then(|| extent.transformed(placed.to_scene)),
+        reach: wrap.is_none().then(|| extent.transformed(placed.to_scene).grown(stroke_reach)),
         cuts: placed.cuts,
       })
       .collect();
-    Some(PreparedShape { edge, bounds, to_local: to_scene.inverse(), wrap, copies })
+    let colored = strokes.iter().filter(|stroke| stroke.color.is_some()).count();
+    Some(PreparedShape { edge, bounds, to_local: to_scene.inverse(), wrap, copies, strokes, colored })
   }
 
   /// Outline in scene space, as a closed loop for each copy of the shape, with what's cut from it left off. A polyline
@@ -163,16 +155,11 @@ impl Shape {
       ShapeNode::Bezier { points } => points.iter().map(|p| p.handle.resolve(env)).collect(),
       _ => Vec::new(),
     };
-    let hole = match &self.base {
-      ShapeNode::Ring { inner_radius, .. } => inner_radius.resolve(env).max(0.0),
-      _ => 0.0,
-    };
     Some(ShapePose {
       transforms: steps.iter().map(|(affine, _)| *affine).collect(),
       bounds,
       points,
       handles,
-      hole,
       pivots: steps.iter().map(|(_, center)| *center).chain([end]).collect(),
       centers: self.transform.iter().map(|transform| transform.copy_center(env)).collect(),
       outline: self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect(),
@@ -203,7 +190,7 @@ impl Shape {
   }
 
   pub(crate) fn is_animated(&self) -> bool {
-    self.base.is_animated() || self.transform.iter().any(Transform::is_animated)
+    self.base.is_animated() || self.transform.iter().any(Transform::is_animated) || self.adjust.iter().any(ShapeAdjust::is_animated)
   }
 }
 
@@ -215,11 +202,7 @@ impl ShapeNode {
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
-      Self::Ring { inner_radius: a, thickness: b }
-      | Self::Ellipse { rx: a, ry: b }
-      | Self::Rect { width: a, height: b } => {
-        a.is_animated() || b.is_animated()
-      }
+      Self::Ellipse { rx: a, ry: b } | Self::Rect { width: a, height: b } => a.is_animated() || b.is_animated(),
       Self::Chevron { width: a, height: b, notch: c } => a.is_animated() || b.is_animated() || c.is_animated(),
       Self::Diamond { width: a, height: b, widest_at: c, bow: d } | Self::Star { radius: a, legs: b, leg_width: c, bow: d } => {
         a.is_animated() || b.is_animated() || c.is_animated() || d.is_animated()
@@ -233,7 +216,6 @@ impl ShapeNode {
   pub(crate) fn bounds(&self, env: &Env) -> Bounds {
     match self {
       Self::Circle { .. }
-      | Self::Ring { .. }
       | Self::Ellipse { .. }
       | Self::Rect { .. }
       | Self::Diamond { .. }
@@ -251,7 +233,7 @@ impl ShapeNode {
   /// Outline in local space, before transforms
   fn outline(&self, env: &Env) -> Vec<Vec2> {
     match self {
-      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => (0..ROUND_OUTLINE_POINTS)
+      Self::Circle { .. } | Self::Ellipse { .. } => (0..ROUND_OUTLINE_POINTS)
         .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ROUND_OUTLINE_POINTS as f32) * self.reach(env))
         .collect(),
       Self::Rect { .. } => {
@@ -288,7 +270,7 @@ impl ShapeNode {
   /// the outline polygon, since a sweep runs this for every sample.
   fn along(&self, phase: f32, env: &Env) -> Vec2 {
     match self {
-      Self::Circle { .. } | Self::Ring { .. } | Self::Ellipse { .. } => {
+      Self::Circle { .. } | Self::Ellipse { .. } => {
         Vec2::from_angle(std::f32::consts::TAU * phase) * self.reach(env)
       }
       Self::Polyline { .. } | Self::Bezier { .. } => along_line(&self.outline(env), phase),
@@ -300,7 +282,6 @@ impl ShapeNode {
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
       Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
-      Self::Ring { inner_radius, thickness } => Vec2::splat(inner_radius.resolve(env).max(0.0) + thickness.resolve(env)),
       Self::Ellipse { rx, ry } => Vec2::new(rx.resolve(env), ry.resolve(env)),
       Self::Rect { width, height }
       | Self::Diamond { width, height, .. }
@@ -314,7 +295,6 @@ impl ShapeNode {
   fn edge(&self, env: &Env) -> Edge {
     match self {
       Self::Circle { .. } | Self::Ellipse { .. } => Edge::Ellipse(self.reach(env)),
-      Self::Ring { inner_radius, thickness } => Edge::Ring { hole: inner_radius.resolve(env), thickness: thickness.resolve(env) },
       Self::Rect { .. } => Edge::Rect(self.reach(env)),
       Self::Diamond { .. } | Self::Star { .. } | Self::Chevron { .. } => Edge::Polygon(self.outline(env)),
       Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
@@ -333,14 +313,19 @@ pub(crate) struct PreparedShape {
   wrap: Option<Wrap>,
   /// Each copy that's drawn, the shape itself first
   copies: Vec<PreparedCopy>,
+  /// In order
+  strokes: Vec<PreparedStroke>,
+  /// How many of the strokes have a color
+  colored: usize,
 }
 
 impl PreparedShape {
-  /// How much of the sample the shape covers (0 to 1), and the sample's position in the local space of the copy nearest
-  /// it. `None` if the sample is outside every copy.
-  pub(crate) fn cover(&self, at: &Sample) -> Option<(f32, Vec2)> {
+  /// How much of the sample the shape and its colored strokes cover. `None` if the sample is outside every copy.
+  pub(crate) fn cover(&self, at: &Sample) -> Option<Cover> {
     let pos = self.wrap.map_or(at.pos, |wrap| wrap.apply(at.pos));
     let mut nearest: Option<(f32, Vec2)> = None;
+    // the nearest copy's distance to each colored stroke's band
+    let mut bands = vec![f32::INFINITY; self.colored];
     for copy in &self.copies {
       if copy.reach.is_some_and(|reach| !reach.grown(at.radius).contains(at.pos)) {
         continue;
@@ -348,15 +333,36 @@ impl PreparedShape {
       let local = copy.to_local.transform_point2(pos);
       let (distance, gradient) = self.edge.distance(local);
       // inside the edge and on the kept side of every cut, so the farthest of them
-      let distance = copy.cuts.iter().fold(scene_distance(distance, gradient, &copy.to_local), |distance, cut| distance.max(cut.distance(pos)));
+      let mut distance = copy.cuts.iter().fold(scene_distance(distance, gradient, &copy.to_local), |distance, cut| distance.max(cut.distance(pos)));
+      let mut colored = bands.iter_mut();
+      for stroke in &self.strokes {
+        if stroke.color.is_none() {
+          distance = stroke.band(distance);
+        } else if let Some(band) = colored.next() {
+          *band = band.min(stroke.band(distance));
+        }
+      }
       if nearest.is_none_or(|(nearest, _)| distance < nearest) {
         nearest = Some((distance, local));
       }
     }
     let (distance, local) = nearest?;
-    let coverage = coverage(distance, at.radius);
-    (coverage > 0.0).then_some((coverage, local))
+    let colors = self.strokes.iter().filter_map(|stroke| stroke.color);
+    let strokes: Vec<(f32, Rgba<u8>)> =
+      bands.into_iter().zip(colors).map(|(band, color)| (coverage(band, at.radius), color)).filter(|(amount, _)| *amount > 0.0).collect();
+    let amount = coverage(distance, at.radius);
+    (amount > 0.0 || !strokes.is_empty()).then_some(Cover { amount, local, strokes })
   }
+}
+
+/// How much of a sample a [`PreparedShape`] covers
+pub(crate) struct Cover {
+  /// How much the shape covers, 0 to 1
+  pub amount: f32,
+  /// The sample's position in the local space of the copy nearest it
+  pub local: Vec2,
+  /// Each colored stroke that covers some of the sample, in order: how much, and its color
+  pub strokes: Vec<(f32, Rgba<u8>)>,
 }
 
 /// One copy of a [`PreparedShape`]
@@ -384,7 +390,6 @@ impl Placement {
 /// A shape's edge in local space, with its sizes resolved
 enum Edge {
   Ellipse(Vec2),
-  Ring { hole: f32, thickness: f32 },
   Rect(Vec2),
   Polygon(Vec<Vec2>),
   /// A polyline or bezier, which has no inside
@@ -396,7 +401,6 @@ impl Edge {
   fn distance(&self, p: Vec2) -> (f32, Vec2) {
     match self {
       Self::Ellipse(reach) => ellipse_distance(*reach, p),
-      Self::Ring { hole, thickness } => ring_distance(*hole, *thickness, p),
       Self::Rect(reach) => rect_distance(*reach, p),
       Self::Polygon(points) => polygon_distance(points, p),
       Self::Open => (f32::INFINITY, Vec2::X),
@@ -409,7 +413,6 @@ impl Edge {
     let around = |reach: Vec2| Bounds::new(-reach, reach);
     match self {
       Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
-      Self::Ring { hole, thickness } => around(Vec2::splat(hole.max(0.0) + thickness)),
       Self::Polygon(points) => bounds_of(points.iter().copied()),
       Self::Open => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
@@ -482,17 +485,6 @@ fn ellipse_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
   }
   let along = p / reach;
   (along.length() - 1.0, along.normalize_or(Vec2::X) / reach)
-}
-
-/// Signed distance to the nearer edge of a ring. With no hole, the outside edge is the only one.
-fn ring_distance(hole: f32, thickness: f32, p: Vec2) -> (f32, Vec2) {
-  if thickness <= 0.0 {
-    return (f32::INFINITY, Vec2::X);
-  }
-  let out = p.normalize_or(Vec2::X);
-  let to_outside = p.length() - (hole.max(0.0) + thickness);
-  let to_hole = hole - p.length();
-  if hole <= 0.0 || to_outside > to_hole { (to_outside, out) } else { (to_hole, -out) }
 }
 
 fn whole_legs(legs: &Prop<f32>, env: &Env) -> u32 {
@@ -613,7 +605,7 @@ fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
 mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
-  use crate::scene::{Key, Keyframes, Params, Transform};
+  use crate::scene::{Color, Key, Keyframes, Params, StrokeAlign, Transform};
   use crate::scene::value::tests::env;
 
   fn square() -> ShapeNode {
@@ -632,7 +624,7 @@ mod tests {
   fn covered(shape: &Shape, x: f32, y: f32, radius: f32) -> f32 {
     let params = Params::new();
     let at = Sample::new(Vec2::new(x, y), radius);
-    shape.prepare(&env(0.0, &params)).and_then(|shape| shape.cover(&at)).map_or(0.0, |(c, ..)| c)
+    shape.prepare(&env(0.0, &params)).and_then(|shape| shape.cover(&at)).map_or(0.0, |cover| cover.amount)
   }
 
   #[test]
@@ -700,8 +692,12 @@ mod tests {
     assert_eq!(covered(&ellipse, 0.0, 0.0, 0.5), 0.0);
   }
 
+  fn stroked(shape: ShapeNode, width: f32, align: StrokeAlign) -> Shape {
+    Shape::new(shape).adjust(ShapeAdjust::Stroke { width: width.into(), align, color: None })
+  }
+
   fn ring(radius: f32, thickness: f32) -> Shape {
-    Shape::new(ShapeNode::Ring { inner_radius: radius.into(), thickness: thickness.into() })
+    stroked(ShapeNode::circle(radius), thickness, StrokeAlign::Outside)
   }
 
   #[test]
@@ -712,7 +708,7 @@ mod tests {
   }
 
   #[test]
-  fn a_ring_covers_its_band_and_not_its_hole() {
+  fn a_stroke_with_no_color_covers_its_band_and_not_the_inside() {
     let band = ring(4.0, 2.0);
     assert_eq!(covered(&band, 0.0, 0.0, 0.1), 0.0);
     assert_eq!(covered(&band, 3.0, 0.0, 0.1), 0.0);
@@ -723,32 +719,71 @@ mod tests {
   }
 
   #[test]
-  fn a_rings_edges_are_in_scene_units_when_scaled() {
-    let band = ring(4.0, 2.0).transform(Transform::Scale(10.0.into()));
-    assert!((covered(&band, 40.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
-    assert!((covered(&band, 60.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
+  fn a_stroke_is_aligned_inside_across_or_outside_the_edge() {
+    let rect = || ShapeNode::Rect { width: 20.0.into(), height: 20.0.into() };
+    for (align, from, to) in [(StrokeAlign::Inside, 8.0, 10.0), (StrokeAlign::Centered, 9.0, 11.0), (StrokeAlign::Outside, 10.0, 12.0)] {
+      let band = stroked(rect(), 2.0, align);
+      assert_eq!(covered(&band, (from + to) / 2.0, 0.0, 0.1), 1.0, "{align:?}");
+      assert_eq!(covered(&band, from - 0.5, 0.0, 0.1), 0.0, "{align:?}");
+      assert_eq!(covered(&band, to + 0.5, 0.0, 0.1), 0.0, "{align:?}");
+    }
   }
 
   #[test]
-  fn a_ring_with_no_hole_is_a_circle() {
-    assert_eq!(covered(&ring(0.0, 2.0), 0.0, 0.0, 0.5), 1.0);
-    assert_eq!(covered(&ring(0.0, 2.0), 3.0, 0.0, 0.5), 0.0);
+  fn a_stroke_is_in_scene_units_however_the_shape_is_scaled() {
+    let band = stroked(ShapeNode::circle(0.4), 2.0, StrokeAlign::Outside).transform(Transform::Scale(10.0.into()));
+    assert!((covered(&band, 4.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
+    assert!((covered(&band, 6.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
 
   #[test]
-  fn a_ring_with_no_thickness_draws_nothing() {
+  fn a_stroke_with_no_width_draws_nothing() {
     assert_eq!(covered(&ring(4.0, 0.0), 4.0, 0.0, 0.5), 0.0);
   }
 
   #[test]
-  fn a_ring_is_bounded_and_gone_around_by_its_outside_edge() {
+  fn a_stroke_outlines_each_copy() {
+    // two circles that overlap, so the edge of one is inside the other
+    let shape = dot((1.5, 0.0), mirror((0.0, 0.0), 0.0)).adjust(ShapeAdjust::Stroke { width: 0.5.into(), align: StrokeAlign::Centered, color: None });
+    assert_eq!(covered(&shape, -0.5, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.5, 0.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, 0.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_stroke_with_a_color_is_drawn_apart_from_the_shape() {
     let params = Params::new();
-    let frame = env(0.0, &params);
-    let pose = ring(4.0, 2.0).pose(&frame).unwrap();
-    assert_eq!(pose.bounds, Bounds::new(Vec2::splat(-6.0), Vec2::splat(6.0)));
-    assert_eq!(pose.hole, 4.0);
-    assert!(ring(4.0, 2.0).along(0.0, &frame).abs_diff_eq(Vec2::new(6.0, 0.0), 1e-5));
-    assert!(pose.outline.iter().all(|p| (p.length() - 6.0).abs() < 1e-4));
+    let red = Rgba([255, 0, 0, 255]);
+    let shape = Shape::new(ShapeNode::circle(4.0))
+      .adjust(ShapeAdjust::Stroke { width: 2.0.into(), align: StrokeAlign::Outside, color: Some(Color(red).into()) })
+      .prepare(&env(0.0, &params))
+      .unwrap();
+    let inside = shape.cover(&Sample::new(Vec2::ZERO, 0.1)).unwrap();
+    assert_eq!((inside.amount, inside.strokes), (1.0, vec![]));
+    let band = shape.cover(&Sample::new(Vec2::new(5.0, 0.0), 0.1)).unwrap();
+    assert_eq!((band.amount, band.strokes), (0.0, vec![(1.0, red)]));
+    assert!(shape.cover(&Sample::new(Vec2::new(7.0, 0.0), 0.1)).is_none());
+  }
+
+  #[test]
+  fn a_colored_stroke_after_one_with_no_color_outlines_its_band() {
+    let params = Params::new();
+    let red = Rgba([255, 0, 0, 255]);
+    let shape = ring(4.0, 2.0)
+      .adjust(ShapeAdjust::Stroke { width: 0.5.into(), align: StrokeAlign::Outside, color: Some(Color(red).into()) })
+      .prepare(&env(0.0, &params))
+      .unwrap();
+    for x in [3.75, 6.25] {
+      let edge = shape.cover(&Sample::new(Vec2::new(x, 0.0), 0.1)).unwrap();
+      assert_eq!((edge.amount, edge.strokes), (0.0, vec![(1.0, red)]), "at {x}");
+    }
+  }
+
+  #[test]
+  fn a_stroke_can_be_animated() {
+    let grows = Prop::Keyframes(Keyframes { keys: vec![Key::new(0.0, 1.0, Curve::Linear)], cycle: Cycle::Once });
+    assert!(Shape::new(ShapeNode::circle(1.0)).adjust(ShapeAdjust::Stroke { width: grows, align: StrokeAlign::Centered, color: None }).is_animated());
+    assert!(!ring(4.0, 2.0).is_animated());
   }
 
   fn diamond(widest_at: f32) -> Shape {
@@ -962,7 +997,7 @@ mod tests {
   fn a_sample_takes_the_local_position_of_the_copy_it_is_in() {
     let params = Params::new();
     let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).prepare(&env(0.0, &params)).unwrap();
-    let (_, local) = shape.cover(&Sample::new(Vec2::new(-10.0, 1.0), 0.1)).unwrap();
+    let local = shape.cover(&Sample::new(Vec2::new(-10.0, 1.0), 0.1)).unwrap().local;
     assert!(local.abs_diff_eq(Vec2::new(0.0, -1.0), 1e-4));
   }
 

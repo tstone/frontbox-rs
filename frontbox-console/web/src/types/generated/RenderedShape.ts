@@ -21,10 +21,6 @@ points: Array<[number, number]>,
  */
 handles: Array<[number, number]>, 
 /**
- * How far a ring's hole reaches from its center, in its own space
- */
-hole: number, 
-/**
  * Where its center is going into each transform, in the space the ones before it put the shape in, then in the
  * scene after the last. A rotate turns around it.
  */

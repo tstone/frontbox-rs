@@ -329,7 +329,6 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     max: pose.bounds.max.to_array(),
     points: pose.points.iter().map(|p| p.to_array()).collect(),
     handles: pose.handles.iter().map(|p| p.to_array()).collect(),
-    hole: pose.hole,
     pivots: pose.pivots.iter().map(|p| p.to_array()).collect(),
     centers: pose.centers.iter().map(|center| center.map(|p| p.to_array())).collect(),
     outline: pose.outline.iter().map(|p| p.to_array()).collect(),

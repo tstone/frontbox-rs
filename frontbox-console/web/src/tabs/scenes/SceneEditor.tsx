@@ -31,7 +31,7 @@ import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityCo
 import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
-import ShapeHandles, { holeOutline, layerUnder } from './ShapeHandles'
+import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
 /** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
@@ -388,10 +388,8 @@ export default function SceneEditor(props: {
     const open = selection[0]()
     const rendered = drawn()
     if (playback.playing() || open === null || !rendered || !openShown()) return []
-    const edges = (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
-    // one loop for each copy of its shape, and a ring has its hole outlined too
-    const pose = (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer]
-    return [...edges, pose ? holeOutline(pose) : []].filter((loop) => loop.length > 0)
+    // one loop for each copy of its shape
+    return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
   }
 
   /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */

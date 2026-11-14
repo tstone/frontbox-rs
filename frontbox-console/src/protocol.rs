@@ -194,8 +194,6 @@ pub struct RenderedShape {
   pub points: Vec<[f32; 2]>,
   /// A bezier's handles, each from its point
   pub handles: Vec<[f32; 2]>,
-  /// How far a ring's hole reaches from its center, in its own space
-  pub hole: f32,
   /// Where its center is going into each transform, in the space the ones before it put the shape in, then in the
   /// scene after the last. A rotate turns around it.
   pub pivots: Vec<[f32; 2]>,

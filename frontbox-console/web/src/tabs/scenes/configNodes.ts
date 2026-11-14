@@ -8,6 +8,7 @@ import type { Mask } from '../../types/generated/Mask'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
+import type { ShapeAdjust } from '../../types/generated/ShapeAdjust'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
@@ -40,6 +41,7 @@ import {
   shapeProps,
   soundLabel,
   soundVolume,
+  strokeProps,
   traversalTarget,
   translateRanges,
   UNIT,
@@ -101,8 +103,13 @@ export type NodeData =
   | { kind: 'fit'; lens: Lens<Transform> }
   /** A mirror, revolve, or divide, which has its props under it */
   | { kind: 'copy'; lens: Lens<Transform> }
-  /** The row for adding a transform, or an adjust where there's `adjusts`. With `shape`, it also offers a mirror, revolve, or divide. */
+  /**
+   * The row for adding a transform, or an adjust where there's `adjusts`. With `shape`, it also offers a mirror, revolve,
+   * divide, or stroke.
+   */
   | { kind: 'modifiers'; transforms: Lens<Transform[]>; adjusts?: Lens<ColorAdjust[]>; shape?: Lens<Shape> }
+  /** A stroke along a shape's edge, which has its props under it */
+  | { kind: 'stroke'; lens: Lens<ShapeAdjust> }
   | { kind: 'points'; shape: PointsShape; lens: Lens<Prop<Vec2>[]> | Lens<BezierPoint[]> }
   | { kind: 'bezier-point' }
   | { kind: 'traversals'; lens: Lens<Traversal[]>; layer: Lens<SceneLayer> }
@@ -326,7 +333,8 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
 /**
  * Transforms then adjusts, as rows beside the props of what they change, and a row for adding either. Translates,
  * rotates, scales, and adjusts are props of their own, a fit picks its traversal in its row, and a mirror, revolve, or
- * divide has its props under it. With `shape`, the row for adding offers those too.
+ * divide has its props under it. With `shape`, the row for adding offers those too, and its strokes are listed after its
+ * transforms, each with its props under it.
  */
 function modifierNodes(id: string, transforms: Lens<Transform[]>, space: TransformSpace, surface: Surface, adjusts?: Lens<ColorAdjust[]>, shape?: Lens<Shape>): ConfigNode[] {
   const transformList = `${id}/transform`
@@ -359,8 +367,18 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const spec: PropSpec = { lens: adjustAmount(lens) as Lens<Prop<SceneValue>>, paramName, fallback: range.rest!, ranges: both(range) }
     return { ...propNode(`${adjustList}/${index}`, label, spec, surface), place: { list: adjusts as Lens<unknown[]>, listId: adjustList, index }, modifier: kind }
   })
+  const strokes = shape && orEmpty(field(shape, 'adjust'))
+  const strokeNodes = (strokes?.get() ?? []).map((stroke, index): ConfigNode => {
+    const strokeId = `${adjustList}/${index}`
+    const lens = item(strokes!, index)
+    const children = strokeProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
+      propNode(`${strokeId}/${key}`, label, { lens: propLens, paramName: `stroke_${key}`, fallback, ranges }, surface),
+    )
+    const place = { list: strokes as Lens<unknown[]>, listId: adjustList, index }
+    return branch({ id: strokeId, label: 'Stroke', kind: 'stroke', lens, value: stroke, place, fields: true, children })
+  })
   const add: ConfigNode = { id: `${id}/modifiers`, label: 'Modifier', kind: 'modifiers', transforms, adjusts, shape, value: undefined }
-  return [...transformNodes, ...adjustNodes, add]
+  return [...transformNodes, ...adjustNodes, ...strokeNodes, add]
 }
 
 /** A solid's color, a gradient's stops, or an animated image's frame, then its transforms and adjusts */

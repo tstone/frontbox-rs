@@ -16,6 +16,7 @@ import type { LedLayer } from '../../types/generated/LedLayer'
 import type { Scene as SceneFile } from '../../types/generated/Scene'
 import type { SceneLayer as SceneFileLayer } from '../../types/generated/SceneLayer'
 import type { SceneSource } from '../../types/generated/SceneSource'
+import type { ShapeAdjust } from '../../types/generated/ShapeAdjust'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
@@ -405,9 +406,11 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
+    const strokes = orEmpty(field(lens, 'adjust'))
+    strokes.get().forEach((_, i) => strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges)))
   }
 
-  const fill = (lens: Lens<Layer['fill']>, label: string) => {
+  const fill =(lens: Lens<Layer['fill']>, label: string) => {
     transforms(orEmpty(field(lens, 'transform')), `${label} · Fill`, 'fill')
     const base = field(lens, 'base')
     const current = base.get()
@@ -959,6 +962,19 @@ export function copyProps(transform: Lens<Transform>, surface: Surface): PropFie
   return [center(field(line, 'center')), propField('rotation', 'Rotation', 0, both(ROTATION), field(line, 'rotation'))]
 }
 
+/** A stroke's width, then its color if it has one rather than taking the layer's fill */
+export function strokeProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropField[] {
+  const stroke = variant(adjust, 'Stroke')
+  const width = propField('width', 'Width', 0, both(strokeRange(surface)), field(stroke, 'width'))
+  if (!stroke.get().color) return [width]
+  return [width, propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(stroke, 'color'))]
+}
+
+/** A stroke a tenth the size of a new shape, along its edge, that takes the layer's fill */
+export function newStroke(surface: Surface): ShapeAdjust {
+  return { Stroke: { width: { Fixed: strokeRange(surface).rest! } } }
+}
+
 /** The sizes of a shape that isn't made of points, and the props that say how it's drawn. None for one that is. */
 export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[] {
   const current = base.get()
@@ -967,10 +983,6 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
   const size = (key: string, label: string, ranges: Ranges, lens: Lens<unknown>) => propField(key, label, 0, ranges, lens)
   const shaped = (key: string, label: string, range: Range, lens: Lens<unknown>) => propField(key, label, range.rest!, both(range), lens)
   if ('Circle' in current) return [size('radius', 'Radius', round, field(variant(base, 'Circle'), 'radius'))]
-  if ('Ring' in current) {
-    const ring = variant(base, 'Ring')
-    return [size('inner_radius', 'Inner radius', round, field(ring, 'inner_radius')), size('thickness', 'Thickness', round, field(ring, 'thickness'))]
-  }
   if ('Ellipse' in current) {
     const ellipse = variant(base, 'Ellipse')
     return [size('rx', 'RX', both(radius(across)), field(ellipse, 'rx')), size('ry', 'RY', both(radius(down)), field(ellipse, 'ry'))]
@@ -1040,6 +1052,12 @@ export function roundRange(surface: Surface): Range {
 export function reachRange(surface: Surface): Range {
   const range = roundRange(surface)
   return { ...range, rest: Math.round(newShapeSize(surface) / 4 / range.step) * range.step }
+}
+
+/** How wide a stroke is, which can be as wide as `roundRange` goes */
+export function strokeRange(surface: Surface): Range {
+  const range = roundRange(surface)
+  return { ...range, rest: Math.max(Math.round(newShapeSize(surface) / 10 / range.step), 1) * range.step }
 }
 
 /** A polygon's points, in the shape's own space around its center */

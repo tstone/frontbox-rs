@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
 use crate::layout::Grid;
-use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
+use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Cover, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
 
 /// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -231,19 +231,22 @@ pub(crate) struct PreparedArea<'a> {
 }
 
 impl PreparedArea<'_> {
-  /// The fill's color at a sample, with edge coverage in alpha
+  /// The fill's color at a sample, with edge coverage in alpha, and a shape's colored strokes drawn over it
   pub(crate) fn color(&self, at: &Sample) -> Rgba<u8> {
-    let (coverage, fill_pos) = match &self.clip {
-      Clip::Viewport(viewport) if !viewport.contains(at.pos) => return Rgba([0, 0, 0, 0]),
-      Clip::Viewport(viewport) => (1.0, viewport.to_unit(at.pos)),
+    match &self.clip {
+      Clip::Viewport(viewport) if !viewport.contains(at.pos) => Rgba([0, 0, 0, 0]),
+      Clip::Viewport(viewport) => self.fill.color(viewport.to_unit(at.pos)),
       Clip::Shape(shape) => match shape.cover(at) {
-        Some((coverage, local)) => (coverage, shape.bounds.to_unit(local)),
-        None => return Rgba([0, 0, 0, 0]),
+        Some(cover) => self.covered(shape, cover),
+        None => Rgba([0, 0, 0, 0]),
       },
-    };
-    let mut color = self.fill.color(fill_pos);
-    color[3] = (color[3] as f32 * coverage).round() as u8;
-    color
+    }
+  }
+
+  /// The fill where a shape covers it, with the shape's colored strokes over it
+  fn covered(&self, shape: &PreparedShape, cover: Cover) -> Rgba<u8> {
+    let color = covering(self.fill.color(shape.bounds.to_unit(cover.local)), cover.amount);
+    cover.strokes.into_iter().fold(color, |color, (amount, stroke)| Rgba::over(covering(stroke, amount), color))
   }
 }
 
@@ -251,6 +254,12 @@ impl PreparedArea<'_> {
 enum Clip {
   Viewport(Bounds),
   Shape(PreparedShape),
+}
+
+/// `color` with its alpha scaled by how much of a sample it covers
+fn covering(mut color: Rgba<u8>, coverage: f32) -> Rgba<u8> {
+  color[3] = (color[3] as f32 * coverage).round() as u8;
+  color
 }
 
 /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their

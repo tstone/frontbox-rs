@@ -141,9 +141,11 @@ mod tests {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(Shape::new(
-          ShapeNode::Ring { inner_radius: 3.0.into(), thickness: 1.0.into() },
-        )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(
+          Shape::new(ShapeNode::circle(3.0))
+            .adjust(ShapeAdjust::Stroke { width: 1.0.into(), align: StrokeAlign::Outside, color: None })
+            .adjust(ShapeAdjust::Stroke { width: 0.25.into(), align: StrokeAlign::Centered, color: Some(Color(Rgba([255, 255, 255, 255])).into()) }),
+        ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
           .region(
@@ -353,18 +355,16 @@ mod tests {
     let scene = load(
       "(layers: [
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ellipse(r1: Fixed(2.0), r2: Fixed(10.0)))),
-        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ring(radius: Fixed(3.0), thickness: Fixed(1.0)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Route(points: []))),
       ])",
     )
     .unwrap();
     let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
     assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
-    assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
-    assert!(matches!(base(2), ShapeNode::Polyline { .. }));
+    assert!(matches!(base(1), ShapeNode::Polyline { .. }));
 
     let written = save(&scene).unwrap();
-    assert!(["rx:", "inner_radius:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
+    assert!(["rx:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
   }
 
   #[test]

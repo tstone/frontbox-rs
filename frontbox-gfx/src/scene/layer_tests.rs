@@ -982,3 +982,18 @@ fn a_prepared_layer_draws_samples_of_another_radius_as_they_are_drawn_alone() {
     assert_eq!(prepared.sample(&at), scene.layers[0].sample(&at, &frame));
   }
 }
+
+#[test]
+fn a_colored_stroke_is_drawn_over_the_fill_and_one_without_a_color_takes_it() {
+  let circle = || Shape::new(ShapeNode::circle(10.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
+  let outlined = circle().adjust(ShapeAdjust::Stroke { width: 2.0.into(), align: StrokeAlign::Inside, color: Some(Color(BLUE).into()) });
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(outlined)]);
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.1), RED);
+  assert_eq!(sample(&scene, 59.0, 25.0, 0.1), BLUE);
+  assert_eq!(sample(&scene, 61.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
+
+  let ring = circle().adjust(ShapeAdjust::Stroke { width: 2.0.into(), align: StrokeAlign::Inside, color: None });
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(ring)]);
+  assert_eq!(sample(&scene, 50.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
+  assert_eq!(sample(&scene, 59.0, 25.0, 0.1), RED);
+}

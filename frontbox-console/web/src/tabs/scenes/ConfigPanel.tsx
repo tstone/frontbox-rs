@@ -20,6 +20,7 @@ import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Stop } from '../../types/generated/Stop'
+import type { StrokeAlign } from '../../types/generated/StrokeAlign'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
@@ -85,7 +86,9 @@ import {
   newAdjust,
   newLayerPlace,
   newShapeSize,
+  newStroke,
   NOTCH,
+  orEmpty,
   RATE,
   reachRange,
   removed,
@@ -117,15 +120,13 @@ import {
 
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
-type ShapeKind = 'None' | 'Circle' | 'Ring' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Polygon' | 'Polyline' | 'Bezier'
+type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Polygon' | 'Polyline' | 'Bezier'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
 /** What a layer's region can be: a shape, or on an LED scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
 
-/** How much of a new ring's reach is its hole */
-const RING_HOLE = 0.75
 /** How wide a triangle is, as a share of how tall it is, so that its sides are all the same length */
 const TRIANGLE_WIDTH = 2 / Math.sqrt(3)
 /** How wide a pinwheel's blades are where they're widest, as a share of how long they are */
@@ -154,7 +155,6 @@ const SHAPES: ShapeOption[] = ([
   { value: 'Ellipse', label: 'Ellipse' },
   { value: 'Polygon', label: 'Polygon' },
   { value: 'Rect', label: 'Rectangle' },
-  { value: 'Ring', label: 'Ring' },
   { value: 'Star', label: 'Star' },
 ] as ShapeOption[]).map((option) => ({ ...option, group: 'Shapes' }))
 const TEMPLATES: ShapeOption[] = [
@@ -201,6 +201,17 @@ const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
   { value: 'Inside', label: 'Inside the mask' },
 ]
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
+/** Only for a shape that's drawn, rather than a sweep's path */
+const STROKE_OPTION: { value: 'Stroke'; label: string } = { value: 'Stroke', label: 'Stroke' }
+const STROKE_ALIGN_OPTIONS: { value: StrokeAlign; label: string }[] = [
+  { value: 'Inside', label: 'Inside the edge' },
+  { value: 'Centered', label: 'Centered on the edge' },
+  { value: 'Outside', label: 'Outside the edge' },
+]
+const STROKE_DRAWS_OPTIONS: { value: 'Fill' | 'Color'; label: string }[] = [
+  { value: 'Fill', label: "The layer's fill, without the inside" },
+  { value: 'Color', label: 'A color, over the inside' },
+]
 const SPEED_OPTIONS: { value: SpeedKind; label: string }[] = [
   { value: 'Duration', label: 'Finish in a time' },
   { value: 'Rate', label: 'Rate' },
@@ -209,7 +220,6 @@ const SPEED_OPTIONS: { value: SpeedKind; label: string }[] = [
 const SHAPE_ICONS: Record<RegionKind, Icon> = {
   None: icons.Scan,
   Circle: icons.Circle,
-  Ring: icons.CircleDot,
   Ellipse: icons.Egg,
   Rect: icons.Square,
   Polygon: icons.Pentagon,
@@ -250,6 +260,7 @@ const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   leds: icons.Lightbulb,
   z: icons.Layers2,
   mask: icons.SquareDashed,
+  stroke: icons.PenLine,
   fit: icons.Maximize2,
   points: icons.Waypoints,
   'bezier-point': icons.Dot,
@@ -856,6 +867,7 @@ function NodeFields(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'region')}>{(region) => <GraphFields layer={region().layer!} />}</Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillFields lens={fill().lens} />}</Match>
       <Match when={is(props.node, 'mask')}>{(mask) => <MaskFields lens={mask().lens as Lens<Mask>} />}</Match>
+      <Match when={is(props.node, 'stroke')}>{(stroke) => <StrokeFields node={stroke()} />}</Match>
       <Match when={is(props.node, 'traversal')}>{(traversal) => <TraversalFields lens={traversal().lens} layer={traversal().layer} />}</Match>
       <Match when={is(props.node, 'node-ref')}>{(ref) => <NodeRefFields label={ref().label} lens={ref().lens} />}</Match>
       <Match when={is(props.node, 'prop')}>{(prop) => <PropField bare label={prop().label} {...propFieldSpec(prop())} />}</Match>
@@ -996,6 +1008,31 @@ function MaskFields(props: { lens: Lens<Mask> }) {
         onChange={(value) => field(props.lens, 'invert').set(value === 'Outside' || undefined)}
       />
     </FieldRow>
+  )
+}
+
+/** Which side of a shape's edge a stroke is on, and what it's drawn with */
+function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) {
+  const stroke = () => variant(props.node.lens, 'Stroke')
+  return (
+    <>
+      <FieldRow label="Align">
+        <Dropdown
+          label="Align"
+          options={STROKE_ALIGN_OPTIONS}
+          value={stroke().get().align ?? 'Centered'}
+          onChange={(align) => field(stroke(), 'align').set(align === 'Centered' ? undefined : align)}
+        />
+      </FieldRow>
+      <FieldRow label="Draw with">
+        <Dropdown
+          label="Draw with"
+          options={STROKE_DRAWS_OPTIONS}
+          value={stroke().get().color ? 'Color' : 'Fill'}
+          onChange={(draws) => field(stroke(), 'color').set(draws === 'Color' ? { Fixed: WHITE } : undefined)}
+        />
+      </FieldRow>
+    </>
   )
 }
 
@@ -1447,7 +1484,6 @@ function templateShape(kind: TemplateKind, across: number): { base: ShapeNode; t
 function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): ShapeNode {
   const reach = Math.max(width, height) / 2
   if (kind === 'Circle') return { Circle: { radius: { Fixed: reach } } }
-  if (kind === 'Ring') return { Ring: { inner_radius: { Fixed: reach * RING_HOLE }, thickness: { Fixed: reach * (1 - RING_HOLE) } } }
   if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
   if (kind === 'Diamond') {
@@ -1480,10 +1516,6 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
 function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   const value = (prop: Prop<number>) => startingValue(prop, scene, 0)
   if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
-  if ('Ring' in base) {
-    const across = (value(base.Ring.inner_radius) + value(base.Ring.thickness)) * 2
-    return [across, across]
-  }
   if ('Ellipse' in base) return [value(base.Ellipse.rx) * 2, value(base.Ellipse.ry) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
   if ('Diamond' in base) return [value(base.Diamond.width), value(base.Diamond.height)]
@@ -1546,20 +1578,27 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
 }
 
 /**
- * Adds a transform or an adjust, listed together, after those already there. A mirror, revolve, or divide goes before
- * a shape's first translate instead, so that its center is in the shape's own space and it moves with the shape.
+ * Adds a transform, an adjust, or a stroke, listed together, after those already there. A mirror, revolve, or divide
+ * goes before a shape's first translate instead, so that its center is in the shape's own space and it moves with the
+ * shape.
  */
 function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }) {
   const tree = useContext(ConfigTreeContext)!
   const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
   const traversals = useContext(TraversalsContext)
   // a fit is only for a layer with traversals to fit to
   const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? COPY_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
-  const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : [])]
+  const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : []), ...(props.node.shape ? [[STROKE_OPTION]] : [])]
   const owner = () => props.node.id.slice(0, props.node.id.lastIndexOf('/'))
-  const add = (kind: TransformKind | AdjustKind) =>
+  const add = (kind: TransformKind | AdjustKind | 'Stroke') =>
     batch(() => {
-      if (kind in ADJUSTS) {
+      if (kind === 'Stroke') {
+        const strokes = orEmpty(field(props.node.shape!, 'adjust'))
+        const list = strokes.get()
+        strokes.set([...list, newStroke(surface())])
+        tree.select(`${owner()}/adjust/${list.length}`)
+      } else if (kind in ADJUSTS) {
         const list = props.node.adjusts!.get()
         props.node.adjusts!.set([...list, newAdjust(kind as AdjustKind)])
         tree.select(`${owner()}/adjust/${list.length}`)

@@ -69,6 +69,7 @@ mod random;
 mod scene_error;
 mod sample;
 mod shape;
+mod shape_adjust;
 mod sweep;
 #[cfg(test)]
 pub(crate) mod test_scene;
@@ -99,6 +100,7 @@ pub use random::*;
 pub use scene_error::*;
 pub use sample::*;
 pub use shape::*;
+pub use shape_adjust::*;
 pub use sweep::*;
 pub use timing::*;
 pub use value::*;
