@@ -5,7 +5,7 @@ import type { Key } from "./Key";
 /**
  * Keyframes, timed from the start of each scene cycle
  */
-export type Track<T> = { 
+export type Keyframes<T> = { 
 /**
  * Sorted by `at`
  */

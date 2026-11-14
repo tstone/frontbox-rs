@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::layer::env;
 use crate::scene::sweep::only_for_positions;
-use crate::scene::{Animatable, Env, LayerFrame, Modulated, Random, Sweep, Track, VisitResponse};
+use crate::scene::{Animatable, Env, Keyframes, LayerFrame, Modulated, Random, Sweep, VisitResponse};
 
 /// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept
 /// along a path, or set off by a traversal's visits
 ///
-/// In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
-/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`, or
+/// In RON: `Fixed(4.0)`, `Param("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
+/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Param("lap")))`, or
 /// `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +18,7 @@ pub enum Prop<T> {
   /// Read from a parameter. A missing parameter, or one of the wrong type, gives the type's default.
   Param(String),
   /// Keyframes over time
-  Track(Track<T>),
+  Keyframes(Keyframes<T>),
   /// Picked at random at set times
   Random(Random),
   /// Moves through a range in a repeating wave, timed to the scene cycle
@@ -39,7 +39,11 @@ impl<T> From<T> for Prop<T> {
 impl<T> Prop<T> {
   /// Whether it can change while a scene plays, which needs the scene to have a timing
   pub fn is_animated(&self) -> bool {
-    matches!(self, Self::Track(_) | Self::Random(_) | Self::Modulated(_) | Self::Sweep(_) | Self::Visit(_))
+    match self {
+      Self::Fixed(_) | Self::Param(_) => false,
+      Self::Sweep(sweep) => sweep.is_animated(),
+      Self::Keyframes(_) | Self::Random(_) | Self::Modulated(_) | Self::Visit(_) => true,
+    }
   }
 }
 
@@ -54,7 +58,7 @@ impl<T: Animatable> Prop<T> {
     match self {
       Self::Fixed(value) => value.clone(),
       Self::Param(name) => env.param(name).and_then(T::from_value).unwrap_or_default(),
-      Self::Track(track) => track.resolve(env.time),
+      Self::Keyframes(keyframes) => keyframes.resolve(env.time),
       Self::Random(random) => random.resolve(env),
       Self::Modulated(modulated) => modulated.resolve(env),
       Self::Sweep(sweep) => T::from_point(sweep.resolve(env)).unwrap_or_default(),

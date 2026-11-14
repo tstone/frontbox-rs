@@ -31,7 +31,7 @@ impl Sample {
 pub struct LayerFrame<'a> {
   /// Seconds since the scene started
   pub time: f32,
-  /// The scene's timing. `None` for a static scene, whose tracks stay at time 0.
+  /// The scene's timing. `None` for a static scene, whose keyframes stay at time 0.
   pub timing: Option<Timing>,
   /// Seed for random props. Players use a new one each time they restart a scene, so it doesn't repeat the same picks.
   pub playback_seed: u32,

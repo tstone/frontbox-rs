@@ -464,13 +464,13 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-export type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Modulated', 'Sweep', 'Visit']
+export type PropKind = 'Fixed' | 'Param' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit']
 
 export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Fixed: 'Fixed',
   Param: 'Param',
-  Track: 'Keyframes',
+  Keyframes: 'Keyframes',
   Random: 'Random',
   Modulated: 'Modulated',
   Sweep: 'Sweep',
@@ -560,7 +560,7 @@ export function PropField<T extends SceneValue>(
             <p class="scene-note scene-note-warn">No parameter of this type has that name, so this reads as zero.</p>
           </Show>
         </Match>
-        <Match when={kind() === 'Track'}>
+        <Match when={kind() === 'Keyframes'}>
           <p class="scene-note">Keyframes are on the timeline below.</p>
         </Match>
         <Match when={kind() === 'Random'}>
@@ -579,7 +579,7 @@ export function PropField<T extends SceneValue>(
           <ModulatedField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Modulated')} />
         </Match>
         <Match when={kind() === 'Sweep'}>
-          <p class="scene-note">Its path is under it. When it goes around is on the timeline below.</p>
+          <p class="scene-note">Its path is under it, and how far along the path it is, from 0 to 1. Keyframing that from 0 to 1 goes around once.</p>
         </Match>
         <Match when={kind() === 'Visit'}>
           <VisitField label={props.label} ranges={props.ranges} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Visit')} />
@@ -606,9 +606,9 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
     if (next === kind()) return
     const current = value()
     if (next === 'Fixed') props.lens.set({ Fixed: current })
-    if (next === 'Track') {
+    if (next === 'Keyframes') {
       scene.set(withTiming(scene.get()))
-      props.lens.set({ Track: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
+      props.lens.set({ Keyframes: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
     }
     if (next === 'Random') {
       scene.set(withTiming(scene.get()))

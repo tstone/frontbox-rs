@@ -479,7 +479,7 @@ fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
 mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
-  use crate::scene::{Key, Params, Track, Transform};
+  use crate::scene::{Key, Keyframes, Params, Transform};
   use crate::scene::value::tests::env;
 
   fn square() -> ShapeNode {
@@ -875,7 +875,7 @@ mod tests {
 
   #[test]
   fn a_bezier_is_animated_by_a_point_or_a_handle() {
-    let moves = || Prop::Track(Track { keys: vec![Key::new(0.0, Vec2::ZERO, Curve::Linear)], cycle: Cycle::Once });
+    let moves = || Prop::Keyframes(Keyframes { keys: vec![Key::new(0.0, Vec2::ZERO, Curve::Linear)], cycle: Cycle::Once });
     let by_point = BezierPoint { point: moves(), handle: Vec2::ZERO.into() };
     let by_handle = BezierPoint { point: Vec2::ZERO.into(), handle: moves() };
     assert!(ShapeNode::Bezier { points: vec![by_point] }.is_animated());
@@ -917,7 +917,7 @@ mod tests {
   #[test]
   fn sizes_change_over_time() {
     let params = Params::new();
-    let grows = Prop::Track(Track {
+    let grows = Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 2.0, Curve::Linear), Key::new(1.0, 6.0, Curve::Linear)],
       cycle: Cycle::Once,
     });

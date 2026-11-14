@@ -26,7 +26,7 @@ export type Scene = { version: number,
  */
 params?: { [key in string]: Value }, 
 /**
- * `None` is static, and its tracks stay on their first moment
+ * `None` is static, and its keyframes stay on their first key
  */
 timing?: Timing, 
 /**

@@ -2099,11 +2099,6 @@ label.scene-button:hover {
   cursor: ew-resize;
 }
 
-.scene-sweep-start {
-  left: 0;
-  translate: -100% -50%;
-}
-
 .scene-sweep-finish {
   right: 0;
   translate: 100% -50%;

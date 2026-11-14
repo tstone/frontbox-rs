@@ -123,7 +123,7 @@ fn gradient_runs_along_the_leds() {
 #[test]
 fn time_moves_tracks() {
   let (context, addresses) = three_leds();
-  let track = Prop::Track(Track {
+  let track = Prop::Keyframes(Keyframes {
     keys: vec![Key::new(0.0, Color(Rgba([0, 0, 0, 255])), Curve::Linear), Key::new(1.0, Color(Rgba([200, 0, 0, 255])), Curve::Linear)],
     cycle: Cycle::Once,
   });
@@ -256,11 +256,11 @@ fn a_shape_reaches_leds_past_the_edge_of_the_plane() {
 #[test]
 fn an_led_a_shape_moves_off_is_given_up() {
   let (context, addresses) = placed_leds(&[at(5.0, 5.0)]);
-  let path = Track {
+  let path = Keyframes {
     keys: vec![Key::new(0.0, Vec2::new(5.0, 5.0), Curve::Linear), Key::new(1.0, Vec2::new(50.0, 5.0), Curve::Linear)],
     cycle: Cycle::Once,
   };
-  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Prop::Track(path)))).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold));
+  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Prop::Keyframes(path)))).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold));
   play(&context, PlayableScene::new(scene));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 

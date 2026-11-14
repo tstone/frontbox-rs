@@ -6,7 +6,7 @@ use crate::scene::{Animatable, Env, Prop, Spread};
 
 /// A value that moves through its spread in a repeating wave, timed to the scene cycle
 ///
-/// A [`Track`](crate::scene::Track)'s keys are in seconds, so a wave made of keys drifts when the scene's duration
+/// [`Keyframes`](crate::scene::Keyframes) are in seconds, so a wave made of keys drifts when the scene's duration
 /// changes. This keeps the same number of waves per cycle at any duration.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,7 +81,7 @@ mod tests {
   use crate::animation::Cycle;
   use crate::scene::value::tests::env;
   use crate::animation::Curve;
-  use crate::scene::{Color, Key, Params, Timing, Track, Value};
+  use crate::scene::{Color, Key, Keyframes, Params, Timing, Value};
 
   fn modulated(wave: Wave) -> Modulated {
     Modulated { wave, spread: Spread::Float(10.0, 20.0), rate: 1.0, phase: Box::new(0.0.into()) }
@@ -150,7 +150,7 @@ mod tests {
   #[test]
   fn a_phase_rising_through_the_scene_adds_waves() {
     let keys = vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(4.0, 1.0, Curve::Linear)];
-    let phase = Prop::Track(Track { keys, cycle: Cycle::Once });
+    let phase = Prop::Keyframes(Keyframes { keys, cycle: Cycle::Once });
     let faster = Modulated { phase: Box::new(phase), ..modulated(Wave::Ramp) };
     // a wave from the rate and one from the phase, so two over the scene
     assert_eq!([0.0, 1.0, 2.0, 3.0].map(|time| at(&faster, time)), [10.0, 15.0, 10.0, 15.0]);

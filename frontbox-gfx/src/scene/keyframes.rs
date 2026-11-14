@@ -6,7 +6,7 @@ use crate::scene::Animatable;
 /// Keyframes, timed from the start of each scene cycle
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Track<T> {
+pub struct Keyframes<T> {
   /// Sorted by `at`
   pub keys: Vec<Key<T>>,
   /// How many times the keys play. Each loop jumps from the last key straight back to the first.
@@ -14,7 +14,13 @@ pub struct Track<T> {
   pub cycle: Cycle,
 }
 
-impl<T: Animatable> Track<T> {
+impl<T> Keyframes<T> {
+  pub fn new(keys: Vec<Key<T>>, cycle: Cycle) -> Self {
+    Self { keys, cycle }
+  }
+}
+
+impl<T: Animatable> Keyframes<T> {
   pub(crate) fn resolve(&self, time: f32) -> T {
     let (Some(first), Some(last)) = (self.keys.first(), self.keys.last()) else {
       return T::default();
@@ -63,7 +69,7 @@ mod tests {
   use crate::scene::{Params, Prop};
 
   fn track(cycle: Cycle) -> Prop<f32> {
-    Prop::Track(Track {
+    Prop::Keyframes(Keyframes {
       keys: vec![
         Key::new(0.0, 0.0, Curve::Linear),
         Key::new(1.0, 10.0, Curve::Linear),
@@ -85,7 +91,7 @@ mod tests {
   #[test]
   fn the_first_keys_curve_does_nothing() {
     let params = Params::new();
-    let prop = Prop::Track(Track {
+    let prop = Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::EaseIn), Key::new(1.0, 10.0, Curve::Linear)],
       cycle: Cycle::Forever,
     });
@@ -111,7 +117,7 @@ mod tests {
   #[test]
   fn empty_track_is_the_default() {
     let params = Params::new();
-    let prop: Prop<f32> = Prop::Track(Track { keys: vec![], cycle: Cycle::Once });
+    let prop: Prop<f32> = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
     assert_eq!(prop.resolve(&env(1.0, &params)), 0.0);
   }
 }

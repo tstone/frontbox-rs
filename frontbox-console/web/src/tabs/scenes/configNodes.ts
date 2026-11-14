@@ -495,18 +495,18 @@ function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Su
   return branch({ id, label, kind: 'node-ref', lens, value: current, fields: 'Name' in current, children })
 }
 
-/** A prop opens to its field. One that sweeps has its path under it, and one in a wave its phase. */
+/** A prop opens to its field. One that sweeps has its path and its position along it under it, and one in a wave its phase. */
 function propNode(id: string, label: string, spec: PropSpec, surface: Surface): ConfigNode {
   const prop = spec.lens.get()
-  const phase = (lens: Lens<Modulated>) =>
-    propNode(`${id}/phase`, 'Phase', { lens: field(lens, 'phase') as Lens<Prop<SceneValue>>, paramName: `${spec.paramName}_phase`, fallback: 0, ranges: both(UNIT) }, surface)
+  const under = (name: 'position' | 'phase', label: string, lens: Lens<unknown>) =>
+    propNode(`${id}/${name}`, label, { lens: lens as Lens<Prop<SceneValue>>, paramName: `${spec.paramName}_${name}`, fallback: 0, ranges: both(UNIT) }, surface)
   const children =
     'Sweep' in prop
-      ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface)]
+      ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface), under('position', 'Position', field(variant(spec.lens, 'Sweep'), 'position'))]
       : 'Modulated' in prop
-        ? [phase(variant(spec.lens, 'Modulated'))]
+        ? [under('phase', 'Phase', field(variant(spec.lens, 'Modulated') as Lens<Modulated>, 'phase'))]
         : []
   // keyframes are edited on the timeline and a fixed color by its swatch in the row, so there's nothing to open
   const fixedColor = 'Fixed' in prop && Array.isArray(prop.Fixed) && prop.Fixed.length === 4
-  return branch({ id, label, kind: 'prop', ...spec, value: prop, fields: !('Track' in prop) && !fixedColor, children })
+  return branch({ id, label, kind: 'prop', ...spec, value: prop, fields: !('Keyframes' in prop) && !fixedColor, children })
 }

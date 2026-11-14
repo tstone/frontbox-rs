@@ -22,7 +22,7 @@ import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
-import type { Track } from '../../types/generated/Track'
+import type { Keyframes } from '../../types/generated/Keyframes'
 import type { Value } from '../../types/generated/Value'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
@@ -195,7 +195,7 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Visit' in prop) return prop.Visit.from
-  if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
+  if ('Keyframes' in prop) return prop.Keyframes.keys[0]?.value ?? fallback
   if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadAt(prop.Random.spread, 0.5) as T) : fallback
   if ('Modulated' in prop) {
     const { spread, wave, phase } = prop.Modulated
@@ -229,12 +229,23 @@ export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
 /** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
 export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base
 
-/** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
+/** A circle around `center`, gone around once over a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
   const reach = Math.min(x.max - x.min, y.max - y.min) / 4
   const base = { Circle: { radius: { Fixed: reach } } }
-  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, start: 0, end: duration }
+  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, position: lap(duration) }
 }
+
+/** From 0 to 1 over `duration` seconds, once */
+const lap = (duration: number): Prop<number> => ({
+  Keyframes: {
+    keys: [
+      { at: 0, value: 0, curve: 'Linear' },
+      { at: duration, value: 1, curve: 'Linear' },
+    ],
+    cycle: 'Once',
+  },
+})
 
 /** Whether a scene plays more than once, which gives its first moment something to come from and its last somewhere to go */
 export function repeats(scene: Scene) {
@@ -276,7 +287,7 @@ export function framesTrack(info: ImageInfo, { duration }: Timing): Prop<number>
     { at: 0, value: 0, curve: 'Linear' },
     { at: end, value: info.frames, curve: 'Linear' },
   ]
-  return { Track: { keys, cycle: 'Once' } }
+  return { Keyframes: { keys, cycle: 'Once' } }
 }
 
 /** Scene with a parameter added or changed */
@@ -361,6 +372,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       const path = `${label} · Path`
       shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
     }
+    if ('Sweep' in prop) use(field(variant(lens as PropLens, 'Sweep'), 'position'), `${label} · Position`, both(UNIT))
     if ('Modulated' in prop) use(field(variant(lens as PropLens, 'Modulated'), 'phase'), `${label} · Phase`, both(UNIT))
   }
 
@@ -546,12 +558,9 @@ export function traversalLength(traversal: Traversal, scene: Scene, measured: nu
 export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
   return propUses(scene, surfaces).flatMap(({ lens, layer, mask, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop || 'Modulated' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
+    return 'Keyframes' in prop || 'Random' in prop || 'Modulated' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
   })
 }
-
-/** A time no scene gets to, which a sweep waits for at the start of its path */
-const NEVER = 1e30
 
 /**
  * Whether a track is set to stay put. That's only for the editing and isn't part of the scene: it's on the track so that
@@ -580,10 +589,9 @@ function middleOf(spread: Spread): Spread {
  * where it starts.
  */
 function held(prop: Prop<SceneValue>): Prop<SceneValue> {
-  if ('Sweep' in prop) return { Sweep: { ...prop.Sweep, start: NEVER, end: 2 * NEVER } }
   if ('Modulated' in prop) return { Modulated: { ...prop.Modulated, rate: 0 } }
   if ('Random' in prop) return { Random: { ...prop.Random, spread: middleOf(prop.Random.spread), force_unique: false } }
-  return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
+  return 'Keyframes' in prop && prop.Keyframes.keys.length > 0 ? { Fixed: prop.Keyframes.keys[0].value } : prop
 }
 
 /**
@@ -646,30 +654,22 @@ export function sceneSource(scene: Scene): SceneSource {
   return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneFile(shown) } }
 }
 
-/** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */
+/** When a prop changes, in order: its keyframes, or the moments a value is picked */
 export function trackTimes(prop: Prop<SceneValue>) {
-  if ('Track' in prop) return prop.Track.keys.map((key) => key.at)
-  if ('Sweep' in prop) return [prop.Sweep.start, prop.Sweep.end]
+  if ('Keyframes' in prop) return prop.Keyframes.keys.map((key) => key.at)
   return 'Random' in prop ? prop.Random.picks.map((pick) => pick.at) : []
 }
 
-/** `scene` with new times for what's on its timeline: the keys and picks of a prop, and the two ends of a sweep */
-function withTimes(
-  scene: Scene,
-  moments: <T extends { at: number }>(list: T[]) => T[],
-  ends: (sweep: Sweep) => [number, number],
-): Scene {
+/** `scene` with new times for what's on its timeline: the keyframes and picks of a prop */
+function withTimes(scene: Scene, moments: <T extends { at: number }>(list: T[]) => T[]): Scene {
   let next = scene
   const tracks = sceneTracks({ get: () => next, set: (edited) => (next = edited) })
   for (const { prop } of tracks) {
     const current = prop.get()
-    if ('Track' in current) {
-      prop.set({ Track: { ...current.Track, keys: moments(current.Track.keys) } })
+    if ('Keyframes' in current) {
+      prop.set({ Keyframes: { ...current.Keyframes, keys: moments(current.Keyframes.keys) } })
     } else if ('Random' in current) {
       prop.set({ Random: { ...current.Random, picks: moments(current.Random.picks) } })
-    } else if ('Sweep' in current) {
-      const [start, end] = ends(current.Sweep)
-      prop.set({ Sweep: { ...current.Sweep, start, end } })
     }
   }
   return next
@@ -705,11 +705,7 @@ export function withDuration(scene: Scene, duration: number): Scene {
 export function withTimesInLength(scene: Scene): Scene {
   const length = scene.timing?.duration
   if (length === undefined) return scene
-  const timed = withTimes(
-    scene,
-    (moments) => pulledBack(moments, length),
-    ({ start, end }) => (end <= length ? [start, end] : [Math.min(start, Math.max(length - TIME_STEP, 0)), length]),
-  )
+  const timed = withTimes(scene, (moments) => pulledBack(moments, length))
   // one that runs past the end is left to show that it does
   const traversed = withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
   // a sound has to start before the end, as one at the end is the start of the next cycle
@@ -718,11 +714,7 @@ export function withTimesInLength(scene: Scene): Scene {
 
 /** `scene` with its length and everything on its timeline scaled by `by`. What's past the end stays past a longer one. */
 export function withTimesScaled(scene: Scene, by: number): Scene {
-  const timed = withTimes(
-    scene,
-    (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })),
-    ({ start, end }) => [start * by, end * by],
-  )
+  const timed = withTimes(scene, (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })))
   // a rate is left as it is, as it's in steps and not seconds
   const scaled = withTraversals(timed, ({ start, speed, ...traversal }) => ({
     ...traversal,
@@ -761,7 +753,7 @@ function lerp(a: SceneValue, b: SceneValue, by: number): SceneValue {
  * `track` with a key added at a time, so that the scene looks as it did. Between two keys that's the value partway
  * from one to the next as if by a straight line, which is close enough for a curve to start from.
  */
-export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue> {
+export function withKey(track: Keyframes<SceneValue>, at: number): Keyframes<SceneValue> {
   const { keys } = track
   const after = keys.findIndex((key) => key.at > at)
   const index = after === -1 ? keys.length : after

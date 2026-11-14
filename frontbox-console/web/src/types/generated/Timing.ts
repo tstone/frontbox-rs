@@ -12,7 +12,7 @@ export type Timing = {
  */
 duration: number, 
 /**
- * How many times to play. Each track can also loop on its own within a cycle.
+ * How many times to play. Each set of keyframes can also loop on its own within a cycle.
  */
 cycle: Cycle, 
 /**

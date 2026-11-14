@@ -6,7 +6,7 @@ import type { Wave } from "./Wave";
 /**
  * A value that moves through its spread in a repeating wave, timed to the scene cycle
  *
- * A [`Track`](crate::scene::Track)'s keys are in seconds, so a wave made of keys drifts when the scene's duration
+ * [`Keyframes`](crate::scene::Keyframes) are in seconds, so a wave made of keys drifts when the scene's duration
  * changes. This keeps the same number of waves per cycle at any duration.
  */
 export type Modulated = { wave: Wave, 

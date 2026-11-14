@@ -14,7 +14,7 @@ const CYCLE_MARGIN: f32 = 1e-4;
 pub struct Timing {
   /// Seconds per cycle
   pub duration: f32,
-  /// How many times to play. Each track can also loop on its own within a cycle.
+  /// How many times to play. Each set of keyframes can also loop on its own within a cycle.
   #[serde(default)]
   pub cycle: Cycle,
   /// What's shown once every cycle has played

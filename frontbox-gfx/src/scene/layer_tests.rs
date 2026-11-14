@@ -36,7 +36,7 @@ fn no_timing(layer: &str) -> SceneError {
 
 #[test]
 fn a_scene_that_cant_play_says_which_layer_is_why() {
-  let changing = || solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(Track { keys: vec![], cycle: Cycle::Once })));
+  let changing = || solid(RED).adjust(ColorAdjust::HueShift(Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once })));
   let scene = |top: Layer| Scene::new(Surface::Area, vec![Layer::new(solid(RED)), top]);
 
   let error = scene(Layer::new(changing()).name("sparkle")).check().unwrap_err();
@@ -415,7 +415,7 @@ fn a_mask_stays_put_as_its_layer_moves() {
 
 #[test]
 fn an_animated_mask_needs_a_timing() {
-  let changing = solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(Track { keys: vec![], cycle: Cycle::Once })));
+  let changing = solid(RED).adjust(ColorAdjust::HueShift(Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once })));
   assert_eq!(masked(Mask::new(changing)).check(), Err(no_timing("layer 2")));
 }
 
@@ -537,7 +537,7 @@ fn a_grid_of_another_shape_does_not_squash_the_scene() {
 
 /// A level that rises from 0 to 100 over a second, and stays there. Read back with `level_at`.
 fn rising(timing: Option<Timing>) -> Scene {
-  let track = Prop::Track(Track {
+  let track = Prop::Keyframes(Keyframes {
     keys: vec![
       Key::new(0.0, Color(Rgba([0, 0, 0, 255])), Curve::Linear),
       Key::new(1.0, Color(Rgba([100, 0, 0, 255])), Curve::Linear),
@@ -604,16 +604,16 @@ fn keyframes_need_a_timing() {
 
 #[test]
 fn keyframes_are_found_wherever_a_scene_has_them() {
-  fn track<T>() -> Track<T> {
-    Track { keys: vec![], cycle: Cycle::Once }
+  fn track<T>() -> Keyframes<T> {
+    Keyframes { keys: vec![], cycle: Cycle::Once }
   }
-  let in_transform = Layer::new(solid(RED)).region(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Track(track()))));
-  let in_point = Layer::new(solid(RED)).region(Shape::new(ShapeNode::Polygon { points: vec![Prop::Track(track())] }));
+  let in_transform = Layer::new(solid(RED)).region(Shape::new(ShapeNode::circle(0.5)).transform(Transform::Rotate(Prop::Keyframes(track()))));
+  let in_point = Layer::new(solid(RED)).region(Shape::new(ShapeNode::Polygon { points: vec![Prop::Keyframes(track())] }));
   let in_stop = Layer::new(Fill::new(FillNode::Gradient {
-    stops: vec![Stop::new(0.0, Prop::Track(track()))],
+    stops: vec![Stop::new(0.0, Prop::Keyframes(track()))],
     style: GradientStyle::Linear,
   }));
-  let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Track(track()))));
+  let in_adjust = Layer::new(solid(RED).adjust(ColorAdjust::HueShift(Prop::Keyframes(track()))));
   for layer in [in_transform, in_point, in_stop, in_adjust] {
     assert_eq!(Scene::new(Surface::Area, vec![layer]).check(), Err(no_timing("layer 1")));
   }
@@ -759,8 +759,8 @@ fn frame_at(scene: &Scene, time: f32, playback_seed: u32, params: &Params) -> u8
 
 #[test]
 fn keys_going_from_0_to_the_frame_count_spend_the_same_time_on_each() {
-  let track = Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 4.0, Curve::Linear)], cycle: Cycle::Once };
-  let scene = playing(Prop::Track(track));
+  let track = Keyframes { keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 4.0, Curve::Linear)], cycle: Cycle::Once };
+  let scene = playing(Prop::Keyframes(track));
   let frames = [0.1, 0.3, 0.6, 0.9].map(|time| frame_at(&scene, time, 0, &Params::new()));
   assert_eq!(frames, [0, 1, 2, 3]);
 }
@@ -793,8 +793,8 @@ fn a_random_frame_is_a_different_frame_at_every_pick() {
 
 #[test]
 fn a_frame_that_changes_needs_timing() {
-  let track = Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once };
-  let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(track)) };
+  let track = Keyframes { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once };
+  let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Keyframes(track)) };
   let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]);
   assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
 }

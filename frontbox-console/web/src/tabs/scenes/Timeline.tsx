@@ -7,7 +7,6 @@ import type { Modulated } from '../../types/generated/Modulated'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedGraph } from '../../types/generated/RenderedGraph'
-import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
@@ -311,13 +310,12 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
   )
 }
 
-/** A prop's name and its keys, its picks, its sweep, or its wave along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
+/** A prop's name and its keys, its picks, or its wave along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
 function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number; reveal: (track: SceneTrack) => void }) {
   const scene = useContext(SceneContext)!
   // read through `props`, as a row goes to whichever prop comes to be at its position
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
-  const swept = () => 'Sweep' in prop.get()
   const waved = () => 'Modulated' in prop.get()
   /** The time under the mouse, and whether that's a dot's rather than one to add a dot at */
   const [hovering, setHovering] = createSignal<{ at: number; onDot: boolean } | null>(null)
@@ -330,7 +328,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
-    if (swept() || waved()) return
+    if (waved()) return
     const { width } = e.currentTarget.getBoundingClientRect()
     const at = along(e, e.currentTarget) * props.span
     const nearest = times().reduce((near, time) => (Math.abs(time - at) < Math.abs(near - at) ? time : near), Infinity)
@@ -340,7 +338,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
 
   const add = (at: number) => {
     const current = prop.get()
-    if ('Track' in current) prop.set({ Track: withKey(current.Track, at) })
+    if ('Keyframes' in current) prop.set({ Keyframes: withKey(current.Keyframes, at) })
     if ('Random' in current) prop.set({ Random: withPick(current.Random, at) })
   }
 
@@ -378,16 +376,13 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
               </span>
             </ScenePortal>
           </Show>
-          <Show when={swept()}>
-            <SweepBar label={props.track.label} lens={variant(prop, 'Sweep')} percent={props.percent} span={props.span} />
-          </Show>
           <Show when={waved()}>
             <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
           </Show>
-          <Index each={swept() ? [] : times()}>
+          <Index each={times()}>
             {(time, index) => (
               <Show
-                when={'Track' in prop.get()}
+                when={'Keyframes' in prop.get()}
                 fallback={
                   <PickDot
                     label={props.track.label}
@@ -402,7 +397,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
                 <KeyDot
                   label={props.track.label}
                   ranges={props.track}
-                  keys={field(variant(prop, 'Track'), 'keys')}
+                  keys={field(variant(prop, 'Keyframes'), 'keys')}
                   index={index}
                   left={props.percent(time())}
                   times={times()}
@@ -438,12 +433,12 @@ function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number;
 }
 
 /**
- * A wave's phase `seconds` into the cycle, as `Track::resolve` in frontbox-gfx has it for keyframes, with a curve written
+ * A wave's phase `seconds` into the cycle, as `Keyframes::resolve` in frontbox-gfx has it for keyframes, with a curve written
  * by hand taken as linear. Only the machine knows what one from anywhere else comes to, so that stays where it starts.
  */
 function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
-  if (!('Track' in phase)) return startingValue(phase, scene, 0)
-  const { keys, cycle } = phase.Track
+  if (!('Keyframes' in phase)) return startingValue(phase, scene, 0)
+  const { keys, cycle } = phase.Keyframes
   const [first, last] = [keys[0], keys[keys.length - 1]]
   if (!first || !last) return 0
   const laps = cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
@@ -570,71 +565,6 @@ function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; p
         <button type="button" class="scene-sound-edge scene-sound-edge-end" aria-label={`${props.label} end, ${shownEnd().toFixed(2)} seconds`} {...endEdge} />
       </div>
     </>
-  )
-}
-
-/** When a path is followed: a line along the track, with an arrow at each end for changing them and a grip for moving it as a whole */
-function SweepBar(props: { label: string; lens: Lens<Sweep>; percent: (seconds: number) => string; span: number }) {
-  const sweep = () => props.lens.get()
-  let bar!: HTMLDivElement
-
-  /** Dragging something that sets both ends from how far it's come, and from how they were when it was pressed */
-  const dragged = (ends: (by: number, pressed: { start: number; end: number; span: number }) => [number, number]) => {
-    // kept from the press, as the view's length can change with where the ends are
-    let press: { x: number; start: number; end: number; span: number } | null = null
-    const lane = () => bar.parentElement!
-    return {
-      onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        press = { x: along(e, lane()), start: sweep().start, end: sweep().end, span: props.span }
-      },
-      onPointerMove(e: PointerEvent) {
-        if (!press) return
-        const [start, end] = ends((along(e, lane()) - press.x) * press.span, press)
-        props.lens.set({ ...sweep(), start, end })
-      },
-      onPointerUp: () => (press = null),
-      onPointerCancel: () => (press = null),
-    }
-  }
-
-  // made once, as each of these holds its own press
-  const startArrow = dragged((by, { start, end }) => [clamp(snap(start + by), 0, end - TIME_STEP), end])
-  const endArrow = dragged((by, { start, end, span }) => [start, clamp(snap(end + by), start + TIME_STEP, span)])
-  const grip = dragged((by, { start, end, span }) => {
-    const moved = clamp(snap(by), -start, span - end)
-    return [snap(start + moved), snap(end + moved)]
-  })
-
-  return (
-    <div
-      class="scene-sweep"
-      ref={bar}
-      style={{ left: props.percent(sweep().start), width: props.percent(sweep().end - sweep().start) }}
-    >
-      <button
-        type="button"
-        class="scene-sweep-end scene-sweep-start"
-        aria-label={`${props.label} start, ${sweep().start.toFixed(2)} seconds`}
-        {...startArrow}
-      >
-        ‹
-      </button>
-      <button
-        type="button"
-        class="scene-sweep-grip"
-        aria-label={`Move ${props.label} along the timeline`}
-        {...grip}
-      />
-      <button
-        type="button"
-        class="scene-sweep-end scene-sweep-finish"
-        aria-label={`${props.label} end, ${sweep().end.toFixed(2)} seconds`}
-        {...endArrow}
-      >
-        ›
-      </button>
-    </div>
   )
 }
 
@@ -845,7 +775,7 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
         >
           Duplicate
         </button>
-        {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Track */}
+        {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Keyframes */}
         <button
           type="button"
           class="scene-key-remove"

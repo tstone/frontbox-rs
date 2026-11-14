@@ -635,7 +635,7 @@ mod tests {
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
           region: (
             base: Rect(width: Fixed(0.5), height: Fixed(0.25)),
-            transform: [Translate(Track(keys: [(at: 0.0, value: (0.0, 0.0)), (at: 2.0, value: (1.0, 0.0))], cycle: Once))],
+            transform: [Translate(Keyframes(keys: [(at: 0.0, value: (0.0, 0.0)), (at: 2.0, value: (1.0, 0.0))], cycle: Once))],
           ),
         ))],)"#;
     let shapes = render_scene(ron(source), SIZE, no_leds(), None, 1.0, Some(0)).unwrap().shapes;
@@ -712,10 +712,10 @@ mod tests {
   fn what_a_client_keeps_on_a_track_for_itself_doesnt_reach_the_file() {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
-      layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Track(keys: [(at: 0.0, value: (9, 8, 7, 255))])))))],)"#;
+      layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (9, 8, 7, 255))])))))],)"#;
     let scene = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap().scene;
     let mut json = serde_json::to_value(&scene).unwrap();
-    json["layers"][0]["Leds"]["layer"]["fill"]["base"]["Solid"]["Track"]["hidden"] = true.into();
+    json["layers"][0]["Leds"]["layer"]["fill"]["base"]["Solid"]["Keyframes"]["hidden"] = true.into();
     let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_leds(), None, 0.0, None);
     let back = back.unwrap();
     assert!(!back.ron.contains("hidden"), "{}", back.ron);
@@ -725,7 +725,7 @@ mod tests {
   fn a_definition_is_held_to_the_same_rules_as_a_file() {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
-      layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))])))))],)"#;
+      layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))])))))],)"#;
     let mut scene = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap().scene;
     scene.timing = None;
     let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), None, 0.0, None).err().unwrap();
@@ -737,7 +737,7 @@ mod tests {
     ron(&format!(
       r#"Scene(
         version: 2, timing: (duration: 2.0, cycle: {cycle}),
-        layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Track(keys: [
+        layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [
           (at: 0.0, value: (0, 0, 0, 255)),
           (at: 2.0, value: (200, 0, 0, 255)),
         ])))))],)"#
@@ -875,7 +875,7 @@ mod tests {
 
     let source = r#"Scene(version: 2, timing: (duration: 1.0, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Image(
       name: "a.gif",
-      frame: Track(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 2.0)]),
+      frame: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 2.0)]),
     ))))])"#;
     let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), Some(content.clone()), 0).unwrap();
     let header = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
@@ -1021,7 +1021,7 @@ mod tests {
       layers: [Leds(surface: Area("Square"), layer: (
         region: (
           base: Polygon(points: [Fixed(0.0, 0.0), Param("at"), Fixed(1.0, 0.0)]),
-          transform: [Rotate(Track(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 90.0, curve: Steps(4))], cycle: Times(2)))],
+          transform: [Rotate(Keyframes(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 90.0, curve: Steps(4))], cycle: Times(2)))],
         ),
         fill: (base: Solid(Param("tint")), adjust: [HueShift(Param("size"))]),
       ))],)"#;
@@ -1038,7 +1038,7 @@ mod tests {
       layers: [Leds(surface: Area("Square"), layer: (
         region: (
           base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0)),
-          transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), start: 0.5, end: 1.5))],
+          transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), position: Keyframes(keys: [(at: 0.5, value: 0.0), (at: 1.5, value: 1.0)])))],
         ),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;

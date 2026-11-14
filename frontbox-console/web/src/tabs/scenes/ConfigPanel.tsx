@@ -209,7 +209,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
 const SOURCE_ICONS: Record<PropKind, Icon> = {
   Fixed: icons.Pin,
   Param: icons.Variable,
-  Track: icons.ChartSpline,
+  Keyframes: icons.ChartSpline,
   Random: icons.Dices,
   Modulated: icons.AudioWaveform,
   Sweep: icons.Orbit,
@@ -1271,7 +1271,7 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
             <span class="scene-note">{describeImage(known())}</span>
             <Show when={known().frames > 1 && imageLength(known())}>
               {/* a track of its frames goes back to playing it once at its own speed, which is what fitting is for */}
-              <FitTimelineButton length={imageLength(known())!} onFit={() => frame() && 'Track' in frame()! && field(props.lens, 'frame').set(framesTrack(known(), scene.get().timing!))} />
+              <FitTimelineButton length={imageLength(known())!} onFit={() => frame() && 'Keyframes' in frame()! && field(props.lens, 'frame').set(framesTrack(known(), scene.get().timing!))} />
             </Show>
           </div>
         )}

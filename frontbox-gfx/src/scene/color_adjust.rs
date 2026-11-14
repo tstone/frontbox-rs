@@ -58,7 +58,7 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::scene::value::tests::env;
-  use crate::scene::{Key, Params, Track};
+  use crate::scene::{Key, Keyframes, Params};
 
   #[test]
   fn hue_shift_turns_the_color() {
@@ -70,7 +70,7 @@ mod tests {
   #[test]
   fn hue_shift_can_be_animated() {
     let params = Params::new();
-    let adjust = ColorAdjust::HueShift(Prop::Track(Track {
+    let adjust = ColorAdjust::HueShift(Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(3.0, 360.0, Curve::Linear)],
       cycle: Cycle::Forever,
     }));
@@ -124,7 +124,7 @@ mod tests {
 
   #[test]
   fn each_adjust_can_be_animated() {
-    let moving = || Prop::Track(Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once });
+    let moving = || Prop::Keyframes(Keyframes { keys: vec![Key::new(0.0, 0.0, Curve::Linear)], cycle: Cycle::Once });
     assert!(ColorAdjust::Opacity(moving()).is_animated());
     assert!(ColorAdjust::Brightness(moving()).is_animated());
     assert!(ColorAdjust::Contrast(moving()).is_animated());

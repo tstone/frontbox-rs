@@ -125,7 +125,7 @@ mod tests {
         .region(
           Shape::new(ShapeNode::circle(0.5))
             .transform(Transform::Scale(40.0.into()))
-            .transform(Transform::Translate(Prop::Track(Track {
+            .transform(Transform::Translate(Prop::Keyframes(Keyframes {
               keys: vec![
                 Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
                 Key::new(1.0, Vec2::new(70.0, 25.0), Curve::EaseInOut),
@@ -152,15 +152,13 @@ mod tests {
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
-            0.25,
-            1.0,
+            Prop::Keyframes(Keyframes::new(vec![Key::new(0.25, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], Cycle::Once)),
           )))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
-            0.0,
-            1.0,
+            Prop::Param("lap".into()),
           )))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
@@ -171,18 +169,18 @@ mod tests {
                 BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
               ],
             }),
-            0.0,
-            1.0,
+            Prop::Modulated(Modulated { wave: Wave::Triangle, spread: Spread::Float(0.0, 1.0), rate: 1.0, phase: Box::new(0.0.into()) }),
           )))),
         ),
     ]);
     scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+    scene.params.insert("lap".into(), Value::Float(0.5));
     scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
   #[test]
   fn a_sweep_only_loads_on_a_position() {
-    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), start: 0.0, end: 1.0)";
+    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), position: Fixed(0.5))";
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
@@ -256,7 +254,7 @@ mod tests {
       wave: Square(duty: 0.25),
       spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
       rate: 0.5,
-      phase: Track(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
+      phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
     ))))])";
     let written = save(&load(source).unwrap()).unwrap();
     let loaded = load(&written).unwrap();
@@ -265,7 +263,7 @@ mod tests {
     };
     let spread = Spread::Color { hue: (0.0, 120.0), brightness: (0.5, 1.0), alpha: (1.0, 1.0) };
     assert_eq!((modulated.wave, modulated.spread, modulated.rate), (Wave::Square { duty: 0.25 }, spread, 0.5));
-    let Prop::Track(phase) = &*modulated.phase else {
+    let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
     };
     assert_eq!(phase.keys.iter().map(|key| (key.at, key.value)).collect::<Vec<_>>(), [(0.0, 0.0), (2.0, 1.0)]);
@@ -355,11 +353,11 @@ mod tests {
 
   #[test]
   fn an_animated_image_keeps_its_frame_when_written_and_read() {
-    let frame = Track {
+    let frame = Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
       cycle: Default::default(),
     };
-    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(frame)) };
+    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Keyframes(frame)) };
     let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
     let read = load(&save(&scene).unwrap()).unwrap();
 
@@ -419,7 +417,7 @@ mod tests {
   fn refuses_keyframes_with_no_timing() {
     let result = load(
       r#"(
-        layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+        layers: [(fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
       )"#,
     );
     assert!(matches!(result, Err(FormatError::Invalid(_))), "{result:?}");

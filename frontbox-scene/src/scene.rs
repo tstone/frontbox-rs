@@ -31,7 +31,7 @@ pub struct Scene {
   #[serde(default, skip_serializing_if = "Params::is_empty")]
   #[cfg_attr(feature = "ts", ts(as = "Option<Params>", optional))]
   pub params: Params,
-  /// `None` is static, and its tracks stay on their first moment
+  /// `None` is static, and its keyframes stay on their first key
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub timing: Option<Timing>,
@@ -455,7 +455,7 @@ mod tests {
 
   #[test]
   fn what_a_layer_cant_play_is_refused_by_its_place_in_the_scene() {
-    let track = Prop::Track(Track { keys: vec![], cycle: Cycle::Once });
+    let track = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
     let changing = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::HueShift(track));
     let scene = Scene::new(vec![DisplayLayer::new("Dmd", layer()).into(), LedLayer::sequence(LedQ::Every, Layer::new(changing)).into()]);
     assert_eq!(scene.check(), Err(SceneError::NoTiming { layer: "layer 2".into() }));
@@ -513,7 +513,7 @@ mod tests {
 
   #[test]
   fn each_sound_plays_at_the_volume_its_layer_has_then_in_the_order_they_start() {
-    let fade_in = || Prop::Track(Track { keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], cycle: Cycle::Once });
+    let fade_in = || Prop::Keyframes(Keyframes { keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], cycle: Cycle::Once });
     let late = SoundLayer::new("a.wav").start(0.5).skip(0.125).end(0.75).volume(fade_in());
     let early = SoundLayer::new("b.wav").start(0.25).volume(fade_in());
     let scene = Scene::new(vec![late.into(), early.into()]).timing(Timing::new(1.0, Cycle::Forever));

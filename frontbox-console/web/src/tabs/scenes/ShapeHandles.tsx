@@ -195,17 +195,17 @@ function writer(scene: Lens<Scene>, time: number): Write {
     can(prop, like) {
       if (isHidden(prop)) return false
       if ('Fixed' in prop) return true
-      if ('Track' in prop) return prop.Track.keys.length > 0
+      if ('Keyframes' in prop) return prop.Keyframes.keys.length > 0
       return 'Param' in prop && paramFits(scene.get().params?.[prop.Param], like)
     },
     to(lens, value) {
       const prop = lens.get() as Prop<SceneValue>
       if ('Fixed' in prop) lens.set({ Fixed: value })
       else if ('Param' in prop) scene.set(withParam(scene.get(), prop.Param, value))
-      else if ('Track' in prop) {
-        const track = prop.Track.keys.some((key) => sameMoment(key.at)) ? prop.Track : withKey(prop.Track, time)
+      else if ('Keyframes' in prop) {
+        const track = prop.Keyframes.keys.some((key) => sameMoment(key.at)) ? prop.Keyframes : withKey(prop.Keyframes, time)
         const keys = track.keys.map((key) => (sameMoment(key.at) ? { ...key, value } : key))
-        ;(lens as Lens<Prop<SceneValue>>).set({ Track: { ...track, keys } })
+        ;(lens as Lens<Prop<SceneValue>>).set({ Keyframes: { ...track, keys } })
       }
     },
   }
