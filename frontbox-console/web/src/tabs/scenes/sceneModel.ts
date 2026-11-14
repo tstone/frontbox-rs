@@ -19,7 +19,6 @@ import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
-import type { LedSurface } from '../../types/generated/LedSurface'
 import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Track } from '../../types/generated/Track'
@@ -252,15 +251,6 @@ export function layerPlane({ surface }: SceneLayer) {
   return surface === undefined || surface === 'Sequence' ? null : surface.Area
 }
 
-/**
- * Layer on something else. A region is measured in the units of what it's on, so it would land somewhere else on another
- * kind of surface. The layer goes back to covering all of it, unmasked. A graph stays on another plane, as its traversals
- * start from LEDs, but not on a `Sequence`, which has no graph.
- */
-export function withLayerSurface({ region, mask, graph, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
-  return { ...layer, surface, ...(surface !== 'Sequence' && { graph }) }
-}
-
 /** Where an algorithm that goes to a node is going, which is `null` for the others */
 export function traversalTarget(algorithm: Lens<TraversalAlgorithm>): Lens<NodeRef> | null {
   const current = algorithm.get()
@@ -291,7 +281,7 @@ export function freshTraversalName(layer: SceneLayer, base: string) {
 export function newLayerPlace(scene: Scene): Omit<SceneLayer, keyof Layer> {
   const under = scene.layers.at(-1)
   if (scene.kind === 'Dmd') return { display: under?.display ?? 'Dmd', z: under?.z }
-  return { leds: under?.leds, z: under?.z, surface: under?.surface ?? 'Sequence' }
+  return { leds: under?.leds ?? 'Every', z: under?.z, surface: under?.surface ?? 'Sequence' }
 }
 
 /** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */

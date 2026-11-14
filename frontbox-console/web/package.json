@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@ark-ui/solid": "^5.39.2",
+    "lucide-solid": "^1.64.0",
     "solid-js": "^1.9.15",
     "three": "^0.186.1"
   },

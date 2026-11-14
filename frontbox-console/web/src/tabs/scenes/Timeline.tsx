@@ -137,7 +137,7 @@ export default function Timeline(props: {
       </header>
       <Show
         when={timing()}
-        fallback={<p class="scene-note">Set any value to Track to animate this scene.</p>}
+        fallback={<p class="scene-note">Set any value to Keyframes to animate this scene.</p>}
       >
         <div class="scene-timeline-tracks">
           <div class="scene-timeline-lanes" style={{ '--played-fraction': props.playback.position() / span(), '--end-fraction': timing()!.duration / span() }}>
@@ -173,7 +173,7 @@ export default function Timeline(props: {
               {(run) => <TraversalRow run={run()} length={length(run())} end={timing()!.duration} percent={percent} span={span()} open={props.openLayer} />}
             </Index>
             {/* by position, so an edit doesn't tear down the editor it was made in */}
-            <Index each={tracks()} fallback={traversals().length === 0 && sounds.get().length === 0 && <p class="scene-note">Set any value to Track to give it a track here.</p>}>
+            <Index each={tracks()} fallback={traversals().length === 0 && sounds.get().length === 0 && <p class="scene-note">Set any value to Keyframes to give it a track here.</p>}>
               {(track) => <TrackRow track={track()} percent={percent} span={span()} reveal={props.reveal} />}
             </Index>
             <div class="scene-timeline-playhead" />
