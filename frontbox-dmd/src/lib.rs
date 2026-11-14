@@ -1,19 +1,6 @@
-mod dmd_device;
-mod dmd_manager;
-mod dmd_scene;
-mod dmd_system;
-mod initials_entry_system;
-pub mod menu;
-mod pin2dmd;
-mod pixel_font;
-mod sprite_sheet;
-mod text_formatting;
+//! Dot matrix displays, as [`DisplayDevice`](frontbox_display::DisplayDevice)s for the `DisplaySystem`. They're kept
+//! apart from `frontbox-display` because they need USB, which a game without one shouldn't have to build.
 
-pub use dmd_device::*;
-pub use dmd_scene::*;
-pub use dmd_system::*;
-pub use initials_entry_system::*;
+mod pin2dmd;
+
 pub use pin2dmd::*;
-pub use pixel_font::*;
-pub use sprite_sheet::*;
-pub use text_formatting::*;

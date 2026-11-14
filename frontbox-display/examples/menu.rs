@@ -1,0 +1,24 @@
+use std::time::Duration;
+
+use frontbox_core::prelude::*;
+use frontbox_display::menu::*;
+
+fn main() {
+  hardware_defs! {
+    pub DROP_COIL: DriverDefinition = DriverDefinition::new("example")
+      .mode(
+        DriverMode::pulse()
+          .initial_pwm_length(HardwareValue::config(
+            "Drop Target Reset Duration",
+            "Amount of time fire the coil to reset the bank",
+            Duration::from_millis(35),
+            Ranges::duration(5, 100),
+          ))
+          .build(),
+      );
+  }
+
+  let _menu = MenuSection::root()
+    .section(MenuSection::new("Section 1").configs(DROP_COIL.configs()))
+    .section(MenuSection::new("Section 2"));
+}

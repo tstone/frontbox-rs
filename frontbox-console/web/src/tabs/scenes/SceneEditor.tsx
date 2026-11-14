@@ -6,6 +6,7 @@ import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMo
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import { addContentScene, deleteContentScene, saveContentScene } from '../../state/contentScenes'
+import { playContentSound } from '../../state/contentSounds'
 import {
   forgetSceneRender,
   renderClips,
@@ -16,6 +17,7 @@ import {
   sceneRender,
   type SceneClip,
 } from '../../state/sceneRender'
+import type { ClipSound } from '../../types/generated/ClipSound'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
@@ -29,15 +31,12 @@ import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityCo
 import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
-import ShapeHandles, { holeOutline, layerUnder } from './ShapeHandles'
+import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
 /** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
 const SEQUENCE_VIEWS = ['Machine', 'Strip'] as const
 type SequenceView = (typeof SEQUENCE_VIEWS)[number]
-
-/** Marks the history entry that the editor is on */
-const EDITING = { editing: true }
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -83,8 +82,17 @@ function clipLedColor({ ledIndex, leds, frames }: SceneClip, frame: number, name
   return cssColor({ r: leds[at], g: leds[at + 1], b: leds[at + 2] })
 }
 
-/** Edits a scene from the content folder. A scene is opened by mounting one of these, with `source` being its file. */
-export default function SceneEditor(props: { name: string; source: string; onClose: () => void }) {
+/**
+ * Edits a scene from the content folder. A scene is opened by mounting one of these, with `source` being its file. It hands
+ * `onLeaving` what says whether it can be left now, which asks about unsaved changes when it can't.
+ */
+export default function SceneEditor(props: {
+  name: string
+  source: string
+  onClose: () => void
+  onRename: (name: string) => void
+  onLeaving: (mayLeave: () => boolean) => void
+}) {
   let canvas!: HTMLCanvasElement
   let root!: HTMLDivElement
   // the scene is held in both forms, each kept in step by the machine as this side never reads or writes RON. `scene`
@@ -109,6 +117,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   }
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   const [sourceTab, setSourceTab] = createSignal('config')
+  // where the config tree puts its own buttons, at the end of the tabs
+  const [treeTools, setTreeTools] = createSignal<HTMLElement>()
   const revealing = createSignal<Prop<SceneValue> | null>(null)
   // what's on show, which stays put while the source doesn't parse
   const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
@@ -197,6 +207,26 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     if (sceneClipError()) playback.pause()
   })
 
+  // the preview's sounds play on the machine as it passes their starts, as they would in the game, so playing from partway
+  // through a cycle leaves out the ones before. `heard` is how far that's got.
+  let heard: { cycle: number; position: number } | null = null
+  createEffect(() => {
+    if (!playback.playing()) {
+      heard = null
+      return
+    }
+    const clip = sceneClip(clipCycle())
+    const [cycle, position] = [playback.cycle() ?? 0, playback.position()]
+    if (!clip) return
+    const from = heard
+    const passed = ({ at }: ClipSound) => {
+      if (from === null) return at === position
+      return (from.cycle !== cycle || at > from.position) && at <= position
+    }
+    clip.sounds.filter(passed).forEach(({ sound, volume, skip, length }) => playContentSound(sound, volume, skip, length))
+    heard = { cycle, position }
+  })
+
   const editing: Lens<Scene> = {
     get: () => scene()!,
     set: (next) => {
@@ -233,6 +263,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     batch(() => {
       setSaved(written)
       setName(chosen)
+      props.onRename(chosen)
       setFileError(null)
     })
   }
@@ -255,49 +286,39 @@ export default function SceneEditor(props: { name: string; source: string; onClo
     })
   }
 
-  /** Takes its history entry with it, so that Back doesn't stop on the list that's already showing */
-  const leave = () => {
-    props.onClose()
-    if (history.state?.editing) history.back()
-  }
+  /** Leaves at once, unsaved changes or not */
+  const leave = () => props.onClose()
 
   const close = () => (unsaved() ? setConfirming('close') : leave())
 
-  onMount(() => {
-    // Back goes to the list, by way of an entry on top of the one the list has
-    const tabHash = location.hash
-    history.pushState(EDITING, '')
+  // going back to the list, by Back or by the URL, asks first when there's something to lose
+  props.onLeaving(() => {
+    if (!unsaved()) return true
+    setConfirming('close')
+    return false
+  })
 
-    const onPopState = () => {
-      // choosing a tab comes through here too, and the tab only shows after a change of hash
-      if (history.state?.editing || location.hash !== tabHash || !root.checkVisibility()) return
-      if (!unsaved()) {
-        props.onClose()
-        return
-      }
-      history.pushState(EDITING, '')
-      setConfirming('close')
-    }
-    // coming back by choosing the tab makes a new entry, which Back would otherwise leave the tab from
-    const onHashChange = () => {
-      if (location.hash === tabHash && !history.state?.editing) history.pushState(EDITING, '')
-    }
+  onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // the tab stays mounted while another is showing
-      if (e.key !== 's' || !(e.ctrlKey || e.metaKey) || !root.checkVisibility()) return
-      e.preventDefault()
-      save()
+      if (!root.checkVisibility()) return
+      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        save()
+      } else if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
+        // taken from a focused button too, which would otherwise be pressed
+        e.preventDefault()
+        if (e.repeat) return
+        if (playback.playing()) playback.stop()
+        else if (scene()?.timing) playback.play()
+      }
     }
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (unsaved()) e.preventDefault()
     }
-    window.addEventListener('popstate', onPopState)
-    window.addEventListener('hashchange', onHashChange)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('beforeunload', onBeforeUnload)
     onCleanup(() => {
-      window.removeEventListener('popstate', onPopState)
-      window.removeEventListener('hashchange', onHashChange)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('beforeunload', onBeforeUnload)
     })
@@ -348,29 +369,27 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const [hiddenRegions, setHiddenRegions] = createSignal<ReadonlySet<string>>(new Set())
   const regionKey = ({ layer, mask }: Selection) => `${layer}${mask ? ' mask' : ''}`
   const regionVisibility: RegionVisibility = {
-    shown: () => {
-      const open = selection[0]()
-      return open === null || !hiddenRegions().has(regionKey(open))
-    },
-    show(shown) {
-      const open = selection[0]()
-      if (open === null) return
+    shown: (of) => !hiddenRegions().has(regionKey(of)),
+    show(of, shown) {
       const next = new Set(hiddenRegions())
-      if (shown) next.delete(regionKey(open))
-      else next.add(regionKey(open))
+      if (shown) next.delete(regionKey(of))
+      else next.add(regionKey(of))
       setHiddenRegions(next)
     },
+  }
+  /** Whether what's open has its region drawn, which it does with nothing open */
+  const openShown = () => {
+    const open = selection[0]()
+    return open === null || regionVisibility.shown(open)
   }
 
   /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
   const outline = (): Vec2[][] => {
     const open = selection[0]()
     const rendered = drawn()
-    if (playback.playing() || open === null || !rendered || !regionVisibility.shown()) return []
-    const edge = (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
-    // a ring has its hole outlined too
-    const pose = (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer]
-    return [edge, pose ? holeOutline(pose) : []].filter((loop) => loop.length > 0)
+    if (playback.playing() || open === null || !rendered || !openShown()) return []
+    // one loop for each copy of its shape
+    return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
   }
 
   /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */
@@ -378,7 +397,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const selectedPose = () => {
     const open = selected()
     const rendered = drawn()
-    if (open === null || !rendered || !regionVisibility.shown()) return null
+    if (open === null || !rendered || !openShown()) return null
     return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
   }
   const hasShape = (open: Selection | null) => open !== null && selectedShape(scene(), open) !== undefined
@@ -407,7 +426,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const reveal = ({ prop, layer, mask }: SceneTrack) => {
     batch(() => {
       setSourceTab('config')
-      selection[1]({ layer, mask })
+      // a sound layer is always open
+      if (layer !== null) selection[1]({ layer, mask })
       revealing[1](prop.get())
     })
   }
@@ -440,7 +460,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
       <GraphOverlay
         space={space}
         // still there to click on while choosing one of its LEDs
-        graph={regionVisibility.shown() || nodePicking.choosing[0]() !== null ? selectedGraph() : null}
+        graph={openShown() || nodePicking.choosing[0]() !== null ? selectedGraph() : null}
         layer={selected()?.layer ?? null}
         highlighted={nodePicking.highlighted[0]()}
         choosing={nodePicking.choosing[0]() !== null}
@@ -507,7 +527,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
           </Show>
           <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
           <div class="scene-file-view">
-            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier to a grid in the shape's own units as they're dragged">
+            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier, and how far a shape is moved, to a grid in the shape's own units as they're dragged">
               <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
                 <Checkbox.Control>
                   <Checkbox.Indicator>✓</Checkbox.Indicator>
@@ -586,7 +606,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                 { id: 'source', minSize: 15 },
                 { id: 'output', minSize: 15 },
               ]}
-              defaultSize={[25, 75]}
+              defaultSize={[29, 71]}
             >
               <Splitter.Panel id="source">
                 <div class="scene-source">
@@ -595,17 +615,12 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                       <LedsNote />
                     </div>
                   </Show>
-                  <Show when={scene() !== null}>
-                    {/* an edit here would replace the RON with the last scene that could be read */}
-                    <div class="scene-editing" inert={error() !== null}>
-                      <ParametersPanel />
-                    </div>
-                  </Show>
                   <Tabs.Root class="scene-tabs" value={sourceTab()} onValueChange={(details) => setSourceTab(details.value)}>
                     <Tabs.List>
                       <Tabs.Trigger value="config">Config</Tabs.Trigger>
                       <Tabs.Trigger value="raw">Raw</Tabs.Trigger>
                       <Tabs.Indicator />
+                      <span class="scene-tabs-end" ref={setTreeTools} hidden={sourceTab() !== 'config'} />
                     </Tabs.List>
                     <Tabs.Content value="config">
                       <Show when={error() !== null}>
@@ -615,7 +630,7 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                       </Show>
                       <Show when={scene() !== null}>
                         <div class="scene-editing" inert={error() !== null}>
-                          <ConfigPanel selection={selection} />
+                          <ConfigPanel selection={selection} toolbar={treeTools()} />
                         </div>
                       </Show>
                     </Tabs.Content>
@@ -631,6 +646,12 @@ export default function SceneEditor(props: { name: string; source: string; onClo
                       />
                     </Tabs.Content>
                   </Tabs.Root>
+                  <Show when={scene() !== null}>
+                    {/* an edit here would replace the RON with the last scene that could be read */}
+                    <div class="scene-editing" inert={error() !== null}>
+                      <ParametersPanel />
+                    </div>
+                  </Show>
                 </div>
               </Splitter.Panel>
               <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />
@@ -708,3 +729,11 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 }
 
 const distance = ([ax, ay]: Vec2, [bx, by]: Vec2) => Math.hypot(ax - bx, ay - by)
+
+/** Whether a key pressed in `target` goes to text being edited there */
+const typingIn = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'reset', 'submit'].includes(target.type)))

@@ -38,7 +38,7 @@ pub enum ScoopEntry {
   LowerEntrance,
 }
 
-/// The scoop is about to eject its ball, once its eject effect has played (right away without one). A hold placed
+/// The scoop is about to eject its ball, once its eject scene has played (right away without one). A hold placed
 /// before then stops the eject, and this is emitted again when it next starts.
 #[derive(serde::Serialize, Event)]
 pub struct ScoopEjectStarted<S> {

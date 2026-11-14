@@ -5,6 +5,7 @@ use itertools::Itertools;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::prelude::*;
+use frontbox_scene::{PlaybackId, Scene, SceneSystem};
 
 use crate::*;
 
@@ -106,6 +107,12 @@ pub struct LedSystem {
   conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
   monitored: HashSet<LedAddress>,
+  /// The `order` the next new declaration gets
+  next_order: u64,
+  /// Where each shown playback's LED layers land, worked out the first time it's shown, as LEDs don't move
+  placements: HashMap<PlaybackId, LedPlacement>,
+  /// This frame's colors from playbacks, by LED: a z and a color for each that reaches it, in the order they started
+  played: HashMap<LedAddress, Vec<(i8, Rgba<u8>)>>,
 }
 
 impl LedSystem {
@@ -117,6 +124,9 @@ impl LedSystem {
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
       monitored: HashSet::new(),
+      next_order: 0,
+      placements: HashMap::new(),
+      played: HashMap::new(),
     }
   }
 
@@ -172,8 +182,17 @@ impl LedSystem {
     let declarations: LedDeclarations = declarations.into();
     log::trace!(target: "frontbox::led", "LED declarations declared: {:?}", declarations);
 
+    let id = DeclarationIdentifier { system_id: owning_system, z_index: declarations.z_index };
     for (led, color) in declarations.pairings {
-      let declaration = StatefulLedDeclaration { active, color };
+      let on_led = self.declarations.entry(led.clone()).or_default();
+      let order = match on_led.get(&id) {
+        Some(existing) => existing.order,
+        None => {
+          self.next_order += 1;
+          self.next_order
+        }
+      };
+      let declaration = StatefulLedDeclaration { active, color, order };
       if self.monitored.contains(led) {
         log::info!(
           target: "frontbox::led",
@@ -184,17 +203,7 @@ impl LedSystem {
         );
       }
 
-      self
-        .declarations
-        .entry(led.clone())
-        .or_insert_with(HashMap::new)
-        .insert(
-          DeclarationIdentifier {
-            system_id: owning_system,
-            z_index: declarations.z_index,
-          },
-          declaration,
-        );
+      on_led.insert(id, declaration);
     }
   }
 
@@ -267,10 +276,78 @@ impl LedSystem {
     }
   }
 
+  /// The color each LED shows this frame, from the declarations and the playbacks shown. `None` for one nothing gives a
+  /// color.
+  pub(crate) fn resolve(&mut self, ctx: &SystemContext) -> Vec<(LedAddress, Option<Rgba<u8>>)> {
+    self.draw_playbacks(ctx);
+    let undeclared = HashMap::new();
+    let mut resolved = Vec::with_capacity(self.all_addresses.len());
+    for led in self.all_addresses.iter() {
+      let declarations = self.declarations.get(led);
+      let played = self.played.get(led).map_or(&[][..], Vec::as_slice);
+      if declarations.is_none() && played.is_empty() {
+        log::trace!(target: "frontbox::led", "Nothing gives a color to LED at {:?}", led);
+        resolved.push((led.clone(), None));
+        continue;
+      }
+      let declarations = declarations.unwrap_or(&undeclared);
+      if self.monitored.contains(led) {
+        log::info!(target: "frontbox::led", "Current declarations for LED {:?}: {:?}, and from playbacks: {:?}", led, declarations, played);
+      }
+
+      // every z with something on it for this LED
+      let z_indexes = declarations
+        .iter()
+        .filter(|(_, d)| d.active)
+        .map(|(id, _)| id.z_index)
+        .chain(played.iter().map(|(z, _)| *z))
+        .sorted()
+        .unique()
+        .collect();
+
+      let final_color = Self::resolve_led_color(
+        led,
+        z_indexes,
+        declarations,
+        played,
+        &self.conflict_resolution,
+        &mut self.alternate_resolver,
+      );
+
+      if self.monitored.contains(led) {
+        log::info!(target: "frontbox::led", "Setting led {:?} to {:?}", led, final_color);
+      }
+      resolved.push((led.clone(), Some(final_color)));
+    }
+    resolved
+  }
+
+  /// Samples the LED layers of each playback the `SceneSystem` shows, into `played`
+  fn draw_playbacks(&mut self, ctx: &SystemContext) {
+    self.played.clear();
+    let Some(scenes) = ctx.systems.get::<SceneSystem>() else {
+      self.placements.clear();
+      return;
+    };
+    let mut shown = HashSet::new();
+    for (id, playback) in scenes.shown() {
+      shown.insert(id);
+      let placement = self.placements.entry(id).or_insert_with(|| place(playback.scene(), ctx));
+      placement.update_visits(playback.scene(), &playback.moment());
+      for (z, led, color) in placement.colors(playback.scene(), &playback.moment()) {
+        if color[3] > 0 {
+          self.played.entry(led.address.clone()).or_default().push((z, color));
+        }
+      }
+    }
+    self.placements.retain(|id, _| shown.contains(id));
+  }
+
   fn resolve_led_color(
     led: &LedAddress,
     mut z_indexes: Vec<i8>,
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
+    played: &[(i8, Rgba<u8>)],
     conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
   ) -> Rgba<u8> {
@@ -278,6 +355,7 @@ impl LedSystem {
     let top_declarations = declarations
       .iter()
       .filter(|(id, dec)| id.z_index == *max_z && dec.active)
+      .sorted_by_key(|(_, dec)| dec.order)
       .collect::<Vec<_>>();
 
     let top_color = if top_declarations.len() == 1 {
@@ -310,6 +388,9 @@ impl LedSystem {
       Rgba::default()
     };
 
+    // playbacks on this z are drawn over its declarations, in the order they started
+    let top_color = played.iter().filter(|(z, _)| z == max_z).fold(top_color, |below, (_, color)| color.composite_over(below));
+
     // if the top color is transparent, composite it with the next highest declaration below it
     if top_color.alpha() < 255 && z_indexes.len() > 1 {
       z_indexes.pop();
@@ -317,6 +398,7 @@ impl LedSystem {
         led,
         z_indexes,
         declarations,
+        played,
         conflict_resolution,
         alternate_resolver,
       );
@@ -351,43 +433,12 @@ impl System for LedSystem {
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
-    let mut leds_to_set: Vec<(LedAddress, Rgb)> = Vec::new();
-
-    for led in self.all_addresses.iter() {
-      if let Some(declarations) = self.declarations.get(led) {
-        if self.monitored.contains(&led) {
-          log::info!(target: "frontbox::led", "Current declarations for LED {:?}: {:?}", led, declarations);
-        }
-
-        // assemble a list of unique z-indexes which are defined for this LED
-        let z_indexes = declarations
-          .iter()
-          .filter(|(_, d)| d.active)
-          .map(|(id, _)| id.z_index)
-          .sorted()
-          .unique()
-          .collect();
-
-        let final_color = Self::resolve_led_color(
-          led,
-          z_indexes,
-          declarations,
-          &self.conflict_resolution,
-          &mut self.alternate_resolver,
-        );
-
-        if self.monitored.contains(&led) {
-          log::info!(target: "frontbox::led", "Setting led {:?} to {:?}", led, final_color);
-        }
-
-        leds_to_set.push((led.clone(), led_color(final_color)));
-      } else {
-        // no declarations for this LED = turn it off
-        // if it's already off this will get filtered out below
-        log::trace!(target: "frontbox::led", "Turning off LED at {:?}", led);
-        leds_to_set.push((led.clone(), Rgb::black()));
-      }
-    }
+    let mut leds_to_set: Vec<(LedAddress, Rgb)> = self
+      .resolve(ctx)
+      .into_iter()
+      // an LED nothing gives a color is turned off, which is filtered out below if it's already off
+      .map(|(led, color)| (led, color.map_or(Rgb::black(), led_color)))
+      .collect();
 
     // filter out LEDs that are the same as the prior render to avoid redundant updates
     // "there are hard limits to the amount of data that can go out over the EXP bus of about 80 characters per millisecond" -- ecurtz
@@ -430,6 +481,9 @@ impl System for LedSystem {
 pub struct StatefulLedDeclaration {
   pub active: bool,
   pub color: Rgba<u8>,
+  /// Counts up with each new declaration, and stays the same when a system changes the color of one it already made, so
+  /// conflicts are resolved in the order systems first declared
+  pub order: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -446,6 +500,24 @@ pub enum LedConflictResolution {
   Mix,
   /// The first system to make a declaration wins (default)
   FirstWins,
+}
+
+/// Places a playback's scene on the LEDs, saying which of its layers can't reach any
+fn place(scene: &Scene, ctx: &SystemContext) -> LedPlacement {
+  for (index, layer) in scene.layers.iter().enumerate() {
+    let Some(on) = layer.as_leds() else {
+      continue;
+    };
+    if on.leds.is_none() {
+      log::warn!(target: "frontbox::led", "{} of a scene has no LEDs, so it isn't shown", on.layer.label(index));
+    }
+    if let Some(plane) = on.surface.plane()
+      && ctx.leds.plane(plane).is_none()
+    {
+      log::error!(target: "frontbox::led", "{} of a scene is on plane \"{plane}\", which wasn't added to the app", on.layer.label(index));
+    }
+  }
+  LedPlacement::new(scene, &ctx.leds, ctx.led_radius)
 }
 
 /// The color an LED shows for this one, as if composited over an LED that's off: alpha dims it toward black
@@ -585,6 +657,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba::default(),
+          order: 1,
         },
       ),
       (
@@ -595,6 +668,7 @@ mod tests {
         StatefulLedDeclaration {
           active: false, // final color should NOT be red
           color: Rgba::red(),
+          order: 2,
         },
       ),
     ]);
@@ -606,6 +680,7 @@ mod tests {
       &led,
       vec![0, 1],
       &declarations,
+      &[],
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -630,6 +705,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba::red(),
+          order: 3,
         },
       ),
       (
@@ -640,6 +716,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba::blue(),
+          order: 4,
         },
       ),
     ]);
@@ -651,6 +728,7 @@ mod tests {
       &led,
       vec![1],
       &declarations,
+      &[],
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -674,6 +752,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba::red(),
+          order: 5,
         },
       ),
       (
@@ -684,6 +763,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba::blue(),
+          order: 6,
         },
       ),
     ]);
@@ -698,6 +778,7 @@ mod tests {
       &led,
       vec![0],
       &declarations,
+      &[],
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -722,6 +803,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba([255, 0, 0, 127]), // semi-transparent red
+          order: 7,
         },
       ),
       (
@@ -732,6 +814,7 @@ mod tests {
         StatefulLedDeclaration {
           active: true,
           color: Rgba([255, 255, 255, 255]), // opaque white
+          order: 8,
         },
       ),
     ]);
@@ -746,6 +829,7 @@ mod tests {
       &led,
       vec![0, 1],
       &declarations,
+      &[],
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -774,6 +858,36 @@ mod tests {
 
     system.on_event(&SystemReactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
     assert!(is_active(&system));
+  }
+
+  /// Which color wins on one LED when systems 1 to `systems` declare on the same z in that order, and then the first changes
+  /// its color
+  fn first_wins_of(systems: u64) -> Rgba<u8> {
+    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let mut system = LedSystem::new();
+    for id in 1..=systems {
+      system.declare(id, LedDeclarations::new(vec![(&led, Rgba([id as u8, 0, 0, 255]))], 0));
+    }
+    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
+    LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], &HashMap::new(), &mut AlternateResolver::new())
+  }
+
+  #[test]
+  fn first_wins_is_the_first_to_declare_even_once_it_changes_its_color() {
+    // enough systems that a hash map's order would put another first
+    assert_eq!(first_wins_of(32), Rgba::blue());
+  }
+
+  #[test]
+  fn a_declaration_made_again_after_its_given_up_goes_to_the_back() {
+    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let mut system = LedSystem::new();
+    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
+    system.declare(2, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
+    system.undeclare(1, LedIdentifications::new(vec![led.clone()], 0));
+    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
+    let color = LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], &HashMap::new(), &mut AlternateResolver::new());
+    assert_eq!(color, Rgba::blue());
   }
 
   #[test]

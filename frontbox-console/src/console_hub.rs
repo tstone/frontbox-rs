@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
@@ -25,18 +26,22 @@ const BROADCAST_CAPACITY: usize = 1024;
 /// LED updates buffered per client. LEDs are display-only and change constantly, so a client that falls behind skips
 /// them (and is sent the current colors) rather than holding up anything else.
 const LED_BROADCAST_CAPACITY: usize = 4;
+/// Display frames buffered per client. Each is a whole frame, so one that falls behind is sent the newest of each.
+const DISPLAY_BROADCAST_CAPACITY: usize = 4;
 
 #[derive(Clone)]
 pub(crate) struct ConsoleHub {
   state: Arc<Mutex<HubState>>,
   tx: broadcast::Sender<Utf8Bytes>,
   leds_tx: broadcast::Sender<Utf8Bytes>,
+  displays_tx: broadcast::Sender<Bytes>,
 }
 
 impl ConsoleHub {
   pub fn new() -> Self {
     let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
     let (leds_tx, _) = broadcast::channel(LED_BROADCAST_CAPACITY);
+    let (displays_tx, _) = broadcast::channel(DISPLAY_BROADCAST_CAPACITY);
     Self {
       state: Arc::new(Mutex::new(HubState {
         snapshot: Snapshot::default(),
@@ -44,14 +49,16 @@ impl ConsoleHub {
         next_seq: 0,
         plane_images: Vec::new(),
         led_radius: DEFAULT_LED_RADIUS,
-        content: None,
+        content: content(None),
         control: None,
         metrics: None,
         led_names: HashMap::new(),
         pending_leds: BTreeMap::new(),
+        display_frames: Vec::new(),
       })),
       tx,
       leds_tx,
+      displays_tx,
     }
   }
 
@@ -62,6 +69,7 @@ impl ConsoleHub {
       init,
       events: self.tx.subscribe(),
       leds: self.leds_tx.subscribe(),
+      displays: self.displays_tx.subscribe(),
     })
   }
 
@@ -132,6 +140,16 @@ impl ConsoleHub {
     let _ = control.send(TracerControlEvent::SetConfig { key, value });
   }
 
+  /// Play a sound from the content folder in the app, at `volume` (1.0 is as recorded), from `skip` seconds in, and cut
+  /// off after `length` seconds if given
+  pub fn play_sound(&self, sound: String, volume: f32, skip: f32, length: Option<f32>) {
+    let state = self.state.lock().unwrap();
+    let Some(control) = &state.control else {
+      return;
+    };
+    let _ = control.send(TracerControlEvent::PlaySound { sound, volume, skip, length });
+  }
+
   pub fn set_metrics(&self, metrics: Option<MetricsDb>) {
     self.state.lock().unwrap().metrics = metrics;
   }
@@ -169,7 +187,7 @@ impl ConsoleHub {
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
     match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle)).await {
-      Ok(Ok(clip)) => Some(Message::Binary(clip.into())),
+      Ok(Ok(clip)) => Some(Message::Binary([&[BINARY_CLIP][..], &clip].concat().into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
         log::error!(target: "frontbox::console", "Scene clip stopped: {err}");
@@ -182,17 +200,19 @@ impl ConsoleHub {
     self.state.lock().unwrap().led_radius = radius;
   }
 
+  /// Uses the app's content folder, or none
   pub fn set_content(&self, path: Option<PathBuf>) {
-    if let Some(path) = &path {
-      if !path.is_dir() {
-        log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
-      }
+    if let Some(path) = &path
+      && !path.is_dir()
+    {
+      log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
     }
-    self.state.lock().unwrap().content = path.map(Content::new);
+    self.state.lock().unwrap().content = content(path);
   }
 
-  /// The app's content folder. `None` until `AppTracer::init`, or when the app has none.
-  pub fn content(&self) -> Option<Content> {
+  /// Where scenes' images, fonts, and sounds come from. Until `AppTracer::init`, and for an app without a content
+  /// folder, it has only the fonts frontbox comes with.
+  pub fn content(&self) -> Content {
     self.state.lock().unwrap().content.clone()
   }
 
@@ -268,6 +288,46 @@ impl ConsoleHub {
     if let Some(message) = serialize(&ServerMessage::Leds(LedColors { colors })) {
       // no receivers is fine: LED updates are only for clients connected right now
       let _ = self.leds_tx.send(message);
+    }
+  }
+
+  /// Adds a display for clients to show, and gives its place in `Snapshot::displays`. Clients start over to learn of it.
+  pub fn add_display(&self, view: DisplayView) -> usize {
+    let mut state = self.state.lock().unwrap();
+    state.snapshot.displays.push(view);
+    state.display_frames.push(DisplayFrame { latest: None, pending: false });
+    if let Some(init) = serialize(&ServerMessage::Init(state.snapshot.clone())) {
+      let _ = self.tx.send(init);
+    }
+    state.snapshot.displays.len() - 1
+  }
+
+  /// Keeps a display's newest frame, for `flush_displays` to send
+  pub fn set_display_frame(&self, display: usize, frame: &[image::Rgb<u8>]) {
+    let mut message = Vec::with_capacity(2 + frame.len() * 3);
+    message.extend([BINARY_DISPLAY_FRAME, display as u8]);
+    message.extend(frame.iter().flat_map(|pixel| pixel.0));
+    let mut state = self.state.lock().unwrap();
+    if let Some(feed) = state.display_frames.get_mut(display) {
+      *feed = DisplayFrame { latest: Some(message.into()), pending: true };
+    }
+  }
+
+  /// Every display's newest frame, for a client that's just connected or fell behind
+  pub fn display_frames(&self) -> Vec<Bytes> {
+    let state = self.state.lock().unwrap();
+    state.display_frames.iter().filter_map(|feed| feed.latest.clone()).collect()
+  }
+
+  /// Called on a timer by the tracer
+  pub fn flush_displays(&self) {
+    let mut state = self.state.lock().unwrap();
+    for feed in state.display_frames.iter_mut().filter(|feed| feed.pending) {
+      feed.pending = false;
+      if let Some(frame) = &feed.latest {
+        // no receivers is fine: frames are only for clients connected right now
+        let _ = self.displays_tx.send(frame.clone());
+      }
     }
   }
 
@@ -561,6 +621,13 @@ pub(crate) struct Subscription {
   pub init: Utf8Bytes,
   pub events: broadcast::Receiver<Utf8Bytes>,
   pub leds: broadcast::Receiver<Utf8Bytes>,
+  pub displays: broadcast::Receiver<Bytes>,
+}
+
+/// The content in `path`, or without a folder, with the fonts frontbox comes with, which scenes can use without a
+/// file
+fn content(path: Option<PathBuf>) -> Content {
+  path.map_or_else(Content::without_folder, Content::new).with_fonts(frontbox_display::bundled_fonts())
 }
 
 struct HubState {
@@ -568,7 +635,7 @@ struct HubState {
   started: Instant,
   next_seq: u64,
   led_radius: f32,
-  content: Option<Content>,
+  content: Content,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.
@@ -578,10 +645,19 @@ struct HubState {
   led_names: LedNames,
   /// LED colors changed since the last `flush_leds`
   pending_leds: BTreeMap<String, Rgb>,
+  /// For `snapshot.displays`, by the same index
+  display_frames: Vec<DisplayFrame>,
 }
 
 /// (expansion board address, breakout, index) to LED name
 type LedNames = HashMap<(u8, Option<u8>, u8), String>;
+
+/// A display's newest frame, as the message that sends it
+struct DisplayFrame {
+  latest: Option<Bytes>,
+  /// Whether `latest` hasn't been sent yet
+  pending: bool,
+}
 
 /// The app's control event for setting a switch from the console
 fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
@@ -661,5 +737,27 @@ mod tests {
     };
     assert_eq!((key.as_str(), value), ("Turns", ConfigDomainValue::Int(4)));
     assert!(app.try_recv().is_err());
+  }
+
+  fn display(name: &str) -> DisplayView {
+    DisplayView { name: name.into(), width: 2, height: 1, placement: None }
+  }
+
+  #[test]
+  fn only_the_newest_frame_of_a_display_is_sent_and_only_once() {
+    let hub = ConsoleHub::new();
+    hub.add_display(display("Dmd"));
+    let other = hub.add_display(display("Lcd"));
+    let mut frames = hub.subscribe().unwrap().displays;
+
+    hub.set_display_frame(other, &[image::Rgb([1, 2, 3]), image::Rgb([4, 5, 6])]);
+    hub.set_display_frame(other, &[image::Rgb([7, 8, 9]), image::Rgb([10, 11, 12])]);
+    hub.flush_displays();
+    hub.flush_displays();
+
+    let newest = [BINARY_DISPLAY_FRAME, 1, 7, 8, 9, 10, 11, 12];
+    assert_eq!(frames.try_recv().unwrap()[..], newest);
+    assert!(frames.try_recv().is_err());
+    assert_eq!(hub.display_frames().iter().map(|frame| &frame[..]).collect::<Vec<_>>(), [&newest[..]]);
   }
 }

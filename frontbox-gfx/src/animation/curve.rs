@@ -6,13 +6,15 @@ const BACK_C2: f32 = BACK_C1 * 1.525;
 const BACK_C3: f32 = BACK_C1 + 1.0;
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Curve {
   #[default]
   Linear,
   EaseIn,
   EaseOut,
   EaseInOut,
+  /// Eases in and out along half a cosine, so keys that alternate between two values make a sine wave
+  SineInOut,
   ExponentialIn,
   ExponentialOut,
   ExponentialInOut,
@@ -47,6 +49,7 @@ impl Curve {
       Self::EaseIn => phase.powi(2),
       Self::EaseOut => 1.0 - (1.0 - phase).powi(2),
       Self::EaseInOut => sample_ease_inout(phase),
+      Self::SineInOut => (1.0 - f32::cos(phase * PI)) / 2.0,
       Self::ExponentialIn => 2.0f32.powf(10.0 * phase - 10.0),
       Self::ExponentialOut => 1.0 - 2.0f32.powf(-10.0 * phase),
       Self::ExponentialInOut => sample_exponential_inout(phase),
@@ -160,6 +163,7 @@ mod tests {
       Curve::EaseIn,
       Curve::EaseOut,
       Curve::EaseInOut,
+      Curve::SineInOut,
       Curve::ExponentialIn,
       Curve::ExponentialOut,
       Curve::ExponentialInOut,

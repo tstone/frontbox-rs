@@ -221,7 +221,7 @@ pub enum TraversalAlgorithm {
     to: NodeRef,
     /// How freely the path wanders off the shortest one. 0 always takes the shortest. Above it, the path is a random
     /// walk toward `to` with its loops cut out, steered less the higher it is. Around 5 it's barely steered at all. Read
-    /// once a cycle, at its start, so a track or random value gives each cycle its own amount.
+    /// once a cycle, at its start, so keyframes or a random value give each cycle its own amount.
     #[serde(default = "no_wander")]
     wander: Prop<f32>,
   },

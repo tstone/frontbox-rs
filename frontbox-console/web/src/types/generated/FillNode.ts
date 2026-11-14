@@ -17,7 +17,7 @@ stops: Array<Stop>, style: GradientStyle, } } | { "Image": {
  */
 name: string, 
 /**
- * FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+ * Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
  * count gives each frame equal time. Clamped to the last frame.
  */
 frame?: Prop<number>, } };

@@ -24,9 +24,11 @@ fn rng_range((low, high): (f32, f32), rnd: f32) -> f32 {
 }
 
 impl Animatable for f32 {
+  /// A `Float`, or an `Int` as near as an `f32` holds it
   fn from_value(value: &Value) -> Option<Self> {
     match value {
       Value::Float(v) => Some(*v),
+      Value::Int(v) => Some(*v as f32),
       _ => None,
     }
   }

@@ -4,7 +4,7 @@ pub use ball_save_ext::*;
 use std::collections::HashMap;
 
 use frontbox_core::prelude::*;
-use frontbox_led::prelude::*;
+use frontbox_scene::{PlayableScene, ScenePlayer};
 
 use crate::ball_management::{BallManager, Launch};
 use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
@@ -60,22 +60,22 @@ use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 /// go on to them.
 ///
 /// After the last request ends, a grace period keeps saving a little longer (a ball already heading for the outlane as
-/// the save ends). The effect stops when the requests end, not after the grace period.
+/// the save ends). The scene stops when the requests end, not after the grace period.
 ///
 /// ## Setup
 /// ```rust,ignore
 /// // in the player template
 /// BallSaveSystem::new()
 ///   .grace_period(Duration::from_secs(2))
-///   .led_effect(ball_save_effect)
+///   .scene(ball_save_scene)
 ///
 /// app.routine::<BallDraining>(routine![BallSaveSystem]);
 /// ```
 #[derive(Clone)]
 pub struct BallSaveSystem {
   handle: SystemHandle,
-  effect: Option<LedPlayback>,
-  effect_playing: bool,
+  scene: Option<ScenePlayer>,
+  scene_playing: bool,
   /// Time remaining per requesting system, or `None` for until released
   requests: HashMap<u64, Option<Duration>>,
   grace_period: Duration,
@@ -89,8 +89,8 @@ impl BallSaveSystem {
     Self {
       handle: SystemHandle::default(),
       grace_period: Duration::from_secs(2),
-      effect: None,
-      effect_playing: false,
+      scene: None,
+      scene_playing: false,
       requests: HashMap::new(),
       grace_remaining: Duration::ZERO,
       was_saving: false,
@@ -103,9 +103,9 @@ impl BallSaveSystem {
     self
   }
 
-  /// An effect to play while there are requests
-  pub fn led_effect(mut self, effect: LedPlayback) -> Self {
-    self.effect = Some(effect.stopped());
+  /// A scene to play while there are requests
+  pub fn scene(mut self, scene: impl Into<PlayableScene>) -> Self {
+    self.scene = Some(ScenePlayer::new(scene));
     self
   }
 
@@ -148,17 +148,16 @@ impl BallSaveSystem {
     self.update(ctx);
   }
 
-  /// Bring the effect in line with the current requests
+  /// Bring the scene in line with the current requests
   fn update(&mut self, ctx: &SystemContext) {
     let requested = !self.requests.is_empty();
-    if requested != self.effect_playing {
-      self.effect_playing = requested;
-      if let Some(effect) = self.effect.as_mut() {
+    if requested != self.scene_playing {
+      self.scene_playing = requested;
+      if let Some(scene) = self.scene.as_mut() {
         if requested {
-          effect.reset();
-          effect.play();
+          scene.start(ctx);
         } else {
-          effect.stop(ctx);
+          scene.stop(ctx);
         }
       }
     }
@@ -185,7 +184,7 @@ impl System for BallSaveSystem {
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
-    // Overriding skips the default LED deactivation; clearing stops the effect instead
+    // Overriding skips the default LED deactivation; clearing stops the scene instead
     self.clear(ctx);
   }
 
@@ -243,12 +242,6 @@ impl System for BallSaveSystem {
       if self.grace_remaining.is_zero() {
         self.update(ctx);
       }
-    }
-
-    if self.effect_playing
-      && let Some(effect) = self.effect.as_mut()
-    {
-      effect.apply(delta, ctx);
     }
   }
 }

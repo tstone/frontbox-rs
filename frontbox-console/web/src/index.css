@@ -10,6 +10,7 @@
   --ok: #1a7f37;
   --warn: #b35900;
   --danger: #c62828;
+  --sound: #0b8ca6;
 
   /* log categories */
   --cat-event: #8b3bff;
@@ -49,6 +50,7 @@
     --ok: #4ac26b;
     --warn: #e0a040;
     --danger: #ff6b6b;
+    --sound: #3cc6de;
 
     --cat-event: #b27bff;
     --cat-switch: #58a6ff;

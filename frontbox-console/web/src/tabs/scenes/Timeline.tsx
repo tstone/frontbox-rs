@@ -1,17 +1,19 @@
 import { Popover } from '@ark-ui/solid/popover'
 import { batch, createMemo, createSignal, For, Index, onCleanup, Show, useContext } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import ScenePortal, { LayerColorContext, layerColorClass, type LayerColor } from './ScenePortal'
 import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedGraph } from '../../types/generated/RenderedGraph'
-import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
 import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, sceneTraversals, snap, TIME_STEP, trackTimes, traversalLength, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
+import { contentSoundLength } from '../../state/contentSounds'
+import type { SoundLayer } from '../../types/generated/SoundLayer'
+import { curveHeight, field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Scene, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -74,14 +76,16 @@ export default function Timeline(props: {
   const length = ({ traversal, layer, index }: SceneTraversal) =>
     traversalLength(traversal.get(), scene.get(), props.graphs[layer]?.lengths[index] ?? null)
 
-  /** How much time the view shows. A key or a traversal past the end is still there to be found and moved. */
+  /** How much time the view shows. A key, a traversal or a sound past the end is still there to be found and moved. */
   const span = createMemo(() =>
     Math.max(
       timing()?.duration ?? 1,
       ...tracks().map(({ prop }) => trackTimes(prop.get()).at(-1) ?? 0),
       ...traversals().map((run) => run.traversal.get().start + (length(run) ?? 0)),
+      ...scene.get().sounds.map((layer) => soundEnd(layer, contentSoundLength(layer.sound)) ?? layer.start),
     ),
   )
+  const sounds = field(scene, 'sounds')
 
   const percent = (seconds: number) => `${(seconds / span()) * 100}%`
 
@@ -133,7 +137,7 @@ export default function Timeline(props: {
       </header>
       <Show
         when={timing()}
-        fallback={<p class="scene-note">Set any value to Track to animate this scene.</p>}
+        fallback={<p class="scene-note">Set any value to Keyframes to animate this scene.</p>}
       >
         <div class="scene-timeline-tracks">
           <div class="scene-timeline-lanes" style={{ '--played-fraction': props.playback.position() / span(), '--end-fraction': timing()!.duration / span() }}>
@@ -162,11 +166,14 @@ export default function Timeline(props: {
                 </For>
               </div>
             </div>
+            <Index each={sounds.get()}>
+              {(_, index) => <SoundRow lens={item(sounds, index)} index={index} end={timing()!.duration} percent={percent} span={span()} />}
+            </Index>
             <Index each={traversals()}>
               {(run) => <TraversalRow run={run()} length={length(run())} end={timing()!.duration} percent={percent} span={span()} open={props.openLayer} />}
             </Index>
             {/* by position, so an edit doesn't tear down the editor it was made in */}
-            <Index each={tracks()} fallback={traversals().length === 0 && <p class="scene-note">Set any value to Track to give it a track here.</p>}>
+            <Index each={tracks()} fallback={traversals().length === 0 && sounds.get().length === 0 && <p class="scene-note">Set any value to Keyframes to give it a track here.</p>}>
               {(track) => <TrackRow track={track()} percent={percent} span={span()} reveal={props.reveal} />}
             </Index>
             <div class="scene-timeline-playhead" />
@@ -289,7 +296,7 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
           <path d="M2 3h1.25v10H2zM12.75 3H14v10h-1.25zM4.25 8 7 5.25v2h2v-2L11.75 8 9 10.75v-2H7v2z" />
         </svg>
       </Popover.Trigger>
-      <Portal>
+      <ScenePortal>
         <Popover.Positioner>
           <Popover.Content class="scene-time-scales" onPointerEnter={stay} onPointerLeave={leave}>
             <For each={SHORTER}>{option}</For>
@@ -297,17 +304,18 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
             <For each={LONGER}>{option}</For>
           </Popover.Content>
         </Popover.Positioner>
-      </Portal>
+      </ScenePortal>
     </Popover.Root>
   )
 }
 
-/** A prop's name and its keys, its picks, or its sweep along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
+/** A prop's name and its keys, its picks, or its wave along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
 function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number; reveal: (track: SceneTrack) => void }) {
+  const scene = useContext(SceneContext)!
   // read through `props`, as a row goes to whichever prop comes to be at its position
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
-  const swept = () => 'Sweep' in prop.get()
+  const waved = () => 'Modulated' in prop.get()
   /** The time under the mouse, and whether that's a dot's rather than one to add a dot at */
   const [hovering, setHovering] = createSignal<{ at: number; onDot: boolean } | null>(null)
   let lane!: HTMLDivElement
@@ -319,7 +327,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
-    if (swept()) return
+    if (waved()) return
     const { width } = e.currentTarget.getBoundingClientRect()
     const at = along(e, e.currentTarget) * props.span
     const nearest = times().reduce((near, time) => (Math.abs(time - at) < Math.abs(near - at) ? time : near), Infinity)
@@ -329,94 +337,188 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
 
   const add = (at: number) => {
     const current = prop.get()
-    if ('Track' in current) prop.set({ Track: withKey(current.Track, at) })
+    if ('Keyframes' in current) prop.set({ Keyframes: withKey(current.Keyframes, at) })
     if ('Random' in current) prop.set({ Random: withPick(current.Random, at) })
   }
 
+  // a track that isn't on a drawn layer is a sound's volume
+  const color = (): LayerColor => (props.track.layer === null ? 'sound' : undefined)
+
   return (
-    <div class="scene-timeline-row" classList={{ 'scene-timeline-hidden': isHidden(prop.get()) }}>
-      <div class="scene-timeline-name">
-        <EyeButton label={props.track.label} hidden={isHidden(prop.get())} onChange={(hidden) => prop.set(withHidden(prop.get(), hidden))} />
-        <button type="button" class="scene-timeline-label" title={`Find ${props.track.label} in Config`} onClick={() => props.reveal(props.track)}>
-          {props.track.label}
-        </button>
-      </div>
-      <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
-        <Show when={hovering()?.onDot === false}>
-          <button
-            type="button"
-            class="scene-key-add"
-            aria-label={`Add a key to ${props.track.label}`}
-            style={{ left: props.percent(hovering()!.at) }}
-            onClick={() => {
-              add(hovering()!.at)
-              setHovering(null)
-            }}
-          >
-            +
+    <LayerColorContext.Provider value={color()}>
+      <div class={`scene-timeline-row ${layerColorClass(color()) ?? ''}`} classList={{ 'scene-timeline-hidden': isHidden(prop.get()) }}>
+        <div class="scene-timeline-name">
+          <EyeButton label={props.track.label} hidden={isHidden(prop.get())} onChange={(hidden) => prop.set(withHidden(prop.get(), hidden))} />
+          <button type="button" class="scene-timeline-label" title={`Find ${props.track.label} in Config`} onClick={() => props.reveal(props.track)}>
+            {props.track.label}
           </button>
-        </Show>
-        <Show when={hovering() !== null}>
-          <Portal>
-            <span class="scene-key-add-time" style={addTimePlace()}>
-              {hovering()!.at.toFixed(2)} s
-            </span>
-          </Portal>
-        </Show>
-        <Show when={swept()}>
-          <SweepBar label={props.track.label} lens={variant(prop, 'Sweep')} percent={props.percent} span={props.span} />
-        </Show>
-        <Index each={swept() ? [] : times()}>
-          {(time, index) => (
-            <Show
-              when={'Track' in prop.get()}
-              fallback={
-                <PickDot
+        </div>
+        <div class="scene-timeline-lane" ref={lane} onPointerMove={hover} onPointerLeave={() => setHovering(null)}>
+          <Show when={hovering()?.onDot === false}>
+            <button
+              type="button"
+              class="scene-key-add"
+              aria-label={`Add a key to ${props.track.label}`}
+              style={{ left: props.percent(hovering()!.at) }}
+              onClick={() => {
+                add(hovering()!.at)
+                setHovering(null)
+              }}
+            >
+              +
+            </button>
+          </Show>
+          <Show when={hovering() !== null}>
+            <ScenePortal>
+              <span class="scene-key-add-time" style={addTimePlace()}>
+                {hovering()!.at.toFixed(2)} s
+              </span>
+            </ScenePortal>
+          </Show>
+          <Show when={waved()}>
+            <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
+          </Show>
+          <Index each={times()}>
+            {(time, index) => (
+              <Show
+                when={'Keyframes' in prop.get()}
+                fallback={
+                  <PickDot
+                    label={props.track.label}
+                    picks={field(variant(prop, 'Random'), 'picks')}
+                    index={index}
+                    left={props.percent(time())}
+                    times={times()}
+                    span={props.span}
+                  />
+                }
+              >
+                <KeyDot
                   label={props.track.label}
-                  picks={field(variant(prop, 'Random'), 'picks')}
+                  ranges={props.track}
+                  keys={field(variant(prop, 'Keyframes'), 'keys')}
                   index={index}
                   left={props.percent(time())}
                   times={times()}
                   span={props.span}
                 />
-              }
-            >
-              <KeyDot
-                label={props.track.label}
-                ranges={props.track}
-                keys={field(variant(prop, 'Track'), 'keys')}
-                index={index}
-                left={props.percent(time())}
-                times={times()}
-                span={props.span}
-              />
-            </Show>
-          )}
-        </Index>
+              </Show>
+            )}
+          </Index>
+        </div>
+      </div>
+    </LayerColorContext.Provider>
+  )
+}
+
+/** Most points drawn along a wave, however many times it goes by */
+const WAVE_SAMPLES = 2048
+
+/** A modulated prop's wave over the scene's first cycle, from its low end at the bottom to its high end at the top */
+function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number; percent: (seconds: number) => string }) {
+  const points = () => {
+    const samples = Math.min(Math.ceil(96 * Math.max(props.modulated.rate, 1)), WAVE_SAMPLES)
+    return Array.from({ length: samples + 1 }, (_, index) => {
+      const at = index / samples
+      const phase = phaseAt(props.modulated.phase, props.scene, at * props.duration)
+      return `${at},${1 - envelopeHeight(props.modulated.envelope, wavePosition(props.modulated, phase, at))}`
+    }).join(' ')
+  }
+  return (
+    <svg class="scene-wave" style={{ width: props.percent(props.duration) }} viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={points()} />
+    </svg>
+  )
+}
+
+/**
+ * A wave's phase `seconds` into the cycle, as `Keyframes::resolve` in frontbox-gfx has it for keyframes, with a curve written
+ * by hand taken as linear. Only the machine knows what one from anywhere else comes to, so that stays where it starts.
+ */
+function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
+  if (!('Keyframes' in phase)) return startingValue(phase, scene, 0)
+  const { keys, cycle } = phase.Keyframes
+  const [first, last] = [keys[0], keys[keys.length - 1]]
+  if (!first || !last) return 0
+  const laps = cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
+  const time = last.at <= 0 ? seconds : seconds >= laps * last.at ? last.at : cycle === 'Once' ? seconds : seconds % last.at
+  if (time <= first.at) return first.value
+  for (let index = 1; index < keys.length; index++) {
+    const [a, b] = [keys[index - 1], keys[index]]
+    if (time < b.at) {
+      const span = b.at - a.at
+      const through = span > 0 ? (time - a.at) / span : 1
+      return a.value + (b.value - a.value) * curveHeight(b.curve, through)
+    }
+  }
+  return last.value
+}
+
+/** A sound layer's name, and a bar for when it plays */
+function SoundRow(props: { lens: Lens<SoundLayer>; index: number; end: number; percent: (seconds: number) => string; span: number }) {
+  const label = () => soundLabel(props.lens.get(), props.index)
+
+  return (
+    <div class="scene-timeline-row scene-color-sound">
+      <div class="scene-timeline-name">
+        <span class="scene-timeline-mark" aria-hidden="true">
+          ♪
+        </span>
+        <span class="scene-timeline-label" title={props.lens.get().sound}>
+          {label()}
+        </span>
+      </div>
+      <div class="scene-timeline-lane">
+        <SoundBar label={label()} lens={props.lens} end={props.end} percent={props.percent} span={props.span} />
       </div>
     </div>
   )
 }
 
-/** When a path is followed: a line along the track, with an arrow at each end for changing them and a grip for moving it as a whole */
-function SweepBar(props: { label: string; lens: Lens<Sweep>; percent: (seconds: number) => string; span: number }) {
-  const sweep = () => props.lens.get()
+/**
+ * When a sound plays: a bar from its start to where it ends or is cut off, between the parts of the sound that are
+ * skipped and cut off. Its left edge skips more or less of the sound's beginning and its right edge moves the end, each
+ * leaving the other where it is, and the rest moves the whole of it. It can't start at `end`, as that's the start of the
+ * next cycle, but it can play on past it.
+ */
+function SoundBar(props: { label: string; lens: Lens<SoundLayer>; end: number; percent: (seconds: number) => string; span: number }) {
+  const layer = () => props.lens.get()
+  const length = () => contentSoundLength(layer().sound)
+  const skip = () => layer().skip ?? 0
+  /** Where the sound ends on its own, once that's known */
+  const natural = () => soundNaturalEnd(layer(), length())
+  // until its length is known, it's given some room to be grabbed by
+  const shownEnd = () => soundEnd(layer(), length()) ?? layer().start + props.span / 20
+  /** Where the sound's beginning would be on the timeline if none of it were skipped, which can't be before the top */
+  const head = () => Math.max(layer().start - skip(), 0)
+  const latest = () => Math.max(props.end - TIME_STEP, 0)
   let bar!: HTMLDivElement
 
-  /** Dragging something that sets both ends from how far it's come, and from how they were when it was pressed */
-  const dragged = (ends: (by: number, pressed: { start: number; end: number; span: number }) => [number, number]) => {
+  type Times = { start: number; skip: number; end: number | undefined }
+
+  /** `layer` with its times set, playing to the end of its sound if `end` reaches it */
+  const set = ({ start, skip, end }: Times) => {
+    const { end: _, skip: __, ...rest } = layer()
+    const natural = soundNaturalEnd({ ...rest, start, skip }, length())
+    const ends = end !== undefined && (natural === undefined || end < natural - TIME_STEP / 2)
+    props.lens.set({ ...rest, start, ...(skip > 0 && { skip }), ...(ends && { end }) })
+  }
+
+  /** Dragging something that sets the times from how far it's come, and from how they were when it was pressed */
+  const dragged = (times: (by: number, pressed: Times) => Times) => {
     // kept from the press, as the view's length can change with where the ends are
-    let press: { x: number; start: number; end: number; span: number } | null = null
+    let press: { x: number; span: number; times: Times } | null = null
     const lane = () => bar.parentElement!
     return {
       onPointerDown(e: PointerEvent & { currentTarget: HTMLElement }) {
+        // an edge is inside the bar, which would take the drag as its own
+        e.stopPropagation()
         e.currentTarget.setPointerCapture(e.pointerId)
-        press = { x: along(e, lane()), start: sweep().start, end: sweep().end, span: props.span }
+        press = { x: along(e, lane()), span: props.span, times: { start: layer().start, skip: skip(), end: layer().end ?? natural() } }
       },
       onPointerMove(e: PointerEvent) {
         if (!press) return
-        const [start, end] = ends((along(e, lane()) - press.x) * press.span, press)
-        props.lens.set({ ...sweep(), start, end })
+        set(times((along(e, lane()) - press.x) * press.span, press.times))
       },
       onPointerUp: () => (press = null),
       onPointerCancel: () => (press = null),
@@ -424,42 +526,44 @@ function SweepBar(props: { label: string; lens: Lens<Sweep>; percent: (seconds: 
   }
 
   // made once, as each of these holds its own press
-  const startArrow = dragged((by, { start, end }) => [clamp(snap(start + by), 0, end - TIME_STEP), end])
-  const endArrow = dragged((by, { start, end, span }) => [start, clamp(snap(end + by), start + TIME_STEP, span)])
-  const grip = dragged((by, { start, end, span }) => {
-    const moved = clamp(snap(by), -start, span - end)
-    return [snap(start + moved), snap(end + moved)]
+  // the sound stays put on the timeline, so its start moves with how much of its beginning is skipped
+  const startEdge = dragged((by, { start, skip, end }) => {
+    const next = clamp(snap(start + by), Math.max(start - skip, 0), Math.min(latest(), (end ?? shownEnd()) - TIME_STEP))
+    return { start: next, skip: Math.max(snap(skip + next - start), 0), end }
+  })
+  const endEdge = dragged((by, { start, skip, end }) => ({ start, skip, end: clamp(snap((end ?? shownEnd()) + by), start + TIME_STEP, natural() ?? Infinity) }))
+  const middle = dragged((by, { start, skip, end }) => {
+    const moved = clamp(snap(by), -start, latest() - start)
+    return { start: snap(start + moved), skip, end: end === undefined ? undefined : snap(end + moved) }
   })
 
   return (
-    <div
-      class="scene-sweep"
-      ref={bar}
-      style={{ left: props.percent(sweep().start), width: props.percent(sweep().end - sweep().start) }}
-    >
-      <button
-        type="button"
-        class="scene-sweep-end scene-sweep-start"
-        aria-label={`${props.label} start, ${sweep().start.toFixed(2)} seconds`}
-        {...startArrow}
+    <>
+      <Show when={skip() > 0 && head() < layer().start}>
+        <span
+          class="scene-sound-skipped"
+          title={`The first ${skip().toFixed(2)} s of ${props.label} is skipped`}
+          style={{ left: props.percent(head()), width: props.percent(layer().start - head()) }}
+        />
+      </Show>
+      <Show when={natural() !== undefined && natural()! > shownEnd()}>
+        <span
+          class="scene-sound-cut"
+          title={`The last ${(natural()! - shownEnd()).toFixed(2)} s of ${props.label} is cut off`}
+          style={{ left: props.percent(shownEnd()), width: props.percent(natural()! - shownEnd()) }}
+        />
+      </Show>
+      <div
+        class="scene-sound-bar"
+        ref={bar}
+        title={`${layer().sound}${length() ? `, ${length()!.toFixed(2)} s long` : ''}`}
+        style={{ left: props.percent(layer().start), width: props.percent(shownEnd() - layer().start) }}
+        {...middle}
       >
-        ‹
-      </button>
-      <button
-        type="button"
-        class="scene-sweep-grip"
-        aria-label={`Move ${props.label} along the timeline`}
-        {...grip}
-      />
-      <button
-        type="button"
-        class="scene-sweep-end scene-sweep-finish"
-        aria-label={`${props.label} end, ${sweep().end.toFixed(2)} seconds`}
-        {...endArrow}
-      >
-        ›
-      </button>
-    </div>
+        <button type="button" class="scene-sound-edge scene-sound-edge-start" aria-label={`${props.label}, ${skip().toFixed(2)} seconds skipped at its beginning`} {...startEdge} />
+        <button type="button" class="scene-sound-edge scene-sound-edge-end" aria-label={`${props.label} end, ${shownEnd().toFixed(2)} seconds`} {...endEdge} />
+      </div>
+    </>
   )
 }
 
@@ -601,11 +705,11 @@ function Dot<T extends { at: number }>(props: DotPlace & { label: string; moment
         onPointerUp={() => (press = null)}
         onPointerCancel={() => (press = null)}
       />
-      <Portal>
+      <ScenePortal>
         <Popover.Positioner>
           <Popover.Content class="scene-key-editor">{props.children}</Popover.Content>
         </Popover.Positioner>
-      </Portal>
+      </ScenePortal>
     </Popover.Root>
   )
 }
@@ -670,7 +774,7 @@ function KeyDot(props: DotPlace & { label: string; ranges: Pick<SceneTrack, 'ran
         >
           Duplicate
         </button>
-        {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Track */}
+        {/* a track with no keys reads as zero, and leaving it is a matter of switching it away from Keyframes */}
         <button
           type="button"
           class="scene-key-remove"

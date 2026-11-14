@@ -5,10 +5,7 @@ use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
 use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
-use frontbox_dmd::DmdScene;
-use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::GfxComposition;
-use frontbox_led::LedScene;
+use frontbox_scene::Scene;
 use frontbox_metrics::CounterTotal;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
@@ -46,6 +43,8 @@ pub struct Snapshot {
   /// The last color sent to each LED, by name, in wire channel order (an LED wired GRB has green first)
   pub led_colors: BTreeMap<String, Rgb>,
   pub planes: Vec<PlaneView>,
+  /// Displays mirrored in the console. Their frames are binary messages naming them by their place here.
+  pub displays: Vec<DisplayView>,
   /// Operator configs in use, by key, with their current values
   pub configs: BTreeMap<&'static str, ConfigView>,
   #[ts(as = "Vec<TraceRecord>")]
@@ -113,6 +112,30 @@ pub struct PlaneView {
   pub code: Option<String>,
 }
 
+/// The first byte of a binary message, which says what the rest is
+pub const BINARY_CLIP: u8 = 0;
+/// A display's frame: then a byte for its place in `Snapshot::displays`, then red, green, and blue for each pixel,
+/// row-major from the top left
+pub const BINARY_DISPLAY_FRAME: u8 = 1;
+
+/// A display mirrored in the console
+#[derive(Clone, serde::Serialize, TS)]
+pub struct DisplayView {
+  pub name: String,
+  pub width: u32,
+  pub height: u32,
+  /// Where it is on the machine, to draw it there. `None` draws it on its own.
+  pub placement: Option<DisplayPlacement>,
+}
+
+/// A rectangle on a plane, in the plane's units, from `origin` to `origin + size`
+#[derive(Clone, serde::Serialize, TS)]
+pub struct DisplayPlacement {
+  pub plane: String,
+  pub origin: [f32; 2],
+  pub size: [f32; 2],
+}
+
 #[derive(Clone, serde::Serialize, TS)]
 pub struct LedColors {
   pub colors: BTreeMap<String, Rgb>,
@@ -122,7 +145,7 @@ pub struct LedColors {
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
   /// The scene that was rendered
-  pub scene: SceneDefinition,
+  pub scene: Scene,
   /// The same scene as RON
   pub ron: String,
   pub width: usize,
@@ -131,12 +154,12 @@ pub struct RenderedScene {
   pub colors: Vec<u8>,
   /// The part of the scene those points show, in scene units
   pub area: RenderedArea,
-  /// Where each layer is drawn, as a closed loop of points in scene units
-  pub outlines: Vec<Vec<[f32; 2]>>,
+  /// Where each layer is drawn, as closed loops of points in scene units: one for each copy of its shape
+  pub outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
   pub shapes: Vec<Option<RenderedShape>>,
   /// Where each layer's mask is drawn. Empty for a layer without one.
-  pub mask_outlines: Vec<Vec<[f32; 2]>>,
+  pub mask_outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's mask's shape as it stands. `None` for a layer without one.
   pub mask_shapes: Vec<Option<RenderedShape>>,
   /// What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
@@ -171,13 +194,29 @@ pub struct RenderedShape {
   pub points: Vec<[f32; 2]>,
   /// A bezier's handles, each from its point
   pub handles: Vec<[f32; 2]>,
-  /// How far a ring's hole reaches from its center, in its own space
-  pub hole: f32,
-  /// Its edge in the scene, as a closed loop of points, or its line for a polyline or bezier, which doesn't close
+  /// Where its center is going into each transform, in the space the ones before it put the shape in, then in the
+  /// scene after the last. A rotate turns around it.
+  pub pivots: Vec<[f32; 2]>,
+  /// For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
+  /// `None` for other transforms.
+  pub centers: Vec<Option<[f32; 2]>>,
+  /// For each shift, the ends of the shape along its line and where it moves the middle to, in the space the transforms
+  /// before it put the shape in. `None` for other transforms.
+  pub shifts: Vec<Option<RenderedShift>>,
+  /// Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
+  /// points, or its line for a polyline or bezier, which doesn't close
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that
   /// doesn't.
   pub paths: Vec<Option<RenderedShape>>,
+}
+
+/// Where a shift moves a shape
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedShift {
+  pub back: [f32; 2],
+  pub forward: [f32; 2],
+  pub middle: [f32; 2],
 }
 
 /// What the console says about an image in the content folder, so an editor can offer its frames
@@ -189,6 +228,16 @@ pub struct ImageInfo {
   pub frames: usize,
   /// Seconds it takes to play, by what the file says
   pub duration: f32,
+}
+
+/// A font a scene can use, so an editor can offer sizes it draws crisply at
+#[derive(Clone, serde::Serialize, TS)]
+pub struct FontInfo {
+  pub name: String,
+  /// For a font drawn on a pixel grid, the size that's one scene unit to its pixels. It's crisp at whole multiples of it.
+  pub pixel_size: Option<f32>,
+  /// For a pixel font, how many of its pixels tall its capital letters are
+  pub cap_height: Option<f32>,
 }
 
 /// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a
@@ -204,6 +253,23 @@ pub struct RenderedClip {
   pub height: usize,
   /// The name of each LED the scene lands on
   pub leds: Vec<String>,
+  /// The sounds its sound layers start in the cycle, in the order they start
+  pub sounds: Vec<ClipSound>,
+}
+
+/// A sound starting in a [`RenderedClip`]
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ClipSound {
+  /// Seconds into the cycle
+  pub at: f32,
+  /// The sound, by its name in the content folder
+  pub sound: String,
+  /// 1.0 is as recorded
+  pub volume: f32,
+  /// Seconds cut from the beginning of the sound
+  pub skip: f32,
+  /// Seconds it plays before it's cut off, or `None` to play to its end
+  pub length: Option<f32>,
 }
 
 /// A rectangle in a scene
@@ -260,6 +326,9 @@ pub enum ClientMessage {
     /// Which cycle, counting from zero
     cycle: u32,
   },
+  /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
+  /// the app has no sound system.
+  PlaySound { sound: String, volume: f32, skip: f32, length: Option<f32> },
 }
 
 /// A scene to render, as either of the forms the console edits it in
@@ -268,62 +337,20 @@ pub enum SceneSource {
   /// As written in a file
   Ron(String),
   /// As edited field by field
-  Definition(SceneDefinition),
+  Definition(Scene),
   /// Drawn as `shown`, for trying a change out without making it. `scene` is what's given back in both forms.
-  Preview { scene: SceneDefinition, shown: SceneDefinition },
+  Preview { scene: Scene, shown: Scene },
 }
 
-/// A scene file, whichever kind it says it is
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
-pub enum SceneDefinition {
-  Led(LedScene),
-  Dmd(DmdScene),
-}
-
-impl SceneDefinition {
-  pub fn load(source: &str) -> Result<Self, FormatError> {
-    let scene: Self = file::load(source)?;
-    file::check_version(scene.version())?;
-    scene.check().map_err(FormatError::Invalid)?;
-    Ok(scene)
-  }
-
-  pub fn save(&self) -> Result<String, FormatError> {
-    file::save(self)
-  }
-
-  /// Checks what a definition's types can't say for themselves
-  pub fn check(&self) -> Result<(), String> {
-    match self {
-      Self::Led(scene) => scene.check().map_err(|err| err.to_string()),
-      Self::Dmd(scene) => scene.check().map_err(|err| err.to_string()),
-    }
-  }
-
-  fn version(&self) -> u32 {
-    match self {
-      Self::Led(scene) => scene.version,
-      Self::Dmd(scene) => scene.version,
-    }
-  }
-
-  /// What's drawn, leaving out where
-  pub fn composition(&self) -> GfxComposition {
-    match self {
-      Self::Led(scene) => scene.composition(),
-      Self::Dmd(scene) => scene.composition.clone(),
-    }
-  }
-}
-
-/// How many points to sample a scene at. The kind of scene decides which of these applies.
+/// How many points to sample a scene at. A scene with display layers is drawn at the width and height; one without draws
+/// a strip of its `Sequence` LED layers, `leds` long.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
 pub struct SceneSize {
-  /// LEDs along the strip, for an LED scene's `Sequence` layers
+  /// Points along the strip of `Sequence` LED layers
   pub leds: usize,
-  /// Points across, for an `Area` viewport
+  /// Points across a display, and the width of an LED layer on a plane the machine doesn't have
   pub width: usize,
-  /// Points down, for an `Area` viewport
+  /// Points down a display, and the height of an LED layer on a plane the machine doesn't have
   pub height: usize,
 }
 

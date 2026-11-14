@@ -1,4 +1,4 @@
-//! Two scoops on virtual hardware: one with a lower entrance and an eject effect, whose ball can be held, and a plain one.
+//! Two scoops on virtual hardware: one with a lower entrance and an eject scene, whose ball can be held, and a plain one.
 
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -17,7 +17,7 @@ const LOWER_ENTRANCE: &str = "lower_entrance";
 const REAR: &str = "rear_scoop";
 const REAR_COIL: &str = "rear_scoop_coil";
 
-/// How long the lower scoop's eject effect is
+/// How long the lower scoop's eject scene is
 const EJECT_DELAY: Duration = Duration::from_millis(750);
 const VERIFY_DELAY: Duration = Duration::from_millis(250);
 const LOWER_ENTRANCE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -40,19 +40,15 @@ static REAR_DRIVER: LazyLock<DriverDefinition> = LazyLock::new(|| {
 });
 
 /// A scene with the given timing line, on an LED the machine doesn't have
-fn effect(timing: &str) -> LedPlayback {
+fn scene(timing: &str) -> PlayableScene<Completes> {
   let scene = format!(
-    r#"Led(
-      version: 1,
+    r#"Scene(
+      version: 2,
       {timing}
-      layers: [(
-        leds: Name("scoop_led"),
-        surface: Sequence,
-        layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))),
-      )],
+      layers: [Leds(leds: Name("scoop_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
     )"#
   );
-  LedPlayback::new(LedScene::load(&scene).unwrap()).unwrap()
+  PlayableScene::completing(Scene::load(&scene).unwrap()).unwrap()
 }
 
 fn app() -> App {
@@ -75,7 +71,7 @@ fn app() -> App {
       ScoopSystem::<Lower>::new(LOWER, LOWER_COIL)
         .lower_entrance_switch(LOWER_ENTRANCE)
         .lower_entrance_timeout(LOWER_ENTRANCE_TIMEOUT)
-        .before_eject_effect(effect("timing: (duration: 0.25, cycle: Times(3)),"))
+        .before_eject_scene(scene("timing: (duration: 0.25, cycle: Times(3)),"))
         .verify_delay(VERIFY_DELAY),
     )
     .system(ScoopSystem::<Rear>::new(REAR, REAR_COIL).verify_delay(VERIFY_DELAY));
@@ -111,7 +107,7 @@ fn past(duration: Duration) -> Duration {
 }
 
 #[test]
-fn a_ball_is_ejected_once_the_eject_effect_has_played() {
+fn a_ball_is_ejected_once_the_eject_scene_has_played() {
   let mut s = Scenario::new(app()).start();
   let entered = s.record(|e: &ScoopBallEntered<Lower>| e.entry);
   let started = s.record(|_: &ScoopEjectStarted<Lower>| ());
@@ -128,7 +124,7 @@ fn a_ball_is_ejected_once_the_eject_effect_has_played() {
 }
 
 #[test]
-fn with_no_eject_effect_the_ball_is_ejected_at_once() {
+fn with_no_eject_scene_the_ball_is_ejected_at_once() {
   let mut s = Scenario::new(app()).start();
   let ejected = s.record(|_: &ScoopEjected<Rear>| ());
 
@@ -221,7 +217,7 @@ fn a_held_ball_waits_until_the_last_hold_is_released() {
 }
 
 #[test]
-fn a_hold_during_the_eject_effect_stops_the_eject() {
+fn a_hold_during_the_eject_scene_stops_the_eject() {
   let mut s = Scenario::new(app()).start();
   let started = s.record(|_: &ScoopEjectStarted<Lower>| ());
 
@@ -270,17 +266,4 @@ fn a_ball_search_kicks_empty_scoops_but_not_a_held_ball() {
   s.advance(Duration::from_secs(2));
   assert_eq!(taps(&s, LOWER_COIL), 0);
   assert_eq!(taps(&s, REAR_COIL), 1);
-}
-
-#[test]
-#[should_panic(expected = "never completes")]
-fn an_eject_effect_that_never_completes_is_refused() {
-  ScoopSystem::<Lower>::new(LOWER, LOWER_COIL).before_eject_effect(effect(""));
-}
-
-#[test]
-#[should_panic(expected = "never completes")]
-fn an_eject_effect_that_repeats_forever_is_refused() {
-  ScoopSystem::<Lower>::new(LOWER, LOWER_COIL)
-    .before_eject_effect(effect("timing: (duration: 0.25, cycle: Forever),"));
 }

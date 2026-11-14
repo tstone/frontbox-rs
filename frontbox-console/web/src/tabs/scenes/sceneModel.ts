@@ -1,3 +1,4 @@
+import { fontPixelSize } from '../../state/contentFonts'
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
@@ -6,27 +7,33 @@ import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
-import type { GfxComposition } from '../../types/generated/GfxComposition'
 import type { GraphMask } from '../../types/generated/GraphMask'
 import type { LedLayer } from '../../types/generated/LedLayer'
-import type { SceneDefinition } from '../../types/generated/SceneDefinition'
+import type { Scene as SceneFile } from '../../types/generated/Scene'
+import type { SceneLayer as SceneFileLayer } from '../../types/generated/SceneLayer'
 import type { SceneSource } from '../../types/generated/SceneSource'
+import type { ShapeAdjust } from '../../types/generated/ShapeAdjust'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
+import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
-import type { Surface as LedSurface } from '../../types/generated/Surface'
 import type { Sweep } from '../../types/generated/Sweep'
+import type { TextSource } from '../../types/generated/TextSource'
 import type { Timing } from '../../types/generated/Timing'
-import type { Track } from '../../types/generated/Track'
+import type { Keyframes } from '../../types/generated/Keyframes'
 import type { Value } from '../../types/generated/Value'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
+import type { Envelope } from '../../types/generated/Envelope'
+import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
+import { sample } from './CurvePicker'
 
 export type Vec2 = [number, number]
 
@@ -123,14 +130,23 @@ export function wrapValue(value: SceneValue): Value {
   return value.length === 2 ? { Vec2: value } : { Color: value }
 }
 
-export function unwrapValue(value: Value): SceneValue {
+/** A param a prop can read, which is any but text */
+export type PropValue = Exclude<Value, { Text: string }>
+
+export function unwrapValue(value: PropValue): SceneValue {
   if ('Float' in value) return value.Float
+  if ('Int' in value) return value.Int
   return 'Vec2' in value ? value.Vec2 : value.Color
 }
 
-/** Whether a param can feed a prop holding values like `like`. A param of the wrong type gives the type's default. */
-export function paramFits(param: Value | undefined, like: SceneValue) {
-  return param !== undefined && Object.keys(param)[0] === Object.keys(wrapValue(like))[0]
+/**
+ * Whether a param can feed a prop holding values like `like`. A param of the wrong type gives the type's default. A
+ * number prop reads an `Int` too.
+ */
+export function paramFits(param: Value | undefined, like: SceneValue): param is PropValue {
+  if (param === undefined) return false
+  const kind = Object.keys(wrapValue(like))[0]
+  return Object.keys(param)[0] === kind || (kind === 'Float' && 'Int' in param)
 }
 
 /** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
@@ -149,12 +165,34 @@ function hsvColor(hue: number, brightness: number, alpha: number): Color {
   return [channel(5), channel(3), channel(1), Math.round(alpha * 255)]
 }
 
-/** The middle of what a spread can pick */
-function spreadMiddle(spread: Spread): SceneValue {
-  if ('Float' in spread) return midpoint(spread.Float)
-  if ('Vec2' in spread) return [midpoint(spread.Vec2.x), midpoint(spread.Vec2.y)]
+/** What a spread comes to at `height`, from its low end at 0 to its high end at 1, as `Animatable::from_spread` has it */
+function spreadAt(spread: Spread, height: number): SceneValue {
+  const at = ([low, high]: [number, number]) => low + (high - low) * height
+  if ('Float' in spread) return at(spread.Float)
+  if ('Vec2' in spread) return [at(spread.Vec2.x), at(spread.Vec2.y)]
   const { hue, brightness, alpha } = spread.Color
-  return hsvColor(midpoint(hue), midpoint(brightness), midpoint(alpha))
+  return hsvColor(at(hue), at(brightness), at(alpha))
+}
+
+/** An envelope's height at `position` through its wave, 0 to 1, as `Envelope::sample` in frontbox-gfx has it */
+export function envelopeHeight({ attack, decay }: Envelope, position: number): number {
+  if (!decay) return envelopeCurveHeight(attack, position)
+  return position < 0.5 ? envelopeCurveHeight(attack, position * 2) : envelopeCurveHeight(decay, position * 2 - 1)
+}
+
+function envelopeCurveHeight({ curve, reversed }: EnvelopeCurve, phase: number) {
+  return curveHeight(curve, reversed ? 1 - phase : phase)
+}
+
+/** Where a curve is at a phase from 0 to 1, with one written by hand taken as linear, as only the machine knows what it comes to */
+export function curveHeight(curve: Curve, phase: number) {
+  return typeof curve === 'string' ? sample(curve, phase) : phase
+}
+
+/** Where in its wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
+export function wavePosition({ rate }: Modulated, phase: number, cycles: number) {
+  const position = (cycles * rate + phase) % 1
+  return position < 0 ? position + 1 : position
 }
 
 /** The widest spread for a prop holding values like `like`, short of making a color see-through */
@@ -164,18 +202,23 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
 
-/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a path was moved to, or a visit response at rest */
+/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Visit' in prop) return prop.Visit.from
-  if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
-  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadMiddle(prop.Random.spread) as T) : fallback
+  if ('Keyframes' in prop) return prop.Keyframes.keys[0]?.value ?? fallback
+  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadAt(prop.Random.spread, 0.5) as T) : fallback
+  if ('Modulated' in prop) {
+    const { spread, envelope, phase } = prop.Modulated
+    const position = wavePosition(prop.Modulated, startingValue(phase, scene, 0), 0)
+    return spreadFits(spread, fallback) ? (spreadAt(spread, envelopeHeight(envelope, position)) as T) : fallback
+  }
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
     return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
   }
   const param = scene.params?.[prop.Param]
-  return paramFits(param, fallback) ? (unwrapValue(param!) as T) : fallback
+  return paramFits(param, fallback) ? (unwrapValue(param) as T) : fallback
 }
 
 /** `base`, or `base_2` and so on if a parameter already has that name */
@@ -197,12 +240,23 @@ export function shapePoints(base: ShapeNode): Prop<Vec2>[] {
 /** Whether a shape is a line that stops at its last point, and not an edge that comes back around to its first */
 export const isOpen = (base: ShapeNode) => 'Polyline' in base || 'Bezier' in base
 
-/** A circle around `center` for the whole of a scene's length, big enough to see in the ranges of the prop on it */
+/** A circle around `center`, gone around once over a scene's length, big enough to see in the ranges of the prop on it */
 export function newSweep(center: Vec2, [x, y]: Ranges, duration: number): Sweep {
   const reach = Math.min(x.max - x.min, y.max - y.min) / 4
   const base = { Circle: { radius: { Fixed: reach } } }
-  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, start: 0, end: duration }
+  return { path: { base, transform: [{ Translate: { Fixed: center } }] }, position: lap(duration) }
 }
+
+/** From 0 to 1 over `duration` seconds, once */
+const lap = (duration: number): Prop<number> => ({
+  Keyframes: {
+    keys: [
+      { at: 0, value: 0, curve: 'Linear' },
+      { at: duration, value: 1, curve: 'Linear' },
+    ],
+    cycle: 'Once',
+  },
+})
 
 /** Whether a scene plays more than once, which gives its first moment something to come from and its last somewhere to go */
 export function repeats(scene: Scene) {
@@ -215,9 +269,15 @@ export function cycleCount({ cycle }: Timing) {
   return cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
 }
 
-/** Whether a scene's cycles differ from each other, which only random picks can make them do */
+/** Whether a scene's cycles differ from each other, which only random picks and waves that don't fit a cycle a whole number of times can make them do */
 export function changesEachCycle(scene: Scene) {
-  return repeats(scene) && propUses(reading(scene)).some(({ lens }) => 'Random' in lens.get())
+  return (
+    repeats(scene) &&
+    propUses(reading(scene)).some(({ lens }) => {
+      const prop = lens.get()
+      return 'Random' in prop || ('Modulated' in prop && !Number.isInteger(prop.Modulated.rate))
+    })
+  )
 }
 
 /** Scene with a timing, which it needs before it can have keyframes. A new one is `duration` long and repeats. */
@@ -238,26 +298,22 @@ export function framesTrack(info: ImageInfo, { duration }: Timing): Prop<number>
     { at: 0, value: 0, curve: 'Linear' },
     { at: end, value: info.frames, curve: 'Linear' },
   ]
-  return { Track: { keys, cycle: 'Once' } }
+  return { Keyframes: { keys, cycle: 'Once' } }
 }
 
 /** Scene with a parameter added or changed */
 export function withParam(scene: Scene, name: string, value: SceneValue): Scene {
-  return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
+  return withParamValue(scene, name, wrapValue(value))
+}
+
+/** `withParam` for a value of any type, such as text */
+export function withParamValue(scene: Scene, name: string, value: Value): Scene {
+  return { ...scene, params: { ...scene.params, [name]: value } }
 }
 
 /** The plane an `Area` layer covers, which is `null` for a `Sequence` or a layer of a DMD */
 export function layerPlane({ surface }: SceneLayer) {
   return surface === undefined || surface === 'Sequence' ? null : surface.Area
-}
-
-/**
- * Layer on something else. A region is measured in the units of what it's on, so it would land somewhere else on another
- * kind of surface. The layer goes back to covering all of it, unmasked. A graph stays on another plane, as its traversals
- * start from LEDs, but not on a `Sequence`, which has no graph.
- */
-export function withLayerSurface({ region, mask, graph, ...layer }: SceneLayer, surface: LedSurface): SceneLayer {
-  return { ...layer, surface, ...(surface !== 'Sequence' && { graph }) }
 }
 
 /** Where an algorithm that goes to a node is going, which is `null` for the others */
@@ -287,14 +343,15 @@ export function freshTraversalName(layer: SceneLayer, base: string) {
 }
 
 /** Where a new layer goes: where the one under it is, so that stacking is the easy thing to do */
-export function newLayerPlace(scene: Scene): Partial<LedLayer> {
-  if (scene.kind === 'Dmd') return {}
+export function newLayerPlace(scene: Scene): Omit<SceneLayer, keyof Layer> {
   const under = scene.layers.at(-1)
-  return { leds: under?.leds, z: under?.z, surface: under?.surface ?? 'Sequence' }
+  if (scene.kind === 'Dmd') return { display: under?.display ?? 'Dmd', z: under?.z }
+  return { leds: under?.leds ?? 'Every', z: under?.z, surface: under?.surface ?? 'Sequence' }
 }
 
 /** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */
-export function ledsCase({ layers }: Scene) {
+export function ledsCase(scene: Scene) {
+  const layers = scene.layers.filter((layer) => layer.display === undefined)
   if (layers.some((layer) => layer.leds === undefined)) return 'None'
   const leds = new Set(layers.map((layer) => JSON.stringify(layer.leds)))
   return leds.size <= 1 ? 'Replaceable' : 'Fixed'
@@ -319,16 +376,20 @@ export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection
 
 /** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
-  const uses: { lens: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }[] = []
-  let layerIndex = 0
+  const uses: { lens: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }[] = []
+  // `null` for a sound layer, which isn't among the drawn layers
+  let layerIndex: number | null = 0
   let inMask = false
   let surface: Surface = null
   const use = (lens: unknown, label: string, ranges: Ranges) => {
     uses.push({ lens: lens as PropLens, layer: layerIndex, mask: inMask, label, ranges })
-    if ('Sweep' in (lens as PropLens).get()) {
+    const prop = (lens as PropLens).get()
+    if ('Sweep' in prop) {
       const path = `${label} · Path`
       shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
     }
+    if ('Sweep' in prop) use(field(variant(lens as PropLens, 'Sweep'), 'position'), `${label} · Position`, both(UNIT))
+    if ('Modulated' in prop) use(field(variant(lens as PropLens, 'Modulated'), 'phase'), `${label} · Phase`, both(UNIT))
   }
 
   const transforms = (transform: Lens<Transform[]>, label: string, space: TransformSpace) => {
@@ -337,6 +398,10 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
       else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
       else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
+      else {
+        const name = `${label} · ${Object.keys(w)[0]}`
+        shapeTransformProps(lens, surface).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
+      }
     })
   }
 
@@ -344,25 +409,9 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     transforms(orEmpty(field(lens, 'transform')), transformLabel, 'shape')
     const base = field(lens, 'base')
     const current = base.get()
-    const [across, down] = sizeRanges(surface)
-    if ('Circle' in current) {
-      use(field(variant(base, 'Circle'), 'radius'), `${label} · Radius`, both(roundRange(surface)))
-    } else if ('Ring' in current) {
-      const ring = variant(base, 'Ring')
-      use(field(ring, 'inner_radius'), `${label} · Inner radius`, both(roundRange(surface)))
-      use(field(ring, 'thickness'), `${label} · Thickness`, both(roundRange(surface)))
-    } else if ('Ellipse' in current) {
-      const ellipse = variant(base, 'Ellipse')
-      use(field(ellipse, 'rx'), `${label} · RX`, both(radius(across)))
-      use(field(ellipse, 'ry'), `${label} · RY`, both(radius(down)))
-    } else if ('Rect' in current) {
-      const rect = variant(base, 'Rect')
-      use(field(rect, 'width'), `${label} · Width`, both(across))
-      use(field(rect, 'height'), `${label} · Height`, both(down))
-    } else if ('Pinwheel' in current) {
-      const pinwheel = variant(base, 'Pinwheel')
-      use(field(pinwheel, 'blades'), `${label} · Blades`, both(BLADES))
-      use(field(pinwheel, 'blade_fraction'), `${label} · Blade fraction`, both(BLADE_FRACTION))
+    const sizes = shapeProps(base as Lens<ShapeNode>, surface)
+    if (sizes.length > 0) {
+      sizes.forEach((prop) => use(prop.lens, `${label} · ${prop.label}`, prop.ranges))
     } else if ('Bezier' in current) {
       const points = field(variant(base, 'Bezier'), 'points')
       points.get().forEach((_, i) => {
@@ -373,9 +422,11 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       const points = 'Polygon' in current ? field(variant(base, 'Polygon'), 'points') : field(variant(base, 'Polyline'), 'points')
       points.get().forEach((_, i) => use(item(points, i), `${label} · Point ${i + 1}`, pointRanges(surface)))
     }
+    const strokes = orEmpty(field(lens, 'adjust'))
+    strokes.get().forEach((_, i) => strokeProps(item(strokes, i), surface).forEach((prop) => use(prop.lens, `${label} · Stroke · ${prop.label}`, prop.ranges)))
   }
 
-  const fill = (lens: Lens<Layer['fill']>, label: string) => {
+  const fill =(lens: Lens<Layer['fill']>, label: string) => {
     transforms(orEmpty(field(lens, 'transform')), `${label} · Fill`, 'fill')
     const base = field(lens, 'base')
     const current = base.get()
@@ -447,7 +498,18 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       if (mask.region) shape(field(lens, 'region') as Lens<Shape>, maskLabel, `${maskLabel} · Region`)
     }
   })
+
+  const sounds = field(scene, 'sounds')
+  layerIndex = null
+  inMask = false
+  sounds.get().forEach((layer, index) => use(soundVolume(item(sounds, index)), `${soundLabel(layer, index)} · Volume`, both(VOLUME)))
   return uses
+}
+
+/** A sound layer's volume, which is 1 when the file leaves it out */
+export function soundVolume(layer: Lens<SoundLayer>): Lens<Prop<number>> {
+  const volume = field(layer, 'volume')
+  return { get: () => volume.get() ?? { Fixed: 1 }, set: volume.set }
 }
 
 /** What to call a layer, which is its place from the bottom until it's given a name */
@@ -462,10 +524,20 @@ function referencedParams(scene: Scene) {
     const prop = lens.get()
     if ('Param' in prop) names.add(prop.Param)
   }
+  // text isn't a prop, so it's found on its own
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit)
+    if (value === null || typeof value !== 'object') return
+    const text = (value as { Text?: { text?: TextSource } }).Text?.text
+    if (text !== undefined && typeof text === 'object' && 'Param' in text) names.add(text.Param)
+    Object.values(value).forEach(visit)
+  }
+  visit(scene.layers)
   return names
 }
 
-export type SceneTrack = { prop: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }
+/** A prop on the timeline. `layer` is `null` for a sound layer's. */
+export type SceneTrack = { prop: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }
 
 /** A traversal on the timeline: its layer, and its place among the layer's traversals */
 export type SceneTraversal = { traversal: Lens<Traversal>; layer: number; index: number; label: string }
@@ -495,12 +567,9 @@ export function traversalLength(traversal: Traversal, scene: Scene, measured: nu
 export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
   return propUses(scene, surfaces).flatMap(({ lens, layer, mask, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
+    return 'Keyframes' in prop || 'Random' in prop || 'Modulated' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
   })
 }
-
-/** A time no scene gets to, which a sweep waits for at the start of its path */
-const NEVER = 1e30
 
 /**
  * Whether a track is set to stay put. That's only for the editing and isn't part of the scene: it's on the track so that
@@ -525,33 +594,62 @@ function middleOf(spread: Spread): Spread {
 
 /**
  * A track that stays on its first value. Only the machine knows what a random prop's first pick comes to, so that stays
- * on the middle of its spread, as it does for anything else that needs a value for it here.
+ * on the middle of its spread, as it does for anything else that needs a value for it here. A wave with no rate stays
+ * where it starts.
  */
 function held(prop: Prop<SceneValue>): Prop<SceneValue> {
-  if ('Sweep' in prop) return { Sweep: { ...prop.Sweep, start: NEVER, end: 2 * NEVER } }
+  if ('Modulated' in prop) return { Modulated: { ...prop.Modulated, rate: 0 } }
   if ('Random' in prop) return { Random: { ...prop.Random, spread: middleOf(prop.Random.spread), force_unique: false } }
-  return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
+  return 'Keyframes' in prop && prop.Keyframes.keys.length > 0 ? { Fixed: prop.Keyframes.keys[0].value } : prop
 }
 
-/** A layer as the editor works on it, with where it happens alongside what it draws. A DMD's layers don't say where. */
-export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>>
+/**
+ * A layer as the editor works on it, with what it's drawn on alongside what it draws: LEDs, with `leds`, `surface`, and
+ * `z`, or a display, named by `display`.
+ */
+export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>> & { display?: string }
 
-/** A scene as the editor works on it, which is everything in one place whichever kind of file it's from */
-export type Scene = Omit<GfxComposition, 'layers'> & { kind: 'Led' | 'Dmd'; version: number; layers: SceneLayer[] }
+/**
+ * A scene as the editor works on it, with everything about a layer in one place. `kind` is what the editor shows it on:
+ * one with display layers is edited as a display's, and one without as the LEDs'. Its sound layers are apart from the
+ * drawn ones in `layers`, as nothing about them is drawn, and go after them in the file.
+ */
+export type Scene = Omit<SceneFile, 'layers'> & { kind: 'Led' | 'Dmd'; layers: SceneLayer[]; sounds: SoundLayer[] }
 
-export function editedScene(definition: SceneDefinition): Scene {
-  if ('Led' in definition) {
-    const { layers, ...scene } = definition.Led
-    return { ...scene, kind: 'Led', layers: layers.map(({ layer, ...place }) => ({ ...layer, ...place })) }
-  }
-  const { composition, version } = definition.Dmd
-  return { ...composition, version, kind: 'Dmd' }
+export function editedScene({ layers, ...scene }: SceneFile): Scene {
+  const edited = layers.flatMap((on): SceneLayer[] => {
+    if ('Sound' in on) return []
+    if ('Display' in on) {
+      const { layer, ...place } = on.Display
+      return [{ ...layer, ...place }]
+    }
+    const { layer, ...place } = on.Leds
+    return [{ ...layer, ...place }]
+  })
+  const sounds = layers.flatMap((on) => ('Sound' in on ? [on.Sound] : []))
+  return { ...scene, kind: layers.some((on) => 'Display' in on) ? 'Dmd' : 'Led', layers: edited, sounds }
 }
 
-function sceneDefinition({ kind, version, layers, ...scene }: Scene): SceneDefinition {
-  if (kind === 'Dmd') return { Dmd: { version, composition: { ...scene, layers } } }
-  const placed = layers.map(({ leds, z, surface, ...layer }) => ({ leds, z, surface: surface!, layer }))
-  return { Led: { version, ...scene, layers: placed } }
+function sceneFile({ kind, layers, sounds, ...scene }: Scene): SceneFile {
+  const placed = layers.map(({ leds, z, surface, display, ...layer }): SceneFileLayer =>
+    display !== undefined ? { Display: { display, z, layer } } : { Leds: { leds, z, surface: surface ?? 'Sequence', layer } },
+  )
+  return { ...scene, layers: [...placed, ...sounds.map((sound): SceneFileLayer => ({ Sound: sound }))] }
+}
+
+/** What to call a sound layer: its name, or the file it plays without the folder and extension */
+export const soundLabel = (layer: SoundLayer, index: number) =>
+  layer.name ?? (layer.sound.split('/').at(-1)!.replace(/\.[^.]+$/, '') || `Sound ${index + 1}`)
+
+/** Where on the timeline a sound layer's sound would end if it weren't cut off, if `length` says how long the sound is */
+export const soundNaturalEnd = (layer: SoundLayer, length: number | null | undefined) => (length == null ? undefined : layer.start + length - (layer.skip ?? 0))
+
+/** Where a sound layer plays to: where it's cut off, or else the end of its sound, if `length` says how long that is */
+export const soundEnd = (layer: SoundLayer, length: number | null | undefined) => layer.end ?? soundNaturalEnd(layer, length)
+
+/** `scene` with each of its sound layers changed by `edit` */
+function withSounds(scene: Scene, edit: (layer: SoundLayer) => SoundLayer): Scene {
+  return { ...scene, sounds: scene.sounds.map(edit) }
 }
 
 /** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
@@ -561,34 +659,26 @@ export function sceneSource(scene: Scene): SceneSource {
   for (const { prop } of tracks) {
     if (isHidden(prop.get())) prop.set(held(prop.get()))
   }
-  const definition = sceneDefinition(scene)
-  return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneDefinition(shown) } }
+  const definition = sceneFile(scene)
+  return shown === scene ? { Definition: definition } : { Preview: { scene: definition, shown: sceneFile(shown) } }
 }
 
-/** When a prop changes, in order: a track's keys, the moments a value is picked, or the two ends of a sweep */
+/** When a prop changes, in order: its keyframes, or the moments a value is picked */
 export function trackTimes(prop: Prop<SceneValue>) {
-  if ('Track' in prop) return prop.Track.keys.map((key) => key.at)
-  if ('Sweep' in prop) return [prop.Sweep.start, prop.Sweep.end]
+  if ('Keyframes' in prop) return prop.Keyframes.keys.map((key) => key.at)
   return 'Random' in prop ? prop.Random.picks.map((pick) => pick.at) : []
 }
 
-/** `scene` with new times for what's on its timeline: the keys and picks of a prop, and the two ends of a sweep */
-function withTimes(
-  scene: Scene,
-  moments: <T extends { at: number }>(list: T[]) => T[],
-  ends: (sweep: Sweep) => [number, number],
-): Scene {
+/** `scene` with new times for what's on its timeline: the keyframes and picks of a prop */
+function withTimes(scene: Scene, moments: <T extends { at: number }>(list: T[]) => T[]): Scene {
   let next = scene
   const tracks = sceneTracks({ get: () => next, set: (edited) => (next = edited) })
   for (const { prop } of tracks) {
     const current = prop.get()
-    if ('Track' in current) {
-      prop.set({ Track: { ...current.Track, keys: moments(current.Track.keys) } })
+    if ('Keyframes' in current) {
+      prop.set({ Keyframes: { ...current.Keyframes, keys: moments(current.Keyframes.keys) } })
     } else if ('Random' in current) {
       prop.set({ Random: { ...current.Random, picks: moments(current.Random.picks) } })
-    } else if ('Sweep' in current) {
-      const [start, end] = ends(current.Sweep)
-      prop.set({ Sweep: { ...current.Sweep, start, end } })
     }
   }
   return next
@@ -614,43 +704,45 @@ function pulledBack<T extends { at: number }>(moments: T[], length: number): T[]
   return pulled
 }
 
+/** `scene` with a timeline `duration` long, as if it were typed in as the length */
+export function withDuration(scene: Scene, duration: number): Scene {
+  const timed = withTiming(scene, duration)
+  return withTimesInLength({ ...timed, timing: { ...timed.timing!, duration } })
+}
+
 /** `scene` with what's past the end of its timeline brought back to the end */
 export function withTimesInLength(scene: Scene): Scene {
   const length = scene.timing?.duration
   if (length === undefined) return scene
-  const timed = withTimes(
-    scene,
-    (moments) => pulledBack(moments, length),
-    ({ start, end }) => (end <= length ? [start, end] : [Math.min(start, Math.max(length - TIME_STEP, 0)), length]),
-  )
+  const timed = withTimes(scene, (moments) => pulledBack(moments, length))
   // one that runs past the end is left to show that it does
-  return withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
+  const traversed = withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
+  // a sound has to start before the end, as one at the end is the start of the next cycle
+  return withSounds(traversed, (layer) => ({ ...layer, start: Math.min(layer.start, Math.max(length - TIME_STEP, 0)) }))
 }
 
 /** `scene` with its length and everything on its timeline scaled by `by`. What's past the end stays past a longer one. */
 export function withTimesScaled(scene: Scene, by: number): Scene {
-  const timed = withTimes(
-    scene,
-    (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })),
-    ({ start, end }) => [start * by, end * by],
-  )
+  const timed = withTimes(scene, (moments) => moments.map((moment) => ({ ...moment, at: moment.at * by })))
   // a rate is left as it is, as it's in steps and not seconds
   const scaled = withTraversals(timed, ({ start, speed, ...traversal }) => ({
     ...traversal,
     start: start * by,
     speed: 'Duration' in speed && speed.Duration !== null ? { Duration: speed.Duration * by } : speed,
   }))
-  const next = { ...scaled, timing: scaled.timing && { ...scaled.timing, duration: scaled.timing.duration * by } }
+  const soundsScaled = withSounds(scaled, ({ start, end, ...layer }) => ({ ...layer, start: start * by, ...(end !== undefined && { end: end * by }) }))
+  const next = { ...soundsScaled, timing: soundsScaled.timing && { ...soundsScaled.timing, duration: soundsScaled.timing.duration * by } }
   return by < 1 ? withTimesInLength(next) : next
 }
 
 /**
  * `next` without its timing once `current`'s last track is gone, as the timing was only there for them and would
- * otherwise end a scene that's meant to stay up.
+ * otherwise end a scene that's meant to stay up. A sound starting after the start keeps it, as it needs one to start in.
  */
 export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
   const tracks = (scene: Scene) => sceneTracks(reading(scene)).length
-  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next)) return next
+  const startsLater = next.sounds.some(({ start }) => start > 0)
+  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next) || startsLater) return next
   const { timing: _, ...rest } = next
   return rest
 }
@@ -670,7 +762,7 @@ function lerp(a: SceneValue, b: SceneValue, by: number): SceneValue {
  * `track` with a key added at a time, so that the scene looks as it did. Between two keys that's the value partway
  * from one to the next as if by a straight line, which is close enough for a curve to start from.
  */
-export function withKey(track: Track<SceneValue>, at: number): Track<SceneValue> {
+export function withKey(track: Keyframes<SceneValue>, at: number): Keyframes<SceneValue> {
   const { keys } = track
   const after = keys.findIndex((key) => key.at > at)
   const index = after === -1 ? keys.length : after
@@ -782,6 +874,8 @@ export function paramRanges(scene: Scene, name: string, surfaces: LayerSurfaces)
 export const both = (range: Range): Ranges => [range, range]
 
 export const UNIT: Range = { min: 0, max: 1, step: 0.01, rest: 0 }
+/** A sound's volume: 1 is as recorded, and above it louder */
+export const VOLUME: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
 export const ROTATION: Range = { min: -180, max: 180, step: 1, rest: 0 }
 export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
 const OPACITY: Range = { ...UNIT, rest: 1 }
@@ -804,10 +898,25 @@ export const GROWTH_DENSITY: Range = { min: 0, max: 32, step: 1, rest: 4 }
 export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
-/** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
-export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
-/** How much of each of a pinwheel's shares is blade. Past these ends, its blades or its gaps are too thin to make out. */
-export const BLADE_FRACTION: Range = { min: 0.1, max: 0.9, step: 0.01, rest: 0.5 }
+/** Waves per scene cycle. Fractions carry a wave on across cycles. */
+export const WAVE_RATE: Range = { min: 0, max: 16, step: 0.25, rest: 1 }
+/** A fraction of a star's leg is dropped, so a spread goes one past the last, as it does for `frameRanges` */
+/** A number written out as text, such as a bonus counted up */
+export const NUMBER: Range = { min: 0, max: 100_000, step: 1, rest: 0 }
+export const LEGS: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 5 }
+/** How many copies a revolve makes, which also drops a fraction */
+export const COPIES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
+/** Degrees a revolve spreads its copies over */
+export const REVOLVE_ANGLE: Range = { min: -360, max: 360, step: 1, rest: 360 }
+/** How far a side curves out, or in below 0, as a fraction of its length */
+export const BOW: Range = { min: -0.5, max: 0.5, step: 0.01, rest: 0 }
+/** How far a shift moves a shape's middle, as a share of the way to one end or the other */
+export const SHIFT: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
+/** How far up a chevron's notch reaches */
+export const NOTCH: Range = { ...UNIT, rest: 0.5 }
+/** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
+ * star's sides line up into a pentagram. */
+export const LEG_WIDTH: Range = { min: 0, max: 2, step: 0.01, rest: 0.65 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 
@@ -852,6 +961,118 @@ export function scaleRanges(): Ranges {
   return both(SCALE)
 }
 
+/** A transform that copies or cuts a shape, which has a center */
+export type CopyKind = 'Mirror' | 'Revolve' | 'Divide'
+export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Divide']
+
+/** A prop of a shape or a transform, with what to call it, its value if it has nothing to take one from, and its ranges */
+export type PropField = { key: string; label: string; fallback: SceneValue; lens: Lens<Prop<SceneValue>>; ranges: Ranges }
+
+/**
+ * The props of a transform that's only for shapes, and has props of its own rather than being one. For a mirror,
+ * revolve, or divide, its center, which is in the space the transforms before it put the shape in, then how its line
+ * is turned or how its copies are spread. For a shift, how far it moves the shape's middle, then how its line is
+ * turned. None for other transforms.
+ */
+export function shapeTransformProps(transform: Lens<Transform>, surface: Surface): PropField[] {
+  const current = transform.get()
+  if ('Shift' in current) {
+    const shift = variant(transform as Lens<Extract<Transform, { Shift: unknown }>>, 'Shift')
+    return [
+      propField('amount', 'Amount', SHIFT.rest!, both(SHIFT), field(shift, 'amount')),
+      propField('rotation', 'Rotation', 0, both(ROTATION), field(shift, 'rotation')),
+    ]
+  }
+  const center = (lens: Lens<unknown>) => propField('center', 'Center', [0, 0], pointRanges(surface), lens)
+  if ('Revolve' in current) {
+    const revolve = variant(transform as Lens<Extract<Transform, { Revolve: unknown }>>, 'Revolve')
+    return [
+      center(field(revolve, 'center')),
+      propField('angle', 'Angle', REVOLVE_ANGLE.rest!, both(REVOLVE_ANGLE), field(revolve, 'angle')),
+      propField('count', 'Count', COPIES.rest!, both(COPIES), field(revolve, 'count')),
+    ]
+  }
+  if (!('Mirror' in current) && !('Divide' in current)) return []
+  // a mirror and a divide both have a line through their center
+  const line = variant(transform as Lens<Record<'Mirror' | 'Divide', Extract<Transform, { Mirror: unknown }>['Mirror']>>, 'Mirror' in current ? 'Mirror' : 'Divide')
+  return [center(field(line, 'center')), propField('rotation', 'Rotation', 0, both(ROTATION), field(line, 'rotation'))]
+}
+
+/** A stroke's width, then its color if it has one rather than taking the layer's fill */
+export function strokeProps(adjust: Lens<ShapeAdjust>, surface: Surface): PropField[] {
+  const stroke = variant(adjust, 'Stroke')
+  const width = propField('width', 'Width', 0, both(strokeRange(surface)), field(stroke, 'width'))
+  if (!stroke.get().color) return [width]
+  return [width, propField('color', 'Color', [255, 255, 255, 255], both(UNIT), field(stroke, 'color'))]
+}
+
+/** A stroke a tenth the size of a new shape, along its edge, that takes the layer's fill */
+export function newStroke(surface: Surface): ShapeAdjust {
+  return { Stroke: { width: { Fixed: strokeRange(surface).rest! } } }
+}
+
+/**
+ * The sizes of a shape that isn't made of points, and the props that say how it's drawn. None for one that is. Text's
+ * width and height are its box, and its size is its font's em.
+ */
+export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[] {
+  const current = base.get()
+  const [across, down] = sizeRanges(surface)
+  const round = both(roundRange(surface))
+  const size = (key: string, label: string, ranges: Ranges, lens: Lens<unknown>) => propField(key, label, 0, ranges, lens)
+  const shaped = (key: string, label: string, range: Range, lens: Lens<unknown>) => propField(key, label, range.rest!, both(range), lens)
+  if ('Circle' in current) return [size('radius', 'Radius', round, field(variant(base, 'Circle'), 'radius'))]
+  if ('Ellipse' in current) {
+    const ellipse = variant(base, 'Ellipse')
+    return [size('rx', 'RX', both(radius(across)), field(ellipse, 'rx')), size('ry', 'RY', both(radius(down)), field(ellipse, 'ry'))]
+  }
+  if ('Rect' in current) {
+    const rect = variant(base, 'Rect')
+    return [size('width', 'Width', both(across), field(rect, 'width')), size('height', 'Height', both(down), field(rect, 'height'))]
+  }
+  if ('Diamond' in current) {
+    const diamond = variant(base, 'Diamond')
+    return [
+      size('width', 'Width', both(across), field(diamond, 'width')),
+      size('height', 'Height', both(down), field(diamond, 'height')),
+      shaped('bow', 'Bow', BOW, field(diamond, 'bow')),
+    ]
+  }
+  if ('Star' in current) {
+    const star = variant(base, 'Star')
+    return [
+      size('radius', 'Radius', round, field(star, 'radius')),
+      shaped('legs', 'Legs', LEGS, field(star, 'legs')),
+      shaped('leg_width', 'Leg width', LEG_WIDTH, field(star, 'leg_width')),
+      shaped('bow', 'Bow', BOW, field(star, 'bow')),
+    ]
+  }
+  if ('Chevron' in current) {
+    const chevron = variant(base, 'Chevron')
+    return [
+      size('width', 'Width', both(across), field(chevron, 'width')),
+      size('height', 'Height', both(down), field(chevron, 'height')),
+      shaped('notch', 'Notch', NOTCH, field(chevron, 'notch')),
+    ]
+  }
+  if ('Text' in current) {
+    const text = variant(base, 'Text')
+    const props = [
+      size('width', 'Width', both(across), field(text, 'width')),
+      size('height', 'Height', both(down), field(text, 'height')),
+      size('size', 'Size', both(textSizeRange(current.Text.font, surface)), field(text, 'size')),
+    ]
+    const source = field(text, 'text')
+    if ('Number' in current.Text.text) props.push(propField('value', 'Number', 0, both(NUMBER), field(variant(source, 'Number'), 'value')))
+    return props
+  }
+  return []
+}
+
+function propField(key: string, label: string, fallback: SceneValue, ranges: Ranges, lens: Lens<unknown>): PropField {
+  return { key, label, fallback, ranges, lens: lens as Lens<Prop<SceneValue>> }
+}
+
 /** How wide and tall a new shape is: half of what it's on, and a sequence runs from 0 to 1 */
 export function newShapeSize(surface: Surface) {
   const [width, height] = surface ?? [1, 0]
@@ -880,6 +1101,29 @@ export function roundRange(surface: Surface): Range {
 export function reachRange(surface: Surface): Range {
   const range = roundRange(surface)
   return { ...range, rest: Math.round(newShapeSize(surface) / 4 / range.step) * range.step }
+}
+
+/**
+ * Text's size, which can be as big as `roundRange` goes. A pixel font's goes in whole multiples of its pixel size, so it
+ * stays crisp.
+ */
+export function textSizeRange(font: string, surface: Surface): Range {
+  const range = roundRange(surface)
+  const pixels = fontPixelSize(font)
+  if (!pixels) return range
+  return { min: pixels, max: pixels * Math.max(Math.floor(range.max / pixels), 1), step: pixels, rest: pixels }
+}
+
+/** The nearest size a pixel font is crisp at, which is `size` for a font that isn't one */
+export function crispTextSize(font: string, size: number): number {
+  const pixels = fontPixelSize(font)
+  return pixels ? Math.max(Math.round(size / pixels), 1) * pixels : size
+}
+
+/** How wide a stroke is, which can be as wide as `roundRange` goes */
+export function strokeRange(surface: Surface): Range {
+  const range = roundRange(surface)
+  return { ...range, rest: Math.max(Math.round(newShapeSize(surface) / 10 / range.step), 1) * range.step }
 }
 
 /** A polygon's points, in the shape's own space around its center */

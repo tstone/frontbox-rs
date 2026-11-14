@@ -15,18 +15,24 @@ const connectionLabels: Record<ConnectionStatus, string> = {
 function App() {
   onCleanup(startConsole())
 
-  // the active tab lives in the URL hash so a reload lands on the same tab
-  const tabFromHash = () => (tabs.find((t) => `#${t.id}` === location.hash) ?? tabs[0]).id
+  // the active tab lives in the URL hash so a reload lands on the same tab. A tab can add to it after a slash, such as
+  // the scene that's open, which coming back to the tab returns to.
+  const tabFromHash = () => (tabs.find((t) => location.hash === `#${t.id}` || location.hash.startsWith(`#${t.id}/`)) ?? tabs[0]).id
   const [active, setActive] = createSignal(tabFromHash())
+  const lastHash: Record<string, string> = {}
   const onHashChange = () => setActive(tabFromHash())
   window.addEventListener('hashchange', onHashChange)
   onCleanup(() => window.removeEventListener('hashchange', onHashChange))
+  const choose = (tab: string) => {
+    lastHash[active()] = location.hash
+    location.hash = lastHash[tab] ?? tab
+  }
 
   return (
     <Tabs.Root
       class="app"
       value={active()}
-      onValueChange={(details) => (location.hash = details.value)}
+      onValueChange={(details) => choose(details.value)}
       // tabs mount on first visit and then stay mounted, so their UI state survives switching
       lazyMount
     >

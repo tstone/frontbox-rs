@@ -1,21 +1,23 @@
 import { ColorPicker, parseColor, type Color as PickerColor } from '@ark-ui/solid/color-picker'
-import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import ScenePortal from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
-import { ShapeEditor } from './ConfigPanel'
+import { contentSounds, playContentSound } from '../../state/contentSounds'
+import { Eye, EyeOff } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
 import type { Curve } from '../../types/generated/Curve'
+import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
-import CurvePicker, { CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Surface, type Vec2 } from './sceneModel'
+import CurvePicker, { CurveGraph, CURVES, CUSTOM_CURVE } from './CurvePicker'
+import { curveHeight, field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -43,10 +45,10 @@ export type NodePicking = {
 export const NodePickingContext = createContext<NodePicking>()
 
 /**
- * Whether the open layer's or mask's region, or its graph, is drawn over the preview. Only for the editing, so it isn't
- * part of the scene and hiding it changes nothing the scene shows.
+ * Whether a layer's or mask's region, or its graph, is drawn over the preview while it's selected. Only for the editing,
+ * so it isn't part of the scene and hiding it changes nothing the scene shows.
  */
-export type RegionVisibility = { shown: Accessor<boolean>; show: (shown: boolean) => void }
+export type RegionVisibility = { shown: (of: Selection) => boolean; show: (of: Selection, shown: boolean) => void }
 
 export const RegionVisibilityContext = createContext<RegionVisibility>()
 
@@ -76,31 +78,43 @@ export function EyeButton(props: { label: string; hidden: boolean; onChange: (hi
       title={action()}
       onClick={() => props.onChange(!props.hidden)}
     >
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
-        <Show when={props.hidden} fallback={<circle cx="8" cy="8" r="1.75" />}>
-          <path d="M3 13 13 3" />
-        </Show>
-      </svg>
+      <Show when={props.hidden} fallback={<Eye aria-hidden="true" />}>
+        <EyeOff aria-hidden="true" />
+      </Show>
     </button>
   )
 }
 
-/** Picks one of an enum's values */
+/** Picks one of an enum's values. Options with a `group` are listed under its name, with the groups in the order they first come. */
 export function Dropdown<T extends string>(props: {
   label: string
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; group?: string }[]
   value: T
   onChange: (value: T) => void
+  /** As wide as its value rather than its row, with a list as wide as the options need */
+  compact?: boolean
 }) {
   const collection = createMemo(() => createListCollection({ items: props.options }))
+  const groups = createMemo(() => [...new Set(props.options.map((option) => option.group))])
+  const inGroup = (group: string | undefined) => collection().items.filter((option) => option.group === group)
+  const item = (option: { value: T; label: string }) => (
+    <Select.Item item={option}>
+      <Select.ItemText>{option.label}</Select.ItemText>
+      <Select.ItemIndicator>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8.5l3.5 3.5L13 5" />
+        </svg>
+      </Select.ItemIndicator>
+    </Select.Item>
+  )
   return (
     <Select.Root
       class="scene-dropdown"
+      classList={{ 'scene-dropdown-compact': props.compact }}
       collection={collection()}
       value={[props.value]}
       onValueChange={(details) => props.onChange(details.value[0] as T)}
-      positioning={{ sameWidth: true }}
+      positioning={props.compact ? { placement: 'bottom-end' } : { sameWidth: true }}
     >
       <Select.Control>
         <Select.Trigger aria-label={props.label}>
@@ -112,26 +126,41 @@ export function Dropdown<T extends string>(props: {
           </Select.Indicator>
         </Select.Trigger>
       </Select.Control>
-      <Portal>
+      <ScenePortal>
         <Select.Positioner>
           <Select.Content class="scene-dropdown-list">
-            <For each={collection().items}>
-              {(option) => (
-                <Select.Item item={option}>
-                  <Select.ItemText>{option.label}</Select.ItemText>
-                  <Select.ItemIndicator>
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <path d="M3 8.5l3.5 3.5L13 5" />
-                    </svg>
-                  </Select.ItemIndicator>
-                </Select.Item>
+            <For each={groups()}>
+              {(group) => (
+                <Show when={group !== undefined} fallback={<For each={inGroup(undefined)}>{item}</For>}>
+                  <Select.ItemGroup>
+                    <Select.ItemGroupLabel>{group}</Select.ItemGroupLabel>
+                    <For each={inGroup(group)}>{item}</For>
+                  </Select.ItemGroup>
+                </Show>
               )}
             </For>
           </Select.Content>
         </Select.Positioner>
-      </Portal>
+      </ScenePortal>
       <Select.HiddenSelect />
     </Select.Root>
+  )
+}
+
+/** The sound a clip plays, from the machine's content folder, with a button to hear it on the machine at `volume` */
+export function SoundPicker(props: { lens: Lens<string>; volume: number }) {
+  // one that's gone from the folder is still shown, as the scene still names it
+  const options = () => {
+    const names = contentSounds().includes(props.lens.get()) ? contentSounds() : [props.lens.get(), ...contentSounds()]
+    return names.map((name) => ({ value: name, label: name }))
+  }
+  return (
+    <div class="scene-sound">
+      <Dropdown label="Sound" options={options()} value={props.lens.get()} onChange={props.lens.set} />
+      <button type="button" class="scene-button" aria-label={`Play ${props.lens.get()} on the machine`} onClick={() => playContentSound(props.lens.get(), props.volume)}>
+        ▶
+      </button>
+    </div>
   )
 }
 
@@ -266,7 +295,7 @@ const brightnessTrack = () => 'linear-gradient(to right, #000, #fff)'
 
 const opacityTrack = () => 'linear-gradient(to right, transparent, #fff)'
 
-/** What a random prop can pick from, with a control for each thing about it that varies */
+/** What a random prop can pick from, or a wave moves through, with a control for each thing about it that varies */
 function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges }) {
   const spread = () => props.lens.get()
   const float = () => variant(props.lens, 'Float')
@@ -351,7 +380,8 @@ function Vec2Field(props: { label: string; lens: Lens<Vec2>; ranges: Ranges }) {
   )
 }
 
-function ColorField(props: { label: string; lens: Lens<Color> }) {
+/** A swatch that opens the picker, which also takes a hex value */
+export function ColorField(props: { label: string; lens: Lens<Color>; class?: string }) {
   // what the picker last chose. The scene only keeps red, green, and blue, which lose the hue of a white, a black, or a
   // gray, so the picker keeps its own color for as long as the scene still agrees with it. Its format has to be one with
   // a hue too, as it turns the value it's given into that format.
@@ -372,7 +402,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
 
   return (
     <ColorPicker.Root
-      class="scene-color"
+      class={props.class ?? 'scene-color'}
       format="hsba"
       value={value()}
       onValueChange={(details) => {
@@ -384,9 +414,8 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
         <ColorPicker.Trigger aria-label={props.label}>
           <ColorPicker.ValueSwatch />
         </ColorPicker.Trigger>
-        <ColorPicker.ChannelInput channel="hex" aria-label={`${props.label} as hex`} />
       </ColorPicker.Control>
-      <Portal>
+      <ScenePortal>
         <ColorPicker.Positioner>
           <ColorPicker.Content class="scene-color-picker">
             <ColorPicker.Area>
@@ -395,6 +424,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
             </ColorPicker.Area>
             {channelSlider('hue')}
             {channelSlider('alpha')}
+            <ColorPicker.ChannelInput channel="hex" aria-label={`${props.label} as hex`} />
             <ColorPicker.SwatchGroup>
               <For each={NAMED_COLORS}>
                 {({ name, hex }) => (
@@ -406,7 +436,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
             </ColorPicker.SwatchGroup>
           </ColorPicker.Content>
         </ColorPicker.Positioner>
-      </Portal>
+      </ScenePortal>
       <ColorPicker.HiddenInput />
     </ColorPicker.Root>
   )
@@ -445,11 +475,22 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Sweep' | 'Visit'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Sweep', 'Visit']
+export type PropKind = 'Fixed' | 'Param' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit']
 
-/** A prop: whether it's fixed, read from a parameter, keyframed, picked at random, swept along a path, or set off by visits, and the control for that */
-export function PropField<T extends SceneValue>(props: {
+export const PROP_KIND_LABELS: Record<PropKind, string> = {
+  Fixed: 'Fixed',
+  Param: 'Param',
+  Keyframes: 'Keyframes',
+  Random: 'Random',
+  Modulated: 'Modulated',
+  Sweep: 'Sweep',
+  Visit: 'Visit',
+}
+
+export const propKind = (prop: Prop<SceneValue>) => Object.keys(prop)[0] as PropKind
+
+type PropProps<T extends SceneValue> = {
   label: string
   /** What to call a parameter made from this prop */
   paramName: string
@@ -457,52 +498,26 @@ export function PropField<T extends SceneValue>(props: {
   /** For a prop with nothing to take a value from */
   fallback: T
   ranges: Ranges
-  /** For a pair of numbers that isn't a position, such as a scale */
-  notPosition?: boolean
-}) {
+}
+
+/**
+ * A prop: whether it's fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept along a path,
+ * or set off by visits, and the control for that. A sweep's path is edited in the config tree, under the prop's node.
+ */
+export function PropField<T extends SceneValue>(
+  props: PropProps<T> & {
+    /** Leaves out the label and where the value comes from, for a field under a row that already has them */
+    bare?: boolean
+  },
+) {
   const scene = useScene()
   const [revealing, setRevealing] = useContext(RevealContext)!
   const [pinged, setPinged] = createSignal(false)
   let element!: HTMLDivElement
   const prop = () => props.lens.get()
-  const kind = () => Object.keys(prop())[0] as PropKind
+  const kind = () => propKind(prop())
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   const paramName = () => (prop() as { Param: string }).Param
-  // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
-  const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2 && !props.notPosition
-  // visits are only there to respond to in a layer with traversals
-  const traversals = useContext(TraversalsContext)
-  const kinds = () =>
-    PROP_KINDS.filter((option) => (option !== 'Sweep' || isPosition() || kind() === 'Sweep') && (option !== 'Visit' || traversals().length > 0 || kind() === 'Visit'))
-
-  const choose = (next: PropKind) => {
-    if (next === kind()) return
-    const current = value()
-    if (next === 'Fixed') props.lens.set({ Fixed: current })
-    if (next === 'Track') {
-      scene.set(withTiming(scene.get()))
-      props.lens.set({ Track: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
-    }
-    if (next === 'Random') {
-      scene.set(withTiming(scene.get()))
-      const seed = Math.floor(Math.random() * 2 ** 32)
-      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
-    }
-    if (next === 'Sweep') {
-      const timed = withTiming(scene.get())
-      scene.set(timed)
-      props.lens.set({ Sweep: newSweep(current as Vec2, props.ranges, timed.timing!.duration) })
-    }
-    if (next === 'Param') {
-      const name = freshParamName(scene.get(), props.paramName)
-      scene.set(withParam(scene.get(), name, current))
-      props.lens.set({ Param: name })
-    }
-    if (next === 'Visit') {
-      scene.set(withTiming(scene.get()))
-      props.lens.set({ Visit: newVisit(traversals()[0] ?? '', current, props.ranges) as VisitResponse<T> })
-    }
-  }
 
   // a field can come up for this, in a layer that's only now opening
   createEffect(() => {
@@ -527,26 +542,12 @@ export function PropField<T extends SceneValue>(props: {
         if (e.target === e.currentTarget) setPinged(false)
       }}
     >
-      <div class="scene-prop-header">
-        <span class="scene-field-label">{props.label}</span>
-        <SegmentGroup.Root
-          class="scene-prop-kind"
-          aria-label={`${props.label} source`}
-          value={kind()}
-          onValueChange={(details) => choose(details.value as PropKind)}
-        >
-          <SegmentGroup.Indicator />
-          <For each={kinds()}>
-            {(option) => (
-              <SegmentGroup.Item value={option}>
-                <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
-                <SegmentGroup.ItemControl />
-                <SegmentGroup.ItemHiddenInput />
-              </SegmentGroup.Item>
-            )}
-          </For>
-        </SegmentGroup.Root>
-      </div>
+      <Show when={!props.bare}>
+        <div class="scene-prop-header">
+          <span class="scene-field-label">{props.label}</span>
+          <PropSource {...props} />
+        </div>
+      </Show>
       <Switch>
         <Match when={kind() === 'Fixed'}>
           <ValueField
@@ -570,7 +571,7 @@ export function PropField<T extends SceneValue>(props: {
             <p class="scene-note scene-note-warn">No parameter of this type has that name, so this reads as zero.</p>
           </Show>
         </Match>
-        <Match when={kind() === 'Track'}>
+        <Match when={kind() === 'Keyframes'}>
           <p class="scene-note">Keyframes are on the timeline below.</p>
         </Match>
         <Match when={kind() === 'Random'}>
@@ -585,15 +586,74 @@ export function PropField<T extends SceneValue>(props: {
           <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
           <p class="scene-note">When to pick a new value is on the timeline below.</p>
         </Match>
+        <Match when={kind() === 'Modulated'}>
+          <ModulatedField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Modulated')} />
+        </Match>
         <Match when={kind() === 'Sweep'}>
-          <ShapeEditor path lens={field(variant(props.lens, 'Sweep'), 'path')} />
-          <p class="scene-note">When it goes around is on the timeline below.</p>
+          <p class="scene-note">Its path is under it, and how far along the path it is, from 0 to 1. Keyframing that from 0 to 1 goes around once.</p>
         </Match>
         <Match when={kind() === 'Visit'}>
           <VisitField label={props.label} ranges={props.ranges} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Visit')} />
         </Match>
       </Switch>
     </div>
+  )
+}
+
+/** Where a prop takes its value from. Switching it starts the new way at the value the prop starts at now. */
+export function PropSource<T extends SceneValue>(props: PropProps<T>) {
+  const scene = useScene()
+  const prop = () => props.lens.get()
+  const kind = () => propKind(prop())
+  const value = () => startingValue(prop(), scene.get(), props.fallback)
+  // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
+  const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2
+  // visits are only there to respond to in a layer with traversals
+  const traversals = useContext(TraversalsContext)
+  const kinds = () =>
+    PROP_KINDS.filter((option) => (option !== 'Sweep' || isPosition() || kind() === 'Sweep') && (option !== 'Visit' || traversals().length > 0 || kind() === 'Visit'))
+
+  const choose = (next: PropKind) => {
+    if (next === kind()) return
+    const current = value()
+    if (next === 'Fixed') props.lens.set({ Fixed: current })
+    if (next === 'Keyframes') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Keyframes: { keys: [{ at: 0, value: current, curve: 'Linear' }], cycle: 'Once' } })
+    }
+    if (next === 'Random') {
+      scene.set(withTiming(scene.get()))
+      const seed = Math.floor(Math.random() * 2 ** 32)
+      props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
+    }
+    if (next === 'Modulated') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Modulated: { envelope: { attack: { curve: 'Linear' } }, spread: fullSpread(current, props.ranges), rate: 1, phase: { Fixed: 0 } } })
+    }
+    if (next === 'Sweep') {
+      const timed = withTiming(scene.get())
+      scene.set(timed)
+      props.lens.set({ Sweep: newSweep(current as Vec2, props.ranges, timed.timing!.duration) })
+    }
+    if (next === 'Param') {
+      const name = freshParamName(scene.get(), props.paramName)
+      scene.set(withParam(scene.get(), name, current))
+      props.lens.set({ Param: name })
+    }
+    if (next === 'Visit') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Visit: newVisit(traversals()[0] ?? '', current, props.ranges) as VisitResponse<T> })
+    }
+  }
+
+  return (
+    <Dropdown
+      compact
+      label={`${props.label} source`}
+      options={kinds().map((option) => ({ value: option, label: PROP_KIND_LABELS[option] }))}
+      value={kind()}
+      onChange={choose}
+    />
   )
 }
 
@@ -681,6 +741,66 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
         <Dropdown label={`${props.label} overlapping visits`} options={OVERLAP_OPTIONS} value={response().overlap} onChange={field(props.lens, 'overlap').set} />
       </FieldRow>
     </>
+  )
+}
+
+/** A wave's attack and its decay, the range it moves through, and how many times it goes by each cycle. Its phase is a prop under it. */
+function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: Ranges; fallback: SceneValue }) {
+  const envelope = field(props.lens, 'envelope')
+
+  return (
+    <>
+      <div class="scene-envelope">
+        <EnvelopeCurveField label={`${props.label} attack`} name="Attack" value={envelope.get().attack} onChange={field(envelope, 'attack').set} />
+        <EnvelopeCurveField optional label={`${props.label} decay`} name="Decay" value={envelope.get().decay} onChange={field(envelope, 'decay').set} />
+      </div>
+      <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
+      <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
+        <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
+      </Show>
+      <FieldRow label="Rate">
+        <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={field(props.lens, 'rate').set} />
+      </FieldRow>
+      <p class="scene-note">
+        The attack takes the whole wave, or the first half of it with a decay after it. Rate is waves per cycle. The phase under it shifts the wave along, and keyframing it can speed the wave up or
+        slow it down.
+      </p>
+    </>
+  )
+}
+
+/**
+ * One curve of a wave drawn out, which opens the curves to pick from, and a switch that plays it backwards. Only a
+ * decay can be left out, which is what `undefined` stands for, and shows as a box to add one.
+ */
+function EnvelopeCurveField<T extends EnvelopeCurve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
+  const reversed = () => props.value?.reversed ?? false
+  const height = (phase: number) => (props.value ? curveHeight(props.value.curve, reversed() ? 1 - phase : phase) : 0)
+
+  return (
+    <div class="scene-envelope-part">
+      <span class="scene-field-label">{props.name}</span>
+      <CurvePicker
+        class="scene-envelope-curve"
+        label={props.label}
+        value={props.value?.curve}
+        onPick={(curve) => props.onChange({ ...props.value, curve } as T)}
+        onRemove={props.optional && props.value ? () => props.onChange(undefined as T) : undefined}
+      >
+        <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
+          <CurveGraph height={height} />
+        </Show>
+      </CurvePicker>
+      <Show when={props.value}>
+        <Toggle.Root class="scene-switch" checked={reversed()} onCheckedChange={(details) => props.onChange({ ...props.value!, reversed: details.checked || undefined } as T)}>
+          <Toggle.Control>
+            <Toggle.Thumb />
+          </Toggle.Control>
+          <Toggle.Label>Reverse</Toggle.Label>
+          <Toggle.HiddenInput aria-label={`Reverse ${props.label}`} />
+        </Toggle.Root>
+      </Show>
+    </div>
   )
 }
 

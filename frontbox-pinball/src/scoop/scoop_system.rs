@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use frontbox_core::prelude::*;
-use frontbox_led::prelude::*;
+use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::scoop::{ScoopBallEntered, ScoopEjectStarted, ScoopEjected, ScoopEntry};
 use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
@@ -22,7 +22,7 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// app.system(
 ///   ScoopSystem::<Lower>::new(lower_scoop::SWITCH.name, lower_scoop::COIL.name)
 ///     .lower_entrance_switch(subway::SWITCH.name)
-///     .before_eject_effect(led_playback!("lower_scoop/eject.scene")),
+///     .before_eject_scene(eject_scene),
 /// );
 /// app.system(ScoopSystem::<Rear>::new(rear_scoop::SWITCH.name, rear_scoop::COIL.name));
 ///
@@ -35,13 +35,13 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// - **Whether the ball can go** is decided for each ball as it lands, by the game: other systems hold it
 ///   ([`Self::hold`]) for as long as they need it, and it can go once none of them does. The scoop has no setting for
 ///   this, since the same scoop might hold one ball for a menu and let the next go.
-/// - **How the eject goes** is set once, on the scoop: with a [`before_eject_effect`](Self::before_eject_effect), the
-///   effect plays through and then the coil fires. Without one, the coil fires right away.
+/// - **How the eject goes** is set once, on the scoop: with a [`before_eject_scene`](Self::before_eject_scene), the
+///   scene plays through and then the coil fires. Without one, the coil fires right away.
 ///
 /// For every ball:
 /// 1. It lands, and `ScoopBallEntered` is emitted.
 /// 2. Any system that wants it to wait calls [`Self::hold`] on hearing that.
-/// 3. Once nothing holds it (right away, if nothing did), `ScoopEjectStarted` is emitted and the eject effect plays.
+/// 3. Once nothing holds it (right away, if nothing did), `ScoopEjectStarted` is emitted and the eject scene plays.
 ///    A hold placed while it plays stops the eject, which starts over from here when the ball is next let go.
 /// 4. The coil fires, and `ScoopEjected` is emitted.
 ///
@@ -80,13 +80,13 @@ pub struct ScoopSystem<S> {
   lower_entrance_switch: Option<&'static str>,
   lower_entrance_timeout: Duration,
   verify_delay: Duration,
-  before_eject_effect: Option<LedPlayback>,
-  after_eject_effect: Option<LedPlayback>,
+  before_eject_scene: Option<ScenePlayer<Completes>>,
+  after_eject_scene: Option<PlayableScene<Completes>>,
   /// Who's holding the ball, by `ctx.id()`
   holds: HashSet<u64>,
   /// There's a ball that hasn't been ejected yet
   ball_waiting: bool,
-  /// Running while the eject effect plays
+  /// Running while the eject scene plays
   eject_cue: Option<u64>,
   /// A ball passed the lower entrance switch and hasn't arrived yet
   lower_entrance_passed: bool,
@@ -106,8 +106,8 @@ impl<S: 'static> ScoopSystem<S> {
       lower_entrance_switch: None,
       lower_entrance_timeout: Duration::from_secs(5),
       verify_delay: Duration::from_secs(1),
-      before_eject_effect: None,
-      after_eject_effect: None,
+      before_eject_scene: None,
+      after_eject_scene: None,
       holds: HashSet::new(),
       ball_waiting: false,
       eject_cue: None,
@@ -138,24 +138,18 @@ impl<S: 'static> ScoopSystem<S> {
     self
   }
 
-  /// An effect to play before the coil fires, which it does once the effect has played through. `ScoopEjectStarted`
+  /// A scene to play before the coil fires, which it does once the scene has played through. `ScoopEjectStarted`
   /// is emitted as it starts. Without one, the coil fires right away.
   ///
-  /// Panics if the effect never completes (a scene that's static or repeats forever), as the ball would never eject.
-  pub fn before_eject_effect(mut self, effect: LedPlayback) -> Self {
-    assert!(
-      effect.length().is_some(),
-      "The eject effect of the {} scoop never completes, so there's no telling when to eject. Give its scene a \
-       timing that plays a set number of times.",
-      self.name
-    );
-    self.before_eject_effect = Some(effect.stopped());
+  /// It has to be a scene that completes, as the ball would otherwise never eject.
+  pub fn before_eject_scene(mut self, scene: PlayableScene<Completes>) -> Self {
+    self.before_eject_scene = Some(ScenePlayer::new(scene));
     self
   }
 
-  /// An effect to play each time the coil fires
-  pub fn after_eject_effect(mut self, effect: LedPlayback) -> Self {
-    self.after_eject_effect = Some(effect.stopped());
+  /// A scene to play each time the coil fires. It plays to its end, whatever the scoop does next.
+  pub fn after_eject_scene(mut self, scene: PlayableScene<Completes>) -> Self {
+    self.after_eject_scene = Some(scene);
     self
   }
 
@@ -165,8 +159,8 @@ impl<S: 'static> ScoopSystem<S> {
     if let Some(cue) = self.eject_cue.take() {
       let ctx = &ctx.for_system(self.handle);
       ctx.cues.cancel(cue);
-      if let Some(effect) = self.before_eject_effect.as_mut() {
-        effect.stop(ctx);
+      if let Some(scene) = self.before_eject_scene.as_mut() {
+        scene.stop(ctx);
       }
     }
   }
@@ -219,17 +213,15 @@ impl<S: 'static> ScoopSystem<S> {
     }
 
     ctx.emit(ScoopEjectStarted::<S>::new());
-    let Some(effect) = self.before_eject_effect.as_mut() else {
+    let Some(scene) = self.before_eject_scene.as_mut() else {
       self.kick(ctx);
       return;
     };
 
-    effect.reset();
-    effect.play();
-    // checked to have a length when it was set
-    let length = effect.length().unwrap_or_default();
+    scene.restart(ctx);
+    let length = scene.scene().length();
     self.eject_cue = Some(ctx.cues.start(
-      ScoopCue::<S>::new(Step::EjectEffectCompleted),
+      ScoopCue::<S>::new(Step::EjectSceneCompleted),
       length.once(),
     ));
   }
@@ -237,12 +229,11 @@ impl<S: 'static> ScoopSystem<S> {
   fn kick(&mut self, ctx: &SystemContext) {
     ctx.drivers.activate(self.coil, ActivationMode::Tap);
     self.eject_cue = None;
-    if let Some(effect) = self.before_eject_effect.as_mut() {
-      effect.stop(ctx);
+    if let Some(scene) = self.before_eject_scene.as_mut() {
+      scene.stop(ctx);
     }
-    if let Some(effect) = self.after_eject_effect.as_mut() {
-      effect.reset();
-      effect.play();
+    if let Some(scene) = &self.after_eject_scene {
+      ctx.play_scene(scene);
     }
     if self.ball_waiting {
       self.ball_waiting = false;
@@ -275,7 +266,7 @@ impl<S: 'static> ScoopSystem<S> {
   fn on_cue(&mut self, step: Step, ctx: &SystemContext) {
     match step {
       Step::BeginEject => self.begin_eject(ctx),
-      Step::EjectEffectCompleted => self.kick(ctx),
+      Step::EjectSceneCompleted => self.kick(ctx),
       Step::VacancyCheckDue => self.on_vacancy_check_due(ctx),
       Step::LowerEntranceExpired => {
         self.lower_entrance_passed = false;
@@ -327,15 +318,6 @@ impl<S: 'static> System for ScoopSystem<S> {
       self.begin_eject(ctx);
     }
   }
-
-  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    if let Some(effect) = self.before_eject_effect.as_mut() {
-      effect.apply(delta, ctx);
-    }
-    if let Some(effect) = self.after_eject_effect.as_mut() {
-      effect.apply(delta, ctx);
-    }
-  }
 }
 
 // -- Cues --
@@ -361,7 +343,7 @@ impl<S> ScoopCue<S> {
 enum Step {
   /// Start the eject, if there's a ball and nothing is holding it
   BeginEject,
-  EjectEffectCompleted,
+  EjectSceneCompleted,
   VacancyCheckDue,
   LowerEntranceExpired,
 }

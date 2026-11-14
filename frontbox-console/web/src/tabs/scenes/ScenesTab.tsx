@@ -1,9 +1,10 @@
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createTreeCollection, TreeView } from '@ark-ui/solid/tree-view'
-import { createEffect, createMemo, createSignal, For, Show } from 'solid-js'
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { machine } from '../../state/console'
 import { addContentScene, contentScenes, contentScenesFailed, deleteContentScene, readContentScene, refreshContentScenes } from '../../state/contentScenes'
 import ConfirmDialog from './ConfirmDialog'
+import { planeNames } from './LayerPlace'
 import SceneEditor from './SceneEditor'
 import SceneNameDialog, { SceneNameButton } from './SceneNameDialog'
 import './ScenesTab.css'
@@ -13,16 +14,23 @@ const STARTING_LAYER = `(fill: (base: Gradient(stops: [
       (at: 1.0, color: Fixed(0, 0, 255, 255)),
     ])))`
 
-/** A new scene of each kind. Which LEDs an LED scene's layers are on is chosen in the editor. */
+/**
+ * A new scene of each kind. An LED scene starts on every LED, which can be narrowed in the editor, as an area of the
+ * machine's first plane, or a sequence on a machine with none.
+ */
 const STARTING_SCENES = {
-  LED: `Led(
-  version: 1,
-  layers: [(surface: Sequence, layer: ${STARTING_LAYER})],
+  LED: () => {
+    const plane = planeNames()[0]
+    const surface = plane === undefined ? 'Sequence' : `Area(${JSON.stringify(plane)})`
+    return `Scene(
+  version: 2,
+  layers: [Leds(leds: Every, surface: ${surface}, layer: ${STARTING_LAYER})],
 )
-`,
-  DMD: `Dmd(
-  version: 1,
-  composition: (layers: [${STARTING_LAYER}]),
+`
+  },
+  DMD: () => `Scene(
+  version: 2,
+  layers: [Display(display: "Dmd", layer: ${STARTING_LAYER})],
 )
 `,
 }
@@ -32,14 +40,81 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 
 // Tracks what's collapsed rather than what's expanded, so new folders start open. Outlives the list, which is gone while a scene is open.
 const [collapsed, setCollapsed] = createSignal<string[]>([])
+// what went wrong opening a scene, which can happen while the list isn't showing, as one named in the URL is opened on load
+const [error, setError] = createSignal<string | null>(null)
 
-/** The scenes in the machine's content folder, and the editor when one is open */
+const LIST_HASH = '#scenes'
+const SCENE_HASH = `${LIST_HASH}/`
+const sceneHash = (name: string) => SCENE_HASH + name.split('/').map(encodeURIComponent).join('/')
+/** The scene the URL names, or `null` for the list */
+const hashScene = () => (location.hash.startsWith(SCENE_HASH) ? decodeURIComponent(location.hash.slice(SCENE_HASH.length)) : null)
+
+/**
+ * The scenes in the machine's content folder, and the editor when one is open. The open scene is named in the URL, so a
+ * reload opens it again and Back goes to the list. Its history entry says whether it was opened from the list, which
+ * leaving it then goes back to.
+ */
 export default function ScenesTab() {
   const [open, setOpen] = createSignal<OpenScene | null>(null)
+  // kept apart from `open`, as a save as changes it without opening the scene again
+  let openName: string | null = null
+  let mayLeave = () => true
+
+  const show = (scene: OpenScene | null) => {
+    openName = scene?.name ?? null
+    setOpen(scene)
+  }
+
+  const openFromList = (scene: OpenScene) => {
+    history.pushState({ fromList: true }, '', sceneHash(scene.name))
+    show(scene)
+  }
+
+  const close = () => {
+    show(null)
+    if (history.state?.fromList) history.back()
+    else history.replaceState(null, '', LIST_HASH)
+  }
+
+  /** Shows what the URL names, unless there are unsaved changes to ask about first */
+  const follow = async () => {
+    if (location.hash !== LIST_HASH && !location.hash.startsWith(SCENE_HASH)) return
+    const name = hashScene()
+    if (name === openName) return
+    if (openName !== null && !mayLeave()) {
+      // the entry under this one is the list, as this is only reached by leaving
+      history.pushState({ fromList: true }, '', sceneHash(openName))
+      return
+    }
+    show(null)
+    if (name === null) return
+    try {
+      const source = await readContentScene(name)
+      if (hashScene() === name) show({ name, source })
+    } catch (err) {
+      setError(message(err))
+      history.replaceState(null, '', LIST_HASH)
+    }
+  }
+
+  follow()
+  window.addEventListener('hashchange', follow)
+  onCleanup(() => window.removeEventListener('hashchange', follow))
 
   return (
-    <Show when={open()} keyed fallback={<SceneList onOpen={setOpen} />}>
-      {(scene) => <SceneEditor name={scene.name} source={scene.source} onClose={() => setOpen(null)} />}
+    <Show when={open()} keyed fallback={<SceneList onOpen={openFromList} />}>
+      {(scene) => (
+        <SceneEditor
+          name={scene.name}
+          source={scene.source}
+          onClose={close}
+          onRename={(name) => {
+            openName = name
+            history.replaceState(history.state, '', sceneHash(name))
+          }}
+          onLeaving={(check) => (mayLeave = check)}
+        />
+      )}
     </Show>
   )
 }
@@ -48,7 +123,6 @@ export default function ScenesTab() {
 type OpenScene = { name: string; source: string }
 
 function SceneList(props: { onOpen: (scene: OpenScene) => void }) {
-  const [error, setError] = createSignal<string | null>(null)
   const [renaming, setRenaming] = createSignal<string | null>(null)
   const [deleting, setDeleting] = createSignal<string | null>(null)
 
@@ -204,7 +278,7 @@ function SceneTreeNode(props: { node: SceneNode; indexPath: number[]; onRename: 
 function NewScene(props: { onAdded: (scene: OpenScene) => void }) {
   const [kind, setKind] = createSignal<SceneKind>('LED')
   const add = async (name: string) => {
-    props.onAdded({ name, source: await addContentScene(name, { Ron: STARTING_SCENES[kind()] }) })
+    props.onAdded({ name, source: await addContentScene(name, { Ron: STARTING_SCENES[kind()]() }) })
   }
 
   return (
