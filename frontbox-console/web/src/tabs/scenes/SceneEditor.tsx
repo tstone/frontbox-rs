@@ -301,9 +301,17 @@ export default function SceneEditor(props: {
   onMount(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       // the tab stays mounted while another is showing
-      if (e.key !== 's' || !(e.ctrlKey || e.metaKey) || !root.checkVisibility()) return
-      e.preventDefault()
-      save()
+      if (!root.checkVisibility()) return
+      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        save()
+      } else if (e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !typingIn(e.target)) {
+        // taken from a focused button too, which would otherwise be pressed
+        e.preventDefault()
+        if (e.repeat) return
+        if (playback.playing()) playback.stop()
+        else if (scene()?.timing) playback.play()
+      }
     }
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (unsaved()) e.preventDefault()
@@ -723,3 +731,11 @@ export default function SceneEditor(props: {
 }
 
 const distance = ([ax, ay]: Vec2, [bx, by]: Vec2) => Math.hypot(ax - bx, ay - by)
+
+/** Whether a key pressed in `target` goes to text being edited there */
+const typingIn = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'reset', 'submit'].includes(target.type)))

@@ -28,7 +28,9 @@ import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
-import type { Wave } from '../../types/generated/Wave'
+import type { Envelope } from '../../types/generated/Envelope'
+import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
+import { sample } from './CurvePicker'
 
 export type Vec2 = [number, number]
 
@@ -160,22 +162,19 @@ function spreadAt(spread: Spread, height: number): SceneValue {
   return hsvColor(at(hue), at(brightness), at(alpha))
 }
 
-/** A wave's height, 0 to 1, at `position` through it, 0 to 1, as `Wave::sample` in frontbox-gfx has it */
-export function waveHeight(wave: Wave, position: number): number {
-  if (typeof wave === 'object') {
-    const half = Math.min(Math.max(wave.Square.duty, 0), 1) / 2
-    return position >= 0.5 - half && position < 0.5 + half ? 1 : 0
-  }
-  switch (wave) {
-    case 'Sine':
-      return (1 - Math.cos(position * 2 * Math.PI)) / 2
-    case 'Triangle':
-      return 1 - Math.abs(2 * position - 1)
-    case 'Ramp':
-      return position
-    case 'Saw':
-      return 1 - position
-  }
+/** An envelope's height at `position` through its wave, 0 to 1, as `Envelope::sample` in frontbox-gfx has it */
+export function envelopeHeight({ attack, decay }: Envelope, position: number): number {
+  if (!decay) return envelopeCurveHeight(attack, position)
+  return position < 0.5 ? envelopeCurveHeight(attack, position * 2) : envelopeCurveHeight(decay, position * 2 - 1)
+}
+
+function envelopeCurveHeight({ curve, reversed }: EnvelopeCurve, phase: number) {
+  return curveHeight(curve, reversed ? 1 - phase : phase)
+}
+
+/** Where a curve is at a phase from 0 to 1, with one written by hand taken as linear, as only the machine knows what it comes to */
+export function curveHeight(curve: Curve, phase: number) {
+  return typeof curve === 'string' ? sample(curve, phase) : phase
 }
 
 /** Where in its wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
@@ -198,9 +197,9 @@ export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene,
   if ('Keyframes' in prop) return prop.Keyframes.keys[0]?.value ?? fallback
   if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadAt(prop.Random.spread, 0.5) as T) : fallback
   if ('Modulated' in prop) {
-    const { spread, wave, phase } = prop.Modulated
+    const { spread, envelope, phase } = prop.Modulated
     const position = wavePosition(prop.Modulated, startingValue(phase, scene, 0), 0)
-    return spreadFits(spread, fallback) ? (spreadAt(spread, waveHeight(wave, position)) as T) : fallback
+    return spreadFits(spread, fallback) ? (spreadAt(spread, envelopeHeight(envelope, position)) as T) : fallback
   }
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)

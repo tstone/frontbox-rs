@@ -134,7 +134,7 @@ mod tests {
             }))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(ColorAdjust::Opacity(
-          Prop::Modulated(Modulated { wave: Wave::Square { duty: 0.25 }, spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Param("offset".into())) }),
+          Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut)), spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Param("offset".into())) }),
         )))
         .region(Shape::new(
           ShapeNode::Polygon {
@@ -169,7 +169,7 @@ mod tests {
                 BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
               ],
             }),
-            Prop::Modulated(Modulated { wave: Wave::Triangle, spread: Spread::Float(0.0, 1.0), rate: 1.0, phase: Box::new(0.0.into()) }),
+            Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear)).decay(EnvelopeCurve::new(Curve::Linear).reversed()), spread: Spread::Float(0.0, 1.0), rate: 1.0, phase: Box::new(0.0.into()) }),
           )))),
         ),
     ]);
@@ -251,7 +251,7 @@ mod tests {
   #[test]
   fn modulated_props_read_and_write() {
     let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Modulated(
-      wave: Square(duty: 0.25),
+      envelope: (attack: (curve: EaseIn, reversed: true), decay: (curve: BounceOut)),
       spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
       rate: 0.5,
       phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
@@ -262,7 +262,8 @@ mod tests {
       panic!("{written}");
     };
     let spread = Spread::Color { hue: (0.0, 120.0), brightness: (0.5, 1.0), alpha: (1.0, 1.0) };
-    assert_eq!((modulated.wave, modulated.spread, modulated.rate), (Wave::Square { duty: 0.25 }, spread, 0.5));
+    let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut));
+    assert_eq!((&modulated.envelope, &modulated.spread, modulated.rate), (&envelope, &spread, 0.5));
     let Prop::Keyframes(phase) = &*modulated.phase else {
       panic!("{written}");
     };
@@ -272,13 +273,16 @@ mod tests {
   #[test]
   fn a_modulated_with_no_phase_starts_at_the_start_of_its_wave() {
     let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Modulated(
-      wave: Sine, spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)), rate: 1.0,
+      envelope: (attack: (curve: Linear)), spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)), rate: 1.0,
     ))))])");
     let scene = scene.unwrap();
     let FillNode::Solid(Prop::Modulated(modulated)) = &scene.layers[0].fill.base else {
       panic!("{scene:?}");
     };
     assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
+    assert_eq!(modulated.envelope, Envelope::new(EnvelopeCurve::new(Curve::Linear)));
+    let written = save(&scene).unwrap();
+    assert!(!written.contains("decay") && !written.contains("reversed"), "{written}");
   }
 
   #[test]

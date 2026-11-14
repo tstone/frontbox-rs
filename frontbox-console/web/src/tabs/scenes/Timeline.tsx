@@ -10,11 +10,10 @@ import type { RenderedGraph } from '../../types/generated/RenderedGraph'
 import type { Timing } from '../../types/generated/Timing'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
-import { sample } from './CurvePicker'
 import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, waveHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Scene, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
+import { curveHeight, field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, envelopeHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Scene, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -422,7 +421,7 @@ function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number;
     return Array.from({ length: samples + 1 }, (_, index) => {
       const at = index / samples
       const phase = phaseAt(props.modulated.phase, props.scene, at * props.duration)
-      return `${at},${1 - waveHeight(props.modulated.wave, wavePosition(props.modulated, phase, at))}`
+      return `${at},${1 - envelopeHeight(props.modulated.envelope, wavePosition(props.modulated, phase, at))}`
     }).join(' ')
   }
   return (
@@ -449,7 +448,7 @@ function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
     if (time < b.at) {
       const span = b.at - a.at
       const through = span > 0 ? (time - a.at) / span : 1
-      return a.value + (b.value - a.value) * (typeof b.curve === 'string' ? sample(b.curve, through) : through)
+      return a.value + (b.value - a.value) * curveHeight(b.curve, through)
     }
   }
   return last.value

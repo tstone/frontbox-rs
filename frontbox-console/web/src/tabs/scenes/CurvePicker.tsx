@@ -1,5 +1,5 @@
 import { Dialog } from '@ark-ui/solid/dialog'
-import { createSignal, For } from 'solid-js'
+import { createSignal, For, Show, type JSX } from 'solid-js'
 import ScenePortal from './ScenePortal'
 import type { Curve } from '../../types/generated/Curve'
 
@@ -35,8 +35,18 @@ const BACK_C1 = 1.70158
 const BACK_C2 = BACK_C1 * 1.525
 const BACK_C3 = BACK_C1 + 1
 
-/** A button that opens every curve drawn from 0 to 1, for picking `label`'s curve by how it looks */
-export default function CurvePicker(props: { label: string; value: Curve; onPick: (curve: Extract<Curve, string>) => void }) {
+/**
+ * A button that opens every curve drawn from 0 to 1, for picking `label`'s curve by how it looks. It shows `children`
+ * in place of its own icon when given them, and the list has a button for `onRemove` when there's one.
+ */
+export default function CurvePicker(props: {
+  label: string
+  value: Curve | undefined
+  onPick: (curve: Extract<Curve, string>) => void
+  onRemove?: () => void
+  class?: string
+  children?: JSX.Element
+}) {
   const [open, setOpen] = createSignal(false)
   const pick = (curve: Extract<Curve, string>) => {
     props.onPick(curve)
@@ -45,10 +55,12 @@ export default function CurvePicker(props: { label: string; value: Curve; onPick
 
   return (
     <Dialog.Root lazyMount unmountOnExit open={open()} onOpenChange={(details) => setOpen(details.open)}>
-      <Dialog.Trigger class="scene-eye" aria-label={`Pick ${props.label} from the curves drawn out`} title="Show the curves">
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2 13.5C8 13.5 8 2.5 14 2.5" />
-        </svg>
+      <Dialog.Trigger class={props.class ?? 'scene-eye'} aria-label={`Pick ${props.label} from the curves drawn out`} title="Show the curves">
+        {props.children ?? (
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2 13.5C8 13.5 8 2.5 14 2.5" />
+          </svg>
+        )}
       </Dialog.Trigger>
       <ScenePortal>
         <Dialog.Backdrop class="scene-dialog-backdrop" />
@@ -61,6 +73,22 @@ export default function CurvePicker(props: { label: string; value: Curve; onPick
             <div class="scene-curve-list">
               <For each={CURVES}>{(curve) => <CurveBox curve={curve} chosen={props.value === curve} onClick={() => pick(curve)} />}</For>
             </div>
+            <Show when={props.onRemove}>
+              {(remove) => (
+                <footer>
+                  <button
+                    type="button"
+                    class="scene-button"
+                    onClick={() => {
+                      remove()()
+                      setOpen(false)
+                    }}
+                  >
+                    Remove
+                  </button>
+                </footer>
+              )}
+            </Show>
           </Dialog.Content>
         </Dialog.Positioner>
       </ScenePortal>
@@ -70,21 +98,29 @@ export default function CurvePicker(props: { label: string; value: Curve; onPick
 
 /** One curve, with lines where it starts from and goes to */
 function CurveBox(props: { curve: Extract<Curve, string>; chosen: boolean; onClick: () => void }) {
-  const y = (value: number) => 1 + OVERSHOOT - value
-  const points = Array.from({ length: SAMPLES + 1 }, (_, index) => {
-    const phase = index / SAMPLES
-    return `${phase},${y(sample(props.curve, phase))}`
-  }).join(' ')
-
   return (
     <button type="button" class="scene-curve" aria-pressed={props.chosen} onClick={props.onClick}>
-      <svg viewBox={`0 0 1 ${1 + 2 * OVERSHOOT}`} preserveAspectRatio="none" aria-hidden="true">
-        <line class="scene-curve-guide" x1="0" x2="1" y1={y(0)} y2={y(0)} />
-        <line class="scene-curve-guide" x1="0" x2="1" y1={y(1)} y2={y(1)} />
-        <polyline class="scene-curve-line" points={points} />
-      </svg>
+      <CurveGraph height={(phase) => sample(props.curve, phase)} />
       <span>{props.curve}</span>
     </button>
+  )
+}
+
+/** A curve's height at each phase from 0 to 1, drawn with lines at 0 and 1 */
+export function CurveGraph(props: { height: (phase: number) => number }) {
+  const y = (value: number) => 1 + OVERSHOOT - value
+  const points = () =>
+    Array.from({ length: SAMPLES + 1 }, (_, index) => {
+      const phase = index / SAMPLES
+      return `${phase},${y(props.height(phase))}`
+    }).join(' ')
+
+  return (
+    <svg viewBox={`0 0 1 ${1 + 2 * OVERSHOOT}`} preserveAspectRatio="none" aria-hidden="true">
+      <line class="scene-curve-guide" x1="0" x2="1" y1={y(0)} y2={y(0)} />
+      <line class="scene-curve-guide" x1="0" x2="1" y1={y(1)} y2={y(1)} />
+      <polyline class="scene-curve-line" points={points()} />
+    </svg>
   )
 }
 

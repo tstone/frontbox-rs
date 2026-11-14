@@ -11,12 +11,13 @@ import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
 import type { Curve } from '../../types/generated/Curve'
+import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
-import CurvePicker, { CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import CurvePicker, { CurveGraph, CURVES, CUSTOM_CURVE } from './CurvePicker'
+import { curveHeight, field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -617,7 +618,7 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
     }
     if (next === 'Modulated') {
       scene.set(withTiming(scene.get()))
-      props.lens.set({ Modulated: { wave: 'Ramp', spread: fullSpread(current, props.ranges), rate: 1, phase: { Fixed: 0 } } })
+      props.lens.set({ Modulated: { envelope: { attack: { curve: 'Linear' } }, spread: fullSpread(current, props.ranges), rate: 1, phase: { Fixed: 0 } } })
     }
     if (next === 'Sweep') {
       const timed = withTiming(scene.get())
@@ -733,36 +734,16 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
   )
 }
 
-type WaveShape = 'Sine' | 'Triangle' | 'Square' | 'Ramp' | 'Saw'
-const WAVE_SHAPES: WaveShape[] = ['Sine', 'Triangle', 'Square', 'Ramp', 'Saw']
-
-/** A wave's shape, the range it moves through, and how many times it goes by each cycle. Its phase is a prop under it. */
+/** A wave's attack and its decay, the range it moves through, and how many times it goes by each cycle. Its phase is a prop under it. */
 function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: Ranges; fallback: SceneValue }) {
-  const wave = field(props.lens, 'wave')
-  const shape = (): WaveShape => {
-    const value = wave.get()
-    return typeof value === 'object' ? 'Square' : value
-  }
-  const duty = () => {
-    const value = wave.get()
-    return typeof value === 'object' ? value.Square.duty : 0.5
-  }
+  const envelope = field(props.lens, 'envelope')
 
   return (
     <>
-      <FieldRow label="Wave">
-        <Dropdown
-          label={`${props.label} wave`}
-          options={WAVE_SHAPES.map((value) => ({ value, label: value }))}
-          value={shape()}
-          onChange={(next) => wave.set(next === 'Square' ? { Square: { duty: duty() } } : next)}
-        />
-      </FieldRow>
-      <Show when={shape() === 'Square'}>
-        <FieldRow label="Duty">
-          <NumberField label={`${props.label} duty`} range={UNIT} value={duty()} onChange={(next) => wave.set({ Square: { duty: next } })} />
-        </FieldRow>
-      </Show>
+      <div class="scene-envelope">
+        <EnvelopeCurveField label={`${props.label} attack`} name="Attack" value={envelope.get().attack} onChange={field(envelope, 'attack').set} />
+        <EnvelopeCurveField optional label={`${props.label} decay`} name="Decay" value={envelope.get().decay} onChange={field(envelope, 'decay').set} />
+      </div>
       <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
       <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
         <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
@@ -770,8 +751,46 @@ function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: R
       <FieldRow label="Rate">
         <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={field(props.lens, 'rate').set} />
       </FieldRow>
-      <p class="scene-note">Rate is waves per cycle. The phase under it shifts the wave along, and keyframing it can speed the wave up or slow it down.</p>
+      <p class="scene-note">
+        The attack takes the whole wave, or the first half of it with a decay after it. Rate is waves per cycle. The phase under it shifts the wave along, and keyframing it can speed the wave up or
+        slow it down.
+      </p>
     </>
+  )
+}
+
+/**
+ * One curve of a wave drawn out, which opens the curves to pick from, and a switch that plays it backwards. Only a
+ * decay can be left out, which is what `undefined` stands for, and shows as a box to add one.
+ */
+function EnvelopeCurveField<T extends EnvelopeCurve | undefined>(props: { label: string; name: string; value: T; onChange: (value: T) => void; optional?: boolean }) {
+  const reversed = () => props.value?.reversed ?? false
+  const height = (phase: number) => (props.value ? curveHeight(props.value.curve, reversed() ? 1 - phase : phase) : 0)
+
+  return (
+    <div class="scene-envelope-part">
+      <span class="scene-field-label">{props.name}</span>
+      <CurvePicker
+        class="scene-envelope-curve"
+        label={props.label}
+        value={props.value?.curve}
+        onPick={(curve) => props.onChange({ ...props.value, curve } as T)}
+        onRemove={props.optional && props.value ? () => props.onChange(undefined as T) : undefined}
+      >
+        <Show when={props.value} fallback={<span class="scene-envelope-add">+</span>}>
+          <CurveGraph height={height} />
+        </Show>
+      </CurvePicker>
+      <Show when={props.value}>
+        <Toggle.Root class="scene-switch" checked={reversed()} onCheckedChange={(details) => props.onChange({ ...props.value!, reversed: details.checked || undefined } as T)}>
+          <Toggle.Control>
+            <Toggle.Thumb />
+          </Toggle.Control>
+          <Toggle.Label>Reverse</Toggle.Label>
+          <Toggle.HiddenInput aria-label={`Reverse ${props.label}`} />
+        </Toggle.Root>
+      </Show>
+    </div>
   )
 }
 
