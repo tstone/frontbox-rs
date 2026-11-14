@@ -48,6 +48,7 @@ impl Scenario {
     ScenarioBuilder {
       app,
       closed: Vec::new(),
+      open: Vec::new(),
     }
   }
 
@@ -166,12 +167,20 @@ impl Scenario {
 pub struct ScenarioBuilder {
   app: App,
   closed: Vec<&'static str>,
+  open: Vec<&'static str>,
 }
 
 impl ScenarioBuilder {
   /// Switches that are closed when the machine boots, such as the trough's for the balls in it
   pub fn closed(mut self, switches: impl IntoIterator<Item = &'static str>) -> Self {
     self.closed.extend(switches);
+    self
+  }
+
+  /// Switches that are open when the machine boots, though their initial state is closed, such as a coin door left
+  /// open
+  pub fn open(mut self, switches: impl IntoIterator<Item = &'static str>) -> Self {
+    self.open.extend(switches);
     self
   }
 
@@ -184,11 +193,16 @@ impl ScenarioBuilder {
     };
 
     let mut virtual_hardware = VirtualHardware::new(&parts.boot_config.io_network);
-    for name in self.closed {
+    let states = self
+      .closed
+      .into_iter()
+      .map(|name| (name, SwitchState::Closed))
+      .chain(self.open.into_iter().map(|name| (name, SwitchState::Open)));
+    for (name, state) in states {
       let id = virtual_hardware
         .switch_id(name)
         .unwrap_or_else(|| panic!("There's no switch named {name}"));
-      virtual_hardware.set_switch(id, SwitchState::Closed);
+      virtual_hardware.set_switch(id, state);
     }
     let mut hardware = vm::read_hardware(parts.boot_config, &virtual_hardware);
     app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
@@ -211,11 +225,10 @@ impl ScenarioBuilder {
 
     // in the order `App::run` spawns them, after the tester so it hears everything from the start
     scenario.tester = scenario.harness.spawn(Tester(taps));
-    scenario.harness.spawn(bridge);
-    for system in parts.systems {
-      scenario.harness.spawn(system);
-    }
-    scenario.harness.spawn(WatchdogSystem::new());
+    let systems = std::iter::once(bridge)
+      .chain(parts.systems)
+      .chain([SystemContainer::new(WatchdogSystem::new())]);
+    scenario.harness.spawn_initial(systems);
     scenario.settle();
     scenario
   }
@@ -265,6 +278,10 @@ mod tests {
 
   static START: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("start").build());
   static TROUGH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
+  static DOOR: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("door").inverted().initially_closed().build());
+  static FLIPPER: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("flipper").initially_open().build());
   static KICKER: LazyLock<DriverDefinition> =
     LazyLock::new(|| DriverDefinition::new("kicker").mode(DriverMode::pulse().build()).build());
 
@@ -274,6 +291,8 @@ mod tests {
         IoBoard::custom(8, 8)
           .wire_switch(0, &START)
           .wire_switch(1, &TROUGH)
+          .wire_switch(2, &DOOR)
+          .wire_switch(3, &FLIPPER)
           .wire_driver(0, &KICKER),
       ]),
       config_path: None,
@@ -337,6 +356,60 @@ mod tests {
     let mut s = Scenario::new(app()).closed(["trough"]).start();
     assert_eq!(s.act(|ctx| ctx.switches.is_closed("trough")), Some(true));
     assert_eq!(s.act(|ctx| ctx.switches.is_closed("start")), Some(false));
+  }
+
+  #[test]
+  fn switches_start_in_their_initial_state() {
+    let mut s = Scenario::new(app()).start();
+    assert_eq!(s.act(|ctx| ctx.switches.is_closed("door")), Some(true));
+    assert_eq!(s.act(|ctx| ctx.switches.is_closed("flipper")), Some(false));
+  }
+
+  /// Keeps each `BootSwitchMisalignmentFound` it hears, as the switch names and the state each should have been in
+  struct Misalignments(Rc<RefCell<Vec<Vec<(&'static str, SwitchState)>>>>);
+
+  impl System for Misalignments {
+    fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
+      if let Some(found) = event.downcast_ref::<BootSwitchMisalignmentFound>() {
+        let mut switches: Vec<_> = found.switches.iter().map(|m| (m.switch.name, m.expected)).collect();
+        switches.sort();
+        self.0.borrow_mut().push(switches);
+      }
+    }
+  }
+
+  fn app_hearing_misalignments() -> (App, Rc<RefCell<Vec<Vec<(&'static str, SwitchState)>>>>) {
+    let found = Rc::default();
+    let mut app = app();
+    app.system(Misalignments(Rc::clone(&found)));
+    (app, found)
+  }
+
+  #[test]
+  fn switches_out_of_their_initial_state_at_boot_are_reported_to_the_apps_systems() {
+    let (app, found) = app_hearing_misalignments();
+    Scenario::new(app).open(["door"]).closed(["flipper"]).start();
+    assert_eq!(
+      *found.borrow(),
+      [vec![("door", SwitchState::Closed), ("flipper", SwitchState::Open)]]
+    );
+  }
+
+  #[test]
+  fn nothing_is_reported_when_every_switch_is_in_its_initial_state() {
+    let (app, found) = app_hearing_misalignments();
+    Scenario::new(app).closed(["trough"]).start();
+    assert!(found.borrow().is_empty());
+  }
+
+  #[test]
+  fn a_reconnect_doesnt_check_the_initial_states_again() {
+    let (app, found) = app_hearing_misalignments();
+    let mut s = Scenario::new(app).start();
+    s.disconnect_machine();
+    s.close_switch("flipper");
+    s.reconnect_machine();
+    assert!(found.borrow().is_empty());
   }
 
   #[test]

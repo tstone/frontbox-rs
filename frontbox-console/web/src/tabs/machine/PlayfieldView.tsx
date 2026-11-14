@@ -7,7 +7,7 @@ import DisplayScreen from '../../components/DisplayScreen'
 import { type ConsoleState, driverState, machine } from '../../state/console'
 import { displayFrame } from '../../state/displays'
 import { cancelPlacing, highlighted, movedPositions, place, placing as placingHardware, type Position } from '../../state/placement'
-import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
+import { isInitiallyClosed, isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
 import type { DisplayView } from '../../types/generated/DisplayView'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
@@ -223,7 +223,8 @@ const named = (point: Point) => `${point.name} (${point.kind})`
 function describe(point: Point): string {
   const id = switchId(point)
   if (id === null) return named(point)
-  const action = latched[id] ? 'click to open' : 'hold to close, shift-click to latch'
+  const [toward, away] = isInitiallyClosed(id) ? ['close', 'open'] : ['open', 'close']
+  const action = latched[id] ? `click to ${toward}` : `hold to ${away}, shift-click to latch`
   return `${point.name} (Switch): ${action}`
 }
 
@@ -714,7 +715,8 @@ export default function PlayfieldView(props: {
     }
 
     /**
-     * A left press on a switch closes it until the press ends; with shift it latches closed (or opens, if latched).
+     * A left press on a switch holds it away from its initial state (closes most) until the press ends; with shift it
+     * latches there (or goes back, if latched).
      * Listened for on the container before it reaches the canvas, so a press on a switch never starts an orbit.
      * When switches overlap, a chooser opens instead.
      */
@@ -774,7 +776,7 @@ export default function PlayfieldView(props: {
       window.removeEventListener('blur', endPress)
     }
     startPress = (id, latch) => {
-      // any click on a latched switch opens it
+      // any click on a latched switch puts it back
       if (latch || latched[id]) {
         toggleLatch(id)
         return

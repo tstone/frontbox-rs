@@ -418,28 +418,28 @@ async fn static_handler(uri: Uri) -> Response {
   }
 }
 
-/// Switches a client has closed. When its session ends they're opened again, so a closed tab can't leave a switch
-/// held closed in the game.
+/// Switches a client has set away from their initial state (open for a switch with none). When its session ends
+/// they're put back, so a closed tab can't leave a switch held in the game.
 struct HeldSwitches {
   hub: ConsoleHub,
-  closed: HashSet<usize>,
+  held: HashSet<usize>,
 }
 
 impl HeldSwitches {
   fn new(hub: ConsoleHub) -> Self {
     Self {
       hub,
-      closed: HashSet::new(),
+      held: HashSet::new(),
     }
   }
 
   fn handle(&mut self, message: ClientMessage) {
     match message {
       ClientMessage::SetSwitch { switch_id, closed } => {
-        if closed {
-          self.closed.insert(switch_id);
+        if closed == self.hub.initially_closed(switch_id) {
+          self.held.remove(&switch_id);
         } else {
-          self.closed.remove(&switch_id);
+          self.held.insert(switch_id);
         }
         self.hub.set_switch(switch_id, closed);
       }
@@ -453,8 +453,8 @@ impl HeldSwitches {
 
 impl Drop for HeldSwitches {
   fn drop(&mut self) {
-    for switch_id in self.closed.drain() {
-      self.hub.set_switch(switch_id, false);
+    for switch_id in self.held.drain() {
+      self.hub.set_switch(switch_id, self.hub.initially_closed(switch_id));
     }
   }
 }

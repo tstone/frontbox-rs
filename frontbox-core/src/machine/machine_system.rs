@@ -381,6 +381,29 @@ impl MachineSystem {
       })
       .ok();
   }
+
+  /// Report switches that aren't in their initial state. Only done at boot: a reconnect isn't checked, as by then the
+  /// switches are wherever play left them.
+  fn check_initial_switch_states(&self, ctx: &SystemContext) {
+    let switches: Vec<MisalignedSwitch> = ctx
+      .switches
+      .misaligned()
+      .into_iter()
+      .map(|(switch, expected)| MisalignedSwitch { switch: switch.clone(), expected })
+      .collect();
+    if switches.is_empty() {
+      return;
+    }
+    for misaligned in &switches {
+      log::warn!(
+        target: "frontbox::switches",
+        "Switch '{}' should be {:?} at boot, but isn't",
+        misaligned.switch.name,
+        misaligned.expected
+      );
+    }
+    ctx.emit(BootSwitchMisalignmentFound { switches });
+  }
 }
 
 impl System for MachineSystem {
@@ -391,6 +414,7 @@ impl System for MachineSystem {
       .map(|(driver_id, mode)| (driver_id, mode.clone()))
       .collect();
     ctx.metrics.inc(&BOOTS);
+    self.check_initial_switch_states(ctx);
   }
 
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {

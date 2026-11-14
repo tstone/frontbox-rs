@@ -27,14 +27,16 @@ pub struct VirtualHardware {
 }
 
 impl VirtualHardware {
-  /// Hardware wired as the network describes, with every switch open, no driver configured, and the watchdog off
+  /// Hardware wired as the network describes, with every switch in its initial state (open if it has none), no driver
+  /// configured, and the watchdog off
   pub fn new(io_network: &IoNetwork) -> Self {
     let switches: HashMap<usize, VirtualSwitch> = io_network
       .switches
       .iter()
       .map(|switch| {
         let inverted = switch.definition.config.as_ref().is_some_and(|config| config.inverted);
-        (switch.id, VirtualSwitch { inverted, closed: false })
+        let closed = switch.definition.initial_state == Some(SwitchState::Closed);
+        (switch.id, VirtualSwitch { inverted, closed })
       })
       .collect();
     let wired_slots = switches.keys().max().map_or(0, |id| id + 1);
@@ -220,9 +222,12 @@ mod tests {
 
   static START: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("start").build());
   static TROUGH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
+  static DOOR: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("door").inverted().initially_closed().build());
   static EJECT: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::new("eject").build());
 
   const START_ID: usize = 0;
+  const DOOR_ID: usize = 1;
   const TROUGH_ID: usize = 3;
   const EJECT_ID: usize = 0;
 
@@ -230,6 +235,7 @@ mod tests {
     VirtualHardware::new(&IoNetwork::new(vec![
       IoBoard::custom(8, 8)
         .wire_switch(START_ID as u16, &START)
+        .wire_switch(DOOR_ID as u16, &DOOR)
         .wire_switch(TROUGH_ID as u16, &TROUGH)
         .wire_driver(EJECT_ID as u16, &EJECT),
     ]))
@@ -257,6 +263,14 @@ mod tests {
 
   fn eject(hw: &VirtualHardware) -> VirtualDriver {
     hw.driver("eject").unwrap()
+  }
+
+  #[test]
+  fn a_switch_starts_in_its_initial_state() {
+    let hw = hardware();
+    assert_eq!(hw.is_closed("door"), Some(true));
+    // closed as the app sees it, so open as the hardware reads it
+    assert_eq!(hw.switch_report()[DOOR_ID], SwitchState::Open);
   }
 
   #[test]

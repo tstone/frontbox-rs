@@ -49,7 +49,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | Target | Covers |
 |---|---|
 | `frontbox::hardware` | Hardware definitions, LED and reference plane setup, hardware queries |
-| `frontbox::switches` | Switch opens and closes, unknown switches, switch combos |
+| `frontbox::switches` | Switch opens and closes, unknown switches, switch combos, switches not in their initial state at boot |
 | `frontbox::machine` | Losing and reconnecting to the machine, hardware that doesn't match the configuration, malformed data |
 | `frontbox::machine::boot` | Opening ports, resetting boards, configuring drivers |
 | `frontbox::machine::serial` | Every frame sent and received, lost ports, unclaimed responses |

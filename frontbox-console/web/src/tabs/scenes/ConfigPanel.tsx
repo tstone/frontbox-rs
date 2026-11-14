@@ -339,9 +339,10 @@ const ConfigTreeContext = createContext<ConfigTree>()
 /**
  * The scene's layers and sound layers as a tree. Each layer's settings and props are nodes under it, and any of those
  * with settings of its own has them under it in turn. Selecting a node selects the layer, or the mask, it's in. Its
- * button for closing every node goes in `toolbar`.
+ * button for closing every node goes in `toolbar`, and `onSelect` hears which node is selected, by id, and `null` once
+ * the panel is gone.
  */
-export default function ConfigPanel(props: { selection: Signal<Selection | null>; toolbar?: HTMLElement }) {
+export default function ConfigPanel(props: { selection: Signal<Selection | null>; toolbar?: HTMLElement; onSelect?: (id: string | null) => void }) {
   const scene = useContext(SceneContext)!
   const surfaces = useContext(LayerSurfacesContext)!
   const [revealing] = useContext(RevealContext)!
@@ -364,6 +365,8 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   const initial = untrack(open)
   const [selected, setSelected] = createSignal<string | null>(initial && selectionNode(initial))
   const [expanded, setExpanded] = createSignal<string[]>(initial ? ancestry(selectionNode(initial)) : [])
+  createEffect(() => props.onSelect?.(selected()))
+  onCleanup(() => props.onSelect?.(null))
 
   const select = (id: string | null) =>
     batch(() => {

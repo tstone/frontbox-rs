@@ -12,6 +12,8 @@ pub struct SwitchLookup {
   pub(crate) by_name: HashMap<&'static str, Switch>,
   is_closed: HashMap<usize, bool>,
   configs: HashMap<usize, SwitchConfig>,
+  /// Each switch's expected state at boot, for those that have one. See `SwitchDefinition::initial_state`.
+  initial_states: HashMap<usize, SwitchState>,
   #[serde(skip)]
   #[cfg_attr(feature = "ts", ts(skip))]
   hit_counters: HashMap<usize, Counter>,
@@ -26,6 +28,7 @@ impl SwitchLookup {
     let mut by_name = HashMap::new();
     let mut is_closed = HashMap::new();
     let mut configs = HashMap::new();
+    let mut initial_states = HashMap::new();
     let mut hit_counters = HashMap::new();
     for addressed in addressed {
       let switch = Switch {
@@ -43,6 +46,10 @@ impl SwitchLookup {
         configs.insert(addressed.id, config.clone());
       }
 
+      if let Some(state) = addressed.definition.initial_state {
+        initial_states.insert(addressed.id, state);
+      }
+
       hit_counters.insert(addressed.id, addressed.definition.hits_counter());
 
       // Actual state is populated below from initial report
@@ -54,6 +61,7 @@ impl SwitchLookup {
       by_name,
       is_closed,
       configs,
+      initial_states,
       hit_counters,
     };
 
@@ -140,6 +148,24 @@ impl SwitchLookup {
       .by_name
       .get(name)
       .and_then(|switch| self.configs.get(&switch.id))
+  }
+
+  /// The switch's expected state at boot, if it has one. See `SwitchDefinition::initial_state`.
+  pub fn initial_state(&self, switch_id: usize) -> Option<SwitchState> {
+    self.initial_states.get(&switch_id).copied()
+  }
+
+  /// Switches not in their expected state at boot, each with the state expected
+  pub fn misaligned(&self) -> Vec<(&Switch, SwitchState)> {
+    self
+      .initial_states
+      .iter()
+      .filter_map(|(id, &expected)| {
+        let closed = *self.is_closed.get(id)?;
+        let switch = self.by_id.get(id)?;
+        (closed != (expected == SwitchState::Closed)).then_some((switch, expected))
+      })
+      .collect()
   }
 
   #[allow(unused)]
@@ -231,6 +257,7 @@ mod tests {
       tags: vec![Box::new(Playfield)],
       location: None,
       config: None,
+      initial_state: None,
     });
 
     let lookup = SwitchLookup::new(

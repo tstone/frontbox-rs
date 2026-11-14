@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use crate::prelude::*;
+use fast_protocol::SwitchState;
 
 #[derive(Debug, Clone)]
 pub struct SwitchDefinition {
@@ -9,6 +10,10 @@ pub struct SwitchDefinition {
   pub tags: Vec<Box<dyn Tag>>,
   pub location: Option<Vec3>,
   pub config: Option<SwitchConfig>,
+  /// The state the switch should be in when the machine boots, as the app sees it (after inversion). The virtual
+  /// machine starts the switch in this state, and on hardware a switch found otherwise at boot is reported in
+  /// `BootSwitchMisalignmentFound`. `None` for a switch with no expected state, such as one a ball may rest on.
+  pub initial_state: Option<SwitchState>,
 }
 
 impl SwitchDefinition {
@@ -54,6 +59,7 @@ pub struct SwitchDefinitionBuilder {
   tags: Vec<Box<dyn Tag>>,
   location: Option<Vec3>,
   config: Option<SwitchConfig>,
+  initial_state: Option<SwitchState>,
 }
 
 impl SwitchDefinitionBuilder {
@@ -63,6 +69,7 @@ impl SwitchDefinitionBuilder {
       tags: Vec::new(),
       location: None,
       config: None,
+      initial_state: None,
     }
   }
 
@@ -109,6 +116,20 @@ impl SwitchDefinitionBuilder {
     self
   }
 
+  /// The switch should be closed when the machine boots, such as a coin door switch held by the shut door. See
+  /// `SwitchDefinition::initial_state`.
+  pub fn initially_closed(mut self) -> Self {
+    self.initial_state = Some(SwitchState::Closed);
+    self
+  }
+
+  /// The switch should be open when the machine boots, so one found closed is likely stuck, such as a flipper button.
+  /// See `SwitchDefinition::initial_state`.
+  pub fn initially_open(mut self) -> Self {
+    self.initial_state = Some(SwitchState::Open);
+    self
+  }
+
   fn config_mut(&mut self) -> &mut SwitchConfig {
     self.config.get_or_insert_with(SwitchConfig::default)
   }
@@ -119,6 +140,7 @@ impl SwitchDefinitionBuilder {
       tags: self.tags,
       location: self.location,
       config: self.config,
+      initial_state: self.initial_state,
     }
   }
 }

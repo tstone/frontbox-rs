@@ -80,7 +80,6 @@
 
 ## Console
 
-- Initial state: configure switches to be latched by default (e.g. trough, captive ball)
 - Some kind of game state specific/user-customizable JSON emission by systems, to view a system's state somehow
 - Macros: recordable + re-playable switch/coil sequences (can also reference other macros)
 - Event sourcing/replay - dump per game (serialize to JSON) - record timestamp as a well. Needs: RandSystem, so a

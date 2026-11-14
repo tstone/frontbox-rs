@@ -203,6 +203,14 @@ export function selectionNode({ layer, mask }: Selection) {
   return `layers/${layer}${mask ? '/mask' : ''}`
 }
 
+/** Which of a layer's or mask's region's transforms a node is, or is under. `null` for a node outside them. */
+export function openTransform(id: string | null, of: Selection): number | null {
+  const prefix = `${selectionNode(of)}/region/transform/`
+  if (!id?.startsWith(prefix)) return null
+  const index = Number(id.slice(prefix.length).split('/')[0])
+  return Number.isInteger(index) ? index : null
+}
+
 /** The nodes that a node is under, from the top down, ending with itself */
 export function ancestry(id: string): string[] {
   const parts = id.split('/')

@@ -66,9 +66,10 @@ const NOTHING: Overlay = { handles: [], paths: [], lines: [], boxes: [], grids: 
 /**
  * Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are.
  * `outlines` has a loop for each copy of the shape, in the scene. With a `grid`, a shape's points and how far it's
- * moved snap to a grid of that size in its own space, which is drawn over a shape made of points.
+ * moved snap to a grid of that size in its own space, which is drawn over a shape made of points. A scale's anchor only
+ * has a handle while that scale is `openTransform`, the one being edited, as it's often over the shape's center.
  */
-export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; outlines: Vec2[][]; time: number; grid: number | null }) {
+export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; outlines: Vec2[][]; time: number; grid: number | null; openTransform: number | null }) {
   const scene = useContext(SceneContext)!
 
   const overlay = createMemo((): Overlay => {
@@ -83,7 +84,7 @@ export default function ShapeHandles(props: { space: PreviewSpace; selection: Se
     // a line's over the shape's own, as its center can sit where the shape's moved from. A path's on top of both, as
     // its shape is held to it and has nothing there to grab.
     return {
-      handles: [...(group ? [group.handle] : []), ...shapeHandles(shape, pose, write, grid), ...lines.handles, ...handles],
+      handles: [...(group ? [group.handle] : []), ...shapeHandles(shape, pose, write, grid), ...anchorHandles(orEmpty(field(shape, 'transform')), pose, write, props.openTransform), ...lines.handles, ...handles],
       paths,
       lines: lines.lines,
       boxes: group ? [group.box] : [],
@@ -340,7 +341,6 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
   const handles = [
     moveHandle(list, pose, write, grid),
     ...revolveHandles(list, pose, write),
-    ...anchorHandles(list, pose, write),
     ...shiftHandles(list, pose, write),
   ]
   if ('Circle' in current) {
@@ -549,10 +549,10 @@ function groupOverlay(list: Lens<Transform[]>, pose: RenderedShape, write: Write
  * The anchor of each scale, the point it keeps still. It's held as an offset from the shape's center going into the
  * scale, in the space the transforms before it put the shape in.
  */
-function anchorHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle[] {
+function anchorHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write, open: number | null): Handle[] {
   return list.get().flatMap((transform, index) => {
     const anchor = pose.anchors[index]
-    if (!('Scale' in transform) || !anchor) return []
+    if (index !== open || !('Scale' in transform) || !anchor) return []
     const prop = field(variant(item(list, index) as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale'), 'anchor')
     // the scale keeps its anchor where it is, so it's only the transforms after it that place it
     const toScene = chain(pose.transforms.slice(index + 1))

@@ -97,6 +97,15 @@ impl Harness {
     handle
   }
 
+  /// Spawn the systems into the root group, then settle, as `RunLoop::run` does at boot: whatever one queues on spawn
+  /// is handled once they're all running
+  pub(crate) fn spawn_initial(&mut self, systems: impl IntoIterator<Item = SystemContainer>) {
+    for system in systems {
+      self.spawn_system(system, ROOT_GROUP);
+    }
+    self.settle();
+  }
+
   /// Spawn a group owned by `owner`, then settle
   #[cfg(test)]
   pub(crate) fn spawn_group_of(

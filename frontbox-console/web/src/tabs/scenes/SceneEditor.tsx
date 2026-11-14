@@ -28,6 +28,7 @@ import { LedsNote } from './LayerPlace'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
 import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
+import { openTransform } from './configNodes'
 import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
@@ -116,6 +117,8 @@ export default function SceneEditor(props: {
     writeSnap(snap())
   }
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
+  // the node selected in the config tree, by id, which says what the handles are for
+  const [treeNode, setTreeNode] = createSignal<string | null>(null)
   const [sourceTab, setSourceTab] = createSignal('config')
   // where the config tree puts its own buttons, at the end of the tabs
   const [treeTools, setTreeTools] = createSignal<HTMLElement>()
@@ -400,6 +403,11 @@ export default function SceneEditor(props: {
     if (open === null || !rendered || !openShown()) return null
     return (open.mask ? rendered.mask_shapes : rendered.shapes)[open.layer] ?? null
   }
+  /** Which of the selected shape's transforms is being edited in the config tree, if any */
+  const editedTransform = () => {
+    const open = selected()
+    return open && openTransform(treeNode(), open)
+  }
   const hasShape = (open: Selection | null) => open !== null && selectedShape(scene(), open) !== undefined
 
   /**
@@ -465,7 +473,7 @@ export default function SceneEditor(props: {
         highlighted={nodePicking.highlighted[0]()}
         choosing={nodePicking.choosing[0]() !== null}
       />
-      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} />
+      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} openTransform={editedTransform()} />
     </>
   )
 
@@ -645,7 +653,7 @@ export default function SceneEditor(props: {
                       </Show>
                       <Show when={scene() !== null}>
                         <div class="scene-editing" inert={error() !== null}>
-                          <ConfigPanel selection={selection} toolbar={treeTools()} />
+                          <ConfigPanel selection={selection} toolbar={treeTools()} onSelect={setTreeNode} />
                         </div>
                       </Show>
                     </Tabs.Content>

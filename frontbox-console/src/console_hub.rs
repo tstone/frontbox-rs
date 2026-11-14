@@ -3,7 +3,7 @@ use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted,
+  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted, SwitchState,
   SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
@@ -125,6 +125,17 @@ impl ConsoleHub {
       return;
     };
     let _ = control.send(switch_control(switch_id, closed));
+  }
+
+  /// Whether the switch is closed in its initial state. Open for a switch with none, or one that isn't known.
+  pub fn initially_closed(&self, switch_id: usize) -> bool {
+    let state = self.state.lock().unwrap();
+    state
+      .snapshot
+      .hardware
+      .as_ref()
+      .and_then(|hw| hw.switches.initial_state(switch_id))
+      .is_some_and(|initial| initial == SwitchState::Closed)
   }
 
   /// Set an operator config in the app. The new value shows up for clients when the app traces it back.
