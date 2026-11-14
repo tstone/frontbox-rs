@@ -13,7 +13,8 @@ pub enum Transform {
   /// A `Sequence` has no second axis, so there it scrolls the drawing along the line with the ends wrapped together:
   /// 360 degrees is one full lap.
   Rotate(Prop<f32>),
-  Scale(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
+  /// The same on both axes. A shape's own size, such as a `Rect`'s width and height, gives it a different one on each.
+  Scale(Prop<f32>),
   /// Lays the node along a traversal of the layer's graph, by name: `(-0.5, 0)` on the node it starts from and
   /// `(0.5, 0)` on the node it visits last, scaled evenly on both axes. A gradient then runs from start to end at
   /// whatever angle the traversal takes.
@@ -36,7 +37,7 @@ impl Transform {
           Affine2::from_translation(center) * turn * Affine2::from_translation(-center)
         }
       },
-      Self::Scale(scale) => Affine2::from_scale(scale.resolve(env)),
+      Self::Scale(scale) => Affine2::from_scale(Vec2::splat(scale.resolve(env))),
       Self::Fit(traversal) => {
         let ends = env.visits.and_then(|visits| visits.ends(traversal)).filter(|(start, end)| start.distance(*end) > f32::EPSILON);
         let Some((start, end)) = ends else {
@@ -59,8 +60,8 @@ impl Transform {
 
   pub(crate) fn is_animated(&self) -> bool {
     match self {
-      Self::Translate(prop) | Self::Scale(prop) => prop.is_animated(),
-      Self::Rotate(prop) => prop.is_animated(),
+      Self::Translate(prop) => prop.is_animated(),
+      Self::Rotate(prop) | Self::Scale(prop) => prop.is_animated(),
       Self::Fit(_) => true,
     }
   }

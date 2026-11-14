@@ -507,7 +507,7 @@ mod tests {
   fn leds_past_the_edge_of_the_plane_show_the_shapes_that_reach_them() {
     let source = r#"Scene(
       version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))), Leds(surface: Area("Square"), layer: (
-          region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(15.0, 5.0))]),
+          region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(15.0, 5.0))]),
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
         ))],)"#;
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
@@ -521,7 +521,7 @@ mod tests {
   fn shape_edges_on_leds_fade_across_the_radius_the_machine_was_booted_with() {
     let source = r#"Scene(
       version: 2, layers: [Leds(surface: Area("Square"), layer: (
-        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 5.0))]),
+        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(5.0, 5.0))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
     let brightness = |radius| {
@@ -655,7 +655,7 @@ mod tests {
   fn grid_fits_a_display() {
     let source = r#"Scene(version: 2,
       layers: [Display(display: "Dmd", layer: (
-        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(3.0, 3.0)), Translate(Fixed(2.5, 2.5))]),
+        region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(3.0)), Translate(Fixed(2.5, 2.5))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],
     )"#;
@@ -827,7 +827,7 @@ mod tests {
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
           mask: (
             fill: (base: Solid(Fixed(0, 0, 0, 255))),
-            region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0, 4.0)), Translate(Fixed(5.0, 2.5))]),
+            region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(5.0, 2.5))]),
           ),
         )),
       ],

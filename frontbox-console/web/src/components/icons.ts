@@ -1,6 +1,7 @@
 // Icons come from Lucide (https://lucide.dev/icons). Each is imported by its own path, as the package's index pulls in
 // every icon's source for Vite to compile.
 export { default as Activity } from 'lucide-solid/icons/activity'
+export { default as AudioWaveform } from 'lucide-solid/icons/audio-waveform'
 export { default as Blend } from 'lucide-solid/icons/blend'
 export { default as ChartSpline } from 'lucide-solid/icons/chart-spline'
 export { default as ChevronRight } from 'lucide-solid/icons/chevron-right'

@@ -243,7 +243,7 @@ fn a_layer_with_no_shape_stops_at_the_edge_of_the_plane() {
 
 /// A circle of radius 2 around this position
 fn circle(at: Prop<Vec2>) -> Shape {
-  Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(4.0).into())).transform(Transform::Translate(at))
+  Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(4.0.into())).transform(Transform::Translate(at))
 }
 
 #[test]

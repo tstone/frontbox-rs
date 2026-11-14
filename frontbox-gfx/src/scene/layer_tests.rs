@@ -252,7 +252,7 @@ fn circle(fill: Fill) -> Scene {
     Layer::new(solid(DARK)),
     Layer::new(fill).region(
       Shape::new(ShapeNode::circle(0.5))
-        .transform(Transform::Scale(Vec2::splat(40.0).into()))
+        .transform(Transform::Scale(40.0.into()))
         .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
     ),
   ])
@@ -295,10 +295,10 @@ fn a_layer_with_no_shape_outlines_the_viewport() {
 #[test]
 fn an_outline_follows_a_shapes_transforms_in_order() {
   let square = ShapeNode::Polygon {
-    points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+    points: [(0.0, 0.0), (1.0, 0.0), (1.0, 2.0), (0.0, 2.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
   };
   let shape = Shape::new(square)
-    .transform(Transform::Scale(Vec2::new(2.0, 4.0).into()))
+    .transform(Transform::Scale(2.0.into()))
     .transform(Transform::Translate(Vec2::new(10.0, 20.0).into()));
   let corners = [(10.0, 20.0), (12.0, 20.0), (12.0, 24.0), (10.0, 24.0)].map(|(x, y)| Vec2::new(x, y));
   assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), corners);
@@ -306,8 +306,8 @@ fn an_outline_follows_a_shapes_transforms_in_order() {
 
 #[test]
 fn an_ellipse_outline_runs_around_its_edge() {
-  let shape = Shape::new(ShapeNode::circle(0.5))
-    .transform(Transform::Scale(Vec2::new(40.0, 20.0).into()))
+  let shape = Shape::new(ShapeNode::Ellipse { rx: 0.5.into(), ry: 0.25.into() })
+    .transform(Transform::Scale(40.0.into()))
     .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()));
   let outline = outlines(Layer::new(solid(RED)).region(shape));
   assert!(outline.len() > 16);
@@ -319,7 +319,7 @@ fn an_ellipse_outline_runs_around_its_edge() {
 
 #[test]
 fn a_shape_that_draws_nothing_has_no_outline() {
-  let collapsed = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::ZERO.into()));
+  let collapsed = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(0.0.into()));
   assert!(outlines(Layer::new(solid(RED)).region(collapsed)).is_empty());
   let line = Shape::new(ShapeNode::Polygon { points: vec![Vec2::ZERO.into(), Vec2::ONE.into()] });
   assert!(outlines(Layer::new(solid(RED)).region(line)).is_empty());
@@ -365,7 +365,7 @@ fn shapes_on_a_grid() {
 /// A circle of diameter 40 at (50, 25)
 fn middle_circle() -> Shape {
   Shape::new(ShapeNode::circle(0.5))
-    .transform(Transform::Scale(Vec2::splat(40.0).into()))
+    .transform(Transform::Scale(40.0.into()))
     .transform(Transform::Translate(Vec2::new(50.0, 25.0).into()))
 }
 
@@ -469,7 +469,7 @@ fn shape_on_a_line_is_measured_along_it() {
   // on 5 LEDs, a circle most of the way across centered on the middle lights all but the end LEDs
   let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
     Shape::new(ShapeNode::circle(0.5))
-      .transform(Transform::Scale(Vec2::splat(0.75).into()))
+      .transform(Transform::Scale(0.75.into()))
       .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
   )]);
   let transparent = Rgba([0, 0, 0, 0]);
@@ -490,7 +490,7 @@ fn a_sequence_plays_on_any_number_of_leds() {
 fn a_shape_covers_the_same_part_of_any_strip() {
   let scene = Scene::new(Surface::Sequence, vec![Layer::new(solid(RED)).region(
     Shape::new(ShapeNode::circle(0.5))
-      .transform(Transform::Scale(Vec2::splat(0.5).into()))
+      .transform(Transform::Scale(0.5.into()))
       .transform(Transform::Translate(Vec2::new(0.5, 0.0).into())),
   )]);
   let lit = |count| line(&scene, count).iter().filter(|c| **c == RED).count();
@@ -513,9 +513,9 @@ fn a_shape_larger_than_the_viewport_can_move_under_it() {
   // a 300 wide gradient, moved so its middle is in view
   let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).region(
     Shape::new(ShapeNode::Polygon {
-      points: [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+      points: [(0.0, 0.0), (6.0, 0.0), (6.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
     })
-    .transform(Transform::Scale(Vec2::new(300.0, 50.0).into()))
+    .transform(Transform::Scale(50.0.into()))
     .transform(Transform::Translate(Vec2::new(-100.0, 0.0).into())),
   )]);
   assert_eq!(sample(&scene, 50.0, 25.0, 0.0), Rgba([127, 0, 128, 255]));
@@ -680,7 +680,7 @@ fn an_image_shows_its_pixels_on_a_grid_of_the_same_size() {
 
 #[test]
 fn an_image_stretches_over_a_shape_and_moves_with_it() {
-  let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(2.0).into())).transform(Transform::Translate(Vec2::new(2.0, 1.5).into()));
+  let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(2.0.into())).transform(Transform::Translate(Vec2::new(2.0, 1.5).into()));
   let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
   assert_eq!(drawn(&scene, 1.5, 0.7, 0.01), RED);
   assert_eq!(drawn(&scene, 2.5, 0.7, 0.01), BLUE);
@@ -710,7 +710,7 @@ fn a_shape_scaled_down_covers_more_of_its_image_with_each_sample() {
   let whole = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
   assert!([RED, BLUE].contains(&whole.sample(&at, &frame)));
 
-  let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(4.0).into())).transform(Transform::Translate(Vec2::splat(32.0).into()));
+  let shape = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(4.0.into())).transform(Transform::Translate(Vec2::splat(32.0).into()));
   let small = Scene::new(Surface::Area, vec![Layer::new(image_fill()).region(shape)]);
   let color = small.sample(&at, &frame);
   assert!((100..=155).contains(&color[0]) && (100..=155).contains(&color[2]), "{color:?}");
@@ -730,7 +730,7 @@ fn transforms_and_adjusts_work_on_an_image_like_any_fill() {
 
 #[test]
 fn an_image_shrunk_by_a_transform_leaves_the_rest_clear() {
-  let shrunk = image_fill().transform(Transform::Scale(Vec2::splat(0.5).into()));
+  let shrunk = image_fill().transform(Transform::Scale(0.5.into()));
   let scene = Scene::new(Surface::Area, vec![Layer::new(shrunk), ]);
   assert_eq!(drawn(&scene, 0.2, 0.2, 0.01)[3], 0);
   assert_eq!(drawn(&scene, 1.5, 1.0, 0.01), RED);
@@ -928,7 +928,7 @@ fn fit_runs_a_gradient_from_where_a_traversal_starts_to_where_it_ends() {
 #[test]
 fn transforms_before_fit_move_the_fill_along_the_traversal() {
   let radial = Fill::new(FillNode::Gradient { stops: vec![Stop::new(0.0, Color(RED)), Stop::new(1.0, Color(BLUE))], style: GradientStyle::Radial })
-    .transform(Transform::Scale(Vec2::splat(2.0).into()))
+    .transform(Transform::Scale(2.0.into()))
     .transform(Transform::Translate(Vec2::new(-0.5, 0.0).into()))
     .transform(Transform::Fit("bolt".into()));
   let colors = fit_colors(radial, None, "0", "4");

@@ -11,11 +11,12 @@ import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
 import type { Curve } from '../../types/generated/Curve'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -283,7 +284,7 @@ const brightnessTrack = () => 'linear-gradient(to right, #000, #fff)'
 
 const opacityTrack = () => 'linear-gradient(to right, transparent, #fff)'
 
-/** What a random prop can pick from, with a control for each thing about it that varies */
+/** What a random prop can pick from, or a wave moves through, with a control for each thing about it that varies */
 function SpreadField(props: { label: string; lens: Lens<Spread>; ranges: Ranges }) {
   const spread = () => props.lens.get()
   const float = () => variant(props.lens, 'Float')
@@ -463,14 +464,15 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-export type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Sweep' | 'Visit'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Sweep', 'Visit']
+export type PropKind = 'Fixed' | 'Param' | 'Track' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Track', 'Random', 'Modulated', 'Sweep', 'Visit']
 
 export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Fixed: 'Fixed',
   Param: 'Param',
   Track: 'Keyframes',
   Random: 'Random',
+  Modulated: 'Modulated',
   Sweep: 'Sweep',
   Visit: 'Visit',
 }
@@ -485,13 +487,11 @@ type PropProps<T extends SceneValue> = {
   /** For a prop with nothing to take a value from */
   fallback: T
   ranges: Ranges
-  /** For a pair of numbers that isn't a position, such as a scale */
-  notPosition?: boolean
 }
 
 /**
- * A prop: whether it's fixed, read from a parameter, keyframed, picked at random, swept along a path, or set off by
- * visits, and the control for that. A sweep's path is edited in the config tree, under the prop's node.
+ * A prop: whether it's fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept along a path,
+ * or set off by visits, and the control for that. A sweep's path is edited in the config tree, under the prop's node.
  */
 export function PropField<T extends SceneValue>(
   props: PropProps<T> & {
@@ -575,6 +575,9 @@ export function PropField<T extends SceneValue>(
           <ForceUniqueField label={props.label} lens={field(variant(props.lens, 'Random'), 'force_unique')} />
           <p class="scene-note">When to pick a new value is on the timeline below.</p>
         </Match>
+        <Match when={kind() === 'Modulated'}>
+          <ModulatedField label={props.label} ranges={props.ranges} fallback={props.fallback} lens={variant(props.lens as Lens<Prop<SceneValue>>, 'Modulated')} />
+        </Match>
         <Match when={kind() === 'Sweep'}>
           <p class="scene-note">Its path is under it. When it goes around is on the timeline below.</p>
         </Match>
@@ -593,7 +596,7 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
   const kind = () => propKind(prop())
   const value = () => startingValue(prop(), scene.get(), props.fallback)
   // only a position can follow a path, though a scene that has one anywhere else can still be switched off it
-  const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2 && !props.notPosition
+  const isPosition = () => Array.isArray(props.fallback) && props.fallback.length === 2
   // visits are only there to respond to in a layer with traversals
   const traversals = useContext(TraversalsContext)
   const kinds = () =>
@@ -611,6 +614,10 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
       scene.set(withTiming(scene.get()))
       const seed = Math.floor(Math.random() * 2 ** 32)
       props.lens.set({ Random: { picks: [newPick(0)], spread: fullSpread(current, props.ranges), seed, force_unique: true } })
+    }
+    if (next === 'Modulated') {
+      scene.set(withTiming(scene.get()))
+      props.lens.set({ Modulated: { wave: 'Ramp', spread: fullSpread(current, props.ranges), rate: 1, phase: { Fixed: 0 } } })
     }
     if (next === 'Sweep') {
       const timed = withTiming(scene.get())
@@ -722,6 +729,48 @@ function VisitField(props: { label: string; lens: Lens<VisitResponse<SceneValue>
       <FieldRow label="Overlapping visits">
         <Dropdown label={`${props.label} overlapping visits`} options={OVERLAP_OPTIONS} value={response().overlap} onChange={field(props.lens, 'overlap').set} />
       </FieldRow>
+    </>
+  )
+}
+
+type WaveShape = 'Sine' | 'Triangle' | 'Square' | 'Ramp' | 'Saw'
+const WAVE_SHAPES: WaveShape[] = ['Sine', 'Triangle', 'Square', 'Ramp', 'Saw']
+
+/** A wave's shape, the range it moves through, and how many times it goes by each cycle. Its phase is a prop under it. */
+function ModulatedField(props: { label: string; lens: Lens<Modulated>; ranges: Ranges; fallback: SceneValue }) {
+  const wave = field(props.lens, 'wave')
+  const shape = (): WaveShape => {
+    const value = wave.get()
+    return typeof value === 'object' ? 'Square' : value
+  }
+  const duty = () => {
+    const value = wave.get()
+    return typeof value === 'object' ? value.Square.duty : 0.5
+  }
+
+  return (
+    <>
+      <FieldRow label="Wave">
+        <Dropdown
+          label={`${props.label} wave`}
+          options={WAVE_SHAPES.map((value) => ({ value, label: value }))}
+          value={shape()}
+          onChange={(next) => wave.set(next === 'Square' ? { Square: { duty: duty() } } : next)}
+        />
+      </FieldRow>
+      <Show when={shape() === 'Square'}>
+        <FieldRow label="Duty">
+          <NumberField label={`${props.label} duty`} range={UNIT} value={duty()} onChange={(next) => wave.set({ Square: { duty: next } })} />
+        </FieldRow>
+      </Show>
+      <SpreadField label={props.label} ranges={props.ranges} lens={field(props.lens, 'spread')} />
+      <Show when={!spreadFits(props.lens.get().spread, props.fallback)}>
+        <p class="scene-note scene-note-warn">This range is for another type of value, so this reads as zero.</p>
+      </Show>
+      <FieldRow label="Rate">
+        <NumberField label={`${props.label} rate`} range={WAVE_RATE} value={props.lens.get().rate} onChange={field(props.lens, 'rate').set} />
+      </FieldRow>
+      <p class="scene-note">Rate is waves per cycle. The phase under it shifts the wave along, and keyframing it can speed the wave up or slow it down.</p>
     </>
   )
 }

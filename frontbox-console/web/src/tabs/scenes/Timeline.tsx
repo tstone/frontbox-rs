@@ -3,6 +3,7 @@ import { batch, createMemo, createSignal, For, Index, onCleanup, Show, useContex
 import ScenePortal, { LayerColorContext, layerColorClass, type LayerColor } from './ScenePortal'
 import type { Cycle } from '../../types/generated/Cycle'
 import type { Key } from '../../types/generated/Key'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { Pick as RandomPick } from '../../types/generated/Pick'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedGraph } from '../../types/generated/RenderedGraph'
@@ -10,10 +11,11 @@ import type { Sweep } from '../../types/generated/Sweep'
 import type { Timing } from '../../types/generated/Timing'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { Playback } from './playback'
+import { sample } from './CurvePicker'
 import { CurveField, Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NumberBox, NumberField, SceneContext, ValueField } from './SceneFields'
 import { contentSoundLength } from '../../state/contentSounds'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
-import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, TIME_STEP, trackTimes, traversalLength, UNIT, variant, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
+import { field, isHidden, item, moveMoment, removed, repeats, sceneTracks, soundEnd, soundLabel, soundNaturalEnd, sceneTraversals, snap, startingValue, TIME_STEP, trackTimes, traversalLength, UNIT, variant, waveHeight, wavePosition, withKey, withKeyCopy, withPick, withHidden, withTimesInLength, withTimesScaled, type Lens, type Scene, type SceneTrack, type SceneTraversal, type SceneValue } from './sceneModel'
 
 /** How close in pixels a click can be to a key before it's taken to mean that key */
 const KEY_REACH = 12
@@ -309,12 +311,14 @@ function TimeScaleMenu(props: { duration: number; scale: (by: number) => void })
   )
 }
 
-/** A prop's name and its keys, its picks, or its sweep along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
+/** A prop's name and its keys, its picks, its sweep, or its wave along the timeline, with a button that follows the mouse for adding a key or a pick and one for holding it still */
 function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => string; span: number; reveal: (track: SceneTrack) => void }) {
+  const scene = useContext(SceneContext)!
   // read through `props`, as a row goes to whichever prop comes to be at its position
   const prop: Lens<Prop<SceneValue>> = { get: () => props.track.prop.get(), set: (next) => props.track.prop.set(next) }
   const times = () => trackTimes(prop.get())
   const swept = () => 'Sweep' in prop.get()
+  const waved = () => 'Modulated' in prop.get()
   /** The time under the mouse, and whether that's a dot's rather than one to add a dot at */
   const [hovering, setHovering] = createSignal<{ at: number; onDot: boolean } | null>(null)
   let lane!: HTMLDivElement
@@ -326,7 +330,7 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
   }
 
   const hover = (e: PointerEvent & { currentTarget: HTMLElement }) => {
-    if (swept()) return
+    if (swept() || waved()) return
     const { width } = e.currentTarget.getBoundingClientRect()
     const at = along(e, e.currentTarget) * props.span
     const nearest = times().reduce((near, time) => (Math.abs(time - at) < Math.abs(near - at) ? time : near), Infinity)
@@ -377,6 +381,9 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
           <Show when={swept()}>
             <SweepBar label={props.track.label} lens={variant(prop, 'Sweep')} percent={props.percent} span={props.span} />
           </Show>
+          <Show when={waved()}>
+            <WaveLine modulated={variant(prop, 'Modulated').get()} scene={scene.get()} duration={scene.get().timing?.duration ?? props.span} percent={props.percent} />
+          </Show>
           <Index each={swept() ? [] : times()}>
             {(time, index) => (
               <Show
@@ -408,6 +415,49 @@ function TrackRow(props: { track: SceneTrack; percent: (seconds: number) => stri
       </div>
     </LayerColorContext.Provider>
   )
+}
+
+/** Most points drawn along a wave, however many times it goes by */
+const WAVE_SAMPLES = 2048
+
+/** A modulated prop's wave over the scene's first cycle, from its low end at the bottom to its high end at the top */
+function WaveLine(props: { modulated: Modulated; scene: Scene; duration: number; percent: (seconds: number) => string }) {
+  const points = () => {
+    const samples = Math.min(Math.ceil(96 * Math.max(props.modulated.rate, 1)), WAVE_SAMPLES)
+    return Array.from({ length: samples + 1 }, (_, index) => {
+      const at = index / samples
+      const phase = phaseAt(props.modulated.phase, props.scene, at * props.duration)
+      return `${at},${1 - waveHeight(props.modulated.wave, wavePosition(props.modulated, phase, at))}`
+    }).join(' ')
+  }
+  return (
+    <svg class="scene-wave" style={{ width: props.percent(props.duration) }} viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={points()} />
+    </svg>
+  )
+}
+
+/**
+ * A wave's phase `seconds` into the cycle, as `Track::resolve` in frontbox-gfx has it for keyframes, with a curve written
+ * by hand taken as linear. Only the machine knows what one from anywhere else comes to, so that stays where it starts.
+ */
+function phaseAt(phase: Prop<number>, scene: Scene, seconds: number): number {
+  if (!('Track' in phase)) return startingValue(phase, scene, 0)
+  const { keys, cycle } = phase.Track
+  const [first, last] = [keys[0], keys[keys.length - 1]]
+  if (!first || !last) return 0
+  const laps = cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
+  const time = last.at <= 0 ? seconds : seconds >= laps * last.at ? last.at : cycle === 'Once' ? seconds : seconds % last.at
+  if (time <= first.at) return first.value
+  for (let index = 1; index < keys.length; index++) {
+    const [a, b] = [keys[index - 1], keys[index]]
+    if (time < b.at) {
+      const span = b.at - a.at
+      const through = span > 0 ? (time - a.at) / span : 1
+      return a.value + (b.value - a.value) * (typeof b.curve === 'string' ? sample(b.curve, through) : through)
+    }
+  }
+  return last.value
 }
 
 /** A sound layer's name, and a bar for when it plays */

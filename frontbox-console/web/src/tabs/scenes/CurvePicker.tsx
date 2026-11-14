@@ -11,6 +11,7 @@ export const CURVES: Extract<Curve, string>[] = [
   'EaseIn',
   'EaseOut',
   'EaseInOut',
+  'SineInOut',
   'ExponentialIn',
   'ExponentialOut',
   'ExponentialInOut',
@@ -88,7 +89,7 @@ function CurveBox(props: { curve: Extract<Curve, string>; chosen: boolean; onCli
 }
 
 /** Where a curve is at a phase from 0 to 1, as `Curve::sample` in frontbox-gfx has it */
-function sample(curve: Extract<Curve, string>, phase: number): number {
+export function sample(curve: Extract<Curve, string>, phase: number): number {
   switch (curve) {
     case 'Linear':
       return phase
@@ -98,6 +99,8 @@ function sample(curve: Extract<Curve, string>, phase: number): number {
       return 1 - (1 - phase) ** 2
     case 'EaseInOut':
       return phase < 0.5 ? 2 * phase ** 2 : 1 - (-2 * phase + 2) ** 2 / 2
+    case 'SineInOut':
+      return (1 - Math.cos(phase * Math.PI)) / 2
     case 'ExponentialIn':
       return 2 ** (10 * phase - 10)
     case 'ExponentialOut':

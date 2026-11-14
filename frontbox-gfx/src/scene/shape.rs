@@ -422,10 +422,14 @@ mod tests {
   use crate::scene::value::tests::env;
 
   fn square() -> ShapeNode {
+    rect_polygon(1.0, 1.0)
+  }
+
+  fn rect_polygon(width: f32, height: f32) -> ShapeNode {
     ShapeNode::Polygon {
       points: [(-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)]
         .into_iter()
-        .map(|(x, y)| Vec2::new(x, y).into())
+        .map(|(x, y)| Vec2::new(x * width, y * height).into())
         .collect(),
     }
   }
@@ -439,7 +443,7 @@ mod tests {
 
   #[test]
   fn circle_covers_inside_and_not_outside() {
-    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(10.0.into()));
     assert_eq!(covered(&circle, 0.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&circle, 4.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&circle, 6.0, 0.0, 0.5), 0.0);
@@ -447,22 +451,22 @@ mod tests {
 
   #[test]
   fn edge_through_a_sample_covers_it_partially() {
-    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(10.0.into()));
     assert!((covered(&circle, 5.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&circle, 5.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
 
   #[test]
-  fn ellipse_edge_is_in_scene_units_when_stretched() {
-    let ellipse = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::new(20.0, 4.0).into()));
+  fn an_ellipse_edge_is_in_scene_units() {
+    let ellipse = Shape::new(ShapeNode::Ellipse { rx: 10.0.into(), ry: 2.0.into() });
     assert!((covered(&ellipse, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&ellipse, 0.0, 2.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&ellipse, 10.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
 
   #[test]
-  fn square_polygon_covers_its_inside() {
-    let rect = Shape::new(square()).transform(Transform::Scale(Vec2::new(10.0, 4.0).into()));
+  fn a_polygon_covers_its_inside() {
+    let rect = Shape::new(rect_polygon(10.0, 4.0));
     assert_eq!(covered(&rect, 0.0, 0.0, 0.5), 1.0);
     assert_eq!(covered(&rect, 4.0, 1.5, 0.5), 1.0);
     assert_eq!(covered(&rect, 0.0, 3.0, 0.5), 0.0);
@@ -526,7 +530,7 @@ mod tests {
 
   #[test]
   fn a_rings_edges_are_in_scene_units_when_scaled() {
-    let band = ring(4.0, 2.0).transform(Transform::Scale(Vec2::splat(10.0).into()));
+    let band = ring(4.0, 2.0).transform(Transform::Scale(10.0.into()));
     assert!((covered(&band, 40.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&band, 60.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
   }
@@ -772,8 +776,7 @@ mod tests {
 
   #[test]
   fn a_rect_edge_is_in_scene_units_when_scaled() {
-    let rect = Shape::new(ShapeNode::Rect { width: 1.0.into(), height: 1.0.into() })
-      .transform(Transform::Scale(Vec2::new(20.0, 4.0).into()));
+    let rect = Shape::new(ShapeNode::Rect { width: 1.0.into(), height: 0.2.into() }).transform(Transform::Scale(20.0.into()));
     assert!((covered(&rect, 10.0, 0.0, 0.5) - 0.5).abs() < 1e-5);
     assert!((covered(&rect, 10.25, 0.0, 0.5) - 0.25).abs() < 1e-5);
     assert!((covered(&rect, 0.0, 2.25, 0.5) - 0.25).abs() < 1e-5);
@@ -830,13 +833,13 @@ mod tests {
   #[test]
   fn a_collapsed_shape_has_no_pose() {
     let params = Params::new();
-    let flat = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(Vec2::ZERO.into()));
+    let flat = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(0.0.into()));
     assert_eq!(flat.pose(&env(0.0, &params)), None);
   }
 
   #[test]
   fn zero_radius_is_a_hard_edge() {
-    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(Vec2::splat(10.0).into()));
+    let circle = Shape::new(ShapeNode::circle(0.5)).transform(Transform::Scale(10.0.into()));
     assert_eq!(covered(&circle, 4.99, 0.0, 0.0), 1.0);
     assert_eq!(covered(&circle, 5.01, 0.0, 0.0), 0.0);
   }

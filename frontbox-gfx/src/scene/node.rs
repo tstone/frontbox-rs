@@ -90,7 +90,7 @@ mod tests {
     let params = Params::new();
     // scale then move: the local point (0.5, 0) is drawn at 2 * 0.5 + 10
     let n = node(vec![
-      Transform::Scale(Vec2::splat(2.0).into()),
+      Transform::Scale(2.0.into()),
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
@@ -100,7 +100,7 @@ mod tests {
     // move then scale: the same point is drawn at 2 * (0.5 + 10)
     let n = node(vec![
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
-      Transform::Scale(Vec2::splat(2.0).into()),
+      Transform::Scale(2.0.into()),
     ]);
     let at = Vec2::new(21.0, 0.0);
     let local = n.to_local(Vec2::ZERO, &env(0.0, &params)).unwrap();
@@ -134,7 +134,7 @@ mod tests {
   #[test]
   fn zero_scale_draws_nothing() {
     let params = Params::new();
-    let n = node(vec![Transform::Scale(Vec2::new(0.0, 1.0).into())]);
+    let n = node(vec![Transform::Scale(0.0.into())]);
     assert!(n.to_local(Vec2::ZERO, &env(0.0, &params)).is_none());
   }
 }

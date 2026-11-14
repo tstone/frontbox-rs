@@ -42,7 +42,8 @@
 //!   over it that [`Prop::Visit`] responds to
 //! - [`Surface`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
 //! - [`Node`] -- The structure shared by shapes and fills: a base, plus [`Transform`]s and adjusts
-//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, or swept along a path ([`Sweep`])
+//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, moved in a wave
+//!   ([`Modulated`]), or swept along a path ([`Sweep`])
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`](mod@file) -- Reading and writing scene files as RON
 //! - [`Content`], [`Images`] -- The folder of scenes and images, and the decoded images a scene draws from
@@ -58,6 +59,7 @@ mod graph_mask;
 mod images;
 mod layer;
 mod mask;
+mod modulated;
 mod node;
 mod prop;
 mod random;
@@ -87,6 +89,7 @@ pub use graph_mask::*;
 pub use images::*;
 pub use layer::*;
 pub use mask::*;
+pub use modulated::*;
 pub use node::*;
 pub use prop::*;
 pub use random::*;

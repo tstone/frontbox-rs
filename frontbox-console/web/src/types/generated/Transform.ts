@@ -4,4 +4,4 @@ import type { Prop } from "./Prop";
 /**
  * Moves, rotates, or scales a node
  */
-export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<[number, number]> } | { "Fit": string };
+export type Transform = { "Translate": Prop<[number, number]> } | { "Rotate": Prop<number> } | { "Scale": Prop<number> } | { "Fit": string };

@@ -6,6 +6,7 @@ import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
@@ -27,6 +28,7 @@ import type { VisitResponse } from '../../types/generated/VisitResponse'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
+import type { Wave } from '../../types/generated/Wave'
 
 export type Vec2 = [number, number]
 
@@ -149,12 +151,37 @@ function hsvColor(hue: number, brightness: number, alpha: number): Color {
   return [channel(5), channel(3), channel(1), Math.round(alpha * 255)]
 }
 
-/** The middle of what a spread can pick */
-function spreadMiddle(spread: Spread): SceneValue {
-  if ('Float' in spread) return midpoint(spread.Float)
-  if ('Vec2' in spread) return [midpoint(spread.Vec2.x), midpoint(spread.Vec2.y)]
+/** What a spread comes to at `height`, from its low end at 0 to its high end at 1, as `Animatable::from_spread` has it */
+function spreadAt(spread: Spread, height: number): SceneValue {
+  const at = ([low, high]: [number, number]) => low + (high - low) * height
+  if ('Float' in spread) return at(spread.Float)
+  if ('Vec2' in spread) return [at(spread.Vec2.x), at(spread.Vec2.y)]
   const { hue, brightness, alpha } = spread.Color
-  return hsvColor(midpoint(hue), midpoint(brightness), midpoint(alpha))
+  return hsvColor(at(hue), at(brightness), at(alpha))
+}
+
+/** A wave's height, 0 to 1, at `position` through it, 0 to 1, as `Wave::sample` in frontbox-gfx has it */
+export function waveHeight(wave: Wave, position: number): number {
+  if (typeof wave === 'object') {
+    const half = Math.min(Math.max(wave.Square.duty, 0), 1) / 2
+    return position >= 0.5 - half && position < 0.5 + half ? 1 : 0
+  }
+  switch (wave) {
+    case 'Sine':
+      return (1 - Math.cos(position * 2 * Math.PI)) / 2
+    case 'Triangle':
+      return 1 - Math.abs(2 * position - 1)
+    case 'Ramp':
+      return position
+    case 'Saw':
+      return 1 - position
+  }
+}
+
+/** Where in its wave a modulated prop is, 0 to 1, at `cycles` into the scene (counting the ones already played), with its phase at `phase` then */
+export function wavePosition({ rate }: Modulated, phase: number, cycles: number) {
+  const position = (cycles * rate + phase) % 1
+  return position < 0 ? position + 1 : position
 }
 
 /** The widest spread for a prop holding values like `like`, short of making a color see-through */
@@ -164,12 +191,17 @@ export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
 
-/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a path was moved to, or a visit response at rest */
+/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
 export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Visit' in prop) return prop.Visit.from
   if ('Track' in prop) return prop.Track.keys[0]?.value ?? fallback
-  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadMiddle(prop.Random.spread) as T) : fallback
+  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadAt(prop.Random.spread, 0.5) as T) : fallback
+  if ('Modulated' in prop) {
+    const { spread, wave, phase } = prop.Modulated
+    const position = wavePosition(prop.Modulated, startingValue(phase, scene, 0), 0)
+    return spreadFits(spread, fallback) ? (spreadAt(spread, waveHeight(wave, position)) as T) : fallback
+  }
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
     return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
@@ -215,9 +247,15 @@ export function cycleCount({ cycle }: Timing) {
   return cycle === 'Once' ? 1 : cycle === 'Forever' ? Infinity : cycle.Times
 }
 
-/** Whether a scene's cycles differ from each other, which only random picks can make them do */
+/** Whether a scene's cycles differ from each other, which only random picks and waves that don't fit a cycle a whole number of times can make them do */
 export function changesEachCycle(scene: Scene) {
-  return repeats(scene) && propUses(reading(scene)).some(({ lens }) => 'Random' in lens.get())
+  return (
+    repeats(scene) &&
+    propUses(reading(scene)).some(({ lens }) => {
+      const prop = lens.get()
+      return 'Random' in prop || ('Modulated' in prop && !Number.isInteger(prop.Modulated.rate))
+    })
+  )
 }
 
 /** Scene with a timing, which it needs before it can have keyframes. A new one is `duration` long and repeats. */
@@ -318,10 +356,12 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
   let surface: Surface = null
   const use = (lens: unknown, label: string, ranges: Ranges) => {
     uses.push({ lens: lens as PropLens, layer: layerIndex, mask: inMask, label, ranges })
-    if ('Sweep' in (lens as PropLens).get()) {
+    const prop = (lens as PropLens).get()
+    if ('Sweep' in prop) {
       const path = `${label} · Path`
       shape(field(variant(lens as PropLens, 'Sweep'), 'path'), path, path)
     }
+    if ('Modulated' in prop) use(field(variant(lens as PropLens, 'Modulated'), 'phase'), `${label} · Phase`, both(UNIT))
   }
 
   const transforms = (transform: Lens<Transform[]>, label: string, space: TransformSpace) => {
@@ -500,7 +540,7 @@ export function traversalLength(traversal: Traversal, scene: Scene, measured: nu
 export function sceneTracks(scene: Lens<Scene>, surfaces?: LayerSurfaces): SceneTrack[] {
   return propUses(scene, surfaces).flatMap(({ lens, layer, mask, label, ranges }) => {
     const prop = lens.get()
-    return 'Track' in prop || 'Random' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
+    return 'Track' in prop || 'Random' in prop || 'Modulated' in prop || 'Sweep' in prop ? [{ prop: lens, layer, mask, label, ranges }] : []
   })
 }
 
@@ -530,10 +570,12 @@ function middleOf(spread: Spread): Spread {
 
 /**
  * A track that stays on its first value. Only the machine knows what a random prop's first pick comes to, so that stays
- * on the middle of its spread, as it does for anything else that needs a value for it here.
+ * on the middle of its spread, as it does for anything else that needs a value for it here. A wave with no rate stays
+ * where it starts.
  */
 function held(prop: Prop<SceneValue>): Prop<SceneValue> {
   if ('Sweep' in prop) return { Sweep: { ...prop.Sweep, start: NEVER, end: 2 * NEVER } }
+  if ('Modulated' in prop) return { Modulated: { ...prop.Modulated, rate: 0 } }
   if ('Random' in prop) return { Random: { ...prop.Random, spread: middleOf(prop.Random.spread), force_unique: false } }
   return 'Track' in prop && prop.Track.keys.length > 0 ? { Fixed: prop.Track.keys[0].value } : prop
 }
@@ -849,10 +891,12 @@ export const GROWTH_DENSITY: Range = { min: 0, max: 32, step: 1, rest: 4 }
 export const BRANCHING: Range = { ...UNIT, rest: 0.3 }
 /** Steps of a visit response's timing */
 export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
+/** Waves per scene cycle. Fractions carry a wave on across cycles. */
+export const WAVE_RATE: Range = { min: 0, max: 16, step: 0.25, rest: 1 }
 /** A fraction of a blade is dropped, so a spread goes one past the last, as it does for `frameRanges` */
 export const BLADES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
-/** How much of each of a pinwheel's shares is blade. Past these ends, its blades or its gaps are too thin to make out. */
-export const BLADE_FRACTION: Range = { min: 0.1, max: 0.9, step: 0.01, rest: 0.5 }
+/** How much of each of a pinwheel's shares is blade: none at 0, the whole circle at 1 */
+export const BLADE_FRACTION: Range = { min: 0, max: 1, step: 0.01, rest: 0.5 }
 
 export type AdjustKind = KeysOf<ColorAdjust>
 

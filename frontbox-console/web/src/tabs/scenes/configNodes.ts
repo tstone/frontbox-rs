@@ -5,6 +5,7 @@ import type { GraphMask } from '../../types/generated/GraphMask'
 import type { Layer } from '../../types/generated/Layer'
 import type { LedQ } from '../../types/generated/LedQ'
 import type { Mask } from '../../types/generated/Mask'
+import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
@@ -120,8 +121,6 @@ export type PropSpec = {
   /** For a prop with nothing to take a value from */
   fallback: SceneValue
   ranges: Ranges
-  /** For a pair of numbers that isn't a position, such as a scale */
-  notPosition?: boolean
 }
 
 export type PointsShape = 'Polygon' | 'Polyline' | 'Bezier'
@@ -245,11 +244,12 @@ function layerChildren(id: string, lens: Lens<SceneLayer>, led: boolean, surface
         { id: `${id}/z`, label: 'Z-index', kind: 'z', lens, value: layer.z },
       ]
     : []
-  const region = regionNode(`${id}/region`, field(lens, 'region'), surface, lens)
+  // a sequence's LEDs are already the ones it shows on, so it only has a region its file gave it, to be removed
+  const regions = led && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
   const fill = fillNode(`${id}/fill`, field(lens, 'fill'), surface)
   const mask = maskNode(`${id}/mask`, field(lens, 'mask'), surface)
   // on an LED layer the mask comes first, as it's over everything else the layer is
-  return led ? [mask, ...place, region, fill] : [region, fill, mask]
+  return led ? [mask, ...place, ...regions, fill] : [...regions, fill, mask]
 }
 
 /** A mask's region, or a layer's, which can be its graph instead */
@@ -364,7 +364,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
         ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, paramName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
         : kind === 'Rotate'
           ? { lens: variant(lens, 'Rotate') as Lens<Prop<SceneValue>>, paramName: 'rotation', fallback: 0, ranges: both(ROTATION) }
-          : { lens: variant(lens, 'Scale') as Lens<Prop<SceneValue>>, paramName: 'scale', fallback: [1, 1], ranges: scaleRanges(), notPosition: true }
+          : { lens: variant(lens, 'Scale') as Lens<Prop<SceneValue>>, paramName: 'scale', fallback: 1, ranges: scaleRanges() }
     // a translate is a position, so it can sweep around a path, which the prop has under it
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }
   })
@@ -486,10 +486,17 @@ function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Su
   return branch({ id, label, kind: 'node-ref', lens, value: current, fields: 'Name' in current, children })
 }
 
-/** A prop opens to its field. One that sweeps has its path under it. */
+/** A prop opens to its field. One that sweeps has its path under it, and one in a wave its phase. */
 function propNode(id: string, label: string, spec: PropSpec, surface: Surface): ConfigNode {
   const prop = spec.lens.get()
-  const children = 'Sweep' in prop ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface)] : []
+  const phase = (lens: Lens<Modulated>) =>
+    propNode(`${id}/phase`, 'Phase', { lens: field(lens, 'phase') as Lens<Prop<SceneValue>>, paramName: `${spec.paramName}_phase`, fallback: 0, ranges: both(UNIT) }, surface)
+  const children =
+    'Sweep' in prop
+      ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface)]
+      : 'Modulated' in prop
+        ? [phase(variant(spec.lens, 'Modulated'))]
+        : []
   // keyframes are edited on the timeline and a fixed color by its swatch in the row, so there's nothing to open
   const fixedColor = 'Fixed' in prop && Array.isArray(prop.Fixed) && prop.Fixed.length === 4
   return branch({ id, label, kind: 'prop', ...spec, value: prop, fields: !('Track' in prop) && !fixedColor, children })

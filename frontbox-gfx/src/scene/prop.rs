@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::layer::env;
 use crate::scene::sweep::only_for_positions;
-use crate::scene::{Animatable, Env, LayerFrame, Random, Sweep, Track, VisitResponse};
+use crate::scene::{Animatable, Env, LayerFrame, Modulated, Random, Sweep, Track, VisitResponse};
 
-/// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, swept along a path, or
-/// set off by a traversal's visits
+/// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept
+/// along a path, or set off by a traversal's visits
 ///
 /// In RON: `Fixed(4.0)`, `Param("size")`, `Track((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
-/// `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`, or
+/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), start: 0.0, end: 1.0))`, or
 /// `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +21,8 @@ pub enum Prop<T> {
   Track(Track<T>),
   /// Picked at random at set times
   Random(Random),
+  /// Moves through a range in a repeating wave, timed to the scene cycle
+  Modulated(Modulated),
   /// Moves along a shape's outline. Only valid for positions (`Vec2`); a file using it for anything else fails to load.
   #[serde(deserialize_with = "only_for_positions::<T, _>")]
   Sweep(Sweep),
@@ -37,7 +39,7 @@ impl<T> From<T> for Prop<T> {
 impl<T> Prop<T> {
   /// Whether it can change while a scene plays, which needs the scene to have a timing
   pub fn is_animated(&self) -> bool {
-    matches!(self, Self::Track(_) | Self::Random(_) | Self::Sweep(_) | Self::Visit(_))
+    matches!(self, Self::Track(_) | Self::Random(_) | Self::Modulated(_) | Self::Sweep(_) | Self::Visit(_))
   }
 }
 
@@ -54,6 +56,7 @@ impl<T: Animatable> Prop<T> {
       Self::Param(name) => env.param(name).and_then(T::from_value).unwrap_or_default(),
       Self::Track(track) => track.resolve(env.time),
       Self::Random(random) => random.resolve(env),
+      Self::Modulated(modulated) => modulated.resolve(env),
       Self::Sweep(sweep) => T::from_point(sweep.resolve(env)).unwrap_or_default(),
       Self::Visit(response) => response.resolve(env),
     }

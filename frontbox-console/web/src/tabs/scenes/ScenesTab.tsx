@@ -4,6 +4,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'so
 import { machine } from '../../state/console'
 import { addContentScene, contentScenes, contentScenesFailed, deleteContentScene, readContentScene, refreshContentScenes } from '../../state/contentScenes'
 import ConfirmDialog from './ConfirmDialog'
+import { planeNames } from './LayerPlace'
 import SceneEditor from './SceneEditor'
 import SceneNameDialog, { SceneNameButton } from './SceneNameDialog'
 import './ScenesTab.css'
@@ -13,14 +14,21 @@ const STARTING_LAYER = `(fill: (base: Gradient(stops: [
       (at: 1.0, color: Fixed(0, 0, 255, 255)),
     ])))`
 
-/** A new scene of each kind. An LED scene starts on every LED, which can be narrowed in the editor. */
+/**
+ * A new scene of each kind. An LED scene starts on every LED, which can be narrowed in the editor, as an area of the
+ * machine's first plane, or a sequence on a machine with none.
+ */
 const STARTING_SCENES = {
-  LED: `Scene(
+  LED: () => {
+    const plane = planeNames()[0]
+    const surface = plane === undefined ? 'Sequence' : `Area(${JSON.stringify(plane)})`
+    return `Scene(
   version: 2,
-  layers: [Leds(leds: Every, surface: Sequence, layer: ${STARTING_LAYER})],
+  layers: [Leds(leds: Every, surface: ${surface}, layer: ${STARTING_LAYER})],
 )
-`,
-  DMD: `Scene(
+`
+  },
+  DMD: () => `Scene(
   version: 2,
   layers: [Display(display: "Dmd", layer: ${STARTING_LAYER})],
 )
@@ -270,7 +278,7 @@ function SceneTreeNode(props: { node: SceneNode; indexPath: number[]; onRename: 
 function NewScene(props: { onAdded: (scene: OpenScene) => void }) {
   const [kind, setKind] = createSignal<SceneKind>('LED')
   const add = async (name: string) => {
-    props.onAdded({ name, source: await addContentScene(name, { Ron: STARTING_SCENES[kind()] }) })
+    props.onAdded({ name, source: await addContentScene(name, { Ron: STARTING_SCENES[kind()]() }) })
   }
 
   return (

@@ -21,8 +21,8 @@ export type Handle = {
   at: Vec2
   /** Set when it's held by something a drag can't change, such as a random value, a sweep, or a hidden track */
   locked: boolean
-  /** Moves what it holds so the handle lands on a point in the scene. `proportional` keeps a scale's shape. */
-  drag(to: Vec2, proportional: boolean): void
+  /** Moves what it holds so the handle lands on a point in the scene */
+  drag(to: Vec2): void
   /** Set when it's on a path, which has a color of its own to tell it from the shape going along it */
   onPath?: boolean
   /** Where a line to it comes from in the scene, for one that belongs to a point */
@@ -131,7 +131,7 @@ export function Grip(props: { handle: Handle; space: PreviewSpace }) {
 
     const move = (e: PointerEvent) => {
       const point = space.unproject(e.clientX, e.clientY)
-      if (point) handle.drag([point[0] + grabbed[0], point[1] + grabbed[1]], e.shiftKey)
+      if (point) handle.drag([point[0] + grabbed[0], point[1] + grabbed[1]])
     }
     // ahead of the preview, which would take the end of a drag over it for a click
     const release = (e: PointerEvent) => {
@@ -378,7 +378,7 @@ function seenThrough(handles: Handle[], view: Affine): Handle[] {
     onPath: true,
     at: apply(view, handle.at),
     arm: handle.arm && apply(view, handle.arm),
-    drag: (to, proportional) => handle.drag(apply(back, to), proportional),
+    drag: (to) => handle.drag(apply(back, to)),
   }))
 }
 
@@ -423,9 +423,8 @@ function scaleHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write,
   const index = Math.max(found, 0)
   const before = chain(pose.transforms.slice(0, index))
   const undoAfter = invert(chain(pose.transforms.slice(found < 0 ? 0 : index + 1)))!
-  const start: Vec2 = found < 0 ? [1, 1] : [pose.transforms[index][0], pose.transforms[index][3]]
   const prop = () => {
-    if (found < 0 && list.get().length === pose.transforms.length) list.set([{ Scale: { Fixed: [1, 1] } }, ...list.get()])
+    if (found < 0 && list.get().length === pose.transforms.length) list.set([{ Scale: { Fixed: 1 } }, ...list.get()])
     return variant(item(list, index) as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale')
   }
 
@@ -434,15 +433,15 @@ function scaleHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write,
     kind: 'scale',
     cursor: 'nesw-resize',
     at: apply(chain(pose.transforms), corner),
-    locked: found >= 0 && !write.can(prop().get(), [0, 0]),
-    drag(to, proportional) {
+    locked: found >= 0 && !write.can(prop().get(), 0),
+    drag(to) {
       const target = apply(undoAfter, to)
       const reached = apply(before, corner)
-      // how much each axis has to grow by, which stays put on an axis the corner sits on the center of
-      const grow = [0, 1].map((axis) => (Math.abs(reached[axis]) > 0 ? target[axis] / (reached[axis] * start[axis]) : 1))
-      const by = proportional ? (grow[0] + grow[1]) / 2 : null
-      const scale = start.map((value, axis) => value * Math.max(by ?? grow[axis], MIN_SCALE / Math.abs(value || 1))) as Vec2
-      write.to(prop(), roundedPoint(scale))
+      // the scale that puts the corner nearest the pointer, as both axes scale together
+      const length = reached[0] ** 2 + reached[1] ** 2
+      if (length === 0) return
+      const scale = (target[0] * reached[0] + target[1] * reached[1]) / length
+      write.to(prop(), rounded(Math.max(scale, MIN_SCALE)))
     },
   }
 }

@@ -1135,9 +1135,14 @@ label.scene-button:hover {
   margin-left: auto;
 }
 
-/* a prop's source, all the same width so they line up down the tree */
+/* a prop's source, all the same width so they line up down the tree. Wide enough for the longest, "Modulated". */
 .scene-tree-source {
-  width: 6rem;
+  width: 7rem;
+}
+
+/* a remove button after a source sits right beside it. With an auto margin too, the two would split the room before them. */
+.scene-tree-source + .scene-tree-end {
+  margin-left: 0;
 }
 
 .scene-tree-source .scene-dropdown-compact [data-part='trigger'] {
@@ -2042,6 +2047,25 @@ label.scene-button:hover {
 .scene-key-pick {
   border-radius: 0;
   rotate: 45deg;
+}
+
+/* drawn out over the first cycle, as its values come from its shape and not from moments on the timeline */
+.scene-wave {
+  position: absolute;
+  z-index: 2;
+  top: 15%;
+  left: 0;
+  height: 70%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.scene-wave polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 /* a line and not dots, as what it follows is the path and not values at moments */

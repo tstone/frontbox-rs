@@ -122,7 +122,7 @@ mod tests {
   #[test]
   fn a_shapes_pose_has_the_paths_it_moves_along() {
     let moved = Transform::Translate(orbit(ShapeNode::circle(10.0), 0.0, 4.0));
-    let shape = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(Vec2::ONE.into())).transform(moved);
+    let shape = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(1.0.into())).transform(moved);
     let pose = shape.pose(&env(0.0, &Params::new())).unwrap();
     assert!(pose.paths[0].is_none());
     let path = pose.paths[1].as_ref().unwrap();

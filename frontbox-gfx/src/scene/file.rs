@@ -124,7 +124,7 @@ mod tests {
         )
         .region(
           Shape::new(ShapeNode::circle(0.5))
-            .transform(Transform::Scale(Vec2::splat(40.0).into()))
+            .transform(Transform::Scale(40.0.into()))
             .transform(Transform::Translate(Prop::Track(Track {
               keys: vec![
                 Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
@@ -133,7 +133,10 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).region(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(ColorAdjust::Opacity(
+          Prop::Modulated(Modulated { wave: Wave::Square { duty: 0.25 }, spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Param("offset".into())) }),
+        )))
+        .region(Shape::new(
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
@@ -243,6 +246,39 @@ mod tests {
     assert_eq!(random.spread, Spread::Color { hue: (330.0, 390.0), brightness: (0.5, 1.0), alpha: (0.25, 1.0) });
     assert_eq!(random.seed, 7);
     assert!(!random.force_unique);
+  }
+
+  #[test]
+  fn modulated_props_read_and_write() {
+    let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Modulated(
+      wave: Square(duty: 0.25),
+      spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
+      rate: 0.5,
+      phase: Track(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    let loaded = load(&written).unwrap();
+    let FillNode::Solid(Prop::Modulated(modulated)) = &loaded.layers[0].fill.base else {
+      panic!("{written}");
+    };
+    let spread = Spread::Color { hue: (0.0, 120.0), brightness: (0.5, 1.0), alpha: (1.0, 1.0) };
+    assert_eq!((modulated.wave, modulated.spread, modulated.rate), (Wave::Square { duty: 0.25 }, spread, 0.5));
+    let Prop::Track(phase) = &*modulated.phase else {
+      panic!("{written}");
+    };
+    assert_eq!(phase.keys.iter().map(|key| (key.at, key.value)).collect::<Vec<_>>(), [(0.0, 0.0), (2.0, 1.0)]);
+  }
+
+  #[test]
+  fn a_modulated_with_no_phase_starts_at_the_start_of_its_wave() {
+    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Modulated(
+      wave: Sine, spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)), rate: 1.0,
+    ))))])");
+    let scene = scene.unwrap();
+    let FillNode::Solid(Prop::Modulated(modulated)) = &scene.layers[0].fill.base else {
+      panic!("{scene:?}");
+    };
+    assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
   }
 
   #[test]

@@ -207,6 +207,7 @@ const SOURCE_ICONS: Record<PropKind, Icon> = {
   Param: icons.Variable,
   Track: icons.ChartSpline,
   Random: icons.Dices,
+  Modulated: icons.AudioWaveform,
   Sweep: icons.Orbit,
   Visit: icons.Footprints,
 }
@@ -833,7 +834,6 @@ const propFieldSpec = (spec: PropSpec) => ({
   lens: spec.lens,
   fallback: spec.fallback,
   ranges: spec.ranges,
-  notPosition: spec.notPosition,
 })
 
 /**
@@ -1381,7 +1381,7 @@ function newShape(kind: Exclude<ShapeKind, 'None'>, surface: Surface): Shape {
   const across = newShapeSize(surface)
   return {
     base: sizedShape(kind, [across, across]),
-    transform: [{ Scale: { Fixed: [1, 1] } }, { Translate: { Fixed: [width / 2, height / 2] } }],
+    transform: [{ Scale: { Fixed: 1 } }, { Translate: { Fixed: [width / 2, height / 2] } }],
   }
 }
 
@@ -1468,7 +1468,7 @@ function pastEnd(before: Vec2, end: Vec2): Vec2 {
 function newTransform(kind: TransformKind, traversals: string[]): Transform {
   if (kind === 'Translate') return { Translate: { Fixed: [0, 0] } }
   if (kind === 'Rotate') return { Rotate: { Fixed: 0 } }
-  if (kind === 'Scale') return { Scale: { Fixed: [1, 1] } }
+  if (kind === 'Scale') return { Scale: { Fixed: 1 } }
   return { Fit: traversals[0] ?? '' }
 }
 
