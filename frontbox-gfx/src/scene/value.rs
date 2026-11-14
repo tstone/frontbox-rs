@@ -5,7 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Bounds, Images, NodeVisits, Timing};
+use crate::scene::{Bounds, Assets, NodeVisits, Timing};
 
 /// Parameter values by name
 pub type Params = BTreeMap<String, Value>;
@@ -19,11 +19,14 @@ pub fn no_params() -> &'static Params {
 
 /// A parameter value the game supplies at runtime
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
   Float(f32),
   Vec2(#[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))] Vec2),
   Color(Color),
+  /// A whole number, for counts and scores too large for a `Float` to hold exactly
+  Int(i64),
+  Text(String),
 }
 
 impl Lerp for Value {
@@ -33,7 +36,8 @@ impl Lerp for Value {
       (Self::Float(from), Self::Float(to)) => Self::Float(from.interpolate(to, t)),
       (Self::Vec2(from), Self::Vec2(to)) => Self::Vec2(from.interpolate(to, t)),
       (Self::Color(from), Self::Color(to)) => Self::Color(from.interpolate(to, t)),
-      _ => *other,
+      (Self::Int(from), Self::Int(to)) => Self::Int((*from as f64).interpolate(&(*to as f64), t).round() as i64),
+      _ => other.clone(),
     }
   }
 }
@@ -53,6 +57,43 @@ impl From<Vec2> for Value {
 impl From<Rgba<u8>> for Value {
   fn from(color: Rgba<u8>) -> Self {
     Self::Color(Color(color))
+  }
+}
+
+impl From<i64> for Value {
+  fn from(value: i64) -> Self {
+    Self::Int(value)
+  }
+}
+
+impl From<i32> for Value {
+  fn from(value: i32) -> Self {
+    Self::Int(value.into())
+  }
+}
+
+impl From<u32> for Value {
+  fn from(value: u32) -> Self {
+    Self::Int(value.into())
+  }
+}
+
+impl From<u64> for Value {
+  /// Past `i64::MAX`, it's `i64::MAX`
+  fn from(value: u64) -> Self {
+    Self::Int(value.try_into().unwrap_or(i64::MAX))
+  }
+}
+
+impl From<String> for Value {
+  fn from(value: String) -> Self {
+    Self::Text(value)
+  }
+}
+
+impl From<&str> for Value {
+  fn from(value: &str) -> Self {
+    Self::Text(value.into())
   }
 }
 
@@ -102,7 +143,7 @@ impl Lerp for Color {
   }
 }
 
-/// Everything a prop needs to resolve: time, params, images, and the viewport
+/// Everything a prop needs to resolve: time, params, images and fonts, and the viewport
 #[derive(Clone, Copy)]
 pub(crate) struct Env<'a> {
   /// Seconds into the current scene cycle
@@ -115,7 +156,7 @@ pub(crate) struct Env<'a> {
   pub playback_seed: u32,
   pub params: &'a Params,
   pub defaults: &'a Params,
-  pub images: &'a Images,
+  pub assets: &'a Assets,
   /// The visible region, in scene units
   pub viewport: Bounds,
   /// On a `Sequence`, the length of one wrap-around lap for `Rotate`, in the units of whatever is being drawn. `None`
@@ -138,6 +179,6 @@ pub(crate) mod tests {
   use super::*;
 
   pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
+    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, assets: Assets::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
   }
 }

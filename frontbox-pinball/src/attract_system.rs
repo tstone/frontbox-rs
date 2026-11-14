@@ -7,8 +7,8 @@ use crate::GamePhase;
 /// the list
 ///
 /// Each plays on whichever LEDs and plane it says. A scene that never completes (static, or repeating forever) plays until
-/// the system goes inactive, and the scenes after it aren't reached. A scene that draws images needs them loaded with
-/// [`Scene::with_images`].
+/// the system goes inactive, and the scenes after it aren't reached. A scene that draws images or text needs them loaded
+/// with [`Scene::with_assets`].
 ///
 /// ```rust,ignore
 /// app.system(AttractSystem::new(vec![Scene::load(SWEEP)?, Scene::load(RAINBOW)?]));

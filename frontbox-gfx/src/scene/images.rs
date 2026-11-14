@@ -1,35 +1,5 @@
 use glam::Vec2;
 use image::{Rgba, RgbaImage};
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
-
-static NONE: LazyLock<Images> = LazyLock::new(Images::default);
-
-/// Decoded images by name, passed to sampling through [`LayerFrame::images`](crate::scene::LayerFrame::images)
-///
-/// Scenes refer to images by name only. [`Content::images_for`](crate::scene::Content::images_for) builds this for a
-/// scene. Clones share pixel data.
-#[derive(Debug, Clone, Default)]
-pub struct Images(HashMap<String, Arc<Picture>>);
-
-impl Images {
-  pub fn new() -> Self {
-    Self::default()
-  }
-
-  /// An empty set, for scenes with no images
-  pub fn none() -> &'static Self {
-    &NONE
-  }
-
-  pub fn insert(&mut self, name: impl Into<String>, picture: impl Into<Arc<Picture>>) {
-    self.0.insert(name.into(), picture.into());
-  }
-
-  pub fn get(&self, name: &str) -> Option<&Picture> {
-    self.0.get(name).map(Arc::as_ref)
-  }
-}
 
 /// A decoded image, possibly animated, ready to sample
 ///

@@ -1,6 +1,6 @@
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::app_tracer::TraceEvent;
-use frontbox_console::protocol::{ClientMessage, ImageInfo, RenderedClip, ServerMessage};
+use frontbox_console::protocol::{ClientMessage, FontInfo, ImageInfo, RenderedClip, ServerMessage};
 use frontbox_gfx::prelude::{Rgba, named_colors};
 use ts_rs::{Config, TS};
 
@@ -15,6 +15,7 @@ fn main() {
   ClientMessage::export_all(&cfg).unwrap();
   RenderedClip::export_all(&cfg).unwrap();
   ImageInfo::export_all(&cfg).unwrap();
+  FontInfo::export_all(&cfg).unwrap();
   export_named_colors(&out);
 }
 

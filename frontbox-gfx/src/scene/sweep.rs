@@ -51,7 +51,7 @@ mod tests {
   use crate::animation::{Curve, Cycle};
   use crate::layout::Line;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Fill, FillNode, Key, Keyframes, LayerFrame, Images, Layer, Params, Timing, Transform, Surface, Value, no_params};
+  use crate::scene::{Color, Fill, FillNode, Key, Keyframes, LayerFrame, Assets, Layer, Params, Timing, Transform, Surface, Value, no_params};
   use crate::scene::test_scene::Scene;
 
   /// Once along the path between `start` and `end` seconds
@@ -140,7 +140,7 @@ mod tests {
 
     let lit = |time: f32| {
       let params = Params::new();
-      let frame = LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+      let frame = LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
       let line = Line::new(5);
       line.samples().map(|sample| scene.sample(&sample, &frame)[0] > 0).collect::<Vec<_>>()
     };

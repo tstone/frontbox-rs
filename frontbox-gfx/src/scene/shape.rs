@@ -1,8 +1,10 @@
-use glam::{Affine2, Vec2};
+use glam::{Affine2, Mat2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Bounds, Cut, Env, Node, PreparedStroke, Prop, Sample, ShapeAdjust, Transform, Wrap};
+use crate::scene::{
+  Bounds, Cut, Env, Node, PreparedStroke, Prop, Sample, ShapeAdjust, TextAlign, ShiftLine, TextOutline, TextSource, Transform, VerticalAlign, Wrap, layout_text,
+};
 
 /// Points in the outline polygon of a round shape
 const ROUND_OUTLINE_POINTS: usize = 64;
@@ -34,10 +36,10 @@ pub enum ShapeNode {
     ry: Prop<f32>,
   },
   Rect { width: Prop<f32>, height: Prop<f32> },
-  /// Four corners: one at the top and one at the bottom, `height` apart, and one either side, `width` apart. `widest_at`
-  /// is how far down the side corners are, from 0 at the top to 1 at the bottom; at 0.5 it's a diamond. `bow` curves
+  /// Four corners: one at the top and one at the bottom, `height` apart, and one either side, `width` apart, halfway
+  /// down. A `Shift` moves the side corners up or down. `bow` curves
   /// all four sides, out when positive and in when negative, by that fraction of a side's length at its middle.
-  Diamond { width: Prop<f32>, height: Prop<f32>, widest_at: Prop<f32>, bow: Prop<f32> },
+  Diamond { width: Prop<f32>, height: Prop<f32>, bow: Prop<f32> },
   /// `legs` triangles out from the origin to `radius`, spaced evenly around it, each `leg_width` times `radius` across
   /// where its base crosses the origin, so the legs keep their shape as the radius changes. The first points up and
   /// they go clockwise, so one leg is a triangle with its base on the origin. `legs` is truncated to a whole number.
@@ -61,6 +63,21 @@ pub enum ShapeNode {
   },
   /// An open, smooth curve through points. Like [`ShapeNode::Polyline`], it's only for a sweep to follow.
   Bezier { points: Vec<BezierPoint> },
+  /// `text` in the font named `font`, in a box `width` by `height` around the origin. `size` is the font's em. Lines
+  /// break at line breaks, and between words where the next would run past the box. `align` places each line across
+  /// the box and `vertical_align` places them all up and down it, and what runs past the box is cut off. The box is
+  /// what a fill is stretched over. With no font by that name, it draws nothing.
+  Text {
+    text: TextSource,
+    font: String,
+    size: Prop<f32>,
+    width: Prop<f32>,
+    height: Prop<f32>,
+    #[serde(default)]
+    align: TextAlign,
+    #[serde(default)]
+    vertical_align: VerticalAlign,
+  },
 }
 
 /// A point a [`ShapeNode::Bezier`] passes through
@@ -86,6 +103,8 @@ pub struct ShapePose {
   pub points: Vec<Vec2>,
   /// Bezier handles, relative to their points. Empty for other shapes.
   pub handles: Vec<Vec2>,
+  /// For each `Shift`, where it moves the shape. `None` for other transforms.
+  pub shifts: Vec<Option<ShiftLine>>,
   /// Where the shape's center is going into each transform, in the space the ones before it put the shape in, then in
   /// scene space after the last. A `Rotate` turns around it.
   pub pivots: Vec<Vec2>,
@@ -104,7 +123,10 @@ impl Shape {
   pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
     let bounds = self.base.bounds(env);
     let to_scene = self.to_scene(bounds.center(), env)?;
-    let edge = self.base.edge(env);
+    let edge = match self.shifted(env) {
+      Some((outline, _)) if !self.base.is_open() => Edge::Polygon(outline),
+      _ => self.base.edge(env, to_scene),
+    };
     let wrap = self.wrap(bounds.center(), to_scene, env);
     let extent = edge.extent();
     let strokes: Vec<PreparedStroke> = self.adjust.iter().map(|adjust| adjust.prepare(env)).collect();
@@ -130,8 +152,8 @@ impl Shape {
     if self.to_scene(bounds.center(), env).is_none() {
       return Vec::new();
     }
-    let own = self.base.outline(env);
-    let open = matches!(self.base, ShapeNode::Polyline { .. } | ShapeNode::Bezier { .. });
+    let own = self.own_outline(env);
+    let open = self.base.is_open();
     let placed = self.placements(bounds.center(), env).into_iter().map(|placed| {
       let outline: Vec<Vec2> = own.iter().map(|p| placed.to_scene.transform_point2(*p)).collect();
       if open { outline } else { placed.cuts.iter().fold(outline, |outline, cut| clipped(&outline, cut)) }
@@ -155,6 +177,7 @@ impl Shape {
       ShapeNode::Bezier { points } => points.iter().map(|p| p.handle.resolve(env)).collect(),
       _ => Vec::new(),
     };
+    let (outline, shifts) = self.shifted(env).unwrap_or_else(|| (self.base.outline(env), vec![None; self.transform.len()]));
     Some(ShapePose {
       transforms: steps.iter().map(|(affine, _)| *affine).collect(),
       bounds,
@@ -162,9 +185,39 @@ impl Shape {
       handles,
       pivots: steps.iter().map(|(_, center)| *center).chain([end]).collect(),
       centers: self.transform.iter().map(|transform| transform.copy_center(env)).collect(),
-      outline: self.base.outline(env).into_iter().map(|p| to_scene.transform_point2(p)).collect(),
+      shifts,
+      outline: outline.into_iter().map(|p| to_scene.transform_point2(p)).collect(),
       paths: self.transform.iter().map(|transform| transform.path().and_then(|path| path.pose(env))).collect(),
     })
+  }
+
+  /// The base's outline in local space, with each `Shift` applied
+  fn own_outline(&self, env: &Env) -> Vec<Vec2> {
+    self.shifted(env).map_or_else(|| self.base.outline(env), |(outline, _)| outline)
+  }
+
+  /// The base's outline in local space with each `Shift` applied, and for each transform, where a `Shift` moves the
+  /// shape. `None` without a shift, or for text, which isn't shifted.
+  fn shifted(&self, env: &Env) -> Option<(Vec<Vec2>, Vec<Option<ShiftLine>>)> {
+    if matches!(self.base, ShapeNode::Text { .. }) || self.transform.iter().all(|transform| transform.shift(env).is_none()) {
+      return None;
+    }
+    let mut outline = self.base.outline(env);
+    // local space to the one each transform starts from
+    let mut before = Affine2::IDENTITY;
+    let mut lines = Vec::with_capacity(self.transform.len());
+    for (transform, (affine, center)) in self.transform.iter().zip(self.steps(self.base.bounds(env).center(), env)) {
+      let shift = transform.shift(env);
+      if let Some(shift) = shift.filter(|_| before.matrix2.determinant().abs() > f32::EPSILON) {
+        let placed: Vec<Vec2> = outline.iter().map(|p| before.transform_point2(*p)).collect();
+        lines.push(Some(shift.line(&placed, center)));
+        outline = shift.apply(&outline, !self.base.is_open(), before, center);
+      } else {
+        lines.push(None);
+      }
+      before = affine * before;
+    }
+    Some((outline, lines))
   }
 
   /// Each copy of the shape its `Mirror`s and `Revolve`s draw, the shape itself first, with what its `Divide`s cut from
@@ -183,8 +236,13 @@ impl Shape {
 
   /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
   pub(crate) fn along(&self, phase: f32, env: &Env) -> Vec2 {
+    let own = match self.shifted(env) {
+      Some((outline, _)) if self.base.is_open() => along_line(&outline, phase),
+      Some((outline, _)) => along_loop(&outline, phase),
+      None => self.base.along(phase, env),
+    };
     match self.to_scene(self.base.bounds(env).center(), env) {
-      Some(to_scene) => to_scene.transform_point2(self.base.along(phase, env)),
+      Some(to_scene) => to_scene.transform_point2(own),
       None => Vec2::ZERO,
     }
   }
@@ -199,16 +257,40 @@ impl ShapeNode {
     Self::Circle { radius: radius.into() }
   }
 
+  /// Text centered in a box `frame` wide and tall
+  pub fn text(text: impl Into<TextSource>, font: impl Into<String>, size: f32, frame: Vec2) -> Self {
+    Self::Text {
+      text: text.into(),
+      font: font.into(),
+      size: size.into(),
+      width: frame.x.into(),
+      height: frame.y.into(),
+      align: TextAlign::default(),
+      vertical_align: VerticalAlign::default(),
+    }
+  }
+
+  /// The name of the font it draws text in, if it's text
+  pub fn font_name(&self) -> Option<&str> {
+    match self {
+      Self::Text { font, .. } => Some(font),
+      _ => None,
+    }
+  }
+
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
       Self::Ellipse { rx: a, ry: b } | Self::Rect { width: a, height: b } => a.is_animated() || b.is_animated(),
-      Self::Chevron { width: a, height: b, notch: c } => a.is_animated() || b.is_animated() || c.is_animated(),
-      Self::Diamond { width: a, height: b, widest_at: c, bow: d } | Self::Star { radius: a, legs: b, leg_width: c, bow: d } => {
+      Self::Chevron { width: a, height: b, notch: c } | Self::Diamond { width: a, height: b, bow: c } => {
+        a.is_animated() || b.is_animated() || c.is_animated()
+      }
+      Self::Star { radius: a, legs: b, leg_width: c, bow: d } => {
         a.is_animated() || b.is_animated() || c.is_animated() || d.is_animated()
       }
       Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
+      Self::Text { text, size, width, height, .. } => text.is_animated() || size.is_animated() || width.is_animated() || height.is_animated(),
     }
   }
 
@@ -220,7 +302,8 @@ impl ShapeNode {
       | Self::Rect { .. }
       | Self::Diamond { .. }
       | Self::Star { .. }
-      | Self::Chevron { .. } => {
+      | Self::Chevron { .. }
+      | Self::Text { .. } => {
         let reach = self.reach(env);
         Bounds::new(-reach, reach)
       }
@@ -236,14 +319,15 @@ impl ShapeNode {
       Self::Circle { .. } | Self::Ellipse { .. } => (0..ROUND_OUTLINE_POINTS)
         .map(|i| Vec2::from_angle(std::f32::consts::TAU * i as f32 / ROUND_OUTLINE_POINTS as f32) * self.reach(env))
         .collect(),
-      Self::Rect { .. } => {
+      // text's is its box, as tracing every letter is more than an outline shows
+      Self::Rect { .. } | Self::Text { .. } => {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Diamond { widest_at, bow, .. } => {
+      Self::Diamond { bow, .. } => {
         let Vec2 { x, y } = self.reach(env);
-        let (bow, side) = (bow.resolve(env), y * (2.0 * unit_fraction(widest_at, env) - 1.0));
-        let corners = [Vec2::new(0.0, -y), Vec2::new(x, side), Vec2::new(0.0, y), Vec2::new(-x, side)];
+        let bow = bow.resolve(env);
+        let corners = [Vec2::new(0.0, -y), Vec2::new(x, 0.0), Vec2::new(0.0, y), Vec2::new(-x, 0.0)];
         (0..4).flat_map(|i| bowed(corners[i], corners[(i + 1) % 4], bow)).collect()
       }
       Self::Star { radius, legs, leg_width, bow } => {
@@ -278,26 +362,40 @@ impl ShapeNode {
     }
   }
 
-  /// Half-extents of a shape that isn't made of points. Zero for those that are.
+  /// Whether it's a line, with no inside
+  fn is_open(&self) -> bool {
+    matches!(self, Self::Polyline { .. } | Self::Bezier { .. })
+  }
+
+  /// Half-extents of a shape that isn't made of points or text. Zero for those that are.
   fn reach(&self, env: &Env) -> Vec2 {
     match self {
       Self::Circle { radius } => Vec2::splat(radius.resolve(env)),
       Self::Ellipse { rx, ry } => Vec2::new(rx.resolve(env), ry.resolve(env)),
       Self::Rect { width, height }
       | Self::Diamond { width, height, .. }
-      | Self::Chevron { width, height, .. } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
+      | Self::Chevron { width, height, .. }
+      | Self::Text { width, height, .. } => Vec2::new(width.resolve(env), height.resolve(env)) / 2.0,
       Self::Star { radius, .. } => Vec2::splat(radius.resolve(env).max(0.0)),
       Self::Polygon { .. } | Self::Polyline { .. } | Self::Bezier { .. } => Vec2::ZERO,
     }
   }
 
-  /// The edge with its sizes resolved
-  fn edge(&self, env: &Env) -> Edge {
+  /// The edge with its sizes resolved. `to_scene` is where the shape is drawn, which text's lines are lined up with.
+  fn edge(&self, env: &Env, to_scene: Affine2) -> Edge {
     match self {
       Self::Circle { .. } | Self::Ellipse { .. } => Edge::Ellipse(self.reach(env)),
       Self::Rect { .. } => Edge::Rect(self.reach(env)),
       Self::Diamond { .. } | Self::Star { .. } | Self::Chevron { .. } => Edge::Polygon(self.outline(env)),
       Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
+      Self::Text { text, font, size, align, vertical_align, .. } => match env.assets.font(font) {
+        Some(font) => {
+          let reach = self.reach(env);
+          let moved_to = to_scene.matrix2.abs_diff_eq(Mat2::IDENTITY, 1e-6).then_some(to_scene.translation);
+          Edge::Text(layout_text(font, &text.resolve(env), size.resolve(env), reach * 2.0, *align, *vertical_align, moved_to), reach)
+        }
+        None => Edge::Open,
+      },
       Self::Polyline { .. } | Self::Bezier { .. } => Edge::Open,
     }
   }
@@ -392,6 +490,8 @@ enum Edge {
   Ellipse(Vec2),
   Rect(Vec2),
   Polygon(Vec<Vec2>),
+  /// Laid out in a box, with half its width and height, that it's cut off at
+  Text(TextOutline, Vec2),
   /// A polyline or bezier, which has no inside
   Open,
 }
@@ -403,6 +503,11 @@ impl Edge {
       Self::Ellipse(reach) => ellipse_distance(*reach, p),
       Self::Rect(reach) => rect_distance(*reach, p),
       Self::Polygon(points) => polygon_distance(points, p),
+      // inside the letters and inside the box, so the farther of the two
+      Self::Text(outline, reach) => {
+        let (text, frame) = (outline.distance(p), rect_distance(*reach, p));
+        if frame.0 > text.0 { frame } else { text }
+      }
       Self::Open => (f32::INFINITY, Vec2::X),
     }
   }
@@ -414,6 +519,10 @@ impl Edge {
     match self {
       Self::Ellipse(reach) | Self::Rect(reach) => around(reach.abs()),
       Self::Polygon(points) => bounds_of(points.iter().copied()),
+      Self::Text(outline, reach) => {
+        let extent = outline.extent();
+        Bounds::new(extent.min.max(-*reach), extent.max.min(*reach))
+      }
       Self::Open => Bounds::new(Vec2::ZERO, Vec2::ZERO),
     }
   }
@@ -457,7 +566,7 @@ fn bezier_line(points: &[BezierPoint], env: &Env) -> Vec<Vec2> {
 }
 
 /// The point at `t` on a cubic bezier (de Casteljau)
-fn cubic([a, b, c, d]: [Vec2; 4], t: f32) -> Vec2 {
+pub(crate) fn cubic([a, b, c, d]: [Vec2; 4], t: f32) -> Vec2 {
   let (e, f, g) = (a.lerp(b, t), b.lerp(c, t), c.lerp(d, t));
   e.lerp(f, t).lerp(f.lerp(g, t), t)
 }
@@ -786,13 +895,17 @@ mod tests {
     assert!(!ring(4.0, 2.0).is_animated());
   }
 
-  fn diamond(widest_at: f32) -> Shape {
-    Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), widest_at: widest_at.into(), bow: 0.0.into() })
+  fn diamond() -> Shape {
+    Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), bow: 0.0.into() })
+  }
+
+  fn shift(amount: f32, rotation: f32) -> Transform {
+    Transform::Shift { amount: amount.into(), rotation: rotation.into() }
   }
 
   #[test]
   fn a_diamond_is_widest_halfway_down() {
-    let shape = diamond(0.5);
+    let shape = diamond();
     for (x, y) in [(0.0, 0.0), (9.0, 0.0), (-9.0, 0.0), (0.0, 9.0), (0.0, -9.0)] {
       assert_eq!(covered(&shape, x, y, 0.1), 1.0, "at ({x}, {y})");
     }
@@ -801,17 +914,60 @@ mod tests {
   }
 
   #[test]
-  fn a_diamonds_widest_point_moves_up_and_down() {
-    let shape = diamond(0.25);
+  fn a_shift_moves_a_diamonds_widest_point_up_and_down() {
+    let shape = diamond().transform(shift(-0.5, 0.0));
     assert_eq!(covered(&shape, 9.0, -5.0, 0.1), 1.0);
     assert_eq!(covered(&shape, 9.0, 0.0, 0.1), 0.0);
     assert_eq!(covered(&shape, 0.0, 9.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, -9.0, 0.1), 1.0);
+  }
+
+  #[test]
+  fn a_shift_all_the_way_squashes_one_half_flat() {
+    let shape = diamond().transform(shift(1.0, 0.0));
+    // a triangle pointing up, its base along the bottom
+    assert_eq!(covered(&shape, 9.0, 9.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, -9.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 6.0, -6.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_shift_turns_with_its_rotation() {
+    // at 90 degrees the line points left, so the corners at the top and bottom move that way
+    let shape = diamond().transform(shift(0.5, 90.0));
+    assert_eq!(covered(&shape, -5.0, 9.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 0.0, 9.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_shift_bends_a_straight_side_where_it_crosses_the_middle() {
+    // a square turned on its side is a diamond, and shifts as one
+    let square = Shape::new(ShapeNode::Rect { width: 20.0.into(), height: 20.0.into() });
+    let shape = square.transform(Transform::Rotate(45.0.into())).transform(shift(-0.5, 0.0));
+    let reach = 10.0 * std::f32::consts::SQRT_2;
+    assert_eq!(covered(&shape, reach - 1.0, -reach / 2.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, reach - 1.0, 0.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_shift_moves_in_the_space_the_transforms_before_it_leave() {
+    let shape = diamond().transform(Transform::Translate(Vec2::new(100.0, 50.0).into())).transform(shift(-0.5, 0.0));
+    assert_eq!(covered(&shape, 109.0, 45.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 109.0, 50.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn text_isnt_shifted_and_its_outline_is_its_box() {
+    let params = Params::new();
+    let text = Shape::new(ShapeNode::text("A", "nothing", 8.0, Vec2::new(20.0, 10.0))).transform(shift(1.0, 0.0));
+    let outline = text.pose(&env(0.0, &params)).unwrap().outline;
+    assert_eq!(outline.len(), 4);
   }
 
   #[test]
   fn a_diamonds_sides_bow() {
-    let bowed = Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), widest_at: 0.5.into(), bow: 0.25.into() });
-    assert_eq!(covered(&diamond(0.5), 6.0, 6.0, 0.1), 0.0);
+    let bowed = Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), bow: 0.25.into() });
+    assert_eq!(covered(&diamond(), 6.0, 6.0, 0.1), 0.0);
     assert_eq!(covered(&bowed, 6.0, 6.0, 0.1), 1.0);
   }
 

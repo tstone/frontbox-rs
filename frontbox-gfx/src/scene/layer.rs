@@ -85,6 +85,12 @@ impl Layer {
     self.fill.base.image_name().into_iter().chain(masked)
   }
 
+  /// Names of the fonts the layer's region and its mask's region use
+  pub fn font_names(&self) -> impl Iterator<Item = &str> {
+    let masked = self.mask.as_ref().and_then(|mask| mask.region.as_ref());
+    self.region.iter().chain(masked).filter_map(|shape| shape.base.font_name())
+  }
+
   /// Validates what the types can't enforce, for the layer at `index` in a scene with `timing`
   pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
     if timing.is_none() && self.is_animated() {
@@ -272,7 +278,7 @@ pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
     playback_seed: frame.playback_seed,
     params: frame.params,
     defaults: frame.defaults,
-    images: frame.images,
+    assets: frame.assets,
     viewport: frame.surface.viewport(frame.size),
     lap: lap(frame.surface, 0.0),
     visits: None,

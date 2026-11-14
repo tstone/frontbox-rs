@@ -1,6 +1,6 @@
 use glam::Vec2;
 
-use crate::scene::{Images, Params, Surface, Timing, Visits};
+use crate::scene::{Assets, Params, Surface, Timing, Visits};
 
 /// A point to get a color for: a position in scene units and the radius of the area it covers
 ///
@@ -39,9 +39,9 @@ pub struct LayerFrame<'a> {
   pub params: &'a Params,
   /// The scene's param defaults
   pub defaults: &'a Params,
-  /// Decoded images by name. A layer whose image is missing draws nothing; get these from
-  /// [`Content::images_for`](crate::scene::Content::images_for), which reports missing images up front.
-  pub images: &'a Images,
+  /// Decoded images and fonts by name. A layer whose image or font is missing draws nothing; get these from
+  /// [`Content::assets_for`](crate::scene::Content::assets_for), which reports missing ones up front.
+  pub assets: &'a Assets,
   /// Size of what the layer is drawn on, in its own units, which the layer's coordinates are in. Unused by a `Sequence`.
   pub size: Vec2,
   pub surface: Surface,

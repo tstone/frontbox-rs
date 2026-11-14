@@ -23,8 +23,8 @@ pub struct SoundSystem {
   )>,
   /// Lines asked for that haven't been reported done with
   callouts_pending: usize,
-  /// Where scenes' sounds are loaded from, once the system spawns. `None` when the app has no content folder.
-  content: Option<Content>,
+  /// Where scenes' sounds are loaded from. Until the system spawns, and for an app without a content folder, it has none.
+  content: Content,
   /// Sounds from the content folder that have been asked to load, by name
   content_loaded: HashSet<String>,
   /// Sounds from the content folder asked for before the system spawned and knew where the folder is
@@ -49,7 +49,7 @@ impl SoundSystem {
       completed_rx,
       manager_channels: Some((rx, completed_tx)),
       callouts_pending: 0,
-      content: None,
+      content: Content::without_folder(),
       content_loaded: HashSet::new(),
       load_on_spawn: Vec::new(),
       playback_times: HashMap::new(),
@@ -125,11 +125,7 @@ impl SoundSystem {
     if self.content_loaded.contains(name) {
       return true;
     }
-    let Some(content) = &self.content else {
-      log::error!(target: "frontbox::sound", "🔊 Can't play scene sound '{}': the app has no content folder", name);
-      return false;
-    };
-    match content.sound_path(name) {
+    match self.content.sound_path(name) {
       Ok(path) => {
         self.content_loaded.insert(name.to_string());
         let _ = self.tx.send(PreloadPath(SoundKey::Owned(name.to_string()), path));
@@ -168,7 +164,7 @@ impl SoundSystem {
 
 impl System for SoundSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    self.content = ctx.content_path.clone().map(Content::new);
+    self.content = ctx.content_path.clone().map_or_else(Content::without_folder, Content::new);
     let Some((rx, completed_tx)) = self.manager_channels.take() else {
       return;
     };
@@ -210,7 +206,7 @@ mod tests {
   fn context() -> (TestContext, mpsc::UnboundedReceiver<SoundManagerMessage>) {
     let mut sound = SoundSystem::new("test");
     let (rx, _) = sound.manager_channels.take().unwrap();
-    sound.content = Some(Content::new("content"));
+    sound.content = Content::new("content");
     let mut context = TestContext::default();
     context.insert_system(SceneSystem::new());
     context.insert_system(sound);

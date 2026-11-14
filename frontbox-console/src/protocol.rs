@@ -200,12 +200,23 @@ pub struct RenderedShape {
   /// For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
   /// `None` for other transforms.
   pub centers: Vec<Option<[f32; 2]>>,
+  /// For each shift, the ends of the shape along its line and where it moves the middle to, in the space the transforms
+  /// before it put the shape in. `None` for other transforms.
+  pub shifts: Vec<Option<RenderedShift>>,
   /// Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
   /// points, or its line for a polyline or bezier, which doesn't close
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that
   /// doesn't.
   pub paths: Vec<Option<RenderedShape>>,
+}
+
+/// Where a shift moves a shape
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedShift {
+  pub back: [f32; 2],
+  pub forward: [f32; 2],
+  pub middle: [f32; 2],
 }
 
 /// What the console says about an image in the content folder, so an editor can offer its frames
@@ -217,6 +228,16 @@ pub struct ImageInfo {
   pub frames: usize,
   /// Seconds it takes to play, by what the file says
   pub duration: f32,
+}
+
+/// A font a scene can use, so an editor can offer sizes it draws crisply at
+#[derive(Clone, serde::Serialize, TS)]
+pub struct FontInfo {
+  pub name: String,
+  /// For a font drawn on a pixel grid, the size that's one scene unit to its pixels. It's crisp at whole multiples of it.
+  pub pixel_size: Option<f32>,
+  /// For a pixel font, how many of its pixels tall its capital letters are
+  pub cap_height: Option<f32>,
 }
 
 /// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a

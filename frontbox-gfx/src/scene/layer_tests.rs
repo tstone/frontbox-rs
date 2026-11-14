@@ -27,7 +27,7 @@ fn red_to_blue() -> Fill {
 
 fn sample(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
 }
 
@@ -52,7 +52,7 @@ fn a_hidden_layer_isnt_drawn_and_keeps_its_place() {
   assert_eq!(sample(&scene, 1.0, 1.0, 0.5), RED);
 
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   assert_eq!(scene.outlines(&frame).len(), 2);
 }
 
@@ -139,7 +139,7 @@ fn a_polygon_away_from_the_origin_turns_around_its_own_middle() {
 
 fn line(scene: &Scene, count: usize) -> Vec<Rgba<u8>> {
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   Line::new(count).samples().map(|s| scene.sample(&s, &frame)).collect()
 }
 
@@ -152,7 +152,7 @@ fn random_color(cycle: Cycle) -> Scene {
 
 fn random_color_at(scene: &Scene, time: f32, playback_seed: u32) -> Rgba<u8> {
   let params = Params::new();
-  let frame = LayerFrame { time, playback_seed, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time, playback_seed, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &frame)
 }
 
@@ -261,7 +261,7 @@ fn circle(fill: Fill) -> Scene {
 
 fn outlines(layer: Layer) -> Vec<Vec<Vec2>> {
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   Scene::new(Surface::Area, vec![layer]).outlines(&frame).remove(0)
 }
 
@@ -270,7 +270,7 @@ fn a_device_decides_the_size_of_an_area() {
   let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED))]);
   let params = Params::new();
   let at = Sample::new(Vec2::new(150.0, 25.0), 0.0);
-  let color = |size: Vec2| scene.sample(&at, &LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() });
+  let color = |size: Vec2| scene.sample(&at, &LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() });
   assert_eq!(color(Vec2::new(200.0, 50.0)), RED);
   assert_eq!(color(SIZE), Rgba([0, 0, 0, 0]));
 }
@@ -280,7 +280,7 @@ fn a_gradient_with_no_shape_stretches_to_the_device() {
   let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue())]);
   let params = Params::new();
   let far_edge = |width: f32| {
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(width, 50.0), surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::new(width, 50.0), surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
     scene.sample(&Sample::new(Vec2::new(width, 25.0), 0.0), &frame)
   };
   assert_eq!(far_edge(100.0), BLUE);
@@ -431,7 +431,7 @@ fn a_masks_image_is_one_the_scene_draws() {
 fn a_masks_outline_and_pose_line_up_with_the_layers() {
   let scene = masked(Mask::new(solid(BLUE)).region(middle_circle()));
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   assert!(scene.mask_outlines(&frame)[0].is_empty());
   assert!(!scene.mask_outlines(&frame)[1].is_empty());
   assert!(scene.mask_poses(&frame)[0].is_none());
@@ -527,7 +527,7 @@ fn a_grid_of_another_shape_does_not_squash_the_scene() {
   // 100 x 50 on a 128 x 32 grid: as wide as it is tall, with bars at the sides
   let scene = circle(solid(RED));
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   let pixels: Vec<_> =
     Grid::new(128, 32, Vec2::new(100.0, 50.0)).samples().map(|s| scene.sample(&s, &frame)).collect();
   let row = |y: usize| pixels[y * 128..(y + 1) * 128].iter().filter(|c| **c == RED).count();
@@ -554,7 +554,7 @@ fn rising(timing: Option<Timing>) -> Scene {
 
 fn level_at(scene: &Scene, time: f32) -> u8 {
   let params = Params::new();
-  scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() })[0]
+  scene.sample(&Sample::new(Vec2::new(0.5, 0.0), 0.5), &LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() })[0]
 }
 
 #[test]
@@ -640,7 +640,7 @@ fn params_override_defaults() {
   assert_eq!(line(&scene, 1), vec![RED]);
 
   let params = Params::from([("color".into(), Value::Color(Color(BLUE)))]);
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.5), &frame), BLUE);
 }
 
@@ -649,30 +649,30 @@ fn image_fill() -> Fill {
   Fill::new(FillNode::image("art.png"))
 }
 
-fn images() -> Images {
+fn images() -> Assets {
   const GREEN: Rgba<u8> = Rgba([0, 255, 0, 255]);
   let art = image::RgbaImage::from_fn(4, 3, |x, y| match (x, y) {
     (_, 1) => GREEN,
     (0 | 1, _) => RED,
     _ => BLUE,
   });
-  let mut images = Images::new();
-  images.insert("art.png", Picture::new(art));
-  images
+  let mut assets = Assets::new();
+  assets.insert_picture("art.png", Picture::new(art));
+  assets
 }
 
 fn drawn(scene: &Scene, x: f32, y: f32, radius: f32) -> Rgba<u8> {
-  let (params, images) = (Params::new(), images());
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size: Vec2::new(4.0, 3.0), surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let (params, assets) = (Params::new(), images());
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size: Vec2::new(4.0, 3.0), surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   scene.sample(&Sample::new(Vec2::new(x, y), radius), &frame)
 }
 
 #[test]
 fn an_image_shows_its_pixels_on_a_grid_of_the_same_size() {
   let scene = Scene::new(Surface::Area, vec![Layer::new(image_fill())]);
-  let (params, images) = (Params::new(), images());
+  let (params, assets) = (Params::new(), images());
   let size = Vec2::new(4.0, 3.0);
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   let colors: Vec<_> = Grid::new(4, 3, size).samples().map(|at| scene.sample(&at, &frame)).collect();
 
   let green = Rgba([0, 255, 0, 255]);
@@ -691,8 +691,8 @@ fn an_image_stretches_over_a_shape_and_moves_with_it() {
 #[test]
 fn a_strip_runs_along_the_middle_of_an_image() {
   let scene = Scene::new(Surface::Sequence, vec![Layer::new(image_fill())]);
-  let (params, images) = (Params::new(), images());
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let (params, assets) = (Params::new(), images());
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   for at in Line::new(5).samples() {
     assert_eq!(scene.sample(&Sample::new(at.pos, 0.0), &frame), Rgba([0, 255, 0, 255]));
   }
@@ -701,10 +701,10 @@ fn a_strip_runs_along_the_middle_of_an_image() {
 #[test]
 fn a_shape_scaled_down_covers_more_of_its_image_with_each_sample() {
   let checkers = image::RgbaImage::from_fn(64, 64, |x, y| if (x + y) % 2 == 0 { RED } else { BLUE });
-  let mut images = Images::new();
-  images.insert("art.png", Picture::new(checkers));
+  let mut assets = Assets::new();
+  assets.insert_picture("art.png", Picture::new(checkers));
   let (params, size) = (Params::new(), Vec2::new(64.0, 64.0));
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
 
   // a whole viewport of it shows each pixel, and the same image in a shape of 4 units has 16 pixels to each unit
   let at = Sample::new(Vec2::new(32.0, 32.0), 0.5);
@@ -752,9 +752,9 @@ fn playing(frame: Prop<f32>) -> Scene {
 /// Which of 4 frames is drawn. Each frame's red is its number.
 fn frame_at(scene: &Scene, time: f32, playback_seed: u32, params: &Params) -> u8 {
   let art = (0..4).map(|n| image::RgbaImage::from_pixel(1, 1, Rgba([n, 0, 0, 255])));
-  let mut images = Images::new();
-  images.insert("a.gif", Picture::animated(art, 0.4));
-  let frame = LayerFrame { time, playback_seed, params, images: &images, size: Vec2::ONE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let mut assets = Assets::new();
+  assets.insert_picture("a.gif", Picture::animated(art, 0.4));
+  let frame = LayerFrame { time, playback_seed, params, assets: &assets, size: Vec2::ONE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   scene.sample(&Sample::new(Vec2::splat(0.5), 0.1), &frame)[0]
 }
 
@@ -829,7 +829,7 @@ fn graph_alphas(scene: &Scene, time: f32) -> Vec<u8> {
   let samples: Vec<Sample> = Line::new(5).samples().enumerate().map(|(i, sample)| sample.at_node(i)).collect();
   let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
   let graph = Graph::build(nodes);
-  let frame = LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
   let visits = scene.visits(&graph, &frame);
   samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)[3]).collect()
 }
@@ -871,7 +871,7 @@ fn a_graph_layer_leaves_out_samples_that_arent_nodes() {
   scene.layers.insert(0, Layer::new(solid(BLUE)));
   scene.layers[1].fill.adjust.clear();
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1), &frame), BLUE);
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1).at_node(0), &frame), RED);
 }
@@ -880,7 +880,7 @@ fn a_graph_layer_leaves_out_samples_that_arent_nodes() {
 fn without_visits_a_graph_layer_rests() {
   let scene = wave();
   let params = Params::new();
-  let frame = LayerFrame { time: 2.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 2.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
   assert_eq!(scene.sample(&Sample::new(Vec2::ZERO, 0.1).at_node(0), &frame)[3], 0);
 }
 
@@ -907,7 +907,7 @@ fn fit_colors(fill: Fill, shape: Option<Shape>, from: &str, to: &str) -> Vec<Rgb
   let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
   let graph = Graph::build(nodes);
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   let visits = scene.visits(&graph, &frame);
   samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect()
 }
@@ -962,7 +962,7 @@ fn a_grid_is_drawn_over_what_is_already_in_it() {
   let layer = Layer::new(solid(Rgba([255, 0, 0, 128]))).region(Shape::new(ShapeNode::circle(5.0)).transform(Transform::Translate(Vec2::new(16.0, 8.0).into())));
   let grid = Grid::new(32, 16, Vec2::new(32.0, 16.0));
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: grid.size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: grid.size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
   let mut pixels = vec![BLUE; 32 * 16];
   layer.sample_grid(&grid, &frame, &mut pixels);
   let alone: Vec<_> = grid.samples().map(|at| layer.sample(&at, &frame).composite_over(BLUE)).collect();
@@ -976,7 +976,7 @@ fn a_prepared_layer_draws_samples_of_another_radius_as_they_are_drawn_alone() {
   // on a Sequence, how far a Rotate turns depends on the radius of the samples
   let scene = turned(45.0);
   let params = Params::new();
-  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: SIZE, surface: Surface::Sequence, visits: None, timing: None, defaults: no_params() };
   let prepared = scene.layers[0].prepare(&frame, 0.25);
   for at in Line::new(8).samples() {
     assert_eq!(prepared.sample(&at), scene.layers[0].sample(&at, &frame));
@@ -996,4 +996,140 @@ fn a_colored_stroke_is_drawn_over_the_fill_and_one_without_a_color_takes_it() {
   let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(ring)]);
   assert_eq!(sample(&scene, 50.0, 25.0, 0.1), Rgba([0, 0, 0, 0]));
   assert_eq!(sample(&scene, 59.0, 25.0, 0.1), RED);
+}
+
+fn text(text: &str, size: f32) -> Shape {
+  Shape::new(ShapeNode::text(text, "pixel.ttf", size, Vec2::splat(20.0)))
+}
+
+/// `text` in a box `frame` wide and tall, with its top left corner at `corner`
+fn text_box(text: &str, size: f32, corner: Vec2, frame: Vec2, align: TextAlign, vertical_align: VerticalAlign) -> Shape {
+  let base = ShapeNode::Text { text: text.into(), font: "pixel.ttf".into(), size: size.into(), width: frame.x.into(), height: frame.y.into(), align, vertical_align };
+  Shape::new(base).transform(Transform::Translate((corner + frame / 2.0).into()))
+}
+
+fn text_pixels(shape: Shape, width: usize, height: usize) -> Vec<String> {
+  pixels(&Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]), width, height)
+}
+
+/// The scene drawn on a grid with hard edges, a row of characters for each row of pixels: `#` where it's drawn, `.`
+/// where it isn't, and `+` where it's partly drawn
+fn pixels(scene: &Scene, width: usize, height: usize) -> Vec<String> {
+  let mut assets = Assets::new();
+  assets.insert_font("pixel.ttf", crate::scene::font::tests::pixel_font());
+  let params = Params::new();
+  let size = Vec2::new(width as f32, height as f32);
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+  let alpha = |x: usize, y: usize| scene.sample(&Sample::new(Vec2::new(x as f32 + 0.5, y as f32 + 0.5), 0.0), &frame)[3];
+  let mark = |alpha: u8| match alpha {
+    0 => '.',
+    255 => '#',
+    _ => '+',
+  };
+  (0..height).map(|y| (0..width).map(|x| mark(alpha(x, y))).collect()).collect()
+}
+
+#[test]
+fn a_pixel_font_at_its_design_size_draws_its_pixels() {
+  // the font's ascent puts the baseline 11 down from the top of the box, at row 8
+  let shape = text_box("HI", 16.0, Vec2::new(1.0, -3.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top);
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]);
+  let expected = [
+    "............",
+    ".#...#.###..",
+    ".#...#..#...",
+    ".#...#..#...",
+    ".#####..#...",
+    ".#...#..#...",
+    ".#...#..#...",
+    ".#...#.###..",
+    "............",
+  ];
+  assert_eq!(pixels(&scene, 12, 9), expected);
+}
+
+#[test]
+fn text_takes_a_stroke_like_any_shape() {
+  let outlined = text_box("I", 16.0, Vec2::new(2.0, -2.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top)
+    .adjust(ShapeAdjust::Stroke { width: 1.0.into(), align: StrokeAlign::Outside, color: None });
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(outlined)]);
+  // the stroke goes around the "I" and in under its bars, leaving the inside out
+  let expected = [
+    ".......",
+    ".#####.",
+    ".#...#.",
+    ".##.##.",
+    "..#.#..",
+    "..#.#..",
+    "..#.#..",
+    ".##.##.",
+    ".#...#.",
+    ".#####.",
+    ".......",
+  ];
+  assert_eq!(pixels(&scene, 7, 11), expected);
+}
+
+#[test]
+fn text_in_a_font_thats_not_loaded_draws_nothing() {
+  let shape = Shape::new(ShapeNode::text("HI", "missing.ttf", 16.0, Vec2::new(12.0, 7.0))).transform(Transform::Translate(Vec2::new(6.0, 3.5).into()));
+  let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]);
+  assert!(pixels(&scene, 12, 7).iter().all(|row| !row.contains(['#', '+'])));
+}
+
+#[test]
+fn a_layer_names_the_fonts_its_region_and_its_masks_use() {
+  let layer = Layer::new(solid(RED)).region(text("A", 8.0)).mask(Mask::new(solid(RED)).region(
+    Shape::new(ShapeNode::text("B", "other.ttf", 8.0, Vec2::splat(8.0))),
+  ));
+  assert_eq!(layer.font_names().collect::<Vec<_>>(), ["pixel.ttf", "other.ttf"]);
+}
+
+#[test]
+fn each_line_is_aligned_across_the_box() {
+  let row = |align| text_pixels(text_box("I", 16.0, Vec2::ZERO, Vec2::new(16.0, 14.0), align, VerticalAlign::Top), 16, 14)[4].clone();
+  assert_eq!(row(TextAlign::Left), "###.............");
+  assert_eq!(row(TextAlign::Center), "......###.......");
+  assert_eq!(row(TextAlign::Right), "............###.");
+}
+
+/// The first row with any of the text in it
+fn first_row(rows: &[String]) -> Option<usize> {
+  rows.iter().position(|row| row.contains('#'))
+}
+
+#[test]
+fn the_lines_are_aligned_up_and_down_the_box_on_whole_pixels() {
+  let top = |vertical| first_row(&text_pixels(text_box("I", 16.0, Vec2::ZERO, Vec2::new(6.0, 24.0), TextAlign::Center, vertical), 6, 24));
+  // a line is 13.66 from the font's ascent to its descent, and a capital is 7 tall with its top 3.66 below the ascent
+  assert_eq!(top(VerticalAlign::Top), Some(4));
+  assert_eq!(top(VerticalAlign::Middle), Some(9));
+  assert_eq!(top(VerticalAlign::Bottom), Some(14));
+}
+
+#[test]
+fn text_breaks_into_lines_a_whole_line_height_apart() {
+  // "I I" is wider than the box, so it breaks between the words
+  let rows = text_pixels(text_box("I I\nI", 16.0, Vec2::ZERO, Vec2::new(8.0, 48.0), TextAlign::Left, VerticalAlign::Top), 8, 48);
+  let tops: Vec<usize> = (0..rows.len()).filter(|y| rows[*y].contains('#') && (*y == 0 || !rows[y - 1].contains('#'))).collect();
+  assert_eq!(tops, [4, 18, 32]);
+}
+
+#[test]
+fn text_past_its_box_is_cut_off() {
+  let shape = text_box("HI", 16.0, Vec2::ONE, Vec2::new(5.0, 4.0), TextAlign::Left, VerticalAlign::Middle);
+  let expected = ["........", ".#...#..", ".#...#..", ".#####..", ".#...#..", "........", "........", "........"];
+  assert_eq!(text_pixels(shape, 8, 8), expected);
+}
+
+#[test]
+fn text_is_on_whole_pixels_wherever_its_box_is() {
+  // a box at half a unit, and one an odd width across, so its middle is half a unit in
+  for (corner, frame) in [(Vec2::splat(0.5), Vec2::new(16.0, 14.0)), (Vec2::ZERO, Vec2::new(15.0, 13.0)), (Vec2::new(1.3, 0.7), Vec2::new(14.2, 13.9))] {
+    for align in [TextAlign::Left, TextAlign::Center, TextAlign::Right] {
+      let rows = text_pixels(text_box("HI", 16.0, corner, frame, align, VerticalAlign::Middle), 18, 16);
+      assert!(rows.iter().any(|row| row.contains('#')), "{corner} {frame} {align:?}");
+      assert!(rows.iter().all(|row| !row.contains('+')), "{corner} {frame} {align:?}: {rows:#?}");
+    }
+  }
 }

@@ -49,7 +49,7 @@ impl ConsoleHub {
         next_seq: 0,
         plane_images: Vec::new(),
         led_radius: DEFAULT_LED_RADIUS,
-        content: None,
+        content: content(None),
         control: None,
         metrics: None,
         led_names: HashMap::new(),
@@ -200,17 +200,19 @@ impl ConsoleHub {
     self.state.lock().unwrap().led_radius = radius;
   }
 
+  /// Uses the app's content folder, or none
   pub fn set_content(&self, path: Option<PathBuf>) {
-    if let Some(path) = &path {
-      if !path.is_dir() {
-        log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
-      }
+    if let Some(path) = &path
+      && !path.is_dir()
+    {
+      log::warn!(target: "frontbox::console", "Content folder {} isn't there yet", path.display());
     }
-    self.state.lock().unwrap().content = path.map(Content::new);
+    self.state.lock().unwrap().content = content(path);
   }
 
-  /// The app's content folder. `None` until `AppTracer::init`, or when the app has none.
-  pub fn content(&self) -> Option<Content> {
+  /// Where scenes' images, fonts, and sounds come from. Until `AppTracer::init`, and for an app without a content
+  /// folder, it has only the fonts frontbox comes with.
+  pub fn content(&self) -> Content {
     self.state.lock().unwrap().content.clone()
   }
 
@@ -622,12 +624,18 @@ pub(crate) struct Subscription {
   pub displays: broadcast::Receiver<Bytes>,
 }
 
+/// The content in `path`, or without a folder, with the fonts frontbox comes with, which scenes can use without a
+/// file
+fn content(path: Option<PathBuf>) -> Content {
+  path.map_or_else(Content::without_folder, Content::new).with_fonts(frontbox_display::bundled_fonts())
+}
+
 struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
   led_radius: f32,
-  content: Option<Content>,
+  content: Content,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,
   /// Where requests from clients (e.g. pressing a switch) go into the app. `None` until `AppTracer::init`.

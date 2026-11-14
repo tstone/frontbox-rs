@@ -96,7 +96,7 @@ mod tests {
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+        let frame = LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -154,7 +154,8 @@ mod tests {
               .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
           ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into(), widest_at: 0.3.into(), bow: (-0.1).into() })
+          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into(), bow: (-0.1).into() })
+            .transform(Transform::Shift { amount: (-0.4).into(), rotation: 0.0.into() })
             .transform(Transform::Mirror { center: Vec2::new(8.0, 0.0).into(), rotation: 20.0.into() })
             .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
         ),
@@ -162,6 +163,10 @@ mod tests {
           Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into(), bow: 0.0.into() })
             .transform(Transform::Divide { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
             .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::text("BALL 1", "fonts/pixel.ttf", 8.0, Vec2::new(30.0, 8.0)))
+            .transform(Transform::Translate(Vec2::new(19.0, 9.0).into())),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([128, 255, 0, 255])).into())))
           .region(Shape::new(ShapeNode::Chevron { width: 20.0.into(), height: 10.0.into(), notch: 0.4.into() }).transform(Transform::Translate(Vec2::new(50.0, 40.0).into()))),
@@ -327,7 +332,7 @@ mod tests {
 
     let params = Params::new();
     let line = Line::new(3);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -380,12 +385,12 @@ mod tests {
     let first = Rgba([255, 0, 0, 255]);
     let last = Rgba([0, 0, 255, 255]);
     let art = [first, first, last].map(|color| image::RgbaImage::from_pixel(1, 1, color));
-    let (mut images, params) = (Images::new(), Params::new());
-    images.insert("a.gif", Picture::animated(art, 0.3));
+    let (mut assets, params) = (Assets::new(), Params::new());
+    assets.insert_picture("a.gif", Picture::animated(art, 0.3));
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() });
+    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, params: &params, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -403,10 +408,10 @@ mod tests {
     assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
 
     let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
-    let (mut images, params) = (Images::new(), Params::new());
-    images.insert("dmd/title.png", Picture::new(art));
+    let (mut assets, params) = (Assets::new(), Params::new());
+    assets.insert_picture("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -513,7 +518,7 @@ mod tests {
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 3, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+        let frame = LayerFrame { time, playback_seed: 3, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
         let visits = scene.visits(&graph, &frame);
         samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect::<Vec<_>>()
       })

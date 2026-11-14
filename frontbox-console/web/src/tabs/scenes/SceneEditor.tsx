@@ -527,7 +527,7 @@ export default function SceneEditor(props: {
           </Show>
           <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
           <div class="scene-file-view">
-            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier to a grid in the shape's own units as they're dragged">
+            <div class="scene-snap" title="Snaps the points of a polygon, route or bezier, and how far a shape is moved, to a grid in the shape's own units as they're dragged">
               <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
                 <Checkbox.Control>
                   <Checkbox.Indicator>✓</Checkbox.Indicator>

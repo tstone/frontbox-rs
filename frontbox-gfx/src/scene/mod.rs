@@ -26,7 +26,7 @@
 //!   playback_seed: 0,
 //!   params: &params,
 //!   defaults: no_params(),
-//!   images: Images::none(),
+//!   assets: Assets::none(),
 //!   size: Default::default(),
 //!   surface: Surface::Sequence,
 //!   visits: None,
@@ -48,14 +48,17 @@
 //!   ([`Modulated`]), or swept along a path ([`Sweep`])
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`](mod@file) -- Reading and writing scene files as RON
-//! - [`Content`], [`Images`] -- The folder of scenes and images, and the decoded images a scene draws from
+//! - [`Content`], [`Assets`], [`Font`] -- The folder of scenes, images, and fonts, and the decoded images and fonts a
+//!   scene draws from
 
 mod animatable;
+mod assets;
 mod bounds;
 mod color_adjust;
 mod content;
 pub mod file;
 mod fill;
+mod font;
 mod graph;
 mod graph_mask;
 mod images;
@@ -71,6 +74,8 @@ mod sample;
 mod shape;
 mod shape_adjust;
 mod sweep;
+mod text_layout;
+mod text_source;
 #[cfg(test)]
 pub(crate) mod test_scene;
 #[cfg(test)]
@@ -83,10 +88,12 @@ mod surface;
 mod transform;
 
 pub use animatable::*;
+pub use assets::*;
 pub use bounds::*;
 pub use color_adjust::*;
 pub use content::*;
 pub use fill::*;
+pub use font::*;
 pub use graph::*;
 pub use graph_mask::*;
 pub use images::*;
@@ -102,6 +109,8 @@ pub use sample::*;
 pub use shape::*;
 pub use shape_adjust::*;
 pub use sweep::*;
+pub use text_layout::*;
+pub use text_source::*;
 pub use timing::*;
 pub use value::*;
 pub use visit_response::*;

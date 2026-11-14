@@ -15,14 +15,14 @@ type Affine = RenderedShape['transforms'][number]
 /** A grab handle: where it is, and what dragging it does */
 export type Handle = {
   label: string
-  kind: 'move' | 'scale' | 'size' | 'point' | 'bezier' | 'center'
+  kind: 'move' | 'scale' | 'size' | 'point' | 'bezier' | 'center' | 'shift'
   cursor: string
   /** Where it sits in the scene */
   at: Vec2
   /** Set when it's held by something a drag can't change, such as a random value, a sweep, or a hidden track */
   locked: boolean
-  /** Moves what it holds so the handle lands on a point in the scene */
-  drag(to: Vec2): void
+  /** Moves what it holds so the handle lands on a point in the scene, with `shift` set while shift is held */
+  drag(to: Vec2, shift: boolean): void
   /** Set when it's on a path, which has a color of its own to tell it from the shape going along it */
   onPath?: boolean
   /** Where a line to it comes from in the scene, for one that belongs to a point */
@@ -59,7 +59,8 @@ const NOTHING: Overlay = { handles: [], paths: [], grids: [] }
 
 /**
  * Grab handles over the selected shape and the paths it follows, placed by the machine's account of where they are.
- * With a `grid`, a shape's points snap to a grid of that size in its own space, which is drawn over it.
+ * With a `grid`, a shape's points and how far it's moved snap to a grid of that size in its own space, which is drawn
+ * over a shape made of points.
  */
 export default function ShapeHandles(props: { space: PreviewSpace; selection: Selection | null; pose: RenderedShape | null; time: number; grid: number | null }) {
   const scene = useContext(SceneContext)!
@@ -126,19 +127,32 @@ export function Grip(props: { handle: Handle; space: PreviewSpace }) {
     if (!pressed) return
     const grabbed: Vec2 = [handle.at[0] - pressed[0], handle.at[1] - pressed[1]]
 
+    let last: Vec2 | null = null
+    const dragTo = (point: Vec2, shift: boolean) => {
+      last = point
+      handle.drag([point[0] + grabbed[0], point[1] + grabbed[1]], shift)
+    }
     const move = (e: PointerEvent) => {
       const point = space.unproject(e.clientX, e.clientY)
-      if (point) handle.drag([point[0] + grabbed[0], point[1] + grabbed[1]])
+      if (point) dragTo(point, e.shiftKey)
+    }
+    // pressing or letting go of shift drags again where the pointer is, so the change shows without moving it
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Shift' && last) dragTo(last, e.shiftKey)
     }
     // ahead of the preview, which would take the end of a drag over it for a click
     const release = (e: PointerEvent) => {
       e.stopPropagation()
       document.body.style.cursor = ''
       window.removeEventListener('pointermove', move)
+      window.removeEventListener('keydown', key)
+      window.removeEventListener('keyup', key)
       window.removeEventListener('pointerup', release, { capture: true })
     }
     document.body.style.cursor = handle.cursor
     window.addEventListener('pointermove', move)
+    window.addEventListener('keydown', key)
+    window.addEventListener('keyup', key)
     window.addEventListener('pointerup', release, { capture: true })
   }
 
@@ -238,6 +252,40 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
   const across = (local: Vec2) => Math.abs(local[0])
   const down = (local: Vec2) => Math.abs(local[1])
 
+  /**
+   * A handle on each side of one of a shape's sizes, along x or y, where the size is `part` of the distance between
+   * them. Dragging one moves that side and leaves the other where it is, moving the shape by half as much. With shift
+   * held, or if the shape can't be moved, both sides move, mirrored about the center. With a `grid`, the side dragged
+   * snaps to it, counted from the scene's origin, so a side lands on a pixel wherever the shape's center is.
+   */
+  const sides = (name: string, prop: Lens<Prop<number>>, axis: 0 | 1, part: number): Handle[] => {
+    const shift = moveHandle(list, pose, write, null)
+    const along = (length: number): Vec2 => (axis === 0 ? [length, 0] : [0, length])
+    const origin = toLocal([0, 0])[axis]
+    const snap = (at: number) => (grid ? origin + Math.round((at - origin) / grid) * grid : at)
+    const edges = [pose.min[axis], pose.max[axis]]
+    const ends = axis === 0 ? ['left', 'right'] : ['top', 'bottom']
+    // once a drag has moved the shape, it's put back when shift is held, as a mirrored drag works from where it was
+    let moved = false
+    return edges.map((edge, i) => ({
+      label: `${name} from the ${ends[i]}. Hold shift to size both sides.`,
+      kind: 'size',
+      cursor: axis === 0 ? 'ew-resize' : 'ns-resize',
+      at: apply(toScene, along(edge)),
+      locked: !write.can(prop.get(), 0),
+      drag(to, mirrored) {
+        const reached = snap(toLocal(to)[axis])
+        const other = mirrored || shift.locked ? -reached : edges[1 - i]
+        write.to(prop, rounded(Math.abs(reached - other) * part))
+        const center = (reached + other) / 2
+        if (center === 0 && !moved) return
+        moved = true
+        const [from, by] = [apply(toScene, [0, 0]), apply(toScene, along(center))]
+        shift.drag([shift.at[0] + by[0] - from[0], shift.at[1] + by[1] - from[1]], false)
+      },
+    }))
+  }
+
   const pointHandle = (index: number, prop: Lens<Prop<Vec2>>): Handle => ({
     label: `Point ${index + 1}`,
     kind: 'point',
@@ -272,18 +320,20 @@ function shapeHandles(shape: Lens<Shape>, pose: RenderedShape, write: Write, gri
   ]
   const bottom = pose.max[1]
 
-  const handles = [moveHandle(list, pose, write), scaleHandle(list, pose, write, [right, top]), ...centerHandles(list, pose, write)]
+  const handles = [
+    moveHandle(list, pose, write, grid),
+    scaleHandle(list, pose, write, [right, top]),
+    ...centerHandles(list, pose, write),
+    ...shiftHandles(list, pose, write),
+  ]
   if ('Circle' in current) {
     handles.push(size('Radius', field(variant(base, 'Circle'), 'radius'), [right, 0], across))
   } else if ('Ellipse' in current) {
-    const { rx, ry } = { rx: field(variant(base, 'Ellipse'), 'rx'), ry: field(variant(base, 'Ellipse'), 'ry') }
-    handles.push(size('RX', rx, [right, 0], across), size('RY', ry, [0, top], down))
-  } else if ('Rect' in current) {
-    const rect = variant(base, 'Rect')
-    handles.push(
-      size('Width', field(rect, 'width'), [right, 0], (local) => across(local) * 2),
-      size('Height', field(rect, 'height'), [0, top], (local) => down(local) * 2),
-    )
+    const ellipse = variant(base, 'Ellipse')
+    handles.push(...sides('RX', field(ellipse, 'rx'), 0, 0.5), ...sides('RY', field(ellipse, 'ry'), 1, 0.5))
+  } else if ('Rect' in current || 'Text' in current) {
+    const rect = 'Rect' in current ? variant(base, 'Rect') : variant(base, 'Text')
+    handles.push(...sides('Width', field(rect, 'width'), 0, 1), ...sides('Height', field(rect, 'height'), 1, 1))
   } else if ('Chevron' in current) {
     handles.push(...boxed(variant(base, 'Chevron'), bottom))
   } else if ('Diamond' in current) {
@@ -377,7 +427,7 @@ function seenThrough(handles: Handle[], view: Affine): Handle[] {
     onPath: true,
     at: apply(view, handle.at),
     arm: handle.arm && apply(view, handle.arm),
-    drag: (to) => handle.drag(apply(back, to)),
+    drag: (to, shift) => handle.drag(apply(back, to), shift),
   }))
 }
 
@@ -388,12 +438,16 @@ function movesAfter(transforms: Transform[], pose: RenderedShape, index: number)
 
 /**
  * The shape's last `Translate`, or one added after its other transforms the first time this is dragged. It's held by
- * the shape's center, which a mirror or revolve moves to the middle of what it draws.
+ * the shape's center, which a mirror or revolve moves to the middle of what it draws. With a `grid`, the translate
+ * snaps so the top left of the shape's bounds is on it, which keeps a box's edges on pixels even where its center is
+ * between two.
  */
-function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle {
+function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write, grid: number | null): Handle {
   const found = list.get().findLastIndex((transform) => 'Translate' in transform)
   const index = found < 0 ? pose.transforms.length : found
   const undoAfter = invert(chain(movesAfter(list.get(), pose, index)))!
+  // where the top left is before the translate moves it
+  const corner = apply(chain(pose.transforms.slice(0, index)), pose.min)
   const prop = () => {
     if (found < 0 && list.get().length === pose.transforms.length) list.set([...list.get(), { Translate: { Fixed: [0, 0] } }])
     return variant(item(list, index) as Lens<Extract<Transform, { Translate: unknown }>>, 'Translate')
@@ -408,7 +462,10 @@ function moveHandle(list: Lens<Transform[]>, pose: RenderedShape, write: Write):
     drag(to) {
       const [x, y] = apply(undoAfter, to)
       const [fromX, fromY] = pose.pivots[index]
-      write.to(prop(), roundedPoint([x - fromX, y - fromY]))
+      const moved = [x - fromX, y - fromY].map((value, axis) =>
+        grid ? Math.round((corner[axis] + value) / grid) * grid - corner[axis] : value,
+      ) as Vec2
+      write.to(prop(), roundedPoint(moved))
     },
   }
 }
@@ -432,6 +489,44 @@ function centerHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Writ
       at: apply(toScene, center),
       locked: !write.can(prop.get(), [0, 0]),
       drag: (to) => write.to(prop, roundedPoint(apply(fromScene, to))),
+    }
+    return [handle]
+  })
+}
+
+/**
+ * The middle of each shift, where it's moved to, with a line back to the shape's center. It drags along the shift's
+ * line, as far as the end of the shape either way.
+ */
+function shiftHandles(list: Lens<Transform[]>, pose: RenderedShape, write: Write): Handle[] {
+  return list.get().flatMap((transform, index) => {
+    const line = pose.shifts[index]
+    if (!('Shift' in transform) || !line) return []
+    const prop = field(variant(item(list, index) as Lens<Extract<Transform, { Shift: unknown }>>, 'Shift'), 'amount')
+    // the shift itself leaves the shape where it is, so it's only those after it that place its line
+    const toScene = chain(pose.transforms.slice(index))
+    const fromScene = invert(toScene)
+    if (!fromScene) return []
+    const [x, y] = pose.pivots[index]
+    const fromCenter = ([toX, toY]: Vec2): Vec2 => [toX - x, toY - y]
+    const [back, forward] = [fromCenter(line.back), fromCenter(line.forward)]
+    const handle: Handle = {
+      label: 'Shift',
+      kind: 'shift',
+      cursor: 'move',
+      at: apply(toScene, line.middle),
+      arm: apply(toScene, [x, y]),
+      locked: !write.can(prop.get(), 0),
+      drag(to) {
+        const at = fromCenter(apply(fromScene, to))
+        // how much of the way it is to an end, by how far it is along the line toward that end
+        const share = ([endX, endY]: Vec2) => {
+          const length = endX ** 2 + endY ** 2
+          return length > 0 ? (at[0] * endX + at[1] * endY) / length : 0
+        }
+        const amount = share(forward) > 0 ? share(forward) : -share(back)
+        write.to(prop, rounded(Math.max(-1, Math.min(1, amount))))
+      },
     }
     return [handle]
   })

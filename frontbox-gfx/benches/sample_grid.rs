@@ -82,23 +82,23 @@ fn over_time(from: f32, to: f32) -> Prop<f32> {
   Prop::Keyframes(Keyframes::new(vec![Key::new(0.0, from, Curve::Linear), Key::new(1.0, to, Curve::Linear)], Cycle::Once))
 }
 
-fn images() -> Images {
-  let mut images = Images::new();
+fn images() -> Assets {
+  let mut assets = Assets::new();
   let checkers = RgbaImage::from_fn(64, 16, |x, y| if (x + y) % 2 == 0 { Rgba([255, 255, 0, 255]) } else { Rgba([0, 0, 0, 255]) });
-  images.insert("checkers", Picture::new(checkers));
-  images
+  assets.insert_picture("checkers", Picture::new(checkers));
+  assets
 }
 
 fn draw(c: &mut Criterion) {
   let params = Params::new();
-  let images = images();
+  let assets = images();
   let frame = LayerFrame {
     time: 0.4,
     timing: Some(Timing::new(1.0, Cycle::Forever)),
     playback_seed: 0,
     params: &params,
     defaults: no_params(),
-    images: &images,
+    assets: &assets,
     size: SIZE,
     surface: Surface::Area,
     visits: None,

@@ -107,7 +107,7 @@ fn an_image_runs_along_the_leds() {
   let (context, addresses) = three_leds();
   let art = image::RgbaImage::from_fn(8, 1, |x, _| if x < 4 { Rgba::red() } else { Rgba::blue() });
   let mut scene = on(LedQ::names(vec!["led0", "led1", "led2"]), Layer::new(Fill::new(FillNode::image("art.png"))));
-  scene.images.insert("art.png", Picture::new(art));
+  scene.assets.insert_picture("art.png", Picture::new(art));
   play(&context, PlayableScene::new(scene));
   let shown = shown(&context, &addresses);
   assert_eq!((shown[0], shown[2]), (Some(Rgba::red()), Some(Rgba::blue())));

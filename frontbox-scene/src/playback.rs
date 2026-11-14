@@ -47,7 +47,7 @@ impl Playback {
   pub fn ease_param(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve) {
     let name = name.into();
     let to = to.into();
-    let from = self.params.get(&name).or_else(|| self.scene.params.get(&name)).copied();
+    let from = self.params.get(&name).or_else(|| self.scene.params.get(&name)).cloned();
     match from {
       Some(from) if !duration.is_zero() => {
         self.easing.insert(name, Ease { from, to, elapsed: Duration::ZERO, duration, curve });

@@ -12,13 +12,11 @@ use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
-use crate::protocol::{ClientMessage, ImageInfo, SceneSource};
+use crate::protocol::{ClientMessage, FontInfo, ImageInfo, SceneSource};
 use crate::scene_render::scene_file;
 
 /// The largest image a client can add
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
-
-const NO_CONTENT_FOLDER: &str = "this machine has no content folder";
 
 /// The built SolidJS app
 #[derive(RustEmbed)]
@@ -37,6 +35,7 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     )
     .route("/content/image-info/{*name}", get(content_image_info))
     .route("/content/sounds", get(content_sounds))
+    .route("/content/fonts", get(content_fonts))
     .route("/content/sounds/{*name}", get(content_sound))
     .route("/content/scenes", get(content_scenes))
     .route(
@@ -196,9 +195,7 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
 
 /// The name of every image in the content folder. An app without one has none.
 async fn content_images(State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return Json(Vec::<String>::new()).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.image_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
@@ -210,7 +207,7 @@ async fn content_images(State(hub): State<ConsoleHub>) -> Response {
 
 /// An image from the content folder, read from disk on each request so it can be edited while the machine runs
 async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(Ok(path)) = hub.content().map(|content| content.image_path(&name)) else {
+  let Ok(path) = hub.content().image_path(&name) else {
     return StatusCode::NOT_FOUND.into_response();
   };
   match tokio::fs::read(&path).await {
@@ -225,9 +222,7 @@ async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 /// The size and frames of an image in the content folder. This decodes it if nothing has yet. The reply to a failure is
 /// text for showing to whoever chose it.
 async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return StatusCode::NOT_FOUND.into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.picture(&name)).await {
     Ok(Ok(picture)) => Json(ImageInfo {
       width: picture.width(),
@@ -249,17 +244,17 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
 
 /// Adds an image to the content folder. The reply to a failure is text for showing to whoever is adding it.
 async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>, bytes: Bytes) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
   match added {
     Ok(Ok(())) => StatusCode::CREATED.into_response(),
     Ok(Err(err)) => {
       let status = match err {
-        ContentError::Taken(_) => StatusCode::CONFLICT,
-        ContentError::Write { .. } | ContentError::Read { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        ContentError::BadName(_) | ContentError::Decode { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+        ContentError::Taken(_) | ContentError::NoFolder => StatusCode::CONFLICT,
+        ContentError::Write { .. } | ContentError::Read { .. } | ContentError::ReadFont { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        ContentError::BadName(_) | ContentError::Decode { .. } | ContentError::BadFontName(_) | ContentError::NotAFont(_) => {
+          StatusCode::UNPROCESSABLE_ENTITY
+        }
       };
       (status, err.to_string()).into_response()
     }
@@ -272,9 +267,7 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
 
 /// The name of every sound in the content folder. An app without one has none.
 async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return Json(Vec::<String>::new()).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.sound_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
@@ -284,9 +277,30 @@ async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
   }
 }
 
+/// Every font a scene can use: those frontbox comes with, and those in the content folder. Loads any that haven't been.
+async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
+  let content = hub.content();
+  let fonts = move || {
+    let info = |name: String| {
+      let font = content.font(&name).ok();
+      let pixel_size = font.as_ref().and_then(|font| font.pixel_size());
+      let cap_height = font.zip(pixel_size).and_then(|(font, size)| font.cap_height(size)).map(f32::round);
+      FontInfo { name, pixel_size, cap_height }
+    };
+    content.font_names().into_iter().map(info).collect::<Vec<_>>()
+  };
+  match tokio::task::spawn_blocking(fonts).await {
+    Ok(fonts) => Json(fonts).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
 /// A sound from the content folder, read from disk on each request so it can be edited while the machine runs
 async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(Ok(path)) = hub.content().map(|content| content.sound_path(&name)) else {
+  let Ok(path) = hub.content().sound_path(&name) else {
     return StatusCode::NOT_FOUND.into_response();
   };
   match tokio::fs::read(&path).await {
@@ -300,9 +314,7 @@ async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 
 /// The name of every scene in the content folder. An app without one has none.
 async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return Json(Vec::<String>::new()).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.scene_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
@@ -315,9 +327,7 @@ async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
 /// A scene's file as RON, read from disk on each request so it can be edited while the machine runs. The reply to a
 /// failure is text for showing to whoever is opening it.
 async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.read_scene(&name)).await {
     Ok(Ok(ron)) => ron.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
@@ -341,9 +351,7 @@ async fn save_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: 
 
 /// Removes a scene from the content folder. The reply to a failure is text for showing to whoever is deleting it.
 async fn delete_content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.delete_scene(&name)).await {
     Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
@@ -361,9 +369,7 @@ async fn write_scene(
   written: StatusCode,
   write: fn(&Content, &str, &str) -> Result<(), SceneFileError>,
 ) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   let ron = match scene_file(source) {
     Ok(ron) => ron,
     Err(err) => return (StatusCode::UNPROCESSABLE_ENTITY, err).into_response(),
@@ -385,7 +391,7 @@ fn scene_file_failure(err: SceneFileError) -> Response {
     {
       StatusCode::NOT_FOUND
     }
-    SceneFileError::Taken(_) => StatusCode::CONFLICT,
+    SceneFileError::Taken(_) | SceneFileError::NoFolder => StatusCode::CONFLICT,
     SceneFileError::Read { .. } | SceneFileError::Write { .. } | SceneFileError::Delete { .. } => {
       StatusCode::INTERNAL_SERVER_ERROR
     }

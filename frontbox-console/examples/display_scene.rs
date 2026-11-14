@@ -34,14 +34,14 @@ async fn main() {
     _ => Platform::Virtual,
   };
 
-  let content = Content::new(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/content"));
+  let content = Content::new(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/content")).with_fonts(bundled_fonts());
   let scene = load(&content, &name).unwrap_or_else(|err| panic!("Couldn't play {name}: {err}"));
 
   App::new(BootConfig {
     platform,
     config_path: None,
     metrics_path: None,
-    content_path: Some(content.root().into()),
+    content_path: content.root().map(Into::into),
     // a display can show far more than LEDs, so it's worth more frames
     system_interval: Duration::from_millis(33),
     ..Default::default()
@@ -63,7 +63,7 @@ fn load(content: &Content, name: &str) -> Result<PlayableScene, String> {
   let path = content.scene_path(name).map_err(|err| err.to_string())?;
   let source = std::fs::read_to_string(path).map_err(|err| err.to_string())?;
   let scene = Scene::load(&source).map_err(|err| err.to_string())?;
-  Ok(PlayableScene::new(scene.with_images(content).map_err(|err| err.to_string())?))
+  Ok(PlayableScene::new(scene.with_assets(content).map_err(|err| err.to_string())?))
 }
 
 /// Plays the scene for as long as the app runs

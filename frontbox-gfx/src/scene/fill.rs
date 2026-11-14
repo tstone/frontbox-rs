@@ -128,7 +128,7 @@ impl FillNode {
         ResolvedFillNode::Gradient { stops: stops.iter().map(|stop| (stop.at, stop.color.resolve(env).0)).collect(), style: *style }
       }
       Self::Image { name, frame } => ResolvedFillNode::Image {
-        picture: env.images.get(name),
+        picture: env.assets.picture(name),
         frame: frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)),
       },
     }

@@ -1,3 +1,4 @@
+mod bundled_fonts;
 mod display_definition;
 mod display_device;
 mod display_manager;
@@ -8,6 +9,7 @@ mod pixel_font;
 mod sprite_sheet;
 mod text_formatting;
 
+pub use bundled_fonts::*;
 pub use display_definition::*;
 pub use display_device::*;
 pub use display_system::*;

@@ -369,6 +369,12 @@
   border-radius: 50%;
 }
 
+.scene-handle-size {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+}
+
 /* out past the corner, where a polygon can have a point of its own */
 .scene-handle-scale {
   margin: -20px 0 0 8px;
@@ -394,6 +400,14 @@
   height: 10px;
   margin: -5px 0 0 -5px;
   rotate: 45deg;
+}
+
+/* a shift's middle, long and thin so it can't be taken for a point */
+.scene-handle-shift {
+  width: 12px;
+  height: 6px;
+  margin: -3px 0 0 -6px;
+  border-radius: 3px;
 }
 
 /* a color of its own, so it can't be taken for the shape going along it */
@@ -1418,7 +1432,9 @@ label.scene-button:hover {
 }
 
 .scene-config input,
+.scene-config textarea,
 .scene-params input,
+.scene-params textarea,
 .scene-key-editor input,
 .scene-timeline input {
   box-sizing: border-box;
@@ -1432,7 +1448,9 @@ label.scene-button:hover {
 }
 
 .scene-config input:focus-visible,
+.scene-config textarea:focus-visible,
 .scene-params input:focus-visible,
+.scene-params textarea:focus-visible,
 .scene-key-editor input:focus-visible,
 .scene-timeline input:focus-visible {
   border-color: var(--accent);
@@ -1449,6 +1467,11 @@ label.scene-button:hover {
 .scene-param-name {
   width: 100%;
   font-family: var(--mono) !important;
+}
+
+/* text's words, which can run over more than one line */
+.scene-text-words {
+  resize: vertical;
 }
 
 /* ---- a slider and its box ---- */

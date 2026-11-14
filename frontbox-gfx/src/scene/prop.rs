@@ -82,7 +82,7 @@ impl Prop<f32> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Bounds, Color, Images, Params, Value};
+  use crate::scene::{Bounds, Color, Assets, Params, Value};
 
   #[test]
   fn fixed_resolves_to_its_value() {
@@ -94,7 +94,7 @@ mod tests {
   fn param_prefers_the_games_value_over_the_default() {
     let defaults = Params::from([("size".into(), Value::Float(1.0)), ("other".into(), Value::Float(9.0))]);
     let params = Params::from([("size".into(), Value::Float(2.0))]);
-    let env = Env { time: 0.0, cycle: 0, timing: None, playback_seed: 0, params: &params, defaults: &defaults, images: Images::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None, visits: None, fill_frame: glam::Affine2::IDENTITY };
+    let env = Env { time: 0.0, cycle: 0, timing: None, playback_seed: 0, params: &params, defaults: &defaults, assets: Assets::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None, visits: None, fill_frame: glam::Affine2::IDENTITY };
     assert_eq!(Prop::<f32>::Param("size".into()).resolve(&env), 2.0);
     assert_eq!(Prop::<f32>::Param("other".into()).resolve(&env), 9.0);
   }

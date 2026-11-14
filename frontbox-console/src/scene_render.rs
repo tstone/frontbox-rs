@@ -6,7 +6,7 @@ use frontbox_led::{LedPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::protocol::{ClipSound, RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, SceneSize, SceneSource};
+use crate::protocol::{ClipSound, RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, RenderedShift, SceneSize, SceneSource};
 
 /// The most points one render will sample. A render costs the machine time and anything on the network can ask for
 /// one. This is far more than any DMD or list of LEDs.
@@ -30,12 +30,12 @@ pub(crate) fn render_scene(
   source: SceneSource,
   size: SceneSize,
   machine: MachineLeds,
-  content: Option<Content>,
+  content: Content,
   time: f32,
   cycle: Option<u32>,
 ) -> Result<RenderedScene, String> {
   let (scene, preview) = read(source)?;
-  let drawn = &with_images(preview.unwrap_or_else(|| scene.clone()), content)?;
+  let drawn = &with_assets(preview.unwrap_or_else(|| scene.clone()), content)?;
   let canvas = Canvas::of(drawn, size)?;
   let (shown, time) = match cycle {
     Some(cycle) => (drawn.clone(), drawn.timing.map_or(time, |timing| timing.cycle_time(cycle, time))),
@@ -73,11 +73,11 @@ pub(crate) fn render_clip(
   source: SceneSource,
   size: SceneSize,
   machine: MachineLeds,
-  content: Option<Content>,
+  content: Content,
   cycle: u32,
 ) -> Result<Vec<u8>, String> {
   let (scene, preview) = read(source)?;
-  let scene = with_images(preview.unwrap_or(scene), content)?;
+  let scene = with_assets(preview.unwrap_or(scene), content)?;
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
@@ -148,14 +148,10 @@ fn checked(scene: Scene) -> Result<Scene, String> {
   Ok(scene)
 }
 
-/// The scene with the images it draws. Each is only decoded the first time, so this is cheap for every frame the client
-/// asks for.
-fn with_images(scene: Scene, content: Option<Content>) -> Result<Scene, String> {
-  match content {
-    Some(content) => scene.with_images(&content).map_err(|err| err.to_string()),
-    None if scene.image_names().next().is_some() => Err("this machine has no content folder".into()),
-    None => Ok(scene),
-  }
+/// The scene with the images and fonts it draws. Each is only loaded the first time, so this is cheap for every frame the
+/// client asks for.
+fn with_assets(scene: Scene, content: Content) -> Result<Scene, String> {
+  scene.with_assets(&content).map_err(|err| err.to_string())
 }
 
 /// What each layer of a scene is drawn on in a render
@@ -331,6 +327,11 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     handles: pose.handles.iter().map(|p| p.to_array()).collect(),
     pivots: pose.pivots.iter().map(|p| p.to_array()).collect(),
     centers: pose.centers.iter().map(|center| center.map(|p| p.to_array())).collect(),
+    shifts: pose
+      .shifts
+      .iter()
+      .map(|line| line.map(|line| RenderedShift { back: line.back.to_array(), forward: line.forward.to_array(), middle: line.middle.to_array() }))
+      .collect(),
     outline: pose.outline.iter().map(|p| p.to_array()).collect(),
     paths: pose.paths.iter().map(|path| path.as_ref().map(rendered_shape)).collect(),
   }
@@ -390,7 +391,7 @@ mod tests {
       ]))))],)"#;
 
   fn colors(source: &str, target: MachineLeds) -> BTreeMap<String, Rgb> {
-    render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().led_colors
+    render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None).unwrap().led_colors
   }
 
   #[test]
@@ -445,7 +446,7 @@ mod tests {
 
   #[test]
   fn each_set_of_leds_gets_a_row_of_the_strip() {
-    let rendered = render_scene(ron(&two_layers(&["led0"], &["led1"])), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(&two_layers(&["led0"], &["led1"])), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (3, 2));
     assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
     assert_eq!(rendered.colors[12..16], [0, 0, 255, 255]);
@@ -453,7 +454,7 @@ mod tests {
 
   #[test]
   fn a_clip_plays_every_layer_on_one_timeline() {
-    let clip = render_clip(1, ron(&two_layers(&["led0"], &["led2"])), SIZE, three(), None, 0).unwrap();
+    let clip = render_clip(1, ron(&two_layers(&["led0"], &["led2"])), SIZE, three(), Content::without_folder(), 0).unwrap();
     let header_length = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     let header: serde_json::Value = serde_json::from_slice(&clip[4..4 + header_length]).unwrap();
     assert_eq!(header["leds"], serde_json::json!(["led0", "led2"]));
@@ -472,7 +473,7 @@ mod tests {
   fn a_graph_is_built_from_the_leds_a_layer_lands_on_and_traversed() {
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
     let target = MachineLeds { leds: leds(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_leds() };
-    let rendered = render_scene(ron(WAVE), SIZE, target, None, 2.0, Some(0)).unwrap();
+    let rendered = render_scene(ron(WAVE), SIZE, target, Content::without_folder(), 2.0, Some(0)).unwrap();
     let lit: Vec<bool> = (0..4).map(|i| rendered.led_colors[&format!("led{i}")] != Rgb::new(0, 0, 0)).collect();
     assert_eq!(lit, [false, false, true, false]);
 
@@ -486,14 +487,14 @@ mod tests {
 
   #[test]
   fn a_layer_without_a_graph_has_none() {
-    let rendered = render_scene(ron(AREA), SIZE, three(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(AREA), SIZE, three(), Content::without_folder(), 0.0, None).unwrap();
     assert!(rendered.graphs[0].is_none());
   }
 
   #[test]
   fn a_strip_shows_a_graph_on_a_sequence_at_its_nearest_nodes() {
     let source = WAVE.replace(r#"Area("Square")"#, "Sequence");
-    let rendered = render_scene(ron(&source), SceneSize { leds: 5, ..SIZE }, three(), None, 1.0, Some(0)).unwrap();
+    let rendered = render_scene(ron(&source), SceneSize { leds: 5, ..SIZE }, three(), Content::without_folder(), 1.0, Some(0)).unwrap();
     // three LEDs in a chain, seen on a strip of five: points halfway between two LEDs show the first of them
     let alphas: Vec<u8> = rendered.colors.chunks(4).map(|color| color[3]).collect();
     assert_eq!(alphas, [0, 0, 255, 255, 0]);
@@ -542,7 +543,7 @@ mod tests {
 
   #[test]
   fn a_sequence_renders_to_leds() {
-    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (3, 1));
     assert_eq!(rendered.colors.len(), 12);
     assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
@@ -551,7 +552,7 @@ mod tests {
 
   #[test]
   fn a_display_renders_to_pixels_and_covers_what_it_was_asked_for() {
-    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (4, 2));
     let area = rendered.area;
     assert_eq!((area.x, area.y, area.width, area.height), (0.0, 0.0, 4.0, 2.0));
@@ -560,7 +561,7 @@ mod tests {
   #[test]
   fn area_layers_have_no_strip() {
     let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(rendered.height, 0);
     assert!(rendered.colors.is_empty());
   }
@@ -569,7 +570,7 @@ mod tests {
   fn layers_on_the_same_leds_share_a_row_of_the_strip_in_the_order_theyre_shown() {
     let layer = |z: i8, color: &str| format!(r#"Leds(leds: Name("led0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", layer(1, "255, 0, 0, 255"), layer(0, "0, 0, 255, 255"));
-    let rendered = render_scene(ron(&source), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(rendered.height, 1);
     assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
   }
@@ -591,7 +592,7 @@ mod tests {
     let source = format!("Scene(version: 2, layers: [{}, {}])", gradient("led0", "Square"), gradient("led1", "Plane"));
     // the same spot on each plane, which is somewhere different on the machine
     let target = MachineLeds { leds: leds(&[Some(Vec3::new(5.0, 5.0, 0.0)), Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_leds() };
-    let rendered = render_scene(ron(&source), SIZE, target, None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(&source), SIZE, target, Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(rendered.led_colors["led0"], Rgb::new(255, 0, 0));
     assert_eq!(rendered.led_colors["led1"], Rgb::new(255, 0, 0));
     assert_eq!(rendered.outlines[0], rendered.outlines[1]);
@@ -601,7 +602,7 @@ mod tests {
   fn each_layer_outlines_what_its_on() {
     let on = |plane: &str| format!(r#"Leds(surface: Area("{plane}"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", on("Square"), on("Wide"));
-    let outlines = render_scene(ron(&source), SIZE, no_leds(), None, 0.0, None).unwrap().outlines;
+    let outlines = render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().outlines;
     assert_eq!(outlines[0], [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
     assert_eq!(outlines[1], [[[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]]]);
   }
@@ -610,7 +611,7 @@ mod tests {
   fn a_layer_with_no_shape_outlines_the_plane() {
     let target = no_leds();
     let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
-    let outlines = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().outlines;
+    let outlines = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None).unwrap().outlines;
     assert_eq!(outlines, [[[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]]);
   }
 
@@ -622,13 +623,13 @@ mod tests {
         region: (base: Polygon(points: [Fixed(0.0, 0.0), Fixed(1.0, 0.0), Fixed(0.0, 1.0)]), transform: [Translate(Fixed(2.0, 3.0))]),
         fill: (base: Solid(Fixed(1, 2, 3, 255))),
       ))],)"#;
-    let outlines = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap().outlines;
+    let outlines = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None).unwrap().outlines;
     assert_eq!(outlines, [[[[2.0, 3.0], [3.0, 3.0], [2.0, 4.0]]]]);
   }
 
   #[test]
   fn a_layer_with_no_shape_outlines_a_whole_sequence() {
-    let outlines = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).unwrap().outlines;
+    let outlines = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().outlines;
     assert_eq!(outlines, [[[[0.0, -0.5], [1.0, -0.5], [1.0, 0.5], [0.0, 0.5]]]]);
   }
 
@@ -643,7 +644,7 @@ mod tests {
             transform: [Translate(Keyframes(keys: [(at: 0.0, value: (0.0, 0.0)), (at: 2.0, value: (1.0, 0.0))], cycle: Once))],
           ),
         ))],)"#;
-    let shapes = render_scene(ron(source), SIZE, no_leds(), None, 1.0, Some(0)).unwrap().shapes;
+    let shapes = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 1.0, Some(0)).unwrap().shapes;
     assert!(shapes[0].is_none());
     let rect = shapes[1].as_ref().unwrap();
     assert_eq!(rect.transforms, [[1.0, 0.0, 0.0, 1.0, 0.5, 0.0]]);
@@ -652,7 +653,7 @@ mod tests {
 
   #[test]
   fn a_sequences_area_gives_each_point_the_same_room() {
-    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).unwrap().area;
+    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().area;
     assert_eq!((area.x, area.y, area.width, area.height), (-0.25, -0.5, 1.5, 1.0));
   }
 
@@ -664,7 +665,7 @@ mod tests {
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],
     )"#;
-    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 5, height: 5 }, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 5, height: 5 }, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     let pixel = |x: usize, y: usize| &rendered.colors[(y * 5 + x) * 4..][..4];
     assert_eq!(pixel(2, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
@@ -672,34 +673,34 @@ mod tests {
 
   #[test]
   fn reports_where_a_scene_is_wrong() {
-    let error = render_scene(ron("Scene(version: 2, layers: [Leds(surface: Sequence, layer: (fill: (base: Nope)))])"), SIZE, no_leds(), None, 0.0, None);
+    let error = render_scene(ron("Scene(version: 2, layers: [Leds(surface: Sequence, layer: (fill: (base: Nope)))])"), SIZE, no_leds(), Content::without_folder(), 0.0, None);
     assert!(error.err().unwrap().contains("1:"));
   }
 
   #[test]
   fn refuses_a_size_too_large_to_sample() {
     let size = SceneSize { leds: usize::MAX, ..SIZE };
-    assert!(render_scene(ron(RED_TO_BLUE), size, no_leds(), None, 0.0, None).is_err());
+    assert!(render_scene(ron(RED_TO_BLUE), size, no_leds(), Content::without_folder(), 0.0, None).is_err());
   }
 
   #[test]
   fn a_definition_renders_like_its_ron() {
-    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).unwrap();
-    let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
+    let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(from_definition.colors, from_ron.colors);
     assert_eq!(from_definition.ron, from_ron.ron);
   }
 
   fn solid(color: &str, timing: &str) -> Scene {
     let source = format!("Scene(version: 2, {timing} layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))])");
-    render_scene(ron(&source), SIZE, no_leds(), None, 0.0, None).unwrap().scene
+    render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().scene
   }
 
   #[test]
   fn a_preview_draws_what_it_shows_and_gives_back_the_scene() {
     let (scene, shown) = (solid("255, 0, 0, 255", ""), solid("0, 0, 255, 255", ""));
-    let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_leds(), None, 0.0, None).unwrap();
-    let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_leds(), None, 0.0, None).unwrap();
+    let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
+    let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(preview.colors[0..3], [0, 0, 255]);
     assert_eq!(preview.ron, from_definition.ron);
   }
@@ -708,7 +709,7 @@ mod tests {
   fn a_clip_of_a_preview_is_of_what_it_shows() {
     let timing = "timing: (duration: 1.0),";
     let source = SceneSource::Preview { scene: solid("255, 0, 0, 255", timing), shown: solid("0, 0, 255, 255", timing) };
-    let clip = render_clip(0, source, SIZE, no_leds(), None, 0).unwrap();
+    let clip = render_clip(0, source, SIZE, no_leds(), Content::without_folder(), 0).unwrap();
     let header = u32::from_le_bytes(clip[0..4].try_into().unwrap()) as usize;
     assert_eq!(clip[4 + header..7 + header], [0, 0, 255]);
   }
@@ -718,10 +719,10 @@ mod tests {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
       layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (9, 8, 7, 255))])))))],)"#;
-    let scene = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap().scene;
+    let scene = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().scene;
     let mut json = serde_json::to_value(&scene).unwrap();
     json["layers"][0]["Leds"]["layer"]["fill"]["base"]["Solid"]["Keyframes"]["hidden"] = true.into();
-    let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_leds(), None, 0.0, None);
+    let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None);
     let back = back.unwrap();
     assert!(!back.ron.contains("hidden"), "{}", back.ron);
   }
@@ -731,9 +732,9 @@ mod tests {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
       layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))])))))],)"#;
-    let mut scene = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap().scene;
+    let mut scene = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap().scene;
     scene.timing = None;
-    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), None, 0.0, None).err().unwrap();
+    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), Content::without_folder(), 0.0, None).err().unwrap();
     assert!(error.contains("timing"), "{error}");
   }
 
@@ -757,13 +758,13 @@ mod tests {
 
   #[test]
   fn renders_any_moment() {
-    let rendered = render_scene(rising("Once"), SIZE, no_leds(), None, 1.0, None).unwrap();
+    let rendered = render_scene(rising("Once"), SIZE, no_leds(), Content::without_folder(), 1.0, None).unwrap();
     assert_eq!(rendered.colors[..4], [100, 0, 0, 255]);
   }
 
   #[test]
   fn the_end_of_a_cycle_is_its_last_moment_however_often_it_repeats() {
-    let rendered = render_scene(rising("Forever"), SIZE, no_leds(), None, 2.0, None).unwrap();
+    let rendered = render_scene(rising("Forever"), SIZE, no_leds(), Content::without_folder(), 2.0, None).unwrap();
     assert_eq!(rendered.colors[..4], [200, 0, 0, 255]);
     assert!(rendered.ron.contains("Forever"), "{}", rendered.ron);
   }
@@ -780,7 +781,7 @@ mod tests {
           )))))],)"#
       ))
     };
-    let colors = |source, time| render_scene(source, SIZE, no_leds(), None, time, None).unwrap().colors;
+    let colors = |source, time| render_scene(source, SIZE, no_leds(), Content::without_folder(), time, None).unwrap().colors;
     assert_ne!(colors(scene("Forever"), 0.25), colors(scene("Forever"), 0.75));
     assert_eq!(colors(scene("Once"), 0.25), colors(scene("Once"), 0.75));
     assert_eq!(colors(scene("Times(1)"), 0.25), colors(scene("Times(1)"), 0.75));
@@ -837,7 +838,7 @@ mod tests {
         )),
       ],
     )"#;
-    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 10, height: 5 }, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 10, height: 5 }, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     let pixel = |x: usize, y: usize| &rendered.colors[(y * 10 + x) * 4..][..4];
     assert_eq!(pixel(5, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 2), [0, 0, 255, 255]);
@@ -850,19 +851,19 @@ mod tests {
   #[test]
   fn a_scene_draws_its_images_from_the_content_folder() {
     let content = content("draws");
-    let rendered = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), Some(content.clone()), 0.0, None).unwrap();
+    let rendered = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), content.clone(), 0.0, None).unwrap();
     assert_eq!(rendered.colors, [255, 0, 0, 255, 0, 0, 255, 255]);
-    let _ = std::fs::remove_dir_all(content.root());
+    let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
   #[test]
   fn a_clip_draws_its_images_too() {
     let content = content("clip");
     let source = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Image(name: "art/a.png"))))])"#;
-    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), Some(content.clone()), 0).unwrap();
+    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), content.clone(), 0).unwrap();
     let header = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     assert_eq!(clip[4 + header..][..8], [255, 0, 0, 255, 0, 0, 255, 255]);
-    let _ = std::fs::remove_dir_all(content.root());
+    let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
   #[test]
@@ -882,33 +883,33 @@ mod tests {
       name: "a.gif",
       frame: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 2.0)]),
     ))))])"#;
-    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), Some(content.clone()), 0).unwrap();
+    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), content.clone(), 0).unwrap();
     let header = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     let frames = &clip[4 + header..];
     assert_eq!(frames[..4], [255, 0, 0, 255]);
     assert_eq!(frames[frames.len() - 8..frames.len() - 4], [0, 0, 255, 255]);
-    let _ = std::fs::remove_dir_all(content.root());
+    let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
   #[test]
   fn a_missing_image_is_an_error_naming_it() {
     let content = content("missing");
     let source = IMAGE.replace("art/a.png", "art/b.png");
-    let error = render_scene(ron(&source), TWO_POINTS, no_leds(), Some(content.clone()), 0.0, None).err().unwrap();
+    let error = render_scene(ron(&source), TWO_POINTS, no_leds(), content.clone(), 0.0, None).err().unwrap();
     assert!(error.contains("art/b.png"), "{error}");
-    let _ = std::fs::remove_dir_all(content.root());
+    let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
   #[test]
   fn a_machine_with_no_content_folder_says_so_only_when_a_scene_needs_one() {
-    let error = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), None, 0.0, None).err().unwrap();
+    let error = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), Content::without_folder(), 0.0, None).err().unwrap();
     assert!(error.contains("no content folder"), "{error}");
-    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), None, 0.0, None).is_ok());
+    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None).is_ok());
   }
 
   #[test]
   fn each_cycle_of_a_scene_has_a_clip_of_its_own() {
-    let clip = |cycle| render_clip(0, picking("Forever", 0.0), SIZE, no_leds(), None, cycle).unwrap();
+    let clip = |cycle| render_clip(0, picking("Forever", 0.0), SIZE, no_leds(), Content::without_folder(), cycle).unwrap();
     let first = clip(0);
     assert_eq!(first, clip(0));
     assert_ne!(read_clip(&first).1, read_clip(&clip(1)).1);
@@ -917,7 +918,7 @@ mod tests {
 
   #[test]
   fn the_first_cycle_of_a_clip_has_nothing_to_smooth_from() {
-    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), None, 0).unwrap();
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 0).unwrap();
     let (header, colors) = read_clip(&clip);
     let frames = header["frames"].as_u64().unwrap() as usize;
     assert_eq!(colors[..12], colors[(frames - 1) * 12..]);
@@ -925,11 +926,11 @@ mod tests {
 
   #[test]
   fn a_moment_of_a_cycle_is_what_its_clip_shows() {
-    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), None, 4).unwrap();
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 4).unwrap();
     let (header, colors) = read_clip(&clip);
     let frames = header["frames"].as_u64().unwrap() as usize;
     let middle = (frames - 1) / 2;
-    let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), None, 0.5, Some(4)).unwrap();
+    let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 0.5, Some(4)).unwrap();
     assert_eq!(moment.colors, colors[middle * 12..][..12]);
   }
 
@@ -941,7 +942,7 @@ mod tests {
         Sound(sound: "sounds/b.wav", volume: Fixed(0.5), start: 0.6, skip: 0.5, end: 0.85),
         Sound(sound: "sounds/a.wav", volume: Fixed(0.5), start: 0.1),
       ],)"#;
-    let clip = render_clip(0, ron(source), SIZE, three(), None, 2).unwrap();
+    let clip = render_clip(0, ron(source), SIZE, three(), Content::without_folder(), 2).unwrap();
     let (header, _) = read_clip(&clip);
     let sounds = header["sounds"].as_array().unwrap();
     let starts: Vec<_> = sounds.iter().map(|sound| (sound["sound"].as_str().unwrap(), sound["at"].as_f64().unwrap())).collect();
@@ -952,13 +953,13 @@ mod tests {
     assert_eq!((&sounds[0]["skip"], &sounds[1]["skip"]), (&0.0.into(), &0.5.into()));
     assert!(sounds[0]["length"].is_null() && (sounds[1]["length"].as_f64().unwrap() - 0.25).abs() < 1e-4, "{sounds:?}");
 
-    let rendered = render_scene(ron(source), SIZE, three(), None, 0.0, Some(0)).unwrap();
+    let rendered = render_scene(ron(source), SIZE, three(), Content::without_folder(), 0.0, Some(0)).unwrap();
     assert_eq!((rendered.outlines[1].len(), rendered.shapes[1].is_none()), (0, true));
   }
 
   #[test]
   fn a_clip_runs_from_the_start_of_a_cycle_to_its_end() {
-    let clip = render_clip(7, rising("Forever"), SIZE, no_leds(), None, 0).unwrap();
+    let clip = render_clip(7, rising("Forever"), SIZE, no_leds(), Content::without_folder(), 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["id"], 7);
     assert_eq!(header["width"], 3);
@@ -978,7 +979,7 @@ mod tests {
       version: 2, timing: (duration: 0.1),
       layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(200, 0, 0, 128)))))],)"#;
     let target = MachineLeds { leds: leds(&[None, None]), ..no_leds() };
-    let clip = render_clip(0, ron(source), SIZE, target, None, 0).unwrap();
+    let clip = render_clip(0, ron(source), SIZE, target, Content::without_folder(), 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["leds"], serde_json::json!(["led0", "led1"]));
 
@@ -992,7 +993,7 @@ mod tests {
   fn a_display_layer_is_drawn_on_its_own_screen_and_reaches_no_leds() {
     let source = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])"#;
     let target = MachineLeds { leds: leds(&[None]), ..no_leds() };
-    let rendered = render_scene(ron(source), SIZE, target, None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None).unwrap();
     assert_eq!((rendered.width, rendered.height), (4, 2));
     assert_eq!((rendered.area.width, rendered.area.height), (4.0, 2.0));
     assert!(rendered.led_colors.is_empty());
@@ -1007,13 +1008,13 @@ mod tests {
 
   #[test]
   fn a_static_scene_has_no_clip() {
-    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_leds(), None, 0).is_err());
+    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0).is_err());
   }
 
   #[test]
   fn refuses_a_clip_too_big_to_send() {
     let size = SceneSize { leds: 1 << 18, width: 0, height: 0 };
-    let error = render_clip(0, rising("Once"), size, no_leds(), None, 0).unwrap_err();
+    let error = render_clip(0, rising("Once"), size, no_leds(), Content::without_folder(), 0).unwrap_err();
     assert!(error.contains("more than"), "{error}");
   }
 
@@ -1030,9 +1031,9 @@ mod tests {
         ),
         fill: (base: Solid(Param("tint")), adjust: [HueShift(Param("size"))]),
       ))],)"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     let json = serde_json::to_string(&rendered.scene).unwrap();
-    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(back.ron, rendered.ron);
   }
 
@@ -1047,9 +1048,9 @@ mod tests {
         ),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     let json = serde_json::to_string(&rendered.scene).unwrap();
-    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), None, 0.0, None).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None).unwrap();
     assert_eq!(back.ron, rendered.ron);
 
     let path = rendered.shapes[0].as_ref().unwrap().paths[0].as_ref().unwrap();

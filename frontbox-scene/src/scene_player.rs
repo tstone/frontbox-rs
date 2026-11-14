@@ -111,7 +111,7 @@ impl<C> ScenePlayer<C> {
     ctx: &SystemContext,
   ) {
     let (name, value) = (name.into(), value.into());
-    self.with_playback(ctx, |playback| playback.set_param(name.clone(), value));
+    self.with_playback(ctx, |playback| playback.set_param(name.clone(), value.clone()));
     self.scene.set_param(name, value);
   }
 
@@ -127,7 +127,7 @@ impl<C> ScenePlayer<C> {
   ) {
     let (name, to) = (name.into(), to.into());
     self.with_playback(ctx, |playback| {
-      playback.ease_param(name.clone(), to, duration, curve)
+      playback.ease_param(name.clone(), to.clone(), duration, curve)
     });
     self.scene.set_param(name, to);
   }
@@ -189,7 +189,7 @@ mod tests {
       scenes
         .shown()
         .next()
-        .and_then(|(_, playback)| playback.moment().params.get(name).copied())
+        .and_then(|(_, playback)| playback.moment().params.get(name).cloned())
     });
     match value.unwrap() {
       Some(Value::Float(value)) => Some(value),

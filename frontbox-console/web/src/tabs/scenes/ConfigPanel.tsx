@@ -6,6 +6,7 @@ import { Dynamic, Portal } from 'solid-js/web'
 import * as icons from '../../components/icons'
 import ScenePortal, { LayerColorContext, layerColorClass } from './ScenePortal'
 import { contentImageInfo } from '../../state/contentImages'
+import { contentFonts, fontLabel, refreshContentFonts } from '../../state/contentFonts'
 import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
 
 import type { BezierPoint } from '../../types/generated/BezierPoint'
@@ -15,15 +16,19 @@ import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Mask } from '../../types/generated/Mask'
 import type { NodeRef } from '../../types/generated/NodeRef'
+import type { NumberFormat } from '../../types/generated/NumberFormat'
 import type { Prop } from '../../types/generated/Prop'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
 import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Stop } from '../../types/generated/Stop'
 import type { StrokeAlign } from '../../types/generated/StrokeAlign'
+import type { TextAlign } from '../../types/generated/TextAlign'
+import type { TextSource } from '../../types/generated/TextSource'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
+import type { VerticalAlign } from '../../types/generated/VerticalAlign'
 import {
   algorithmKind,
   ancestry,
@@ -72,10 +77,12 @@ import {
   BRANCHING,
   COPIES,
   COPY_KINDS,
+  crispTextSize,
   FAN_ANGLE,
   FAN_COUNT,
   field,
   framesTrack,
+  freshParamName,
   freshTraversalName,
   GROWTH_DENSITY,
   imageLength,
@@ -104,8 +111,9 @@ import {
   usedTraversals,
   variant,
   WANDER,
-  WIDEST_AT,
+  SHIFT,
   withDuration,
+  withParamValue,
   withTiming,
   withTraversalRenamed,
   type AdjustKind,
@@ -120,7 +128,7 @@ import {
 
 type FillKind = 'Solid' | GradientStyle | 'Image'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
-type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Polygon' | 'Polyline' | 'Bezier'
+type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
 /** What a layer's region can be: a shape, or on an LED scene its graph */
@@ -156,6 +164,7 @@ const SHAPES: ShapeOption[] = ([
   { value: 'Polygon', label: 'Polygon' },
   { value: 'Rect', label: 'Rectangle' },
   { value: 'Star', label: 'Star' },
+  { value: 'Text', label: 'Text' },
 ] as ShapeOption[]).map((option) => ({ ...option, group: 'Shapes' }))
 const TEMPLATES: ShapeOption[] = [
   { value: 'Pinwheel', label: 'Pinwheel', group: 'Templates' },
@@ -168,16 +177,16 @@ const ALL: ShapeOption = { value: 'None', label: 'All' }
 const SHAPE_OPTIONS: ShapeOption[] = [ALL, ...SHAPES, ...TEMPLATES]
 /**
  * A path has to be something, and can also be a line, which has no inside to draw as a shape. A sweep follows only a
- * path's own outline, so it has no templates.
+ * path's own outline, so it has no templates. Text isn't offered, as only its box is an outline to follow.
  */
 const PATH_OPTIONS: ShapeOption[] = [
-  ...SHAPES,
+  ...SHAPES.filter((option) => option.value !== 'Text'),
   { value: 'Polyline', label: 'Polyline', group: 'Shapes' } as ShapeOption,
   { value: 'Bezier', label: 'Bezier', group: 'Shapes' } as ShapeOption,
 ].sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape that's drawn, rather than a sweep's path */
-const COPY_OPTIONS: { value: TransformKind; label: string }[] = COPY_KINDS.map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
+const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, 'Shift' as const].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on an LED scene */
 const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
 /** Only for a layer with traversals to fit to */
@@ -203,6 +212,32 @@ const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 /** Only for a shape that's drawn, rather than a sweep's path */
 const STROKE_OPTION: { value: 'Stroke'; label: string } = { value: 'Stroke', label: 'Stroke' }
+type TextSourceKind = 'Fixed' | 'Param' | 'Number'
+const TEXT_SOURCE_OPTIONS: { value: TextSourceKind; label: string }[] = [
+  { value: 'Fixed', label: 'Fixed' },
+  { value: 'Param', label: 'Param' },
+  { value: 'Number', label: 'Number' },
+]
+type NumberFormatKind = 'Grouped' | 'Plain' | 'Abbreviated'
+const NUMBER_FORMAT_OPTIONS: { value: NumberFormatKind; label: string }[] = [
+  { value: 'Grouped', label: 'Grouped (12,942)' },
+  { value: 'Plain', label: 'Plain (12942)' },
+  { value: 'Abbreviated', label: 'Abbreviated (12.9k)' },
+]
+/** A new number param's default, long enough to show grouping and abbreviating */
+const NUMBER_PREVIEW = 1_234_567
+/** Characters an abbreviated number starts out fitting in */
+const ABBREVIATED_LENGTH = 5
+const TEXT_ALIGN_OPTIONS: { value: TextAlign; label: string }[] = [
+  { value: 'Left', label: 'Left' },
+  { value: 'Center', label: 'Center' },
+  { value: 'Right', label: 'Right' },
+]
+const VERTICAL_ALIGN_OPTIONS: { value: VerticalAlign; label: string }[] = [
+  { value: 'Top', label: 'Top' },
+  { value: 'Middle', label: 'Middle' },
+  { value: 'Bottom', label: 'Bottom' },
+]
 const STROKE_ALIGN_OPTIONS: { value: StrokeAlign; label: string }[] = [
   { value: 'Inside', label: 'Inside the edge' },
   { value: 'Centered', label: 'Centered on the edge' },
@@ -226,6 +261,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Diamond: icons.Diamond,
   Star: icons.Star,
   Chevron: icons.ChevronUp,
+  Text: icons.Type,
   Polyline: icons.Activity,
   Bezier: icons.Spline,
   Graph: icons.Network,
@@ -240,6 +276,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Mirror: icons.SquareSplitHorizontal,
   Revolve: icons.RefreshCw,
   Divide: icons.Scissors,
+  Shift: icons.MoveVertical,
   HueShift: icons.Palette,
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
@@ -304,6 +341,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   const graphNodes = useGraphNodes()
   const [open, setOpen] = props.selection
   onMount(refreshContentSounds)
+  onMount(refreshContentFonts)
 
   const nodes = createMemo(() => configNodes(scene, surfaces))
   const collection = createMemo(() =>
@@ -864,7 +902,13 @@ function NodeFields(props: { node: ConfigNode }) {
   return (
     <Switch>
       <Match when={is(props.node, 'sound')}>{(sound) => <SoundFields lens={sound().lens} />}</Match>
-      <Match when={is(props.node, 'region')}>{(region) => <GraphFields layer={region().layer!} />}</Match>
+      <Match when={is(props.node, 'region')}>
+        {(region) => (
+          <Show when={region().layer?.get().graph} fallback={<TextFields lens={region().lens as Lens<Shape>} layer={region().layer} />}>
+            <GraphFields layer={region().layer!} />
+          </Show>
+        )}
+      </Match>
       <Match when={is(props.node, 'fill')}>{(fill) => <FillFields lens={fill().lens} />}</Match>
       <Match when={is(props.node, 'mask')}>{(mask) => <MaskFields lens={mask().lens as Lens<Mask>} />}</Match>
       <Match when={is(props.node, 'stroke')}>{(stroke) => <StrokeFields node={stroke()} />}</Match>
@@ -1032,6 +1076,181 @@ function StrokeFields(props: { node: Extract<ConfigNode, { kind: 'stroke' }> }) 
           onChange={(draws) => field(stroke(), 'color').set(draws === 'Color' ? { Fixed: WHITE } : undefined)}
         />
       </FieldRow>
+    </>
+  )
+}
+
+/** Text's font, its words, and where they sit in its box, which can be made to cover what the layer is on */
+function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
+  const scene = useContext(SceneContext)!
+  const surface = useContext(SurfaceContext)!
+  const text = () => variant(field(props.lens, 'base') as Lens<ShapeNode>, 'Text')
+  const source = () => field(text(), 'text')
+  const sourceKind = () => Object.keys(source().get())[0] as TextSourceKind
+  // the words it shows now, carried over to a fixed text or a param's default
+  const shown = () => {
+    const current = source().get()
+    if ('Fixed' in current) return current.Fixed
+    const param = 'Param' in current ? scene.get().params?.[current.Param] : undefined
+    return param && 'Text' in param ? param.Text : 'TEXT'
+  }
+  const changeSource = (kind: TextSourceKind) => {
+    if (kind === sourceKind()) return
+    if (kind === 'Fixed') return source().set({ Fixed: shown() })
+    if (kind === 'Number') {
+      // a param, as a number shown as text is nearly always the game's, with a default that previews the format
+      const name = freshParamName(scene.get(), 'number')
+      scene.set(withParamValue(scene.get(), name, { Int: NUMBER_PREVIEW }))
+      return source().set({ Number: { value: { Param: name }, format: 'Grouped' } })
+    }
+    const name = freshParamName(scene.get(), 'text')
+    scene.set(withParamValue(scene.get(), name, { Text: shown() }))
+    source().set({ Param: name })
+  }
+  // one that isn't in the folder stays chosen, so it can be seen and changed
+  const fonts = () => [...new Set([...contentFonts(), text().get().font])].filter((name) => name !== '').map((name) => ({ value: name, label: fontLabel(name) }))
+  // a fixed size moves to the nearest the new font is crisp at
+  const changeFont = (font: string) => {
+    const { size } = text().get()
+    text().set({ ...text().get(), font, size: 'Fixed' in size ? { Fixed: crispTextSize(font, size.Fixed) } : size })
+  }
+  // the display or plane the layer is on
+  const place = () => {
+    const layer = props.layer?.get()
+    return layer?.display ?? (layer && layerPlane(layer)) ?? 'display'
+  }
+  const fill = ([width, height]: Vec2) => {
+    const box = { ...text().get(), width: { Fixed: width }, height: { Fixed: height } }
+    props.lens.set({ ...props.lens.get(), base: { Text: box }, transform: [{ Translate: { Fixed: [width / 2, height / 2] } }] })
+  }
+  return (
+    <>
+      <FieldRow label="Font">
+        <Show when={fonts().length > 0} fallback={<span class="scene-note">No fonts in the machine's content folder</span>}>
+          <Dropdown label="Font" options={fonts()} value={text().get().font} onChange={changeFont} />
+        </Show>
+      </FieldRow>
+      <Show when={text().get().font !== '' && !contentFonts().includes(text().get().font)}>
+        <p class="scene-note scene-note-warn">There's no font by this name in the content folder, so this draws nothing.</p>
+      </Show>
+      <FieldRow label="Text from">
+        <Dropdown label="Text from" options={TEXT_SOURCE_OPTIONS} value={sourceKind()} onChange={changeSource} />
+      </FieldRow>
+      <Switch>
+        <Match when={sourceKind() === 'Fixed'}>
+          <FieldRow label="Text">
+            <textarea
+              class="scene-param-name scene-text-words"
+              aria-label="Text"
+              rows={2}
+              spellcheck={false}
+              value={shown()}
+              onInput={(e) => source().set({ Fixed: e.currentTarget.value })}
+            />
+          </FieldRow>
+        </Match>
+        <Match when={sourceKind() === 'Param'}>
+          <TextParamField lens={source() as Lens<Extract<TextSource, { Param: string }>>} />
+        </Match>
+        <Match when={sourceKind() === 'Number'}>
+          <NumberFormatField lens={field(variant(source(), 'Number'), 'format')} />
+        </Match>
+      </Switch>
+      <FieldRow label="Align">
+        <Dropdown label="Align" options={TEXT_ALIGN_OPTIONS} value={text().get().align} onChange={(align) => field(text(), 'align').set(align)} />
+      </FieldRow>
+      <FieldRow label="Vertical align">
+        <Dropdown
+          label="Vertical align"
+          options={VERTICAL_ALIGN_OPTIONS}
+          value={text().get().vertical_align}
+          onChange={(align) => field(text(), 'vertical_align').set(align)}
+        />
+      </FieldRow>
+      <Show when={surface()}>
+        {(size) => (
+          <button
+            type="button"
+            class="scene-button scene-fields-button"
+            title={`Sizes the text's box to the ${place()} and moves it over it, in place of its transforms`}
+            onClick={() => fill(size())}
+          >
+            Fill {place()}
+          </button>
+        )}
+      </Show>
+    </>
+  )
+}
+
+/** The param a text reads its words from. A name nothing has yet becomes a param, with the words it showed. */
+function TextParamField(props: { lens: Lens<Extract<TextSource, { Param: string }>> }) {
+  const scene = useContext(SceneContext)!
+  const name = () => props.lens.get().Param
+  const param = () => scene.get().params?.[name()]
+  const rename = (next: string) => {
+    if (next === '' || next === name()) return
+    const current = param()
+    if (scene.get().params?.[next] === undefined) scene.set(withParamValue(scene.get(), next, current && 'Text' in current ? current : { Text: '' }))
+    props.lens.set({ Param: next })
+  }
+  const readable = () => {
+    const current = param()
+    return current !== undefined && ('Text' in current || 'Int' in current || 'Float' in current)
+  }
+  return (
+    <>
+      <FieldRow label="Parameter">
+        <input
+          class="scene-param-name"
+          aria-label="Text parameter name"
+          spellcheck={false}
+          value={name()}
+          onChange={(e) => {
+            rename(e.currentTarget.value.trim())
+            e.currentTarget.value = name()
+          }}
+        />
+      </FieldRow>
+      <Show when={!readable()}>
+        <p class="scene-note scene-note-warn">No text or number parameter has that name, so this draws nothing.</p>
+      </Show>
+    </>
+  )
+}
+
+/** How a number is written out, and for an abbreviated one, how many characters it fits in */
+function NumberFormatField(props: { lens: Lens<NumberFormat> }) {
+  const kind = (): NumberFormatKind => {
+    const format = props.lens.get()
+    return typeof format === 'string' ? format : 'Abbreviated'
+  }
+  const length = () => {
+    const format = props.lens.get()
+    return typeof format === 'string' ? ABBREVIATED_LENGTH : format.Abbreviated.length
+  }
+  return (
+    <>
+      <FieldRow label="Format">
+        <Dropdown
+          label="Format"
+          options={NUMBER_FORMAT_OPTIONS}
+          value={kind()}
+          onChange={(next) => props.lens.set(next === 'Abbreviated' ? { Abbreviated: { length: length() } } : next)}
+        />
+      </FieldRow>
+      <Show when={kind() === 'Abbreviated'}>
+        <FieldRow label="Characters">
+          <NumberBox
+            class="scene-tree-number"
+            aria-label="Characters"
+            min="1"
+            step="1"
+            value={length()}
+            onNumber={(value) => props.lens.set({ Abbreviated: { length: Math.max(1, Math.round(value)) } })}
+          />
+        </FieldRow>
+      </Show>
     </>
   )
 }
@@ -1487,12 +1706,17 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
   if (kind === 'Diamond') {
-    return { Diamond: { width: { Fixed: width }, height: { Fixed: height }, widest_at: { Fixed: WIDEST_AT.rest! }, bow: { Fixed: BOW.rest! } } }
+    return { Diamond: { width: { Fixed: width }, height: { Fixed: height }, bow: { Fixed: BOW.rest! } } }
   }
   if (kind === 'Star') {
     return { Star: { radius: { Fixed: reach }, legs: { Fixed: LEGS.rest! }, leg_width: { Fixed: LEG_WIDTH.rest! }, bow: { Fixed: BOW.rest! } } }
   }
   if (kind === 'Chevron') return { Chevron: { width: { Fixed: width }, height: { Fixed: height }, notch: { Fixed: NOTCH.rest! } } }
+  if (kind === 'Text') {
+    const font = contentFonts()[0] ?? ''
+    const size = { Fixed: crispTextSize(font, Math.max(Math.round(height / 2), 1)) }
+    return { Text: { text: { Fixed: 'TEXT' }, font, size, width: { Fixed: width }, height: { Fixed: height }, align: 'Center', vertical_align: 'Middle' } }
+  }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
     [-width / 2, height / 2],
@@ -1518,6 +1742,7 @@ function shapeSize(base: ShapeNode, scene: Scene): Vec2 {
   if ('Circle' in base) return [value(base.Circle.radius) * 2, value(base.Circle.radius) * 2]
   if ('Ellipse' in base) return [value(base.Ellipse.rx) * 2, value(base.Ellipse.ry) * 2]
   if ('Rect' in base) return [value(base.Rect.width), value(base.Rect.height)]
+  if ('Text' in base) return [value(base.Text.width), value(base.Text.height)]
   if ('Diamond' in base) return [value(base.Diamond.width), value(base.Diamond.height)]
   if ('Chevron' in base) return [value(base.Chevron.width), value(base.Chevron.height)]
   if ('Star' in base) return [value(base.Star.radius) * 2, value(base.Star.radius) * 2]
@@ -1574,6 +1799,7 @@ function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Tr
   if (kind === 'Mirror') return { Mirror: { center: { Fixed: [size[0] / 2, 0] }, rotation: { Fixed: 0 } } }
   if (kind === 'Revolve') return { Revolve: { center: { Fixed: [0, 0] }, angle: { Fixed: REVOLVE_ANGLE.rest! }, count: { Fixed: COPIES.rest! } } }
   if (kind === 'Divide') return { Divide: { center: { Fixed: [0, 0] }, rotation: { Fixed: 0 } } }
+  if (kind === 'Shift') return { Shift: { amount: { Fixed: SHIFT.rest! }, rotation: { Fixed: 0 } } }
   return { Fit: traversals[0] ?? '' }
 }
 
@@ -1588,7 +1814,7 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
   const surface = useContext(SurfaceContext)!
   const traversals = useContext(TraversalsContext)
   // a fit is only for a layer with traversals to fit to
-  const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? COPY_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
+  const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? SHAPE_TRANSFORM_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
   const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : []), ...(props.node.shape ? [[STROKE_OPTION]] : [])]
   const owner = () => props.node.id.slice(0, props.node.id.lastIndexOf('/'))
   const add = (kind: TransformKind | AdjustKind | 'Stroke') =>
@@ -1607,7 +1833,9 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
         const shape = props.node.shape?.get()
         const size = shape ? shapeSize(shape.base, scene.get()) : ([0, 0] as Vec2)
         const placed = list.findIndex((transform) => 'Translate' in transform)
-        const index = COPY_KINDS.includes(kind as CopyKind) && placed >= 0 ? placed : list.length
+        // in the shape's own space, so it moves with the shape
+        const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || kind === 'Shift'
+        const index = inOwnSpace && placed >= 0 ? placed : list.length
         props.node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals(), size), ...list.slice(index)])
         tree.select(`${owner()}/transform/${index}`)
       }

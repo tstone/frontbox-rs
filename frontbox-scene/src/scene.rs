@@ -3,7 +3,7 @@ use std::fmt;
 use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::{self, Content, Images, LayerFrame, Layer, LayerImageError, Params, SceneError, Timing, Visits};
+use frontbox_gfx::scene::{self, Content, Assets, LayerFrame, Layer, LayerAssetError, Params, SceneError, Timing, Visits};
 use serde::{Deserialize, Serialize};
 
 use crate::{Moment, SoundLayer, SoundStart};
@@ -38,17 +38,17 @@ pub struct Scene {
   /// Drawn bottom to top where they land on the same thing at the same z
   #[serde(default)]
   pub layers: Vec<SceneLayer>,
-  /// The decoded images its layers draw, from [`Scene::with_images`]. They aren't written to the file, which only names
-  /// them.
+  /// The decoded images and loaded fonts its layers draw, from [`Scene::with_assets`]. They aren't written to the file,
+  /// which only names them.
   #[serde(skip)]
   #[cfg_attr(feature = "ts", ts(skip))]
-  pub images: Images,
+  pub assets: Assets,
 }
 
 impl Scene {
   /// A scene of the current format version
   pub fn new(layers: Vec<SceneLayer>) -> Self {
-    Self { version: file::VERSION, params: Params::new(), timing: None, layers, images: Images::new() }
+    Self { version: file::VERSION, params: Params::new(), timing: None, layers, assets: Assets::new() }
   }
 
   pub fn timing(mut self, timing: Timing) -> Self {
@@ -85,6 +85,11 @@ impl Scene {
   /// Names of the images it uses, possibly with repeats
   pub fn image_names(&self) -> impl Iterator<Item = &str> {
     self.layers.iter().filter_map(SceneLayer::layer).flat_map(Layer::image_names)
+  }
+
+  /// Names of the fonts its text is in, possibly with repeats
+  pub fn font_names(&self) -> impl Iterator<Item = &str> {
+    self.layers.iter().filter_map(SceneLayer::layer).flat_map(Layer::font_names)
   }
 
   /// Names of the sounds its layers play, possibly with repeats
@@ -128,10 +133,10 @@ impl Scene {
     started
   }
 
-  /// Loads the images its layers draw from `content`. A layer whose image is missing is an error, rather than one that
-  /// silently draws nothing. That reads files, so do it ahead of time rather than in a tick.
-  pub fn with_images(mut self, content: &Content) -> Result<Self, LayerImageError> {
-    self.images = content.images_for(self.layers.iter().filter_map(SceneLayer::layer))?;
+  /// Loads the images and fonts its layers draw from `content`. A layer whose image or font is missing is an error,
+  /// rather than one that silently draws nothing. That reads files, so do it ahead of time rather than in a tick.
+  pub fn with_assets(mut self, content: &Content) -> Result<Self, LayerAssetError> {
+    self.assets = content.assets_for(self.layers.iter().filter_map(SceneLayer::layer))?;
     Ok(self)
   }
 
@@ -171,7 +176,7 @@ impl Scene {
       playback_seed: moment.playback_seed,
       params: moment.params,
       defaults: &self.params,
-      images: &self.images,
+      assets: &self.assets,
       size,
       surface,
       visits,

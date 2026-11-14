@@ -1,3 +1,4 @@
+import { fontPixelSize } from '../../state/contentFonts'
 import { contentImageInfo } from '../../state/contentImages'
 import type { Color } from '../../types/generated/Color'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
@@ -22,6 +23,7 @@ import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
 import type { Sweep } from '../../types/generated/Sweep'
+import type { TextSource } from '../../types/generated/TextSource'
 import type { Timing } from '../../types/generated/Timing'
 import type { Keyframes } from '../../types/generated/Keyframes'
 import type { Value } from '../../types/generated/Value'
@@ -128,14 +130,23 @@ export function wrapValue(value: SceneValue): Value {
   return value.length === 2 ? { Vec2: value } : { Color: value }
 }
 
-export function unwrapValue(value: Value): SceneValue {
+/** A param a prop can read, which is any but text */
+export type PropValue = Exclude<Value, { Text: string }>
+
+export function unwrapValue(value: PropValue): SceneValue {
   if ('Float' in value) return value.Float
+  if ('Int' in value) return value.Int
   return 'Vec2' in value ? value.Vec2 : value.Color
 }
 
-/** Whether a param can feed a prop holding values like `like`. A param of the wrong type gives the type's default. */
-export function paramFits(param: Value | undefined, like: SceneValue) {
-  return param !== undefined && Object.keys(param)[0] === Object.keys(wrapValue(like))[0]
+/**
+ * Whether a param can feed a prop holding values like `like`. A param of the wrong type gives the type's default. A
+ * number prop reads an `Int` too.
+ */
+export function paramFits(param: Value | undefined, like: SceneValue): param is PropValue {
+  if (param === undefined) return false
+  const kind = Object.keys(wrapValue(like))[0]
+  return Object.keys(param)[0] === kind || (kind === 'Float' && 'Int' in param)
 }
 
 /** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
@@ -207,7 +218,7 @@ export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene,
     return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
   }
   const param = scene.params?.[prop.Param]
-  return paramFits(param, fallback) ? (unwrapValue(param!) as T) : fallback
+  return paramFits(param, fallback) ? (unwrapValue(param) as T) : fallback
 }
 
 /** `base`, or `base_2` and so on if a parameter already has that name */
@@ -292,7 +303,12 @@ export function framesTrack(info: ImageInfo, { duration }: Timing): Prop<number>
 
 /** Scene with a parameter added or changed */
 export function withParam(scene: Scene, name: string, value: SceneValue): Scene {
-  return { ...scene, params: { ...scene.params, [name]: wrapValue(value) } }
+  return withParamValue(scene, name, wrapValue(value))
+}
+
+/** `withParam` for a value of any type, such as text */
+export function withParamValue(scene: Scene, name: string, value: Value): Scene {
+  return { ...scene, params: { ...scene.params, [name]: value } }
 }
 
 /** The plane an `Area` layer covers, which is `null` for a `Sequence` or a layer of a DMD */
@@ -384,7 +400,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
       else {
         const name = `${label} · ${Object.keys(w)[0]}`
-        copyProps(lens, surface).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
+        shapeTransformProps(lens, surface).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
       }
     })
   }
@@ -508,6 +524,15 @@ function referencedParams(scene: Scene) {
     const prop = lens.get()
     if ('Param' in prop) names.add(prop.Param)
   }
+  // text isn't a prop, so it's found on its own
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit)
+    if (value === null || typeof value !== 'object') return
+    const text = (value as { Text?: { text?: TextSource } }).Text?.text
+    if (text !== undefined && typeof text === 'object' && 'Param' in text) names.add(text.Param)
+    Object.values(value).forEach(visit)
+  }
+  visit(scene.layers)
   return names
 }
 
@@ -876,6 +901,8 @@ export const STEPS: Range = { min: 0, max: 10, step: 0.1, rest: 0 }
 /** Waves per scene cycle. Fractions carry a wave on across cycles. */
 export const WAVE_RATE: Range = { min: 0, max: 16, step: 0.25, rest: 1 }
 /** A fraction of a star's leg is dropped, so a spread goes one past the last, as it does for `frameRanges` */
+/** A number written out as text, such as a bonus counted up */
+export const NUMBER: Range = { min: 0, max: 100_000, step: 1, rest: 0 }
 export const LEGS: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 5 }
 /** How many copies a revolve makes, which also drops a fraction */
 export const COPIES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
@@ -883,8 +910,8 @@ export const COPIES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 
 export const REVOLVE_ANGLE: Range = { min: -360, max: 360, step: 1, rest: 360 }
 /** How far a side curves out, or in below 0, as a fraction of its length */
 export const BOW: Range = { min: -0.5, max: 0.5, step: 0.01, rest: 0 }
-/** How far down a diamond is widest, which is halfway for a diamond that's the same top and bottom */
-export const WIDEST_AT: Range = { ...UNIT, rest: 0.5 }
+/** How far a shift moves a shape's middle, as a share of the way to one end or the other */
+export const SHIFT: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 /** How far up a chevron's notch reaches */
 export const NOTCH: Range = { ...UNIT, rest: 0.5 }
 /** How wide a star's legs are where they meet, as a fraction of its radius. It rests at 2·tan(18°), where a 5-legged
@@ -934,7 +961,7 @@ export function scaleRanges(): Ranges {
   return both(SCALE)
 }
 
-/** A transform that copies or cuts a shape, which has props of its own rather than being one */
+/** A transform that copies or cuts a shape, which has a center */
 export type CopyKind = 'Mirror' | 'Revolve' | 'Divide'
 export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Divide']
 
@@ -942,11 +969,20 @@ export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Divide']
 export type PropField = { key: string; label: string; fallback: SceneValue; lens: Lens<Prop<SceneValue>>; ranges: Ranges }
 
 /**
- * The props of a mirror, revolve, or divide: its center, which is in the space the transforms before it put the shape
- * in, then how its line is turned or how its copies are spread. None for other transforms.
+ * The props of a transform that's only for shapes, and has props of its own rather than being one. For a mirror,
+ * revolve, or divide, its center, which is in the space the transforms before it put the shape in, then how its line
+ * is turned or how its copies are spread. For a shift, how far it moves the shape's middle, then how its line is
+ * turned. None for other transforms.
  */
-export function copyProps(transform: Lens<Transform>, surface: Surface): PropField[] {
+export function shapeTransformProps(transform: Lens<Transform>, surface: Surface): PropField[] {
   const current = transform.get()
+  if ('Shift' in current) {
+    const shift = variant(transform as Lens<Extract<Transform, { Shift: unknown }>>, 'Shift')
+    return [
+      propField('amount', 'Amount', SHIFT.rest!, both(SHIFT), field(shift, 'amount')),
+      propField('rotation', 'Rotation', 0, both(ROTATION), field(shift, 'rotation')),
+    ]
+  }
   const center = (lens: Lens<unknown>) => propField('center', 'Center', [0, 0], pointRanges(surface), lens)
   if ('Revolve' in current) {
     const revolve = variant(transform as Lens<Extract<Transform, { Revolve: unknown }>>, 'Revolve')
@@ -975,7 +1011,10 @@ export function newStroke(surface: Surface): ShapeAdjust {
   return { Stroke: { width: { Fixed: strokeRange(surface).rest! } } }
 }
 
-/** The sizes of a shape that isn't made of points, and the props that say how it's drawn. None for one that is. */
+/**
+ * The sizes of a shape that isn't made of points, and the props that say how it's drawn. None for one that is. Text's
+ * width and height are its box, and its size is its font's em.
+ */
 export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[] {
   const current = base.get()
   const [across, down] = sizeRanges(surface)
@@ -996,7 +1035,6 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
     return [
       size('width', 'Width', both(across), field(diamond, 'width')),
       size('height', 'Height', both(down), field(diamond, 'height')),
-      shaped('widest_at', 'Widest at', WIDEST_AT, field(diamond, 'widest_at')),
       shaped('bow', 'Bow', BOW, field(diamond, 'bow')),
     ]
   }
@@ -1016,6 +1054,17 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
       size('height', 'Height', both(down), field(chevron, 'height')),
       shaped('notch', 'Notch', NOTCH, field(chevron, 'notch')),
     ]
+  }
+  if ('Text' in current) {
+    const text = variant(base, 'Text')
+    const props = [
+      size('width', 'Width', both(across), field(text, 'width')),
+      size('height', 'Height', both(down), field(text, 'height')),
+      size('size', 'Size', both(textSizeRange(current.Text.font, surface)), field(text, 'size')),
+    ]
+    const source = field(text, 'text')
+    if ('Number' in current.Text.text) props.push(propField('value', 'Number', 0, both(NUMBER), field(variant(source, 'Number'), 'value')))
+    return props
   }
   return []
 }
@@ -1052,6 +1101,23 @@ export function roundRange(surface: Surface): Range {
 export function reachRange(surface: Surface): Range {
   const range = roundRange(surface)
   return { ...range, rest: Math.round(newShapeSize(surface) / 4 / range.step) * range.step }
+}
+
+/**
+ * Text's size, which can be as big as `roundRange` goes. A pixel font's goes in whole multiples of its pixel size, so it
+ * stays crisp.
+ */
+export function textSizeRange(font: string, surface: Surface): Range {
+  const range = roundRange(surface)
+  const pixels = fontPixelSize(font)
+  if (!pixels) return range
+  return { min: pixels, max: pixels * Math.max(Math.floor(range.max / pixels), 1), step: pixels, rest: pixels }
+}
+
+/** The nearest size a pixel font is crisp at, which is `size` for a font that isn't one */
+export function crispTextSize(font: string, size: number): number {
+  const pixels = fontPixelSize(font)
+  return pixels ? Math.max(Math.round(size / pixels), 1) * pixels : size
 }
 
 /** How wide a stroke is, which can be as wide as `roundRange` goes */
