@@ -51,6 +51,7 @@ import {
   type Wandering,
 } from './configNodes'
 import { ImagePicker } from './ImagePicker'
+import { anchorPresets, writer } from './ShapeHandles'
 import { LayerLeds, planeNames } from './LayerPlace'
 import {
   ColorField,
@@ -66,6 +67,7 @@ import {
   RegionVisibilityContext,
   RevealContext,
   SceneContext,
+  ShapePosesContext,
   SoundPicker,
   SurfaceContext,
   TraversalsContext,
@@ -73,7 +75,7 @@ import {
 } from './SceneFields'
 import {
   ADJUSTS,
-  BOW,
+  BULGE,
   BRANCHING,
   COPIES,
   COPY_KINDS,
@@ -111,6 +113,7 @@ import {
   usedTraversals,
   variant,
   WANDER,
+  RESHAPE_KINDS,
   SHIFT,
   withDuration,
   withParamValue,
@@ -118,11 +121,13 @@ import {
   withTraversalRenamed,
   type AdjustKind,
   type CopyKind,
+  type ReshapeKind,
   type Lens,
   type Scene,
   type SceneLayer,
   type Selection,
   type Surface,
+  type SceneValue,
   type Vec2,
 } from './sceneModel'
 
@@ -186,7 +191,7 @@ const PATH_OPTIONS: ShapeOption[] = [
 ].sort(byLabel)
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape that's drawn, rather than a sweep's path */
-const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, 'Shift' as const].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
+const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a layer on an LED scene */
 const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
 /** Only for a layer with traversals to fit to */
@@ -275,8 +280,10 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Fit: icons.Maximize2,
   Mirror: icons.SquareSplitHorizontal,
   Revolve: icons.RefreshCw,
-  Divide: icons.Scissors,
+  Bisect: icons.Scissors,
   Shift: icons.MoveVertical,
+  Bulge: icons.Squircle,
+  Round: icons.SquareRoundCorner,
   HueShift: icons.Palette,
   Opacity: icons.Droplet,
   Brightness: icons.Sun,
@@ -914,10 +921,53 @@ function NodeFields(props: { node: ConfigNode }) {
       <Match when={is(props.node, 'stroke')}>{(stroke) => <StrokeFields node={stroke()} />}</Match>
       <Match when={is(props.node, 'traversal')}>{(traversal) => <TraversalFields lens={traversal().lens} layer={traversal().layer} />}</Match>
       <Match when={is(props.node, 'node-ref')}>{(ref) => <NodeRefFields label={ref().label} lens={ref().lens} />}</Match>
-      <Match when={is(props.node, 'prop')}>{(prop) => <PropField bare label={prop().label} {...propFieldSpec(prop())} />}</Match>
+      <Match when={is(props.node, 'prop')}>
+        {(prop) => (
+          <>
+            <PropField bare label={prop().label} {...propFieldSpec(prop())} />
+            <Show when={prop().anchorOf}>{(of) => <AnchorPresets lens={prop().lens as Lens<Prop<Vec2>>} shape={of().shape} index={of().index} />}</Show>
+          </>
+        )}
+      </Match>
     </Switch>
   )
 }
+
+/**
+ * Buttons that put a scale's anchor on a corner or the center of the shape's box, as the machine last drew it. They're
+ * off while there's no drawing of the shape to go by, or the anchor can't take a value, such as while it's random.
+ */
+function AnchorPresets(props: { lens: Lens<Prop<Vec2>>; shape: Lens<Shape>; index: number }) {
+  const scene = useContext(SceneContext)!
+  const poses = useContext(ShapePosesContext)
+  const presets = () => {
+    const pose = poses.of(props.shape.get())
+    return pose && anchorPresets(pose, props.index)
+  }
+  const write = () => writer(scene, poses.time())
+  const usable = () => presets() !== null && write().can(props.lens.get() as Prop<SceneValue>, [0, 0])
+  return (
+    <div class="scene-anchor-presets" role="group" aria-label="Put the anchor on">
+      <For each={presets() ?? ANCHOR_SPOTS.map((label) => ({ label, anchor: [0, 0] as Vec2 }))}>
+        {({ label, anchor }) => (
+          <button
+            type="button"
+            class="scene-button scene-anchor-preset"
+            title={`Anchor on the ${label.toLowerCase()} of the shape's box`}
+            aria-label={label}
+            disabled={!usable()}
+            onClick={() => write().to(props.lens, anchor)}
+          >
+            <span class="scene-anchor-glyph" data-spot={label.toLowerCase().replace(' ', '-')} />
+          </button>
+        )}
+      </For>
+    </div>
+  )
+}
+
+/** The anchor buttons, in their order, for while there's no drawing of the shape to place them by */
+const ANCHOR_SPOTS = ['Top left', 'Bottom left', 'Center', 'Top right', 'Bottom right']
 
 const propFieldSpec = (spec: PropSpec) => ({
   paramName: spec.paramName,
@@ -1683,7 +1733,7 @@ function newShape(kind: Exclude<ShapeKind, 'None'> | TemplateKind, surface: Surf
 function templateShape(kind: TemplateKind, across: number): { base: ShapeNode; transform: Transform[] } {
   const length = across / 2
   // a star of one leg, pointing up from its base on the origin
-  const triangle = (width: number): ShapeNode => ({ Star: { radius: { Fixed: length }, legs: { Fixed: 1 }, leg_width: { Fixed: width }, bow: { Fixed: BOW.rest! } } })
+  const triangle = (width: number): ShapeNode => ({ Star: { radius: { Fixed: length }, legs: { Fixed: 1 }, leg_width: { Fixed: width } } })
   if (kind === 'Triangle') return { base: triangle(TRIANGLE_WIDTH), transform: [] }
   if (kind === 'Pinwheel') {
     // its blades are triangles with their tips together
@@ -1706,16 +1756,16 @@ function sizedShape(kind: Exclude<ShapeKind, 'None'>, [width, height]: Vec2): Sh
   if (kind === 'Ellipse') return { Ellipse: { rx: { Fixed: width / 2 }, ry: { Fixed: height / 2 } } }
   if (kind === 'Rect') return { Rect: { width: { Fixed: width }, height: { Fixed: height } } }
   if (kind === 'Diamond') {
-    return { Diamond: { width: { Fixed: width }, height: { Fixed: height }, bow: { Fixed: BOW.rest! } } }
+    return { Diamond: { width: { Fixed: width }, height: { Fixed: height } } }
   }
   if (kind === 'Star') {
-    return { Star: { radius: { Fixed: reach }, legs: { Fixed: LEGS.rest! }, leg_width: { Fixed: LEG_WIDTH.rest! }, bow: { Fixed: BOW.rest! } } }
+    return { Star: { radius: { Fixed: reach }, legs: { Fixed: LEGS.rest! }, leg_width: { Fixed: LEG_WIDTH.rest! } } }
   }
   if (kind === 'Chevron') return { Chevron: { width: { Fixed: width }, height: { Fixed: height }, notch: { Fixed: NOTCH.rest! } } }
   if (kind === 'Text') {
     const font = contentFonts()[0] ?? ''
     const size = { Fixed: crispTextSize(font, Math.max(Math.round(height / 2), 1)) }
-    return { Text: { text: { Fixed: 'TEXT' }, font, size, width: { Fixed: width }, height: { Fixed: height }, align: 'Center', vertical_align: 'Middle' } }
+    return { Text: { text: { Fixed: 'TEXT' }, font, size, width: { Fixed: width }, height: { Fixed: height }, align: 'Center', vertical_align: 'Middle', kerning: { Fixed: 0 }, leading: { Fixed: 0 } } }
   }
   // a wave across it, level through each of its points
   const wave: Vec2[] = [
@@ -1789,24 +1839,26 @@ function pastEnd(before: Vec2, end: Vec2): Vec2 {
 
 /**
  * A transform that leaves things where they are, until it's changed. A fit starts on the layer's first traversal. A
- * mirror's line starts along the right of a shape `size` across, so its reflection is beside it, and a revolve and a
- * divide start on its middle.
+ * mirror's line starts along the right of a shape `size` across, so its reflection is beside it, with its center at
+ * the top corner, clear of the shape's move handle at the middle of that side. A revolve and a bisect start on its
+ * middle.
  */
 function newTransform(kind: TransformKind, traversals: string[], size: Vec2): Transform {
   if (kind === 'Translate') return { Translate: { Fixed: [0, 0] } }
   if (kind === 'Rotate') return { Rotate: { Fixed: 0 } }
-  if (kind === 'Scale') return { Scale: { Fixed: 1 } }
-  if (kind === 'Mirror') return { Mirror: { center: { Fixed: [size[0] / 2, 0] }, rotation: { Fixed: 0 } } }
+  if (kind === 'Scale') return { Scale: { amount: { Fixed: 1 }, anchor: { Fixed: [0, 0] } } }
+  if (kind === 'Mirror') return { Mirror: { center: { Fixed: [size[0] / 2, -size[1] / 2] }, rotation: { Fixed: 0 } } }
   if (kind === 'Revolve') return { Revolve: { center: { Fixed: [0, 0] }, angle: { Fixed: REVOLVE_ANGLE.rest! }, count: { Fixed: COPIES.rest! } } }
-  if (kind === 'Divide') return { Divide: { center: { Fixed: [0, 0] }, rotation: { Fixed: 0 } } }
+  if (kind === 'Bisect') return { Bisect: { center: { Fixed: [0, 0] }, rotation: { Fixed: 0 } } }
   if (kind === 'Shift') return { Shift: { amount: { Fixed: SHIFT.rest! }, rotation: { Fixed: 0 } } }
+  if (kind === 'Bulge') return { Bulge: { Fixed: BULGE.rest! } }
+  if (kind === 'Round') return { Round: { Fixed: 0 } }
   return { Fit: traversals[0] ?? '' }
 }
 
 /**
- * Adds a transform, an adjust, or a stroke, listed together, after those already there. A mirror, revolve, or divide
- * goes before a shape's first translate instead, so that its center is in the shape's own space and it moves with the
- * shape.
+ * Adds a transform, an adjust, or a stroke, listed together, after those already there. A transform only for shapes
+ * goes before a shape's first translate instead, so that it works in the shape's own space and moves with the shape.
  */
 function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }) {
   const tree = useContext(ConfigTreeContext)!
@@ -1834,7 +1886,7 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
         const size = shape ? shapeSize(shape.base, scene.get()) : ([0, 0] as Vec2)
         const placed = list.findIndex((transform) => 'Translate' in transform)
         // in the shape's own space, so it moves with the shape
-        const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || kind === 'Shift'
+        const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || RESHAPE_KINDS.includes(kind as ReshapeKind)
         const index = inOwnSpace && placed >= 0 ? placed : list.length
         props.node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals(), size), ...list.slice(index)])
         tree.select(`${owner()}/transform/${index}`)

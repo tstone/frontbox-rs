@@ -197,13 +197,19 @@ pub struct RenderedShape {
   /// Where its center is going into each transform, in the space the ones before it put the shape in, then in the
   /// scene after the last. A rotate turns around it.
   pub pivots: Vec<[f32; 2]>,
-  /// For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
+  /// For each transform, the center of a mirror, revolve, or bisect, in the space the ones before it put the shape in.
   /// `None` for other transforms.
   pub centers: Vec<Option<[f32; 2]>>,
+  /// For each scale, the point it keeps still, in the space the transforms before it put the shape in. `None` for other
+  /// transforms.
+  pub anchors: Vec<Option<[f32; 2]>>,
+  /// For each mirror or bisect, the direction its line runs through its center, unit length. `None` for other
+  /// transforms.
+  pub lines: Vec<Option<[f32; 2]>>,
   /// For each shift, the ends of the shape along its line and where it moves the middle to, in the space the transforms
   /// before it put the shape in. `None` for other transforms.
   pub shifts: Vec<Option<RenderedShift>>,
-  /// Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
+  /// Its own edge in the scene, without the copies and cuts of a mirror, revolve, or bisect, as a closed loop of
   /// points, or its line for a polyline or bezier, which doesn't close
   pub outline: Vec<[f32; 2]>,
   /// For each transform, the path it moves the shape along, in the values the transform takes. `None` for one that

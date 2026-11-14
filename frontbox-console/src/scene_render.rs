@@ -327,6 +327,8 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
     handles: pose.handles.iter().map(|p| p.to_array()).collect(),
     pivots: pose.pivots.iter().map(|p| p.to_array()).collect(),
     centers: pose.centers.iter().map(|center| center.map(|p| p.to_array())).collect(),
+    anchors: pose.anchors.iter().map(|anchor| anchor.map(|p| p.to_array())).collect(),
+    lines: pose.lines.iter().map(|line| line.map(|p| p.to_array())).collect(),
     shifts: pose
       .shifts
       .iter()

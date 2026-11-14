@@ -149,19 +149,22 @@ mod tests {
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
           .region(
-            Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: 1.0.into(), leg_width: 0.4.into(), bow: 0.1.into() })
+            Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: 1.0.into(), leg_width: 0.4.into() })
+              .transform(Transform::Bulge(0.1.into()))
               .transform(Transform::Revolve { center: Vec2::new(0.0, -20.0).into(), angle: 360.0.into(), count: 4.0.into() })
               .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
           ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into(), bow: (-0.1).into() })
+          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into() })
+            .transform(Transform::Bulge((-0.1).into()))
+            .transform(Transform::Round(1.0.into()))
             .transform(Transform::Shift { amount: (-0.4).into(), rotation: 0.0.into() })
             .transform(Transform::Mirror { center: Vec2::new(8.0, 0.0).into(), rotation: 20.0.into() })
             .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 128, 255, 255])).into()))).region(
-          Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into(), bow: 0.0.into() })
-            .transform(Transform::Divide { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
+          Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into() })
+            .transform(Transform::Bisect { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
             .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into()))).region(
@@ -222,6 +225,23 @@ mod tests {
       let error = load(&source).unwrap_err().to_string();
       assert!(error.contains("only a position"), "{error}");
     }
+  }
+
+  #[test]
+  fn a_scale_loads_with_an_anchor_or_only_its_amount() {
+    let scale = |transform: &str| {
+      let scene: Scene = load(&format!("(timing: (duration: 1.0), layers: [(fill: (transform: [{transform}], base: Solid(Fixed(255, 0, 0, 255))))])")).unwrap();
+      let Some(Transform::Scale(scaling)) = scene.layers[0].fill.transform.first().cloned() else {
+        panic!("{scene:?}");
+      };
+      scaling
+    };
+    let only_amount = scale("Scale(Fixed(2.0))");
+    assert!(matches!((only_amount.amount, only_amount.anchor), (Prop::Fixed(2.0), Prop::Fixed(Vec2::ZERO))));
+    let anchored = scale("Scale(amount: Fixed(2.0), anchor: Fixed((1.0, -1.0)))");
+    assert!(matches!(anchored.anchor, Prop::Fixed(anchor) if anchor == Vec2::new(1.0, -1.0)));
+    let written = super::save(&Transform::Scale(Scaling::from(2.0))).unwrap();
+    assert!(matches!(super::load::<Transform>(&written), Ok(Transform::Scale(_))), "{written}");
   }
 
   #[test]

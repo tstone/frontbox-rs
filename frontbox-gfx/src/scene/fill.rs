@@ -280,7 +280,7 @@ mod tests {
     let fill = red_to_blue()
       .transform(Transform::Mirror { center: center(), rotation: 0.0.into() })
       .transform(Transform::Revolve { center: center(), angle: 180.0.into(), count: 3.0.into() })
-      .transform(Transform::Divide { center: center(), rotation: 0.0.into() });
+      .transform(Transform::Bisect { center: center(), rotation: 0.0.into() });
     assert_eq!(color(&fill, -0.5, 0.0), RED);
     assert_eq!(color(&fill, 0.5, 0.0), BLUE);
   }

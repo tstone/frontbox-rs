@@ -89,7 +89,7 @@ impl Wrap {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::Params;
+  use crate::scene::{Params, Scaling};
   use crate::scene::value::tests::env;
 
   fn node(transform: Vec<Transform>) -> Node<(), ()> {
@@ -108,10 +108,19 @@ mod tests {
     let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
-    // move then scale: the same point is drawn at 2 * (0.5 + 10)
+    // move then scale: the scale is around the center where it was moved to, so the point is drawn at 10 + 2 * 0.5
     let n = node(vec![
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
       Transform::Scale(2.0.into()),
+    ]);
+    let at = Vec2::new(11.0, 0.0);
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
+    assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
+
+    // anchored 10 back from the center, at the origin, so it's drawn at 2 * (0.5 + 10)
+    let n = node(vec![
+      Transform::Translate(Vec2::new(10.0, 0.0).into()),
+      Transform::Scale(Scaling { amount: 2.0.into(), anchor: Vec2::new(-10.0, 0.0).into() }),
     ]);
     let at = Vec2::new(21.0, 0.0);
     let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();

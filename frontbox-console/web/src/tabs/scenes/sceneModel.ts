@@ -396,11 +396,10 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     transform.get().forEach((w, index) => {
       const lens = item(transform, index)
       if ('Translate' in w) use(variant(lens, 'Translate'), `${label} · Offset`, translateRanges(surface, space))
-      else if ('Scale' in w) use(variant(lens, 'Scale'), `${label} · Scale`, scaleRanges())
       else if ('Rotate' in w) use(variant(lens, 'Rotate'), `${label} · Rotation`, both(ROTATION))
       else {
         const name = `${label} · ${Object.keys(w)[0]}`
-        shapeTransformProps(lens, surface).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
+        transformProps(lens, surface, space).forEach((prop) => use(prop.lens, `${name} · ${prop.label}`, prop.ranges))
       }
     })
   }
@@ -908,8 +907,8 @@ export const LEGS: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 5 }
 export const COPIES: Range = { min: 1, max: 32, step: 1, spreadEnd: 33, rest: 4 }
 /** Degrees a revolve spreads its copies over */
 export const REVOLVE_ANGLE: Range = { min: -360, max: 360, step: 1, rest: 360 }
-/** How far a side curves out, or in below 0, as a fraction of its length */
-export const BOW: Range = { min: -0.5, max: 0.5, step: 0.01, rest: 0 }
+/** How far a bulge curves a shape's straight sides out, or in below 0, as a fraction of their length */
+export const BULGE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 /** How far a shift moves a shape's middle, as a share of the way to one end or the other */
 export const SHIFT: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 /** How far up a chevron's notch reaches */
@@ -962,20 +961,29 @@ export function scaleRanges(): Ranges {
 }
 
 /** A transform that copies or cuts a shape, which has a center */
-export type CopyKind = 'Mirror' | 'Revolve' | 'Divide'
-export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Divide']
+export type CopyKind = 'Mirror' | 'Revolve' | 'Bisect'
+export const COPY_KINDS: CopyKind[] = ['Mirror', 'Revolve', 'Bisect']
+
+/** A transform that reshapes a shape's outline */
+export type ReshapeKind = 'Shift' | 'Bulge' | 'Round'
+export const RESHAPE_KINDS: ReshapeKind[] = ['Shift', 'Bulge', 'Round']
 
 /** A prop of a shape or a transform, with what to call it, its value if it has nothing to take one from, and its ranges */
 export type PropField = { key: string; label: string; fallback: SceneValue; lens: Lens<Prop<SceneValue>>; ranges: Ranges }
 
 /**
- * The props of a transform that's only for shapes, and has props of its own rather than being one. For a mirror,
- * revolve, or divide, its center, which is in the space the transforms before it put the shape in, then how its line
- * is turned or how its copies are spread. For a shift, how far it moves the shape's middle, then how its line is
- * turned. None for other transforms.
+ * The props of a transform that has props of its own rather than being one. For a scale, how much, then the point that
+ * stays put, from the center. For a mirror, revolve, or bisect, its center, which is in the space the transforms before
+ * it put the shape in, then how its line is turned or how its copies are spread. For a shift, how far it moves the
+ * shape's middle, then how its line is turned. None for other transforms.
  */
-export function shapeTransformProps(transform: Lens<Transform>, surface: Surface): PropField[] {
+export function transformProps(transform: Lens<Transform>, surface: Surface, space: TransformSpace): PropField[] {
   const current = transform.get()
+  if ('Scale' in current) {
+    const scale = variant(transform as Lens<Extract<Transform, { Scale: unknown }>>, 'Scale')
+    const anchor = space === 'fill' ? both(FILL_MOVE) : pointRanges(surface)
+    return [propField('amount', 'Amount', 1, scaleRanges(), field(scale, 'amount')), propField('anchor', 'Anchor', [0, 0], anchor, field(scale, 'anchor'))]
+  }
   if ('Shift' in current) {
     const shift = variant(transform as Lens<Extract<Transform, { Shift: unknown }>>, 'Shift')
     return [
@@ -992,9 +1000,9 @@ export function shapeTransformProps(transform: Lens<Transform>, surface: Surface
       propField('count', 'Count', COPIES.rest!, both(COPIES), field(revolve, 'count')),
     ]
   }
-  if (!('Mirror' in current) && !('Divide' in current)) return []
-  // a mirror and a divide both have a line through their center
-  const line = variant(transform as Lens<Record<'Mirror' | 'Divide', Extract<Transform, { Mirror: unknown }>['Mirror']>>, 'Mirror' in current ? 'Mirror' : 'Divide')
+  if (!('Mirror' in current) && !('Bisect' in current)) return []
+  // a mirror and a bisect both have a line through their center
+  const line = variant(transform as Lens<Record<'Mirror' | 'Bisect', Extract<Transform, { Mirror: unknown }>['Mirror']>>, 'Mirror' in current ? 'Mirror' : 'Bisect')
   return [center(field(line, 'center')), propField('rotation', 'Rotation', 0, both(ROTATION), field(line, 'rotation'))]
 }
 
@@ -1035,7 +1043,6 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
     return [
       size('width', 'Width', both(across), field(diamond, 'width')),
       size('height', 'Height', both(down), field(diamond, 'height')),
-      shaped('bow', 'Bow', BOW, field(diamond, 'bow')),
     ]
   }
   if ('Star' in current) {
@@ -1044,7 +1051,6 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
       size('radius', 'Radius', round, field(star, 'radius')),
       shaped('legs', 'Legs', LEGS, field(star, 'legs')),
       shaped('leg_width', 'Leg width', LEG_WIDTH, field(star, 'leg_width')),
-      shaped('bow', 'Bow', BOW, field(star, 'bow')),
     ]
   }
   if ('Chevron' in current) {
@@ -1061,6 +1067,8 @@ export function shapeProps(base: Lens<ShapeNode>, surface: Surface): PropField[]
       size('width', 'Width', both(across), field(text, 'width')),
       size('height', 'Height', both(down), field(text, 'height')),
       size('size', 'Size', both(textSizeRange(current.Text.font, surface)), field(text, 'size')),
+      size('kerning', 'Kerning', both(textSpacingRange(current.Text, surface)), field(text, 'kerning')),
+      size('leading', 'Leading', both(textSpacingRange(current.Text, surface)), field(text, 'leading')),
     ]
     const source = field(text, 'text')
     if ('Number' in current.Text.text) props.push(propField('value', 'Number', 0, both(NUMBER), field(variant(source, 'Number'), 'value')))
@@ -1114,10 +1122,26 @@ export function textSizeRange(font: string, surface: Surface): Range {
   return { min: pixels, max: pixels * Math.max(Math.floor(range.max / pixels), 1), step: pixels, rest: pixels }
 }
 
+/**
+ * Room added between text's characters or lines, either way up to a quarter of what `roundRange` goes to. A pixel font
+ * at a fixed size goes in whole font pixels, as the renderer rounds it to them.
+ */
+export function textSpacingRange(text: { font: string; size: Prop<number> }, surface: Surface): Range {
+  const reach = roundRange(surface).max / 4
+  const range = { ...span(-reach, reach), rest: 0 }
+  const pixels = fontPixelSize(text.font)
+  return pixels && 'Fixed' in text.size ? { ...range, step: text.size.Fixed / pixels } : range
+}
+
 /** The nearest size a pixel font is crisp at, which is `size` for a font that isn't one */
 export function crispTextSize(font: string, size: number): number {
   const pixels = fontPixelSize(font)
   return pixels ? Math.max(Math.round(size / pixels), 1) * pixels : size
+}
+
+/** The radius a round gives a shape's corners, which can be as big as `roundRange` goes */
+export function cornerRange(surface: Surface): Range {
+  return { ...roundRange(surface), rest: 0 }
 }
 
 /** How wide a stroke is, which can be as wide as `roundRange` goes */

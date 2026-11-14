@@ -27,17 +27,27 @@ handles: Array<[number, number]>,
  */
 pivots: Array<[number, number]>, 
 /**
- * For each transform, the center of a mirror, revolve, or divide, in the space the ones before it put the shape in.
+ * For each transform, the center of a mirror, revolve, or bisect, in the space the ones before it put the shape in.
  * `None` for other transforms.
  */
 centers: Array<[number, number] | null>, 
+/**
+ * For each scale, the point it keeps still, in the space the transforms before it put the shape in. `None` for other
+ * transforms.
+ */
+anchors: Array<[number, number] | null>, 
+/**
+ * For each mirror or bisect, the direction its line runs through its center, unit length. `None` for other
+ * transforms.
+ */
+lines: Array<[number, number] | null>, 
 /**
  * For each shift, the ends of the shape along its line and where it moves the middle to, in the space the transforms
  * before it put the shape in. `None` for other transforms.
  */
 shifts: Array<RenderedShift | null>, 
 /**
- * Its own edge in the scene, without the copies and cuts of a mirror, revolve, or divide, as a closed loop of
+ * Its own edge in the scene, without the copies and cuts of a mirror, revolve, or bisect, as a closed loop of
  * points, or its line for a polyline or bezier, which doesn't close
  */
 outline: Array<[number, number]>, 

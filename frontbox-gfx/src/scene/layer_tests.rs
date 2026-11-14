@@ -301,7 +301,8 @@ fn an_outline_follows_a_shapes_transforms_in_order() {
   let shape = Shape::new(square)
     .transform(Transform::Scale(2.0.into()))
     .transform(Transform::Translate(Vec2::new(10.0, 20.0).into()));
-  let corners = [(10.0, 20.0), (12.0, 20.0), (12.0, 24.0), (10.0, 24.0)].map(|(x, y)| Vec2::new(x, y));
+  // scaled around its middle, (0.5, 1), then moved
+  let corners = [(9.5, 19.0), (11.5, 19.0), (11.5, 23.0), (9.5, 23.0)].map(|(x, y)| Vec2::new(x, y));
   assert_eq!(outlines(Layer::new(solid(RED)).region(shape)), [corners]);
 }
 
@@ -514,10 +515,10 @@ fn a_shape_larger_than_the_viewport_can_move_under_it() {
   // a 300 wide gradient, moved so its middle is in view
   let scene = Scene::new(Surface::Area, vec![Layer::new(red_to_blue()).region(
     Shape::new(ShapeNode::Polygon {
-      points: [(0.0, 0.0), (6.0, 0.0), (6.0, 1.0), (0.0, 1.0)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
+      points: [(-3.0, -0.5), (3.0, -0.5), (3.0, 0.5), (-3.0, 0.5)].map(|(x, y)| Vec2::new(x, y).into()).to_vec(),
     })
     .transform(Transform::Scale(50.0.into()))
-    .transform(Transform::Translate(Vec2::new(-100.0, 0.0).into())),
+    .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
   )]);
   assert_eq!(sample(&scene, 50.0, 25.0, 0.0), Rgba([127, 0, 128, 255]));
 }
@@ -1004,7 +1005,7 @@ fn text(text: &str, size: f32) -> Shape {
 
 /// `text` in a box `frame` wide and tall, with its top left corner at `corner`
 fn text_box(text: &str, size: f32, corner: Vec2, frame: Vec2, align: TextAlign, vertical_align: VerticalAlign) -> Shape {
-  let base = ShapeNode::Text { text: text.into(), font: "pixel.ttf".into(), size: size.into(), width: frame.x.into(), height: frame.y.into(), align, vertical_align };
+  let base = ShapeNode::Text { text: text.into(), font: "pixel.ttf".into(), size: size.into(), width: frame.x.into(), height: frame.y.into(), align, vertical_align, kerning: 0.0.into(), leading: 0.0.into() };
   Shape::new(base).transform(Transform::Translate((corner + frame / 2.0).into()))
 }
 
@@ -1031,8 +1032,8 @@ fn pixels(scene: &Scene, width: usize, height: usize) -> Vec<String> {
 
 #[test]
 fn a_pixel_font_at_its_design_size_draws_its_pixels() {
-  // the font's ascent puts the baseline 11 down from the top of the box, at row 8
-  let shape = text_box("HI", 16.0, Vec2::new(1.0, -3.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top);
+  // the capitals are 7 tall, so their baseline is 7 down from the top of the box, at row 8
+  let shape = text_box("HI", 16.0, Vec2::new(1.0, 1.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top);
   let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(shape)]);
   let expected = [
     "............",
@@ -1050,7 +1051,7 @@ fn a_pixel_font_at_its_design_size_draws_its_pixels() {
 
 #[test]
 fn text_takes_a_stroke_like_any_shape() {
-  let outlined = text_box("I", 16.0, Vec2::new(2.0, -2.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top)
+  let outlined = text_box("I", 16.0, Vec2::new(2.0, 2.0), Vec2::new(20.0, 20.0), TextAlign::Left, VerticalAlign::Top)
     .adjust(ShapeAdjust::Stroke { width: 1.0.into(), align: StrokeAlign::Outside, color: None });
   let scene = Scene::new(Surface::Area, vec![Layer::new(solid(RED)).region(outlined)]);
   // the stroke goes around the "I" and in under its bars, leaving the inside out
@@ -1087,7 +1088,7 @@ fn a_layer_names_the_fonts_its_region_and_its_masks_use() {
 
 #[test]
 fn each_line_is_aligned_across_the_box() {
-  let row = |align| text_pixels(text_box("I", 16.0, Vec2::ZERO, Vec2::new(16.0, 14.0), align, VerticalAlign::Top), 16, 14)[4].clone();
+  let row = |align| text_pixels(text_box("I", 16.0, Vec2::ZERO, Vec2::new(16.0, 14.0), align, VerticalAlign::Top), 16, 14)[0].clone();
   assert_eq!(row(TextAlign::Left), "###.............");
   assert_eq!(row(TextAlign::Center), "......###.......");
   assert_eq!(row(TextAlign::Right), "............###.");
@@ -1101,10 +1102,10 @@ fn first_row(rows: &[String]) -> Option<usize> {
 #[test]
 fn the_lines_are_aligned_up_and_down_the_box_on_whole_pixels() {
   let top = |vertical| first_row(&text_pixels(text_box("I", 16.0, Vec2::ZERO, Vec2::new(6.0, 24.0), TextAlign::Center, vertical), 6, 24));
-  // a line is 13.66 from the font's ascent to its descent, and a capital is 7 tall with its top 3.66 below the ascent
-  assert_eq!(top(VerticalAlign::Top), Some(4));
+  // a capital is 7 tall, so in the middle it starts 8.5 down, which is rounded to a whole pixel
+  assert_eq!(top(VerticalAlign::Top), Some(0));
   assert_eq!(top(VerticalAlign::Middle), Some(9));
-  assert_eq!(top(VerticalAlign::Bottom), Some(14));
+  assert_eq!(top(VerticalAlign::Bottom), Some(17));
 }
 
 #[test]
@@ -1112,7 +1113,23 @@ fn text_breaks_into_lines_a_whole_line_height_apart() {
   // "I I" is wider than the box, so it breaks between the words
   let rows = text_pixels(text_box("I I\nI", 16.0, Vec2::ZERO, Vec2::new(8.0, 48.0), TextAlign::Left, VerticalAlign::Top), 8, 48);
   let tops: Vec<usize> = (0..rows.len()).filter(|y| rows[*y].contains('#') && (*y == 0 || !rows[y - 1].contains('#'))).collect();
-  assert_eq!(tops, [4, 18, 32]);
+  assert_eq!(tops, [0, 14, 28]);
+}
+
+#[test]
+fn leading_adds_room_between_lines_in_whole_font_pixels() {
+  let tops = |leading: f32| {
+    let mut shape = text_box("I\nI", 16.0, Vec2::ZERO, Vec2::new(8.0, 48.0), TextAlign::Left, VerticalAlign::Top);
+    if let ShapeNode::Text { leading: prop, .. } = &mut shape.base {
+      *prop = leading.into();
+    }
+    let rows = text_pixels(shape, 8, 48);
+    (0..rows.len()).filter(|y| rows[*y].contains('#') && (*y == 0 || !rows[y - 1].contains('#'))).collect::<Vec<usize>>()
+  };
+  assert_eq!(tops(0.0), [0, 14]);
+  assert_eq!(tops(4.0), [0, 18]);
+  // a pixel font at its design size has a font pixel to a unit, so 2.4 is rounded to 2
+  assert_eq!(tops(2.4), [0, 16]);
 }
 
 #[test]

@@ -1,16 +1,16 @@
 use glam::{Affine2, Mat2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Prop, Shape};
+use crate::scene::{Contour, Env, Prop, Shape};
 
 /// Cap on the copies one `Revolve` makes, well past where they can be told apart
 const MAX_COPIES: f32 = 360.0;
 
-/// Moves, rotates, scales, copies, or cuts a node
+/// Moves, rotates, scales, copies, cuts, or reshapes a node
 ///
-/// `Mirror`, `Revolve`, `Divide`, and `Shift` are for shapes. Their `center` is in the space the transforms before them put the
-/// shape in, and the transforms after them apply to everything they leave, so `[Revolve(..), Translate(..)]` moves
-/// every copy. A sweep follows only the shape itself, and a fill ignores them.
+/// `Mirror`, `Revolve`, `Bisect`, `Shift`, `Bulge`, and `Round` are for shapes. Their `center` is in the space the
+/// transforms before them put the shape in, and the transforms after them apply to everything they leave, so
+/// `[Revolve(..), Translate(..)]` moves every copy. A sweep follows only the shape itself, and a fill ignores them.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Transform {
@@ -20,8 +20,9 @@ pub enum Transform {
   /// A `Sequence` has no second axis, so there it scrolls the drawing along the line with the ends wrapped together:
   /// 360 degrees is one full lap.
   Rotate(Prop<f32>),
-  /// The same on both axes. A shape's own size, such as a `Rect`'s width and height, gives it a different one on each.
-  Scale(Prop<f32>),
+  /// The same on both axes, around an anchor. A shape's own size, such as a `Rect`'s width and height, gives it a
+  /// different one on each.
+  Scale(Scaling),
   /// Lays the node along a traversal of the layer's graph, by name: `(-0.5, 0)` on the node it starts from and
   /// `(0.5, 0)` on the node it visits last, scaled evenly on both axes. A gradient then runs from start to end at
   /// whatever angle the traversal takes.
@@ -47,7 +48,7 @@ pub enum Transform {
   },
   /// Keeps the part of the shape on one side of a line through `center`. At 0 degrees the line runs straight down and
   /// the right side is kept; it turns clockwise from there, so at 90 the bottom is kept.
-  Divide {
+  Bisect {
     #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
     center: Prop<Vec2>,
     rotation: Prop<f32>,
@@ -58,6 +59,15 @@ pub enum Transform {
   /// squashed flat. The shape's outline is what moves, so text, which has none, isn't shifted. A shift after a
   /// `Mirror` or `Revolve` shifts the shape before it's copied.
   Shift { amount: Prop<f32>, rotation: Prop<f32> },
+  /// Curves each of the shape's straight edges, out when positive and in when negative, by that fraction of the
+  /// edge's length at its middle. A line has no inside, so out is away from the side it bends around. Curves, such as
+  /// a circle's edge or a `Round`'s corners, stay as they are, so a bulge goes before a round for the round to take in
+  /// the corners it leaves. Text isn't bulged, as with a `Shift`.
+  Bulge(Prop<f32>),
+  /// Rounds each of the shape's corners into an arc of this radius, in the space the transforms before it put the
+  /// shape in. Where an edge is too short for the arcs at both its ends, they share it and are tighter. A line's ends
+  /// stay as they are, and text isn't rounded, as with a `Shift`.
+  Round(Prop<f32>),
 }
 
 impl Transform {
@@ -72,7 +82,10 @@ impl Transform {
           Affine2::from_translation(center) * turn * Affine2::from_translation(-center)
         }
       },
-      Self::Scale(scale) => Affine2::from_scale(Vec2::splat(scale.resolve(env))),
+      Self::Scale(Scaling { amount, .. }) => {
+        let anchor = self.anchor(center, env).unwrap_or(center);
+        Affine2::from_translation(anchor) * Affine2::from_scale(Vec2::splat(amount.resolve(env))) * Affine2::from_translation(-anchor)
+      }
       Self::Fit(traversal) => {
         let ends = env.visits.and_then(|visits| visits.ends(traversal)).filter(|(start, end)| start.distance(*end) > f32::EPSILON);
         let Some((start, end)) = ends else {
@@ -83,7 +96,9 @@ impl Transform {
         env.fill_frame * fit
       }
       // the shape itself stays where it is, and `copies` and `cut` say what's added to it or taken away
-      Self::Mirror { .. } | Self::Revolve { .. } | Self::Divide { .. } | Self::Shift { .. } => Affine2::IDENTITY,
+      Self::Mirror { .. } | Self::Revolve { .. } | Self::Bisect { .. } | Self::Shift { .. } | Self::Bulge(_) | Self::Round(_) => {
+        Affine2::IDENTITY
+      }
     }
   }
 
@@ -124,26 +139,46 @@ impl Transform {
     }
   }
 
-  /// The center of a `Mirror`, `Revolve`, or `Divide`
+  /// The center of a `Mirror`, `Revolve`, or `Bisect`
   pub(crate) fn copy_center(&self, env: &Env) -> Option<Vec2> {
     match self {
-      Self::Mirror { center, .. } | Self::Revolve { center, .. } | Self::Divide { center, .. } => Some(center.resolve(env)),
+      Self::Mirror { center, .. } | Self::Revolve { center, .. } | Self::Bisect { center, .. } => Some(center.resolve(env)),
       _ => None,
     }
   }
 
-  /// For a `Divide`, the side of its line that's cut away
+  /// The point a `Scale` keeps still, given where the transforms before it put the node's center
+  pub(crate) fn anchor(&self, center: Vec2, env: &Env) -> Option<Vec2> {
+    match self {
+      Self::Scale(Scaling { anchor, .. }) => Some(center + anchor.resolve(env)),
+      _ => None,
+    }
+  }
+
+  /// The direction of a `Mirror`'s or `Bisect`'s line through its center, unit length
+  pub(crate) fn line(&self, env: &Env) -> Option<Vec2> {
+    match self {
+      Self::Mirror { rotation, .. } | Self::Bisect { rotation, .. } => Some(line_direction(rotation, env)),
+      _ => None,
+    }
+  }
+
+  /// For a `Bisect`, the side of its line that's cut away
   pub(crate) fn cut(&self, env: &Env) -> Option<Cut> {
     match self {
-      Self::Divide { center, rotation } => Some(Cut { point: center.resolve(env), out: line_direction(rotation, env).perp() }),
+      Self::Bisect { center, rotation } => Some(Cut { point: center.resolve(env), out: line_direction(rotation, env).perp() }),
       _ => None,
     }
   }
 
-  /// For a `Shift`, its line and how far it moves the middle
-  pub(crate) fn shift(&self, env: &Env) -> Option<Shift> {
+  /// For a `Shift`, `Bulge`, or `Round`, how it reshapes the shape's outline
+  pub(crate) fn reshape(&self, env: &Env) -> Option<Reshape> {
     match self {
-      Self::Shift { amount, rotation } => Some(Shift { along: line_direction(rotation, env), amount: amount.resolve(env).clamp(-1.0, 1.0) }),
+      Self::Shift { amount, rotation } => {
+        Some(Reshape::Shift(Shift { along: line_direction(rotation, env), amount: amount.resolve(env).clamp(-1.0, 1.0) }))
+      }
+      Self::Bulge(amount) => Some(Reshape::Bulge(amount.resolve(env))),
+      Self::Round(radius) => Some(Reshape::Round(radius.resolve(env))),
       _ => None,
     }
   }
@@ -159,11 +194,55 @@ impl Transform {
   pub(crate) fn is_animated(&self) -> bool {
     match self {
       Self::Translate(prop) => prop.is_animated(),
-      Self::Rotate(prop) | Self::Scale(prop) => prop.is_animated(),
+      Self::Rotate(prop) | Self::Bulge(prop) | Self::Round(prop) => prop.is_animated(),
+      Self::Scale(Scaling { amount, anchor }) => amount.is_animated() || anchor.is_animated(),
       Self::Fit(_) => true,
-      Self::Mirror { center, rotation } | Self::Divide { center, rotation } => center.is_animated() || rotation.is_animated(),
+      Self::Mirror { center, rotation } | Self::Bisect { center, rotation } => center.is_animated() || rotation.is_animated(),
       Self::Shift { amount, rotation } => amount.is_animated() || rotation.is_animated(),
       Self::Revolve { center, angle, count } => center.is_animated() || angle.is_animated() || count.is_animated(),
+    }
+  }
+}
+
+/// How much a [`Transform::Scale`] scales by, and what stays put
+///
+/// In RON: `Scale(amount: Fixed(2.0), anchor: Fixed((-10.0, -5.0)))`, with `anchor` left out for the center. A file can
+/// give only the amount, `Scale(Fixed(2.0))`, as files did before there was an anchor.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "ScalingFile")]
+pub struct Scaling {
+  pub amount: Prop<f32>,
+  /// The point that stays put, from the node's center as placed by the transforms before this one, in the same space.
+  /// The center by default.
+  #[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))]
+  pub anchor: Prop<Vec2>,
+}
+
+impl From<f32> for Scaling {
+  /// Scales by `amount` around the center
+  fn from(amount: f32) -> Self {
+    Self { amount: amount.into(), anchor: Vec2::ZERO.into() }
+  }
+}
+
+/// A [`Scaling`] as a file gives it: with an anchor, or only the amount
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ScalingFile {
+  Anchored {
+    amount: Prop<f32>,
+    #[serde(default)]
+    anchor: Option<Prop<Vec2>>,
+  },
+  Amount(Prop<f32>),
+}
+
+impl From<ScalingFile> for Scaling {
+  fn from(file: ScalingFile) -> Self {
+    match file {
+      ScalingFile::Anchored { amount, anchor } => Self { amount, anchor: anchor.unwrap_or(Prop::Fixed(Vec2::ZERO)) },
+      ScalingFile::Amount(amount) => Self { amount, anchor: Prop::Fixed(Vec2::ZERO) },
     }
   }
 }
@@ -189,6 +268,27 @@ impl Cut {
   }
 }
 
+/// A transform that reshapes a shape's outline, resolved
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Reshape {
+  Shift(Shift),
+  /// How far its straight edges curve out
+  Bulge(f32),
+  /// Its corners' radius
+  Round(f32),
+}
+
+impl Reshape {
+  /// `contour` reshaped, in the space the transforms before this one put it in, where the shape's center is `center`
+  pub(crate) fn apply(&self, contour: &Contour, center: Vec2) -> Contour {
+    match self {
+      Self::Shift(shift) => shift.apply(contour, center),
+      Self::Bulge(amount) => contour.bulged(*amount),
+      Self::Round(radius) => contour.rounded(*radius),
+    }
+  }
+}
+
 /// A `Shift`, resolved
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Shift {
@@ -206,12 +306,11 @@ impl Shift {
     ShiftLine { back: at(back), forward: at(forward), middle: at(middle) }
   }
 
-  /// `outline` shifted along the line through `center`, both in the space `before` takes the outline to. An edge that
-  /// crosses the middle gets a point there, so each part of it stays straight.
-  pub(crate) fn apply(&self, outline: &[Vec2], closed: bool, before: Affine2, center: Vec2) -> Vec<Vec2> {
-    let placed: Vec<Vec2> = outline.iter().map(|p| before.transform_point2(*p)).collect();
+  /// `contour` shifted along the line through `center`. An edge that crosses the middle gets a point there, so each
+  /// part of it stays straight.
+  pub(crate) fn apply(&self, contour: &Contour, center: Vec2) -> Contour {
     let along = |p: Vec2| (p - center).dot(self.along);
-    let line = self.line(&placed, center);
+    let line = self.line(&contour.points(), center);
     let (back, forward, middle) = (along(line.back), along(line.forward), along(line.middle));
     // each half stretched or squashed evenly between its end and the middle
     let moved = |t: f32| match t < 0.0 {
@@ -219,18 +318,7 @@ impl Shift {
       false if forward > 0.0 => middle + t * (forward - middle) / forward,
       _ => t,
     };
-    let edges = if closed { placed.len() } else { placed.len().saturating_sub(1) };
-    let mut split = Vec::with_capacity(placed.len() * 2);
-    for i in 0..placed.len() {
-      let (from, to) = (placed[i], placed[(i + 1) % placed.len()]);
-      split.push(from);
-      let (from_t, to_t) = (along(from), along(to));
-      if i < edges && from_t * to_t < 0.0 {
-        split.push(from.lerp(to, from_t / (from_t - to_t)));
-      }
-    }
-    let back_to_local = before.inverse();
-    split.into_iter().map(|p| back_to_local.transform_point2(p + self.along * (moved(along(p)) - along(p)))).collect()
+    contour.split_and_moved(along, |p| p + self.along * (moved(along(p)) - along(p)))
   }
 }
 
@@ -243,7 +331,7 @@ pub struct ShiftLine {
   pub middle: Vec2,
 }
 
-/// The direction of a `Mirror`'s, `Divide`'s, or `Shift`'s line: straight down at 0 degrees, turning clockwise
+/// The direction of a `Mirror`'s, `Bisect`'s, or `Shift`'s line: straight down at 0 degrees, turning clockwise
 fn line_direction(rotation: &Prop<f32>, env: &Env) -> Vec2 {
   Vec2::from_angle((90.0 + rotation.resolve(env)).to_radians())
 }

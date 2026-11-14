@@ -10,6 +10,8 @@ import { Eye, EyeOff } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
 import type { Prop } from '../../types/generated/Prop'
+import type { RenderedShape } from '../../types/generated/RenderedShape'
+import type { Layer } from '../../types/generated/Layer'
 import type { Curve } from '../../types/generated/Curve'
 import type { EnvelopeCurve } from '../../types/generated/EnvelopeCurve'
 import type { Modulated } from '../../types/generated/Modulated'
@@ -51,6 +53,14 @@ export const NodePickingContext = createContext<NodePicking>()
 export type RegionVisibility = { shown: (of: Selection) => boolean; show: (of: Selection, shown: boolean) => void }
 
 export const RegionVisibilityContext = createContext<RegionVisibility>()
+
+/**
+ * Where a layer's or mask's region stands as the machine last drew it, at the playhead, for fields that need to know
+ * where the shape is. `of` is `null` for a shape that isn't a region, or that hasn't been drawn.
+ */
+export type ShapePoses = { of: (shape: NonNullable<Layer['region']>) => RenderedShape | null; time: Accessor<number> }
+
+export const ShapePosesContext = createContext<ShapePoses>({ of: () => null, time: () => 0 })
 
 function useScene() {
   return useContext(SceneContext)!

@@ -27,7 +27,7 @@ import ConfirmDialog from './ConfirmDialog'
 import { LedsNote } from './LayerPlace'
 import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
-import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, type NodePicking, type RegionVisibility } from './SceneFields'
+import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
@@ -465,7 +465,7 @@ export default function SceneEditor(props: {
         highlighted={nodePicking.highlighted[0]()}
         choosing={nodePicking.choosing[0]() !== null}
       />
-      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} time={playback.position()} grid={snap().on ? snap().size : null} />
+      <ShapeHandles space={space} selection={selected()} pose={selectedPose()} outlines={outline()} time={playback.position()} grid={snap().on ? snap().size : null} />
     </>
   )
 
@@ -496,12 +496,27 @@ export default function SceneEditor(props: {
     },
   }
 
+  /** Each layer's and mask's region as the machine last drew it, found by the shape itself */
+  const shapePoses: ShapePoses = {
+    of: (shape) => {
+      const rendered = drawn()
+      const layers = scene()?.layers ?? []
+      if (!rendered) return null
+      const index = layers.findIndex((layer) => layer.region === shape)
+      if (index >= 0) return rendered.shapes[index] ?? null
+      const masked = layers.findIndex((layer) => layer.mask?.region === shape)
+      return masked >= 0 ? (rendered.mask_shapes[masked] ?? null) : null
+    },
+    time: playback.position,
+  }
+
   return (
     <SceneContext.Provider value={editing}>
       <NodePickingContext.Provider value={nodePicking}>
       <LayerSurfacesContext.Provider value={layerSurface}>
         <RevealContext.Provider value={revealing}>
         <RegionVisibilityContext.Provider value={regionVisibility}>
+        <ShapePosesContext.Provider value={shapePoses}>
         <div class="scene-editor" ref={root}>
         <header class="scene-file">
           <button type="button" class="scene-button" onClick={close}>
@@ -720,6 +735,7 @@ export default function SceneEditor(props: {
           onConfirm={remove}
         />
         </div>
+        </ShapePosesContext.Provider>
         </RegionVisibilityContext.Provider>
         </RevealContext.Provider>
       </LayerSurfacesContext.Provider>

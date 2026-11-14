@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Cut, Env, Node, PreparedStroke, Prop, Sample, ShapeAdjust, TextAlign, ShiftLine, TextOutline, TextSource, Transform, VerticalAlign, Wrap, layout_text,
+  Bounds, Contour, Cut, Env, Node, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, TextAlign, ShiftLine, TextOutline, TextSource, Transform, VerticalAlign, Wrap, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -17,9 +17,6 @@ const MAX_COPIES: usize = 1024;
 
 /// Line segments per bezier span when flattening it to a polyline
 const BEZIER_STEPS: usize = 24;
-
-/// Line segments per bowed side of a star or diamond
-const BOW_STEPS: usize = 16;
 
 /// The area a layer is drawn in
 pub type Shape = Node<ShapeNode, ShapeAdjust>;
@@ -37,14 +34,12 @@ pub enum ShapeNode {
   },
   Rect { width: Prop<f32>, height: Prop<f32> },
   /// Four corners: one at the top and one at the bottom, `height` apart, and one either side, `width` apart, halfway
-  /// down. A `Shift` moves the side corners up or down. `bow` curves
-  /// all four sides, out when positive and in when negative, by that fraction of a side's length at its middle.
-  Diamond { width: Prop<f32>, height: Prop<f32>, bow: Prop<f32> },
+  /// down. A `Shift` moves the side corners up or down.
+  Diamond { width: Prop<f32>, height: Prop<f32> },
   /// `legs` triangles out from the origin to `radius`, spaced evenly around it, each `leg_width` times `radius` across
   /// where its base crosses the origin, so the legs keep their shape as the radius changes. The first points up and
   /// they go clockwise, so one leg is a triangle with its base on the origin. `legs` is truncated to a whole number.
-  /// `bow` curves the legs' sides, as a [`ShapeNode::Diamond`]'s, and leaves one leg's base straight.
-  Star { radius: Prop<f32>, legs: Prop<f32>, leg_width: Prop<f32>, bow: Prop<f32> },
+  Star { radius: Prop<f32>, legs: Prop<f32>, leg_width: Prop<f32> },
   /// A triangle pointing up with a smaller one cut out of its base: `width` across, `height` from the bottom corners to
   /// the tip, and the cut reaching `notch` (0 to 1) of the way up.
   Chevron { width: Prop<f32>, height: Prop<f32>, notch: Prop<f32> },
@@ -65,8 +60,9 @@ pub enum ShapeNode {
   Bezier { points: Vec<BezierPoint> },
   /// `text` in the font named `font`, in a box `width` by `height` around the origin. `size` is the font's em. Lines
   /// break at line breaks, and between words where the next would run past the box. `align` places each line across
-  /// the box and `vertical_align` places them all up and down it, and what runs past the box is cut off. The box is
-  /// what a fill is stretched over. With no font by that name, it draws nothing.
+  /// the box and `vertical_align` places them all up and down it, and what runs past the box is cut off. `kerning` is
+  /// room added between characters and `leading` room added between lines, both in scene units and 0 by default. The
+  /// box is what a fill is stretched over. With no font by that name, it draws nothing.
   Text {
     text: TextSource,
     font: String,
@@ -77,6 +73,10 @@ pub enum ShapeNode {
     align: TextAlign,
     #[serde(default)]
     vertical_align: VerticalAlign,
+    #[serde(default = "no_spacing")]
+    kerning: Prop<f32>,
+    #[serde(default = "no_spacing")]
+    leading: Prop<f32>,
   },
 }
 
@@ -108,10 +108,16 @@ pub struct ShapePose {
   /// Where the shape's center is going into each transform, in the space the ones before it put the shape in, then in
   /// scene space after the last. A `Rotate` turns around it.
   pub pivots: Vec<Vec2>,
-  /// For each transform, the center of a `Mirror`, `Revolve`, or `Divide`, in the space the ones before it put the shape
+  /// For each transform, the center of a `Mirror`, `Revolve`, or `Bisect`, in the space the ones before it put the shape
   /// in. `None` for other transforms.
   pub centers: Vec<Option<Vec2>>,
-  /// Outline of the shape itself in scene space, without what a `Mirror`, `Revolve`, or `Divide` does to it. Closed,
+  /// For each `Scale`, the point it keeps still, in the space the transforms before it put the shape in. `None` for
+  /// other transforms.
+  pub anchors: Vec<Option<Vec2>>,
+  /// For each `Mirror` or `Bisect`, the direction its line runs through its center, unit length. `None` for other
+  /// transforms.
+  pub lines: Vec<Option<Vec2>>,
+  /// Outline of the shape itself in scene space, without what a `Mirror`, `Revolve`, or `Bisect` does to it. Closed,
   /// except for polylines and beziers.
   pub outline: Vec<Vec2>,
   /// For each transform, the pose of the `Sweep` path it follows, if any. The path's coordinates are translate values.
@@ -123,7 +129,7 @@ impl Shape {
   pub(crate) fn prepare(&self, env: &Env) -> Option<PreparedShape> {
     let bounds = self.base.bounds(env);
     let to_scene = self.to_scene(bounds.center(), env)?;
-    let edge = match self.shifted(env) {
+    let edge = match self.reshaped(env) {
       Some((outline, _)) if !self.base.is_open() => Edge::Polygon(outline),
       _ => self.base.edge(env, to_scene),
     };
@@ -177,7 +183,7 @@ impl Shape {
       ShapeNode::Bezier { points } => points.iter().map(|p| p.handle.resolve(env)).collect(),
       _ => Vec::new(),
     };
-    let (outline, shifts) = self.shifted(env).unwrap_or_else(|| (self.base.outline(env), vec![None; self.transform.len()]));
+    let (outline, shifts) = self.reshaped(env).unwrap_or_else(|| (self.base.outline(env), vec![None; self.transform.len()]));
     Some(ShapePose {
       transforms: steps.iter().map(|(affine, _)| *affine).collect(),
       bounds,
@@ -185,42 +191,46 @@ impl Shape {
       handles,
       pivots: steps.iter().map(|(_, center)| *center).chain([end]).collect(),
       centers: self.transform.iter().map(|transform| transform.copy_center(env)).collect(),
+      anchors: self.transform.iter().zip(&steps).map(|(transform, (_, center))| transform.anchor(*center, env)).collect(),
+      lines: self.transform.iter().map(|transform| transform.line(env)).collect(),
       shifts,
       outline: outline.into_iter().map(|p| to_scene.transform_point2(p)).collect(),
       paths: self.transform.iter().map(|transform| transform.path().and_then(|path| path.pose(env))).collect(),
     })
   }
 
-  /// The base's outline in local space, with each `Shift` applied
+  /// The base's outline in local space, with each `Shift`, `Bulge`, and `Round` applied
   fn own_outline(&self, env: &Env) -> Vec<Vec2> {
-    self.shifted(env).map_or_else(|| self.base.outline(env), |(outline, _)| outline)
+    self.reshaped(env).map_or_else(|| self.base.outline(env), |(outline, _)| outline)
   }
 
-  /// The base's outline in local space with each `Shift` applied, and for each transform, where a `Shift` moves the
-  /// shape. `None` without a shift, or for text, which isn't shifted.
-  fn shifted(&self, env: &Env) -> Option<(Vec<Vec2>, Vec<Option<ShiftLine>>)> {
-    if matches!(self.base, ShapeNode::Text { .. }) || self.transform.iter().all(|transform| transform.shift(env).is_none()) {
+  /// The base's outline in local space with each `Shift`, `Bulge`, and `Round` applied, and for each transform, where a
+  /// `Shift` moves the shape. `None` without any of them, or for text, which isn't reshaped.
+  fn reshaped(&self, env: &Env) -> Option<(Vec<Vec2>, Vec<Option<ShiftLine>>)> {
+    if matches!(self.base, ShapeNode::Text { .. }) || self.transform.iter().all(|transform| transform.reshape(env).is_none()) {
       return None;
     }
-    let mut outline = self.base.outline(env);
+    let mut contour = self.base.contour(env);
     // local space to the one each transform starts from
     let mut before = Affine2::IDENTITY;
     let mut lines = Vec::with_capacity(self.transform.len());
     for (transform, (affine, center)) in self.transform.iter().zip(self.steps(self.base.bounds(env).center(), env)) {
-      let shift = transform.shift(env);
-      if let Some(shift) = shift.filter(|_| before.matrix2.determinant().abs() > f32::EPSILON) {
-        let placed: Vec<Vec2> = outline.iter().map(|p| before.transform_point2(*p)).collect();
-        lines.push(Some(shift.line(&placed, center)));
-        outline = shift.apply(&outline, !self.base.is_open(), before, center);
+      if let Some(reshape) = transform.reshape(env).filter(|_| before.matrix2.determinant().abs() > f32::EPSILON) {
+        let placed = contour.transformed(before);
+        lines.push(match reshape {
+          Reshape::Shift(shift) => Some(shift.line(&placed.points(), center)),
+          _ => None,
+        });
+        contour = reshape.apply(&placed, center).transformed(before.inverse());
       } else {
         lines.push(None);
       }
       before = affine * before;
     }
-    Some((outline, lines))
+    Some((contour.points(), lines))
   }
 
-  /// Each copy of the shape its `Mirror`s and `Revolve`s draw, the shape itself first, with what its `Divide`s cut from
+  /// Each copy of the shape its `Mirror`s and `Revolve`s draw, the shape itself first, with what its `Bisect`s cut from
   /// it. Assumes the shape isn't collapsed.
   fn placements(&self, center: Vec2, env: &Env) -> Vec<Placement> {
     let mut placed = vec![Placement { to_scene: Affine2::IDENTITY, cuts: Vec::new() }];
@@ -236,7 +246,7 @@ impl Shape {
 
   /// The scene-space point `phase` (0 to 1) of the way along the outline. The origin if there's no outline.
   pub(crate) fn along(&self, phase: f32, env: &Env) -> Vec2 {
-    let own = match self.shifted(env) {
+    let own = match self.reshaped(env) {
       Some((outline, _)) if self.base.is_open() => along_line(&outline, phase),
       Some((outline, _)) => along_loop(&outline, phase),
       None => self.base.along(phase, env),
@@ -267,6 +277,8 @@ impl ShapeNode {
       height: frame.y.into(),
       align: TextAlign::default(),
       vertical_align: VerticalAlign::default(),
+      kerning: no_spacing(),
+      leading: no_spacing(),
     }
   }
 
@@ -281,16 +293,15 @@ impl ShapeNode {
   fn is_animated(&self) -> bool {
     match self {
       Self::Circle { radius } => radius.is_animated(),
-      Self::Ellipse { rx: a, ry: b } | Self::Rect { width: a, height: b } => a.is_animated() || b.is_animated(),
-      Self::Chevron { width: a, height: b, notch: c } | Self::Diamond { width: a, height: b, bow: c } => {
+      Self::Ellipse { rx: a, ry: b } | Self::Rect { width: a, height: b } | Self::Diamond { width: a, height: b } => a.is_animated() || b.is_animated(),
+      Self::Chevron { width: a, height: b, notch: c } | Self::Star { radius: a, legs: b, leg_width: c } => {
         a.is_animated() || b.is_animated() || c.is_animated()
-      }
-      Self::Star { radius: a, legs: b, leg_width: c, bow: d } => {
-        a.is_animated() || b.is_animated() || c.is_animated() || d.is_animated()
       }
       Self::Polygon { points } | Self::Polyline { points } => points.iter().any(Prop::is_animated),
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
-      Self::Text { text, size, width, height, .. } => text.is_animated() || size.is_animated() || width.is_animated() || height.is_animated(),
+      Self::Text { text, size, width, height, kerning, leading, .. } => {
+        text.is_animated() || [size, width, height, kerning, leading].iter().any(|prop| prop.is_animated())
+      }
     }
   }
 
@@ -324,19 +335,13 @@ impl ShapeNode {
         let reach = self.reach(env);
         [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)].map(|(x, y)| Vec2::new(x, y) * reach).to_vec()
       }
-      Self::Diamond { bow, .. } => {
+      Self::Diamond { .. } => {
         let Vec2 { x, y } = self.reach(env);
-        let bow = bow.resolve(env);
-        let corners = [Vec2::new(0.0, -y), Vec2::new(x, 0.0), Vec2::new(0.0, y), Vec2::new(-x, 0.0)];
-        (0..4).flat_map(|i| bowed(corners[i], corners[(i + 1) % 4], bow)).collect()
+        vec![Vec2::new(0.0, -y), Vec2::new(x, 0.0), Vec2::new(0.0, y), Vec2::new(-x, 0.0)]
       }
-      Self::Star { radius, legs, leg_width, bow } => {
-        let (radius, legs, bow) = (radius.resolve(env), whole_legs(legs, env), bow.resolve(env));
-        let corners = star_outline(legs, radius, radius * leg_width.resolve(env) / 2.0);
-        // one leg's last side is its base, across the origin
-        let sides = if legs == 1 { 2 } else { corners.len() };
-        let side = |i: usize| if i < sides { bowed(corners[i], corners[(i + 1) % corners.len()], bow) } else { vec![corners[i]] };
-        (0..corners.len()).flat_map(side).collect()
+      Self::Star { radius, legs, leg_width } => {
+        let radius = radius.resolve(env);
+        star_outline(whole_legs(legs, env), radius, radius * leg_width.resolve(env) / 2.0)
       }
       Self::Chevron { notch, .. } => {
         let Vec2 { x, y } = self.reach(env);
@@ -347,6 +352,14 @@ impl ShapeNode {
       Self::Polygon { points } if points.len() < 3 => Vec::new(),
       Self::Polygon { points } | Self::Polyline { points } => points.iter().map(|p| p.resolve(env)).collect(),
       Self::Bezier { points } => bezier_line(points, env),
+    }
+  }
+
+  /// The outline, with which of its points are corners and which of its edges are straight
+  fn contour(&self, env: &Env) -> Contour {
+    match self {
+      Self::Circle { .. } | Self::Ellipse { .. } | Self::Bezier { .. } => Contour::curved(self.outline(env), !self.is_open()),
+      _ => Contour::straight(self.outline(env), !self.is_open()),
     }
   }
 
@@ -388,11 +401,12 @@ impl ShapeNode {
       Self::Rect { .. } => Edge::Rect(self.reach(env)),
       Self::Diamond { .. } | Self::Star { .. } | Self::Chevron { .. } => Edge::Polygon(self.outline(env)),
       Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
-      Self::Text { text, font, size, align, vertical_align, .. } => match env.assets.font(font) {
+      Self::Text { text, font, size, align, vertical_align, kerning, leading, .. } => match env.assets.font(font) {
         Some(font) => {
           let reach = self.reach(env);
           let moved_to = to_scene.matrix2.abs_diff_eq(Mat2::IDENTITY, 1e-6).then_some(to_scene.translation);
-          Edge::Text(layout_text(font, &text.resolve(env), size.resolve(env), reach * 2.0, *align, *vertical_align, moved_to), reach)
+          let spacing = Vec2::new(kerning.resolve(env), leading.resolve(env));
+          Edge::Text(layout_text(font, &text.resolve(env), size.resolve(env), reach * 2.0, *align, *vertical_align, spacing, moved_to), reach)
         }
         None => Edge::Open,
       },
@@ -512,8 +526,8 @@ impl Edge {
     }
   }
 
-  /// A box around everything inside the edge. Wider than the shape's bounds for a star or diamond with its sides
-  /// bowed out.
+  /// A box around everything inside the edge. Wider than the shape's bounds when a transform reshapes it, such as a
+  /// `Bulge`.
   fn extent(&self) -> Bounds {
     let around = |reach: Vec2| Bounds::new(-reach, reach);
     match self {
@@ -596,32 +610,17 @@ fn ellipse_distance(reach: Vec2, p: Vec2) -> (f32, Vec2) {
   (along.length() - 1.0, along.normalize_or(Vec2::X) / reach)
 }
 
+/// Text's kerning or leading when a file leaves it out
+fn no_spacing() -> Prop<f32> {
+  Prop::Fixed(0.0)
+}
+
 fn whole_legs(legs: &Prop<f32>, env: &Env) -> u32 {
   legs.resolve_truncated(env).floor().clamp(0.0, MAX_LEGS) as u32
 }
 
 fn unit_fraction(fraction: &Prop<f32>, env: &Env) -> f32 {
   fraction.resolve(env).clamp(0.0, 1.0)
-}
-
-/// The points along a side from `from` toward `to`, leaving out `to` so that sides can be joined end to end. With a
-/// `bow`, the side curves away from the origin (or toward it, when negative) by that fraction of its length at its
-/// middle.
-fn bowed(from: Vec2, to: Vec2, bow: f32) -> Vec<Vec2> {
-  if bow == 0.0 {
-    return vec![from];
-  }
-  let middle = (from + to) / 2.0;
-  let across = (to - from).perp();
-  let out = if across.dot(middle) < 0.0 { -across } else { across };
-  // a quadratic bezier reaches halfway to its control point at its middle
-  let control = middle + out * bow * 2.0;
-  (0..BOW_STEPS)
-    .map(|step| {
-      let t = step as f32 / BOW_STEPS as f32;
-      from.lerp(control, t).lerp(control.lerp(to, t), t)
-    })
-    .collect()
 }
 
 /// Each leg's tip, then where its side meets the next leg's, going clockwise from the leg that points up. `side` is
@@ -896,7 +895,7 @@ mod tests {
   }
 
   fn diamond() -> Shape {
-    Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), bow: 0.0.into() })
+    Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into() })
   }
 
   fn shift(amount: f32, rotation: f32) -> Transform {
@@ -965,18 +964,45 @@ mod tests {
   }
 
   #[test]
-  fn a_diamonds_sides_bow() {
-    let bowed = Shape::new(ShapeNode::Diamond { width: 20.0.into(), height: 20.0.into(), bow: 0.25.into() });
+  fn a_bulge_curves_a_diamonds_sides() {
     assert_eq!(covered(&diamond(), 6.0, 6.0, 0.1), 0.0);
-    assert_eq!(covered(&bowed, 6.0, 6.0, 0.1), 1.0);
+    assert_eq!(covered(&diamond().transform(Transform::Bulge(0.25.into())), 6.0, 6.0, 0.1), 1.0);
+    assert_eq!(covered(&diamond().transform(Transform::Bulge((-0.25).into())), 3.0, 3.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_round_turns_a_rects_corners_into_arcs() {
+    let rect = Shape::new(ShapeNode::Rect { width: 20.0.into(), height: 20.0.into() });
+    let rounded = rect.clone().transform(Transform::Round(5.0.into()));
+    assert_eq!(covered(&rect, 9.5, 9.5, 0.1), 1.0);
+    assert_eq!(covered(&rounded, 9.5, 9.5, 0.1), 0.0);
+    assert_eq!(covered(&rounded, 8.0, 8.0, 0.1), 1.0);
+    assert_eq!(covered(&rounded, 9.5, 0.0, 0.1), 1.0);
+  }
+
+  #[test]
+  fn a_round_is_in_the_space_the_transforms_before_it_leave() {
+    let rect = Shape::new(ShapeNode::Rect { width: 2.0.into(), height: 2.0.into() });
+    // 5 across once scaled, around (5, 5)
+    let shape = rect.transform(Transform::Round(0.5.into())).transform(Transform::Scale(10.0.into()));
+    assert_eq!(covered(&shape, 8.0, 8.0, 0.1), 1.0);
+    assert_eq!(covered(&shape, 9.0, 9.0, 0.1), 0.0);
+  }
+
+  #[test]
+  fn a_circle_has_no_corners_to_round_or_sides_to_bulge() {
+    let params = Params::new();
+    let circle = Shape::new(ShapeNode::circle(10.0));
+    let reshaped = circle.clone().transform(Transform::Bulge(0.5.into())).transform(Transform::Round(5.0.into()));
+    assert_eq!(reshaped.pose(&env(0.0, &params)).unwrap().outline, circle.pose(&env(0.0, &params)).unwrap().outline);
   }
 
   fn star(legs: f32) -> Shape {
-    bowed_star(legs, 0.0)
+    Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: legs.into(), leg_width: 0.4.into() })
   }
 
-  fn bowed_star(legs: f32, bow: f32) -> Shape {
-    Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: legs.into(), leg_width: 0.4.into(), bow: bow.into() })
+  fn bulged_star(legs: f32, amount: f32) -> Shape {
+    star(legs).transform(Transform::Bulge(amount.into()))
   }
 
   #[test]
@@ -1002,16 +1028,15 @@ mod tests {
   }
 
   #[test]
-  fn a_stars_sides_bow_out_and_in_but_one_legs_base_stays_straight() {
+  fn a_bulge_curves_a_stars_sides_out_and_in() {
     // either side of the middle of the one leg's right-hand side, which runs from the tip at (0, -20) to (4, 0)
     let out = Vec2::new(20.0, -4.0).normalize();
     let (beyond, within) = (Vec2::new(2.0, -10.0) + out * 2.0, Vec2::new(2.0, -10.0) - out);
-    assert_eq!(covered(&bowed_star(1.0, 0.0), beyond.x, beyond.y, 0.1), 0.0);
-    assert_eq!(covered(&bowed_star(1.0, 0.25), beyond.x, beyond.y, 0.1), 1.0);
-    assert_eq!(covered(&bowed_star(1.0, 0.0), within.x, within.y, 0.1), 1.0);
+    assert_eq!(covered(&bulged_star(1.0, 0.0), beyond.x, beyond.y, 0.1), 0.0);
+    assert_eq!(covered(&bulged_star(1.0, 0.25), beyond.x, beyond.y, 0.1), 1.0);
+    assert_eq!(covered(&bulged_star(1.0, 0.0), within.x, within.y, 0.1), 1.0);
     // any further in, and the two sides cross
-    assert_eq!(covered(&bowed_star(1.0, -0.07), within.x, within.y, 0.1), 0.0);
-    assert_eq!(covered(&bowed_star(1.0, 0.25), 0.0, 1.0, 0.1), 0.0);
+    assert_eq!(covered(&bulged_star(1.0, -0.07), within.x, within.y, 0.1), 0.0);
   }
 
   #[test]
@@ -1055,8 +1080,8 @@ mod tests {
     Transform::Revolve { center: Vec2::from(center).into(), angle: angle.into(), count: count.into() }
   }
 
-  fn divide(center: (f32, f32), rotation: f32) -> Transform {
-    Transform::Divide { center: Vec2::from(center).into(), rotation: rotation.into() }
+  fn bisect(center: (f32, f32), rotation: f32) -> Transform {
+    Transform::Bisect { center: Vec2::from(center).into(), rotation: rotation.into() }
   }
 
   #[test]
@@ -1095,13 +1120,13 @@ mod tests {
   }
 
   #[test]
-  fn a_divide_keeps_one_side_of_its_line() {
-    let shape = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0));
+  fn a_bisect_keeps_one_side_of_its_line() {
+    let shape = Shape::new(ShapeNode::circle(10.0)).transform(bisect((0.0, 0.0), 0.0));
     assert_eq!(covered(&shape, 5.0, 0.0, 0.1), 1.0);
     assert_eq!(covered(&shape, -5.0, 0.0, 0.1), 0.0);
     assert!((covered(&shape, 0.0, 0.0, 0.5) - 0.5).abs() < 1e-4);
     // at 90 degrees the bottom is kept, and the edge of the circle still bounds it
-    let turned = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 90.0));
+    let turned = Shape::new(ShapeNode::circle(10.0)).transform(bisect((0.0, 0.0), 90.0));
     assert_eq!(covered(&turned, 0.0, 5.0, 0.1), 1.0);
     assert_eq!(covered(&turned, 0.0, -5.0, 0.1), 0.0);
     assert_eq!(covered(&turned, 0.0, 11.0, 0.1), 0.0);
@@ -1113,7 +1138,7 @@ mod tests {
     assert_eq!(covered(&copies, 110.0, 0.0, 0.1), 1.0);
     assert_eq!(covered(&copies, 90.0, 0.0, 0.1), 1.0);
 
-    let cut = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0)).transform(Transform::Scale(2.0.into()));
+    let cut = Shape::new(ShapeNode::circle(10.0)).transform(bisect((0.0, 0.0), 0.0)).transform(Transform::Scale(2.0.into()));
     assert_eq!(covered(&cut, 15.0, 0.0, 0.1), 1.0);
     assert_eq!(covered(&cut, -15.0, 0.0, 0.1), 0.0);
     // still in scene units across the cut, however it's scaled
@@ -1121,8 +1146,8 @@ mod tests {
   }
 
   #[test]
-  fn a_divide_after_a_revolve_cuts_every_copy() {
-    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).transform(divide((10.0, 0.0), 0.0));
+  fn a_bisect_after_a_revolve_cuts_every_copy() {
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).transform(bisect((10.0, 0.0), 0.0));
     assert_eq!(covered(&shape, 11.0, 0.0, 0.1), 1.0);
     assert_eq!(covered(&shape, 9.0, 0.0, 0.1), 0.0);
     assert_eq!(covered(&shape, -10.0, 0.0, 0.1), 0.0);
@@ -1150,6 +1175,17 @@ mod tests {
   }
 
   #[test]
+  fn a_pose_has_the_point_each_scale_keeps_still() {
+    let params = Params::new();
+    let scaling = crate::scene::Scaling { amount: 2.0.into(), anchor: Vec2::new(-1.0, -2.0).into() };
+    let shape = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(Vec2::new(10.0, 5.0).into())).transform(Transform::Scale(scaling));
+    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    // from the center the translate moved it to
+    assert_eq!(pose.anchors, vec![None, Some(Vec2::new(9.0, 3.0))]);
+    assert!(pose.transforms[1].transform_point2(Vec2::new(9.0, 3.0)).abs_diff_eq(Vec2::new(9.0, 3.0), 1e-4));
+  }
+
+  #[test]
   fn a_sample_takes_the_local_position_of_the_copy_it_is_in() {
     let params = Params::new();
     let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).prepare(&env(0.0, &params)).unwrap();
@@ -1162,7 +1198,7 @@ mod tests {
     let params = Params::new();
     let frame = env(0.0, &params);
     assert_eq!(dot((10.0, 0.0), revolve((0.0, 0.0), 180.0, 3.0)).outline(&frame).len(), 3);
-    let cut = Shape::new(ShapeNode::circle(10.0)).transform(divide((0.0, 0.0), 0.0)).outline(&frame);
+    let cut = Shape::new(ShapeNode::circle(10.0)).transform(bisect((0.0, 0.0), 0.0)).outline(&frame);
     assert_eq!(cut.len(), 1);
     assert!(cut[0].iter().all(|point| point.x >= -1e-4));
     assert!(cut[0].iter().any(|point| point.abs_diff_eq(Vec2::new(0.0, 10.0), 1e-3)));

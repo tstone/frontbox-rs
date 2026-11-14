@@ -45,11 +45,11 @@ impl Font {
     Some((bounds.max.y - bounds.min.y).abs() * self.scale(size))
   }
 
-  /// How wide and tall `text` is on one line at `size`, in scene units. `size` is the font's em, as a font size is
-  /// elsewhere, so a pixel font made on an 8-pixel em is one scene unit to a pixel at 8. A line is as tall as from the
-  /// font's ascent to its descent, whatever the letters in it.
-  pub fn measure(&self, text: &str, size: f32) -> Vec2 {
-    Vec2::new(self.placed(text, size).1, self.ascent(size) + self.descent(size))
+  /// How wide and tall `text` is on one line at `size`, with `kerning` added between characters, in scene units. `size`
+  /// is the font's em, as a font size is elsewhere, so a pixel font made on an 8-pixel em is one scene unit to a pixel
+  /// at 8. A line is as tall as from the font's ascent to its descent, whatever the letters in it.
+  pub fn measure(&self, text: &str, size: f32, kerning: f32) -> Vec2 {
+    Vec2::new(self.placed(text, size, kerning).1, self.ascent(size) + self.descent(size))
   }
 
   /// How far the font reaches above its baseline at `size`, in scene units
@@ -67,10 +67,11 @@ impl Font {
     self.face.height_unscaled() * self.scale(size)
   }
 
-  /// Lines of text at `size`, each from the start of its baseline, in local space with y down
-  pub(crate) fn outline<'a>(&self, lines: impl IntoIterator<Item = (&'a str, Vec2)>, size: f32) -> TextOutline {
+  /// Lines of text at `size`, with `kerning` added between characters, each from the start of its baseline, in local
+  /// space with y down
+  pub(crate) fn outline<'a>(&self, lines: impl IntoIterator<Item = (&'a str, Vec2)>, size: f32, kerning: f32) -> TextOutline {
     let scale = self.scale(size);
-    let placed = lines.into_iter().flat_map(|(text, start)| self.placed(text, size).0.into_iter().map(move |(id, pen)| (id, start + Vec2::X * pen)));
+    let placed = lines.into_iter().flat_map(|(text, start)| self.placed(text, size, kerning).0.into_iter().map(move |(id, pen)| (id, start + Vec2::X * pen)));
     let glyphs = placed
       .filter_map(|(id, pen)| {
         let to_local = |point: Point| pen + Vec2::new(point.x, -point.y) * scale;
@@ -84,8 +85,9 @@ impl Font {
     TextOutline { glyphs }
   }
 
-  /// Each glyph of `text` and where its pen position is along the line, with the line's width
-  fn placed(&self, text: &str, size: f32) -> (Vec<(GlyphId, f32)>, f32) {
+  /// Each glyph of `text` and where its pen position is along the line, with the line's width. `kerning` goes between
+  /// characters, not after the last.
+  fn placed(&self, text: &str, size: f32, kerning: f32) -> (Vec<(GlyphId, f32)>, f32) {
     let scale = self.scale(size);
     let mut pen = 0.0;
     let mut before: Option<GlyphId> = None;
@@ -93,7 +95,7 @@ impl Font {
       .chars()
       .map(|c| {
         let id = self.face.glyph_id(c);
-        pen += before.map_or(0.0, |before| self.face.kern_unscaled(before, id) * scale);
+        pen += before.map_or(0.0, |before| self.face.kern_unscaled(before, id) * scale + kerning);
         let at = pen;
         pen += self.face.h_advance_unscaled(id) * scale;
         before = Some(id);
@@ -266,30 +268,33 @@ pub(crate) mod tests {
   #[test]
   fn text_is_a_line_tall_and_as_wide_as_its_letters() {
     let font = pixel_font();
-    let one = font.measure("A", 16.0);
+    let one = font.measure("A", 16.0, 0.0);
     // ascent to descent, at 16 units to the em
     assert!((one.y - (682.0 + 192.0) * 16.0 / 1024.0).abs() < 1e-4);
     assert!(one.x > 0.0);
-    assert!((font.measure("AAA", 16.0).x - 3.0 * one.x).abs() < 1e-3);
-    assert!((font.measure("AAA", 32.0).x - 6.0 * one.x).abs() < 1e-3);
-    assert_eq!(font.measure("", 16.0), Vec2::new(0.0, one.y));
+    assert!((font.measure("AAA", 16.0, 0.0).x - 3.0 * one.x).abs() < 1e-3);
+    assert!((font.measure("AAA", 32.0, 0.0).x - 6.0 * one.x).abs() < 1e-3);
+    assert_eq!(font.measure("", 16.0, 0.0), Vec2::new(0.0, one.y));
+    // kerning goes between the letters, not after the last
+    assert!((font.measure("AAA", 16.0, 2.0).x - (3.0 * one.x + 4.0)).abs() < 1e-3);
+    assert_eq!(font.measure("A", 16.0, 2.0), one);
   }
 
   #[test]
   fn a_line_starts_on_its_baseline() {
     let font = pixel_font();
     let start = Vec2::new(3.0, 20.0);
-    let extent = font.outline([("HI", start)], 16.0).extent();
+    let extent = font.outline([("HI", start)], 16.0, 0.0).extent();
     // the letters sit on the baseline, within the ascent above it
     assert!((extent.max.y - start.y).abs() < 1e-4, "{extent:?}");
     assert!(extent.min.y >= start.y - font.ascent(16.0) - 1e-3, "{extent:?}");
-    assert!(extent.min.x >= start.x && extent.max.x <= start.x + font.measure("HI", 16.0).x + 1e-3, "{extent:?}");
+    assert!(extent.min.x >= start.x && extent.max.x <= start.x + font.measure("HI", 16.0, 0.0).x + 1e-3, "{extent:?}");
   }
 
   #[test]
   fn a_letter_is_inside_its_strokes_and_outside_its_counter() {
     // an "O" in a pixel font is a square ring, here with sides two and a half units wide
-    let outline = pixel_font().outline([("O", Vec2::ZERO)], 40.0);
+    let outline = pixel_font().outline([("O", Vec2::ZERO)], 40.0, 0.0);
     let extent = outline.extent();
     let center = extent.center();
     assert!(outline.distance(center).0 > 0.0, "the counter is outside");
@@ -313,7 +318,7 @@ pub(crate) mod tests {
 
   #[test]
   fn a_space_has_no_outline() {
-    let outline = pixel_font().outline([(" ", Vec2::ZERO)], 10.0);
+    let outline = pixel_font().outline([(" ", Vec2::ZERO)], 10.0, 0.0);
     assert!(outline.glyphs.is_empty());
     assert_eq!(outline.distance(Vec2::ZERO).0, f32::INFINITY);
   }
