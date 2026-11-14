@@ -9,10 +9,14 @@ use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::{TrackBuilder, TrackHandle};
 use kira::{AudioManager, Decibels, ResourceLimitReached, StartTime, Tween};
 
+use crate::SoundKey;
 use crate::callout::CalloutRequest;
 
 /// How far the music drops while a callout plays
 const CALLOUT_DUCK_DB: f32 = -12.0;
+/// How long a sound cut off before its end takes to fade out, or one started partway in to fade in, as starting or
+/// stopping one at once clicks
+const CUT_FADE: Duration = Duration::from_millis(15);
 /// Kira hears from the audio driver every few milliseconds while the stream runs. This long without hearing from it means
 /// the stream has died, whether or not it reported an error.
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(1);
@@ -78,10 +82,22 @@ impl Output {
     Ok(())
   }
 
-  pub fn play_sfx(&mut self, key: &'static str, sound: StaticSoundData) {
+  /// Play a sound at `volume`, where 1.0 is as recorded, from `skip` into it, and fade it out by `length` if given
+  pub fn play_sfx(&mut self, key: &str, sound: StaticSoundData, volume: f32, skip: Duration, length: Option<Duration>) {
     log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
-    if let Err(e) = self.manager.play(sound) {
-      log::error!(target: "frontbox::sound", "Failed to play SFX '{}': {:?}", key, e);
+    let mut sound = sound.volume(amplitude_to_db(volume));
+    if !skip.is_zero() {
+      // starting partway in clicks as stopping early does
+      sound = sound.start_position(skip.as_secs_f64()).fade_in_tween(Tween { duration: CUT_FADE, ..Default::default() });
+    }
+    match self.manager.play(sound) {
+      Ok(mut handle) => {
+        if let Some(length) = length {
+          let fade = CUT_FADE.min(length);
+          handle.stop(Tween { start_time: StartTime::Delayed(length - fade), duration: fade, ..Default::default() });
+        }
+      }
+      Err(e) => log::error!(target: "frontbox::sound", "Failed to play SFX '{}': {:?}", key, e),
     }
   }
 
@@ -89,7 +105,7 @@ impl Output {
   /// line's last sound, which says when the line is over.
   pub fn start_callout(
     &mut self,
-    sounds: &HashMap<&'static str, StaticSoundData>,
+    sounds: &HashMap<SoundKey, StaticSoundData>,
     request: &CalloutRequest,
     follows_on: bool,
   ) -> Option<StaticSoundHandle> {
@@ -99,7 +115,7 @@ impl Output {
     };
     let mut line = vec![sound];
     for key in request.then_keys() {
-      match sounds.get(key) {
+      match sounds.get(*key) {
         Some(sound) => line.push(sound.clone()),
         None => {
           log::error!(target: "frontbox::sound", "🗣️ Callout with key '{}' not found, in line '{}'", key, request.key())
@@ -217,4 +233,12 @@ pub(super) struct ActiveCallout {
   pub key: &'static str,
   pub lead_in: Option<&'static str>,
   pub handle: StaticSoundHandle,
+}
+
+/// A volume where 1.0 is as recorded, in decibels. Nothing is silence.
+fn amplitude_to_db(amplitude: f32) -> Decibels {
+  match amplitude > 0.0 {
+    true => Decibels(20.0 * amplitude.log10()),
+    false => Decibels::SILENCE,
+  }
 }

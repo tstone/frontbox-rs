@@ -614,6 +614,26 @@
   color: var(--warn);
 }
 
+.scene-sound {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.scene-sound .scene-dropdown {
+  flex: 1;
+  min-width: 0;
+}
+
+/* what a sound or an image is like, with a button for fitting the timeline to it */
+.scene-fit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .scene-image-chosen {
   display: flex;
   align-items: center;
@@ -1838,6 +1858,87 @@ label.scene-button:hover {
 .scene-sweep .scene-sweep-grip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* what's for a sound layer, in Config, on the timeline and in their popups, is in its own color, to tell it from the
+   drawn layers */
+.scene-color-sound {
+  --accent: var(--sound);
+  --surface-selected: color-mix(in srgb, var(--sound) 18%, var(--surface));
+}
+
+.scene-color-sound .scene-timeline-mark {
+  color: var(--accent);
+}
+
+/* when a sound plays, which can be dragged by its edges to change its start and end, or by the rest to move it */
+.scene-sound-bar {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  height: 0.875rem;
+  translate: 0 -50%;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  touch-action: none;
+  cursor: grab;
+}
+
+.scene-sound-bar:active {
+  cursor: grabbing;
+}
+
+/* over the bar's ends and a little past them, so a short bar can still be moved by its middle */
+.scene-sound-edge {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  touch-action: none;
+}
+
+.scene-sound-edge-start {
+  left: -0.3125rem;
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none'%3E%3Cpath d='M12 3H7v14h5' stroke='white' stroke-width='4'/%3E%3Cpath d='M12 3H7v14h5' stroke='black' stroke-width='2'/%3E%3C/svg%3E")
+      7 10,
+    w-resize;
+}
+
+.scene-sound-edge-end {
+  right: -0.3125rem;
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none'%3E%3Cpath d='M8 3h5v14H8' stroke='white' stroke-width='4'/%3E%3Cpath d='M8 3h5v14H8' stroke='black' stroke-width='2'/%3E%3C/svg%3E")
+      13 10,
+    e-resize;
+}
+
+.scene-sound-edge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the beginning of a sound that's skipped and the end that's cut off, which aren't heard */
+.scene-sound-skipped,
+.scene-sound-cut {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  height: 0.875rem;
+  translate: 0 -50%;
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--accent) 35%, transparent) 0 2px, transparent 2px 5px);
+}
+
+.scene-sound-skipped {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.scene-sound-cut {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 /* the part of a traversal past the end of the scene, which never plays */

@@ -6,6 +6,7 @@ import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMo
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
 import { addContentScene, deleteContentScene, saveContentScene } from '../../state/contentScenes'
+import { playContentSound } from '../../state/contentSounds'
 import {
   forgetSceneRender,
   renderClips,
@@ -16,6 +17,7 @@ import {
   sceneRender,
   type SceneClip,
 } from '../../state/sceneRender'
+import type { ClipSound } from '../../types/generated/ClipSound'
 import type { Prop } from '../../types/generated/Prop'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
@@ -195,6 +197,26 @@ export default function SceneEditor(props: { name: string; source: string; onClo
 
   createEffect(() => {
     if (sceneClipError()) playback.pause()
+  })
+
+  // the preview's sounds play on the machine as it passes their starts, as they would in the game, so playing from partway
+  // through a cycle leaves out the ones before. `heard` is how far that's got.
+  let heard: { cycle: number; position: number } | null = null
+  createEffect(() => {
+    if (!playback.playing()) {
+      heard = null
+      return
+    }
+    const clip = sceneClip(clipCycle())
+    const [cycle, position] = [playback.cycle() ?? 0, playback.position()]
+    if (!clip) return
+    const from = heard
+    const passed = ({ at }: ClipSound) => {
+      if (from === null) return at === position
+      return (from.cycle !== cycle || at > from.position) && at <= position
+    }
+    clip.sounds.filter(passed).forEach(({ sound, volume, skip, length }) => playContentSound(sound, volume, skip, length))
+    heard = { cycle, position }
   })
 
   const editing: Lens<Scene> = {
@@ -407,7 +429,8 @@ export default function SceneEditor(props: { name: string; source: string; onClo
   const reveal = ({ prop, layer, mask }: SceneTrack) => {
     batch(() => {
       setSourceTab('config')
-      selection[1]({ layer, mask })
+      // a sound layer is always open
+      if (layer !== null) selection[1]({ layer, mask })
       revealing[1](prop.get())
     })
   }

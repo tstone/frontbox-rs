@@ -4,8 +4,9 @@ import { createListCollection, Select } from '@ark-ui/solid/select'
 import { Slider } from '@ark-ui/solid/slider'
 import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import ScenePortal from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
+import { contentSounds, playContentSound } from '../../state/contentSounds'
 import { ShapeEditor } from './ConfigPanel'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
@@ -112,7 +113,7 @@ export function Dropdown<T extends string>(props: {
           </Select.Indicator>
         </Select.Trigger>
       </Select.Control>
-      <Portal>
+      <ScenePortal>
         <Select.Positioner>
           <Select.Content class="scene-dropdown-list">
             <For each={collection().items}>
@@ -129,9 +130,26 @@ export function Dropdown<T extends string>(props: {
             </For>
           </Select.Content>
         </Select.Positioner>
-      </Portal>
+      </ScenePortal>
       <Select.HiddenSelect />
     </Select.Root>
+  )
+}
+
+/** The sound a clip plays, from the machine's content folder, with a button to hear it on the machine at `volume` */
+export function SoundPicker(props: { lens: Lens<string>; volume: number }) {
+  // one that's gone from the folder is still shown, as the scene still names it
+  const options = () => {
+    const names = contentSounds().includes(props.lens.get()) ? contentSounds() : [props.lens.get(), ...contentSounds()]
+    return names.map((name) => ({ value: name, label: name }))
+  }
+  return (
+    <div class="scene-sound">
+      <Dropdown label="Sound" options={options()} value={props.lens.get()} onChange={props.lens.set} />
+      <button type="button" class="scene-button" aria-label={`Play ${props.lens.get()} on the machine`} onClick={() => playContentSound(props.lens.get(), props.volume)}>
+        ▶
+      </button>
+    </div>
   )
 }
 
@@ -386,7 +404,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
         </ColorPicker.Trigger>
         <ColorPicker.ChannelInput channel="hex" aria-label={`${props.label} as hex`} />
       </ColorPicker.Control>
-      <Portal>
+      <ScenePortal>
         <ColorPicker.Positioner>
           <ColorPicker.Content class="scene-color-picker">
             <ColorPicker.Area>
@@ -406,7 +424,7 @@ function ColorField(props: { label: string; lens: Lens<Color> }) {
             </ColorPicker.SwatchGroup>
           </ColorPicker.Content>
         </ColorPicker.Positioner>
-      </Portal>
+      </ScenePortal>
       <ColorPicker.HiddenInput />
     </ColorPicker.Root>
   )

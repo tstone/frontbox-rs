@@ -4,7 +4,7 @@ use std::sync::Arc;
 use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Line;
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
-use frontbox_gfx::scene::{self, LayerFrame, Graph, Params, Sample, Visits};
+use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Params, Sample, Visits};
 use frontbox_scene::{Moment, Scene};
 
 use crate::*;
@@ -55,7 +55,9 @@ impl LedPlacement {
   pub fn colors(&self, scene: &Scene, moment: &Moment) -> Vec<(i8, &PlacedLed, Rgba<u8>)> {
     let mut by_z: BTreeMap<i8, HashMap<&LedAddress, (&PlacedLed, Rgba<u8>)>> = BTreeMap::new();
     for placed in &self.layers {
-      let layer = scene.layers[placed.index].layer();
+      let Some(layer) = placed.layer(scene) else {
+        continue;
+      };
       let frame = placed.frame(scene, moment);
       let colors = by_z.entry(placed.z).or_default();
       for led in &placed.placed {
@@ -96,6 +98,11 @@ impl PlacedLayer {
     self.visits.as_ref().map(|(_, visits)| visits)
   }
 
+  /// What it draws, from the scene it was placed from
+  pub fn layer<'a>(&self, scene: &'a Scene) -> Option<&'a Layer> {
+    scene.layers.get(self.index)?.as_leds().map(|layer| &layer.layer)
+  }
+
   /// What to sample its layer with at `moment`
   pub fn frame<'a>(&'a self, scene: &'a Scene, moment: &Moment<'a>) -> LayerFrame<'a> {
     scene.frame(moment, self.surface, self.size(), self.kept_visits())
@@ -109,7 +116,9 @@ impl PlacedLayer {
     let current = VisitsFor { cycle, playback_seed: moment.playback_seed, params: moment.params.clone() };
     if self.visits.as_ref().is_none_or(|(kept, _)| *kept != current) {
       let frame = scene.frame(moment, self.surface, self.size(), None);
-      self.visits = Some((current, scene.layers[self.index].layer().visits(graph, &frame)));
+      if let Some(layer) = self.layer(scene) {
+        self.visits = Some((current, layer.visits(graph, &frame)));
+      }
     }
   }
 }

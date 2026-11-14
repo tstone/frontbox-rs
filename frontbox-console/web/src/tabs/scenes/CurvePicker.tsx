@@ -1,6 +1,6 @@
 import { Dialog } from '@ark-ui/solid/dialog'
 import { createSignal, For } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import ScenePortal from './ScenePortal'
 import type { Curve } from '../../types/generated/Curve'
 
 /** Written for the scene file by hand, and not something this list can make */
@@ -49,7 +49,7 @@ export default function CurvePicker(props: { label: string; value: Curve; onPick
           <path d="M2 13.5C8 13.5 8 2.5 14 2.5" />
         </svg>
       </Dialog.Trigger>
-      <Portal>
+      <ScenePortal>
         <Dialog.Backdrop class="scene-dialog-backdrop" />
         <Dialog.Positioner class="scene-dialog-positioner">
           <Dialog.Content class="scene-dialog">
@@ -62,7 +62,7 @@ export default function CurvePicker(props: { label: string; value: Curve; onPick
             </div>
           </Dialog.Content>
         </Dialog.Positioner>
-      </Portal>
+      </ScenePortal>
     </Dialog.Root>
   )
 }

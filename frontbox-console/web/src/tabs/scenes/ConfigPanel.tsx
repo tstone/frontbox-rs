@@ -3,9 +3,10 @@ import { Editable } from '@ark-ui/solid/editable'
 import { Menu } from '@ark-ui/solid/menu'
 import { Popover } from '@ark-ui/solid/popover'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
-import { createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, useContext, type Signal } from 'solid-js'
-import { Portal } from 'solid-js/web'
+import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, onMount, Show, Switch, useContext, type Signal } from 'solid-js'
+import ScenePortal, { LayerColorContext, layerColorClass } from './ScenePortal'
 import { contentImageInfo } from '../../state/contentImages'
+import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
 
 import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { Color } from '../../types/generated/Color'
@@ -20,13 +21,14 @@ import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
 import type { Speed } from '../../types/generated/Speed'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
+import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Stop } from '../../types/generated/Stop'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
 import { ImagePicker } from './ImagePicker'
-import LayerPlace from './LayerPlace'
-import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NodePickingContext, NumberField, PropField, RegionVisibilityContext, RevealContext, SceneContext, SurfaceContext, TraversalsContext } from './SceneFields'
+import LayerPlace, { planeNames } from './LayerPlace'
+import { Dropdown, EyeButton, FieldRow, LayerSurfacesContext, NodePickingContext, NumberField, SoundPicker, PropField, RegionVisibilityContext, RevealContext, SceneContext, SurfaceContext, TraversalsContext } from './SceneFields'
 import {
   adjustAmount,
   adjustKind,
@@ -62,6 +64,12 @@ import {
   roundRange,
   scaleRanges,
   shapePoints,
+  snap,
+  soundEnd,
+  soundLabel,
+TIME_STEP,
+  VOLUME,
+  soundVolume,
   sizeRanges,
   startingValue,
   translateRanges,
@@ -71,6 +79,7 @@ import {
   variant,
   type Scene,
   type SceneLayer,
+  withDuration,
   withTiming,
   usedTraversals,
   withTraversalRenamed,
@@ -174,12 +183,133 @@ function newTransform(kind: TransformKind, traversals: string[]): Transform {
   return { Fit: traversals[0] ?? '' }
 }
 
+type NewLayer = 'Sequence' | 'Area' | 'Display' | 'Sound'
+
 /** The scene's layers */
 export default function ConfigPanel(props: { selection: Signal<Selection | null> }) {
+  const scene = useContext(SceneContext)!
+  const [, setOpen] = props.selection
+  onMount(refreshContentSounds)
+
+  /** A DMD scene's layers are all on its display. An area needs a plane to cover. */
+  const options = (): { value: NewLayer; label: string }[] => [
+    ...(scene.get().kind === 'Dmd'
+      ? [{ value: 'Display' as const, label: 'Display' }]
+      : [
+          { value: 'Sequence' as const, label: 'LED sequence' },
+          ...(planeNames().length > 0 ? [{ value: 'Area' as const, label: 'LED area' }] : []),
+        ]),
+    { value: 'Sound', label: 'Sound' },
+  ]
+
+  const add = (kind: NewLayer) => {
+    if (kind === 'Sound') {
+      // moving its start needs a timing to be in, and the timeline to be put on
+      const timed = withTiming(scene.get())
+      scene.set({ ...timed, sounds: [...timed.sounds, { sound: timed.sounds.at(-1)?.sound ?? contentSounds()[0] ?? '', start: 0 }] })
+      return
+    }
+    const place = newLayerPlace(scene.get())
+    const surface = kind === 'Area' ? { surface: { Area: planeNames()[0] } } : kind === 'Sequence' ? { surface: 'Sequence' as const } : {}
+    const layers = scene.get().layers
+    scene.set({ ...scene.get(), layers: [...layers, { ...place, ...surface, fill: { base: { Solid: { Fixed: WHITE } } } }] })
+    setOpen({ layer: layers.length, mask: false })
+  }
+
   return (
     <div class="scene-config">
       <LayerList open={props.selection} />
+      <SoundList />
+      <AddMenu options={options()} onPick={add}>
+        Add layer
+      </AddMenu>
     </div>
+  )
+}
+
+/** The scene's sound layers */
+function SoundList() {
+  const scene = useContext(SceneContext)!
+  const sounds = field(scene, 'sounds')
+
+  return (
+    <>
+      <Index each={sounds.get()}>
+        {(layer, index) => (
+          <LayerColorContext.Provider value="sound">
+            <ListItem
+              class={layerColorClass('sound')}
+              title={soundLabel(layer(), index)}
+              heading={<LayerName lens={field(item(sounds, index), 'name')} placeholder={soundLabel({ ...layer(), name: undefined }, index)} hidden={false} onClick={() => {}} />}
+              list={sounds}
+              index={index}
+            >
+              <SoundEditor lens={item(sounds, index)} />
+            </ListItem>
+          </LayerColorContext.Provider>
+        )}
+      </Index>
+    </>
+  )
+}
+
+/** A sound layer's sound and how loud it is. When it starts and ends is set on the timeline. */
+function SoundEditor(props: { lens: Lens<SoundLayer> }) {
+  const scene = useContext(SceneContext)!
+  const volume = soundVolume(props.lens)
+  /** What it's heard at when it's tried out */
+  const startingVolume = () => startingValue(volume.get(), scene.get(), 1)
+  const length = () => contentSoundLength(props.lens.get().sound)
+  const end = () => soundEnd(props.lens.get(), length())
+
+  return (
+    <>
+      <FieldRow label="Sound">
+        <Show when={contentSounds().length > 0 || props.lens.get().sound !== ''} fallback={<span class="scene-note">No sounds in the machine's content folder</span>}>
+          <SoundPicker lens={field(props.lens, 'sound')} volume={startingVolume()} />
+        </Show>
+      </FieldRow>
+      <Show when={length()}>
+        {(known) => (
+          <div class="scene-fit">
+            <span class="scene-note">{describeSound(props.lens.get(), known())}</span>
+            <FitTimelineButton length={end()!} />
+          </div>
+        )}
+      </Show>
+      <TraversalsContext.Provider value={() => []}>
+        <PropField label="Volume" paramName="volume" fallback={1} ranges={both(VOLUME)} lens={volume} />
+      </TraversalsContext.Provider>
+    </>
+  )
+}
+
+function describeSound({ start, skip = 0, end }: SoundLayer, length: number) {
+  const skipped = skip > 0 ? `, the first ${skip.toFixed(2)} s skipped` : ''
+  const cut = end === undefined || end - start >= length - skip ? '' : `, cut off after ${(end - start).toFixed(2)} s`
+  return `${length.toFixed(2)} s long${skipped}${cut}`
+}
+
+/** A button for making the scene's timeline `length` long, to fit a sound or an image to it, then doing `onFit` */
+function FitTimelineButton(props: { length: number; onFit?: () => void }) {
+  const scene = useContext(SceneContext)!
+  const length = () => snap(props.length)
+  const fits = () => scene.get().timing?.duration === length()
+  return (
+    <button
+      type="button"
+      class="scene-button"
+      disabled={fits() || length() < TIME_STEP}
+      title={fits() ? 'The timeline is already this long' : `Make the timeline ${length().toFixed(2)} s long`}
+      onClick={() =>
+        batch(() => {
+          scene.set(withDuration(scene.get(), length()))
+          props.onFit?.()
+        })
+      }
+    >
+      Fit timeline
+    </button>
   )
 }
 
@@ -189,11 +319,6 @@ function LayerList(props: { open: Signal<Selection | null> }) {
   const layers = field(scene, 'layers')
   // by position, so this follows the open layer as layers around it move and go
   const [open, setOpen] = props.open
-
-  const add = () => {
-    layers.set([...layers.get(), { ...newLayerPlace(scene.get()), fill: { base: { Solid: { Fixed: WHITE } } } }])
-    setOpen({ layer: layers.get().length - 1, mask: false })
-  }
 
   const move = (index: number, by: number) => {
     layers.set(moved(layers.get(), index, by))
@@ -266,7 +391,6 @@ function LayerList(props: { open: Signal<Selection | null> }) {
           )}
         </Index>
       </Accordion.Root>
-      <AddButton onClick={add}>Add layer</AddButton>
     </>
   )
 }
@@ -698,7 +822,17 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
   return (
     <>
       <ImagePicker lens={{ get: name, set: choose }} />
-      <Show when={info()}>{(known) => <p class="scene-note">{describeImage(known())}</p>}</Show>
+      <Show when={info()}>
+        {(known) => (
+          <div class="scene-fit">
+            <span class="scene-note">{describeImage(known())}</span>
+            <Show when={known().frames > 1 && imageLength(known())}>
+              {/* a track of its frames goes back to playing it once at its own speed, which is what fitting is for */}
+              <FitTimelineButton length={imageLength(known())!} onFit={() => frame() && 'Track' in frame()! && field(props.lens, 'frame').set(framesTrack(known(), scene.get().timing!))} />
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={hasFrames()}>
         <PropField
           label="Frame"
@@ -833,7 +967,7 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[] }> }) {
               onPointerUp={release}
               onPointerCancel={release}
             />
-            <Portal>
+            <ScenePortal>
               <Popover.Positioner>
                 <Popover.Content class="scene-config scene-stop-popup">
                   <FieldRow label="At">
@@ -858,7 +992,7 @@ function GradientEditor(props: { lens: Lens<{ stops: Stop[] }> }) {
                   </Show>
                 </Popover.Content>
               </Popover.Positioner>
-            </Portal>
+            </ScenePortal>
           </Popover.Root>
         )}
       </Index>
@@ -1251,9 +1385,9 @@ type ItemButtonsProps<T> = {
 }
 
 /** A thing in a list, with the buttons for moving and removing it. `heading` stands in for its title on screen. */
-function ListItem<T>(props: ItemButtonsProps<T> & { heading?: any; children: any }) {
+function ListItem<T>(props: ItemButtonsProps<T> & { class?: string; heading?: any; children: any }) {
   return (
-    <div class="scene-item">
+    <div class={props.class ? `scene-item ${props.class}` : 'scene-item'}>
       <header>
         <Show when={props.heading} fallback={<span>{props.title}</span>}>
           {props.heading}
@@ -1304,7 +1438,7 @@ function AddMenu<T extends string>(props: { options: { value: T; label: string }
   return (
     <Menu.Root positioning={{ sameWidth: true }} onSelect={(details) => props.onPick(details.value as T)}>
       <Menu.Trigger class="scene-add">{props.children}</Menu.Trigger>
-      <Portal>
+      <ScenePortal>
         <Menu.Positioner>
           <Menu.Content class="scene-dropdown-list">
             <For each={props.options}>
@@ -1316,7 +1450,7 @@ function AddMenu<T extends string>(props: { options: { value: T; label: string }
             </For>
           </Menu.Content>
         </Menu.Positioner>
-      </Portal>
+      </ScenePortal>
     </Menu.Root>
   )
 }

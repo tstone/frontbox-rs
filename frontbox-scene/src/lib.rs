@@ -2,8 +2,8 @@
 //!
 //! <div class="warning">Stability Level: Low</div>
 //!
-//! A [`Scene`] is layers on one timeline, each saying what it's drawn on: LEDs, or a display. It's what's written to a
-//! `.scene` file. The layers themselves, and how they're sampled, are in
+//! A [`Scene`] is layers on one timeline, each saying what it's drawn on (LEDs, or a display), or sounds played at set
+//! times. It's what's written to a `.scene` file. The drawn layers themselves, and how they're sampled, are in
 //! [`frontbox_gfx::scene`]; this crate adds where they go, and playing them.
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
@@ -36,6 +36,7 @@ mod scene;
 mod scene_player;
 mod scene_system;
 mod scene_system_ext;
+mod sound_layer;
 
 pub use moment::*;
 pub use playable_scene::*;
@@ -44,6 +45,7 @@ pub use scene::*;
 pub use scene_player::*;
 pub use scene_system::*;
 pub use scene_system_ext::*;
+pub use sound_layer::*;
 
 use frontbox_core::prelude::*;
 
@@ -56,5 +58,5 @@ pub struct ScenePlaybackCompleted {
 pub mod prelude {
   pub use frontbox_gfx::scene::EndBehavior;
 
-  pub use crate::{Completes, Scene, PlayableScene, SceneLayer, LedLayer, LedSurface, DisplayLayer, ScenePlayer, SceneSystem, SceneSystemExt, ScenePlaybackCompleted};
+  pub use crate::{Completes, Scene, PlayableScene, SceneLayer, LedLayer, LedSurface, DisplayLayer, SoundLayer, ScenePlayer, SceneSystem, SceneSystemExt, ScenePlaybackCompleted};
 }

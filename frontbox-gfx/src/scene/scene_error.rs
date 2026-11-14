@@ -11,6 +11,12 @@ pub enum SceneError {
   SameTraversalName { layer: String, traversal: String },
   /// A traversal's fixed rate isn't a positive number
   NoSpeed { layer: String, traversal: String },
+  /// A sound starts before the scene does, or at or after the end of a cycle
+  StartOutsideCycle { layer: String },
+  /// A sound is cut off at or before its start
+  EndBeforeStart { layer: String },
+  /// A sound skips less than none of its beginning
+  NegativeSkip { layer: String },
 }
 
 impl fmt::Display for SceneError {
@@ -20,6 +26,9 @@ impl fmt::Display for SceneError {
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
       Self::SameTraversalName { layer, traversal } => write!(f, "{layer} has more than one traversal named \"{traversal}\""),
       Self::NoSpeed { layer, traversal } => write!(f, "traversal \"{traversal}\" in {layer} needs a rate or duration more than zero"),
+      Self::StartOutsideCycle { layer } => write!(f, "{layer} has to start within a cycle of the scene"),
+      Self::EndBeforeStart { layer } => write!(f, "{layer} has to end after it starts"),
+      Self::NegativeSkip { layer } => write!(f, "{layer} can't skip less than none of its sound"),
     }
   }
 }

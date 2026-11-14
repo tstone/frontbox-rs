@@ -19,4 +19,4 @@ cycle: number | null, } | { "type": "RenderClip", id: number, source: SceneSourc
 /**
  * Which cycle, counting from zero
  */
-cycle: number, };
+cycle: number, } | { "type": "PlaySound", sound: string, volume: number, skip: number, length: number | null, };

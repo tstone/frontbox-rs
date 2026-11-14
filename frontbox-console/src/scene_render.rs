@@ -6,7 +6,7 @@ use frontbox_led::{LedPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::protocol::{RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, SceneSize, SceneSource};
+use crate::protocol::{ClipSound, RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, SceneSize, SceneSource};
 
 /// The most points one render will sample. A render costs the machine time and anything on the network can ask for
 /// one. This is far more than any DMD or list of LEDs.
@@ -52,11 +52,13 @@ pub(crate) fn render_scene(
 
   let colors = canvas.colors(&shown, &views, &moment).collect();
   let area = rendered_area(canvas.covers);
-  let frames = || (0..shown.layers.len()).map(|index| (shown.layers[index].layer(), views.frame(&shown, index, &moment)));
-  let outlines = frames().map(|(layer, frame)| rendered_outline(&layer.outline(&frame))).collect();
-  let shapes = rendered_shapes(frames().map(|(layer, frame)| layer.shape_pose(&frame)));
-  let mask_outlines = frames().map(|(layer, frame)| rendered_outline(&layer.mask_outline(&frame))).collect();
-  let mask_shapes = rendered_shapes(frames().map(|(layer, frame)| layer.mask_pose(&frame)));
+  // a sound layer draws nothing, so has no outlines or shapes
+  let frames = || (0..shown.layers.len()).map(|index| Some((shown.layers[index].layer()?, views.frame(&shown, index, &moment))));
+  let outlines = frames().map(|drawn| drawn.map_or(Vec::new(), |(layer, frame)| rendered_outline(&layer.outline(&frame)))).collect();
+  let shapes = rendered_shapes(frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.shape_pose(&frame))));
+  let mask_outlines =
+    frames().map(|drawn| drawn.map_or(Vec::new(), |(layer, frame)| rendered_outline(&layer.mask_outline(&frame)))).collect();
+  let mask_shapes = rendered_shapes(frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.mask_pose(&frame))));
   let led_colors = views.led_colors(&shown, &moment);
   let graphs = (0..shown.layers.len()).map(|index| views.placed(index).and_then(rendered_graph)).collect();
   let ron = scene.save().map_err(|err| err.to_string())?;
@@ -91,7 +93,12 @@ pub(crate) fn render_clip(
   }
 
   let led_count = leds.len();
-  let header = RenderedClip { id, frames, width: canvas.width, height: canvas.height, leds: leds.into_iter().collect() };
+  let params = Params::new();
+  let top = Moment { time: 0.0, playback_seed: 0, params: &params };
+  let sounds = scene.sounds_in_cycle(&top, cycle).into_iter();
+  let sounds = sounds.map(|start| ClipSound { at: start.time.rem_euclid(timing.duration), sound: start.sound.into(), volume: start.volume, skip: start.skip, length: start.length });
+  let sounds = sounds.collect();
+  let header = RenderedClip { id, frames, width: canvas.width, height: canvas.height, leds: leds.into_iter().collect(), sounds };
   let header = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
 
   let mut clip = Vec::with_capacity(4 + header.len() + frames * (points * 4 + led_count * 3));
@@ -99,7 +106,6 @@ pub(crate) fn render_clip(
   clip.extend(header);
 
   let mut led_colors = Vec::with_capacity(frames * led_count * 3);
-  let params = Params::new();
   for index in 0..frames {
     let time = timing.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
     let moment = Moment { time, playback_seed: 0, params: &params };
@@ -185,6 +191,7 @@ impl Views {
         View { surface, size: on.and_then(|on| on.plane).map_or(render_size, |plane| plane.extent), placed }
       }
       SceneLayer::Display(_) => View { surface: Surface::Area, size: render_size, placed: None },
+      SceneLayer::Sound(_) => View { surface: Surface::Sequence, size: Vec2::ZERO, placed: None },
     });
     let layers = layers.collect();
     Self { placement, layers }
@@ -253,7 +260,10 @@ impl Canvas {
           // the strip has as many points as asked for, not one per LED, so each shows its nearest node
           let graph = views.placed(index).and_then(|placed| placed.graph.as_ref());
           let at = graph.and_then(|graph| graph.nearest(at.pos)).map_or(*at, |node| at.at_node(node));
-          scene.layers[index].layer().sample(&at, &views.frame(scene, index, moment)).composite_over(below)
+          let Some(layer) = scene.layers[index].layer() else {
+            return below;
+          };
+          layer.sample(&at, &views.frame(scene, index, moment)).composite_over(below)
         });
         color.0
       })
@@ -916,6 +926,29 @@ mod tests {
     let middle = (frames - 1) / 2;
     let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), None, 0.5, Some(4)).unwrap();
     assert_eq!(moment.colors, colors[middle * 12..][..12]);
+  }
+
+  #[test]
+  fn a_clip_has_the_sounds_its_cycle_starts_and_draws_nothing_for_them() {
+    let source = r#"Scene(
+      version: 2, timing: (duration: 1.0, cycle: Forever), layers: [
+        Leds(leds: Name("led0"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+        Sound(sound: "sounds/b.wav", volume: Fixed(0.5), start: 0.6, skip: 0.5, end: 0.85),
+        Sound(sound: "sounds/a.wav", volume: Fixed(0.5), start: 0.1),
+      ],)"#;
+    let clip = render_clip(0, ron(source), SIZE, three(), None, 2).unwrap();
+    let (header, _) = read_clip(&clip);
+    let sounds = header["sounds"].as_array().unwrap();
+    let starts: Vec<_> = sounds.iter().map(|sound| (sound["sound"].as_str().unwrap(), sound["at"].as_f64().unwrap())).collect();
+    assert_eq!(starts.len(), 2);
+    assert_eq!(starts[0].0, "sounds/a.wav");
+    assert!((starts[0].1 - 0.1).abs() < 1e-4 && (starts[1].1 - 0.6).abs() < 1e-4, "{starts:?}");
+    assert_eq!(sounds[0]["volume"], 0.5);
+    assert_eq!((&sounds[0]["skip"], &sounds[1]["skip"]), (&0.0.into(), &0.5.into()));
+    assert!(sounds[0]["length"].is_null() && (sounds[1]["length"].as_f64().unwrap() - 0.25).abs() < 1e-4, "{sounds:?}");
+
+    let rendered = render_scene(ron(source), SIZE, three(), None, 0.0, Some(0)).unwrap();
+    assert_eq!((rendered.outlines[1].len(), rendered.shapes[1].is_none()), (0, true));
   }
 
   #[test]

@@ -1,4 +1,5 @@
 import { createSignal, untrack } from 'solid-js'
+import type { ClipSound } from '../types/generated/ClipSound'
 import type { RenderedClip } from '../types/generated/RenderedClip'
 import type { RenderedScene } from '../types/generated/RenderedScene'
 import type { SceneSize } from '../types/generated/SceneSize'
@@ -33,6 +34,8 @@ export type SceneClip = {
   points: Uint8ClampedArray<ArrayBuffer>
   /** Each frame's LEDs, as red, green, and blue */
   leds: Uint8Array
+  /** The clips the cycle starts, in the order they start */
+  sounds: ClipSound[]
 }
 
 const [render, setRender] = createSignal<SceneRender | null>(null)
@@ -153,7 +156,7 @@ export function receiveSceneClip(message: ArrayBuffer) {
   if (clipInFlight?.id !== header.id) return
   const { target, cycle } = clipInFlight
 
-  const { frames, width, height, leds } = header
+  const { frames, width, height, leds, sounds } = header
   const pointsStart = 4 + headerLength
   const ledsStart = pointsStart + frames * width * height * 4
   const clip = {
@@ -163,6 +166,7 @@ export function receiveSceneClip(message: ArrayBuffer) {
     ledIndex: new Map(leds.map((name, index) => [name, index])),
     points: new Uint8ClampedArray(message, pointsStart, ledsStart - pointsStart),
     leds: new Uint8Array(message, ledsStart),
+    sounds,
   }
   setClips((rendered) => new Map(sameTarget(target, clipsRendered) ? [...rendered, [cycle, clip]] : [[cycle, clip]]))
   clipsRendered = target

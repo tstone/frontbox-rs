@@ -26,9 +26,12 @@ const MAX_FRAMES: usize = 10_000;
 /// Image file extensions, in lowercase
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
 
-/// The content folder, holding scenes and the images they use
+/// Sound file extensions, in lowercase: the formats the sound system decodes
+const SOUND_EXTENSIONS: [&str; 4] = ["wav", "mp3", "ogg", "flac"];
+
+/// The content folder, holding scenes and the images and sounds they use
 ///
-/// The folder is scanned recursively, so it can be organized freely and hold other files too. Images and scenes are
+/// The folder is scanned recursively, so it can be organized freely and hold other files too. Images, sounds, and scenes are
 /// named by their path from the root with forward slashes, such as `dmd/title.png`, so names are the same on every OS.
 ///
 /// Decoded images are cached until their file changes. Clones share the cache.
@@ -52,6 +55,11 @@ impl Content {
     self.names(is_image_name)
   }
 
+  /// Every sound name, sorted. Empty if the folder doesn't exist.
+  pub fn sound_names(&self) -> Vec<String> {
+    self.names(is_sound_name)
+  }
+
   /// Every scene name, sorted. Empty if the folder doesn't exist.
   pub fn scene_names(&self) -> Vec<String> {
     self.names(is_scene_name)
@@ -67,6 +75,14 @@ impl Content {
   /// The file path for an image name. Doesn't check that the file exists.
   pub fn image_path(&self, name: &str) -> Result<PathBuf, ContentError> {
     if !is_image_name(name) {
+      return Err(ContentError::BadName(name.into()));
+    }
+    Ok(self.root.join(name))
+  }
+
+  /// The file path for a sound name. Doesn't check that the file exists.
+  pub fn sound_path(&self, name: &str) -> Result<PathBuf, ContentError> {
+    if !is_sound_name(name) {
       return Err(ContentError::BadName(name.into()));
     }
     Ok(self.root.join(name))
@@ -278,6 +294,10 @@ fn is_image_name(name: &str) -> bool {
   is_inside(name) && extension(name).is_some_and(|extension| IMAGE_EXTENSIONS.contains(&extension.as_str()))
 }
 
+fn is_sound_name(name: &str) -> bool {
+  is_inside(name) && extension(name).is_some_and(|extension| SOUND_EXTENSIONS.contains(&extension.as_str()))
+}
+
 fn is_scene_name(name: &str) -> bool {
   is_inside(name) && extension(name).is_some_and(|extension| extension == file::EXTENSION)
 }
@@ -423,6 +443,20 @@ mod tests {
       Content::new(&folder.0).image_names(),
       ["dmd/modes/Hurry Up.PNG", "photos/a.jpg", "title.png"]
     );
+  }
+
+  #[test]
+  fn sounds_are_found_by_their_extension() {
+    let folder = Folder::new();
+    folder.write("sounds/hit.mp3", b"");
+    folder.write("sounds/callouts/Jackpot.WAV", b"");
+    folder.write("title.png", &png(1, 1));
+    folder.write("notes.txt", b"");
+
+    let content = Content::new(&folder.0);
+    assert_eq!(content.sound_names(), ["sounds/callouts/Jackpot.WAV", "sounds/hit.mp3"]);
+    assert!(matches!(content.sound_path("../hit.mp3"), Err(ContentError::BadName(_))));
+    assert!(matches!(content.sound_path("title.png"), Err(ContentError::BadName(_))));
   }
 
   #[test]

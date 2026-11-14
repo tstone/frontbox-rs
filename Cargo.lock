@@ -1150,6 +1150,8 @@ dependencies = [
  "cpal",
  "dyn-clone",
  "frontbox-core",
+ "frontbox-gfx",
+ "frontbox-scene",
  "kira",
  "log",
  "serde",

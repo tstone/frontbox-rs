@@ -132,6 +132,16 @@ impl ConsoleHub {
     let _ = control.send(TracerControlEvent::SetConfig { key, value });
   }
 
+  /// Play a sound from the content folder in the app, at `volume` (1.0 is as recorded), from `skip` seconds in, and cut
+  /// off after `length` seconds if given
+  pub fn play_sound(&self, sound: String, volume: f32, skip: f32, length: Option<f32>) {
+    let state = self.state.lock().unwrap();
+    let Some(control) = &state.control else {
+      return;
+    };
+    let _ = control.send(TracerControlEvent::PlaySound { sound, volume, skip, length });
+  }
+
   pub fn set_metrics(&self, metrics: Option<MetricsDb>) {
     self.state.lock().unwrap().metrics = metrics;
   }

@@ -16,6 +16,7 @@ import type { Scene as SceneFile } from '../../types/generated/Scene'
 import type { SceneLayer as SceneFileLayer } from '../../types/generated/SceneLayer'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import type { ShapeNode } from '../../types/generated/ShapeNode'
+import type { SoundLayer } from '../../types/generated/SoundLayer'
 import type { Speed } from '../../types/generated/Speed'
 import type { Spread } from '../../types/generated/Spread'
 import type { LedSurface } from '../../types/generated/LedSurface'
@@ -320,8 +321,9 @@ export function selectedShapeLens(scene: Lens<Scene>, { layer, mask }: Selection
 
 /** Every prop in a scene: where it is, which layer it's in and whether that's in its mask, what to call it, and the ranges its sliders use */
 function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
-  const uses: { lens: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }[] = []
-  let layerIndex = 0
+  const uses: { lens: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }[] = []
+  // `null` for a sound layer, which isn't among the drawn layers
+  let layerIndex: number | null = 0
   let inMask = false
   let surface: Surface = null
   const use = (lens: unknown, label: string, ranges: Ranges) => {
@@ -448,7 +450,18 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
       if (mask.region) shape(field(lens, 'region') as Lens<Shape>, maskLabel, `${maskLabel} · Region`)
     }
   })
+
+  const sounds = field(scene, 'sounds')
+  layerIndex = null
+  inMask = false
+  sounds.get().forEach((layer, index) => use(soundVolume(item(sounds, index)), `${soundLabel(layer, index)} · Volume`, both(VOLUME)))
   return uses
+}
+
+/** A sound layer's volume, which is 1 when the file leaves it out */
+export function soundVolume(layer: Lens<SoundLayer>): Lens<Prop<number>> {
+  const volume = field(layer, 'volume')
+  return { get: () => volume.get() ?? { Fixed: 1 }, set: volume.set }
 }
 
 /** What to call a layer, which is its place from the bottom until it's given a name */
@@ -466,7 +479,8 @@ function referencedParams(scene: Scene) {
   return names
 }
 
-export type SceneTrack = { prop: PropLens; layer: number; mask: boolean; label: string; ranges: Ranges }
+/** A prop on the timeline. `layer` is `null` for a sound layer's. */
+export type SceneTrack = { prop: PropLens; layer: number | null; mask: boolean; label: string; ranges: Ranges }
 
 /** A traversal on the timeline: its layer, and its place among the layer's traversals */
 export type SceneTraversal = { traversal: Lens<Traversal>; layer: number; index: number; label: string }
@@ -542,27 +556,45 @@ export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>> & { display?: 
 
 /**
  * A scene as the editor works on it, with everything about a layer in one place. `kind` is what the editor shows it on:
- * one with display layers is edited as a display's, and one without as the LEDs'.
+ * one with display layers is edited as a display's, and one without as the LEDs'. Its sound layers are apart from the
+ * drawn ones in `layers`, as nothing about them is drawn, and go after them in the file.
  */
-export type Scene = Omit<SceneFile, 'layers'> & { kind: 'Led' | 'Dmd'; layers: SceneLayer[] }
+export type Scene = Omit<SceneFile, 'layers'> & { kind: 'Led' | 'Dmd'; layers: SceneLayer[]; sounds: SoundLayer[] }
 
 export function editedScene({ layers, ...scene }: SceneFile): Scene {
-  const edited = layers.map((on): SceneLayer => {
+  const edited = layers.flatMap((on): SceneLayer[] => {
+    if ('Sound' in on) return []
     if ('Display' in on) {
       const { layer, ...place } = on.Display
-      return { ...layer, ...place }
+      return [{ ...layer, ...place }]
     }
     const { layer, ...place } = on.Leds
-    return { ...layer, ...place }
+    return [{ ...layer, ...place }]
   })
-  return { ...scene, kind: layers.some((on) => 'Display' in on) ? 'Dmd' : 'Led', layers: edited }
+  const sounds = layers.flatMap((on) => ('Sound' in on ? [on.Sound] : []))
+  return { ...scene, kind: layers.some((on) => 'Display' in on) ? 'Dmd' : 'Led', layers: edited, sounds }
 }
 
-function sceneFile({ kind, layers, ...scene }: Scene): SceneFile {
+function sceneFile({ kind, layers, sounds, ...scene }: Scene): SceneFile {
   const placed = layers.map(({ leds, z, surface, display, ...layer }): SceneFileLayer =>
     display !== undefined ? { Display: { display, z, layer } } : { Leds: { leds, z, surface: surface ?? 'Sequence', layer } },
   )
-  return { ...scene, layers: placed }
+  return { ...scene, layers: [...placed, ...sounds.map((sound): SceneFileLayer => ({ Sound: sound }))] }
+}
+
+/** What to call a sound layer: its name, or the file it plays without the folder and extension */
+export const soundLabel = (layer: SoundLayer, index: number) =>
+  layer.name ?? (layer.sound.split('/').at(-1)!.replace(/\.[^.]+$/, '') || `Sound ${index + 1}`)
+
+/** Where on the timeline a sound layer's sound would end if it weren't cut off, if `length` says how long the sound is */
+export const soundNaturalEnd = (layer: SoundLayer, length: number | null | undefined) => (length == null ? undefined : layer.start + length - (layer.skip ?? 0))
+
+/** Where a sound layer plays to: where it's cut off, or else the end of its sound, if `length` says how long that is */
+export const soundEnd = (layer: SoundLayer, length: number | null | undefined) => layer.end ?? soundNaturalEnd(layer, length)
+
+/** `scene` with each of its sound layers changed by `edit` */
+function withSounds(scene: Scene, edit: (layer: SoundLayer) => SoundLayer): Scene {
+  return { ...scene, sounds: scene.sounds.map(edit) }
 }
 
 /** How to ask the machine for a scene: as it stands, or if any of its tracks are hidden, as it looks without them moving */
@@ -625,6 +657,12 @@ function pulledBack<T extends { at: number }>(moments: T[], length: number): T[]
   return pulled
 }
 
+/** `scene` with a timeline `duration` long, as if it were typed in as the length */
+export function withDuration(scene: Scene, duration: number): Scene {
+  const timed = withTiming(scene, duration)
+  return withTimesInLength({ ...timed, timing: { ...timed.timing!, duration } })
+}
+
 /** `scene` with what's past the end of its timeline brought back to the end */
 export function withTimesInLength(scene: Scene): Scene {
   const length = scene.timing?.duration
@@ -635,7 +673,9 @@ export function withTimesInLength(scene: Scene): Scene {
     ({ start, end }) => (end <= length ? [start, end] : [Math.min(start, Math.max(length - TIME_STEP, 0)), length]),
   )
   // one that runs past the end is left to show that it does
-  return withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
+  const traversed = withTraversals(timed, (traversal) => (traversal.start < length ? traversal : { ...traversal, start: Math.max(length - TIME_STEP, 0) }))
+  // a sound has to start before the end, as one at the end is the start of the next cycle
+  return withSounds(traversed, (layer) => ({ ...layer, start: Math.min(layer.start, Math.max(length - TIME_STEP, 0)) }))
 }
 
 /** `scene` with its length and everything on its timeline scaled by `by`. What's past the end stays past a longer one. */
@@ -651,17 +691,19 @@ export function withTimesScaled(scene: Scene, by: number): Scene {
     start: start * by,
     speed: 'Duration' in speed && speed.Duration !== null ? { Duration: speed.Duration * by } : speed,
   }))
-  const next = { ...scaled, timing: scaled.timing && { ...scaled.timing, duration: scaled.timing.duration * by } }
+  const soundsScaled = withSounds(scaled, ({ start, end, ...layer }) => ({ ...layer, start: start * by, ...(end !== undefined && { end: end * by }) }))
+  const next = { ...soundsScaled, timing: soundsScaled.timing && { ...soundsScaled.timing, duration: soundsScaled.timing.duration * by } }
   return by < 1 ? withTimesInLength(next) : next
 }
 
 /**
  * `next` without its timing once `current`'s last track is gone, as the timing was only there for them and would
- * otherwise end a scene that's meant to stay up.
+ * otherwise end a scene that's meant to stay up. A sound starting after the start keeps it, as it needs one to start in.
  */
 export function withoutDroppedTiming(current: Scene, next: Scene): Scene {
   const tracks = (scene: Scene) => sceneTracks(reading(scene)).length
-  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next)) return next
+  const startsLater = next.sounds.some(({ start }) => start > 0)
+  if (!next.timing || tracks(current) === 0 || tracks(next) > 0 || traverses(next) || startsLater) return next
   const { timing: _, ...rest } = next
   return rest
 }
@@ -793,6 +835,8 @@ export function paramRanges(scene: Scene, name: string, surfaces: LayerSurfaces)
 export const both = (range: Range): Ranges => [range, range]
 
 export const UNIT: Range = { min: 0, max: 1, step: 0.01, rest: 0 }
+/** A sound's volume: 1 is as recorded, and above it louder */
+export const VOLUME: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
 export const ROTATION: Range = { min: -180, max: 180, step: 1, rest: 0 }
 export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
 const OPACITY: Range = { ...UNIT, rest: 1 }

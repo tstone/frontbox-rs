@@ -201,6 +201,23 @@ pub struct RenderedClip {
   pub height: usize,
   /// The name of each LED the scene lands on
   pub leds: Vec<String>,
+  /// The sounds its sound layers start in the cycle, in the order they start
+  pub sounds: Vec<ClipSound>,
+}
+
+/// A sound starting in a [`RenderedClip`]
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ClipSound {
+  /// Seconds into the cycle
+  pub at: f32,
+  /// The sound, by its name in the content folder
+  pub sound: String,
+  /// 1.0 is as recorded
+  pub volume: f32,
+  /// Seconds cut from the beginning of the sound
+  pub skip: f32,
+  /// Seconds it plays before it's cut off, or `None` to play to its end
+  pub length: Option<f32>,
 }
 
 /// A rectangle in a scene
@@ -257,6 +274,9 @@ pub enum ClientMessage {
     /// Which cycle, counting from zero
     cycle: u32,
   },
+  /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
+  /// the app has no sound system.
+  PlaySound { sound: String, volume: f32, skip: f32, length: Option<f32> },
 }
 
 /// A scene to render, as either of the forms the console edits it in

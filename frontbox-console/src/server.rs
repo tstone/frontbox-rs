@@ -36,6 +36,8 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
       get(content_image).put(add_content_image).layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
     )
     .route("/content/image-info/{*name}", get(content_image_info))
+    .route("/content/sounds", get(content_sounds))
+    .route("/content/sounds/{*name}", get(content_sound))
     .route("/content/scenes", get(content_scenes))
     .route(
       "/content/scenes/{*name}",
@@ -248,6 +250,34 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
   }
 }
 
+/// The name of every sound in the content folder. An app without one has none.
+async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
+  let Some(content) = hub.content() else {
+    return Json(Vec::<String>::new()).into_response();
+  };
+  match tokio::task::spawn_blocking(move || content.sound_names()).await {
+    Ok(names) => Json(names).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// A sound from the content folder, read from disk on each request so it can be edited while the machine runs
+async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Some(Ok(path)) = hub.content().map(|content| content.sound_path(&name)) else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match tokio::fs::read(&path).await {
+    Ok(bytes) => {
+      let mime = mime_guess::from_path(&path).first_or_octet_stream();
+      ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+    }
+    Err(_) => StatusCode::NOT_FOUND.into_response(),
+  }
+}
+
 /// The name of every scene in the content folder. An app without one has none.
 async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
   let Some(content) = hub.content() else {
@@ -388,6 +418,7 @@ impl HeldSwitches {
         self.hub.set_switch(switch_id, closed);
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
+      ClientMessage::PlaySound { sound, volume, skip, length } => self.hub.play_sound(sound, volume, skip, length),
       // replied to by the session, which has the socket
       ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } | ClientMessage::RenderClip { .. } => {}
     }

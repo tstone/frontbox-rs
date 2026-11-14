@@ -295,6 +295,9 @@ impl RunLoop {
           Err(err) => log::warn!(target: "frontbox::console", "Tracer couldn't set config: {err}"),
         }
       }
+      TracerControlEvent::PlaySound { sound, volume, skip, length } => {
+        self.emit_event(None, EventBox::new(SoundPreviewRequested { sound, volume, skip, length }));
+      }
     }
   }
 

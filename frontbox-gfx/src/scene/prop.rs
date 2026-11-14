@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+use crate::scene::layer::env;
 use crate::scene::sweep::only_for_positions;
-use crate::scene::{Animatable, Env, Random, Sweep, Track, VisitResponse};
+use crate::scene::{Animatable, Env, LayerFrame, Random, Sweep, Track, VisitResponse};
 
 /// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, swept along a path, or
 /// set off by a traversal's visits
@@ -34,12 +35,19 @@ impl<T> From<T> for Prop<T> {
 }
 
 impl<T> Prop<T> {
-  pub(crate) fn is_animated(&self) -> bool {
+  /// Whether it can change while a scene plays, which needs the scene to have a timing
+  pub fn is_animated(&self) -> bool {
     matches!(self, Self::Track(_) | Self::Random(_) | Self::Sweep(_) | Self::Visit(_))
   }
 }
 
 impl<T: Animatable> Prop<T> {
+  /// Its value in `frame`, for a value that isn't sampled at a point, such as a sound layer's volume. A `Sweep` or
+  /// `Visit` has no point to go on, so it gives what it would at the frame's origin with nothing visited.
+  pub fn at(&self, frame: &LayerFrame) -> T {
+    self.resolve(&env(frame))
+  }
+
   pub(crate) fn resolve(&self, env: &Env) -> T {
     match self {
       Self::Fixed(value) => value.clone(),

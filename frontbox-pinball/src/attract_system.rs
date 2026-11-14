@@ -82,7 +82,7 @@ mod tests {
   /// The names of the scenes showing
   fn showing(context: &TestContext) -> Vec<String> {
     let names = context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| {
-      scenes.shown().map(|(_, playback)| playback.scene().layers[0].layer().name.clone().unwrap()).collect()
+      scenes.shown().map(|(_, playback)| playback.scene().layers[0].layer().unwrap().name.clone().unwrap()).collect()
     });
     names.unwrap()
   }

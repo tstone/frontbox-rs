@@ -154,7 +154,7 @@ impl Layer {
 
 /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
 /// spacing doesn't matter.
-fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
+pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
   Env {
     time: frame.timing.map_or(0.0, |timing| timing.local_time(frame.time)),
     cycle: frame.timing.map_or(0, |timing| timing.cycle_index(frame.time)),
