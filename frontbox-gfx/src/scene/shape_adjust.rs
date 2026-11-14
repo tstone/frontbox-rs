@@ -1,7 +1,7 @@
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Color, Env, Prop};
+use crate::scene::{Color, Env, Inputs, Prop};
 
 /// Changes to a shape's edge, applied in order after its transforms
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -43,6 +43,15 @@ impl ShapeAdjust {
   pub(crate) fn is_animated(&self) -> bool {
     match self {
       Self::Stroke { width, color, .. } => width.is_animated() || color.as_ref().is_some_and(Prop::is_animated),
+    }
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Stroke { width, color, .. } => {
+        width.read_inputs(inputs);
+        color.iter().for_each(|color| color.read_inputs(inputs));
+      }
     }
   }
 }

@@ -32,6 +32,7 @@ import {
   GROWTH_DENSITY,
   item,
   layerLabel,
+  layerVisible,
   layerPlane,
   orElse,
   orEmpty,
@@ -87,6 +88,10 @@ export type ConfigNode = NodeData & {
 
 /** What a node edits, which says how it's drawn */
 export type NodeData =
+  /** One of the tree's roots: the scene's layers, its variables, or its named values */
+  | { kind: 'section'; section: Section }
+  | { kind: 'variable'; name: string }
+  | { kind: 'value'; name: string }
   /** `unnamed` is what a layer is called until it's given a name */
   | { kind: 'layer'; lens: Lens<SceneLayer>; unnamed: string }
   | { kind: 'sound'; lens: Lens<SoundLayer>; unnamed: string }
@@ -120,11 +125,14 @@ export type NodeData =
 
 export type NodeKind = NodeData['kind']
 
+/** The tree's roots, by id */
+export type Section = 'scene' | 'variables' | 'values'
+
 /** Everything a prop's field needs */
 export type PropSpec = {
   lens: Lens<Prop<SceneValue>>
-  /** What to call a parameter made from it */
-  paramName: string
+  /** What to call a variable made from it */
+  variableName: string
   /** For a prop with nothing to take a value from */
   fallback: SceneValue
   ranges: Ranges
@@ -155,8 +163,37 @@ export const TRANSFORM_LABELS = { Translate: 'Translate', Rotate: 'Rotate', Scal
 export type TransformKind = keyof typeof TRANSFORM_LABELS
 export const transformKind = (transform: Transform) => Object.keys(transform)[0] as TransformKind
 
-/** The scene's layers, then its sound layers */
+/** Three roots: the scene, with its layers then its sound layers; its variables; and its named values */
 export function configNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): ConfigNode[] {
+  const { variables = {}, values = {} } = scene.get()
+  return [
+    branch({ id: 'scene', label: 'Scene', kind: 'section', section: 'scene', value: { layers: scene.get().layers, sounds: scene.get().sounds }, children: layerNodes(scene, surfaces) }),
+    branch({
+      id: 'variables',
+      label: 'Variables',
+      kind: 'section',
+      section: 'variables',
+      value: variables,
+      // a note on how to add one, while there are none
+      fields: Object.keys(variables).length === 0,
+      children: Object.keys(variables)
+        .sort()
+        .map((name) => branch({ id: `variables/${name}`, label: name, kind: 'variable', name, value: variables[name], fields: true })),
+    }),
+    branch({
+      id: 'values',
+      label: 'Values',
+      kind: 'section',
+      section: 'values',
+      value: values,
+      fields: Object.keys(values).length === 0,
+      children: Object.keys(values).map((name) => branch({ id: `values/${name}`, label: name, kind: 'value', name, value: values[name], fields: true })),
+    }),
+  ]
+}
+
+/** The scene's layers, then its sound layers */
+function layerNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): ConfigNode[] {
   const layers = field(scene, 'layers')
   const sounds = field(scene, 'sounds')
   const led = scene.get().kind === 'Led'
@@ -187,7 +224,7 @@ export function configNodes(scene: Lens<Scene>, surfaces: LayerSurfaces): Config
         value: sound,
         fields: true,
         place: { list: sounds, listId: 'sounds', index },
-        children: [propNode(`${id}/volume`, 'Volume', { lens: soundVolume(lens), paramName: 'volume', fallback: 1, ranges: both(VOLUME) }, null)],
+        children: [propNode(`${id}/volume`, 'Volume', { lens: soundVolume(lens), variableName: 'volume', fallback: 1, ranges: both(VOLUME) }, null)],
       })
     }),
   ]
@@ -211,10 +248,12 @@ export function openTransform(id: string | null, of: Selection): number | null {
   return Number.isInteger(index) ? index : null
 }
 
-/** The nodes that a node is under, from the top down, ending with itself */
+/** The nodes that a node is under, from its root down, ending with itself. Layers and sounds are under the scene. */
 export function ancestry(id: string): string[] {
   const parts = id.split('/')
-  return parts.slice(1).map((_, i) => parts.slice(0, i + 2).join('/'))
+  const root = parts[0] === 'layers' || parts[0] === 'sounds' ? 'scene' : parts[0]
+  const under = parts.slice(1).map((_, i) => parts.slice(0, i + 2).join('/'))
+  return [root, ...under.filter((node) => node !== root)]
 }
 
 /**
@@ -265,8 +304,9 @@ function layerChildren(id: string, lens: Lens<SceneLayer>, led: boolean, surface
   const regions = led && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
   const fill = fillNode(`${id}/fill`, field(lens, 'fill'), surface)
   const mask = maskNode(`${id}/mask`, field(lens, 'mask'), surface)
+  const visible = propNode(`${id}/visible`, 'Visible', { lens: layerVisible(lens) as Lens<Prop<SceneValue>>, variableName: 'visible', fallback: true, ranges: both(UNIT) }, surface)
   // on an LED layer the mask comes first, as it's over everything else the layer is
-  return led ? [mask, ...place, ...regions, fill] : [...regions, fill, mask]
+  return led ? [visible, mask, ...place, ...regions, fill] : [visible, ...regions, fill, mask]
 }
 
 /** A mask's region, or a layer's, which can be its graph instead */
@@ -308,7 +348,7 @@ function shapeChildren(id: string, lens: Lens<Shape>, surface: Surface, copies =
   const base = field(lens, 'base') as Lens<ShapeNode>
   const current = base.get()
   const sizes: ConfigNode[] = shapeProps(base, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
-    propNode(`${id}/${key}`, label, { lens: propLens, paramName: key, fallback, ranges }, surface),
+    propNode(`${id}/${key}`, label, { lens: propLens, variableName: key, fallback, ranges }, surface),
   )
   if ('Polygon' in current) sizes.push(pointsNode(`${id}/points`, 'Polygon', field(variant(base, 'Polygon'), 'points'), surface))
   if ('Polyline' in current) sizes.push(pointsNode(`${id}/points`, 'Polyline', field(variant(base, 'Polyline'), 'points'), surface))
@@ -322,7 +362,7 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
   const least = shape === 'Polygon' ? 3 : 2
   const list = lens as Lens<unknown[]>
   const ranges = pointRanges(surface)
-  const position = (propLens: Lens<Prop<Vec2>>): PropSpec => ({ lens: propLens as Lens<Prop<SceneValue>>, paramName: 'point', fallback: [0, 0], ranges })
+  const position = (propLens: Lens<Prop<Vec2>>): PropSpec => ({ lens: propLens as Lens<Prop<SceneValue>>, variableName: 'point', fallback: [0, 0], ranges })
   const children = list.get().map((_, index): ConfigNode => {
     const place = { list, listId: id, index, canRemove: list.get().length > least }
     const pointId = `${id}/${index}`
@@ -336,7 +376,7 @@ function pointsNode(id: string, shape: PointsShape, lens: Lens<Prop<Vec2>[]> | L
       place,
       children: [
         propNode(`${pointId}/point`, 'Position', position(field(point, 'point')), surface),
-        propNode(`${pointId}/handle`, 'Handle', { ...position(field(point, 'handle')), paramName: 'handle' }, surface),
+        propNode(`${pointId}/handle`, 'Handle', { ...position(field(point, 'handle')), variableName: 'handle' }, surface),
       ],
     })
   })
@@ -360,18 +400,18 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     if (kind === 'Mirror' || kind === 'Revolve' || kind === 'Bisect' || kind === 'Shift' || kind === 'Scale') {
       const children = transformProps(lens, surface, space).map(({ key, label, fallback, lens: propLens, ranges }) => {
         const anchorOf = key === 'anchor' && shape ? { shape, index } : undefined
-        return propNode(`${transformId}/${key}`, label, { lens: propLens, paramName: `${kind.toLowerCase()}_${key}`, fallback, ranges, anchorOf }, surface)
+        return propNode(`${transformId}/${key}`, label, { lens: propLens, variableName: `${kind.toLowerCase()}_${key}`, fallback, ranges, anchorOf }, surface)
       })
       return branch({ id: transformId, label: TRANSFORM_LABELS[kind], kind: 'copy', lens, value: transform, place, modifier: kind, children })
     }
     const spec: PropSpec =
       kind === 'Translate'
-        ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, paramName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
+        ? { lens: variant(lens, 'Translate') as Lens<Prop<SceneValue>>, variableName: 'offset', fallback: [0, 0], ranges: translateRanges(surface, space) }
         : kind === 'Rotate'
-          ? { lens: variant(lens, 'Rotate') as Lens<Prop<SceneValue>>, paramName: 'rotation', fallback: 0, ranges: both(ROTATION) }
+          ? { lens: variant(lens, 'Rotate') as Lens<Prop<SceneValue>>, variableName: 'rotation', fallback: 0, ranges: both(ROTATION) }
           : kind === 'Bulge'
-            ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, paramName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
-            : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, paramName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
+            ? { lens: variant(lens, 'Bulge') as Lens<Prop<SceneValue>>, variableName: 'bulge', fallback: BULGE.rest!, ranges: both(BULGE) }
+            : { lens: variant(lens, 'Round') as Lens<Prop<SceneValue>>, variableName: 'corner_radius', fallback: 0, ranges: both(cornerRange(surface)) }
     // a translate is a position, so it can sweep around a path, which the prop has under it
     return { ...propNode(transformId, TRANSFORM_LABELS[kind], spec, surface), place, modifier: kind }
   })
@@ -379,8 +419,8 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
   const adjustNodes = (adjusts?.get() ?? []).map((adjust, index): ConfigNode => {
     const lens = item(adjusts!, index)
     const kind = adjustKind(adjust)
-    const { label, paramName, range } = ADJUSTS[kind]
-    const spec: PropSpec = { lens: adjustAmount(lens) as Lens<Prop<SceneValue>>, paramName, fallback: range.rest!, ranges: both(range) }
+    const { label, variableName, range } = ADJUSTS[kind]
+    const spec: PropSpec = { lens: adjustAmount(lens) as Lens<Prop<SceneValue>>, variableName, fallback: range.rest!, ranges: both(range) }
     return { ...propNode(`${adjustList}/${index}`, label, spec, surface), place: { list: adjusts as Lens<unknown[]>, listId: adjustList, index }, modifier: kind }
   })
   const strokes = shape && orEmpty(field(shape, 'adjust'))
@@ -388,7 +428,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
     const strokeId = `${adjustList}/${index}`
     const lens = item(strokes!, index)
     const children = strokeProps(lens, surface).map(({ key, label, fallback, lens: propLens, ranges }) =>
-      propNode(`${strokeId}/${key}`, label, { lens: propLens, paramName: `stroke_${key}`, fallback, ranges }, surface),
+      propNode(`${strokeId}/${key}`, label, { lens: propLens, variableName: `stroke_${key}`, fallback, ranges }, surface),
     )
     const place = { list: strokes as Lens<unknown[]>, listId: adjustList, index }
     return branch({ id: strokeId, label: 'Stroke', kind: 'stroke', lens, value: stroke, place, fields: true, children })
@@ -403,7 +443,7 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
   const current = base.get()
   const own: ConfigNode[] = []
   if ('Solid' in current) {
-    own.push(propNode(`${id}/color`, 'Color', { lens: variant(base, 'Solid') as Lens<Prop<SceneValue>>, paramName: 'color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface))
+    own.push(propNode(`${id}/color`, 'Color', { lens: variant(base, 'Solid') as Lens<Prop<SceneValue>>, variableName: 'color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface))
   }
   if ('Gradient' in current) own.push(stopsNode(`${id}/stops`, field(variant(base, 'Gradient'), 'stops'), surface))
   if ('Image' in current) {
@@ -412,7 +452,7 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
     // one that's already moving stays in reach, so it can be undone after picking an image that isn't animated
     if ((frames ?? 1) > 1 || (frame !== undefined && !('Fixed' in frame))) {
       const frameLens = orElse(field(variant(base, 'Image'), 'frame'), { Fixed: 0 })
-      own.push(propNode(`${id}/frame`, 'Frame', { lens: frameLens as Lens<Prop<SceneValue>>, paramName: 'frame', fallback: 0, ranges: frameRanges(frames) }, surface))
+      own.push(propNode(`${id}/frame`, 'Frame', { lens: frameLens as Lens<Prop<SceneValue>>, variableName: 'frame', fallback: 0, ranges: frameRanges(frames) }, surface))
     }
   }
   return branch({
@@ -432,7 +472,7 @@ function stopsNode(id: string, lens: Lens<Stop[]>, surface: Surface): ConfigNode
   const children = lens.get().map((_, index) => {
     const color = field(item(lens, index), 'color') as Lens<Prop<SceneValue>>
     const place = { list, listId: id, index, canRemove: lens.get().length > 1, spread: true }
-    return { ...propNode(`${id}/${index}`, `Stop ${index + 1}`, { lens: color, paramName: 'stop_color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface), place }
+    return { ...propNode(`${id}/${index}`, `Stop ${index + 1}`, { lens: color, variableName: 'stop_color', fallback: [255, 255, 255, 255], ranges: both(UNIT) }, surface), place }
   })
   return branch({ id, label: 'Stops', kind: 'stops', lens, value: lens.get(), children })
 }
@@ -465,7 +505,7 @@ function traversalNode(id: string, lens: Lens<Traversal>, layer: Lens<SceneLayer
   const kind = algorithmKind(traversal.algorithm)
   const target = traversalTarget(algorithm)
   const prop = (key: string, label: string, fallback: number, ranges: Ranges, propLens: Lens<Prop<number>>) =>
-    propNode(`${id}/${key}`, label, { lens: propLens as Lens<Prop<SceneValue>>, paramName: key, fallback, ranges }, surface)
+    propNode(`${id}/${key}`, label, { lens: propLens as Lens<Prop<SceneValue>>, variableName: key, fallback, ranges }, surface)
 
   const children: ConfigNode[] = [nodeRefNode(`${id}/from`, 'From', field(lens, 'from'), surface)]
   if (target) children.push(nodeRefNode(`${id}/to`, 'To', target, surface))
@@ -498,7 +538,7 @@ function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Su
   const current = lens.get()
   const children =
     'Nearest' in current
-      ? [propNode(`${id}/position`, 'Position', { lens: variant(lens, 'Nearest') as Lens<Prop<SceneValue>>, paramName: 'position', fallback: [0, 0], ranges: translateRanges(surface, 'shape') }, surface)]
+      ? [propNode(`${id}/position`, 'Position', { lens: variant(lens, 'Nearest') as Lens<Prop<SceneValue>>, variableName: 'position', fallback: [0, 0], ranges: translateRanges(surface, 'shape') }, surface)]
       : []
   return branch({ id, label, kind: 'node-ref', lens, value: current, fields: 'Name' in current, children })
 }
@@ -507,7 +547,7 @@ function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Su
 function propNode(id: string, label: string, spec: PropSpec, surface: Surface): ConfigNode {
   const prop = spec.lens.get()
   const under = (name: 'position' | 'phase', label: string, lens: Lens<unknown>) =>
-    propNode(`${id}/${name}`, label, { lens: lens as Lens<Prop<SceneValue>>, paramName: `${spec.paramName}_${name}`, fallback: 0, ranges: both(UNIT) }, surface)
+    propNode(`${id}/${name}`, label, { lens: lens as Lens<Prop<SceneValue>>, variableName: `${spec.variableName}_${name}`, fallback: 0, ranges: both(UNIT) }, surface)
   const children =
     'Sweep' in prop
       ? [pathNode(`${id}/path`, field(variant(spec.lens, 'Sweep'), 'path'), surface), under('position', 'Position', field(variant(spec.lens, 'Sweep'), 'position'))]

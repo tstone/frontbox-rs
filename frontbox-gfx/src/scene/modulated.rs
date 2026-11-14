@@ -102,7 +102,7 @@ mod tests {
   use super::*;
   use crate::animation::Cycle;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Key, Keyframes, Params, Timing, Value};
+  use crate::scene::{Color, Key, Keyframes, Variables, Timing, Value};
 
   fn modulated(envelope: Envelope) -> Modulated {
     Modulated { envelope, spread: Spread::Float(10.0, 20.0), rate: 1.0, phase: Box::new(0.0.into()) }
@@ -122,9 +122,9 @@ mod tests {
 
   /// Its value at a moment of a scene 4 seconds long that loops forever
   fn at(modulated: &Modulated, scene_time: f32) -> f32 {
-    let params = Params::new();
+    let variables = Variables::new();
     let timing = Timing::new(4.0, Cycle::Forever);
-    let env = Env { cycle: timing.cycle_index(scene_time), timing: Some(timing), ..env(timing.local_time(scene_time), &params) };
+    let env = Env { cycle: timing.cycle_index(scene_time), timing: Some(timing), ..env(timing.local_time(scene_time), &variables) };
     modulated.resolve(&env)
   }
 
@@ -185,16 +185,16 @@ mod tests {
 
   #[test]
   fn a_phase_can_be_a_param() {
-    let params = Params::from([("offset".into(), Value::Float(0.5))]);
-    let shifted = Modulated { phase: Box::new(Prop::Param("offset".into())), ..modulated(up_and_down()) };
-    assert_eq!(shifted.resolve::<f32>(&env(0.0, &params)), 20.0);
+    let variables = Variables::from([("offset".into(), Value::Float(0.5))]);
+    let shifted = Modulated { phase: Box::new(Prop::Variable("offset".into())), ..modulated(up_and_down()) };
+    assert_eq!(shifted.resolve::<f32>(&env(0.0, &variables)), 20.0);
   }
 
   #[test]
   fn every_part_of_a_vec2_and_a_color_moves_together() {
-    let params = Params::new();
+    let variables = Variables::new();
     let timing = Timing::new(4.0, Cycle::Forever);
-    let env = Env { timing: Some(timing), ..env(2.0, &params) };
+    let env = Env { timing: Some(timing), ..env(2.0, &variables) };
     let spread = Spread::Vec2 { x: (0.0, 10.0), y: (5.0, 5.0) };
     let point: Vec2 = Modulated { spread, ..modulated(rising()) }.resolve(&env);
     assert_eq!(point, Vec2::new(5.0, 5.0));
@@ -206,22 +206,22 @@ mod tests {
 
   #[test]
   fn with_no_timing_it_holds_its_starting_value() {
-    let params = Params::new();
+    let variables = Variables::new();
     let shifted = Modulated { phase: Box::new(0.5.into()), ..modulated(up_and_down()) };
-    assert_eq!(shifted.resolve::<f32>(&env(3.0, &params)), 20.0);
+    assert_eq!(shifted.resolve::<f32>(&env(3.0, &variables)), 20.0);
   }
 
   #[test]
   fn a_spread_that_doesnt_match_the_type_is_the_default() {
-    let params = Params::new();
-    assert_eq!(modulated(rising()).resolve::<Color>(&env(0.0, &params)), Color::default());
+    let variables = Variables::new();
+    assert_eq!(modulated(rising()).resolve::<Color>(&env(0.0, &variables)), Color::default());
   }
 
   #[test]
   fn a_prop_reads_its_wave_and_is_animated() {
-    let params = Params::new();
+    let variables = Variables::new();
     let prop: Prop<f32> = Prop::Modulated(modulated(falling()));
     assert!(prop.is_animated());
-    assert_eq!(prop.resolve(&env(0.0, &params)), 20.0);
+    assert_eq!(prop.resolve(&env(0.0, &variables)), 20.0);
   }
 }

@@ -54,7 +54,7 @@ impl SceneSystem {
     self.playbacks.retain(|held| held.id != id);
   }
 
-  /// A playback that's still here, to change its params
+  /// A playback that's still here, to change its variables
   pub fn playback(&mut self, id: PlaybackId) -> Option<&mut Playback> {
     self.playbacks.iter_mut().find(|held| held.id == id).map(|held| &mut held.playback)
   }

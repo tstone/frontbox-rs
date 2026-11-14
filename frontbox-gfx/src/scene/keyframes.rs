@@ -66,7 +66,7 @@ impl<T> Key<T> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Params, Prop};
+  use crate::scene::{Variables, Prop};
 
   fn track(cycle: Cycle) -> Prop<f32> {
     Prop::Keyframes(Keyframes {
@@ -81,43 +81,43 @@ mod tests {
 
   #[test]
   fn track_eases_with_the_curve_of_the_key_it_arrives_at() {
-    let params = Params::new();
+    let variables = Variables::new();
     let prop = track(Cycle::Once);
-    assert_eq!(prop.resolve(&env(0.5, &params)), 5.0);
+    assert_eq!(prop.resolve(&env(0.5, &variables)), 5.0);
     // EaseIn at phase 0.5 is 0.25
-    assert_eq!(prop.resolve(&env(1.5, &params)), 12.5);
+    assert_eq!(prop.resolve(&env(1.5, &variables)), 12.5);
   }
 
   #[test]
   fn the_first_keys_curve_does_nothing() {
-    let params = Params::new();
+    let variables = Variables::new();
     let prop = Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::EaseIn), Key::new(1.0, 10.0, Curve::Linear)],
       cycle: Cycle::Forever,
     });
-    assert_eq!(prop.resolve(&env(0.5, &params)), 5.0);
-    assert_eq!(prop.resolve(&env(1.5, &params)), 5.0);
+    assert_eq!(prop.resolve(&env(0.5, &variables)), 5.0);
+    assert_eq!(prop.resolve(&env(1.5, &variables)), 5.0);
   }
 
   #[test]
   fn track_once_holds_its_last_key() {
-    let params = Params::new();
-    assert_eq!(track(Cycle::Once).resolve(&env(-1.0, &params)), 0.0);
-    assert_eq!(track(Cycle::Once).resolve(&env(10.0, &params)), 20.0);
+    let variables = Variables::new();
+    assert_eq!(track(Cycle::Once).resolve(&env(-1.0, &variables)), 0.0);
+    assert_eq!(track(Cycle::Once).resolve(&env(10.0, &variables)), 20.0);
   }
 
   #[test]
   fn track_loops() {
-    let params = Params::new();
-    assert_eq!(track(Cycle::Forever).resolve(&env(4.5, &params)), 5.0);
-    assert_eq!(track(Cycle::Times(2)).resolve(&env(2.5, &params)), 5.0);
-    assert_eq!(track(Cycle::Times(2)).resolve(&env(4.5, &params)), 20.0);
+    let variables = Variables::new();
+    assert_eq!(track(Cycle::Forever).resolve(&env(4.5, &variables)), 5.0);
+    assert_eq!(track(Cycle::Times(2)).resolve(&env(2.5, &variables)), 5.0);
+    assert_eq!(track(Cycle::Times(2)).resolve(&env(4.5, &variables)), 20.0);
   }
 
   #[test]
   fn empty_track_is_the_default() {
-    let params = Params::new();
+    let variables = Variables::new();
     let prop: Prop<f32> = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
-    assert_eq!(prop.resolve(&env(1.0, &params)), 0.0);
+    assert_eq!(prop.resolve(&env(1.0, &variables)), 0.0);
   }
 }

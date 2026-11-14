@@ -5,13 +5,13 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
-use crate::scene::{LayerFrame, Graph, Layer, Params, Sample, SceneError, ShapePose, Surface, Timing, Visits};
+use crate::scene::{LayerFrame, Graph, Layer, Variables, Sample, SceneError, ShapePose, Surface, Timing, Visits};
 
-/// Layers sharing params and timing, as a scene file holds them but with nothing about hardware
+/// Layers sharing variables and timing, as a scene file holds them but with nothing about hardware
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct Composition {
-  #[serde(default, skip_serializing_if = "Params::is_empty")]
-  pub params: Params,
+  #[serde(default, skip_serializing_if = "Variables::is_empty")]
+  pub variables: Variables,
   #[serde(default, skip_serializing_if = "Option::is_none")]
   pub timing: Option<Timing>,
   #[serde(default)]
@@ -86,7 +86,7 @@ impl Scene {
 
   /// The frame as this scene sees it: on its surface, with its timing and defaults
   fn seen<'a>(&'a self, frame: &LayerFrame<'a>) -> LayerFrame<'a> {
-    LayerFrame { surface: self.surface, timing: self.timing, defaults: &self.params, ..*frame }
+    LayerFrame { surface: self.surface, timing: self.timing, defaults: &self.variables, ..*frame }
   }
 
   /// Every layer drawn bottom to top

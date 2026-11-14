@@ -107,6 +107,8 @@ pub struct PlaneView {
   pub origin: [f32; 3],
   pub rotation: [f32; 4],
   pub extent: [f32; 2],
+  /// The corners of its edge, in its own coordinates: the rectangle over `extent` unless it has an outline
+  pub corners: Vec<[f32; 2]>,
   pub image: Option<String>,
   /// e.g. `planes::PLAYFIELD`, when added with `app_plane!`
   pub code: Option<String>,
@@ -167,6 +169,8 @@ pub struct RenderedScene {
   pub led_colors: BTreeMap<String, Rgb>,
   /// The graph each layer is limited to, built from the LEDs it lands on. `None` for a layer without one.
   pub graphs: Vec<Option<RenderedGraph>>,
+  /// Why the reference scene asked for couldn't be drawn, which leaves it out of the render
+  pub reference_error: Option<String>,
 }
 
 /// A layer's graph: its nodes, where each samples the scene in scene units, and its edges
@@ -323,6 +327,8 @@ pub enum ClientMessage {
     /// Which cycle, counting from zero. With none, it's one from the middle of the scene, to show it as it looks partway
     /// through play.
     cycle: Option<u32>,
+    #[serde(default)]
+    reference: Option<ReferenceScene>,
   },
   /// Render a whole cycle of a scene for the client to play. Answered with a clip, or `SceneClipFailed`.
   RenderClip {
@@ -331,6 +337,8 @@ pub enum ClientMessage {
     size: SceneSize,
     /// Which cycle, counting from zero
     cycle: u32,
+    #[serde(default)]
+    reference: Option<ReferenceScene>,
   },
   /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
   /// the app has no sound system.
@@ -346,6 +354,16 @@ pub enum SceneSource {
   Definition(Scene),
   /// Drawn as `shown`, for trying a change out without making it. `scene` is what's given back in both forms.
   Preview { scene: Scene, shown: Scene },
+}
+
+/// Another scene from the content folder, drawn with the one being rendered to see how the two look together, such as
+/// a game's scores over a transition shown behind them. It plays alongside from the same start, with its own default
+/// variables, and only the scene being rendered has outlines and shapes in the reply.
+#[derive(Clone, PartialEq, serde::Deserialize, TS)]
+pub struct ReferenceScene {
+  pub name: String,
+  /// Drawn over the scene being rendered, or under it
+  pub above: bool,
 }
 
 /// How many points to sample a scene at. A scene with display layers is drawn at the width and height; one without draws

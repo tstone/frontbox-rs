@@ -7,10 +7,11 @@
 //! [`frontbox_gfx::scene`]; this crate adds where they go, and playing them.
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
-//! - [`PlayableScene`] -- A scene with values from the game bound to it: its params, and how long it takes
+//! - [`PlayableScene`] -- A scene with values from the game bound to it: its variables, and how long it takes
 //! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LedSystem`, read each [`Playback`] from
 //!   it each frame.
 //! - [`ScenePlayer`] -- A scene a system turns on and off
+//! - [`Sends`] -- The variables a system sends the scenes it plays, to check a scene someone wrote for it
 //!
 //! A system that uses scenes either hands one off to play to its end, or owns one with a [`ScenePlayer`]:
 //!
@@ -36,6 +37,7 @@ mod scene;
 mod scene_player;
 mod scene_system;
 mod scene_system_ext;
+mod sends;
 mod sound_layer;
 
 pub use moment::*;
@@ -45,6 +47,7 @@ pub use scene::*;
 pub use scene_player::*;
 pub use scene_system::*;
 pub use scene_system_ext::*;
+pub use sends::*;
 pub use sound_layer::*;
 
 use frontbox_core::prelude::*;

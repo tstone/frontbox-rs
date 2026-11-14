@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use frontbox_gfx::scene::file::{self, EXTENSION};
-use frontbox_gfx::scene::{Layer, Params, Timing};
+use frontbox_gfx::scene::{Layer, Timing, Variables};
 use frontbox_scene::{DisplayLayer, LedLayer, Scene, SceneLayer};
 use serde::Deserialize;
 
@@ -46,10 +46,10 @@ fn main() {
 
 fn convert(source: &str) -> Result<String, String> {
   let scene = match file::load::<V1>(source).map_err(|error| error.to_string())? {
-    V1::Led(led) => Scene { params: led.params, timing: led.timing, ..Scene::new(led.layers.into_iter().map(SceneLayer::from).collect()) },
+    V1::Led(led) => Scene { variables: led.params, timing: led.timing, ..Scene::new(led.layers.into_iter().map(SceneLayer::from).collect()) },
     V1::Dmd(dmd) => {
       let layers = dmd.composition.layers.into_iter().map(|layer| DisplayLayer::new(DMD, layer).into()).collect();
-      Scene { params: dmd.composition.params, timing: dmd.composition.timing, ..Scene::new(layers) }
+      Scene { variables: dmd.composition.params, timing: dmd.composition.timing, ..Scene::new(layers) }
     }
   };
   scene.check().map_err(|error| error.to_string())?;
@@ -79,7 +79,7 @@ enum V1 {
 #[derive(Deserialize)]
 struct LedV1 {
   #[serde(default)]
-  params: Params,
+  params: Variables,
   #[serde(default)]
   timing: Option<Timing>,
   #[serde(default)]
@@ -94,7 +94,7 @@ struct DmdV1 {
 #[derive(Deserialize)]
 struct CompositionV1 {
   #[serde(default)]
-  params: Params,
+  params: Variables,
   #[serde(default)]
   timing: Option<Timing>,
   #[serde(default)]

@@ -1,0 +1,52 @@
+Scene(
+  version: 2,
+  variables: {
+    "text": Text("Audio and display settings"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Solid(Fixed(39, 40, 34, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 5.5)),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Text",
+        fill: (
+          base: Solid(Fixed(217, 217, 217, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(63.5, 5.5)),
+          ],
+          base: Text(
+            text: Variable("text"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(121.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+  ],
+)

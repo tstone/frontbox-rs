@@ -15,11 +15,12 @@ copyright name in the font file.
 | MooseNooks | bavarianrobotdiner | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=2095 |
 | OwlsNInk | DubzyWubzyUbzy | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=556 |
 | SirClive | GilesBooth | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=2051 |
+| TenFatGuys | Geoff | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=332 |
 | TimesNewPixel | IshPassion | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=1890 |
 | TinyPix | BlastBrothers | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=4440 |
 | TinyPixie2 | TinyPixie | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=5554 |
-| TomAndJerry | StePickford | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=336 |
 | VSansSerif8bold | quatrus | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=399 |
+| Webslinger | JayWright | https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=922 |
 
 The gallery also has a different, earlier "TimesNewPixel" by pentacom (id 57). The one here is IshPassion's.
 

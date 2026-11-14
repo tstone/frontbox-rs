@@ -1,0 +1,38 @@
+Scene(
+  version: 2,
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Border",
+        fill: (
+          base: Solid(Fixed(0, 0, 217, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 16.0)),
+          ],
+          base: Rect(
+            width: Fixed(128.0),
+            height: Fixed(32.0),
+          ),
+          adjust: [
+            Stroke(
+              width: Fixed(1.0),
+              align: Inside,
+            ),
+          ],
+        ),
+      ),
+    ),
+  ],
+)

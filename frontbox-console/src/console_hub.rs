@@ -93,6 +93,7 @@ impl ConsoleHub {
           origin: origin.to_array(),
           rotation: rotation.to_array(),
           extent: plane.extent.to_array(),
+          corners: plane.corners().iter().map(|corner| corner.to_array()).collect(),
           image: plane
             .image
             .as_ref()
@@ -172,10 +173,11 @@ impl ConsoleHub {
     size: SceneSize,
     time: f32,
     cycle: Option<u32>,
+    reference: Option<ReferenceScene>,
   ) -> Option<Utf8Bytes> {
     let machine = self.machine_leds();
     let content = self.content();
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, machine, content, time, cycle)).await {
+    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, machine, content, time, cycle, reference)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -193,11 +195,12 @@ impl ConsoleHub {
     source: SceneSource,
     size: SceneSize,
     cycle: u32,
+    reference: Option<ReferenceScene>,
   ) -> Option<Message> {
     let machine = self.machine_leds();
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
-    match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle)).await {
+    match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle, reference)).await {
       Ok(Ok(clip)) => Some(Message::Binary([&[BINARY_CLIP][..], &clip].concat().into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
@@ -222,7 +225,7 @@ impl ConsoleHub {
   }
 
   /// Where scenes' images, fonts, and sounds come from. Until `AppTracer::init`, and for an app without a content
-  /// folder, it has only the fonts frontbox comes with.
+  /// folder, it has only the fonts and scenes frontbox comes with.
   pub fn content(&self) -> Content {
     self.state.lock().unwrap().content.clone()
   }
@@ -635,10 +638,10 @@ pub(crate) struct Subscription {
   pub displays: broadcast::Receiver<Bytes>,
 }
 
-/// The content in `path`, or without a folder, with the fonts frontbox comes with, which scenes can use without a
-/// file
+/// The content in `path`, or without a folder, with the fonts and scenes frontbox comes with, which can be used without
+/// a file
 fn content(path: Option<PathBuf>) -> Content {
-  path.map_or_else(Content::without_folder, Content::new).with_fonts(frontbox_display::bundled_fonts())
+  frontbox_display::content_with_bundled(path)
 }
 
 struct HubState {

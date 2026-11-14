@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Graph, Prop, TraversalVisits, rnd};
+use crate::scene::{Env, Graph, Inputs, Prop, TraversalVisits, rnd};
 
 /// Most steps a random walk takes in one frame, so a huge rate can't stall playback
 const MAX_WALK_STEPS: usize = 100_000;
@@ -30,6 +30,20 @@ impl GraphMask {
 
   pub(crate) fn is_animated(&self) -> bool {
     !self.traversals.is_empty()
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    for traversal in &self.traversals {
+      for node in [Some(&traversal.from), traversal.algorithm.to()].into_iter().flatten() {
+        if let NodeRef::Nearest(pos) = node {
+          pos.read_inputs(inputs);
+        }
+      }
+      traversal.algorithm.amounts().into_iter().for_each(|amount| amount.read_inputs(inputs));
+      if let Speed::Rate(rate) = &traversal.speed {
+        rate.read_inputs(inputs);
+      }
+    }
   }
 }
 
@@ -262,6 +276,26 @@ pub enum TraversalAlgorithm {
   RandomWalk,
 }
 
+impl TraversalAlgorithm {
+  /// The node it heads for, if it heads for one
+  fn to(&self) -> Option<&NodeRef> {
+    match self {
+      Self::ShortestPath { to, .. } | Self::FanOut { to, .. } | Self::Growth { to, .. } | Self::AStar { to } => Some(to),
+      Self::BreadthFirst { .. } | Self::DepthFirst | Self::Dijkstra { .. } | Self::RandomWalk => None,
+    }
+  }
+
+  /// Its numbers that are props
+  fn amounts(&self) -> Vec<&Prop<f32>> {
+    match self {
+      Self::BreadthFirst { wander } | Self::Dijkstra { wander } | Self::ShortestPath { wander, .. } => vec![wander],
+      Self::FanOut { angle, count, wander, .. } => vec![angle, count, wander],
+      Self::Growth { reach, density, branching, wander, .. } => vec![reach, density, branching, wander],
+      Self::DepthFirst | Self::AStar { .. } | Self::RandomWalk => vec![],
+    }
+  }
+}
+
 /// A wander when a file leaves it out
 fn no_wander() -> Prop<f32> {
   Prop::Fixed(0.0)
@@ -272,7 +306,7 @@ fn no_wander() -> Prop<f32> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NodeRef {
   Name(String),
-  /// The node closest to a position in scene units. Resolved every frame, so it's meant to be fixed or a param.
+  /// The node closest to a position in scene units. Resolved every frame, so it's meant to be fixed or a variable.
   Nearest(#[cfg_attr(feature = "ts", ts(as = "Prop<[f32; 2]>"))] Prop<Vec2>),
 }
 
@@ -536,7 +570,7 @@ mod tests {
   use super::*;
   use crate::animation::Cycle;
   use crate::scene::value::tests::env;
-  use crate::scene::{GraphNode, Params, Timing};
+  use crate::scene::{GraphNode, Variables, Timing};
 
   /// Nodes "0" to "n-1" in a row, one apart
   fn row(n: usize) -> Graph {
@@ -551,8 +585,8 @@ mod tests {
 
   /// From node "0", two steps a second, in a cycle `duration` seconds long
   fn traverse(graph: &Graph, algorithm: TraversalAlgorithm, duration: f32) -> TraversalVisits {
-    let params = Params::new();
-    let env = Env { timing: Some(Timing::new(duration, Cycle::Forever)), ..env(0.0, &params) };
+    let variables = Variables::new();
+    let env = Env { timing: Some(Timing::new(duration, Cycle::Forever)), ..env(0.0, &variables) };
     Traversal::new("t", NodeRef::name("0"), algorithm, 2.0).visits(graph, &env)
   }
 
@@ -576,16 +610,16 @@ mod tests {
   fn dijkstra_visits_by_distance() {
     let nodes = [0.0, 1.0, 4.0].map(|x| GraphNode::new(format!("{x}"), Vec2::new(x, 0.0))).to_vec();
     let graph = Graph::build(nodes);
-    let params = Params::new();
+    let variables = Variables::new();
     let traversal = Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::Dijkstra { wander: 0.0.into() }, 2.0).start(1.0);
-    assert_eq!(first(&traversal.visits(&graph, &env(0.0, &params)).by_node), [Some(1.0), Some(1.5), Some(3.0)]);
+    assert_eq!(first(&traversal.visits(&graph, &env(0.0, &variables)).by_node), [Some(1.0), Some(1.5), Some(3.0)]);
   }
 
 
   #[test]
   fn a_duration_stretches_the_traversal_to_fit() {
-    let params = Params::new();
-    let env = Env { timing: Some(Timing::new(7.0, Cycle::Forever)), ..env(0.0, &params) };
+    let variables = Variables::new();
+    let env = Env { timing: Some(Timing::new(7.0, Cycle::Forever)), ..env(0.0, &variables) };
     let traversal = |speed: Speed| Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::Dijkstra { wander: 0.0.into() }, speed).start(1.0);
     // 2 units to the end plus a step there, in 3 seconds or the 6 left in the cycle
     let fixed = traversal(Speed::Duration(Some(3.0))).visits(&row(3), &env);
@@ -596,8 +630,8 @@ mod tests {
 
   #[test]
   fn a_shortest_path_over_the_rest_of_the_cycle_reaches_its_target_before_the_cycle_wraps() {
-    let params = Params::new();
-    let env = Env { timing: Some(Timing::new(10.0, Cycle::Forever)), ..env(0.0, &params) };
+    let variables = Variables::new();
+    let env = Env { timing: Some(Timing::new(10.0, Cycle::Forever)), ..env(0.0, &variables) };
     let to = TraversalAlgorithm::ShortestPath { to: NodeRef::name("4"), wander: 0.0.into() };
     let path = Traversal::new("t", NodeRef::name("0"), to, Speed::Duration(None)).visits(&row(5), &env);
     // 4 edges and a step at the target, 2 seconds each
@@ -606,8 +640,8 @@ mod tests {
 
   #[test]
   fn a_random_walk_with_a_duration_takes_a_step_per_node() {
-    let params = Params::new();
-    let walk = Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(Some(10.0))).visits(&grid(), &env(0.0, &params));
+    let variables = Variables::new();
+    let walk = Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(Some(10.0))).visits(&grid(), &env(0.0, &variables));
     assert_eq!(walk.by_node.iter().map(Vec::len).sum::<usize>(), 10);
     assert_eq!(walk.rate, 1.0);
   }
@@ -637,8 +671,8 @@ mod tests {
   #[test]
   fn wander_wanders_off_the_shortest_path_and_still_reaches_the_end() {
     let grid = Graph::build((0..144).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 12) as f32, (i / 12) as f32))).collect());
-    let params = Params::new();
-    let env = Env { timing: Some(Timing::new(10.0, Cycle::Forever)), ..env(0.0, &params) };
+    let variables = Variables::new();
+    let env = Env { timing: Some(Timing::new(10.0, Cycle::Forever)), ..env(0.0, &variables) };
     let path = |name: &str, wander: f32| {
       let to = TraversalAlgorithm::ShortestPath { to: NodeRef::name("23"), wander: wander.into() };
       Traversal::new(name, NodeRef::name("0"), to, 2.0).visits(&grid, &env).by_node
@@ -655,10 +689,10 @@ mod tests {
   #[test]
   fn a_wandering_fill_reaches_everything_in_a_new_order_and_ends_on_time() {
     let grid = Graph::build((0..144).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 12) as f32, (i / 12) as f32))).collect());
-    let params = Params::new();
+    let variables = Variables::new();
     let fill = |by_steps: bool, wander: f32| {
       let algorithm = if by_steps { TraversalAlgorithm::BreadthFirst { wander: wander.into() } } else { TraversalAlgorithm::Dijkstra { wander: wander.into() } };
-      Traversal::new("t", NodeRef::name("0"), algorithm, 2.0).visits(&grid, &env(0.0, &params)).by_node.iter().map(|times| times[0]).collect::<Vec<f32>>()
+      Traversal::new("t", NodeRef::name("0"), algorithm, 2.0).visits(&grid, &env(0.0, &variables)).by_node.iter().map(|times| times[0]).collect::<Vec<f32>>()
     };
     for by_steps in [true, false] {
       let (even, wandering) = (fill(by_steps, 0.0), fill(by_steps, 3.0));
@@ -677,15 +711,15 @@ mod tests {
   fn a_fan_out_goes_to_the_target_and_spreads_across_the_arc() {
     let grid = Graph::build((0..441).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 21) as f32, (i / 21) as f32))).collect());
     let at = |node: usize| Vec2::new((node % 21) as f32, (node / 21) as f32);
-    let params = Params::new();
+    let variables = Variables::new();
     let fan = |count: f32| {
       let algorithm = TraversalAlgorithm::FanOut { to: NodeRef::name("430"), angle: 90.0.into(), count: count.into(), wander: 0.0.into() };
       // from the middle of the bottom row to the middle of the top
-      Traversal::new("t", NodeRef::name("10"), algorithm, 2.0).visits(&grid, &env(0.0, &params)).by_node
+      Traversal::new("t", NodeRef::name("10"), algorithm, 2.0).visits(&grid, &env(0.0, &variables)).by_node
     };
     let visited = |visits: &[Vec<f32>]| visits.iter().filter(|times| !times.is_empty()).count();
     let straight = TraversalAlgorithm::ShortestPath { to: NodeRef::name("430"), wander: 0.0.into() };
-    let straight = Traversal::new("t", NodeRef::name("10"), straight, 2.0).visits(&grid, &env(0.0, &params)).by_node;
+    let straight = Traversal::new("t", NodeRef::name("10"), straight, 2.0).visits(&grid, &env(0.0, &variables)).by_node;
     assert_eq!(visited(&fan(0.0)), visited(&straight));
 
     let spread = fan(4.0);
@@ -702,11 +736,11 @@ mod tests {
   #[test]
   fn a_growth_sends_offshoots_near_its_path_as_the_path_reaches_them() {
     let grid = Graph::build((0..441).map(|i| GraphNode::new(i.to_string(), Vec2::new((i % 21) as f32, (i / 21) as f32))).collect());
-    let params = Params::new();
+    let variables = Variables::new();
     let grow = |name: &str, density: f32, branching: f32| {
       let algorithm = TraversalAlgorithm::Growth { to: NodeRef::name("430"), reach: 3.0.into(), density: density.into(), branching: branching.into(), wander: 0.0.into() };
       // up the middle column, one unit a second
-      Traversal::new(name, NodeRef::name("10"), algorithm, 1.0).visits(&grid, &env(0.0, &params)).by_node
+      Traversal::new(name, NodeRef::name("10"), algorithm, 1.0).visits(&grid, &env(0.0, &variables)).by_node
     };
     let visited = |visits: &[Vec<f32>]| (0..441).filter(|&node| !visits[node].is_empty()).collect::<Vec<_>>();
     let path: Vec<usize> = (0..21).map(|row| row * 21 + 10).collect();
@@ -749,28 +783,28 @@ mod tests {
 
   #[test]
   fn a_random_walk_differs_by_cycle() {
-    let params = Params::new();
+    let variables = Variables::new();
     let traversal = Traversal::new("t", NodeRef::name("4"), TraversalAlgorithm::RandomWalk, 10.0);
-    let walk = |cycle| traversal.visits(&grid(), &Env { cycle, ..env(5.0, &params) }).by_node;
+    let walk = |cycle| traversal.visits(&grid(), &Env { cycle, ..env(5.0, &variables) }).by_node;
     assert_ne!(walk(0), walk(1));
     assert_eq!(walk(0), walk(0));
   }
 
   #[test]
   fn a_missing_start_or_no_rate_visits_nothing() {
-    let params = Params::new();
+    let variables = Variables::new();
     let graph = row(3);
     let nowhere = Traversal::new("t", NodeRef::name("nope"), TraversalAlgorithm::Dijkstra { wander: 0.0.into() }, 1.0);
     let stopped = Traversal::new("t", NodeRef::name("0"), TraversalAlgorithm::Dijkstra { wander: 0.0.into() }, 0.0);
-    assert!(nowhere.visits(&graph, &env(0.0, &params)).by_node.iter().all(Vec::is_empty));
-    assert!(stopped.visits(&graph, &env(0.0, &params)).by_node.iter().all(Vec::is_empty));
+    assert!(nowhere.visits(&graph, &env(0.0, &variables)).by_node.iter().all(Vec::is_empty));
+    assert!(stopped.visits(&graph, &env(0.0, &variables)).by_node.iter().all(Vec::is_empty));
   }
 
   #[test]
   fn nearest_starts_from_the_closest_node() {
-    let params = Params::new();
+    let variables = Variables::new();
     let traversal = Traversal::new("t", NodeRef::Nearest(Vec2::new(2.2, 0.0).into()), TraversalAlgorithm::Dijkstra { wander: 0.0.into() }, 1.0);
-    assert_eq!(first(&traversal.visits(&row(3), &env(0.0, &params)).by_node), [Some(2.0), Some(1.0), Some(0.0)]);
+    assert_eq!(first(&traversal.visits(&row(3), &env(0.0, &variables)).by_node), [Some(2.0), Some(1.0), Some(0.0)]);
   }
 
   #[test]

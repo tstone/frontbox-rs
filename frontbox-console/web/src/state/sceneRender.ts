@@ -1,5 +1,6 @@
 import { createSignal, untrack } from 'solid-js'
 import type { ClipSound } from '../types/generated/ClipSound'
+import type { ReferenceScene } from '../types/generated/ReferenceScene'
 import type { RenderedClip } from '../types/generated/RenderedClip'
 import type { RenderedScene } from '../types/generated/RenderedScene'
 import type { SceneSize } from '../types/generated/SceneSize'
@@ -21,7 +22,8 @@ const REPLY_TIMEOUT_MS = 1000
 /** The same for a clip, which has a whole cycle to render */
 const CLIP_TIMEOUT_MS = 30000
 
-type Target = { source: SceneSource; size: SceneSize }
+/** What's drawn, and another scene from the content folder drawn with it, if any */
+type Target = { source: SceneSource; size: SceneSize; reference: ReferenceScene | null }
 
 /** A cycle of a scene, rendered ahead so it can be played without asking the machine for each frame */
 export type SceneClip = {
@@ -52,16 +54,16 @@ let asked: SceneSource | null = null
  * Asks the machine to render a scene. One request runs at a time and only the newest waits, so dragging a slider can't
  * queue up renders. Waits a tick so that the edits of one change go together.
  */
-export function renderScene(source: SceneSource, size: SceneSize, time: number, cycle: number | null) {
-  waiting = { source, size, time, cycle }
+export function renderScene(source: SceneSource, size: SceneSize, time: number, cycle: number | null, reference: ReferenceScene | null) {
+  waiting = { source, size, time, cycle, reference }
   queueMicrotask(sendWaiting)
 }
 
 function sendWaiting() {
   if (inFlight || !waiting) return
-  const { source, size, time, cycle } = waiting
+  const { source, size, time, cycle, reference } = waiting
   waiting = null
-  sendToMachine({ type: 'RenderScene', source, size, time, cycle })
+  sendToMachine({ type: 'RenderScene', source, size, time, cycle, reference })
   asked = source
   inFlight = { timeout: setTimeout(replied, REPLY_TIMEOUT_MS) }
 }
@@ -112,14 +114,16 @@ const sameTarget = (a: Target, b: Target | null) =>
   a.source === b.source &&
   a.size.leds === b.size.leds &&
   a.size.width === b.size.width &&
-  a.size.height === b.size.height
+  a.size.height === b.size.height &&
+  a.reference?.name === b.reference?.name &&
+  a.reference?.above === b.reference?.above
 
 /**
  * Has the machine render these cycles of a scene, in order, and lets go of any others. Runs as `renderScene` does, one
  * at a time with only the newest scene waiting, and does nothing for a clip that's already rendered.
  */
-export function renderClips(source: SceneSource, size: SceneSize, cycles: number[]) {
-  clipsWanted = { source, size, cycles }
+export function renderClips(source: SceneSource, size: SceneSize, reference: ReferenceScene | null, cycles: number[]) {
+  clipsWanted = { source, size, reference, cycles }
   // called from effects, which shouldn't run again for what this does to the clips
   untrack(() => {
     const kept = [...clips()].filter(([cycle]) => cycles.includes(cycle))
@@ -135,8 +139,8 @@ function sendMissingClip() {
   setClipRendering(cycle !== undefined && cycle === wanted?.cycles[0])
   if (clipInFlight || !wanted || cycle === undefined) return
 
-  const { source, size } = wanted
-  const target = { source, size }
+  const { source, size, reference } = wanted
+  const target = { source, size, reference }
   const id = nextClipId++
   sendToMachine({ type: 'RenderClip', id, ...target, cycle })
   clipInFlight = { id, target, cycle, timeout: setTimeout(() => clipReplied(id), CLIP_TIMEOUT_MS) }

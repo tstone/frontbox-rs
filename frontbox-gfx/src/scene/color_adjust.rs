@@ -2,7 +2,7 @@ use image::{Pixel, Rgba};
 use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
-use crate::scene::{Env, Prop};
+use crate::scene::{Env, Inputs, Prop};
 
 /// Color adjustments, applied in order to a fill's output
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -46,6 +46,12 @@ impl ColorAdjust {
       Self::HueShift(amount) | Self::Opacity(amount) | Self::Brightness(amount) | Self::Contrast(amount) => amount.is_animated(),
     }
   }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::HueShift(amount) | Self::Opacity(amount) | Self::Brightness(amount) | Self::Contrast(amount) => amount.read_inputs(inputs),
+    }
+  }
 }
 
 /// Mid gray, as a channel value
@@ -61,24 +67,24 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::scene::value::tests::env;
-  use crate::scene::{Key, Keyframes, Params};
+  use crate::scene::{Key, Keyframes, Variables};
 
   #[test]
   fn hue_shift_turns_the_color() {
-    let params = Params::new();
+    let variables = Variables::new();
     let adjust = ColorAdjust::HueShift(120.0.into());
-    assert_eq!(adjust.apply(Rgba([255, 0, 0, 128]), adjust.amount(&env(0.0, &params))), Rgba([0, 255, 0, 128]));
+    assert_eq!(adjust.apply(Rgba([255, 0, 0, 128]), adjust.amount(&env(0.0, &variables))), Rgba([0, 255, 0, 128]));
   }
 
   #[test]
   fn hue_shift_can_be_animated() {
-    let params = Params::new();
+    let variables = Variables::new();
     let adjust = ColorAdjust::HueShift(Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(3.0, 360.0, Curve::Linear)],
       cycle: Cycle::Forever,
     }));
     let red = Rgba([255, 0, 0, 255]);
-    let at = |time| adjust.apply(red, adjust.amount(&env(time, &params)));
+    let at = |time| adjust.apply(red, adjust.amount(&env(time, &variables)));
     assert_eq!(at(0.0), red);
     assert_eq!(at(1.0), Rgba([0, 255, 0, 255]));
     assert_eq!(at(2.0), Rgba([0, 0, 255, 255]));
@@ -86,8 +92,8 @@ mod tests {
   }
 
   fn applied(adjust: ColorAdjust, color: Rgba<u8>) -> Rgba<u8> {
-    let params = Params::new();
-    adjust.apply(color, adjust.amount(&env(0.0, &params)))
+    let variables = Variables::new();
+    adjust.apply(color, adjust.amount(&env(0.0, &variables)))
   }
 
   #[test]

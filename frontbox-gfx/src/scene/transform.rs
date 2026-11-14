@@ -1,7 +1,7 @@
 use glam::{Affine2, Mat2, Vec2};
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Contour, Env, Prop, Shape};
+use crate::scene::{Contour, Env, Inputs, Prop, Shape};
 
 /// Cap on the copies one `Revolve` makes, well past where they can be told apart
 const MAX_COPIES: f32 = 360.0;
@@ -200,6 +200,27 @@ impl Transform {
       Self::Mirror { center, rotation } | Self::Bisect { center, rotation } => center.is_animated() || rotation.is_animated(),
       Self::Shift { amount, rotation } => amount.is_animated() || rotation.is_animated(),
       Self::Revolve { center, angle, count } => center.is_animated() || angle.is_animated() || count.is_animated(),
+    }
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Translate(prop) => prop.read_inputs(inputs),
+      Self::Rotate(prop) | Self::Bulge(prop) | Self::Round(prop) => prop.read_inputs(inputs),
+      Self::Scale(Scaling { amount, anchor }) => {
+        amount.read_inputs(inputs);
+        anchor.read_inputs(inputs);
+      }
+      Self::Fit(_) => {}
+      Self::Mirror { center, rotation } | Self::Bisect { center, rotation } => {
+        center.read_inputs(inputs);
+        rotation.read_inputs(inputs);
+      }
+      Self::Shift { amount, rotation } => [amount, rotation].iter().for_each(|prop| prop.read_inputs(inputs)),
+      Self::Revolve { center, angle, count } => {
+        center.read_inputs(inputs);
+        [angle, count].iter().for_each(|prop| prop.read_inputs(inputs));
+      }
     }
   }
 }

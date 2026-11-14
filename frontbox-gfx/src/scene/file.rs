@@ -92,11 +92,11 @@ mod tests {
   }
 
   fn sample_grid(scene: &Scene) -> Vec<Rgba<u8>> {
-    let params = Params::new();
+    let variables = Variables::new();
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+        let frame = LayerFrame { time, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -107,7 +107,7 @@ mod tests {
   /// Uses every type in a definition
   fn everything() -> Scene {
     let mut scene = Scene::new(Surface::Area, vec![
-        Layer::new(Fill::new(FillNode::Solid(Prop::Param("background".into())))),
+        Layer::new(Fill::new(FillNode::Solid(Prop::Variable("background".into())))),
         Layer::new(
           Fill::new(FillNode::Gradient {
             stops: vec![
@@ -117,7 +117,7 @@ mod tests {
             style: GradientStyle::Radial,
           })
           .transform(Transform::Rotate(90.0.into()))
-          .adjust(ColorAdjust::HueShift(Prop::Param("hue".into())))
+          .adjust(ColorAdjust::HueShift(Prop::Variable("hue".into())))
           .adjust(ColorAdjust::Opacity(0.75.into()))
           .adjust(ColorAdjust::Brightness(1.25.into()))
           .adjust(ColorAdjust::Contrast(1.5.into())),
@@ -134,7 +134,7 @@ mod tests {
             }))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(ColorAdjust::Opacity(
-          Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut)), spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Param("offset".into())) }),
+          Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut)), spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Variable("offset".into())) }),
         )))
         .region(Shape::new(
           ShapeNode::Polygon {
@@ -182,7 +182,7 @@ mod tests {
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
-            Prop::Param("lap".into()),
+            Prop::Variable("lap".into()),
           )))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
@@ -197,8 +197,8 @@ mod tests {
           )))),
         ),
     ]);
-    scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
-    scene.params.insert("lap".into(), Value::Float(0.5));
+    scene.variables.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+    scene.variables.insert("lap".into(), Value::Float(0.5));
     scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
@@ -350,9 +350,9 @@ mod tests {
     .unwrap();
     scene.surface = Surface::Sequence;
 
-    let params = Params::new();
+    let variables = Variables::new();
     let line = Line::new(3);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -405,12 +405,12 @@ mod tests {
     let first = Rgba([255, 0, 0, 255]);
     let last = Rgba([0, 0, 255, 255]);
     let art = [first, first, last].map(|color| image::RgbaImage::from_pixel(1, 1, color));
-    let (mut assets, params) = (Assets::new(), Params::new());
+    let (mut assets, variables) = (Assets::new(), Variables::new());
     assets.insert_picture("a.gif", Picture::animated(art, 0.3));
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, params: &params, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() });
+    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -428,10 +428,10 @@ mod tests {
     assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
 
     let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
-    let (mut assets, params) = (Assets::new(), Params::new());
+    let (mut assets, variables) = (Assets::new(), Variables::new());
     assets.insert_picture("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = LayerFrame { time: 0.0, playback_seed: 0, params: &params, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -507,7 +507,7 @@ mod tests {
       traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
       traversal("fan", TraversalAlgorithm::FanOut { to: NodeRef::name("7"), angle: 90.0.into(), count: 2.0.into(), wander: 0.5.into() }),
       traversal("growth", TraversalAlgorithm::Growth { to: NodeRef::name("6"), reach: 25.0.into(), density: 2.0.into(), branching: 0.5.into(), wander: 0.5.into() }),
-      Traversal::new("search", NodeRef::Nearest(Prop::Param("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Param("speed".into())),
+      Traversal::new("search", NodeRef::Nearest(Prop::Variable("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Variable("speed".into())),
       Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
     ];
     let shown = VisitResponse {
@@ -531,14 +531,14 @@ mod tests {
 
   /// Colors on a 3 by 3 graph of nodes "0" to "8", 20 apart, over a few moments
   fn sample_graph(scene: &Scene) -> Vec<Rgba<u8>> {
-    let params = Params::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
+    let variables = Variables::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
     let samples: Vec<Sample> = (0..9).map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i)).collect();
     let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
     let graph = Graph::build(nodes);
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
-        let frame = LayerFrame { time, playback_seed: 3, params: &params, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_params() };
+        let frame = LayerFrame { time, playback_seed: 3, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
         let visits = scene.visits(&graph, &frame);
         samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect::<Vec<_>>()
       })

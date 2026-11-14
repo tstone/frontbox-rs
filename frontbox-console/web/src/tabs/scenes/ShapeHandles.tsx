@@ -5,7 +5,7 @@ import type { RenderedShape } from '../../types/generated/RenderedShape'
 import type { Transform } from '../../types/generated/Transform'
 import type { PreviewSpace } from '../machine/PlayfieldView'
 import { SceneContext } from './SceneFields'
-import { field, isHidden, isOpen, item, orEmpty, paramFits, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withParam, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { field, isHidden, isOpen, item, orEmpty, variableReads, selectedShape, selectedShapeLens, shapePoints, variant, withKey, withVariable, type Lens, type Scene, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 
 type Shape = NonNullable<Layer['region']>
 
@@ -217,7 +217,7 @@ export type Write = {
 }
 
 /**
- * How a drag changes a prop: the value itself, a parameter's default, or a track's key at the playhead, which is added
+ * How a drag changes a prop: the value itself, a variable's default, or a track's key at the playhead, which is added
  * if there isn't one so that the rest of the track stays as it was. A random value or a sweep has nothing to change, and
  * nor has a hidden track, as what it shows isn't what's at the playhead.
  */
@@ -228,12 +228,12 @@ export function writer(scene: Lens<Scene>, time: number): Write {
       if (isHidden(prop)) return false
       if ('Fixed' in prop) return true
       if ('Keyframes' in prop) return prop.Keyframes.keys.length > 0
-      return 'Param' in prop && paramFits(scene.get().params?.[prop.Param], like)
+      return 'Variable' in prop && variableReads(scene.get(), prop.Variable, like)
     },
     to(lens, value) {
       const prop = lens.get() as Prop<SceneValue>
       if ('Fixed' in prop) lens.set({ Fixed: value })
-      else if ('Param' in prop) scene.set(withParam(scene.get(), prop.Param, value))
+      else if ('Variable' in prop) scene.set(withVariable(scene.get(), prop.Variable, value))
       else if ('Keyframes' in prop) {
         const track = prop.Keyframes.keys.some((key) => sameMoment(key.at)) ? prop.Keyframes : withKey(prop.Keyframes, time)
         const keys = track.keys.map((key) => (sameMoment(key.at) ? { ...key, value } : key))

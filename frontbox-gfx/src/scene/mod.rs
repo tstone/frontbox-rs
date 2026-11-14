@@ -19,13 +19,14 @@
 //! }));
 //!
 //! let line = Line::new(8);
-//! let params = Params::new();
+//! let variables = Variables::new();
 //! let frame = LayerFrame {
 //!   time: 0.0,
 //!   timing: None,
 //!   playback_seed: 0,
-//!   params: &params,
-//!   defaults: no_params(),
+//!   variables: &variables,
+//!   defaults: no_variables(),
+//!   values: no_values(),
 //!   assets: Assets::none(),
 //!   size: Default::default(),
 //!   surface: Surface::Sequence,
@@ -44,8 +45,10 @@
 //!   over it that [`Prop::Visit`] responds to
 //! - [`Surface`] -- Whether the scene is drawn along a 1D line of points or over a 2D area
 //! - [`Node`] -- The structure shared by shapes and fills: a base, plus [`Transform`]s and adjusts
-//! - [`Prop`] -- A value that's fixed, read from a parameter, keyframed, picked at random, moved in a wave
+//! - [`Prop`] -- A value that's fixed, read from a variable, keyframed, picked at random, moved in a wave
 //!   ([`Modulated`]), or swept along a path ([`Sweep`])
+//! - [`NamedValue`] -- One of a scene's named values, which a variable can point at
+//! - [`Inputs`] -- The variables a layer reads, to check against what the code playing it sends
 //! - [`Timing`] -- How long an animated scene runs, and how many times
 //! - [`file`](mod@file) -- Reading and writing scene files as RON
 //! - [`Content`], [`Assets`], [`Font`] -- The folder of scenes, images, and fonts, and the decoded images and fonts a
@@ -63,10 +66,12 @@ mod font;
 mod graph;
 mod graph_mask;
 mod images;
+mod inputs;
 mod keyframes;
 mod layer;
 mod mask;
 mod modulated;
+mod named_value;
 mod node;
 mod prop;
 mod random;
@@ -99,10 +104,12 @@ pub use font::*;
 pub use graph::*;
 pub use graph_mask::*;
 pub use images::*;
+pub use inputs::*;
 pub use keyframes::*;
 pub use layer::*;
 pub use mask::*;
 pub use modulated::*;
+pub use named_value::*;
 pub use node::*;
 pub use prop::*;
 pub use random::*;

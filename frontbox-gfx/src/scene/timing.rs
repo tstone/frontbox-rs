@@ -7,7 +7,7 @@ use crate::scene::SceneError;
 /// push them into the neighboring cycle
 const CYCLE_MARGIN: f32 = 1e-4;
 
-/// How long an animated scene runs, and how many times. A scene without a timing is static: only its params can change
+/// How long an animated scene runs, and how many times. A scene without a timing is static: only its variables can change
 /// it.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

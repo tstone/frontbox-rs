@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::scene::{
-  Bounds, Contour, Cut, Env, Node, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, TextAlign, ShiftLine, TextOutline, TextSource, Transform, VerticalAlign, Wrap, layout_text,
+  Bounds, Contour, Cut, Env, Inputs, Node, PreparedStroke, Prop, Reshape, Sample, ShapeAdjust, TextAlign, TextOverflow, ShiftLine, TextOutline, TextSource, Transform, VerticalAlign, Wrap, layout_text,
 };
 
 /// Points in the outline polygon of a round shape
@@ -59,7 +59,8 @@ pub enum ShapeNode {
   /// An open, smooth curve through points. Like [`ShapeNode::Polyline`], it's only for a sweep to follow.
   Bezier { points: Vec<BezierPoint> },
   /// `text` in the font named `font`, in a box `width` by `height` around the origin. `size` is the font's em. Lines
-  /// break at line breaks, and between words where the next would run past the box. `align` places each line across
+  /// break at line breaks, and between words where the next would run past the box, or are cut short with an ellipsis
+  /// there, as `overflow` says. `align` places each line across
   /// the box and `vertical_align` places them all up and down it, and what runs past the box is cut off. `kerning` is
   /// room added between characters and `leading` room added between lines, both in scene units and 0 by default. The
   /// box is what a fill is stretched over. With no font by that name, it draws nothing.
@@ -77,6 +78,9 @@ pub enum ShapeNode {
     kerning: Prop<f32>,
     #[serde(default = "no_spacing")]
     leading: Prop<f32>,
+    #[serde(default, skip_serializing_if = "TextOverflow::is_wrap")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<TextOverflow>", optional))]
+    overflow: TextOverflow,
   },
 }
 
@@ -260,6 +264,12 @@ impl Shape {
   pub(crate) fn is_animated(&self) -> bool {
     self.base.is_animated() || self.transform.iter().any(Transform::is_animated) || self.adjust.iter().any(ShapeAdjust::is_animated)
   }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    self.base.read_inputs(inputs);
+    self.transform.iter().for_each(|transform| transform.read_inputs(inputs));
+    self.adjust.iter().for_each(|adjust| adjust.read_inputs(inputs));
+  }
 }
 
 impl ShapeNode {
@@ -279,6 +289,7 @@ impl ShapeNode {
       vertical_align: VerticalAlign::default(),
       kerning: no_spacing(),
       leading: no_spacing(),
+      overflow: TextOverflow::default(),
     }
   }
 
@@ -301,6 +312,27 @@ impl ShapeNode {
       Self::Bezier { points } => points.iter().any(|p| p.point.is_animated() || p.handle.is_animated()),
       Self::Text { text, size, width, height, kerning, leading, .. } => {
         text.is_animated() || [size, width, height, kerning, leading].iter().any(|prop| prop.is_animated())
+      }
+    }
+  }
+
+  fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Circle { radius } => radius.read_inputs(inputs),
+      Self::Ellipse { rx: a, ry: b } | Self::Rect { width: a, height: b } | Self::Diamond { width: a, height: b } => {
+        [a, b].iter().for_each(|prop| prop.read_inputs(inputs))
+      }
+      Self::Chevron { width: a, height: b, notch: c } | Self::Star { radius: a, legs: b, leg_width: c } => {
+        [a, b, c].iter().for_each(|prop| prop.read_inputs(inputs))
+      }
+      Self::Polygon { points } | Self::Polyline { points } => points.iter().for_each(|point| point.read_inputs(inputs)),
+      Self::Bezier { points } => points.iter().for_each(|p| {
+        p.point.read_inputs(inputs);
+        p.handle.read_inputs(inputs);
+      }),
+      Self::Text { text, size, width, height, kerning, leading, .. } => {
+        text.read_inputs(inputs);
+        [size, width, height, kerning, leading].iter().for_each(|prop| prop.read_inputs(inputs));
       }
     }
   }
@@ -401,12 +433,12 @@ impl ShapeNode {
       Self::Rect { .. } => Edge::Rect(self.reach(env)),
       Self::Diamond { .. } | Self::Star { .. } | Self::Chevron { .. } => Edge::Polygon(self.outline(env)),
       Self::Polygon { points } => Edge::Polygon(points.iter().map(|p| p.resolve(env)).collect()),
-      Self::Text { text, font, size, align, vertical_align, kerning, leading, .. } => match env.assets.font(font) {
+      Self::Text { text, font, size, align, vertical_align, kerning, leading, overflow, .. } => match env.assets.font(font) {
         Some(font) => {
           let reach = self.reach(env);
           let moved_to = to_scene.matrix2.abs_diff_eq(Mat2::IDENTITY, 1e-6).then_some(to_scene.translation);
           let spacing = Vec2::new(kerning.resolve(env), leading.resolve(env));
-          Edge::Text(layout_text(font, &text.resolve(env), size.resolve(env), reach * 2.0, *align, *vertical_align, spacing, moved_to), reach)
+          Edge::Text(layout_text(font, &text.resolve(env), size.resolve(env), reach * 2.0, *align, *vertical_align, *overflow, spacing, moved_to), reach)
         }
         None => Edge::Open,
       },
@@ -713,7 +745,7 @@ fn polygon_distance(points: &[Vec2], p: Vec2) -> (f32, Vec2) {
 mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
-  use crate::scene::{Color, Key, Keyframes, Params, StrokeAlign, Transform};
+  use crate::scene::{Color, Key, Keyframes, Variables, StrokeAlign, Transform};
   use crate::scene::value::tests::env;
 
   fn square() -> ShapeNode {
@@ -730,9 +762,9 @@ mod tests {
   }
 
   fn covered(shape: &Shape, x: f32, y: f32, radius: f32) -> f32 {
-    let params = Params::new();
+    let variables = Variables::new();
     let at = Sample::new(Vec2::new(x, y), radius);
-    shape.prepare(&env(0.0, &params)).and_then(|shape| shape.cover(&at)).map_or(0.0, |cover| cover.amount)
+    shape.prepare(&env(0.0, &variables)).and_then(|shape| shape.cover(&at)).map_or(0.0, |cover| cover.amount)
   }
 
   #[test]
@@ -778,11 +810,11 @@ mod tests {
 
   #[test]
   fn polygon_bounds() {
-    let params = Params::new();
+    let variables = Variables::new();
     let triangle = ShapeNode::Polygon {
       points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(4.0, 1.0).into(), Vec2::new(1.0, 3.0).into()],
     };
-    assert_eq!(triangle.bounds(&env(0.0, &params)), Bounds::new(Vec2::ZERO, Vec2::new(4.0, 3.0)));
+    assert_eq!(triangle.bounds(&env(0.0, &variables)), Bounds::new(Vec2::ZERO, Vec2::new(4.0, 3.0)));
   }
 
   #[test]
@@ -810,9 +842,9 @@ mod tests {
 
   #[test]
   fn a_circle_reaches_its_radius_every_way() {
-    let params = Params::new();
+    let variables = Variables::new();
     let circle = ShapeNode::circle(3.0);
-    assert_eq!(circle.bounds(&env(0.0, &params)), Bounds::new(Vec2::splat(-3.0), Vec2::splat(3.0)));
+    assert_eq!(circle.bounds(&env(0.0, &variables)), Bounds::new(Vec2::splat(-3.0), Vec2::splat(3.0)));
   }
 
   #[test]
@@ -860,11 +892,11 @@ mod tests {
 
   #[test]
   fn a_stroke_with_a_color_is_drawn_apart_from_the_shape() {
-    let params = Params::new();
+    let variables = Variables::new();
     let red = Rgba([255, 0, 0, 255]);
     let shape = Shape::new(ShapeNode::circle(4.0))
       .adjust(ShapeAdjust::Stroke { width: 2.0.into(), align: StrokeAlign::Outside, color: Some(Color(red).into()) })
-      .prepare(&env(0.0, &params))
+      .prepare(&env(0.0, &variables))
       .unwrap();
     let inside = shape.cover(&Sample::new(Vec2::ZERO, 0.1)).unwrap();
     assert_eq!((inside.amount, inside.strokes), (1.0, vec![]));
@@ -875,11 +907,11 @@ mod tests {
 
   #[test]
   fn a_colored_stroke_after_one_with_no_color_outlines_its_band() {
-    let params = Params::new();
+    let variables = Variables::new();
     let red = Rgba([255, 0, 0, 255]);
     let shape = ring(4.0, 2.0)
       .adjust(ShapeAdjust::Stroke { width: 0.5.into(), align: StrokeAlign::Outside, color: Some(Color(red).into()) })
-      .prepare(&env(0.0, &params))
+      .prepare(&env(0.0, &variables))
       .unwrap();
     for x in [3.75, 6.25] {
       let edge = shape.cover(&Sample::new(Vec2::new(x, 0.0), 0.1)).unwrap();
@@ -957,9 +989,9 @@ mod tests {
 
   #[test]
   fn text_isnt_shifted_and_its_outline_is_its_box() {
-    let params = Params::new();
+    let variables = Variables::new();
     let text = Shape::new(ShapeNode::text("A", "nothing", 8.0, Vec2::new(20.0, 10.0))).transform(shift(1.0, 0.0));
-    let outline = text.pose(&env(0.0, &params)).unwrap().outline;
+    let outline = text.pose(&env(0.0, &variables)).unwrap().outline;
     assert_eq!(outline.len(), 4);
   }
 
@@ -991,10 +1023,10 @@ mod tests {
 
   #[test]
   fn a_circle_has_no_corners_to_round_or_sides_to_bulge() {
-    let params = Params::new();
+    let variables = Variables::new();
     let circle = Shape::new(ShapeNode::circle(10.0));
     let reshaped = circle.clone().transform(Transform::Bulge(0.5.into())).transform(Transform::Round(5.0.into()));
-    assert_eq!(reshaped.pose(&env(0.0, &params)).unwrap().outline, circle.pose(&env(0.0, &params)).unwrap().outline);
+    assert_eq!(reshaped.pose(&env(0.0, &variables)).unwrap().outline, circle.pose(&env(0.0, &variables)).unwrap().outline);
   }
 
   fn star(legs: f32) -> Shape {
@@ -1050,10 +1082,10 @@ mod tests {
 
   #[test]
   fn a_star_with_no_legs_draws_nothing() {
-    let params = Params::new();
+    let variables = Variables::new();
     assert_eq!(covered(&star(0.0), 0.0, 0.0, 0.5), 0.0);
-    assert_eq!(star(0.0).pose(&env(0.0, &params)).unwrap().outline, vec![]);
-    assert_eq!(star(1e9).pose(&env(0.0, &params)).unwrap().outline.len(), MAX_LEGS as usize * 2);
+    assert_eq!(star(0.0).pose(&env(0.0, &variables)).unwrap().outline, vec![]);
+    assert_eq!(star(1e9).pose(&env(0.0, &variables)).unwrap().outline.len(), MAX_LEGS as usize * 2);
   }
 
   #[test]
@@ -1113,10 +1145,10 @@ mod tests {
 
   #[test]
   fn a_revolve_of_none_draws_nothing() {
-    let params = Params::new();
+    let variables = Variables::new();
     let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 0.0));
     assert_eq!(covered(&shape, 10.0, 0.0, 0.1), 0.0);
-    assert_eq!(shape.outline(&env(0.0, &params)), Vec::<Vec<Vec2>>::new());
+    assert_eq!(shape.outline(&env(0.0, &variables)), Vec::<Vec<Vec2>>::new());
   }
 
   #[test]
@@ -1163,8 +1195,8 @@ mod tests {
 
   #[test]
   fn a_pose_has_where_each_transform_turns_around() {
-    let params = Params::new();
-    let pose = dot((10.0, 5.0), mirror((0.0, 0.0), 0.0)).pose(&env(0.0, &params)).unwrap();
+    let variables = Variables::new();
+    let pose = dot((10.0, 5.0), mirror((0.0, 0.0), 0.0)).pose(&env(0.0, &variables)).unwrap();
     // into the translate, into the mirror, then on its line
     let expected = [Vec2::ZERO, Vec2::new(10.0, 5.0), Vec2::new(0.0, 5.0)];
     assert_eq!(pose.pivots.len(), expected.len());
@@ -1176,10 +1208,10 @@ mod tests {
 
   #[test]
   fn a_pose_has_the_point_each_scale_keeps_still() {
-    let params = Params::new();
+    let variables = Variables::new();
     let scaling = crate::scene::Scaling { amount: 2.0.into(), anchor: Vec2::new(-1.0, -2.0).into() };
     let shape = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(Vec2::new(10.0, 5.0).into())).transform(Transform::Scale(scaling));
-    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    let pose = shape.pose(&env(0.0, &variables)).unwrap();
     // from the center the translate moved it to
     assert_eq!(pose.anchors, vec![None, Some(Vec2::new(9.0, 3.0))]);
     assert!(pose.transforms[1].transform_point2(Vec2::new(9.0, 3.0)).abs_diff_eq(Vec2::new(9.0, 3.0), 1e-4));
@@ -1187,16 +1219,16 @@ mod tests {
 
   #[test]
   fn a_sample_takes_the_local_position_of_the_copy_it_is_in() {
-    let params = Params::new();
-    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).prepare(&env(0.0, &params)).unwrap();
+    let variables = Variables::new();
+    let shape = dot((10.0, 0.0), revolve((0.0, 0.0), 360.0, 2.0)).prepare(&env(0.0, &variables)).unwrap();
     let local = shape.cover(&Sample::new(Vec2::new(-10.0, 1.0), 0.1)).unwrap().local;
     assert!(local.abs_diff_eq(Vec2::new(0.0, -1.0), 1e-4));
   }
 
   #[test]
   fn an_outline_has_a_loop_for_each_copy_with_cuts_taken_off() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     assert_eq!(dot((10.0, 0.0), revolve((0.0, 0.0), 180.0, 3.0)).outline(&frame).len(), 3);
     let cut = Shape::new(ShapeNode::circle(10.0)).transform(bisect((0.0, 0.0), 0.0)).outline(&frame);
     assert_eq!(cut.len(), 1);
@@ -1215,8 +1247,8 @@ mod tests {
 
   #[test]
   fn a_polyline_goes_from_its_first_point_to_its_last_at_an_even_speed() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let path = Shape::new(polyline(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)]));
     for (phase, x, y) in [(0.0, 0.0, 0.0), (0.5, 20.0, 0.0), (0.75, 30.0, 0.0), (1.0, 30.0, 10.0)] {
       assert!(path.along(phase, &frame).abs_diff_eq(Vec2::new(x, y), 1e-4), "at {phase}");
@@ -1225,8 +1257,8 @@ mod tests {
 
   #[test]
   fn a_polyline_of_one_point_stays_on_it_and_one_of_none_at_the_origin() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     assert_eq!(Shape::new(polyline(&[(3.0, 4.0)])).along(0.5, &frame), Vec2::new(3.0, 4.0));
     assert_eq!(Shape::new(polyline(&[])).along(0.5, &frame), Vec2::ZERO);
   }
@@ -1242,8 +1274,8 @@ mod tests {
 
   #[test]
   fn a_line_does_not_close() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let pose = Shape::new(polyline(&[(0.0, 0.0), (30.0, 0.0), (30.0, 10.0)])).pose(&frame).unwrap();
     assert_eq!(pose.outline.len(), 3);
     assert_eq!(pose.points, pose.outline);
@@ -1253,16 +1285,16 @@ mod tests {
 
   #[test]
   fn a_bezier_with_no_handles_is_a_polyline() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let path = Shape::new(bezier(&[((0.0, 0.0), (0.0, 0.0)), ((30.0, 0.0), (0.0, 0.0)), ((30.0, 10.0), (0.0, 0.0))]));
     assert!(path.along(0.5, &frame).abs_diff_eq(Vec2::new(20.0, 0.0), 1e-3));
   }
 
   #[test]
   fn a_bezier_goes_through_its_points_and_leans_toward_its_handles() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let path = Shape::new(bezier(&[((0.0, 0.0), (0.0, 12.0)), ((20.0, 0.0), (0.0, -12.0))]));
     assert_eq!(path.along(0.0, &frame), Vec2::ZERO);
     assert!(path.along(1.0, &frame).abs_diff_eq(Vec2::new(20.0, 0.0), 1e-4));
@@ -1272,8 +1304,8 @@ mod tests {
 
   #[test]
   fn a_handle_stays_with_its_point_and_arrives_from_the_opposite_way() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let path = ShapeNode::Bezier {
       points: vec![
         BezierPoint { point: Vec2::ZERO.into(), handle: Vec2::ZERO.into() },
@@ -1291,8 +1323,8 @@ mod tests {
 
   #[test]
   fn a_beziers_middle_is_that_of_its_points() {
-    let params = Params::new();
-    let frame = env(0.0, &params);
+    let variables = Variables::new();
+    let frame = env(0.0, &variables);
     let pose = Shape::new(bezier(&[((0.0, 0.0), (0.0, 100.0)), ((20.0, 10.0), (0.0, -100.0))])).pose(&frame).unwrap();
     assert_eq!(pose.bounds, Bounds::new(Vec2::ZERO, Vec2::new(20.0, 10.0)));
     assert_eq!(pose.points, vec![Vec2::ZERO, Vec2::new(20.0, 10.0)]);
@@ -1343,24 +1375,24 @@ mod tests {
 
   #[test]
   fn sizes_change_over_time() {
-    let params = Params::new();
+    let variables = Variables::new();
     let grows = Prop::Keyframes(Keyframes {
       keys: vec![Key::new(0.0, 2.0, Curve::Linear), Key::new(1.0, 6.0, Curve::Linear)],
       cycle: Cycle::Once,
     });
     let rect = Shape::new(ShapeNode::Rect { width: grows, height: 4.0.into() });
     assert!(rect.is_animated());
-    assert_eq!(rect.base.bounds(&env(0.5, &params)), Bounds::new(Vec2::new(-2.0, -2.0), Vec2::new(2.0, 2.0)));
+    assert_eq!(rect.base.bounds(&env(0.5, &variables)), Bounds::new(Vec2::new(-2.0, -2.0), Vec2::new(2.0, 2.0)));
   }
 
   #[test]
   fn a_pose_has_what_an_editor_needs_to_work_out_a_drag() {
-    let params = Params::new();
+    let variables = Variables::new();
     let triangle = ShapeNode::Polygon {
       points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(4.0, 0.0).into(), Vec2::new(0.0, 2.0).into()],
     };
     let shape = Shape::new(triangle).transform(Transform::Translate(Vec2::new(1.0, 2.0).into()));
-    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    let pose = shape.pose(&env(0.0, &variables)).unwrap();
     assert_eq!(pose.transforms, vec![Affine2::from_translation(Vec2::new(1.0, 2.0))]);
     assert_eq!(pose.bounds, Bounds::new(Vec2::ZERO, Vec2::new(4.0, 2.0)));
     assert_eq!(pose.points.len(), 3);
@@ -1368,19 +1400,19 @@ mod tests {
 
   #[test]
   fn a_pose_turns_around_the_shape_where_it_has_been_moved() {
-    let params = Params::new();
+    let variables = Variables::new();
     let shape = Shape::new(ShapeNode::circle(1.0))
       .transform(Transform::Translate(Vec2::new(10.0, 0.0).into()))
       .transform(Transform::Rotate(90.0.into()));
-    let pose = shape.pose(&env(0.0, &params)).unwrap();
+    let pose = shape.pose(&env(0.0, &variables)).unwrap();
     assert!(pose.transforms[1].transform_point2(Vec2::new(10.0, 0.0)).abs_diff_eq(Vec2::new(10.0, 0.0), 1e-5));
   }
 
   #[test]
   fn a_collapsed_shape_has_no_pose() {
-    let params = Params::new();
+    let variables = Variables::new();
     let flat = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(0.0.into()));
-    assert_eq!(flat.pose(&env(0.0, &params)), None);
+    assert_eq!(flat.pose(&env(0.0, &variables)), None);
   }
 
   #[test]

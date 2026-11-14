@@ -52,6 +52,11 @@ impl Font {
     Vec2::new(self.placed(text, size, kerning).1, self.ascent(size) + self.descent(size))
   }
 
+  /// Whether the font has a glyph for `c`
+  pub(crate) fn has_char(&self, c: char) -> bool {
+    self.face.glyph_id(c).0 != 0
+  }
+
   /// How far the font reaches above its baseline at `size`, in scene units
   pub(crate) fn ascent(&self, size: f32) -> f32 {
     self.face.ascent_unscaled() * self.scale(size)

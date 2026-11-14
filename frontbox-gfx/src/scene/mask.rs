@@ -1,7 +1,7 @@
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Bounds, Env, Fill, PreparedArea, Sample, Shape, fill_outline, prepare_area};
+use crate::scene::{Bounds, Env, Fill, Inputs, PreparedArea, Sample, Shape, fill_outline, prepare_area};
 
 /// Controls where a layer shows, using the alpha of the mask's own fill and region. The layer is visible in proportion
 /// to the mask's opacity; the mask's colors are never drawn.
@@ -38,6 +38,11 @@ impl Mask {
 
   pub(crate) fn is_animated(&self) -> bool {
     self.fill.is_animated() || self.region.as_ref().is_some_and(Shape::is_animated)
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    self.fill.read_inputs(inputs);
+    self.region.iter().for_each(|region| region.read_inputs(inputs));
   }
 
   /// The mask resolved for samples of `radius`

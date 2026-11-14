@@ -66,6 +66,21 @@ use crate::prelude::ReferencePlaneBuilder;
 ///     .build()
 /// });
 /// ```
+///
+/// A plane that isn't a rectangle, such as a cabinet side that is taller at the back, takes an outline. Its extent is
+/// the outline's bounds.
+///
+/// ```rust
+/// use frontbox_core::prelude::*;
+/// use std::sync::LazyLock;
+///
+/// static LEFT_WALL: LazyLock<ReferencePlane> = LazyLock::new(|| {
+///   ReferencePlane::new("Left wall")
+///     .outline([Vec2::new(0.0, 3.0), Vec2::new(50.0, 0.0), Vec2::new(50.0, 19.0), Vec2::new(0.0, 19.0)])
+///     .build()
+/// });
+/// assert_eq!(LEFT_WALL.extent, Vec2::new(50.0, 19.0));
+/// ```
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ReferencePlane {
   /// Shown wherever the plane is displayed, e.g. in the pin console
@@ -74,6 +89,9 @@ pub struct ReferencePlane {
   pub origin: Vec3,
   /// Fixed size of the plane: width (x), height (y)
   pub extent: Vec2,
+  /// The plane's edge as a polygon in its own coordinates, for a surface that isn't a rectangle (e.g. a cabinet side).
+  /// Empty for the rectangle over `extent`.
+  pub outline: Vec<Vec2>,
   pub rotation: Quat,
   pub parent: Option<&'static ReferencePlane>,
   pub image: Option<PathBuf>,
@@ -82,6 +100,15 @@ pub struct ReferencePlane {
 impl ReferencePlane {
   pub const fn new(name: &'static str) -> ReferencePlaneBuilder {
     ReferencePlaneBuilder::new(name)
+  }
+
+  /// The corners of the plane's edge, in its own coordinates: its outline, or the rectangle over its extent
+  pub fn corners(&self) -> Vec<Vec2> {
+    if !self.outline.is_empty() {
+      return self.outline.clone();
+    }
+    let Vec2 { x, y } = self.extent;
+    vec![Vec2::ZERO, Vec2::new(x, 0.0), Vec2::new(x, y), Vec2::new(0.0, y)]
   }
 
   /// Map a given point relative to a plane to its absolute existence in the world

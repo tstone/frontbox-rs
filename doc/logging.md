@@ -76,7 +76,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 
 | Target | Covers |
 |---|---|
-| `frontbox::scene` | Scene playbacks starting and ending |
+| `frontbox::scene` | Scene playbacks starting and ending, scenes that don't fit what the system playing them sends, variables pointed at values the scene doesn't have |
 | `frontbox::led` | LED declarations and rendering |
 | `frontbox::sound` | Audio output, sound effects, callouts, music |
 | `frontbox::display` | Opening and losing displays, scenes drawn on displays that weren't added, menus, initials entry |

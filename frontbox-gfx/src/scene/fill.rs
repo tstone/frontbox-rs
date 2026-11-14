@@ -3,7 +3,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, ColorAdjust, Env, Node, Picture, Prop, Transform, Wrap};
+use crate::scene::{Color, ColorAdjust, Env, Inputs, Node, Picture, Prop, Transform, Wrap};
 
 /// The colors a layer is drawn with
 ///
@@ -32,6 +32,12 @@ impl Fill {
     self.base.is_animated()
       || self.transform.iter().any(Transform::is_animated)
       || self.adjust.iter().any(ColorAdjust::is_animated)
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    self.base.read_inputs(inputs);
+    self.transform.iter().for_each(|transform| transform.read_inputs(inputs));
+    self.adjust.iter().for_each(|adjust| adjust.read_inputs(inputs));
   }
 }
 
@@ -111,6 +117,14 @@ impl FillNode {
       Self::Solid(color) => color.is_animated(),
       Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
+    }
+  }
+
+  fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Solid(color) => color.read_inputs(inputs),
+      Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.color.read_inputs(inputs)),
+      Self::Image { frame, .. } => frame.iter().for_each(|frame| frame.read_inputs(inputs)),
     }
   }
 
@@ -197,7 +211,7 @@ fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::{Params, Prop};
+  use crate::scene::{Variables, Prop};
   use crate::scene::Transform;
   use crate::scene::value::tests::env;
 
@@ -216,8 +230,8 @@ mod tests {
   }
 
   fn color(fill: &Fill, x: f32, y: f32) -> Rgba<u8> {
-    let params = Params::new();
-    fill.prepare(Vec2::ZERO, &env(0.0, &params)).map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
+    let variables = Variables::new();
+    fill.prepare(Vec2::ZERO, &env(0.0, &variables)).map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
   }
 
   #[test]

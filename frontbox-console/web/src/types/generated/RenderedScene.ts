@@ -49,4 +49,8 @@ led_colors: { [key in string]: Rgb },
 /**
  * The graph each layer is limited to, built from the LEDs it lands on. `None` for a layer without one.
  */
-graphs: Array<RenderedGraph | null>, };
+graphs: Array<RenderedGraph | null>, 
+/**
+ * Why the reference scene asked for couldn't be drawn, which leaves it out of the render
+ */
+reference_error: string | null, };

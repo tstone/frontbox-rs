@@ -2,21 +2,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::scene::layer::env;
 use crate::scene::sweep::only_for_positions;
-use crate::scene::{Animatable, Env, Keyframes, LayerFrame, Modulated, Random, Sweep, VisitResponse};
+use crate::scene::{Animatable, Env, Inputs, Keyframes, LayerFrame, Modulated, Random, Sweep, Value, VisitResponse};
 
-/// A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept
+/// A value in a definition that can be fixed, read from a variable, keyframed, picked at random, moved in a wave, swept
 /// along a path, or set off by a traversal's visits
 ///
-/// In RON: `Fixed(4.0)`, `Param("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
-/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Param("lap")))`, or
-/// `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`.
+/// In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
+/// `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
+/// or `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`. Files from before variables were named so can
+/// say `Param` for `Variable`.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(deserialize = "T: Animatable + Deserialize<'de>"))]
 pub enum Prop<T> {
   Fixed(T),
-  /// Read from a parameter. A missing parameter, or one of the wrong type, gives the type's default.
-  Param(String),
+  /// Read from a variable, which is a value or points at one of the scene's named values. A missing variable, or one of
+  /// the wrong type, gives the type's default.
+  #[serde(alias = "Param")]
+  Variable(String),
   /// Keyframes over time
   Keyframes(Keyframes<T>),
   /// Picked at random at set times
@@ -40,7 +43,7 @@ impl<T> Prop<T> {
   /// Whether it can change while a scene plays, which needs the scene to have a timing
   pub fn is_animated(&self) -> bool {
     match self {
-      Self::Fixed(_) | Self::Param(_) => false,
+      Self::Fixed(_) | Self::Variable(_) => false,
       Self::Sweep(sweep) => sweep.is_animated(),
       Self::Keyframes(_) | Self::Random(_) | Self::Modulated(_) | Self::Visit(_) => true,
     }
@@ -57,12 +60,25 @@ impl<T: Animatable> Prop<T> {
   pub(crate) fn resolve(&self, env: &Env) -> T {
     match self {
       Self::Fixed(value) => value.clone(),
-      Self::Param(name) => env.param(name).and_then(T::from_value).unwrap_or_default(),
+      Self::Variable(name) => match env.variable(name) {
+        Some(Value::Named(value)) => env.named(value).and_then(|(named, env)| Some(T::named_prop(named)?.resolve(&env))).unwrap_or_default(),
+        value => value.and_then(T::from_value).unwrap_or_default(),
+      },
       Self::Keyframes(keyframes) => keyframes.resolve(env.time),
       Self::Random(random) => random.resolve(env),
       Self::Modulated(modulated) => modulated.resolve(env),
       Self::Sweep(sweep) => T::from_point(sweep.resolve(env)).unwrap_or_default(),
       Self::Visit(response) => response.resolve(env),
+    }
+  }
+
+  /// Adds the variables it reads to `inputs`
+  pub fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Fixed(_) | Self::Keyframes(_) | Self::Random(_) | Self::Visit(_) => {}
+      Self::Variable(name) => inputs.variable(name, T::VARIABLE_TYPE),
+      Self::Modulated(modulated) => modulated.phase.read_inputs(inputs),
+      Self::Sweep(sweep) => sweep.read_inputs(inputs),
     }
   }
 }
@@ -82,27 +98,27 @@ impl Prop<f32> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Bounds, Color, Assets, Params, Value};
+  use crate::scene::{Bounds, Color, Assets, Variables, Value, no_values};
 
   #[test]
   fn fixed_resolves_to_its_value() {
-    let params = Params::new();
-    assert_eq!(Prop::Fixed(3.0).resolve(&env(5.0, &params)), 3.0);
+    let variables = Variables::new();
+    assert_eq!(Prop::Fixed(3.0).resolve(&env(5.0, &variables)), 3.0);
   }
 
   #[test]
   fn param_prefers_the_games_value_over_the_default() {
-    let defaults = Params::from([("size".into(), Value::Float(1.0)), ("other".into(), Value::Float(9.0))]);
-    let params = Params::from([("size".into(), Value::Float(2.0))]);
-    let env = Env { time: 0.0, cycle: 0, timing: None, playback_seed: 0, params: &params, defaults: &defaults, assets: Assets::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None, visits: None, fill_frame: glam::Affine2::IDENTITY };
-    assert_eq!(Prop::<f32>::Param("size".into()).resolve(&env), 2.0);
-    assert_eq!(Prop::<f32>::Param("other".into()).resolve(&env), 9.0);
+    let defaults = Variables::from([("size".into(), Value::Float(1.0)), ("other".into(), Value::Float(9.0))]);
+    let variables = Variables::from([("size".into(), Value::Float(2.0))]);
+    let env = Env { time: 0.0, cycle: 0, timing: None, playback_seed: 0, variables: &variables, defaults: &defaults, values: no_values(), depth: 0, assets: Assets::none(), viewport: Bounds::sized(glam::Vec2::ONE), lap: None, visits: None, fill_frame: glam::Affine2::IDENTITY };
+    assert_eq!(Prop::<f32>::Variable("size".into()).resolve(&env), 2.0);
+    assert_eq!(Prop::<f32>::Variable("other".into()).resolve(&env), 9.0);
   }
 
   #[test]
   fn param_that_is_missing_or_the_wrong_type_is_the_default() {
-    let params = Params::from([("size".into(), Value::Color(Color::default()))]);
-    assert_eq!(Prop::<f32>::Param("size".into()).resolve(&env(0.0, &params)), 0.0);
-    assert_eq!(Prop::<f32>::Param("nope".into()).resolve(&env(0.0, &params)), 0.0);
+    let variables = Variables::from([("size".into(), Value::Color(Color::default()))]);
+    assert_eq!(Prop::<f32>::Variable("size".into()).resolve(&env(0.0, &variables)), 0.0);
+    assert_eq!(Prop::<f32>::Variable("nope".into()).resolve(&env(0.0, &variables)), 0.0);
   }
 }

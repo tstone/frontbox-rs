@@ -2,21 +2,22 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Env, Prop, Value};
+use crate::scene::{Env, Inputs, NamedValue, VariableType, Prop, Value};
 
 /// Where a [`ShapeNode::Text`]'s text comes from
 ///
-/// In RON: `Fixed("BALL 1")`, `Param("player")`, or `Number((value: Param("score"), format: Grouped))`.
+/// In RON: `Fixed("BALL 1")`, `Variable("player")`, or `Number(value: Variable("score"), format: Grouped)`.
 ///
 /// [`ShapeNode::Text`]: crate::scene::ShapeNode::Text
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TextSource {
   Fixed(String),
-  /// Read from a text parameter. A number parameter is written out in digits, and a missing one, or one of another type,
-  /// is no text.
-  Param(String),
-  /// A number written out in `format`, such as a score from a parameter or a bonus counted up on keyframes
+  /// Read from a text variable, or one pointing at a text named value. A number is written out in digits, and a missing
+  /// variable, or one of another type, is no text.
+  #[serde(alias = "Param")]
+  Variable(String),
+  /// A number written out in `format`, such as a score from a variable or a bonus counted up on keyframes
   Number(NumberText),
 }
 
@@ -35,18 +36,32 @@ impl From<String> for TextSource {
 impl TextSource {
   pub(crate) fn is_animated(&self) -> bool {
     match self {
-      Self::Fixed(_) | Self::Param(_) => false,
+      Self::Fixed(_) | Self::Variable(_) => false,
       Self::Number(number) => number.value.is_animated(),
+    }
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Fixed(_) => {}
+      Self::Variable(name) => inputs.variable(name, VariableType::Text),
+      Self::Number(number) => number.value.read_inputs(inputs),
     }
   }
 
   pub(crate) fn resolve<'a>(&'a self, env: &'a Env) -> Cow<'a, str> {
     match self {
       Self::Fixed(text) => Cow::Borrowed(text),
-      Self::Param(name) => match env.param(name) {
+      Self::Variable(name) => match env.variable(name) {
         Some(Value::Text(text)) => Cow::Borrowed(text),
         Some(Value::Int(number)) => Cow::Owned(number.to_string()),
         Some(Value::Float(number)) => Cow::Owned(number.to_string()),
+        Some(Value::Named(value)) => match env.named(value) {
+          Some((NamedValue::Text(text), _)) => Cow::Borrowed(text),
+          Some((NamedValue::Int(number), _)) => Cow::Owned(number.to_string()),
+          Some((NamedValue::Float(number), env)) => Cow::Owned(number.resolve(&env).to_string()),
+          _ => Cow::Borrowed(""),
+        },
         _ => Cow::Borrowed(""),
       },
       Self::Number(number) => Cow::Owned(number.format.write(number.resolve(env))),
@@ -64,13 +79,18 @@ pub struct NumberText {
 }
 
 impl NumberText {
-  /// A parameter is read here rather than through `value`, as an `Int` score can be too large for an `f32` to hold
+  /// A variable is read here rather than through `value`, as an `Int` score can be too large for an `f32` to hold
   /// exactly
   fn resolve(&self, env: &Env) -> i64 {
     match &self.value {
-      Prop::Param(name) => match env.param(name) {
+      Prop::Variable(name) => match env.variable(name) {
         Some(Value::Int(number)) => *number,
         Some(Value::Float(number)) => *number as i64,
+        Some(Value::Named(value)) => match env.named(value) {
+          Some((NamedValue::Int(number), _)) => *number,
+          Some((NamedValue::Float(number), env)) => number.resolve(&env) as i64,
+          _ => 0,
+        },
         _ => 0,
       },
       value => value.resolve(env) as i64,
@@ -148,7 +168,7 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::scene::value::tests::env;
-  use crate::scene::{Key, Keyframes, Params};
+  use crate::scene::{Key, Keyframes, Variables};
 
   #[test]
   fn grouped_puts_commas_between_thousands() {
@@ -187,18 +207,18 @@ mod tests {
 
   #[test]
   fn param_text_is_read_and_numbers_are_written_out() {
-    let params = Params::from([("name".into(), Value::Text("TOM".into())), ("ball".into(), Value::Int(3))]);
-    let env = env(0.0, &params);
-    assert_eq!(TextSource::Param("name".into()).resolve(&env), "TOM");
-    assert_eq!(TextSource::Param("ball".into()).resolve(&env), "3");
-    assert_eq!(TextSource::Param("missing".into()).resolve(&env), "");
+    let variables = Variables::from([("name".into(), Value::Text("TOM".into())), ("ball".into(), Value::Int(3))]);
+    let env = env(0.0, &variables);
+    assert_eq!(TextSource::Variable("name".into()).resolve(&env), "TOM");
+    assert_eq!(TextSource::Variable("ball".into()).resolve(&env), "3");
+    assert_eq!(TextSource::Variable("missing".into()).resolve(&env), "");
   }
 
   #[test]
   fn a_number_param_is_exact_past_what_a_float_holds() {
-    let params = Params::from([("score".into(), Value::Int(123_456_789))]);
-    let number = TextSource::Number(NumberText { value: Prop::Param("score".into()), format: NumberFormat::Grouped });
-    assert_eq!(number.resolve(&env(0.0, &params)), "123,456,789");
+    let variables = Variables::from([("score".into(), Value::Int(123_456_789))]);
+    let number = TextSource::Number(NumberText { value: Prop::Variable("score".into()), format: NumberFormat::Grouped });
+    assert_eq!(number.resolve(&env(0.0, &variables)), "123,456,789");
   }
 
   #[test]
@@ -206,6 +226,6 @@ mod tests {
     let keys = Keyframes::new(vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 1000.0, Curve::Linear)], Cycle::Once);
     let number = TextSource::Number(NumberText { value: Prop::Keyframes(keys), format: NumberFormat::Grouped });
     assert!(number.is_animated());
-    assert_eq!(number.resolve(&env(0.5, &Params::new())), "500");
+    assert_eq!(number.resolve(&env(0.5, &Variables::new())), "500");
   }
 }

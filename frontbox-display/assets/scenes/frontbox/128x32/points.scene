@@ -1,0 +1,294 @@
+Scene(
+  version: 2,
+  variables: {
+    "ball": Int(1),
+    "player": Int(1),
+    "player_1_color": Value("current"),
+    "player_1_visible": Bool(true),
+    "player_2_color": Value("waiting"),
+    "player_2_visible": Bool(true),
+    "player_3_color": Value("waiting"),
+    "player_3_visible": Bool(true),
+    "player_4_color": Value("waiting"),
+    "player_4_visible": Bool(true),
+    "score": Int(4231890),
+    "score_1": Int(4231890),
+    "score_2": Int(1250000),
+    "score_3": Int(87420),
+    "score_4": Int(0),
+  },
+  values: {
+    "current": Color(Fixed(255, 230, 120, 255)),
+    "waiting": Color(Fixed(150, 150, 150, 255)),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player",
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(12.5, 3.0)),
+          ],
+          base: Text(
+            text: Fixed("PLAYER"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(23.0),
+            height: Fixed(6.0),
+            align: Left,
+            vertical_align: Top,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player number",
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(29.0, 4.0)),
+          ],
+          base: Text(
+            text: Variable("player"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(8.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Top,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Ball",
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(41.0, 3.0)),
+          ],
+          base: Text(
+            text: Fixed("BALL"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(14.0),
+            height: Fixed(6.0),
+            align: Left,
+            vertical_align: Top,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Ball number",
+        fill: (
+          base: Solid(Fixed(255, 230, 120, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(54.0, 4.0)),
+          ],
+          base: Text(
+            text: Variable("ball"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(8.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Top,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      z: 1,
+      layer: (
+        name: "Score",
+        fill: (
+          transform: [
+            Rotate(Fixed(90.0)),
+          ],
+          base: Gradient(
+            stops: [
+              (
+                at: 0.0,
+                color: Fixed(0, 234, 255, 255),
+              ),
+              (
+                at: 1.0,
+                color: Fixed(9, 12, 135, 255),
+              ),
+            ],
+            style: Linear,
+          ),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 15.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score"),
+              format: Grouped,
+            ),
+            font: "TenFatGuys",
+            size: Fixed(16.0),
+            width: Fixed(122.0),
+            height: Fixed(16.0),
+            align: Right,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player 1 score",
+        visible: Variable("player_1_visible"),
+        fill: (
+          base: Solid(Variable("player_1_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(16.0, 28.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score_1"),
+              format: Abbreviated(
+                length: 5,
+              ),
+            ),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(30.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Bottom,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player 2 score",
+        visible: Variable("player_2_visible"),
+        fill: (
+          base: Solid(Variable("player_2_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(48.0, 28.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score_2"),
+              format: Abbreviated(
+                length: 5,
+              ),
+            ),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(30.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Bottom,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player 3 score",
+        visible: Variable("player_3_visible"),
+        fill: (
+          base: Solid(Variable("player_3_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(80.0, 28.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score_3"),
+              format: Abbreviated(
+                length: 5,
+              ),
+            ),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(30.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Bottom,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Player 4 score",
+        visible: Variable("player_4_visible"),
+        fill: (
+          base: Solid(Variable("player_4_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(112.0, 28.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score_4"),
+              format: Abbreviated(
+                length: 5,
+              ),
+            ),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(30.0),
+            height: Fixed(8.0),
+            align: Left,
+            vertical_align: Bottom,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

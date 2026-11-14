@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::color::RgbaColor;
 use crate::layout::Grid;
-use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Cover, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop};
+use crate::scene::{Bounds, Env, Fill, LayerFrame, Graph, GraphMask, Mask, Cover, PreparedFill, PreparedMask, PreparedShape, Sample, SceneError, Shape, ShapePose, Speed, Surface, Timing, Transform, Visits, Prop, Inputs};
 
 /// A fill drawn in a region
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -14,10 +14,16 @@ pub struct Layer {
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
   pub name: Option<String>,
-  /// Skipped when drawing, but still validated by `check`
+  /// Skipped when drawing, but still validated by `check`. For the editor, to see the layers under it; `visible` is
+  /// for the scene.
   #[serde(default, skip_serializing_if = "std::ops::Not::not")]
   #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
   pub hidden: bool,
+  /// Whether it's drawn, such as a score for a player who's in the game. Like any prop, it can come from a variable, or
+  /// switch on keyframes; a number, as from a random prop or a wave, is visible from 0.5 up. Always visible if left out.
+  #[serde(default = "always_visible", skip_serializing_if = "is_always_visible")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Prop<bool>>", optional))]
+  pub visible: Prop<bool>,
   pub fill: Fill,
   /// Where the layer draws, and what its fill is stretched over. `None` covers the whole viewport.
   #[serde(default, alias = "shape", skip_serializing_if = "Option::is_none")]
@@ -35,7 +41,7 @@ pub struct Layer {
 
 impl Layer {
   pub fn new(fill: Fill) -> Self {
-    Self { name: None, hidden: false, fill, region: None, mask: None, graph: None }
+    Self { name: None, hidden: false, visible: always_visible(), fill, region: None, mask: None, graph: None }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -45,6 +51,11 @@ impl Layer {
 
   pub fn hidden(mut self) -> Self {
     self.hidden = true;
+    self
+  }
+
+  pub fn visible(mut self, visible: impl Into<Prop<bool>>) -> Self {
+    self.visible = visible.into();
     self
   }
 
@@ -74,9 +85,19 @@ impl Layer {
 
   pub(crate) fn is_animated(&self) -> bool {
     self.fill.is_animated()
+      || self.visible.is_animated()
       || self.region.as_ref().is_some_and(Shape::is_animated)
       || self.mask.as_ref().is_some_and(Mask::is_animated)
       || self.graph.as_ref().is_some_and(GraphMask::is_animated)
+  }
+
+  /// Adds the variables it reads to `inputs`
+  pub fn read_inputs(&self, inputs: &mut Inputs) {
+    self.visible.read_inputs(inputs);
+    self.fill.read_inputs(inputs);
+    self.region.iter().for_each(|region| region.read_inputs(inputs));
+    self.mask.iter().for_each(|mask| mask.read_inputs(inputs));
+    self.graph.iter().for_each(|graph| graph.read_inputs(inputs));
   }
 
   /// Names of the images the layer and its mask use
@@ -110,7 +131,7 @@ impl Layer {
     Ok(())
   }
 
-  /// The color at a sample. A hidden layer draws nothing. Without a shape it's clipped to the viewport; a shape can
+  /// The color at a sample. A hidden layer, or one that isn't visible, draws nothing. Without a shape it's clipped to the viewport; a shape can
   /// extend past it.
   ///
   /// To sample many points in one frame, [`Self::prepare`] once and sample that.
@@ -123,8 +144,9 @@ impl Layer {
   pub fn prepare<'a>(&'a self, frame: &LayerFrame<'a>, radius: f32) -> PreparedLayer<'a> {
     let by_node = self.graph.is_some() && frame.visits.is_some();
     let env = Env { lap: lap(frame.surface, radius), ..env(frame) };
-    let drawn = (!self.hidden && !by_node).then(|| Drawn::new(self, radius, &env));
-    PreparedLayer { layer: self, frame: *frame, radius, drawn }
+    let shown = !self.hidden && self.visible.resolve(&env);
+    let drawn = (shown && !by_node).then(|| Drawn::new(self, radius, &env));
+    PreparedLayer { layer: self, frame: *frame, radius, shown, drawn }
   }
 
   /// Draws the layer over `pixels`, a row at a time from the top left of `grid`
@@ -181,7 +203,9 @@ pub struct PreparedLayer<'a> {
   frame: LayerFrame<'a>,
   /// The sample radius it was prepared for
   radius: f32,
-  /// `None` for a hidden layer, or one prepared again at each node
+  /// Whether it's drawn this frame. A layer prepared again at each node checks again there, as a visit can show it.
+  shown: bool,
+  /// `None` for a layer that isn't shown, or one prepared again at each node
   drawn: Option<Drawn<'a>>,
 }
 
@@ -192,11 +216,18 @@ impl PreparedLayer<'_> {
     if self.layer.hidden || (self.layer.graph.is_some() && at.node.is_none()) {
       return Rgba([0, 0, 0, 0]);
     }
+    let by_node = self.layer.graph.is_some() && self.frame.visits.is_some();
+    if !by_node && !self.shown {
+      return Rgba([0, 0, 0, 0]);
+    }
     match &self.drawn {
       Some(drawn) if at.radius == self.radius => drawn.sample(at),
       _ => {
         let visits = self.frame.visits.zip(at.node).map(|(visits, node)| visits.at(node));
         let env = Env { lap: lap(self.frame.surface, at.radius), visits, ..env(&self.frame) };
+        if by_node && !self.layer.visible.resolve(&env) {
+          return Rgba([0, 0, 0, 0]);
+        }
         Drawn::new(self.layer, at.radius, &env).sample(at)
       }
     }
@@ -268,6 +299,14 @@ fn covering(mut color: Rgba<u8>, coverage: f32) -> Rgba<u8> {
   color
 }
 
+fn always_visible() -> Prop<bool> {
+  Prop::Fixed(true)
+}
+
+fn is_always_visible(visible: &Prop<bool>) -> bool {
+  matches!(visible, Prop::Fixed(true))
+}
+
 /// The resolve environment for a frame. With no sample radius to go on, `lap` assumes points dense enough that their
 /// spacing doesn't matter.
 pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
@@ -276,8 +315,10 @@ pub(crate) fn env<'a>(frame: &LayerFrame<'a>) -> Env<'a> {
     cycle: frame.timing.map_or(0, |timing| timing.cycle_index(frame.time)),
     timing: frame.timing,
     playback_seed: frame.playback_seed,
-    params: frame.params,
+    variables: frame.variables,
     defaults: frame.defaults,
+    values: frame.values,
+    depth: 0,
     assets: frame.assets,
     viewport: frame.surface.viewport(frame.size),
     lap: lap(frame.surface, 0.0),

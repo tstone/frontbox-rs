@@ -4,8 +4,8 @@ import type { NumberText } from "./NumberText";
 /**
  * Where a [`ShapeNode::Text`]'s text comes from
  *
- * In RON: `Fixed("BALL 1")`, `Param("player")`, or `Number((value: Param("score"), format: Grouped))`.
+ * In RON: `Fixed("BALL 1")`, `Variable("player")`, or `Number(value: Variable("score"), format: Grouped)`.
  *
  * [`ShapeNode::Text`]: crate::scene::ShapeNode::Text
  */
-export type TextSource = { "Fixed": string } | { "Param": string } | { "Number": NumberText };
+export type TextSource = { "Fixed": string } | { "Variable": string } | { "Number": NumberText };

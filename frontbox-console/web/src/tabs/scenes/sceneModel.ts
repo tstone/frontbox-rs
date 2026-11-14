@@ -7,6 +7,7 @@ import type { ImageInfo } from '../../types/generated/ImageInfo'
 import type { Key } from '../../types/generated/Key'
 import type { Layer } from '../../types/generated/Layer'
 import type { Mask } from '../../types/generated/Mask'
+import type { NamedValue } from '../../types/generated/NamedValue'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { Prop } from '../../types/generated/Prop'
@@ -46,7 +47,7 @@ export type Surface = Vec2 | null
 export type LayerSurfaces = (layer: SceneLayer) => Surface
 
 /** What a `Prop` can hold */
-export type SceneValue = number | Vec2 | Color
+export type SceneValue = number | Vec2 | Color | boolean
 
 /** The span a slider covers. The number box next to it can go past this. */
 export type Range = {
@@ -124,34 +125,121 @@ export function moved<T>(list: T[], index: number, by: number): T[] {
   return next
 }
 
-/** The value a param holds, as `Value` tags each kind */
+/** The value a variable holds, as `Value` tags each kind */
 export function wrapValue(value: SceneValue): Value {
+  if (typeof value === 'boolean') return { Bool: value }
   if (typeof value === 'number') return { Float: value }
   return value.length === 2 ? { Vec2: value } : { Color: value }
 }
 
-/** A param a prop can read, which is any but text */
-export type PropValue = Exclude<Value, { Text: string }>
+/** A variable a prop can read, which is any but text, or one pointing at a named value */
+export type PropValue = Exclude<Value, { Text: string } | { Value: string }>
 
 export function unwrapValue(value: PropValue): SceneValue {
   if ('Float' in value) return value.Float
   if ('Int' in value) return value.Int
+  if ('Bool' in value) return value.Bool
   return 'Vec2' in value ? value.Vec2 : value.Color
 }
 
+/** Whether a value of kind `given` can feed a prop of kind `kind`. A number prop reads an `Int`, and true or false reads any number. */
+function kindReads(kind: string, given: string) {
+  return given === kind || (kind === 'Float' && given === 'Int') || (kind === 'Bool' && (given === 'Float' || given === 'Int'))
+}
+
+/** `value` as a prop holding values like `like` takes it: a number is true from 0.5 up, as on the machine */
+function asLike<T extends SceneValue>(value: SceneValue, like: T): T {
+  if (typeof like === 'boolean' && typeof value === 'number') return (value >= 0.5) as T
+  return value as T
+}
+
 /**
- * Whether a param can feed a prop holding values like `like`. A param of the wrong type gives the type's default. A
- * number prop reads an `Int` too.
+ * Whether a variable can feed a prop holding values like `like`. A variable of the wrong type gives the type's default. A
+ * number prop reads an `Int` too, and true or false reads any number.
  */
-export function paramFits(param: Value | undefined, like: SceneValue): param is PropValue {
-  if (param === undefined) return false
-  const kind = Object.keys(wrapValue(like))[0]
-  return Object.keys(param)[0] === kind || (kind === 'Float' && 'Int' in param)
+export function variableFits(variable: Value | undefined, like: SceneValue): variable is PropValue {
+  if (variable === undefined) return false
+  return kindReads(Object.keys(wrapValue(like))[0], Object.keys(variable)[0])
+}
+
+/** Whether a variable a prop holding values like `like` reads is that type, following one that points at a named value */
+export function variableReads(scene: Scene, name: string, like: SceneValue): boolean {
+  const variable = scene.variables?.[name]
+  if (variable === undefined || !('Value' in variable)) return variableFits(variable, like)
+  const named = scene.values?.[variable.Value]
+  if (named === undefined) return false
+  return kindReads(Object.keys(wrapValue(like))[0], Object.keys(named)[0])
+}
+
+/** A named value as a prop, for one a prop can read, which is any but text */
+export function namedProp(named: NamedValue | undefined): Prop<SceneValue> | undefined {
+  if (named === undefined || 'Text' in named) return undefined
+  if ('Int' in named) return { Fixed: named.Int }
+  if ('Float' in named) return named.Float
+  if ('Bool' in named) return named.Bool
+  return 'Vec2' in named ? named.Vec2 : named.Color
+}
+
+/** The kinds of named value, as `NamedValue` tags them */
+export type NamedValueKind = 'Color' | 'Float' | 'Vec2' | 'Int' | 'Text' | 'Bool'
+export const NAMED_VALUE_KINDS: NamedValueKind[] = ['Color', 'Float', 'Vec2', 'Int', 'Text', 'Bool']
+
+/** A named value of `kind`, before it's been given one */
+export function newNamedValue(kind: NamedValueKind): NamedValue {
+  if (kind === 'Color') return { Color: { Fixed: [255, 255, 255, 255] } }
+  if (kind === 'Float') return { Float: { Fixed: 0 } }
+  if (kind === 'Vec2') return { Vec2: { Fixed: [0, 0] } }
+  if (kind === 'Bool') return { Bool: { Fixed: true } }
+  return kind === 'Int' ? { Int: 0 } : { Text: '' }
+}
+
+/** `base`, or `base_2` and so on if `taken` says it's taken */
+function freshName(base: string, taken: (name: string) => boolean) {
+  if (!taken(base)) return base
+  let n = 2
+  while (taken(`${base}_${n}`)) n++
+  return `${base}_${n}`
+}
+
+/** A scene with a new named value of `kind` */
+export function withNewValue(scene: Scene, kind: NamedValueKind): Scene {
+  const name = freshName('value', (name) => scene.values?.[name] !== undefined)
+  return { ...scene, values: { ...scene.values, [name]: newNamedValue(kind) } }
+}
+
+/** `record` with the key `from` renamed `to`, in the same place */
+function renamedKey<T>(record: Record<string, T>, from: string, to: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).map(([key, value]) => [key === from ? to : key, value]))
+}
+
+/** A scene with a named value renamed, and the variables pointing at it following. A name that's taken or empty is refused. */
+export function withValueRenamed(scene: Scene, from: string, to: string): Scene {
+  if (to === '' || scene.values?.[to] !== undefined) return scene
+  const variables = Object.fromEntries(
+    Object.entries(scene.variables ?? {}).map(([name, value]) => [name, 'Value' in value && value.Value === from ? { Value: to } : value]),
+  )
+  return { ...scene, values: renamedKey(scene.values ?? {}, from, to), variables }
+}
+
+/** What a named value shows, as a variable's own value */
+export function ownValue(scene: Scene, named: NamedValue): Value {
+  if ('Int' in named) return { Int: named.Int }
+  if ('Text' in named) return { Text: named.Text }
+  const fallback: SceneValue = 'Float' in named ? 0 : 'Vec2' in named ? [0, 0] : 'Bool' in named ? true : [0, 0, 0, 0]
+  return wrapValue(startingValue(namedProp(named)!, scene, fallback))
+}
+
+/** A scene without a named value. A variable that pointed at it keeps what it showed, as a value of its own. */
+export function withoutValue(scene: Scene, name: string): Scene {
+  const { [name]: removed, ...values } = scene.values ?? {}
+  const kept = (value: Value): Value => ('Value' in value && value.Value === name && removed !== undefined ? ownValue(scene, removed) : value)
+  const variables = Object.fromEntries(Object.entries(scene.variables ?? {}).map(([variable, value]) => [variable, kept(value)]))
+  return { ...scene, values, variables }
 }
 
 /** Whether a random prop holding values like `like` can pick from a spread. One of the wrong type gives the type's default. */
 export function spreadFits(spread: Spread, like: SceneValue) {
-  return Object.keys(spread)[0] === Object.keys(wrapValue(like))[0]
+  return kindReads(Object.keys(wrapValue(like))[0], Object.keys(spread)[0])
 }
 
 const midpoint = ([low, high]: [number, number]) => (low + high) / 2
@@ -197,33 +285,43 @@ export function wavePosition({ rate }: Modulated, phase: number, cycles: number)
 
 /** The widest spread for a prop holding values like `like`, short of making a color see-through */
 export function fullSpread(like: SceneValue, [x, y]: Ranges): Spread {
+  // half the range is true
+  if (typeof like === 'boolean') return { Float: [0, 1] }
   if (typeof like === 'number') return { Float: [x.min, x.spreadEnd ?? x.max] }
   if (like.length === 2) return { Vec2: { x: [x.min, x.max], y: [y.min, y.max] } }
   return { Color: { hue: [HUE.min, HUE.max], brightness: [UNIT.min, UNIT.max], alpha: [UNIT.max, UNIT.max] } }
 }
 
-/** The value a prop shows with no game running: the parameter's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
-export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T): T {
+/** The value a prop shows with no game running: the variable's default, a track's first key, the middle of a spread, where a wave starts, where a path was moved to, or a visit response at rest */
+export function startingValue<T extends SceneValue>(prop: Prop<T>, scene: Scene, fallback: T, depth = 0): T {
   if ('Fixed' in prop) return prop.Fixed
   if ('Visit' in prop) return prop.Visit.from
   if ('Keyframes' in prop) return prop.Keyframes.keys[0]?.value ?? fallback
-  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? (spreadAt(prop.Random.spread, 0.5) as T) : fallback
+  if ('Random' in prop) return spreadFits(prop.Random.spread, fallback) ? asLike(spreadAt(prop.Random.spread, 0.5), fallback) : fallback
   if ('Modulated' in prop) {
     const { spread, envelope, phase } = prop.Modulated
     const position = wavePosition(prop.Modulated, startingValue(phase, scene, 0), 0)
-    return spreadFits(spread, fallback) ? (spreadAt(spread, envelopeHeight(envelope, position)) as T) : fallback
+    return spreadFits(spread, fallback) ? asLike(spreadAt(spread, envelopeHeight(envelope, position)), fallback) : fallback
   }
   if ('Sweep' in prop) {
     const moved = prop.Sweep.path.transform?.find((transform) => 'Translate' in transform)
     return moved && 'Translate' in moved ? (startingValue(moved.Translate, scene, fallback as Vec2) as T) : fallback
   }
-  const param = scene.params?.[prop.Param]
-  return paramFits(param, fallback) ? (unwrapValue(param) as T) : fallback
+  const variable = scene.variables?.[prop.Variable]
+  // values that point at each other stop, as they do on the machine
+  if (variable !== undefined && 'Value' in variable) {
+    const named = namedProp(scene.values?.[variable.Value])
+    return named && depth < MAX_VALUE_DEPTH && variableReads(scene, prop.Variable, fallback) ? startingValue(named as Prop<T>, scene, fallback, depth + 1) : fallback
+  }
+  return variableFits(variable, fallback) ? (unwrapValue(variable) as T) : fallback
 }
 
-/** `base`, or `base_2` and so on if a parameter already has that name */
-export function freshParamName(scene: Scene, base: string) {
-  const taken = (name: string) => scene.params?.[name] !== undefined
+/** How many named values deep a variable resolves, as on the machine */
+const MAX_VALUE_DEPTH = 8
+
+/** `base`, or `base_2` and so on if a variable already has that name */
+export function freshVariableName(scene: Scene, base: string) {
+  const taken = (name: string) => scene.variables?.[name] !== undefined
   if (!taken(base)) return base
   let n = 2
   while (taken(`${base}_${n}`)) n++
@@ -301,14 +399,14 @@ export function framesTrack(info: ImageInfo, { duration }: Timing): Prop<number>
   return { Keyframes: { keys, cycle: 'Once' } }
 }
 
-/** Scene with a parameter added or changed */
-export function withParam(scene: Scene, name: string, value: SceneValue): Scene {
-  return withParamValue(scene, name, wrapValue(value))
+/** Scene with a variable added or changed */
+export function withVariable(scene: Scene, name: string, value: SceneValue): Scene {
+  return withVariableValue(scene, name, wrapValue(value))
 }
 
-/** `withParam` for a value of any type, such as text */
-export function withParamValue(scene: Scene, name: string, value: Value): Scene {
-  return { ...scene, params: { ...scene.params, [name]: value } }
+/** `withVariable` for a value of any type, such as text */
+export function withVariableValue(scene: Scene, name: string, value: Value): Scene {
+  return { ...scene, variables: { ...scene.variables, [name]: value } }
 }
 
 /** The plane an `Area` layer covers, which is `null` for a `Sequence` or a layer of a DMD */
@@ -485,6 +583,7 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     const layer = item(layers, index)
     const label = layerLabel(layers.get()[index], index)
 
+    use(layerVisible(layer), `${label} · Visible`, both(UNIT))
     fill(field(layer, 'fill'), label)
     if (region) shape(field(layer, 'region') as Lens<Shape>, label, `${label} · Region`)
     if (layerGraph) graph(field(layer, 'graph') as Lens<GraphMask>, `${label} · Graph`)
@@ -502,7 +601,20 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
   layerIndex = null
   inMask = false
   sounds.get().forEach((layer, index) => use(soundVolume(item(sounds, index)), `${soundLabel(layer, index)} · Volume`, both(VOLUME)))
+
+  const values = field(scene, 'values') as Lens<Record<string, NamedValue>>
+  for (const [name, value] of Object.entries(values.get() ?? {})) {
+    const kind = Object.keys(value)[0] as NamedValueKind
+    if (kind === 'Int' || kind === 'Text') continue
+    use(variant(field(values, name), kind), `Value · ${name}`, both(UNREFERENCED))
+  }
   return uses
+}
+
+/** Whether a layer is drawn, which it always is when the file leaves it out, as the file does then */
+export function layerVisible(layer: Lens<SceneLayer>): Lens<Prop<boolean>> {
+  const visible = field(layer, 'visible')
+  return { get: () => visible.get() ?? { Fixed: true }, set: (next) => visible.set('Fixed' in next && next.Fixed === true ? undefined : next) }
 }
 
 /** A sound layer's volume, which is 1 when the file leaves it out */
@@ -516,19 +628,19 @@ export const layerLabel = (layer: SceneLayer, index: number) => layer.name ?? `L
 
 const reading = (scene: Scene): Lens<Scene> => ({ get: () => scene, set: () => {} })
 
-/** The names of the parameters a scene's props read */
-function referencedParams(scene: Scene) {
+/** The names of the variables a scene's props read */
+function referencedVariables(scene: Scene) {
   const names = new Set<string>()
   for (const { lens } of propUses(reading(scene))) {
     const prop = lens.get()
-    if ('Param' in prop) names.add(prop.Param)
+    if ('Variable' in prop) names.add(prop.Variable)
   }
   // text isn't a prop, so it's found on its own
   const visit = (value: unknown) => {
     if (Array.isArray(value)) return value.forEach(visit)
     if (value === null || typeof value !== 'object') return
     const text = (value as { Text?: { text?: TextSource } }).Text?.text
-    if (text !== undefined && typeof text === 'object' && 'Param' in text) names.add(text.Param)
+    if (text !== undefined && typeof text === 'object' && 'Variable' in text) names.add(text.Variable)
     Object.values(value).forEach(visit)
   }
   visit(scene.layers)
@@ -752,6 +864,8 @@ function traverses(scene: Scene) {
 }
 
 function lerp(a: SceneValue, b: SceneValue, by: number): SceneValue {
+  // true or false holds until the key it arrives at, as on the machine
+  if (typeof a === 'boolean') return by >= 1 ? b : a
   if (typeof a === 'number') return a + ((b as number) - a) * by
   const mixed = a.map((channel, i) => (lerp(channel, (b as number[])[i], by) as number))
   return (a.length === 4 ? mixed.map(Math.round) : mixed) as SceneValue
@@ -796,7 +910,7 @@ export function withKeyCopy(keys: Key<SceneValue>[], index: number, at: number):
  * somewhere to go.
  */
 export function newVisit(traversal: string, current: SceneValue, [range]: Ranges): VisitResponse<SceneValue> {
-  const [from, to] = typeof current === 'number' ? [0, range.max] : [current, current]
+  const [from, to] = typeof current === 'number' ? [0, range.max] : typeof current === 'boolean' ? [false, true] : [current, current]
   return { traversal, from, to, smooth_in: 1, hold: 1, smooth_out: 1, curve_in: 'Linear', curve_out: 'Linear', overlap: 'Max' }
 }
 
@@ -848,23 +962,23 @@ export function withPick(random: Random, at: number): Random {
 }
 
 /**
- * `next` without the parameters that `current` read and it doesn't, so a parameter goes away with the last prop using
+ * `next` without the variables that `current` read and it doesn't, so a variable goes away with the last prop using
  * it. One that nothing has read yet stays, as whoever wrote it may be about to use it.
  */
-export function withoutDroppedParams(current: Scene, next: Scene): Scene {
-  const stillRead = referencedParams(next)
-  const dropped = [...referencedParams(current)].filter((name) => !stillRead.has(name))
-  if (dropped.length === 0 || !next.params) return next
-  const params = { ...next.params }
-  for (const name of dropped) delete params[name]
-  return { ...next, params }
+export function withoutDroppedVariables(current: Scene, next: Scene): Scene {
+  const stillRead = referencedVariables(next)
+  const dropped = [...referencedVariables(current)].filter((name) => !stillRead.has(name))
+  if (dropped.length === 0 || !next.variables) return next
+  const variables = { ...next.variables }
+  for (const name of dropped) delete variables[name]
+  return { ...next, variables }
 }
 
-/** The ranges for a parameter's sliders, from the first prop that reads it */
-export function paramRanges(scene: Scene, name: string, surfaces: LayerSurfaces): Ranges {
+/** The ranges for a variable's sliders, from the first prop that reads it */
+export function variableRanges(scene: Scene, name: string, surfaces: LayerSurfaces): Ranges {
   const use = propUses(reading(scene), surfaces).find(({ lens }) => {
     const prop = lens.get()
-    return 'Param' in prop && prop.Param === name
+    return 'Variable' in prop && prop.Variable === name
   })
   return use?.ranges ?? both(UNREFERENCED)
 }
@@ -880,7 +994,7 @@ export const HUE: Range = { min: 0, max: 360, step: 1, rest: 0 }
 const OPACITY: Range = { ...UNIT, rest: 1 }
 /** A multiplier that can go either way, and leaves things alone at 1 */
 const FACTOR: Range = { min: 0, max: 2, step: 0.01, rest: 1 }
-const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
+export const UNREFERENCED: Range = { min: -100, max: 100, step: 0.1, rest: 0 }
 const FILL_MOVE: Range = { min: -1, max: 1, step: 0.01, rest: 0 }
 const SCALE: Range = { min: 0, max: 16, step: 0.01, rest: 1 }
 /** Steps a second, or for a traversal that goes by distance, scene units a second */
@@ -920,11 +1034,11 @@ export const LEG_WIDTH: Range = { min: 0, max: 2, step: 0.01, rest: 0.65 }
 export type AdjustKind = KeysOf<ColorAdjust>
 
 /** What to call each kind of adjust, what to call its amount, and its range, which rests where it changes nothing */
-export const ADJUSTS: Record<AdjustKind, { label: string; amount: string; paramName: string; range: Range }> = {
-  HueShift: { label: 'Hue shift', amount: 'Degrees', paramName: 'hue_shift', range: HUE },
-  Opacity: { label: 'Opacity', amount: 'Opacity', paramName: 'opacity', range: OPACITY },
-  Brightness: { label: 'Brightness', amount: 'Brightness', paramName: 'brightness', range: FACTOR },
-  Contrast: { label: 'Contrast', amount: 'Contrast', paramName: 'contrast', range: FACTOR },
+export const ADJUSTS: Record<AdjustKind, { label: string; amount: string; variableName: string; range: Range }> = {
+  HueShift: { label: 'Hue shift', amount: 'Degrees', variableName: 'hue_shift', range: HUE },
+  Opacity: { label: 'Opacity', amount: 'Opacity', variableName: 'opacity', range: OPACITY },
+  Brightness: { label: 'Brightness', amount: 'Brightness', variableName: 'brightness', range: FACTOR },
+  Contrast: { label: 'Contrast', amount: 'Contrast', variableName: 'contrast', range: FACTOR },
 }
 
 export const adjustKind = (adjust: ColorAdjust) => Object.keys(adjust)[0] as AdjustKind

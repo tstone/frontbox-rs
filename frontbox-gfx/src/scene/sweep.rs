@@ -2,7 +2,7 @@ use glam::Vec2;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::scene::{Animatable, Env, Prop, Shape, ShapeNode};
+use crate::scene::{Animatable, Env, Inputs, Prop, Shape, ShapeNode};
 
 /// A position on a shape's outline, or along a polyline or bezier
 ///
@@ -35,6 +35,11 @@ impl Sweep {
   pub(crate) fn is_animated(&self) -> bool {
     self.position.is_animated() || self.path.is_animated()
   }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    self.position.read_inputs(inputs);
+    self.path.read_inputs(inputs);
+  }
 }
 
 /// Deserializes `Prop::Sweep`, rejecting it unless `T` is a position type
@@ -51,7 +56,7 @@ mod tests {
   use crate::animation::{Curve, Cycle};
   use crate::layout::Line;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Fill, FillNode, Key, Keyframes, LayerFrame, Assets, Layer, Params, Timing, Transform, Surface, Value, no_params};
+  use crate::scene::{Color, Fill, FillNode, Key, Keyframes, LayerFrame, Assets, Layer, Variables, Timing, Transform, Surface, Value, no_values, no_variables};
   use crate::scene::test_scene::Scene;
 
   /// Once along the path between `start` and `end` seconds
@@ -65,7 +70,7 @@ mod tests {
   }
 
   fn at(prop: &Prop<Vec2>, time: f32) -> Vec2 {
-    prop.resolve(&env(time, &Params::new()))
+    prop.resolve(&env(time, &Variables::new()))
   }
 
   #[test]
@@ -103,9 +108,9 @@ mod tests {
 
   #[test]
   fn its_position_can_come_from_a_param_without_a_timing() {
-    let sweep: Prop<Vec2> = Prop::Sweep(Sweep::new(Shape::new(ShapeNode::circle(10.0)), Prop::Param("lap".into())));
-    let params = Params::from([("lap".into(), Value::Float(0.5))]);
-    assert!(sweep.resolve(&env(0.0, &params)).abs_diff_eq(Vec2::new(-10.0, 0.0), 1e-4));
+    let sweep: Prop<Vec2> = Prop::Sweep(Sweep::new(Shape::new(ShapeNode::circle(10.0)), Prop::Variable("lap".into())));
+    let variables = Variables::from([("lap".into(), Value::Float(0.5))]);
+    assert!(sweep.resolve(&env(0.0, &variables)).abs_diff_eq(Vec2::new(-10.0, 0.0), 1e-4));
     assert!(!sweep.is_animated());
   }
 
@@ -139,8 +144,8 @@ mod tests {
     let scene = scene.timing(Timing::new(2.0, Cycle::Forever));
 
     let lit = |time: f32| {
-      let params = Params::new();
-      let frame = LayerFrame { time, playback_seed: 0, params: &params, assets: Assets::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None, timing: None, defaults: no_params() };
+      let variables = Variables::new();
+      let frame = LayerFrame { time, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::ZERO, surface: Surface::Area, visits: None, timing: None, defaults: no_variables(), values: no_values() };
       let line = Line::new(5);
       line.samples().map(|sample| scene.sample(&sample, &frame)[0] > 0).collect::<Vec<_>>()
     };
@@ -152,7 +157,7 @@ mod tests {
   fn a_shapes_pose_has_the_paths_it_moves_along() {
     let moved = Transform::Translate(orbit(ShapeNode::circle(10.0), 0.0, 4.0));
     let shape = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Scale(1.0.into())).transform(moved);
-    let pose = shape.pose(&env(0.0, &Params::new())).unwrap();
+    let pose = shape.pose(&env(0.0, &Variables::new())).unwrap();
     assert!(pose.paths[0].is_none());
     let path = pose.paths[1].as_ref().unwrap();
     assert_eq!(path.bounds.max, Vec2::splat(10.0));

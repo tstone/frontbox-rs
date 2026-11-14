@@ -3,18 +3,18 @@ use std::sync::Arc;
 
 use frontbox_core::prelude::*;
 use frontbox_gfx::animation::{Curve, Lerp};
-use frontbox_gfx::scene::{EndBehavior, Params, Value};
+use frontbox_gfx::scene::{EndBehavior, Variables, Value};
 
 use crate::*;
 
-/// A [`Scene`] being played: the clock, parameters, and everything else that's only true while it plays, none of which is
+/// A [`Scene`] being played: the clock, variables, and everything else that's only true while it plays, none of which is
 /// written to a file. The [`SceneSystem`] makes one from a [`PlayableScene`] for each scene it's given to play, and
 /// systems that draw a kind of layer read them from it.
 #[derive(Debug, Clone)]
 pub struct Playback {
   scene: Arc<Scene>,
-  params: Params,
-  /// Params moving toward a value, by name
+  variables: Variables,
+  /// Variables moving toward a value, by name
   easing: BTreeMap<String, Ease>,
   elapsed: Duration,
   /// How much of the scene plays in a second
@@ -27,7 +27,7 @@ impl Playback {
   pub(crate) fn new<C>(playable: &PlayableScene<C>) -> Self {
     Self {
       scene: playable.scene().clone(),
-      params: playable.params().clone(),
+      variables: playable.variables().clone(),
       easing: BTreeMap::new(),
       elapsed: Duration::ZERO,
       speed: playable.speed(),
@@ -35,32 +35,38 @@ impl Playback {
     }
   }
 
-  /// Sets a parameter, taking the place of the scene's default, and of any ease toward another value
-  pub fn set_param(&mut self, name: impl Into<String>, value: impl Into<Value>) {
-    let name = name.into();
-    self.easing.remove(&name);
-    self.params.insert(name, value.into());
+  /// Sets a variable, taking the place of the scene's default, and of any ease toward another value
+  pub fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
+    let (name, value) = (name.into(), value.into());
+    self.scene.warn_if_missing(&name, &value);
+    self.insert_variable(name, value);
   }
 
-  /// Moves a parameter from where it is now to `to` over `duration`, along `curve`. Where it is now is the value it was
+  /// [`Playback::set_variable`] for a value that was already checked against the scene
+  pub(crate) fn insert_variable(&mut self, name: String, value: Value) {
+    self.easing.remove(&name);
+    self.variables.insert(name, value);
+  }
+
+  /// Moves a variable from where it is now to `to` over `duration`, along `curve`. Where it is now is the value it was
   /// last set or eased to, or else the scene's default. One with neither is set to `to` straight away.
-  pub fn ease_param(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve) {
+  pub fn ease_variable(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve) {
     let name = name.into();
     let to = to.into();
-    let from = self.params.get(&name).or_else(|| self.scene.params.get(&name)).cloned();
+    let from = self.variables.get(&name).or_else(|| self.scene.variables.get(&name)).cloned();
     match from {
       Some(from) if !duration.is_zero() => {
         self.easing.insert(name, Ease { from, to, elapsed: Duration::ZERO, duration, curve });
       }
-      _ => self.set_param(name, to),
+      _ => self.set_variable(name, to),
     }
   }
 
-  /// Moves time forward by `delta`. Eased parameters keep moving once the scene has completed.
+  /// Moves time forward by `delta`. Eased variables keep moving once the scene has completed.
   pub(crate) fn advance(&mut self, delta: Duration) {
     for (name, ease) in &mut self.easing {
       ease.elapsed = (ease.elapsed + delta).min(ease.duration);
-      self.params.insert(name.clone(), ease.value());
+      self.variables.insert(name.clone(), ease.value());
     }
     self.easing.retain(|_, ease| ease.elapsed < ease.duration);
 
@@ -86,11 +92,11 @@ impl Playback {
 
   /// Where it is now, for sampling the scene's layers with [`Scene::frame`]
   pub fn moment(&self) -> Moment<'_> {
-    Moment { time: self.elapsed.as_secs_f32(), playback_seed: self.playback_seed, params: &self.params }
+    Moment { time: self.elapsed.as_secs_f32(), playback_seed: self.playback_seed, variables: &self.variables }
   }
 }
 
-/// A parameter moving from one value to another
+/// A variable moving from one value to another
 #[derive(Debug, Clone)]
 struct Ease {
   from: Value,
@@ -119,7 +125,7 @@ mod tests {
   }
 
   fn float(playback: &Playback, name: &str) -> Option<f32> {
-    match playback.moment().params.get(name) {
+    match playback.moment().variables.get(name) {
       Some(Value::Float(value)) => Some(*value),
       _ => None,
     }
@@ -158,8 +164,8 @@ mod tests {
 
   #[test]
   fn an_eased_param_moves_from_where_it_was() {
-    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).param("y", 0.0));
-    playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).variable("y", 0.0));
+    playback.ease_variable("y", 10.0, Duration::from_secs(1), Curve::Linear);
     playback.advance(Duration::from_millis(250));
     assert_eq!(float(&playback, "y"), Some(2.5));
     playback.advance(Duration::from_secs(2));
@@ -169,18 +175,18 @@ mod tests {
   #[test]
   fn an_eased_param_starts_from_the_scenes_default() {
     let mut scene = Scene::new(vec![]);
-    scene.params.insert("y".into(), Value::Float(4.0));
+    scene.variables.insert("y".into(), Value::Float(4.0));
     let mut playback = Playback::new(&PlayableScene::new(scene));
-    playback.ease_param("y", 8.0, Duration::from_secs(1), Curve::Linear);
+    playback.ease_variable("y", 8.0, Duration::from_secs(1), Curve::Linear);
     playback.advance(Duration::from_millis(500));
     assert_eq!(float(&playback, "y"), Some(6.0));
   }
 
   #[test]
   fn setting_an_eased_param_ends_the_ease() {
-    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).param("y", 0.0));
-    playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
-    playback.set_param("y", 3.0);
+    let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])).variable("y", 0.0));
+    playback.ease_variable("y", 10.0, Duration::from_secs(1), Curve::Linear);
+    playback.set_variable("y", 3.0);
     playback.advance(Duration::from_millis(500));
     assert_eq!(float(&playback, "y"), Some(3.0));
   }
@@ -188,7 +194,7 @@ mod tests {
   #[test]
   fn a_param_with_nowhere_to_ease_from_is_set() {
     let mut playback = Playback::new(&PlayableScene::new(Scene::new(vec![])));
-    playback.ease_param("y", 10.0, Duration::from_secs(1), Curve::Linear);
+    playback.ease_variable("y", 10.0, Duration::from_secs(1), Curve::Linear);
     assert_eq!(float(&playback, "y"), Some(10.0));
   }
 }

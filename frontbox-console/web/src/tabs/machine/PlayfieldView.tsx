@@ -103,6 +103,16 @@ function cabinetGroup() {
   return group
 }
 
+/** A plane's surface, its edge running through its corners. Its image is stretched over its extent. */
+function planeGeometry(plane: PlaneView) {
+  const [w, h] = plane.extent
+  const geometry = new THREE.ShapeGeometry(new THREE.Shape(plane.corners.map(([x, y]) => new THREE.Vector2(x, y))))
+  // a shape's UVs are its points, so scale them to the extent
+  const uv = geometry.attributes.uv
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / (w || 1), uv.getY(i) / (h || 1))
+  return geometry
+}
+
 type Layer = 'axes' | 'planes' | 'artwork' | 'displays' | 'screens' | 'switches' | 'leds' | 'drivers'
 
 const LAYERS: { layer: Layer; label: string; title: string }[] = [
@@ -478,8 +488,7 @@ export default function PlayfieldView(props: {
       content = cabinetGroup()
 
       for (const plane of planes) {
-        const [w, h] = plane.extent
-        const geometry = new THREE.PlaneGeometry(w, h).translate(w / 2, h / 2, 0)
+        const geometry = planeGeometry(plane)
         // map, opacity and color are set by `stylePlanes`, as they depend on the layers shown
         const material = new THREE.MeshBasicMaterial({
           transparent: true,

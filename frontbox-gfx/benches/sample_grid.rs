@@ -90,14 +90,14 @@ fn images() -> Assets {
 }
 
 fn draw(c: &mut Criterion) {
-  let params = Params::new();
+  let variables = Variables::new();
   let assets = images();
   let frame = LayerFrame {
     time: 0.4,
     timing: Some(Timing::new(1.0, Cycle::Forever)),
     playback_seed: 0,
-    params: &params,
-    defaults: no_params(),
+    variables: &variables,
+    defaults: no_variables(), values: no_values(),
     assets: &assets,
     size: SIZE,
     surface: Surface::Area,

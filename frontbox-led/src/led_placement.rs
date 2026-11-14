@@ -4,7 +4,7 @@ use std::sync::Arc;
 use frontbox_core::prelude::*;
 use frontbox_gfx::layout::Line;
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
-use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Params, Sample, Visits};
+use frontbox_gfx::scene::{self, Graph, Layer, LayerFrame, Variables, Sample, Visits};
 use frontbox_scene::{Moment, Scene};
 
 use crate::*;
@@ -83,7 +83,7 @@ pub struct PlacedLayer {
   pub placed: Vec<PlacedLed>,
   /// For a layer with a graph, the one built from its LEDs
   pub graph: Option<Arc<Graph>>,
-  /// The traversals of the cycle being played, kept until the cycle, playback seed, or params change
+  /// The traversals of the cycle being played, kept until the cycle, playback seed, or variables change
   visits: Option<(VisitsFor, Visits)>,
 }
 
@@ -113,7 +113,7 @@ impl PlacedLayer {
       return;
     };
     let cycle = scene.timing.map_or(0, |timing| timing.cycle_index(moment.time));
-    let current = VisitsFor { cycle, playback_seed: moment.playback_seed, params: moment.params.clone() };
+    let current = VisitsFor { cycle, playback_seed: moment.playback_seed, variables: moment.variables.clone() };
     if self.visits.as_ref().is_none_or(|(kept, _)| *kept != current) {
       let frame = scene.frame(moment, self.surface, self.size(), None);
       if let Some(layer) = self.layer(scene) {
@@ -165,7 +165,7 @@ fn place_on_plane<'a>(leds: &'a LedLookup, plane: &ReferencePlane, query: &'a Le
 struct VisitsFor {
   cycle: u32,
   playback_seed: u32,
-  params: Params,
+  variables: Variables,
 }
 
 #[cfg(test)]

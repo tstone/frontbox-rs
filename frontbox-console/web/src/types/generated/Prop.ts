@@ -6,11 +6,12 @@ import type { Sweep } from "./Sweep";
 import type { VisitResponse } from "./VisitResponse";
 
 /**
- * A value in a definition that can be fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept
+ * A value in a definition that can be fixed, read from a variable, keyframed, picked at random, moved in a wave, swept
  * along a path, or set off by a traversal's visits
  *
- * In RON: `Fixed(4.0)`, `Param("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
- * `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Param("lap")))`, or
- * `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`.
+ * In RON: `Fixed(4.0)`, `Variable("size")`, `Keyframes((keys: [...]))`, `Random((picks: [...], spread: Float(0.0, 1.0)))`,
+ * `Modulated((wave: Sine, spread: Float(0.0, 1.0), rate: 2.0))`, `Sweep((path: (base: Circle(radius: Fixed(5.0))), position: Variable("lap")))`,
+ * or `Visit((traversal: "bolt", from: 0.0, to: 1.0, smooth_out: 3.0))`. Files from before variables were named so can
+ * say `Param` for `Variable`.
  */
-export type Prop<T> = { "Fixed": T } | { "Param": string } | { "Keyframes": Keyframes<T> } | { "Random": Random } | { "Modulated": Modulated } | { "Sweep": Sweep } | { "Visit": VisitResponse<T> };
+export type Prop<T> = { "Fixed": T } | { "Variable": string } | { "Keyframes": Keyframes<T> } | { "Random": Random } | { "Modulated": Modulated } | { "Sweep": Sweep } | { "Visit": VisitResponse<T> };

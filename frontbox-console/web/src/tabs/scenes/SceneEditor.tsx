@@ -1,11 +1,11 @@
 import { Checkbox } from '@ark-ui/solid/checkbox'
 import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { Splitter } from '@ark-ui/solid/splitter'
-import { Tabs } from '@ark-ui/solid/tabs'
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from 'solid-js'
+import * as icons from '../../components/icons'
 import { cssColor } from '../../lib/leds'
 import { machine } from '../../state/console'
-import { addContentScene, deleteContentScene, saveContentScene } from '../../state/contentScenes'
+import { addContentScene, contentScenes, deleteContentScene, saveContentScene } from '../../state/contentScenes'
 import { playContentSound } from '../../state/contentSounds'
 import {
   forgetSceneRender,
@@ -19,17 +19,17 @@ import {
 } from '../../state/sceneRender'
 import type { ClipSound } from '../../types/generated/ClipSound'
 import type { Prop } from '../../types/generated/Prop'
+import type { ReferenceScene } from '../../types/generated/ReferenceScene'
 import type { RenderedScene } from '../../types/generated/RenderedScene'
 import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ConfirmDialog from './ConfirmDialog'
 import { LedsNote } from './LayerPlace'
-import ParametersPanel from './ParametersPanel'
 import { createPlayback } from './playback'
-import { NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
+import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { openTransform } from './configNodes'
-import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedParams, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedVariables, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
@@ -60,6 +60,30 @@ function writeSnap(snap: Snap) {
     localStorage.setItem(SNAP_KEY, JSON.stringify(snap))
   } catch {
     // storage can be unavailable (private windows); snapping still works for this session
+  }
+}
+
+/** Where a reference scene is drawn, over the scene being edited or under it */
+const REFERENCE_PLACES = ['Above', 'Below'] as const
+
+/** The option for drawing the scene alone */
+const NO_REFERENCE = ''
+
+/** The scene each scene is shown with, by the name of the one being edited */
+const REFERENCE_KEY = 'frontbox-console.scene-references'
+function readReferences(): Record<string, ReferenceScene> {
+  try {
+    return JSON.parse(localStorage.getItem(REFERENCE_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+function writeReference(scene: string, reference: ReferenceScene | null) {
+  try {
+    const { [scene]: _, ...others } = readReferences()
+    localStorage.setItem(REFERENCE_KEY, JSON.stringify(reference ? { ...others, [scene]: reference } : others))
+  } catch {
+    // storage can be unavailable (private windows); the reference is still shown for this session
   }
 }
 
@@ -111,6 +135,12 @@ export default function SceneEditor(props: {
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [sequenceView, setSequenceView] = createSignal<SequenceView>('Machine')
+  // another scene drawn with this one, to see how the two look together. Only this one's layers can be selected.
+  const [reference, setReferenceState] = createSignal<ReferenceScene | null>(readReferences()[props.name] ?? null)
+  const setReference = (next: ReferenceScene | null) => {
+    setReferenceState(next)
+    writeReference(name(), next)
+  }
   const [snap, setSnapState] = createSignal(readSnap())
   const setSnap = (change: Partial<Snap>) => {
     setSnapState({ ...snap(), ...change })
@@ -119,8 +149,9 @@ export default function SceneEditor(props: {
   const selection = createSignal<Selection | null>({ layer: 0, mask: false })
   // the node selected in the config tree, by id, which says what the handles are for
   const [treeNode, setTreeNode] = createSignal<string | null>(null)
-  const [sourceTab, setSourceTab] = createSignal('config')
-  // where the config tree puts its own buttons, at the end of the tabs
+  // the source panel shows the scene as a tree, or as RON
+  const [showingCode, setShowingCode] = createSignal(false)
+  // where the config tree puts its own buttons, at the end of its section's header
   const [treeTools, setTreeTools] = createSignal<HTMLElement>()
   const revealing = createSignal<Prop<SceneValue> | null>(null)
   // what's on show, which stays put while the source doesn't parse
@@ -151,17 +182,19 @@ export default function SceneEditor(props: {
   let latest: SceneSource = { Ron: props.source }
   const send = (source: SceneSource) => {
     latest = source
-    renderScene(source, size(), moment(), momentCycle())
-    if (playback.playing()) renderClips(source, size(), untrack(clipCycles))
+    renderScene(source, size(), moment(), momentCycle(), reference())
+    if (playback.playing()) renderClips(source, size(), reference(), untrack(clipCycles))
   }
 
   // moving on to a cycle wants the one after it, where `send` is for changes to the scene
   createEffect(() => {
     const cycles = clipCycles()
     untrack(() => {
-      if (playback.playing()) renderClips(latest, size(), cycles)
+      if (playback.playing()) renderClips(latest, size(), reference(), cycles)
     })
   })
+
+  createEffect(on(reference, () => send(latest), { defer: true }))
 
   /**
    * What's on show from the clips, which stays put if the next cycle is late back from the machine. `null` is when the
@@ -233,7 +266,7 @@ export default function SceneEditor(props: {
   const editing: Lens<Scene> = {
     get: () => scene()!,
     set: (next) => {
-      const edited = withoutDroppedTiming(scene()!, withoutDroppedParams(scene()!, next))
+      const edited = withoutDroppedTiming(scene()!, withoutDroppedVariables(scene()!, next))
       setScene(edited)
       send(sceneSource(edited))
     },
@@ -266,6 +299,7 @@ export default function SceneEditor(props: {
     batch(() => {
       setSaved(written)
       setName(chosen)
+      writeReference(chosen, reference())
       props.onRename(chosen)
       setFileError(null)
     })
@@ -332,7 +366,7 @@ export default function SceneEditor(props: {
 
   // a file that won't read has nothing to show in the config, so it opens where it can be fixed
   createEffect(() => {
-    if (scene() === null && error() !== null) setSourceTab('raw')
+    if (scene() === null && error() !== null) setShowingCode(true)
   })
 
   const isDmd = () => scene()?.kind === 'Dmd'
@@ -433,7 +467,7 @@ export default function SceneEditor(props: {
   /** Brings a track's field up in the config, from wherever that's been left */
   const reveal = ({ prop, layer, mask }: SceneTrack) => {
     batch(() => {
-      setSourceTab('config')
+      setShowingCode(false)
       // a sound layer is always open
       if (layer !== null) selection[1]({ layer, mask })
       revealing[1](prop.get())
@@ -443,7 +477,7 @@ export default function SceneEditor(props: {
   /** Brings a layer up in the config, as for a traversal, which is under its graph */
   const openLayer = (layer: number) => {
     batch(() => {
-      setSourceTab('config')
+      setShowingCode(false)
       selection[1]({ layer, mask: false })
     })
   }
@@ -549,7 +583,39 @@ export default function SceneEditor(props: {
             <span class="scene-note">Unsaved changes</span>
           </Show>
           <Show when={fileError()}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
+          <Show when={drawn()?.reference_error}>{(text) => <span class="scene-note scene-note-warn">{text()}</span>}</Show>
           <div class="scene-file-view">
+            <div class="scene-reference" title="Another scene drawn with this one, to see how the two look together. Only this scene's layers can be selected.">
+              <span>Show with</span>
+              <Dropdown
+                compact
+                label="Scene to show with this one"
+                options={[{ value: NO_REFERENCE, label: 'Nothing' }, ...contentScenes().filter((scene) => scene !== name()).map((scene) => ({ value: scene, label: scene }))]}
+                value={reference()?.name ?? NO_REFERENCE}
+                onChange={(chosen) => setReference(chosen === NO_REFERENCE ? null : { name: chosen, above: reference()?.above ?? true })}
+              />
+              <Show when={reference()}>
+                {(shown) => (
+                  <SegmentGroup.Root
+                    class="scene-prop-kind scene-view"
+                    aria-label="Where the other scene is drawn"
+                    value={shown().above ? 'Above' : 'Below'}
+                    onValueChange={(details) => setReference({ ...shown(), above: details.value === 'Above' })}
+                  >
+                    <SegmentGroup.Indicator />
+                    <For each={REFERENCE_PLACES}>
+                      {(option) => (
+                        <SegmentGroup.Item value={option}>
+                          <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+                          <SegmentGroup.ItemControl />
+                          <SegmentGroup.ItemHiddenInput />
+                        </SegmentGroup.Item>
+                      )}
+                    </For>
+                  </SegmentGroup.Root>
+                )}
+              </Show>
+            </div>
             <div class="scene-snap" title="Snaps the points of a polygon, route or bezier, and how far a shape is moved, to a grid in the shape's own units as they're dragged">
               <Checkbox.Root checked={snap().on} onCheckedChange={(details) => setSnap({ on: details.checked === true })}>
                 <Checkbox.Control>
@@ -638,43 +704,48 @@ export default function SceneEditor(props: {
                       <LedsNote />
                     </div>
                   </Show>
-                  <Tabs.Root class="scene-tabs" value={sourceTab()} onValueChange={(details) => setSourceTab(details.value)}>
-                    <Tabs.List>
-                      <Tabs.Trigger value="config">Config</Tabs.Trigger>
-                      <Tabs.Trigger value="raw">Raw</Tabs.Trigger>
-                      <Tabs.Indicator />
-                      <span class="scene-tabs-end" ref={setTreeTools} hidden={sourceTab() !== 'config'} />
-                    </Tabs.List>
-                    <Tabs.Content value="config">
+                  <div class="scene-source-header">
+                    <span class="scene-tabs-end" ref={setTreeTools} hidden={showingCode()} />
+                    <button
+                      type="button"
+                      class="scene-icon-button"
+                      classList={{ active: showingCode() }}
+                      aria-label={showingCode() ? 'Show the tree' : 'Show the code'}
+                      aria-pressed={showingCode()}
+                      title={showingCode() ? 'Show the tree' : 'Show the scene as RON'}
+                      onClick={() => setShowingCode(!showingCode())}
+                    >
+                      <icons.Code aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div class="scene-source-body">
+                    <Show
+                      when={!showingCode()}
+                      fallback={
+                        <textarea
+                          aria-label="Scene, as RON"
+                          spellcheck={false}
+                          value={ron()}
+                          onInput={(e) => {
+                            setRon(e.currentTarget.value)
+                            send({ Ron: e.currentTarget.value })
+                          }}
+                        />
+                      }
+                    >
                       <Show when={error() !== null}>
                         <p class="scene-note scene-note-warn">
                           {scene() === null ? "This scene can't be read. Fix the error to edit it." : 'This is the last scene that rendered. Fix the error to edit it.'}
                         </p>
                       </Show>
                       <Show when={scene() !== null}>
+                        {/* an edit here would replace the RON with the last scene that could be read */}
                         <div class="scene-editing" inert={error() !== null}>
                           <ConfigPanel selection={selection} toolbar={treeTools()} onSelect={setTreeNode} />
                         </div>
                       </Show>
-                    </Tabs.Content>
-                    <Tabs.Content value="raw">
-                      <textarea
-                        aria-label="Scene, as RON"
-                        spellcheck={false}
-                        value={ron()}
-                        onInput={(e) => {
-                          setRon(e.currentTarget.value)
-                          send({ Ron: e.currentTarget.value })
-                        }}
-                      />
-                    </Tabs.Content>
-                  </Tabs.Root>
-                  <Show when={scene() !== null}>
-                    {/* an edit here would replace the RON with the last scene that could be read */}
-                    <div class="scene-editing" inert={error() !== null}>
-                      <ParametersPanel />
-                    </div>
-                  </Show>
+                    </Show>
+                  </div>
                 </div>
               </Splitter.Panel>
               <Splitter.ResizeTrigger id="source:output" aria-label="Resize scene source" />

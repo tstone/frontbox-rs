@@ -2,6 +2,6 @@
 import type { Color } from "./Color";
 
 /**
- * A parameter value the game supplies at runtime
+ * A variable value the game supplies at runtime
  */
-export type Value = { "Float": number } | { "Vec2": [number, number] } | { "Color": Color } | { "Int": number } | { "Text": string };
+export type Value = { "Float": number } | { "Vec2": [number, number] } | { "Color": Color } | { "Int": number } | { "Text": string } | { "Bool": boolean } | { "Value": string };

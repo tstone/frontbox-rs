@@ -3,25 +3,40 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use frontbox_core::prelude::*;
-use frontbox_gfx::scene::{EndBehavior, Params, Value};
+use frontbox_gfx::scene::{EndBehavior, Variables, Value};
 
 use crate::*;
 
-/// A [`Scene`] with values from the game bound to it: its parameters, and how long it takes. It holds nothing about a
+/// A [`Scene`] with values from the game bound to it: its variables, and how long it takes. It holds nothing about a
 /// scene that's playing, so one can be kept and played any number of times. A `Scene` converts into one that plays as
 /// written.
 ///
-/// Parameters are how code changes a scene:
+/// Variables are how code changes a scene:
 ///
 /// ```rust
 /// # use frontbox_scene::*;
 /// # use frontbox_gfx::prelude::*;
 /// let scene = Scene::load(r#"Scene(
 ///   version: 2,
-///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Param("color")))))],
+///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
 /// )"#).unwrap();
 ///
-/// let scene = PlayableScene::new(scene).param("color", Rgba::red());
+/// let scene = PlayableScene::new(scene).variable("color", Rgba::red());
+/// ```
+///
+/// A variable can also point at one of the scene's named values, so the scene decides what each looks like:
+///
+/// ```rust
+/// # use frontbox_scene::*;
+/// # use frontbox_gfx::scene::Value;
+/// let scene = Scene::load(r#"Scene(
+///   version: 2,
+///   variables: {"color": Value("unlit")},
+///   values: {"lit": Color(Fixed(255, 0, 0, 255)), "unlit": Color(Fixed(0, 0, 0, 255))},
+///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
+/// )"#).unwrap();
+///
+/// let scene = PlayableScene::new(scene).variable("color", Value::named("lit"));
 /// ```
 ///
 /// What needs a scene to go away on its own, such as [`play_scene`](SceneSystemExt::play_scene), takes a
@@ -42,7 +57,7 @@ use crate::*;
 #[derive(Debug, Clone)]
 pub struct PlayableScene<C = Unchecked> {
   scene: Arc<Scene>,
-  params: Params,
+  variables: Variables,
   /// How much of the scene plays in a second
   speed: f32,
   completes: PhantomData<C>,
@@ -81,18 +96,21 @@ impl PlayableScene<Completes> {
 
 impl<C> PlayableScene<C> {
   fn unchecked(scene: Arc<Scene>) -> Self {
-    Self { scene, params: Params::new(), speed: 1.0, completes: PhantomData }
+    Self { scene, variables: Variables::new(), speed: 1.0, completes: PhantomData }
   }
 
-  /// Sets a parameter, taking the place of the scene's default
-  pub fn param(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
-    self.set_param(name, value);
+  /// Sets a variable, taking the place of the scene's default. A [`Value::named`] points it at one of the scene's named
+  /// values; one the scene doesn't have logs a warning.
+  pub fn variable(mut self, name: impl Into<String>, value: impl Into<Value>) -> Self {
+    self.set_variable(name, value);
     self
   }
 
-  /// [`PlayableScene::param`] for one that's already built
-  pub fn set_param(&mut self, name: impl Into<String>, value: impl Into<Value>) {
-    self.params.insert(name.into(), value.into());
+  /// [`PlayableScene::variable`] for one that's already built
+  pub fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
+    let (name, value) = (name.into(), value.into());
+    self.scene.warn_if_missing(&name, &value);
+    self.variables.insert(name, value);
   }
 
   /// Plays a cycle of the scene in `duration`, however long it was written to be, for when how long it lasts is only
@@ -117,8 +135,8 @@ impl<C> PlayableScene<C> {
     &self.scene
   }
 
-  pub(crate) fn params(&self) -> &Params {
-    &self.params
+  pub(crate) fn variables(&self) -> &Variables {
+    &self.variables
   }
 
   pub(crate) fn speed(&self) -> f32 {
@@ -145,7 +163,7 @@ impl From<Arc<Scene>> for PlayableScene {
 
 impl From<PlayableScene<Completes>> for PlayableScene {
   fn from(playable: PlayableScene<Completes>) -> Self {
-    Self { scene: playable.scene, params: playable.params, speed: playable.speed, completes: PhantomData }
+    Self { scene: playable.scene, variables: playable.variables, speed: playable.speed, completes: PhantomData }
   }
 }
 
@@ -214,8 +232,8 @@ mod tests {
 
   #[test]
   fn one_that_completes_can_go_where_either_is_taken() {
-    let playable: PlayableScene = PlayableScene::completing(timed(0.5, Cycle::Once)).unwrap().param("y", 1.0).into();
+    let playable: PlayableScene = PlayableScene::completing(timed(0.5, Cycle::Once)).unwrap().variable("y", 1.0).into();
     assert_eq!(playable.length(), Some(Duration::from_millis(500)));
-    assert!(playable.params().get("y").is_some());
+    assert!(playable.variables().get("y").is_some());
   }
 }

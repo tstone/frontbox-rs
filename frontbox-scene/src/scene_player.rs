@@ -103,21 +103,21 @@ impl<C> ScenePlayer<C> {
     complete.unwrap_or(false)
   }
 
-  /// Sets a parameter, now if it's playing, and for each time it starts from here on
-  pub fn set_param(
+  /// Sets a variable, now if it's playing, and for each time it starts from here on
+  pub fn set_variable(
     &mut self,
     name: impl Into<String>,
     value: impl Into<Value>,
     ctx: &SystemContext,
   ) {
     let (name, value) = (name.into(), value.into());
-    self.with_playback(ctx, |playback| playback.set_param(name.clone(), value.clone()));
-    self.scene.set_param(name, value);
+    self.with_playback(ctx, |playback| playback.insert_variable(name.clone(), value.clone()));
+    self.scene.set_variable(name, value);
   }
 
-  /// Moves a parameter to `to` over `duration`, along `curve`, if it's playing: see [`Playback::ease_param`]. Each time
-  /// it starts from here on, the parameter is `to` from the top.
-  pub fn ease_param(
+  /// Moves a variable to `to` over `duration`, along `curve`, if it's playing: see [`Playback::ease_variable`]. Each time
+  /// it starts from here on, the variable is `to` from the top.
+  pub fn ease_variable(
     &mut self,
     name: impl Into<String>,
     to: impl Into<Value>,
@@ -127,9 +127,9 @@ impl<C> ScenePlayer<C> {
   ) {
     let (name, to) = (name.into(), to.into());
     self.with_playback(ctx, |playback| {
-      playback.ease_param(name.clone(), to.clone(), duration, curve)
+      playback.ease_variable(name.clone(), to.clone(), duration, curve)
     });
-    self.scene.set_param(name, to);
+    self.scene.set_variable(name, to);
   }
 
   /// The scene and the values bound to it, such as its [`length`](PlayableScene::length)
@@ -189,7 +189,7 @@ mod tests {
       scenes
         .shown()
         .next()
-        .and_then(|(_, playback)| playback.moment().params.get(name).cloned())
+        .and_then(|(_, playback)| playback.moment().variables.get(name).cloned())
     });
     match value.unwrap() {
       Some(Value::Float(value)) => Some(value),
@@ -285,7 +285,7 @@ mod tests {
     let context = context();
     let mut player: ScenePlayer = ScenePlayer::new(timed(1.0, Cycle::Forever));
     player.start(&context.sys_ctx());
-    player.set_param("y", 2.0, &context.sys_ctx());
+    player.set_variable("y", 2.0, &context.sys_ctx());
     assert_eq!(float(&context, "y"), Some(2.0));
 
     player.start(&context.sys_ctx());
@@ -296,9 +296,9 @@ mod tests {
   fn an_eased_param_moves_while_playing() {
     let context = context();
     let mut player =
-      ScenePlayer::new(PlayableScene::new(timed(1.0, Cycle::Forever)).param("y", 0.0));
+      ScenePlayer::new(PlayableScene::new(timed(1.0, Cycle::Forever)).variable("y", 0.0));
     player.start(&context.sys_ctx());
-    player.ease_param(
+    player.ease_variable(
       "y",
       10.0,
       Duration::from_secs(1),

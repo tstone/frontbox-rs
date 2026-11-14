@@ -42,7 +42,8 @@ const SOUND_EXTENSIONS: [&str; 4] = ["wav", "mp3", "ogg", "flac"];
 /// same on every OS.
 ///
 /// Fonts can also come from [`Self::with_fonts`], such as those a crate comes with, named without an extension so they
-/// can't be mistaken for a file.
+/// can't be mistaken for a file. Scenes can come from [`Self::with_scenes`], and a file at the same path in the folder
+/// is used in a bundled scene's place, so a game can change how a framework screen looks.
 ///
 /// An app without a folder still has a `Content`, from [`Self::without_folder`]. It has only the fonts it's given, and
 /// anything that needs a file is a [`ContentError::NoFolder`] or [`SceneFileError::NoFolder`].
@@ -56,7 +57,9 @@ pub struct Content {
   /// Loaded fonts, with their file's modified time and size when they were loaded
   fonts: Arc<Mutex<HashMap<String, (Stamp, Font)>>>,
   /// From [`Self::with_fonts`], by name
-  bundled: Arc<BTreeMap<String, Font>>,
+  bundled_fonts: Arc<BTreeMap<String, Font>>,
+  /// From [`Self::with_scenes`]: each scene's source, by name
+  bundled_scenes: Arc<BTreeMap<String, String>>,
 }
 
 impl Content {
@@ -66,15 +69,25 @@ impl Content {
 
   /// For an app without a content folder
   pub fn without_folder() -> Self {
-    Self { root: None, decoded: Arc::default(), fonts: Arc::default(), bundled: Arc::default() }
+    Self { root: None, decoded: Arc::default(), fonts: Arc::default(), bundled_fonts: Arc::default(), bundled_scenes: Arc::default() }
   }
 
   /// Adds fonts that aren't in the folder, such as those a crate comes with. A name given here is used before a file
   /// of the same name, so give them names without an extension, which a file in the folder can't have.
   pub fn with_fonts<'a>(mut self, fonts: impl IntoIterator<Item = (&'a str, Font)>) -> Self {
-    let mut bundled = (*self.bundled).clone();
+    let mut bundled = (*self.bundled_fonts).clone();
     bundled.extend(fonts.into_iter().map(|(name, font)| (name.to_owned(), font)));
-    self.bundled = Arc::new(bundled);
+    self.bundled_fonts = Arc::new(bundled);
+    self
+  }
+
+  /// Adds scenes that aren't in the folder, such as those a crate comes with, as each one's name and source. A file at
+  /// the same path in the folder is read in its place. A name that isn't a scene name is left out.
+  pub fn with_scenes<'a>(mut self, scenes: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
+    let mut bundled = (*self.bundled_scenes).clone();
+    let scenes = scenes.into_iter().filter(|(name, _)| is_scene_name(name));
+    bundled.extend(scenes.map(|(name, source)| (name.to_owned(), source.to_owned())));
+    self.bundled_scenes = Arc::new(bundled);
     self
   }
 
@@ -90,7 +103,7 @@ impl Content {
 
   /// Every font name, sorted: those from [`Self::with_fonts`], and those in the folder
   pub fn font_names(&self) -> Vec<String> {
-    let mut names: Vec<String> = self.bundled.keys().cloned().chain(self.names(is_font_name)).collect();
+    let mut names: Vec<String> = self.bundled_fonts.keys().cloned().chain(self.names(is_font_name)).collect();
     names.sort();
     names
   }
@@ -100,9 +113,17 @@ impl Content {
     self.names(is_sound_name)
   }
 
-  /// Every scene name, sorted. Empty if the folder doesn't exist.
+  /// Every scene name, sorted: those in the folder, and those from [`Self::with_scenes`]
   pub fn scene_names(&self) -> Vec<String> {
-    self.names(is_scene_name)
+    let mut names: Vec<String> = self.bundled_scenes.keys().cloned().chain(self.names(is_scene_name)).collect();
+    names.sort();
+    names.dedup();
+    names
+  }
+
+  /// Whether a scene by this name came from [`Self::with_scenes`], whether or not a file in the folder replaces it
+  pub fn is_bundled_scene(&self, name: &str) -> bool {
+    self.bundled_scenes.contains_key(name)
   }
 
   fn names(&self, wanted: fn(&str) -> bool) -> Vec<String> {
@@ -159,7 +180,7 @@ impl Content {
   /// A font from [`Self::with_fonts`], or one loaded from the folder, from the cache unless its file has changed.
   /// Reads the file, so don't call this mid-frame.
   pub fn font(&self, name: &str) -> Result<Font, ContentError> {
-    if let Some(font) = self.bundled.get(name) {
+    if let Some(font) = self.bundled_fonts.get(name) {
       return Ok(font.clone());
     }
     if !is_font_name(name) {
@@ -217,10 +238,20 @@ impl Content {
     self.file(name).ok_or(SceneFileError::NoFolder)
   }
 
-  /// A scene file's raw text. It isn't parsed, so a broken file can still be opened and fixed.
+  /// A scene's raw text: its file's, or else the bundled scene's. It isn't parsed, so a broken file can still be opened
+  /// and fixed.
   pub fn read_scene(&self, name: &str) -> Result<String, SceneFileError> {
-    let path = self.scene_path(name)?;
-    fs::read_to_string(path).map_err(|error| SceneFileError::Read { name: name.into(), error })
+    let bundled = self.bundled_scenes.get(name);
+    let path = match (self.scene_path(name), bundled) {
+      (Ok(path), _) => path,
+      (Err(_), Some(source)) => return Ok(source.clone()),
+      (Err(error), None) => return Err(error),
+    };
+    match (fs::read_to_string(path), bundled) {
+      (Ok(source), _) => Ok(source),
+      (Err(error), Some(source)) if error.kind() == io::ErrorKind::NotFound => Ok(source.clone()),
+      (Err(error), _) => Err(SceneFileError::Read { name: name.into(), error }),
+    }
   }
 
   /// Adds a new scene. Fails if one by that name exists.
@@ -912,6 +943,26 @@ mod tests {
     let folder = Folder::new();
     folder.write("a.scene", b"(oops");
     assert_eq!(Content::new(&folder.0).read_scene("a.scene").unwrap(), "(oops");
+  }
+
+  #[test]
+  fn a_bundled_scene_is_read_until_a_file_replaces_it() {
+    let folder = Folder::new();
+    let content = Content::new(&folder.0).with_scenes([("frontbox/points.scene", "bundled"), ("not a scene", "")]);
+    assert_eq!(content.scene_names(), ["frontbox/points.scene"]);
+    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "bundled");
+
+    folder.write("frontbox/points.scene", b"changed");
+    assert_eq!(content.scene_names(), ["frontbox/points.scene"]);
+    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "changed");
+    assert!(content.is_bundled_scene("frontbox/points.scene"));
+  }
+
+  #[test]
+  fn without_a_folder_bundled_scenes_can_still_be_read() {
+    let content = Content::without_folder().with_scenes([("frontbox/points.scene", "bundled")]);
+    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "bundled");
+    assert!(matches!(content.read_scene("other.scene"), Err(SceneFileError::NoFolder)));
   }
 
   #[test]

@@ -3,7 +3,7 @@ import type { Cycle } from "./Cycle";
 import type { EndBehavior } from "./EndBehavior";
 
 /**
- * How long an animated scene runs, and how many times. A scene without a timing is static: only its params can change
+ * How long an animated scene runs, and how many times. A scene without a timing is static: only its variables can change
  * it.
  */
 export type Timing = { 

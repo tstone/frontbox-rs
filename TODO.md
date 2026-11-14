@@ -1,6 +1,5 @@
 ## Headless
 
-- Reference planes should allow polygons so that cabinet sides don't look weird
 - RandSystem (interface) that manages seed per game.
 - LedSystem becomes the implementation of an interface
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
@@ -76,7 +75,11 @@
 - Transition left/right ease between sections
 - Animate right offset of section arrow when selected
 - Fancy: the selection box animates between vertical offsets
-- DmdMatch system that takes a DMD scene or something
+- DmdMatch system that takes a DMD scene or something. Its scene (`frontbox/128x32/match.scene`) reads `match`, and
+  `player_1` to `player_4` (each score's last two digits); the numbers cycling before the match lands are keyframes
+  in the scene.
+- Initials entry (`InitialsEntrySystem`) as a scene, once it's redone. It reads `letters`, `cursor`, `player`, and
+  `rank`.
 
 ## Console
 

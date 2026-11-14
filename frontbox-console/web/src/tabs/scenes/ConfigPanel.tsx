@@ -5,6 +5,8 @@ import { batch, createContext, createEffect, createMemo, createSignal, For, Inde
 import { Dynamic, Portal } from 'solid-js/web'
 import * as icons from '../../components/icons'
 import ScenePortal, { LayerColorContext, layerColorClass } from './ScenePortal'
+import { NAMED_VALUE_LABELS, namedValueKind, ValueFields } from './ValueFields'
+import { VariableFields, VariableSource } from './VariableFields'
 import { contentImageInfo } from '../../state/contentImages'
 import { contentFonts, fontLabel, refreshContentFonts } from '../../state/contentFonts'
 import { contentSoundLength, contentSounds, refreshContentSounds } from '../../state/contentSounds'
@@ -28,6 +30,7 @@ import type { TextSource } from '../../types/generated/TextSource'
 import type { Transform } from '../../types/generated/Transform'
 import type { Traversal } from '../../types/generated/Traversal'
 import type { TraversalAlgorithm } from '../../types/generated/TraversalAlgorithm'
+import type { TextOverflow } from '../../types/generated/TextOverflow'
 import type { VerticalAlign } from '../../types/generated/VerticalAlign'
 import {
   algorithmKind,
@@ -84,7 +87,7 @@ import {
   FAN_COUNT,
   field,
   framesTrack,
-  freshParamName,
+  freshVariableName,
   freshTraversalName,
   GROWTH_DENSITY,
   imageLength,
@@ -116,7 +119,7 @@ import {
   RESHAPE_KINDS,
   SHIFT,
   withDuration,
-  withParamValue,
+  withVariableValue,
   withTiming,
   withTraversalRenamed,
   type AdjustKind,
@@ -127,6 +130,10 @@ import {
   type SceneLayer,
   type Selection,
   type Surface,
+  type NamedValueKind,
+  NAMED_VALUE_KINDS,
+  withNewValue,
+  withoutValue,
   type SceneValue,
   type Vec2,
 } from './sceneModel'
@@ -217,10 +224,10 @@ const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
 const ADJUST_OPTIONS = (Object.keys(ADJUSTS) as AdjustKind[]).map((value) => ({ value, label: ADJUSTS[value].label }))
 /** Only for a shape that's drawn, rather than a sweep's path */
 const STROKE_OPTION: { value: 'Stroke'; label: string } = { value: 'Stroke', label: 'Stroke' }
-type TextSourceKind = 'Fixed' | 'Param' | 'Number'
+type TextSourceKind = 'Fixed' | 'Variable' | 'Number'
 const TEXT_SOURCE_OPTIONS: { value: TextSourceKind; label: string }[] = [
   { value: 'Fixed', label: 'Fixed' },
-  { value: 'Param', label: 'Param' },
+  { value: 'Variable', label: 'Variable' },
   { value: 'Number', label: 'Number' },
 ]
 type NumberFormatKind = 'Grouped' | 'Plain' | 'Abbreviated'
@@ -229,7 +236,7 @@ const NUMBER_FORMAT_OPTIONS: { value: NumberFormatKind; label: string }[] = [
   { value: 'Plain', label: 'Plain (12942)' },
   { value: 'Abbreviated', label: 'Abbreviated (12.9k)' },
 ]
-/** A new number param's default, long enough to show grouping and abbreviating */
+/** A new number variable's default, long enough to show grouping and abbreviating */
 const NUMBER_PREVIEW = 1_234_567
 /** Characters an abbreviated number starts out fitting in */
 const ABBREVIATED_LENGTH = 5
@@ -242,6 +249,10 @@ const VERTICAL_ALIGN_OPTIONS: { value: VerticalAlign; label: string }[] = [
   { value: 'Top', label: 'Top' },
   { value: 'Middle', label: 'Middle' },
   { value: 'Bottom', label: 'Bottom' },
+]
+const TEXT_OVERFLOW_OPTIONS: { value: TextOverflow; label: string }[] = [
+  { value: 'Wrap', label: 'Wraps onto more lines' },
+  { value: 'Ellipsis', label: 'Cut short with …' },
 ]
 const STROKE_ALIGN_OPTIONS: { value: StrokeAlign; label: string }[] = [
   { value: 'Inside', label: 'Inside the edge' },
@@ -292,7 +303,7 @@ const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
 /** A prop's icon says where its value comes from */
 const SOURCE_ICONS: Record<PropKind, Icon> = {
   Fixed: icons.Pin,
-  Param: icons.Variable,
+  Variable: icons.Variable,
   Keyframes: icons.ChartSpline,
   Random: icons.Dices,
   Modulated: icons.AudioWaveform,
@@ -311,6 +322,8 @@ const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   traversals: icons.Route,
   traversal: icons.Footprints,
   'node-ref': icons.MapPin,
+  variable: icons.Variable,
+  value: icons.Palette,
 }
 
 type SpeedKind = 'Rate' | 'Duration'
@@ -332,13 +345,16 @@ type ConfigTree = {
   /** The place of the row being dragged, which can be dropped elsewhere in its list */
   dragging(): ListPlace | null
   setDragging(place: ListPlace | null): void
+  /** The kinds of layer the scene can have added, and adding one */
+  layerOptions(): { value: NewLayer; label: string }[]
+  addLayer(kind: NewLayer): void
 }
 
 const ConfigTreeContext = createContext<ConfigTree>()
 
 /**
- * The scene's layers and sound layers as a tree. Each layer's settings and props are nodes under it, and any of those
- * with settings of its own has them under it in turn. Selecting a node selects the layer, or the mask, it's in. Its
+ * The scene as a tree, with three roots: its layers and sound layers, its variables, and its named values. Each layer's
+ * settings and props are nodes under it, and any of those with settings of its own has them under it in turn. Selecting a node selects the layer, or the mask, it's in. Its
  * button for closing every node goes in `toolbar`, and `onSelect` hears which node is selected, by id, and `null` once
  * the panel is gone.
  */
@@ -364,7 +380,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   // with is set here rather than by the effect below, and anything added and opened at once is opened in the same batch.
   const initial = untrack(open)
   const [selected, setSelected] = createSignal<string | null>(initial && selectionNode(initial))
-  const [expanded, setExpanded] = createSignal<string[]>(initial ? ancestry(selectionNode(initial)) : [])
+  const [expanded, setExpanded] = createSignal<string[]>(initial ? ancestry(selectionNode(initial)) : ['scene'])
   createEffect(() => props.onSelect?.(selected()))
   onCleanup(() => props.onSelect?.(null))
 
@@ -408,9 +424,12 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
       }),
     dragging,
     setDragging,
+    layerOptions: () => options(),
+    addLayer: (kind) => add(kind),
   }
 
-  // a layer opened from elsewhere, such as by a click in the preview, is selected and opened up in the tree
+  // a layer opened from elsewhere, such as by a click in the preview, is selected, opened up, and scrolled to in the tree
+  let treeElement!: HTMLDivElement
   createEffect(
     on(open, (current) => {
       if (sameSelection(selectionOf(untrack(selected)), current)) return
@@ -418,6 +437,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
       const id = selectionNode(current)
       setSelected(id)
       expand(...ancestry(id))
+      scrollToRow(treeElement, id)
     }),
   )
 
@@ -455,7 +475,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
       batch(() => {
         scene.set({ ...timed, sounds: [...timed.sounds, { sound: timed.sounds.at(-1)?.sound ?? contentSounds()[0] ?? '', start: 0 }] })
         select(id)
-        expand(id)
+        expand('scene', id)
       })
       return
     }
@@ -466,7 +486,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
     batch(() => {
       scene.set({ ...scene.get(), layers: [...layers, { ...place, ...surface, fill: { base: { Solid: { Fixed: WHITE } } } }] })
       select(id)
-      expand(id)
+      expand('scene', id)
     })
   }
 
@@ -483,6 +503,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
       </Show>
       <ConfigTreeContext.Provider value={tree}>
         <TreeView.Root
+          ref={treeElement}
           class="scene-config-tree"
           collection={collection()}
           selectionMode="single"
@@ -504,10 +525,6 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
           </TreeView.Tree>
         </TreeView.Root>
       </ConfigTreeContext.Provider>
-      <AddMenu label="Add layer" class="scene-add-layer" groups={[options()]} onPick={add}>
-        <icons.Plus aria-hidden="true" />
-        Layer
-      </AddMenu>
       <datalist id={LED_NAMES}>
         <For each={graphNodes()}>{(name) => <option value={name} />}</For>
       </datalist>
@@ -516,6 +533,18 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
 }
 
 const sameSelection = (a: Selection | null, b: Selection | null) => a?.layer === b?.layer && a?.mask === b?.mask
+
+/**
+ * Scrolls a node's row into view, if it isn't already. A branch only puts up what's in it once it's open, so this waits
+ * a few frames for the row to be there.
+ */
+function scrollToRow(tree: HTMLElement, id: string, frames = 5) {
+  requestAnimationFrame(() => {
+    const row = tree.querySelector(`:is([data-part="item"], [data-part="branch-control"])[data-value="${CSS.escape(id)}"]`)
+    if (row) row.scrollIntoView({ block: 'nearest' })
+    else if (frames > 1) scrollToRow(tree, id, frames - 1)
+  })
+}
 
 /** A node's row, then its fields and the nodes under it while it's open */
 function TreeNode(props: { node: ConfigNode; indexPath: number[] }) {
@@ -588,11 +617,13 @@ function NodeScope(props: { node: ConfigNode; children: JSX.Element }) {
 }
 
 /**
- * A node's icon and label, and the controls that fit beside them. A layer says what it is in words instead of an icon, and
- * only the nodes right under a layer have one, as more than that is too busy.
+ * A node's icon and label, and the controls that fit beside them. A root or a layer says what it is in words instead of an
+ * icon, and only the nodes right under a layer have one, as more than that is too busy.
  */
 function NodeRow(props: { node: ConfigNode; depth: number }) {
-  const hasIcon = () => props.depth <= 2 && props.node.kind !== 'layer' && props.node.kind !== 'sound' && props.node.kind !== 'modifiers'
+  const scene = useContext(SceneContext)!
+  // the scene's nodes are a level down, under its root
+  const hasIcon = () => props.depth <= 3 && !['section', 'layer', 'sound', 'modifiers'].includes(props.node.kind)
   const label = <span class={hasIcon() ? 'scene-tree-label' : 'scene-tree-label scene-tree-label-wide'}>{props.node.label}</span>
   return (
     <>
@@ -600,6 +631,51 @@ function NodeRow(props: { node: ConfigNode; depth: number }) {
         <NodeIcon node={props.node} />
       </Show>
       <Switch fallback={label}>
+        <Match when={is(props.node, 'section')}>
+          {(section) => (
+            <>
+              {label}
+              <Count of={section().children} />
+              <Switch>
+                <Match when={section().section === 'scene'}>
+                  <AddLayer node={section()} />
+                </Match>
+                <Match when={section().section === 'values'}>
+                  <AddValue node={section()} />
+                </Match>
+              </Switch>
+            </>
+          )}
+        </Match>
+        <Match when={is(props.node, 'variable')}>
+          {(variable) => (
+            <>
+              {label}
+              <Controls node={props.node} class="scene-tree-end scene-tree-source">
+                <VariableSource name={variable().name} />
+              </Controls>
+            </>
+          )}
+        </Match>
+        <Match when={is(props.node, 'value')}>
+          {(value) => (
+            <>
+              {label}
+              <span class="scene-tree-summary">{NAMED_VALUE_LABELS[namedValueKind(scene.get().values![value().name]!)]}</span>
+              <Controls node={props.node} class="scene-tree-end">
+                <button
+                  type="button"
+                  class="scene-icon-button"
+                  aria-label={`Remove value ${value().name}`}
+                  title="Remove"
+                  onClick={() => scene.set(withoutValue(scene.get(), value().name))}
+                >
+                  <icons.X aria-hidden="true" />
+                </button>
+              </Controls>
+            </>
+          )}
+        </Match>
         <Match when={is(props.node, 'layer') || is(props.node, 'sound')}>
           {(layer) => <LayerRow node={layer()} />}
         </Match>
@@ -911,6 +987,14 @@ function RemoveButton(props: { node: ConfigNode; place: ListPlace; bare?: boolea
 function NodeFields(props: { node: ConfigNode }) {
   return (
     <Switch>
+      <Match when={is(props.node, 'section') && (props.node as { section: string }).section === 'variables'}>
+        <p class="scene-note">Set a prop to Variable to add one.</p>
+      </Match>
+      <Match when={is(props.node, 'section') && (props.node as { section: string }).section === 'values'}>
+        <p class="scene-note">Add a value, then point a variable at it from its default or from the game.</p>
+      </Match>
+      <Match when={is(props.node, 'variable')}>{(variable) => <VariableFields name={variable().name} />}</Match>
+      <Match when={is(props.node, 'value')}>{(value) => <ValueFields name={value().name} />}</Match>
       <Match when={is(props.node, 'sound')}>{(sound) => <SoundFields lens={sound().lens} />}</Match>
       <Match when={is(props.node, 'region')}>
         {(region) => (
@@ -973,24 +1057,25 @@ function AnchorPresets(props: { lens: Lens<Prop<Vec2>>; shape: Lens<Shape>; inde
 const ANCHOR_SPOTS = ['Top left', 'Bottom left', 'Center', 'Top right', 'Bottom right']
 
 const propFieldSpec = (spec: PropSpec) => ({
-  paramName: spec.paramName,
+  variableName: spec.variableName,
   lens: spec.lens,
   fallback: spec.fallback,
   ranges: spec.ranges,
 })
 
 /**
- * What a fixed prop is, or the parameter or traversal a prop reads from, as a glance at it in its row. A prop that changes
+ * What a fixed prop is, or the variable or traversal a prop reads from, as a glance at it in its row. A prop that changes
  * over time shows nothing, as its source at the end of the row already says so.
  */
 function PropSummary(props: { node: ConfigNode; spec: PropSpec }) {
   const prop = () => props.spec.lens.get()
   const text = () => {
     const current = prop()
-    if ('Param' in current) return current.Param
+    if ('Variable' in current) return current.Variable
     if ('Visit' in current) return current.Visit.traversal
     if ('Fixed' in current) {
       const value = current.Fixed
+      if (typeof value === 'boolean') return value ? 'Yes' : 'No'
       if (typeof value === 'number') return formatNumber(value)
       if (value.length === 2) return value.map(formatNumber).join(', ')
     }
@@ -1140,25 +1225,25 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
   const text = () => variant(field(props.lens, 'base') as Lens<ShapeNode>, 'Text')
   const source = () => field(text(), 'text')
   const sourceKind = () => Object.keys(source().get())[0] as TextSourceKind
-  // the words it shows now, carried over to a fixed text or a param's default
+  // the words it shows now, carried over to a fixed text or a variable's default
   const shown = () => {
     const current = source().get()
     if ('Fixed' in current) return current.Fixed
-    const param = 'Param' in current ? scene.get().params?.[current.Param] : undefined
-    return param && 'Text' in param ? param.Text : 'TEXT'
+    const variable = 'Variable' in current ? scene.get().variables?.[current.Variable] : undefined
+    return variable && 'Text' in variable ? variable.Text : 'TEXT'
   }
   const changeSource = (kind: TextSourceKind) => {
     if (kind === sourceKind()) return
     if (kind === 'Fixed') return source().set({ Fixed: shown() })
     if (kind === 'Number') {
-      // a param, as a number shown as text is nearly always the game's, with a default that previews the format
-      const name = freshParamName(scene.get(), 'number')
-      scene.set(withParamValue(scene.get(), name, { Int: NUMBER_PREVIEW }))
-      return source().set({ Number: { value: { Param: name }, format: 'Grouped' } })
+      // a variable, as a number shown as text is nearly always the game's, with a default that previews the format
+      const name = freshVariableName(scene.get(), 'number')
+      scene.set(withVariableValue(scene.get(), name, { Int: NUMBER_PREVIEW }))
+      return source().set({ Number: { value: { Variable: name }, format: 'Grouped' } })
     }
-    const name = freshParamName(scene.get(), 'text')
-    scene.set(withParamValue(scene.get(), name, { Text: shown() }))
-    source().set({ Param: name })
+    const name = freshVariableName(scene.get(), 'text')
+    scene.set(withVariableValue(scene.get(), name, { Text: shown() }))
+    source().set({ Variable: name })
   }
   // one that isn't in the folder stays chosen, so it can be seen and changed
   const fonts = () => [...new Set([...contentFonts(), text().get().font])].filter((name) => name !== '').map((name) => ({ value: name, label: fontLabel(name) }))
@@ -1193,7 +1278,7 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
         <Match when={sourceKind() === 'Fixed'}>
           <FieldRow label="Text">
             <textarea
-              class="scene-param-name scene-text-words"
+              class="scene-variable-name scene-text-words"
               aria-label="Text"
               rows={2}
               spellcheck={false}
@@ -1202,8 +1287,8 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
             />
           </FieldRow>
         </Match>
-        <Match when={sourceKind() === 'Param'}>
-          <TextParamField lens={source() as Lens<Extract<TextSource, { Param: string }>>} />
+        <Match when={sourceKind() === 'Variable'}>
+          <TextVariableField lens={source() as Lens<Extract<TextSource, { Variable: string }>>} />
         </Match>
         <Match when={sourceKind() === 'Number'}>
           <NumberFormatField lens={field(variant(source(), 'Number'), 'format')} />
@@ -1218,6 +1303,15 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
           options={VERTICAL_ALIGN_OPTIONS}
           value={text().get().vertical_align}
           onChange={(align) => field(text(), 'vertical_align').set(align)}
+        />
+      </FieldRow>
+      <FieldRow label="Too wide">
+        <Dropdown
+          label="Too wide"
+          options={TEXT_OVERFLOW_OPTIONS}
+          value={text().get().overflow ?? 'Wrap'}
+          // left out of the file while it wraps, as it does by default
+          onChange={(overflow) => field(text(), 'overflow').set(overflow === 'Wrap' ? undefined : overflow)}
         />
       </FieldRow>
       <Show when={surface()}>
@@ -1236,27 +1330,27 @@ function TextFields(props: { lens: Lens<Shape>; layer?: Lens<SceneLayer> }) {
   )
 }
 
-/** The param a text reads its words from. A name nothing has yet becomes a param, with the words it showed. */
-function TextParamField(props: { lens: Lens<Extract<TextSource, { Param: string }>> }) {
+/** The variable a text reads its words from. A name nothing has yet becomes a variable, with the words it showed. */
+function TextVariableField(props: { lens: Lens<Extract<TextSource, { Variable: string }>> }) {
   const scene = useContext(SceneContext)!
-  const name = () => props.lens.get().Param
-  const param = () => scene.get().params?.[name()]
+  const name = () => props.lens.get().Variable
+  const variable = () => scene.get().variables?.[name()]
   const rename = (next: string) => {
     if (next === '' || next === name()) return
-    const current = param()
-    if (scene.get().params?.[next] === undefined) scene.set(withParamValue(scene.get(), next, current && 'Text' in current ? current : { Text: '' }))
-    props.lens.set({ Param: next })
+    const current = variable()
+    if (scene.get().variables?.[next] === undefined) scene.set(withVariableValue(scene.get(), next, current && 'Text' in current ? current : { Text: '' }))
+    props.lens.set({ Variable: next })
   }
   const readable = () => {
-    const current = param()
+    const current = variable()
     return current !== undefined && ('Text' in current || 'Int' in current || 'Float' in current)
   }
   return (
     <>
-      <FieldRow label="Parameter">
+      <FieldRow label="Variable">
         <input
-          class="scene-param-name"
-          aria-label="Text parameter name"
+          class="scene-variable-name"
+          aria-label="Text variable name"
           spellcheck={false}
           value={name()}
           onChange={(e) => {
@@ -1266,7 +1360,7 @@ function TextParamField(props: { lens: Lens<Extract<TextSource, { Param: string 
         />
       </FieldRow>
       <Show when={!readable()}>
-        <p class="scene-note scene-note-warn">No text or number parameter has that name, so this draws nothing.</p>
+        <p class="scene-note scene-note-warn">No text or number variable has that name, so this draws nothing.</p>
       </Show>
     </>
   )
@@ -1399,7 +1493,7 @@ function TraversalFields(props: { lens: Lens<Traversal>; layer: Lens<SceneLayer>
     <>
       <FieldRow label="Name">
         <input
-          class="scene-param-name"
+          class="scene-variable-name"
           aria-label="Traversal name"
           spellcheck={false}
           value={traversal().name}
@@ -1494,7 +1588,7 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
     <div class="scene-field" onMouseEnter={() => point(true)} onMouseLeave={() => point(false)} onFocusIn={() => point(true)} onFocusOut={() => point(false)}>
       <div class="scene-node-pick">
         <input
-          class="scene-param-name"
+          class="scene-variable-name"
           aria-label={`${props.label} LED`}
           list={LED_NAMES}
           spellcheck={false}
@@ -1579,7 +1673,7 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
   // whether a chosen image is animated is only known once the machine has decoded it
   let choosing: string | null = null
 
-  // a frame's number means nothing in another image, but where a track or a param leads is still wanted
+  // a frame's number means nothing in another image, but where a track or a variable leads is still wanted
   const choose = (next: string) => {
     if (next === name()) return
     const current = frame()
@@ -1599,7 +1693,7 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
     }),
   )
 
-  const changes = () => (info()?.frames ?? 1) > 1 && frame() !== undefined && !('Fixed' in frame()!) && !('Param' in frame()!)
+  const changes = () => (info()?.frames ?? 1) > 1 && frame() !== undefined && !('Fixed' in frame()!) && !('Variable' in frame()!)
 
   return (
     <>
@@ -1960,6 +2054,41 @@ function AddMenu<T extends string>(props: { label: string; class: string; groups
 }
 
 /** An add button in a list's row */
+/** A layer added to the end of the scene, of a kind it can have */
+function AddLayer(props: { node: ConfigNode }) {
+  const tree = useContext(ConfigTreeContext)!
+  return (
+    <Controls node={props.node} class="scene-tree-end">
+      <AddMenu label="Add layer" class="scene-icon-button" groups={[tree.layerOptions()]} onPick={tree.addLayer}>
+        <icons.Plus aria-hidden="true" />
+      </AddMenu>
+    </Controls>
+  )
+}
+
+/** A named value added to the scene, of the type picked */
+function AddValue(props: { node: ConfigNode }) {
+  const tree = useContext(ConfigTreeContext)!
+  const scene = useContext(SceneContext)!
+  const add = (kind: NamedValueKind) => {
+    const before = new Set(Object.keys(scene.get().values ?? {}))
+    const next = withNewValue(scene.get(), kind)
+    const name = Object.keys(next.values ?? {}).find((value) => !before.has(value))!
+    batch(() => {
+      scene.set(next)
+      tree.select(`values/${name}`)
+      tree.expand('values', `values/${name}`)
+    })
+  }
+  return (
+    <Controls node={props.node} class="scene-tree-end">
+      <AddMenu label="Add value" class="scene-icon-button" groups={[NAMED_VALUE_KINDS.map((kind) => ({ value: kind, label: NAMED_VALUE_LABELS[kind] }))]} onPick={add}>
+        <icons.Plus aria-hidden="true" />
+      </AddMenu>
+    </Controls>
+  )
+}
+
 function AddButton(props: { node: ConfigNode; label: string; onClick: () => void }) {
   return (
     <Controls node={props.node} class="scene-tree-end">

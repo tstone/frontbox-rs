@@ -19,7 +19,7 @@ import type { Overlap } from '../../types/generated/Overlap'
 import type { Spread } from '../../types/generated/Spread'
 import type { VisitResponse } from '../../types/generated/VisitResponse'
 import CurvePicker, { CurveGraph, CURVES, CUSTOM_CURVE } from './CurvePicker'
-import { curveHeight, field, freshParamName, fullSpread, HUE, newPick, newSweep, newVisit, paramFits, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withParam, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
+import { curveHeight, field, freshVariableName, fullSpread, HUE, newPick, newSweep, newVisit, variableReads, spreadFits, startingValue, STEPS, UNIT, variant, WAVE_RATE, withVariable, withTiming, type Lens, type Range, type Ranges, type LayerSurfaces, type Scene, type SceneValue, type Selection, type Surface, type Vec2 } from './sceneModel'
 
 /** The scene being edited, for fields whose edits reach past their own place in it */
 export const SceneContext = createContext<Lens<Scene>>()
@@ -458,15 +458,24 @@ function toScene(color: PickerColor): Color {
   return [channel('red'), channel('green'), channel('blue'), Math.round(rgba.getChannelValue('alpha') * 255)]
 }
 
-/** The control for a value of any type. Both a fixed prop and a parameter's default use this. */
+/** The control for a value of any type. Both a fixed prop and a variable's default use this. */
 export function ValueField(props: { label: string; lens: Lens<SceneValue>; ranges: Ranges }) {
   const kind = () => {
     const value = props.lens.get()
+    if (typeof value === 'boolean') return 'bool'
     if (typeof value === 'number') return 'number'
     return value.length === 2 ? 'vec2' : 'color'
   }
   return (
     <Switch>
+      <Match when={kind() === 'bool'}>
+        <Toggle.Root class="scene-switch" checked={props.lens.get() as boolean} onCheckedChange={(details) => props.lens.set(details.checked)}>
+          <Toggle.Control>
+            <Toggle.Thumb />
+          </Toggle.Control>
+          <Toggle.HiddenInput aria-label={props.label} />
+        </Toggle.Root>
+      </Match>
       <Match when={kind() === 'number'}>
         <NumberField
           label={props.label}
@@ -485,12 +494,12 @@ export function ValueField(props: { label: string; lens: Lens<SceneValue>; range
   )
 }
 
-export type PropKind = 'Fixed' | 'Param' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
-const PROP_KINDS: PropKind[] = ['Fixed', 'Param', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit']
+export type PropKind = 'Fixed' | 'Variable' | 'Keyframes' | 'Random' | 'Modulated' | 'Sweep' | 'Visit'
+const PROP_KINDS: PropKind[] = ['Fixed', 'Variable', 'Keyframes', 'Random', 'Modulated', 'Sweep', 'Visit']
 
 export const PROP_KIND_LABELS: Record<PropKind, string> = {
   Fixed: 'Fixed',
-  Param: 'Param',
+  Variable: 'Variable',
   Keyframes: 'Keyframes',
   Random: 'Random',
   Modulated: 'Modulated',
@@ -502,8 +511,8 @@ export const propKind = (prop: Prop<SceneValue>) => Object.keys(prop)[0] as Prop
 
 type PropProps<T extends SceneValue> = {
   label: string
-  /** What to call a parameter made from this prop */
-  paramName: string
+  /** What to call a variable made from this prop */
+  variableName: string
   lens: Lens<Prop<T>>
   /** For a prop with nothing to take a value from */
   fallback: T
@@ -511,7 +520,7 @@ type PropProps<T extends SceneValue> = {
 }
 
 /**
- * A prop: whether it's fixed, read from a parameter, keyframed, picked at random, moved in a wave, swept along a path,
+ * A prop: whether it's fixed, read from a variable, keyframed, picked at random, moved in a wave, swept along a path,
  * or set off by visits, and the control for that. A sweep's path is edited in the config tree, under the prop's node.
  */
 export function PropField<T extends SceneValue>(
@@ -527,7 +536,7 @@ export function PropField<T extends SceneValue>(
   const prop = () => props.lens.get()
   const kind = () => propKind(prop())
   const value = () => startingValue(prop(), scene.get(), props.fallback)
-  const paramName = () => (prop() as { Param: string }).Param
+  const variableName = () => (prop() as { Variable: string }).Variable
 
   // a field can come up for this, in a layer that's only now opening
   createEffect(() => {
@@ -538,9 +547,9 @@ export function PropField<T extends SceneValue>(
   })
 
   const rename = (name: string) => {
-    if (name === '' || name === paramName()) return
-    if (scene.get().params?.[name] === undefined) scene.set(withParam(scene.get(), name, value()))
-    props.lens.set({ Param: name })
+    if (name === '' || name === variableName()) return
+    if (scene.get().variables?.[name] === undefined) scene.set(withVariable(scene.get(), name, value()))
+    props.lens.set({ Variable: name })
   }
 
   return (
@@ -566,19 +575,19 @@ export function PropField<T extends SceneValue>(
             lens={{ get: () => value(), set: (next) => props.lens.set({ Fixed: next as T }) }}
           />
         </Match>
-        <Match when={kind() === 'Param'}>
+        <Match when={kind() === 'Variable'}>
           <input
-            class="scene-param-name"
-            aria-label={`${props.label} parameter name`}
+            class="scene-variable-name"
+            aria-label={`${props.label} variable name`}
             spellcheck={false}
-            value={paramName()}
+            value={variableName()}
             onChange={(e) => {
               rename(e.currentTarget.value.trim())
-              e.currentTarget.value = paramName()
+              e.currentTarget.value = variableName()
             }}
           />
-          <Show when={!paramFits(scene.get().params?.[paramName()], props.fallback)}>
-            <p class="scene-note scene-note-warn">No parameter of this type has that name, so this reads as zero.</p>
+          <Show when={!variableReads(scene.get(), variableName(), props.fallback)}>
+            <p class="scene-note scene-note-warn">No variable of this type has that name, so this reads as zero.</p>
           </Show>
         </Match>
         <Match when={kind() === 'Keyframes'}>
@@ -645,10 +654,10 @@ export function PropSource<T extends SceneValue>(props: PropProps<T>) {
       scene.set(timed)
       props.lens.set({ Sweep: newSweep(current as Vec2, props.ranges, timed.timing!.duration) })
     }
-    if (next === 'Param') {
-      const name = freshParamName(scene.get(), props.paramName)
-      scene.set(withParam(scene.get(), name, current))
-      props.lens.set({ Param: name })
+    if (next === 'Variable') {
+      const name = freshVariableName(scene.get(), props.variableName)
+      scene.set(withVariable(scene.get(), name, current))
+      props.lens.set({ Variable: name })
     }
     if (next === 'Visit') {
       scene.set(withTiming(scene.get()))

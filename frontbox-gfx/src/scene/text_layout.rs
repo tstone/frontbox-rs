@@ -48,6 +48,26 @@ impl VerticalAlign {
   }
 }
 
+/// What a line of a [`ShapeNode::Text`] does where it's wider than its box
+///
+/// [`ShapeNode::Text`]: crate::scene::ShapeNode::Text
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TextOverflow {
+  /// Breaks between words onto the lines below
+  #[default]
+  Wrap,
+  /// Stays on one line, cut short with "…" (or "..." in a font without it) where it would run past the box. Line breaks
+  /// in the text still start new lines.
+  Ellipsis,
+}
+
+impl TextOverflow {
+  pub(crate) fn is_wrap(&self) -> bool {
+    *self == Self::Wrap
+  }
+}
+
 /// `text` laid out in a box `frame` wide and tall around the origin, at `size`, with y down. Lines are a line height
 /// apart, and are aligned by their capitals: from the top of the first line's to the last line's baseline, or the
 /// font's ascent for a font without an "H". A font's ascent can reach well above its capitals, which would push the
@@ -65,13 +85,17 @@ pub(crate) fn layout_text(
   frame: Vec2,
   align: TextAlign,
   vertical: VerticalAlign,
+  overflow: TextOverflow,
   spacing: Vec2,
   moved_to: Option<Vec2>,
 ) -> TextOutline {
   let pixel = font.pixel_size().filter(|_| size > 0.0).map(|pixels| size / pixels);
   let whole = |length: f32| pixel.map_or(length, |pixel| (length / pixel).round() * pixel);
   let kerning = whole(spacing.x);
-  let lines = wrap_text(font, text, size, kerning, frame.x);
+  let lines = match overflow {
+    TextOverflow::Wrap => wrap_text(font, text, size, kerning, frame.x),
+    TextOverflow::Ellipsis => cut_text(font, text, size, kerning, frame.x),
+  };
   let corner = -frame / 2.0;
   // the grid's size, and where one of its points is in local space
   let grid = pixel.map(|pixel| match moved_to {
@@ -117,6 +141,21 @@ pub fn wrap_text(font: &Font, text: &str, size: f32, kerning: f32, width: f32) -
   lines
 }
 
+/// `text` as lines: one for each line break, each cut short with an ellipsis where it would run past `width`, with
+/// `kerning` between characters. A line with no room for any of its characters is the ellipsis alone.
+pub fn cut_text(font: &Font, text: &str, size: f32, kerning: f32, width: f32) -> Vec<String> {
+  let ellipsis = if font.has_char('…') { "…" } else { "..." };
+  let fits = |line: &str| font.measure(line, size, kerning).x <= width;
+  let cut = |line: &str| {
+    if fits(line) {
+      return line.to_owned();
+    }
+    let ends = line.char_indices().map(|(at, _)| at).rev();
+    ends.map(|end| format!("{}{ellipsis}", line[..end].trim_end())).find(|cut| fits(cut)).unwrap_or_else(|| ellipsis.into())
+  };
+  text.split('\n').map(|line| cut(line.trim_end_matches('\r'))).collect()
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -131,6 +170,26 @@ mod tests {
     assert_eq!(wrap_text(&font, "ABCDEFG H", 16.0, 0.0, 3.0 * letter), ["ABCDEFG", "H"]);
     assert_eq!(wrap_text(&font, "", 16.0, 0.0, 0.0), [""]);
     assert_eq!(wrap_text(&font, "A\r\n\nB", 16.0, 0.0, 10.0), ["A", "", "B"]);
+  }
+
+  #[test]
+  fn a_line_too_wide_is_cut_short_with_an_ellipsis() {
+    let font = pixel_font();
+    let width = font.measure("ABC...", 8.0, 0.0).x;
+    assert_eq!(cut_text(&font, "ABCDEFG", 8.0, 0.0, width), ["ABC..."]);
+    assert_eq!(cut_text(&font, "ABC", 8.0, 0.0, width), ["ABC"]);
+  }
+
+  #[test]
+  fn a_cut_drops_the_space_before_the_ellipsis_and_keeps_line_breaks() {
+    let font = pixel_font();
+    let width = font.measure("AB...", 8.0, 0.0).x;
+    assert_eq!(cut_text(&font, "AB CDEF\nA", 8.0, 0.0, width), ["AB...", "A"]);
+  }
+
+  #[test]
+  fn a_line_with_no_room_is_the_ellipsis_alone() {
+    assert_eq!(cut_text(&pixel_font(), "ABCDEFG", 8.0, 0.0, 1.0), ["..."]);
   }
 
   #[test]

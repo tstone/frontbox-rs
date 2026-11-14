@@ -89,7 +89,7 @@ impl Wrap {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::{Params, Scaling};
+  use crate::scene::{Variables, Scaling};
   use crate::scene::value::tests::env;
 
   fn node(transform: Vec<Transform>) -> Node<(), ()> {
@@ -98,14 +98,14 @@ mod tests {
 
   #[test]
   fn transforms_apply_to_the_drawing_in_order() {
-    let params = Params::new();
+    let variables = Variables::new();
     // scale then move: the local point (0.5, 0) is drawn at 2 * 0.5 + 10
     let n = node(vec![
       Transform::Scale(2.0.into()),
       Transform::Translate(Vec2::new(10.0, 0.0).into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
-    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &variables)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
     // move then scale: the scale is around the center where it was moved to, so the point is drawn at 10 + 2 * 0.5
@@ -114,7 +114,7 @@ mod tests {
       Transform::Scale(2.0.into()),
     ]);
     let at = Vec2::new(11.0, 0.0);
-    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &variables)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
 
     // anchored 10 back from the center, at the origin, so it's drawn at 2 * (0.5 + 10)
@@ -123,38 +123,38 @@ mod tests {
       Transform::Scale(Scaling { amount: 2.0.into(), anchor: Vec2::new(-10.0, 0.0).into() }),
     ]);
     let at = Vec2::new(21.0, 0.0);
-    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &variables)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(0.5, 0.0), 1e-6));
   }
 
   #[test]
   fn rotate_turns_x_toward_y() {
-    let params = Params::new();
+    let variables = Variables::new();
     let n = node(vec![Transform::Rotate(90.0.into())]);
     let at = Vec2::new(0.0, 1.0);
-    let local = n.to_scene(Vec2::ZERO, &env(0.0, &params)).unwrap().inverse();
+    let local = n.to_scene(Vec2::ZERO, &env(0.0, &variables)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(1.0, 0.0), 1e-6));
   }
 
   #[test]
   fn rotate_turns_around_the_middle_of_a_drawing_wherever_it_has_been_moved() {
-    let params = Params::new();
+    let variables = Variables::new();
     // the middle stays at (11, 0), and what was 1 past it on x is now 1 past it on y
     let n = node(vec![Transform::Translate(Vec2::new(10.0, 0.0).into()), Transform::Rotate(90.0.into())]);
     let center = Vec2::new(1.0, 0.0);
-    let to_scene = n.to_scene(center, &env(0.0, &params)).unwrap();
+    let to_scene = n.to_scene(center, &env(0.0, &variables)).unwrap();
     assert!(to_scene.transform_point2(center).abs_diff_eq(Vec2::new(11.0, 0.0), 1e-5));
     assert!(to_scene.transform_point2(Vec2::new(2.0, 0.0)).abs_diff_eq(Vec2::new(11.0, 1.0), 1e-5));
 
     let at = Vec2::new(11.0, 1.0);
-    let local = n.to_scene(center, &env(0.0, &params)).unwrap().inverse();
+    let local = n.to_scene(center, &env(0.0, &variables)).unwrap().inverse();
     assert!(local.transform_point2(at).abs_diff_eq(Vec2::new(2.0, 0.0), 1e-5));
   }
 
   #[test]
   fn zero_scale_draws_nothing() {
-    let params = Params::new();
+    let variables = Variables::new();
     let n = node(vec![Transform::Scale(0.0.into())]);
-    assert!(n.to_scene(Vec2::ZERO, &env(0.0, &params)).is_none());
+    assert!(n.to_scene(Vec2::ZERO, &env(0.0, &variables)).is_none());
   }
 }

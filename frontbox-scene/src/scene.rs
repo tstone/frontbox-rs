@@ -3,7 +3,7 @@ use std::fmt;
 use frontbox_core::prelude::*;
 use frontbox_gfx::animation::Cycle;
 use frontbox_gfx::scene::file::{self, FormatError};
-use frontbox_gfx::scene::{self, Content, Assets, LayerFrame, Layer, LayerAssetError, Params, SceneError, Timing, Visits};
+use frontbox_gfx::scene::{self, Content, Assets, Inputs, LayerFrame, Layer, LayerAssetError, Value, Values, Variables, SceneError, SceneFileError, Timing, Visits};
 use serde::{Deserialize, Serialize};
 
 use crate::{Moment, SoundLayer, SoundStart};
@@ -27,10 +27,15 @@ use crate::{Moment, SoundLayer, SoundStart};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
   pub version: u32,
-  /// Parameter names and their defaults
-  #[serde(default, skip_serializing_if = "Params::is_empty")]
-  #[cfg_attr(feature = "ts", ts(as = "Option<Params>", optional))]
-  pub params: Params,
+  /// Variable names and their defaults. A default can point at one of `values`. Files from before variables were named
+  /// so say `params`.
+  #[serde(default, alias = "params", skip_serializing_if = "Variables::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Variables>", optional))]
+  pub variables: Variables,
+  /// Named values, each a type and a prop of it, which a variable can point at, from its default or the code
+  #[serde(default, skip_serializing_if = "Values::is_empty")]
+  #[cfg_attr(feature = "ts", ts(as = "Option<Values>", optional))]
+  pub values: Values,
   /// `None` is static, and its keyframes stay on their first key
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
@@ -48,7 +53,7 @@ pub struct Scene {
 impl Scene {
   /// A scene of the current format version
   pub fn new(layers: Vec<SceneLayer>) -> Self {
-    Self { version: file::VERSION, params: Params::new(), timing: None, layers, assets: Assets::new() }
+    Self { version: file::VERSION, variables: Variables::new(), values: Values::new(), timing: None, layers, assets: Assets::new() }
   }
 
   pub fn timing(mut self, timing: Timing) -> Self {
@@ -64,6 +69,14 @@ impl Scene {
     Ok(scene)
   }
 
+  /// Reads scene `name` from `content`, with the images and fonts it draws. That reads files, so do it ahead of time
+  /// rather than in a tick.
+  pub fn open(content: &Content, name: &str) -> Result<Self, OpenError> {
+    let source = content.read_scene(name).map_err(OpenError::File)?;
+    let scene = Self::load(&source).map_err(|error| OpenError::Format { name: name.into(), error })?;
+    scene.with_assets(content).map_err(|error| OpenError::Assets { name: name.into(), error })
+  }
+
   /// Writes a `.scene` file
   pub fn save(&self) -> Result<String, FormatError> {
     // only `load` can take it back, so it isn't cloned for anything else
@@ -76,10 +89,37 @@ impl Scene {
     if let Some(timing) = self.timing {
       timing.check()?;
     }
+    if let Some(name) = self.values.iter().find(|(_, value)| self.timing.is_none() && value.is_animated()).map(|(name, _)| name) {
+      return Err(SceneError::NoTiming { layer: format!("value \"{name}\"") });
+    }
     self.layers.iter().enumerate().try_for_each(|(index, layer)| match layer {
       SceneLayer::Sound(sound) => sound.check(index, self.timing),
       drawn => drawn.layer().map_or(Ok(()), |layer| layer.check(index, self.timing)),
     })
+  }
+
+  /// The variables its layers and named values read from the code playing it
+  pub fn inputs(&self) -> Inputs {
+    let mut inputs = Inputs::new();
+    self.values.values().for_each(|value| value.read_inputs(&mut inputs));
+    for layer in &self.layers {
+      match layer {
+        SceneLayer::Sound(sound) => sound.volume.read_inputs(&mut inputs),
+        drawn => drawn.layer().iter().for_each(|layer| layer.read_inputs(&mut inputs)),
+      }
+    }
+    inputs
+  }
+
+  /// Logs a warning if `value` points `variable` at a named value the scene doesn't have. The variable then reads as its
+  /// type's zero value.
+  pub(crate) fn warn_if_missing(&self, variable: &str, value: &Value) {
+    if let Value::Named(name) = value
+      && !self.values.contains_key(name)
+    {
+      let names: Vec<_> = self.values.keys().collect();
+      log::warn!(target: "frontbox::scene", "Variable \"{variable}\" points at value \"{name}\", which the scene doesn't have. Its values: {names:?}");
+    }
   }
 
   /// Names of the images it uses, possibly with repeats
@@ -174,8 +214,9 @@ impl Scene {
       time: moment.time,
       timing: self.timing,
       playback_seed: moment.playback_seed,
-      params: moment.params,
-      defaults: &self.params,
+      variables: moment.variables,
+      defaults: &self.variables,
+      values: &self.values,
       assets: &self.assets,
       size,
       surface,
@@ -375,6 +416,26 @@ fn is_zero(z: &i8) -> bool {
   *z == 0
 }
 
+/// Why [`Scene::open`] couldn't open a scene
+#[derive(Debug)]
+pub enum OpenError {
+  File(SceneFileError),
+  Format { name: String, error: FormatError },
+  Assets { name: String, error: LayerAssetError },
+}
+
+impl fmt::Display for OpenError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::File(error) => error.fmt(f),
+      Self::Format { name, error } => write!(f, "scene \"{name}\": {error}"),
+      Self::Assets { name, error } => write!(f, "scene \"{name}\": {error}"),
+    }
+  }
+}
+
+impl std::error::Error for OpenError {}
+
 /// How a file says it's a scene
 #[derive(Serialize, Deserialize)]
 enum SceneFile {
@@ -511,8 +572,8 @@ mod tests {
   #[test]
   fn a_sound_layer_with_no_volume_or_times_plays_all_of_it_as_recorded_at_the_start() {
     let scene = Scene::load(r#"Scene(version: 2, layers: [Sound(sound: "a.wav")])"#).unwrap();
-    let params = Params::new();
-    let started = scene.sounds_started(&Moment { time: 0.1, playback_seed: 0, params: &params }, None);
+    let variables = Variables::new();
+    let started = scene.sounds_started(&Moment { time: 0.1, playback_seed: 0, variables: &variables }, None);
     assert_eq!(started, [SoundStart { sound: "a.wav", time: 0.0, volume: 1.0, skip: 0.0, length: None }]);
   }
 
@@ -522,9 +583,9 @@ mod tests {
     let late = SoundLayer::new("a.wav").start(0.5).skip(0.125).end(0.75).volume(fade_in());
     let early = SoundLayer::new("b.wav").start(0.25).volume(fade_in());
     let scene = Scene::new(vec![late.into(), early.into()]).timing(Timing::new(1.0, Cycle::Forever));
-    let params = Params::new();
+    let variables = Variables::new();
 
-    let started = scene.sounds_started(&Moment { time: 1.6, playback_seed: 0, params: &params }, Some(1.0));
+    let started = scene.sounds_started(&Moment { time: 1.6, playback_seed: 0, variables: &variables }, Some(1.0));
     assert_eq!(
       started,
       [
@@ -538,11 +599,49 @@ mod tests {
   fn a_cycle_has_its_starts_at_their_times_in_it() {
     let scene = Scene::new(vec![SoundLayer::new("b.wav").start(0.5).into(), SoundLayer::new("a.wav").into()])
       .timing(Timing::new(2.0, Cycle::Times(2)));
-    let params = Params::new();
-    let moment = Moment { time: 0.0, playback_seed: 0, params: &params };
+    let variables = Variables::new();
+    let moment = Moment { time: 0.0, playback_seed: 0, variables: &variables };
     let times = |cycle| scene.sounds_in_cycle(&moment, cycle).iter().map(|start| (start.sound, start.time)).collect::<Vec<_>>();
     assert_eq!(times(1), [("a.wav", 2.0), ("b.wav", 2.5)]);
     assert_eq!(times(5), times(1), "past the last cycle is the last");
+  }
+
+  #[test]
+  fn values_are_read_and_written() {
+    let source = r#"Scene(version: 2, variables: {"color": Value("current")}, values: {"current": Color(Variable("lit"))}, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Variable("color")))))])"#;
+    let scene = Scene::load(source).unwrap();
+    assert_eq!(scene.variables["color"], Value::named("current"));
+    let written = scene.save().unwrap();
+    assert!(written.contains(r#"Value("current")"#), "{written}");
+    let read = Scene::load(&written).unwrap();
+    assert!(matches!(read.values["current"], NamedValue::Color(_)));
+    assert_eq!(read.inputs().variables.keys().collect::<Vec<_>>(), ["color", "lit"]);
+  }
+
+  #[test]
+  fn a_file_from_before_variables_says_params() {
+    let scene = Scene::load(r#"Scene(version: 2, params: {"size": Float(2.0)}, layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Param("color")))))])"#).unwrap();
+    assert_eq!(scene.variables["size"], Value::Float(2.0));
+    assert_eq!(scene.inputs().variables.keys().collect::<Vec<_>>(), ["color"]);
+  }
+
+  #[test]
+  fn an_animated_value_needs_a_timing() {
+    let scene = Scene::load(r#"Scene(version: 2, values: {"pulse": Float(Keyframes((keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 1.0)], cycle: Once)))})"#);
+    assert!(scene.is_err());
+  }
+
+  #[test]
+  fn a_sounds_volume_is_read_too() {
+    let scene = Scene::new(vec![SoundLayer::new("a.wav").volume(Prop::Variable("loud".into())).into()]);
+    assert_eq!(scene.inputs().variables.keys().collect::<Vec<_>>(), ["loud"]);
+  }
+
+  #[test]
+  fn a_bundled_scene_opens_until_a_file_replaces_it() {
+    let content = Content::without_folder().with_scenes([("frontbox/a.scene", "Scene(version: 2, timing: (duration: 2.0))")]);
+    assert_eq!(Scene::open(&content, "frontbox/a.scene").unwrap().timing.unwrap().duration, 2.0);
+    assert!(matches!(Scene::open(&content, "b.scene"), Err(OpenError::File(_))));
   }
 
   #[test]

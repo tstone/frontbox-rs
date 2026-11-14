@@ -1,0 +1,177 @@
+Scene(
+  version: 2,
+  timing: (
+    duration: 0.8,
+    cycle: Forever,
+  ),
+  variables: {
+    "arrow_offset": Value("selected_arrow_offset"),
+    "bar_opacity": Value("selected_bar_opacity"),
+    "has_value": Bool(false),
+    "label": Text("Replay score and extra ball awards"),
+    "opens": Bool(true),
+    "text_color": Value("selected_text_color"),
+    "value": Text(""),
+  },
+  values: {
+    "normal_arrow_offset": Vec2(Fixed(0.0, 0.0)),
+    "normal_bar_opacity": Float(Fixed(0.0)),
+    "normal_text_color": Color(Fixed(255, 255, 77, 255)),
+    "selected_arrow_offset": Vec2(Modulated(
+      envelope: (
+        attack: (
+          curve: EaseInOut,
+        ),
+        decay: (
+          curve: EaseInOut,
+          reversed: true,
+        ),
+      ),
+      spread: Vec2(
+        x: (0.0, 2.0),
+        y: (0.0, 0.0),
+      ),
+      rate: 1.0,
+    )),
+    "selected_bar_opacity": Float(Fixed(1.0)),
+    "selected_text_color": Color(Fixed(240, 250, 255, 255)),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Gradient(
+            stops: [
+              (
+                at: 0.0,
+                color: Fixed(0, 170, 200, 255),
+              ),
+              (
+                at: 1.0,
+                color: Fixed(0, 40, 120, 255),
+              ),
+            ],
+            style: Linear,
+          ),
+          adjust: [
+            Opacity(Variable("bar_opacity")),
+          ],
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 5.5)),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Label beside arrow",
+        visible: Variable("opens"),
+        fill: (
+          base: Solid(Variable("text_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(59.5, 5.5)),
+          ],
+          base: Text(
+            text: Variable("label"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(113.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Label beside value",
+        visible: Variable("has_value"),
+        fill: (
+          base: Solid(Variable("text_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(43.0, 5.5)),
+          ],
+          base: Text(
+            text: Variable("label"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(80.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Value",
+        visible: Variable("has_value"),
+        fill: (
+          base: Solid(Variable("text_color")),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(104.0, 5.5)),
+          ],
+          base: Text(
+            text: Variable("value"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(40.0),
+            height: Fixed(7.0),
+            align: Right,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Arrow",
+        visible: Variable("opens"),
+        fill: (
+          base: Solid(Variable("text_color")),
+        ),
+        region: (
+          transform: [
+            Rotate(Fixed(90.0)),
+            Translate(Fixed(121.5, 5.5)),
+            Translate(Variable("arrow_offset")),
+          ],
+          base: Chevron(
+            width: Fixed(5.0),
+            height: Fixed(3.0),
+            notch: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)
