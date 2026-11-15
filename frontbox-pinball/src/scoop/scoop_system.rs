@@ -8,12 +8,10 @@ use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 use crate::scoop::{ScoopBallEntered, ScoopEjectStarted, ScoopEjected, ScoopEntry};
 use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 
-/// A scoop (saucer, kickout hole): a hole with a switch that a ball comes to rest on, and a coil that kicks it back
-/// out. Ejects any ball that lands in it, at any time (in a turn, after a tilt, at boot), and kicks again if the ball
-/// is still there afterwards.
+/// A "scoop" (saucer, kickout hole): a hole with an occupancy switch and a coil that kicks it back out.
 ///
-/// ## One per scoop
-/// `S` is a marker type that names the scoop, so a machine has a `ScoopSystem` per scoop, each with its own events:
+/// ## Usage
+/// A machine has a ScoopSystem per physical scoop on the playfield, with `S` as a marker type for uniqueness.
 ///
 /// ```rust,ignore
 /// pub struct Lower;
@@ -30,23 +28,22 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// if event.is::<ScoopEjected<Lower>>() { /* ... */ }
 /// ```
 ///
-/// ## What happens to a ball
-/// Two things decide it, and they're separate:
-/// - **Whether the ball can go** is decided for each ball as it lands, by the game: other systems hold it
-///   ([`Self::hold`]) for as long as they need it, and it can go once none of them does. The scoop has no setting for
-///   this, since the same scoop might hold one ball for a menu and let the next go.
-/// - **How the eject goes** is set once, on the scoop: with a [`before_eject_scene`](Self::before_eject_scene), the
-///   scene plays through and then the coil fires. Without one, the coil fires right away.
+/// ## Events
+/// - [`ScoopBallEntered<S>`] when a ball lands in the scoop, with its entry type
+/// - [`ScoopEjectStarted<S>`] when the eject process begins
+/// - [`ScoopEjected<S>`] when the ball is successfully ejected
 ///
-/// For every ball:
-/// 1. It lands, and `ScoopBallEntered` is emitted.
-/// 2. Any system that wants it to wait calls [`Self::hold`] on hearing that.
-/// 3. Once nothing holds it (right away, if nothing did), `ScoopEjectStarted` is emitted and the eject scene plays.
-///    A hold placed while it plays stops the eject, which starts over from here when the ball is next let go.
-/// 4. The coil fires, and `ScoopEjected` is emitted.
+/// ## Entry Response
+/// The ball  lands in the scoop and `ScoopBallEntered` is emitted. The default orientation of ScoopSystem is to eject it right away.
+/// However any other system can place a hold by calling [`Self::hold`]. Once nothing holds it (right away, if nothing did) the eject
+/// process beings (below).
 ///
-/// So a scoop that only ever ejects needs nothing more than its switch and coil, and a scoop that opens a menu is the
-/// same scoop plus a menu system that holds the ball while it's open.
+/// ## Eject Lifecycle
+/// 1. ScoopEjectStarted is emitted
+/// 2. before_eject_scene (optional) completes -- Must be time limited
+/// 3. Coil fires
+/// 4. after_eject_scene (optional) completes -- Must be time limited
+/// 5. ScoopEjected is emitted
 ///
 /// ## Holds
 /// A hold is kept by the system that placed it, by its `ctx.id()`, so several can hold the same ball (an award's
@@ -69,14 +66,8 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// to eject.
 ///
 /// ## Ball counts
-/// A ball resting in the scoop is reported to ball management as held (`set_balls_held`). It's still in play, so a
-/// drain while it's here doesn't end the turn, but a ball search doesn't look for it.
-///
-/// ## Its own coil
-/// For [`KICK_SETTLE`] after the coil fires, the switch closing isn't taken for a ball landing: the kicker can pass
-/// through an opto when it fires into an empty scoop (as a ball search does), and each phantom ball would be kicked
-/// again. If the switch is still closed once that time is up, a ball did land. A ball still there after a kick is kicked again after the `verify_delay`, waiting twice as long after each
-/// kick that fails, up to [`MAX_VERIFY_DELAY`], so a ball stuck for good doesn't fire the coil every second.
+/// A ball resting in the scoop is reported to ball management as 'held'. It's still in play, so a drain while it's held
+/// doesn't end the turn, but a ball search doesn't look for it.
 pub struct ScoopSystem<S> {
   handle: SystemHandle,
   /// For logs
@@ -241,17 +232,22 @@ impl<S: 'static> ScoopSystem<S> {
 
     scene.restart(ctx);
     let length = scene.scene().length();
-    self.eject_cue = Some(ctx.cues.start(
-      ScoopCue::<S>::new(Step::EjectSceneCompleted),
-      length.once(),
-    ));
+    self.eject_cue = Some(
+      ctx
+        .cues
+        .start(ScoopCue::<S>::new(Step::EjectSceneCompleted), length.once()),
+    );
   }
 
   /// Fire the coil, then check the scoop is empty once the kick has had time to work
   fn fire(&mut self, ctx: &SystemContext) {
     ctx.drivers.activate(self.coil, ActivationMode::Tap);
     ctx.cues.cancel(self.settle_cue.take());
-    self.settle_cue = Some(ctx.cues.start(ScoopCue::<S>::new(Step::KickSettled), KICK_SETTLE.once()));
+    self.settle_cue = Some(
+      ctx
+        .cues
+        .start(ScoopCue::<S>::new(Step::KickSettled), KICK_SETTLE.once()),
+    );
 
     // so the check reads the switch as it is, even if its opening went unreported
     if let Some(machine) = ctx.systems.get::<MachineSystem>() {
@@ -261,7 +257,9 @@ impl<S: 'static> ScoopSystem<S> {
       .verify_delay
       .saturating_mul(1 << self.failed_kicks.min(16))
       .min(MAX_VERIFY_DELAY.max(self.verify_delay));
-    ctx.cues.start(ScoopCue::<S>::new(Step::VacancyCheckDue), delay.once());
+    ctx
+      .cues
+      .start(ScoopCue::<S>::new(Step::VacancyCheckDue), delay.once());
   }
 
   fn kick(&mut self, ctx: &SystemContext) {
@@ -305,7 +303,10 @@ impl<S: 'static> ScoopSystem<S> {
   /// The kicker is back, so a switch still closed from while it was moving is a ball that landed
   fn on_kick_settled(&mut self, ctx: &SystemContext) {
     self.settle_cue = None;
-    if std::mem::take(&mut self.closed_while_settling) && !self.ball_waiting && self.is_occupied(ctx) {
+    if std::mem::take(&mut self.closed_while_settling)
+      && !self.ball_waiting
+      && self.is_occupied(ctx)
+    {
       self.on_ball_enter(ctx);
     }
   }
