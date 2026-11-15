@@ -143,19 +143,15 @@ pub struct LedColors {
   pub colors: BTreeMap<String, Rgb>,
 }
 
-/// A scene's colors at each point, row by row from the top left
+/// A moment of a scene, on everything it draws on
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedScene {
   /// The scene that was rendered
   pub scene: Scene,
   /// The same scene as RON
   pub ron: String,
-  pub width: usize,
-  pub height: usize,
-  /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
-  pub colors: Vec<u8>,
-  /// The part of the scene those points show, in scene units
-  pub area: RenderedArea,
+  /// The strip of its `Sequence` LED layers, if it has any, then each display it or the reference scene draws on
+  pub canvases: Vec<RenderedCanvas>,
   /// Where each layer is drawn, as closed loops of points in scene units: one for each copy of its shape
   pub outlines: Vec<Vec<Vec<[f32; 2]>>>,
   /// Each layer's shape as it stands, for the editor's handles. `None` for a layer without one.
@@ -171,6 +167,19 @@ pub struct RenderedScene {
   pub graphs: Vec<Option<RenderedGraph>>,
   /// Why the reference scene asked for couldn't be drawn, which leaves it out of the render
   pub reference_error: Option<String>,
+}
+
+/// The colors a render drew at each point of one thing a scene draws on, row by row from the top left
+#[derive(Clone, serde::Serialize, TS)]
+pub struct RenderedCanvas {
+  /// The display, by name, or `None` for the strip of `Sequence` LED layers
+  pub display: Option<String>,
+  pub width: usize,
+  pub height: usize,
+  /// Red, green, blue, and alpha for each point, as a canvas's `ImageData` takes them
+  pub colors: Vec<u8>,
+  /// The part of the scene those points show, in scene units
+  pub area: RenderedArea,
 }
 
 /// A layer's graph: its nodes, where each samples the scene in scene units, and its edges
@@ -251,20 +260,29 @@ pub struct FontInfo {
 }
 
 /// How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a
-/// little-endian `u32`. After it come the frames' points, red, green, blue, and alpha as for `RenderedScene::colors`,
-/// then the frames' LEDs, as red, green, and blue in the order of `leds`.
+/// little-endian `u32`. After it come each canvas's frames, canvas by canvas, with red, green, blue, and alpha for each
+/// point as in `RenderedCanvas::colors`, then the frames' LEDs, as red, green, and blue in the order of `leds`.
 #[derive(Clone, serde::Serialize, TS)]
 pub struct RenderedClip {
   /// The `RenderClip` this answers
   pub id: u32,
   /// Evenly spaced from the start of a cycle to its end, both included
   pub frames: usize,
-  pub width: usize,
-  pub height: usize,
+  /// What each canvas is of, in the order their frames come, as in `RenderedScene::canvases`
+  pub canvases: Vec<ClipCanvas>,
   /// The name of each LED the scene lands on
   pub leds: Vec<String>,
   /// The sounds its sound layers start in the cycle, in the order they start
   pub sounds: Vec<ClipSound>,
+}
+
+/// One of the canvases in a [`RenderedClip`]
+#[derive(Clone, serde::Serialize, TS)]
+pub struct ClipCanvas {
+  /// The display, by name, or `None` for the strip of `Sequence` LED layers
+  pub display: Option<String>,
+  pub width: usize,
+  pub height: usize,
 }
 
 /// A sound starting in a [`RenderedClip`]
@@ -366,15 +384,15 @@ pub struct ReferenceScene {
   pub above: bool,
 }
 
-/// How many points to sample a scene at. A scene with display layers is drawn at the width and height; one without draws
-/// a strip of its `Sequence` LED layers, `leds` long.
+/// How many points to sample a scene at where the machine doesn't say. A display is drawn at its own size, and only one
+/// the machine doesn't have is drawn at the width and height.
 #[derive(Clone, Copy, serde::Deserialize, TS)]
 pub struct SceneSize {
   /// Points along the strip of `Sequence` LED layers
   pub leds: usize,
-  /// Points across a display, and the width of an LED layer on a plane the machine doesn't have
+  /// Points across a display the machine doesn't have, and the width of an LED layer on a plane it doesn't have
   pub width: usize,
-  /// Points down a display, and the height of an LED layer on a plane the machine doesn't have
+  /// Points down a display the machine doesn't have, and the height of an LED layer on a plane it doesn't have
   pub height: usize,
 }
 

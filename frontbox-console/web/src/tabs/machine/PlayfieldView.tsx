@@ -127,8 +127,8 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
-/** A preview is about the LEDs, so what it shows is fixed */
-const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, displays: false, screens: false, switches: false, leds: true, drivers: false }
+/** A preview is about what a scene draws on, so what it shows is fixed. Displays are only shown where they're placed. */
+const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, displays: true, screens: false, switches: false, leds: true, drivers: false }
 
 // which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
@@ -244,6 +244,11 @@ export default function PlayfieldView(props: {
    * hardware sits idle, and can't be pressed or placed.
    */
   ledColor?: (name: string) => string | null
+  /**
+   * What a preview's displays show, by name, as red, green, blue, and alpha for each pixel. `null` leaves a display
+   * dark. Without this, they're dark too.
+   */
+  displayFrame?: (display: string) => Uint8ClampedArray | null
   /** The plane a preview works on */
   plane?: () => PlaneView | null
   /** Closed loops of points to outline on the plane, in the plane's units, such as a ring's edge and its hole */
@@ -535,12 +540,14 @@ export default function PlayfieldView(props: {
         content.add(mesh)
       }
       disposeDisplayEffects = createRoot((dispose) => {
-        placed.forEach(({ index }, i) => {
+        placed.forEach(({ index, display }, i) => {
           const { texture } = displayViews[i]
           createEffect(() => {
-            const frame = displayFrame(index)
-            if (!frame || frame.length !== texture.image.data?.length) return
-            texture.image.data.set(frame)
+            const frame = preview ? (props.displayFrame?.(display.name) ?? null) : displayFrame(index)
+            if (frame && frame.length === texture.image.data?.length) texture.image.data.set(frame)
+            // a preview's display goes dark when the scene stops drawing on it
+            else if (!frame && preview) texture.image.data?.fill(0)
+            else return
             texture.needsUpdate = true
             render()
           })

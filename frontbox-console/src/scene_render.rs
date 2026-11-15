@@ -7,7 +7,8 @@ use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::protocol::{
-  ClipSound, ReferenceScene, RenderedArea, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, RenderedShift, SceneSize, SceneSource,
+  ClipCanvas, ClipSound, ReferenceScene, RenderedArea, RenderedCanvas, RenderedClip, RenderedGraph, RenderedScene, RenderedShape, RenderedShift,
+  SceneSize, SceneSource,
 };
 
 /// The most points one render will sample. A render costs the machine time and anything on the network can ask for
@@ -20,18 +21,27 @@ const MAX_CLIP_SAMPLES: usize = 1 << 23;
 const CLIP_FRAMES_PER_SECOND: f32 = 30.0;
 
 /// The machine a scene is previewed on
-pub(crate) struct MachineLeds {
+pub(crate) struct PreviewMachine {
   pub leds: LedLookup,
   pub radius: f32,
+  /// Each display's width and height in pixels, by the name it was added under
+  pub displays: BTreeMap<String, (usize, usize)>,
 }
 
-/// Renders a moment of a scene with its default variables, to whichever of the sizes suits it. Without a cycle, that
-/// moment is in one from the middle of the scene. The reply has the scene in both forms, as this is the only place RON is
-/// read or written for a client. The error is for showing to whoever wrote the scene.
+impl PreviewMachine {
+  /// A display's width and height, or for one the machine doesn't have, the size asked for
+  fn display_size(&self, display: &str, size: SceneSize) -> (usize, usize) {
+    self.displays.get(display).copied().unwrap_or((size.width, size.height))
+  }
+}
+
+/// Renders a moment of a scene with its default variables, on its strip and each display it draws on. Without a cycle,
+/// that moment is in one from the middle of the scene. The reply has the scene in both forms, as this is the only place
+/// RON is read or written for a client. The error is for showing to whoever wrote the scene.
 pub(crate) fn render_scene(
   source: SceneSource,
   size: SceneSize,
-  machine: MachineLeds,
+  machine: PreviewMachine,
   content: Content,
   time: f32,
   cycle: Option<u32>,
@@ -39,13 +49,14 @@ pub(crate) fn render_scene(
 ) -> Result<RenderedScene, String> {
   let (scene, preview) = read(source)?;
   let drawn = &with_assets(preview.unwrap_or_else(|| scene.clone()), &content)?;
-  let canvas = Canvas::of(drawn, size)?;
   // one that can't be drawn is left out, as the scene being edited still can be
-  let (mut reference, reference_error) = match reference.map(|reference| Reference::open(reference, &canvas, size, &machine, &content)) {
+  let (reference, reference_error) = match reference.map(|reference| Reference::open(reference, size, &machine, &content)) {
     Some(Ok(reference)) => (Some(reference), None),
     Some(Err(error)) => (None, Some(error)),
     None => (None, None),
   };
+  let canvases = Canvas::all(drawn, reference.as_ref().map(|reference| &reference.scene), size, &machine)?;
+  let mut reference = reference.map(|reference| reference.drawn_on(&canvases));
   let raw_time = time;
   let (shown, time) = match cycle {
     Some(cycle) => (drawn.clone(), drawn.timing.map_or(time, |timing| timing.cycle_time(cycle, time))),
@@ -65,12 +76,15 @@ pub(crate) fn render_scene(
     reference.views.placement.update_visits(&reference.scene, &reference_moment);
   }
 
-  let colors = canvas.colors(&shown, &views, &moment).collect();
-  let colors = match &reference {
-    Some(reference) => reference.drawn_with(colors, &reference_moment),
-    None => colors,
-  };
-  let area = rendered_area(canvas.covers);
+  let canvases = canvases.iter().enumerate().map(|(index, canvas)| {
+    let colors = canvas.colors(&shown, &views, &moment).collect();
+    let colors = match &reference {
+      Some(reference) => reference.drawn_with(index, colors, &reference_moment),
+      None => colors,
+    };
+    RenderedCanvas { display: canvas.display.clone(), width: canvas.width, height: canvas.height, colors, area: rendered_area(canvas.covers) }
+  });
+  let canvases = canvases.collect();
   // a sound layer draws nothing, so has no outlines or shapes
   let frames = || (0..shown.layers.len()).map(|index| Some((shown.layers[index].layer()?, views.frame(&shown, index, &moment))));
   let outlines = frames().map(|drawn| drawn.map_or(Vec::new(), |(layer, frame)| rendered_outline(&layer.outline(&frame)))).collect();
@@ -82,7 +96,7 @@ pub(crate) fn render_scene(
   let graphs = (0..shown.layers.len()).map(|index| views.placed(index).and_then(rendered_graph)).collect();
   let ron = scene.save().map_err(|err| err.to_string())?;
 
-  Ok(RenderedScene { scene, ron, width: canvas.width, height: canvas.height, colors, area, outlines, shapes, mask_outlines, mask_shapes, led_colors, graphs, reference_error })
+  Ok(RenderedScene { scene, ron, canvases, outlines, shapes, mask_outlines, mask_shapes, led_colors, graphs, reference_error })
 }
 
 /// Renders every frame of one cycle of a scene, for a client to play without coming back to the machine until the next.
@@ -91,7 +105,7 @@ pub(crate) fn render_clip(
   id: u32,
   source: SceneSource,
   size: SceneSize,
-  machine: MachineLeds,
+  machine: PreviewMachine,
   content: Content,
   cycle: u32,
   reference: Option<ReferenceScene>,
@@ -101,15 +115,17 @@ pub(crate) fn render_clip(
   let Some(timing) = scene.timing else {
     return Err("a static scene has nothing to play".into());
   };
-  let canvas = Canvas::of(&scene, size)?;
-  let mut views = Views::of(&scene, size, &machine);
   // one that can't be drawn is left out, as a render of the moment says why
-  let mut reference = reference.and_then(|reference| Reference::open(reference, &canvas, size, &machine, &content).ok());
+  let reference = reference.and_then(|reference| Reference::open(reference, size, &machine, &content).ok());
+  let canvases = Canvas::all(&scene, reference.as_ref().map(|reference| &reference.scene), size, &machine)?;
+  let mut reference = reference.map(|reference| reference.drawn_on(&canvases));
+  let mut views = Views::of(&scene, size, &machine);
   let mut leds = views.led_names();
   leds.extend(reference.iter().flat_map(|reference| reference.views.led_names()));
   // a frame at each end, so that a clip finishes on the scene's last moment
   let frames = ((timing.duration * CLIP_FRAMES_PER_SECOND).ceil() as usize).saturating_add(1);
-  let points = canvas.width.saturating_mul(canvas.height);
+  // no more than a render samples, so this can't overflow
+  let points: usize = canvases.iter().map(|canvas| canvas.width * canvas.height).sum();
   let total = points.saturating_add(leds.len()).saturating_mul(frames);
   if total > MAX_CLIP_SAMPLES {
     return Err(format!("this clip is {total} points, more than the {MAX_CLIP_SAMPLES} one can sample"));
@@ -121,13 +137,16 @@ pub(crate) fn render_clip(
   let sounds = scene.sounds_in_cycle(&top, cycle).into_iter();
   let sounds = sounds.map(|start| ClipSound { at: start.time.rem_euclid(timing.duration), sound: start.sound.into(), volume: start.volume, skip: start.skip, length: start.length });
   let sounds = sounds.collect();
-  let header = RenderedClip { id, frames, width: canvas.width, height: canvas.height, leds: leds.iter().cloned().collect(), sounds };
+  let clip_canvases = canvases.iter().map(|canvas| ClipCanvas { display: canvas.display.clone(), width: canvas.width, height: canvas.height });
+  let header = RenderedClip { id, frames, canvases: clip_canvases.collect(), leds: leds.iter().cloned().collect(), sounds };
   let header = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
 
   let mut clip = Vec::with_capacity(4 + header.len() + frames * (points * 4 + led_count * 3));
   clip.extend((header.len() as u32).to_le_bytes());
   clip.extend(header);
 
+  // each canvas's frames go together
+  let mut drawn: Vec<Vec<u8>> = canvases.iter().map(|canvas| Vec::with_capacity(frames * canvas.width * canvas.height * 4)).collect();
   let mut leds_shown = Vec::with_capacity(frames * led_count * 3);
   for index in 0..frames {
     let time = timing.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
@@ -139,15 +158,18 @@ pub(crate) fn render_clip(
         reference.views.placement.update_visits(&reference.scene, &moment);
       }
     }
-    let colors = canvas.colors(&scene, &views, &moment).collect();
-    clip.extend(match &reference {
-      Some(reference) => reference.drawn_with(colors, &moment),
-      None => colors,
-    });
+    for (canvas_index, canvas) in canvases.iter().enumerate() {
+      let colors = canvas.colors(&scene, &views, &moment).collect();
+      drawn[canvas_index].extend(match &reference {
+        Some(reference) => reference.drawn_with(canvas_index, colors, &moment),
+        None => colors,
+      });
+    }
     // every LED is shown every frame, and in name order, as `leds` has them
     let shown = led_colors(&scene, &views, &moment, reference.as_ref().map(|reference| (reference, &moment)));
     leds_shown.extend(leds.iter().map(|name| shown.get(name).copied().unwrap_or(Rgb { r: 0, g: 0, b: 0 })).flat_map(|Rgb { r, g, b }| [r, g, b]));
   }
+  clip.extend(drawn.into_iter().flatten());
   clip.extend(leds_shown);
   Ok(clip)
 }
@@ -201,22 +223,28 @@ struct Reference {
   scene: Scene,
   above: bool,
   views: Views,
-  /// `None` where it doesn't draw on the same points as the scene being rendered, as a display's screen and a strip of
-  /// LEDs don't
-  canvas: Option<Canvas>,
+  /// Its own drawing of each of the rendered scene's canvases. `None` where it doesn't draw on the same points, as on a
+  /// strip of a different number of rows.
+  canvases: Vec<Option<Canvas>>,
 }
 
 impl Reference {
-  /// Draws on the same points as `rendered` where it can
-  fn open(reference: ReferenceScene, rendered: &Canvas, size: SceneSize, machine: &MachineLeds, content: &Content) -> Result<Self, String> {
+  fn open(reference: ReferenceScene, size: SceneSize, machine: &PreviewMachine, content: &Content) -> Result<Self, String> {
     let failed = |err: String| format!("{} can't be shown with this scene: {err}", reference.name);
     let source = content.read_scene(&reference.name).map_err(|err| failed(err.to_string()))?;
     let scene = Scene::load(&source).map_err(|err| failed(err.to_string()))?;
     let scene = with_assets(scene, content).map_err(failed)?;
-    let canvas = Canvas::of(&scene, size).map_err(failed)?;
-    let same_points = canvas.shows_display == rendered.shows_display && canvas.width == rendered.width && canvas.height == rendered.height;
     let views = Views::of(&scene, size, machine);
-    Ok(Self { scene, above: reference.above, views, canvas: same_points.then_some(canvas) })
+    Ok(Self { scene, above: reference.above, views, canvases: Vec::new() })
+  }
+
+  /// Draws on the same points as each of `rendered` where it can: the same display, or a strip with as many rows
+  fn drawn_on(self, rendered: &[Canvas]) -> Self {
+    let canvases = rendered.iter().map(|canvas| match &canvas.display {
+      Some(display) => Some(Canvas::display(&self.scene, display, (canvas.width, canvas.height))),
+      None => Canvas::strip(&self.scene, canvas.width).filter(|strip| strip.height == canvas.height),
+    });
+    Self { canvases: canvases.collect(), ..self }
   }
 
   /// One of the scene being rendered's colors, with this scene's over or under
@@ -227,9 +255,9 @@ impl Reference {
     }
   }
 
-  /// A canvas's colors with this scene's drawn on them, where it draws on the same points
-  fn drawn_with(&self, colors: Vec<u8>, moment: &Moment) -> Vec<u8> {
-    let Some(canvas) = &self.canvas else {
+  /// The colors of the canvas at `index` with this scene's drawn on them, where it draws on the same points
+  fn drawn_with(&self, index: usize, colors: Vec<u8>, moment: &Moment) -> Vec<u8> {
+    let Some(canvas) = &self.canvases[index] else {
       return colors;
     };
     let theirs: Vec<u8> = canvas.colors(&self.scene, &self.views, moment).collect();
@@ -256,7 +284,7 @@ struct View {
 }
 
 impl Views {
-  fn of(scene: &Scene, size: SceneSize, machine: &MachineLeds) -> Self {
+  fn of(scene: &Scene, size: SceneSize, machine: &PreviewMachine) -> Self {
     let render_size = Vec2::new(size.width as f32, size.height as f32);
     let mut chosen = scene.clone();
     for layer in chosen.layers.iter_mut().filter_map(SceneLayer::as_leds_mut).filter(|layer| layer.leds.is_none()) {
@@ -270,7 +298,10 @@ impl Views {
         let surface = on.map_or(Surface::Area, |on| on.surface);
         View { surface, size: on.and_then(|on| on.plane).map_or(render_size, |plane| plane.extent), placed }
       }
-      SceneLayer::Display(_) => View { surface: Surface::Area, size: render_size, placed: None },
+      SceneLayer::Display(layer) => {
+        let (width, height) = machine.display_size(&layer.display, size);
+        View { surface: Surface::Area, size: Vec2::new(width as f32, height as f32), placed: None }
+      }
       SceneLayer::Sound(_) => View { surface: Surface::Sequence, size: Vec2::ZERO, placed: None },
     });
     let layers = layers.collect();
@@ -303,9 +334,11 @@ impl Views {
   }
 }
 
-/// What's drawn in a render, apart from the LEDs: a display's screen, or a strip of the `Sequence` layers on LEDs. An LED
-/// layer covering an `Area` is only seen on the machine. A scene with display layers draws those; without, its strip.
+/// What's drawn in a render apart from the LEDs: a display's screen, or a strip of the `Sequence` layers on LEDs. An LED
+/// layer covering an `Area` is only seen on the machine.
 struct Canvas {
+  /// The display, by name, or `None` for the strip
+  display: Option<String>,
   width: usize,
   height: usize,
   samples: Vec<Sample>,
@@ -313,30 +346,47 @@ struct Canvas {
   covers: Bounds,
   /// For each row of points, which layers it draws, bottom to top
   rows: Vec<Vec<usize>>,
-  /// A display's screen, rather than a strip of LEDs
-  shows_display: bool,
 }
 
 impl Canvas {
-  fn of(scene: &Scene, size: SceneSize) -> Result<Self, String> {
-    let display = display_layers(scene);
-    let (width, height) = match display.is_empty() {
-      true => (size.leds, strips(scene).len()),
-      false => (size.width, size.height),
-    };
-    if width.saturating_mul(height) > MAX_SAMPLES {
-      return Err(format!("{width} x {height} is more than the {MAX_SAMPLES} points a render can sample"));
+  /// The strip, if the scene has `Sequence` layers, then each display it or `reference` draws on, at the display's size
+  fn all(scene: &Scene, reference: Option<&Scene>, size: SceneSize, machine: &PreviewMachine) -> Result<Vec<Self>, String> {
+    let mut displays: Vec<&str> = Vec::new();
+    for display in display_names(scene).chain(reference.into_iter().flat_map(display_names)) {
+      if !displays.contains(&display) {
+        displays.push(display);
+      }
     }
-    Ok(match display.is_empty() {
-      true => {
-        let line = Line::new(width);
-        Self { width, height, samples: line.samples().collect(), covers: line.covers(), rows: strips(scene), shows_display: false }
-      }
-      false => {
-        let grid = Grid::new(width, height, Vec2::new(width as f32, height as f32));
-        Self { width, height, samples: grid.samples().collect(), covers: grid.covers(), rows: vec![display], shows_display: true }
-      }
-    })
+    // counted before anything is sampled, as a size can be anything a client asks for
+    let rows = strips(scene).len();
+    let strip = if rows > 0 { size.leds.saturating_mul(rows) } else { 0 };
+    let points = displays.iter().fold(strip, |total, display| {
+      let (width, height) = machine.display_size(display, size);
+      total.saturating_add(width.saturating_mul(height))
+    });
+    if points > MAX_SAMPLES {
+      return Err(format!("{points} points is more than the {MAX_SAMPLES} a render can sample"));
+    }
+    let displays = displays.into_iter().map(|display| Self::display(scene, display, machine.display_size(display, size)));
+    Ok(Self::strip(scene, size.leds).into_iter().chain(displays).collect())
+  }
+
+  /// The strip of the scene's `Sequence` layers, `leds` points long, with a row for each set of LEDs. `None` for a scene
+  /// without any.
+  fn strip(scene: &Scene, leds: usize) -> Option<Self> {
+    let rows = strips(scene);
+    if rows.is_empty() {
+      return None;
+    }
+    let line = Line::new(leds);
+    Some(Self { display: None, width: leds, height: rows.len(), samples: line.samples().collect(), covers: line.covers(), rows })
+  }
+
+  /// A display's screen, with whichever of the scene's layers are on it
+  fn display(scene: &Scene, display: &str, (width, height): (usize, usize)) -> Self {
+    let grid = Grid::new(width, height, Vec2::new(width as f32, height as f32));
+    let rows = vec![display_layers(scene, display)];
+    Self { display: Some(display.into()), width, height, samples: grid.samples().collect(), covers: grid.covers(), rows }
   }
 
   /// Red, green, blue, and alpha for each point. Every row of a display is in the one row of `rows`.
@@ -362,9 +412,15 @@ impl Canvas {
   }
 }
 
-/// The display layers, in the order they're shown
-fn display_layers(scene: &Scene) -> Vec<usize> {
-  let mut layers: Vec<usize> = (0..scene.layers.len()).filter(|&index| scene.layers[index].as_display().is_some()).collect();
+/// The displays a scene draws on, in the order of their first layers, some more than once
+fn display_names(scene: &Scene) -> impl Iterator<Item = &str> {
+  scene.layers.iter().filter_map(|layer| Some(layer.as_display()?.display.as_str()))
+}
+
+/// The layers on a display, in the order they're shown
+fn display_layers(scene: &Scene, display: &str) -> Vec<usize> {
+  let on = |index: &usize| scene.layers[*index].as_display().is_some_and(|layer| layer.display == display);
+  let mut layers: Vec<usize> = (0..scene.layers.len()).filter(on).collect();
   layers.sort_by_key(|&index| scene.layers[index].z());
   layers
 }
@@ -448,8 +504,14 @@ mod tests {
     SceneSource::Ron(source.into())
   }
 
-  fn no_leds() -> MachineLeds {
-    MachineLeds { leds: leds(&[]), radius: DEFAULT_LED_RADIUS }
+  fn no_leds() -> PreviewMachine {
+    PreviewMachine { leds: leds(&[]), radius: DEFAULT_LED_RADIUS, displays: BTreeMap::new() }
+  }
+
+  /// The one canvas a render drew on
+  fn only(rendered: &RenderedScene) -> &RenderedCanvas {
+    assert_eq!(rendered.canvases.len(), 1, "drawn on more than one canvas");
+    &rendered.canvases[0]
   }
 
   /// LEDs in hardware order, with these locations, on a machine with the planes here
@@ -483,13 +545,13 @@ mod tests {
         (at: 1.0, color: Fixed(0, 0, 255, 255)),
       ]))))],)"#;
 
-  fn colors(source: &str, target: MachineLeds) -> BTreeMap<String, Rgb> {
+  fn colors(source: &str, target: PreviewMachine) -> BTreeMap<String, Rgb> {
     render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None).unwrap().led_colors
   }
 
   #[test]
   fn a_sequence_spreads_over_the_leds_in_order() {
-    let target = MachineLeds { leds: leds(&[None, None, None]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() };
     let colors = colors(RED_TO_BLUE, target);
     assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
     assert_eq!(colors["led2"], Rgb::new(0, 0, 255));
@@ -498,7 +560,7 @@ mod tests {
   #[test]
   fn a_sequence_spreads_over_only_the_chosen_leds_in_their_order() {
     let source = RED_TO_BLUE.replace("surface: Sequence,", r#"surface: Sequence, leds: Names(["led2", "led0"]),"#);
-    let target = MachineLeds { leds: leds(&[None, None, None]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() };
     let colors = colors(&source, target);
     assert_eq!(colors.len(), 2);
     assert_eq!(colors["led2"], Rgb::new(255, 0, 0));
@@ -519,8 +581,8 @@ mod tests {
     )
   }
 
-  fn three() -> MachineLeds {
-    MachineLeds { leds: leds(&[None, None, None]), ..no_leds() }
+  fn three() -> PreviewMachine {
+    PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() }
   }
 
   #[test]
@@ -540,9 +602,9 @@ mod tests {
   #[test]
   fn each_set_of_leds_gets_a_row_of_the_strip() {
     let rendered = render_scene(ron(&two_layers(&["led0"], &["led1"])), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!((rendered.width, rendered.height), (3, 2));
-    assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
-    assert_eq!(rendered.colors[12..16], [0, 0, 255, 255]);
+    assert_eq!((only(&rendered).width, only(&rendered).height), (3, 2));
+    assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
+    assert_eq!(only(&rendered).colors[12..16], [0, 0, 255, 255]);
   }
 
   #[test]
@@ -551,7 +613,7 @@ mod tests {
     let header_length = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     let header: serde_json::Value = serde_json::from_slice(&clip[4..4 + header_length]).unwrap();
     assert_eq!(header["leds"], serde_json::json!(["led0", "led2"]));
-    assert_eq!(header["height"], 2);
+    assert_eq!(header["canvases"][0]["height"], 2);
     assert_eq!(clip[clip.len() - 6..], [255, 0, 0, 0, 0, 255]);
   }
 
@@ -565,7 +627,7 @@ mod tests {
   #[test]
   fn a_graph_is_built_from_the_leds_a_layer_lands_on_and_traversed() {
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
-    let target = MachineLeds { leds: leds(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_leds() };
     let rendered = render_scene(ron(WAVE), SIZE, target, Content::without_folder(), 2.0, Some(0), None).unwrap();
     let lit: Vec<bool> = (0..4).map(|i| rendered.led_colors[&format!("led{i}")] != Rgb::new(0, 0, 0)).collect();
     assert_eq!(lit, [false, false, true, false]);
@@ -589,14 +651,14 @@ mod tests {
     let source = WAVE.replace(r#"Area("Square")"#, "Sequence");
     let rendered = render_scene(ron(&source), SceneSize { leds: 5, ..SIZE }, three(), Content::without_folder(), 1.0, Some(0), None).unwrap();
     // three LEDs in a chain, seen on a strip of five: points halfway between two LEDs show the first of them
-    let alphas: Vec<u8> = rendered.colors.chunks(4).map(|color| color[3]).collect();
+    let alphas: Vec<u8> = only(&rendered).colors.chunks(4).map(|color| color[3]).collect();
     assert_eq!(alphas, [0, 0, 255, 255, 0]);
   }
 
   #[test]
   fn an_area_colors_leds_by_where_they_are_on_the_plane() {
     let at = |x: f32| Some(Vec3::new(100.0 + x, 5.0, 0.0));
-    let target = MachineLeds { leds: leds(&[at(10.0), at(0.0)]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[at(10.0), at(0.0)]), ..no_leds() };
     let colors = colors(&AREA.replace("Square", "Plane"), target);
     assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
     assert_eq!(colors["led1"], Rgb::new(255, 0, 0));
@@ -610,7 +672,7 @@ mod tests {
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
         ))],)"#;
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
-    let target = MachineLeds { leds: leds(&[at(15.0), at(25.0)]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[at(15.0), at(25.0)]), ..no_leds() };
     let colors = colors(source, target);
     assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
     assert_eq!(colors["led1"], Rgb::new(0, 0, 0));
@@ -624,7 +686,7 @@ mod tests {
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
     let brightness = |radius| {
-      let target = MachineLeds {
+      let target = PreviewMachine {
         leds: leds(&[Some(Vec3::new(5.0, 6.95, 0.0))]),
         radius,
         ..no_leds()
@@ -637,17 +699,17 @@ mod tests {
   #[test]
   fn a_sequence_renders_to_leds() {
     let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!((rendered.width, rendered.height), (3, 1));
-    assert_eq!(rendered.colors.len(), 12);
-    assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
-    assert_eq!(rendered.colors[8..], [0, 0, 255, 255]);
+    assert_eq!((only(&rendered).width, only(&rendered).height), (3, 1));
+    assert_eq!(only(&rendered).colors.len(), 12);
+    assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
+    assert_eq!(only(&rendered).colors[8..], [0, 0, 255, 255]);
   }
 
   #[test]
   fn a_display_renders_to_pixels_and_covers_what_it_was_asked_for() {
     let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!((rendered.width, rendered.height), (4, 2));
-    let area = rendered.area;
+    assert_eq!((only(&rendered).width, only(&rendered).height), (4, 2));
+    let area = &only(&rendered).area;
     assert_eq!((area.x, area.y, area.width, area.height), (0.0, 0.0, 4.0, 2.0));
   }
 
@@ -655,8 +717,56 @@ mod tests {
   fn area_layers_have_no_strip() {
     let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
     let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!(rendered.height, 0);
-    assert!(rendered.colors.is_empty());
+    assert!(rendered.canvases.is_empty());
+  }
+
+  /// Red on a strip, green on the `Dmd`, and blue on the `Lcd`
+  const EVERYWHERE: &str = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [
+    Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+    Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 255, 0, 255))))),
+    Display(display: "Lcd", layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))),
+  ])"#;
+
+  /// A machine with a 3 by 1 `Dmd`
+  fn with_dmd() -> PreviewMachine {
+    PreviewMachine { displays: BTreeMap::from([("Dmd".into(), (3, 1))]), ..no_leds() }
+  }
+
+  #[test]
+  fn a_scene_is_drawn_on_its_strip_and_each_of_its_displays() {
+    let rendered = render_scene(ron(EVERYWHERE), SIZE, with_dmd(), Content::without_folder(), 0.0, None, None).unwrap();
+    let canvases: Vec<_> = rendered.canvases.iter().map(|canvas| (canvas.display.as_deref(), canvas.width, canvas.height, &canvas.colors[..4])).collect();
+    assert_eq!(canvases, [(None, 3, 1, &[255, 0, 0, 255][..]), (Some("Dmd"), 3, 1, &[0, 255, 0, 255]), (Some("Lcd"), 4, 2, &[0, 0, 255, 255])]);
+  }
+
+  #[test]
+  fn a_display_layer_is_the_size_of_its_display() {
+    let source = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
+    let rendered = render_scene(ron(source), SIZE, with_dmd(), Content::without_folder(), 0.0, None, None).unwrap();
+    assert_eq!(rendered.outlines[0], [[[0.0, 0.0], [3.0, 0.0], [3.0, 1.0], [0.0, 1.0]]]);
+  }
+
+  #[test]
+  fn a_clip_has_each_canvas_s_frames_in_turn() {
+    let clip = render_clip(0, ron(EVERYWHERE), SIZE, with_dmd(), Content::without_folder(), 0, None).unwrap();
+    let (header, points) = read_clip(&clip);
+    let frames = header["frames"].as_u64().unwrap() as usize;
+    assert_eq!(header["canvases"][1], serde_json::json!({ "display": "Dmd", "width": 3, "height": 1 }));
+    let (strip, rest) = points.split_at(frames * 3 * 4);
+    let (dmd, lcd) = rest.split_at(frames * 3 * 4);
+    assert_eq!(lcd.len(), frames * 8 * 4);
+    assert!(strip.chunks_exact(4).all(|point| point == [255, 0, 0, 255]));
+    assert!(dmd.chunks_exact(4).all(|point| point == [0, 255, 0, 255]));
+    assert!(lcd.chunks_exact(4).all(|point| point == [0, 0, 255, 255]));
+  }
+
+  #[test]
+  fn a_reference_scene_shows_on_a_display_the_scene_leaves_alone() {
+    let content = Content::without_folder().with_scenes([("reference.scene", solid_display("0, 0, 255, 255").as_str())]);
+    let reference = ReferenceScene { name: "reference.scene".into(), above: false };
+    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, with_dmd(), content, 0.0, None, Some(reference)).unwrap();
+    let dmd = &rendered.canvases[1];
+    assert_eq!((dmd.display.as_deref(), &dmd.colors[..4]), (Some("Dmd"), &[0, 0, 255, 255][..]));
   }
 
   #[test]
@@ -664,8 +774,8 @@ mod tests {
     let layer = |z: i8, color: &str| format!(r#"Leds(leds: Name("led0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", layer(1, "255, 0, 0, 255"), layer(0, "0, 0, 255, 255"));
     let rendered = render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!(rendered.height, 1);
-    assert_eq!(rendered.colors[..4], [255, 0, 0, 255]);
+    assert_eq!(only(&rendered).height, 1);
+    assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
   }
 
   #[test]
@@ -684,7 +794,7 @@ mod tests {
     };
     let source = format!("Scene(version: 2, layers: [{}, {}])", gradient("led0", "Square"), gradient("led1", "Plane"));
     // the same spot on each plane, which is somewhere different on the machine
-    let target = MachineLeds { leds: leds(&[Some(Vec3::new(5.0, 5.0, 0.0)), Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[Some(Vec3::new(5.0, 5.0, 0.0)), Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_leds() };
     let rendered = render_scene(ron(&source), SIZE, target, Content::without_folder(), 0.0, None, None).unwrap();
     assert_eq!(rendered.led_colors["led0"], Rgb::new(255, 0, 0));
     assert_eq!(rendered.led_colors["led1"], Rgb::new(255, 0, 0));
@@ -746,7 +856,7 @@ mod tests {
 
   #[test]
   fn a_sequences_area_gives_each_point_the_same_room() {
-    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap().area;
+    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap().canvases.remove(0).area;
     assert_eq!((area.x, area.y, area.width, area.height), (-0.25, -0.5, 1.5, 1.0));
   }
 
@@ -759,7 +869,7 @@ mod tests {
       ))],
     )"#;
     let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 5, height: 5 }, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    let pixel = |x: usize, y: usize| &rendered.colors[(y * 5 + x) * 4..][..4];
+    let pixel = |x: usize, y: usize| &only(&rendered).colors[(y * 5 + x) * 4..][..4];
     assert_eq!(pixel(2, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
   }
@@ -779,8 +889,8 @@ mod tests {
   #[test]
   fn a_definition_renders_like_its_ron() {
     let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    let from_definition = render_scene(SceneSource::Definition(from_ron.scene), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!(from_definition.colors, from_ron.colors);
+    let from_definition = render_scene(SceneSource::Definition(from_ron.scene.clone()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
+    assert_eq!(only(&from_definition).colors, only(&from_ron).colors);
     assert_eq!(from_definition.ron, from_ron.ron);
   }
 
@@ -794,7 +904,7 @@ mod tests {
     let (scene, shown) = (solid("255, 0, 0, 255", ""), solid("0, 0, 255, 255", ""));
     let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
     let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!(preview.colors[0..3], [0, 0, 255]);
+    assert_eq!(only(&preview).colors[0..3], [0, 0, 255]);
     assert_eq!(preview.ron, from_definition.ron);
   }
 
@@ -852,13 +962,13 @@ mod tests {
   #[test]
   fn renders_any_moment() {
     let rendered = render_scene(rising("Once"), SIZE, no_leds(), Content::without_folder(), 1.0, None, None).unwrap();
-    assert_eq!(rendered.colors[..4], [100, 0, 0, 255]);
+    assert_eq!(only(&rendered).colors[..4], [100, 0, 0, 255]);
   }
 
   #[test]
   fn the_end_of_a_cycle_is_its_last_moment_however_often_it_repeats() {
     let rendered = render_scene(rising("Forever"), SIZE, no_leds(), Content::without_folder(), 2.0, None, None).unwrap();
-    assert_eq!(rendered.colors[..4], [200, 0, 0, 255]);
+    assert_eq!(only(&rendered).colors[..4], [200, 0, 0, 255]);
     assert!(rendered.ron.contains("Forever"), "{}", rendered.ron);
   }
 
@@ -874,7 +984,7 @@ mod tests {
           )))))],)"#
       ))
     };
-    let colors = |source, time| render_scene(source, SIZE, no_leds(), Content::without_folder(), time, None, None).unwrap().colors;
+    let colors = |source, time| render_scene(source, SIZE, no_leds(), Content::without_folder(), time, None, None).unwrap().canvases.remove(0).colors;
     assert_ne!(colors(scene("Forever"), 0.25), colors(scene("Forever"), 0.75));
     assert_eq!(colors(scene("Once"), 0.25), colors(scene("Once"), 0.75));
     assert_eq!(colors(scene("Times(1)"), 0.25), colors(scene("Times(1)"), 0.75));
@@ -932,7 +1042,7 @@ mod tests {
       ],
     )"#;
     let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 10, height: 5 }, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
-    let pixel = |x: usize, y: usize| &rendered.colors[(y * 10 + x) * 4..][..4];
+    let pixel = |x: usize, y: usize| &only(&rendered).colors[(y * 10 + x) * 4..][..4];
     assert_eq!(pixel(5, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 2), [0, 0, 255, 255]);
     assert!(rendered.mask_shapes[0].is_none());
@@ -945,7 +1055,7 @@ mod tests {
   fn a_scene_draws_its_images_from_the_content_folder() {
     let content = content("draws");
     let rendered = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), content.clone(), 0.0, None, None).unwrap();
-    assert_eq!(rendered.colors, [255, 0, 0, 255, 0, 0, 255, 255]);
+    assert_eq!(only(&rendered).colors, [255, 0, 0, 255, 0, 0, 255, 255]);
     let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
@@ -1024,7 +1134,7 @@ mod tests {
     let frames = header["frames"].as_u64().unwrap() as usize;
     let middle = (frames - 1) / 2;
     let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 0.5, Some(4), None).unwrap();
-    assert_eq!(moment.colors, colors[middle * 12..][..12]);
+    assert_eq!(only(&moment).colors, colors[middle * 12..][..12]);
   }
 
   #[test]
@@ -1055,8 +1165,8 @@ mod tests {
     let clip = render_clip(7, rising("Forever"), SIZE, no_leds(), Content::without_folder(), 0, None).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["id"], 7);
-    assert_eq!(header["width"], 3);
-    assert_eq!(header["height"], 1);
+    assert_eq!(header["canvases"][0]["width"], 3);
+    assert_eq!(header["canvases"][0]["height"], 1);
 
     let frames = header["frames"].as_u64().unwrap() as usize;
     assert_eq!(frames, 61);
@@ -1071,7 +1181,7 @@ mod tests {
     let source = r#"Scene(
       version: 2, timing: (duration: 0.1),
       layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(200, 0, 0, 128)))))],)"#;
-    let target = MachineLeds { leds: leds(&[None, None]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[None, None]), ..no_leds() };
     let clip = render_clip(0, ron(source), SIZE, target, Content::without_folder(), 0, None).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["leds"], serde_json::json!(["led0", "led1"]));
@@ -1085,10 +1195,10 @@ mod tests {
   #[test]
   fn a_display_layer_is_drawn_on_its_own_screen_and_reaches_no_leds() {
     let source = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])"#;
-    let target = MachineLeds { leds: leds(&[None]), ..no_leds() };
+    let target = PreviewMachine { leds: leds(&[None]), ..no_leds() };
     let rendered = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None).unwrap();
-    assert_eq!((rendered.width, rendered.height), (4, 2));
-    assert_eq!((rendered.area.width, rendered.area.height), (4.0, 2.0));
+    assert_eq!((only(&rendered).width, only(&rendered).height), (4, 2));
+    assert_eq!((only(&rendered).area.width, only(&rendered).area.height), (4.0, 2.0));
     assert!(rendered.led_colors.is_empty());
     assert!(rendered.ron.starts_with("Scene("), "{}", rendered.ron);
   }
@@ -1167,7 +1277,7 @@ mod tests {
   fn with_reference(source: &str, reference: &str, above: bool) -> Vec<u8> {
     let content = Content::without_folder().with_scenes([("reference.scene", reference)]);
     let reference = ReferenceScene { name: "reference.scene".into(), above };
-    render_scene(ron(source), TWO_POINTS, no_leds(), content, 0.0, None, Some(reference)).unwrap().colors
+    render_scene(ron(source), TWO_POINTS, no_leds(), content, 0.0, None, Some(reference)).unwrap().canvases.remove(0).colors
   }
 
   #[test]
@@ -1199,7 +1309,7 @@ mod tests {
     let reference = ReferenceScene { name: "gone.scene".into(), above: true };
     let alone = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None).unwrap();
     let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, Some(reference)).unwrap();
-    assert_eq!(rendered.colors, alone.colors);
+    assert_eq!(only(&rendered).colors, only(&alone).colors);
     let error = rendered.reference_error.unwrap();
     assert!(error.starts_with("gone.scene can't be shown with this scene"), "{error}");
     assert_eq!(alone.reference_error, None);

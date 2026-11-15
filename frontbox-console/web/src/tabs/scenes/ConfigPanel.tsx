@@ -55,7 +55,7 @@ import {
 } from './configNodes'
 import { ImagePicker } from './ImagePicker'
 import { anchorPresets, writer } from './ShapeHandles'
-import { LayerLeds, planeNames } from './LayerPlace'
+import { displayNames, LayerLeds, NEW_LAYER_OPTIONS, newPlace, planeNames, type NewLayerPlace } from './LayerPlace'
 import {
   ColorField,
   Dropdown,
@@ -313,7 +313,7 @@ const SOURCE_ICONS: Record<PropKind, Icon> = {
   Visit: icons.Footprints,
 }
 const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
-  plane: icons.MapIcon,
+  place: icons.MapIcon,
   leds: icons.Lightbulb,
   z: icons.Layers2,
   mask: icons.SquareDashed,
@@ -329,7 +329,7 @@ const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
 }
 
 type SpeedKind = 'Rate' | 'Duration'
-type NewLayer = 'Sequence' | 'Area' | 'Display' | 'Sound'
+type NewLayer = NewLayerPlace | 'Sound'
 
 /** A node of a kind, or `false` for one of another */
 function is<K extends NodeKind>(node: ConfigNode, kind: K) {
@@ -446,7 +446,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
   // an LED layer from before layers started on every LED has none, which the game can't play, so it's given every LED
   createEffect(() => {
     const current = scene.get()
-    if (current.kind === 'Dmd' || current.layers.every((layer) => layer.display !== undefined || layer.leds !== undefined)) return
+    if (current.layers.every((layer) => layer.display !== undefined || layer.leds !== undefined)) return
     scene.set({ ...current, layers: current.layers.map((layer) => (layer.display === undefined && layer.leds === undefined ? { ...layer, leds: 'Every' } : layer)) })
   })
 
@@ -458,14 +458,9 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
     if (path) expand(...path)
   })
 
-  /** A DMD scene's layers are all on its display. An area needs a plane to cover. */
+  /** A new layer is picked by kind, and goes on a plane or display that "Draws on" can change. An area needs a plane to cover. */
   const options = (): { value: NewLayer; label: string }[] => [
-    ...(scene.get().kind === 'Dmd'
-      ? [{ value: 'Display' as const, label: 'Display' }]
-      : [
-          { value: 'Sequence' as const, label: 'LED sequence' },
-          ...(planeNames().length > 0 ? [{ value: 'Area' as const, label: 'LED area' }] : []),
-        ]),
+    ...NEW_LAYER_OPTIONS.filter(({ value }) => value !== 'Area' || planeNames().length > 0),
     { value: 'Sound', label: 'Sound' },
   ]
 
@@ -481,12 +476,11 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
       })
       return
     }
-    const place = newLayerPlace(scene.get())
-    const surface = kind === 'Area' ? { surface: { Area: planeNames()[0] } } : kind === 'Sequence' ? { surface: 'Sequence' as const } : {}
+    const place = newLayerPlace(scene.get(), newPlace(scene.get(), kind))
     const layers = scene.get().layers
     const id = selectionNode({ layer: layers.length, mask: false })
     batch(() => {
-      scene.set({ ...scene.get(), layers: [...layers, { ...place, ...surface, fill: { base: { Solid: { Fixed: WHITE } } } }] })
+      scene.set({ ...scene.get(), layers: [...layers, { ...place, fill: { base: { Solid: { Fixed: WHITE } } } }] })
       select(id)
       expand('scene', id)
     })
@@ -681,20 +675,28 @@ function NodeRow(props: { node: ConfigNode; depth: number }) {
         <Match when={is(props.node, 'layer') || is(props.node, 'sound')}>
           {(layer) => <LayerRow node={layer()} />}
         </Match>
-        <Match when={is(props.node, 'plane')}>
-          {(plane) => (
-            <>
-              {label}
-              <Controls node={props.node}>
-                <Dropdown
-                  label="Plane"
-                  options={planeNames().map((name) => ({ value: name, label: name }))}
-                  value={layerPlane(plane().lens.get())!}
-                  onChange={(name) => field(plane().lens, 'surface').set({ Area: name })}
-                />
-              </Controls>
-            </>
-          )}
+        <Match when={is(props.node, 'place')}>
+          {(place) => {
+            const display = () => place().lens.get().display
+            const current = () => display() ?? layerPlane(place().lens.get())!
+            // one on a plane or display the machine doesn't have stays chosen, so it can be seen and changed
+            const options = () => {
+              const names = display() !== undefined ? displayNames(scene.get()) : planeNames()
+              return [...new Set([...names, current()])].map((name) => ({ value: name, label: name }))
+            }
+            const choose = (name: string) => {
+              if (display() !== undefined) field(place().lens, 'display').set(name)
+              else field(place().lens, 'surface').set({ Area: name })
+            }
+            return (
+              <>
+                {label}
+                <Controls node={props.node}>
+                  <Dropdown label="Draws on" options={options()} value={current()} onChange={choose} />
+                </Controls>
+              </>
+            )
+          }}
         </Match>
         <Match when={is(props.node, 'leds')}>
           {(leds) => (
@@ -814,6 +816,7 @@ function NodeIcon(props: { node: ConfigNode }) {
     if (node.kind === 'fill') return FILL_ICONS[fillKind(node.lens)]
     if (node.modifier) return MODIFIER_ICONS[node.modifier]
     if (node.kind === 'prop') return SOURCE_ICONS[propKind(node.lens.get())]
+    if (node.kind === 'place' && node.lens.get().display !== undefined) return icons.Monitor
     return KIND_ICONS[node.kind] ?? icons.Dot
   }
   return <Dynamic component={icon()} class="scene-tree-icon" aria-hidden="true" />
@@ -858,8 +861,9 @@ function LayerRow(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound' }
   const hidden = () => layer().get().hidden === true
   const type = () => {
     if (props.node.kind === 'sound') return 'Sound'
-    if (scene.get().kind === 'Dmd') return 'Display'
-    return layerPlane(props.node.lens.get() as SceneLayer) === null ? 'LED Sequence' : 'LED Area'
+    const layer = props.node.lens.get() as SceneLayer
+    if (layer.display !== undefined) return displayNames(scene.get()).length > 1 ? `Display · ${layer.display}` : 'Display'
+    return layerPlane(layer) === null ? 'LED Sequence' : 'LED Area'
   }
   const open = () => {
     tree.select(props.node.id)
@@ -1796,7 +1800,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
   const lens = () => props.node.lens as Lens<Shape | undefined>
   const base = () => field(lens() as Lens<Shape>, 'base') as Lens<ShapeNode>
   // a graph's nodes are where its LEDs are on a plane, so a sequence has none
-  const graphs = () => layer() !== undefined && scene.get().kind === 'Led' && layerPlane(layer()!.get()) !== null
+  const graphs = () => layer() !== undefined && layerPlane(layer()!.get()) !== null
   const kind = () => regionKind(lens(), layer())
   const options = () => (path() ? PATH_OPTIONS : graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
   const of = () => selectionOf(props.node.id)

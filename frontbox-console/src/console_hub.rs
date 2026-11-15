@@ -16,7 +16,7 @@ use std::time::Instant;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::protocol::*;
-use crate::scene_render::{MachineLeds, render_clip, render_scene};
+use crate::scene_render::{PreviewMachine, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
@@ -175,7 +175,7 @@ impl ConsoleHub {
     cycle: Option<u32>,
     reference: Option<ReferenceScene>,
   ) -> Option<Utf8Bytes> {
-    let machine = self.machine_leds();
+    let machine = self.preview_machine();
     let content = self.content();
     let message = match tokio::task::spawn_blocking(move || render_scene(source, size, machine, content, time, cycle, reference)).await {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
@@ -197,7 +197,7 @@ impl ConsoleHub {
     cycle: u32,
     reference: Option<ReferenceScene>,
   ) -> Option<Message> {
-    let machine = self.machine_leds();
+    let machine = self.preview_machine();
     let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
     match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle, reference)).await {
@@ -230,7 +230,7 @@ impl ConsoleHub {
     self.state.lock().unwrap().content.clone()
   }
 
-  fn machine_leds(&self) -> MachineLeds {
+  fn preview_machine(&self) -> PreviewMachine {
     let state = self.state.lock().unwrap();
     let leds = state
       .snapshot
@@ -238,7 +238,8 @@ impl ConsoleHub {
       .as_ref()
       .map(|hardware| hardware.leds.clone())
       .unwrap_or_default();
-    MachineLeds { leds, radius: state.led_radius }
+    let displays = state.snapshot.displays.iter().map(|display| (display.name.clone(), (display.width as usize, display.height as usize)));
+    PreviewMachine { leds, radius: state.led_radius, displays: displays.collect() }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client

@@ -1,4 +1,5 @@
 import { createSignal, untrack } from 'solid-js'
+import type { ClipCanvas } from '../types/generated/ClipCanvas'
 import type { ClipSound } from '../types/generated/ClipSound'
 import type { ReferenceScene } from '../types/generated/ReferenceScene'
 import type { RenderedClip } from '../types/generated/RenderedClip'
@@ -28,17 +29,18 @@ type Target = { source: SceneSource; size: SceneSize; reference: ReferenceScene 
 /** A cycle of a scene, rendered ahead so it can be played without asking the machine for each frame */
 export type SceneClip = {
   frames: number
-  width: number
-  height: number
+  /** The strip and the displays, as a render has them */
+  canvases: ClipCanvasFrames[]
   /** Where each LED's colors are in a frame */
   ledIndex: Map<string, number>
-  /** Each frame's points, as a canvas takes them */
-  points: Uint8ClampedArray<ArrayBuffer>
   /** Each frame's LEDs, as red, green, and blue */
   leds: Uint8Array
   /** The clips the cycle starts, in the order they start */
   sounds: ClipSound[]
 }
+
+/** One of a clip's canvases, with each frame's points as a canvas takes them */
+export type ClipCanvasFrames = ClipCanvas & { points: Uint8ClampedArray<ArrayBuffer> }
 
 const [render, setRender] = createSignal<SceneRender | null>(null)
 
@@ -160,16 +162,20 @@ export function receiveSceneClip(message: ArrayBuffer) {
   if (clipInFlight?.id !== header.id) return
   const { target, cycle } = clipInFlight
 
-  const { frames, width, height, leds, sounds } = header
-  const pointsStart = 4 + headerLength
-  const ledsStart = pointsStart + frames * width * height * 4
+  const { frames, leds, sounds } = header
+  // each canvas's frames go together, one canvas after another
+  let start = 4 + headerLength
+  const canvases = header.canvases.map((canvas) => {
+    const length = frames * canvas.width * canvas.height * 4
+    const points = new Uint8ClampedArray(message, start, length)
+    start += length
+    return { ...canvas, points }
+  })
   const clip = {
     frames,
-    width,
-    height,
+    canvases,
     ledIndex: new Map(leds.map((name, index) => [name, index])),
-    points: new Uint8ClampedArray(message, pointsStart, ledsStart - pointsStart),
-    leds: new Uint8Array(message, ledsStart),
+    leds: new Uint8Array(message, start),
     sounds,
   }
   setClips((rendered) => new Map(sameTarget(target, clipsRendered) ? [...rendered, [cycle, clip]] : [[cycle, clip]]))

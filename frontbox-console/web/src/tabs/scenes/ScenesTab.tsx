@@ -1,40 +1,18 @@
-import { SegmentGroup } from '@ark-ui/solid/segment-group'
 import { createTreeCollection, TreeView } from '@ark-ui/solid/tree-view'
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from 'solid-js'
 import { machine } from '../../state/console'
 import { addContentScene, contentScenes, contentScenesFailed, deleteContentScene, readContentScene, refreshContentScenes } from '../../state/contentScenes'
 import ConfirmDialog from './ConfirmDialog'
-import { planeNames } from './LayerPlace'
 import SceneEditor from './SceneEditor'
 import SceneNameDialog, { SceneNameButton } from './SceneNameDialog'
 import './ScenesTab.css'
 
-const STARTING_LAYER = `(fill: (base: Gradient(stops: [
-      (at: 0.0, color: Fixed(255, 0, 0, 255)),
-      (at: 1.0, color: Fixed(0, 0, 255, 255)),
-    ])))`
-
-/**
- * A new scene of each kind. An LED scene starts on every LED, which can be narrowed in the editor, as an area of the
- * machine's first plane, or a sequence on a machine with none.
- */
-const STARTING_SCENES = {
-  LED: () => {
-    const plane = planeNames()[0]
-    const surface = plane === undefined ? 'Sequence' : `Area(${JSON.stringify(plane)})`
-    return `Scene(
+/** A new scene, which has no layers until they're added in the editor */
+const EMPTY_SCENE = `Scene(
   version: 2,
-  layers: [Leds(leds: Every, surface: ${surface}, layer: ${STARTING_LAYER})],
+  layers: [],
 )
 `
-  },
-  DMD: () => `Scene(
-  version: 2,
-  layers: [Display(display: "Dmd", layer: ${STARTING_LAYER})],
-)
-`,
-}
-type SceneKind = keyof typeof STARTING_SCENES
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
@@ -274,34 +252,13 @@ function SceneTreeNode(props: { node: SceneNode; indexPath: number[]; onRename: 
   )
 }
 
-/** Asks for a kind and a name and adds a scene by them, so that what's being edited always has a file to save to */
+/** Asks for a name and adds an empty scene by it, so that what's being edited always has a file to save to */
 function NewScene(props: { onAdded: (scene: OpenScene) => void }) {
-  const [kind, setKind] = createSignal<SceneKind>('LED')
   const add = async (name: string) => {
-    props.onAdded({ name, source: await addContentScene(name, { Ron: STARTING_SCENES[kind()]() }) })
+    props.onAdded({ name, source: await addContentScene(name, { Ron: EMPTY_SCENE }) })
   }
 
-  return (
-    <SceneNameButton label="+ New" title="New scene" action="Create" acting="Creating…" onName={add}>
-      <SegmentGroup.Root
-        class="scene-prop-kind"
-        aria-label="Kind of scene"
-        value={kind()}
-        onValueChange={(details) => setKind(details.value as SceneKind)}
-      >
-        <SegmentGroup.Indicator />
-        <For each={Object.keys(STARTING_SCENES)}>
-          {(option) => (
-            <SegmentGroup.Item value={option}>
-              <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
-              <SegmentGroup.ItemControl />
-              <SegmentGroup.ItemHiddenInput />
-            </SegmentGroup.Item>
-          )}
-        </For>
-      </SegmentGroup.Root>
-    </SceneNameButton>
-  )
+  return <SceneNameButton label="+ New" title="New scene" action="Create" acting="Creating…" onName={add} />
 }
 
 /** A folder has children, and a scene has none. A scene's id is its name, and a folder's is its path. */

@@ -15,6 +15,7 @@ import {
   sceneClipError,
   sceneClipRendering,
   sceneRender,
+  type ClipCanvasFrames,
   type SceneClip,
 } from '../../state/sceneRender'
 import type { ClipSound } from '../../types/generated/ClipSound'
@@ -29,15 +30,20 @@ import { LedsNote } from './LayerPlace'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { openTransform } from './configNodes'
-import { changesEachCycle, cycleCount, editedScene, layerPlane, sceneSource, selectedShape, withoutDroppedVariables, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
+import { changesEachCycle, cycleCount, editedScene, layerPlace, layerPlane, placeDisplay, sceneSource, selectedShape, withoutDroppedVariables, withoutDroppedTiming, type Lens, type Scene, type SceneLayer, type SceneTrack, type SceneValue, type Selection, type Vec2 } from './sceneModel'
 import { SceneNameButton } from './SceneNameDialog'
 import GraphOverlay from './GraphOverlay'
 import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
-/** A sequence can be seen played on the machine, or along a strip of its own, which is where its handles are */
-const SEQUENCE_VIEWS = ['Machine', 'Strip'] as const
-type SequenceView = (typeof SEQUENCE_VIEWS)[number]
+/**
+ * What the preview shows: the machine, with the LEDs and the displays that have a place on it, the strip of the
+ * `Sequence` layers, which is where their handles are, or one display on its own
+ */
+type View = 'Machine' | 'Strip' | `Display:${string}`
+
+/** The display a view is of, which is `null` for the machine and the strip */
+const viewDisplay = (view: View) => (view.startsWith('Display:') ? view.slice('Display:'.length) : null)
 
 /** The fewest pixels tall a line is drawn, as one row of points would otherwise be a sliver */
 const MIN_DRAWN_HEIGHT = 32
@@ -94,9 +100,10 @@ function draw(canvas: HTMLCanvasElement, width: number, height: number, colors: 
   canvas.getContext('2d')!.putImageData(new ImageData(colors, width, height), 0, 0)
 }
 
-function drawClipFrame(canvas: HTMLCanvasElement, { width, height, points }: SceneClip, frame: number) {
+/** One frame of one of a clip's canvases */
+function clipFrameColors({ width, height, points }: ClipCanvasFrames, frame: number) {
   const length = width * height * 4
-  draw(canvas, width, height, points.subarray(frame * length, (frame + 1) * length))
+  return points.subarray(frame * length, (frame + 1) * length)
 }
 
 /** An LED's color in a frame of a clip, as CSS or `null` for off */
@@ -134,7 +141,7 @@ export default function SceneEditor(props: {
   const [leds, setLeds] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
-  const [sequenceView, setSequenceView] = createSignal<SequenceView>('Machine')
+  const [chosenView, setView] = createSignal<View>('Machine')
   // another scene drawn with this one, to see how the two look together. Only this one's layers can be selected.
   const [reference, setReferenceState] = createSignal<ReferenceScene | null>(readReferences()[props.name] ?? null)
   const setReference = (next: ReferenceScene | null) => {
@@ -226,8 +233,6 @@ export default function SceneEditor(props: {
   createEffect(() => {
     const reply = sceneRender()
     if (!reply || !('rendered' in reply)) return
-    const { width, height, colors } = reply.rendered
-    if (!untrack(playback.playing)) draw(canvas, width, height, new Uint8ClampedArray(colors))
     setDrawn(reply.rendered)
     if (!reply.settled) return
     if ('Ron' in reply.source) setScene(editedScene(reply.rendered.scene))
@@ -235,8 +240,20 @@ export default function SceneEditor(props: {
   })
 
   createEffect(() => {
+    const shown = shownCanvas()
+    const [width, height] = canvasSize()
+    if (untrack(playback.playing)) return
+    if (shown) draw(canvas, shown.width, shown.height, new Uint8ClampedArray(shown.colors))
+    else draw(canvas, width, height, new Uint8ClampedArray(width * height * 4))
+  })
+
+  createEffect(() => {
     const shown = clipFrame()
-    if (shown) drawClipFrame(canvas, shown.clip, shown.frame)
+    if (!shown) return
+    const [width, height] = canvasSize()
+    const on = shown.clip.canvases.find((clipCanvas) => clipCanvas.display === viewDisplay(view()))
+    if (on) draw(canvas, on.width, on.height, clipFrameColors(on, shown.frame))
+    else draw(canvas, width, height, new Uint8ClampedArray(width * height * 4))
   })
 
   createEffect(() => {
@@ -369,29 +386,95 @@ export default function SceneEditor(props: {
     if (scene() === null && error() !== null) setShowingCode(true)
   })
 
-  const isDmd = () => scene()?.kind === 'Dmd'
-
   /** The layer the preview is showing the surface of: the open one, or with none open, the last that was */
   const shownIndex = createMemo<number>((last) => selection[0]()?.layer ?? last, 0)
   const shownLayer = () => scene()?.layers[shownIndex()]
-  const isSequence = () => shownLayer()?.surface === 'Sequence'
+  const isSequence = () => shownLayer() !== undefined && shownLayer()!.display === undefined && shownLayer()!.surface === 'Sequence'
 
-  /** What's on show comes from the layer: a DMD is on its screen, and LEDs are on the machine */
-  const onMachine = () => !isDmd() && (!isSequence() || sequenceView() === 'Machine')
+  /** The machine's displays, then any others the scene or the scene shown with it draws on */
+  const displays = () => {
+    const named = scene()?.layers.flatMap((layer) => (layer.display === undefined ? [] : [layer.display])) ?? []
+    const drawnOn = drawn()?.canvases.flatMap((on) => (on.display === null ? [] : [on.display])) ?? []
+    return [...new Set([...machine.displays.map((display) => display.name), ...named, ...drawnOn])]
+  }
+  const hasStrip = () => scene()?.layers.some((layer) => layer.display === undefined && layer.surface === 'Sequence') ?? false
+  const views = (): { value: View; label: string }[] => [
+    { value: 'Machine', label: 'Machine' },
+    ...(hasStrip() ? [{ value: 'Strip' as const, label: 'Strip' }] : []),
+    ...displays().map((display) => ({ value: `Display:${display}` as const, label: display })),
+  ]
+  /** What's on show, which is the machine once what was chosen isn't there to show */
+  const view = (): View => (views().some(({ value }) => value === chosenView()) ? chosenView() : 'Machine')
+  const onMachine = () => view() === 'Machine'
+
+  // the view goes to where the open layer draws. A sequence is on the machine too, so it stays on the strip if it's there.
+  createEffect(
+    on(
+      () => shownLayer() && layerPlace(shownLayer()!),
+      (place) => {
+        if (place === undefined) return
+        const display = placeDisplay(place)
+        if (display !== null) setView(`Display:${display}`)
+        else if (place !== 'Sequence' || untrack(view) !== 'Strip') setView('Machine')
+      },
+    ),
+  )
 
   // a plane with no extent has no size to give a layer
   const planes = () => machine.planes.filter((plane) => plane.extent[0] > 0 && plane.extent[1] > 0)
   const planeOf = (layer: SceneLayer | undefined) => planes().find(({ name }) => layer !== undefined && name === layerPlane(layer)) ?? null
   const plane = () => planeOf(shownLayer())
 
-  /** With no plane to take a size from, the render is its own device, as a DMD is */
+  /** The size the editor previews a display at when the machine doesn't have it, and an area on a plane it doesn't have */
+  const ownSize = (): Vec2 => [Math.max(width(), 1), Math.max(height(), 1)]
+  const displaySize = (name: string): Vec2 => {
+    const display = machine.displays.find((display) => display.name === name)
+    return display ? [display.width, display.height] : ownSize()
+  }
+  const machineHasDisplay = (name: string) => machine.displays.some((display) => display.name === name)
+
+  /** A display layer is the size of its display, and an area the size of its plane */
   const layerSurface = (layer: SceneLayer) => {
+    if (layer.display !== undefined) return displaySize(layer.display)
     if (layer.surface === 'Sequence') return null
-    return planeOf(layer)?.extent ?? ([Math.max(width(), 1), Math.max(height(), 1)] as Vec2)
+    return planeOf(layer)?.extent ?? ownSize()
   }
 
-  /** Whether a layer is on what's on show, as those are the ones a click there can reach */
-  const onShownSurface = (layer: SceneLayer) => JSON.stringify(layer.surface) === JSON.stringify(shownLayer()?.surface)
+  /** Whether a layer is on what's on show, as those are the ones a click there can reach and have handles there */
+  const onView = (layer: SceneLayer) => {
+    const shown = view()
+    if (shown === 'Strip') return layer.display === undefined && layer.surface === 'Sequence'
+    if (shown === 'Machine') return layer.display === undefined && layer.surface !== 'Sequence' && JSON.stringify(layer.surface) === JSON.stringify(shownLayer()?.surface)
+    return layer.display === viewDisplay(shown)
+  }
+
+  /** The open layer or mask, if its layer is on what's on show */
+  const openOnView = () => {
+    const open = selection[0]()
+    const layer = open && scene()?.layers[open.layer]
+    return layer && onView(layer) ? open : null
+  }
+
+  /** The render of what the canvas shows. A display nothing draws on has none. */
+  const shownCanvas = () => drawn()?.canvases.find((on) => on.display === viewDisplay(view()) && (on.display !== null || view() === 'Strip')) ?? null
+  /** The canvas's size in points, which for a display nothing draws on is the display's */
+  const canvasSize = (): Vec2 => {
+    const shown = shownCanvas()
+    if (shown) return [shown.width, shown.height]
+    const display = viewDisplay(view())
+    return display === null ? [0, 0] : displaySize(display)
+  }
+
+  /** What a display shows, for drawing it where it is on the machine. `null` for one the scene doesn't draw on. */
+  const previewDisplayFrame = (display: string) => {
+    const shown = clipFrame()
+    if (shown) {
+      const on = shown.clip.canvases.find((clipCanvas) => clipCanvas.display === display)
+      return on ? clipFrameColors(on, shown.frame) : null
+    }
+    const rendered = drawn()?.canvases.find((on) => on.display === display)
+    return rendered ? new Uint8ClampedArray(rendered.colors) : null
+  }
 
   const ledColors = () => drawn()?.led_colors ?? {}
 
@@ -422,15 +505,18 @@ export default function SceneEditor(props: {
 
   /** Where the open layer or mask is drawn, in scene units. Left out while playing, where it's the scene that's being watched. */
   const outline = (): Vec2[][] => {
-    const open = selection[0]()
+    const open = openOnView()
     const rendered = drawn()
     if (playback.playing() || open === null || !rendered || !openShown()) return []
     // one loop for each copy of its shape
     return (open.mask ? rendered.mask_outlines : rendered.outlines)[open.layer] ?? []
   }
 
-  /** What's open is what's selected in the preview. Its handles are left out while playing, as its outline is. */
-  const selected = () => (playback.playing() || error() !== null ? null : selection[0]())
+  /**
+   * What's open is what's selected in the preview, if it's on what's on show. Its handles are left out while playing,
+   * as its outline is.
+   */
+  const selected = () => (playback.playing() || error() !== null ? null : openOnView())
   const selectedPose = () => {
     const open = selected()
     const rendered = drawn()
@@ -459,7 +545,7 @@ export default function SceneEditor(props: {
       nodePicking.choosing[1](null)
       return
     }
-    const under = point && layerUnder(scene()!, drawn()!.outlines, point, onShownSurface)
+    const under = point && layerUnder(scene()!, drawn()!.outlines, point, onView)
     if (under !== null) setOpen({ layer: under, mask: false })
     else if (hasShape(open())) setOpen(null)
   }
@@ -520,19 +606,19 @@ export default function SceneEditor(props: {
 
   /** Keeps its shape however much room the preview has, with one point of a sequence being as tall as it is wide */
   const screenAspect = () => {
-    const shown = drawn()
-    return shown ? Math.max(shown.width, 1) / Math.max(shown.height, 1) : 1
+    const [width, height] = canvasSize()
+    return Math.max(width, 1) / Math.max(height, 1)
   }
 
-  /** The DMD is the part of the scene the machine rendered, stretched over the canvas */
+  /** The canvas is the part of the scene the machine rendered, stretched over it */
   const screenSpace: PreviewSpace = {
     project([x, y]) {
-      const area = drawn()?.area
+      const area = shownCanvas()?.area
       const [width, height] = screenSize()
       return area ? [((x - area.x) / area.width) * width, ((y - area.y) / area.height) * height] : null
     },
     unproject(clientX, clientY) {
-      const area = drawn()?.area
+      const area = shownCanvas()?.area
       const { left, top, width, height } = canvas.getBoundingClientRect()
       return area ? [area.x + ((clientX - left) / width) * area.width, area.y + ((clientY - top) / height) * area.height] : null
     },
@@ -633,44 +719,30 @@ export default function SceneEditor(props: {
                 onNumber={(size) => size > 0 && setSnap({ size })}
               />
             </div>
-            <Show
-              when={!onMachine()}
-              fallback={
-                <>
-                  <Show when={!isSequence() && planes().length === 0}>
-                    <span class="scene-note">The machine has no planes</span>
-                  </Show>
-                  <Show when={isSequence() && hasShape(selected())}>
-                    <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
-                  </Show>
-                </>
-              }
-            >
-              <Show
-                when={isSequence()}
-                fallback={
-                  <>
-                    <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
-                    <span>×</span>
-                    <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
-                  </>
-                }
-              >
-                <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
-              </Show>
+            <Show when={onMachine() && !isSequence() && shownLayer()?.display === undefined && planes().length === 0}>
+              <span class="scene-note">The machine has no planes</span>
             </Show>
-            <Show when={isSequence()}>
-              <SegmentGroup.Root
-                class="scene-prop-kind scene-view"
-                aria-label="Preview"
-                value={sequenceView()}
-                onValueChange={(details) => setSequenceView(details.value as SequenceView)}
-              >
+            <Show when={onMachine() && isSequence() && hasShape(selection[0]())}>
+              <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
+            </Show>
+            <Show when={view() === 'Strip'}>
+              <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
+            </Show>
+            <Show when={viewDisplay(view()) !== null && !machineHasDisplay(viewDisplay(view())!)}>
+              <span class="scene-note" title="The machine has no display by this name, so it's previewed at this size">
+                Not on the machine
+              </span>
+              <NumberBox min="1" aria-label="Width" value={width()} onNumber={setWidth} />
+              <span>×</span>
+              <NumberBox min="1" aria-label="Height" value={height()} onNumber={setHeight} />
+            </Show>
+            <Show when={views().length > 1}>
+              <SegmentGroup.Root class="scene-prop-kind scene-view" aria-label="Preview" value={view()} onValueChange={(details) => setView(details.value as View)}>
                 <SegmentGroup.Indicator />
-                <For each={SEQUENCE_VIEWS}>
+                <For each={views()}>
                   {(option) => (
-                    <SegmentGroup.Item value={option}>
-                      <SegmentGroup.ItemText>{option}</SegmentGroup.ItemText>
+                    <SegmentGroup.Item value={option.value}>
+                      <SegmentGroup.ItemText>{option.label}</SegmentGroup.ItemText>
                       <SegmentGroup.ItemControl />
                       <SegmentGroup.ItemHiddenInput />
                     </SegmentGroup.Item>
@@ -699,7 +771,7 @@ export default function SceneEditor(props: {
             >
               <Splitter.Panel id="source">
                 <div class="scene-source">
-                  <Show when={scene() !== null && !isDmd()}>
+                  <Show when={scene() !== null}>
                     <div class="scene-leds">
                       <LedsNote />
                     </div>
@@ -755,6 +827,7 @@ export default function SceneEditor(props: {
                 <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()}>
                   <PlayfieldView
                     ledColor={ledColor}
+                    displayFrame={previewDisplayFrame}
                     plane={() => (isSequence() ? null : plane())}
                     outline={outline}
                     onClickPlane={(point) => !isSequence() && plane() && pick(point)}
@@ -762,9 +835,9 @@ export default function SceneEditor(props: {
                   />
                 </div>
                 <div class="scene-dmd" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={onMachine()}>
-                  <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${isSequence() ? MIN_DRAWN_HEIGHT : 0}px` }}>
+                  <div class="scene-dmd-screen" style={{ '--aspect': screenAspect(), 'min-height': `${view() === 'Strip' ? MIN_DRAWN_HEIGHT : 0}px` }}>
                     <canvas ref={canvas} onClick={(e) => pick(screenSpace.unproject(e.clientX, e.clientY))} />
-                    <Show when={drawn()?.area}>
+                    <Show when={shownCanvas()?.area}>
                       {(area) => (
                         <svg viewBox={`${area().x} ${area().y} ${area().width} ${area().height}`} preserveAspectRatio="none" aria-hidden="true">
                           <For each={outline()}>{(loop) => <polygon points={loop.join(' ')} />}</For>

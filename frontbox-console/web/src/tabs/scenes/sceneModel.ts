@@ -409,7 +409,7 @@ export function withVariableValue(scene: Scene, name: string, value: Value): Sce
   return { ...scene, variables: { ...scene.variables, [name]: value } }
 }
 
-/** The plane an `Area` layer covers, which is `null` for a `Sequence` or a layer of a DMD */
+/** The plane an `Area` layer covers, which is `null` for a `Sequence` or a display's layer */
 export function layerPlane({ surface }: SceneLayer) {
   return surface === undefined || surface === 'Sequence' ? null : surface.Area
 }
@@ -440,11 +440,30 @@ export function freshTraversalName(layer: SceneLayer, base: string) {
   return `${base}_${n}`
 }
 
-/** Where a new layer goes: where the one under it is, so that stacking is the easy thing to do */
-export function newLayerPlace(scene: Scene): Omit<SceneLayer, keyof Layer> {
-  const under = scene.layers.at(-1)
-  if (scene.kind === 'Dmd') return { display: under?.display ?? 'Dmd', z: under?.z }
-  return { leds: under?.leds ?? 'Every', z: under?.z, surface: under?.surface ?? 'Sequence' }
+/**
+ * What a layer draws on, as one string so a dropdown can offer them all: `Sequence` for LEDs in order, `Area:<plane>`
+ * for LEDs where they are on a plane, or `Display:<display>`
+ */
+export type LayerPlace = 'Sequence' | `Area:${string}` | `Display:${string}`
+
+export function layerPlace(layer: SceneLayer): LayerPlace {
+  if (layer.display !== undefined) return `Display:${layer.display}`
+  const plane = layerPlane(layer)
+  return plane === null ? 'Sequence' : `Area:${plane}`
+}
+
+/** The display a place is, which is `null` for LEDs */
+export const placeDisplay = (place: LayerPlace) => (place.startsWith('Display:') ? place.slice('Display:'.length) : null)
+
+/**
+ * Where a new layer on `place` goes: on the LEDs and at the z of the last layer there, so that stacking is the easy
+ * thing to do. A first layer on LEDs is on every LED.
+ */
+export function newLayerPlace(scene: Scene, place: LayerPlace): Omit<SceneLayer, keyof Layer> {
+  const display = placeDisplay(place)
+  if (display !== null) return { display, z: scene.layers.findLast((layer) => layer.display === display)?.z }
+  const under = scene.layers.findLast((layer) => layer.display === undefined)
+  return { leds: under?.leds ?? 'Every', z: under?.z, surface: place === 'Sequence' ? 'Sequence' : { Area: place.slice('Area:'.length) } }
 }
 
 /** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */
@@ -724,11 +743,10 @@ function held(prop: Prop<SceneValue>): Prop<SceneValue> {
 export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>> & { display?: string }
 
 /**
- * A scene as the editor works on it, with everything about a layer in one place. `kind` is what the editor shows it on:
- * one with display layers is edited as a display's, and one without as the LEDs'. Its sound layers are apart from the
+ * A scene as the editor works on it, with everything about a layer in one place. Its sound layers are apart from the
  * drawn ones in `layers`, as nothing about them is drawn, and go after them in the file.
  */
-export type Scene = Omit<SceneFile, 'layers'> & { kind: 'Led' | 'Dmd'; layers: SceneLayer[]; sounds: SoundLayer[] }
+export type Scene = Omit<SceneFile, 'layers'> & { layers: SceneLayer[]; sounds: SoundLayer[] }
 
 export function editedScene({ layers, ...scene }: SceneFile): Scene {
   const edited = layers.flatMap((on): SceneLayer[] => {
@@ -741,10 +759,10 @@ export function editedScene({ layers, ...scene }: SceneFile): Scene {
     return [{ ...layer, ...place }]
   })
   const sounds = layers.flatMap((on) => ('Sound' in on ? [on.Sound] : []))
-  return { ...scene, kind: layers.some((on) => 'Display' in on) ? 'Dmd' : 'Led', layers: edited, sounds }
+  return { ...scene, layers: edited, sounds }
 }
 
-function sceneFile({ kind, layers, sounds, ...scene }: Scene): SceneFile {
+function sceneFile({ layers, sounds, ...scene }: Scene): SceneFile {
   const placed = layers.map(({ leds, z, surface, display, ...layer }): SceneFileLayer =>
     display !== undefined ? { Display: { display, z, layer } } : { Leds: { leds, z, surface: surface ?? 'Sequence', layer } },
   )
