@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use frontbox_core::prelude::*;
+use frontbox_gfx::animation::Curve;
 use frontbox_gfx::scene::{Content, Prop, Transform, Value, VariableType};
 use frontbox_scene::{
   OpenError, PlayableScene, Scene, SceneLayer, ScenePlayer, Sends, SentVariable,
@@ -23,15 +24,19 @@ const MENU_END_SND: &str = "dmd_menu_end";
 const ROWS_SHOWN: usize = 4;
 /// How far apart rows are, in pixels. A row's fragment draws the first row, and each one below it is moved down by this.
 const ROW_HEIGHT: f32 = 7.0;
+/// How long the selection takes to slide to another row
+const SLIDE_DURATION: Duration = Duration::from_millis(120);
 
 /// The operator menu, shown on the DMD while the coin door is open. It's drawn from fragments: scenes for its parts,
-/// `frame`, `heading`, `row`, `edit`, and `about`, in `frontbox/128x32/menu/` unless
+/// `frame`, `selection`, `heading`, `row`, `edit`, and `about`, in `frontbox/128x32/menu/` unless
 /// [`fragments`](Self::fragments) names another folder. A game changes how the menu looks by putting its own files
 /// under those names in its content folder.
 ///
-/// Each part is played as a copy of its fragment, moved down to its row. The copies are drawn frame first, then the rows
-/// from the top. The code sets their variables:
+/// Each part is played as a copy of its fragment, moved down to its row. The copies are drawn frame first, then the
+/// selection, then the rows from the top. The code sets their variables:
 ///
+/// - `selection`: `offset`, how far it's moved from the first row to the selected one. It slides there when the
+///   selection moves.
 /// - `heading`: `text`
 /// - `row`: `label`, `value`, `opens` (it opens a section, screen, or action, so it shows the arrow), `has_value`
 ///   (it's a setting), and `changed` (a setting that isn't at its default). Each variable whose default points at a
@@ -345,6 +350,13 @@ impl DmdMenuSystem {
       for (name, value) in part.variables {
         player.set_variable(name, value, ctx);
       }
+      for (name, value) in part.eased {
+        if same_place {
+          player.ease_variable(name, value, SLIDE_DURATION, Curve::EaseOut, ctx);
+        } else {
+          player.set_variable(name, value, ctx);
+        }
+      }
     }
     for mut gone in self.shown.drain(count..) {
       gone.player.stop(ctx);
@@ -384,7 +396,11 @@ impl DmdMenuSystem {
       .enumerate()
       .skip(first)
       .take(ROWS_SHOWN);
-    let mut parts = vec![Part::new(Fragment::Frame, 0)];
+    let selection = Vec2::new(0.0, (self.selected_row - first) as f32 * ROW_HEIGHT);
+    let mut parts = vec![
+      Part::new(Fragment::Frame, 0),
+      Part::new(Fragment::Selection, 0).eased("offset", selection),
+    ];
     for (row, (index, display_row)) in rows.enumerate() {
       let part = match display_row {
         DisplayMenuRow::Heading { text, .. } => {
@@ -566,6 +582,7 @@ fn placed(scene: &Scene, row: usize, z: i8) -> Scene {
 /// The menu's fragments, opened from the content folder or the bundled scenes
 struct Fragments {
   frame: Scene,
+  selection: Scene,
   heading: Scene,
   row: Scene,
   edit: Scene,
@@ -582,6 +599,7 @@ impl Fragments {
     };
     Ok(Self {
       frame: open("frame", Sends { variables: &[] })?,
+      selection: open("selection", SELECTION_SENDS)?,
       heading: open("heading", HEADING_SENDS)?,
       row: open("row", ROW_SENDS)?,
       edit: open("edit", EDIT_SENDS)?,
@@ -592,6 +610,7 @@ impl Fragments {
   fn scene(&self, fragment: Fragment) -> &Scene {
     match fragment {
       Fragment::Frame => &self.frame,
+      Fragment::Selection => &self.selection,
       Fragment::Heading => &self.heading,
       Fragment::Row => &self.row,
       Fragment::Edit => &self.edit,
@@ -599,6 +618,15 @@ impl Fragments {
     }
   }
 }
+
+const SELECTION_SENDS: Sends = Sends {
+  variables: &[SentVariable {
+    name: "offset",
+    sent_as: VariableType::Vec2,
+    values: &[],
+    about: "How far it's moved from the first row to the selected one",
+  }],
+};
 
 const HEADING_SENDS: Sends = Sends {
   variables: &[SentVariable {
@@ -685,6 +713,7 @@ const ABOUT_SENDS: Sends = Sends {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fragment {
   Frame,
+  Selection,
   Heading,
   Row,
   Edit,
@@ -697,6 +726,8 @@ struct Part {
   fragment: Fragment,
   row: usize,
   variables: Vec<(String, Value)>,
+  /// Eased to their values when the part is already shown, rather than set
+  eased: Vec<(String, Value)>,
 }
 
 impl Part {
@@ -705,11 +736,17 @@ impl Part {
       fragment,
       row,
       variables: Vec::new(),
+      eased: Vec::new(),
     }
   }
 
   fn variable(mut self, name: &str, value: impl Into<Value>) -> Self {
     self.variables.push((name.into(), value.into()));
+    self
+  }
+
+  fn eased(mut self, name: &str, value: impl Into<Value>) -> Self {
+    self.eased.push((name.into(), value.into()));
     self
   }
 
@@ -803,16 +840,17 @@ mod tests {
       fragments,
       [
         (Fragment::Frame, 0),
+        (Fragment::Selection, 0),
         (Fragment::Heading, 0),
         (Fragment::Row, 1),
         (Fragment::Row, 2),
         (Fragment::Row, 3)
       ]
     );
-    assert_eq!(variable(&parts[1], "text"), Some(&Value::from("Frontbox")));
-    assert_eq!(variable(&parts[2], "label"), Some(&Value::from("Audio")));
-    assert_eq!(variable(&parts[2], "opens"), Some(&Value::from(true)));
-    assert_eq!(shown(&context).len(), 5);
+    assert_eq!(variable(&parts[2], "text"), Some(&Value::from("Frontbox")));
+    assert_eq!(variable(&parts[3], "label"), Some(&Value::from("Audio")));
+    assert_eq!(variable(&parts[3], "opens"), Some(&Value::from(true)));
+    assert_eq!(shown(&context).len(), 6);
   }
 
   #[test]
@@ -821,12 +859,12 @@ mod tests {
     let menu = spawned(&mut context);
     let parts = menu.parts();
     assert_eq!(
-      variable(&parts[2], "bar_opacity"),
-      Some(&Value::named("selected_bar_opacity"))
+      variable(&parts[3], "text_color"),
+      Some(&Value::named("selected_text_color"))
     );
     assert_eq!(
-      variable(&parts[3], "bar_opacity"),
-      Some(&Value::named("normal_bar_opacity"))
+      variable(&parts[4], "text_color"),
+      Some(&Value::named("normal_text_color"))
     );
   }
 
@@ -839,9 +877,37 @@ mod tests {
     menu.on_tick(Duration::ZERO, &context.sys_ctx());
     assert_eq!(shown(&context), before);
     assert_eq!(
-      variable(&menu.parts()[3], "bar_opacity"),
-      Some(&Value::named("selected_bar_opacity"))
+      variable(&menu.parts()[4], "text_color"),
+      Some(&Value::named("selected_text_color"))
     );
+  }
+
+  #[test]
+  fn the_selection_slides_to_the_selected_row() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    menu.navigate_inc(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+    let offset = |context: &TestContext| {
+      let ctx = context.sys_ctx();
+      let scenes = ctx.systems.get::<SceneSystem>().unwrap();
+      let (_, selection) = scenes.shown().nth(1).unwrap();
+      selection.moment().variables.get("offset").cloned()
+    };
+    // it starts on the first selectable row, below the heading
+    let advance = |context: &TestContext, ms| {
+      let ctx = context.sys_ctx();
+      ctx
+        .systems
+        .with::<SceneSystem, _>(|scenes| scenes.on_tick(Duration::from_millis(ms), &ctx));
+    };
+    advance(&context, 60);
+    let Some(Value::Vec2(halfway)) = offset(&context) else {
+      panic!("no offset");
+    };
+    assert!(halfway.y > 7.0 && halfway.y < 14.0, "{halfway}");
+    advance(&context, 100);
+    assert_eq!(offset(&context), Some(Value::Vec2(Vec2::new(0.0, 14.0))));
   }
 
   #[test]
@@ -866,6 +932,7 @@ mod tests {
     let content = content_with_bundled(None);
     let fragments = Fragments::open(&content, "frontbox/128x32/menu").unwrap();
     for (scene, sends) in [
+      (&fragments.selection, SELECTION_SENDS),
       (&fragments.heading, HEADING_SENDS),
       (&fragments.row, ROW_SENDS),
       (&fragments.edit, EDIT_SENDS),

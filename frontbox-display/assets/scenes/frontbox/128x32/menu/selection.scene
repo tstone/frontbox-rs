@@ -1,0 +1,39 @@
+Scene(
+  version: 2,
+  variables: {
+    "offset": Vec2(0.0, 0.0),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Gradient(
+            stops: [
+              (
+                at: 0.0,
+                color: Fixed(0, 170, 200, 255),
+              ),
+              (
+                at: 1.0,
+                color: Fixed(0, 40, 120, 255),
+              ),
+            ],
+            style: Linear,
+          ),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 5.5)),
+            Translate(Variable("offset")),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

@@ -64,6 +64,18 @@ pub enum FillNode {
     #[cfg_attr(feature = "ts", ts(optional))]
     frame: Option<Prop<f32>>,
   },
+  /// One sprite from an image laid out as a grid of equal sprites, stretched over the unit box like an `Image`
+  Spritesheet {
+    /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+    name: String,
+    rows: u32,
+    columns: u32,
+    /// Which sprite, counting across each row from the top left, 0 if not set. Truncated to a whole number like an
+    /// `Image`'s frame, and clamped to the last sprite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    sprite: Option<Prop<f32>>,
+  },
 }
 
 /// A gradient color stop. `at` runs from 0 to 1.
@@ -117,6 +129,7 @@ impl FillNode {
       Self::Solid(color) => color.is_animated(),
       Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
+      Self::Spritesheet { sprite, .. } => sprite.as_ref().is_some_and(Prop::is_animated),
     }
   }
 
@@ -125,12 +138,13 @@ impl FillNode {
       Self::Solid(color) => color.read_inputs(inputs),
       Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.color.read_inputs(inputs)),
       Self::Image { frame, .. } => frame.iter().for_each(|frame| frame.read_inputs(inputs)),
+      Self::Spritesheet { sprite, .. } => sprite.iter().for_each(|sprite| sprite.read_inputs(inputs)),
     }
   }
 
   pub(crate) fn image_name(&self) -> Option<&str> {
     match self {
-      Self::Image { name, .. } if !name.is_empty() => Some(name),
+      Self::Image { name, .. } | Self::Spritesheet { name, .. } if !name.is_empty() => Some(name),
       _ => None,
     }
   }
@@ -145,6 +159,14 @@ impl FillNode {
         picture: env.assets.picture(name),
         frame: frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)),
       },
+      Self::Spritesheet { name, rows, columns, sprite } => {
+        let (rows, columns) = ((*rows).max(1), (*columns).max(1));
+        let sprite = sprite.as_ref().map_or(0.0, |sprite| sprite.resolve_truncated(env)).max(0.0) as u32;
+        let sprite = sprite.min(rows * columns - 1);
+        let size = Vec2::new(1.0 / columns as f32, 1.0 / rows as f32);
+        let min = Vec2::new((sprite % columns) as f32, (sprite / columns) as f32) * size;
+        ResolvedFillNode::Sprite { picture: env.assets.picture(name), min, size }
+      }
     }
   }
 }
@@ -176,6 +198,8 @@ enum ResolvedFillNode<'a> {
   Gradient { stops: Vec<(f32, Rgba<u8>)>, style: GradientStyle },
   /// `None` for an image that isn't loaded, which draws nothing
   Image { picture: Option<&'a Picture>, frame: f32 },
+  /// The part of an image from `min`, `size` across, in units of the whole image
+  Sprite { picture: Option<&'a Picture>, min: Vec2, size: Vec2 },
 }
 
 impl ResolvedFillNode<'_> {
@@ -184,6 +208,9 @@ impl ResolvedFillNode<'_> {
       Self::Solid(color) => *color,
       Self::Gradient { stops, style } => gradient(stops, style.at(p)),
       Self::Image { picture, frame } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color(*frame, p, footprint)),
+      Self::Sprite { picture, min, size } => {
+        picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color_within(0.0, *min, *size, p, footprint))
+      }
     }
   }
 }

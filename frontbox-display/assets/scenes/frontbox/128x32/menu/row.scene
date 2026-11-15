@@ -6,7 +6,6 @@ Scene(
   ),
   variables: {
     "arrow_offset": Value("selected_arrow_offset"),
-    "bar_opacity": Value("selected_bar_opacity"),
     "has_value": Bool(false),
     "label": Text("Replay score and extra ball awards"),
     "opens": Bool(true),
@@ -15,7 +14,6 @@ Scene(
   },
   values: {
     "normal_arrow_offset": Vec2(Fixed(0.0, 0.0)),
-    "normal_bar_opacity": Float(Fixed(0.0)),
     "normal_text_color": Color(Fixed(255, 255, 77, 255)),
     "selected_arrow_offset": Vec2(Modulated(
       envelope: (
@@ -33,43 +31,9 @@ Scene(
       ),
       rate: 1.0,
     )),
-    "selected_bar_opacity": Float(Fixed(1.0)),
     "selected_text_color": Color(Fixed(240, 250, 255, 255)),
   },
   layers: [
-    Display(
-      display: "Dmd",
-      layer: (
-        name: "Bar",
-        fill: (
-          base: Gradient(
-            stops: [
-              (
-                at: 0.0,
-                color: Fixed(0, 170, 200, 255),
-              ),
-              (
-                at: 1.0,
-                color: Fixed(0, 40, 120, 255),
-              ),
-            ],
-            style: Linear,
-          ),
-          adjust: [
-            Opacity(Variable("bar_opacity")),
-          ],
-        ),
-        region: (
-          transform: [
-            Translate(Fixed(64.0, 5.5)),
-          ],
-          base: Rect(
-            width: Fixed(124.0),
-            height: Fixed(7.0),
-          ),
-        ),
-      ),
-    ),
     Display(
       display: "Dmd",
       layer: (

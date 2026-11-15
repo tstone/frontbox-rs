@@ -33,8 +33,3 @@ No driver installation is needed on Linux, but by default USB devices are only a
 3. Unplug and replug the PIN2DMD
 
 You can verify the device is visible with `lsusb` — look for VID `0314` PID `e457`.
-
-## Pixel Font Sources
-
-- [Bold Pixels](https://yukipixels.itch.io/boldpixels) by YukiPixels CC Share Alike 4.0
-- [Sigi](https://github.com/rsms/sigi-pixel-font) by Rasmus Andersson CC0

@@ -138,8 +138,9 @@ import {
   type Vec2,
 } from './sceneModel'
 
-type FillKind = 'Solid' | GradientStyle | 'Image'
+type FillKind = 'Solid' | GradientStyle | 'Image' | 'Spritesheet'
 type ImageFill = Extract<FillNode, { Image: unknown }>['Image']
+type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet']
 type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
@@ -165,6 +166,7 @@ const FILL_OPTIONS: { value: FillKind; label: string }[] = [
   { value: 'Radial', label: 'Radial gradient' },
   { value: 'Conical', label: 'Conical gradient' },
   { value: 'Image', label: 'Image' },
+  { value: 'Spritesheet', label: 'Sprite sheet' },
 ]
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label)
 type ShapeOption = { value: RegionKind | TemplateKind; label: string; group?: string }
@@ -282,7 +284,7 @@ const SHAPE_ICONS: Record<RegionKind, Icon> = {
   Bezier: icons.Spline,
   Graph: icons.Network,
 }
-const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Image: icons.ImageIcon }
+const FILL_ICONS: Record<FillKind, Icon> = { Solid: icons.PaintBucket, Linear: icons.Blend, Radial: icons.Blend, Conical: icons.Blend, Image: icons.ImageIcon, Spritesheet: icons.ImageIcon }
 /** A transform's or an adjust's icon says which kind it is, in place of where its value comes from */
 const MODIFIER_ICONS: Record<TransformKind | AdjustKind, Icon> = {
   Translate: icons.Move,
@@ -1614,7 +1616,7 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
 
 const fillKind = (lens: Lens<Fill>): FillKind => {
   const current = lens.get().base
-  return 'Solid' in current ? 'Solid' : 'Gradient' in current ? current.Gradient.style : 'Image'
+  return 'Solid' in current ? 'Solid' : 'Gradient' in current ? current.Gradient.style : 'Image' in current ? 'Image' : 'Spritesheet'
 }
 
 /** What a fill is. A solid's color is under it, as is an animated image's frame. */
@@ -1631,7 +1633,9 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
       if (next === 'Solid') {
         base().set({ Solid: color ?? { Fixed: WHITE } })
       } else if (next === 'Image') {
-        base().set({ Image: { name: '' } })
+        base().set({ Image: { name: 'Spritesheet' in current ? current.Spritesheet.name : '' } })
+      } else if (next === 'Spritesheet') {
+        base().set({ Spritesheet: { name: 'Image' in current ? current.Image.name : '', rows: 1, columns: 1 } })
       } else if ('Gradient' in current) {
         base().set({ Gradient: { ...current.Gradient, style: next } })
       } else {
@@ -1659,6 +1663,9 @@ function FillFields(props: { lens: Lens<Fill> }) {
     <Switch>
       <Match when={'Image' in base.get()}>
         <ImageEditor lens={variant(base, 'Image')} />
+      </Match>
+      <Match when={'Spritesheet' in base.get()}>
+        <SpritesheetEditor lens={variant(base, 'Spritesheet')} />
       </Match>
     </Switch>
   )
@@ -1712,6 +1719,29 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
       <Show when={changes() && info()}>
         {(known) => <p class="scene-note">A fraction of a frame is dropped, so going up to {known().frames} gives every frame the same time.</p>}
       </Show>
+    </>
+  )
+}
+
+/** The sheet's image, and how many rows and columns of sprites it's laid out in */
+function SpritesheetEditor(props: { lens: Lens<SpritesheetFill> }) {
+  const info = () => contentImageInfo(props.lens.get().name)
+  const count = (key: 'rows' | 'columns') => (value: number) => field(props.lens, key).set(Math.max(1, Math.round(value) || 1))
+  const sprite = () => {
+    const known = info()
+    const { rows, columns } = props.lens.get()
+    return known && `Each sprite is ${+(known.width / columns).toFixed(2)} × ${+(known.height / rows).toFixed(2)}`
+  }
+  return (
+    <>
+      <ImagePicker lens={field(props.lens, 'name')} />
+      <FieldRow label="Rows">
+        <NumberBox class="scene-tree-number" aria-label="Rows" min="1" step="1" value={props.lens.get().rows} onNumber={count('rows')} />
+      </FieldRow>
+      <FieldRow label="Columns">
+        <NumberBox class="scene-tree-number" aria-label="Columns" min="1" step="1" value={props.lens.get().columns} onNumber={count('columns')} />
+      </FieldRow>
+      <Show when={sprite()}>{(text) => <span class="scene-note">{text()}</span>}</Show>
     </>
   )
 }

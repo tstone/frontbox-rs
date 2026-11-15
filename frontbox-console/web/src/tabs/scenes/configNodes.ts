@@ -437,7 +437,7 @@ function modifierNodes(id: string, transforms: Lens<Transform[]>, space: Transfo
   return [...transformNodes, ...adjustNodes, ...strokeNodes, add]
 }
 
-/** A solid's color, a gradient's stops, or an animated image's frame, then its transforms and adjusts */
+/** A solid's color, a gradient's stops, an animated image's frame, or a sprite sheet's sprite, then its transforms and adjusts */
 function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
   const base = field(lens, 'base')
   const current = base.get()
@@ -455,13 +455,18 @@ function fillNode(id: string, lens: Lens<Fill>, surface: Surface): ConfigNode {
       own.push(propNode(`${id}/frame`, 'Frame', { lens: frameLens as Lens<Prop<SceneValue>>, variableName: 'frame', fallback: 0, ranges: frameRanges(frames) }, surface))
     }
   }
+  if ('Spritesheet' in current) {
+    const { rows, columns } = current.Spritesheet
+    const spriteLens = orElse(field(variant(base, 'Spritesheet'), 'sprite'), { Fixed: 0 })
+    own.push(propNode(`${id}/sprite`, 'Sprite', { lens: spriteLens as Lens<Prop<SceneValue>>, variableName: 'sprite', fallback: 0, ranges: frameRanges(rows * columns) }, surface))
+  }
   return branch({
     id,
     label: 'Fill',
     kind: 'fill',
     lens,
     value: lens.get(),
-    fields: 'Image' in current,
+    fields: 'Image' in current || 'Spritesheet' in current,
     children: [...own, ...modifierNodes(id, orEmpty(field(lens, 'transform')), 'fill', surface, orEmpty(field(lens, 'adjust')))],
   })
 }

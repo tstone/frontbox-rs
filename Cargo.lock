@@ -1190,7 +1190,6 @@ dependencies = [
  "frontbox-sound",
  "image",
  "log",
- "rand 0.10.0",
  "serde",
  "serde_json",
 ]
@@ -1210,7 +1209,6 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "criterion",
- "dyn-clone",
  "glam 0.33.2",
  "image",
  "log",
@@ -1258,6 +1256,7 @@ version = "0.1.0"
 dependencies = [
  "dyn-clone",
  "frontbox-core",
+ "frontbox-display",
  "frontbox-gfx",
  "frontbox-led",
  "frontbox-scene",

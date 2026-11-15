@@ -32,8 +32,7 @@ pub enum Curve {
   /// quantize that curve instead, e.g. `Curve::EaseIn.compose(Curve::Steps(4))`
   Steps(usize),
   Constant(f32),
-  /// Runs the curve backwards in time and flips it, `1 - c(1 - phase)`, turning an ease-in into an ease-out. Over
-  /// reversed stops this plays the original curve backwards; see [`Tween::reverse`](crate::animation::Tween::reverse).
+  /// Runs the curve backwards in time and flips it, `1 - c(1 - phase)`, turning an ease-in into an ease-out
   Reflect(Box<Self>),
   /// Multiplies the outputs of two curves, e.g. `Multiply(Sinusoid, EaseIn)` for a pulse that grows in intensity
   Multiply(Box<Self>, Box<Self>),

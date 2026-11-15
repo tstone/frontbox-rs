@@ -68,13 +68,9 @@
 
 ## DMD
 
-- Retire `frontbox_gfx::canvas` (and `extent`) by moving DMD rendering onto scenes. Needs: DMD scene playback, text in scenes (pixel and sprite-sheet fonts), and a way to lay out the menu. Its `Size`/`Position` are pixel sizes, so the DMD keeps an integer size of its own.
 - DisplaySystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
-- Need a better pattern/more generalized UI DSP to do the following:
-- Transition left/right ease between sections
-- Animate right offset of section arrow when selected
-- Fancy: the selection box animates between vertical offsets
+- Menu: ease left/right between sections (a transition between playbacks, see R2 §6)
 - DmdMatch system that takes a DMD scene or something. Its scene (`frontbox/128x32/match.scene`) reads `match`, and
   `player_1` to `player_4` (each score's last two digits); the numbers cycling before the match lands are keyframes
   in the scene.

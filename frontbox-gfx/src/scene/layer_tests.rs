@@ -1196,3 +1196,28 @@ fn text_is_on_whole_pixels_wherever_its_box_is() {
     }
   }
 }
+
+/// Which sprite of a 3 x 2 sheet of 2 x 2 pixel sprites is drawn, over the whole 2 x 2 grid. Each sprite's red is its
+/// number, and its green is which of its pixels it is.
+fn sprites_drawn(sprite: Prop<f32>) -> Vec<(u8, u8)> {
+  let sheet = image::RgbaImage::from_fn(6, 4, |x, y| Rgba([(x / 2 + y / 2 * 3) as u8, (x % 2 + y % 2 * 2) as u8, 0, 255]));
+  let mut assets = Assets::new();
+  assets.insert_picture("sheet.png", Picture::new(sheet));
+  let fill = FillNode::Spritesheet { name: "sheet.png".into(), rows: 2, columns: 3, sprite: Some(sprite) };
+  let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(fill))]);
+  let (variables, size) = (Variables::new(), Vec2::new(2.0, 2.0));
+  let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: &assets, size, surface: Surface::Area, visits: None, timing: None, defaults: no_variables(), values: no_values() };
+  Grid::new(2, 2, size).samples().map(|at| scene.sample(&at, &frame)).map(|Rgba([r, g, _, _])| (r, g)).collect()
+}
+
+#[test]
+fn a_spritesheet_draws_the_sprite_it_is_given_counting_across_rows() {
+  assert_eq!(sprites_drawn(Prop::Fixed(0.0)), [(0, 0), (0, 1), (0, 2), (0, 3)]);
+  assert_eq!(sprites_drawn(Prop::Fixed(4.0)), [(4, 0), (4, 1), (4, 2), (4, 3)]);
+}
+
+#[test]
+fn a_sprite_past_the_last_is_the_last_and_a_part_is_truncated() {
+  assert_eq!(sprites_drawn(Prop::Fixed(9.0)), [(5, 0), (5, 1), (5, 2), (5, 3)]);
+  assert_eq!(sprites_drawn(Prop::Fixed(1.9)), [(1, 0), (1, 1), (1, 2), (1, 3)]);
+}

@@ -1,15 +1,9 @@
 use frontbox_core::prelude::*;
-use frontbox_gfx::animation::{Accumulator, Animation, Curve, Tween};
-use frontbox_gfx::canvas::*;
-use frontbox_gfx::prelude::*;
 
-use crate::{BOLD_PIXELS_10PX_REGULAR_FONT, SIGI_BOLD_7PX_FONT};
-
-/// Accepts 3 letter initials form the player
+/// Accepts 3 letter initials from the player. Nothing shows them yet: see the initials entry item in `TODO.md`.
 pub struct InitialsEntrySystem {
   title: String,
   name: String,
-  cursor_flash: Tween<Duration, Rgba<u8>>,
   decrement_switches: SwitchQ,
   increment_switches: SwitchQ,
   accept_switches: SwitchQ,
@@ -26,12 +20,6 @@ impl InitialsEntrySystem {
     Self {
       title: title.into(),
       name: "A".to_string(),
-      cursor_flash: Tween::new(
-        Duration::from_millis(350),
-        Curve::ExponentialInOut,
-        vec![Rgba::white(), Rgba::default()],
-        Cycle::Forever,
-      ),
       decrement_switches,
       increment_switches,
       accept_switches,
@@ -77,61 +65,15 @@ impl InitialsEntrySystem {
       return;
     }
 
-    log::info!(target: "frontbox::display", "Initials entered: {}", self.name);
+    log::info!(target: "frontbox::display", "Initials entered for {}: {}", self.title, self.name);
     ctx.emit(InitialsEntered {
       initials: self.name.clone(),
     });
     ctx.systems.despawn_self();
   }
-
-  // TODO: draw this as a scene on the DisplaySystem. Until then nothing shows it.
-  #[allow(dead_code)]
-  fn draw(&self) -> Container {
-    let mut window = Container::transparent().with_padding_all(2);
-
-    // title
-    window.add(
-      SIGI_BOLD_7PX_FONT
-        .left_aligned(&self.title, Rgba::white())
-        .default_position(),
-    );
-
-    // name
-    window.add(
-      BOLD_PIXELS_10PX_REGULAR_FONT
-        .left_aligned(&self.name, Rgba::white())
-        .top_offset(12),
-    );
-
-    // cursor
-    let cursor_color = self.cursor_flash.sample();
-
-    if cursor_color != Rgba::default() {
-      let name_without_last = self
-        .name
-        .chars()
-        .take(self.name.len().saturating_sub(1))
-        .collect::<String>();
-      let left_offset = BOLD_PIXELS_10PX_REGULAR_FONT
-        .left_aligned(&name_without_last, Rgba::white())
-        .total_width();
-      window.add(
-        BOLD_PIXELS_10PX_REGULAR_FONT
-          .left_aligned("_", cursor_color)
-          .left_offset(left_offset)
-          .top_offset(24),
-      );
-    }
-
-    window
-  }
 }
 
 impl System for InitialsEntrySystem {
-  fn on_tick(&mut self, delta: Duration, _ctx: &SystemContext) {
-    self.cursor_flash.accumulate(delta);
-  }
-
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       if self.decrement_switches.matches(&event.switch) {

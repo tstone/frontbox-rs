@@ -535,6 +535,9 @@ function propUses(scene: Lens<Scene>, surfaces: LayerSurfaces = () => null) {
     } else if ('Image' in current && current.Image.frame) {
       const frames = contentImageInfo(current.Image.name)?.frames
       use(field(variant(base, 'Image'), 'frame'), `${label} · Frame`, frameRanges(frames))
+    } else if ('Spritesheet' in current && current.Spritesheet.sprite) {
+      const { rows, columns } = current.Spritesheet
+      use(field(variant(base, 'Spritesheet'), 'sprite'), `${label} · Sprite`, frameRanges(rows * columns))
     }
     const adjust = orEmpty(field(lens, 'adjust'))
     adjust.get().forEach((current, i) => {

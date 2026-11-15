@@ -1,0 +1,62 @@
+Scene(
+  version: 2,
+  timing: (
+    duration: 0.5,
+    cycle: Forever,
+  ),
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Text",
+        fill: (
+          base: Solid(Keyframes(
+      keys: [
+        (
+          at: 0.0,
+          value: (255, 255, 0, 255),
+          curve: EaseInOut,
+        ),
+        (
+          at: 0.25,
+          value: (255, 165, 0, 255),
+          curve: EaseInOut,
+        ),
+        (
+          at: 0.5,
+          value: (255, 255, 0, 255),
+          curve: EaseInOut,
+        ),
+      ],
+      cycle: Once,
+    )),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 16.0)),
+          ],
+          base: Text(
+            text: Fixed("Press Start"),
+            font: "TenFatGuys",
+            size: Fixed(16.0),
+            width: Fixed(124.0),
+            height: Fixed(16.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

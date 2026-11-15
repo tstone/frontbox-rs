@@ -52,19 +52,30 @@ impl Picture {
   /// level. Outside the box is transparent, except that a sample still overlapping it gets the nearest edge pixel, so an
   /// anti-aliased shape edge has a color to fade.
   pub(crate) fn color(&self, frame: f32, p: Vec2, footprint: Vec2) -> Rgba<u8> {
+    self.color_within(frame, Vec2::ZERO, Vec2::ONE, p, footprint)
+  }
+
+  /// [`Picture::color`] for the part of the image from `min`, `size` across, in units of the whole image, such as one
+  /// sprite of a sheet. Pixels outside that part never show.
+  pub(crate) fn color_within(&self, frame: f32, min: Vec2, size: Vec2, p: Vec2, footprint: Vec2) -> Rgba<u8> {
     let at = p + 0.5;
     let reaches = (at.cmpge(-footprint) & at.cmple(Vec2::ONE + footprint)).all();
     if !reaches || self.width() == 0 || self.height() == 0 {
       return Rgba([0, 0, 0, 0]);
     }
     let at = at.clamp(Vec2::ZERO, Vec2::ONE);
-    let across = footprint * 2.0 * Vec2::new(self.width() as f32, self.height() as f32);
+    let across = footprint * 2.0 * size * Vec2::new(self.width() as f32, self.height() as f32);
     let level = across.max_element().max(1.0).log2().round() as usize;
     let levels = &self.frames[(frame as usize).min(self.frames.len() - 1)];
     let image = &levels[level.min(levels.len() - 1)];
 
-    let index = |at: f32, size: u32| ((at * size as f32) as u32).min(size - 1);
-    *image.get_pixel(index(at.x, image.width()), index(at.y, image.height()))
+    // the part's first and last pixel on an axis, so rounding never reaches a neighbor's
+    let index = |at: f32, min: f32, size: f32, pixels: u32| {
+      let first = ((min * pixels as f32) as u32).min(pixels - 1);
+      let last = (((min + size) * pixels as f32).ceil() as u32).clamp(first + 1, pixels) - 1;
+      (((min + at * size) * pixels as f32) as u32).clamp(first, last)
+    };
+    *image.get_pixel(index(at.x, min.x, size.x, image.width()), index(at.y, min.y, size.y, image.height()))
   }
 }
 
