@@ -71,6 +71,12 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// ## Ball counts
 /// A ball resting in the scoop is reported to ball management as held (`set_balls_held`). It's still in play, so a
 /// drain while it's here doesn't end the turn, but a ball search doesn't look for it.
+///
+/// ## Its own coil
+/// For [`KICK_SETTLE`] after the coil fires, the switch closing isn't taken for a ball landing: the kicker can pass
+/// through an opto when it fires into an empty scoop (as a ball search does), and each phantom ball would be kicked
+/// again. If the switch is still closed once that time is up, a ball did land. A ball still there after a kick is kicked again after the `verify_delay`, waiting twice as long after each
+/// kick that fails, up to [`MAX_VERIFY_DELAY`], so a ball stuck for good doesn't fire the coil every second.
 pub struct ScoopSystem<S> {
   handle: SystemHandle,
   /// For logs
@@ -91,8 +97,20 @@ pub struct ScoopSystem<S> {
   /// A ball passed the lower entrance switch and hasn't arrived yet
   lower_entrance_passed: bool,
   lower_entrance_cue: Option<u64>,
+  /// Running for [`KICK_SETTLE`] after the coil fires, while the switch closing is the kicker rather than a ball
+  settle_cue: Option<u64>,
+  /// The switch closed while settling, so a ball may have landed under the kicker
+  closed_while_settling: bool,
+  /// Kicks in a row that left the ball in the scoop, to back off the next one
+  failed_kicks: u32,
   scoop: PhantomData<fn() -> S>,
 }
+
+/// How long after the coil fires its switch closing isn't taken for a ball landing
+pub const KICK_SETTLE: Duration = Duration::from_millis(250);
+
+/// The longest wait between kicks at a ball that won't leave
+pub const MAX_VERIFY_DELAY: Duration = Duration::from_secs(30);
 
 impl<S: 'static> ScoopSystem<S> {
   /// `occupancy_switch` is closed while a ball rests in the scoop, and `coil` kicks it out
@@ -113,6 +131,9 @@ impl<S: 'static> ScoopSystem<S> {
       eject_cue: None,
       lower_entrance_passed: false,
       lower_entrance_cue: None,
+      settle_cue: None,
+      closed_while_settling: false,
+      failed_kicks: 0,
       scoop: PhantomData,
     }
   }
@@ -226,8 +247,25 @@ impl<S: 'static> ScoopSystem<S> {
     ));
   }
 
-  fn kick(&mut self, ctx: &SystemContext) {
+  /// Fire the coil, then check the scoop is empty once the kick has had time to work
+  fn fire(&mut self, ctx: &SystemContext) {
     ctx.drivers.activate(self.coil, ActivationMode::Tap);
+    ctx.cues.cancel(self.settle_cue.take());
+    self.settle_cue = Some(ctx.cues.start(ScoopCue::<S>::new(Step::KickSettled), KICK_SETTLE.once()));
+
+    // so the check reads the switch as it is, even if its opening went unreported
+    if let Some(machine) = ctx.systems.get::<MachineSystem>() {
+      machine.refresh_switch_state();
+    }
+    let delay = self
+      .verify_delay
+      .saturating_mul(1 << self.failed_kicks.min(16))
+      .min(MAX_VERIFY_DELAY.max(self.verify_delay));
+    ctx.cues.start(ScoopCue::<S>::new(Step::VacancyCheckDue), delay.once());
+  }
+
+  fn kick(&mut self, ctx: &SystemContext) {
+    self.fire(ctx);
     self.eject_cue = None;
     if let Some(scene) = self.before_eject_scene.as_mut() {
       scene.stop(ctx);
@@ -239,22 +277,36 @@ impl<S: 'static> ScoopSystem<S> {
       self.ball_waiting = false;
       ctx.emit(ScoopEjected::<S>::new());
     }
-
-    // so the check reads the switch as it is, even if its opening went unreported
-    if let Some(machine) = ctx.systems.get::<MachineSystem>() {
-      machine.refresh_switch_state();
-    }
-    ctx.cues.start(
-      ScoopCue::<S>::new(Step::VacancyCheckDue),
-      self.verify_delay.once(),
-    );
   }
 
   fn on_vacancy_check_due(&mut self, ctx: &SystemContext) {
     // a ball that's waiting came in since the kick, and ejects in its own time
     if !self.ball_waiting && self.holds.is_empty() && self.is_occupied(ctx) {
-      log::warn!(target: "frontbox::scoop", "Ball still in {} scoop after a kick. Kicking again.", self.name);
+      self.failed_kicks += 1;
+      log::warn!(
+        target: "frontbox::scoop",
+        "Ball still in {} scoop after {} kick(s). Kicking again.",
+        self.name,
+        self.failed_kicks
+      );
       self.kick(ctx);
+    }
+  }
+
+  fn on_switch_closed(&mut self, ctx: &SystemContext) {
+    if self.settle_cue.is_some() {
+      log::debug!(target: "frontbox::scoop", "{} scoop switch closed as the coil fired, which may not be a ball", self.name);
+      self.closed_while_settling = true;
+      return;
+    }
+    self.on_ball_enter(ctx);
+  }
+
+  /// The kicker is back, so a switch still closed from while it was moving is a ball that landed
+  fn on_kick_settled(&mut self, ctx: &SystemContext) {
+    self.settle_cue = None;
+    if std::mem::take(&mut self.closed_while_settling) && !self.ball_waiting && self.is_occupied(ctx) {
+      self.on_ball_enter(ctx);
     }
   }
 
@@ -268,6 +320,7 @@ impl<S: 'static> ScoopSystem<S> {
       Step::BeginEject => self.begin_eject(ctx),
       Step::EjectSceneCompleted => self.kick(ctx),
       Step::VacancyCheckDue => self.on_vacancy_check_due(ctx),
+      Step::KickSettled => self.on_kick_settled(ctx),
       Step::LowerEntranceExpired => {
         self.lower_entrance_passed = false;
         self.lower_entrance_cue = None;
@@ -291,7 +344,7 @@ impl<S: 'static> System for ScoopSystem<S> {
     if routine.is::<BallSearching>() {
       // not while its ball is being held, or is about to eject
       if !self.ball_waiting || (self.holds.is_empty() && self.eject_cue.is_none()) {
-        ctx.drivers.activate(self.coil, ActivationMode::Tap);
+        self.fire(ctx);
       }
       ctx.routines.complete_step::<BallSearching>();
     }
@@ -300,13 +353,14 @@ impl<S: 'static> System for ScoopSystem<S> {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       if event.switch.name == self.occupancy_switch {
-        self.on_ball_enter(ctx);
+        self.on_switch_closed(ctx);
       } else if Some(event.switch.name) == self.lower_entrance_switch {
         self.on_lower_entrance_switch_closed(ctx);
       }
     } else if let Some(event) = event.downcast_ref::<SwitchOpened>()
       && event.switch.name == self.occupancy_switch
     {
+      self.failed_kicks = 0;
       ctx.set_balls_held(0);
     } else if let Some(cue) = event.downcast_ref::<ScoopCue<S>>() {
       self.on_cue(cue.step, ctx);
@@ -345,5 +399,7 @@ enum Step {
   BeginEject,
   EjectSceneCompleted,
   VacancyCheckDue,
+  /// The kick has had time to work, so the switch closing is a ball again
+  KickSettled,
   LowerEntranceExpired,
 }

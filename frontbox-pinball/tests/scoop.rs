@@ -177,10 +177,12 @@ fn a_ball_that_passed_the_lower_entrance_switch_entered_that_way() {
   s.close_switch(LOWER);
   assert_eq!(entered.take(), [ScoopEntry::LowerEntrance]);
 
-  // the next one came in the front
+  // the next one came in the front, landing as the kicker went back
   s.advance(past(EJECT_DELAY));
   s.open_switch(LOWER);
   s.close_switch(LOWER);
+  assert!(entered.take().is_empty(), "not until the kicker has settled");
+  s.advance(past(KICK_SETTLE));
   assert_eq!(entered.take(), [ScoopEntry::Direct]);
 }
 
@@ -266,4 +268,41 @@ fn a_ball_search_kicks_empty_scoops_but_not_a_held_ball() {
   s.advance(Duration::from_secs(2));
   assert_eq!(taps(&s, LOWER_COIL), 0);
   assert_eq!(taps(&s, REAR_COIL), 1);
+}
+
+#[test]
+fn the_kicker_passing_the_switch_of_an_empty_scoop_is_not_a_ball() {
+  let mut s = Scenario::new(app()).start();
+  let entered = s.record(|_: &ScoopBallEntered<Rear>| ());
+
+  s.act(|ctx| ctx.routines.start(BallSearching { round: 1 }));
+  assert_eq!(taps(&s, REAR_COIL), 1);
+  // the kicker swings through the opto
+  s.hit_switch(REAR);
+  s.advance(Duration::from_secs(5));
+  assert!(entered.take().is_empty());
+  assert_eq!(taps(&s, REAR_COIL), 1, "nothing to kick again");
+
+  // once it's settled, a ball landing is a ball
+  s.close_switch(REAR);
+  assert_eq!(entered.take().len(), 1);
+}
+
+#[test]
+fn a_ball_that_wont_leave_is_kicked_less_and_less_often() {
+  let mut s = Scenario::new(app()).start();
+  s.close_switch(REAR);
+  // kicks at 0, then 250ms, 500ms, 1s, 2s and 4s apart
+  s.advance(Duration::from_millis(8500));
+  assert_eq!(taps(&s, REAR_COIL), 6);
+  s.advance(Duration::from_secs(60));
+  assert!(taps(&s, REAR_COIL) < 12, "kicked {} times", taps(&s, REAR_COIL));
+
+  // it left, so the next ball starts over
+  s.open_switch(REAR);
+  s.advance(past(KICK_SETTLE));
+  let before = taps(&s, REAR_COIL);
+  s.close_switch(REAR);
+  s.advance(past(VERIFY_DELAY));
+  assert_eq!(taps(&s, REAR_COIL), before + 2);
 }

@@ -726,7 +726,7 @@ fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
   g.advance(Duration::from_secs(27));
   assert_eq!(g.drop_resets(), 3);
   assert!(failed.take().is_empty(), "the last round gets its pause too");
-  g.advance(Duration::from_secs(5));
+  g.advance(Duration::from_secs(6));
   assert_eq!(failed.take(), [(3, 0)]);
   assert_eq!(g.ejects(), 2);
   assert_eq!(turns.take(), [0]);
@@ -908,7 +908,7 @@ fn there_is_no_ball_search_while_the_coin_door_is_open() {
 }
 
 #[test]
-fn a_ball_found_stops_the_round_in_progress() {
+fn a_switch_hit_while_coils_fire_does_not_end_the_search() {
   let mut g = Game::start();
   g.hit_switch(START);
   g.serve();
@@ -916,10 +916,26 @@ fn a_ball_found_stops_the_round_in_progress() {
     g.advance(ms(50));
   }
 
-  // Knocked loose by the drop bank, so the pop has no need to fire
+  // most likely the drop bank's own coil, so the round goes on
   g.hit_switch(PLAYFIELD);
-  g.advance(Duration::from_secs(5));
-  assert_eq!((g.drop_resets(), g.pops()), (1, 0));
+  g.advance(ms(600));
+  assert_eq!((g.drop_resets(), g.pops()), (1, 1));
+}
+
+#[test]
+fn a_ball_found_after_a_round_ends_the_search() {
+  let mut g = Game::start();
+  g.hit_switch(START);
+  g.serve();
+  while g.pops() == 0 {
+    g.advance(ms(50));
+  }
+
+  // in the pause after the round, once the last coil's interval is over
+  g.advance(ms(300));
+  g.hit_switch(PLAYFIELD);
+  g.advance(Duration::from_secs(6));
+  assert_eq!((g.drop_resets(), g.pops()), (1, 1), "no second round");
 }
 
 #[test]
