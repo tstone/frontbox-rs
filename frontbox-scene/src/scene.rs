@@ -290,6 +290,13 @@ impl SceneLayer {
     }
   }
 
+  pub fn as_display_mut(&mut self) -> Option<&mut DisplayLayer> {
+    match self {
+      Self::Display(layer) => Some(layer),
+      _ => None,
+    }
+  }
+
   pub fn as_sound(&self) -> Option<&SoundLayer> {
     match self {
       Self::Sound(layer) => Some(layer),

@@ -6,7 +6,9 @@ use crate::bundled_fonts;
 
 /// The framework's screens, by the name a file in a game's content folder replaces each under. Each is in a folder for
 /// the size of display it's made for.
-const SCENES: [(&str, &str); 5] = [
+const SCENES: [(&str, &str); 7] = [
+  ("frontbox/128x32/menu/about.scene", include_str!("../assets/scenes/frontbox/128x32/menu/about.scene")),
+  ("frontbox/128x32/menu/edit.scene", include_str!("../assets/scenes/frontbox/128x32/menu/edit.scene")),
   ("frontbox/128x32/menu/frame.scene", include_str!("../assets/scenes/frontbox/128x32/menu/frame.scene")),
   ("frontbox/128x32/menu/heading.scene", include_str!("../assets/scenes/frontbox/128x32/menu/heading.scene")),
   ("frontbox/128x32/menu/row.scene", include_str!("../assets/scenes/frontbox/128x32/menu/row.scene")),

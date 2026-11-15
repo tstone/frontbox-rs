@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 
 use frontbox_core::prelude::*;
-use frontbox_gfx::canvas::*;
-use frontbox_gfx::prelude::*;
+use frontbox_gfx::scene::{Content, Prop, Transform, Value, VariableType};
+use frontbox_scene::{
+  OpenError, PlayableScene, Scene, SceneLayer, ScenePlayer, Sends, SentVariable,
+};
 #[cfg(feature = "sound")]
 use frontbox_sound::*;
 
-use crate::menu::{DmdMenuTheme, MenuRow, MenuSection};
+use crate::menu::{MenuRow, MenuSection};
 use crate::*;
 
 const SELECT_SND: &str = "dmd_menu_select";
@@ -17,9 +19,36 @@ const NOT_ALLOWED_SND: &str = "dmd_menu_not_allowed";
 const MENU_BEGIN_SND: &str = "dmd_menu_begin";
 const MENU_END_SND: &str = "dmd_menu_end";
 
+/// Rows shown at once
+const ROWS_SHOWN: usize = 4;
+/// How far apart rows are, in pixels. A row's fragment draws the first row, and each one below it is moved down by this.
+const ROW_HEIGHT: f32 = 7.0;
+
+/// The operator menu, shown on the DMD while the coin door is open. It's drawn from fragments: scenes for its parts,
+/// `frame`, `heading`, `row`, `edit`, and `about`, in `frontbox/128x32/menu/` unless
+/// [`fragments`](Self::fragments) names another folder. A game changes how the menu looks by putting its own files
+/// under those names in its content folder.
+///
+/// Each part is played as a copy of its fragment, moved down to its row. The copies are drawn frame first, then the rows
+/// from the top. The code sets their variables:
+///
+/// - `heading`: `text`
+/// - `row`: `label`, `value`, `opens` (it opens a section, screen, or action, so it shows the arrow), `has_value`
+///   (it's a setting), and `changed` (a setting that isn't at its default). Each variable whose default points at a
+///   value named `selected_…` or `normal_…` is pointed at the one for whether the row is selected, so a fragment can
+///   add to what selection changes without code.
+/// - `edit`: `label`, `description`, `value`, and `changed`
+/// - `about`: `version`
 pub struct DmdMenuSystem {
   switch_names: MenuSwitches,
-  theme: DmdMenuTheme,
+  /// The folder the fragments are in
+  folder: String,
+  /// Of every layer it draws
+  z: i8,
+  /// Opened when the system spawns. `None` if any of them couldn't be, and then nothing is drawn.
+  fragments: Option<Fragments>,
+  /// What's on the display, in the order it's drawn
+  shown: Vec<ShownPart>,
   row_lookup: HashMap<u64, MenuRowReference>,
   active_section: &'static MenuSection,
   display_rows: Vec<DisplayMenuRow>,
@@ -33,7 +62,7 @@ pub struct DmdMenuSystem {
 }
 
 impl DmdMenuSystem {
-  pub fn new(switch_names: MenuSwitches, root: &'static MenuSection, theme: DmdMenuTheme) -> Self {
+  pub fn new(switch_names: MenuSwitches, root: &'static MenuSection) -> Self {
     let root: &'static MenuSection = {
       let mut root = root.clone();
       root
@@ -56,7 +85,10 @@ impl DmdMenuSystem {
 
     Self {
       switch_names,
-      theme,
+      folder: "frontbox/128x32/menu".into(),
+      z: i8::MAX,
+      fragments: None,
+      shown: Vec::new(),
       row_lookup,
       active_section: root,
       display_rows: Vec::new(),
@@ -66,6 +98,19 @@ impl DmdMenuSystem {
       requires_row_refresh: true,
       requires_render: true,
     }
+  }
+
+  /// Reads the fragments from `folder` in the content folder or among the bundled scenes, by the names
+  /// [`DmdMenuSystem`] lists
+  pub fn fragments(mut self, folder: impl Into<String>) -> Self {
+    self.folder = folder.into();
+    self
+  }
+
+  /// Draws the menu at `z` among everything on the display. It's on top of everything unless this says otherwise.
+  pub fn z(mut self, z: i8) -> Self {
+    self.z = z;
+    self
   }
 
   /// Build a quick id => section, section parent lookup table for fast navigation
@@ -115,6 +160,7 @@ impl DmdMenuSystem {
       }
       DisplayMenuRow::Special(name) => {
         self.selected_special = Some(name);
+        self.requires_render = true;
         ctx.play_sfx(SELECT_SND);
       }
       DisplayMenuRow::Action { id, .. } => {
@@ -250,7 +296,7 @@ impl DmdMenuSystem {
             id: *id,
             name: config.label,
             desc: config.desc,
-            is_default: config.is_default(value),
+            changed: !config.is_default(value),
             value: config.format(value),
           });
         }
@@ -270,222 +316,103 @@ impl DmdMenuSystem {
     self.requires_render = true;
   }
 
-  fn draw(&self, viewport: &Size<u32>) -> Container {
-    if let Some(row) = self.selected_config {
-      if let Some(DisplayMenuRow::Config {
-        name, desc, value, ..
-      }) = self.display_rows.iter().find(|r| r.id() == row.id())
-      {
-        return self.draw_config_edit(name, desc, value.clone());
-      }
-    } else if let Some(special) = self.selected_special {
-      match special {
-        "About" => {
-          return self.draw_special_about();
+  /// Plays the parts for what the menu shows now, keeping the playbacks of parts that are still in the same place
+  fn show(&mut self, ctx: &SystemContext) {
+    let Some(fragments) = &self.fragments else {
+      return;
+    };
+    let parts = self.parts();
+    let count = parts.len();
+    for (index, part) in parts.into_iter().enumerate() {
+      let same_place = self
+        .shown
+        .get(index)
+        .is_some_and(|shown| shown.fragment == part.fragment && shown.row == part.row);
+      if !same_place {
+        let scene = placed(fragments.scene(part.fragment), part.row, self.z);
+        let player = ScenePlayer::started(PlayableScene::new(scene), ctx);
+        let shown = ShownPart {
+          fragment: part.fragment,
+          row: part.row,
+          player,
+        };
+        match self.shown.get_mut(index) {
+          Some(old) => std::mem::replace(old, shown).player.stop(ctx),
+          None => self.shown.push(shown),
         }
-        _ => todo!("Special menu screen not implemented: {}", special),
+      }
+      let player = &mut self.shown[index].player;
+      for (name, value) in part.variables {
+        player.set_variable(name, value, ctx);
       }
     }
-
-    self.draw_menu(viewport)
+    for mut gone in self.shown.drain(count..) {
+      gone.player.stop(ctx);
+    }
   }
 
-  fn draw_menu(&self, viewport: &Size<u32>) -> Container {
-    let mut frame = Container::new(self.theme.menu_bg.clone());
-    if let Some(theme_border) = &self.theme.menu_border
-      && let Some(border) = frame.border_mut()
+  /// What the menu shows now, in the order it's drawn
+  fn parts(&self) -> Vec<Part> {
+    if let Some(row) = self.selected_config
+      && let Some(DisplayMenuRow::Config {
+        name,
+        desc,
+        value,
+        changed,
+        ..
+      }) = self.display_rows.iter().find(|r| r.id() == row.id())
     {
-      *border = *theme_border;
-      frame.padding = Padding::new(1, 1, 1, 1);
+      return vec![
+        Part::new(Fragment::Edit, 0)
+          .variable("label", *name)
+          .variable("description", *desc)
+          .variable("value", value.as_str())
+          .variable("changed", *changed),
+      ];
+    }
+    if self.selected_special.is_some() {
+      return vec![Part::new(Fragment::About, 0).variable("version", env!("CARGO_PKG_VERSION"))];
     }
 
-    let row_height = SIGI_REGULAR_5PX_FONT.height as u32 + 2; // 2 leading between
-    let mut acc_height = 0;
-    let mut row_index = self
+    let first = self
       .selected_row
       .saturating_sub(2)
-      .clamp(0, self.display_rows.len());
-
-    // draw rows that fit into the viewport
-    while let Some(row) = self.display_rows.get(row_index) {
-      let selected = row_index == self.selected_row;
-      let layer = match row {
-        DisplayMenuRow::Section { name, .. } => self.draw_section(name, selected),
+      .min(self.display_rows.len().saturating_sub(ROWS_SHOWN));
+    let rows = self
+      .display_rows
+      .iter()
+      .enumerate()
+      .skip(first)
+      .take(ROWS_SHOWN);
+    let mut parts = vec![Part::new(Fragment::Frame, 0)];
+    for (row, (index, display_row)) in rows.enumerate() {
+      let part = match display_row {
+        DisplayMenuRow::Heading { text, .. } => {
+          Part::new(Fragment::Heading, row).variable("text", text.as_str())
+        }
         DisplayMenuRow::Config {
-          #[allow(unused)]
-          id,
           name,
           value,
-          is_default,
+          changed,
           ..
-        } => self.draw_config_row(name, value.clone(), *is_default, selected),
-        DisplayMenuRow::Heading { text, .. } => self.draw_heading(text),
-        DisplayMenuRow::Special(name) => self.draw_section(name, selected),
-        DisplayMenuRow::Action { text, .. } => self.draw_section(text, selected),
+        } => Part::new(Fragment::Row, row).row(name, value, false, *changed),
+        DisplayMenuRow::Section { name, .. } => {
+          Part::new(Fragment::Row, row).row(name, "", true, false)
+        }
+        DisplayMenuRow::Special(name) => Part::new(Fragment::Row, row).row(name, "", true, false),
+        DisplayMenuRow::Action { text, .. } => {
+          Part::new(Fragment::Row, row).row(text, "", true, false)
+        }
       };
-
-      frame.add(
-        layer
-          .vertical(Vertical::top_offset(acc_height))
-          .height(row_height),
-      );
-      acc_height += row_height;
-
-      if acc_height >= viewport.height {
-        break;
-      }
-      row_index += 1;
+      let selected = index == self.selected_row;
+      parts.push(match &self.fragments {
+        Some(fragments) if part.fragment == Fragment::Row => {
+          part.selected(&fragments.row, selected)
+        }
+        _ => part,
+      });
     }
-
-    frame
-  }
-
-  fn draw_section(&self, name: &str, selected: bool) -> Container {
-    let bg: Fill2d = if selected {
-      self.theme.selected_bg.clone()
-    } else {
-      self.theme.unselected_bg.clone()
-    };
-
-    let mut row = Container::new(bg).with_padding(1, 1, 0, 0);
-
-    let text_color = if selected {
-      self.theme.selected_color
-    } else {
-      self.theme.unselected_color
-    };
-
-    row.add(
-      SIGI_REGULAR_5PX_FONT
-        .overflow_text(name, text_color, 1)
-        .default_position(),
-    );
-
-    row.add(
-      SYMBOLS_5PX_REGULAR_FONT
-        .text("▶", text_color, 1, TextAlignment::Left)
-        .width(5)
-        .horizontal(Horizontal::right_offset(2)),
-    );
-
-    row
-  }
-
-  fn draw_config_row(
-    &self,
-    name: &'static str,
-    value: String,
-    is_default: bool,
-    selected: bool,
-  ) -> Container {
-    let bg: Fill2d = if selected {
-      self.theme.selected_bg.clone()
-    } else {
-      self.theme.unselected_bg.clone()
-    };
-
-    let mut row = Container::new(bg).with_padding(1, 1, 0, 0);
-
-    let text_color = if selected {
-      self.theme.selected_color
-    } else {
-      self.theme.unselected_color
-    };
-
-    row.add(
-      SIGI_CONDENSED_REGULAR_5PX_FONT
-        .overflow_text(name, text_color, 1)
-        .width(0.70),
-    );
-
-    let value_font = if is_default {
-      &SIGI_CONDENSED_REGULAR_5PX_FONT
-    } else {
-      &SIGI_CONDENSED_BOLD_5PX_FONT
-    };
-
-    row.add(
-      value_font
-        .overflow_text(value, text_color, 1)
-        .width(0.27)
-        .horizontal(Horizontal::right_offset(0)),
-    );
-
-    row
-  }
-
-  fn draw_heading(&self, text: &str) -> Container {
-    let mut row = Container::new(self.theme.heading_bg.clone()).with_padding(1, 1, 0, 0);
-    row.add(
-      SIGI_REGULAR_5PX_FONT
-        .overflow_text(text, self.theme.heading_color, 1)
-        .default_position(),
-    );
-    row
-  }
-
-  fn draw_config_edit(&self, name: &'static str, desc: &'static str, value: String) -> Container {
-    let mut window = Container::new(self.theme.menu_bg.clone()).with_padding_all(2);
-
-    // TODO: need a text_block which handles multi-line text
-
-    window.add(
-      SIGI_REGULAR_5PX_FONT
-        .left_aligned(name, self.theme.heading_color)
-        .default_position(),
-    );
-
-    window.add(
-      SIGI_CONDENSED_REGULAR_5PX_FONT
-        .left_aligned(desc, self.theme.unselected_color)
-        .width(0.70)
-        .top_offset(9),
-    );
-
-    window.add(
-      SIGI_REGULAR_5PX_FONT
-        .left_aligned(value, self.theme.unselected_color)
-        .top_offset(9)
-        .right_offset(0)
-        .width(0.25),
-    );
-
-    window
-  }
-
-  fn draw_special_about(&self) -> Container {
-    // TODO: some kind of nice graphic here instead of this placeholder
-    let mut window = Container::new(Fill2d::Gradient(
-      vec![
-        GradientStop::new(0.0, Rgba([0xf8, 0xf8, 0xf2, 0xff]).darken(0.15)),
-        GradientStop::new(0.25, Rgba::cyan()),
-        GradientStop::new(1.0, Rgba([0xf9, 0x26, 0x72, 0xff])),
-      ],
-      45.0,
-    ));
-    window.add(
-      SIGI_BOLD_7PX_FONT
-        .left_aligned("Frontbox", Rgba::black())
-        .width(63)
-        .horizontal(Horizontal::Centered)
-        .top_offset(5),
-    );
-    window.add(
-      SIGI_CONDENSED_BOLD_5PX_FONT
-        .left_aligned(env!("CARGO_PKG_VERSION"), Rgba::black())
-        .width(25)
-        .horizontal(Horizontal::Centered)
-        .top_offset(13),
-    );
-
-    window.add(
-      SIGI_CONDENSED_REGULAR_5PX_FONT
-        .left_aligned("Neon Blue Pinball 2026", Rgba::black())
-        .width(102)
-        .horizontal(Horizontal::Centered)
-        .top_offset(20),
-    );
-    window
+    parts
   }
 }
 
@@ -498,6 +425,12 @@ impl System for DmdMenuSystem {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
+    let content = content_with_bundled(ctx.content_path.clone());
+    match Fragments::open(&content, &self.folder) {
+      Ok(fragments) => self.fragments = Some(fragments),
+      Err(error) => log::error!(target: "frontbox::display", "The menu can't be drawn: {error}"),
+    }
+
     if let Some(mut snd) = ctx.systems.get::<SoundSystem>() {
       snd.preload_embedded(MENU_BEGIN_SND, menu::sounds::DOOR_OPEN);
       snd.preload_embedded(BACK_SND, menu::sounds::MENU_BACK);
@@ -531,8 +464,8 @@ impl System for DmdMenuSystem {
       self.requires_row_refresh = false;
     }
 
-    // TODO: draw `self.draw` as a scene on the DisplaySystem. Until then nothing shows the menu.
     if self.requires_render {
+      self.show(ctx);
       self.requires_render = false;
     }
   }
@@ -563,7 +496,7 @@ enum DisplayMenuRow {
     name: &'static str,
     desc: &'static str,
     value: String,
-    is_default: bool,
+    changed: bool,
   },
   Heading {
     id: u64,
@@ -606,4 +539,359 @@ pub struct MenuSwitches {
 struct MenuRowReference {
   row: &'static MenuRow,
   parent: Option<&'static MenuSection>,
+}
+
+/// A copy of `scene` moved down to `row`, with every display layer at `z`. A layer without a region covers the whole
+/// display, so it stays where it is.
+fn placed(scene: &Scene, row: usize, z: i8) -> Scene {
+  let mut scene = scene.clone();
+  let offset = Vec2::new(0.0, row as f32 * ROW_HEIGHT);
+  for layer in scene
+    .layers
+    .iter_mut()
+    .filter_map(SceneLayer::as_display_mut)
+  {
+    layer.z = z;
+    if let Some(region) = &mut layer.layer.region
+      && row > 0
+    {
+      region
+        .transform
+        .push(Transform::Translate(Prop::Fixed(offset)));
+    }
+  }
+  scene
+}
+
+/// The menu's fragments, opened from the content folder or the bundled scenes
+struct Fragments {
+  frame: Scene,
+  heading: Scene,
+  row: Scene,
+  edit: Scene,
+  about: Scene,
+}
+
+impl Fragments {
+  fn open(content: &Content, folder: &str) -> Result<Self, OpenError> {
+    let open = |name: &str, sends: Sends| {
+      let path = format!("{folder}/{name}.scene");
+      let scene = Scene::open(content, &path)?;
+      sends.log_mismatches(&path, &scene);
+      Ok(scene)
+    };
+    Ok(Self {
+      frame: open("frame", Sends { variables: &[] })?,
+      heading: open("heading", HEADING_SENDS)?,
+      row: open("row", ROW_SENDS)?,
+      edit: open("edit", EDIT_SENDS)?,
+      about: open("about", ABOUT_SENDS)?,
+    })
+  }
+
+  fn scene(&self, fragment: Fragment) -> &Scene {
+    match fragment {
+      Fragment::Frame => &self.frame,
+      Fragment::Heading => &self.heading,
+      Fragment::Row => &self.row,
+      Fragment::Edit => &self.edit,
+      Fragment::About => &self.about,
+    }
+  }
+}
+
+const HEADING_SENDS: Sends = Sends {
+  variables: &[SentVariable {
+    name: "text",
+    sent_as: VariableType::Text,
+    values: &[],
+    about: "The heading",
+  }],
+};
+
+const ROW_SENDS: Sends = Sends {
+  variables: &[
+    SentVariable {
+      name: "label",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "What the row is",
+    },
+    SentVariable {
+      name: "value",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "A setting's value, or no text",
+    },
+    SentVariable {
+      name: "opens",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether it opens a section, screen, or action",
+    },
+    SentVariable {
+      name: "has_value",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether it's a setting",
+    },
+    SentVariable {
+      name: "changed",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether it's a setting that isn't at its default",
+    },
+  ],
+};
+
+const EDIT_SENDS: Sends = Sends {
+  variables: &[
+    SentVariable {
+      name: "label",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "The setting's name",
+    },
+    SentVariable {
+      name: "description",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "What the setting does",
+    },
+    SentVariable {
+      name: "value",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "The setting's value",
+    },
+    SentVariable {
+      name: "changed",
+      sent_as: VariableType::Bool,
+      values: &[],
+      about: "Whether it isn't at its default",
+    },
+  ],
+};
+
+const ABOUT_SENDS: Sends = Sends {
+  variables: &[SentVariable {
+    name: "version",
+    sent_as: VariableType::Text,
+    values: &[],
+    about: "Frontbox's version",
+  }],
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fragment {
+  Frame,
+  Heading,
+  Row,
+  Edit,
+  About,
+}
+
+/// One part of what the menu shows: a fragment on a row, and the variables to set on it
+#[derive(Debug, Clone, PartialEq)]
+struct Part {
+  fragment: Fragment,
+  row: usize,
+  variables: Vec<(String, Value)>,
+}
+
+impl Part {
+  fn new(fragment: Fragment, row: usize) -> Self {
+    Self {
+      fragment,
+      row,
+      variables: Vec::new(),
+    }
+  }
+
+  fn variable(mut self, name: &str, value: impl Into<Value>) -> Self {
+    self.variables.push((name.into(), value.into()));
+    self
+  }
+
+  /// The variables of a `row` fragment
+  fn row(self, label: &str, value: &str, opens: bool, changed: bool) -> Self {
+    self
+      .variable("label", label)
+      .variable("value", value)
+      .variable("opens", opens)
+      .variable("has_value", !opens)
+      .variable("changed", changed)
+  }
+
+  /// Points each of `scene`'s variables whose default is a `selected_…` or `normal_…` value at the one for `selected`
+  fn selected(mut self, scene: &Scene, selected: bool) -> Self {
+    let state = if selected { "selected_" } else { "normal_" };
+    for (name, default) in &scene.variables {
+      let Value::Named(value) = default else {
+        continue;
+      };
+      if let Some(rest) = value
+        .strip_prefix("selected_")
+        .or_else(|| value.strip_prefix("normal_"))
+      {
+        self
+          .variables
+          .push((name.clone(), Value::named(format!("{state}{rest}"))));
+      }
+    }
+    self
+  }
+}
+
+/// A part on the display
+struct ShownPart {
+  fragment: Fragment,
+  row: usize,
+  player: ScenePlayer,
+}
+
+#[cfg(test)]
+mod tests {
+  use frontbox_scene::{PlaybackId, SceneSystem};
+
+  use super::*;
+
+  const SWITCHES: MenuSwitches = MenuSwitches {
+    coin_door: "door",
+    back_btn: "back",
+    select_btn: "select",
+    inc_btn: "inc",
+    dec_btn: "dec",
+  };
+
+  fn menu() -> DmdMenuSystem {
+    let root = MenuSection::root()
+      .section(MenuSection::new("Audio"))
+      .section(MenuSection::new("Lights"));
+    DmdMenuSystem::new(SWITCHES, Box::leak(Box::new(root)))
+  }
+
+  fn spawned(context: &mut TestContext) -> DmdMenuSystem {
+    context.insert_system(SceneSystem::new());
+    let mut menu = menu();
+    menu.on_spawn(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+    menu
+  }
+
+  fn shown(context: &TestContext) -> Vec<PlaybackId> {
+    let ctx = context.sys_ctx();
+    let scenes = ctx.systems.get::<SceneSystem>().unwrap();
+    scenes.shown().map(|(id, _)| id).collect()
+  }
+
+  fn variable<'a>(part: &'a Part, name: &str) -> Option<&'a Value> {
+    part
+      .variables
+      .iter()
+      .find(|(variable, _)| variable == name)
+      .map(|(_, value)| value)
+  }
+
+  #[test]
+  fn the_menu_is_its_frame_then_a_part_for_each_row() {
+    let mut context = TestContext::default();
+    let menu = spawned(&mut context);
+    let parts = menu.parts();
+    let fragments: Vec<_> = parts.iter().map(|part| (part.fragment, part.row)).collect();
+    assert_eq!(
+      fragments,
+      [
+        (Fragment::Frame, 0),
+        (Fragment::Heading, 0),
+        (Fragment::Row, 1),
+        (Fragment::Row, 2),
+        (Fragment::Row, 3)
+      ]
+    );
+    assert_eq!(variable(&parts[1], "text"), Some(&Value::from("Frontbox")));
+    assert_eq!(variable(&parts[2], "label"), Some(&Value::from("Audio")));
+    assert_eq!(variable(&parts[2], "opens"), Some(&Value::from(true)));
+    assert_eq!(shown(&context).len(), 5);
+  }
+
+  #[test]
+  fn the_selected_row_points_its_variables_at_the_selected_values() {
+    let mut context = TestContext::default();
+    let menu = spawned(&mut context);
+    let parts = menu.parts();
+    assert_eq!(
+      variable(&parts[2], "bar_opacity"),
+      Some(&Value::named("selected_bar_opacity"))
+    );
+    assert_eq!(
+      variable(&parts[3], "bar_opacity"),
+      Some(&Value::named("normal_bar_opacity"))
+    );
+  }
+
+  #[test]
+  fn moving_the_selection_keeps_the_playbacks_of_parts_in_the_same_place() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    let before = shown(&context);
+    menu.navigate_inc(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+    assert_eq!(shown(&context), before);
+    assert_eq!(
+      variable(&menu.parts()[3], "bar_opacity"),
+      Some(&Value::named("selected_bar_opacity"))
+    );
+  }
+
+  #[test]
+  fn a_screen_of_its_own_takes_the_place_of_the_rows() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    // About is last, after the two sections
+    menu.navigate_inc(&context.sys_ctx());
+    menu.navigate_inc(&context.sys_ctx());
+    menu.navigate_fwd(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+    let parts = menu.parts();
+    assert_eq!(
+      parts.iter().map(|part| part.fragment).collect::<Vec<_>>(),
+      [Fragment::About]
+    );
+    assert_eq!(shown(&context).len(), 1);
+  }
+
+  #[test]
+  fn the_bundled_fragments_fit_what_the_menu_sends() {
+    let content = content_with_bundled(None);
+    let fragments = Fragments::open(&content, "frontbox/128x32/menu").unwrap();
+    for (scene, sends) in [
+      (&fragments.heading, HEADING_SENDS),
+      (&fragments.row, ROW_SENDS),
+      (&fragments.edit, EDIT_SENDS),
+      (&fragments.about, ABOUT_SENDS),
+    ] {
+      assert_eq!(sends.check(scene), []);
+    }
+  }
+
+  #[test]
+  fn a_copy_is_moved_down_to_its_row_and_drawn_at_the_menus_z() {
+    let content = content_with_bundled(None);
+    let fragments = Fragments::open(&content, "frontbox/128x32/menu").unwrap();
+    let copy = placed(&fragments.row, 2, 5);
+    let layer = copy.layers[0].as_display().unwrap();
+    assert_eq!(layer.z, 5);
+    let translate = layer
+      .layer
+      .region
+      .as_ref()
+      .unwrap()
+      .transform
+      .last()
+      .unwrap();
+    assert!(
+      matches!(translate, Transform::Translate(Prop::Fixed(offset)) if *offset == Vec2::new(0.0, 14.0))
+    );
+  }
 }
