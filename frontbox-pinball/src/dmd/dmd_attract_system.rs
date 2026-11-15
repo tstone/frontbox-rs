@@ -36,7 +36,7 @@ pub struct DmdAttractSystem {
   /// The screen that's shown, or is shown next if none is
   current: usize,
   player: Option<ScenePlayer>,
-  last_scores: Vec<(&'static str, u64)>,
+  last_scores: Vec<u64>,
   cue_id: Option<u64>,
 }
 
@@ -115,9 +115,9 @@ impl DmdAttractSystem {
     };
     let mut scene = PlayableScene::new(scene.clone());
     if let AttractScreen::LastScore(player) = self.screens[index]
-      && let Some((label, score)) = self.last_scores.get(player)
+      && let Some(score) = self.last_scores.get(player)
     {
-      scene = scene.variable("label", *label).variable("score", Value::Int(*score as i64));
+      scene = scene.variable("label", format!("Player {}", player + 1)).variable("score", Value::Int(*score as i64));
     }
     self.player = Some(ScenePlayer::started(scene, ctx));
   }
@@ -195,7 +195,7 @@ pub enum AttractScreen {
   /// A scene from the content folder, by name
   Scene(&'static str),
   /// The score player `n` (from 0) finished the last game with: `frontbox/128x32/attract/last_score.scene`, sent the
-  /// player's `label` and `score`. Skipped until a game has been played, and for a player who wasn't in it.
+  /// player's `label` ("Player 1" for player 0) and `score`. Skipped until a game has been played, and for a player who wasn't in it.
   LastScore(usize),
   /// `frontbox/128x32/attract/press_start.scene`, while a game can be started. Skipped otherwise.
   PressStart,
@@ -203,7 +203,7 @@ pub enum AttractScreen {
 
 const LAST_SCORE_SENDS: Sends = Sends {
   variables: &[
-    SentVariable { name: "label", sent_as: VariableType::Text, values: &[], about: "Who the score is for, e.g. PLAYER 1" },
+    SentVariable { name: "label", sent_as: VariableType::Text, values: &[], about: "Who the score is for, e.g. Player 1" },
     SentVariable { name: "score", sent_as: VariableType::Number, values: &[], about: "The score they finished with" },
   ],
 };
@@ -239,7 +239,7 @@ mod tests {
   fn a_game_ending_shows_its_first_score_then_steps_through_the_rest() {
     let mut context = TestContext::default();
     let mut attract = spawned(&mut context, SCREENS.to_vec());
-    let ending = GameEnding { scores: vec![("PLAYER 1", 100), ("PLAYER 2", 200)], reason: crate::GameEndReason::Completed };
+    let ending = GameEnding { scores: vec![100, 200], reason: crate::GameEndReason::Completed };
     attract.on_event(&RoutineCompleted { routine: ending, completion: RoutineCompletion::AllSteps }, &context.sys_ctx());
     assert_eq!(attract.current, 0);
     attract.step(1, &context.sys_ctx());

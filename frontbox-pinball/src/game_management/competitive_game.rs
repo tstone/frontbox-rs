@@ -460,7 +460,7 @@ impl CompetitiveGame {
     self.cancel_ejects(ctx);
 
     let scores = self.scores();
-    for (player, (_, score)) in scores.iter().enumerate() {
+    for (player, score) in scores.iter().enumerate() {
       ctx
         .metrics
         .record_for_player(&metrics::FINAL_SCORE, player as u8, *score);
@@ -502,7 +502,7 @@ impl CompetitiveGame {
   }
 
   /// Each player's score, in player order
-  fn scores(&self) -> Vec<(&'static str, u64)> {
+  fn scores(&self) -> Vec<u64> {
     match &self.game_state {
       Some(GameState::Competitive {
         player_scores,
@@ -511,8 +511,7 @@ impl CompetitiveGame {
       }) => player_scores
         .iter()
         .take(*player_count as usize)
-        .enumerate()
-        .map(|(idx, score)| (PLAYER_GROUP_NAMES[idx], *score))
+        .copied()
         .collect(),
       _ => Vec::new(),
     }
@@ -932,7 +931,7 @@ mod tests {
     }
 
     fn score(&self) -> u64 {
-      self.game.scores()[0].1
+      self.game.scores()[0]
     }
 
     /// The `GameEnding` routines started since the last check
@@ -1099,7 +1098,7 @@ mod tests {
     let endings = f.game_endings();
     assert_eq!(endings.len(), 1);
     assert_eq!(endings[0].reason, GameEndReason::Completed);
-    assert_eq!(endings[0].scores, vec![("player1", 100)]);
+    assert_eq!(endings[0].scores, vec![100]);
   }
 
   #[test]

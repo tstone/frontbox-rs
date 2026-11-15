@@ -13,11 +13,11 @@ Scene(
             stops: [
               (
                 at: 0.0,
-                color: Fixed(0, 170, 200, 255),
+                color: Fixed(0, 48, 64, 255),
               ),
               (
                 at: 1.0,
-                color: Fixed(0, 40, 120, 255),
+                color: Fixed(0, 16, 40, 255),
               ),
             ],
             style: Linear,

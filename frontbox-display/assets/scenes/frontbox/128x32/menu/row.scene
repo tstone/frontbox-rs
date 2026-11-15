@@ -31,7 +31,7 @@ Scene(
       ),
       rate: 1.0,
     )),
-    "selected_text_color": Color(Fixed(240, 250, 255, 255)),
+    "selected_text_color": Color(Fixed(255, 255, 255, 255)),
   },
   layers: [
     Display(

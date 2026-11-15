@@ -33,8 +33,8 @@ pub struct GameStarting;
 /// play, so it's waited for.
 #[derive(serde::Serialize, Event, Clone)]
 pub struct GameEnding {
-  /// Each player's final score, in player order
-  pub scores: Vec<(&'static str, u64)>,
+  /// Each player's final score, indexed by player (0 for player 1)
+  pub scores: Vec<u64>,
   pub reason: GameEndReason,
 }
 

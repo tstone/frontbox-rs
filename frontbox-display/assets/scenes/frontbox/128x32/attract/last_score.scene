@@ -1,7 +1,7 @@
 Scene(
   version: 2,
   variables: {
-    "label": Text("PLAYER 1"),
+    "label": Text("Player 1"),
     "score": Int(4231890),
   },
   layers: [
