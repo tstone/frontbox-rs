@@ -301,6 +301,10 @@ mod tests {
     fn balls_held(&self) -> u8 {
       0
     }
+    fn set_balls_locked(&mut self, _locker: u64, _count: u8, _ctx: &ServiceContext) {}
+    fn balls_locked(&self) -> u8 {
+      0
+    }
   }
 
   struct Fixture {

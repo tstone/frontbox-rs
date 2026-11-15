@@ -601,10 +601,79 @@ fn a_held_ball_is_not_taken_for_a_drain() {
   g.advance(Duration::from_secs(5));
   assert_eq!(turns.take(), [0], "the turn goes on");
 
-  // Kicked back out, it's in play again, and its drain ends the turn
+  // Kicked back out, its drain ends the turn
   g.act(|ctx| ctx.set_balls_held(0));
   g.drain();
   assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn draining_the_other_balls_while_one_is_held_does_not_end_the_turn() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  let ended = g.record(|_: &MultiballEnded| ());
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+  g.hit_switch(LOCK);
+  g.serve();
+  g.serve();
+  g.advance(MULTIBALL_SAVE + Duration::from_secs(1));
+
+  // One ball rests in a scoop while the other two drain. It's still in play, so only the multiball ends.
+  g.act(|ctx| ctx.set_balls_held(1));
+  g.drain();
+  g.drain();
+  assert_eq!(ended.take().len(), 1);
+  assert_eq!(turns.take(), [0], "the turn goes on");
+
+  // Kicked out, it's the last ball, and its drain ends the turn
+  g.act(|ctx| ctx.set_balls_held(0));
+  g.drain();
+  assert_eq!(turns.take(), [1]);
+}
+
+#[test]
+fn a_locked_ball_is_out_of_play_until_released() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  // The ball is locked, and another served in its place
+  g.act(|ctx| {
+    ctx.set_balls_locked(1);
+    ctx.eject_ball(Launch::Player);
+  });
+  g.serve();
+
+  // The locked ball isn't in play, so this drain ends the turn, and the next doesn't wait for it
+  g.drain();
+  assert_eq!(turns.take(), [0, 1]);
+
+  // Next turn, the lock releases its ball alongside the one served: two in play, and both have to drain
+  g.serve();
+  g.outlast_ball_save();
+  g.act(|ctx| ctx.set_balls_locked(0));
+  g.drain();
+  assert!(turns.take().is_empty(), "the turn goes on");
+  g.drain();
+  assert_eq!(turns.take(), [2]);
+}
+
+#[test]
+fn locking_the_last_ball_without_serving_another_ends_the_turn() {
+  let mut g = Game::start();
+  let turns = g.record(|e: &RoutineStarted<TurnStarting>| e.routine.turn);
+  g.hit_switch(START);
+  g.serve();
+  g.outlast_ball_save();
+
+  // Nothing is left in play, and no drain is coming, so the game manager takes it for one
+  g.act(|ctx| ctx.set_balls_locked(1));
+  g.advance(Duration::from_secs(20));
+  assert_eq!(turns.take(), [0, 1]);
 }
 
 #[test]

@@ -5,7 +5,7 @@ use frontbox_core::prelude::*;
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, EjectCompleted,
+  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged, EjectCompleted,
   Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
   StandardBallManagementConfig, TroughEjectFailed, TroughOccupancyChanged,
 };
@@ -20,6 +20,8 @@ pub struct StandardBallManagement {
   balls_found: u8,
   /// Balls resting in each holder, by the holder's id, as it last reported
   balls_held: HashMap<u64, u8>,
+  /// Balls locked out of play in each lock, by the lock's id, as it last reported
+  balls_locked: HashMap<u64, u8>,
   /// Balls requested but not yet ejected from the trough
   queue: VecDeque<RequestedBall>,
   /// Requests with balls not yet in play or given up on
@@ -85,6 +87,7 @@ impl StandardBallManagement {
       balls_found: 0, // set on spawn
       config,
       balls_held: HashMap::new(),
+      balls_locked: HashMap::new(),
       queue: VecDeque::new(),
       requests: Vec::new(),
       last_eject_id: 0,
@@ -95,11 +98,11 @@ impl StandardBallManagement {
     }
   }
 
+  /// Includes held balls, which are still in play, but not locked ones
   fn in_play(&self, occupancy: u8) -> u8 {
     self
-      .balls_found
+      .max_in_play()
       .saturating_sub(occupancy)
-      .saturating_sub(self.balls_held())
       .saturating_sub(self.available_balls())
   }
 
@@ -121,7 +124,22 @@ impl StandardBallManagement {
   }
 
   fn max_in_play(&self) -> u8 {
-    self.balls_found.saturating_sub(self.balls_held())
+    self.balls_found.saturating_sub(self.balls_locked())
+  }
+
+  /// Balls in play that aren't resting in a holder
+  fn loose_in_play(&self, ctx: &SystemContext) -> u8 {
+    self.current_in_play(ctx).saturating_sub(self.balls_held())
+  }
+
+  /// Counts balls going into a holder or lock that weren't loose in play (e.g. one sitting in a scoop at boot), before
+  /// the holder's count is updated. Returns how many that was.
+  fn count_balls_entering_holder(&mut self, entering: u8, ctx: &SystemContext) -> u8 {
+    let uncounted = entering.saturating_sub(self.loose_in_play(ctx));
+    if uncounted > 0 {
+      self.count_balls_found(uncounted, ctx);
+    }
+    uncounted
   }
 
   /// Balls turned up that weren't counted (e.g. one stuck on the playfield since before the count was established),
@@ -146,9 +164,11 @@ impl StandardBallManagement {
 
   fn on_trough_entered(&mut self, current_occupancy: u8, entered: u8, ctx: &SystemContext) {
     // Balls beyond what could be in the trough weren't counted as in play; account for them rather than call them drains
-    let excess = current_occupancy
-      .saturating_sub(self.max_in_play().saturating_sub(self.available_balls()))
-      .min(entered);
+    let could_drain = self
+      .max_in_play()
+      .saturating_sub(self.balls_held())
+      .saturating_sub(self.available_balls());
+    let excess = current_occupancy.saturating_sub(could_drain).min(entered);
     if excess > 0 {
       self.reconcile_appearing_ball(excess, ctx);
     }
@@ -555,7 +575,7 @@ impl BallManagement for StandardBallManagement {
   fn establish_ball_count(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     let occupancy = ctx.systems.expect::<TroughSystem>().occupancy();
-    self.balls_found = occupancy + self.available_balls() + self.balls_held();
+    self.balls_found = occupancy + self.available_balls() + self.balls_held() + self.balls_locked();
 
     let installed = self.balls_installed(ctx);
     if self.balls_found < installed {
@@ -571,7 +591,8 @@ impl BallManagement for StandardBallManagement {
 
   fn remove_missing_ball(&mut self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    if self.current_in_play(ctx) == 0 {
+    // a held ball isn't lost, its holder knows where it is
+    if self.loose_in_play(ctx) == 0 {
       return;
     }
     self.balls_found -= 1;
@@ -589,33 +610,48 @@ impl BallManagement for StandardBallManagement {
     if count == before {
       return;
     }
-
-    // More balls held than were in play weren't counted (e.g. one sitting in a scoop at boot)
-    let uncounted = count
-      .saturating_sub(before)
-      .saturating_sub(self.current_in_play(ctx));
+    let uncounted = self.count_balls_entering_holder(count.saturating_sub(before), ctx);
     if uncounted > 0 {
-      self.count_balls_found(uncounted, ctx);
-    }
-
-    let max_before = self.max_in_play();
-    if count == 0 {
-      self.balls_held.remove(&holder);
-    } else {
-      self.balls_held.insert(holder, count);
-    }
-    let max_after = self.max_in_play();
-    let delta = max_after as i8 - max_before as i8 + uncounted as i8;
-    if delta != 0 {
       ctx.emit(MaxBallsInPlayChanged {
-        max_in_play: max_after,
-        delta,
+        max_in_play: self.max_in_play(),
+        delta: uncounted as i8,
       });
     }
+
+    set_count(&mut self.balls_held, holder, count);
+    ctx.emit(BallsHeldChanged {
+      held: self.balls_held(),
+      delta: count as i8 - before as i8,
+    });
   }
 
   fn balls_held(&self) -> u8 {
     self.balls_held.values().sum()
+  }
+
+  fn set_balls_locked(&mut self, locker: u64, count: u8, ctx: &ServiceContext) {
+    let ctx = &ctx.for_system(self.handle);
+    let before = self.balls_locked.get(&locker).copied().unwrap_or(0);
+    if count == before {
+      return;
+    }
+    let max_before = self.max_in_play();
+    self.count_balls_entering_holder(count.saturating_sub(before), ctx);
+    set_count(&mut self.balls_locked, locker, count);
+    let max_after = self.max_in_play();
+
+    log::info!(target: "frontbox::ball_management", "{} ball(s) locked, {} could be in play", self.balls_locked(), max_after);
+    // a ball that wasn't counted turning up in a lock leaves no more able to be in play
+    if max_after != max_before {
+      ctx.emit(MaxBallsInPlayChanged {
+        max_in_play: max_after,
+        delta: max_after as i8 - max_before as i8,
+      });
+    }
+  }
+
+  fn balls_locked(&self) -> u8 {
+    self.balls_locked.values().sum()
   }
 }
 
@@ -673,6 +709,15 @@ impl System for StandardBallManagement {
     } else if event.is::<VerifyLaunch>() {
       self.verify_launch(ctx);
     }
+  }
+}
+
+/// Sets a holder's or lock's count, leaving no entry for one that's empty
+fn set_count(counts: &mut HashMap<u64, u8>, id: u64, count: u8) {
+  if count == 0 {
+    counts.remove(&id);
+  } else {
+    counts.insert(id, count);
   }
 }
 
@@ -880,6 +925,11 @@ mod tests {
       self.system.set_balls_held(holder, count, &self.ctx.svc_ctx());
     }
 
+    /// Simulate `locker` reporting how many balls are locked in it
+    fn lock(&mut self, locker: u64, count: u8) {
+      self.system.set_balls_locked(locker, count, &self.ctx.svc_ctx());
+    }
+
     fn balls_in_play(&self) -> u8 {
       self.system.balls_in_play(&self.ctx.svc_ctx())
     }
@@ -902,6 +952,17 @@ mod tests {
         .iter()
         .filter_map(|e| e.event.downcast_ref::<BallsExitedPlay>())
         .map(|e| (e.count, e.in_play))
+        .collect()
+    }
+
+    /// (held, delta) of all balls held events emitted since the last call
+    fn held_changed_events(&mut self) -> Vec<(u8, i8)> {
+      self
+        .ctx
+        .events_emitted()
+        .iter()
+        .filter_map(|e| e.event.downcast_ref::<BallsHeldChanged>())
+        .map(|e| (e.held, e.delta))
         .collect()
     }
 
@@ -1008,22 +1069,22 @@ mod tests {
   // -- Held balls --
 
   #[test]
-  fn holding_a_ball_in_play_takes_it_out_of_play() {
+  fn held_ball_stays_in_play() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
     f.hold(1, 1);
-    assert_eq!(f.max_changed_events(), vec![(4, -1)]);
-    assert_eq!(f.balls_in_play(), 0);
+    assert_eq!(f.held_changed_events(), vec![(1, 1)]);
+    assert_eq!(f.balls_in_play(), 1);
   }
 
   #[test]
-  fn releasing_a_held_ball_puts_it_back_in_play() {
+  fn releasing_a_held_ball_is_reported() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
     f.hold(1, 1);
     f.events();
     f.hold(1, 0);
-    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
+    assert_eq!(f.held_changed_events(), vec![(0, -1)]);
     assert_eq!(f.balls_in_play(), 1);
   }
 
@@ -1042,28 +1103,26 @@ mod tests {
     f.hold(2, 1);
     f.hold(1, 0);
     assert_eq!(f.system.balls_held(), 1);
-    assert_eq!(f.balls_in_play(), 1);
+    assert_eq!(f.balls_in_play(), 2);
   }
 
   #[test]
-  fn held_ball_is_not_counted_as_in_play() {
+  fn drain_with_a_ball_held_leaves_it_in_play() {
     let mut f = Fixture::spawn(5);
-    f.trough_changed(4, 0, 1);
-    f.hold(1, 1); // ball in play goes into the lock
-    f.trough_changed(3, 0, 1); // replacement ball ejected
-    f.trough_changed(4, 1, 0);
-    assert_eq!(f.drained_events(), vec![(1, 0)]);
+    f.trough_changed(3, 0, 2); // 2 balls in play
+    f.hold(1, 1); // one goes into a scoop
+    f.trough_changed(4, 1, 0); // the other drains
+    assert_eq!(f.drained_events(), vec![(1, 1)]);
   }
 
   #[test]
-  fn ball_released_from_a_holder_during_multiball_is_counted_as_in_play() {
+  fn ball_released_from_a_holder_drains_as_the_last_ball() {
     let mut f = Fixture::spawn(5);
     f.trough_changed(4, 0, 1);
     f.hold(1, 1);
-    f.trough_changed(2, 0, 2); // 2 balls in play
-    f.hold(1, 0); // the held ball is kicked out
-    f.trough_changed(3, 1, 0);
-    assert_eq!(f.drained_events(), vec![(1, 2)]);
+    f.hold(1, 0); // kicked out
+    f.trough_changed(5, 1, 0);
+    assert_eq!(f.drained_events(), vec![(1, 0)]);
   }
 
   #[test]
@@ -1072,14 +1131,97 @@ mod tests {
     let mut f = Fixture::spawn(4);
     f.hold(1, 1);
     assert_eq!(f.system.balls_found, 5);
-    assert_eq!(f.balls_in_play(), 0);
-    assert!(f.max_changed_events().is_empty(), "nothing more could be in play");
-
-    // once kicked out, it's in play and its drain is counted
-    f.hold(1, 0);
     assert_eq!(f.balls_in_play(), 1);
+    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
+
+    // once kicked out, its drain is counted
+    f.hold(1, 0);
     f.trough_changed(5, 1, 0);
     assert_eq!(f.drained_events(), vec![(1, 0)]);
+  }
+
+  #[test]
+  fn held_ball_is_not_given_up_as_lost() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.hold(1, 1);
+    f.system.remove_missing_ball(&f.ctx.svc_ctx());
+    assert_eq!(f.system.balls_found, 5);
+  }
+
+  // -- Locked balls --
+
+  #[test]
+  fn locking_a_ball_takes_it_out_of_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.lock(1, 1);
+    assert_eq!(f.max_changed_events(), vec![(4, -1)]);
+    assert_eq!(f.balls_in_play(), 0);
+  }
+
+  #[test]
+  fn drain_with_a_ball_locked_leaves_none_in_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(3, 0, 2); // 2 balls in play
+    f.lock(1, 1); // one is locked
+    f.trough_changed(4, 1, 0); // the other drains
+    assert_eq!(f.drained_events(), vec![(1, 0)]);
+  }
+
+  #[test]
+  fn ball_served_after_a_lock_drains_as_the_last_ball() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(4, 0, 1);
+    f.lock(1, 1);
+    f.trough_changed(3, 0, 1); // another ball served
+    f.trough_changed(4, 1, 0);
+    assert_eq!(f.drained_events(), vec![(1, 0)]);
+    assert_eq!(f.max_changed_events(), vec![], "a drain, not a ball turning up");
+  }
+
+  #[test]
+  fn releasing_a_locked_ball_puts_it_back_in_play() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(3, 0, 2);
+    f.lock(1, 1);
+    f.events();
+    f.lock(1, 0);
+    assert_eq!(f.max_changed_events(), vec![(5, 1)]);
+    assert_eq!(f.balls_in_play(), 2);
+    f.trough_changed(4, 1, 0);
+    assert_eq!(f.drained_events(), vec![(1, 1)]);
+  }
+
+  #[test]
+  fn locks_are_counted_separately() {
+    let mut f = Fixture::spawn(5);
+    f.trough_changed(2, 0, 3);
+    f.lock(1, 1);
+    f.lock(2, 2);
+    f.lock(1, 0);
+    assert_eq!(f.system.balls_locked(), 2);
+    assert_eq!(f.balls_in_play(), 1);
+  }
+
+  #[test]
+  fn locked_ball_that_was_never_in_play_is_counted() {
+    // e.g. one left in the lock at boot
+    let mut f = Fixture::spawn(4);
+    f.lock(1, 1);
+    assert_eq!(f.system.balls_found, 5);
+    assert_eq!(f.balls_in_play(), 0);
+    assert!(f.max_changed_events().is_empty(), "nothing more could be in play");
+  }
+
+  #[test]
+  fn establish_ball_count_counts_locked_balls() {
+    let mut f = Fixture::spawn(4);
+    f.lock(1, 1);
+    f.system.balls_found = 7;
+    f.system.establish_ball_count(&f.ctx.svc_ctx());
+    assert_eq!(f.system.balls_found, 5);
+    assert_eq!(f.balls_in_play(), 0);
   }
 
   // -- Unexpected balls --
@@ -1127,7 +1269,7 @@ mod tests {
 
     f.system.establish_ball_count(&f.ctx.svc_ctx());
     assert_eq!(f.system.balls_found, 5);
-    assert_eq!(f.balls_in_play(), 0);
+    assert_eq!(f.balls_in_play(), 1, "the held ball");
     assert!(f.events().is_empty());
   }
 

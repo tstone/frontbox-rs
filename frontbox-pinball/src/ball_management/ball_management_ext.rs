@@ -14,14 +14,18 @@ pub trait BallManagementExt {
   /// Drops queued balls, completes open requests, and keeps a ball resting in the plunge lane for the next request
   fn cancel_ejects(&self);
 
-  /// Balls currently in play, not counting balls resting in holders
+  /// Balls currently in play, including balls resting in holders but not locked balls
   fn balls_in_play(&self) -> u8;
-  /// Takes the balls currently present (in the trough, the plunge lane and holders) as all of the balls there are
+  /// Takes the balls currently present (in the trough, the plunge lane, holders and locks) as all of the balls there
+  /// are
   fn establish_ball_count(&self);
 
-  /// Reports how many balls are resting in this system right now (a scoop, a VUK, a lock), from its own switches.
-  /// Report every change, including back to 0.
+  /// Reports how many balls are resting in this system right now (a scoop, a VUK), from its own switches. They stay
+  /// in play. Report every change, including back to 0.
   fn set_balls_held(&self, count: u8);
+  /// Reports how many balls are locked in this system right now (a ball lock), from its own switches. They're out of
+  /// play until released. Report every change, including back to 0.
+  fn set_balls_locked(&self, count: u8);
 }
 
 impl<'a> BallManagementExt for SystemContext<'a> {
@@ -67,6 +71,13 @@ impl<'a> BallManagementExt for SystemContext<'a> {
     let ctx = self;
     with_ball_manager(self, |manager| {
       manager.set_balls_held(ctx.id(), count, ctx.into());
+    });
+  }
+
+  fn set_balls_locked(&self, count: u8) {
+    let ctx = self;
+    with_ball_manager(self, |manager| {
+      manager.set_balls_locked(ctx.id(), count, ctx.into());
     });
   }
 }

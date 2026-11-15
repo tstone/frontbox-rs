@@ -299,13 +299,10 @@ impl CompetitiveGame {
   }
 
   /// Catches a drain that was never reported (e.g. a ball save's replacement that never left the trough). With no drain
-  /// being decided, no ball on its way into play and none held (a scoop holding the only ball), finding nothing in play
-  /// on two checks in a row is treated as a drain.
+  /// being decided and no ball on its way into play, finding nothing in play (held balls included) on two checks in a
+  /// row is treated as a drain.
   fn check_balls_in_play(&mut self, ctx: &ServiceContext) {
-    let none_in_play = !self.draining
-      && self.balls_in_play(ctx) == 0
-      && !self.ejects_pending(ctx)
-      && self.balls_held(ctx) == 0;
+    let none_in_play = !self.draining && self.balls_in_play(ctx) == 0 && !self.ejects_pending(ctx);
     if none_in_play && self.found_no_ball_in_play {
       log::warn!(target: "frontbox::game_manager", "No ball in play and no drain reported, treating it as a drain");
       self.found_no_ball_in_play = false;
@@ -402,12 +399,6 @@ impl CompetitiveGame {
       .is_some_and(|ball_manager| ball_manager.ejects_pending())
   }
 
-  fn balls_held(&self, ctx: &ServiceContext) -> u8 {
-    ctx
-      .for_system(self.handle)
-      .systems.get::<BallManager>()
-      .map_or(0, |ball_manager| ball_manager.balls_held())
-  }
 
   fn advance_turn(&mut self, ctx: &ServiceContext) {
     self.waiting_for_balls = false;
@@ -838,6 +829,10 @@ mod tests {
     }
     fn set_balls_held(&mut self, _holder: u64, _count: u8, _ctx: &ServiceContext) {}
     fn balls_held(&self) -> u8 {
+      0
+    }
+    fn set_balls_locked(&mut self, _locker: u64, _count: u8, _ctx: &ServiceContext) {}
+    fn balls_locked(&self) -> u8 {
       0
     }
   }

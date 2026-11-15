@@ -34,10 +34,20 @@ pub struct MaxBallsInPlayChanged {
 pub struct BallsExitedPlay {
   /// Balls that left play
   pub count: u8,
-  /// Balls still in play afterwards. Balls are in play once they have left the trough and aren't locked, which
-  /// includes a ball in the plunge lane waiting to be launched for a request, but not one kept there for the next
-  /// request (see `BallManagement::cancel_ejects`).
+  /// Balls still in play afterwards. Balls are in play once they have left the trough, which includes balls resting
+  /// in holders (`BallManagement::set_balls_held`) and a ball in the plunge lane waiting to be launched for a request,
+  /// but not one kept there for the next request (see `BallManagement::cancel_ejects`).
   pub in_play: u8,
+}
+
+/// Emitted when the balls resting in holders (scoops, VUKs) change, as reported with `BallManagement::set_balls_held`.
+/// Held balls are still in play, so this doesn't change `in_play`.
+#[derive(serde::Serialize, Event)]
+pub struct BallsHeldChanged {
+  /// Balls resting in all holders
+  pub held: u8,
+  /// Negative when a holder let a ball go
+  pub delta: i8,
 }
 
 /// Emitted once a ball has gone into play, which can be well after it was ejected (e.g. a player waiting to plunge).

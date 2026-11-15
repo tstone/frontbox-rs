@@ -4,7 +4,7 @@ use frontbox_core::prelude::*;
 
 use crate::ball_management::{
   BallEnteredPlay, BallManager, BallSearchFailed, BallSearching, BallsExitedPlay,
-  MaxBallsInPlayChanged,
+  BallsHeldChanged, MaxBallsInPlayChanged,
 };
 use crate::{CoinDoor, configs, metrics};
 
@@ -100,14 +100,15 @@ impl BallSearchSystem {
     self.coils_to_fire.clear();
   }
 
-  /// A ball is loose somewhere (in play, and not waiting in the plunge lane), and no operator is at the playfield
+  /// A ball is loose somewhere (in play, not held, and not waiting in the plunge lane), and no operator is at the
+  /// playfield
   fn has_loose_ball(&self, ctx: &SystemContext) -> bool {
     ctx.states.is(CoinDoor::Closed)
       && ctx
         .systems
         .get::<BallManager>()
         .is_some_and(|ball_manager| {
-          ball_manager.balls_in_play(ctx.into()) > 0
+          ball_manager.balls_in_play(ctx.into()) > ball_manager.balls_held()
             && !ball_manager.is_ball_in_plunge_lane(ctx.into())
         })
   }
@@ -233,8 +234,11 @@ impl System for BallSearchSystem {
       self.restart_delay(ctx);
     } else if event.is::<BallsExitedPlay>() || event.is::<BallEnteredPlay>() {
       self.ball_seen(ctx);
+    } else if let Some(BallsHeldChanged { delta: ..0, .. }) = event.downcast_ref::<BallsHeldChanged>() {
+      // a holder released its ball, which hasn't had the chance to hit a switch yet
+      self.restart_delay(ctx);
     } else if let Some(MaxBallsInPlayChanged { delta: 1.., .. }) = event.downcast_ref::<MaxBallsInPlayChanged>() {
-      // e.g. a holder released its ball, which hasn't had the chance to hit a switch yet
+      // a lock released its ball, or one that wasn't counted turned up, which may not have hit a switch yet
       self.restart_delay(ctx);
     } else if let Some(changed) = event.downcast_ref::<StateChanged<CoinDoor>>() {
       match changed.to {

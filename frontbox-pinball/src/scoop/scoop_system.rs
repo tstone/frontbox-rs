@@ -69,8 +69,8 @@ use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
 /// to eject.
 ///
 /// ## Ball counts
-/// A ball resting in the scoop is reported to ball management as held (`set_balls_held`), so it isn't counted as in
-/// play.
+/// A ball resting in the scoop is reported to ball management as held (`set_balls_held`). It's still in play, so a
+/// drain while it's here doesn't end the turn, but a ball search doesn't look for it.
 pub struct ScoopSystem<S> {
   handle: SystemHandle,
   /// For logs

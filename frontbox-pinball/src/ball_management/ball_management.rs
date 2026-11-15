@@ -9,7 +9,9 @@ use crate::ball_management::StandardBuilder;
 /// It spawns whatever child systems it needs to run it. Other systems talk to ball management directly, not child systems.
 ///
 /// ## Responsibilities
-/// - **Counting balls.** Knows how many balls are in play, in the trough, and resting in holders (scoops, locks). Counts
+/// - **Counting balls.** Knows how many balls are in play, in the trough, resting in holders (scoops, VUKs), and locked
+///   (ball locks). A held ball is still in play: it's only resting somewhere known, and will return to the playfield.
+///   A locked ball is out of play until its lock releases it. Counts
 ///   are derived from what the hardware reports, not from running counters, so that a halted event, failed eject, or
 ///   missed drain can't make them drift. Balls that appear unexpectedly are reconciled, not reported as drains.
 ///   Comparing against the balls installed (`configs::BALLS_INSTALLED`) tells it which are missing.
@@ -31,14 +33,16 @@ use crate::ball_management::StandardBuilder;
 ///
 /// ## Not responsible for
 /// - Game rules: turns, ball save, multiball, extra balls. These are built on ball management's events and calls.
-/// - Physically holding or releasing balls in scoops and locks. The systems running them report what they hold with
-///   `set_balls_held`.
+/// - Physically holding or releasing balls in scoops, VUKs and locks. The systems running them report what they hold
+///   with `set_balls_held` or `set_balls_locked`.
 ///
 /// ## Events
 /// - `BallsExitedPlay` - Emitted when one or more balls leave play
 /// - `BallEnteredPlay` - Emitted when a ball has been launched into play
 /// - `EjectCompleted` - Emitted when every ball from an `eject` or `eject_many` request is in play or given up on
-/// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is held)
+/// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked,
+///   released from a lock, found or lost)
+/// - `BallsHeldChanged` - Emitted when a holder reports a change in the balls resting in it
 pub trait BallManagement: SpawnableSystem {
   /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry.
   fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64;
@@ -53,11 +57,11 @@ pub trait BallManagement: SpawnableSystem {
   /// True while a requested ball hasn't left the trough yet. Once it has, it counts toward `balls_in_play`.
   fn ejects_pending(&self) -> bool;
 
-  /// Balls currently in play, not counting balls resting in holders
+  /// Balls currently in play, including balls resting in holders but not locked balls
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8;
   /// True while a ball is resting in the plunge lane, e.g. waiting for the player to plunge it
   fn is_ball_in_plunge_lane(&self, ctx: &ServiceContext) -> bool;
-  /// Takes the balls currently present (in the trough, the plunge lane and holders) as all of the balls there are.
+  /// Takes the balls currently present (in the trough, the plunge lane, holders and locks) as all of the balls there are.
   /// Typically called at the start of a game, so that a ball lost in a previous game isn't waited on forever. Balls
   /// installed but not found are then `balls_missing`.
   fn establish_ball_count(&mut self, ctx: &ServiceContext);
@@ -65,15 +69,28 @@ pub trait BallManagement: SpawnableSystem {
   /// turned up since
   fn balls_missing(&self, ctx: &ServiceContext) -> u8;
   /// Takes a ball in play out of the count, as lost (e.g. a ball search couldn't find it), so play doesn't wait for it.
-  /// It's counted again if it turns up. Does nothing with no ball in play.
+  /// It's counted again if it turns up. Does nothing when every ball in play is held, or none is.
   fn remove_missing_ball(&mut self, ctx: &ServiceContext);
 
-  /// Reports how many balls are resting in `holder` (its `ctx.id()`) right now: a scoop, a VUK, a lock. Read from the
-  /// holder's own switches, and reported on every change, including back to 0. Held balls aren't in play, so they
-  /// aren't waited for to drain.
+  /// Reports how many balls are resting in `holder` (its `ctx.id()`) right now: a scoop, a VUK. Read from the
+  /// holder's own switches, and reported on every change, including back to 0.
+  ///
+  /// Held balls are still in play, as they'll be returned to the playfield: a drain with one held doesn't end the
+  /// turn, and the end of a turn waits for it to drain. Knowing where they are, a ball search doesn't look for them.
   fn set_balls_held(&mut self, holder: u64, count: u8, ctx: &ServiceContext);
-  /// Balls resting in holders
+  /// Balls resting in holders. They're counted in `balls_in_play`.
   fn balls_held(&self) -> u8;
+
+  /// Reports how many balls are locked in `locker` (its `ctx.id()`) right now: a ball lock that keeps them for later,
+  /// such as a multiball. Read from the lock's own switches, and reported on every change, including back to 0.
+  ///
+  /// Unlike held balls, locked balls are out of play until released: a drain of the last ball not locked ends the
+  /// turn, and the end of a turn or a game doesn't wait for them. Locking the last ball in play leaves none, so the
+  /// locker should put another into play (`eject`), or the game manager will take it for a drain. Releasing one puts
+  /// it back in play. Either way, `MaxBallsInPlayChanged` is emitted.
+  fn set_balls_locked(&mut self, locker: u64, count: u8, ctx: &ServiceContext);
+  /// Balls locked out of play. They're not counted in `balls_in_play`.
+  fn balls_locked(&self) -> u8;
 }
 
 pub struct BallManager {
