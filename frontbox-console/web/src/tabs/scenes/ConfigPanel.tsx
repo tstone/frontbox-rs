@@ -54,6 +54,7 @@ import {
   type Wandering,
 } from './configNodes'
 import { ImagePicker } from './ImagePicker'
+import { SoundPicker } from './SoundPicker'
 import { anchorPresets, writer } from './ShapeHandles'
 import { displayNames, LayerLeds, NEW_LAYER_OPTIONS, newPlace, planeNames, type NewLayerPlace } from './LayerPlace'
 import {
@@ -71,7 +72,6 @@ import {
   RevealContext,
   SceneContext,
   ShapePosesContext,
-  SoundPicker,
   SurfaceContext,
   TraversalsContext,
   type PropKind,

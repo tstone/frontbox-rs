@@ -6,6 +6,8 @@ use crate::*;
 pub trait LedSystemExt {
   /// Declare one color for every LED the targets resolve to
   fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
+  /// Declare one color for every LED the targets resolve to, flashing on and off
+  fn declare_leds_flashing<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
   /// Declare colors for the targets, given by `colors` from the number of LEDs they resolve to
   fn declare_led_colors<T: Contextual<LedIdentifications>>(
     &self,
@@ -28,6 +30,14 @@ impl<'a> LedSystemExt for SystemContext<'a> {
     self.declare_led_colors(targets, |count| vec![color; count]);
   }
 
+  fn declare_leds_flashing<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
+    with_led_system(self, |led_system| {
+      let targets = targets.resolve(&self);
+      let pairings = targets.leds.iter().map(|led| (led, color)).collect();
+      led_system.declare(self.id(), LedDeclarations::new(pairings, targets.z_index).flashing());
+    });
+  }
+
   fn declare_led_colors<T: Contextual<LedIdentifications>>(
     &self,
     targets: &T,
@@ -36,10 +46,7 @@ impl<'a> LedSystemExt for SystemContext<'a> {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
       let colors = colors(targets.leds.len());
-      let declarations = LedDeclarations {
-        pairings: targets.leds.iter().zip(colors).collect(),
-        z_index: targets.z_index,
-      };
+      let declarations = LedDeclarations::new(targets.leds.iter().zip(colors).collect(), targets.z_index);
       led_system.declare(self.id(), declarations);
     });
   }
@@ -47,12 +54,8 @@ impl<'a> LedSystemExt for SystemContext<'a> {
   fn declare_leds_inactive<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
     with_led_system(self, |led_system| {
       let targets = targets.resolve(&self);
-      let colors = vec![color; targets.leds.len()];
-      let declarations = LedDeclarations {
-        pairings: targets.leds.iter().zip(colors).collect(),
-        z_index: targets.z_index,
-      };
-      led_system.declare_inactive(self.id(), declarations);
+      let pairings = targets.leds.iter().map(|led| (led, color)).collect();
+      led_system.declare_inactive(self.id(), LedDeclarations::new(pairings, targets.z_index));
     });
   }
 

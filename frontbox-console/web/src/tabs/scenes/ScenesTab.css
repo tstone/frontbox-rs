@@ -23,6 +23,28 @@
   font-size: 1.125rem;
 }
 
+.scene-list .filter-input,
+.scene-dialog .filter-input {
+  padding: 0.4rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.scene-list .filter-input::placeholder,
+.scene-dialog .filter-input::placeholder {
+  color: var(--muted);
+}
+
+.scene-list .filter-input:focus-visible,
+.scene-dialog .filter-input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .scene-tree {
   min-height: 0;
   padding: 0.25rem;
@@ -695,9 +717,13 @@
   min-width: 0;
 }
 
-.scene-sound .scene-dropdown {
+.scene-sound-chosen {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* what a sound or an image is like, with a button for fitting the timeline to it */
@@ -863,6 +889,53 @@ label.scene-button:hover {
   gap: 0.5rem;
   min-height: 0;
   overflow-y: scroll;
+}
+
+/* a set height, so that it doesn't jump around as the list is filtered */
+.scene-dialog-sounds {
+  width: min(36rem, 100%);
+  height: min(40rem, 100%);
+}
+
+.scene-sound-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.scene-sound-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.scene-sound-option:hover {
+  background: var(--surface-hover);
+}
+
+.scene-sound-option[aria-selected='true'] {
+  border-color: var(--accent);
+}
+
+/* a whole path, as what tells two sounds apart can be at either end of it */
+.scene-sound-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 .scene-curve-list {

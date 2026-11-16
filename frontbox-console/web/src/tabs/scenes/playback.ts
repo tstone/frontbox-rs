@@ -6,9 +6,10 @@ export type Playback = ReturnType<typeof createPlayback>
 
 /**
  * Where the preview is in a scene, and moving that along. Time only moves once `ready`, as there's nothing to show until
- * the frames have come back from the machine.
+ * the frames have come back from the machine. `starting` is called as play starts from the beginning, rather than going
+ * on from a pause.
  */
-export function createPlayback(timing: Accessor<Timing | undefined>, ready: Accessor<boolean>) {
+export function createPlayback(timing: Accessor<Timing | undefined>, ready: Accessor<boolean>, starting: () => void) {
   const [position, setPosition] = createSignal(0)
   const [playing, setPlaying] = createSignal(false)
   const [cycle, setCycle] = createSignal<number | null>(null)
@@ -71,6 +72,7 @@ export function createPlayback(timing: Accessor<Timing | undefined>, ready: Acce
     /** From where it is, or from the start if it's at the end */
     play: () => {
       if (position() >= timing()!.duration) seek(0)
+      if (elapsed === 0) starting()
       setCycle(Math.floor(elapsed / timing()!.duration))
       setPlaying(true)
     },

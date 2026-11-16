@@ -33,6 +33,9 @@
 //! # }
 //! ```
 //!
+//! A status is a color, either on or flashing ([`declare_leds_flashing`](LedSystemExt::declare_leds_flashing)). Every
+//! flashing declaration flashes in step, once each [`FLASH_PERIOD`]. Anything more than that is a scene.
+//!
 //! ### 2. A scene the system owns
 //! What's drawn in the editor is a [`Scene`](frontbox_scene::Scene), played by the
 //! [`SceneSystem`](frontbox_scene::SceneSystem). A system that turns one on and off, for example to pulse a shot while

@@ -11,6 +11,9 @@ use crate::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 
+/// One on and off of a flashing declaration. At 2Hz it stays well under the tick rate, so it doesn't alias.
+pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
+
 /// # LedSystem
 ///
 /// ### Features
@@ -113,6 +116,8 @@ pub struct LedSystem {
   placements: HashMap<PlaybackId, LedPlacement>,
   /// This frame's colors from playbacks, by LED: a z and a color for each that reaches it, in the order they started
   played: HashMap<LedAddress, Vec<(i8, Rgba<u8>)>>,
+  /// How far into [`FLASH_PERIOD`] flashing declarations are
+  flash_clock: Duration,
 }
 
 impl LedSystem {
@@ -127,7 +132,13 @@ impl LedSystem {
       next_order: 0,
       placements: HashMap::new(),
       played: HashMap::new(),
+      flash_clock: Duration::ZERO,
     }
+  }
+
+  /// Whether flashing declarations are in the on half of their period
+  fn flash_on(&self) -> bool {
+    self.flash_clock < FLASH_PERIOD / 2
   }
 
   #[allow(unused)]
@@ -192,7 +203,12 @@ impl LedSystem {
           self.next_order
         }
       };
-      let declaration = StatefulLedDeclaration { active, color, order };
+      let declaration = StatefulLedDeclaration {
+        active,
+        color,
+        order,
+        flashing: declarations.flashing,
+      };
       if self.monitored.contains(led) {
         log::info!(
           target: "frontbox::led",
@@ -280,6 +296,7 @@ impl LedSystem {
   /// color.
   pub(crate) fn resolve(&mut self, ctx: &SystemContext) -> Vec<(LedAddress, Option<Rgba<u8>>)> {
     self.draw_playbacks(ctx);
+    let flash_on = self.flash_on();
     let undeclared = HashMap::new();
     let mut resolved = Vec::with_capacity(self.all_addresses.len());
     for led in self.all_addresses.iter() {
@@ -298,7 +315,7 @@ impl LedSystem {
       // every z with something on it for this LED
       let z_indexes = declarations
         .iter()
-        .filter(|(_, d)| d.active)
+        .filter(|(_, d)| d.shows(flash_on))
         .map(|(id, _)| id.z_index)
         .chain(played.iter().map(|(z, _)| *z))
         .sorted()
@@ -310,6 +327,7 @@ impl LedSystem {
         z_indexes,
         declarations,
         played,
+        flash_on,
         &self.conflict_resolution,
         &mut self.alternate_resolver,
       );
@@ -348,13 +366,14 @@ impl LedSystem {
     mut z_indexes: Vec<i8>,
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
     played: &[(i8, Rgba<u8>)],
+    flash_on: bool,
     conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
   ) -> Rgba<u8> {
     let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
     let top_declarations = declarations
       .iter()
-      .filter(|(id, dec)| id.z_index == *max_z && dec.active)
+      .filter(|(id, dec)| id.z_index == *max_z && dec.shows(flash_on))
       .sorted_by_key(|(_, dec)| dec.order)
       .collect::<Vec<_>>();
 
@@ -399,6 +418,7 @@ impl LedSystem {
         z_indexes,
         declarations,
         played,
+        flash_on,
         conflict_resolution,
         alternate_resolver,
       );
@@ -430,6 +450,10 @@ impl System for LedSystem {
 
   fn on_tick(&mut self, delta: Duration, _ctx: &SystemContext) {
     self.alternate_resolver.accumulate(delta);
+    self.flash_clock += delta;
+    while self.flash_clock >= FLASH_PERIOD {
+      self.flash_clock -= FLASH_PERIOD;
+    }
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
@@ -484,6 +508,14 @@ pub struct StatefulLedDeclaration {
   /// Counts up with each new declaration, and stays the same when a system changes the color of one it already made, so
   /// conflicts are resolved in the order systems first declared
   pub order: u64,
+  pub flashing: bool,
+}
+
+impl StatefulLedDeclaration {
+  /// Whether it gives its LED a color this frame: it's active, and if it flashes, the flash is on
+  fn shows(&self, flash_on: bool) -> bool {
+    self.active && (flash_on || !self.flashing)
+  }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -658,6 +690,7 @@ mod tests {
           active: true,
           color: Rgba::default(),
           order: 1,
+          flashing: false,
         },
       ),
       (
@@ -669,6 +702,7 @@ mod tests {
           active: false, // final color should NOT be red
           color: Rgba::red(),
           order: 2,
+          flashing: false,
         },
       ),
     ]);
@@ -681,6 +715,7 @@ mod tests {
       vec![0, 1],
       &declarations,
       &[],
+      true,
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -706,6 +741,7 @@ mod tests {
           active: true,
           color: Rgba::red(),
           order: 3,
+          flashing: false,
         },
       ),
       (
@@ -717,6 +753,7 @@ mod tests {
           active: true,
           color: Rgba::blue(),
           order: 4,
+          flashing: false,
         },
       ),
     ]);
@@ -729,6 +766,7 @@ mod tests {
       vec![1],
       &declarations,
       &[],
+      true,
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -753,6 +791,7 @@ mod tests {
           active: true,
           color: Rgba::red(),
           order: 5,
+          flashing: false,
         },
       ),
       (
@@ -764,6 +803,7 @@ mod tests {
           active: true,
           color: Rgba::blue(),
           order: 6,
+          flashing: false,
         },
       ),
     ]);
@@ -779,6 +819,7 @@ mod tests {
       vec![0],
       &declarations,
       &[],
+      true,
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -804,6 +845,7 @@ mod tests {
           active: true,
           color: Rgba([255, 0, 0, 127]), // semi-transparent red
           order: 7,
+          flashing: false,
         },
       ),
       (
@@ -815,6 +857,7 @@ mod tests {
           active: true,
           color: Rgba([255, 255, 255, 255]), // opaque white
           order: 8,
+          flashing: false,
         },
       ),
     ]);
@@ -830,6 +873,7 @@ mod tests {
       vec![0, 1],
       &declarations,
       &[],
+      true,
       &conflict_resolution,
       &mut alternate_resolver,
     );
@@ -869,7 +913,7 @@ mod tests {
       system.declare(id, LedDeclarations::new(vec![(&led, Rgba([id as u8, 0, 0, 255]))], 0));
     }
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
-    LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], &HashMap::new(), &mut AlternateResolver::new())
+    LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new())
   }
 
   #[test]
@@ -886,8 +930,30 @@ mod tests {
     system.declare(2, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
     system.undeclare(1, LedIdentifications::new(vec![led.clone()], 0));
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
-    let color = LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], &HashMap::new(), &mut AlternateResolver::new());
+    let color = LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new());
     assert_eq!(color, Rgba::blue());
+  }
+
+  #[test]
+  fn a_flashing_declaration_shows_through_to_the_layer_below_while_its_off() {
+    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let mut system = LedSystem::new();
+    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
+    system.declare(2, LedDeclarations::new(vec![(&led, Rgba::green())], 1).flashing());
+    let color = |flash_on: bool, system: &LedSystem| {
+      let z_indexes = system.declarations[&led].iter().filter(|(_, d)| d.shows(flash_on)).map(|(id, _)| id.z_index).sorted().collect();
+      LedSystem::resolve_led_color(&led, z_indexes, &system.declarations[&led], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())
+    };
+    assert_eq!(color(true, &system), Rgba::green());
+    assert_eq!(color(false, &system), Rgba::blue());
+  }
+
+  #[test]
+  fn the_flash_is_on_for_the_first_half_of_each_period() {
+    let mut system = LedSystem::new();
+    assert!(system.flash_on());
+    system.flash_clock = FLASH_PERIOD / 2;
+    assert!(!system.flash_on());
   }
 
   #[test]

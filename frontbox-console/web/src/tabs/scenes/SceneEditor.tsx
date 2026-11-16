@@ -11,6 +11,7 @@ import {
   forgetSceneRender,
   renderClips,
   renderScene,
+  reseedScenePreview,
   sceneClip,
   sceneClipError,
   sceneClipRendering,
@@ -168,7 +169,8 @@ export default function SceneEditor(props: {
     equals: (a, b) => a.leds === b.leds && a.width === b.width && a.height === b.height,
   })
 
-  const playback = createPlayback(() => scene()?.timing, () => sceneClip(clipCycle()) !== null && !sceneClipError())
+  // each play of the scene makes its own random choices, as each playback in the game does
+  const playback = createPlayback(() => scene()?.timing, () => sceneClip(clipCycle()) !== null && !sceneClipError(), reseedScenePreview)
 
   // read without tracking while playing, as those moments come from the clip
   const moment = () => (playback.playing() ? untrack(playback.position) : playback.position())

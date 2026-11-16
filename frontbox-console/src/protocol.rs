@@ -347,6 +347,10 @@ pub enum ClientMessage {
     cycle: Option<u32>,
     #[serde(default)]
     reference: Option<ReferenceScene>,
+    /// What the scene's random choices come from, as each playback on the machine has its own. The same seed gives the
+    /// same choices, so the moments of one play of the scene agree.
+    #[serde(default)]
+    seed: u32,
   },
   /// Render a whole cycle of a scene for the client to play. Answered with a clip, or `SceneClipFailed`.
   RenderClip {
@@ -357,6 +361,9 @@ pub enum ClientMessage {
     cycle: u32,
     #[serde(default)]
     reference: Option<ReferenceScene>,
+    /// As for `RenderScene`
+    #[serde(default)]
+    seed: u32,
   },
   /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
   /// the app has no sound system.

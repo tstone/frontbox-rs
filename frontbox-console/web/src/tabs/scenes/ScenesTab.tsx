@@ -18,6 +18,8 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 
 // Tracks what's collapsed rather than what's expanded, so new folders start open. Outlives the list, which is gone while a scene is open.
 const [collapsed, setCollapsed] = createSignal<string[]>([])
+// what the list is filtered by, kept for coming back to the list after a scene
+const [filter, setFilter] = createSignal('')
 // what went wrong opening a scene, which can happen while the list isn't showing, as one named in the URL is opened on load
 const [error, setError] = createSignal<string | null>(null)
 
@@ -104,7 +106,13 @@ function SceneList(props: { onOpen: (scene: OpenScene) => void }) {
   const [renaming, setRenaming] = createSignal<string | null>(null)
   const [deleting, setDeleting] = createSignal<string | null>(null)
 
-  const tree = createMemo(() => sceneTree(contentScenes()))
+  // every word typed has to be somewhere in the scene's path, in any order
+  const words = () => filter().trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const matching = createMemo(() => {
+    const terms = words()
+    return contentScenes().filter((name) => terms.every((term) => name.toLowerCase().includes(term)))
+  })
+  const tree = createMemo(() => sceneTree(matching()))
   const collection = createMemo(() =>
     createTreeCollection<SceneNode>({
       nodeToValue: (node) => node.id,
@@ -159,6 +167,18 @@ function SceneList(props: { onOpen: (scene: OpenScene) => void }) {
         <h2>Scenes</h2>
         <NewScene onAdded={props.onOpen} />
       </header>
+      <Show when={contentScenes().length > 0}>
+        <input
+          class="filter-input"
+          type="search"
+          placeholder="Filter by name"
+          aria-label="Filter scenes by name"
+          autocomplete="off"
+          spellcheck={false}
+          value={filter()}
+          onInput={(e) => setFilter(e.currentTarget.value)}
+        />
+      </Show>
       <Show when={error()}>{(text) => <p class="scene-note scene-note-warn">{text()}</p>}</Show>
       <Show when={contentScenesFailed()}>
         <p class="scene-note scene-note-warn">Couldn't read the machine's content folder</p>
@@ -166,7 +186,10 @@ function SceneList(props: { onOpen: (scene: OpenScene) => void }) {
       <Show when={!contentScenesFailed() && contentScenes().length === 0}>
         <p class="scene-note">No scenes in the machine's content folder</p>
       </Show>
-      <Show when={contentScenes().length > 0}>
+      <Show when={contentScenes().length > 0 && matching().length === 0}>
+        <p class="scene-note">Nothing matches "{filter().trim()}"</p>
+      </Show>
+      <Show when={matching().length > 0}>
         {/* Nothing stays selected, so that choosing a scene is what opens it, by mouse or by keyboard, every time */}
         <TreeView.Root
           class="scene-tree"
@@ -177,8 +200,11 @@ function SceneList(props: { onOpen: (scene: OpenScene) => void }) {
             const name = details.selectedValue[0]
             if (name !== undefined && contentScenes().includes(name)) open(name)
           }}
-          expandedValue={folders().filter((id) => !collapsed().includes(id))}
-          onExpandedChange={(details) => setCollapsed(folders().filter((id) => !details.expandedValue.includes(id)))}
+          // while filtering, every folder is open so that each match shows
+          expandedValue={words().length > 0 ? folders() : folders().filter((id) => !collapsed().includes(id))}
+          onExpandedChange={(details) => {
+            if (words().length === 0) setCollapsed(folders().filter((id) => !details.expandedValue.includes(id)))
+          }}
         >
           <TreeView.Tree>
             <For each={tree()}>{(node, index) => <SceneTreeNode node={node} indexPath={[index()]} onRename={setRenaming} onDelete={setDeleting} />}</For>

@@ -16,8 +16,17 @@ time: number,
  * Which cycle, counting from zero. With none, it's one from the middle of the scene, to show it as it looks partway
  * through play.
  */
-cycle: number | null, reference: ReferenceScene | null, } | { "type": "RenderClip", id: number, source: SceneSource, size: SceneSize, 
+cycle: number | null, reference: ReferenceScene | null, 
+/**
+ * What the scene's random choices come from, as each playback on the machine has its own. The same seed gives the
+ * same choices, so the moments of one play of the scene agree.
+ */
+seed: number, } | { "type": "RenderClip", id: number, source: SceneSource, size: SceneSize, 
 /**
  * Which cycle, counting from zero
  */
-cycle: number, reference: ReferenceScene | null, } | { "type": "PlaySound", sound: string, volume: number, skip: number, length: number | null, };
+cycle: number, reference: ReferenceScene | null, 
+/**
+ * As for `RenderScene`
+ */
+seed: number, } | { "type": "PlaySound", sound: string, volume: number, skip: number, length: number | null, };

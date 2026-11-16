@@ -5,7 +5,6 @@ import { Switch as Toggle } from '@ark-ui/solid/switch'
 import { createContext, createEffect, createMemo, createSignal, For, Match, Show, splitProps, Switch, useContext, type Accessor, type JSX, type Signal } from 'solid-js'
 import ScenePortal from './ScenePortal'
 import InfoTip from '../../components/InfoTip'
-import { contentSounds, playContentSound } from '../../state/contentSounds'
 import { Eye, EyeOff } from '../../components/icons'
 import type { Color } from '../../types/generated/Color'
 import { NAMED_COLORS } from '../../types/generated/namedColors'
@@ -154,23 +153,6 @@ export function Dropdown<T extends string>(props: {
       </ScenePortal>
       <Select.HiddenSelect />
     </Select.Root>
-  )
-}
-
-/** The sound a clip plays, from the machine's content folder, with a button to hear it on the machine at `volume` */
-export function SoundPicker(props: { lens: Lens<string>; volume: number }) {
-  // one that's gone from the folder is still shown, as the scene still names it
-  const options = () => {
-    const names = contentSounds().includes(props.lens.get()) ? contentSounds() : [props.lens.get(), ...contentSounds()]
-    return names.map((name) => ({ value: name, label: name }))
-  }
-  return (
-    <div class="scene-sound">
-      <Dropdown label="Sound" options={options()} value={props.lens.get()} onChange={props.lens.set} />
-      <button type="button" class="scene-button" aria-label={`Play ${props.lens.get()} on the machine`} onClick={() => playContentSound(props.lens.get(), props.volume)}>
-        ▶
-      </button>
-    </div>
   )
 }
 
