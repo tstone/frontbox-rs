@@ -58,8 +58,14 @@ pub struct ScenePlaybackCompleted {
   pub playback: PlaybackId,
 }
 
+/// What a system that plays scenes uses: opening, binding variables, playing, and checking what it sends
 pub mod prelude {
-  pub use frontbox_gfx::scene::EndBehavior;
+  pub use frontbox_gfx::animation::Curve;
+  pub use frontbox_gfx::prelude::*;
+  pub use frontbox_gfx::scene::{Content, EndBehavior, Timing, Value, VariableType};
 
-  pub use crate::{Completes, Scene, PlayableScene, SceneLayer, LedLayer, LedSurface, DisplayLayer, SoundLayer, ScenePlayer, SceneSystem, SceneSystemExt, ScenePlaybackCompleted};
+  pub use crate::{
+    Completes, DisplayLayer, LedLayer, LedSurface, PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted,
+    ScenePlayer, SceneSystem, SceneSystemExt, Sends, SentVariable, SoundLayer,
+  };
 }

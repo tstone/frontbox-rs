@@ -107,7 +107,7 @@ impl<C> PlayableScene<C> {
   }
 
   /// [`PlayableScene::variable`] for one that's already built
-  pub fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
+  pub(crate) fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
     let (name, value) = (name.into(), value.into());
     self.scene.warn_if_missing(&name, &value);
     self.variables.insert(name, value);

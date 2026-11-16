@@ -199,10 +199,10 @@ fn stop_clears_the_leds() {
 fn params_set_by_the_game() {
   let (context, addresses) = three_leds();
   let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(Prop::Variable("color".into())))));
-  let id = play(&context, PlayableScene::new(scene).variable("color", Rgba::red()));
+  let mut player = ScenePlayer::started(PlayableScene::new(scene).variable("color", Rgba::red()), &context.sys_ctx());
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
-  with_scenes(&context, |scenes| scenes.playback(id).unwrap().set_variable("color", Rgba::green()));
+  player.set_variable("color", Rgba::green(), &context.sys_ctx());
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::green()));
 }
 

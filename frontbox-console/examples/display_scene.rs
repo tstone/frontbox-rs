@@ -15,9 +15,8 @@ use std::io::Write;
 
 use frontbox_console::WebTracer;
 use frontbox_core::prelude::*;
-use frontbox_display::*;
+use frontbox_display::prelude::*;
 use frontbox_dmd::*;
-use frontbox_scene::*;
 
 #[tokio::main]
 async fn main() {

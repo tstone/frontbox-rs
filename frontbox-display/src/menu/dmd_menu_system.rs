@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
 use frontbox_core::prelude::*;
-use frontbox_gfx::animation::Curve;
-use frontbox_gfx::scene::{Content, Prop, Transform, Value, VariableType};
-use frontbox_scene::{
-  OpenError, PlayableScene, Scene, SceneLayer, ScenePlayer, Sends, SentVariable,
-};
+use frontbox_gfx::scene::{Prop, Transform};
+use frontbox_scene::OpenError;
+use frontbox_scene::prelude::*;
 #[cfg(feature = "sound")]
 use frontbox_sound::*;
 

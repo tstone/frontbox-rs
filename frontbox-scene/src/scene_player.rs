@@ -115,8 +115,9 @@ impl<C> ScenePlayer<C> {
     self.scene.set_variable(name, value);
   }
 
-  /// Moves a variable to `to` over `duration`, along `curve`, if it's playing: see [`Playback::ease_variable`]. Each time
-  /// it starts from here on, the variable is `to` from the top.
+  /// Moves a variable to `to` over `duration`, along `curve`, if it's playing. It moves from the value it was last set or
+  /// eased to, or else the scene's default; one with neither is set to `to` straight away. Each time it starts from here
+  /// on, the variable is `to` from the top.
   pub fn ease_variable(
     &mut self,
     name: impl Into<String>,

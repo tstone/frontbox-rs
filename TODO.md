@@ -16,6 +16,7 @@
 - Some kind of bundle that makes all the pinball things start up
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - "GamePhase" is a state, but "GameState" is not. Fix the naming
+- Pausable timers independent of active state
 
 ## Design Choices/Core
 

@@ -4,8 +4,7 @@ mod dmd_points_system;
 pub use dmd_attract_system::*;
 pub use dmd_points_system::*;
 
-use frontbox_gfx::scene::Content;
-use frontbox_scene::{Scene, SceneLayer, Sends};
+use frontbox_scene::prelude::*;
 
 /// Scene `name` from `content`, checked against what's sent to it, with each of its display layers at `z`. `None` if it
 /// can't be opened, which is logged.

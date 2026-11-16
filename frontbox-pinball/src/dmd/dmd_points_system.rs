@@ -1,7 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_display::content_with_bundled;
-use frontbox_gfx::scene::{Value, VariableType};
-use frontbox_scene::{PlayableScene, ScenePlayer, SentVariable, Sends};
+use frontbox_display::prelude::*;
 
 use crate::dmd::open_scene;
 use crate::{GameManager, GamePhase, GameState};
@@ -146,8 +144,6 @@ const TRANSITION_SENDS: Sends = Sends {
 
 #[cfg(test)]
 mod tests {
-  use frontbox_scene::Scene;
-
   use super::*;
 
   fn variable<'a>(variables: &'a [(String, Value)], name: &str) -> &'a Value {

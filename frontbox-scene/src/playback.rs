@@ -36,7 +36,7 @@ impl Playback {
   }
 
   /// Sets a variable, taking the place of the scene's default, and of any ease toward another value
-  pub fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
+  pub(crate) fn set_variable(&mut self, name: impl Into<String>, value: impl Into<Value>) {
     let (name, value) = (name.into(), value.into());
     self.scene.warn_if_missing(&name, &value);
     self.insert_variable(name, value);
@@ -50,7 +50,7 @@ impl Playback {
 
   /// Moves a variable from where it is now to `to` over `duration`, along `curve`. Where it is now is the value it was
   /// last set or eased to, or else the scene's default. One with neither is set to `to` straight away.
-  pub fn ease_variable(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve) {
+  pub(crate) fn ease_variable(&mut self, name: impl Into<String>, to: impl Into<Value>, duration: Duration, curve: Curve) {
     let name = name.into();
     let to = to.into();
     let from = self.variables.get(&name).or_else(|| self.scene.variables.get(&name)).cloned();

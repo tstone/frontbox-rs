@@ -13,3 +13,9 @@ pub use display_definition::*;
 pub use display_device::*;
 pub use display_system::*;
 pub use initials_entry_system::*;
+
+/// What an app with a display uses: the system and its displays, the content scenes open from, and the scene prelude
+pub mod prelude {
+  pub use crate::{DisplayDefinition, DisplaySystem, InitialsEntered, InitialsEntrySystem, content_with_bundled};
+  pub use frontbox_scene::prelude::*;
+}

@@ -1,8 +1,6 @@
 use frontbox_core::prelude::*;
-use frontbox_display::content_with_bundled;
 use frontbox_display::menu::DmdMenuSystem;
-use frontbox_gfx::scene::{Value, VariableType};
-use frontbox_scene::{PlayableScene, Scene, ScenePlayer, SentVariable, Sends};
+use frontbox_display::prelude::*;
 
 use crate::dmd::open_scene;
 use crate::{GameEnding, GamePhase, PlayerEntry};
