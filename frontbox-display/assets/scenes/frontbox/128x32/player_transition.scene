@@ -1,0 +1,73 @@
+Scene(
+  version: 2,
+  variables: {
+    "center": Value("player_3"),
+  },
+  values: {
+    "player_1": Vec2(Fixed(11.0, 29.0)),
+    "player_2": Vec2(Fixed(43.0, 29.0)),
+    "player_3": Vec2(Fixed(75.0, 29.0)),
+    "player_4": Vec2(Fixed(107.0, 29.0)),
+  },
+  timing: (
+    duration: 0.3,
+    cycle: Once,
+  ),
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Burst",
+        fill: (
+          base: Gradient(
+            stops: [
+              (
+                at: 0.0,
+                color: Fixed(255, 255, 255, 255),
+              ),
+              (
+                at: 1.0,
+                color: Fixed(0, 0, 0, 255),
+              ),
+            ],
+            style: Radial,
+          ),
+          adjust: [
+            Opacity(Modulated(
+              envelope: (
+                attack: (
+                  curve: Linear,
+                  reversed: true,
+                ),
+              ),
+              spread: Float(0.0, 1.0),
+              rate: 1.0,
+              phase: Fixed(0.0),
+            )),
+          ],
+        ),
+        region: (
+          transform: [
+            Translate(Variable("center")),
+            Scale(
+              amount: Modulated(
+                envelope: (
+                  attack: (
+                    curve: EaseOut,
+                  ),
+                ),
+                spread: Float(0.25, 5.0),
+                rate: 1.0,
+                phase: Fixed(0.0),
+              ),
+              anchor: Fixed(0.0, 0.0),
+            ),
+          ],
+          base: Circle(
+            radius: Fixed(4.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

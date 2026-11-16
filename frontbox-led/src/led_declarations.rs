@@ -5,11 +5,22 @@ use image::Rgba;
 pub struct LedDeclarations<'a> {
   pub pairings: Vec<(&'a LedAddress, Rgba<u8>)>,
   pub z_index: i8,
+  /// The colors flash on and off rather than staying on
+  pub flashing: bool,
 }
 
 impl<'a> LedDeclarations<'a> {
   pub fn new(pairings: Vec<(&'a LedAddress, Rgba<u8>)>, z_index: i8) -> Self {
-    Self { pairings, z_index }
+    Self {
+      pairings,
+      z_index,
+      flashing: false,
+    }
+  }
+
+  /// Flash the colors on and off, in step with every other flashing declaration
+  pub fn flashing(self) -> Self {
+    Self { flashing: true, ..self }
   }
 
   /// Update all defined colors to the provided color, leaving any uncolored LEDs unchanged.
@@ -21,7 +32,7 @@ impl<'a> LedDeclarations<'a> {
       .collect();
     Self {
       pairings: recolored_pairings,
-      z_index: self.z_index,
+      ..self
     }
   }
 }

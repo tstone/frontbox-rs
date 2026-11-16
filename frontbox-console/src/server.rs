@@ -12,13 +12,11 @@ use std::net::SocketAddr;
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::console_hub::{ConsoleHub, Subscription};
-use crate::protocol::{ClientMessage, ImageInfo, SceneSource};
+use crate::protocol::{ClientMessage, FontInfo, ImageInfo, SceneSource};
 use crate::scene_render::scene_file;
 
 /// The largest image a client can add
 const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
-
-const NO_CONTENT_FOLDER: &str = "this machine has no content folder";
 
 /// The built SolidJS app
 #[derive(RustEmbed)]
@@ -36,6 +34,9 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
       get(content_image).put(add_content_image).layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
     )
     .route("/content/image-info/{*name}", get(content_image_info))
+    .route("/content/sounds", get(content_sounds))
+    .route("/content/fonts", get(content_fonts))
+    .route("/content/sounds/{*name}", get(content_sound))
     .route("/content/scenes", get(content_scenes))
     .route(
       "/content/scenes/{*name}",
@@ -71,12 +72,18 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
       init,
       events: mut rx,
       mut leds,
+      mut displays,
     }) = hub.subscribe()
     else {
       return;
     };
     if socket.send(Message::Text(init)).await.is_err() {
       return;
+    }
+    for frame in hub.display_frames() {
+      if socket.send(Message::Binary(frame)).await.is_err() {
+        return;
+      }
     }
 
     loop {
@@ -112,6 +119,20 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
           }
         }
 
+        frame = displays.recv() => {
+          let frames = match frame {
+            Ok(frame) => vec![frame],
+            // each is a whole frame, so after skipping some, the newest of each display is all that's needed
+            Err(RecvError::Lagged(_)) => hub.display_frames(),
+            Err(RecvError::Closed) => return,
+          };
+          for frame in frames {
+            if socket.send(Message::Binary(frame)).await.is_err() {
+              return;
+            }
+          }
+        }
+
         Some(clip) = clips.recv() => {
           if socket.send(clip).await.is_err() {
             return;
@@ -128,18 +149,18 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
                 return;
               }
             }
-            Ok(ClientMessage::RenderScene { source, size, time, cycle }) => {
-              if let Some(reply) = hub.render_scene(source, size, time, cycle).await
+            Ok(ClientMessage::RenderScene { source, size, time, cycle, reference, seed }) => {
+              if let Some(reply) = hub.render_scene(source, size, time, cycle, reference, seed).await
                 && socket.send(Message::Text(reply)).await.is_err()
               {
                 return;
               }
             }
-            Ok(ClientMessage::RenderClip { id, source, size, cycle }) => {
+            Ok(ClientMessage::RenderClip { id, source, size, cycle, reference, seed }) => {
               let hub = hub.clone();
               let clip_sender = clip_sender.clone();
               tokio::spawn(async move {
-                if let Some(clip) = hub.render_clip(id, source, size, cycle).await {
+                if let Some(clip) = hub.render_clip(id, source, size, cycle, reference, seed).await {
                   let _ = clip_sender.send(clip).await;
                 }
               });
@@ -174,9 +195,7 @@ async fn plane_image(Path(index): Path<usize>, State(hub): State<ConsoleHub>) ->
 
 /// The name of every image in the content folder. An app without one has none.
 async fn content_images(State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return Json(Vec::<String>::new()).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.image_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
@@ -188,7 +207,7 @@ async fn content_images(State(hub): State<ConsoleHub>) -> Response {
 
 /// An image from the content folder, read from disk on each request so it can be edited while the machine runs
 async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(Ok(path)) = hub.content().map(|content| content.image_path(&name)) else {
+  let Ok(path) = hub.content().image_path(&name) else {
     return StatusCode::NOT_FOUND.into_response();
   };
   match tokio::fs::read(&path).await {
@@ -203,9 +222,7 @@ async fn content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 /// The size and frames of an image in the content folder. This decodes it if nothing has yet. The reply to a failure is
 /// text for showing to whoever chose it.
 async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return StatusCode::NOT_FOUND.into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.picture(&name)).await {
     Ok(Ok(picture)) => Json(ImageInfo {
       width: picture.width(),
@@ -227,17 +244,17 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
 
 /// Adds an image to the content folder. The reply to a failure is text for showing to whoever is adding it.
 async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>, bytes: Bytes) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
   match added {
     Ok(Ok(())) => StatusCode::CREATED.into_response(),
     Ok(Err(err)) => {
       let status = match err {
-        ContentError::Taken(_) => StatusCode::CONFLICT,
-        ContentError::Write { .. } | ContentError::Read { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        ContentError::BadName(_) | ContentError::Decode { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+        ContentError::Taken(_) | ContentError::NoFolder => StatusCode::CONFLICT,
+        ContentError::Write { .. } | ContentError::Read { .. } | ContentError::ReadFont { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        ContentError::BadName(_) | ContentError::Decode { .. } | ContentError::BadFontName(_) | ContentError::NotAFont(_) => {
+          StatusCode::UNPROCESSABLE_ENTITY
+        }
       };
       (status, err.to_string()).into_response()
     }
@@ -248,11 +265,56 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
   }
 }
 
+/// The name of every sound in the content folder. An app without one has none.
+async fn content_sounds(State(hub): State<ConsoleHub>) -> Response {
+  let content = hub.content();
+  match tokio::task::spawn_blocking(move || content.sound_names()).await {
+    Ok(names) => Json(names).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// Every font a scene can use: those frontbox comes with, and those in the content folder. Loads any that haven't been.
+async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
+  let content = hub.content();
+  let fonts = move || {
+    let info = |name: String| {
+      let font = content.font(&name).ok();
+      let pixel_size = font.as_ref().and_then(|font| font.pixel_size());
+      let cap_height = font.zip(pixel_size).and_then(|(font, size)| font.cap_height(size)).map(f32::round);
+      FontInfo { name, pixel_size, cap_height }
+    };
+    content.font_names().into_iter().map(info).collect::<Vec<_>>()
+  };
+  match tokio::task::spawn_blocking(fonts).await {
+    Ok(fonts) => Json(fonts).into_response(),
+    Err(err) => {
+      log::error!(target: "frontbox::console", "Scanning the content folder stopped: {err}");
+      StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+  }
+}
+
+/// A sound from the content folder, read from disk on each request so it can be edited while the machine runs
+async fn content_sound(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
+  let Ok(path) = hub.content().sound_path(&name) else {
+    return StatusCode::NOT_FOUND.into_response();
+  };
+  match tokio::fs::read(&path).await {
+    Ok(bytes) => {
+      let mime = mime_guess::from_path(&path).first_or_octet_stream();
+      ([(header::CONTENT_TYPE, mime.to_string())], bytes).into_response()
+    }
+    Err(_) => StatusCode::NOT_FOUND.into_response(),
+  }
+}
+
 /// The name of every scene in the content folder. An app without one has none.
 async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return Json(Vec::<String>::new()).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.scene_names()).await {
     Ok(names) => Json(names).into_response(),
     Err(err) => {
@@ -265,9 +327,7 @@ async fn content_scenes(State(hub): State<ConsoleHub>) -> Response {
 /// A scene's file as RON, read from disk on each request so it can be edited while the machine runs. The reply to a
 /// failure is text for showing to whoever is opening it.
 async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.read_scene(&name)).await {
     Ok(Ok(ron)) => ron.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
@@ -291,9 +351,7 @@ async fn save_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: 
 
 /// Removes a scene from the content folder. The reply to a failure is text for showing to whoever is deleting it.
 async fn delete_content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   match tokio::task::spawn_blocking(move || content.delete_scene(&name)).await {
     Ok(Ok(())) => StatusCode::NO_CONTENT.into_response(),
     Ok(Err(err)) => scene_file_failure(err),
@@ -311,9 +369,7 @@ async fn write_scene(
   written: StatusCode,
   write: fn(&Content, &str, &str) -> Result<(), SceneFileError>,
 ) -> Response {
-  let Some(content) = hub.content() else {
-    return (StatusCode::CONFLICT, NO_CONTENT_FOLDER).into_response();
-  };
+  let content = hub.content();
   let ron = match scene_file(source) {
     Ok(ron) => ron,
     Err(err) => return (StatusCode::UNPROCESSABLE_ENTITY, err).into_response(),
@@ -335,7 +391,7 @@ fn scene_file_failure(err: SceneFileError) -> Response {
     {
       StatusCode::NOT_FOUND
     }
-    SceneFileError::Taken(_) => StatusCode::CONFLICT,
+    SceneFileError::Taken(_) | SceneFileError::NoFolder => StatusCode::CONFLICT,
     SceneFileError::Read { .. } | SceneFileError::Write { .. } | SceneFileError::Delete { .. } => {
       StatusCode::INTERNAL_SERVER_ERROR
     }
@@ -362,32 +418,33 @@ async fn static_handler(uri: Uri) -> Response {
   }
 }
 
-/// Switches a client has closed. When its session ends they're opened again, so a closed tab can't leave a switch
-/// held closed in the game.
+/// Switches a client has set away from their initial state (open for a switch with none). When its session ends
+/// they're put back, so a closed tab can't leave a switch held in the game.
 struct HeldSwitches {
   hub: ConsoleHub,
-  closed: HashSet<usize>,
+  held: HashSet<usize>,
 }
 
 impl HeldSwitches {
   fn new(hub: ConsoleHub) -> Self {
     Self {
       hub,
-      closed: HashSet::new(),
+      held: HashSet::new(),
     }
   }
 
   fn handle(&mut self, message: ClientMessage) {
     match message {
       ClientMessage::SetSwitch { switch_id, closed } => {
-        if closed {
-          self.closed.insert(switch_id);
+        if closed == self.hub.initially_closed(switch_id) {
+          self.held.remove(&switch_id);
         } else {
-          self.closed.remove(&switch_id);
+          self.held.insert(switch_id);
         }
         self.hub.set_switch(switch_id, closed);
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
+      ClientMessage::PlaySound { sound, volume, skip, length } => self.hub.play_sound(sound, volume, skip, length),
       // replied to by the session, which has the socket
       ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } | ClientMessage::RenderClip { .. } => {}
     }
@@ -396,8 +453,8 @@ impl HeldSwitches {
 
 impl Drop for HeldSwitches {
   fn drop(&mut self) {
-    for switch_id in self.closed.drain() {
-      self.hub.set_switch(switch_id, false);
+    for switch_id in self.held.drain() {
+      self.hub.set_switch(switch_id, self.hub.initially_closed(switch_id));
     }
   }
 }

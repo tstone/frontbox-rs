@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::scene::Bounds;
 
 /// The kind of surface a scene is drawn on. Its size comes from the device, through
-/// [`FrameContext::size`](crate::scene::FrameContext::size).
+/// [`LayerFrame::size`](crate::scene::LayerFrame::size).
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Surface {

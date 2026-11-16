@@ -271,7 +271,7 @@ impl RgbaColor for Rgba<u8> {
     Rgba([140, 255, 0, 255])
   }
   fn orange() -> Self {
-    Rgba([255, 70, 0, 255])
+    Rgba([255, 110, 0, 255])
   }
   fn navy() -> Self {
     Rgba([0, 10, 120, 255])
@@ -280,7 +280,7 @@ impl RgbaColor for Rgba<u8> {
     Rgba([40, 255, 90, 255])
   }
   fn amber() -> Self {
-    Rgba([255, 115, 0, 255])
+    Rgba([255, 130, 0, 255])
   }
   fn gold() -> Self {
     Rgba([255, 155, 0, 255])

@@ -17,7 +17,16 @@ stops: Array<Stop>, style: GradientStyle, } } | { "Image": {
  */
 name: string, 
 /**
- * FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+ * Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
  * count gives each frame equal time. Clamped to the last frame.
  */
-frame?: Prop<number>, } };
+frame?: Prop<number>, } } | { "Spritesheet": { 
+/**
+ * Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+ */
+name: string, rows: number, columns: number, 
+/**
+ * Which sprite, counting across each row from the top left, 0 if not set. Truncated to a whole number like an
+ * `Image`'s frame, and clamped to the last sprite.
+ */
+sprite?: Prop<number>, } };

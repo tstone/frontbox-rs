@@ -27,6 +27,21 @@ impl SwitchOpened {
   }
 }
 
+/// Emitted once at boot when any switch isn't in its initial state (`SwitchDefinition::initial_state`), such as a
+/// stuck flipper button or a coin door left open. Not emitted again after a [`MachineReconnected`].
+#[derive(serde::Serialize, Event, Debug, Clone)]
+pub struct BootSwitchMisalignmentFound {
+  pub switches: Vec<MisalignedSwitch>,
+}
+
+/// A switch found at boot in a different state from its initial state
+#[derive(serde::Serialize, Debug, Clone)]
+pub struct MisalignedSwitch {
+  pub switch: Switch,
+  /// Its initial state, which it wasn't in
+  pub expected: SwitchState,
+}
+
 /// Emitted when the connection to the machine's hardware is lost
 #[derive(serde::Serialize, Event, Debug, Clone)]
 pub struct MachineDisconnected;

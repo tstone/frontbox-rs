@@ -3,9 +3,9 @@
 export const NAMED_COLORS = [
   { name: 'red', hex: '#ff0000' },
   { name: 'coral', hex: '#ff5032' },
-  { name: 'orange', hex: '#ff4600' },
+  { name: 'orange', hex: '#ff6e00' },
   { name: 'peach', hex: '#ff693c' },
-  { name: 'amber', hex: '#ff7300' },
+  { name: 'amber', hex: '#ff8200' },
   { name: 'gold', hex: '#ff9b00' },
   { name: 'yellow', hex: '#ffff00' },
   { name: 'olive', hex: '#6e6400' },

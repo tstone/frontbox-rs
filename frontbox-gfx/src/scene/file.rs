@@ -3,8 +3,7 @@
 //! Files are written with RON's `implicit_some` and `unwrap_variant_newtypes` extensions, so they only state what
 //! they change and avoid double parentheses. Fields that aren't written take their default.
 //!
-//! The top-level type, such as `LedScene` or `DmdScene`, is defined by the crate that owns it. Each is wrapped in a
-//! variant named for its kind, so a file says what it is and one kind can't be loaded as another.
+//! The top-level type, `Scene`, is defined in `frontbox-scene`.
 
 use std::fmt;
 
@@ -14,13 +13,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 /// The format version this build writes, and the newest it reads
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// Scene file extension, in lowercase
 pub const EXTENSION: &str = "scene";
 
-/// Parses a scene file without validating it. Call [`GfxComposition::check`](crate::scene::GfxComposition::check) on
-/// the result.
+/// Parses a scene file without validating it. The scene type has a `check` to call on the result.
 pub fn load<T: DeserializeOwned>(source: &str) -> Result<T, FormatError> {
   options().from_str(source).map_err(FormatError::Read)
 }
@@ -80,11 +78,11 @@ mod tests {
   use super::*;
   use crate::animation::{Curve, Cycle};
   use crate::layout::Line;
-  use crate::scene::test_scene::Scene;
+  use crate::scene::test_scene::{Composition, Scene};
   use crate::scene::*;
 
   fn load(source: &str) -> Result<Scene, FormatError> {
-    let composition: GfxComposition = super::load(source)?;
+    let composition: Composition = super::load(source)?;
     composition.check().map_err(|err| FormatError::Invalid(err.to_string()))?;
     Ok(Scene::with_composition(Surface::Area, composition))
   }
@@ -94,11 +92,11 @@ mod tests {
   }
 
   fn sample_grid(scene: &Scene) -> Vec<Rgba<u8>> {
-    let params = Params::new();
+    let variables = Variables::new();
     [0.0, 0.5, 1.0, 1.5]
       .into_iter()
       .flat_map(|time| {
-        let frame = FrameContext { time, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+        let frame = LayerFrame { time, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
         (0..20)
           .flat_map(|y| (0..40).map(move |x| Sample::new(Vec2::new(x as f32 * 2.5, y as f32 * 2.5), 1.0)))
           .map(move |s| scene.sample(&s, &frame))
@@ -109,7 +107,7 @@ mod tests {
   /// Uses every type in a definition
   fn everything() -> Scene {
     let mut scene = Scene::new(Surface::Area, vec![
-        Layer::new(Fill::new(FillNode::Solid(Prop::Param("background".into())))),
+        Layer::new(Fill::new(FillNode::Solid(Prop::Variable("background".into())))),
         Layer::new(
           Fill::new(FillNode::Gradient {
             stops: vec![
@@ -119,15 +117,15 @@ mod tests {
             style: GradientStyle::Radial,
           })
           .transform(Transform::Rotate(90.0.into()))
-          .adjust(ColorAdjust::HueShift(Prop::Param("hue".into())))
+          .adjust(ColorAdjust::HueShift(Prop::Variable("hue".into())))
           .adjust(ColorAdjust::Opacity(0.75.into()))
           .adjust(ColorAdjust::Brightness(1.25.into()))
           .adjust(ColorAdjust::Contrast(1.5.into())),
         )
         .region(
           Shape::new(ShapeNode::circle(0.5))
-            .transform(Transform::Scale(Vec2::splat(40.0).into()))
-            .transform(Transform::Translate(Prop::Track(Track {
+            .transform(Transform::Scale(40.0.into()))
+            .transform(Transform::Translate(Prop::Keyframes(Keyframes {
               keys: vec![
                 Key::new(0.0, Vec2::new(30.0, 25.0), Curve::Linear),
                 Key::new(1.0, Vec2::new(70.0, 25.0), Curve::EaseInOut),
@@ -135,29 +133,56 @@ mod tests {
               cycle: Cycle::Forever,
             }))),
         ),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into()))).region(Shape::new(
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 0, 255, 255])).into())).adjust(ColorAdjust::Opacity(
+          Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut)), spread: Spread::Float(0.5, 1.0), rate: 2.0, phase: Box::new(Prop::Variable("offset".into())) }),
+        )))
+        .region(Shape::new(
           ShapeNode::Polygon {
             points: vec![Vec2::new(0.0, 0.0).into(), Vec2::new(20.0, 0.0).into(), Vec2::new(10.0, 15.0).into()],
           },
         )),
-        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(Shape::new(
-          ShapeNode::Ring { inner_radius: 3.0.into(), thickness: 1.0.into() },
-        )),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 0, 255])).into()))).region(
+          Shape::new(ShapeNode::circle(3.0))
+            .adjust(ShapeAdjust::Stroke { width: 1.0.into(), align: StrokeAlign::Outside, color: None })
+            .adjust(ShapeAdjust::Stroke { width: 0.25.into(), align: StrokeAlign::Centered, color: Some(Color(Rgba([255, 255, 255, 255])).into()) }),
+        ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 0, 255])).into())))
           .hidden()
-          .region(Shape::new(ShapeNode::Pinwheel { blades: 4.0.into(), blade_fraction: 0.25.into() })),
+          .region(
+            Shape::new(ShapeNode::Star { radius: 20.0.into(), legs: 1.0.into(), leg_width: 0.4.into() })
+              .transform(Transform::Bulge(0.1.into()))
+              .transform(Transform::Revolve { center: Vec2::new(0.0, -20.0).into(), angle: 360.0.into(), count: 4.0.into() })
+              .transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
+          ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::Diamond { width: 10.0.into(), height: 20.0.into() })
+            .transform(Transform::Bulge((-0.1).into()))
+            .transform(Transform::Round(1.0.into()))
+            .transform(Transform::Shift { amount: (-0.4).into(), rotation: 0.0.into() })
+            .transform(Transform::Mirror { center: Vec2::new(8.0, 0.0).into(), rotation: 20.0.into() })
+            .transform(Transform::Translate(Vec2::new(30.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 128, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::Star { radius: 15.0.into(), legs: 5.0.into(), leg_width: 0.4.into() })
+            .transform(Transform::Bisect { center: Vec2::new(0.0, 2.0).into(), rotation: 45.0.into() })
+            .transform(Transform::Translate(Vec2::new(70.0, 25.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 255, 255, 255])).into()))).region(
+          Shape::new(ShapeNode::text("BALL 1", "fonts/pixel.ttf", 8.0, Vec2::new(30.0, 8.0)))
+            .transform(Transform::Translate(Vec2::new(19.0, 9.0).into())),
+        ),
+        Layer::new(Fill::new(FillNode::Solid(Color(Rgba([128, 255, 0, 255])).into())))
+          .region(Shape::new(ShapeNode::Chevron { width: 20.0.into(), height: 10.0.into(), notch: 0.4.into() }).transform(Transform::Translate(Vec2::new(50.0, 40.0).into()))),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 0, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::circle(15.0)).transform(Transform::Translate(Vec2::new(50.0, 25.0).into())),
-            0.25,
-            1.0,
+            Prop::Keyframes(Keyframes::new(vec![Key::new(0.25, 0.0, Curve::Linear), Key::new(1.0, 1.0, Curve::Linear)], Cycle::Once)),
           )))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([0, 255, 255, 255])).into()))).region(
           Shape::new(ShapeNode::circle(4.0)).transform(Transform::Translate(Prop::Sweep(Sweep::new(
             Shape::new(ShapeNode::Polyline { points: vec![Vec2::ZERO.into(), Vec2::new(10.0, 0.0).into()] }),
-            0.0,
-            1.0,
+            Prop::Variable("lap".into()),
           )))),
         ),
         Layer::new(Fill::new(FillNode::Solid(Color(Rgba([255, 0, 255, 255])).into()))).region(
@@ -168,18 +193,18 @@ mod tests {
                 BezierPoint { point: Vec2::new(10.0, 0.0).into(), handle: Vec2::new(0.0, -5.0).into() },
               ],
             }),
-            0.0,
-            1.0,
+            Prop::Modulated(Modulated { envelope: Envelope::new(EnvelopeCurve::new(Curve::Linear)).decay(EnvelopeCurve::new(Curve::Linear).reversed()), spread: Spread::Float(0.0, 1.0), rate: 1.0, phase: Box::new(0.0.into()) }),
           )))),
         ),
     ]);
-    scene.params.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+    scene.variables.insert("background".into(), Value::Color(Color(Rgba([16, 16, 16, 255]))));
+    scene.variables.insert("lap".into(), Value::Float(0.5));
     scene.timing(Timing::new(1.0, Cycle::Forever))
   }
 
   #[test]
   fn a_sweep_only_loads_on_a_position() {
-    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), start: 0.0, end: 1.0)";
+    let sweep = "Sweep(path: (base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0))), position: Fixed(0.5))";
     let scene = |transform: &str, radius: &str, color: &str| {
       format!(
         "(timing: (duration: 1.0), layers: [(
@@ -200,6 +225,23 @@ mod tests {
       let error = load(&source).unwrap_err().to_string();
       assert!(error.contains("only a position"), "{error}");
     }
+  }
+
+  #[test]
+  fn a_scale_loads_with_an_anchor_or_only_its_amount() {
+    let scale = |transform: &str| {
+      let scene: Scene = load(&format!("(timing: (duration: 1.0), layers: [(fill: (transform: [{transform}], base: Solid(Fixed(255, 0, 0, 255))))])")).unwrap();
+      let Some(Transform::Scale(scaling)) = scene.layers[0].fill.transform.first().cloned() else {
+        panic!("{scene:?}");
+      };
+      scaling
+    };
+    let only_amount = scale("Scale(Fixed(2.0))");
+    assert!(matches!((only_amount.amount, only_amount.anchor), (Prop::Fixed(2.0), Prop::Fixed(Vec2::ZERO))));
+    let anchored = scale("Scale(amount: Fixed(2.0), anchor: Fixed((1.0, -1.0)))");
+    assert!(matches!(anchored.anchor, Prop::Fixed(anchor) if anchor == Vec2::new(1.0, -1.0)));
+    let written = super::save(&Transform::Scale(Scaling::from(2.0))).unwrap();
+    assert!(matches!(super::load::<Transform>(&written), Ok(Transform::Scale(_))), "{written}");
   }
 
   #[test]
@@ -248,6 +290,43 @@ mod tests {
   }
 
   #[test]
+  fn modulated_props_read_and_write() {
+    let source = "(timing: (duration: 2.0), layers: [(fill: (base: Solid(Modulated(
+      envelope: (attack: (curve: EaseIn, reversed: true), decay: (curve: BounceOut)),
+      spread: Color(hue: (0.0, 120.0), brightness: (0.5, 1.0)),
+      rate: 0.5,
+      phase: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 2.0, value: 1.0)]),
+    ))))])";
+    let written = save(&load(source).unwrap()).unwrap();
+    let loaded = load(&written).unwrap();
+    let FillNode::Solid(Prop::Modulated(modulated)) = &loaded.layers[0].fill.base else {
+      panic!("{written}");
+    };
+    let spread = Spread::Color { hue: (0.0, 120.0), brightness: (0.5, 1.0), alpha: (1.0, 1.0) };
+    let envelope = Envelope::new(EnvelopeCurve::new(Curve::EaseIn).reversed()).decay(EnvelopeCurve::new(Curve::BounceOut));
+    assert_eq!((&modulated.envelope, &modulated.spread, modulated.rate), (&envelope, &spread, 0.5));
+    let Prop::Keyframes(phase) = &*modulated.phase else {
+      panic!("{written}");
+    };
+    assert_eq!(phase.keys.iter().map(|key| (key.at, key.value)).collect::<Vec<_>>(), [(0.0, 0.0), (2.0, 1.0)]);
+  }
+
+  #[test]
+  fn a_modulated_with_no_phase_starts_at_the_start_of_its_wave() {
+    let scene = load("(timing: (duration: 1.0), layers: [(fill: (base: Solid(Modulated(
+      envelope: (attack: (curve: Linear)), spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)), rate: 1.0,
+    ))))])");
+    let scene = scene.unwrap();
+    let FillNode::Solid(Prop::Modulated(modulated)) = &scene.layers[0].fill.base else {
+      panic!("{scene:?}");
+    };
+    assert!(matches!(*modulated.phase, Prop::Fixed(0.0)));
+    assert_eq!(modulated.envelope, Envelope::new(EnvelopeCurve::new(Curve::Linear)));
+    let written = save(&scene).unwrap();
+    assert!(!written.contains("decay") && !written.contains("reversed"), "{written}");
+  }
+
+  #[test]
   fn round_trip_samples_the_same() {
     let scene = everything();
     let written = save(&scene).unwrap();
@@ -271,9 +350,9 @@ mod tests {
     .unwrap();
     scene.surface = Surface::Sequence;
 
-    let params = Params::new();
+    let variables = Variables::new();
     let line = Line::new(3);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
     let colors: Vec<_> = line.samples().map(|s| scene.sample(&s, &frame)).collect();
     assert_eq!(colors[0], Rgba([255, 0, 0, 255]));
     assert_eq!(colors[2], Rgba([0, 0, 255, 255]));
@@ -301,41 +380,37 @@ mod tests {
     let scene = load(
       "(layers: [
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ellipse(r1: Fixed(2.0), r2: Fixed(10.0)))),
-        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Ring(radius: Fixed(3.0), thickness: Fixed(1.0)))),
-        (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Pinwheel(blades: Fixed(4.0), balance: Fixed(0.25)))),
         (fill: (base: Solid(Fixed(255, 0, 0, 255))), shape: (base: Route(points: []))),
       ])",
     )
     .unwrap();
     let base = |index: usize| &scene.layers[index].region.as_ref().unwrap().base;
     assert!(matches!(base(0), ShapeNode::Ellipse { rx: Prop::Fixed(10.0), ry: Prop::Fixed(2.0) }));
-    assert!(matches!(base(1), ShapeNode::Ring { inner_radius: Prop::Fixed(3.0), .. }));
-    assert!(matches!(base(2), ShapeNode::Pinwheel { blade_fraction: Prop::Fixed(0.25), .. }));
-    assert!(matches!(base(3), ShapeNode::Polyline { .. }));
+    assert!(matches!(base(1), ShapeNode::Polyline { .. }));
 
     let written = save(&scene).unwrap();
-    assert!(["rx:", "inner_radius:", "blade_fraction:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
+    assert!(["rx:", "Polyline("].iter().all(|name| written.contains(name)), "{written}");
   }
 
   #[test]
   fn an_animated_image_keeps_its_frame_when_written_and_read() {
-    let frame = Track {
+    let frame = Keyframes {
       keys: vec![Key::new(0.0, 0.0, Curve::Linear), Key::new(1.0, 2.0, Curve::Linear)],
       cycle: Default::default(),
     };
-    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Track(frame)) };
+    let image = FillNode::Image { name: "a.gif".into(), frame: Some(Prop::Keyframes(frame)) };
     let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]).timing(Timing::new(1.0, Cycle::Once));
     let read = load(&save(&scene).unwrap()).unwrap();
 
     let first = Rgba([255, 0, 0, 255]);
     let last = Rgba([0, 0, 255, 255]);
     let art = [first, first, last].map(|color| image::RgbaImage::from_pixel(1, 1, color));
-    let (mut images, params) = (Images::new(), Params::new());
-    images.insert("a.gif", Picture::animated(art, 0.3));
+    let (mut assets, variables) = (Assets::new(), Variables::new());
+    assets.insert_picture("a.gif", Picture::animated(art, 0.3));
 
     let size = Vec2::new(1.0, 1.0);
     let at = Sample::new(Vec2::splat(0.5), 0.1);
-    let color = |scene: &Scene, time| scene.sample(&at, &FrameContext { time, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None });
+    let color = |scene: &Scene, time| scene.sample(&at, &LayerFrame { time, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() });
     for time in [0.0, 0.4, 1.0] {
       assert_eq!(color(&read, time), color(&scene, time));
     }
@@ -353,10 +428,10 @@ mod tests {
     assert_eq!(read.image_names().collect::<Vec<_>>(), ["dmd/title.png"]);
 
     let art = image::RgbaImage::from_fn(2, 2, |x, _| if x == 0 { Rgba([255, 0, 0, 255]) } else { Rgba([0, 0, 255, 255]) });
-    let (mut images, params) = (Images::new(), Params::new());
-    images.insert("dmd/title.png", Picture::new(art));
+    let (mut assets, variables) = (Assets::new(), Variables::new());
+    assets.insert_picture("dmd/title.png", Picture::new(art));
     let size = Vec2::new(2.0, 2.0);
-    let frame = FrameContext { time: 0.0, playback_seed: 0, params: &params, images: &images, size, surface: scene.surface, visits: None };
+    let frame = LayerFrame { time: 0.0, playback_seed: 0, variables: &variables, assets: &assets, size, surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
     let at = Sample::new(Vec2::new(1.5, 0.5), 0.5);
     assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
     assert_eq!(read.sample(&at, &frame), Rgba([0, 0, 255, 255]));
@@ -383,7 +458,7 @@ mod tests {
   fn refuses_keyframes_with_no_timing() {
     let result = load(
       r#"(
-        layers: [(fill: (base: Solid(Track(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
+        layers: [(fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))]))))],
       )"#,
     );
     assert!(matches!(result, Err(FormatError::Invalid(_))), "{result:?}");
@@ -432,7 +507,7 @@ mod tests {
       traversal("path", TraversalAlgorithm::ShortestPath { to: NodeRef::name("8"), wander: 0.5.into() }),
       traversal("fan", TraversalAlgorithm::FanOut { to: NodeRef::name("7"), angle: 90.0.into(), count: 2.0.into(), wander: 0.5.into() }),
       traversal("growth", TraversalAlgorithm::Growth { to: NodeRef::name("6"), reach: 25.0.into(), density: 2.0.into(), branching: 0.5.into(), wander: 0.5.into() }),
-      Traversal::new("search", NodeRef::Nearest(Prop::Param("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Param("speed".into())),
+      Traversal::new("search", NodeRef::Nearest(Prop::Variable("hit".into())), TraversalAlgorithm::AStar { to: NodeRef::name("0") }, Prop::Variable("speed".into())),
       Traversal::new("walk", NodeRef::name("0"), TraversalAlgorithm::RandomWalk, Speed::Duration(None)),
     ];
     let shown = VisitResponse {
@@ -456,17 +531,16 @@ mod tests {
 
   /// Colors on a 3 by 3 graph of nodes "0" to "8", 20 apart, over a few moments
   fn sample_graph(scene: &Scene) -> Vec<Rgba<u8>> {
-    let params = Params::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
+    let variables = Variables::from([("hit".into(), Value::Vec2(Vec2::new(45.0, 45.0))), ("speed".into(), Value::Float(3.0))]);
     let samples: Vec<Sample> = (0..9).map(|i| Sample::new(Vec2::new((i % 3) as f32 * 20.0, (i / 3) as f32 * 20.0), 1.0).at_node(i)).collect();
     let nodes = samples.iter().enumerate().map(|(i, sample)| GraphNode::new(i.to_string(), sample.pos)).collect();
     let graph = Graph::build(nodes);
     [0.0, 0.3, 0.8, 1.5, 2.6]
       .into_iter()
       .flat_map(|time| {
-        let frame = FrameContext { time, playback_seed: 3, params: &params, images: Images::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None };
+        let frame = LayerFrame { time, playback_seed: 3, variables: &variables, assets: Assets::none(), size: Vec2::new(100.0, 50.0), surface: scene.surface, visits: None, timing: None, defaults: no_variables(), values: no_values() };
         let visits = scene.visits(&graph, &frame);
-        let frame = FrameContext { visits: Some(&visits), ..frame };
-        samples.iter().map(|sample| scene.sample(sample, &frame)).collect::<Vec<_>>()
+        samples.iter().map(|sample| scene.sample_visited(sample, &frame, &visits)).collect::<Vec<_>>()
       })
       .collect()
   }

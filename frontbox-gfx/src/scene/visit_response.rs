@@ -98,16 +98,16 @@ impl<T: Animatable> VisitResponse<T> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Params, TraversalVisits, Visits};
+  use crate::scene::{Variables, TraversalVisits, Visits};
 
   /// Visits at these seconds to node 0 from traversal "t", stepping twice a second
   fn visited(at: &[f32]) -> Visits {
-    Visits { layers: vec![vec![TraversalVisits { name: "t".into(), rate: 2.0, by_node: vec![at.to_vec()], ends: None }]] }
+    Visits { traversals: vec![TraversalVisits { name: "t".into(), rate: 2.0, by_node: vec![at.to_vec()], ends: None }] }
   }
 
   fn at(response: &VisitResponse<f32>, visits: &Visits, time: f32) -> f32 {
-    let params = Params::new();
-    response.resolve(&Env { visits: visits.at(0, 0), ..env(time, &params) })
+    let variables = Variables::new();
+    response.resolve(&Env { visits: Some(visits.at(0)), ..env(time, &variables) })
   }
 
   fn response() -> VisitResponse<f32> {
@@ -154,8 +154,8 @@ mod tests {
 
   #[test]
   fn without_visits_or_with_another_traversal_it_stays_at_from() {
-    let params = Params::new();
-    assert_eq!(response().resolve(&env(1.0, &params)), 0.0);
+    let variables = Variables::new();
+    assert_eq!(response().resolve(&env(1.0, &variables)), 0.0);
     let other = VisitResponse { traversal: "other".into(), ..response() };
     assert_eq!(at(&other, &visited(&[0.0]), 0.5), 0.0);
   }

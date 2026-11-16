@@ -66,7 +66,7 @@ fn to_camel_case(s: &str) -> String {
 
 /// Turn any object in a Frontbox Event. Child data must implement serde::Serialize
 ///
-/// A generic event is one for each of its type parameters, which must be `'static`:
+/// A generic event is one for each of its type variables, which must be `'static`:
 /// ```ignore
 ///   #[derive(Serialize, Event)]
 ///   struct Ejected<S> {

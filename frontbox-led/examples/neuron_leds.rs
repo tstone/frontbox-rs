@@ -1,10 +1,9 @@
 use frontbox_core::prelude::*;
-use frontbox_gfx::animation::*;
 use frontbox_led::prelude::*;
 use std::io::Write;
 
 /**
- * This example demonstrates how to use the animation system to various LED effects
+ * This example demonstrates declaring LED colors, and animating them with scenes
  */
 
 pub mod leds {
@@ -35,6 +34,7 @@ async fn main() {
     ..Default::default()
   })
   .configure(|app| {
+    app.system(SceneSystem::new());
     app.system(LedSystem::new());
     app.system(LedExample::new());
   })
@@ -42,43 +42,45 @@ async fn main() {
   .await;
 }
 
+/// Fades demo3 from black to purple and back, over and over
+const FLASH: &str = r#"Scene(
+  version: 2,
+  timing: (duration: 0.9, cycle: Forever),
+  layers: [Leds(leds: Name("demo3"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
+    keys: [
+      (at: 0.0, value: (0, 0, 0, 255), curve: ExponentialInOut),
+      (at: 0.45, value: (128, 0, 128, 255), curve: ExponentialInOut),
+      (at: 0.9, value: (0, 0, 0, 255), curve: ExponentialInOut),
+    ],
+    cycle: Once,
+  )))))],
+)"#;
+
+/// Takes demo4 from black up to red, flashes it yellow, and fades it out, over and over
+const SEQUENCE: &str = r#"Scene(
+  version: 2,
+  timing: (duration: 2.1, cycle: Forever),
+  layers: [Leds(leds: Name("demo4"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
+    keys: [
+      (at: 0.0, value: (0, 0, 0, 255), curve: EaseInOut),
+      (at: 1.5, value: (255, 0, 0, 255), curve: Linear),
+      (at: 1.7, value: (255, 255, 0, 255), curve: Linear),
+      (at: 2.1, value: (0, 0, 0, 255), curve: Linear),
+    ],
+    cycle: Once,
+  )))))],
+)"#;
+
 struct LedExample {
-  flash: Box<dyn Animation<Duration, Rgba<u8>>>,
-  seq: Box<dyn Animation<Duration, Rgba<u8>>>,
+  flash: ScenePlayer,
+  sequence: ScenePlayer,
 }
 
 impl LedExample {
   fn new() -> Self {
     Self {
-      flash: Tween::boxed(
-        Duration::from_millis(450),
-        Curve::ExponentialInOut,
-        vec![Rgba::black(), Rgba::purple()],
-        Cycle::Forever,
-      ),
-      seq: Sequence::boxed(
-        vec![
-          Tween::boxed(
-            Duration::from_millis(1500),
-            Curve::EaseInOut,
-            vec![Rgba::black(), Rgba::red()],
-            Cycle::Once,
-          ),
-          Tween::boxed(
-            Duration::from_millis(200),
-            Curve::Sinusoid,
-            vec![Rgba::red(), Rgba::yellow()],
-            Cycle::Once,
-          ),
-          Tween::boxed(
-            Duration::from_millis(400),
-            Curve::Linear,
-            vec![Rgba::yellow(), Rgba::black()],
-            Cycle::Once,
-          ),
-        ],
-        Cycle::Forever,
-      ),
+      flash: ScenePlayer::new(Scene::load(FLASH).unwrap()),
+      sequence: ScenePlayer::new(Scene::load(SEQUENCE).unwrap()),
     }
   }
 }
@@ -100,13 +102,9 @@ impl System for LedExample {
     );
   }
 
-  fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
-    // tick animations to update their internal state
-    self.flash.accumulate(delta);
-    self.seq.accumulate(delta);
-
-    // re-declare LEDs with updated animated colors
-    ctx.declare_leds(&leds::DEMO3.q(), self.flash.sample());
-    ctx.declare_leds(&leds::DEMO4.q(), self.seq.sample());
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    // safe to call every tick: each starts once and plays until the system goes
+    self.flash.start(ctx);
+    self.sequence.start(ctx);
   }
 }

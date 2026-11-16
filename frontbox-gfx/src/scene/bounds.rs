@@ -45,6 +45,18 @@ impl Bounds {
     Affine2::from_scale(Vec2::new(axis(size.x), axis(size.y))) * Affine2::from_translation(-self.center())
   }
 
+  /// Larger by `amount` on every side
+  pub(crate) fn grown(&self, amount: f32) -> Self {
+    Self::new(self.min - amount, self.max + amount)
+  }
+
+  /// The smallest box around this one after `affine` is applied to it
+  pub(crate) fn transformed(&self, affine: Affine2) -> Self {
+    let corners = [self.min, Vec2::new(self.max.x, self.min.y), self.max, Vec2::new(self.min.x, self.max.y)].map(|p| affine.transform_point2(p));
+    let start = Self::new(corners[0], corners[0]);
+    corners.into_iter().fold(start, |bounds, p| Self::new(bounds.min.min(p), bounds.max.max(p)))
+  }
+
   /// Converts a length to unit box units on each axis. A zero-length axis gives 0.
   pub fn to_unit_length(&self, length: f32) -> Vec2 {
     let size = self.size();

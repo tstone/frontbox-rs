@@ -132,7 +132,7 @@
 //!
 //! ### Menus
 //!
-//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-dmd` menu section. A static config is
+//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-display` menu section. A static config is
 //! added with `display()`.
 //!
 //! ```rust,ignore

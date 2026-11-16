@@ -1,9 +1,9 @@
-use glam::Vec2;
+use glam::{Affine2, Vec2};
 use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Transform};
+use crate::scene::{Color, ColorAdjust, Env, Inputs, Node, Picture, Prop, Transform, Wrap};
 
 /// The colors a layer is drawn with
 ///
@@ -12,23 +12,32 @@ use crate::scene::{Color, ColorAdjust, Env, Node, Prop, Transform};
 pub type Fill = Node<FillNode, ColorAdjust>;
 
 impl Fill {
-  /// The color at a point in the unit box. `footprint` is the sample's radius along each axis, in unit box units.
-  pub(crate) fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
+  /// The fill as it is in `env`, to color any number of samples with. `footprint` is the samples' radius along each
+  /// axis, in unit box units. `None` if a transform collapses it, so it draws nothing.
+  pub(crate) fn prepare<'a>(&'a self, footprint: Vec2, env: &Env<'a>) -> Option<PreparedFill<'a>> {
     // on a Sequence, the lap is the unit box plus one sample's width, as samples reach half a width past each end
     let env = &Env { lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x), ..*env };
-    let p = self.on_lap(p, Vec2::ZERO, env);
-    let Some(to_local) = self.to_local(Vec2::ZERO, env) else {
-      return Rgba([0, 0, 0, 0]);
-    };
-    let footprint = to_local.matrix2.abs() * footprint;
-    let color = self.base.color(to_local.transform_point2(p), footprint, env);
-    self.adjust.iter().fold(color, |color, adjust| adjust.apply(color, env))
+    let to_scene = self.to_scene(Vec2::ZERO, env)?;
+    let to_local = to_scene.inverse();
+    Some(PreparedFill {
+      wrap: self.wrap(Vec2::ZERO, to_scene, env),
+      to_local,
+      footprint: to_local.matrix2.abs() * footprint,
+      base: self.base.resolve(env),
+      adjust: self.adjust.iter().map(|adjust| (adjust, adjust.amount(env))).collect(),
+    })
   }
 
   pub(crate) fn is_animated(&self) -> bool {
     self.base.is_animated()
       || self.transform.iter().any(Transform::is_animated)
       || self.adjust.iter().any(ColorAdjust::is_animated)
+  }
+
+  pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
+    self.base.read_inputs(inputs);
+    self.transform.iter().for_each(|transform| transform.read_inputs(inputs));
+    self.adjust.iter().for_each(|adjust| adjust.read_inputs(inputs));
   }
 }
 
@@ -49,11 +58,23 @@ pub enum FillNode {
   Image {
     /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
-    /// FrameContext index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
+    /// Frame index for an animated image, 0 if not set. Truncated to a whole number, so animating it from 0 to the frame
     /// count gives each frame equal time. Clamped to the last frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     frame: Option<Prop<f32>>,
+  },
+  /// One sprite from an image laid out as a grid of equal sprites, stretched over the unit box like an `Image`
+  Spritesheet {
+    /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
+    name: String,
+    rows: u32,
+    columns: u32,
+    /// Which sprite, counting across each row from the top left, 0 if not set. Truncated to a whole number like an
+    /// `Image`'s frame, and clamped to the last sprite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    sprite: Option<Prop<f32>>,
   },
 }
 
@@ -108,51 +129,116 @@ impl FillNode {
       Self::Solid(color) => color.is_animated(),
       Self::Gradient { stops, .. } => stops.iter().any(|stop| stop.color.is_animated()),
       Self::Image { frame, .. } => frame.as_ref().is_some_and(Prop::is_animated),
+      Self::Spritesheet { sprite, .. } => sprite.as_ref().is_some_and(Prop::is_animated),
+    }
+  }
+
+  fn read_inputs(&self, inputs: &mut Inputs) {
+    match self {
+      Self::Solid(color) => color.read_inputs(inputs),
+      Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.color.read_inputs(inputs)),
+      Self::Image { frame, .. } => frame.iter().for_each(|frame| frame.read_inputs(inputs)),
+      Self::Spritesheet { sprite, .. } => sprite.iter().for_each(|sprite| sprite.read_inputs(inputs)),
     }
   }
 
   pub(crate) fn image_name(&self) -> Option<&str> {
     match self {
-      Self::Image { name, .. } if !name.is_empty() => Some(name),
+      Self::Image { name, .. } | Self::Spritesheet { name, .. } if !name.is_empty() => Some(name),
       _ => None,
     }
   }
 
-  fn color(&self, p: Vec2, footprint: Vec2, env: &Env) -> Rgba<u8> {
+  fn resolve<'a>(&self, env: &Env<'a>) -> ResolvedFillNode<'a> {
     match self {
-      Self::Solid(color) => color.resolve(env).0,
-      Self::Gradient { stops, style } => gradient(stops, style.at(p), env),
-      Self::Image { name, frame } => env.images.get(name).map_or(Rgba([0, 0, 0, 0]), |image| {
-        image.color(frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)), p, footprint)
-      }),
+      Self::Solid(color) => ResolvedFillNode::Solid(color.resolve(env).0),
+      Self::Gradient { stops, style } => {
+        ResolvedFillNode::Gradient { stops: stops.iter().map(|stop| (stop.at, stop.color.resolve(env).0)).collect(), style: *style }
+      }
+      Self::Image { name, frame } => ResolvedFillNode::Image {
+        picture: env.assets.picture(name),
+        frame: frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)),
+      },
+      Self::Spritesheet { name, rows, columns, sprite } => {
+        let (rows, columns) = ((*rows).max(1), (*columns).max(1));
+        let sprite = sprite.as_ref().map_or(0.0, |sprite| sprite.resolve_truncated(env)).max(0.0) as u32;
+        let sprite = sprite.min(rows * columns - 1);
+        let size = Vec2::new(1.0 / columns as f32, 1.0 / rows as f32);
+        let min = Vec2::new((sprite % columns) as f32, (sprite / columns) as f32) * size;
+        ResolvedFillNode::Sprite { picture: env.assets.picture(name), min, size }
+      }
     }
   }
 }
 
-fn gradient(stops: &[Stop], t: f32, env: &Env) -> Rgba<u8> {
+/// A [`Fill`] resolved for one frame, with what coloring a sample needs
+pub(crate) struct PreparedFill<'a> {
+  wrap: Option<Wrap>,
+  to_local: Affine2,
+  /// The samples' radius along each axis, in the fill's local space
+  footprint: Vec2,
+  base: ResolvedFillNode<'a>,
+  /// Each adjust, with how much it adjusts by
+  adjust: Vec<(&'a ColorAdjust, f32)>,
+}
+
+impl PreparedFill<'_> {
+  /// The color at a point in the unit box
+  pub(crate) fn color(&self, p: Vec2) -> Rgba<u8> {
+    let p = self.wrap.map_or(p, |wrap| wrap.apply(p));
+    let color = self.base.color(self.to_local.transform_point2(p), self.footprint);
+    self.adjust.iter().fold(color, |color, (adjust, amount)| adjust.apply(color, *amount))
+  }
+}
+
+/// A [`FillNode`] with its props resolved
+enum ResolvedFillNode<'a> {
+  Solid(Rgba<u8>),
+  /// Each stop's `at` and color
+  Gradient { stops: Vec<(f32, Rgba<u8>)>, style: GradientStyle },
+  /// `None` for an image that isn't loaded, which draws nothing
+  Image { picture: Option<&'a Picture>, frame: f32 },
+  /// The part of an image from `min`, `size` across, in units of the whole image
+  Sprite { picture: Option<&'a Picture>, min: Vec2, size: Vec2 },
+}
+
+impl ResolvedFillNode<'_> {
+  fn color(&self, p: Vec2, footprint: Vec2) -> Rgba<u8> {
+    match self {
+      Self::Solid(color) => *color,
+      Self::Gradient { stops, style } => gradient(stops, style.at(p)),
+      Self::Image { picture, frame } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color(*frame, p, footprint)),
+      Self::Sprite { picture, min, size } => {
+        picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color_within(0.0, *min, *size, p, footprint))
+      }
+    }
+  }
+}
+
+fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
   let (Some(first), Some(last)) = (stops.first(), stops.last()) else {
     return Rgba([0, 0, 0, 0]);
   };
-  if t <= first.at {
-    return first.color.resolve(env).0;
+  if t <= first.0 {
+    return first.1;
   }
 
   for pair in stops.windows(2) {
-    let (a, b) = (&pair[0], &pair[1]);
-    if t <= b.at {
-      let span = b.at - a.at;
-      let local = if span > 0.0 { (t - a.at) / span } else { 1.0 };
-      return a.color.resolve(env).0.interpolate(&b.color.resolve(env).0, local);
+    let ((a_at, a), (b_at, b)) = (pair[0], pair[1]);
+    if t <= b_at {
+      let span = b_at - a_at;
+      let local = if span > 0.0 { (t - a_at) / span } else { 1.0 };
+      return a.interpolate(&b, local);
     }
   }
 
-  last.color.resolve(env).0
+  last.1
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::Params;
+  use crate::scene::{Variables, Prop};
   use crate::scene::Transform;
   use crate::scene::value::tests::env;
 
@@ -171,8 +257,8 @@ mod tests {
   }
 
   fn color(fill: &Fill, x: f32, y: f32) -> Rgba<u8> {
-    let params = Params::new();
-    fill.color(Vec2::new(x, y), Vec2::ZERO, &env(0.0, &params))
+    let variables = Variables::new();
+    fill.prepare(Vec2::ZERO, &env(0.0, &variables)).map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
   }
 
   #[test]
@@ -227,6 +313,17 @@ mod tests {
       .transform(Transform::Rotate(90.0.into()));
     assert_eq!(color(&fill, 1.0, -0.5), RED);
     assert_eq!(color(&fill, 1.0, 0.5), BLUE);
+  }
+
+  #[test]
+  fn a_fill_ignores_transforms_that_copy_or_cut_a_shape() {
+    let center = || Prop::Fixed(Vec2::ZERO);
+    let fill = red_to_blue()
+      .transform(Transform::Mirror { center: center(), rotation: 0.0.into() })
+      .transform(Transform::Revolve { center: center(), angle: 180.0.into(), count: 3.0.into() })
+      .transform(Transform::Bisect { center: center(), rotation: 0.0.into() });
+    assert_eq!(color(&fill, -0.5, 0.0), RED);
+    assert_eq!(color(&fill, 0.5, 0.0), BLUE);
   }
 
   #[test]

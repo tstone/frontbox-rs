@@ -1,0 +1,69 @@
+Scene(
+  version: 2,
+  timing: (
+    duration: 4.0,
+    cycle: Forever,
+  ),
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          base: Text(text: Fixed("BALL 1"), font: "TinyPixie2", size: Fixed(6.0), width: Fixed(48.0), height: Fixed(8.0), align: Right, vertical_align: Bottom),
+          transform: [
+            Translate(Fixed(104.0, 28.0)),
+          ],
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        fill: (
+          base: Gradient(
+            stops: [
+              (at: 0.0, color: Fixed(255, 220, 0, 255)),
+              (at: 1.0, color: Fixed(255, 60, 0, 255)),
+            ],
+            style: Linear,
+          ),
+          transform: [
+            Rotate(Fixed(90.0)),
+          ],
+        ),
+        region: (
+          base: Text(text: Fixed("1,250,000"), font: "VSansSerif8bold", size: Fixed(16.0), width: Fixed(128.0), height: Fixed(16.0)),
+          transform: [
+            Translate(Fixed(64.0, 18.0)),
+          ],
+          adjust: [
+            Stroke(width: Fixed(1.0), align: Outside, color: Fixed(120, 0, 0, 255)),
+          ],
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        fill: (
+          base: Solid(Fixed(0, 200, 255, 255)),
+        ),
+        region: (
+          base: Text(text: Fixed("EXTRA BALL"), font: "LCDBlock", size: Fixed(16.0), width: Fixed(80.0), height: Fixed(14.0), align: Left),
+          transform: [
+            Translate(Keyframes(
+              keys: [
+                (at: 0.0, value: (168.0, 7.0)),
+                (at: 4.0, value: (-32.0, 7.0)),
+              ],
+              cycle: Once,
+            )),
+          ],
+        ),
+      ),
+    ),
+  ],
+)

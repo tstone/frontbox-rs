@@ -5,18 +5,53 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Bounds, Images, NodeVisits, Timing};
+use crate::scene::{Bounds, Assets, NamedValue, NodeVisits, Timing, Values};
 
-/// Parameter values by name
-pub type Params = BTreeMap<String, Value>;
+/// Variable values by name
+pub type Variables = BTreeMap<String, Value>;
 
-/// A parameter value the game supplies at runtime
+static NO_PARAMS: Variables = BTreeMap::new();
+
+/// An empty set, for a scene with no variable defaults, or a frame that sets none
+pub fn no_variables() -> &'static Variables {
+  &NO_PARAMS
+}
+
+/// A variable value the game supplies at runtime
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
   Float(f32),
   Vec2(#[cfg_attr(feature = "ts", ts(as = "[f32; 2]"))] Vec2),
   Color(Color),
+  /// A whole number, for counts and scores too large for a `Float` to hold exactly
+  Int(i64),
+  Text(String),
+  /// Whether something is so, such as whether a layer is visible
+  Bool(bool),
+  /// One of the scene's named values, by name, written `Value("current")`
+  #[serde(rename = "Value")]
+  Named(String),
+}
+
+impl Value {
+  /// Points a variable at one of the scene's named values
+  pub fn named(name: impl Into<String>) -> Self {
+    Self::Named(name.into())
+  }
+}
+
+impl Lerp for Value {
+  /// Between two values of the same type. Between different types, it's `other` the whole way.
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    match (self, other) {
+      (Self::Float(from), Self::Float(to)) => Self::Float(from.interpolate(to, t)),
+      (Self::Vec2(from), Self::Vec2(to)) => Self::Vec2(from.interpolate(to, t)),
+      (Self::Color(from), Self::Color(to)) => Self::Color(from.interpolate(to, t)),
+      (Self::Int(from), Self::Int(to)) => Self::Int((*from as f64).interpolate(&(*to as f64), t).round() as i64),
+      _ => other.clone(),
+    }
+  }
 }
 
 impl From<f32> for Value {
@@ -34,6 +69,49 @@ impl From<Vec2> for Value {
 impl From<Rgba<u8>> for Value {
   fn from(color: Rgba<u8>) -> Self {
     Self::Color(Color(color))
+  }
+}
+
+impl From<i64> for Value {
+  fn from(value: i64) -> Self {
+    Self::Int(value)
+  }
+}
+
+impl From<i32> for Value {
+  fn from(value: i32) -> Self {
+    Self::Int(value.into())
+  }
+}
+
+impl From<u32> for Value {
+  fn from(value: u32) -> Self {
+    Self::Int(value.into())
+  }
+}
+
+impl From<u64> for Value {
+  /// Past `i64::MAX`, it's `i64::MAX`
+  fn from(value: u64) -> Self {
+    Self::Int(value.try_into().unwrap_or(i64::MAX))
+  }
+}
+
+impl From<bool> for Value {
+  fn from(value: bool) -> Self {
+    Self::Bool(value)
+  }
+}
+
+impl From<String> for Value {
+  fn from(value: String) -> Self {
+    Self::Text(value)
+  }
+}
+
+impl From<&str> for Value {
+  fn from(value: &str) -> Self {
+    Self::Text(value.into())
   }
 }
 
@@ -83,7 +161,7 @@ impl Lerp for Color {
   }
 }
 
-/// Everything a prop needs to resolve: time, params, images, and the viewport
+/// Everything a prop needs to resolve: time, variables, images and fonts, and the viewport
 #[derive(Clone, Copy)]
 pub(crate) struct Env<'a> {
   /// Seconds into the current scene cycle
@@ -92,11 +170,15 @@ pub(crate) struct Env<'a> {
   pub cycle: u32,
   /// The scene's timing, so random picks can look into the neighboring cycles
   pub timing: Option<Timing>,
-  /// See [`FrameContext::take`](crate::scene::FrameContext::playback_seed)
+  /// See [`LayerFrame::take`](crate::scene::LayerFrame::playback_seed)
   pub playback_seed: u32,
-  pub params: &'a Params,
-  pub defaults: &'a Params,
-  pub images: &'a Images,
+  pub variables: &'a Variables,
+  pub defaults: &'a Variables,
+  /// The scene's named values, which a variable can point at
+  pub values: &'a Values,
+  /// How many named values deep this is resolving, so values that point at each other stop
+  pub depth: u8,
+  pub assets: &'a Assets,
   /// The visible region, in scene units
   pub viewport: Bounds,
   /// On a `Sequence`, the length of one wrap-around lap for `Rotate`, in the units of whatever is being drawn. `None`
@@ -108,17 +190,30 @@ pub(crate) struct Env<'a> {
   pub fill_frame: Affine2,
 }
 
-impl Env<'_> {
-  pub(crate) fn param(&self, name: &str) -> Option<&Value> {
-    self.params.get(name).or_else(|| self.defaults.get(name))
+impl<'a> Env<'a> {
+  pub(crate) fn variable(&self, name: &str) -> Option<&'a Value> {
+    self.variables.get(name).or_else(|| self.defaults.get(name))
+  }
+
+  /// A named value, and the environment to resolve its prop in. `None` if there's none by that name, or if values have
+  /// pointed at each other too many times over to be going anywhere.
+  pub(crate) fn named(&self, name: &str) -> Option<(&'a NamedValue, Env<'a>)> {
+    if self.depth >= MAX_VALUE_DEPTH {
+      return None;
+    }
+    Some((self.values.get(name)?, Env { depth: self.depth + 1, ..*self }))
   }
 }
+
+/// How many named values deep a variable can resolve
+const MAX_VALUE_DEPTH: u8 = 8;
 
 #[cfg(test)]
 pub(crate) mod tests {
   use super::*;
+  use crate::scene::no_values;
 
-  pub(crate) fn env<'a>(time: f32, params: &'a Params) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, playback_seed: 0, params, defaults: params, images: Images::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
+  pub(crate) fn env<'a>(time: f32, variables: &'a Variables) -> Env<'a> {
+    Env { time, cycle: 0, timing: None, playback_seed: 0, variables, defaults: variables, values: no_values(), depth: 0, assets: Assets::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
   }
 }

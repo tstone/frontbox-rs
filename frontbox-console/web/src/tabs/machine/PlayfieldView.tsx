@@ -3,18 +3,29 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ledName } from '../../lib/format'
 import { LED_OFF, ledColor as machineLedColor } from '../../lib/leds'
+import DisplayScreen from '../../components/DisplayScreen'
 import { type ConsoleState, driverState, machine } from '../../state/console'
+import { displayFrame } from '../../state/displays'
 import { cancelPlacing, highlighted, movedPositions, place, placing as placingHardware, type Position } from '../../state/placement'
-import { isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
+import { isInitiallyClosed, isSwitchClosed, latched, pressed, pressSwitch, release, setSwitchClosed, toggleLatch } from '../../state/switchControl'
+import type { DisplayView } from '../../types/generated/DisplayView'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import './PlayfieldView.css'
 
 type Item = { key: string; name: string; kind: 'Switch' | 'Driver' | 'LED'; location: Position | null }
 type Point = Item & { location: Position; moved: boolean }
 
+/** A display, by its place in `machine.displays` */
+type ShownDisplay = { index: number; display: DisplayView }
+type PlacedDisplay = ShownDisplay & { plane: PlaneView; origin: [number, number]; size: [number, number] }
+
 type SceneData = {
   planes: PlaneView[]
   points: Point[]
+  /** Displays drawn on their plane */
+  placed: PlacedDisplay[]
+  /** Every display, drawn flat over the view */
+  screens: ShownDisplay[]
   /** Every switch, driver and LED, located or not, by key */
   items: Map<string, Item>
   unlocated: number
@@ -64,12 +75,20 @@ function sceneData(state: ConsoleState): SceneData {
     const location = moved ?? item.location
     if (location) points.push({ ...item, location, moved: moved !== undefined })
   }
+  const placed: PlacedDisplay[] = []
+  state.displays.forEach((display, index) => {
+    const placement = display.placement
+    const plane = placement && planes.find((p) => p.name === placement.plane)
+    if (placement && plane) placed.push({ index, display, plane, origin: placement.origin, size: placement.size })
+  })
   return {
     planes,
     points,
+    placed,
+    screens: state.displays.map((display, index) => ({ index, display })),
     items: new Map(all.map((item) => [item.key, item])),
     unlocated: all.length - points.length,
-    signature: JSON.stringify([planes, points.map((p) => [p.key, p.location])]),
+    signature: JSON.stringify([planes, points.map((p) => [p.key, p.location]), state.displays]),
   }
 }
 
@@ -84,12 +103,23 @@ function cabinetGroup() {
   return group
 }
 
-type Layer = 'axes' | 'planes' | 'artwork' | 'switches' | 'leds' | 'drivers'
+/** A plane's surface, its edge running through its corners. Its image is stretched over its extent. */
+function planeGeometry(plane: PlaneView) {
+  const [w, h] = plane.extent
+  const geometry = new THREE.ShapeGeometry(new THREE.Shape(plane.corners.map(([x, y]) => new THREE.Vector2(x, y))))
+  // a shape's UVs are its points, so scale them to the extent
+  const uv = geometry.attributes.uv
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / (w || 1), uv.getY(i) / (h || 1))
+  return geometry
+}
+
+type Layer = 'axes' | 'planes' | 'artwork' | 'displays' | 'screens' | 'switches' | 'leds' | 'drivers'
 
 const LAYERS: { layer: Layer; label: string; title: string }[] = [
   { layer: 'axes', label: 'Axes', title: "The X/Y/Z axes at the cabinet's origin (0, 0, 0)" },
   { layer: 'planes', label: 'Planes', title: "The machine's surfaces and their outlines" },
   { layer: 'artwork', label: 'Artwork', title: 'Images drawn over the planes, e.g. playfield art' },
+  { layer: 'displays', label: 'Displays', title: 'What the displays show, on the machine where they have a place on it' },
   { layer: 'switches', label: 'Switches', title: 'Switch dots' },
   { layer: 'leds', label: 'LEDs', title: 'LED dots' },
   { layer: 'drivers', label: 'Drivers', title: 'Driver dots' },
@@ -97,8 +127,8 @@ const LAYERS: { layer: Layer; label: string; title: string }[] = [
 
 const layerOf = (kind: Item['kind']): Layer => (kind === 'Switch' ? 'switches' : kind === 'Driver' ? 'drivers' : 'leds')
 
-/** A preview is about the LEDs, so what it shows is fixed */
-const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, switches: false, leds: true, drivers: false }
+/** A preview is about what a scene draws on, so what it shows is fixed. Displays are only shown where they're placed. */
+const PREVIEW_LAYERS: Record<Layer, boolean> = { axes: false, planes: true, artwork: true, displays: true, screens: false, switches: false, leds: true, drivers: false }
 
 // which layers are shown, remembered per browser
 const LAYERS_KEY = 'frontbox-console.layers'
@@ -203,7 +233,8 @@ const named = (point: Point) => `${point.name} (${point.kind})`
 function describe(point: Point): string {
   const id = switchId(point)
   if (id === null) return named(point)
-  const action = latched[id] ? 'click to open' : 'hold to close, shift-click to latch'
+  const [toward, away] = isInitiallyClosed(id) ? ['close', 'open'] : ['open', 'close']
+  const action = latched[id] ? `click to ${toward}` : `hold to ${away}, shift-click to latch`
   return `${point.name} (Switch): ${action}`
 }
 
@@ -213,6 +244,11 @@ export default function PlayfieldView(props: {
    * hardware sits idle, and can't be pressed or placed.
    */
   ledColor?: (name: string) => string | null
+  /**
+   * What a preview's displays show, by name, as red, green, blue, and alpha for each pixel. `null` leaves a display
+   * dark. Without this, they're dark too.
+   */
+  displayFrame?: (display: string) => Uint8ClampedArray | null
   /** The plane a preview works on */
   plane?: () => PlaneView | null
   /** Closed loops of points to outline on the plane, in the plane's units, such as a ring's edge and its hole */
@@ -245,7 +281,7 @@ export default function PlayfieldView(props: {
   let startPress: (id: number, latch: boolean) => void = () => {}
   const [toast, setToast] = createSignal<string | null>(null)
   const [layers, setLayers] = createSignal(
-    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, switches: true, leds: true, drivers: true }),
+    preview ? PREVIEW_LAYERS : readLayers({ axes: true, planes: true, artwork: true, displays: true, screens: true, switches: true, leds: true, drivers: true }),
   )
   const toggleLayer = (layer: Layer) => setLayers((shown) => ({ ...shown, [layer]: !shown[layer] }))
   const placingName = () => {
@@ -321,6 +357,9 @@ export default function PlayfieldView(props: {
     const planeViews: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; edges: THREE.LineSegments; image: THREE.Texture | null }[] = []
     const textures = new Map<string, THREE.Texture>()
     const textureLoader = new THREE.TextureLoader()
+    // a display on its plane, showing each frame as it arrives
+    const displayViews: { mesh: THREE.Mesh; material: THREE.MeshBasicMaterial; texture: THREE.DataTexture }[] = []
+    let disposeDisplayEffects: (() => void) | undefined
     const shapes = hardwareShapes()
     const shapeGeometries = new Set<THREE.BufferGeometry>(Object.values(shapes))
     const ghostMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.8 })
@@ -425,7 +464,16 @@ export default function PlayfieldView(props: {
       render()
     }
 
-    function build({ planes, points }: SceneData) {
+    function disposeDisplays() {
+      disposeDisplayEffects?.()
+      displayViews.forEach(({ material, texture }) => {
+        material.dispose()
+        texture.dispose()
+      })
+      displayViews.length = 0
+    }
+
+    function build({ planes, points, placed }: SceneData) {
       scene.remove(content)
       content.traverse((obj) => {
         if (obj instanceof THREE.Mesh || obj instanceof THREE.LineSegments) {
@@ -435,6 +483,7 @@ export default function PlayfieldView(props: {
       planeMaterials.forEach((m) => m.dispose())
       lineMaterials.forEach((m) => m.dispose())
       dots.forEach((_, dot) => ((dot as THREE.Mesh).material as THREE.Material).dispose())
+      disposeDisplays()
       planeMaterials.length = 0
       lineMaterials.length = 0
       planeMeshes.length = 0
@@ -444,8 +493,7 @@ export default function PlayfieldView(props: {
       content = cabinetGroup()
 
       for (const plane of planes) {
-        const [w, h] = plane.extent
-        const geometry = new THREE.PlaneGeometry(w, h).translate(w / 2, h / 2, 0)
+        const geometry = planeGeometry(plane)
         // map, opacity and color are set by `stylePlanes`, as they depend on the layers shown
         const material = new THREE.MeshBasicMaterial({
           transparent: true,
@@ -466,6 +514,46 @@ export default function PlayfieldView(props: {
           content.add(obj)
         }
       }
+
+      for (const { display, plane, origin: [x, y], size: [w, h] } of placed) {
+        // Its first row is at the plane's lower y, as with a plane's image, unless the plane stands with its y running
+        // up the machine. Then the display is turned so its top is up.
+        const upright = new THREE.Vector3(0, 1, 0).applyQuaternion(new THREE.Quaternion(...plane.rotation)).z > 0
+        // black until its first frame
+        const texture = new THREE.DataTexture(new Uint8Array(display.width * display.height * 4), display.width, display.height)
+        texture.magFilter = THREE.NearestFilter
+        texture.colorSpace = THREE.SRGBColorSpace
+        texture.needsUpdate = true
+        // pulled toward the camera so the plane, drawn after it, doesn't wash over it
+        const material = new THREE.MeshBasicMaterial({
+          map: texture,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -4,
+        })
+        const geometry = new THREE.PlaneGeometry(w, h).scale(1, upright ? -1 : 1, 1).translate(x + w / 2, y + h / 2, 0)
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.position.set(...plane.origin)
+        mesh.quaternion.set(...plane.rotation)
+        displayViews.push({ mesh, material, texture })
+        content.add(mesh)
+      }
+      disposeDisplayEffects = createRoot((dispose) => {
+        placed.forEach(({ index, display }, i) => {
+          const { texture } = displayViews[i]
+          createEffect(() => {
+            const frame = preview ? (props.displayFrame?.(display.name) ?? null) : displayFrame(index)
+            if (frame && frame.length === texture.image.data?.length) texture.image.data.set(frame)
+            // a preview's display goes dark when the scene stops drawing on it
+            else if (!frame && preview) texture.image.data?.fill(0)
+            else return
+            texture.needsUpdate = true
+            render()
+          })
+        })
+        return dispose
+      })
 
       for (const point of points) {
         const dot = new THREE.Mesh(shapes[point.kind], new THREE.MeshBasicMaterial())
@@ -512,6 +600,7 @@ export default function PlayfieldView(props: {
       const shown = untrack(layers)
       origin.visible = shown.axes
       stylePlanes()
+      displayViews.forEach(({ mesh }) => (mesh.visible = shown.displays))
       dots.forEach((point, dot) => (dot.visible = shown[layerOf(point.kind)]))
       applyHighlight()
     }
@@ -642,7 +731,8 @@ export default function PlayfieldView(props: {
     }
 
     /**
-     * A left press on a switch closes it until the press ends; with shift it latches closed (or opens, if latched).
+     * A left press on a switch holds it away from its initial state (closes most) until the press ends; with shift it
+     * latches there (or goes back, if latched).
      * Listened for on the container before it reaches the canvas, so a press on a switch never starts an orbit.
      * When switches overlap, a chooser opens instead.
      */
@@ -702,7 +792,7 @@ export default function PlayfieldView(props: {
       window.removeEventListener('blur', endPress)
     }
     startPress = (id, latch) => {
-      // any click on a latched switch opens it
+      // any click on a latched switch puts it back
       if (latch || latched[id]) {
         toggleLatch(id)
         return
@@ -773,6 +863,7 @@ export default function PlayfieldView(props: {
       container.removeEventListener('pointerdown', onPressStart, { capture: true })
       endPress()
       disposeDotEffects?.()
+      disposeDisplays()
       resizeObserver.disconnect()
       themeObserver.disconnect()
       darkQuery.removeEventListener('change', applyTheme)
@@ -804,7 +895,17 @@ export default function PlayfieldView(props: {
           </For>
         </div>
       </Show>
-      <Show when={data().planes.length === 0 && data().points.length === 0}>
+      <Show when={!preview && data().screens.length > 0}>
+        <div class="display-screens">
+          <button type="button" class="view-toggle" aria-pressed={layers().screens} onClick={() => toggleLayer('screens')}>
+            {layers().screens ? 'Hide displays' : 'Show displays'}
+          </button>
+          <Show when={layers().screens}>
+            <For each={data().screens}>{({ index, display }) => <DisplayScreen display={display} index={index} />}</For>
+          </Show>
+        </div>
+      </Show>
+      <Show when={data().planes.length === 0 && data().points.length === 0 && data().screens.length === 0}>
         <p class="notice empty">
           Nothing to draw yet. Give hardware a <code>location</code>, or add planes with <code>WebTracer::plane</code>.
         </p>

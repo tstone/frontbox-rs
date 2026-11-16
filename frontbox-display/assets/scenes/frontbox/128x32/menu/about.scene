@@ -1,0 +1,108 @@
+Scene(
+  version: 2,
+  variables: {
+    "version": Text("0.1.0"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Gradient(
+            stops: [
+              (
+                at: 0.0,
+                color: Fixed(211, 211, 206, 255),
+              ),
+              (
+                at: 0.25,
+                color: Fixed(0, 255, 255, 255),
+              ),
+              (
+                at: 1.0,
+                color: Fixed(249, 38, 114, 255),
+              ),
+            ],
+            style: Linear,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Name",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 9.0)),
+          ],
+          base: Text(
+            text: Fixed("Frontbox"),
+            font: "TenFatGuys",
+            size: Fixed(16.0),
+            width: Fixed(124.0),
+            height: Fixed(16.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Version",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 19.5)),
+          ],
+          base: Text(
+            text: Variable("version"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Credit",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 26.5)),
+          ],
+          base: Text(
+            text: Fixed("Neon Blue Pinball 2026"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

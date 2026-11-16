@@ -1,0 +1,114 @@
+Scene(
+  version: 2,
+  variables: {
+    "description": Text("How long the coil is fired to reset the drop target bank"),
+    "label": Text("Drop Target Reset Duration"),
+    "value": Text("35ms"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Solid(Fixed(39, 40, 34, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 5.5)),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Label",
+        fill: (
+          base: Solid(Fixed(217, 217, 217, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(63.5, 5.5)),
+          ],
+          base: Text(
+            text: Variable("label"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(121.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Description",
+        fill: (
+          base: Solid(Fixed(255, 255, 77, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(45.0, 20.5)),
+          ],
+          base: Text(
+            text: Variable("description"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(84.0),
+            height: Fixed(21.0),
+            align: Left,
+            vertical_align: Top,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Value",
+        fill: (
+          base: Solid(Fixed(240, 250, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(107.0, 20.5)),
+          ],
+          base: Text(
+            text: Variable("value"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(36.0),
+            height: Fixed(7.0),
+            align: Right,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+  ],
+)

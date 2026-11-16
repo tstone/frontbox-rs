@@ -1,10 +1,9 @@
 use std::time::Duration;
 
-use frontbox_gfx::canvas::Size;
 use image::Rgb;
 use rusb::UsbContext;
 
-use crate::DmdDevice;
+use frontbox_display::{DisplayDevice, DisplaySize};
 
 const VENDOR_ID: u16 = 0x0314;
 const PRODUCT_ID: u16 = 0xE457;
@@ -38,17 +37,17 @@ pub enum PanelType {
 pub struct Pin2Dmd {
   handle: Option<rusb::DeviceHandle<rusb::Context>>,
   panel: PanelType,
-  size: Size<u32>,
+  size: DisplaySize,
   elements: usize,
 }
 
 impl Pin2Dmd {
-  /// The device is opened once [`DmdSystem`](crate::DmdSystem) spawns
+  /// The device is opened once [`DisplaySystem`](frontbox_display::DisplaySystem) spawns
   pub fn new(width: u32, height: u32, panel: PanelType) -> Self {
     Self {
       handle: None,
       panel,
-      size: Size::new(width, height),
+      size: DisplaySize::new(width, height),
       elements: width as usize * height as usize / 2,
     }
   }
@@ -105,8 +104,8 @@ impl Pin2Dmd {
   }
 }
 
-impl DmdDevice for Pin2Dmd {
-  fn size(&self) -> Size<u32> {
+impl DisplayDevice for Pin2Dmd {
+  fn size(&self) -> DisplaySize {
     self.size
   }
 

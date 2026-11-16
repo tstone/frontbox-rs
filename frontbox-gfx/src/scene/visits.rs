@@ -1,25 +1,23 @@
 use glam::Vec2;
 
-/// Every visit each layer's traversals make in the current cycle. Get it from
-/// [`GfxComposition::visits`](crate::scene::GfxComposition::visits) and pass it in
-/// [`FrameContext::visits`](crate::scene::FrameContext::visits).
+/// Every visit a layer's traversals make in the current cycle. Get it from [`Layer::visits`](crate::scene::Layer::visits)
+/// and pass it in [`LayerFrame::visits`](crate::scene::LayerFrame::visits).
 #[derive(Debug, Clone, Default)]
 pub struct Visits {
-  /// By layer, then by traversal in the layer's order. Empty for a layer without a graph.
-  pub(crate) layers: Vec<Vec<TraversalVisits>>,
+  /// In the order of the layer's traversals
+  pub(crate) traversals: Vec<TraversalVisits>,
 }
 
 impl Visits {
-  /// The visits a layer's responses see at one node
-  pub(crate) fn at(&self, layer: usize, node: usize) -> Option<NodeVisits<'_>> {
-    self.layers.get(layer).map(|traversals| NodeVisits { traversals, node })
+  /// The visits the layer's responses see at one node
+  pub(crate) fn at(&self, node: usize) -> NodeVisits<'_> {
+    NodeVisits { traversals: &self.traversals, node }
   }
 
-  /// Seconds from the first visit to the last for each of a layer's traversals, in its order. `None` for one that
+  /// Seconds from the first visit to the last for each of the layer's traversals, in its order. `None` for one that
   /// visits nothing.
-  pub fn lengths(&self, layer: usize) -> Vec<Option<f32>> {
-    let traversals = self.layers.get(layer).map_or(&[][..], Vec::as_slice);
-    traversals.iter().map(TraversalVisits::length).collect()
+  pub fn lengths(&self) -> Vec<Option<f32>> {
+    self.traversals.iter().map(TraversalVisits::length).collect()
   }
 }
 

@@ -17,6 +17,12 @@
 //! - Automatically lowers volume on music track when playing
 //! - [`CalloutCompleted`] says when a line is done with
 //! 
+//! ## Scene sounds
+//!
+//! - A scene's `Sound` layers name sounds in the app's content folder, such as `sounds/zap.mp3`
+//! - Loaded the first time a scene plays them, or ahead of time with [`SoundSystem::preload_scene`]
+//! - Each plays when the playback's clock passes one of its layer's start times, as an effect would
+//!
 //! ## Music
 //! 
 //! - Stream from disk
@@ -51,7 +57,12 @@ pub use callout::CalloutRequest;
 pub use sound_system::*;
 pub use sound_system_ext::*;
 
+use std::borrow::Cow;
+
 use frontbox_core::prelude::*;
+
+/// The name a sound is preloaded and played by: a constant in the game's code, or a name from a scene
+pub type SoundKey = Cow<'static, str>;
 
 /// A callout is done with, whether it was said or not. It isn't said if a higher priority replaced it, it waited longer
 /// than its `max_wait`, or it couldn't be played. So anything waiting on a line, like a mode's intro, always hears back.

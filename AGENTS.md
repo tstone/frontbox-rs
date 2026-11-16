@@ -59,6 +59,9 @@ ctx.systems.with::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), du
 - Ball counts are derived from the trough's reported occupancy, not kept as running counters that drift when an event
   is halted, an eject fails, or a drain is missed. Consumers read `BallsExitedPlay.in_play` rather than keeping their
   own counts.
+- A ball a mechanism keeps is either held (`set_balls_held`: a scoop or VUK that will kick it back out, still in play)
+  or locked (`set_balls_locked`: a ball lock keeping it for later, out of play until released). Don't use one for the
+  other: a held ball keeps the turn going, and a locked one doesn't.
 - Ball management reports drains but doesn't decide what they mean. During a turn, the game manager runs the
   `BallDraining` routine for each drain. Systems that can save a drain (ball save, outlane saves) are its
   participants, and halt it when they save one; the app lists them in the order they get the chance.

@@ -1,0 +1,71 @@
+Scene(
+  version: 2,
+  variables: {
+    "label": Text("Player 1"),
+    "score": Int(4231890),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Label",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 8.5)),
+          ],
+          base: Text(
+            text: Variable("label"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(118.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Score",
+        fill: (
+          base: Solid(Fixed(255, 255, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 19.0)),
+          ],
+          base: Text(
+            text: Number(
+              value: Variable("score"),
+              format: Grouped,
+            ),
+            font: "TenFatGuys",
+            size: Fixed(16.0),
+            width: Fixed(118.0),
+            height: Fixed(16.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

@@ -7,6 +7,7 @@ import { groupLabel, shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
+import { BINARY_CLIP, BINARY_DISPLAY_FRAME, receiveDisplayFrame } from './displays'
 import { receiveSceneClip, receiveSceneClipFailed, receiveSceneRender } from './sceneRender'
 import { type Connection, connect, type ConnectionStatus } from './socket'
 
@@ -37,6 +38,7 @@ const [state, setState] = createStore<ConsoleState>({
   game: null,
   routines: [],
   planes: [],
+  displays: [],
   led_colors: {},
   configs: {},
   log: [],
@@ -50,7 +52,7 @@ let connection: Connection | null = null
 
 /** Returns a cleanup function */
 export function startConsole(): () => void {
-  connection = connect(handleMessage, receiveSceneClip, (status) => setState('connection', status))
+  connection = connect(handleMessage, handleBinary, (status) => setState('connection', status))
   return () => {
     connection?.close()
     connection = null
@@ -64,7 +66,7 @@ export function sendToMachine(message: ClientMessage) {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, driver_modes, game, planes, led_colors, configs, log } = message
+      const { hardware, groups, switches, drivers, driver_modes, game, planes, displays, led_colors, configs, log } = message
       // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
       // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
       // would rebuild everything that reads them.
@@ -72,7 +74,7 @@ function handleMessage(message: ServerMessage) {
         setState('hardware', reconcile(hardware))
         setState('led_colors', reconcile(led_colors))
         setState('configs', reconcile(configs))
-        setState({ groups, switches, drivers, driver_modes, game, planes, log })
+        setState({ groups, switches, drivers, driver_modes, game, planes, displays, log })
       })
       break
     }
@@ -107,6 +109,18 @@ function handleMessage(message: ServerMessage) {
       break
     case 'SceneClipFailed':
       receiveSceneClipFailed(message.id, message.error)
+      break
+  }
+}
+
+/** Its first byte says what it is */
+function handleBinary(message: ArrayBuffer) {
+  switch (new Uint8Array(message)[0]) {
+    case BINARY_CLIP:
+      receiveSceneClip(message.slice(1))
+      break
+    case BINARY_DISPLAY_FRAME:
+      receiveDisplayFrame(message)
       break
   }
 }

@@ -31,7 +31,7 @@ impl DriverTriggers {
       DriverTriggerControlMode::Off => {
         self.triggers.remove(&driver_id);
       }
-      // a tap is one-shot, so it leaves the driver as it was
+      // a tap leaves FAST under manual control, but `MachineSystem` triggers the driver again the way it was
       DriverTriggerControlMode::Manual => {}
     }
   }

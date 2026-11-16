@@ -4,6 +4,7 @@ import type { FillNode } from "./FillNode";
 import type { GraphMask } from "./GraphMask";
 import type { Mask } from "./Mask";
 import type { Node } from "./Node";
+import type { Prop } from "./Prop";
 import type { ShapeAdjust } from "./ShapeAdjust";
 import type { ShapeNode } from "./ShapeNode";
 
@@ -16,9 +17,15 @@ export type Layer = {
  */
 name?: string, 
 /**
- * Skipped when drawing, but still validated by `check`
+ * Skipped when drawing, but still validated by `check`. For the editor, to see the layers under it; `visible` is
+ * for the scene.
  */
-hidden?: boolean, fill: Node<FillNode, ColorAdjust>, 
+hidden?: boolean, 
+/**
+ * Whether it's drawn, such as a score for a player who's in the game. Like any prop, it can come from a variable, or
+ * switch on keyframes; a number, as from a random prop or a wave, is visible from 0.5 up. Always visible if left out.
+ */
+visible?: Prop<boolean>, fill: Node<FillNode, ColorAdjust>, 
 /**
  * Where the layer draws, and what its fill is stretched over. `None` covers the whole viewport.
  */

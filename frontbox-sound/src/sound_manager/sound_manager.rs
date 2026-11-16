@@ -15,8 +15,8 @@ use super::connection::Connection;
 use super::output::{ActiveCallout, Output};
 use super::output_device::{Opened, OutputDevice};
 use super::sound_manager_message::SoundManagerMessage;
-use crate::CalloutCompleted;
 use crate::callout::{CalloutQueue, CalloutRequest};
+use crate::{CalloutCompleted, SoundKey};
 
 /// How often the manager checks on callouts and the output
 const TICK: Duration = Duration::from_millis(100);
@@ -29,7 +29,7 @@ pub(crate) struct SoundManager {
   device: OutputDevice,
   rx: mpsc::UnboundedReceiver<SoundManagerMessage>,
   completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
-  sounds: HashMap<&'static str, StaticSoundData>,
+  sounds: HashMap<SoundKey, StaticSoundData>,
   callout_volume: f32,
   /// The music asked for, so it can be started again on a new connection
   music: Option<PathBuf>,
@@ -81,7 +81,7 @@ impl SoundManager {
     match message {
       SoundManagerMessage::PreloadPath(name, path) => self.preload(name, path),
       SoundManagerMessage::PreloadEmbedded(name, bytes) => self.preload_embedded(name, bytes),
-      SoundManagerMessage::PlaySfx(key) => self.play_sfx(key),
+      SoundManagerMessage::PlaySfx(key, volume, skip, length) => self.play_sfx(key, volume, skip, length),
       SoundManagerMessage::PlayCallout(request) => self.play_callout(request),
       SoundManagerMessage::SetCalloutVolume(db) => self.set_callout_volume(db),
       SoundManagerMessage::PlayMusic(path, crossfade) => self.play_music(path, crossfade),
@@ -229,7 +229,7 @@ impl SoundManager {
 
   // --- Messages ---
 
-  fn preload(&mut self, name: &'static str, path: impl AsRef<Path>) {
+  fn preload(&mut self, name: SoundKey, path: impl AsRef<Path>) {
     log::debug!(target: "frontbox::sound", "Preloading sound '{}' at {:?}", name, path.as_ref());
     match StaticSoundData::from_file(path.as_ref()) {
       Ok(sound) => {
@@ -244,7 +244,7 @@ impl SoundManager {
     }
   }
 
-  fn preload_embedded(&mut self, name: &'static str, bytes: &'static [u8]) {
+  fn preload_embedded(&mut self, name: SoundKey, bytes: &'static [u8]) {
     log::debug!(
       target: "frontbox::sound",
       "Preloading embedded sound '{}' ({} bytes)",
@@ -261,8 +261,8 @@ impl SoundManager {
     }
   }
 
-  fn play_sfx(&mut self, key: &'static str) {
-    let Some(sound) = self.sounds.get(key) else {
+  fn play_sfx(&mut self, key: SoundKey, volume: f32, skip: Duration, length: Option<Duration>) {
+    let Some(sound) = self.sounds.get(&key) else {
       log::error!(target: "frontbox::sound", "🔊 Sound with key '{}' not found", key);
       return;
     };
@@ -270,7 +270,7 @@ impl SoundManager {
       log::debug!(target: "frontbox::sound", "🔇 No audio output, skipped SFX '{}'", key);
       return;
     };
-    output.play_sfx(key, sound.clone());
+    output.play_sfx(&key, sound.clone(), volume, skip, length);
   }
 
   fn play_callout(&mut self, request: CalloutRequest) {

@@ -1,17 +1,13 @@
 import { createEffect, createSignal, on, Show, untrack, useContext } from 'solid-js'
 import { machine } from '../../state/console'
 import type { LedQ } from '../../types/generated/LedQ'
-import LedPicker, { canPick, EVERY_LED, ledPick, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
-import { Dropdown, FieldRow, NumberBox, SceneContext } from './SceneFields'
-import { field, layerPlane, ledsCase, withLayerSurface, type Lens, type SceneLayer } from './sceneModel'
+import LedPicker, { canPick, ledPick, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
+import { SceneContext } from './SceneFields'
+import { layerPlace, ledsCase, type LayerPlace, type Lens, type Scene } from './sceneModel'
 
-const TYPE_OPTIONS: { value: 'Sequence' | 'Area'; label: string }[] = [
-  { value: 'Sequence', label: 'Sequence (1D)' },
-  { value: 'Area', label: 'Area (2D)' },
-]
-
+// a layer with no LEDs yet says so in its own row
 const LEDS_NOTES = {
-  None: "A layer has no LEDs yet. It previews on every LED, and this can't play in the game.",
+  None: null,
   Replaceable: 'Code can replace these LEDs.',
   Fixed: "Layers are on different LEDs, so code can't replace them.",
 }
@@ -21,59 +17,46 @@ export function planeNames() {
   return machine.planes.filter((plane) => plane.extent[0] > 0 && plane.extent[1] > 0).map((plane) => plane.name)
 }
 
+/** What a display layer is on when the machine has no displays and the scene names none, as the framework's scenes are */
+const DEFAULT_DISPLAY = 'Dmd'
+
+/** The displays a scene's layers can be on: the machine's, then any others the scene names */
+export function displayNames(scene: Scene) {
+  const named = scene.layers.flatMap((layer) => (layer.display === undefined ? [] : [layer.display]))
+  const names = [...new Set([...machine.displays.map((display) => display.name), ...named])]
+  return names.length > 0 ? names : [DEFAULT_DISPLAY]
+}
+
+/** The kinds of place a new layer can go on, which pick a plane or display for it that "Draws on" can change */
+export type NewLayerPlace = 'Sequence' | 'Area' | 'Display'
+
+export const NEW_LAYER_OPTIONS: { value: NewLayerPlace; label: string }[] = [
+  { value: 'Sequence', label: 'LED sequence' },
+  { value: 'Area', label: 'LED area' },
+  { value: 'Display', label: 'Display' },
+]
+
+/** Where a new layer of a kind goes: the plane or display of the scene's last layer on one, or else the first there is */
+export function newPlace(scene: Scene, kind: NewLayerPlace): LayerPlace {
+  if (kind === 'Sequence') return 'Sequence'
+  const places = scene.layers.map(layerPlace)
+  const prefix = kind === 'Area' ? 'Area:' : 'Display:'
+  const first = kind === 'Area' ? `Area:${planeNames()[0]}` : `Display:${displayNames(scene)[0]}`
+  return places.findLast((place) => place.startsWith(prefix)) ?? (first as LayerPlace)
+}
+
 /** What code can do with a scene's LEDs, which comes of the LEDs its layers are on */
 export function LedsNote() {
   const scene = useContext(SceneContext)!
   return (
-    <Show when={scene.get().layers.length > 0}>
-      <p class="scene-note">{LEDS_NOTES[ledsCase(scene.get())]}</p>
+    <Show when={scene.get().layers.some((layer) => layer.display === undefined) && LEDS_NOTES[ledsCase(scene.get())]}>
+      {(note) => <p class="scene-note">{note()}</p>}
     </Show>
   )
 }
 
-/** Where a layer of an LED scene happens: on what, on which LEDs, and how it stacks up against everything else on them */
-export default function LayerPlace(props: { lens: Lens<SceneLayer> }) {
-  const scene = useContext(SceneContext)!
-  const plane = () => layerPlane(props.lens.get())
-  const type = () => (plane() === null ? 'Sequence' : 'Area')
-
-  return (
-    <Show when={scene.get().kind === 'Led'}>
-      <section class="scene-group">
-        <FieldRow label="Type">
-          <Dropdown
-            label="Type"
-            options={TYPE_OPTIONS}
-            value={type()}
-            onChange={(value) => {
-              if (value === type()) return
-              props.lens.set(withLayerSurface(props.lens.get(), value === 'Area' ? { Area: planeNames()[0] ?? '' } : 'Sequence'))
-            }}
-          />
-        </FieldRow>
-        <Show when={plane() !== null}>
-          <FieldRow label="Plane">
-            <Dropdown
-              label="Plane"
-              options={planeNames().map((name) => ({ value: name, label: name }))}
-              value={plane()!}
-              onChange={(name) => field(props.lens, 'surface').set({ Area: name })}
-            />
-          </FieldRow>
-        </Show>
-        <FieldRow label="LEDs">
-          <LayerLeds lens={field(props.lens, 'leds')} />
-        </FieldRow>
-        <FieldRow label="Z">
-          <NumberBox aria-label="Z" step="1" value={props.lens.get().z ?? 0} onNumber={(z) => field(props.lens, 'z').set(Math.round(z) || undefined)} />
-        </FieldRow>
-      </section>
-    </Show>
-  )
-}
-
-/** Which LEDs a layer is on, if it's been said */
-function LayerLeds(props: { lens: Lens<LedQ | undefined> }) {
+/** Which LEDs a layer is on. New layers start on every LED, and only a scene from before then has none. */
+export function LayerLeds(props: { lens: Lens<LedQ | undefined> }) {
   // what's been picked each way is kept here to come back to, as the file only has the way that's in use
   const [pick, setPick] = createSignal(ledPick(props.lens.get() ?? 'Every'))
   createEffect(
@@ -90,26 +73,21 @@ function LayerLeds(props: { lens: Lens<LedQ | undefined> }) {
     props.lens.set(pickedQuery(chosen))
   }
 
+  const label = () => {
+    const leds = props.lens.get()
+    return leds === undefined ? 'None' : ledsLabel(leds)
+  }
+  const title = () => {
+    const leds = props.lens.get()
+    return leds === undefined || canPick(leds) ? label() : 'Replaced if chosen here. Edit it in Raw to keep it.'
+  }
+
   return (
-    <Show
-      when={props.lens.get()}
-      fallback={
-        <button type="button" class="scene-add" onClick={() => choose(EVERY_LED)}>
-          Choose LEDs
-        </button>
-      }
-    >
-      {(leds) => (
-        <div class="scene-layer-leds">
-          <LedPicker pick={pick()} onChange={choose} />
-          <span class="scene-note" title={canPick(leds()) ? undefined : 'Replaced if chosen here. Edit it in Raw to keep it.'}>
-            {ledsLabel(leds())}
-          </span>
-          <button type="button" class="scene-layer-leds-clear" aria-label="Clear LEDs" onClick={() => props.lens.set(undefined)}>
-            ×
-          </button>
-        </div>
-      )}
-    </Show>
+    <div class="scene-layer-leds">
+      <span class="scene-note" title={title()}>
+        {label()}
+      </span>
+      <LedPicker pick={pick()} onChange={choose} />
+    </div>
   )
 }

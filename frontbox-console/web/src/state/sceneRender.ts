@@ -1,4 +1,7 @@
 import { createSignal, untrack } from 'solid-js'
+import type { ClipCanvas } from '../types/generated/ClipCanvas'
+import type { ClipSound } from '../types/generated/ClipSound'
+import type { ReferenceScene } from '../types/generated/ReferenceScene'
 import type { RenderedClip } from '../types/generated/RenderedClip'
 import type { RenderedScene } from '../types/generated/RenderedScene'
 import type { SceneSize } from '../types/generated/SceneSize'
@@ -20,20 +23,39 @@ const REPLY_TIMEOUT_MS = 1000
 /** The same for a clip, which has a whole cycle to render */
 const CLIP_TIMEOUT_MS = 30000
 
-type Target = { source: SceneSource; size: SceneSize }
+/** What's drawn, and another scene from the content folder drawn with it, if any */
+type Target = { source: SceneSource; size: SceneSize; reference: ReferenceScene | null }
+
+const newSeed = () => Math.floor(Math.random() * 2 ** 32)
+
+/**
+ * What the preview's random choices come from. It stays the same while a play of the scene is under way, so its moments
+ * agree, and a new play gets a new one, as each playback on the machine does.
+ */
+let seed = newSeed()
+
+/** Starts a new play of the scene, with random choices of its own. Clips of the last one are let go. */
+export function reseedScenePreview() {
+  seed = newSeed()
+  clipsRendered = null
+  setClips(new Map())
+}
 
 /** A cycle of a scene, rendered ahead so it can be played without asking the machine for each frame */
 export type SceneClip = {
   frames: number
-  width: number
-  height: number
+  /** The strip and the displays, as a render has them */
+  canvases: ClipCanvasFrames[]
   /** Where each LED's colors are in a frame */
   ledIndex: Map<string, number>
-  /** Each frame's points, as a canvas takes them */
-  points: Uint8ClampedArray<ArrayBuffer>
   /** Each frame's LEDs, as red, green, and blue */
   leds: Uint8Array
+  /** The clips the cycle starts, in the order they start */
+  sounds: ClipSound[]
 }
+
+/** One of a clip's canvases, with each frame's points as a canvas takes them */
+export type ClipCanvasFrames = ClipCanvas & { points: Uint8ClampedArray<ArrayBuffer> }
 
 const [render, setRender] = createSignal<SceneRender | null>(null)
 
@@ -41,7 +63,7 @@ const [render, setRender] = createSignal<SceneRender | null>(null)
 export const sceneRender = render
 
 let inFlight: { timeout: ReturnType<typeof setTimeout> } | null = null
-let waiting: (Target & { time: number; cycle: number | null }) | null = null
+let waiting: (Target & { time: number; cycle: number | null; seed: number }) | null = null
 // what the next reply answers, which outlives `inFlight` as a slow render is still worth having. `null` once forgotten.
 let asked: SceneSource | null = null
 
@@ -49,16 +71,16 @@ let asked: SceneSource | null = null
  * Asks the machine to render a scene. One request runs at a time and only the newest waits, so dragging a slider can't
  * queue up renders. Waits a tick so that the edits of one change go together.
  */
-export function renderScene(source: SceneSource, size: SceneSize, time: number, cycle: number | null) {
-  waiting = { source, size, time, cycle }
+export function renderScene(source: SceneSource, size: SceneSize, time: number, cycle: number | null, reference: ReferenceScene | null) {
+  waiting = { source, size, time, cycle, reference, seed }
   queueMicrotask(sendWaiting)
 }
 
 function sendWaiting() {
   if (inFlight || !waiting) return
-  const { source, size, time, cycle } = waiting
+  const { source, size, time, cycle, reference, seed } = waiting
   waiting = null
-  sendToMachine({ type: 'RenderScene', source, size, time, cycle })
+  sendToMachine({ type: 'RenderScene', source, size, time, cycle, reference, seed })
   asked = source
   inFlight = { timeout: setTimeout(replied, REPLY_TIMEOUT_MS) }
 }
@@ -99,24 +121,30 @@ export const sceneClipRendering = clipRendering
 export const sceneClipError = clipError
 
 let nextClipId = 0
-let clipInFlight: { id: number; target: Target; cycle: number; timeout: ReturnType<typeof setTimeout> } | null = null
-let clipsWanted: (Target & { cycles: number[] }) | null = null
-// what `clips` are of
-let clipsRendered: Target | null = null
+/** A clip is of a scene as drawn with a seed, as another seed draws it differently */
+type ClipTarget = Target & { seed: number }
 
-const sameTarget = (a: Target, b: Target | null) =>
+let clipInFlight: { id: number; target: ClipTarget; cycle: number; timeout: ReturnType<typeof setTimeout> } | null = null
+let clipsWanted: (ClipTarget & { cycles: number[] }) | null = null
+// what `clips` are of
+let clipsRendered: ClipTarget | null = null
+
+const sameTarget = (a: ClipTarget, b: ClipTarget | null) =>
   b !== null &&
+  a.seed === b.seed &&
   a.source === b.source &&
   a.size.leds === b.size.leds &&
   a.size.width === b.size.width &&
-  a.size.height === b.size.height
+  a.size.height === b.size.height &&
+  a.reference?.name === b.reference?.name &&
+  a.reference?.above === b.reference?.above
 
 /**
  * Has the machine render these cycles of a scene, in order, and lets go of any others. Runs as `renderScene` does, one
  * at a time with only the newest scene waiting, and does nothing for a clip that's already rendered.
  */
-export function renderClips(source: SceneSource, size: SceneSize, cycles: number[]) {
-  clipsWanted = { source, size, cycles }
+export function renderClips(source: SceneSource, size: SceneSize, reference: ReferenceScene | null, cycles: number[]) {
+  clipsWanted = { source, size, reference, seed, cycles }
   // called from effects, which shouldn't run again for what this does to the clips
   untrack(() => {
     const kept = [...clips()].filter(([cycle]) => cycles.includes(cycle))
@@ -132,8 +160,8 @@ function sendMissingClip() {
   setClipRendering(cycle !== undefined && cycle === wanted?.cycles[0])
   if (clipInFlight || !wanted || cycle === undefined) return
 
-  const { source, size } = wanted
-  const target = { source, size }
+  const { source, size, reference, seed } = wanted
+  const target = { source, size, reference, seed }
   const id = nextClipId++
   sendToMachine({ type: 'RenderClip', id, ...target, cycle })
   clipInFlight = { id, target, cycle, timeout: setTimeout(() => clipReplied(id), CLIP_TIMEOUT_MS) }
@@ -146,23 +174,28 @@ function clipReplied(id: number) {
   sendMissingClip()
 }
 
-/** Called by the console for each binary message, which is always a clip */
+/** Called by the console for each clip: a binary message without its first byte */
 export function receiveSceneClip(message: ArrayBuffer) {
   const headerLength = new DataView(message).getUint32(0, true)
   const header: RenderedClip = JSON.parse(new TextDecoder().decode(new Uint8Array(message, 4, headerLength)))
   if (clipInFlight?.id !== header.id) return
   const { target, cycle } = clipInFlight
 
-  const { frames, width, height, leds } = header
-  const pointsStart = 4 + headerLength
-  const ledsStart = pointsStart + frames * width * height * 4
+  const { frames, leds, sounds } = header
+  // each canvas's frames go together, one canvas after another
+  let start = 4 + headerLength
+  const canvases = header.canvases.map((canvas) => {
+    const length = frames * canvas.width * canvas.height * 4
+    const points = new Uint8ClampedArray(message, start, length)
+    start += length
+    return { ...canvas, points }
+  })
   const clip = {
     frames,
-    width,
-    height,
+    canvases,
     ledIndex: new Map(leds.map((name, index) => [name, index])),
-    points: new Uint8ClampedArray(message, pointsStart, ledsStart - pointsStart),
-    leds: new Uint8Array(message, ledsStart),
+    leds: new Uint8Array(message, start),
+    sounds,
   }
   setClips((rendered) => new Map(sameTarget(target, clipsRendered) ? [...rendered, [cycle, clip]] : [[cycle, clip]]))
   clipsRendered = target

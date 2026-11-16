@@ -6,9 +6,14 @@ edition = "2024"
 [dependencies]
 log = "0.4.29"
 frontbox-core = { path = "../frontbox-core" }
+frontbox-gfx = { path = "../frontbox-gfx" }
+frontbox-scene = { path = "../frontbox-scene" }
 dyn-clone = "1.0.20"
 kira = "0.12.0"
 cpal = "0.17" # must match version kira uses
 tokio = "1.53.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+
+[dev-dependencies]
+frontbox-core = { path = "../frontbox-core", features = ["testing"] }

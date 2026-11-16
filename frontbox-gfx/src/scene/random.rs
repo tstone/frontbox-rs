@@ -209,7 +209,7 @@ mod tests {
   use super::*;
   use crate::animation::Cycle;
   use crate::scene::value::tests::env;
-  use crate::scene::{Color, Params, Prop, Timing};
+  use crate::scene::{Color, Variables, Prop, Timing};
 
   fn random(picks: Vec<f32>) -> Random {
     Random {
@@ -222,12 +222,12 @@ mod tests {
 
   /// The value of a [`random`] with these picks, at a moment of a scene 4 seconds long
   fn smoothed(picks: &[Pick], cycle: Cycle, scene_time: f32) -> f32 {
-    let params = Params::new();
+    let variables = Variables::new();
     let timing = Timing::new(4.0, cycle);
     let env = Env {
       cycle: timing.cycle_index(scene_time),
       timing: Some(timing),
-      ..env(timing.local_time(scene_time), &params)
+      ..env(timing.local_time(scene_time), &variables)
     };
     Random { picks: picks.to_vec(), ..random(vec![]) }.resolve(&env)
   }
@@ -238,44 +238,44 @@ mod tests {
 
   #[test]
   fn holds_a_value_until_the_next_pick() {
-    let params = Params::new();
+    let variables = Variables::new();
     let random = random(vec![0.0, 1.0]);
-    let first: f32 = random.resolve(&env(0.0, &params));
-    assert_eq!(random.resolve::<f32>(&env(0.5, &params)), first);
-    assert_eq!(random.resolve::<f32>(&env(0.99, &params)), first);
-    assert_ne!(random.resolve::<f32>(&env(1.0, &params)), first);
-    assert_eq!(random.resolve::<f32>(&env(1.0, &params)), random.resolve::<f32>(&env(50.0, &params)));
+    let first: f32 = random.resolve(&env(0.0, &variables));
+    assert_eq!(random.resolve::<f32>(&env(0.5, &variables)), first);
+    assert_eq!(random.resolve::<f32>(&env(0.99, &variables)), first);
+    assert_ne!(random.resolve::<f32>(&env(1.0, &variables)), first);
+    assert_eq!(random.resolve::<f32>(&env(1.0, &variables)), random.resolve::<f32>(&env(50.0, &variables)));
   }
 
   #[test]
   fn the_first_pick_covers_the_time_before_it() {
-    let params = Params::new();
+    let variables = Variables::new();
     let random = random(vec![1.0]);
-    assert_eq!(random.resolve::<f32>(&env(0.0, &params)), random.resolve::<f32>(&env(1.0, &params)));
+    assert_eq!(random.resolve::<f32>(&env(0.0, &variables)), random.resolve::<f32>(&env(1.0, &variables)));
   }
 
   #[test]
   fn each_cycle_and_each_take_picks_again() {
-    let params = Params::new();
+    let variables = Variables::new();
     let random = random(vec![0.0]);
-    let first: f32 = random.resolve(&env(0.0, &params));
-    assert_ne!(random.resolve::<f32>(&Env { cycle: 1, ..env(0.0, &params) }), first);
-    assert_ne!(random.resolve::<f32>(&Env { playback_seed: 1, ..env(0.0, &params) }), first);
+    let first: f32 = random.resolve(&env(0.0, &variables));
+    assert_ne!(random.resolve::<f32>(&Env { cycle: 1, ..env(0.0, &variables) }), first);
+    assert_ne!(random.resolve::<f32>(&Env { playback_seed: 1, ..env(0.0, &variables) }), first);
   }
 
   #[test]
   fn seeds_keep_props_apart() {
-    let params = Params::new();
+    let variables = Variables::new();
     let other = Random { seed: 2, ..random(vec![0.0]) };
-    assert_ne!(random(vec![0.0]).resolve::<f32>(&env(0.0, &params)), other.resolve::<f32>(&env(0.0, &params)));
+    assert_ne!(random(vec![0.0]).resolve::<f32>(&env(0.0, &variables)), other.resolve::<f32>(&env(0.0, &variables)));
   }
 
   #[test]
   fn stays_in_its_spread() {
-    let params = Params::new();
+    let variables = Variables::new();
     let spread = Spread::Vec2 { x: (2.0, 3.0), y: (-5.0, -4.0) };
     for seed in 0..500 {
-      let value: Vec2 = Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve(&env(0.0, &params));
+      let value: Vec2 = Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve(&env(0.0, &variables));
       assert!((2.0..=3.0).contains(&value.x), "{value}");
       assert!((-5.0..=-4.0).contains(&value.y), "{value}");
     }
@@ -283,17 +283,17 @@ mod tests {
 
   #[test]
   fn an_empty_spread_is_that_value() {
-    let params = Params::new();
+    let variables = Variables::new();
     let random = Random { picks: vec![Pick::new(0.0)], spread: Spread::Float(4.0, 4.0), seed: 1, force_unique: true };
-    assert_eq!(random.resolve::<f32>(&env(0.0, &params)), 4.0);
+    assert_eq!(random.resolve::<f32>(&env(0.0, &variables)), 4.0);
   }
 
   #[test]
   fn colors_are_picked_by_hue_and_brightness() {
-    let params = Params::new();
+    let variables = Variables::new();
     let color = |hue, brightness| -> Rgba<u8> {
       let spread = Spread::Color { hue, brightness, alpha: (1.0, 1.0) };
-      Random { picks: vec![Pick::new(0.0)], spread, seed: 1, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0
+      Random { picks: vec![Pick::new(0.0)], spread, seed: 1, force_unique: true }.resolve::<Color>(&env(0.0, &variables)).0
     };
     assert_eq!(color((120.0, 120.0), (1.0, 1.0)), Rgba([0, 255, 0, 255]));
     assert_eq!(color((240.0, 240.0), (0.5, 0.5)), Rgba([0, 0, 128, 255]));
@@ -302,11 +302,11 @@ mod tests {
 
   #[test]
   fn hues_can_span_the_reds_on_both_sides_of_zero() {
-    let params = Params::new();
+    let variables = Variables::new();
     for seed in 0..500 {
       let spread = Spread::Color { hue: (330.0, 390.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
       let picks = vec![Pick::new(0.0)];
-      let Rgba([red, green, blue, _]) = Random { picks, spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0;
+      let Rgba([red, green, blue, _]) = Random { picks, spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &variables)).0;
       assert_eq!(red, 255);
       assert!(green <= 128 && blue <= 128, "{green} {blue}");
     }
@@ -314,12 +314,12 @@ mod tests {
 
   #[test]
   fn alpha_stays_in_its_spread_and_comes_apart_from_the_color() {
-    let params = Params::new();
+    let variables = Variables::new();
     let spread = Spread::Color { hue: (120.0, 120.0), brightness: (1.0, 1.0), alpha: (0.25, 0.75) };
     let alphas: Vec<u8> = (0..500)
       .map(|seed| {
         let Rgba([red, green, blue, alpha]) =
-          Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &params)).0;
+          Random { picks: vec![Pick::new(0.0)], spread, seed, force_unique: true }.resolve::<Color>(&env(0.0, &variables)).0;
         assert_eq!((red, green, blue), (0, 255, 0));
         alpha
       })
@@ -404,13 +404,13 @@ mod tests {
 
   /// What each pick comes to, as whole numbers, over a scene looping through these picks for `instances` of them
   fn whole_picks(random: &Random, instances: u32) -> Vec<f32> {
-    let params = Params::new();
+    let variables = Variables::new();
     let timing = Timing::new(1.0, Cycle::Forever);
     let count = random.picks.len() as u32;
     (0..instances)
       .map(|instance| {
         let time = random.picks[(instance % count) as usize].at;
-        random.resolve_truncated(&Env { cycle: instance / count, timing: Some(timing), ..env(time, &params) })
+        random.resolve_truncated(&Env { cycle: instance / count, timing: Some(timing), ..env(time, &variables) })
       })
       .collect()
   }
@@ -453,13 +453,13 @@ mod tests {
 
   #[test]
   fn colors_differ_from_the_one_before_too() {
-    let params = Params::new();
+    let variables = Variables::new();
     let timing = Timing::new(1.0, Cycle::Forever);
     // only a few colors are this dark
     let spread = Spread::Color { hue: (120.0, 120.0), brightness: (0.0, 0.016), alpha: (1.0, 1.0) };
     let random = Random { spread, ..random(vec![0.0]) };
     let colors: Vec<Color> =
-      (0..200).map(|cycle| random.resolve(&Env { cycle, timing: Some(timing), ..env(0.0, &params) })).collect();
+      (0..200).map(|cycle| random.resolve(&Env { cycle, timing: Some(timing), ..env(0.0, &variables) })).collect();
     assert!(colors.windows(2).all(|pair| pair[0] != pair[1]));
   }
 
@@ -470,16 +470,16 @@ mod tests {
 
   #[test]
   fn nothing_to_pick_from_is_the_default() {
-    let params = Params::new();
-    assert_eq!(random(vec![]).resolve::<f32>(&env(0.0, &params)), 0.0);
-    assert_eq!(random(vec![0.0]).resolve::<Color>(&env(0.0, &params)), Color::default());
+    let variables = Variables::new();
+    assert_eq!(random(vec![]).resolve::<f32>(&env(0.0, &variables)), 0.0);
+    assert_eq!(random(vec![0.0]).resolve::<Color>(&env(0.0, &variables)), Color::default());
   }
 
   #[test]
   fn a_prop_reads_its_picks_and_is_animated() {
-    let params = Params::new();
+    let variables = Variables::new();
     let prop: Prop<f32> = Prop::Random(random(vec![0.0]));
     assert!(prop.is_animated());
-    assert_eq!(prop.resolve(&env(0.0, &params)), random(vec![0.0]).resolve::<f32>(&env(0.0, &params)));
+    assert_eq!(prop.resolve(&env(0.0, &variables)), random(vec![0.0]).resolve::<f32>(&env(0.0, &variables)));
   }
 }

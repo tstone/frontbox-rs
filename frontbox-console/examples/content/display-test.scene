@@ -1,0 +1,68 @@
+Scene(
+  version: 2,
+  timing: (
+    duration: 4.0,
+    cycle: Forever,
+  ),
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        fill: (
+          base: Image(name: "bg.png"),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      z: 1,
+      layer: (
+        fill: (
+          base: Image(name: "forestman.png"),
+        ),
+        region: (
+          base: Rect(width: Fixed(32.0), height: Fixed(32.0)),
+          transform: [
+            Translate(Keyframes(
+              keys: [
+                (at: 0.0, value: (-16.0, 16.0)),
+                (at: 4.0, value: (144.0, 16.0)),
+              ],
+              cycle: Once,
+            )),
+          ],
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      z: 2,
+      layer: (
+        fill: (
+          base: Solid(Keyframes(
+            keys: [
+              (at: 0.0, value: (255, 0, 0, 255), curve: SineInOut),
+              (at: 2.0, value: (255, 220, 0, 255), curve: SineInOut),
+              (at: 4.0, value: (255, 0, 0, 255)),
+            ],
+            cycle: Once,
+          )),
+        ),
+        region: (
+          base: Circle(radius: Fixed(6.0)),
+          transform: [
+            Scale(Keyframes(
+              keys: [
+                (at: 0.0, value: 0.5, curve: SineInOut),
+                (at: 2.0, value: 1.0, curve: SineInOut),
+                (at: 4.0, value: 0.5),
+              ],
+              cycle: Once,
+            )),
+            Translate(Fixed(112.0, 10.0)),
+          ],
+        ),
+      ),
+    ),
+  ],
+)

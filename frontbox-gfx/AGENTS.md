@@ -19,14 +19,15 @@ may depend on general crates (`image`, `palette`, `glam`, `serde`, `ron`).
 
 ## Hardware stays out of this crate
 
-gfx describes what a composition looks like and how it moves. Which LEDs it lands on (`LedQ`), which plane, z-index, and
-DMD pixel grids all belong to the adapter crates (`frontbox-led`, `frontbox-dmd`). Each has its own scene type, a
-`GfxComposition` plus what that hardware needs, and that's what's written to a `.scene` file. So a scene file does name
-hardware, and an LED scene and a DMD scene aren't interchangeable. Only this crate stays free of it.
+gfx describes what a layer looks like and how it moves, and samples one layer at a time. What a layer is drawn on (which
+LEDs, which plane, which display) and its z belong to `frontbox-scene`, whose `Scene` is layers on one timeline, each
+saying what it's on. That's what's written to a `.scene` file, so a scene file does name hardware. Placing layers on
+hardware belongs to the crates that draw them (`frontbox-led`, and a display crate). Only this crate stays free of it.
 
 ## Definitions are data
 
-gfx owns the definition of compositions and the storage format of scene files (RON).
+gfx owns the definition of layers and the storage format of scene files (RON): the extensions they're written with and
+the format version. `frontbox-scene` owns the top-level type.
 
 - Definitions are enums and structs that derive `Serialize`/`Deserialize`. No trait objects, closures, or `fn`
   pointers in a definition. When there's a choice of kinds, it's an enum variant, not a trait implementation.
@@ -47,7 +48,7 @@ There is no separate 1d model. A `Surface` is either a `Sequence` of points in o
 difference: every layer, shape, fill, blend, mask, and filter works in both. Don't add a feature that only works in one;
 if a strip needs something, build it so it also works on a plane.
 
-A device maps its points into the viewport, so a composition never changes with a device's resolution.
+A device maps its points into the viewport, so a layer never changes with a device's resolution.
 
 ## Units and color
 

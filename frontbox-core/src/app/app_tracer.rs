@@ -212,4 +212,22 @@ pub enum TracerControlEvent {
     key: String,
     value: ConfigDomainValue,
   },
+  /// Play a sound from the content folder, as a scene previewed in the console reaches one of its sounds. Sent on to
+  /// systems as [`SoundPreviewRequested`].
+  PlaySound {
+    sound: String,
+    volume: f32,
+    skip: f32,
+    length: Option<f32>,
+  },
+}
+
+/// A tracer asked for a sound from the content folder to be played, at `volume` (1.0 is as recorded), from `skip` seconds
+/// in, and cut off after `length` seconds if given. `SoundSystem` plays it.
+#[derive(Debug, Clone, serde::Serialize, Event)]
+pub struct SoundPreviewRequested {
+  pub sound: String,
+  pub volume: f32,
+  pub skip: f32,
+  pub length: Option<f32>,
 }

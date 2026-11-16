@@ -16,6 +16,7 @@ impl ReferencePlaneBuilder {
         name,
         origin: Vec3::ZERO,
         extent: Vec2::ZERO,
+        outline: Vec::new(),
         rotation: Quat::IDENTITY,
         parent: None,
         image: None,
@@ -32,6 +33,14 @@ impl ReferencePlaneBuilder {
   /// Fixed size of the plane: width (x), height (y)
   pub const fn extent(mut self, extent: Vec2) -> Self {
     self.plane.extent = extent;
+    self
+  }
+
+  /// The plane's edge as a polygon, for a surface that isn't a rectangle. Points are in the plane's coordinates, at or
+  /// past its origin, and the extent becomes their bounds.
+  pub fn outline(mut self, points: impl Into<Vec<Vec2>>) -> Self {
+    self.plane.outline = points.into();
+    self.plane.extent = self.plane.outline.iter().fold(Vec2::ZERO, |bounds, point| bounds.max(*point));
     self
   }
 
@@ -63,8 +72,9 @@ impl ReferencePlaneBuilder {
   }
 
   pub const fn build(self) -> ReferencePlane {
-    // Moving `plane` out would drop the rest of `self`, which a const fn can't do (`image` has a destructor). There
-    // is nothing else in `self`, so read `plane` out and forget the shell instead, letting planes be plain statics.
+    // Moving `plane` out would drop the rest of `self`, which a const fn can't do (`image` and `outline` have
+    // destructors). There is nothing else in `self`, so read `plane` out and forget the shell instead, letting planes
+    // be plain statics.
     let plane = unsafe { std::ptr::read(&self.plane) };
     std::mem::forget(self);
     plane

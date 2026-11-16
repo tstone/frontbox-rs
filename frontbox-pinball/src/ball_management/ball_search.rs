@@ -4,7 +4,7 @@ use frontbox_core::prelude::*;
 
 use crate::ball_management::{
   BallEnteredPlay, BallManager, BallSearchFailed, BallSearching, BallsExitedPlay,
-  MaxBallsInPlayChanged,
+  BallsHeldChanged, MaxBallsInPlayChanged,
 };
 use crate::{CoinDoor, configs, metrics};
 
@@ -23,6 +23,10 @@ const COIL_INTERVAL: Duration = Duration::from_millis(250);
 ///
 /// Each round runs the routine, then fires the `coils` (e.g. pop bumpers and slingshots, which have nothing to decide)
 /// one at a time in driver order. Ending the search cancels the round in progress, so no more coils fire.
+///
+/// A playfield switch hit while a round is firing coils, up to `COIL_INTERVAL` after the last one, doesn't end the
+/// search: the coils hit switches themselves (a kicker through a scoop's opto, a pop's skirt). A ball knocked loose
+/// shows up in the pause after the round, or drains.
 ///
 /// There's no search while a ball waits in the plunge lane for the player, while every ball not in the trough is held
 /// (`set_balls_held`), while one of the `hold_switches` is closed (the player cradling the ball on a flipper), or
@@ -83,6 +87,11 @@ impl BallSearchSystem {
     self.delay_cue = Some(ctx.cues.start(SearchDelayElapsed, delay.once()));
   }
 
+  /// Firing coils: in the routine, between coils, or waiting out the last one
+  fn is_firing(&self) -> bool {
+    self.routine_id.is_some() || self.coil_cue.is_some()
+  }
+
   fn ball_seen(&mut self, ctx: &SystemContext) {
     if self.is_searching() {
       log::info!(target: "frontbox::ball_management::ball_search", "Ball found, ending the search");
@@ -100,14 +109,15 @@ impl BallSearchSystem {
     self.coils_to_fire.clear();
   }
 
-  /// A ball is loose somewhere (in play, and not waiting in the plunge lane), and no operator is at the playfield
+  /// A ball is loose somewhere (in play, not held, and not waiting in the plunge lane), and no operator is at the
+  /// playfield
   fn has_loose_ball(&self, ctx: &SystemContext) -> bool {
     ctx.states.is(CoinDoor::Closed)
       && ctx
         .systems
         .get::<BallManager>()
         .is_some_and(|ball_manager| {
-          ball_manager.balls_in_play(ctx.into()) > 0
+          ball_manager.balls_in_play(ctx.into()) > ball_manager.balls_held()
             && !ball_manager.is_ball_in_plunge_lane(ctx.into())
         })
   }
@@ -156,23 +166,19 @@ impl BallSearchSystem {
       .map_or_else(Vec::new, |coils| coils.query_iter(ctx.into()).collect());
     coils.sort_by_key(|driver| driver.id);
     self.coils_to_fire = coils.into_iter().map(|driver| driver.name).collect();
-    self.fire_next_coil_later(ctx);
+    // the routine's last participant may have just fired
+    self.coil_cue = Some(ctx.cues.start(NextCoilDue, COIL_INTERVAL.once()));
   }
 
+  /// Fire the next coil and wait out the interval after it, or complete the round once the last one's interval is over
   fn on_next_coil_due(&mut self, ctx: &SystemContext) {
     self.coil_cue = None;
-    if let Some(coil) = self.coils_to_fire.pop_front() {
-      ctx.drivers.activate(coil, ActivationMode::Tap);
-    }
-    self.fire_next_coil_later(ctx);
-  }
-
-  /// Wait out the interval before the next coil, or complete the round once there are none left
-  fn fire_next_coil_later(&mut self, ctx: &SystemContext) {
-    if self.coils_to_fire.is_empty() {
-      self.on_round_completed(ctx);
-    } else {
-      self.coil_cue = Some(ctx.cues.start(NextCoilDue, COIL_INTERVAL.once()));
+    match self.coils_to_fire.pop_front() {
+      Some(coil) => {
+        ctx.drivers.activate(coil, ActivationMode::Tap);
+        self.coil_cue = Some(ctx.cues.start(NextCoilDue, COIL_INTERVAL.once()));
+      }
+      None => self.on_round_completed(ctx),
     }
   }
 
@@ -223,7 +229,10 @@ impl System for BallSearchSystem {
     if let Some(event) = event.downcast_ref::<SwitchClosed>()
       && self.playfield_switches.matches(&event.switch)
     {
-      self.ball_seen(ctx);
+      // likely one of the search's own coils
+      if !self.is_firing() {
+        self.ball_seen(ctx);
+      }
     } else if let Some(event) = event.downcast_ref::<SwitchOpened>()
       && self
         .hold_switches
@@ -233,8 +242,11 @@ impl System for BallSearchSystem {
       self.restart_delay(ctx);
     } else if event.is::<BallsExitedPlay>() || event.is::<BallEnteredPlay>() {
       self.ball_seen(ctx);
+    } else if let Some(BallsHeldChanged { delta: ..0, .. }) = event.downcast_ref::<BallsHeldChanged>() {
+      // a holder released its ball, which hasn't had the chance to hit a switch yet
+      self.restart_delay(ctx);
     } else if let Some(MaxBallsInPlayChanged { delta: 1.., .. }) = event.downcast_ref::<MaxBallsInPlayChanged>() {
-      // e.g. a holder released its ball, which hasn't had the chance to hit a switch yet
+      // a lock released its ball, or one that wasn't counted turned up, which may not have hit a switch yet
       self.restart_delay(ctx);
     } else if let Some(changed) = event.downcast_ref::<StateChanged<CoinDoor>>() {
       match changed.to {

@@ -33,6 +33,13 @@ impl Lerp for f64 {
   }
 }
 
+impl Lerp for bool {
+  /// Holds `self` until the end, as there's nothing between true and false: keyframes switch on the key they arrive at
+  fn interpolate(&self, other: &Self, t: f32) -> Self {
+    if t >= 1.0 { *other } else { *self }
+  }
+}
+
 impl Lerp for char {
   fn interpolate(&self, other: &Self, t: f32) -> Self {
     let from = *self as u32;

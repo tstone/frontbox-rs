@@ -4,12 +4,15 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+use crate::ConsoleDisplay;
 use crate::console_hub::ConsoleHub;
 use crate::server;
 
 pub const DEFAULT_ADDR: ([u8; 4], u16) = ([0, 0, 0, 0], 3000);
 
 const LED_FLUSH_INTERVAL: Duration = Duration::from_millis(50);
+/// About 30 frames a second, which is plenty to watch a display by
+const DISPLAY_FLUSH_INTERVAL: Duration = Duration::from_millis(33);
 
 /// Web-based dashboard for visualizing Frontbox state.
 ///
@@ -52,6 +55,20 @@ impl WebTracer {
     self
   }
 
+  /// Shows a display in the console, when added to it as a mirror
+  ///
+  /// ```rust,ignore
+  /// let console = WebTracer::new();
+  /// app.system(DisplaySystem::new().display(
+  ///   DisplayDefinition::new("Dmd", Pin2Dmd::new(128, 32, PanelType::Rgb))
+  ///     .mirror(console.display_view().on(&planes::BACKBOX, Vec2::new(4.0, 2.0), Vec2::new(12.0, 3.0))),
+  /// ));
+  /// app.tracer(console);
+  /// ```
+  pub fn display_view(&self) -> ConsoleDisplay {
+    ConsoleDisplay::new(self.hub.clone())
+  }
+
   fn start(&mut self) {
     let Some(mut rx) = self.rx.take() else {
       return;
@@ -74,6 +91,17 @@ impl WebTracer {
       loop {
         interval.tick().await;
         led_hub.flush_leds();
+      }
+    });
+
+    // and display frames, so a display changing every tick doesn't send every frame
+    let display_hub = self.hub.clone();
+    tokio::spawn(async move {
+      let mut interval = tokio::time::interval(DISPLAY_FLUSH_INTERVAL);
+      interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+      loop {
+        interval.tick().await;
+        display_hub.flush_displays();
       }
     });
   }

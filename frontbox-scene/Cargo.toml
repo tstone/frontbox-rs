@@ -1,0 +1,19 @@
+[package]
+name = "frontbox-scene"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frontbox-core = { path = "../frontbox-core" }
+frontbox-gfx = { path = "../frontbox-gfx" }
+log = "0.4.29"
+rand = "0.10.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.149"
+ts-rs = { version = "12.0.1", optional = true }
+
+[dev-dependencies]
+frontbox-core = { path = "../frontbox-core", features = ["testing"] }
+
+[features]
+ts = ["dep:ts-rs", "frontbox-core/ts", "frontbox-gfx/ts"]
