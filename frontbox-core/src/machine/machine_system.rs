@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::hardware::*;
-use crate::machine::driver_triggers::DriverTriggers;
+use crate::machine::driver_triggers::{DriverTrigger, DriverTriggers};
 use crate::machine::machine_metrics::{BOOTS, MINUTES_ON};
 use crate::machine::*;
 use crate::operator_config::ConfigChanged;
@@ -177,6 +177,21 @@ impl MachineSystem {
         switch,
       })
       .ok();
+
+    // a tap leaves the driver under manual control, so one its switch fires (a pop, a sling) would go dead until it's
+    // made automatic again
+    if matches!(mode, DriverTriggerControlMode::Manual)
+      && let DriverTrigger::Automatic { switch } = self.triggers.current_trigger(driver)
+    {
+      self
+        .machine_sender
+        .send(MachineMessage::TriggerDriver {
+          driver_id: driver,
+          mode: DriverTriggerControlMode::Automatic,
+          switch,
+        })
+        .ok();
+    }
 
     if let Some(state) = driver_state {
       self
@@ -634,6 +649,14 @@ mod tests {
     harness.activate(ActivationMode::Tap);
     harness.activate(ActivationMode::VirtualSwitchOn);
     assert_eq!(harness.driver_commands(), vec!["TL:A,1,\r", "TL:A,3,\r"]);
+  }
+
+  #[test]
+  fn a_tap_puts_a_switch_triggered_driver_back_to_automatic() {
+    let mut harness = Harness::new();
+    harness.activate(ActivationMode::Automatic);
+    harness.activate(ActivationMode::Tap);
+    assert_eq!(harness.driver_commands(), vec!["TL:A,0,12\r", "TL:A,1,\r", "TL:A,0,12\r"]);
   }
 
   #[test]
