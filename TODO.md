@@ -37,7 +37,7 @@
 - Line-based fills (polyline, spiral, logarithmic spiral, etc. snake patterns) 
 - Line based fill patterns usable for Sweep
 - Graph algorithms have a "Reverse" option to perform the algo in reverse (ie. calculate then play backwards)
-- Noise and noise masks (some kind of transparency threshold adjust)
+- Noise and noise masks: `FillNode::Noise`, plus a threshold `ColorAdjust` for noise masks
 - Need to probably move pixel font rendering into gfx with real TTF rendering
 - New curves for flame/flicker, stutter, glitch
 - Ability to compose curves in editor
@@ -45,13 +45,53 @@
 - Plane stitching for playback (or should this just be real 3d rendering?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
-- Proper BPM sync between music+scenes
+- Proper BPM sync between music+scenes: a playback clock that follows music
 - Keyframes show more like Ableton automation, visually displaying the curve between points, and allowing the dots to be movable as today
+- Outline/stroke shouldn't take over fill
+- Grid is awkward, and only shows up on polygons
+- Graph region: a "cellular" mode that highlights all segments of a cell
+- Plug in custom shapes or graphics with their own settings (e.g. a kinematics/skeleton extension)
+- Idea: reflect is bisect + mirror (e.g. a leaf shape from a circle)
+- Events and callouts fired when the clock passes them, tracked like sounds (`SoundLayer::started`). An event would be
+  one untyped `SceneMilestoneReached { playback, name }`. Wait until a game needs them.
+- Scene transitions (cut, cross-fade, wipe, push) between two playbacks. First version drives opacity or a mask on
+  both; with nested scenes, a transition is a scene with two slots.
+- Live reload of scenes and fonts, as `Content` already does for images.
+- Golden-image tests: render a scene at a time to PNG and compare with a stored one.
+
+### gfx
+
+- Non-affine transforms: apply the transform list as point mappings, then add `Repeat(size)` (wrap), `Mirror`, and
+  polar. `Translate` + `Repeat` replaces the `lap` plumbing; `Rotate` on a `Sequence` becomes sugar for it. This is a
+  format change that rewrites every file.
+- Marquee: `Translate` + `Repeat` inside a mask.
+- Per-layer `blend` (additive, `Max`, `Multiply`).
+- Float color: sample in `f32` premultiplied, convert once at the device edge (where LED gamma and per-strip
+  calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
+- Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
+- `ShapeAdjust::Feather(width)` for soft edges.
+- Merge `Circle` into `Ellipse`.
+- Name `(fill, region)` as one type shared by `Layer` and `Mask`: collapses `outlines`/`mask_outlines` and
+  `shapes`/`mask_shapes`, allows `mask: Vec<...>` and masks with a `graph`.
+- `Stop::at` as a `Prop<f32>`.
+- Per-point phase for `Modulated`: a prop source that reads the point's position or `Sequence` index.
+- One internal walker over every `Prop`, replacing the hand-written `is_animated`, `read_inputs`, `image_names`,
+  `font_names`, and `check` walks.
+- Gaps in `check`: `Visit`/`Fit` naming a missing traversal; unsorted `Keyframes::keys`, `Random::picks`, gradient
+  `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
+- Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
+- Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
 
 ### LEDs
 
-- Alternate resolver doesn't work with animated inputs
+- Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
+- `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
 - LedSystem becomes an interface
+- LED and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
+  budget (~80 chars/ms), sending the largest changes first.
+- `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
+- Keep each LED's declarations ordered by `(z, order)` to drop the per-tick sort.
+- `led_graph.rs` `GRAPHS` cache is never evicted (grows with each LED position edit in the console).
 - Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for LEDs
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
 - Single channel flasher support
@@ -64,6 +104,8 @@
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
 - music track repeat
+- Cut a scene's sounds off when its playback stops. Needs a handle per sound in the sound manager.
+- Schedule scene sound starts a tick ahead on the audio clock, for starts finer than a tick.
 - apply-able effects (warble, reverb, glitch)
 - legacy hardware emulation? built-in synthesis (frontbox-synth?) e.g. YM2610 FM
 
@@ -71,7 +113,19 @@
 
 - DisplaySystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
-- Menu: ease left/right between sections (a transition between playbacks, see R2 §6)
+- Menu: ease left/right between sections (a scene transition, see Scenes/Editor)
+- Anchoring or scaling so a single scene works on displays of different resolutions
+- Outer glow/drop shadow on regions
+- Snap eased positions to whole pixels (`Transform::Snap(step)` or a display setting); the menu selection slide
+  shimmers.
+- Fit text: a text region with a list of fonts/sizes, picking the largest that fits.
+- Ordered dithering in the `Pin2Dmd` output (6-bit channels band).
+- Limited-palette `DisplayDevice` for classic mono DMDs (4 or 16 shades).
+- Brightness as an operator config, applied in the output.
+- Speed: skip a layer for samples outside its region's transformed bounds; build DMD graphs from the pixel grid
+  instead of O(n²) `Graph::build`.
+- Bundled framework scenes for sizes other than 128 x 32.
+- An LCD output: a new `DisplayDevice` and row-parallel sampling.
 - DmdMatch system that takes a DMD scene or something. Its scene (`frontbox/128x32/match.scene`) reads `match`, and
   `player_1` to `player_4` (each score's last two digits); the numbers cycling before the match lands are keyframes
   in the scene.
