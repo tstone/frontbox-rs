@@ -5,22 +5,18 @@
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - ExpAddress is defined twice, once in fast-protocol and once in frontbox. The latter has "port". This needs to be
   resolved.
-- Generalized systems: Scoop, lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
+- Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
+- ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - CrashPowerDown -- Verify that this still makes sense
-- Operator metrics can be reset (e.g. when a coil is replaced)
-- Config: No extra balls/points instead
-- With fb-pin centralized, maybe events should be centralized too
 - System groups need to be able to contain other system groups (recursive parent lookup)
 - Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
 - Some kind of bundle that makes all the pinball things start up
-- ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - "GamePhase" is a state, but "GameState" is not. Fix the naming
-- Pausable timers independent of active state
+- Pausable timers independent of active state (automatically after 5s of inactivity, pre-ball search?)
 
 ## Design Choices/Core
 
-- I think scenes probably need to also include an audio definition
 - Implement a proper LampDriver that also supports flashing
 - Revisit if `Synchronize` event still makes sense or not
 - Should a "hold" (like how BallSave uses them) be a framework feature?
@@ -32,6 +28,10 @@
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
 - Motor support: new MotorDefinition w/ FAST protocol + Machine support for motor commands
+- Switch test mode for display menu
+- Operator metrics can be reset (e.g. when a coil is replaced)
+- Config: No extra balls/points instead
+- Metrics show on DMD menu
 
 ### Scenes/Editor
 
@@ -82,6 +82,7 @@
   `stops` (sort on load); `Prop::Sweep` on a non-position type built in code.
 - Replace `DefaultHasher` in `scene/random.rs` with a fixed integer hash (stable across Rust releases, cheaper).
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
+- Outer glow/drop shadow on regions
 
 ### LEDs
 
@@ -116,12 +117,9 @@
 - Implement remaining menu sounds
 - Menu: ease left/right between sections (a scene transition, see Scenes/Editor)
 - Anchoring or scaling so a single scene works on displays of different resolutions
-- Outer glow/drop shadow on regions
 - Snap eased positions to whole pixels (`Transform::Snap(step)` or a display setting); the menu selection slide
   shimmers.
 - Fit text: a text region with a list of fonts/sizes, picking the largest that fits.
-- Ordered dithering in the `Pin2Dmd` output (6-bit channels band).
-- Limited-palette `DisplayDevice` for classic mono DMDs (4 or 16 shades).
 - Brightness as an operator config, applied in the output.
 - Speed: skip a layer for samples outside its region's transformed bounds; build DMD graphs from the pixel grid
   instead of O(n²) `Graph::build`.
@@ -132,6 +130,8 @@
   in the scene.
 - Initials entry (`InitialsEntrySystem`) as a scene, once it's redone. It reads `letters`, `cursor`, `player`, and
   `rank`.
+- Ordered dithering in the `Pin2Dmd` output (6-bit channels band).
+- Limited-palette `DisplayDevice` for classic mono DMDs (4 or 16 shades).
 
 ## Console
 
