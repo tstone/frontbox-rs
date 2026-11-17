@@ -67,6 +67,25 @@
 //!
 //! Cycling works by rotating through the list of values each time the cue fires. Think of it like a normal cue that just keeps rotating which signal is emitted, in order. In the example above, 1 second would elapse, then `On` would be cued. Another second would elapse and `Off` would be cued. Another second would elapse and `On` would be cued, and so on.
 
+//! ### Pausing
+//!
+//! A cue can be paused with its handle, and resumed later. While paused, time doesn't count toward it: a
+//! `Cue::Once(30s)` paused 10 seconds in fires 20 seconds after it's resumed. A paused cue can still be canceled.
+//!
+//! ```rust
+//! # use frontbox_core::prelude::*;
+//! # #[derive(Serialize, Event)]
+//! # struct TimeUp;
+//! # fn example(ctx: &SystemContext) {
+//! let handle = ctx.cues.start(TimeUp, Cue::Once(Duration::from_secs(30)));
+//! ctx.cues.pause(handle);
+//! // ...
+//! ctx.cues.resume(handle);
+//! # }
+//! ```
+//!
+//! A system's cues also stop counting while the system is inactive, as it isn't ticked.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -91,6 +110,8 @@ pub(crate) struct CueAccumulator {
   signals: Arc<Vec<Box<dyn Event>>>,
   /// The signal the next fire sends, cycling through `signals`
   next_signal: usize,
+  /// While paused, time passing doesn't count toward the cue
+  paused: bool,
 }
 
 impl CueAccumulator {
@@ -108,12 +129,21 @@ impl CueAccumulator {
       elapsed: Duration::ZERO,
       signals: Arc::new(signals),
       next_signal: 0,
+      paused: false,
     }
+  }
+
+  pub(crate) fn set_paused(&mut self, paused: bool) {
+    self.paused = paused;
   }
 
   /// Move the cue forward in time, calling `fire` with the signal for each time it came due, in order. A cue with
   /// a zero interval fires at most once per call.
+  /// A paused cue doesn't move, and fires nothing.
   pub(crate) fn accumulate(&mut self, delta: Duration, mut fire: impl FnMut(&dyn Event)) {
+    if self.paused {
+      return;
+    }
     self.elapsed += delta;
 
     while !self.is_complete() && self.elapsed >= self.interval {
@@ -251,6 +281,41 @@ mod test {
 
     assert_eq!(advance(&mut cue, ms(1000)), ["Signal", "Signal"]);
     assert!(cue.is_complete());
+  }
+
+  #[test]
+  fn a_paused_cue_holds_its_progress_until_resumed() {
+    let mut cue = CueAccumulator::new(Cue::Once(ms(1000)), events![Signal]);
+
+    assert!(advance(&mut cue, ms(600)).is_empty());
+    cue.set_paused(true);
+    assert!(advance(&mut cue, ms(5000)).is_empty());
+    assert!(!cue.is_complete());
+
+    cue.set_paused(false);
+    assert!(advance(&mut cue, ms(399)).is_empty());
+    assert_eq!(advance(&mut cue, ms(1)), ["Signal"]);
+  }
+
+  #[test]
+  fn a_paused_now_cue_waits_for_resume() {
+    let mut cue = CueAccumulator::new(Cue::Now, events![Signal]);
+    cue.set_paused(true);
+
+    assert!(advance(&mut cue, Duration::ZERO).is_empty());
+    cue.set_paused(false);
+    assert_eq!(advance(&mut cue, Duration::ZERO), ["Signal"]);
+  }
+
+  #[test]
+  fn a_paused_cycling_cue_resumes_on_its_next_signal() {
+    let mut cue = CueAccumulator::new(Cue::Forever(ms(100)), events![Signal, Signal2]);
+
+    assert_eq!(advance(&mut cue, ms(100)), ["Signal"]);
+    cue.set_paused(true);
+    assert!(advance(&mut cue, ms(1000)).is_empty());
+    cue.set_paused(false);
+    assert_eq!(advance(&mut cue, ms(100)), ["Signal2"]);
   }
 
   #[test]

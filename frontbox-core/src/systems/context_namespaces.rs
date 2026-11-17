@@ -126,6 +126,22 @@ impl<'a> ContextCues<'a> {
       self.ctx.cancel_cue(self.handle, cue_id);
     }
   }
+
+  /// Pause a cue this system started: time stops counting toward it until it's [resumed](Self::resume). Takes an id
+  /// or an `Option` of one, and does nothing for `None` or a cue that's already paused, completed, or canceled.
+  pub fn pause(&self, cue_id: impl Into<Option<u64>>) {
+    if let Some(cue_id) = cue_id.into() {
+      self.ctx.set_cue_paused(self.handle, cue_id, true);
+    }
+  }
+
+  /// Resume a cue [paused](Self::pause) by this system, picking up where it left off. Takes an id or an `Option` of
+  /// one, and does nothing for `None` or a cue that isn't paused.
+  pub fn resume(&self, cue_id: impl Into<Option<u64>>) {
+    if let Some(cue_id) = cue_id.into() {
+      self.ctx.set_cue_paused(self.handle, cue_id, false);
+    }
+  }
 }
 
 /// `ctx.routines`: start and take part in [routines](crate::systems::routine)

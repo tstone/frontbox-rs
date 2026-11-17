@@ -207,6 +207,12 @@ impl<'a> ServiceContext<'a> {
     let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
   }
 
+  pub(crate) fn set_cue_paused(&self, handle: SystemHandle, cue_id: u64, paused: bool) {
+    let _ = self
+      .app_sender
+      .send(AppMessage::SetCuePaused(handle, cue_id, paused));
+  }
+
   // --- Routines ---
 
   /// Starting, cancelling, completing and halting need the caller's identity, so they're only public through

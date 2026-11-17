@@ -39,6 +39,27 @@ impl RunLoop {
       );
     }
   }
+
+  pub(super) fn set_cue_paused(&self, handle: SystemHandle, cue_id: u64, paused: bool) {
+    if let Some(mut system) = self.groups.system(handle) {
+      log::debug!(
+        target: "frontbox::cues",
+        "{} cue {} for {} ({})",
+        if paused { "Pausing" } else { "Resuming" },
+        cue_id,
+        system.name(),
+        handle.id
+      );
+      system.set_cue_paused(cue_id, paused);
+    } else {
+      log::warn!(
+        target: "frontbox::cues",
+        "No system found with ID {}, cannot pause or resume cue with ID {}",
+        handle.id,
+        cue_id
+      );
+    }
+  }
 }
 
 /// If run loop processing starts running behind, this is a multiplier for how many intervals to allow before clamping the delta passed to systems. 
@@ -146,6 +167,26 @@ mod tests {
     h.tick_by(ms(200));
 
     assert_eq!(pokes.get(), 0);
+  }
+
+  #[test]
+  fn a_paused_cue_signals_only_after_it_is_resumed() {
+    let mut h = Harness::new();
+    let (handle, cue, pokes) = spawn_cued(&mut h);
+
+    h.tick_by(ms(60));
+    h.send(AppMessage::SetCuePaused(handle, cue, true));
+    h.settle();
+    h.tick_by(ms(200));
+    assert_eq!(pokes.get(), 0, "time doesn't count toward a paused cue");
+
+    h.send(AppMessage::SetCuePaused(handle, cue, false));
+    h.settle();
+    h.tick_by(ms(30));
+    assert_eq!(pokes.get(), 0, "it picks up at 60ms of 100ms");
+
+    h.tick_by(ms(10));
+    assert_eq!(pokes.get(), 1);
   }
 
   #[test]

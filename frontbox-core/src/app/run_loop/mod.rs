@@ -232,6 +232,9 @@ impl RunLoop {
       AppMessage::CancelCue(handle, cue_id) => {
         self.cancel_cue(handle, cue_id);
       }
+      AppMessage::SetCuePaused(handle, cue_id, paused) => {
+        self.set_cue_paused(handle, cue_id, paused);
+      }
       AppMessage::StartRoutine(start) => {
         let (origin, type_id) = (start.origin, start.type_id);
         if let Some(started) = self.routines.start(start, &self.groups, &self.tracers) {

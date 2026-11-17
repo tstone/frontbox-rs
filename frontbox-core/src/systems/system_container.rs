@@ -189,6 +189,13 @@ impl SystemContainer {
     self.cues.remove(&cue_id);
   }
 
+  /// Does nothing for a cue that has completed or was canceled
+  pub(crate) fn set_cue_paused(&mut self, cue_id: u64, paused: bool) {
+    if let Some(cue) = self.cues.get_mut(&cue_id) {
+      cue.set_paused(paused);
+    }
+  }
+
   #[allow(unused)]
   pub(crate) fn downcast_ref<T: System + 'static>(&self) -> Option<&T> {
     (self.as_any)(self.inner.as_ref()).downcast_ref::<T>()

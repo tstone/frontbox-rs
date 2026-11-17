@@ -33,6 +33,7 @@ pub enum AppMessage {
   DeactivateSystemGroup(GroupId),
   CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
   CancelCue(SystemHandle, u64),
+  SetCuePaused(SystemHandle, u64, bool),
   StartRoutine(RoutineStart),
   /// The origin cancels the routine with this id
   CancelRoutine(SystemHandle, u64),
@@ -102,6 +103,9 @@ impl Debug for AppMessage {
         write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
       }
       AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
+      AppMessage::SetCuePaused(handle, cue_id, paused) => {
+        write!(f, "SetCuePaused({}:{}, {})", handle.id, cue_id, paused)
+      }
       AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
       AppMessage::CancelRoutine(handle, routine_id) => {
         write!(f, "CancelRoutine({}:{})", handle.id, routine_id)
