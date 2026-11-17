@@ -129,7 +129,7 @@ mod tests {
   use std::sync::atomic::{AtomicU8, Ordering};
 
   use super::*;
-  use crate::{GameEndReason, GameManagement, GameManager, GameState, TurnStartReason};
+  use crate::{GameEndReason, GameManagement, GameManager, GameSession, TurnStartReason};
 
   const BOB: &str = "tilt_bob";
   const SETTLE: Duration = Duration::from_secs(1);
@@ -227,7 +227,7 @@ mod tests {
     fn tilt(&mut self, _ctx: &ServiceContext) {
       self.tilts.fetch_add(1, Ordering::SeqCst);
     }
-    fn game_state(&self) -> Option<&GameState> {
+    fn session(&self) -> Option<&GameSession> {
       None
     }
     fn add_points(&mut self, _points: u64, _ctx: &ServiceContext) {}

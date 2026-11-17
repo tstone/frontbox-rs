@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox_core::prelude::*;
 
-use crate::{CompetitiveGame, GameEndReason, GameEnding, GameState, TurnEnding, TurnStarting};
+use crate::{CompetitiveGame, GameEndReason, GameEnding, GameSession, TurnEnding, TurnStarting};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started. Does nothing if no
@@ -15,7 +15,7 @@ pub trait GameManagement: SpawnableSystem {
   /// it, and drains can't be saved. Does nothing unless the turn's ball has been served, or once the turn is ending.
   fn tilt(&mut self, ctx: &ServiceContext);
 
-  fn game_state(&self) -> Option<&GameState>;
+  fn session(&self) -> Option<&GameSession>;
 
   /// Add points to the current player/team
   fn add_points(&mut self, points: u64, ctx: &ServiceContext);

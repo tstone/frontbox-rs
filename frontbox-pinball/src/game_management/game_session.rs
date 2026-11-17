@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-pub enum GameState {
+pub enum GameSession {
   Competitive {
     player_count: u8,
     max_players: u8,
@@ -26,9 +26,9 @@ pub enum GameState {
   },
 }
 
-impl GameState {
+impl GameSession {
   pub fn competitive(max_players: u8) -> Self {
-    GameState::Competitive {
+    GameSession::Competitive {
       player_count: 0,
       max_players,
       current_player: 0,
@@ -42,19 +42,19 @@ impl GameState {
 
   pub fn current_player(&self) -> u8 {
     match self {
-      GameState::Competitive { current_player, .. } => *current_player,
-      GameState::Cooperative { current_player, .. } => *current_player,
+      GameSession::Competitive { current_player, .. } => *current_player,
+      GameSession::Cooperative { current_player, .. } => *current_player,
     }
   }
 
   pub fn current_player_score(&self) -> Option<u64> {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         current_player,
         player_scores,
         ..
       } => player_scores.get(*current_player as usize).copied(),
-      GameState::Cooperative {
+      GameSession::Cooperative {
         current_player,
         player_scores,
         ..
@@ -64,8 +64,8 @@ impl GameState {
 
   pub(crate) fn increment_player_count(&mut self) {
     match self {
-      GameState::Competitive { player_count, .. } => *player_count += 1,
-      GameState::Cooperative { player_count, .. } => *player_count += 1,
+      GameSession::Competitive { player_count, .. } => *player_count += 1,
+      GameSession::Cooperative { player_count, .. } => *player_count += 1,
     }
   }
 
@@ -80,12 +80,12 @@ impl GameState {
 
   pub(crate) fn increment_current_player_turn(&mut self) {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         current_player,
         player_turns,
         ..
       } => player_turns[*current_player as usize] += 1,
-      GameState::Cooperative {
+      GameSession::Cooperative {
         current_player,
         player_turns,
         ..
@@ -95,19 +95,19 @@ impl GameState {
 
   pub(crate) fn set_current_player(&mut self, player_index: u8) {
     match self {
-      GameState::Competitive { current_player, .. } => *current_player = player_index,
-      GameState::Cooperative { current_player, .. } => *current_player = player_index,
+      GameSession::Competitive { current_player, .. } => *current_player = player_index,
+      GameSession::Cooperative { current_player, .. } => *current_player = player_index,
     }
   }
 
   pub fn current_player_turn(&self) -> u8 {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         current_player,
         player_turns,
         ..
       } => player_turns[*current_player as usize],
-      GameState::Cooperative {
+      GameSession::Cooperative {
         current_player,
         player_turns,
         ..
@@ -117,26 +117,26 @@ impl GameState {
 
   pub fn player_count(&self) -> u8 {
     match self {
-      GameState::Competitive { player_count, .. } => *player_count,
-      GameState::Cooperative { player_count, .. } => *player_count,
+      GameSession::Competitive { player_count, .. } => *player_count,
+      GameSession::Cooperative { player_count, .. } => *player_count,
     }
   }
 
   pub fn max_players(&self) -> u8 {
     match self {
-      GameState::Competitive { max_players, .. } => *max_players,
-      GameState::Cooperative { max_players, .. } => *max_players,
+      GameSession::Competitive { max_players, .. } => *max_players,
+      GameSession::Cooperative { max_players, .. } => *max_players,
     }
   }
 
   pub fn current_player_multiplier(&self) -> f32 {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         current_player,
         player_multiplier,
         ..
       } => player_multiplier[*current_player as usize],
-      GameState::Cooperative {
+      GameSession::Cooperative {
         current_player,
         player_multiplier,
         ..
@@ -146,12 +146,12 @@ impl GameState {
 
   pub fn current_player_multiplier_mut(&mut self) -> Option<&mut f32> {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         current_player,
         player_multiplier,
         ..
       } => player_multiplier.get_mut(*current_player as usize),
-      GameState::Cooperative {
+      GameSession::Cooperative {
         current_player,
         player_multiplier,
         ..
@@ -161,8 +161,8 @@ impl GameState {
 
   pub fn players_on_team(&self, team_index: u8) -> Option<Vec<u8>> {
     match self {
-      GameState::Competitive { .. } => None,
-      GameState::Cooperative {
+      GameSession::Competitive { .. } => None,
+      GameSession::Cooperative {
         player_team_map, ..
       } => {
         let players_on_team = player_team_map
@@ -177,29 +177,29 @@ impl GameState {
 
   pub fn player_score(&self, player_index: u8) -> Option<&u64> {
     match self {
-      GameState::Competitive { player_scores, .. } => player_scores.get(player_index as usize),
-      GameState::Cooperative { player_scores, .. } => player_scores.get(player_index as usize),
+      GameSession::Competitive { player_scores, .. } => player_scores.get(player_index as usize),
+      GameSession::Cooperative { player_scores, .. } => player_scores.get(player_index as usize),
     }
   }
 
   pub(crate) fn player_score_mut(&mut self, player_index: u8) -> Option<&mut u64> {
     match self {
-      GameState::Competitive { player_scores, .. } => player_scores.get_mut(player_index as usize),
-      GameState::Cooperative { player_scores, .. } => player_scores.get_mut(player_index as usize),
+      GameSession::Competitive { player_scores, .. } => player_scores.get_mut(player_index as usize),
+      GameSession::Cooperative { player_scores, .. } => player_scores.get_mut(player_index as usize),
     }
   }
 
   pub fn current_team(&self) -> Option<u8> {
     match self {
-      GameState::Competitive { .. } => None,
-      GameState::Cooperative { current_team, .. } => Some(*current_team),
+      GameSession::Competitive { .. } => None,
+      GameSession::Cooperative { current_team, .. } => Some(*current_team),
     }
   }
 
   pub fn team_score(&self, team_index: u8) -> Option<u64> {
     match self {
-      GameState::Competitive { .. } => None,
-      GameState::Cooperative {
+      GameSession::Competitive { .. } => None,
+      GameSession::Cooperative {
         player_team_map,
         player_scores,
         ..
@@ -251,12 +251,12 @@ impl GameState {
 
   fn extra_ball_counts(&self) -> (&Vec<u8>, &Vec<u8>) {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         player_extra_balls,
         player_extra_balls_granted,
         ..
       } => (player_extra_balls, player_extra_balls_granted),
-      GameState::Cooperative {
+      GameSession::Cooperative {
         player_extra_balls,
         player_extra_balls_granted,
         ..
@@ -266,12 +266,12 @@ impl GameState {
 
   fn extra_ball_counts_mut(&mut self) -> (&mut Vec<u8>, &mut Vec<u8>) {
     match self {
-      GameState::Competitive {
+      GameSession::Competitive {
         player_extra_balls,
         player_extra_balls_granted,
         ..
       } => (player_extra_balls, player_extra_balls_granted),
-      GameState::Cooperative {
+      GameSession::Cooperative {
         player_extra_balls,
         player_extra_balls_granted,
         ..

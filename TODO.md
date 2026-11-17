@@ -12,7 +12,6 @@
 - Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - Toggle group: a choice operator config where each choice names a system group (e.g. payment mode: free play vs credit play). A small provided system activates the chosen group at boot and swaps groups on `ConfigChanged` for that key, using the existing `ctx.groups.activate`/`ctx.groups.deactivate`. Choices need a saved key separate from the menu label, like config keys. Open question: should a swap wait until no game is in progress, for toggles that matter mid-game (difficulty, rules variants)?
 - Some kind of bundle that makes all the pinball things start up
-- "GamePhase" is a state, but "GameState" is not. Fix the naming
 - Pausable timers independent of active state (automatically after 5s of inactivity, pre-ball search?)
 
 ## Design Choices/Core

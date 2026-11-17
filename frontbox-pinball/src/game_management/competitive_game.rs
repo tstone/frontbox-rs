@@ -69,7 +69,7 @@ pub struct CompetitiveGame {
   systems_template: Vec<ChildSystemContainer>,
   max_players: u8,
   ball_in_play_switches: SwitchQ,
-  game_state: Option<GameState>,
+  session: Option<GameSession>,
   /// The phase of the current turn. Kept here as well as set as a state, since a state reads as its old value until the
   /// run loop gets to it.
   turn_phase: TurnPhase,
@@ -115,7 +115,7 @@ impl CompetitiveGame {
       systems_template: player_template,
       max_players,
       ball_in_play_switches,
-      game_state: None,
+      session: None,
       turn_phase: TurnPhase::None,
       player_groups: Vec::new(),
       handle: SystemHandle::default(),
@@ -139,7 +139,7 @@ impl CompetitiveGame {
   fn start_game(&mut self, ctx: &ServiceContext) {
     let sys_ctx = ctx.for_system(self.handle);
     log::info!(target: "frontbox::game_manager", "Starting game with max players: {}", self.max_players);
-    self.game_state = Some(GameState::competitive(self.max_players));
+    self.session = Some(GameSession::competitive(self.max_players));
     self.set_game_phase(GamePhase::Starting, ctx);
 
     // Start a game assuming the number of balls in the trough is how many there should be
@@ -162,7 +162,7 @@ impl CompetitiveGame {
 
   fn start_turn(&mut self, reason: TurnStartReason, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    let player = self.game_state.as_ref().unwrap().current_player();
+    let player = self.session.as_ref().unwrap().current_player();
 
     ctx.groups.activate(&self.player_groups[player as usize]);
     ctx.metrics.set_player(player);
@@ -176,13 +176,13 @@ impl CompetitiveGame {
     self.pending_drains.clear();
     self.tilted = false;
     self.waiting_for_balls = false;
-    let game_state = self.game_state.as_ref().unwrap();
-    let group = &self.player_groups[game_state.current_player() as usize];
+    let session = self.session.as_ref().unwrap();
+    let group = &self.player_groups[session.current_player() as usize];
     ctx
       .routines
       .new(TurnStarting {
-        current_player: game_state.current_player(),
-        turn: game_state.current_player_turn(),
+        current_player: session.current_player(),
+        turn: session.current_player_turn(),
         reason,
       })
       .group(group)
@@ -206,7 +206,7 @@ impl CompetitiveGame {
   }
 
   fn is_game_started(&self) -> bool {
-    self.game_state.is_some()
+    self.session.is_some()
   }
 
   /// Whether a player can be added right now. Others read this as `PlayerEntry`, published by `update_player_entry`.
@@ -215,10 +215,10 @@ impl CompetitiveGame {
       return false;
     }
     // if the game is started, then it must be the first player's turn on their first ball
-    if let Some(game_state) = &self.game_state {
-      return game_state.current_player() == 0
-        && game_state.current_player_turn() == 0
-        && game_state.player_count() < game_state.max_players();
+    if let Some(session) = &self.session {
+      return session.current_player() == 0
+        && session.current_player_turn() == 0
+        && session.player_count() < session.max_players();
     }
 
     true
@@ -262,11 +262,11 @@ impl CompetitiveGame {
         .for_system(self.handle)
         .cues.start(CheckBallsInPlay, Cue::Forever(IN_PLAY_CHECK_INTERVAL)),
     );
-    let game_state = self.game_state.as_ref().unwrap();
+    let session = self.session.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
     ctx.for_system(self.handle).emit(TurnActive::new(
-      game_state.current_player(),
-      game_state.current_player_turn(),
+      session.current_player(),
+      session.current_player_turn(),
     ));
   }
 
@@ -283,10 +283,10 @@ impl CompetitiveGame {
     }
 
     let ctx: &ServiceContext = ctx.into();
-    let game_state = self.game_state.as_ref().unwrap();
+    let session = self.session.as_ref().unwrap();
     let draining = BallDraining {
-      current_player: game_state.current_player(),
-      turn: game_state.current_player_turn(),
+      current_player: session.current_player(),
+      turn: session.current_player_turn(),
       count,
       in_play,
     };
@@ -350,14 +350,14 @@ impl CompetitiveGame {
     if let Some(active_at) = self.turn_active_at.take() {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
-    let game_state = self.game_state.as_ref().unwrap();
-    let group = &self.player_groups[game_state.current_player() as usize];
+    let session = self.session.as_ref().unwrap();
+    let group = &self.player_groups[session.current_player() as usize];
     ctx
       .for_system(self.handle)
       .routines
       .new(TurnEnding {
-        current_player: game_state.current_player(),
-        turn: game_state.current_player_turn(),
+        current_player: session.current_player(),
+        turn: session.current_player_turn(),
         reason,
       })
       .group(group)
@@ -403,16 +403,16 @@ impl CompetitiveGame {
   fn advance_turn(&mut self, ctx: &ServiceContext) {
     self.waiting_for_balls = false;
     let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
-    let game_state = if let Some(game_state) = &mut self.game_state {
-      game_state
+    let session = if let Some(session) = &mut self.session {
+      session
     } else {
       log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
-    let player = game_state.current_player();
-    if game_state.use_extra_ball(player) {
-      let remaining = game_state.extra_balls(player);
+    let player = session.current_player();
+    if session.use_extra_ball(player) {
+      let remaining = session.extra_balls(player);
       log::info!(target: "frontbox::game_manager", "Using an extra ball, {} unused", remaining);
       ctx.metrics.inc(&metrics::EXTRA_BALLS);
       ctx.metrics.flush();
@@ -429,11 +429,11 @@ impl CompetitiveGame {
     ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
-    game_state.increment_current_player_turn();
-    game_state.advance_turn();
+    session.increment_current_player_turn();
+    session.advance_turn();
 
     // Verify we haven't gone over the turn limit
-    if game_state.current_player_turn() >= max_turn_count {
+    if session.current_player_turn() >= max_turn_count {
       self.start_game_ending(GameEndReason::Completed, ctx);
       return;
     }
@@ -441,8 +441,8 @@ impl CompetitiveGame {
     log::info!(
       target: "frontbox::game_manager",
       "Advancing turn (player: {}, turn: {})",
-      game_state.current_player(),
-      game_state.current_player_turn()
+      session.current_player(),
+      session.current_player_turn()
     );
 
     self.start_turn(TurnStartReason::Ordered, ctx);
@@ -478,7 +478,7 @@ impl CompetitiveGame {
     for group in self.player_groups.drain(..) {
       ctx.despawn_system_group(group);
     }
-    self.game_state = None;
+    self.session = None;
     self.set_game_phase(GamePhase::None, ctx);
     self.set_turn_phase(TurnPhase::None, ctx);
 
@@ -503,8 +503,8 @@ impl CompetitiveGame {
 
   /// Each player's score, in player order
   fn scores(&self) -> Vec<u64> {
-    match &self.game_state {
-      Some(GameState::Competitive {
+    match &self.session {
+      Some(GameSession::Competitive {
         player_scores,
         player_count,
         ..
@@ -612,23 +612,23 @@ impl GameManagement for CompetitiveGame {
       self.start_game(ctx);
     }
 
-    let game_state = if let Some(game_state) = &mut self.game_state {
-      game_state
+    let session = if let Some(session) = &mut self.session {
+      session
     } else {
       log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
       return;
     };
 
-    game_state.increment_player_count();
+    session.increment_player_count();
     log::info!(
       target: "frontbox::game_manager",
       "Adding player to game (current count: {})",
-      game_state.player_count()
+      session.player_count()
     );
 
     // create copy of systems for new player as a new system group
     let copy = self.systems_template.to_vec();
-    let group_name = Self::player_group_name(game_state.player_count() - 1);
+    let group_name = Self::player_group_name(session.player_count() - 1);
 
     let svc_ctx = ctx.for_system(self.handle);
     self
@@ -639,7 +639,7 @@ impl GameManagement for CompetitiveGame {
   }
 
   fn quit_game(&mut self, reason: GameEndReason, ctx: &ServiceContext) {
-    let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
+    let Some(player) = self.session.as_ref().map(GameSession::current_player) else {
       return;
     };
     if self.game_phase == GamePhase::Ending {
@@ -672,7 +672,7 @@ impl GameManagement for CompetitiveGame {
       log::info!(target: "frontbox::game_manager", "Tilt while no ball is being played, ignored");
       return;
     }
-    let Some(player) = self.game_state.as_ref().map(GameState::current_player) else {
+    let Some(player) = self.session.as_ref().map(GameSession::current_player) else {
       return;
     };
 
@@ -688,21 +688,21 @@ impl GameManagement for CompetitiveGame {
     self.transition_turn_to_ending(TurnEndReason::Tilted, ctx);
   }
 
-  fn game_state(&self) -> Option<&GameState> {
-    self.game_state.as_ref()
+  fn session(&self) -> Option<&GameSession> {
+    self.session.as_ref()
   }
 
   fn clear_multiplier(&mut self) {
-    if let Some(game_state) = &mut self.game_state
-      && let Some(multiplier) = game_state.current_player_multiplier_mut()
+    if let Some(session) = &mut self.session
+      && let Some(multiplier) = session.current_player_multiplier_mut()
     {
       *multiplier = 1.0;
     }
   }
 
   fn set_multiplier(&mut self, multiplier: f32) {
-    if let Some(game_state) = &mut self.game_state
-      && let Some(current_multiplier) = game_state.current_player_multiplier_mut()
+    if let Some(session) = &mut self.session
+      && let Some(current_multiplier) = session.current_player_multiplier_mut()
     {
       *current_multiplier = multiplier;
     }
@@ -713,17 +713,17 @@ impl GameManagement for CompetitiveGame {
       log::debug!(target: "frontbox::game_manager", "{} points ignored, the turn was tilted", points);
       return;
     }
-    if let Some(game_state) = &mut self.game_state {
-      let multiplier = game_state.current_player_multiplier();
+    if let Some(session) = &mut self.session {
+      let multiplier = session.current_player_multiplier();
       // f64 holds integers exactly up to 2^53, so an award isn't rounded at a multiplier of 1.0
       let points_received = (points as f64 * multiplier as f64) as u64;
-      if let Some(score) = game_state.player_score_mut(game_state.current_player()) {
+      if let Some(score) = session.player_score_mut(session.current_player()) {
         *score = score.saturating_add(points_received);
         let total_points = *score;
 
         // Emit event with points added information
         ctx.for_system(self.handle).emit(PointsAdded::new(
-          game_state.current_player(),
+          session.current_player(),
           points_received,
           total_points,
         ));
@@ -736,19 +736,19 @@ impl GameManagement for CompetitiveGame {
       log::warn!(target: "frontbox::game_manager", "An extra ball can only be granted during play, ignored");
       return false;
     }
-    let Some(game_state) = &mut self.game_state else {
+    let Some(session) = &mut self.session else {
       return false;
     };
 
-    let player = game_state.current_player();
+    let player = session.current_player();
     let max = ctx.config.get(&configs::MAX_EXTRA_BALLS);
-    if game_state.extra_balls_granted(player) >= max {
+    if session.extra_balls_granted(player) >= max {
       log::info!(target: "frontbox::game_manager", "Extra ball limit of {} reached, not granted", max);
       return false;
     }
 
-    game_state.grant_extra_ball(player);
-    let count = game_state.extra_balls(player);
+    session.grant_extra_ball(player);
+    let count = session.extra_balls(player);
     log::info!(target: "frontbox::game_manager", "Extra ball granted, {} unused", count);
     ctx.for_system(self.handle).emit(ExtraBallGranted {
       player_index: player,
@@ -883,7 +883,7 @@ mod tests {
 
     /// The ball drains without being saved, and the turn's `TurnEnding` completes
     fn play_out_turn(&mut self) {
-      let state = self.game.game_state().unwrap();
+      let state = self.game.session().unwrap();
       let (current_player, turn) = (state.current_player(), state.current_player_turn());
       self.event(BallsExitedPlay {
         count: 1,
@@ -902,7 +902,7 @@ mod tests {
     }
 
     fn complete_turn_ending(&mut self, reason: TurnEndReason) {
-      let state = self.game.game_state().unwrap();
+      let state = self.game.session().unwrap();
       let (current_player, turn) = (state.current_player(), state.current_player_turn());
       self.event(done(
         TurnEnding {
@@ -957,7 +957,7 @@ mod tests {
 
     /// The ball of the turn just started enters play
     fn serve(&mut self) {
-      let state = self.game.game_state().unwrap();
+      let state = self.game.session().unwrap();
       let (current_player, turn) = (state.current_player(), state.current_player_turn());
       self.event(done(
         TurnStarting {
@@ -991,7 +991,7 @@ mod tests {
       "same player, same turn number"
     );
     assert_eq!(f.game.turn_phase, TurnPhase::Starting);
-    assert_eq!(f.game.game_state().unwrap().extra_balls(0), 0);
+    assert_eq!(f.game.session().unwrap().extra_balls(0), 0);
 
     f.serve();
     f.play_out_turn();
@@ -1073,7 +1073,7 @@ mod tests {
     f.ctx.svc_ctx().config.set(&configs::MAX_EXTRA_BALLS, 1);
     assert!(f.game.grant_extra_ball(&f.ctx.svc_ctx()));
     assert!(!f.game.grant_extra_ball(&f.ctx.svc_ctx()));
-    assert_eq!(f.game.game_state().unwrap().extra_balls(0), 1);
+    assert_eq!(f.game.session().unwrap().extra_balls(0), 1);
 
     f.play_out_turn();
     f.serve();
@@ -1129,7 +1129,7 @@ mod tests {
     let mut f = Fixture::starting(2, 1);
     assert!(f.game.is_player_addable());
     f.game.add_player(&f.ctx.svc_ctx());
-    assert_eq!(f.game.game_state().unwrap().player_count(), 2);
+    assert_eq!(f.game.session().unwrap().player_count(), 2);
     assert!(
       f.ctx
         .routines_started()
@@ -1190,7 +1190,7 @@ mod tests {
     f.play_out_turn();
 
     f.game.add_player(&f.ctx.svc_ctx());
-    assert_eq!(f.game.game_state().unwrap().player_count(), 1);
+    assert_eq!(f.game.session().unwrap().player_count(), 1);
   }
 
   #[test]

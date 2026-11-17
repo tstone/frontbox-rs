@@ -2,7 +2,7 @@ use frontbox_core::prelude::*;
 use frontbox_display::prelude::*;
 
 use crate::dmd::open_scene;
-use crate::{GameManager, GamePhase, GameState};
+use crate::{GameManager, GamePhase, GameSession};
 
 const POINTS_SCENE: &str = "frontbox/128x32/points.scene";
 const TRANSITION_SCENE: &str = "frontbox/128x32/player_transition.scene";
@@ -66,7 +66,7 @@ impl System for DmdPointsSystem {
 
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
     let read = ctx.systems.get::<GameManager>().and_then(|game| {
-      let state = game.game_state()?;
+      let state = game.session()?;
       Some((state.current_player(), points_variables(state)))
     });
     let Some((player, variables)) = read else {
@@ -95,7 +95,7 @@ impl System for DmdPointsSystem {
 }
 
 /// What the points scene is sent for `state`. The scores along the bottom are only shown with more than one player.
-fn points_variables(state: &GameState) -> Vec<(String, Value)> {
+fn points_variables(state: &GameSession) -> Vec<(String, Value)> {
   let (count, current) = (state.player_count(), state.current_player());
   let score = |player| state.player_score(player).copied().unwrap_or(0) as i64;
   let mut variables = vec![
@@ -150,8 +150,8 @@ mod tests {
     &variables.iter().find(|(variable, _)| variable == name).unwrap().1
   }
 
-  fn game(players: u8) -> GameState {
-    let mut state = GameState::competitive(4);
+  fn game(players: u8) -> GameSession {
+    let mut state = GameSession::competitive(4);
     (0..players).for_each(|_| state.increment_player_count());
     state
   }

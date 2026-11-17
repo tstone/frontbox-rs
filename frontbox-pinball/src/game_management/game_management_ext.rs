@@ -72,7 +72,7 @@ impl<'a> GameManagementExt for SystemContext<'a> {
   fn extra_balls(&self) -> u8 {
     with_game_manager(self, |manager| {
       manager
-        .game_state()
+        .session()
         .map(|state| state.extra_balls(state.current_player()))
         .unwrap_or(0)
     })
