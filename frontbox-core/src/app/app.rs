@@ -1,4 +1,5 @@
 use crate::app::app_tracer::AppTracer;
+use crate::app::emergency_stop::EmergencyStop;
 use crate::app::run_loop;
 use crate::machine::*;
 use crate::metrics::MetricsDb;
@@ -8,12 +9,10 @@ use crate::prelude::app_tracer::TracerControlEvent;
 use crate::prelude::*;
 use crate::provided::WatchdogSystem;
 use crate::systems::routine::Routines;
-use fast_protocol::BoardResetCommand;
 use futures_util::FutureExt;
 use std::any::{TypeId, type_name};
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
-use std::time::Duration;
 use tokio::sync::mpsc;
 
 /// Main runnable of Frontbox
@@ -158,7 +157,7 @@ impl App {
       app_state.metrics.begin_store_task(db);
     }
 
-    let crash_power_down = CrashPowerDown::new(machine_sender.clone(), &app_state);
+    let emergency_stop = EmergencyStop::new(machine_sender.clone(), &app_state);
 
     // These systems need to appear first because other systems expect them to be present on startup
     let bridge = SystemContainer::new(MachineSystem::new(machine_sender, app_sender.clone()));
@@ -189,7 +188,7 @@ impl App {
         "💥 Run loop panicked: {}. Powering down the machine.",
         crate::systems::panic_message(payload.as_ref())
       );
-      crash_power_down.run().await;
+      emergency_stop.run().await;
       std::panic::resume_unwind(payload);
     }
   }
@@ -203,36 +202,4 @@ pub(crate) struct AppParts {
   pub boot_config: BootConfig,
   pub routines: HashMap<TypeId, RoutineDefinition>,
   pub planes: Vec<AppPlane>,
-}
-
-/// What to send the machine if the run loop dies: expire the watchdog, which cuts power to the coils, and reset the
-/// expansion boards, which blanks the LEDs. Built before the run loop takes the app state.
-struct CrashPowerDown {
-  machine_sender: mpsc::UnboundedSender<MachineMessage>,
-  exp_addresses: Vec<u8>,
-}
-
-impl CrashPowerDown {
-  /// How long the machine task gets to send the power down messages before the process goes
-  const FLUSH_TIME: Duration = Duration::from_millis(500);
-
-  fn new(machine_sender: mpsc::UnboundedSender<MachineMessage>, state: &AppState) -> Self {
-    Self {
-      machine_sender,
-      exp_addresses: state.exp_network.iter().map(|board| board.address).collect(),
-    }
-  }
-
-  async fn run(&self) {
-    let _ = self.machine_sender.send(MachineMessage::WatchdogClear);
-    for address in &self.exp_addresses {
-      let _ = self.machine_sender.send(MachineMessage::Command {
-        port: MachinePort::Exp,
-        command: Box::new(BoardResetCommand::new(*address)),
-        timeout: COMMAND_TIMEOUT,
-      });
-    }
-    // the machine runs on its own task, which keeps going while this one waits
-    tokio::time::sleep(Self::FLUSH_TIME).await;
-  }
 }

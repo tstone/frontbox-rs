@@ -62,6 +62,7 @@ pub(crate) mod app_message;
 mod app_state;
 pub mod app_tracer;
 mod boot_config;
+mod emergency_stop;
 pub mod event_box;
 mod groups_ext;
 pub(crate) mod run_loop;
