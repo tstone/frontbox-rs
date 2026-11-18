@@ -36,7 +36,7 @@ pub struct PlungeLaneSystem {
   re_enter_timeout: Duration,
   /// From the ball entering the lane until it is considered gone
   ball_present: bool,
-  wait_cue_id: Option<u64>,
+  wait_timer_id: Option<u64>,
   ball_present_scene: Option<ScenePlayer>,
 }
 
@@ -47,7 +47,7 @@ impl PlungeLaneSystem {
       plunge_lane_switch_name: config.switch_name,
       re_enter_timeout: config.re_enter_timeout,
       ball_present: false,
-      wait_cue_id: None,
+      wait_timer_id: None,
       ball_present_scene: config.ball_present_scene.clone().map(ScenePlayer::new),
     }
   }
@@ -72,14 +72,14 @@ impl PlungeLaneSystem {
       .unwrap_or(false)
   }
 
-  fn cancel_cue(&mut self, ctx: &SystemContext) {
-    ctx.cues.cancel(self.wait_cue_id.take());
+  fn cancel_timer(&mut self, ctx: &SystemContext) {
+    ctx.timers.cancel(self.wait_timer_id.take());
   }
 
   fn on_lane_switch_closed(&mut self, ctx: &SystemContext) {
-    // If a pending wait cue is running, then the ball has rolled back in rather than a new ball entering
-    if self.wait_cue_id.is_some() {
-      self.cancel_cue(ctx);
+    // If a pending wait timer is running, then the ball has rolled back in rather than a new ball entering
+    if self.wait_timer_id.is_some() {
+      self.cancel_timer(ctx);
       log::info!(target: "frontbox::ball_management::plunge_lane", "Ball re-entered");
       ctx.emit(BallReenteredPlungeLane);
       return;
@@ -92,8 +92,8 @@ impl PlungeLaneSystem {
 
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
     log::info!(target: "frontbox::ball_management::plunge_lane", "Ball exited");
-    self.cancel_cue(ctx);
-    self.wait_cue_id = Some(ctx.cues.start(TimesUpBallsGone, Cue::Once(self.re_enter_timeout)));
+    self.cancel_timer(ctx);
+    self.wait_timer_id = Some(ctx.timers.start(TimesUpBallsGone, Timer::Once(self.re_enter_timeout)));
   }
 
   /// Plays the ball present scene while a ball is in the lane during a game, and stops it otherwise (e.g. a game quit
@@ -126,7 +126,7 @@ impl System for PlungeLaneSystem {
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<TimesUpBallsGone>() {
-      self.wait_cue_id = None;
+      self.wait_timer_id = None;
       ctx.emit(BallExitedPlungeLane);
       self.ball_present = false;
     } else if !self.ball_present
@@ -139,7 +139,7 @@ impl System for PlungeLaneSystem {
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
       self.on_lane_switch_opened(ctx);
-    } else if self.wait_cue_id.is_some()
+    } else if self.wait_timer_id.is_some()
       && let Some(event) = event.downcast_ref::<SwitchClosed>()
       && event.switch.name.eq(self.plunge_lane_switch_name)
     {
@@ -152,7 +152,7 @@ impl System for PlungeLaneSystem {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct TimesUpBallsGone;
@@ -283,7 +283,7 @@ mod tests {
 
     f.set_lane_switch(true);
     assert_eq!(f.events(), vec!["BallReenteredPlungeLane"]);
-    assert!(f.lane.wait_cue_id.is_none(), "timeout cancelled");
+    assert!(f.lane.wait_timer_id.is_none(), "timeout cancelled");
     assert!(f.lane.is_ball_present());
   }
 

@@ -101,7 +101,7 @@ fn release_lower(s: &mut Scenario, requester: u64) {
   });
 }
 
-/// A little past `duration`, so a cue due at it has fired
+/// A little past `duration`, so a timer due at it has fired
 fn past(duration: Duration) -> Duration {
   duration + Duration::from_millis(50)
 }

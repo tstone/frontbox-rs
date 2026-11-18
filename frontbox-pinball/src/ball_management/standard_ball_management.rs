@@ -34,7 +34,7 @@ pub struct StandardBallManagement {
   /// time.
   eject_state: EjectState,
   /// Set from the autoplunger firing at the ball in the lane until it's checked that the ball left
-  launch_verify_cue_id: Option<u64>,
+  launch_verify_timer_id: Option<u64>,
   /// Times the autoplunger has fired again at the ball in the lane without moving it
   launch_retries: u8,
 }
@@ -64,7 +64,7 @@ enum EjectState {
     /// The request it serves, or `None` if released by `cancel_ejects`
     ball: Option<RequestedBall>,
     /// Set once the trough has finished ejecting, while waiting for the plunge lane to see the ball
-    arrival_cue_id: Option<u64>,
+    arrival_timer_id: Option<u64>,
     /// The autoplunger has already been fired once to knock the ball loose
     kicked: bool,
   },
@@ -93,7 +93,7 @@ impl StandardBallManagement {
       last_eject_id: 0,
       trough_ejecting: None,
       eject_state: EjectState::Idle,
-      launch_verify_cue_id: None,
+      launch_verify_timer_id: None,
       launch_retries: 0,
     }
   }
@@ -231,7 +231,7 @@ impl StandardBallManagement {
     if self.config.plunge_lane().is_some() {
       self.eject_state = EjectState::EnRoute {
         ball: Some(next),
-        arrival_cue_id: None,
+        arrival_timer_id: None,
         kicked: false,
       };
     }
@@ -276,13 +276,13 @@ impl StandardBallManagement {
       return;
     };
     if let EjectState::EnRoute {
-      arrival_cue_id,
+      arrival_timer_id,
       kicked: was_kicked,
       ..
     } = &mut self.eject_state
     {
-      ctx.cues.cancel(arrival_cue_id.take());
-      *arrival_cue_id = Some(ctx.cues.start(LaneArrivalTimedOut, timeout.once()));
+      ctx.timers.cancel(arrival_timer_id.take());
+      *arrival_timer_id = Some(ctx.timers.start(LaneArrivalTimedOut, timeout.once()));
       *was_kicked = kicked;
     }
   }
@@ -291,13 +291,13 @@ impl StandardBallManagement {
   fn end_en_route(&mut self, ctx: &SystemContext) -> Option<RequestedBall> {
     let EjectState::EnRoute {
       ball,
-      arrival_cue_id,
+      arrival_timer_id,
       ..
     } = self.eject_state
     else {
       return None;
     };
-    ctx.cues.cancel(arrival_cue_id);
+    ctx.timers.cancel(arrival_timer_id);
     self.eject_state = EjectState::Idle;
     ball
   }
@@ -306,16 +306,16 @@ impl StandardBallManagement {
   /// the switch is faulty). First try knocking it loose with the autoplunger, then stop waiting so the queue doesn't
   /// stall. Ball counts come from the trough, so giving up doesn't throw them off.
   fn on_lane_arrival_timed_out(&mut self, ctx: &SystemContext) {
-    // Anything other than a waiting en route ball means the cue is stale
+    // Anything other than a waiting en route ball means the timer is stale
     let EjectState::EnRoute {
-      arrival_cue_id,
+      arrival_timer_id,
       kicked,
       ..
     } = &mut self.eject_state
     else {
       return;
     };
-    if arrival_cue_id.take().is_none() {
+    if arrival_timer_id.take().is_none() {
       return;
     }
     let kicked = *kicked;
@@ -406,15 +406,15 @@ impl StandardBallManagement {
     else {
       return;
     };
-    ctx.cues.cancel(self.launch_verify_cue_id.take());
-    self.launch_verify_cue_id = Some(ctx.cues.start(VerifyLaunch, time.once()));
+    ctx.timers.cancel(self.launch_verify_timer_id.take());
+    self.launch_verify_timer_id = Some(ctx.timers.start(VerifyLaunch, time.once()));
   }
 
   /// The autoplunger fired a while ago. A ball still resting in the lane wasn't moved by it (e.g. a weak coil, or the
   /// ball wasn't seated yet), so an automatic launch is fired again, up to `configs::AUTOPLUNGER_RETRIES` times. Past
   /// that, or for a ball the player launches, the launch button (if any) is armed.
   fn verify_launch(&mut self, ctx: &SystemContext) {
-    if self.launch_verify_cue_id.take().is_none() {
+    if self.launch_verify_timer_id.take().is_none() {
       return;
     }
     let EjectState::InLane { ball, .. } = self.eject_state else {
@@ -442,7 +442,7 @@ impl StandardBallManagement {
   }
 
   fn end_launch_verification(&mut self, ctx: &SystemContext) {
-    ctx.cues.cancel(self.launch_verify_cue_id.take());
+    ctx.timers.cancel(self.launch_verify_timer_id.take());
     self.launch_retries = 0;
   }
 
@@ -721,7 +721,7 @@ fn set_count(counts: &mut HashMap<u64, u8>, id: u64, count: u8) {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct LaneArrivalTimedOut;
@@ -889,7 +889,7 @@ mod tests {
       matches!(
         self.system.eject_state,
         EjectState::EnRoute {
-          arrival_cue_id: Some(_),
+          arrival_timer_id: Some(_),
           ..
         }
       )
@@ -1615,7 +1615,7 @@ mod tests {
     f.lane_exited();
     assert_eq!(f.launched_events(), vec![LaunchMethod::Auto]);
 
-    f.deliver(&LaneArrivalTimedOut); // a stale cue is ignored
+    f.deliver(&LaneArrivalTimedOut); // a stale timer is ignored
     assert!(f.launched_events().is_empty());
   }
 

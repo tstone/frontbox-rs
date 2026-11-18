@@ -74,7 +74,7 @@ impl System for GameStartable {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.cues.start_multi(events![LampOn, LampOff], Cue::Forever(self.flash_duration));
+    ctx.timers.start_multi(events![LampOn, LampOff], Timer::Forever(self.flash_duration));
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {

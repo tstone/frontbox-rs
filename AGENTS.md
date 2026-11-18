@@ -16,7 +16,7 @@ gets a new target, added to that doc.
 
 A public method on a system is called by other systems, so it must take `&ServiceContext`, never `&SystemContext`.
 A `SystemContext` is a `ServiceContext` plus the handle of the current system, so passing one to another system
-hands it the caller's identity: events it emits, cues it schedules, and lookups it does would all act as the caller.
+hands it the caller's identity: events it emits, timers it schedules, and lookups it does would all act as the caller.
 
 The system builds its own `SystemContext` from its handle:
 
@@ -41,13 +41,13 @@ pub fn request(&mut self, requester: u64, duration: Duration, ctx: &ServiceConte
 ctx.systems.with::<BallSaveSystem, _>(|ball_save| ball_save.request(ctx.id(), duration, ctx.into()));
 ```
 
-### Events and cues
+### Events and timers
 
 - Name events in the past tense (`BallSaved`), and routine payloads in the present progressive for what's going on
   while they run (`TurnEnding`).
 - Say "complete" rather than "finish" for something that runs to an end, such as a routine or one of its steps
   (`RoutineCompleted`, `ctx.routines.complete_step`).
-- Cues a system sends to itself are private and live in the same file as the system.
+- Events a system sends itself with a timer are private and live in the same file as the system.
 - Public events for a module are centralized in that module's `mod.rs`, not spread across system files.
 - An event always reaches every active system; nothing can stop it. When systems need the chance to change what
   happens next (saving a drain, extending a turn), make that a routine they take part in, and have them halt it.

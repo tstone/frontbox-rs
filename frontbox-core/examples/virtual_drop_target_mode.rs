@@ -77,7 +77,7 @@ struct DropTargetDownUp {
 }
 
 #[derive(serde::Serialize, Event)]
-struct DropUp; // cue to send self
+struct DropUp; // timer to send self
 
 impl DropTargetDownUp {
   pub fn new(target_switches: [&'static str; 3]) -> Self {
@@ -92,7 +92,7 @@ impl DropTargetDownUp {
         .all(|&target| ctx.switches.is_closed(target).unwrap_or(false));
 
       if all_down {
-        ctx.cues.start(DropUp, Cue::Once(Duration::from_millis(250)));
+        ctx.timers.start(DropUp, Timer::Once(Duration::from_millis(250)));
       }
     }
   }

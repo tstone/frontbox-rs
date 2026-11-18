@@ -4,13 +4,13 @@ use crate::prelude::*;
 /// A system which continually pings the FAST hardware to keep 48v active. This is required to use drivers.
 pub struct WatchdogSystem {
   handle: SystemHandle,
-  cue_handle: Option<u64>,
+  timer_handle: Option<u64>,
 }
 
 impl WatchdogSystem {
   pub fn new() -> Self {
     Self {
-      cue_handle: None,
+      timer_handle: None,
       handle: SystemHandle::default(),
     }
   }
@@ -22,9 +22,9 @@ impl WatchdogSystem {
     log::info!(target: "frontbox::watchdog", "🐶 Enabling watchdog with {:?}", ctx.watchdog_interval);
 
     // renew watchdog slightly before it expires
-    self.cue_handle = Some(ctx.cues.start(
+    self.timer_handle = Some(ctx.timers.start(
       WatchdogPing,
-      Cue::Forever(
+      Timer::Forever(
         // renew it slightly ahead of the configured interval to add some buffer for any latency
         ctx.watchdog_interval.unwrap_or(Duration::from_millis(1500)) - Duration::from_millis(250),
       ),
@@ -38,7 +38,7 @@ impl WatchdogSystem {
     log::info!(target: "frontbox::watchdog", "🐶 Disabling watchdog");
     ctx.systems.expect::<MachineSystem>().clear_watchdog();
 
-    ctx.cues.cancel(self.cue_handle.take());
+    ctx.timers.cancel(self.timer_handle.take());
   }
 }
 
@@ -56,7 +56,7 @@ impl System for WatchdogSystem {
     if event.is::<WatchdogPing>() {
       log::trace!(target: "frontbox::watchdog", "🐶 Watchdog event => Ping");
       ctx.systems.expect::<MachineSystem>().ping_watchdog();
-    } else if event.is::<MachineReconnected>() && self.cue_handle.is_some() {
+    } else if event.is::<MachineReconnected>() && self.timer_handle.is_some() {
       // feed it now rather than at the next ping, as the hardware's has been running down since it was brought up
       ctx.systems.expect::<MachineSystem>().ping_watchdog();
     }

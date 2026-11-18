@@ -31,9 +31,9 @@ pub enum AppMessage {
   DespawnSystemGroup(GroupId),
   ActivateSystemGroup(GroupId),
   DeactivateSystemGroup(GroupId),
-  CreateCue(SystemHandle, u64, Cue, Vec<Box<dyn Event>>),
-  CancelCue(SystemHandle, u64),
-  SetCuePaused(SystemHandle, u64, bool),
+  CreateTimer(SystemHandle, u64, Timer, Vec<Box<dyn Event>>),
+  CancelTimer(SystemHandle, u64),
+  SetTimerPaused(SystemHandle, u64, bool),
   StartRoutine(RoutineStart),
   /// The origin cancels the routine with this id
   CancelRoutine(SystemHandle, u64),
@@ -99,12 +99,12 @@ impl Debug for AppMessage {
       AppMessage::DespawnSystemGroup(id) => write!(f, "DespawnSystemGroup({})", id),
       AppMessage::ActivateSystemGroup(id) => write!(f, "ActivateSystemGroup({})", id),
       AppMessage::DeactivateSystemGroup(id) => write!(f, "DeactivateSystemGroup({})", id),
-      AppMessage::CreateCue(handle, cue_id, cue, _signals) => {
-        write!(f, "CreateCue({}:{}, {:?})", handle.id, cue_id, cue)
+      AppMessage::CreateTimer(handle, timer_id, timer, _signals) => {
+        write!(f, "CreateTimer({}:{}, {:?})", handle.id, timer_id, timer)
       }
-      AppMessage::CancelCue(handle, cue_id) => write!(f, "CancelCue({}:{})", handle.id, cue_id),
-      AppMessage::SetCuePaused(handle, cue_id, paused) => {
-        write!(f, "SetCuePaused({}:{}, {})", handle.id, cue_id, paused)
+      AppMessage::CancelTimer(handle, timer_id) => write!(f, "CancelTimer({}:{})", handle.id, timer_id),
+      AppMessage::SetTimerPaused(handle, timer_id, paused) => {
+        write!(f, "SetTimerPaused({}:{}, {})", handle.id, timer_id, paused)
       }
       AppMessage::StartRoutine(start) => write!(f, "StartRoutine({:?})", start),
       AppMessage::CancelRoutine(handle, routine_id) => {

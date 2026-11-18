@@ -84,12 +84,12 @@ pub struct ScoopSystem<S> {
   /// There's a ball that hasn't been ejected yet
   ball_waiting: bool,
   /// Running while the eject scene plays
-  eject_cue: Option<u64>,
+  eject_timer: Option<u64>,
   /// A ball passed the lower entrance switch and hasn't arrived yet
   lower_entrance_passed: bool,
-  lower_entrance_cue: Option<u64>,
+  lower_entrance_timer: Option<u64>,
   /// Running for [`KICK_SETTLE`] after the coil fires, while the switch closing is the kicker rather than a ball
-  settle_cue: Option<u64>,
+  settle_timer: Option<u64>,
   /// The switch closed while settling, so a ball may have landed under the kicker
   closed_while_settling: bool,
   /// Kicks in a row that left the ball in the scoop, to back off the next one
@@ -119,10 +119,10 @@ impl<S: 'static> ScoopSystem<S> {
       after_eject_scene: None,
       holds: HashSet::new(),
       ball_waiting: false,
-      eject_cue: None,
+      eject_timer: None,
       lower_entrance_passed: false,
-      lower_entrance_cue: None,
-      settle_cue: None,
+      lower_entrance_timer: None,
+      settle_timer: None,
       closed_while_settling: false,
       failed_kicks: 0,
       scoop: PhantomData,
@@ -168,9 +168,9 @@ impl<S: 'static> ScoopSystem<S> {
   /// Keep a ball in the scoop, keyed by the requester's `ctx.id()`. This also catches one that's about to eject.
   pub fn hold(&mut self, requester: u64, ctx: &ServiceContext) {
     self.holds.insert(requester);
-    if let Some(cue) = self.eject_cue.take() {
+    if let Some(timer) = self.eject_timer.take() {
       let ctx = &ctx.for_system(self.handle);
-      ctx.cues.cancel(cue);
+      ctx.timers.cancel(timer);
       if let Some(scene) = self.before_eject_scene.as_mut() {
         scene.stop(ctx);
       }
@@ -183,7 +183,7 @@ impl<S: 'static> ScoopSystem<S> {
     // left to the next event, so that a hold being taken over from this one can get in first
     ctx
       .for_system(self.handle)
-      .emit(ScoopCue::<S>::new(Step::BeginEject));
+      .emit(ScoopSignal::<S>::new(Step::BeginEject));
   }
 
   fn is_occupied(&self, ctx: &SystemContext) -> bool {
@@ -199,7 +199,7 @@ impl<S: 'static> ScoopSystem<S> {
     } else {
       ScoopEntry::Direct
     };
-    ctx.cues.cancel(self.lower_entrance_cue.take());
+    ctx.timers.cancel(self.lower_entrance_timer.take());
     log::info!(target: "frontbox::scoop", "Ball entered {} scoop ({:?})", self.name, entry);
 
     self.ball_waiting = true;
@@ -207,20 +207,20 @@ impl<S: 'static> ScoopSystem<S> {
 
     // whatever wants to hold the ball hears about it first, and the eject starts if nothing did
     ctx.emit(ScoopBallEntered::<S>::new(entry));
-    ctx.emit(ScoopCue::<S>::new(Step::BeginEject));
+    ctx.emit(ScoopSignal::<S>::new(Step::BeginEject));
   }
 
   fn on_lower_entrance_switch_closed(&mut self, ctx: &SystemContext) {
     self.lower_entrance_passed = true;
-    ctx.cues.cancel(self.lower_entrance_cue.take());
-    self.lower_entrance_cue = Some(ctx.cues.start(
-      ScoopCue::<S>::new(Step::LowerEntranceExpired),
+    ctx.timers.cancel(self.lower_entrance_timer.take());
+    self.lower_entrance_timer = Some(ctx.timers.start(
+      ScoopSignal::<S>::new(Step::LowerEntranceExpired),
       self.lower_entrance_timeout.once(),
     ));
   }
 
   fn begin_eject(&mut self, ctx: &SystemContext) {
-    if !self.ball_waiting || self.eject_cue.is_some() || !self.holds.is_empty() {
+    if !self.ball_waiting || self.eject_timer.is_some() || !self.holds.is_empty() {
       return;
     }
 
@@ -232,21 +232,21 @@ impl<S: 'static> ScoopSystem<S> {
 
     scene.restart(ctx);
     let length = scene.scene().length();
-    self.eject_cue = Some(
+    self.eject_timer = Some(
       ctx
-        .cues
-        .start(ScoopCue::<S>::new(Step::EjectSceneCompleted), length.once()),
+        .timers
+        .start(ScoopSignal::<S>::new(Step::EjectSceneCompleted), length.once()),
     );
   }
 
   /// Fire the coil, then check the scoop is empty once the kick has had time to work
   fn fire(&mut self, ctx: &SystemContext) {
     ctx.drivers.activate(self.coil, ActivationMode::Tap);
-    ctx.cues.cancel(self.settle_cue.take());
-    self.settle_cue = Some(
+    ctx.timers.cancel(self.settle_timer.take());
+    self.settle_timer = Some(
       ctx
-        .cues
-        .start(ScoopCue::<S>::new(Step::KickSettled), KICK_SETTLE.once()),
+        .timers
+        .start(ScoopSignal::<S>::new(Step::KickSettled), KICK_SETTLE.once()),
     );
 
     // so the check reads the switch as it is, even if its opening went unreported
@@ -258,13 +258,13 @@ impl<S: 'static> ScoopSystem<S> {
       .saturating_mul(1 << self.failed_kicks.min(16))
       .min(MAX_VERIFY_DELAY.max(self.verify_delay));
     ctx
-      .cues
-      .start(ScoopCue::<S>::new(Step::VacancyCheckDue), delay.once());
+      .timers
+      .start(ScoopSignal::<S>::new(Step::VacancyCheckDue), delay.once());
   }
 
   fn kick(&mut self, ctx: &SystemContext) {
     self.fire(ctx);
-    self.eject_cue = None;
+    self.eject_timer = None;
     if let Some(scene) = self.before_eject_scene.as_mut() {
       scene.stop(ctx);
     }
@@ -292,7 +292,7 @@ impl<S: 'static> ScoopSystem<S> {
   }
 
   fn on_switch_closed(&mut self, ctx: &SystemContext) {
-    if self.settle_cue.is_some() {
+    if self.settle_timer.is_some() {
       log::debug!(target: "frontbox::scoop", "{} scoop switch closed as the coil fired, which may not be a ball", self.name);
       self.closed_while_settling = true;
       return;
@@ -302,7 +302,7 @@ impl<S: 'static> ScoopSystem<S> {
 
   /// The kicker is back, so a switch still closed from while it was moving is a ball that landed
   fn on_kick_settled(&mut self, ctx: &SystemContext) {
-    self.settle_cue = None;
+    self.settle_timer = None;
     if std::mem::take(&mut self.closed_while_settling)
       && !self.ball_waiting
       && self.is_occupied(ctx)
@@ -316,7 +316,7 @@ impl<S: 'static> ScoopSystem<S> {
     self.begin_eject(ctx);
   }
 
-  fn on_cue(&mut self, step: Step, ctx: &SystemContext) {
+  fn on_signal(&mut self, step: Step, ctx: &SystemContext) {
     match step {
       Step::BeginEject => self.begin_eject(ctx),
       Step::EjectSceneCompleted => self.kick(ctx),
@@ -324,7 +324,7 @@ impl<S: 'static> ScoopSystem<S> {
       Step::KickSettled => self.on_kick_settled(ctx),
       Step::LowerEntranceExpired => {
         self.lower_entrance_passed = false;
-        self.lower_entrance_cue = None;
+        self.lower_entrance_timer = None;
       }
     }
   }
@@ -344,7 +344,7 @@ impl<S: 'static> System for ScoopSystem<S> {
   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
     if routine.is::<BallSearching>() {
       // not while its ball is being held, or is about to eject
-      if !self.ball_waiting || (self.holds.is_empty() && self.eject_cue.is_none()) {
+      if !self.ball_waiting || (self.holds.is_empty() && self.eject_timer.is_none()) {
         self.fire(ctx);
       }
       ctx.routines.complete_step::<BallSearching>();
@@ -363,8 +363,8 @@ impl<S: 'static> System for ScoopSystem<S> {
     {
       self.failed_kicks = 0;
       ctx.set_balls_held(0);
-    } else if let Some(cue) = event.downcast_ref::<ScoopCue<S>>() {
-      self.on_cue(cue.step, ctx);
+    } else if let Some(timer) = event.downcast_ref::<ScoopSignal<S>>() {
+      self.on_signal(timer.step, ctx);
     } else if event.is::<RoutineStarted<TurnEnding>>() || event.is::<PlayerTilted>() {
       self.clear_holds(ctx);
     } else if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>()
@@ -375,17 +375,17 @@ impl<S: 'static> System for ScoopSystem<S> {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 /// What the scoop sends itself. Generic like the public events, so one scoop doesn't act on another's.
 #[derive(serde::Serialize, Event)]
-struct ScoopCue<S> {
+struct ScoopSignal<S> {
   step: Step,
   #[serde(skip)]
   scoop: PhantomData<fn() -> S>,
 }
 
-impl<S> ScoopCue<S> {
+impl<S> ScoopSignal<S> {
   fn new(step: Step) -> Self {
     Self {
       step,

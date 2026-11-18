@@ -132,7 +132,7 @@ fn ms(ms: u64) -> Duration {
   Duration::from_millis(ms)
 }
 
-/// A little past `duration`, so a cue due at it has fired
+/// A little past `duration`, so a timer due at it has fired
 fn past(duration: Duration) -> Duration {
   duration + ms(50)
 }

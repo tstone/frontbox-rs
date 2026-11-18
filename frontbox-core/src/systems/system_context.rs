@@ -9,7 +9,7 @@ use crate::prelude::*;
 ///
 /// Each handler receives a reference to `SystemContext` which has both the `Context` and a reference to the `SystemHandle` of the current system. As this guide has shown, it's through Context that access several features is provided, including:
 ///
-/// - Schedule cues
+/// - Schedule timers
 /// - Emit events
 /// - Access hardware configuration and state
 ///
@@ -27,7 +27,7 @@ use crate::prelude::*;
 ///
 /// - `ctx.systems`: look up, spawn, and despawn systems
 /// - `ctx.groups`: spawn and manage system groups
-/// - `ctx.cues`: schedule signals back to this system
+/// - `ctx.timers`: schedule signals back to this system
 /// - `ctx.routines`: start and take part in routines
 /// - `ctx.states`: read and set states
 /// - `ctx.drivers`: look up, configure, activate, and deactivate drivers
@@ -40,7 +40,7 @@ pub struct SystemContext<'a> {
   ctx: ServiceContext<'a>,
   pub systems: ContextSystems<'a>,
   pub groups: ContextGroups<'a>,
-  pub cues: ContextCues<'a>,
+  pub timers: ContextTimers<'a>,
   pub routines: ContextRoutines<'a>,
   pub states: ContextStates<'a>,
   pub drivers: ContextDrivers<'a>,
@@ -61,7 +61,7 @@ impl<'a> SystemContext<'a> {
       ctx,
       systems: ContextSystems::new(handle, ctx),
       groups: ContextGroups::new(handle, ctx),
-      cues: ContextCues::new(handle, ctx),
+      timers: ContextTimers::new(handle, ctx),
       routines: ContextRoutines::for_system(handle, ctx),
       states: ContextStates::new(handle, ctx),
       drivers: ctx.drivers,

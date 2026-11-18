@@ -22,8 +22,8 @@ pub struct SwitchComboSystem {
   held_for: Option<Duration>,
   on_combo: Box<dyn FnMut(&SystemContext) + Send + Sync>,
   window_started: bool,
-  window_cue: Option<u64>,
-  hold_cue: Option<u64>,
+  window_timer: Option<u64>,
+  hold_timer: Option<u64>,
   fired: bool,
 }
 
@@ -36,8 +36,8 @@ impl SwitchComboSystem {
       held_for: None,
       on_combo: Box::new(|_| {}),
       window_started: false,
-      window_cue: None,
-      hold_cue: None,
+      window_timer: None,
+      hold_timer: None,
       fired: false,
     }
   }
@@ -76,37 +76,37 @@ impl SwitchComboSystem {
     if let Some(window) = self.within {
       if !self.window_started {
         self.window_started = true;
-        self.window_cue = Some(ctx.cues.start(WindowElapsed, window.once()));
+        self.window_timer = Some(ctx.timers.start(WindowElapsed, window.once()));
       }
     }
 
-    if self.fired || self.hold_cue.is_some() || self.closed_count(ctx) < self.switch_names.len() {
+    if self.fired || self.hold_timer.is_some() || self.closed_count(ctx) < self.switch_names.len() {
       return;
     }
 
     // Too slow: the window ran out before the last switch closed
-    if self.within.is_some() && self.window_cue.is_none() {
+    if self.within.is_some() && self.window_timer.is_none() {
       return;
     }
 
     match self.held_for {
-      Some(duration) => self.hold_cue = Some(ctx.cues.start(Held, duration.once())),
+      Some(duration) => self.hold_timer = Some(ctx.timers.start(Held, duration.once())),
       None => self.fire(ctx),
     }
   }
 
   fn on_member_opened(&mut self, ctx: &SystemContext) {
     self.fired = false;
-    ctx.cues.cancel(self.hold_cue.take());
+    ctx.timers.cancel(self.hold_timer.take());
 
     if self.closed_count(ctx) == 0 {
       self.window_started = false;
-      ctx.cues.cancel(self.window_cue.take());
+      ctx.timers.cancel(self.window_timer.take());
     }
   }
 
   fn on_held(&mut self, ctx: &SystemContext) {
-    self.hold_cue = None;
+    self.hold_timer = None;
     if self.closed_count(ctx) == self.switch_names.len() {
       self.fire(ctx);
     }
@@ -138,7 +138,7 @@ impl System for SwitchComboSystem {
     } else if event.is::<Held>() {
       self.on_held(ctx);
     } else if event.is::<WindowElapsed>() {
-      self.window_cue = None;
+      self.window_timer = None;
     }
   }
 }

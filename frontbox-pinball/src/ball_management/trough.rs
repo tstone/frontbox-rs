@@ -150,7 +150,7 @@ impl TroughSystem {
   fn eject_inner(&mut self, ctx: &SystemContext) {
     self.eject_state = EjectState::Verifying {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
-      cue_id: ctx.cues.start(VerifyEject, self.config.eject_verification_time.once()),
+      timer_id: ctx.timers.start(VerifyEject, self.config.eject_verification_time.once()),
     };
     ctx.drivers.activate(self.config.eject_coil_name, ActivationMode::Tap);
   }
@@ -167,8 +167,8 @@ impl TroughSystem {
   }
 
   fn verify_eject_switch(&mut self, ctx: &SystemContext) {
-    if let EjectState::Verifying { cue_id, .. } = self.eject_state {
-      ctx.cues.cancel(cue_id);
+    if let EjectState::Verifying { timer_id, .. } = self.eject_state {
+      ctx.timers.cancel(timer_id);
       self.eject_verified(ctx);
     }
   }
@@ -216,36 +216,36 @@ impl TroughSystem {
   }
 
   fn queue_occupancy_settling(&mut self, ctx: &SystemContext) {
-    let max_cue_id = match self.occupancy_state {
+    let max_timer_id = match self.occupancy_state {
       OccupancyState::Settling {
-        max_cue_id,
-        settling_cue_id: cue_id,
+        max_timer_id,
+        settling_timer_id: timer_id,
       } => {
-        ctx.cues.cancel(cue_id);
-        max_cue_id
+        ctx.timers.cancel(timer_id);
+        max_timer_id
       }
-      OccupancyState::Ready => ctx.cues.start(MaxSettle, self.config.occupancy_settling_max.once()),
+      OccupancyState::Ready => ctx.timers.start(MaxSettle, self.config.occupancy_settling_max.once()),
     };
 
     self.occupancy_state = OccupancyState::Settling {
-      max_cue_id,
-      settling_cue_id: ctx.cues.start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
+      max_timer_id,
+      settling_timer_id: ctx.timers.start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
     }
   }
 
   /// This method gets triggered by a trough switch being hit, but after settling time has elapsed
   /// It should always end with a reset and only emit an event if occupancy did change
   fn verify_occupancy(&mut self, ctx: &SystemContext) {
-    // Either cue completes settling; cancel the other so it can't cut short a later settle
+    // Either timer completes settling; cancel the other so it can't cut short a later settle
     let OccupancyState::Settling {
-      settling_cue_id,
-      max_cue_id,
+      settling_timer_id,
+      max_timer_id,
     } = self.occupancy_state
     else {
       return;
     };
-    ctx.cues.cancel(settling_cue_id);
-    ctx.cues.cancel(max_cue_id);
+    ctx.timers.cancel(settling_timer_id);
+    ctx.timers.cancel(max_timer_id);
     self.occupancy_state = OccupancyState::Ready;
 
     // While an eject is verifying, whether the ball has exited isn't known yet. Hold the report until the eject
@@ -313,19 +313,19 @@ impl System for TroughSystem {
 enum OccupancyState {
   Ready,
   Settling {
-    settling_cue_id: u64,
-    max_cue_id: u64,
+    settling_timer_id: u64,
+    max_timer_id: u64,
   },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EjectState {
   Ready,
-  Verifying { target_occupancy: u8, cue_id: u64 },
+  Verifying { target_occupancy: u8, timer_id: u64 },
   Pending,
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct VerifyEject;
@@ -460,12 +460,12 @@ mod tests {
       self.trough.eject_many(count, &self.ctx.svc_ctx());
     }
 
-    /// Simulate the settling cue elapsing
+    /// Simulate the settling timer elapsing
     fn settle(&mut self) {
       self.deliver(&VerifyOccupancy);
     }
 
-    /// Simulate the eject verification cue elapsing
+    /// Simulate the eject verification timer elapsing
     fn verify_timeout(&mut self) {
       self.deliver(&VerifyEject);
     }
@@ -602,8 +602,8 @@ mod tests {
     let mut f = Fixture::spawn(3, false, false);
     f.set_balls(4);
     let OccupancyState::Settling {
-      settling_cue_id: first_settle,
-      max_cue_id: first_max,
+      settling_timer_id: first_settle,
+      max_timer_id: first_max,
     } = f.trough.occupancy_state
     else {
       panic!("expected settling");
@@ -611,8 +611,8 @@ mod tests {
 
     f.set_balls(5);
     let OccupancyState::Settling {
-      settling_cue_id: second_settle,
-      max_cue_id: second_max,
+      settling_timer_id: second_settle,
+      max_timer_id: second_max,
     } = f.trough.occupancy_state
     else {
       panic!("expected settling");
@@ -620,9 +620,9 @@ mod tests {
 
     assert_ne!(
       first_settle, second_settle,
-      "settle cue restarts on every change"
+      "settle timer restarts on every change"
     );
-    assert_eq!(first_max, second_max, "max settle cue is not restarted");
+    assert_eq!(first_max, second_max, "max settle timer is not restarted");
   }
 
   #[test]
@@ -637,9 +637,9 @@ mod tests {
   }
 
   #[test]
-  fn occupancy_stale_settle_cue_while_ready_is_ignored() {
+  fn occupancy_stale_settle_timer_while_ready_is_ignored() {
     let mut f = Fixture::spawn(3, false, false);
-    // switch cache changes without a switch event; a stale cue must not report it
+    // switch cache changes without a switch event; a stale timer must not report it
     f.balls = 4;
     f.apply();
     f.settle();

@@ -16,7 +16,7 @@ pub struct SystemContainer {
   id: u64,
   name: &'static str,
   inner: Box<dyn System>,
-  cues: HashMap<u64, CueAccumulator>,
+  timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
   faulted: bool,
   as_any: fn(&dyn System) -> &dyn Any,
@@ -29,7 +29,7 @@ impl SystemContainer {
       id: Self::next_id(),
       name: type_name_of_val(&system),
       inner: Box::new(system),
-      cues: HashMap::new(),
+      timers: HashMap::new(),
       last_active_state: true,
       faulted: false,
       as_any: |s| s as &dyn Any,
@@ -165,34 +165,34 @@ impl SystemContainer {
 
   pub(crate) fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     let system_id = self.id;
-    self.cues.retain(|id, cue| {
-      cue.accumulate(delta, |signal| {
-        log::trace!(target: "frontbox::cues", "Cue {} @ system {} fired", id, system_id);
+    self.timers.retain(|id, timer| {
+      timer.accumulate(delta, |signal| {
+        log::trace!(target: "frontbox::timers", "Timer {} @ system {} fired", id, system_id);
         self.inner.on_event(signal, ctx);
       });
 
-      if cue.is_complete() {
-        log::trace!(target: "frontbox::cues", "Cue {} @ system {} completed, removing", id, system_id);
+      if timer.is_complete() {
+        log::trace!(target: "frontbox::timers", "Timer {} @ system {} completed, removing", id, system_id);
       }
-      !cue.is_complete()
+      !timer.is_complete()
     });
 
     // bubble tick to inner system after processing timers
     self.inner.on_tick(delta, ctx);
   }
 
-  pub(crate) fn create_cue(&mut self, cue: Cue, id: u64, signals: Vec<Box<dyn Event>>) {
-    self.cues.insert(id, CueAccumulator::new(cue, signals));
+  pub(crate) fn create_timer(&mut self, timer: Timer, id: u64, signals: Vec<Box<dyn Event>>) {
+    self.timers.insert(id, TimerAccumulator::new(timer, signals));
   }
 
-  pub(crate) fn cancel_cue(&mut self, cue_id: u64) {
-    self.cues.remove(&cue_id);
+  pub(crate) fn cancel_timer(&mut self, timer_id: u64) {
+    self.timers.remove(&timer_id);
   }
 
-  /// Does nothing for a cue that has completed or was canceled
-  pub(crate) fn set_cue_paused(&mut self, cue_id: u64, paused: bool) {
-    if let Some(cue) = self.cues.get_mut(&cue_id) {
-      cue.set_paused(paused);
+  /// Does nothing for a timer that has completed or was canceled
+  pub(crate) fn set_timer_paused(&mut self, timer_id: u64, paused: bool) {
+    if let Some(timer) = self.timers.get_mut(&timer_id) {
+      timer.set_paused(paused);
     }
   }
 
@@ -237,7 +237,7 @@ pub struct SpawnableSystemContainer {
   id: u64,
   name: &'static str,
   inner: Box<dyn SpawnableSystem>,
-  cues: HashMap<u64, CueAccumulator>,
+  timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
@@ -249,7 +249,7 @@ impl SpawnableSystemContainer {
       id: SystemContainer::next_id(),
       name: type_name_of_val(&system),
       inner: Box::new(system),
-      cues: HashMap::new(),
+      timers: HashMap::new(),
       last_active_state: true,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
@@ -261,7 +261,7 @@ impl SpawnableSystemContainer {
       id: self.id,
       name: self.name,
       inner: self.inner,
-      cues: self.cues,
+      timers: self.timers,
       last_active_state: self.last_active_state,
       faulted: false,
       as_any: self.as_any,
@@ -281,7 +281,7 @@ pub struct ChildSystemContainer {
   id: u64,
   name: &'static str,
   inner: Box<dyn ChildSystem>,
-  cues: HashMap<u64, CueAccumulator>,
+  timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
@@ -293,7 +293,7 @@ impl ChildSystemContainer {
       id: SystemContainer::next_id(),
       name: type_name_of_val(&system),
       inner: Box::new(system),
-      cues: HashMap::new(),
+      timers: HashMap::new(),
       last_active_state: true,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
@@ -305,7 +305,7 @@ impl ChildSystemContainer {
       id: self.id,
       name: self.name,
       inner: self.inner,
-      cues: self.cues,
+      timers: self.timers,
       last_active_state: self.last_active_state,
       faulted: false,
       as_any: self.as_any,

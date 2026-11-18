@@ -75,7 +75,7 @@
 //! ```
 //!
 //! Each participant is handed the routine in `on_routine`, and calls `ctx.routines.complete_step` when its step is done,
-//! either right away or later (from a cue, say):
+//! either right away or later (from a timer, say):
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
@@ -90,7 +90,7 @@
 //!   fn on_routine(&mut self, routine: &dyn Event, ctx: &SystemContext) {
 //!     if routine.is::<TurnEnding>() {
 //!       // count up the bonus, done in 3 seconds
-//!       ctx.cues.start(BonusCounted, Cue::Once(Duration::from_secs(3)));
+//!       ctx.timers.start(BonusCounted, Timer::Once(Duration::from_secs(3)));
 //!     }
 //!   }
 //!
@@ -113,7 +113,7 @@
 //! ### Cancelling
 //!
 //! `ctx.routines.start` returns the routine's id, which its origin can pass to `ctx.routines.cancel` to stop it
-//! wherever it's at, like a cue. The participant whose step is in progress isn't told, and anything it does to
+//! wherever it's at, like a timer. The participant whose step is in progress isn't told, and anything it does to
 //! complete its step afterwards is ignored. No one after it takes a step. `RoutineCompleted<E>` is still broadcast, with
 //! `RoutineCompletion::Cancelled`, so listeners that reacted to `RoutineStarted<E>` see it end. This is for an origin
 //! whose reason to run the routine has gone, such as a ball search stopping when the coin door opens.
@@ -153,8 +153,8 @@
 //!   (de)activation take effect in queue order; a system whose own `is_active` changes is noticed when the framework
 //!   next checks it, as with anything else. A system replaced with `ctx.systems.replace_self` is a new system, so the replacement
 //!   can't complete the old step.
-//! - **Paused while the origin is inactive** -- Like a cue, a routine doesn't move on while its origin is inactive. The
-//!   step in progress carries on, but the next participant isn't handed the routine, nor `RoutineCompleted`
+//! - **Paused while the origin is inactive** -- Like a timer, a routine doesn't move on while its origin is inactive.
+//!   The step in progress carries on, but the next participant isn't handed the routine, nor `RoutineCompleted`
 //!   broadcast, until the origin is active again. That includes a halted routine, but not a cancelled one. A routine whose origin is despawned
 //!   is abandoned, and never completes.
 

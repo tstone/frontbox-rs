@@ -35,7 +35,7 @@ pub struct DmdAttractSystem {
   current: usize,
   player: Option<ScenePlayer>,
   last_scores: Vec<u64>,
-  cue_id: Option<u64>,
+  timer_id: Option<u64>,
 }
 
 impl DmdAttractSystem {
@@ -49,7 +49,7 @@ impl DmdAttractSystem {
       current: 0,
       player: None,
       last_scores: Vec::new(),
-      cue_id: None,
+      timer_id: None,
     }
   }
 
@@ -121,9 +121,9 @@ impl DmdAttractSystem {
   }
 
   /// Moves on after a screen's time, counting from now
-  fn cue_next(&mut self, ctx: &SystemContext) {
-    ctx.cues.cancel(self.cue_id.take());
-    self.cue_id = Some(ctx.cues.start(NextScreen, Cue::Forever(self.screen_duration)));
+  fn schedule_next(&mut self, ctx: &SystemContext) {
+    ctx.timers.cancel(self.timer_id.take());
+    self.timer_id = Some(ctx.timers.start(NextScreen, Timer::Forever(self.screen_duration)));
   }
 }
 
@@ -143,15 +143,15 @@ impl System for DmdAttractSystem {
         AttractScreen::PressStart => open_scene(&content, PRESS_START_SCENE, Sends { variables: &[] }, self.z),
       })
       .collect();
-    self.cue_next(ctx);
+    self.schedule_next(ctx);
   }
 
   fn on_reactivate(&mut self, ctx: &SystemContext) {
-    self.cue_next(ctx);
+    self.schedule_next(ctx);
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
-    ctx.cues.cancel(self.cue_id.take());
+    ctx.timers.cancel(self.timer_id.take());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -162,17 +162,17 @@ impl System for DmdAttractSystem {
       // the scores the players finished with
       if let Some(first) = self.screens.iter().position(|screen| *screen == AttractScreen::LastScore(0)) {
         self.show(first, ctx);
-        self.cue_next(ctx);
+        self.schedule_next(ctx);
       }
     } else if let Some(closed) = event.downcast_ref::<SwitchClosed>()
       && let Some((previous, next)) = self.flippers
     {
       if closed.switch.name == previous {
         self.step(-1, ctx);
-        self.cue_next(ctx);
+        self.schedule_next(ctx);
       } else if closed.switch.name == next {
         self.step(1, ctx);
-        self.cue_next(ctx);
+        self.schedule_next(ctx);
       }
     }
   }

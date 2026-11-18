@@ -37,7 +37,7 @@ pub struct AutoPlungerSystem {
   before_launch_scene: Option<ScenePlayer<Completes>>,
   after_launch_scene: Option<PlayableScene<Completes>>,
   armed: bool,
-  /// A launch waiting for the before-launch scene to play through, with the cue that ends the wait
+  /// A launch waiting for the before-launch scene to play through, with the timer that ends the wait
   pending_launch: Option<(LaunchMethod, u64)>,
 }
 
@@ -106,11 +106,11 @@ impl AutoPlungerSystem {
 
   /// Call off a launch that's waiting for the before-launch scene, e.g. because the ball has left the lane
   pub fn cancel_launch(&mut self, ctx: &ServiceContext) {
-    let Some((_, cue)) = self.pending_launch.take() else {
+    let Some((_, timer)) = self.pending_launch.take() else {
       return;
     };
     let ctx = &ctx.for_system(self.handle);
-    ctx.cues.cancel(cue);
+    ctx.timers.cancel(timer);
     if let Some(scene) = self.before_launch_scene.as_mut() {
       scene.stop(ctx);
     }
@@ -148,8 +148,8 @@ impl AutoPlungerSystem {
 
     scene.restart(ctx);
     let length = scene.scene().length();
-    let cue = ctx.cues.start(BeforeLaunchSceneCompleted, length.once());
-    self.pending_launch = Some((method, cue));
+    let timer = ctx.timers.start(BeforeLaunchSceneCompleted, length.once());
+    self.pending_launch = Some((method, timer));
   }
 
   fn on_before_launch_scene_completed(&mut self, ctx: &SystemContext) {
@@ -211,7 +211,7 @@ impl System for AutoPlungerSystem {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct BeforeLaunchSceneCompleted;
@@ -276,7 +276,7 @@ mod tests {
 
     autoplunger.launch(&ctx.svc_ctx());
     autoplunger.cancel_launch(&ctx.svc_ctx());
-    // a cue that was already on its way
+    // a timer that was already on its way
     autoplunger.on_event(&BeforeLaunchSceneCompleted, &ctx.sys_ctx());
     assert_eq!(fires(&mut ctx), 0);
   }

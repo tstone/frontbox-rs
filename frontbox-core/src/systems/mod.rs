@@ -20,7 +20,7 @@
 //! ## What Systems Do
 //!
 //! - [Emit events](crate::systems::event)
-//! - [Schedule cues](crate::systems::cue)
+//! - [Schedule timers](crate::systems::timer)
 //! - [Interact with other systems](#services)
 //! - [Become inactive](#active)
 //! - [React to their own lifecycle](#lifecycle)
@@ -167,8 +167,8 @@
 //! ```
 mod context_namespaces;
 mod contextual;
-pub mod cue;
-mod cue_ext;
+pub mod timer;
+mod timer_ext;
 pub mod event;
 mod group_handle;
 pub mod routine;
@@ -184,8 +184,8 @@ mod test_context;
 
 pub use context_namespaces::*;
 pub use contextual::*;
-pub use cue::*;
-pub use cue_ext::*;
+pub use timer::*;
+pub use timer_ext::*;
 pub use event::*;
 pub use group_handle::*;
 pub use routine::{

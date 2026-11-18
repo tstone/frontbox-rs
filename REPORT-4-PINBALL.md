@@ -45,7 +45,7 @@ variant) has to rewrite about 600 lines to change one of them. `GameState` shows
 
 `CompetitiveGame` has `turn_phase` and `game_phase`, plus `ball_served`, `draining`, `tilted`, and
 `waiting_for_balls`. Each flag only means something in one phase, and `start_turn`, `tilt`, and `start_game_ending`
-each reset a different subset. Since then, `in_play_check_cue`, `found_no_ball_in_play`, and `ball_return_cue`
+each reset a different subset. Since then, `in_play_check_timer`, `found_no_ball_in_play`, and `ball_return_timer`
 have joined them.
 
 **Suggestion.** Keep the public `TurnPhase` state as it is, and hold a private enum with the detail inside it:
@@ -88,7 +88,7 @@ copies, and each one today handles despawn and deactivation slightly differently
   backoff.
 - **Unused**: `TroughEjectStarted` is emitted and nothing listens; `TroughSystem::eject_many` has no caller;
   `HighScoresSystem.custom_scores` goes with the leaderboards item.
-- **`GameStartable`** flashes a lamp through a cue pair and plays an LED effect, each with its own rule for when it
+- **`GameStartable`** flashes a lamp through a cycling timer and plays an LED effect, each with its own rule for when it
   runs. The lamp half is waiting on the `LampDriver` item in `TODO.md`.
 
 ### B8. What lotko wrote that belongs here

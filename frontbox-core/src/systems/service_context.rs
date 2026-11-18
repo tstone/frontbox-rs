@@ -173,44 +173,44 @@ impl<'a> ServiceContext<'a> {
       .send(AppMessage::DeactivateSystemGroup(group.id()));
   }
 
-  // --- Cues ---
+  // --- Timers ---
 
-  pub(crate) fn cue(&self, handle: SystemHandle, signal: impl Event + 'static, cue: Cue) -> u64 {
-    let cue_id = SystemContainer::next_id();
+  pub(crate) fn timer(&self, handle: SystemHandle, signal: impl Event + 'static, timer: Timer) -> u64 {
+    let timer_id = SystemContainer::next_id();
     self
       .app_sender
-      .send(AppMessage::CreateCue(
+      .send(AppMessage::CreateTimer(
         handle,
-        cue_id,
-        cue,
+        timer_id,
+        timer,
         vec![Box::new(signal)],
       ))
       .ok();
-    cue_id
+    timer_id
   }
 
-  pub(crate) fn cue_cycling(
+  pub(crate) fn timer_cycling(
     &self,
     handle: SystemHandle,
     signals: Vec<Box<dyn Event>>,
-    cue: Cue,
+    timer: Timer,
   ) -> u64 {
-    let cue_id = SystemContainer::next_id();
+    let timer_id = SystemContainer::next_id();
     self
       .app_sender
-      .send(AppMessage::CreateCue(handle, cue_id, cue, signals))
+      .send(AppMessage::CreateTimer(handle, timer_id, timer, signals))
       .ok();
-    cue_id
+    timer_id
   }
 
-  pub(crate) fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
-    let _ = self.app_sender.send(AppMessage::CancelCue(handle, cue_id));
+  pub(crate) fn cancel_timer(&self, handle: SystemHandle, timer_id: u64) {
+    let _ = self.app_sender.send(AppMessage::CancelTimer(handle, timer_id));
   }
 
-  pub(crate) fn set_cue_paused(&self, handle: SystemHandle, cue_id: u64, paused: bool) {
+  pub(crate) fn set_timer_paused(&self, handle: SystemHandle, timer_id: u64, paused: bool) {
     let _ = self
       .app_sender
-      .send(AppMessage::SetCuePaused(handle, cue_id, paused));
+      .send(AppMessage::SetTimerPaused(handle, timer_id, paused));
   }
 
   // --- Routines ---

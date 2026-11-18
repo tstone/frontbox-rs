@@ -13,50 +13,50 @@ impl RunLoop {
     });
   }
 
-  pub(super) fn create_cue(&self, handle: SystemHandle, cue_id: u64, cue: Cue, signals: Vec<Box<dyn Event>>) {
+  pub(super) fn create_timer(&self, handle: SystemHandle, timer_id: u64, timer: Timer, signals: Vec<Box<dyn Event>>) {
     if let Some(mut system) = self.groups.system(handle) {
-      log::debug!(target: "frontbox::cues", "Creating cue for {} ({})", system.name(), handle.id);
-      system.create_cue(cue, cue_id, signals);
+      log::debug!(target: "frontbox::timers", "Creating timer for {} ({})", system.name(), handle.id);
+      system.create_timer(timer, timer_id, signals);
     } else {
       log::warn!(
-        target: "frontbox::cues",
-        "Cueing: No system found with ID {}, cannot create cue {:?}",
+        target: "frontbox::timers",
+        "No system found with ID {}, cannot create timer {:?}",
         handle.id,
-        cue
+        timer
       );
     }
   }
 
-  pub(super) fn cancel_cue(&self, handle: SystemHandle, cue_id: u64) {
+  pub(super) fn cancel_timer(&self, handle: SystemHandle, timer_id: u64) {
     if let Some(mut system) = self.groups.system(handle) {
-      system.cancel_cue(cue_id);
+      system.cancel_timer(timer_id);
     } else {
       log::warn!(
-        target: "frontbox::cues",
-        "No system found with ID {}, cannot cancel cue with ID {}",
+        target: "frontbox::timers",
+        "No system found with ID {}, cannot cancel timer with ID {}",
         handle.id,
-        cue_id
+        timer_id
       );
     }
   }
 
-  pub(super) fn set_cue_paused(&self, handle: SystemHandle, cue_id: u64, paused: bool) {
+  pub(super) fn set_timer_paused(&self, handle: SystemHandle, timer_id: u64, paused: bool) {
     if let Some(mut system) = self.groups.system(handle) {
       log::debug!(
-        target: "frontbox::cues",
-        "{} cue {} for {} ({})",
+        target: "frontbox::timers",
+        "{} timer {} for {} ({})",
         if paused { "Pausing" } else { "Resuming" },
-        cue_id,
+        timer_id,
         system.name(),
         handle.id
       );
-      system.set_cue_paused(cue_id, paused);
+      system.set_timer_paused(timer_id, paused);
     } else {
       log::warn!(
-        target: "frontbox::cues",
-        "No system found with ID {}, cannot pause or resume cue with ID {}",
+        target: "frontbox::timers",
+        "No system found with ID {}, cannot pause or resume timer with ID {}",
         handle.id,
-        cue_id
+        timer_id
       );
     }
   }
@@ -115,15 +115,15 @@ mod tests {
     assert_eq!(log.take(), ["1 on_tick", "2 on_tick", "1 on_render", "2 on_render"]);
   }
 
-  /// Cues a `Poke` to itself 100ms after it spawns, and counts the `Poke`s it hears
-  struct Cued {
-    cue: Rc<Cell<u64>>,
+  /// Timers a `Poke` to itself 100ms after it spawns, and counts the `Poke`s it hears
+  struct Timed {
+    timer: Rc<Cell<u64>>,
     pokes: Rc<Cell<u32>>,
   }
 
-  impl System for Cued {
+  impl System for Timed {
     fn on_spawn(&mut self, ctx: &SystemContext) {
-      self.cue.set(ctx.cues.start(Poke, Cue::Once(ms(100))));
+      self.timer.set(ctx.timers.start(Poke, Timer::Once(ms(100))));
     }
 
     fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
@@ -133,18 +133,18 @@ mod tests {
     }
   }
 
-  fn spawn_cued(h: &mut Harness) -> (SystemHandle, u64, Rc<Cell<u32>>) {
-    let (cue, pokes) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
-    let handle = h.spawn(Cued { cue: cue.clone(), pokes: pokes.clone() });
-    (handle, cue.get(), pokes)
+  fn spawn_timed(h: &mut Harness) -> (SystemHandle, u64, Rc<Cell<u32>>) {
+    let (timer, pokes) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
+    let handle = h.spawn(Timed { timer: timer.clone(), pokes: pokes.clone() });
+    (handle, timer.get(), pokes)
   }
 
   #[test]
-  fn a_cue_signals_its_own_system_once_its_time_has_passed() {
+  fn a_timer_signals_its_own_system_once_its_time_has_passed() {
     let mut h = Harness::new();
     let log = Log::default();
     h.spawn(Probe::<1>(log.clone()));
-    let (_, _, pokes) = spawn_cued(&mut h);
+    let (_, _, pokes) = spawn_timed(&mut h);
 
     h.tick_by(ms(60));
     assert_eq!(pokes.get(), 0);
@@ -153,16 +153,16 @@ mod tests {
     assert_eq!(pokes.get(), 1);
 
     h.tick_by(ms(200));
-    assert_eq!(pokes.get(), 1, "a `Cue::Once` fires once");
-    assert!(!log.take().contains(&"1 heard Poke".to_string()), "only the system that cued it hears it");
+    assert_eq!(pokes.get(), 1, "a `Timer::Once` fires once");
+    assert!(!log.take().contains(&"1 heard Poke".to_string()), "only the system that started it hears it");
   }
 
   #[test]
-  fn a_cancelled_cue_never_signals() {
+  fn a_cancelled_timer_never_signals() {
     let mut h = Harness::new();
-    let (handle, cue, pokes) = spawn_cued(&mut h);
+    let (handle, timer, pokes) = spawn_timed(&mut h);
 
-    h.send(AppMessage::CancelCue(handle, cue));
+    h.send(AppMessage::CancelTimer(handle, timer));
     h.settle();
     h.tick_by(ms(200));
 
@@ -170,17 +170,17 @@ mod tests {
   }
 
   #[test]
-  fn a_paused_cue_signals_only_after_it_is_resumed() {
+  fn a_paused_timer_signals_only_after_it_is_resumed() {
     let mut h = Harness::new();
-    let (handle, cue, pokes) = spawn_cued(&mut h);
+    let (handle, timer, pokes) = spawn_timed(&mut h);
 
     h.tick_by(ms(60));
-    h.send(AppMessage::SetCuePaused(handle, cue, true));
+    h.send(AppMessage::SetTimerPaused(handle, timer, true));
     h.settle();
     h.tick_by(ms(200));
-    assert_eq!(pokes.get(), 0, "time doesn't count toward a paused cue");
+    assert_eq!(pokes.get(), 0, "time doesn't count toward a paused timer");
 
-    h.send(AppMessage::SetCuePaused(handle, cue, false));
+    h.send(AppMessage::SetTimerPaused(handle, timer, false));
     h.settle();
     h.tick_by(ms(30));
     assert_eq!(pokes.get(), 0, "it picks up at 60ms of 100ms");

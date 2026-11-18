@@ -1,5 +1,5 @@
-//! The namespaces on [`SystemContext`]: `ctx.systems`, `ctx.groups`, `ctx.cues`, `ctx.routines`, and `ctx.states`. Each
-//! acts as the system the context was given to.
+//! The namespaces on [`SystemContext`]: `ctx.systems`, `ctx.groups`, `ctx.timers`, `ctx.routines`, and `ctx.states`.
+//! Each acts as the system the context was given to.
 
 use std::any::{TypeId, type_name};
 use std::cell::RefMut;
@@ -98,48 +98,48 @@ impl<'a> ContextGroups<'a> {
   }
 }
 
-/// `ctx.cues`: schedule signals back to this system. See [cues](mod@crate::systems::cue)
+/// `ctx.timers`: schedule signals back to this system. See [timers](mod@crate::systems::timer)
 #[derive(Clone, Copy)]
-pub struct ContextCues<'a> {
+pub struct ContextTimers<'a> {
   handle: SystemHandle,
   ctx: ServiceContext<'a>,
 }
 
-impl<'a> ContextCues<'a> {
+impl<'a> ContextTimers<'a> {
   pub(crate) fn new(handle: SystemHandle, ctx: ServiceContext<'a>) -> Self {
     Self { handle, ctx }
   }
 
-  /// Start a cue that sends `signal` to this system as `cue` says. Returns its id, for [`cancel`](Self::cancel).
-  pub fn start(&self, signal: impl Event + 'static, cue: Cue) -> u64 {
-    self.ctx.cue(self.handle, signal, cue)
+  /// Start a timer that sends `signal` to this system as `timer` says. Returns its id, for [`cancel`](Self::cancel).
+  pub fn start(&self, signal: impl Event + 'static, timer: Timer) -> u64 {
+    self.ctx.timer(self.handle, signal, timer)
   }
 
-  /// Start a cue that sends multiple `signals`, in turn, cycling through each
-  pub fn start_multi(&self, signals: Vec<Box<dyn Event>>, cue: Cue) -> u64 {
-    self.ctx.cue_cycling(self.handle, signals, cue)
+  /// Start a timer that sends multiple `signals`, in turn, cycling through each
+  pub fn start_multi(&self, signals: Vec<Box<dyn Event>>, timer: Timer) -> u64 {
+    self.ctx.timer_cycling(self.handle, signals, timer)
   }
 
-  /// Cancel a cue this system started. Takes an id or an `Option` of one, and does nothing for `None`.
-  pub fn cancel(&self, cue_id: impl Into<Option<u64>>) {
-    if let Some(cue_id) = cue_id.into() {
-      self.ctx.cancel_cue(self.handle, cue_id);
+  /// Cancel a timer this system started. Takes an id or an `Option` of one, and does nothing for `None`.
+  pub fn cancel(&self, timer_id: impl Into<Option<u64>>) {
+    if let Some(timer_id) = timer_id.into() {
+      self.ctx.cancel_timer(self.handle, timer_id);
     }
   }
 
-  /// Pause a cue this system started: time stops counting toward it until it's [resumed](Self::resume). Takes an id
-  /// or an `Option` of one, and does nothing for `None` or a cue that's already paused, completed, or canceled.
-  pub fn pause(&self, cue_id: impl Into<Option<u64>>) {
-    if let Some(cue_id) = cue_id.into() {
-      self.ctx.set_cue_paused(self.handle, cue_id, true);
+  /// Pause a timer this system started: time stops counting toward it until it's [resumed](Self::resume). Takes an id
+  /// or an `Option` of one, and does nothing for `None` or a timer that's already paused, completed, or canceled.
+  pub fn pause(&self, timer_id: impl Into<Option<u64>>) {
+    if let Some(timer_id) = timer_id.into() {
+      self.ctx.set_timer_paused(self.handle, timer_id, true);
     }
   }
 
-  /// Resume a cue [paused](Self::pause) by this system, picking up where it left off. Takes an id or an `Option` of
-  /// one, and does nothing for `None` or a cue that isn't paused.
-  pub fn resume(&self, cue_id: impl Into<Option<u64>>) {
-    if let Some(cue_id) = cue_id.into() {
-      self.ctx.set_cue_paused(self.handle, cue_id, false);
+  /// Resume a timer [paused](Self::pause) by this system, picking up where it left off. Takes an id or an `Option` of
+  /// one, and does nothing for `None` or a timer that isn't paused.
+  pub fn resume(&self, timer_id: impl Into<Option<u64>>) {
+    if let Some(timer_id) = timer_id.into() {
+      self.ctx.set_timer_paused(self.handle, timer_id, false);
     }
   }
 }

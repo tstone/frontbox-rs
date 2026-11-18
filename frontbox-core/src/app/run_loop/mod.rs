@@ -4,7 +4,7 @@
 //! - `harness`: driving the loop synchronously, for tests (with the `testing` feature, or in this crate's tests)
 //! - `lifecycle`: spawning, despawning, activating and deactivating systems and groups
 //! - `switches`: switch state changes, from the machine or a tracer
-//! - `timing`: ticks, the tick timer and cues
+//! - `timing`: ticks, the tick timer and timers
 
 mod delivery;
 #[cfg(any(test, feature = "testing"))]
@@ -226,14 +226,14 @@ impl RunLoop {
         self.deactivate_system_group(group);
         self.activation_changed(&self.groups.handles_in(group));
       }
-      AppMessage::CreateCue(handle, cue_id, cue, signals) => {
-        self.create_cue(handle, cue_id, cue, signals);
+      AppMessage::CreateTimer(handle, timer_id, timer, signals) => {
+        self.create_timer(handle, timer_id, timer, signals);
       }
-      AppMessage::CancelCue(handle, cue_id) => {
-        self.cancel_cue(handle, cue_id);
+      AppMessage::CancelTimer(handle, timer_id) => {
+        self.cancel_timer(handle, timer_id);
       }
-      AppMessage::SetCuePaused(handle, cue_id, paused) => {
-        self.set_cue_paused(handle, cue_id, paused);
+      AppMessage::SetTimerPaused(handle, timer_id, paused) => {
+        self.set_timer_paused(handle, timer_id, paused);
       }
       AppMessage::StartRoutine(start) => {
         let (origin, type_id) = (start.origin, start.type_id);

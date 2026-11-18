@@ -88,13 +88,13 @@ pub struct CompetitiveGame {
   tilted: bool,
   /// Whether `TurnEnding` has completed, and the turn advances once no ball is left in play
   waiting_for_balls: bool,
-  /// While the turn is active, the cue that checks for no ball in play without a drain having been reported
-  in_play_check_cue: Option<u64>,
+  /// While the turn is active, the timer that checks for no ball in play without a drain having been reported
+  in_play_check_timer: Option<u64>,
   /// Whether the last of those checks found no ball in play
   found_no_ball_in_play: bool,
   /// Set when a game ends with balls from it still in play. Player entry stays closed until they come home, or this
-  /// cue times out.
-  ball_return_cue: Option<u64>,
+  /// timer times out.
+  ball_return_timer: Option<u64>,
   /// The phase of the game, kept here for the same reason as `turn_phase`. While it's `Starting` or `Ending`, no turn
   /// moves on.
   game_phase: GamePhase,
@@ -125,9 +125,9 @@ impl CompetitiveGame {
       pending_drains: VecDeque::new(),
       tilted: false,
       waiting_for_balls: false,
-      in_play_check_cue: None,
+      in_play_check_timer: None,
       found_no_ball_in_play: false,
-      ball_return_cue: None,
+      ball_return_timer: None,
       game_phase: GamePhase::None,
     }
   }
@@ -194,7 +194,7 @@ impl CompetitiveGame {
   fn set_turn_phase(&mut self, turn_phase: TurnPhase, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
     if turn_phase != TurnPhase::Active {
-      ctx.cues.cancel(self.in_play_check_cue.take());
+      ctx.timers.cancel(self.in_play_check_timer.take());
     }
     self.turn_phase = turn_phase;
     ctx.states.set(turn_phase);
@@ -211,7 +211,7 @@ impl CompetitiveGame {
 
   /// Whether a player can be added right now. Others read this as `PlayerEntry`, published by `update_player_entry`.
   fn is_player_addable(&self) -> bool {
-    if self.game_phase == GamePhase::Ending || self.ball_return_cue.is_some() {
+    if self.game_phase == GamePhase::Ending || self.ball_return_timer.is_some() {
       return false;
     }
     // if the game is started, then it must be the first player's turn on their first ball
@@ -257,10 +257,10 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Transitioning current turn to active");
     self.set_turn_phase(TurnPhase::Active, ctx);
     self.found_no_ball_in_play = false;
-    self.in_play_check_cue = Some(
+    self.in_play_check_timer = Some(
       ctx
         .for_system(self.handle)
-        .cues.start(CheckBallsInPlay, Cue::Forever(IN_PLAY_CHECK_INTERVAL)),
+        .timers.start(CheckBallsInPlay, Timer::Forever(IN_PLAY_CHECK_INTERVAL)),
     );
     let session = self.session.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
@@ -486,10 +486,10 @@ impl CompetitiveGame {
     let in_play = self.balls_in_play(ctx);
     if in_play > 0 {
       log::info!(target: "frontbox::game_manager", "Waiting for {} ball(s) to come home before another game can start", in_play);
-      self.ball_return_cue = Some(
+      self.ball_return_timer = Some(
         ctx
           .for_system(self.handle)
-          .cues.start(BallReturnTimedOut, BALL_RETURN_TIMEOUT.once()),
+          .timers.start(BallReturnTimedOut, BALL_RETURN_TIMEOUT.once()),
       );
     }
     self.update_player_entry(ctx);
@@ -497,7 +497,7 @@ impl CompetitiveGame {
 
   /// The balls from the last game came home, or stopped being waited for
   fn balls_returned(&mut self, ctx: &ServiceContext) {
-    ctx.for_system(self.handle).cues.cancel(self.ball_return_cue.take());
+    ctx.for_system(self.handle).timers.cancel(self.ball_return_timer.take());
     self.update_player_entry(ctx);
   }
 
@@ -539,13 +539,13 @@ impl System for CompetitiveGame {
         }
         return;
       }
-      GamePhase::None if self.ball_return_cue.is_some() => {
+      GamePhase::None if self.ball_return_timer.is_some() => {
         if is_last_ball_gone(event) {
           self.balls_returned(ctx.into());
         } else if event.is::<BallReturnTimedOut>() {
           // they're left out of the next game's count (see `establish_ball_count`)
           log::warn!(target: "frontbox::game_manager", "Balls from the last game didn't come home, no longer waiting for them");
-          self.ball_return_cue = None;
+          self.ball_return_timer = None;
           self.balls_returned(ctx.into());
         }
         return;
@@ -764,7 +764,7 @@ fn is_last_ball_gone(event: &dyn Event) -> bool {
     || matches!(event.downcast_ref::<BallSearchFailed>(), Some(BallSearchFailed { in_play: 0, .. }))
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct CheckBallsInPlay;

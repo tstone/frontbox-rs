@@ -37,7 +37,7 @@ pub struct CradleSystem {
   playfield_switches: SwitchQ,
   hold_switches: SwitchQ,
   settle: Duration,
-  settle_cue: Option<u64>,
+  settle_timer: Option<u64>,
   /// Mirrors the `Cradle` state, which is set by message, so it's up to date within a handler
   cradled: bool,
 }
@@ -48,7 +48,7 @@ impl CradleSystem {
       playfield_switches,
       hold_switches,
       settle: DEFAULT_SETTLE,
-      settle_cue: None,
+      settle_timer: None,
       cradled: false,
     }
   }
@@ -91,9 +91,9 @@ impl CradleSystem {
   /// before the trough has settled on it leaving), and no event says when it has.
   fn restart(&mut self, ctx: &SystemContext) {
     self.set_cradled(false, ctx);
-    ctx.cues.cancel(self.settle_cue.take());
+    ctx.timers.cancel(self.settle_timer.take());
     if self.is_flipper_held(ctx) {
-      self.settle_cue = Some(ctx.cues.start(SettleElapsed, self.settle.once()));
+      self.settle_timer = Some(ctx.timers.start(SettleElapsed, self.settle.once()));
     }
   }
 
@@ -105,7 +105,7 @@ impl CradleSystem {
   }
 
   fn on_settle_elapsed(&mut self, ctx: &SystemContext) {
-    self.settle_cue = None;
+    self.settle_timer = None;
     if self.could_be_cradled(ctx) {
       self.set_cradled(true, ctx);
     }
@@ -155,7 +155,7 @@ impl System for CradleSystem {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct SettleElapsed;

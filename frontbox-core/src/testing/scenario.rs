@@ -84,7 +84,7 @@ impl Scenario {
     self.settle();
   }
 
-  /// Let time pass, ticking at the app's interval as the machine would, so cues and timers run as they would there
+  /// Let time pass, ticking at the app's interval as the machine would, so timers run as they would there
   pub fn advance(&mut self, duration: Duration) {
     let interval = self.harness.tick_interval();
     assert!(!interval.is_zero(), "The app's system interval is zero, so time can't pass");
@@ -317,7 +317,7 @@ mod tests {
   #[derive(serde::Serialize, Event)]
   struct KickSettled;
 
-  /// The cue `Kicker` sends itself
+  /// The timer `Kicker` sends itself
   #[derive(serde::Serialize, Event)]
   struct SettleTimer;
 
@@ -335,7 +335,7 @@ mod tests {
         self.kicks += 1;
         ctx.drivers.activate("kicker", ActivationMode::Tap);
         ctx.emit(Kicked(self.kicks));
-        ctx.cues.start(SettleTimer, Cue::Once(Duration::from_secs(1)));
+        ctx.timers.start(SettleTimer, Timer::Once(Duration::from_secs(1)));
       } else if event.is::<SettleTimer>() {
         ctx.emit(KickSettled);
       }
@@ -424,7 +424,7 @@ mod tests {
   }
 
   #[test]
-  fn time_passing_runs_cues() {
+  fn time_passing_runs_timers() {
     let mut s = Scenario::new(app()).start();
     let settled = s.record(|_: &KickSettled| ());
 

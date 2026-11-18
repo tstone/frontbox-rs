@@ -8,7 +8,7 @@
 //! 3. Write a [system](mod@crate::systems).
 //! 4. Emit some [events](mod@crate::systems::event).
 //! 5. Turn on some LEDs (see `frontbox-led`).
-//! 6. [Choreograph](mod@crate::systems::cue) something.
+//! 6. [Choreograph](mod@crate::systems::timer) something.
 
 pub mod app;
 mod connection_retry;

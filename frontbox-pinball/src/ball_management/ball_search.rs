@@ -39,12 +39,12 @@ pub struct BallSearchSystem {
   coils: Option<DriverQ>,
   /// Coils still to fire in the current round
   coils_to_fire: VecDeque<&'static str>,
-  delay_cue: Option<u64>,
-  round_cue: Option<u64>,
+  delay_timer: Option<u64>,
+  round_timer: Option<u64>,
   /// The `BallSearching` routine of the current round, while it runs
   routine_id: Option<u64>,
   /// Fires the next of `coils_to_fire`
-  coil_cue: Option<u64>,
+  coil_timer: Option<u64>,
   /// Rounds run in the current search, 0 when not searching
   rounds: u8,
 }
@@ -56,10 +56,10 @@ impl BallSearchSystem {
       hold_switches: None,
       coils: None,
       coils_to_fire: VecDeque::new(),
-      delay_cue: None,
-      round_cue: None,
+      delay_timer: None,
+      round_timer: None,
       routine_id: None,
-      coil_cue: None,
+      coil_timer: None,
       rounds: 0,
     }
   }
@@ -82,14 +82,14 @@ impl BallSearchSystem {
   }
 
   fn restart_delay(&mut self, ctx: &SystemContext) {
-    ctx.cues.cancel(self.delay_cue.take());
+    ctx.timers.cancel(self.delay_timer.take());
     let delay = ctx.config.get(&configs::BALL_SEARCH_DELAY);
-    self.delay_cue = Some(ctx.cues.start(SearchDelayElapsed, delay.once()));
+    self.delay_timer = Some(ctx.timers.start(SearchDelayElapsed, delay.once()));
   }
 
   /// Firing coils: in the routine, between coils, or waiting out the last one
   fn is_firing(&self) -> bool {
-    self.routine_id.is_some() || self.coil_cue.is_some()
+    self.routine_id.is_some() || self.coil_timer.is_some()
   }
 
   fn ball_seen(&mut self, ctx: &SystemContext) {
@@ -103,9 +103,9 @@ impl BallSearchSystem {
   /// Also stops the round in progress, wherever it's at: in the routine, or firing coils
   fn stop_search(&mut self, ctx: &SystemContext) {
     self.rounds = 0;
-    ctx.cues.cancel(self.round_cue.take());
+    ctx.timers.cancel(self.round_timer.take());
     ctx.routines.cancel(self.routine_id.take());
-    ctx.cues.cancel(self.coil_cue.take());
+    ctx.timers.cancel(self.coil_timer.take());
     self.coils_to_fire.clear();
   }
 
@@ -133,7 +133,7 @@ impl BallSearchSystem {
   }
 
   fn on_delay_elapsed(&mut self, ctx: &SystemContext) {
-    self.delay_cue = None;
+    self.delay_timer = None;
     // the delay was started over mid-search (e.g. a hold switch released), and starts again once the search ends
     if self.is_searching() {
       return;
@@ -167,16 +167,16 @@ impl BallSearchSystem {
     coils.sort_by_key(|driver| driver.id);
     self.coils_to_fire = coils.into_iter().map(|driver| driver.name).collect();
     // the routine's last participant may have just fired
-    self.coil_cue = Some(ctx.cues.start(NextCoilDue, COIL_INTERVAL.once()));
+    self.coil_timer = Some(ctx.timers.start(NextCoilDue, COIL_INTERVAL.once()));
   }
 
   /// Fire the next coil and wait out the interval after it, or complete the round once the last one's interval is over
   fn on_next_coil_due(&mut self, ctx: &SystemContext) {
-    self.coil_cue = None;
+    self.coil_timer = None;
     match self.coils_to_fire.pop_front() {
       Some(coil) => {
         ctx.drivers.activate(coil, ActivationMode::Tap);
-        self.coil_cue = Some(ctx.cues.start(NextCoilDue, COIL_INTERVAL.once()));
+        self.coil_timer = Some(ctx.timers.start(NextCoilDue, COIL_INTERVAL.once()));
       }
       None => self.on_round_completed(ctx),
     }
@@ -184,12 +184,12 @@ impl BallSearchSystem {
 
   fn on_round_completed(&mut self, ctx: &SystemContext) {
     if self.is_searching() {
-      self.round_cue = Some(ctx.cues.start(RoundPauseElapsed, ROUND_PAUSE.once()));
+      self.round_timer = Some(ctx.timers.start(RoundPauseElapsed, ROUND_PAUSE.once()));
     }
   }
 
   fn on_round_pause_elapsed(&mut self, ctx: &SystemContext) {
-    self.round_cue = None;
+    self.round_timer = None;
     if !self.has_loose_ball(ctx) {
       // e.g. the ball was held, or rolled into the plunge lane, without a playfield switch seeing it
       self.stop_search(ctx);
@@ -267,7 +267,7 @@ impl System for BallSearchSystem {
   }
 }
 
-// -- Cues --
+// -- Signals --
 
 #[derive(serde::Serialize, Event)]
 struct SearchDelayElapsed;
