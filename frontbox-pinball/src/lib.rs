@@ -10,7 +10,7 @@
 //! `TurnStartReason::ExtraBall` and the same turn number.
 //!
 //! # Overview: Game Start
-//! When the first player is added (e.g. by `FreePlay` or `CreditsPlay`), the game manager starts the game and starts the `GameStarting` routine at the root.
+//! When the first player is added (e.g. by `CreditsSystem`, on a start press), the game manager starts the game and starts the `GameStarting` routine at the root.
 //! 1. `RoutineStarted<GameStarting>` is broadcast first. The game is started, but no turn has begun and the playfield drivers are still off.
 //! 2. Each participant (game-start sound, start-of-game display, etc.) takes its turn. More players can still be added meanwhile.
 //! 3. Once the last participant completes its step, the first turn begins with `TurnStarting`.
@@ -76,7 +76,7 @@
 //! To receive the benefits of this crate, these systems must be added to the root of the app:
 //! - `GameManager` - Either competitive or cooperative
 //! - `BallManager` - e.g. `BallManager::standard`
-//! - Game Start -- `FreePlay` or `CreditsPlay`
+//! - `CreditsSystem` - adds players on a start press, on free play or for a credit
 //!
 //! ## Ball Save, Multiball, Extra Balls, and Similar Mechanics
 //! `BallSaveSystem` (in the player template) saves drained balls while any system has requested a ball save. It takes
@@ -108,16 +108,24 @@
 //! ## Attract Mode
 //! `AttractSystem` (at the root) plays a list of scenes on every LED, one after another, for as long as `GamePhase` is
 //! `None`.
+//!
+//! A scene that should play alongside the others while no game is running (e.g. an animation on the start button's
+//! LEDs) is a second `AttractSystem` with just that scene.
+//!
+//! ## Credits and the Start Button
+//! `CreditsSystem` (at the root) counts coins into credits, and adds a player on a start press, spending a credit, or
+//! none with the `FREE_PLAY` operator config on (the default). It flashes the start lamp while a press would add a
+//! player. `CreditsChanged` is emitted whenever the credits change, for a display to show them.
 
 mod attract_system;
 pub mod ball_management;
 mod ball_save;
 mod coin_door;
 mod cradle;
+mod credits;
 mod dmd;
 pub mod configs;
 mod game_management;
-mod game_start;
 mod high_scores;
 pub mod metrics;
 mod scoop;
@@ -129,9 +137,9 @@ pub use ball_management::*;
 pub use ball_save::*;
 pub use coin_door::*;
 pub use cradle::*;
+pub use credits::*;
 pub use dmd::*;
 pub use game_management::*;
-pub use game_start::*;
 pub use high_scores::*;
 pub use scoop::*;
 pub use tilt::*;

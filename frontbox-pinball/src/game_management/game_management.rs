@@ -6,8 +6,8 @@ use crate::{CompetitiveGame, GameEndReason, GameEnding, GameSession, TiltSystem,
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started. Does nothing if no
-  /// player can be added right now; `PlayerEntry` says whether one can.
-  fn add_player(&mut self, ctx: &ServiceContext);
+  /// player can be added right now; `PlayerEntry` says whether one can. Returns whether a player was added.
+  fn add_player(&mut self, ctx: &ServiceContext) -> bool;
   /// Ends the game in progress early, skipping the rest of the current turn. `GameEnding` still runs, with `reason`
   /// (`GameEndReason::Quit`, or `SlamTilted`). Does nothing if no game is started, or it's already ending.
   fn quit_game(&mut self, reason: GameEndReason, ctx: &ServiceContext);

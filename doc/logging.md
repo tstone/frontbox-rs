@@ -70,7 +70,8 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | `frontbox::scoop` | Scoop captures and ejects |
 | `frontbox::coin_door` | Coin door open and close |
 | `frontbox::cradle` | The player starting and ending a cradle |
-| `frontbox::game_manager` | Games, players, turns, free play, the quit combo |
+| `frontbox::game_manager` | Games, players, turns, the quit combo |
+| `frontbox::credits` | Coins, credits, and start presses that add a player or are refused |
 | `frontbox::high_scores` | Saving high scores |
 
 ### Output

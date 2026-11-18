@@ -18,21 +18,22 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
   - Ball management (trough, plunge lane, auto-plunger, ball management)
   - Competitive game management (game lifecycle, player tracking, turn tracking, extra ball, etc.)
   - Combined LED + display + sound scenes with built-in editor
-  - Free play and tilt support
+  - Coin-based and free play game start
   - Music playback, sound effect playback, and callback playback with ducking
   - Operator config (adjustable game/hardware settings)
   - Web-based management console
   - Metrics
+  - Tilt, slam tilt, and ball cradled detection
 
 **Still Missing**: 
   - High scores
   - Cooperative game management
   - Alphanumeric display/NeoSeg support
   - Hardware support: motors and servos
-  - Coin-based game start
   - Music loop points, effects, and multi-stem playback
   - Operator menu is still a little rough
   - Tournament settings/seeded random
+  - Free game on score threshold/high score
 
 ### Architectural Overview
 
@@ -45,8 +46,8 @@ Systems can be grouped or go active/inactive independently. Systems interact wit
 #### A Basic Game Lifecycle Example
 
 - The start button is pressed. This causes a switch event.
-- The `FreePlaySystem` receives the switch event then checks the `PlayerEntry` state. It is currently `PlayerEntry::Open`.
-- `FreePlaySystem` calls `GameManagement` (through context) to invoke `add_player`.
+- The `CreditsSystem` receives the switch event then checks the `PlayerEntry` state. It is currently `PlayerEntry::Open`, and the machine is on free play (or has a credit to spend).
+- `CreditsSystem` calls `GameManagement` (through context) to invoke `add_player`.
 - `GameManagement` adds the player, recognizes this is the first player and starts a game.
 - Event `RoutineStarted<GameStarting>` is emitted.
 - Systems participating in `GameStarting` are run in order (by the framework)

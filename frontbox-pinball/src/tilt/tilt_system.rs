@@ -227,7 +227,9 @@ mod tests {
   impl System for FakeGame {}
 
   impl GameManagement for FakeGame {
-    fn add_player(&mut self, _ctx: &ServiceContext) {}
+    fn add_player(&mut self, _ctx: &ServiceContext) -> bool {
+      false
+    }
     fn quit_game(&mut self, _reason: GameEndReason, _ctx: &ServiceContext) {}
     fn tilt(&mut self, _ctx: &ServiceContext) {
       self.tilts.fetch_add(1, Ordering::SeqCst);

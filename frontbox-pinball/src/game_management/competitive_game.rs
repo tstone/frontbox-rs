@@ -602,11 +602,11 @@ impl System for CompetitiveGame {
 }
 
 impl GameManagement for CompetitiveGame {
-  fn add_player(&mut self, ctx: &ServiceContext) {
+  fn add_player(&mut self, ctx: &ServiceContext) -> bool {
     // checked here as well as through `PlayerEntry`, which reads as its old value until the run loop gets to it
     if !self.is_player_addable() {
       log::warn!(target: "frontbox::game_manager", "A player can't be added now, ignored");
-      return;
+      return false;
     }
     if !self.is_game_started() {
       self.start_game(ctx);
@@ -616,7 +616,7 @@ impl GameManagement for CompetitiveGame {
       session
     } else {
       log::error!(target: "frontbox::game_manager", "Game state should have been initialized when starting the game");
-      return;
+      return false;
     };
 
     session.increment_player_count();
@@ -636,6 +636,7 @@ impl GameManagement for CompetitiveGame {
       .push(svc_ctx.groups.spawn(group_name, copy, false));
     svc_ctx.emit(PlayerAdded);
     self.update_player_entry(ctx);
+    true
   }
 
   fn quit_game(&mut self, reason: GameEndReason, ctx: &ServiceContext) {

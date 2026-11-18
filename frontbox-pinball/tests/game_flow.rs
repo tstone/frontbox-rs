@@ -115,7 +115,7 @@ fn app_with(ball_manager: BallManager) -> App {
       ],
       SwitchQ::name(PLAYFIELD),
     ))
-    .system(FreePlay::new(SwitchQ::name(START)))
+    .system(CreditsSystem::new(SwitchQ::name(START)))
     .system(
       BallSearchSystem::new(SwitchQ::name(PLAYFIELD))
         .hold_switches(SwitchQ::name(FLIPPER))

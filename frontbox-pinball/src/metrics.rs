@@ -108,3 +108,15 @@ pub static EXTRA_BALLS:LazyLock<Counter> = LazyLock::new(|| {
     .key("extra_balls")
     .category("Games")
 });
+
+pub static COINS_INSERTED: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Coins Inserted", "Coins dropped through any coin switch, including past the credit limit")
+    .key("coins_inserted")
+    .category("Coins")
+});
+
+pub static CREDITS_SPENT: LazyLock<Counter> = LazyLock::new(|| {
+  Counter::new("Credits Spent", "Credits spent adding a player. Players added on free play spend none")
+    .key("credits_spent")
+    .category("Coins")
+});

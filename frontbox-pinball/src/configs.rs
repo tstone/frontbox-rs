@@ -113,3 +113,33 @@ pub static AUTOPLUNGER_RETRIES: LazyLock<Config<u8>> = LazyLock::new(|| {
   )
   .key("autoplunger_retries")
 });
+
+pub static FREE_PLAY: LazyLock<Config<bool>> = LazyLock::new(|| {
+  Config::new(
+    "Free Play",
+    "Whether a game can be started without a credit. Coins still add credits while it's on",
+    true,
+    Toggle,
+  )
+  .key("free_play")
+});
+
+pub static COINS_PER_CREDIT: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Coins Per Credit",
+    "How many coins make one credit",
+    1,
+    Ranges::u8(1, 10),
+  )
+  .key("coins_per_credit")
+});
+
+pub static MAX_CREDITS: LazyLock<Config<u8>> = LazyLock::new(|| {
+  Config::new(
+    "Max Credits",
+    "The most credits the machine holds. Coins inserted past it are counted in the audits but add no credit",
+    30,
+    Ranges::u8(1, 99),
+  )
+  .key("max_credits")
+});
