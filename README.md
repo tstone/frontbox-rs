@@ -12,13 +12,12 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
 ### Status
 
 **In**: 
-  - Core framework (systems, events, routines, states)
+  - Core framework (systems, events, routines, states, timers)
   - FAST protocol handshaking, boot sequence, and watchdog management
   - Hardware support: drivers (coils), switches, and LEDs
-  - Ball management (trough, plunge lane, auto-plunger)
+  - Ball management (trough, plunge lane, auto-plunger, ball management)
   - Competitive game management (game lifecycle, player tracking, turn tracking, extra ball, etc.)
-  - Rich LED scenes with built-in editor
-  - DMD display rendering
+  - Combined LED + display + sound scenes with built-in editor
   - Free play and tilt support
   - Music playback, sound effect playback, and callback playback with ducking
   - Operator config (adjustable game/hardware settings)
@@ -26,14 +25,14 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
   - Metrics
 
 **Still Missing**: 
-  - Ball search
   - High scores
   - Cooperative game management
-  - DMD scenes and editor (soon)
   - Alphanumeric display/NeoSeg support
   - Hardware support: motors and servos
   - Coin-based game start
   - Music loop points, effects, and multi-stem playback
+  - Operator menu is still a little rough
+  - Tournament settings/seeded random
 
 ### Architectural Overview
 
@@ -98,38 +97,6 @@ A: Yes:
 ### Web Console
 
 ![Web console machine view](doc/img/console-machine-view.png)
-
-### Content Folder
-
-`BootConfig::content_path` is the folder of what scenes use, such as images. It's scanned whatever is inside it, so
-organize it any way you like. A scene names an image by its path from this folder (`Image(name: "dmd/title.png")`), and
-images added from the console's scene editor are saved in it. The `frame` of an animated GIF says which of its frames to
-draw, and like any other value it can be fixed, a parameter, keyframed, or random.
-
-Be careful with where this points, as a game usually runs in more than one way:
-
-- A relative path is resolved from the working directory. `cargo run` uses wherever it was run from, and a service uses
-  whatever it's configured with, so the same path can lead to two different folders or to none.
-- `cargo run` and a release build run from different places, so they only share a folder if it's an absolute path.
-- `env!("CARGO_MANIFEST_DIR")` is the folder the game was built in, fixed when it's compiled. On a machine running a
-  build made somewhere else, that folder isn't there.
-
-So choose an absolute path at startup, the same way as for `config_path` and `metrics_path`. With this, every build on
-the machine shares one folder, and a virtual machine on a development computer uses the one in the game's source:
-
-```rust,ignore
-content_path: Some(if virtual_mode {
-  concat!(env!("CARGO_MANIFEST_DIR"), "/content").into()
-} else {
-  "/home/pinball/content".into()
-}),
-```
-
-Whether builds should share a folder is up to you. To keep them apart, for example so a development build can't change
-what a released game shows, give each its own path.
-
-The folder isn't copied anywhere by Frontbox. Images added from the console on a machine are only on that machine, and
-images added to the game's source need to reach the machine however the game gets there.
 
 ## Guides
 

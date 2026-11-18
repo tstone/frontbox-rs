@@ -24,10 +24,6 @@ have left the trough, not balls requested and still queued. So `in_play == 0` at
 `!ejects_pending()`. `BallManagement::ejects_pending` already exists, for the game manager's check for nothing in
 play. Keep the snapshot in the event for display.
 
-### A8. Smaller items
-
-- Every log target here is `frontbox_core::...`. The log target item in `TODO.md` covers it.
-
 ## B. Architecture and types
 
 ### B1. The game manager does four jobs
