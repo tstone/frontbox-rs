@@ -1,5 +1,5 @@
 use frontbox_core::prelude::*;
-use frontbox_core::tags::Cabinet;
+use crate::tags::Cabinet;
 use frontbox_scene::{PlayableScene, ScenePlayer};
 
 use crate::{GamePhase, GameStarting, PlayerEntry};

@@ -428,14 +428,17 @@ fn a_moved_scene_plays_on_the_new_leds_keeping_its_zs() {
   assert_eq!(shown, vec![None, Some(Rgba::blue()), None]);
 }
 
+#[derive(Tag)]
+struct Playfield;
+
 #[test]
 fn a_tag_finds_the_leds_that_have_it() {
   let (mut context, addresses) = three_leds();
   let address = LedAddress::new(ExpAddress::default(), 9);
-  context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(frontbox_core::tags::Playfield)], ..Default::default() });
+  context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
   context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.on_spawn(&context.sys_ctx()));
 
-  play(&context, PlayableScene::new(on(LedQ::tag::<frontbox_core::tags::Playfield>(), solid(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LedQ::tag::<Playfield>(), solid(Rgba::red()))));
   assert_eq!(shown(&context, &[address])[0], Some(Rgba::red()));
   assert_eq!(shown(&context, &addresses)[0], None);
 }

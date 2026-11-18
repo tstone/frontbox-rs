@@ -202,6 +202,11 @@ impl DerefMut for LedLookup {
 mod tests {
   use super::*;
 
+  #[derive(frontbox_derive::Tag)]
+  struct Insert;
+  #[derive(frontbox_derive::Tag)]
+  struct Lane;
+
   /// LEDs named by their (board, breakout, index)
   fn lookup(addresses: &[(u8, Option<u8>, u8)]) -> LedLookup {
     let mut leds = LedLookup::default();
@@ -233,9 +238,9 @@ mod tests {
   fn a_tag_comes_in_hardware_order() {
     let mut leds = lookup(&[(2, Some(0), 0), (1, Some(1), 0), (1, Some(0), 5)]);
     for name in ["2.0.0", "1.0.5"] {
-      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
+      leds.get_mut(name).unwrap().tags.push(Box::new(Insert));
     }
-    leds.get_mut("1.1.0").unwrap().tags.push(Box::new(crate::tags::Lane));
+    leds.get_mut("1.1.0").unwrap().tags.push(Box::new(Lane));
     assert_eq!(names(&leds, &LedQ::Tag("Insert".into())), ["1.0.5", "2.0.0"]);
   }
 
@@ -243,10 +248,10 @@ mod tests {
   fn or_runs_a_query_at_a_time_and_reaches_an_led_once() {
     let mut leds = lookup(&[(2, Some(0), 0), (1, Some(1), 0), (1, Some(0), 5)]);
     for name in ["2.0.0", "1.1.0"] {
-      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Lane));
+      leds.get_mut(name).unwrap().tags.push(Box::new(Lane));
     }
     for name in ["1.0.5", "1.1.0"] {
-      leds.get_mut(name).unwrap().tags.push(Box::new(crate::tags::Insert));
+      leds.get_mut(name).unwrap().tags.push(Box::new(Insert));
     }
     let lane_first = LedQ::Or(vec![LedQ::Tag("Lane".into()), LedQ::Tag("Insert".into())]);
     assert_eq!(names(&leds, &lane_first), ["1.1.0", "2.0.0", "1.0.5"]);

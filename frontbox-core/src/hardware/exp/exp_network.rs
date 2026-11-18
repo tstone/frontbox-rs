@@ -4,7 +4,7 @@ use crate::hardware::ExpBoard;
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
-/// # use frontbox_core::tags::*;
+/// # #[derive(Tag)] pub struct Cabinet;
 /// # static PLAYFIELD: ReferencePlane = ReferencePlane::new("Playfield")
 /// #   .origin(Vec3::new(1.0, 3.25, 12.0))
 /// #   .extent(Vec2::new(20.25, 45.0))

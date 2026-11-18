@@ -29,31 +29,9 @@ impl serde::Serialize for dyn Tag {
   }
 }
 
-// switches
+
 #[derive(Tag)]
 pub struct Button;
-// drivers
+
 #[derive(Tag)]
 pub(crate) struct _FrontboxDrivenLamp;
-
-// LEDs
-#[derive(Tag)]
-pub struct GeneralIllumination;
-#[derive(Tag)]
-pub struct Insert;
-
-// multi
-#[derive(Tag)]
-pub struct Playfield;
-#[derive(Tag)]
-pub struct Flasher;
-#[derive(Tag)]
-pub struct Cabinet;
-#[derive(Tag)]
-pub struct Lane;
-#[derive(Tag)]
-pub struct Target;
-#[derive(Tag)]
-pub struct Ramp;
-#[derive(Tag)]
-pub struct Spinner;

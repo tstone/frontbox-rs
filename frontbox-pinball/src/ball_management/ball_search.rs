@@ -16,7 +16,7 @@ const ROUND_PAUSE: Duration = Duration::from_secs(5);
 const COIL_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Searches for a stuck ball. Once a ball is in play and none of `playfield_switches` (e.g.
-/// `SwitchQ::tag::<Playfield>()`) has been hit for `configs::BALL_SEARCH_DELAY`, it runs the `BallSearching` routine,
+/// `SwitchQ::tag::<BallActivity>()`) has been hit for `configs::BALL_SEARCH_DELAY`, it runs the `BallSearching` routine,
 /// up to 3 rounds with a pause after each. A ball showing up (a playfield switch hit, a drain, or a launch) ends
 /// the search. If none has by the end of the last round's pause, it gives up with `BallSearchFailed`, taking one ball
 /// out of the count as lost. The delay then starts over, so another ball still in play is searched for in turn.

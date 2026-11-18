@@ -503,10 +503,13 @@ mod tests {
     assert_eq!((screen.display.as_str(), screen.z), ("Dmd", 2));
   }
 
+  #[derive(Tag)]
+  struct Playfield;
+
   #[test]
   fn a_layer_says_what_its_on() {
     let written = Scene::new(vec![
-      LedLayer::area(LedQ::tag::<frontbox_core::tags::Playfield>(), "Playfield", layer()).into(),
+      LedLayer::area(LedQ::tag::<Playfield>(), "Playfield", layer()).into(),
       DisplayLayer::new("Dmd", layer()).into(),
     ])
     .save()

@@ -1,10 +1,12 @@
 use frontbox_core::prelude::*;
-use frontbox_core::tags::Playfield;
 
 use std::io::Write;
 use std::time::Duration;
 
 use crate::drivers::*;
+
+#[derive(Tag)]
+pub struct Playfield;
 
 pub mod drivers {
   use super::*;

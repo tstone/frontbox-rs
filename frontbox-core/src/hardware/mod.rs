@@ -11,7 +11,7 @@
 //! Every piece of core hardware shares three points of definition in common, which also represent 3 ways of describing hardware:
 //!
 //! - **Name** - Name is a unique, static string identifier that will always refer to that exact piece of hardware. In most cases this is explicitly given, but in some cases (e.g. LED strips) it is automatically generated.
-//! - **Tags** - Tags are just empty structs which are a way to arbitrarily classify something (e.g. on the playfield, part of a mech, of a type, etc.). Frontbox [includes a handful of tags](crate::hardware::tags), but these can be user-defined as well.
+//! - **Tags** - Tags are just empty structs which are a way to arbitrarily classify something (e.g. on the playfield, part of a mech, of a type, etc.). These can be user-defined.
 //! - **Location** - Location specifies where something is in space, and is typically used for LED canvas rendering or complex spatial effects.
 //!
 //! Thus, in Frontbox hardware can typically always be referenced in these 3 ways: directly by it's name, or implicitly but it's tags or location. See hardware querying ([SwitchQ], [DriverQ], [LedQ]) for details on how this works.
@@ -31,7 +31,8 @@
 //! 1. **Definition** -- Static configuration such as name, tags, location, and any configuration _(user responsibility)_
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_core::tags::*;
+//! # #[derive(Tag)] struct Playfield;
+//! # #[derive(Tag)] struct Target;
 //! # use std::sync::LazyLock;
 //! static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
 //!   SwitchDefinition::new("example_switch")
@@ -44,7 +45,8 @@
 //! 2. **Wiring** -- A static hardware definition is assigned to a specific pin on a specific board _(user responsibility)_
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_core::tags::*;
+//! # #[derive(Tag)] struct Playfield;
+//! # #[derive(Tag)] struct Target;
 //! # use std::sync::LazyLock;
 //! # static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
 //! #  SwitchDefinition::new("example_switch")
@@ -62,7 +64,8 @@
 //! 4. **Stateful** -- Some hardware (e.g. switches) also become stateful, keeping track of things like open/closed state _(framework responsibility)_ (accessible via [SystemContext](crate::systems::SystemContext))
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_core::tags::*;
+//! # #[derive(Tag)] struct Playfield;
+//! # #[derive(Tag)] struct Target;
 //! # use std::sync::LazyLock;
 //! # static EXAMPLE: LazyLock<SwitchDefinition> = LazyLock::new(|| {
 //! #  SwitchDefinition::new("example_switch")

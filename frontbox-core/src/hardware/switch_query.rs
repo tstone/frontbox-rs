@@ -104,7 +104,8 @@ impl SwitchQ {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::tags::Playfield;
+  #[derive(frontbox_derive::Tag)]
+  struct Playfield;
 
   #[test]
   fn name_query() {

@@ -6,12 +6,15 @@ use std::io::Write;
  * This example demonstrates declaring LED colors, and animating them with scenes
  */
 
+#[derive(Tag)]
+pub struct Lane;
+
 pub mod leds {
   use super::*;
 
   hardware_defs! {
     // like other hardware, LEDs can be arbitrary tagged for later querying
-    pub DEMO1: LedDefinition = LedDefinition::single("demo1").tag(tags::Lane);
+    pub DEMO1: LedDefinition = LedDefinition::single("demo1").tag(Lane);
     pub DEMO2: LedDefinition = LedDefinition::single("demo2");
     pub DEMO3: LedDefinition = LedDefinition::single("demo3");
     pub DEMO4: LedDefinition = LedDefinition::single("demo4");

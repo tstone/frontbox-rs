@@ -246,7 +246,10 @@ impl Switch {
 mod tests {
   use std::sync::LazyLock;
 
-  use crate::tags::{Playfield, Target};
+  #[derive(frontbox_derive::Tag)]
+  struct Playfield;
+  #[derive(frontbox_derive::Tag)]
+  struct Target;
 
   use super::*;
 

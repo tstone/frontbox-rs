@@ -25,11 +25,14 @@ const DEFAULT_SETTLE: Duration = Duration::from_secs(1);
 /// ## Setup
 /// ```rust,ignore
 /// // at the root
-/// CradleSystem::new(SwitchQ::tag::<Playfield>(), SwitchQ::tag::<FlipperButton>())
+/// CradleSystem::new(
+///   SwitchQ::tag::<BallActivity>(),
+///   SwitchQ::and(SwitchQ::tag::<Flipper>(), SwitchQ::tag::<Button>()),
+/// )
 /// ```
 ///
 /// The playfield switches mustn't include the flippers' own end-of-stroke switches, as holding a flipper up keeps
-/// those closed.
+/// those closed (see `tags::BallActivity`).
 pub struct CradleSystem {
   playfield_switches: SwitchQ,
   hold_switches: SwitchQ,

@@ -121,6 +121,7 @@ mod game_start;
 mod high_scores;
 pub mod metrics;
 mod scoop;
+pub mod tags;
 mod tilt;
 
 pub use attract_system::*;
