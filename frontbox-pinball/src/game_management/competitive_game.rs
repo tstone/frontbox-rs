@@ -330,7 +330,7 @@ impl CompetitiveGame {
       RoutineCompletion::Halted => {
         log::info!(target: "frontbox::game_manager", "Drain was saved")
       }
-      RoutineCompletion::AllSteps if done.routine.in_play == 0 => {
+      RoutineCompletion::AllSteps if self.balls_in_play(ctx) == 0 && !self.ejects_pending(ctx) => {
         self.pending_drains.clear();
         self.transition_turn_to_ending(TurnEndReason::Drained, ctx);
         return;
@@ -775,7 +775,7 @@ struct BallReturnTimedOut;
 #[cfg(test)]
 mod tests {
   use std::sync::Arc;
-  use std::sync::atomic::{AtomicU8, Ordering};
+  use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
   use super::*;
   use crate::ball_management::{BallManagement, LaunchMethod};
@@ -792,11 +792,14 @@ mod tests {
     ctx: TestContext,
     /// What `FakeBalls` reports as in play
     in_play: Arc<AtomicU8>,
+    /// What `FakeBalls` reports for `ejects_pending`
+    ejects_pending: Arc<AtomicBool>,
   }
 
   /// Ball management that only reports the balls in play it's told
   struct FakeBalls {
     in_play: Arc<AtomicU8>,
+    ejects_pending: Arc<AtomicBool>,
   }
 
   impl System for FakeBalls {}
@@ -813,7 +816,7 @@ mod tests {
     }
     fn cancel_ejects(&mut self, _ctx: &ServiceContext) {}
     fn ejects_pending(&self) -> bool {
-      false
+      self.ejects_pending.load(Ordering::SeqCst)
     }
     fn balls_in_play(&self, _ctx: &ServiceContext) -> u8 {
       self.in_play.load(Ordering::SeqCst)
@@ -868,13 +871,20 @@ mod tests {
       let mut ctx = TestContext::default();
       ctx.svc_ctx().config.set(&configs::TURN_COUNT, turns);
       let in_play = Arc::new(AtomicU8::new(0));
+      let ejects_pending = Arc::new(AtomicBool::new(false));
       ctx.insert_system(BallManager::new(FakeBalls {
         in_play: in_play.clone(),
+        ejects_pending: ejects_pending.clone(),
       }));
       let mut game = CompetitiveGame::new(max_players, Vec::new(), SwitchQ::names([]));
       game.on_spawn(&ctx.sys_ctx());
       game.add_player(&ctx.svc_ctx());
-      Self { game, ctx, in_play }
+      Self {
+        game,
+        ctx,
+        in_play,
+        ejects_pending,
+      }
     }
 
     fn event(&mut self, event: impl Event) {
@@ -917,6 +927,10 @@ mod tests {
     /// Balls in play, as ball management reports them
     fn set_in_play(&mut self, in_play: u8) {
       self.in_play.store(in_play, Ordering::SeqCst);
+    }
+
+    fn set_ejects_pending(&mut self, pending: bool) {
+      self.ejects_pending.store(pending, Ordering::SeqCst);
     }
 
     /// The reasons of the `TurnEnding` routines started since the last check
@@ -1266,6 +1280,57 @@ mod tests {
 
     f.event(done(draining(1, 0), RoutineCompletion::AllSteps));
     assert_eq!(f.game.turn_phase, TurnPhase::Ending);
+  }
+
+  #[test]
+  fn a_queued_drain_does_not_end_the_turn_once_a_save_has_put_a_ball_back() {
+    let mut f = Fixture::playing(3);
+    let draining = |count, in_play| BallDraining {
+      current_player: 0,
+      turn: 0,
+      count,
+      in_play,
+    };
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 1,
+    });
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+
+    // the first drain is saved, and its replacement makes it into play before the second is decided
+    f.event(done(draining(1, 1), RoutineCompletion::Halted));
+    f.set_in_play(1);
+    f.event(done(draining(1, 0), RoutineCompletion::AllSteps));
+
+    assert_eq!(f.game.turn_phase, TurnPhase::Active);
+    assert!(f.turn_endings().is_empty());
+  }
+
+  #[test]
+  fn a_drain_does_not_end_the_turn_while_a_ball_is_on_its_way_into_play() {
+    let mut f = Fixture::playing(3);
+    f.event(BallsExitedPlay {
+      count: 1,
+      in_play: 0,
+    });
+
+    // e.g. multiball balls requested but not yet out of the trough
+    f.set_ejects_pending(true);
+    f.event(done(
+      BallDraining {
+        current_player: 0,
+        turn: 0,
+        count: 1,
+        in_play: 0,
+      },
+      RoutineCompletion::AllSteps,
+    ));
+
+    assert_eq!(f.game.turn_phase, TurnPhase::Active);
+    assert!(f.turn_endings().is_empty());
   }
 
   #[test]

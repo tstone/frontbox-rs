@@ -102,7 +102,8 @@ impl TurnActive {
 /// Routine run for each drain during a turn (`BallsExitedPlay`), to decide whether it stands. Its participants are
 /// whatever can save the ball (ball save, an outlane save), in the order they get the chance. One that saves it puts
 /// the balls back into play and calls `ctx.routines.halt`, and the participants after it don't take a step. If none does,
-/// the drain stands; when it was the last ball in play (`in_play == 0`), the turn ends with `TurnEnding`. With no
+/// the drain stands; when no ball is left in play by then and none is on its way in, the turn ends with `TurnEnding`.
+/// That's checked when the drain is decided, not from `in_play`, which was counted when it was reported. With no
 /// routine defined, every drain stands right away.
 ///
 /// ```rust,ignore

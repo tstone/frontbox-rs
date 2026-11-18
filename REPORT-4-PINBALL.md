@@ -2,27 +2,8 @@
 
 | # | Finding | Effect | Size of fix |
 |---|---|---|---|
-| A6 | A drain is decided on a count taken earlier | A turn can end while a ball is on its way out | Small |
-| A7 | Scores are `u32` with an `f32` multiplier | Rounded awards, overflow, multipliers that overwrite each other | Medium |
 | B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
 | C | Missing pinball behavior | Credits, bonus, match, multiball, and more | Varies |
-
-## A. Bugs
-
-### A6. A drain is decided on a count taken earlier
-
-`BallDraining.in_play` is read when `BallsExitedPlay` is emitted. The decision in `drain_decided` comes later: after
-every participant's step, and after any drains queued ahead in `pending_drains`. Also, `in_play` counts balls that
-have left the trough, not balls requested and still queued. So `in_play == 0` at decision time can be wrong:
-
-- Drain A is saved and its replacement requested. Drain B, queued behind it with `in_play: 0`, is decided after the
-  save has expired. The turn ends while A's replacement is on its way.
-- A mode asks for multiball balls, and the one live ball drains before the first of them leaves the trough. Requesting
-  a ball save alongside, as the docs recommend, covers this, but nothing enforces it.
-
-**Fix.** Decide on current numbers: in `drain_decided`, end the turn only if `balls_in_play() == 0` and
-`!ejects_pending()`. `BallManagement::ejects_pending` already exists, for the game manager's check for nothing in
-play. Keep the snapshot in the event for display.
 
 ## B. Architecture and types
 
