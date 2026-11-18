@@ -5,8 +5,8 @@ use crate::{GameManagementExt, TiltWarned, TurnPhase, TurnStarting, configs, met
 /// Reads the tilt bob: each swing warns the player, and once they're out of warnings, the next one tilts them.
 ///
 /// ## Per player
-/// Belongs in the player template, like `BallSaveSystem`, as the warnings are the player's. It's only active while
-/// their turn is starting or active, so it stops reading the bob once the turn is tilted or over. Handling the tilt
+/// The game manager spawns one per player when given the tilt bob (`GameManager::tilt_bob`), as the warnings are the
+/// player's. It's only active while their turn is starting or active, so it stops reading the bob once the turn is tilted or over. Handling the tilt
 /// itself (ending the turn, ignoring points) is the game manager's: see `GameManagement::tilt`.
 ///
 /// ## Warnings
@@ -20,7 +20,12 @@ use crate::{GameManagementExt, TiltWarned, TurnPhase, TurnStarting, configs, met
 ///
 /// ## Setup
 /// ```rust,ignore
-/// // in the player template
+/// GameManager::competitive(4, player_template, ball_in_play_switches).tilt_bob(&switches::TILT_BOB)
+/// ```
+///
+/// For a different settle time or grace period, put it in the player template yourself instead:
+///
+/// ```rust,ignore
 /// TiltSystem::new(&switches::TILT_BOB)
 ///   .settle_time(Duration::from_millis(1500))
 /// ```
@@ -227,6 +232,7 @@ mod tests {
     fn tilt(&mut self, _ctx: &ServiceContext) {
       self.tilts.fetch_add(1, Ordering::SeqCst);
     }
+    fn add_player_system(&mut self, _system: ChildSystemContainer) {}
     fn session(&self) -> Option<&GameSession> {
       None
     }

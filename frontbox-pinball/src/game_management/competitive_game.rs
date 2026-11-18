@@ -688,6 +688,10 @@ impl GameManagement for CompetitiveGame {
     self.transition_turn_to_ending(TurnEndReason::Tilted, ctx);
   }
 
+  fn add_player_system(&mut self, system: ChildSystemContainer) {
+    self.systems_template.push(system);
+  }
+
   fn session(&self) -> Option<&GameSession> {
     self.session.as_ref()
   }
@@ -1038,6 +1042,13 @@ mod tests {
   #[should_panic(expected = "max_players must be between 1 and 6")]
   fn more_players_than_there_are_player_groups_panics() {
     CompetitiveGame::new(7, Vec::new(), SwitchQ::names([]));
+  }
+
+  #[test]
+  fn a_player_system_added_at_setup_joins_the_template() {
+    let mut game = CompetitiveGame::new(2, Vec::new(), SwitchQ::names([]));
+    game.add_player_system(TiltSystem::new(SwitchQ::name("tilt_bob")).into());
+    assert_eq!(game.systems_template.len(), 1);
   }
 
   #[test]

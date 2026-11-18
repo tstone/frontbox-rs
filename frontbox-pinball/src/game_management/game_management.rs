@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use frontbox_core::prelude::*;
 
-use crate::{CompetitiveGame, GameEndReason, GameEnding, GameSession, TurnEnding, TurnStarting};
+use crate::{CompetitiveGame, GameEndReason, GameEnding, GameSession, TiltSystem, TurnEnding, TurnStarting};
 
 pub trait GameManagement: SpawnableSystem {
   /// Adds a player to the game. Starts the game automatically if one has not yet been started. Does nothing if no
@@ -14,6 +14,10 @@ pub trait GameManagement: SpawnableSystem {
   /// The current player tilts: their turn ends at once (`TurnEndReason::Tilted`), points are ignored for the rest of
   /// it, and drains can't be saved. Does nothing unless the turn's ball has been served, or once the turn is ending.
   fn tilt(&mut self, ctx: &ServiceContext);
+
+  /// Adds a system to the player template, so every player added from now on gets their own copy. Used at setup by
+  /// `GameManager` for the per-player children it's configured with (e.g. `tilt_bob`).
+  fn add_player_system(&mut self, system: ChildSystemContainer);
 
   fn session(&self) -> Option<&GameSession>;
 
@@ -57,6 +61,13 @@ impl GameManager {
       player_template,
       ball_in_play_switches,
     ))
+  }
+
+  /// The machine's tilt bob. Each player gets a `TiltSystem` reading it, which warns them on a swing and tilts them
+  /// once they're out of warnings.
+  pub fn tilt_bob(mut self, bob: impl Into<SwitchQ>) -> Self {
+    self.inner.add_player_system(TiltSystem::new(bob).into());
+    self
   }
 
   /// The drivers to make live during a turn (e.g. `DriverQ::tag::<Playfield>()`)

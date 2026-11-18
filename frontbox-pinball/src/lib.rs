@@ -92,9 +92,9 @@
 //! and its `in_play` is how many balls are left.
 //!
 //! ## Tilt and Slam Tilt
-//! `TiltSystem` (in the player template) reads the tilt bob, warning the player (`TiltWarned`) up to the
-//! `TILT_WARNINGS` operator config, and tilting them on the next swing. A tilt (`GameManagement::tilt`) emits
-//! `PlayerTilted` and starts `TurnEnding` at once with `TurnEndReason::Tilted`: modes clean up and the drivers go off
+//! Given the tilt bob (`GameManager::tilt_bob`), the game manager spawns a `TiltSystem` for each player. It reads
+//! the bob, warning the player (`TiltWarned`) up to the `TILT_WARNINGS` operator config, and tilting them on the next
+//! swing. A tilt (`GameManagement::tilt`) emits `PlayerTilted` and starts `TurnEnding` at once with `TurnEndReason::Tilted`: modes clean up and the drivers go off
 //! while the balls roll down, points are ignored, and drains can't be saved. Warnings can be earned with
 //! `ctx.grant_tilt_warning()` (`TiltExt`).
 //!
