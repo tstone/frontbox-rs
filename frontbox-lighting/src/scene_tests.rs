@@ -1,4 +1,4 @@
-//! Scenes played by the `SceneSystem`, as the `LedSystem` draws them
+//! Scenes played by the `SceneSystem`, as the `LayeredLightManager` draws them
 
 use std::sync::LazyLock;
 
@@ -20,7 +20,7 @@ static OFFSET: LazyLock<ReferencePlane> =
 /// LEDs "led0".. at these locations, with every plane added
 fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
   let mut context = TestContext::default();
-  context.insert_system(LedSystem::new());
+  context.insert_system(LayeredLightManager::new());
   context.insert_system(SceneSystem::new());
   let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), 0, i as u8)).collect();
   for (i, address) in addresses.iter().enumerate() {
@@ -29,7 +29,7 @@ fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
   context.add_plane(&PLANE);
   context.add_plane(&WIDE);
   context.add_plane(&OFFSET);
-  context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.on_spawn(&context.sys_ctx()));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.on_spawn(&context.sys_ctx()));
   (context, addresses)
 }
 
@@ -60,7 +60,7 @@ fn tick(context: &TestContext, delta: Duration) {
 
 /// What each LED shows, `None` where nothing gives it a color
 fn shown(context: &TestContext, addresses: &[LedAddress]) -> Vec<Option<Rgba<u8>>> {
-  let resolved = context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.resolve(&context.sys_ctx())).unwrap();
+  let resolved = context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.resolve(&context.sys_ctx())).unwrap();
   addresses.iter().map(|address| resolved.iter().find(|(led, _)| led == address).and_then(|(_, color)| *color)).collect()
 }
 
@@ -399,7 +399,7 @@ fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
 #[test]
 fn a_playback_is_drawn_over_declarations_on_its_z() {
   let (context, addresses) = three_leds();
-  context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.declare(OWNER + 1, (&addresses[0], Rgba::blue())));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.declare(OWNER + 1, (&addresses[0], Rgba::blue()).into()));
   play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
@@ -436,7 +436,7 @@ fn a_tag_finds_the_leds_that_have_it() {
   let (mut context, addresses) = three_leds();
   let address = LedAddress::new(ExpAddress::default(), 0, 9);
   context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
-  context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.on_spawn(&context.sys_ctx()));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.on_spawn(&context.sys_ctx()));
 
   play(&context, PlayableScene::new(on(LedQ::tag::<Playfield>(), solid(Rgba::red()))));
   assert_eq!(shown(&context, &[address])[0], Some(Rgba::red()));

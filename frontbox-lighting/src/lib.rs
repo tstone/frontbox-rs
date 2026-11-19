@@ -16,7 +16,7 @@
 //!
 //! ### 1. Status
 //! A system may need to set LEDs to a color to say something is true, for example "this lane is lit". That isn't a
-//! scene. The system declares the color with the [`LedSystem`], and it stays until the system undeclares it or goes
+//! scene. The system declares the color with the [`LightManager`], and it stays until the system undeclares it or goes
 //! inactive.
 //!
 //! ```rust
@@ -33,7 +33,7 @@
 //! # }
 //! ```
 //!
-//! A status is a color, either on or flashing ([`declare_leds_flashing`](LedSystemExt::declare_leds_flashing)). Every
+//! A status is a color, either on or flashing ([`declare_leds_flashing`](LightManagerExt::declare_leds_flashing)). Every
 //! flashing declaration flashes in step, once each [`FLASH_PERIOD`]. Anything more than that is a scene.
 //!
 //! ### 2. A scene the system owns
@@ -100,7 +100,7 @@
 //! Generally, setting LEDs happens by way of scenes, but understanding the stack can be useful when choosing which approach to use or building your own from scratch.
 //!
 //! - [`SceneSystem`](frontbox_scene::SceneSystem) - Holds the scenes playing
-//! - [`LedSystem`] - Draws the LED layers of those scenes with [`LedPlacement`], along with direct declarations, and
+//! - [`LayeredLightManager`] - Draws the LED layers of those scenes with [`LedPlacement`], along with direct declarations, and
 //!   resolves priority and layers. Sets the final color with `Machine`.
 //! - [`Machine`](frontbox_core::machine::Machine) - Lowest level interface; Explicitly sets the state of an LED. Not recommended to interact with directly.
 //!
@@ -111,27 +111,31 @@ mod led_declarations;
 mod led_identifications;
 mod led_identifications_ext;
 mod led_placement;
-mod led_system;
-mod led_system_ext;
+mod layered_light_manager;
+mod light_manager;
+mod light_manager_ext;
 #[cfg(test)]
 mod scene_tests;
 
 pub(crate) use alternate_resolver::*;
-pub(crate) use led_declarations::*;
+pub use led_declarations::*;
 pub use led_graph::*;
 pub use led_identifications::*;
 pub use led_identifications_ext::*;
 pub use led_placement::*;
-pub use led_system::*;
-pub use led_system_ext::*;
+pub use layered_light_manager::*;
+pub use light_manager::*;
+pub use light_manager_ext::*;
 
 pub mod prelude {
   pub use crate::led_graph::*;
   pub use crate::led_identifications::*;
   pub use crate::led_identifications_ext::*;
   pub use crate::led_placement::*;
-  pub use crate::led_system::*;
-  pub use crate::led_system_ext::*;
+  pub use crate::layered_light_manager::*;
+  pub use crate::led_declarations::*;
+  pub use crate::light_manager::*;
+  pub use crate::light_manager_ext::*;
   pub use frontbox_gfx::prelude::*;
   pub use frontbox_scene::prelude::*;
 }

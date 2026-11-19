@@ -49,7 +49,7 @@
 //!
 //! Each of these is also broadcast to every other system as an event, once the handler has run: `SystemSpawned`,
 //! `SystemDeactivated`, `SystemReactivated`, and `SystemDespawned`. Use these to react to *another* system's lifecycle;
-//! for example, `LedSystem` stops rendering a system's LED declarations while it's inactive.
+//! for example, `LightManager` stops rendering a system's LED declarations while it's inactive.
 //!
 //! #### Startup
 //!

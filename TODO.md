@@ -1,7 +1,6 @@
 ## Headless
 
 - RandSystem (interface) that manages seed per game.
-- LedSystem becomes the implementation of an interface
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
@@ -81,7 +80,6 @@
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
 - `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
-- LedSystem becomes an interface
 - LED and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
   budget (~80 chars/ms), sending the largest changes first.
 - `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.

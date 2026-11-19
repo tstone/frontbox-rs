@@ -38,7 +38,7 @@ async fn main() {
   })
   .configure(|app| {
     app.system(SceneSystem::new());
-    app.system(LedSystem::new());
+    app.system(LayeredLightManager::new());
     app.system(LedExample::new());
   })
   .run()

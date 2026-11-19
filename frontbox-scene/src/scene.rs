@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Moment, SoundLayer, SoundStart};
 
 /// Layers on one timeline, each saying what it's drawn on or that it's sound, as written to a `.scene` file. Each system
-/// plays the layers it knows: `LedSystem` plays [`LedLayer`]s, a display plays the [`DisplayLayer`]s for it, and
+/// plays the layers it knows: `LightManager` plays [`LedLayer`]s, a display plays the [`DisplayLayer`]s for it, and
 /// `SoundSystem` plays [`SoundLayer`]s. A [`Playback`](crate::Playback) holds what's only true while one plays.
 ///
 /// ```rust

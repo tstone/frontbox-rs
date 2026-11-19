@@ -9,7 +9,7 @@ use frontbox_scene::{Moment, Scene};
 
 use crate::*;
 
-/// Where a scene's LED layers land on the machine's LEDs, and what each LED shows from them. `LedSystem` keeps one for
+/// Where a scene's LED layers land on the machine's LEDs, and what each LED shows from them. `LayeredLightManager` keeps one for
 /// each playback it draws, and the console one for the scene it previews, so both show the same.
 #[derive(Debug, Clone)]
 pub struct LedPlacement {

@@ -14,10 +14,12 @@ const LED_SET_BATCH_SIZE: usize = 24;
 /// One on and off of a flashing declaration. At 2Hz it stays well under the tick rate, so it doesn't alias.
 pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 
-/// # LedSystem
+/// # LayeredLightManager
+///
+/// The [`LightManager`] this crate provides. Each light shows what's declared and played on it, composed in z-layers.
 ///
 /// ### Features
-/// - **Conflict Resolution** -- Multiple systems can declare a color on the same layer for an LED and the LedSystem will handle resolving that conflict automatically (conflict resolution mode is user settable)
+/// - **Conflict Resolution** -- Multiple systems can declare a color on the same layer for an LED and the LayeredLightManager will handle resolving that conflict automatically (conflict resolution mode is user settable)
 /// - **Layer (z-index) Support** -- It's possible to keep an "under layer" active while playing temporary animations a layer above
 /// - **Alpha Compositing** -- LEDs are rendered in RGBA which supports transparency (under colors show through partially)
 /// - An easy way to de-activate LED declarations when a system is de-activated
@@ -25,7 +27,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 ///
 /// ### In Use
 ///
-/// Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LedSystem looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
+/// Using the LedSystems works by way of a _declaration_. A declaration doesn't forcibly set an LED, instead it's more like a request, "Hello, I am system 12345 and would prefer for this LED to be this color at this level of priority" (you can think of Z-index layers as levels of priority). Each render frame, the LayeredLightManager looks through all active declarations, chooses the highest priority one, resolves any conflicting declarations, and updates the state of LEDs that need to change. This process also detects LEDs that are no longer set and clears them automatically.
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
@@ -72,7 +74,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 /// # }
 /// ```
 ///
-/// In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LedSystem` is live, it will de-activate declarations, then re-activate them once the System comes back.
+/// In fact, this behavior is built-in to `System` by default. When a system goes inactive, if `LayeredLightManager` is live, it will de-activate declarations, then re-activate them once the System comes back.
 ///
 /// ### Layering
 ///
@@ -101,7 +103,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 /// # }
 /// ```
 
-pub struct LedSystem {
+pub struct LayeredLightManager {
   all_addresses: Vec<LedAddress>,
   // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.
   declarations: HashMap<LedAddress, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
@@ -120,7 +122,7 @@ pub struct LedSystem {
   flash_clock: Duration,
 }
 
-impl LedSystem {
+impl LayeredLightManager {
   pub fn new() -> Self {
     Self {
       declarations: HashMap::new(),
@@ -150,11 +152,6 @@ impl LedSystem {
       .unwrap_or(Vec::new())
   }
 
-  /// The colors declared for an LED by any system, in no particular order
-  pub fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>> {
-    self.declarations_for(addr).iter().map(|d| d.color).collect()
-  }
-
   pub fn reset(&mut self) {
     self.declarations.clear();
     self.prior_render.clear();
@@ -170,27 +167,7 @@ impl LedSystem {
     });
   }
 
-  /// Declare that a system wants to set a LED to a color. Handles resolution and rendering.
-  pub fn declare<'a>(&mut self, owning_system: u64, declarations: impl Into<LedDeclarations<'a>>) {
-    self.declare_inner(owning_system, declarations, true);
-  }
-
-  /// Same as declare but doesn't render until activate_by_system is called. Useful for systems that want to prepare declarations in advance and activate them all at once later.
-  pub fn declare_inactive<'a>(
-    &mut self,
-    owning_system: u64,
-    declarations: impl Into<LedDeclarations<'a>>,
-  ) {
-    self.declare_inner(owning_system, declarations, false);
-  }
-
-  fn declare_inner<'a>(
-    &mut self,
-    owning_system: u64,
-    declarations: impl Into<LedDeclarations<'a>>,
-    active: bool,
-  ) {
-    let declarations: LedDeclarations = declarations.into();
+  fn declare_inner(&mut self, owning_system: u64, declarations: LedDeclarations<'_>, active: bool) {
     log::trace!(target: "frontbox::led", "LED declarations declared: {:?}", declarations);
 
     let id = DeclarationIdentifier { system_id: owning_system, z_index: declarations.z_index };
@@ -220,75 +197,6 @@ impl LedSystem {
       }
 
       on_led.insert(id, declaration);
-    }
-  }
-
-  /// Remove declarations for the LED. If z-index is provided, only remove declarations for that layer.
-  pub fn undeclare(&mut self, system_id: u64, identifications: impl Into<LedIdentifications>) {
-    let identifications: LedIdentifications = identifications.into();
-    let target_id = DeclarationIdentifier {
-      system_id,
-      z_index: identifications.z_index,
-    };
-
-    for led in identifications.leds {
-      if self.monitored.contains(&led) {
-        log::info!(
-          target: "frontbox::led",
-          "Undeclare by system {} of monitored LED {:?}",
-          system_id,
-          led
-        );
-      }
-
-      if let Some(declarations) = self.declarations.get_mut(&led) {
-        declarations.retain(|id, _| id != &target_id);
-        if declarations.is_empty() {
-          self.declarations.remove(&led);
-        }
-      }
-    }
-  }
-
-  /// Entirely remove all declarations by the given system
-  pub fn undeclare_by_system(&mut self, system_id: &u64) {
-    log::debug!(target: "frontbox::led", "Removing all LED declarations for {}", system_id);
-    for declarations in self.declarations.values_mut() {
-      declarations.retain(|id, _| &id.system_id != system_id);
-    }
-  }
-
-  /// Keep declarations but mark them as inactive so they don't render
-  pub fn deactivate_by_system(&mut self, system_id: u64) {
-    log::debug!(target: "frontbox::led", "Deactivating all LED declarations for {}", system_id);
-    for declarations in self.declarations.values_mut() {
-      for (id, declaration) in declarations.iter_mut() {
-        if id.system_id == system_id {
-          declaration.active = false;
-        }
-      }
-    }
-  }
-
-  /// Mark any existing declarations as active
-  pub fn activate_by_system(&mut self, system_id: u64) {
-    for declarations in self.declarations.values_mut() {
-      for (id, declaration) in declarations.iter_mut() {
-        if id.system_id == system_id {
-          declaration.active = true;
-        }
-      }
-    }
-  }
-
-  pub fn set_conflict_resolution(
-    &mut self,
-    identifications: impl Into<LedIdentifications>,
-    resolution: LedConflictResolution,
-  ) {
-    let identifications = identifications.into();
-    for led in identifications.leds {
-      self.conflict_resolution.insert(led.clone(), resolution);
     }
   }
 
@@ -429,7 +337,84 @@ impl LedSystem {
   }
 }
 
-impl System for LedSystem {
+impl LightManager for LayeredLightManager {
+  fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>> {
+    self.declarations_for(addr).iter().map(|d| d.color).collect()
+  }
+
+  fn declare(&mut self, owner: u64, declarations: LedDeclarations<'_>) {
+    self.declare_inner(owner, declarations, true);
+  }
+
+  fn declare_inactive(&mut self, owner: u64, declarations: LedDeclarations<'_>) {
+    self.declare_inner(owner, declarations, false);
+  }
+
+  fn undeclare(&mut self, system_id: u64, identifications: LedIdentifications) {
+    let target_id = DeclarationIdentifier {
+      system_id,
+      z_index: identifications.z_index,
+    };
+
+    for led in identifications.leds {
+      if self.monitored.contains(&led) {
+        log::info!(
+          target: "frontbox::led",
+          "Undeclare by system {} of monitored LED {:?}",
+          system_id,
+          led
+        );
+      }
+
+      if let Some(declarations) = self.declarations.get_mut(&led) {
+        declarations.retain(|id, _| id != &target_id);
+        if declarations.is_empty() {
+          self.declarations.remove(&led);
+        }
+      }
+    }
+  }
+
+  fn undeclare_by_system(&mut self, system_id: u64) {
+    log::debug!(target: "frontbox::led", "Removing all LED declarations for {}", system_id);
+    for declarations in self.declarations.values_mut() {
+      declarations.retain(|id, _| id.system_id != system_id);
+    }
+  }
+
+  fn deactivate_by_system(&mut self, system_id: u64) {
+    log::debug!(target: "frontbox::led", "Deactivating all LED declarations for {}", system_id);
+    for declarations in self.declarations.values_mut() {
+      for (id, declaration) in declarations.iter_mut() {
+        if id.system_id == system_id {
+          declaration.active = false;
+        }
+      }
+    }
+  }
+
+  fn activate_by_system(&mut self, system_id: u64) {
+    for declarations in self.declarations.values_mut() {
+      for (id, declaration) in declarations.iter_mut() {
+        if id.system_id == system_id {
+          declaration.active = true;
+        }
+      }
+    }
+  }
+
+  fn set_conflict_resolution(&mut self, identifications: LedIdentifications, resolution: LedConflictResolution) {
+    for led in identifications.leds {
+      self.conflict_resolution.insert(led.clone(), resolution);
+    }
+  }
+}
+
+impl System for LayeredLightManager {
+  fn provides(provides: &mut Provides<Self>) {
+    provides.add::<dyn LightManager>(|s| s);
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Create a copy of all LEDs addresses to reference during rendering
     self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
@@ -437,7 +422,7 @@ impl System for LedSystem {
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
     if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
-      self.undeclare_by_system(id);
+      self.undeclare_by_system(*id);
     } else if let Some(SystemDeactivated { id, .. }) = event.downcast_ref::<SystemDeactivated>() {
       self.deactivate_by_system(*id);
     } else if let Some(SystemReactivated { id, .. }) = event.downcast_ref::<SystemReactivated>() {
@@ -565,7 +550,7 @@ mod tests {
   // Two different systems declare the same LED
   #[test]
   fn declare_and_undeclare_systems() {
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     let led = LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
@@ -592,7 +577,7 @@ mod tests {
   // One system declares multiple times to overwrite
   #[test]
   fn declare_overwrite() {
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     let led = LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
@@ -619,7 +604,7 @@ mod tests {
   // One system declares two different LEDs
   #[test]
   fn declare_and_undeclare_multiple() {
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     let led1 = LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
@@ -654,7 +639,7 @@ mod tests {
   // One system declares the same LED at two different z-indexes
   #[test]
   fn declare_and_undeclare_z_index() {
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     let led = LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
@@ -715,7 +700,7 @@ mod tests {
     let conflict_resolution = HashMap::new();
     let mut alternate_resolver = AlternateResolver::new();
 
-    let resolved_color = LedSystem::resolve_led_color(
+    let resolved_color = LayeredLightManager::resolve_led_color(
       &led,
       vec![0, 1],
       &declarations,
@@ -767,7 +752,7 @@ mod tests {
     let conflict_resolution = HashMap::new();
     let mut alternate_resolver = AlternateResolver::new();
 
-    let resolved_color = LedSystem::resolve_led_color(
+    let resolved_color = LayeredLightManager::resolve_led_color(
       &led,
       vec![1],
       &declarations,
@@ -821,7 +806,7 @@ mod tests {
     )]);
     let mut alternate_resolver = AlternateResolver::new();
 
-    let resolved_color = LedSystem::resolve_led_color(
+    let resolved_color = LayeredLightManager::resolve_led_color(
       &led,
       vec![0],
       &declarations,
@@ -876,7 +861,7 @@ mod tests {
     )]);
     let mut alternate_resolver = AlternateResolver::new();
 
-    let resolved_color = LedSystem::resolve_led_color(
+    let resolved_color = LayeredLightManager::resolve_led_color(
       &led,
       vec![0, 1],
       &declarations,
@@ -894,7 +879,7 @@ mod tests {
   #[test]
   fn follows_system_activity() {
     let ctx = TestContext::default();
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     let led = LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
@@ -904,7 +889,7 @@ mod tests {
       42,
       LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
     );
-    let is_active = |system: &LedSystem| system.declarations[&led].values().all(|d| d.active);
+    let is_active = |system: &LayeredLightManager| system.declarations[&led].values().all(|d| d.active);
 
     system.on_event(&SystemDeactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
     assert!(!is_active(&system));
@@ -913,16 +898,33 @@ mod tests {
     assert!(is_active(&system));
   }
 
+  // Declaring from a system's context reaches the manager by its trait
+  #[test]
+  fn is_found_as_the_light_manager() {
+    let mut ctx = TestContext::default();
+    ctx.insert_system(LayeredLightManager::new());
+    let led = LedAddress {
+      exp: ExpAddress::new(3, None),
+      port: 0,
+      index: 1,
+    };
+
+    ctx.sys_ctx().declare_leds(&LedIdentifications::new(vec![led.clone()], 0), Rgba::red());
+
+    let colors = ctx.sys_ctx().light_manager().unwrap().declared_colors(&led);
+    assert_eq!(colors, vec![Rgba::red()]);
+  }
+
   /// Which color wins on one LED when systems 1 to `systems` declare on the same z in that order, and then the first changes
   /// its color
   fn first_wins_of(systems: u64) -> Rgba<u8> {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     for id in 1..=systems {
       system.declare(id, LedDeclarations::new(vec![(&led, Rgba([id as u8, 0, 0, 255]))], 0));
     }
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
-    LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new())
+    LayeredLightManager::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new())
   }
 
   #[test]
@@ -934,24 +936,24 @@ mod tests {
   #[test]
   fn a_declaration_made_again_after_its_given_up_goes_to_the_back() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
     system.declare(2, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
     system.undeclare(1, LedIdentifications::new(vec![led.clone()], 0));
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
-    let color = LedSystem::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new());
+    let color = LayeredLightManager::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new());
     assert_eq!(color, Rgba::blue());
   }
 
   #[test]
   fn a_flashing_declaration_shows_through_to_the_layer_below_while_its_off() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
     system.declare(2, LedDeclarations::new(vec![(&led, Rgba::green())], 1).flashing());
-    let color = |flash_on: bool, system: &LedSystem| {
+    let color = |flash_on: bool, system: &LayeredLightManager| {
       let z_indexes = system.declarations[&led].iter().filter(|(_, d)| d.shows(flash_on)).map(|(id, _)| id.z_index).sorted().collect();
-      LedSystem::resolve_led_color(&led, z_indexes, &system.declarations[&led], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())
+      LayeredLightManager::resolve_led_color(&led, z_indexes, &system.declarations[&led], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())
     };
     assert_eq!(color(true, &system), Rgba::green());
     assert_eq!(color(false, &system), Rgba::blue());
@@ -959,7 +961,7 @@ mod tests {
 
   #[test]
   fn the_flash_is_on_for_the_first_half_of_each_period() {
-    let mut system = LedSystem::new();
+    let mut system = LayeredLightManager::new();
     assert!(system.flash_on());
     system.flash_clock = FLASH_PERIOD / 2;
     assert!(!system.flash_on());

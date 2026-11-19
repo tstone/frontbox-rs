@@ -31,7 +31,7 @@ async fn main() {
     ..Default::default()
   })
   .configure(|app| {
-    app.system(LedSystem::new());
+    app.system(LayeredLightManager::new());
     app.system(System1);
     app.system(System2);
   })

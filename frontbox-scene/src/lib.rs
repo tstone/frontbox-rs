@@ -8,7 +8,7 @@
 //!
 //! - [`Scene`], [`SceneLayer`] -- The definition, as written to a file
 //! - [`PlayableScene`] -- A scene with values from the game bound to it: its variables, and how long it takes
-//! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LedSystem`, read each [`Playback`] from
+//! - [`SceneSystem`] -- Plays scenes. Systems that draw a kind of layer, like `LightManager`, read each [`Playback`] from
 //!   it each frame.
 //! - [`ScenePlayer`] -- A scene a system turns on and off
 //! - [`Sends`] -- The variables a system sends the scenes it plays, to check a scene someone wrote for it
