@@ -1,12 +1,8 @@
 use frontbox_core::prelude::*;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-
-static ROW_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone)]
 pub struct MenuSection {
-  pub id: u64,
   pub name: String,
   pub rows: Vec<MenuRow>,
 }
@@ -19,9 +15,8 @@ impl MenuSection {
   pub fn new(name: impl Into<String>) -> Self {
     let name = name.into();
     MenuSection {
-      id: MenuRow::next_row_id(),
       name: name.clone(),
-      rows: vec![MenuRow::Heading(MenuRow::next_row_id(), name)],
+      rows: vec![MenuRow::Heading(name)],
     }
   }
 
@@ -31,16 +26,12 @@ impl MenuSection {
   }
 
   pub fn configs(mut self, configs: Vec<&'static ConfigDefinition>) -> Self {
-    for config in configs {
-      let id = MenuRow::next_row_id();
-      self.rows.push(MenuRow::Config(id, config));
-    }
+    self.rows.extend(configs.into_iter().map(MenuRow::Config));
     self
   }
 
   pub fn header(mut self, text: impl Into<String>) -> Self {
-    let id = MenuRow::next_row_id();
-    self.rows.push(MenuRow::Heading(id, text.into()));
+    self.rows.push(MenuRow::Heading(text.into()));
     self
   }
 
@@ -49,8 +40,9 @@ impl MenuSection {
     text: &'static str,
     action: impl Fn(&SystemContext) + Send + Sync + 'static,
   ) -> Self {
-    let id = MenuRow::next_row_id();
-    self.rows.push(MenuRow::Action(id, text, false, Arc::new(action)));
+    self
+      .rows
+      .push(MenuRow::Action(text, false, Arc::new(action)));
     self
   }
 
@@ -61,8 +53,9 @@ impl MenuSection {
     text: &'static str,
     action: impl Fn(&SystemContext) + Send + Sync + 'static,
   ) -> Self {
-    let id = MenuRow::next_row_id();
-    self.rows.push(MenuRow::Action(id, text, true, Arc::new(action)));
+    self
+      .rows
+      .push(MenuRow::Action(text, true, Arc::new(action)));
     self
   }
 
@@ -84,12 +77,11 @@ impl MenuSection {
 #[derive(Clone)]
 pub enum MenuRow {
   Section(MenuSection),
-  Config(u64, &'static ConfigDefinition),
-  Heading(u64, String),
-  Special(u64, &'static str),
-  /// The id, the text, whether it asks to confirm before running, and what it runs
+  Config(&'static ConfigDefinition),
+  Heading(String),
+  Special(&'static str),
+  /// The text, whether it asks to confirm before running, and what it runs
   Action(
-    u64,
     &'static str,
     bool,
     Arc<dyn Fn(&SystemContext) + Send + Sync + 'static>,
@@ -97,20 +89,6 @@ pub enum MenuRow {
 }
 
 impl MenuRow {
-  pub(crate) fn next_row_id() -> u64 {
-    ROW_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-  }
-
-  pub fn id(&self) -> u64 {
-    match self {
-      Self::Section(s) => s.id,
-      Self::Config(id, _) => *id,
-      Self::Heading(id, _) => *id,
-      Self::Special(id, _) => *id,
-      Self::Action(id, ..) => *id,
-    }
-  }
-
   pub fn section(&self) -> Option<&MenuSection> {
     match self {
       Self::Section(s) => Some(s),
@@ -120,22 +98,8 @@ impl MenuRow {
 
   pub fn config(&self) -> Option<&'static ConfigDefinition> {
     match self {
-      Self::Config(_, cfg) => Some(cfg),
+      Self::Config(cfg) => Some(cfg),
       _ => None,
-    }
-  }
-
-  pub fn increment(&self, ctx: &SystemContext) -> String {
-    match self {
-      Self::Config(_, config) => config.format(ctx.config.inc(config)),
-      _ => "".to_string(),
-    }
-  }
-
-  pub fn decrement(&self, ctx: &SystemContext) -> String {
-    match self {
-      Self::Config(_, config) => config.format(ctx.config.dec(config)),
-      _ => "".to_string(),
     }
   }
 }

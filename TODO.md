@@ -108,12 +108,20 @@
 
 - DisplaySystem should listen for MachineDisconnected/Reconnected events and automatically show something on the DMD if that happens (z-index 100?)
 - Implement remaining menu sounds
+- Menu: editing a setting saves on every press, with no way back. Restore a setting's default from its edit screen,
+  and repeat inc/dec while the button is held.
+- Menu: fire a coil from its settings' edit screen
+- Menu: decide what opening the coin door does to a game in progress, and whether the menu buttons do anything else
+  during a game.
 - Menu: ease left/right between sections (a scene transition, see Scenes/Editor)
 - Anchoring or scaling so a single scene works on displays of different resolutions
+- Menu: move `MenuSection` out of `frontbox-display` so the console's config view can show the same tree, and other
+  displays can draw it.
 - Snap eased positions to whole pixels (`Transform::Snap(step)` or a display setting); the menu selection slide
   shimmers.
 - Fit text: a text region with a list of fonts/sizes, picking the largest that fits.
 - Brightness as an operator config, applied in the output.
+- Global volume, SFX volume, music volume, callout volume all as a menu options
 - Speed: skip a layer for samples outside its region's transformed bounds; build DMD graphs from the pixel grid
   instead of O(n²) `Graph::build`.
 - Bundled framework scenes for sizes other than 128 x 32.

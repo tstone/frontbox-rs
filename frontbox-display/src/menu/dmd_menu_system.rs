@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use frontbox_core::prelude::*;
 use frontbox_gfx::scene::{Prop, Transform};
 use frontbox_scene::OpenError;
@@ -53,18 +51,12 @@ pub struct DmdMenuSystem {
   fragments: Option<Fragments>,
   /// What's on the display, in the order it's drawn
   shown: Vec<ShownPart>,
-  row_lookup: HashMap<u64, &'static MenuRow>,
   active_section: &'static MenuSection,
   /// The sections above the active one, each with the row that was selected in it, so going back selects it again
   parents: Vec<(&'static MenuSection, usize)>,
-  display_rows: Vec<DisplayMenuRow>,
+  /// Index into the active section's rows
   selected_row: usize,
-  selected_config: Option<&'static MenuRow>,
-  selected_special: Option<&'static str>,
-  /// The action waiting for the operator to confirm it
-  confirming: Option<&'static MenuRow>,
-  // indicates that the rows vector needs to be re-generated because something changed
-  requires_row_refresh: bool,
+  screen: Screen,
   // indicates that something about the display changed and needs to be re-rendered
   requires_render: bool,
 }
@@ -73,15 +65,9 @@ impl DmdMenuSystem {
   pub fn new(switch_names: MenuSwitches, root: &'static MenuSection) -> Self {
     let root: &'static MenuSection = {
       let mut root = root.clone();
-      root
-        .rows
-        .push(MenuRow::Special(MenuRow::next_row_id(), "About"));
+      root.rows.push(MenuRow::Special("About"));
       Box::leak(Box::new(root))
     };
-
-    // Build up a quick lookup table by ID to row
-    let mut row_lookup = HashMap::<u64, &'static MenuRow>::new();
-    Self::build_row_lookup(&mut row_lookup, root);
 
     Self {
       switch_names,
@@ -89,15 +75,10 @@ impl DmdMenuSystem {
       z: i8::MAX,
       fragments: None,
       shown: Vec::new(),
-      row_lookup,
       active_section: root,
       parents: Vec::new(),
-      display_rows: Vec::new(),
       selected_row: Self::first_non_header_row(root),
-      selected_config: None,
-      selected_special: None,
-      confirming: None,
-      requires_row_refresh: true,
+      screen: Screen::Rows,
       requires_render: true,
     }
   }
@@ -115,221 +96,108 @@ impl DmdMenuSystem {
     self
   }
 
-  /// Build a quick id => row lookup table for fast navigation
-  fn build_row_lookup(lookup: &mut HashMap<u64, &'static MenuRow>, parent: &'static MenuSection) {
-    for row in &parent.rows {
-      lookup.insert(row.id(), row);
-
-      if let MenuRow::Section(section) = row {
-        Self::build_row_lookup(lookup, section);
-      }
-    }
-  }
-
   fn first_non_header_row(section: &'static MenuSection) -> usize {
     section
       .rows
       .iter()
-      .position(|r| !matches!(r, MenuRow::Heading(_, _)))
+      .position(|r| !matches!(r, MenuRow::Heading(_)))
       .unwrap_or(0)
   }
 
-  fn activate_section(&mut self, section: &'static MenuSection, ctx: &SystemContext) {
+  fn selected(&self) -> &'static MenuRow {
+    let section: &'static MenuSection = self.active_section;
+    &section.rows[self.selected_row]
+  }
+
+  fn activate_section(&mut self, section: &'static MenuSection, selected_row: usize) {
     self.active_section = section;
-    self.selected_row = Self::first_non_header_row(self.active_section);
-    self.refresh_display_rows(ctx);
+    self.selected_row = selected_row;
+    self.requires_render = true;
+  }
+
+  fn open(&mut self, screen: Screen) {
+    self.screen = screen;
+    self.requires_render = true;
   }
 
   fn navigate_fwd(&mut self, ctx: &SystemContext) {
-    if let Some(MenuRow::Action(_, _, _, action)) = self.confirming.take() {
-      self.requires_render = true;
-      ctx.play_sfx(SELECT_SND);
-      action(ctx);
-      return;
+    let row = self.selected();
+    match (self.screen, row) {
+      (Screen::Rows, MenuRow::Heading(_)) => return,
+      (Screen::Rows, _) | (Screen::Confirm, _) => ctx.play_sfx(SELECT_SND),
+      (Screen::Edit | Screen::About, _) => return,
     }
-    match self.display_rows[self.selected_row] {
-      DisplayMenuRow::Section { id, .. } => {
-        let row: &'static MenuRow = self.row_lookup[&id];
-        let section = row.section().unwrap();
+    match (self.screen, row) {
+      (Screen::Confirm, MenuRow::Action(_, _, action)) => {
+        self.open(Screen::Rows);
+        action(ctx);
+      }
+      (_, MenuRow::Section(section)) => {
         self.parents.push((self.active_section, self.selected_row));
-        self.activate_section(section, ctx);
-        ctx.play_sfx(SELECT_SND);
+        self.activate_section(section, Self::first_non_header_row(section));
       }
-      DisplayMenuRow::Config { id, .. } => {
-        if let Some(row) = self.row_lookup.get(&id) {
-          self.selected_config = Some(*row);
-          self.requires_render = true;
-          ctx.play_sfx(SELECT_SND);
-        }
-      }
-      DisplayMenuRow::Special(name) => {
-        self.selected_special = Some(name);
-        self.requires_render = true;
-        ctx.play_sfx(SELECT_SND);
-      }
-      DisplayMenuRow::Action { id, .. } => {
-        if let Some(row) = self.row_lookup.get(&id) {
-          if let MenuRow::Action(_, _, confirm, action) = *row {
-            ctx.play_sfx(SELECT_SND);
-            if *confirm {
-              self.confirming = Some(*row);
-              self.requires_render = true;
-            } else {
-              action(ctx);
-            }
-          }
-        }
-      }
-      _ => {}
+      (_, MenuRow::Config(_)) => self.open(Screen::Edit),
+      (_, MenuRow::Special(_)) => self.open(Screen::About),
+      (_, MenuRow::Action(_, true, _)) => self.open(Screen::Confirm),
+      (_, MenuRow::Action(_, false, action)) => action(ctx),
+      (_, MenuRow::Heading(_)) => {}
     }
   }
 
   fn navigate_back(&mut self, ctx: &SystemContext) {
-    if self.confirming.is_some() {
-      self.confirming = None;
-      self.requires_render = true;
+    if self.screen != Screen::Rows {
+      self.open(Screen::Rows);
       ctx.play_sfx(BACK_SND);
-    } else if self.selected_config.is_some() {
-      self.selected_config = None;
-      self.requires_render = true;
+    } else if let Some((parent, selected_row)) = self.parents.pop() {
       ctx.play_sfx(BACK_SND);
-    } else if self.selected_special.is_some() {
-      self.selected_special = None;
-      self.requires_render = true;
-      ctx.play_sfx(BACK_SND);
+      self.activate_section(parent, selected_row);
     } else {
-      if let Some((parent, selected_row)) = self.parents.pop() {
-        ctx.play_sfx(BACK_SND);
-        self.activate_section(parent, ctx);
-        self.selected_row = selected_row;
-      } else {
-        ctx.play_sfx(NOT_ALLOWED_SND);
-      }
+      ctx.play_sfx(NOT_ALLOWED_SND);
     }
   }
 
   fn navigate_inc(&mut self, ctx: &SystemContext) {
-    if self.confirming.is_some() {
-      return;
-    }
-    if let Some(row) = &mut self.selected_config {
-      if let Some(value) = self
-        .display_rows
-        .iter_mut()
-        .find(|r| r.id() == row.id())
-        .unwrap()
-        .value_mut()
-      {
-        *value = row.increment(ctx);
-        log::debug!(target: "frontbox::display", "increment: {}", value);
-      }
-      self.requires_render = true;
-    } else {
-      let mut next = self.selected_row;
-
-      loop {
-        next += 1;
-
-        match self.display_rows.get(next) {
-          // skip headings during increment
-          Some(DisplayMenuRow::Heading { .. }) if next >= self.display_rows.len() => {
-            next = self.selected_row;
-            break;
-          }
-          Some(DisplayMenuRow::Heading { .. }) => continue,
-          _ if next >= self.display_rows.len() => {
-            next = self.selected_row;
-            break;
-          }
-          _ => break,
-        }
-      }
-
-      if self.selected_row != next {
-        self.selected_row = next;
+    match (self.screen, self.selected()) {
+      (Screen::Edit, MenuRow::Config(config)) => {
+        let value = ctx.config.inc(config);
+        log::debug!(target: "frontbox::display", "increment: {}", config.format(value));
         self.requires_render = true;
       }
+      (Screen::Rows, _) => {
+        let rows = &self.active_section.rows;
+        // skip headings
+        let next =
+          (self.selected_row + 1..rows.len()).find(|&i| !matches!(rows[i], MenuRow::Heading(_)));
+        if let Some(next) = next {
+          self.selected_row = next;
+          self.requires_render = true;
+        }
+      }
+      _ => return,
     }
     ctx.play_sfx(INC_SOUND);
   }
 
   fn navigate_dec(&mut self, ctx: &SystemContext) {
-    if self.confirming.is_some() {
-      return;
-    }
-    if let Some(row) = &self.selected_config {
-      if let Some(value) = self
-        .display_rows
-        .iter_mut()
-        .find(|r| r.id() == row.id())
-        .unwrap()
-        .value_mut()
-      {
-        *value = row.decrement(ctx);
-      }
-      self.requires_render = true;
-    } else if self.selected_row > 0 {
-      let mut prev = self.selected_row;
-
-      loop {
-        prev -= 1;
-
-        match self.display_rows.get(prev) {
-          // skip headings during increment
-          Some(DisplayMenuRow::Heading { .. }) if prev == 0 => {
-            prev = self.selected_row;
-            break;
-          }
-          Some(DisplayMenuRow::Heading { .. }) => continue,
-          _ => break,
-        }
-      }
-
-      if self.selected_row != prev {
-        self.selected_row = prev;
+    match (self.screen, self.selected()) {
+      (Screen::Edit, MenuRow::Config(config)) => {
+        ctx.config.dec(config);
         self.requires_render = true;
       }
-    }
-
-    ctx.play_sfx(DEC_SOUND);
-  }
-
-  // Display rows contained memoized values which may change. Upon trigger, re-generate these rows with the latest values
-  fn refresh_display_rows(&mut self, ctx: &SystemContext) {
-    self.display_rows.clear();
-
-    for row in &self.active_section.rows {
-      match row {
-        MenuRow::Section(section) => {
-          self.display_rows.push(DisplayMenuRow::Section {
-            id: section.id,
-            name: section.name.clone(),
-          });
+      (Screen::Rows, _) => {
+        let rows = &self.active_section.rows;
+        // skip headings
+        let prev = (0..self.selected_row)
+          .rev()
+          .find(|&i| !matches!(rows[i], MenuRow::Heading(_)));
+        if let Some(prev) = prev {
+          self.selected_row = prev;
+          self.requires_render = true;
         }
-        MenuRow::Config(id, config) => {
-          let value = ctx.config.inspect(config);
-          self.display_rows.push(DisplayMenuRow::Config {
-            id: *id,
-            name: config.label,
-            desc: config.desc,
-            changed: !config.is_default(value),
-            value: config.format(value),
-          });
-        }
-        MenuRow::Heading(id, text) => {
-          self.display_rows.push(DisplayMenuRow::Heading {
-            id: *id,
-            text: text.to_string(),
-          });
-        }
-        MenuRow::Special(_, text) => self.display_rows.push(DisplayMenuRow::Special(text)),
-        MenuRow::Action(id, text, ..) => self
-          .display_rows
-          .push(DisplayMenuRow::Action { id: *id, text }),
       }
+      _ => return,
     }
-
-    self.requires_render = true;
+    ctx.play_sfx(DEC_SOUND);
   }
 
   /// Plays the parts for what the menu shows now, keeping the playbacks of parts that are still in the same place
@@ -337,7 +205,7 @@ impl DmdMenuSystem {
     let Some(fragments) = &self.fragments else {
       return;
     };
-    let parts = self.parts();
+    let parts = self.parts(ctx);
     let count = parts.len();
     for (index, part) in parts.into_iter().enumerate() {
       let same_place = self
@@ -375,64 +243,55 @@ impl DmdMenuSystem {
   }
 
   /// What the menu shows now, in the order it's drawn
-  fn parts(&self) -> Vec<Part> {
-    if let Some(row) = self.selected_config
-      && let Some(DisplayMenuRow::Config {
-        name,
-        desc,
-        value,
-        changed,
-        ..
-      }) = self.display_rows.iter().find(|r| r.id() == row.id())
-    {
-      return vec![
-        Part::new(Fragment::Edit, 0)
-          .variable("label", *name)
-          .variable("description", *desc)
-          .variable("value", value.as_str())
-          .variable("changed", *changed),
-      ];
-    }
-    if let Some(MenuRow::Action(_, label, ..)) = self.confirming {
-      return vec![Part::new(Fragment::Confirm, 0).variable("label", *label)];
-    }
-    if self.selected_special.is_some() {
-      return vec![Part::new(Fragment::About, 0).variable("version", env!("CARGO_PKG_VERSION"))];
+  fn parts(&self, ctx: &SystemContext) -> Vec<Part> {
+    match (self.screen, self.selected()) {
+      (Screen::Edit, MenuRow::Config(config)) => {
+        let value = ctx.config.inspect(config);
+        return vec![
+          Part::new(Fragment::Edit, 0)
+            .variable("label", config.label)
+            .variable("description", config.desc)
+            .variable("value", config.format(value).as_str())
+            .variable("changed", !config.is_default(value)),
+        ];
+      }
+      (Screen::Confirm, MenuRow::Action(label, ..)) => {
+        return vec![Part::new(Fragment::Confirm, 0).variable("label", *label)];
+      }
+      (Screen::About, _) => {
+        return vec![Part::new(Fragment::About, 0).variable("version", env!("CARGO_PKG_VERSION"))];
+      }
+      _ => {}
     }
 
+    let all_rows = &self.active_section.rows;
     let first = self
       .selected_row
       .saturating_sub(2)
-      .min(self.display_rows.len().saturating_sub(ROWS_SHOWN));
-    let rows = self
-      .display_rows
-      .iter()
-      .enumerate()
-      .skip(first)
-      .take(ROWS_SHOWN);
+      .min(all_rows.len().saturating_sub(ROWS_SHOWN));
+    let rows = all_rows.iter().enumerate().skip(first).take(ROWS_SHOWN);
     let selection = Vec2::new(0.0, (self.selected_row - first) as f32 * ROW_HEIGHT);
     let mut parts = vec![
       Part::new(Fragment::Frame, 0),
       Part::new(Fragment::Selection, 0).eased("offset", selection),
     ];
-    for (row, (index, display_row)) in rows.enumerate() {
-      let part = match display_row {
-        DisplayMenuRow::Heading { text, .. } => {
-          Part::new(Fragment::Heading, row).variable("text", text.as_str())
+    for (row, (index, menu_row)) in rows.enumerate() {
+      let part = match menu_row {
+        MenuRow::Heading(text) => Part::new(Fragment::Heading, row).variable("text", text.as_str()),
+        MenuRow::Config(config) => {
+          let value = ctx.config.inspect(config);
+          Part::new(Fragment::Row, row).row(
+            config.label,
+            &config.format(value),
+            false,
+            !config.is_default(value),
+          )
         }
-        DisplayMenuRow::Config {
-          name,
-          value,
-          changed,
-          ..
-        } => Part::new(Fragment::Row, row).row(name, value, false, *changed),
-        DisplayMenuRow::Section { name, .. } => {
-          Part::new(Fragment::Row, row).row(name, "", true, false)
+        MenuRow::Section(section) => {
+          Part::new(Fragment::Row, row).row(&section.name, "", true, false)
         }
-        DisplayMenuRow::Special(name) => Part::new(Fragment::Row, row).row(name, "", true, false),
-        DisplayMenuRow::Action { text, .. } => {
-          Part::new(Fragment::Row, row).row(text, "", true, false)
-        }
+        MenuRow::Special(name) => Part::new(Fragment::Row, row).row(name, "", true, false),
+        MenuRow::Action(text, ..) => Part::new(Fragment::Row, row).row(text, "", true, false),
       };
       let selected = index == self.selected_row;
       parts.push(match &self.fragments {
@@ -480,7 +339,7 @@ impl System for DmdMenuSystem {
   }
 
   fn on_reactivate(&mut self, ctx: &SystemContext) {
-    self.requires_row_refresh = true;
+    self.requires_render = true;
     ctx.play_sfx(MENU_BEGIN_SND);
   }
 
@@ -489,11 +348,6 @@ impl System for DmdMenuSystem {
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
-    if self.requires_row_refresh {
-      self.refresh_display_rows(ctx);
-      self.requires_row_refresh = false;
-    }
-
     if self.requires_render {
       self.show(ctx);
       self.requires_render = false;
@@ -511,51 +365,22 @@ impl System for DmdMenuSystem {
       } else if event.switch.name == self.switch_names.dec_btn {
         self.navigate_dec(ctx);
       }
+    } else if event.downcast_ref::<ConfigChanged>().is_some() {
+      // a setting shown may have changed, from the menu or elsewhere (the console)
+      self.requires_render = true;
     }
   }
 }
 
-/// The counterpart to MenuRow which only handles display data
-enum DisplayMenuRow {
-  Section {
-    id: u64,
-    name: String,
-  },
-  Config {
-    id: u64,
-    name: &'static str,
-    desc: &'static str,
-    value: String,
-    changed: bool,
-  },
-  Heading {
-    id: u64,
-    text: String,
-  },
-  Special(&'static str),
-  Action {
-    id: u64,
-    text: &'static str,
-  },
-}
-
-impl DisplayMenuRow {
-  pub fn id(&self) -> u64 {
-    match self {
-      DisplayMenuRow::Config { id, .. } => *id,
-      DisplayMenuRow::Section { id, .. } => *id,
-      DisplayMenuRow::Heading { id, .. } => *id,
-      DisplayMenuRow::Special(_) => 0,
-      DisplayMenuRow::Action { id, .. } => *id,
-    }
-  }
-
-  pub fn value_mut(&mut self) -> Option<&mut String> {
-    match self {
-      DisplayMenuRow::Config { value, .. } => Some(value),
-      _ => None,
-    }
-  }
+/// What takes the display: the rows of the active section, or a screen for the selected row
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Screen {
+  Rows,
+  /// Editing the selected setting
+  Edit,
+  About,
+  /// Asking to confirm the selected action
+  Confirm,
 }
 
 pub struct MenuSwitches {
@@ -856,7 +681,7 @@ mod tests {
   fn the_menu_is_its_frame_then_a_part_for_each_row() {
     let mut context = TestContext::default();
     let menu = spawned(&mut context);
-    let parts = menu.parts();
+    let parts = menu.parts(&context.sys_ctx());
     let fragments: Vec<_> = parts.iter().map(|part| (part.fragment, part.row)).collect();
     assert_eq!(
       fragments,
@@ -879,7 +704,7 @@ mod tests {
   fn the_selected_row_points_its_variables_at_the_selected_values() {
     let mut context = TestContext::default();
     let menu = spawned(&mut context);
-    let parts = menu.parts();
+    let parts = menu.parts(&context.sys_ctx());
     assert_eq!(
       variable(&parts[3], "text_color"),
       Some(&Value::named("selected_text_color"))
@@ -899,7 +724,7 @@ mod tests {
     menu.on_tick(Duration::ZERO, &context.sys_ctx());
     assert_eq!(shown(&context), before);
     assert_eq!(
-      variable(&menu.parts()[4], "text_color"),
+      variable(&menu.parts(&context.sys_ctx())[4], "text_color"),
       Some(&Value::named("selected_text_color"))
     );
   }
@@ -962,19 +787,46 @@ mod tests {
 
     menu.navigate_fwd(&context.sys_ctx());
     assert_eq!(
-      menu.parts().iter().map(|part| part.fragment).collect::<Vec<_>>(),
+      menu
+        .parts(&context.sys_ctx())
+        .iter()
+        .map(|part| part.fragment)
+        .collect::<Vec<_>>(),
       [Fragment::Confirm]
     );
     assert!(!ran.load(Ordering::Relaxed));
 
     // back cancels
     menu.navigate_back(&context.sys_ctx());
-    assert_ne!(menu.parts()[0].fragment, Fragment::Confirm);
+    assert_ne!(
+      menu.parts(&context.sys_ctx())[0].fragment,
+      Fragment::Confirm
+    );
     assert!(!ran.load(Ordering::Relaxed));
 
     menu.navigate_fwd(&context.sys_ctx());
     menu.navigate_fwd(&context.sys_ctx());
     assert!(ran.load(Ordering::Relaxed));
+  }
+
+  #[test]
+  fn a_setting_changed_elsewhere_is_shown() {
+    static SPEED: std::sync::LazyLock<Config<u8>> = std::sync::LazyLock::new(|| {
+      Config::new("Speed", "How fast", 1, Ranges::u8(1, 5)).key("menu_test_speed")
+    });
+    let root = MenuSection::root().configs(vec![SPEED.display()]);
+    let mut context = TestContext::default();
+    context.insert_system(SceneSystem::new());
+    let mut menu = DmdMenuSystem::new(SWITCHES, Box::leak(Box::new(root)));
+    menu.on_spawn(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+
+    context.sys_ctx().config.set(&SPEED, 4);
+    menu.on_event(&ConfigChanged("menu_test_speed"), &context.sys_ctx());
+    assert!(menu.requires_render);
+    let parts = menu.parts(&context.sys_ctx());
+    assert_eq!(variable(&parts[3], "value"), Some(&Value::from("4")));
+    assert_eq!(variable(&parts[3], "changed"), Some(&Value::from(true)));
   }
 
   #[test]
@@ -986,7 +838,7 @@ mod tests {
     menu.navigate_inc(&context.sys_ctx());
     menu.navigate_fwd(&context.sys_ctx());
     menu.on_tick(Duration::ZERO, &context.sys_ctx());
-    let parts = menu.parts();
+    let parts = menu.parts(&context.sys_ctx());
     assert_eq!(
       parts.iter().map(|part| part.fragment).collect::<Vec<_>>(),
       [Fragment::About]
