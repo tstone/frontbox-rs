@@ -33,7 +33,7 @@ static START_LAMP_DRIVER: LazyLock<DriverDefinition> =
   LazyLock::new(|| CreditsSystem::start_lamp_driver(START_LAMP).build());
 
 fn app(max_players: u8, credits: CreditsSystem) -> App {
-  let mut board = IoBoard::custom(16, 8)
+  let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
     .wire_switch(4, &START_SWITCH)
     .wire_switch(5, &COIN_LEFT_SWITCH)
     .wire_switch(6, &COIN_RIGHT_SWITCH)

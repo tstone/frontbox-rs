@@ -288,7 +288,7 @@ mod tests {
   fn app() -> App {
     let mut app = App::new(BootConfig {
       io_network: IoNetwork::new(vec![
-        IoBoard::custom(8, 8)
+        IoBoard::custom(8, 8, DriverVoltage::High)
           .wire_switch(0, &START)
           .wire_switch(1, &TROUGH)
           .wire_switch(2, &DOOR)

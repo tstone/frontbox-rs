@@ -54,7 +54,7 @@ fn scene(timing: &str) -> PlayableScene<Completes> {
 fn app() -> App {
   let mut app = App::new(BootConfig {
     io_network: IoNetwork::new(vec![
-      IoBoard::custom(8, 8)
+      IoBoard::custom(8, 8, DriverVoltage::High)
         .wire_switch(0, &LOWER_SWITCH)
         .wire_switch(1, &LOWER_ENTRANCE_SWITCH)
         .wire_switch(2, &REAR_SWITCH)

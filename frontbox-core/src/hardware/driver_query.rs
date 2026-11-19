@@ -12,6 +12,7 @@ pub enum DriverQ {
   And(Vec<DriverQ>),
   Or(Vec<DriverQ>),
   Location(ReferencePlane, Region),
+  Voltage(DriverVoltage),
 }
 
 impl DriverQ {
@@ -28,6 +29,10 @@ impl DriverQ {
   /// Query that matches any driver with the specified tag type.
   pub fn tag<'a, T: Tag + 'static>() -> Self {
     Self::Tag(TypeId::of::<T>())
+  }
+
+  pub fn voltage(voltage: DriverVoltage) -> Self {
+    Self::Voltage(voltage)
   }
 
   /// Query that matches if either sub-selection matches.
@@ -82,6 +87,7 @@ impl DriverQ {
         .location
         .map(|location| region.within(plane.to_relative(location)))
         .unwrap_or(false),
+      Self::Voltage(voltage) => driver.voltage == *voltage,
     }
   }
 
@@ -120,6 +126,7 @@ mod tests {
       },
       tags: vec![],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
@@ -138,6 +145,7 @@ mod tests {
       },
       tags: vec![Box::new(Playfield)],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
@@ -156,6 +164,7 @@ mod tests {
       },
       tags: vec![Box::new(Playfield)],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
@@ -174,6 +183,7 @@ mod tests {
       },
       tags: vec![Box::new(Playfield)],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
@@ -192,6 +202,7 @@ mod tests {
       },
       tags: vec![Box::new(Playfield)],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
@@ -213,8 +224,30 @@ mod tests {
       },
       tags: vec![Box::new(Playfield)],
       location: None,
+      voltage: DriverVoltage::High,
     };
 
     assert!(q.matches(&driver));
+  }
+
+  #[test]
+  fn voltage_query() {
+    let q = DriverQ::voltage(DriverVoltage::High);
+
+    let mut driver = Driver {
+      id: 1,
+      name: "driver1",
+      assignment: IoAddress {
+        board_idx: 0,
+        pin: 1,
+      },
+      tags: vec![],
+      location: None,
+      voltage: DriverVoltage::High,
+    };
+    assert!(q.matches(&driver));
+
+    driver.voltage = DriverVoltage::Low;
+    assert!(!q.matches(&driver));
   }
 }

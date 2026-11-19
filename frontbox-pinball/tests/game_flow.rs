@@ -95,7 +95,7 @@ fn app_with_autoplunger() -> App {
 }
 
 fn app_with(ball_manager: StandardBallManager) -> App {
-  let mut board = IoBoard::custom(16, 8)
+  let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
     .wire_switch(3, &PLUNGE_SWITCH)
     .wire_switch(4, &START_SWITCH)
     .wire_switch(5, &PLAYFIELD_SWITCH)

@@ -45,7 +45,8 @@ compositing over black, so alpha dims it.
 `frontbox-core` holds what's true about the machine, and works without `frontbox-lighting`:
 
 - **Which lights exist**: name, tags, location, and where each is wired (`LightAddress`).
-- **What a driver powers**: `DriverLoad::{Coil, Light}` on the driver.
+- **Driver voltage**: `DriverVoltage::{High, Low}`, from the board a driver is wired to (`Driver.voltage`,
+  `DriverQ::voltage`). Whether a driver is a light isn't stored on the driver: it is if a light has its address.
 - **The bulb's color** of a driver light, which the console uses for previews. A red lamp is red.
 - **Light radius**: how far a light spreads on its plane (today's `led_radius` in `AppConfig`). This is a physical
   size, like location, and the console reads it from `AppConfig` through the tracer to preview scenes. It stays in
@@ -144,30 +145,10 @@ source that turns on. "Lighting" names only the subject: the crate and the log t
 
 Each phase builds, passes tests, and leaves the machine behaving as before, except where a phase says otherwise.
 
-### 3. Rename (done)
-
-Everything else in the [Names](#names) table, in one change. "LED" stays wherever something is only about LEDs:
-`LedAddress`, `LedDefinition`, `LedPort`, `ChannelOrder`, `led_color`, the raw writes on `ctx.lights` (`set` and the
-rest take an EXP address and indexes), lowering and sending in `LayeredLightManager`, and the console's live colors from
-the machine (`ServerMessage::Leds`), which are keyed by LED address. `Light` and `LightLookup` moved out of `exp` to
-`hardware`, as phase 4 adds lights from the IO network.
-
-- **Scene files.** `SceneLayer::Leds` and `LedLayer.leds` are renamed outright (`Lights`, `lights`), with no aliases,
-  and old files no longer load. Neither repo has scene files with light layers, so there was nothing to migrate.
-  `convert_v1_scenes` reads a v1 file's layers as today's, so a v1 file now needs `leds:` renamed first.
-- **The console.** TS types regenerated. The scenes tab (`LightPicker.tsx` and the rest) and the scene preview's
-  messages (`RenderedScene.light_colors`, `RenderedClip.lights`, `SceneSize.lights`) use lights. The machine tab
-  reads `hardware.lights` but otherwise still shows LEDs, until phase 4.
-- **Log target.** `frontbox::led` → `frontbox::lighting`, and `doc/logging.md`.
-- **Docs.** README, TODO, doc comments and examples.
-
 ### 4. Driver lights
 
-- **What a driver powers.** Add `DriverLoad::{Coil, Light}` to `DriverDefinition` and the runtime `Driver`.
-  - `DriverDefinition::new` sets `Coil`.
-  - `DriverQ` can select on it (`DriverQ::load(DriverLoad::Coil)`, with `DriverQ::coils()` as shorthand).
-  - Ball search fires only coils, whatever query it's given. A lamp tagged `Playfield` is never pulsed.
-- **Definition.** `DriverDefinition::light(name)` sets `Light` and takes `.color(Rgba)` (the bulb's color),
+- **Ball search** fires only high-voltage drivers, whatever query it's given, so cabinet lamps are never pulsed.
+- **Definition.** `DriverDefinition::light(name)` takes `.color(Rgba)` (the bulb's color),
   `.location(Vec3)` and `.tag(...)`. It configures the driver as today (`pulse_hold`, virtual switch, 0% initial,
   100% hold) and registers a light with a `Driver` address.
 - **The lookup.** `LightLookup` takes lights from the IO network as well as EXP boards.
@@ -216,8 +197,8 @@ the machine (`ServerMessage::Leds`), which are keyed by LED address. `Light` and
 - **Text from scenes.** Playing text from a scene needs a new layer kind, and `SceneLayer` is a closed enum in
   `frontbox-scene`. Decide then whether that kind is generic ("text on a named character display") or whether scenes
   get a way to add layer kinds from outside.
-- **Pulsed driver lights**, such as incandescent flashers on high-voltage drivers. `DriverLoad::Light` already keeps
-  them out of ball search. Lowering one to a pulse instead of a hold is a second way to write a `Driver` address.
+- **Pulsed driver lights**, such as incandescent flashers on high-voltage drivers. Ball search would pulse these, being high
+  voltage, unless it also skips drivers that have a light. Lowering one to a pulse instead of a hold is a second way to write a `Driver` address.
 - **PWM dimming** of driver lights (by reconfiguring hold power).
 - **Hysteresis** on the threshold, if a scene shows a lamp chattering.
 

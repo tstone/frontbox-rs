@@ -16,7 +16,8 @@ pub struct DriverLookup {
 }
 
 impl DriverLookup {
-  pub fn new(drivers: Vec<IoAddressed<DriverDefinition>>) -> Self {
+  /// Each driver takes its voltage from the board it's wired to, by its `board_idx` in `boards`.
+  pub fn new(drivers: Vec<IoAddressed<DriverDefinition>>, boards: &[IoBoard]) -> Self {
     let mut by_id = HashMap::new();
     let mut by_name = HashMap::new();
     let mut modes = HashMap::new();
@@ -29,6 +30,10 @@ impl DriverLookup {
         assignment: addressed.assignment.clone(),
         tags: addressed.definition.tags.clone(),
         location: addressed.definition.location(),
+        voltage: boards
+          .get(addressed.assignment.board_idx as usize)
+          .map(|board| board.voltage_at(addressed.assignment.pin))
+          .unwrap_or_else(|| panic!("Driver {} is wired to board {}, which isn't in the I/O network", addressed.definition.name, addressed.assignment.board_idx)),
       };
 
       by_id.insert(addressed.id, driver.clone());
@@ -128,6 +133,8 @@ pub struct Driver {
   pub tags: Vec<Box<dyn Tag>>,
   #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
+  /// From the board it's wired to
+  pub voltage: DriverVoltage,
 }
 
 impl Driver {
@@ -143,5 +150,27 @@ impl Driver {
       .tags
       .iter()
       .any(|tag| <dyn Tag>::as_any(tag.as_ref()).type_id() == type_id)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::sync::LazyLock;
+
+  use super::*;
+
+  static COIL: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::new("coil").build());
+  static LAMP: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::new("lamp").build());
+
+  #[test]
+  fn a_driver_takes_its_voltage_from_its_board() {
+    let network = IoNetwork::new(vec![
+      IoBoard::io_3208().wire_driver(0, &COIL),
+      IoBoard::cabinet().wire_driver(0, &LAMP),
+    ]);
+    let drivers = DriverLookup::new(network.drivers, &network.boards);
+
+    assert_eq!(drivers.by_name("coil").unwrap().voltage, DriverVoltage::High);
+    assert_eq!(drivers.by_name("lamp").unwrap().voltage, DriverVoltage::Low);
   }
 }

@@ -493,7 +493,14 @@ mod tests {
           assignment: IoAddress::new(0, 1),
           id: 0xB,
         },
-      ]);
+      ],
+        &[IoBoard {
+          description: "test",
+          switch_count: 8,
+          driver_count: 8,
+          driver_voltage: DriverVoltage::High,
+        }],
+      );
       ctx.insert_switch(Switch {
         name: "sw",
         id: 0x12,

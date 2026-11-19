@@ -335,6 +335,7 @@ pub async fn resolve_io_network(
           board_revision,
           switch_count,
           driver_count,
+          driver_voltage: board.driver_voltage,
         });
       }
       Ok(NodeInfo::Failed) => return Err(BootError::Failed { step: step() }),

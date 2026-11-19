@@ -273,10 +273,19 @@ mod tests {
       .collect()
   }
 
+  fn high_voltage_board() -> IoBoard {
+    IoBoard {
+      description: "test",
+      switch_count: 16,
+      driver_count: 16,
+      driver_voltage: DriverVoltage::High,
+    }
+  }
+
   #[test]
   fn finds_unknown_switch_references() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]));
+    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]), &[high_voltage_board()]);
 
     assert_eq!(
       Hardware::unknown_switch_references(&drivers, &switches),
@@ -307,7 +316,7 @@ mod tests {
 
   #[test]
   fn identical_hardware_configs_on_one_key_are_duplicates() {
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]), &[high_voltage_board()]);
     assert_eq!(
       Hardware::duplicate_config_keys(&drivers),
       vec![("Initial Power", "left", "right")]
@@ -316,7 +325,7 @@ mod tests {
 
   #[test]
   fn an_explicit_key_resolves_a_duplicate() {
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]));
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]), &[high_voltage_board()]);
     assert!(Hardware::duplicate_config_keys(&drivers).is_empty());
   }
 
@@ -324,7 +333,7 @@ mod tests {
   #[should_panic(expected = "Hardware config keys must be unique")]
   fn duplicate_hardware_config_keys_panic_at_boot() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]), &[high_voltage_board()]);
     Hardware::new(switches, drivers, LightLookup::default(), vec![], vec![]);
   }
 
