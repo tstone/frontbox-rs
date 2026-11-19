@@ -25,10 +25,11 @@
 //!
 //! ## Music
 //! 
-//! - Stream from disk
+//! - Loaded from disk into memory when played
 //! - Can only play one at a time
 //! - Overlapping requests overwrite previous track
-//! - Can crossfade into each other
+//! - Loops until stopped or replaced
+//! - Can crossfade into each other, and into itself on each loop
 //! 
 //! ```rust
 //! # use frontbox_core::prelude::*;

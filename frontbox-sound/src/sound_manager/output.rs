@@ -4,11 +4,12 @@ use std::time::Instant;
 
 use cpal::StreamError;
 use frontbox_core::prelude::*;
-use kira::sound::PlaybackState;
+use kira::clock::{ClockHandle, ClockSpeed};
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::track::{TrackBuilder, TrackHandle};
 use kira::{AudioManager, Decibels, ResourceLimitReached, StartTime, Tween};
 
+use super::music::Music;
 use crate::SoundKey;
 use crate::callout::CalloutRequest;
 
@@ -26,7 +27,9 @@ pub(super) struct Output {
   manager: AudioManager,
   music_track: TrackHandle,
   callout_track: TrackHandle,
-  active_music: Option<StaticSoundHandle>,
+  /// Times music passes, so each loop starts on the audio thread's clock rather than on a tick
+  clock: ClockHandle,
+  active_music: Option<Music>,
   /// The line being said. The [`SoundManager`](super::SoundManager) moves through its queue with this.
   pub active_callout: Option<ActiveCallout>,
   /// When kira last heard from the audio driver
@@ -42,10 +45,13 @@ impl Output {
     let music_track = manager.add_sub_track(TrackBuilder::default())?;
     let callout_track =
       manager.add_sub_track(TrackBuilder::default().volume(Decibels(callout_volume)))?;
+    let mut clock = manager.add_clock(ClockSpeed::TicksPerSecond(1.0))?;
+    clock.start();
     Ok(Self {
       manager,
       music_track,
       callout_track,
+      clock,
       active_music: None,
       active_callout: None,
       last_heartbeat: now,
@@ -160,8 +166,9 @@ impl Output {
       .set_volume(Decibels(db), Tween::default());
   }
 
-  /// Crossfade into the music at `path`. Returns whether it plays.
-  pub fn start_music(&mut self, path: &Path, crossfade: Duration) -> bool {
+  /// Crossfade into the music at `path` from `from` seconds in, looping it until it's stopped. The crossfade is also
+  /// used between each loop. Returns whether it plays.
+  pub fn start_music(&mut self, path: &Path, crossfade: Duration, from: f64) -> bool {
     let sound = match StaticSoundData::from_file(path) {
       Ok(sound) => sound,
       Err(e) => {
@@ -169,14 +176,17 @@ impl Output {
         return false;
       }
     };
-    match self.music_track.play(sound) {
+    // crossfade from music playing, or fade in briefly when picked up partway in, as starting there would click
+    let fade_in = match (&self.active_music, from > 0.0) {
+      (Some(_), _) => Some(crossfade),
+      (None, true) => Some(CUT_FADE),
+      (None, false) => None,
+    };
+    match Music::start(&mut self.music_track, &self.clock, path, sound, crossfade, from, fade_in) {
       Ok(music) => {
         log::info!(target: "frontbox::sound", "🎵 Playing music {}", path.display());
         if let Some(mut old_music) = self.active_music.replace(music) {
-          old_music.stop(Tween {
-            duration: crossfade,
-            ..Default::default()
-          });
+          old_music.crossfade_out(crossfade);
         }
         true
       }
@@ -188,24 +198,28 @@ impl Output {
   }
 
   /// Fade out the music. Returns whether there was any to stop.
-  pub fn stop_music(&mut self, crossfade: Duration) -> bool {
-    let Some(music) = &mut self.active_music else {
+  pub fn stop_music(&mut self, fade: Duration) -> bool {
+    let Some(mut music) = self.active_music.take() else {
       return false;
     };
     music.stop(Tween {
-      duration: crossfade,
+      duration: fade,
       ..Default::default()
     });
     true
   }
 
-  /// Whether the last music started has played out. A dead stream leaves a track as it was, so music cut off by a lost
-  /// device hasn't.
-  pub fn music_played_out(&self) -> bool {
-    self
-      .active_music
-      .as_ref()
-      .is_some_and(|music| music.state() == PlaybackState::Stopped)
+  /// Schedule the music's next pass once the last has started
+  pub fn update_music(&mut self) {
+    if let Some(music) = &mut self.active_music {
+      music.update(&mut self.music_track, &self.clock);
+    }
+  }
+
+  /// How far into the music it is, in seconds. A dead stream leaves the clock where it stopped, so after a lost device
+  /// this says where the music was cut off.
+  pub fn music_position(&self) -> Option<f64> {
+    Some(self.active_music.as_ref()?.position(&self.clock))
   }
 
   pub fn duck_music(&mut self) {

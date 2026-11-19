@@ -99,14 +99,19 @@ impl SoundSystem {
     let _ = self.tx.send(SetCalloutVolume(db));
   }
 
+  /// Play the music at `path` over and over until it's stopped or other music replaces it. `crossfade` is how long it
+  /// takes to fade in from music already playing, and how long each loop crossfades into the next. Each loop starts
+  /// `crossfade` into the track, so its first `crossfade` only plays the first time. With no crossfade, it loops start to
+  /// end with no gap.
   pub fn play_music(&mut self, path: impl AsRef<Path>, crossfade: Duration) {
     let _ = self
       .tx
       .send(PlayMusic(path.as_ref().to_path_buf(), crossfade));
   }
 
-  pub fn stop_music(&mut self, crossfade: Duration) {
-    let _ = self.tx.send(StopMusic(crossfade));
+  /// Fade out the music over `fade`
+  pub fn stop_music(&mut self, fade: Duration) {
+    let _ = self.tx.send(StopMusic(fade));
   }
 
   /// Play a sound from the content folder at `volume`, from `skip` seconds in, and cut off after `length` seconds if

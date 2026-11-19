@@ -31,8 +31,8 @@ pub(crate) struct SoundManager {
   completed_tx: mpsc::UnboundedSender<CalloutCompleted>,
   sounds: HashMap<SoundKey, StaticSoundData>,
   callout_volume: f32,
-  /// The music asked for, so it can be started again on a new connection
-  music: Option<PathBuf>,
+  /// The music asked for, so it can be picked up again on a new connection
+  music: Option<MusicRequest>,
   // callouts can only play one at a time. If multiple are triggered in quick succession, they will be queued up and played one after another
   callout_queue: CalloutQueue,
   connection: Connection,
@@ -92,6 +92,9 @@ impl SoundManager {
   fn on_tick(&mut self) {
     let now = Instant::now();
     self.update_connection(now);
+    if let Connection::Connected(output) = &mut self.connection {
+      output.update_music();
+    }
 
     for key in self.callout_queue.take_stale(now) {
       report(&self.completed_tx, key, false);
@@ -172,8 +175,8 @@ impl SoundManager {
     }
     self.connection = Connection::Connected(output);
 
-    if let Some(path) = self.music.clone() {
-      self.start_music(&path, Duration::ZERO);
+    if let Some(music) = self.music.take() {
+      self.start_music(music);
     }
     self.start_next_callout();
   }
@@ -219,9 +222,9 @@ impl SoundManager {
       if let Some(active) = &output.active_callout {
         report(&self.completed_tx, active.key, false);
       }
-      // music that had already played out isn't started again on the next output
-      if output.music_played_out() {
-        self.music = None;
+      // the next output picks the music up where this one cut it off
+      if let (Some(music), Some(position)) = (&mut self.music, output.music_position()) {
+        music.from = position;
       }
     }
     self.flush_callouts();
@@ -331,26 +334,27 @@ impl SoundManager {
   }
 
   fn play_music(&mut self, path: PathBuf, crossfade: Duration) {
+    let music = MusicRequest { path, crossfade, from: 0.0 };
     if let Connection::Connected(_) = self.connection {
-      self.start_music(&path, crossfade);
+      self.start_music(music);
     } else {
       log::info!(
         target: "frontbox::sound",
         "🎵 No audio output yet, music {} will start once there is one",
-        path.display()
+        music.path.display()
       );
-      self.music = Some(path);
+      self.music = Some(music);
     }
   }
 
   /// Start music on the open output, remembering it if it plays
-  fn start_music(&mut self, path: &Path, crossfade: Duration) {
+  fn start_music(&mut self, music: MusicRequest) {
     let Connection::Connected(output) = &mut self.connection else {
       return;
     };
     self.music = output
-      .start_music(path, crossfade)
-      .then(|| path.to_path_buf());
+      .start_music(&music.path, music.crossfade, music.from)
+      .then_some(music);
   }
 
   fn stop_music(&mut self, crossfade: Duration) {
@@ -365,6 +369,15 @@ impl SoundManager {
       log::info!(target: "frontbox::sound", "Stop music requested, but no music track was active");
     }
   }
+}
+
+/// Music asked for, and where to pick it up on the next output
+struct MusicRequest {
+  path: PathBuf,
+  /// Into the music, and between each loop
+  crossfade: Duration,
+  /// Seconds into the track
+  from: f64,
 }
 
 fn report(completed_tx: &mpsc::UnboundedSender<CalloutCompleted>, key: &'static str, played: bool) {

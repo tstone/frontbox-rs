@@ -95,10 +95,8 @@
 
 ### Sound
 
-- Some kind of reconnect with backoff to the sound service/driver
 - frontbox-sound loop point support
 - frontbox-sound multi-stem music support
-- music track repeat
 - Cut a scene's sounds off when its playback stops. Needs a handle per sound in the sound manager.
 - Schedule scene sound starts a tick ahead on the audio clock, for starts finer than a tick.
 - apply-able effects (warble, reverb, glitch)
@@ -125,7 +123,6 @@
 - Speed: skip a layer for samples outside its region's transformed bounds; build DMD graphs from the pixel grid
   instead of O(n²) `Graph::build`.
 - Bundled framework scenes for sizes other than 128 x 32.
-- An LCD output: a new `DisplayDevice` and row-parallel sampling.
 - DmdMatch system that takes a DMD scene or something. Its scene (`frontbox/128x32/match.scene`) reads `match`, and
   `player_1` to `player_4` (each score's last two digits); the numbers cycling before the match lands are keyframes
   in the scene.
@@ -133,6 +130,9 @@
   `rank`.
 - Ordered dithering in the `Pin2Dmd` output (6-bit channels band).
 - Limited-palette `DisplayDevice` for classic mono DMDs (4 or 16 shades).
+
+## LCD
+- An LCD output: a new `DisplayDevice` and row-parallel sampling.
 
 ## Console
 

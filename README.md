@@ -28,12 +28,13 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
 **Still Missing**: 
   - High scores
   - Cooperative game management
-  - Alphanumeric display/NeoSeg support
   - Hardware support: motors and servos
   - Music loop points, effects, and multi-stem playback
   - Operator menu diagnostics (switch, coil test, etc.)
   - Tournament settings/seeded random
   - Free game on score threshold/high score
+  - LCD display support
+  - Alphanumeric display/NeoSeg support
 
 ### Architectural Overview
 

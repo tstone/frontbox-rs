@@ -1,6 +1,7 @@
 //! The task that plays what [`SoundSystem`](crate::SoundSystem) asks for, and keeps a connection to the audio device.
 
 mod connection;
+mod music;
 mod output;
 mod output_device;
 #[allow(clippy::module_inception)]
