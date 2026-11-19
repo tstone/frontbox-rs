@@ -111,6 +111,9 @@
 //! 2. `ctx.systems.expect::<S>` - Returns mutable reference to `S`, also panics if it does not exist
 //! 3. `ctx.systems.with::<S, _>` - Runs a closure on `S`, logging a warning if it isn't running
 //!
+//! Each has a `_dyn` form (`get_dyn`, `expect_dyn`, `with_dyn`) that looks a system up by a trait it provides
+//! instead, such as `ctx.systems.get_dyn::<dyn BallManagement>()`. See [`System::provides`].
+//!
 //! ```rust
 //! # use frontbox_core::prelude::*;
 //! # struct TroughSystem;
@@ -172,6 +175,7 @@ mod timer_ext;
 pub mod event;
 mod group_handle;
 pub mod routine;
+mod provides;
 mod service_context;
 pub mod state;
 mod system;
@@ -191,6 +195,8 @@ pub use group_handle::*;
 pub use routine::{
   RoutineBuilder, RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted,
 };
+pub use provides::Provides;
+pub(crate) use provides::ProvidedTraits;
 pub use service_context::*;
 pub use state::{State, StateChanged};
 pub use system::*;
@@ -210,8 +216,10 @@ use indexmap::IndexMap;
 
 pub struct Systems {
   systems: IndexMap<u64, RefCell<SystemContainer>>,
+  /// Each system's own type, and the traits it provides (see [`System::provides`]), to the latest system inserted
+  /// with it
   type_to_id: HashMap<TypeId, u64>,
-  id_to_type: HashMap<u64, TypeId>,
+  id_to_types: HashMap<u64, Vec<TypeId>>,
   // Kept outside the cells, so a system can be named while it's borrowed (e.g. running a handler)
   id_to_name: HashMap<u64, &'static str>,
 }
@@ -221,7 +229,7 @@ impl Systems {
     Self {
       systems: IndexMap::new(),
       type_to_id: HashMap::new(),
-      id_to_type: HashMap::new(),
+      id_to_types: HashMap::new(),
       id_to_name: HashMap::new(),
     }
   }
@@ -241,8 +249,13 @@ impl Systems {
 
   pub(crate) fn insert(&mut self, system: impl Into<SystemContainer>) {
     let system = system.into();
-    self.type_to_id.insert(system.type_id(), system.id());
-    self.id_to_type.insert(system.id(), system.type_id());
+    let types: Vec<TypeId> = std::iter::once(system.type_id())
+      .chain(system.provided_traits())
+      .collect();
+    for type_id in &types {
+      self.type_to_id.insert(*type_id, system.id());
+    }
+    self.id_to_types.insert(system.id(), types);
     self.id_to_name.insert(system.id(), system.name());
     self.systems.insert(system.id(), RefCell::new(system));
   }
@@ -250,11 +263,11 @@ impl Systems {
   pub(crate) fn remove(&mut self, system_id: u64) -> Option<RefCell<SystemContainer>> {
     let result = self.systems.shift_remove(&system_id);
     self.id_to_name.remove(&system_id);
-    if let Some(system_type) = self.id_to_type.remove(&system_id) {
-      // Only clear the mapping if it still points at this system, so removing an older system of the same type
-      // doesn't orphan a newer one.
-      if self.type_to_id.get(&system_type) == Some(&system_id) {
-        self.type_to_id.remove(&system_type);
+    for type_id in self.id_to_types.remove(&system_id).unwrap_or_default() {
+      // Only clear the mapping if it still points at this system, so removing an older system of the same type (or
+      // providing the same trait) doesn't orphan a newer one.
+      if self.type_to_id.get(&type_id) == Some(&system_id) {
+        self.type_to_id.remove(&type_id);
       }
     }
     result
@@ -314,6 +327,22 @@ impl Systems {
           .expect("type_to_id mapping was incorrect")
       })
     }))
+  }
+
+  /// Like [`borrow_by_type`](Self::borrow_by_type), for the latest system providing the trait `I` (see
+  /// [`System::provides`])
+  pub(crate) fn borrow_by_trait<I: ?Sized + 'static>(
+    &'_ self,
+  ) -> Result<Option<RefMut<'_, I>>, SystemBusy> {
+    let Some(system_id) = self.type_to_id.get(&TypeId::of::<I>()) else {
+      return Ok(None);
+    };
+    // `I` might be a system's own type rather than a trait it provides, which this doesn't find
+    Ok(
+      self
+        .borrow_by_id(system_id)?
+        .and_then(|system| RefMut::filter_map(system, |container| container.cast_mut::<I>()).ok()),
+    )
   }
 
   pub fn contains<T: System + 'static>(&self) -> bool {

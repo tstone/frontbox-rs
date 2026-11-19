@@ -21,6 +21,7 @@ pub struct SystemContainer {
   faulted: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
+  provided: ProvidedTraits,
 }
 
 impl SystemContainer {
@@ -34,6 +35,7 @@ impl SystemContainer {
       faulted: false,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
+      provided: Provides::<T>::collect(),
     }
   }
 
@@ -204,6 +206,16 @@ impl SystemContainer {
   pub(crate) fn downcast_mut<T: System + 'static>(&mut self) -> Option<&mut T> {
     (self.as_any_mut)(self.inner.as_mut()).downcast_mut::<T>()
   }
+
+  /// The traits the system can be looked up by, besides its own type. See [`System::provides`].
+  pub(crate) fn provided_traits(&self) -> impl Iterator<Item = TypeId> + '_ {
+    self.provided.type_ids()
+  }
+
+  /// The system as the trait `I`, if it provides it
+  pub(crate) fn cast_mut<I: ?Sized + 'static>(&mut self) -> Option<&mut I> {
+    self.provided.cast_mut::<I>(self.inner.as_mut())
+  }
 }
 
 /// The result of [`SystemContainer::handle_active`]
@@ -241,6 +253,7 @@ pub struct SpawnableSystemContainer {
   last_active_state: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
+  provided: ProvidedTraits,
 }
 
 impl SpawnableSystemContainer {
@@ -253,6 +266,7 @@ impl SpawnableSystemContainer {
       last_active_state: true,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
+      provided: Provides::<T>::collect(),
     }
   }
 
@@ -266,6 +280,7 @@ impl SpawnableSystemContainer {
       faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
+      provided: self.provided,
     }
   }
 }
@@ -285,6 +300,7 @@ pub struct ChildSystemContainer {
   last_active_state: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
+  provided: ProvidedTraits,
 }
 
 impl ChildSystemContainer {
@@ -297,6 +313,7 @@ impl ChildSystemContainer {
       last_active_state: true,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
+      provided: Provides::<T>::collect(),
     }
   }
 
@@ -310,6 +327,7 @@ impl ChildSystemContainer {
       faulted: false,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
+      provided: self.provided,
     }
   }
 }

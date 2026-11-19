@@ -174,15 +174,28 @@ Behavior doesn't change. The only output is `Exp { channels: Rgb }`.
 ### 4. Single-channel lights on a slot
 
 - **Definition.** `LedDefinition::single` takes a channel (`.channel(Channel::G)`), giving `Channels::One`.
-- **A generic helper for 1 to 3 lights on one slot**, in R, G, B order. This is the flasher case, but named for what
-  it is.
-- **Boot check.** A slot with fewer than 3 channels used must be the last on its port. Reject the config with an
-  error naming the slot otherwise.
+- **A generic helper for 1 to 3 lights on one slot**, in R, G, B order.
+- **Core's boot check** is only that no channel is used by two lights, including an `Rgb` light, which uses all three.
+  Reject the config with an error naming the slot and both lights.
+- **The flasher helper** defines a chain of single-channel flashers on a port. The boards take channels one after
+  another along the chain, so the helper assigns slots and channels in that order. Only the last slot can be partly
+  used. The rule lives in the helper because it's how flasher boards read the chain, not a rule about slots. Other
+  hardware, such as a NeoSeg digit, can leave channels unused mid-port.
 - **`TODO.md`.** Remove "Single channel flasher support".
 
 ### Later, not in this plan
 
-- **NeoSeg** as its own module: a digit definition helper, and a text system with the character table.
+- **NeoSeg** as its own module. Nothing about it is added to `LightOutput` or `Channels`.
+  - **Segments.** Each segment is a single-channel light (`Exp { slot, channels: One(..) }`) with a name such as
+    `score.3.g` and a position from the segment layout. Scenes see only these lights, so sweeps across the display
+    work with nothing NeoSeg-specific.
+  - **The definition helper.** It takes a port, a starting index, a digit count and a layout, and produces the
+    segment lights and a `SegmentDisplay`: per digit, the light for each segment, in the character table's order.
+  - **Channel order.** Brief testing showed the channels out of the expected order, possibly because segments pack
+    across slot boundaries, so one digit starts partway through the previous one's last slot. The helper owns working
+    out slots and channels, so either layout fits. Work out the real order on hardware first.
+  - **The text system.** It takes the `SegmentDisplay`, looks each character up in its table, and declares brightness
+    on the segment lights through light management.
 - **Text from scenes.** Playing text from a scene needs a new layer kind, and `SceneLayer` is a closed enum in
   `frontbox-scene`. Decide then whether that kind is generic ("text on a named character display") or whether scenes
   get a way to add layer kinds from outside.

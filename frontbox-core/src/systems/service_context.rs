@@ -100,6 +100,30 @@ impl<'a> ServiceContext<'a> {
     }
   }
 
+  /// Lookup a system by a trait it provides (see [`System::provides`]): the nearest one matches first
+  pub(crate) fn get_dyn<I: ?Sized + 'static>(&self, handle: SystemHandle) -> Option<RefMut<'_, I>> {
+    let found = self.groups.nearest(handle.group, TypeId::of::<I>())?;
+    match self.groups.get(&found.group)?.borrow_by_trait::<I>() {
+      Ok(system) => system,
+      Err(busy) => {
+        let caller = self.groups.system_name(handle).unwrap_or("<unknown>");
+        log::error!(target: "frontbox::events", "{caller} looked up {}, which is already in use: {busy}", busy.name);
+        None
+      }
+    }
+  }
+
+  /// Lookup a system by a trait it provides; panic if none does or it's already in use
+  pub(crate) fn expect_dyn<I: ?Sized + 'static>(&self, handle: SystemHandle) -> RefMut<'_, I> {
+    self.get_dyn::<I>(handle).unwrap_or_else(|| {
+      panic!(
+        "Expected a system providing {} was not found, or is already in use (see the error above). Make sure one was \
+         added to the App and lists it in `System::provides`.",
+        type_name::<I>()
+      )
+    })
+  }
+
   /// Lookup a system by type; panic if it does not exist or is already in use
   pub(crate) fn expect<T: System + 'static>(&self, handle: SystemHandle) -> RefMut<'_, T> {
     let system_name = type_name::<T>();
