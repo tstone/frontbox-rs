@@ -148,8 +148,8 @@ impl<'a> ContextLeds<'a> {
     let led_states = led_states
       .into_iter()
       .map(|(index, color)| {
-        let channels = leds.channels_at(address, index);
-        (index, channels.reorder(color))
+        let order = leds.order_at(address, index);
+        (index, order.reorder(color))
       })
       .collect();
     self
@@ -161,14 +161,14 @@ impl<'a> ContextLeds<'a> {
   /// orders are sent in a command per order.
   pub fn set_multiple(&self, address: ExpAddress, color: Rgb, indexes: Vec<u8>) {
     let leds = &self.machine.base.leds;
-    let groups = group_by_channels(
+    let groups = group_by_order(
       indexes
         .into_iter()
-        .map(|index| (index, leds.channels_at(address, index))),
+        .map(|index| (index, leds.order_at(address, index))),
     );
     self.machine.with(|machine, _| {
-      for (channels, indexes) in groups {
-        machine.set_multiple_leds(address, channels.reorder(color), indexes);
+      for (order, indexes) in groups {
+        machine.set_multiple_leds(address, order.reorder(color), indexes);
       }
     });
   }
@@ -176,17 +176,17 @@ impl<'a> ContextLeds<'a> {
   /// Set every LED on a port/breakout to the same color (RA). The color is sent in the channel order most of its
   /// LEDs take, then LEDs that take another order are set again in theirs (RB).
   pub fn set_all(&self, address: ExpAddress, color: Rgb) {
-    let mut groups = group_by_channels(self.machine.base.leds.channels_on(address));
+    let mut groups = group_by_order(self.machine.base.leds.orders_on(address));
     groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
     let base = groups
       .first()
-      .map(|(channels, _)| *channels)
+      .map(|(order, _)| *order)
       .unwrap_or_default();
 
     self.machine.with(|machine, _| {
       machine.set_all_leds(address, base.reorder(color));
-      for (channels, indexes) in groups.into_iter().skip(1) {
-        machine.set_multiple_leds(address, channels.reorder(color), indexes);
+      for (order, indexes) in groups.into_iter().skip(1) {
+        machine.set_multiple_leds(address, order.reorder(color), indexes);
       }
     });
   }
@@ -241,8 +241,8 @@ impl MachineAccess<'_> {
 }
 
 /// Group LED indexes by the channel order their LEDs take, keeping the order each first appears in
-fn group_by_channels(leds: impl Iterator<Item = (u8, LedChannels)>) -> Vec<(LedChannels, Vec<u8>)> {
-  let mut groups: Vec<(LedChannels, Vec<u8>)> = Vec::new();
+fn group_by_order(leds: impl Iterator<Item = (u8, ChannelOrder)>) -> Vec<(ChannelOrder, Vec<u8>)> {
+  let mut groups: Vec<(ChannelOrder, Vec<u8>)> = Vec::new();
   for (index, channels) in leds {
     match groups.iter_mut().find(|(c, _)| *c == channels) {
       Some((_, indexes)) => indexes.push(index),
@@ -257,19 +257,19 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_group_by_channels() {
+  fn test_group_by_order() {
     let leds = [
-      (0, LedChannels::GRB),
-      (1, LedChannels::RGB),
-      (2, LedChannels::GRB),
-      (3, LedChannels::BRG),
+      (0, ChannelOrder::GRB),
+      (1, ChannelOrder::RGB),
+      (2, ChannelOrder::GRB),
+      (3, ChannelOrder::BRG),
     ];
     assert_eq!(
-      group_by_channels(leds.into_iter()),
+      group_by_order(leds.into_iter()),
       vec![
-        (LedChannels::GRB, vec![0, 2]),
-        (LedChannels::RGB, vec![1]),
-        (LedChannels::BRG, vec![3]),
+        (ChannelOrder::GRB, vec![0, 2]),
+        (ChannelOrder::RGB, vec![1]),
+        (ChannelOrder::BRG, vec![3]),
       ]
     );
   }

@@ -135,6 +135,7 @@ products is built on top:
 | `LedAddress` (as a light's identity) | `LightAddress` (phase 2) | A light's address, of which `LedAddress` is the EXP case |
 | `LedAddress` (as a place on an LED port) | unchanged | It's specifically an LED port, among the kinds of EXP port |
 | `LedDefinition` | unchanged | It defines LEDs, which are one kind of light |
+| `LedChannels`, `.channels(...)`, `LedConfiguration.channels` | `ChannelOrder`, `.channel_order(...)`, `channel_order` (done) | It's the order a chip takes its channels in, not which channels a light uses (`Channels`) |
 
 The thing is a "light" and not a "lighting": "lighting" suggests making a space brighter, where a light here is a
 source that turns on. "Lighting" names only the subject: the crate and the log target.
@@ -142,27 +143,6 @@ source that turns on. "Lighting" names only the subject: the crate and the log t
 ## Phases
 
 Each phase builds, passes tests, and leaves the machine behaving as before, except where a phase says otherwise.
-
-### 2. Address lights by `LightAddress`
-
-Behavior doesn't change. The only address is `Exp { led, channels: Rgb }`.
-
-- **The address.** Add `LightAddress` and `Channels` to core. `LED` gets `address: LightAddress` in place of its
-  `LedAddress`, which moves inside it.
-- **The trait.** `LightManager` takes the plain arguments shown under [Light management](#light-management): lights
-  by `LightAddress`, and z passed with each declaration.
-  - Remove `LedDeclarations`, `LedIdentifications`, `LedIdentificationsExt` and `IdentificationAtZ`. Queries resolve
-    to lights only.
-  - The ext's methods take z as an argument where today's callers use `.at_z(...)` (16 here, 14 in lotko).
-  - Systems that store a target as `Box<dyn Contextual<LedIdentifications>>` store a `LedQ` instead, plus a z field
-    of their own if they need a fixed one.
-  - `set_conflict_resolution` takes lights only. It takes a z today and ignores it.
-- **Remove `monitor`.** Nothing calls it.
-- **Inside `LayeredLightManager`.**
-  - Declarations, `prior_render`, `played`, the alternate resolver and `LedPlacement` are keyed by `LightAddress`.
-  - Lowering groups lights by `LedAddress`.
-  - The public `led_color()` becomes the private lowering step.
-- **Console and trace.** LED state is keyed by `LightAddress`.
 
 ### 3. Rename
 
@@ -201,9 +181,13 @@ Everything else in the [Names](#names) table, in one change.
 
 - **Definition.** `LedDefinition::single` takes a channel (`.channel(Channel::G)`), giving `Channels::One`.
 - **A generic helper for 1 to 3 lights on one LED address**, in R, G, B order.
-- **Core's boot check** is only that no channel is used by two lights, including an `Rgb` light, which uses all three.
+- **Core's boot check** is that no channel is used by two lights, including an `Rgb` light, which uses all three.
   Reject the config with an error naming the LED address and both lights. This is what makes a `LightAddress`
   unique to one light.
+- **No channel order with single channels.** Core reorders an LED address's RGB by its `ChannelOrder` when writing
+  it, which would move a single-channel light onto another channel. So `One(..)` names a position on the wire, and an
+  LED address with a single-channel light must keep the default order. Reject a config that gives it another, naming
+  the LED address and the light.
 - **The flasher helper** defines a chain of single-channel flashers on a port. The boards take channels one after
   another along the chain, so the helper assigns LED addresses and channels in that order. Only the last LED address
   can be partly used. The rule lives in the helper because it's how flasher boards read the chain, not a rule about

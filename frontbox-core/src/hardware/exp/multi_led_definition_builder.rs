@@ -46,8 +46,8 @@ impl MultiLedDefinitionBuilder {
     self
   }
 
-  pub fn channels(mut self, channels: LedChannels) -> Self {
-    self.config_mut().channels = channels;
+  pub fn channel_order(mut self, order: ChannelOrder) -> Self {
+    self.config_mut().channel_order = order;
     self
   }
 

@@ -9,4 +9,4 @@
  * ([`LedPort::sk6812`](crate::hardware::LedPort::sk6812)), the board shows the part shared by all three channels on
  * the white channel instead.
  */
-export type LedChannels = "RGB" | "GRB" | "BRG";
+export type ChannelOrder = "RGB" | "GRB" | "BRG";

@@ -36,5 +36,5 @@ impl HardwareDefinition for SingleLedDefinition {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedConfiguration {
-  pub channels: LedChannels,
+  pub channel_order: ChannelOrder,
 }

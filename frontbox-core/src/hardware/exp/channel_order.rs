@@ -9,21 +9,21 @@ use fast_protocol::Rgb;
 /// the white channel instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum LedChannels {
+pub enum ChannelOrder {
   #[default]
   RGB,
   GRB,
   BRG,
 }
 
-impl LedChannels {
+impl ChannelOrder {
   /// Put `color` into the order this LED takes its channels in
   pub fn reorder(self, color: Rgb) -> Rgb {
     let Rgb { r, g, b } = color;
     match self {
-      LedChannels::RGB => color,
-      LedChannels::GRB => Rgb::new(g, r, b),
-      LedChannels::BRG => Rgb::new(b, r, g),
+      ChannelOrder::RGB => color,
+      ChannelOrder::GRB => Rgb::new(g, r, b),
+      ChannelOrder::BRG => Rgb::new(b, r, g),
     }
   }
 }
@@ -35,8 +35,8 @@ mod tests {
   #[test]
   fn test_reorder() {
     let color = Rgb::new(1, 2, 3);
-    assert_eq!(LedChannels::RGB.reorder(color), Rgb::new(1, 2, 3));
-    assert_eq!(LedChannels::GRB.reorder(color), Rgb::new(2, 1, 3));
-    assert_eq!(LedChannels::BRG.reorder(color), Rgb::new(3, 1, 2));
+    assert_eq!(ChannelOrder::RGB.reorder(color), Rgb::new(1, 2, 3));
+    assert_eq!(ChannelOrder::GRB.reorder(color), Rgb::new(2, 1, 3));
+    assert_eq!(ChannelOrder::BRG.reorder(color), Rgb::new(3, 1, 2));
   }
 }

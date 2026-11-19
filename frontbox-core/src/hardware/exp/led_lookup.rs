@@ -11,7 +11,7 @@ pub struct LedLookup {
   configs: HashMap<String, LedConfiguration>,
   /// Keyed the way the hardware sets LEDs: (board and breakout, index)
   #[serde(skip)] // redundant with by_name for web console
-  channels_by_index: HashMap<(ExpAddress, u8), LedChannels>,
+  order_by_index: HashMap<(ExpAddress, u8), ChannelOrder>,
   /// What the app was given, for finding one by name
   #[serde(skip)]
   planes: Vec<&'static ReferencePlane>,
@@ -21,7 +21,7 @@ impl LedLookup {
   pub fn new(boards: &Vec<ResolvedExpansionBoard>) -> Self {
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
-    let mut channels_by_index = HashMap::new();
+    let mut order_by_index = HashMap::new();
 
     for board in boards {
       for (port_index, port) in board.led_ports.iter().enumerate() {
@@ -32,9 +32,9 @@ impl LedLookup {
             .definition
             .config
             .as_ref()
-            .map(|config| config.channels)
+            .map(|config| config.channel_order)
             .unwrap_or_default();
-          channels_by_index.insert((address.exp, address.index), channels);
+          order_by_index.insert((address.exp, address.index), channels);
 
           by_name.insert(
             led.definition.name.to_string(),
@@ -58,7 +58,7 @@ impl LedLookup {
     Self {
       by_name,
       configs,
-      channels_by_index,
+      order_by_index,
       planes: Vec::new(),
     }
   }
@@ -150,18 +150,18 @@ impl LedLookup {
   }
 
   /// The channel order of the LED at `index` on a board's breakout, or the default for an LED that isn't defined
-  pub(crate) fn channels_at(&self, address: ExpAddress, index: u8) -> LedChannels {
+  pub(crate) fn order_at(&self, address: ExpAddress, index: u8) -> ChannelOrder {
     self
-      .channels_by_index
+      .order_by_index
       .get(&(address, index))
       .copied()
       .unwrap_or_default()
   }
 
   /// The index and channel order of every LED defined on a board's breakout
-  pub(crate) fn channels_on(&self, address: ExpAddress) -> impl Iterator<Item = (u8, LedChannels)> + '_ {
+  pub(crate) fn orders_on(&self, address: ExpAddress) -> impl Iterator<Item = (u8, ChannelOrder)> + '_ {
     self
-      .channels_by_index
+      .order_by_index
       .iter()
       .filter(move |((exp, _), _)| *exp == address)
       .map(|((_, index), channels)| (*index, *channels))
