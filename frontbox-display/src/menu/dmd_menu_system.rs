@@ -52,8 +52,10 @@ pub struct DmdMenuSystem {
   fragments: Option<Fragments>,
   /// What's on the display, in the order it's drawn
   shown: Vec<ShownPart>,
-  row_lookup: HashMap<u64, MenuRowReference>,
+  row_lookup: HashMap<u64, &'static MenuRow>,
   active_section: &'static MenuSection,
+  /// The sections above the active one, each with the row that was selected in it, so going back selects it again
+  parents: Vec<(&'static MenuSection, usize)>,
   display_rows: Vec<DisplayMenuRow>,
   selected_row: usize,
   selected_config: Option<&'static MenuRow>,
@@ -73,17 +75,9 @@ impl DmdMenuSystem {
         .push(MenuRow::Special(MenuRow::next_row_id(), "About"));
       Box::leak(Box::new(root))
     };
-    let root_row: &'static MenuRow = Box::leak(Box::new(MenuRow::Section(root.clone())));
 
-    // Build up a quick lookup table by ID to row/parent
-    let mut row_lookup = HashMap::<u64, MenuRowReference>::new();
-    row_lookup.insert(
-      root.id,
-      MenuRowReference {
-        row: root_row,
-        parent: None,
-      },
-    );
+    // Build up a quick lookup table by ID to row
+    let mut row_lookup = HashMap::<u64, &'static MenuRow>::new();
     Self::build_row_lookup(&mut row_lookup, root);
 
     Self {
@@ -94,6 +88,7 @@ impl DmdMenuSystem {
       shown: Vec::new(),
       row_lookup,
       active_section: root,
+      parents: Vec::new(),
       display_rows: Vec::new(),
       selected_row: Self::first_non_header_row(root),
       selected_config: None,
@@ -116,16 +111,10 @@ impl DmdMenuSystem {
     self
   }
 
-  /// Build a quick id => section, section parent lookup table for fast navigation
-  fn build_row_lookup(lookup: &mut HashMap<u64, MenuRowReference>, parent: &'static MenuSection) {
+  /// Build a quick id => row lookup table for fast navigation
+  fn build_row_lookup(lookup: &mut HashMap<u64, &'static MenuRow>, parent: &'static MenuSection) {
     for row in &parent.rows {
-      lookup.insert(
-        row.id(),
-        MenuRowReference {
-          row,
-          parent: Some(parent),
-        },
-      );
+      lookup.insert(row.id(), row);
 
       if let MenuRow::Section(section) = row {
         Self::build_row_lookup(lookup, section);
@@ -150,13 +139,15 @@ impl DmdMenuSystem {
   fn navigate_fwd(&mut self, ctx: &SystemContext) {
     match self.display_rows[self.selected_row] {
       DisplayMenuRow::Section { id, .. } => {
-        let section = self.row_lookup.get(&id).unwrap().row.section().unwrap();
+        let row: &'static MenuRow = self.row_lookup[&id];
+        let section = row.section().unwrap();
+        self.parents.push((self.active_section, self.selected_row));
         self.activate_section(section, ctx);
         ctx.play_sfx(SELECT_SND);
       }
       DisplayMenuRow::Config { id, .. } => {
-        if let Some(reference) = self.row_lookup.get(&id) {
-          self.selected_config = Some(reference.row);
+        if let Some(row) = self.row_lookup.get(&id) {
+          self.selected_config = Some(*row);
           self.requires_render = true;
           ctx.play_sfx(SELECT_SND);
         }
@@ -167,8 +158,8 @@ impl DmdMenuSystem {
         ctx.play_sfx(SELECT_SND);
       }
       DisplayMenuRow::Action { id, .. } => {
-        if let Some(reference) = self.row_lookup.get(&id) {
-          if let MenuRow::Action(_, _, action) = reference.row {
+        if let Some(row) = self.row_lookup.get(&id) {
+          if let MenuRow::Action(_, _, action) = *row {
             ctx.play_sfx(SELECT_SND);
             action(ctx);
           }
@@ -188,13 +179,10 @@ impl DmdMenuSystem {
       self.requires_render = true;
       ctx.play_sfx(BACK_SND);
     } else {
-      let parent = self
-        .row_lookup
-        .get(&self.active_section.id)
-        .and_then(|e| e.parent);
-      if let Some(parent) = parent {
+      if let Some((parent, selected_row)) = self.parents.pop() {
         ctx.play_sfx(BACK_SND);
         self.activate_section(parent, ctx);
+        self.selected_row = selected_row;
       } else {
         ctx.play_sfx(NOT_ALLOWED_SND);
       }
@@ -550,11 +538,6 @@ pub struct MenuSwitches {
   pub dec_btn: &'static str,
 }
 
-struct MenuRowReference {
-  row: &'static MenuRow,
-  parent: Option<&'static MenuSection>,
-}
-
 /// A copy of `scene` moved down to `row`, with every display layer at `z`. A layer without a region covers the whole
 /// display, so it stays where it is.
 fn placed(scene: &Scene, row: usize, z: i8) -> Scene {
@@ -906,6 +889,18 @@ mod tests {
     assert!(halfway.y > 7.0 && halfway.y < 14.0, "{halfway}");
     advance(&context, 100);
     assert_eq!(offset(&context), Some(Value::Vec2(Vec2::new(0.0, 14.0))));
+  }
+
+  #[test]
+  fn going_back_selects_the_section_it_came_from() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    menu.navigate_inc(&context.sys_ctx());
+    let lights = menu.selected_row;
+    menu.navigate_fwd(&context.sys_ctx());
+    assert_ne!(menu.selected_row, lights);
+    menu.navigate_back(&context.sys_ctx());
+    assert_eq!(menu.selected_row, lights);
   }
 
   #[test]
