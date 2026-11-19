@@ -7,18 +7,13 @@ use std::any::Any;
 /// LED indexes are `0x00`-`0x7F`, or `0x80`-`0xFF` for mapped LED sets created with `LM:`.
 #[derive(Debug, Clone)]
 pub struct SetLedsBinaryCommand {
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   states: Vec<(u8, Rgb)>,
 }
 
 impl SetLedsBinaryCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u8, Rgb)>) -> Self {
-    Self {
-      expansion_board,
-      breakout,
-      states,
-    }
+  pub fn new(address: ExpAddress, states: Vec<(u8, Rgb)>) -> Self {
+    Self { address, states }
   }
 }
 
@@ -27,8 +22,7 @@ impl FastBinaryDispatch for SetLedsBinaryCommand {
     // https://fastpinball.com/fast-serial-protocol/exp/rd/
     binary_frames(
       "RD",
-      self.expansion_board,
-      self.breakout,
+      self.address,
       &self.states,
       |payload, (led_idx, color)| payload.extend([*led_idx, color.r, color.g, color.b]),
     )
@@ -41,8 +35,7 @@ impl FastBinaryDispatch for SetLedsBinaryCommand {
   fn describe(&self) -> String {
     describe_binary(
       "RD",
-      self.expansion_board,
-      self.breakout,
+      self.address,
       self
         .states
         .iter()
@@ -58,8 +51,7 @@ mod tests {
   #[test]
   fn test_request() {
     let result = SetLedsBinaryCommand::new(
-      0x48,
-      None,
+      ExpAddress::new(0x48, None),
       vec![
         (0x01, Rgb::new(0xFF, 0x00, 0xFF)),
         (0x24, Rgb::new(0xFF, 0xFF, 0x00)),
@@ -78,8 +70,7 @@ mod tests {
   #[test]
   fn test_describe() {
     let result = SetLedsBinaryCommand::new(
-      0x48,
-      None,
+      ExpAddress::new(0x48, None),
       vec![
         (0x01, Rgb::new(0xFF, 0x00, 0xFF)),
         (0x24, Rgb::new(0xFF, 0xFF, 0x00)),
@@ -92,7 +83,7 @@ mod tests {
   #[test]
   fn test_request_splits_over_max_count() {
     let states = (0..130).map(|i| (i as u8, Rgb::black())).collect();
-    let result = SetLedsBinaryCommand::new(0x48, None, states).to_bytes();
+    let result = SetLedsBinaryCommand::new(ExpAddress::new(0x48, None), states).to_bytes();
 
     // Two frames: 127 LEDs then 3 LEDs, each LED being 4 bytes
     assert_eq!(result.len(), (6 + 1 + 127 * 4) + (6 + 1 + 3 * 4));

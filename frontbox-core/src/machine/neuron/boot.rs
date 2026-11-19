@@ -372,8 +372,7 @@ pub async fn configure_led_port(
   led_port: &ResolvedLedPort,
 ) {
   let cmd = ConfigureLedPortCommand::new(
-    board.address,
-    board.breakout,
+    ExpAddress::new(board.address, board.breakout),
     port_index,
     led_port.led_type.clone(),
     led_index_offset,

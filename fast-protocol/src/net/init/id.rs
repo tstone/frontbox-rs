@@ -1,4 +1,3 @@
-use crate::common::expansion_addr;
 use crate::*;
 
 #[derive(Debug, Clone)]
@@ -17,9 +16,9 @@ impl IdCommand {
     }
   }
 
-  pub fn exp(board: u8, breakout: Option<u8>) -> Self {
+  pub fn exp(address: ExpAddress) -> Self {
     IdCommand {
-      address: Some(FastAddress::Exp(board, breakout)),
+      address: Some(FastAddress::Exp(address)),
     }
   }
 }
@@ -28,9 +27,7 @@ impl FastStringDispatch for IdCommand {
   fn to_string(&self) -> String {
     match self.address {
       Some(FastAddress::Io(id)) => format!("ID@{}:\r", id),
-      Some(FastAddress::Exp(board, breakout)) => {
-        format!("ID@{}:\r", expansion_addr(board, breakout))
-      }
+      Some(FastAddress::Exp(address)) => format!("ID@{}:\r", address),
       None => "ID:\r".to_string(),
     }
   }

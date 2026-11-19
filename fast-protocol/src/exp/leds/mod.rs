@@ -16,7 +16,7 @@ pub use set_multiple_leds_binary::*;
 pub use set_white::*;
 pub use set_white_binary::*;
 
-use crate::common::expansion_addr;
+use crate::ExpAddress;
 
 /// The most LEDs a binary LED command (RB, RD, RZ) can update, since the count is a single byte in `0x00`-`0x7F`
 const MAX_BINARY_COUNT: usize = 0x7F;
@@ -24,12 +24,10 @@ const MAX_BINARY_COUNT: usize = 0x7F;
 /// Encodes a binary LED command of the form `<prefix>@<address>:<count>{<entry>...}`
 fn binary_frames<T>(
   prefix: &str,
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   entries: &[T],
   encode: impl Fn(&mut Vec<u8>, &T),
 ) -> Vec<u8> {
-  let address = expansion_addr(expansion_board, breakout);
   let mut bytes = Vec::new();
   for chunk in entries.chunks(MAX_BINARY_COUNT) {
     bytes.extend(format!("{}@{}:", prefix, address).as_bytes());
@@ -44,11 +42,9 @@ fn binary_frames<T>(
 /// Describes a binary LED command for logging, in the style of its ASCII sibling: `<prefix>@<address>:<part>,...`
 fn describe_binary(
   prefix: &str,
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   parts: impl Iterator<Item = String>,
 ) -> String {
-  let address = expansion_addr(expansion_board, breakout);
   format!(
     "{}@{}:{}",
     prefix,

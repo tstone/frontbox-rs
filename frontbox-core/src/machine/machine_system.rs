@@ -297,18 +297,13 @@ impl MachineSystem {
   }
 
   /// Set the color of multiple LEDs in a single command (RD). Colors are already in each LED's channel order.
-  pub(crate) fn set_leds(
-    &self,
-    expansion_id: u8,
-    breakout: Option<u8>,
-    led_states: Vec<(u8, Rgb)>,
-  ) {
+  pub(crate) fn set_leds(&self, address: ExpAddress, led_states: Vec<(u8, Rgb)>) {
     if cfg!(debug_assertions) {
       self
         .app_sender
         .send(AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
-          expansion: expansion_id,
-          breakout,
+          expansion: address.board_address,
+          breakout: address.breakout,
           states: led_states.clone(),
         }))
         .ok();
@@ -318,29 +313,19 @@ impl MachineSystem {
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetLedsBinaryCommand::new(
-          expansion_id,
-          breakout,
-          led_states,
-        )),
+        command: Box::new(SetLedsBinaryCommand::new(address, led_states)),
       })
       .ok();
   }
 
   /// Set multiple LEDs on a port/breakout to the same color (RB), already in their channel order
-  pub(crate) fn set_multiple_leds(
-    &self,
-    expansion_id: u8,
-    breakout: Option<u8>,
-    color: Rgb,
-    indexes: Vec<u8>,
-  ) {
+  pub(crate) fn set_multiple_leds(&self, address: ExpAddress, color: Rgb, indexes: Vec<u8>) {
     if cfg!(debug_assertions) {
       self
         .app_sender
         .send(AppMessage::TracerEvent(TraceEvent::LedsRGBChange {
-          expansion: expansion_id,
-          breakout,
+          expansion: address.board_address,
+          breakout: address.breakout,
           states: indexes
             .clone()
             .into_iter()
@@ -354,45 +339,31 @@ impl MachineSystem {
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetMultipleLedsBinaryCommand::new(
-          expansion_id,
-          breakout,
-          color,
-          indexes,
-        )),
+        command: Box::new(SetMultipleLedsBinaryCommand::new(address, color, indexes)),
       })
       .ok();
   }
 
   /// Set all LEDs on a port/breakout to the same color (RA), already in their channel order
-  pub(crate) fn set_all_leds(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb) {
+  pub(crate) fn set_all_leds(&self, address: ExpAddress, color: Rgb) {
     // TODO: tracer support
 
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetAllLedsCommand::new(expansion_id, breakout, color)),
+        command: Box::new(SetAllLedsCommand::new(address, color)),
       })
       .ok();
   }
 
   /// Set the white channel of multiple LEDs in a single command (RZ)
-  pub(crate) fn set_leds_white(
-    &self,
-    expansion_id: u8,
-    breakout: Option<u8>,
-    led_states: Vec<(u8, u8)>,
-  ) {
+  pub(crate) fn set_leds_white(&self, address: ExpAddress, led_states: Vec<(u8, u8)>) {
     self
       .machine_sender
       .send(MachineMessage::Dispatch {
         port: MachinePort::Exp,
-        command: Box::new(SetWhiteBinaryCommand::new(
-          expansion_id,
-          breakout,
-          led_states,
-        )),
+        command: Box::new(SetWhiteBinaryCommand::new(address, led_states)),
       })
       .ok();
   }

@@ -17,5 +17,5 @@ pub use event_response::*;
 #[derive(Debug, Clone)]
 pub enum FastAddress {
   Io(u8),
-  Exp(u8, Option<u8>), // board, breakout
+  Exp(ExpAddress),
 }

@@ -1,4 +1,3 @@
-use crate::common::expansion_addr;
 use crate::*;
 
 #[derive(Debug, Clone)]
@@ -18,7 +17,7 @@ impl IdentifyHardwareCommand {
 
 impl FastStringDispatch for IdentifyHardwareCommand {
   fn to_string(&self) -> String {
-    let address = expansion_addr(self.expansion_board, Some(self.breakout));
+    let address = ExpAddress::new(self.expansion_board, Some(self.breakout));
     format!("IH@{}:\r", address)
   }
 }

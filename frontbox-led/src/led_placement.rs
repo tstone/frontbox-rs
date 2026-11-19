@@ -182,7 +182,7 @@ mod tests {
   fn placed_leds(locations: &[Option<Vec3>]) -> TestContext {
     let mut context = TestContext::default();
     for (i, location) in locations.iter().enumerate() {
-      let address = LedAddress::new(ExpAddress::default(), i as u8);
+      let address = LedAddress::new(ExpAddress::default(), 0, i as u8);
       context.insert_led(LED { name: format!("led{i}"), address, location: *location, ..Default::default() });
     }
     context.add_plane(&PLANE);

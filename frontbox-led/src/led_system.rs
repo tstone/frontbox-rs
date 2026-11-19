@@ -494,7 +494,7 @@ impl System for LedSystem {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
           ctx
             .leds
-            .set(address.board_address, address.breakout, chunk.to_vec());
+            .set(address, chunk.to_vec());
         }
       }
     }
@@ -567,7 +567,8 @@ mod tests {
   fn declare_and_undeclare_systems() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -593,7 +594,8 @@ mod tests {
   fn declare_overwrite() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -619,15 +621,16 @@ mod tests {
   fn declare_and_undeclare_multiple() {
     let mut system = LedSystem::new();
     let led1 = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
     let led2 = LedAddress {
       exp: ExpAddress {
         board_address: 3,
         breakout: None,
-        port: 0,
       },
+      port: 0,
       index: 2,
     };
 
@@ -653,7 +656,8 @@ mod tests {
   fn declare_and_undeclare_z_index() {
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -676,7 +680,8 @@ mod tests {
   #[test]
   fn alpha_fall_through_ignores_disabled() {
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -727,7 +732,8 @@ mod tests {
   #[test]
   fn resolve_color() {
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -777,7 +783,8 @@ mod tests {
   #[test]
   fn resolve_color_conflict() {
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -831,7 +838,8 @@ mod tests {
   #[test]
   fn resolve_color_alpha_compositing() {
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
 
@@ -888,7 +896,8 @@ mod tests {
     let ctx = TestContext::default();
     let mut system = LedSystem::new();
     let led = LedAddress {
-      exp: ExpAddress::new(3, None, 0),
+      exp: ExpAddress::new(3, None),
+      port: 0,
       index: 1,
     };
     system.declare(
@@ -907,7 +916,7 @@ mod tests {
   /// Which color wins on one LED when systems 1 to `systems` declare on the same z in that order, and then the first changes
   /// its color
   fn first_wins_of(systems: u64) -> Rgba<u8> {
-    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
     let mut system = LedSystem::new();
     for id in 1..=systems {
       system.declare(id, LedDeclarations::new(vec![(&led, Rgba([id as u8, 0, 0, 255]))], 0));
@@ -924,7 +933,7 @@ mod tests {
 
   #[test]
   fn a_declaration_made_again_after_its_given_up_goes_to_the_back() {
-    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
     let mut system = LedSystem::new();
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
     system.declare(2, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
@@ -936,7 +945,7 @@ mod tests {
 
   #[test]
   fn a_flashing_declaration_shows_through_to_the_layer_below_while_its_off() {
-    let led = LedAddress { exp: ExpAddress::new(3, None, 0), index: 1 };
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
     let mut system = LedSystem::new();
     system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
     system.declare(2, LedDeclarations::new(vec![(&led, Rgba::green())], 1).flashing());

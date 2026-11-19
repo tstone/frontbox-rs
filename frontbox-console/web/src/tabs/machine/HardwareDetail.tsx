@@ -74,7 +74,7 @@ function LedDetail(props: { led: LED }) {
       </Field>
       <Field label="Breakout">{exp.breakout ?? 'None'}</Field>
       {/* ports are 0-based in the address but numbered from 1 on the PCB and in `wire_led_port` */}
-      <Field label="Port">{exp.port + 1}</Field>
+      <Field label="Port">{props.led.address.port + 1}</Field>
     </Fields>
   )
 }

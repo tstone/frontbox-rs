@@ -1,35 +1,28 @@
-use crate::common::expansion_addr;
 use crate::*;
 
 /// Set the color of multiple LEDs in a single command (RS)
 #[derive(Debug, Clone)]
 pub struct SetLedsCommand {
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   states: Vec<(u16, Rgb)>,
 }
 
 impl SetLedsCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u16, Rgb)>) -> Self {
-    Self {
-      expansion_board,
-      breakout,
-      states,
-    }
+  pub fn new(address: ExpAddress, states: Vec<(u16, Rgb)>) -> Self {
+    Self { address, states }
   }
 }
 
 impl FastStringDispatch for SetLedsCommand {
   fn to_string(&self) -> String {
     // https://fastpinball.com/fast-serial-protocol/exp/rs/
-    let address = expansion_addr(self.expansion_board, self.breakout);
     let states_part = self
       .states
       .iter()
       .map(|(led_idx, color)| format!("{:02X}{}", led_idx, color.to_hex()))
       .collect::<Vec<_>>()
       .join(",");
-    format!("RS@{}:{}\r", address, states_part)
+    format!("RS@{}:{}\r", self.address, states_part)
   }
 }
 
@@ -40,8 +33,7 @@ mod tests {
   #[test]
   fn test_request() {
     let result = SetLedsCommand::new(
-      0x48,
-      None,
+      ExpAddress::new(0x48, None),
       vec![(0, Rgb::new(255, 0, 0)), (1, Rgb::new(0, 255, 0))],
     )
     .to_string();

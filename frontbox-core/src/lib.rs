@@ -53,7 +53,7 @@ pub mod prelude {
 
   // re-exports
   pub use fast_protocol::driver_config::*;
-  pub use fast_protocol::{DriverTriggerControlMode, LedType, Power, Rgb, SwitchState};
+  pub use fast_protocol::{DriverTriggerControlMode, ExpAddress, LedType, Power, Rgb, SwitchState};
   pub use frontbox_derive::*;
   pub use glam::{Quat, Vec2, Vec3};
   pub use indexmap::IndexSet;

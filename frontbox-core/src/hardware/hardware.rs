@@ -142,11 +142,7 @@ impl Hardware {
         .for_each(|(i, led)| {
           addressed_leds.push(ExpAddressed {
             definition: led.clone(),
-            assignment: ExpAddress {
-              board_address: board.address,
-              breakout: Some(port_idx / 4),
-              port: port_idx as u8,
-            },
+            assignment: ExpAddress::new(board.address, Some(port_idx / 4)),
             id: i + port_led_total_count + offset as usize,
           });
         });

@@ -140,12 +140,12 @@ function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
     case 'leds':
       return Object.values(hw.leds.by_name)
         .map((led) => {
-          const { exp, index } = led.address
+          const { exp, port, index } = led.address
           return {
             key: `led:${led.name}`,
             name: ledName(led.name),
             // PCB port numbering, matching `wire_led_port`
-            address: `${hexAddress(exp.board_address)}-${exp.port + 1}-${index}`,
+            address: `${hexAddress(exp.board_address)}-${port + 1}-${index}`,
             tags: led.tags,
             detail: null,
             state: () => (ledColorKnown(led.name) ? (ledColor(led.name) ?? 'Off') : null),

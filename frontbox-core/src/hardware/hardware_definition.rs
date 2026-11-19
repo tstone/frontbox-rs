@@ -73,25 +73,6 @@ impl<T: HardwareDefinition + 'static> Clone for IoAddressed<T> {
 
 // -- Exp --
 
-/// An address on the expansion network
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct ExpAddress {
-  pub board_address: u8,
-  pub breakout: Option<u8>,
-  pub port: u8,
-}
-
-impl ExpAddress {
-  pub fn new(board_address: u8, breakout: Option<u8>, port: u8) -> Self {
-    Self {
-      board_address,
-      breakout,
-      port,
-    }
-  }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExpWired<D: HardwareDefinition + Clone> {
   pub definition: D,

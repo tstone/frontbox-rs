@@ -143,40 +143,40 @@ impl<'a> ContextLeds<'a> {
 
   /// Set the color of each LED, by index on the port/breakout, in a single command (RD). Each color is put into the
   /// channel order of its LED.
-  pub fn set(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, Rgb)>) {
+  pub fn set(&self, address: ExpAddress, led_states: Vec<(u8, Rgb)>) {
     let leds = &self.machine.base.leds;
     let led_states = led_states
       .into_iter()
       .map(|(index, color)| {
-        let channels = leds.channels_at(expansion_id, breakout, index);
+        let channels = leds.channels_at(address, index);
         (index, channels.reorder(color))
       })
       .collect();
     self
       .machine
-      .with(|machine, _| machine.set_leds(expansion_id, breakout, led_states));
+      .with(|machine, _| machine.set_leds(address, led_states));
   }
 
   /// Set the LEDs at `indexes` on a port/breakout to the same color (RB). LEDs that take their channels in different
   /// orders are sent in a command per order.
-  pub fn set_multiple(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb, indexes: Vec<u8>) {
+  pub fn set_multiple(&self, address: ExpAddress, color: Rgb, indexes: Vec<u8>) {
     let leds = &self.machine.base.leds;
     let groups = group_by_channels(
       indexes
         .into_iter()
-        .map(|index| (index, leds.channels_at(expansion_id, breakout, index))),
+        .map(|index| (index, leds.channels_at(address, index))),
     );
     self.machine.with(|machine, _| {
       for (channels, indexes) in groups {
-        machine.set_multiple_leds(expansion_id, breakout, channels.reorder(color), indexes);
+        machine.set_multiple_leds(address, channels.reorder(color), indexes);
       }
     });
   }
 
   /// Set every LED on a port/breakout to the same color (RA). The color is sent in the channel order most of its
   /// LEDs take, then LEDs that take another order are set again in theirs (RB).
-  pub fn set_all(&self, expansion_id: u8, breakout: Option<u8>, color: Rgb) {
-    let mut groups = group_by_channels(self.machine.base.leds.channels_on(expansion_id, breakout));
+  pub fn set_all(&self, address: ExpAddress, color: Rgb) {
+    let mut groups = group_by_channels(self.machine.base.leds.channels_on(address));
     groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
     let base = groups
       .first()
@@ -184,18 +184,18 @@ impl<'a> ContextLeds<'a> {
       .unwrap_or_default();
 
     self.machine.with(|machine, _| {
-      machine.set_all_leds(expansion_id, breakout, base.reorder(color));
+      machine.set_all_leds(address, base.reorder(color));
       for (channels, indexes) in groups.into_iter().skip(1) {
-        machine.set_multiple_leds(expansion_id, breakout, channels.reorder(color), indexes);
+        machine.set_multiple_leds(address, channels.reorder(color), indexes);
       }
     });
   }
 
   /// Set the white channel of each LED, by index on the port/breakout, in a single command (RZ)
-  pub fn set_white(&self, expansion_id: u8, breakout: Option<u8>, led_states: Vec<(u8, u8)>) {
+  pub fn set_white(&self, address: ExpAddress, led_states: Vec<(u8, u8)>) {
     self
       .machine
-      .with(|machine, _| machine.set_leds_white(expansion_id, breakout, led_states));
+      .with(|machine, _| machine.set_leds_white(address, led_states));
   }
 }
 

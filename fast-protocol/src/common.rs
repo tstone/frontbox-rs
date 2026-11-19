@@ -1,19 +1,6 @@
 use crate::FastResponseError;
 use crate::RawResponse;
 
-/// Format expansion address with or without breakout nibble
-pub fn expansion_addr(expansion_board: u8, breakout: Option<u8>) -> String {
-  format!(
-    "{:X}{}",
-    expansion_board,
-    if let Some(b) = breakout {
-      format!("{:X}", b)
-    } else {
-      "".to_string()
-    }
-  )
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessedResponse {
   Processed,

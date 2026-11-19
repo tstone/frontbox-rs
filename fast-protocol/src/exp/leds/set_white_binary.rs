@@ -8,18 +8,13 @@ use std::any::Any;
 /// LED indexes are `0x00`-`0x7F`, or `0x80`-`0xFF` for mapped LED sets created with `LM:`.
 #[derive(Debug, Clone)]
 pub struct SetWhiteBinaryCommand {
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   states: Vec<(u8, u8)>,
 }
 
 impl SetWhiteBinaryCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, states: Vec<(u8, u8)>) -> Self {
-    Self {
-      expansion_board,
-      breakout,
-      states,
-    }
+  pub fn new(address: ExpAddress, states: Vec<(u8, u8)>) -> Self {
+    Self { address, states }
   }
 }
 
@@ -28,8 +23,7 @@ impl FastBinaryDispatch for SetWhiteBinaryCommand {
     // https://fastpinball.com/fast-serial-protocol/exp/rz/
     binary_frames(
       "RZ",
-      self.expansion_board,
-      self.breakout,
+      self.address,
       &self.states,
       |payload, (led_idx, white)| payload.extend([*led_idx, *white]),
     )
@@ -42,8 +36,7 @@ impl FastBinaryDispatch for SetWhiteBinaryCommand {
   fn describe(&self) -> String {
     describe_binary(
       "RZ",
-      self.expansion_board,
-      self.breakout,
+      self.address,
       self
         .states
         .iter()
@@ -59,8 +52,7 @@ mod tests {
   #[test]
   fn test_request() {
     let result = SetWhiteBinaryCommand::new(
-      0x48,
-      Some(1),
+      ExpAddress::new(0x48, Some(1)),
       vec![(0x01, 0x00), (0x10, 0x80), (0x2B, 0xFF)],
     )
     .to_bytes();
@@ -73,7 +65,7 @@ mod tests {
   #[test]
   fn test_describe() {
     let result =
-      SetWhiteBinaryCommand::new(0x48, Some(1), vec![(0x01, 0x00), (0x2B, 0xFF)]).describe();
+      SetWhiteBinaryCommand::new(ExpAddress::new(0x48, Some(1)), vec![(0x01, 0x00), (0x2B, 0xFF)]).describe();
     assert_eq!(result, "RZ@481:0100,2BFF");
   }
 }

@@ -37,12 +37,14 @@ impl Eq for LED {}
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedAddress {
   pub exp: ExpAddress,
+  /// The LED port on the board, 0-based. Only for display: `index` already counts from the start of the breakout.
+  pub port: u8,
   pub index: u8,
 }
 
 impl LedAddress {
-  pub fn new(exp: ExpAddress, index: u8) -> Self {
-    Self { exp, index }
+  pub fn new(exp: ExpAddress, port: u8, index: u8) -> Self {
+    Self { exp, port, index }
   }
 
   pub fn board(&self) -> u8 {
@@ -53,7 +55,4 @@ impl LedAddress {
     self.exp.breakout
   }
 
-  pub fn port(&self) -> u8 {
-    self.exp.port
-  }
 }

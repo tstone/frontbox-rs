@@ -524,7 +524,7 @@ mod tests {
     leds.add_plane(&WIDE);
     for (i, &location) in locations.iter().enumerate() {
       let name = format!("led{i}");
-      let address = LedAddress::new(ExpAddress::default(), i as u8);
+      let address = LedAddress::new(ExpAddress::default(), 0, i as u8);
       leds.insert(name.clone(), LED { name, address, location, ..Default::default() });
     }
     leds

@@ -1,5 +1,4 @@
 use super::{MAX_BINARY_COUNT, describe_binary};
-use crate::common::expansion_addr;
 use crate::*;
 use std::any::Any;
 
@@ -8,17 +7,15 @@ use std::any::Any;
 /// LED indexes are `0x00`-`0x7F`, or `0x80`-`0xFF` for mapped LED sets created with `LM:`.
 #[derive(Debug, Clone)]
 pub struct SetMultipleLedsBinaryCommand {
-  expansion_board: u8,
-  breakout: Option<u8>,
+  address: ExpAddress,
   color: Rgb,
   indexes: Vec<u8>,
 }
 
 impl SetMultipleLedsBinaryCommand {
-  pub fn new(expansion_board: u8, breakout: Option<u8>, color: Rgb, indexes: Vec<u8>) -> Self {
+  pub fn new(address: ExpAddress, color: Rgb, indexes: Vec<u8>) -> Self {
     Self {
-      expansion_board,
-      breakout,
+      address,
       color,
       indexes,
     }
@@ -29,10 +26,9 @@ impl FastBinaryDispatch for SetMultipleLedsBinaryCommand {
   fn to_bytes(&self) -> Vec<u8> {
     // https://fastpinball.com/fast-serial-protocol/exp/rb/
     // The color sits between the count and the indexes, so it can't go through `binary_frames`
-    let address = expansion_addr(self.expansion_board, self.breakout);
     let mut bytes = Vec::new();
     for chunk in self.indexes.chunks(MAX_BINARY_COUNT) {
-      bytes.extend(format!("RB@{}:", address).as_bytes());
+      bytes.extend(format!("RB@{}:", self.address).as_bytes());
       bytes.extend([chunk.len() as u8, self.color.r, self.color.g, self.color.b]);
       bytes.extend(chunk);
     }
@@ -46,8 +42,7 @@ impl FastBinaryDispatch for SetMultipleLedsBinaryCommand {
   fn describe(&self) -> String {
     describe_binary(
       "RB",
-      self.expansion_board,
-      self.breakout,
+      self.address,
       std::iter::once(self.color.to_hex())
         .chain(self.indexes.iter().map(|idx| format!("{:02X}", idx))),
     )
@@ -61,8 +56,7 @@ mod tests {
   #[test]
   fn test_request() {
     let result = SetMultipleLedsBinaryCommand::new(
-      0x48,
-      None,
+      ExpAddress::new(0x48, None),
       Rgb::new(0xFF, 0xFF, 0x00),
       vec![0x00, 0x01, 0x02, 0x03, 0x04],
     )
@@ -75,9 +69,12 @@ mod tests {
 
   #[test]
   fn test_describe() {
-    let result =
-      SetMultipleLedsBinaryCommand::new(0x48, None, Rgb::new(0xFF, 0xFF, 0x00), vec![0x00, 0x1A])
-        .describe();
+    let result = SetMultipleLedsBinaryCommand::new(
+      ExpAddress::new(0x48, None),
+      Rgb::new(0xFF, 0xFF, 0x00),
+      vec![0x00, 0x1A],
+    )
+    .describe();
     assert_eq!(result, "RB@48:FFFF00,00,1A");
   }
 }

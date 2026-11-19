@@ -22,7 +22,7 @@ fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
   let mut context = TestContext::default();
   context.insert_system(LedSystem::new());
   context.insert_system(SceneSystem::new());
-  let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), i as u8)).collect();
+  let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), 0, i as u8)).collect();
   for (i, address) in addresses.iter().enumerate() {
     context.insert_led(LED { name: format!("led{i}"), address: address.clone(), location: locations[i], ..Default::default() });
   }
@@ -434,7 +434,7 @@ struct Playfield;
 #[test]
 fn a_tag_finds_the_leds_that_have_it() {
   let (mut context, addresses) = three_leds();
-  let address = LedAddress::new(ExpAddress::default(), 9);
+  let address = LedAddress::new(ExpAddress::default(), 0, 9);
   context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
   context.sys_ctx().systems.with::<LedSystem, _>(|leds| leds.on_spawn(&context.sys_ctx()));
 

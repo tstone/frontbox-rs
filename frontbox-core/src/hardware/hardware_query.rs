@@ -333,7 +333,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 1),
+        address: LedAddress::new(ExpAddress::default(), 0, 1),
         ..Default::default()
       },
     );
@@ -341,7 +341,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 2),
+        address: LedAddress::new(ExpAddress::default(), 0, 2),
         ..Default::default()
       },
     );
@@ -360,7 +360,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 1),
+        address: LedAddress::new(ExpAddress::default(), 0, 1),
         ..Default::default()
       },
     );
@@ -368,7 +368,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 2),
+        address: LedAddress::new(ExpAddress::default(), 0, 2),
         ..Default::default()
       },
     );
@@ -376,7 +376,7 @@ mod tests {
       "led3".to_string(),
       LED {
         name: "led3".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 3),
+        address: LedAddress::new(ExpAddress::default(), 0, 3),
         ..Default::default()
       },
     );
@@ -384,7 +384,7 @@ mod tests {
       "led4".to_string(),
       LED {
         name: "led4".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 4),
+        address: LedAddress::new(ExpAddress::default(), 0, 4),
         ..Default::default()
       },
     );
@@ -405,7 +405,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 5),
+        address: LedAddress::new(ExpAddress::default(), 0, 5),
         ..Default::default()
       },
     );
@@ -413,7 +413,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 8),
+        address: LedAddress::new(ExpAddress::default(), 0, 8),
         ..Default::default()
       },
     );
@@ -421,7 +421,7 @@ mod tests {
       "led3".to_string(),
       LED {
         name: "led3".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 3),
+        address: LedAddress::new(ExpAddress::default(), 0, 3),
         ..Default::default()
       },
     );
@@ -429,7 +429,7 @@ mod tests {
       "led4".to_string(),
       LED {
         name: "led4".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 4),
+        address: LedAddress::new(ExpAddress::default(), 0, 4),
         ..Default::default()
       },
     );
