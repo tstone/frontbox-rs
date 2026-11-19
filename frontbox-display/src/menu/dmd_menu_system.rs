@@ -26,7 +26,7 @@ const ROW_HEIGHT: f32 = 7.0;
 const SLIDE_DURATION: Duration = Duration::from_millis(120);
 
 /// The operator menu, shown on the DMD while the coin door is open. It's drawn from fragments: scenes for its parts,
-/// `frame`, `selection`, `heading`, `row`, `edit`, and `about`, in `frontbox/128x32/menu/` unless
+/// `frame`, `selection`, `heading`, `row`, `edit`, `about`, and `confirm`, in `frontbox/128x32/menu/` unless
 /// [`fragments`](Self::fragments) names another folder. A game changes how the menu looks by putting its own files
 /// under those names in its content folder.
 ///
@@ -42,6 +42,7 @@ const SLIDE_DURATION: Duration = Duration::from_millis(120);
 ///   add to what selection changes without code.
 /// - `edit`: `label`, `description`, `value`, and `changed`
 /// - `about`: `version`
+/// - `confirm`: `label`, the action that runs if the operator presses select
 pub struct DmdMenuSystem {
   switch_names: MenuSwitches,
   /// The folder the fragments are in
@@ -60,6 +61,8 @@ pub struct DmdMenuSystem {
   selected_row: usize,
   selected_config: Option<&'static MenuRow>,
   selected_special: Option<&'static str>,
+  /// The action waiting for the operator to confirm it
+  confirming: Option<&'static MenuRow>,
   // indicates that the rows vector needs to be re-generated because something changed
   requires_row_refresh: bool,
   // indicates that something about the display changed and needs to be re-rendered
@@ -93,6 +96,7 @@ impl DmdMenuSystem {
       selected_row: Self::first_non_header_row(root),
       selected_config: None,
       selected_special: None,
+      confirming: None,
       requires_row_refresh: true,
       requires_render: true,
     }
@@ -137,6 +141,12 @@ impl DmdMenuSystem {
   }
 
   fn navigate_fwd(&mut self, ctx: &SystemContext) {
+    if let Some(MenuRow::Action(_, _, _, action)) = self.confirming.take() {
+      self.requires_render = true;
+      ctx.play_sfx(SELECT_SND);
+      action(ctx);
+      return;
+    }
     match self.display_rows[self.selected_row] {
       DisplayMenuRow::Section { id, .. } => {
         let row: &'static MenuRow = self.row_lookup[&id];
@@ -159,9 +169,14 @@ impl DmdMenuSystem {
       }
       DisplayMenuRow::Action { id, .. } => {
         if let Some(row) = self.row_lookup.get(&id) {
-          if let MenuRow::Action(_, _, action) = *row {
+          if let MenuRow::Action(_, _, confirm, action) = *row {
             ctx.play_sfx(SELECT_SND);
-            action(ctx);
+            if *confirm {
+              self.confirming = Some(*row);
+              self.requires_render = true;
+            } else {
+              action(ctx);
+            }
           }
         }
       }
@@ -170,7 +185,11 @@ impl DmdMenuSystem {
   }
 
   fn navigate_back(&mut self, ctx: &SystemContext) {
-    if self.selected_config.is_some() {
+    if self.confirming.is_some() {
+      self.confirming = None;
+      self.requires_render = true;
+      ctx.play_sfx(BACK_SND);
+    } else if self.selected_config.is_some() {
       self.selected_config = None;
       self.requires_render = true;
       ctx.play_sfx(BACK_SND);
@@ -190,6 +209,9 @@ impl DmdMenuSystem {
   }
 
   fn navigate_inc(&mut self, ctx: &SystemContext) {
+    if self.confirming.is_some() {
+      return;
+    }
     if let Some(row) = &mut self.selected_config {
       if let Some(value) = self
         .display_rows
@@ -232,6 +254,9 @@ impl DmdMenuSystem {
   }
 
   fn navigate_dec(&mut self, ctx: &SystemContext) {
+    if self.confirming.is_some() {
+      return;
+    }
     if let Some(row) = &self.selected_config {
       if let Some(value) = self
         .display_rows
@@ -298,7 +323,7 @@ impl DmdMenuSystem {
           });
         }
         MenuRow::Special(_, text) => self.display_rows.push(DisplayMenuRow::Special(text)),
-        MenuRow::Action(id, text, _) => self
+        MenuRow::Action(id, text, ..) => self
           .display_rows
           .push(DisplayMenuRow::Action { id: *id, text }),
       }
@@ -367,6 +392,9 @@ impl DmdMenuSystem {
           .variable("value", value.as_str())
           .variable("changed", *changed),
       ];
+    }
+    if let Some(MenuRow::Action(_, label, ..)) = self.confirming {
+      return vec![Part::new(Fragment::Confirm, 0).variable("label", *label)];
     }
     if self.selected_special.is_some() {
       return vec![Part::new(Fragment::About, 0).variable("version", env!("CARGO_PKG_VERSION"))];
@@ -568,6 +596,7 @@ struct Fragments {
   row: Scene,
   edit: Scene,
   about: Scene,
+  confirm: Scene,
 }
 
 impl Fragments {
@@ -585,6 +614,7 @@ impl Fragments {
       row: open("row", ROW_SENDS)?,
       edit: open("edit", EDIT_SENDS)?,
       about: open("about", ABOUT_SENDS)?,
+      confirm: open("confirm", CONFIRM_SENDS)?,
     })
   }
 
@@ -596,6 +626,7 @@ impl Fragments {
       Fragment::Row => &self.row,
       Fragment::Edit => &self.edit,
       Fragment::About => &self.about,
+      Fragment::Confirm => &self.confirm,
     }
   }
 }
@@ -691,6 +722,15 @@ const ABOUT_SENDS: Sends = Sends {
   }],
 };
 
+const CONFIRM_SENDS: Sends = Sends {
+  variables: &[SentVariable {
+    name: "label",
+    sent_as: VariableType::Text,
+    values: &[],
+    about: "The action to confirm",
+  }],
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fragment {
   Frame,
@@ -699,6 +739,7 @@ enum Fragment {
   Row,
   Edit,
   About,
+  Confirm,
 }
 
 /// One part of what the menu shows: a fragment on a row, and the variables to set on it
@@ -904,6 +945,39 @@ mod tests {
   }
 
   #[test]
+  fn an_action_with_confirm_runs_only_once_confirmed() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let ran = Arc::new(AtomicBool::new(false));
+    let root = MenuSection::root().action_with_confirm("Reset", {
+      let ran = ran.clone();
+      move |_| ran.store(true, Ordering::Relaxed)
+    });
+    let mut context = TestContext::default();
+    context.insert_system(SceneSystem::new());
+    let mut menu = DmdMenuSystem::new(SWITCHES, Box::leak(Box::new(root)));
+    menu.on_spawn(&context.sys_ctx());
+    menu.on_tick(Duration::ZERO, &context.sys_ctx());
+
+    menu.navigate_fwd(&context.sys_ctx());
+    assert_eq!(
+      menu.parts().iter().map(|part| part.fragment).collect::<Vec<_>>(),
+      [Fragment::Confirm]
+    );
+    assert!(!ran.load(Ordering::Relaxed));
+
+    // back cancels
+    menu.navigate_back(&context.sys_ctx());
+    assert_ne!(menu.parts()[0].fragment, Fragment::Confirm);
+    assert!(!ran.load(Ordering::Relaxed));
+
+    menu.navigate_fwd(&context.sys_ctx());
+    menu.navigate_fwd(&context.sys_ctx());
+    assert!(ran.load(Ordering::Relaxed));
+  }
+
+  #[test]
   fn a_screen_of_its_own_takes_the_place_of_the_rows() {
     let mut context = TestContext::default();
     let mut menu = spawned(&mut context);
@@ -930,6 +1004,7 @@ mod tests {
       (&fragments.row, ROW_SENDS),
       (&fragments.edit, EDIT_SENDS),
       (&fragments.about, ABOUT_SENDS),
+      (&fragments.confirm, CONFIRM_SENDS),
     ] {
       assert_eq!(sends.check(scene), []);
     }

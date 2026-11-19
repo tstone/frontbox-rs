@@ -1,0 +1,111 @@
+Scene(
+  version: 2,
+  variables: {
+    "label": Text("Shutdown"),
+  },
+  layers: [
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Background",
+        fill: (
+          base: Solid(Fixed(0, 0, 0, 255)),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Bar",
+        fill: (
+          base: Solid(Fixed(39, 40, 34, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 5.5)),
+          ],
+          base: Rect(
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Label",
+        fill: (
+          base: Solid(Fixed(217, 217, 217, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(63.5, 5.5)),
+          ],
+          base: Text(
+            text: Variable("label"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(121.0),
+            height: Fixed(7.0),
+            align: Left,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+            overflow: Ellipsis,
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Question",
+        fill: (
+          base: Solid(Fixed(255, 255, 77, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 16.5)),
+          ],
+          base: Text(
+            text: Fixed("Are you sure?"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+    Display(
+      display: "Dmd",
+      layer: (
+        name: "Buttons",
+        fill: (
+          base: Solid(Fixed(240, 250, 255, 255)),
+        ),
+        region: (
+          transform: [
+            Translate(Fixed(64.0, 25.5)),
+          ],
+          base: Text(
+            text: Fixed("Select: yes   Back: no"),
+            font: "TinyPixie2",
+            size: Fixed(6.0),
+            width: Fixed(124.0),
+            height: Fixed(7.0),
+            align: Center,
+            vertical_align: Middle,
+            kerning: Fixed(0.0),
+            leading: Fixed(0.0),
+          ),
+        ),
+      ),
+    ),
+  ],
+)

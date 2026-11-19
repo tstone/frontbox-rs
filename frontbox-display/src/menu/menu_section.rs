@@ -50,20 +50,32 @@ impl MenuSection {
     action: impl Fn(&SystemContext) + Send + Sync + 'static,
   ) -> Self {
     let id = MenuRow::next_row_id();
-    self.rows.push(MenuRow::Action(id, text, Arc::new(action)));
+    self.rows.push(MenuRow::Action(id, text, false, Arc::new(action)));
+    self
+  }
+
+  /// Like [`action`](Self::action), but selecting it first asks the operator to confirm: select again runs it, back
+  /// cancels
+  pub fn action_with_confirm(
+    mut self,
+    text: &'static str,
+    action: impl Fn(&SystemContext) + Send + Sync + 'static,
+  ) -> Self {
+    let id = MenuRow::next_row_id();
+    self.rows.push(MenuRow::Action(id, text, true, Arc::new(action)));
     self
   }
 
   /// Add menu item to terminate just the software (useful for development)
   pub fn terminate(self) -> Self {
-    self.action("Terminate", |ctx| {
+    self.action_with_confirm("Terminate", |ctx| {
       ctx.shutdown(ShutdownScope::Process);
     })
   }
 
   /// Add menu item to shutdown the whole computer
   pub fn shutdown(self) -> Self {
-    self.action("Shutdown", |ctx| {
+    self.action_with_confirm("Shutdown", |ctx| {
       ctx.shutdown(ShutdownScope::OperatingSystem);
     })
   }
@@ -75,9 +87,11 @@ pub enum MenuRow {
   Config(u64, &'static ConfigDefinition),
   Heading(u64, String),
   Special(u64, &'static str),
+  /// The id, the text, whether it asks to confirm before running, and what it runs
   Action(
     u64,
     &'static str,
+    bool,
     Arc<dyn Fn(&SystemContext) + Send + Sync + 'static>,
   ),
 }
