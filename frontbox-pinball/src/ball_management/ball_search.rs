@@ -70,7 +70,8 @@ impl BallSearchSystem {
     self
   }
 
-  /// Coils to fire after the routine in each round
+  /// Coils to fire after the routine in each round. To leave out lamps on low-voltage drivers, narrow the query with
+  /// [`DriverQ::voltage`], e.g. `DriverQ::tag::<Playfield>().and(DriverQ::voltage(DriverVoltage::High))`.
   pub fn coils(mut self, coils: DriverQ) -> Self {
     self.coils = Some(coils);
     self

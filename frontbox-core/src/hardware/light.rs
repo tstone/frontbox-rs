@@ -11,6 +11,9 @@ pub struct Light {
   pub tags: Vec<Box<dyn Tag>>,
   #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]
   pub location: Option<Vec3>,
+  /// The color of a light that only shows one brightness, such as a lamp's bulb, for previewing it. `None` for an RGB
+  /// LED, which shows whatever color it's set to.
+  pub color: Option<Rgb>,
 }
 
 impl Light {

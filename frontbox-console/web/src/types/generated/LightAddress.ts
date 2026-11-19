@@ -8,4 +8,4 @@ import type { LedAddress } from "./LedAddress";
  * Light management and its callers name a light by its address. Within a run a light's address never changes, but
  * anything saved, such as a scene file, names lights by name.
  */
-export type LightAddress = { "kind": "Exp", led: LedAddress, channels: Channels, };
+export type LightAddress = { "kind": "Exp", led: LedAddress, channels: Channels, } | { "kind": "Driver", driver: string, };

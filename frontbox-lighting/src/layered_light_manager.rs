@@ -11,6 +11,10 @@ use crate::*;
 
 const LED_SET_BATCH_SIZE: usize = 24;
 
+/// The brightness, from 0 to 1, at or above which a driver light is on, unless [`LayeredLightManager::threshold`]
+/// changes it
+pub const DEFAULT_THRESHOLD: f32 = 0.5;
+
 /// One on and off of a flashing declaration. At 2Hz it stays well under the tick rate, so it doesn't alias.
 pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 
@@ -98,6 +102,13 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 /// // final color renders as pink [255, 127, 127, 255]
 /// # }
 /// ```
+///
+/// ### Driver lights
+///
+/// A driver light ([`DriverDefinition::light`]) is either on or off. It takes its color like any other light, and is on
+/// when that color's brightness, its largest channel after compositing over black, is at or above its threshold.
+/// The threshold is [`DEFAULT_THRESHOLD`] unless set with [`threshold`](Self::threshold) or
+/// [`threshold_for`](Self::threshold_for).
 
 pub struct LayeredLightManager {
   all_lights: Vec<LightAddress>,
@@ -105,6 +116,12 @@ pub struct LayeredLightManager {
   declarations: HashMap<LightAddress, HashMap<DeclarationIdentifier, StatefulLightDeclaration>>,
   /// What each LED address was last set to, so only those that change are sent
   prior_render: HashMap<LedAddress, Rgb>,
+  /// Whether each driver light was last turned on, so only those that change are sent
+  prior_drivers: HashMap<&'static str, bool>,
+  threshold: f32,
+  /// Thresholds for some lights, resolved to `thresholds` on spawn. A light more than one reaches takes the last.
+  threshold_queries: Vec<(LightQ, f32)>,
+  thresholds: HashMap<LightAddress, f32>,
   conflict_resolution: HashMap<LightAddress, LightConflictResolution>,
   alternate_resolver: AlternateResolver,
   /// The `order` the next new declaration gets
@@ -123,6 +140,10 @@ impl LayeredLightManager {
       declarations: HashMap::new(),
       all_lights: Vec::new(),
       prior_render: HashMap::new(),
+      prior_drivers: HashMap::new(),
+      threshold: DEFAULT_THRESHOLD,
+      threshold_queries: Vec::new(),
+      thresholds: HashMap::new(),
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
       next_order: 0,
@@ -130,6 +151,18 @@ impl LayeredLightManager {
       played: HashMap::new(),
       flash_clock: Duration::ZERO,
     }
+  }
+
+  /// The brightness, from 0 to 1, at or above which driver lights are on. [`DEFAULT_THRESHOLD`] if not set.
+  pub fn threshold(mut self, threshold: f32) -> Self {
+    self.threshold = threshold;
+    self
+  }
+
+  /// The threshold for the driver lights `lights` reaches, in place of [`threshold`](Self::threshold)
+  pub fn threshold_for(mut self, lights: impl Into<LightQ>, threshold: f32) -> Self {
+    self.threshold_queries.push((lights.into(), threshold));
+    self
   }
 
   /// Whether flashing declarations are in the on half of their period
@@ -149,6 +182,7 @@ impl LayeredLightManager {
   pub fn reset(&mut self) {
     self.declarations.clear();
     self.prior_render.clear();
+    self.prior_drivers.clear();
     self.conflict_resolution.clear();
     self.alternate_resolver.reset();
   }
@@ -374,6 +408,11 @@ impl System for LayeredLightManager {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Create a copy of every light's address to reference during rendering
     self.all_lights = ctx.lights.values().map(|light| light.address.clone()).collect();
+    self.thresholds = self
+      .threshold_queries
+      .iter()
+      .flat_map(|(query, threshold)| query.resolve(ctx).into_iter().map(|light| (light, *threshold)))
+      .collect();
   }
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
@@ -384,8 +423,9 @@ impl System for LayeredLightManager {
     } else if let Some(SystemReactivated { id, .. }) = event.downcast_ref::<SystemReactivated>() {
       self.activate_by_system(*id);
     } else if event.is::<MachineReconnected>() {
-      // the expansion boards were reset, so send every light on the next render rather than only those that change
+      // the boards were reset, so send every light on the next render rather than only those that change
       self.prior_render.clear();
+      self.prior_drivers.clear();
     }
   }
 
@@ -398,7 +438,19 @@ impl System for LayeredLightManager {
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
-    let mut leds_to_set = lower(self.resolve(ctx));
+    let Lowered { leds: mut leds_to_set, drivers } = lower(self.resolve(ctx), self.threshold, &self.thresholds);
+
+    for (driver, on) in drivers {
+      if self.prior_drivers.insert(driver, on) == Some(on) {
+        continue;
+      }
+      log::debug!(target: "frontbox::lighting", "Turning driver light {driver} {}", if on { "on" } else { "off" });
+      if on {
+        ctx.drivers.activate(driver, ActivationMode::VirtualSwitchOn);
+      } else {
+        ctx.drivers.deactivate(driver, DeactivationMode::VirtualSwitchOff);
+      }
+    }
 
     // filter out LEDs that are the same as the prior render to avoid redundant updates
     // "there are hard limits to the amount of data that can go out over the EXP bus of about 80 characters per millisecond" -- ecurtz
@@ -488,15 +540,34 @@ fn place(scene: &Scene, ctx: &SystemContext) -> LightPlacement {
   LightPlacement::new(scene, &ctx.lights, ctx.light_radius)
 }
 
-/// What to write to each LED address for the colors its lights show. A light nothing gives a color is turned off,
-/// which `on_render` leaves out if it's already off.
-fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>) -> Vec<(LedAddress, Rgb)> {
-  resolved
-    .into_iter()
-    .map(|(light, color)| match light {
-      LightAddress::Exp { led, channels: Channels::Rgb } => (led, color.map_or(Rgb::black(), led_color)),
-    })
-    .collect()
+/// What to write to each address for the colors its lights show. A light nothing gives a color is turned off, which
+/// `on_render` leaves out if it's already off.
+fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>, threshold: f32, thresholds: &HashMap<LightAddress, f32>) -> Lowered {
+  let mut lowered = Lowered::default();
+  for (light, color) in resolved {
+    let color = color.map_or(Rgb::black(), led_color);
+    match light {
+      LightAddress::Exp { led, channels: Channels::Rgb } => lowered.leds.push((led, color)),
+      LightAddress::Driver { driver } => {
+        let threshold = thresholds.get(&light).copied().unwrap_or(threshold);
+        lowered.drivers.push((driver, brightness(color) >= threshold));
+      }
+    }
+  }
+  lowered
+}
+
+/// A color's brightness from 0 to 1: its largest channel
+fn brightness(color: Rgb) -> f32 {
+  color.r.max(color.g).max(color.b) as f32 / 255.0
+}
+
+/// One frame's lights, lowered to what's written to the hardware
+#[derive(Debug, Default, PartialEq)]
+struct Lowered {
+  leds: Vec<(LedAddress, Rgb)>,
+  /// Each driver light, and whether it's on
+  drivers: Vec<(&'static str, bool)>,
 }
 
 /// The RGB an LED shows for a color, as if composited over an LED that's off: alpha dims it toward black
@@ -905,8 +976,8 @@ mod tests {
   #[test]
   fn an_rgb_light_keeps_opaque_colors() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let lowered = lower(vec![(LightAddress::rgb(led.clone()), Some(Rgba([255, 128, 0, 255])))]);
-    assert_eq!(lowered, vec![(led, Rgb::new(255, 128, 0))]);
+    let lowered = lower(vec![(LightAddress::rgb(led.clone()), Some(Rgba([255, 128, 0, 255])))], DEFAULT_THRESHOLD, &HashMap::new());
+    assert_eq!(lowered.leds, vec![(led, Rgb::new(255, 128, 0))]);
   }
 
   #[test]
@@ -918,6 +989,34 @@ mod tests {
   #[test]
   fn a_light_nothing_gives_a_color_is_turned_off() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    assert_eq!(lower(vec![(LightAddress::rgb(led.clone()), None)]), vec![(led, Rgb::black())]);
+    assert_eq!(lower(vec![(LightAddress::rgb(led.clone()), None)], DEFAULT_THRESHOLD, &HashMap::new()).leds, vec![(led, Rgb::black())]);
+  }
+
+  /// Whether a driver light lowered from `color` is on, with the default threshold or `threshold` for it
+  fn driver_on(color: Option<Rgba<u8>>, threshold: Option<f32>) -> bool {
+    let light = LightAddress::Driver { driver: "lamp" };
+    let thresholds = threshold.map(|t| (light.clone(), t)).into_iter().collect();
+    let lowered = lower(vec![(light, color)], DEFAULT_THRESHOLD, &thresholds);
+    assert!(lowered.leds.is_empty());
+    lowered.drivers == [("lamp", true)]
+  }
+
+  #[test]
+  fn a_driver_light_is_on_at_or_above_its_threshold() {
+    assert!(driver_on(Some(Rgba::white()), None));
+    assert!(driver_on(Some(Rgba([0, 128, 0, 255])), None), "the largest channel is its brightness");
+    assert!(!driver_on(Some(Rgba([100, 100, 100, 255])), None));
+    assert!(!driver_on(None, None));
+  }
+
+  #[test]
+  fn alpha_dims_a_driver_light() {
+    assert!(!driver_on(Some(Rgba::white().with_alpha_f32(0.25)), None));
+  }
+
+  #[test]
+  fn a_driver_light_can_have_its_own_threshold() {
+    assert!(driver_on(Some(Rgba([100, 100, 100, 255])), Some(0.2)));
+    assert!(!driver_on(Some(Rgba::white()), Some(1.1)));
   }
 }

@@ -19,7 +19,9 @@ pub struct LightLookup {
 }
 
 impl LightLookup {
-  pub fn new(boards: &Vec<ResolvedExpansionBoard>) -> Self {
+  /// The LEDs on the expansion boards, and a light for each driver powering a bulb (one with a
+  /// [`bulb`](DriverDefinition::bulb))
+  pub fn new(boards: &Vec<ResolvedExpansionBoard>, drivers: &[IoAddressed<DriverDefinition>]) -> Self {
     let mut by_name = HashMap::new();
     let mut configs = HashMap::new();
     let mut order_by_index = HashMap::new();
@@ -44,6 +46,7 @@ impl LightLookup {
               address: LightAddress::rgb(address),
               tags: led.definition.tags.clone(),
               location: led.definition.location,
+              color: None,
             },
           );
 
@@ -54,6 +57,23 @@ impl LightLookup {
             .and_then(|config| configs.insert(led.definition.name.to_string(), config.clone()));
         }
       }
+    }
+
+    for addressed in drivers {
+      let definition = &addressed.definition;
+      let Some(bulb) = definition.bulb else {
+        continue;
+      };
+      by_name.insert(
+        definition.name.to_string(),
+        Light {
+          name: definition.name.to_string(),
+          address: LightAddress::Driver { driver: definition.name },
+          tags: definition.tags.clone(),
+          location: definition.location,
+          color: Some(bulb),
+        },
+      );
     }
 
     Self {
@@ -253,6 +273,34 @@ mod tests {
   fn a_tag_no_light_has_reaches_none() {
     let lights = lookup(&[(1, Some(0), 0)]);
     assert!(names(&lights, &LightQ::Tag("Insert".into())).is_empty());
+  }
+
+  #[test]
+  fn a_driver_with_a_bulb_is_a_light() {
+    static LAMP: std::sync::LazyLock<DriverDefinition> =
+      std::sync::LazyLock::new(|| DriverDefinition::light("lamp").color(Rgb::new(255, 0, 0)).build());
+    static COIL: std::sync::LazyLock<DriverDefinition> = std::sync::LazyLock::new(|| DriverDefinition::new("coil").build());
+    let network = IoNetwork::new(vec![IoBoard::cabinet().wire_driver(0, &LAMP).wire_driver(1, &COIL)]);
+
+    let lights = LightLookup::new(&vec![], &network.drivers);
+    let lamp = lights.by_name("lamp").unwrap();
+    assert_eq!(lamp.address, LightAddress::Driver { driver: "lamp" });
+    assert_eq!(lamp.color, Some(Rgb::new(255, 0, 0)));
+    assert!(lights.by_name("coil").is_none());
+  }
+
+  #[test]
+  fn driver_lights_come_after_leds() {
+    let mut lights = lookup(&[(1, Some(0), 0)]);
+    lights.insert(
+      "lamp".into(),
+      Light {
+        name: "lamp".into(),
+        address: LightAddress::Driver { driver: "lamp" },
+        ..Default::default()
+      },
+    );
+    assert_eq!(names(&lights, &LightQ::every()), ["1.0.0", "lamp"]);
   }
 
   #[test]

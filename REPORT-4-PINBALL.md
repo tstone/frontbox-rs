@@ -59,7 +59,8 @@ copies, and each one today handles despawn and deactivation slightly differently
 - **Unused**: `TroughEjectStarted` is emitted and nothing listens; `TroughSystem::eject_many` has no caller;
   `HighScoresSystem.custom_scores` goes with the leaderboards item.
 - **`GameStartable`** flashes a lamp through a cycling timer and plays an LED effect, each with its own rule for when it
-  runs. The lamp half is waiting on the `LampDriver` item in `TODO.md`.
+  runs. The lamp half is done: `CreditsSystem` declares its start lamp, a driver light, flashing through light
+  management.
 
 ### B8. What lotko wrote that belongs here
 

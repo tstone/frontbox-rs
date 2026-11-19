@@ -139,8 +139,10 @@ function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
         })
     case 'leds':
       return Object.values(hw.lights.by_name)
-        .map((led) => {
-          const { exp, port, index } = led.address.led
+        // driver lights are listed with the drivers
+        .flatMap((led) => (led.address.kind === 'Exp' ? [{ led, address: led.address.led }] : []))
+        .map(({ led, address }) => {
+          const { exp, port, index } = address
           return {
             key: `led:${led.name}`,
             name: ledName(led.name),

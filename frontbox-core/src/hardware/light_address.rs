@@ -10,6 +10,8 @@ use crate::prelude::*;
 pub enum LightAddress {
   /// Written over the EXP bus as part of an LED address's RGB
   Exp { led: LedAddress, channels: Channels },
+  /// A driver powering a bulb, turned on and off over its virtual switch
+  Driver { driver: &'static str },
 }
 
 impl LightAddress {
@@ -22,13 +24,24 @@ impl LightAddress {
   pub fn led(&self) -> Option<&LedAddress> {
     match self {
       Self::Exp { led, .. } => Some(led),
+      Self::Driver { .. } => None,
     }
   }
 
-  /// The order lights come in when nothing else orders them: by board, breakout, then index
-  pub(crate) fn hardware_order(&self) -> (u8, Option<u8>, u8) {
+  /// The driver it's written to, if it's a driver light
+  pub fn driver(&self) -> Option<&'static str> {
     match self {
-      Self::Exp { led, .. } => (led.board(), led.breakout(), led.index),
+      Self::Driver { driver } => Some(driver),
+      Self::Exp { .. } => None,
+    }
+  }
+
+  /// The order lights come in when nothing else orders them: LEDs by board, breakout, then index, and then driver
+  /// lights by driver name
+  pub(crate) fn hardware_order(&self) -> (bool, (u8, Option<u8>, u8), &'static str) {
+    match self {
+      Self::Exp { led, .. } => (false, (led.board(), led.breakout(), led.index), ""),
+      Self::Driver { driver } => (true, (0, None, 0), driver),
     }
   }
 }

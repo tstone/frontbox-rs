@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use frontbox_core::prelude::*;
 use frontbox_core::toml;
+use frontbox_lighting::prelude::*;
 
 use crate::credits::{CreditsChanged, StartRefused, StartRefusedReason};
-use crate::tags::Cabinet;
 use crate::{GameManagerExt, GamePhase, PlayerEntry, configs, metrics};
 
 /// Counts coins into credits, and adds a player when the start button is pressed while one can be added
@@ -15,7 +15,8 @@ use crate::{GameManagerExt, GamePhase, PlayerEntry, configs, metrics};
 /// player (no credit with free play off, or a game that can't take one) emits `StartRefused` with the reason, for the
 /// game to give feedback.
 ///
-/// With a start lamp, the lamp flashes while a press would add a player, and is off otherwise.
+/// With a start lamp, it declares the lamp flashing through light management while a press would add a player, and
+/// takes the declaration back otherwise.
 ///
 /// Credits are kept across power cycles when given a file to save them to (`save_to`); without one, they're kept in
 /// memory and start at 0.
@@ -25,14 +26,15 @@ use crate::{GameManagerExt, GamePhase, PlayerEntry, configs, metrics};
 /// // at the root
 /// CreditsSystem::new(start_button::SWITCH.q())
 ///   .coin_switches(SwitchQ::tag::<CoinSwitch>())
-///   .start_lamp(start_button::LAMP.name)
+///   .start_lamp(start_button::LAMP.q())
 ///   .save_to("credits.toml")
 /// ```
 pub struct CreditsSystem {
   start_button: SwitchQ,
   coin_switches: Option<SwitchQ>,
-  start_lamp: Option<&'static str>,
-  flash_duration: Duration,
+  start_lamp: Option<LightQ>,
+  /// Whether the start lamp is declared flashing
+  lamp_lit: bool,
   saved: SavedCredits,
   path: Option<PathBuf>,
   handle: SystemHandle,
@@ -44,7 +46,7 @@ impl CreditsSystem {
       start_button: start_button.into(),
       coin_switches: None,
       start_lamp: None,
-      flash_duration: Duration::from_millis(185),
+      lamp_lit: false,
       saved: SavedCredits::default(),
       path: None,
       handle: SystemHandle::default(),
@@ -57,9 +59,9 @@ impl CreditsSystem {
     self
   }
 
-  /// The start button's lamp, defined with `CreditsSystem::start_lamp_driver`
-  pub fn start_lamp(mut self, name: &'static str) -> Self {
-    self.start_lamp = Some(name);
+  /// The start button's lamp, such as a driver light (`DriverDefinition::light`) or an LED
+  pub fn start_lamp(mut self, lamp: impl Into<LightQ>) -> Self {
+    self.start_lamp = Some(lamp.into());
     self
   }
 
@@ -69,19 +71,6 @@ impl CreditsSystem {
     self.saved = toml::load(path).unwrap_or_default();
     self.path = Some(path.to_path_buf());
     self
-  }
-
-  /// A start button lamp the system can flash
-  pub fn start_lamp_driver(name: &'static str) -> DriverDefinitionBuilder {
-    DriverDefinitionBuilder::new(name)
-      .mode(
-        DriverMode::pulse_hold()
-          .trigger_mode(DriverTriggerMode::VirtualSwitchTrue)
-          .initial_pwm_power(Power::ZERO)
-          .secondary_pwm_power(Power::FULL)
-          .build(),
-      )
-      .tag(Cabinet)
   }
 
   pub fn credits(&self) -> u8 {
@@ -186,14 +175,20 @@ impl CreditsSystem {
     }
   }
 
-  fn lamp(&self, on: bool, ctx: &SystemContext) {
-    let Some(name) = self.start_lamp else {
+  /// Declares the start lamp flashing while a press would add a player, and takes it back once one wouldn't
+  fn update_lamp(&mut self, ctx: &SystemContext) {
+    let lit = self.start_lamp.is_some() && self.is_startable(ctx);
+    if lit == self.lamp_lit {
+      return;
+    }
+    self.lamp_lit = lit;
+    let Some(lamp) = &self.start_lamp else {
       return;
     };
-    if on {
-      ctx.drivers.activate(name, ActivationMode::VirtualSwitchOn);
+    if lit {
+      ctx.declare_lights_flashing(lamp, LAMP_Z, Rgba::white());
     } else {
-      ctx.drivers.deactivate(name, DeactivationMode::VirtualSwitchOff);
+      ctx.undeclare_lights(lamp, LAMP_Z);
     }
   }
 }
@@ -201,17 +196,14 @@ impl CreditsSystem {
 impl System for CreditsSystem {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
-    if self.start_lamp.is_some() {
-      ctx.timers.start_multi(events![LampOn, LampOff], Timer::Forever(self.flash_duration));
-    }
+  }
+
+  fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
+    self.update_lamp(ctx);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
-    if event.is::<LampOn>() {
-      self.lamp(self.is_startable(ctx), ctx);
-    } else if event.is::<LampOff>() {
-      self.lamp(false, ctx);
-    } else if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
+    if let Some(SwitchClosed { switch }) = event.downcast_ref::<SwitchClosed>() {
       if self.start_button.matches(switch) {
         self.on_start_pressed(ctx);
       } else if let Some(coins) = &self.coin_switches
@@ -232,10 +224,8 @@ struct SavedCredits {
   coins: u8,
 }
 
-#[derive(serde::Serialize, Event)]
-struct LampOn;
-#[derive(serde::Serialize, Event)]
-struct LampOff;
+/// The z the start lamp is declared at
+const LAMP_Z: i8 = 0;
 
 #[cfg(test)]
 mod tests {
