@@ -48,8 +48,8 @@ Systems can be grouped or go active/inactive independently. Systems interact wit
 
 - The start button is pressed. This causes a switch event.
 - The `CreditsSystem` receives the switch event then checks the `PlayerEntry` state. It is currently `PlayerEntry::Open`, and the machine is on free play (or has a credit to spend).
-- `CreditsSystem` calls `GameManagement` (through context) to invoke `add_player`.
-- `GameManagement` adds the player, recognizes this is the first player and starts a game.
+- `CreditsSystem` calls `GameManager` (through context) to invoke `add_player`.
+- `GameManager` adds the player, recognizes this is the first player and starts a game.
 - Event `RoutineStarted<GameStarting>` is emitted.
 - Systems participating in `GameStarting` are run in order (by the framework)
 - Event `RoutineCompleted<GameStarting>` is emitted.

@@ -52,7 +52,7 @@ fn app(max_players: u8, credits: CreditsSystem) -> App {
   });
   app
     .system(StandardBallManager::builder(TROUGH, EJECT).build())
-    .system(GameManager::competitive(max_players, vec![], SwitchQ::name(START)))
+    .system(CompetitiveGame::new(max_players, vec![], SwitchQ::name(START)))
     .system(credits)
     .system(GameOverDisplay)
     .routine::<GameEnding>(routine![GameOverDisplay]);

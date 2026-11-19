@@ -1,13 +1,13 @@
 use frontbox_core::prelude::*;
 
-use crate::{GameManagementExt, TiltWarned, TurnPhase, TurnStarting, configs, metrics};
+use crate::{GameManagerExt, TiltWarned, TurnPhase, TurnStarting, configs, metrics};
 
 /// Reads the tilt bob: each swing warns the player, and once they're out of warnings, the next one tilts them.
 ///
 /// ## Per player
-/// The game manager spawns one per player when given the tilt bob (`GameManager::tilt_bob`), as the warnings are the
+/// The game manager spawns one per player when given the tilt bob (`CompetitiveGame::tilt_bob`), as the warnings are the
 /// player's. It's only active while their turn is starting or active, so it stops reading the bob once the turn is tilted or over. Handling the tilt
-/// itself (ending the turn, ignoring points) is the game manager's: see `GameManagement::tilt`.
+/// itself (ending the turn, ignoring points) is the game manager's: see `GameManager::tilt`.
 ///
 /// ## Warnings
 /// The player has `TILT_WARNINGS` warnings (operator config). Each swing uses one and emits `TiltWarned`; a swing once
@@ -20,7 +20,7 @@ use crate::{GameManagementExt, TiltWarned, TurnPhase, TurnStarting, configs, met
 ///
 /// ## Setup
 /// ```rust,ignore
-/// GameManager::competitive(4, player_template, ball_in_play_switches).tilt_bob(&switches::TILT_BOB)
+/// CompetitiveGame::new(4, player_template, ball_in_play_switches).tilt_bob(&switches::TILT_BOB)
 /// ```
 ///
 /// For a different settle time or grace period, put it in the player template yourself instead:
@@ -134,7 +134,7 @@ mod tests {
   use std::sync::atomic::{AtomicU8, Ordering};
 
   use super::*;
-  use crate::{GameEndReason, GameManagement, GameManager, GameSession, TurnStartReason};
+  use crate::{GameEndReason, GameManager, GameSession, TurnStartReason};
 
   const BOB: &str = "tilt_bob";
   const SETTLE: Duration = Duration::from_secs(1);
@@ -153,9 +153,9 @@ mod tests {
       let mut ctx = TestContext::default();
       ctx.svc_ctx().config.set(&configs::TILT_WARNINGS, warnings);
       let tilts = Arc::new(AtomicU8::new(0));
-      ctx.insert_system(GameManager::new(FakeGame {
+      ctx.insert_system(FakeGame {
         tilts: tilts.clone(),
-      }));
+      });
       let mut system = TiltSystem::new(SwitchQ::name(BOB))
         .settle_time(SETTLE)
         .grace_period(GRACE);
@@ -224,9 +224,13 @@ mod tests {
     tilts: Arc<AtomicU8>,
   }
 
-  impl System for FakeGame {}
+  impl System for FakeGame {
+    fn provides(provides: &mut Provides<Self>) {
+      provides.add::<dyn GameManager>(|s| s);
+    }
+  }
 
-  impl GameManagement for FakeGame {
+  impl GameManager for FakeGame {
     fn add_player(&mut self, _ctx: &ServiceContext) -> bool {
       false
     }

@@ -159,7 +159,7 @@ pub enum TurnEndReason {
   Tilted,
 }
 
-/// Emitted when the current player tilts (`GameManagement::tilt`), just before their turn's `TurnEnding` starts. Points
+/// Emitted when the current player tilts (`GameManager::tilt`), just before their turn's `TurnEnding` starts. Points
 /// are ignored for the rest of the turn.
 #[derive(serde::Serialize, Event)]
 pub struct PlayerTilted {

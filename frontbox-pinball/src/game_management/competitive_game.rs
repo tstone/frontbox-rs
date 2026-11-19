@@ -132,6 +132,13 @@ impl CompetitiveGame {
     }
   }
 
+  /// The machine's tilt bob. Each player gets a `TiltSystem` reading it, which warns them on a swing and tilts them
+  /// once they're out of warnings.
+  pub fn tilt_bob(mut self, bob: impl Into<SwitchQ>) -> Self {
+    self.add_player_system(TiltSystem::new(bob).into());
+    self
+  }
+
   fn player_group_name(player: u8) -> &'static str {
     PLAYER_GROUP_NAMES[player as usize]
   }
@@ -519,6 +526,10 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
+  fn provides(provides: &mut Provides<Self>) {
+    provides.add::<dyn GameManager>(|s| s);
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
     self.update_player_entry(ctx.into());
@@ -601,7 +612,7 @@ impl System for CompetitiveGame {
   }
 }
 
-impl GameManagement for CompetitiveGame {
+impl GameManager for CompetitiveGame {
   fn add_player(&mut self, ctx: &ServiceContext) -> bool {
     // checked here as well as through `PlayerEntry`, which reads as its old value until the run loop gets to it
     if !self.is_player_addable() {

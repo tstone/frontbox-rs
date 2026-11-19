@@ -64,15 +64,16 @@ writes slots and driver lights. Every other system, and every scene, declares th
 
 It follows the same pattern as ball and game management:
 
-- **`LightManagement`**: the trait. Its methods are the public surface: declare, undeclare, activate and deactivate by
-  system, and conflict resolution.
-- **`LightManager`**: the wrapper other systems look up.
-- **`StandardLightManagement`**: the implementation, which is today's `LedSystem`.
-- **`LightManagementExt`**: keeps `declare_lights` and the rest working on `SystemContext`.
+- **`LightManager`**: the trait. Its methods are the public surface: declare, undeclare, activate and deactivate by
+  system, and conflict resolution. Other systems look it up with `ctx.systems.get_dyn::<dyn LightManager>()`.
+- **`StandardLightManager`**: the implementation, which is today's `LedSystem`. It lists `dyn LightManager` in
+  `System::provides`.
+- **`LightManagerExt`**: keeps `declare_lights` and the rest working on `SystemContext`, and adds
+  `ctx.light_manager()`.
 
 It spawns no children. Product support (see below) is made of peers that declare through it, never children of it.
 
-### One frame of `StandardLightManagement`
+### One frame of `StandardLightManager`
 
 1. **Gather** declarations from systems, and colors sampled from the scene layers it plays.
 2. **Compose per light**: z-layers, conflict resolution, flashing.
@@ -102,8 +103,8 @@ built on top:
 | `LED` (the runtime struct) | `Light` | Any light source, not only LEDs |
 | `LedQ` | `LightQ` | |
 | `LedLookup`, `ctx.leds` | `LightLookup`, `ctx.lights` | |
-| `LedSystem` | `LightManagement` (trait), `LightManager` (wrapper), `StandardLightManagement` (implementation) | Follows `BallManagement`/`BallManager`/`StandardBallManagement` |
-| `LedSystemExt` | `LightManagementExt` | |
+| `LedSystem` | `LightManager` (trait), `StandardLightManager` (implementation) | Follows `BallManager`/`StandardBallManager` |
+| `LedSystemExt` | `LightManagerExt` | |
 | `declare_leds`, `declare_leds_flashing`, `declare_led_colors`, `declare_leds_inactive`, `undeclare_leds`, `activate_led_declarations`, `deactivate_led_declarations`, `set_led_conflict_resolution` | `declare_lights`, ... (`led` → `light` throughout) | |
 | `LedDeclarations`, `LedIdentifications`, `LedIdentificationsExt`, `LedConflictResolution` | `Light...` | |
 | `LedPlacement`, `LedLayer`, `LedSurface`, `SceneLayer::Leds` | `LightPlacement`, `LightLayer`, `LightSurface`, `SceneLayer::Lights` | |
@@ -126,10 +127,8 @@ Everything in the table except `LedAddress`, so all the naming changes land toge
 
 - **The crate.** Rename `frontbox-led` to `frontbox-lighting`, along with every `Cargo.toml` and `use` that depends on
   it. Lotko's need the same change.
-- **The trait.** Pull `LightManagement` out of `LedSystem`'s public methods, and add the `LightManager` wrapper the
-  way `BallManager` is written (`Box<dyn LightManagement>`, `delegate_system!`). `LightManagementExt` looks it up
-  through `LightManager`. This is the third hand-written wrapper (see B4 in `REPORT-4-PINBALL.md`). Don't fix that
-  here.
+- **The trait.** Pull `LightManager` out of `LedSystem`'s public methods. `StandardLightManager` provides it
+  (`System::provides`), and `LightManagerExt` looks it up with `get_dyn`, as `BallManagerExt` does. No wrapper.
 - **Scene files.** `SceneLayer::Leds` and `LedLayer.leds` are written into scene files. They're renamed outright
   (`Lights`, `lights`), with no aliases, and old files no longer load. This repo's scenes have no LED layers. Lotko's
   scenes are migrated in the same change (`Leds(` → `Lights(`, `leds:` → `lights:` inside those layers).
@@ -144,7 +143,7 @@ Behavior doesn't change. The only output is `Exp { channels: Rgb }`.
 - **Identity.** `Light` gets an id and `output: LightOutput`. `LedAddress` becomes `ExpSlot` and lives in the output.
 - **Public signatures.** Those that take `&LedAddress` take a light id: `LightDeclarations::new`, `declared_colors`,
   `monitor`, `undeclare`, `LightIdentifications`.
-- **Inside `StandardLightManagement`.**
+- **Inside `StandardLightManager`.**
   - Declarations, `prior_render`, `played`, the alternate resolver and `LightPlacement` are keyed by light.
   - Lowering groups lights by slot.
   - The public `led_color()` becomes the private lowering step.
@@ -160,8 +159,8 @@ Behavior doesn't change. The only output is `Exp { channels: Rgb }`.
   `.location(Vec3)` and `.tag(...)`. It configures the driver as today (`pulse_hold`, virtual switch, 0% initial,
   100% hold) and registers a light with a `Driver` output.
 - **The lookup.** `LightLookup` takes lights from the IO network as well as EXP boards.
-- **Threshold.** A `StandardLightManagement` setting, 0.5 by default, with per-light overrides by `LightQ`.
-- **Writing.** `StandardLightManagement` sends `activate(VirtualSwitchOn)` / `deactivate(VirtualSwitchOff)` on a
+- **Threshold.** A `StandardLightManager` setting, 0.5 by default, with per-light overrides by `LightQ`.
+- **Writing.** `StandardLightManager` sends `activate(VirtualSwitchOn)` / `deactivate(VirtualSwitchOff)` on a
   change, and forgets a driver light's last state on `reset()` as it does for slots.
 - **`CreditsSystem`.**
   - `start_lamp` takes a `LightQ`.

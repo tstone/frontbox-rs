@@ -1,14 +1,19 @@
+use std::cell::RefMut;
+
 use frontbox_core::prelude::*;
 
 use crate::{GameEndReason, GameManager};
 
-pub trait GameManagementExt {
+pub trait GameManagerExt {
+  /// The running game manager, for calls not covered below. `None` if it isn't running, or is in use.
+  fn game_manager(&self) -> Option<RefMut<'_, dyn GameManager>>;
+
   /// Adds a player to the game. Starts the game automatically if one has not yet been started. Returns whether a
-  /// player was added. See `GameManagement::add_player`.
+  /// player was added. See `GameManager::add_player`.
   fn add_player(&self) -> bool;
-  /// Ends the game in progress early. See `GameManagement::quit_game`.
+  /// Ends the game in progress early. See `GameManager::quit_game`.
   fn quit_game(&self, reason: GameEndReason);
-  /// The current player tilts. See `GameManagement::tilt`.
+  /// The current player tilts. See `GameManager::tilt`.
   fn tilt(&self);
 
   /// Add points to the current player/team
@@ -18,13 +23,17 @@ pub trait GameManagementExt {
   /// Clear points multiplier for current player/team
   fn clear_multiplier(&self);
 
-  /// Give the current player an extra ball. See `GameManagement::grant_extra_ball`.
+  /// Give the current player an extra ball. See `GameManager::grant_extra_ball`.
   fn grant_extra_ball(&self) -> bool;
   /// Extra balls the current player has and hasn't used
   fn extra_balls(&self) -> u8;
 }
 
-impl<'a> GameManagementExt for SystemContext<'a> {
+impl<'a> GameManagerExt for SystemContext<'a> {
+  fn game_manager(&self) -> Option<RefMut<'_, dyn GameManager>> {
+    self.systems.get_dyn::<dyn GameManager>()
+  }
+
   fn add_player(&self) -> bool {
     let ctx = self;
     with_game_manager(self, |manager| manager.add_player(ctx.into())).unwrap_or(false)
@@ -79,11 +88,11 @@ impl<'a> GameManagementExt for SystemContext<'a> {
   }
 }
 
-fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut GameManager) -> T) -> Option<T> {
-  if let Some(mut system) = ctx.systems.get::<GameManager>() {
-    Some(f(&mut system))
+fn with_game_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut dyn GameManager) -> T) -> Option<T> {
+  if let Some(mut system) = ctx.game_manager() {
+    Some(f(&mut *system))
   } else {
-    log::error!(target: "frontbox::game_manager", "GameManager not running.");
+    log::error!(target: "frontbox::game_manager", "The game manager is not running.");
     None
   }
 }

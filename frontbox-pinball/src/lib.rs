@@ -74,7 +74,8 @@
 //! ## Required Systems
 //!
 //! To receive the benefits of this crate, these systems must be added to the root of the app:
-//! - `GameManager` - Either competitive or cooperative
+//! - A `GameManager` - e.g. `CompetitiveGame`
+//! - `PlayfieldDrivers` - makes the playfield's switch-fired drivers live during each turn
 //! - `BallManager` - e.g. `StandardBallManager::builder`
 //! - `CreditsSystem` - adds players on a start press, on free play or for a credit
 //!
@@ -84,7 +85,7 @@
 //! `BallDraining` participants too, and the app picks their order.
 //!
 //! Extra balls are kept by the game manager, per player. Any system grants one with `ctx.grant_extra_ball()`
-//! (`GameManagementExt`), up to the `MAX_EXTRA_BALLS` operator config's limit per game; it returns false when the
+//! (`GameManagerExt`), up to the `MAX_EXTRA_BALLS` operator config's limit per game; it returns false when the
 //! limit is reached, so the caller can award something else.
 //!
 //! A multiball is a mode asking ball management for more balls, usually with a ball save request alongside. It knows
@@ -92,9 +93,9 @@
 //! and its `in_play` is how many balls are left.
 //!
 //! ## Tilt and Slam Tilt
-//! Given the tilt bob (`GameManager::tilt_bob`), the game manager spawns a `TiltSystem` for each player. It reads
+//! Given the tilt bob (`CompetitiveGame::tilt_bob`), the game manager spawns a `TiltSystem` for each player. It reads
 //! the bob, warning the player (`TiltWarned`) up to the `TILT_WARNINGS` operator config, and tilting them on the next
-//! swing. A tilt (`GameManagement::tilt`) emits `PlayerTilted` and starts `TurnEnding` at once with `TurnEndReason::Tilted`: modes clean up and the drivers go off
+//! swing. A tilt (`GameManager::tilt`) emits `PlayerTilted` and starts `TurnEnding` at once with `TurnEndReason::Tilted`: modes clean up and the drivers go off
 //! while the balls roll down, points are ignored, and drains can't be saved. Warnings can be earned with
 //! `ctx.grant_tilt_warning()` (`TiltExt`).
 //!

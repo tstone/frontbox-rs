@@ -12,7 +12,7 @@ use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
 /// ## Per player
-/// Ball save belongs in the player's system group (the `GameManager` player template), not at the root. It is only
+/// Ball save belongs in the player's system group (the game manager's player template), not at the root. It is only
 /// active while that player's turn is beginning or active. When the turn ends it deactivates, which clears every
 /// request, so nothing carries over to the next turn. Ball management, by contrast, is global.
 ///

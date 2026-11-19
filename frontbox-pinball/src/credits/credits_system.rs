@@ -5,7 +5,7 @@ use frontbox_core::toml;
 
 use crate::credits::{CreditsChanged, StartRefused, StartRefusedReason};
 use crate::tags::Cabinet;
-use crate::{GameManager, GamePhase, PlayerEntry, configs, metrics};
+use crate::{GameManagerExt, GamePhase, PlayerEntry, configs, metrics};
 
 /// Counts coins into credits, and adds a player when the start button is pressed while one can be added
 /// (`PlayerEntry::Open`), spending a credit for them. With `configs::FREE_PLAY` on, a player is added without one.
@@ -135,8 +135,8 @@ impl CreditsSystem {
       return;
     }
 
-    let Some(mut game_manager) = ctx.systems.get::<GameManager>() else {
-      log::warn!(target: "frontbox::credits", "GameManager not found, can't add a player");
+    let Some(mut game_manager) = ctx.game_manager() else {
+      log::warn!(target: "frontbox::credits", "No game manager running, can't add a player");
       return;
     };
     let added = game_manager.add_player(ctx.into());
@@ -240,7 +240,7 @@ struct LampOff;
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{GameEndReason, GameManagement, GameSession};
+  use crate::{GameEndReason, GameManager, GameSession};
 
   const START: &str = "start";
 
@@ -248,9 +248,13 @@ mod tests {
   /// longer take one
   struct RefusingGame;
 
-  impl System for RefusingGame {}
+  impl System for RefusingGame {
+    fn provides(provides: &mut Provides<Self>) {
+      provides.add::<dyn GameManager>(|s| s);
+    }
+  }
 
-  impl GameManagement for RefusingGame {
+  impl GameManager for RefusingGame {
     fn add_player(&mut self, _ctx: &ServiceContext) -> bool {
       false
     }
@@ -276,7 +280,7 @@ mod tests {
   fn a_player_the_game_refuses_spends_no_credit() {
     let mut ctx = TestContext::default();
     ctx.svc_ctx().config.set(&configs::FREE_PLAY, false);
-    ctx.insert_system(GameManager::new(RefusingGame));
+    ctx.insert_system(RefusingGame);
     let owner = ctx.insert_system(EntryOwner);
     ctx.svc_ctx().for_system(owner).states.set(PlayerEntry::Open);
     ctx.apply_states();

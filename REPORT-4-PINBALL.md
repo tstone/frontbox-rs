@@ -10,7 +10,7 @@
 ### B1. The game manager does four jobs
 
 `CompetitiveGame` runs the game and turn lifecycle, owns the player groups, keeps scores and multipliers, and keeps
-extra balls. `GameManagement` exposes all four, so a second implementation (cooperative, timed, a tournament
+extra balls. `GameManager` exposes all four, so a second implementation (cooperative, timed, a tournament
 variant) has to rewrite about 600 lines to change one of them. `GameState` shows the cost already: it has a
 `Cooperative` variant nothing constructs, and every accessor is written out twice, once per variant, for 280 lines.
 
@@ -32,17 +32,6 @@ have joined them.
 **Suggestion.** Keep the public `TurnPhase` state as it is, and hold a private enum with the detail inside it:
 `Starting { served }`, `Active { deciding_drain }`, `Ending { routine_completed }`. The match in `on_event` then
 has to say what each one does with each event.
-
-### B4. The interface wrapper is written by hand each time
-
-`GameManager` and `BallManager` are each a `Box<dyn Trait>`, a `Deref`, forwarding of `System`, an `Ext` trait on
-`SystemContext`, and a `with_...` helper. `BallSaveExt` and `TiltExt` repeat the last two. `TODO.md` wants
-`LedSystem` and `DmdSystem` to become interfaces as well, which would make four copies of the wrapper.
-
-**Suggestion.** Support it once in core: either a lookup by trait (`ctx.systems.get_dyn::<dyn BallManagement>()`,
-registered at spawn) or a macro that writes the wrapper. `GameManager` isn't a pure wrapper today because it also
-switches the playfield drivers. That part reads only routine events, so it can be a small system of its own
-(`PlayfieldDrivers`), which also lets a game replace it.
 
 ### B5. Requests keyed by owner
 
@@ -144,7 +133,7 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
   balls before the next turn.
 
 One thing about the tests. Game management is tested against a fake ball manager, and ball management against events
-delivered by hand. `tests/game_flow.rs` fills the gap between them: a real `CompetitiveGame`, `StandardBallManagement`,
+delivered by hand. `tests/game_flow.rs` fills the gap between them: a real `CompetitiveGame`, `StandardBallManager`,
 trough, and lane, driven only by switch changes. It now covers the lane, tilt, quit, and multiball cases. A5 and A6
 are the next scenarios for it.
 

@@ -2,7 +2,7 @@ use frontbox_core::prelude::*;
 use frontbox_display::prelude::*;
 
 use crate::dmd::open_scene;
-use crate::{GameManager, GamePhase, GameSession};
+use crate::{GameManagerExt, GamePhase, GameSession};
 
 const POINTS_SCENE: &str = "frontbox/128x32/points.scene";
 const TRANSITION_SCENE: &str = "frontbox/128x32/player_transition.scene";
@@ -65,7 +65,7 @@ impl System for DmdPointsSystem {
   }
 
   fn on_tick(&mut self, _delta: Duration, ctx: &SystemContext) {
-    let read = ctx.systems.get::<GameManager>().and_then(|game| {
+    let read = ctx.game_manager().and_then(|game| {
       let state = game.session()?;
       Some((state.current_player(), points_variables(state)))
     });

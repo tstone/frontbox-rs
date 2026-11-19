@@ -1,6 +1,6 @@
 use frontbox_core::prelude::*;
 
-use crate::{GameEndReason, GameManagementExt, GamePhase, SlamTilted, metrics};
+use crate::{GameEndReason, GameManagerExt, GamePhase, SlamTilted, metrics};
 
 /// Ends the game at once when the slam tilt switch closes. A slam tilt is physical abuse of the machine (it was kicked,
 /// or the coin door slammed), so nothing of the game is kept: no turn ending, no extra balls.
