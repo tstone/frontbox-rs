@@ -66,7 +66,7 @@ function sceneData(state: ConsoleState): SceneData {
     ? [
         ...Object.values(hw.switches.by_id).map((s) => ({ key: `switch:${s.id}`, name: s.name, kind: 'Switch' as const, location: s.location })),
         ...Object.values(hw.drivers.by_id).map((d) => ({ key: `driver:${d.id}`, name: d.name, kind: 'Driver' as const, location: d.location })),
-        ...Object.values(hw.leds.by_name).map((l) => ({ key: `led:${l.name}`, name: ledName(l.name), kind: 'LED' as const, location: l.location })),
+        ...Object.values(hw.lights.by_name).map((l) => ({ key: `led:${l.name}`, name: ledName(l.name), kind: 'LED' as const, location: l.location })),
       ]
     : []
   const points: Point[] = []

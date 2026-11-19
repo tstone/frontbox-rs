@@ -56,7 +56,7 @@ import {
 import { ImagePicker } from './ImagePicker'
 import { SoundPicker } from './SoundPicker'
 import { anchorPresets, writer } from './ShapeHandles'
-import { displayNames, LayerLeds, NEW_LAYER_OPTIONS, newPlace, planeNames, type NewLayerPlace } from './LayerPlace'
+import { displayNames, LayerLights, NEW_LAYER_OPTIONS, newPlace, planeNames, type NewLayerPlace } from './LayerPlace'
 import {
   ColorField,
   Dropdown,
@@ -144,7 +144,7 @@ type SpritesheetFill = Extract<FillNode, { Spritesheet: unknown }>['Spritesheet'
 type ShapeKind = 'None' | 'Circle' | 'Ellipse' | 'Rect' | 'Diamond' | 'Star' | 'Chevron' | 'Text' | 'Polygon' | 'Polyline' | 'Bezier'
 /** A shape set up from the others, which is a shape of their kind once it's picked */
 type TemplateKind = 'Pinwheel' | 'Propeller' | 'Triangle'
-/** What a layer's region can be: a shape, or on an LED scene its graph */
+/** What a layer's region can be: a shape, or on a light scene its graph */
 type RegionKind = ShapeKind | 'Graph'
 type Icon = typeof icons.Circle
 
@@ -201,7 +201,7 @@ const PATH_OPTIONS: ShapeOption[] = [
 const TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = (['Translate', 'Rotate', 'Scale'] as const).map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
 /** Only for a shape that's drawn, rather than a sweep's path */
 const SHAPE_TRANSFORM_OPTIONS: { value: TransformKind; label: string }[] = [...COPY_KINDS, ...RESHAPE_KINDS].map((value) => ({ value, label: TRANSFORM_LABELS[value] }))
-/** Only for a layer on an LED scene */
+/** Only for a layer on a light scene */
 const GRAPH_REGION_OPTIONS: ShapeOption[] = [ALL, { value: 'Graph', label: 'Graph' }, ...SHAPES, ...TEMPLATES]
 /** Only for a layer with traversals to fit to */
 const FIT_OPTION: { value: TransformKind; label: string } = { value: 'Fit', label: TRANSFORM_LABELS.Fit }
@@ -216,7 +216,7 @@ const ALGORITHM_OPTIONS: { value: AlgorithmKind; label: string }[] = [
   { value: 'RandomWalk', label: 'Random walk' },
 ]
 const NODE_OPTIONS: { value: 'Name' | 'Nearest'; label: string }[] = [
-  { value: 'Name', label: 'LED' },
+  { value: 'Name', label: 'Light' },
   { value: 'Nearest', label: 'Nearest to a position' },
 ]
 const MASK_SHOWS_OPTIONS: { value: 'Inside' | 'Outside'; label: string }[] = [
@@ -314,7 +314,7 @@ const SOURCE_ICONS: Record<PropKind, Icon> = {
 }
 const KIND_ICONS: Partial<Record<NodeKind, Icon>> = {
   place: icons.MapIcon,
-  leds: icons.Lightbulb,
+  lights: icons.Lightbulb,
   z: icons.Layers2,
   mask: icons.SquareDashed,
   stroke: icons.PenLine,
@@ -443,11 +443,11 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
     }),
   )
 
-  // an LED layer from before layers started on every LED has none, which the game can't play, so it's given every LED
+  // a light layer from before layers started on every light has none, which the game can't play, so it's given every light
   createEffect(() => {
     const current = scene.get()
-    if (current.layers.every((layer) => layer.display !== undefined || layer.leds !== undefined)) return
-    scene.set({ ...current, layers: current.layers.map((layer) => (layer.display === undefined && layer.leds === undefined ? { ...layer, leds: 'Every' } : layer)) })
+    if (current.layers.every((layer) => layer.display !== undefined || layer.lights !== undefined)) return
+    scene.set({ ...current, layers: current.layers.map((layer) => (layer.display === undefined && layer.lights === undefined ? { ...layer, lights: 'Every' } : layer)) })
   })
 
   // a prop's field only comes up once every node it's under is open
@@ -521,7 +521,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
           </TreeView.Tree>
         </TreeView.Root>
       </ConfigTreeContext.Provider>
-      <datalist id={LED_NAMES}>
+      <datalist id={LIGHT_NAMES}>
         <For each={graphNodes()}>{(name) => <option value={name} />}</For>
       </datalist>
     </div>
@@ -698,12 +698,12 @@ function NodeRow(props: { node: ConfigNode; depth: number }) {
             )
           }}
         </Match>
-        <Match when={is(props.node, 'leds')}>
-          {(leds) => (
+        <Match when={is(props.node, 'lights')}>
+          {(lights) => (
             <>
               {label}
               <Controls node={props.node}>
-                <LayerLeds lens={leds().lens} />
+                <LayerLights lens={lights().lens} />
               </Controls>
             </>
           )}
@@ -863,7 +863,7 @@ function LayerRow(props: { node: Extract<ConfigNode, { kind: 'layer' | 'sound' }
     if (props.node.kind === 'sound') return 'Sound'
     const layer = props.node.lens.get() as SceneLayer
     if (layer.display !== undefined) return displayNames(scene.get()).length > 1 ? `Display · ${layer.display}` : 'Display'
-    return layerPlane(layer) === null ? 'LED Sequence' : 'LED Area'
+    return layerPlane(layer) === null ? 'Light sequence' : 'Light area'
   }
   const open = () => {
     tree.select(props.node.id)
@@ -1408,12 +1408,12 @@ function NumberFormatField(props: { lens: Lens<NumberFormat> }) {
   )
 }
 
-/** A graph built from a layer's LEDs, as its region. Its traversals, which props can respond to, are under it. */
+/** A graph built from a layer's lights, as its region. Its traversals, which props can respond to, are under it. */
 function GraphFields(props: { layer: Lens<SceneLayer> }) {
   return (
     <>
       <p class="scene-note">
-        Only LEDs in the graph light up on this layer. To show them as a traversal reaches them, set the layer's opacity to Visit. On a plane, LEDs
+        Only lights in the graph light up on this layer. To show them as a traversal reaches them, set the layer's opacity to Visit. On a plane, lights
         more than half a unit above or below it, such as on ramps, aren't in the graph.
       </p>
       <Show when={props.layer.get().region}>
@@ -1426,11 +1426,11 @@ function GraphFields(props: { layer: Lens<SceneLayer> }) {
   )
 }
 
-const LED_NAMES = 'scene-led-names'
+const LIGHT_NAMES = 'scene-light-names'
 
 /**
- * A traversal from the first LED in the graph out to all the others, over the rest of the cycle.
- * Before the graph has been drawn there are no LEDs to name, so it starts from whichever is nearest the middle.
+ * A traversal from the first light in the graph out to all the others, over the rest of the cycle.
+ * Before the graph has been drawn there are no lights to name, so it starts from whichever is nearest the middle.
  */
 function newTraversal(name: string, nodes: string[], surface: Surface): Traversal {
   const [width, height] = surface ?? [1, 0]
@@ -1513,14 +1513,14 @@ function TraversalFields(props: { lens: Lens<Traversal>; layer: Lens<SceneLayer>
         <Dropdown label="Algorithm" options={ALGORITHM_OPTIONS} value={kind()} onChange={setKind} />
       </FieldRow>
       <Show when={!target()}>
-        <p class="scene-note">Goes on to every LED in the graph. The targeted algorithms go to one LED.</p>
+        <p class="scene-note">Goes on to every light in the graph. The targeted algorithms go to one light.</p>
       </Show>
       <Show when={kind() === 'FanOut'}>
-        <p class="scene-note">Also goes to random LEDs along an arc around From, through To, spread across it.</p>
+        <p class="scene-note">Also goes to random lights along an arc around From, through To, spread across it.</p>
       </Show>
       <Show when={kind() === 'Growth'}>
         <p class="scene-note">
-          Sends offshoots from the path to as many random LEDs within Reach of it as Density. Branching is the chance an offshoot sends out one of its
+          Sends offshoots from the path to as many random lights within Reach of it as Density. Branching is the chance an offshoot sends out one of its
           own.
         </p>
       </Show>
@@ -1541,13 +1541,13 @@ function TraversalFields(props: { lens: Lens<Traversal>; layer: Lens<SceneLayer>
   )
 }
 
-/** The LEDs in the selected layer's graph, by name, which are the only ones a traversal can start from or go to */
+/** The lights in the selected layer's graph, by name, which are the only ones a traversal can start from or go to */
 function useGraphNodes() {
   const picking = useContext(NodePickingContext)
   return () => picking?.nodes() ?? []
 }
 
-/** Whether a node of a graph is an LED by name, or whichever is nearest a position, which is a prop under it */
+/** Whether a node of a graph is a light by name, or whichever is nearest a position, which is a prop under it */
 function NodeRefKindPicker(props: { node: Extract<ConfigNode, { kind: 'node-ref' }> }) {
   const tree = useContext(ConfigTreeContext)!
   const surface = useContext(SurfaceContext)!
@@ -1568,7 +1568,7 @@ function NodeRefKindPicker(props: { node: Extract<ConfigNode, { kind: 'node-ref'
   )
 }
 
-/** An LED of the graph by name. It can be chosen by clicking it in the preview, and is pointed out there while this is hovered. */
+/** A light of the graph by name. It can be chosen by clicking it in the preview, and is pointed out there while this is hovered. */
 function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
   const picking = useContext(NodePickingContext)
   const graphNodes = useGraphNodes()
@@ -1595,8 +1595,8 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
       <div class="scene-node-pick">
         <input
           class="scene-variable-name"
-          aria-label={`${props.label} LED`}
-          list={LED_NAMES}
+          aria-label={`${props.label} light`}
+          list={LIGHT_NAMES}
           spellcheck={false}
           value={name()}
           onChange={(e) => props.lens.set({ Name: e.currentTarget.value.trim() })}
@@ -1605,14 +1605,14 @@ function NodeRefFields(props: { label: string; lens: Lens<NodeRef> }) {
           type="button"
           class="scene-button"
           aria-pressed={choosing()}
-          title={choosing() ? 'Stop choosing' : `Choose the ${props.label.toLowerCase()} LED by clicking it in the preview`}
+          title={choosing() ? 'Stop choosing' : `Choose the ${props.label.toLowerCase()} light by clicking it in the preview`}
           onClick={toggleChoosing}
         >
           {choosing() ? 'Selecting…' : 'Select'}
         </button>
       </div>
       <Show when={graphNodes().length > 0 && !graphNodes().includes(name())}>
-        <p class="scene-note scene-note-warn">This LED isn't in the layer's graph, so the traversal reaches nothing from it.</p>
+        <p class="scene-note scene-note-warn">This light isn't in the layer's graph, so the traversal reaches nothing from it.</p>
       </Show>
     </div>
   )
@@ -1785,9 +1785,9 @@ function regionKind(lens: Lens<Shape | undefined>, layer?: Lens<SceneLayer>): Re
 }
 
 /**
- * Picks what a mask's region, a layer's, or a sweep's path is, which can't be left out. On an LED scene, a layer's region
+ * Picks what a mask's region, a layer's, or a sweep's path is, which can't be left out. On a light scene, a layer's region
  * can also be its graph. In the file the two are separate, and a layer could have both, but the graph already says which
- * LEDs it shows on. A region has its outline in the preview, which can be hidden.
+ * lights it shows on. A region has its outline in the preview, which can be hidden.
  */
 function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | 'path' }> }) {
   const tree = useContext(ConfigTreeContext)!
@@ -1799,7 +1799,7 @@ function ShapeKindPicker(props: { node: Extract<ConfigNode, { kind: 'region' | '
   const layer = () => (props.node.kind === 'region' ? props.node.layer : undefined)
   const lens = () => props.node.lens as Lens<Shape | undefined>
   const base = () => field(lens() as Lens<Shape>, 'base') as Lens<ShapeNode>
-  // a graph's nodes are where its LEDs are on a plane, so a sequence has none
+  // a graph's nodes are where its lights are on a plane, so a sequence has none
   const graphs = () => layer() !== undefined && layerPlane(layer()!.get()) !== null
   const kind = () => regionKind(lens(), layer())
   const options = () => (path() ? PATH_OPTIONS : graphs() ? GRAPH_REGION_OPTIONS : SHAPE_OPTIONS)
@@ -2033,7 +2033,7 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
   )
 }
 
-/** Which traversal a fit is to. It runs from where the traversal starts, at -0.5 across, to the LED it reaches last, at 0.5. */
+/** Which traversal a fit is to. It runs from where the traversal starts, at -0.5 across, to the light it reaches last, at 0.5. */
 function FitPicker(props: { node: Extract<ConfigNode, { kind: 'fit' }> }) {
   const traversals = useContext(TraversalsContext)
   const fitted = () => (props.node.lens.get() as { Fit: string }).Fit

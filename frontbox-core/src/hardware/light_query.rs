@@ -4,26 +4,26 @@ use indexmap::IndexSet;
 
 use crate::prelude::*;
 
-/// An LED Query. Scene files hold these, so tags and planes are by name.
+/// A query for lights. Scene files hold these, so tags and planes are by name.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum LedQ {
+pub enum LightQ {
   Every,
   Name(String),
   Names(#[cfg_attr(feature = "ts", ts(as = "Vec<String>"))] IndexSet<String>),
   /// A tag, by the name it goes by in [`Tag::tag_name`]
   Tag(String),
-  And(Vec<LedQ>),
-  Or(Vec<LedQ>),
+  And(Vec<LightQ>),
+  Or(Vec<LightQ>),
   /// Within a region of a plane, by the name it was added to the app under
   Location(String, Region),
-  Skip(Box<LedQ>, usize),
-  Take(Box<LedQ>, usize),
-  Reverse(Box<LedQ>),
+  Skip(Box<LightQ>, usize),
+  Take(Box<LightQ>, usize),
+  Reverse(Box<LightQ>),
 }
 
-impl LedQ {
-  /// Literally every LED
+impl LightQ {
+  /// Literally every light
   pub fn every() -> Self {
     Self::Every
   }
@@ -98,27 +98,27 @@ impl LedQ {
 
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
   pub fn precompute(&self, ctx: &ServiceContext) -> Self {
-    LedQ::Names(self.query_iter(ctx).map(|led| led.name.clone()).collect())
+    LightQ::Names(self.query_iter(ctx).map(|light| light.name.clone()).collect())
   }
 
-  /// Resolve the query into a reference for all matching LEDs
+  /// Resolve the query into a reference for all matching lights
   pub fn query_iter<'c>(
     &'c self,
     ctx: &'c ServiceContext,
-  ) -> Box<dyn Iterator<Item = &'c LED> + 'c> {
-    ctx.leds.query_iter(&self)
+  ) -> Box<dyn Iterator<Item = &'c Light> + 'c> {
+    ctx.lights.query_iter(&self)
   }
 
-  /// Resolve the query into a reference for all matching LEDs
-  pub fn query<'c>(&'c self, ctx: &'c ServiceContext) -> Vec<&'c LED> {
-    ctx.leds.query_iter(&self).collect()
+  /// Resolve the query into a reference for all matching lights
+  pub fn query<'c>(&'c self, ctx: &'c ServiceContext) -> Vec<&'c Light> {
+    ctx.lights.query_iter(&self).collect()
   }
 
   pub fn query_addresses<'c>(&'c self, ctx: &'c ServiceContext) -> Vec<LightAddress> {
     ctx
-      .leds
+      .lights
       .query_iter(&self)
-      .map(|led| led.address.clone())
+      .map(|light| light.address.clone())
       .collect()
   }
 }

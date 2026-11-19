@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Moment, SoundLayer, SoundStart};
 
 /// Layers on one timeline, each saying what it's drawn on or that it's sound, as written to a `.scene` file. Each system
-/// plays the layers it knows: `LightManager` plays [`LedLayer`]s, a display plays the [`DisplayLayer`]s for it, and
+/// plays the layers it knows: `LightManager` plays [`LightLayer`]s, a display plays the [`DisplayLayer`]s for it, and
 /// `SoundSystem` plays [`SoundLayer`]s. A [`Playback`](crate::Playback) holds what's only true while one plays.
 ///
 /// ```rust
@@ -18,7 +18,7 @@ use crate::{Moment, SoundLayer, SoundStart};
 ///   version: 2,
 ///   timing: (duration: 0.5),
 ///   layers: [
-///     Leds(leds: Tag("Playfield"), z: 1, surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+///     Lights(lights: Tag("Playfield"), z: 1, surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
 ///     Sound(sound: "sounds/zap.mp3"),
 ///   ],
 /// )"#).unwrap();
@@ -185,18 +185,18 @@ impl Scene {
     self.timing.is_some_and(|timing| timing.is_complete(time))
   }
 
-  /// Moves every LED layer to `leds`, for when which LEDs a scene plays on is only known in the game. Each layer's z and
-  /// surface stay as the scene says. That's only for a scene whose LED layers are all on the same LEDs, as there's
+  /// Moves every light layer to `lights`, for when which lights a scene plays on is only known in the game. Each layer's z and
+  /// surface stay as the scene says. That's only for a scene whose light layers are all on the same lights, as there's
   /// otherwise no saying which of them to move.
-  pub fn moved_to_leds(mut self, leds: LedQ) -> Result<Self, DifferentLeds> {
-    let mut on = self.layers.iter().filter_map(SceneLayer::as_leds).map(|layer| &layer.leds);
+  pub fn moved_to_lights(mut self, lights: LightQ) -> Result<Self, DifferentLights> {
+    let mut on = self.layers.iter().filter_map(SceneLayer::as_lights).map(|layer| &layer.lights);
     if let Some(first) = on.next()
       && on.any(|other| other != first)
     {
-      return Err(DifferentLeds);
+      return Err(DifferentLights);
     }
-    for layer in self.layers.iter_mut().filter_map(SceneLayer::as_leds_mut) {
-      layer.leds = Some(leds.clone());
+    for layer in self.layers.iter_mut().filter_map(SceneLayer::as_lights_mut) {
+      layer.lights = Some(lights.clone());
     }
     Ok(self)
   }
@@ -229,16 +229,16 @@ impl Scene {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SceneLayer {
-  Leds(LedLayer),
+  Lights(LightLayer),
   Display(DisplayLayer),
   Sound(SoundLayer),
 }
 
 impl SceneLayer {
-  /// What's drawn, for an LED or display layer
+  /// What's drawn, for a light or display layer
   pub fn layer(&self) -> Option<&Layer> {
     match self {
-      Self::Leds(layer) => Some(&layer.layer),
+      Self::Lights(layer) => Some(&layer.layer),
       Self::Display(layer) => Some(&layer.layer),
       Self::Sound(_) => None,
     }
@@ -246,7 +246,7 @@ impl SceneLayer {
 
   pub fn layer_mut(&mut self) -> Option<&mut Layer> {
     match self {
-      Self::Leds(layer) => Some(&mut layer.layer),
+      Self::Lights(layer) => Some(&mut layer.layer),
       Self::Display(layer) => Some(&mut layer.layer),
       Self::Sound(_) => None,
     }
@@ -255,7 +255,7 @@ impl SceneLayer {
   /// Order among everything playing on the same thing: higher is on top. `None` for a sound layer.
   pub fn z(&self) -> Option<i8> {
     match self {
-      Self::Leds(layer) => Some(layer.z),
+      Self::Lights(layer) => Some(layer.z),
       Self::Display(layer) => Some(layer.z),
       Self::Sound(_) => None,
     }
@@ -269,16 +269,16 @@ impl SceneLayer {
     }
   }
 
-  pub fn as_leds(&self) -> Option<&LedLayer> {
+  pub fn as_lights(&self) -> Option<&LightLayer> {
     match self {
-      Self::Leds(layer) => Some(layer),
+      Self::Lights(layer) => Some(layer),
       _ => None,
     }
   }
 
-  pub fn as_leds_mut(&mut self) -> Option<&mut LedLayer> {
+  pub fn as_lights_mut(&mut self) -> Option<&mut LightLayer> {
     match self {
-      Self::Leds(layer) => Some(layer),
+      Self::Lights(layer) => Some(layer),
       _ => None,
     }
   }
@@ -305,9 +305,9 @@ impl SceneLayer {
   }
 }
 
-impl From<LedLayer> for SceneLayer {
-  fn from(layer: LedLayer) -> Self {
-    Self::Leds(layer)
+impl From<LightLayer> for SceneLayer {
+  fn from(layer: LightLayer) -> Self {
+    Self::Lights(layer)
   }
 }
 
@@ -323,31 +323,31 @@ impl From<SoundLayer> for SceneLayer {
   }
 }
 
-/// A layer drawn on LEDs
+/// A layer drawn on lights
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LedLayer {
-  /// `None` is none yet. It lands on no LEDs, and the editor previews it on every LED.
+pub struct LightLayer {
+  /// `None` is none yet. It lands on no lights, and the editor previews it on every light.
   #[serde(default, skip_serializing_if = "Option::is_none")]
   #[cfg_attr(feature = "ts", ts(optional))]
-  pub leds: Option<LedQ>,
-  /// Which layer of the LED system it's on
+  pub lights: Option<LightQ>,
+  /// Which z-layer of light management it's on
   #[serde(default, skip_serializing_if = "is_zero")]
   #[cfg_attr(feature = "ts", ts(as = "Option<i8>", optional))]
   pub z: i8,
-  pub surface: LedSurface,
+  pub surface: LightSurface,
   pub layer: Layer,
 }
 
-impl LedLayer {
-  /// Spreads along `leds` in order
-  pub fn sequence(leds: LedQ, layer: Layer) -> Self {
-    Self { leds: Some(leds), z: 0, surface: LedSurface::Sequence, layer }
+impl LightLayer {
+  /// Spreads along `lights` in order
+  pub fn sequence(lights: LightQ, layer: Layer) -> Self {
+    Self { lights: Some(lights), z: 0, surface: LightSurface::Sequence, layer }
   }
 
-  /// Covers a plane, by the name it was added to the app under, lighting `leds` from where they are on it
-  pub fn area(leds: LedQ, plane: impl Into<String>, layer: Layer) -> Self {
-    Self { leds: Some(leds), z: 0, surface: LedSurface::Area(plane.into()), layer }
+  /// Covers a plane, by the name it was added to the app under, lighting `lights` from where they are on it
+  pub fn area(lights: LightQ, plane: impl Into<String>, layer: Layer) -> Self {
+    Self { lights: Some(lights), z: 0, surface: LightSurface::Area(plane.into()), layer }
   }
 
   pub fn at_z(mut self, z: i8) -> Self {
@@ -356,17 +356,17 @@ impl LedLayer {
   }
 }
 
-/// What an LED layer is drawn on, which is what its numbers are measured against
+/// What a light layer is drawn on, which is what its numbers are measured against
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LedSurface {
-  /// Its LEDs in order
+pub enum LightSurface {
+  /// Its lights in order
   Sequence,
-  /// A plane, by the name it was added to the app under, which gives the layer its size and the LEDs their positions
+  /// A plane, by the name it was added to the app under, which gives the layer its size and the lights their positions
   Area(String),
 }
 
-impl LedSurface {
+impl LightSurface {
   /// The kind of surface the layer is sampled on, which the plane's name doesn't change
   pub fn sampled_as(&self) -> scene::Surface {
     match self {
@@ -407,17 +407,17 @@ impl DisplayLayer {
   }
 }
 
-/// Why [`Scene::moved_to_leds`] refused: the scene's LED layers aren't all on the same LEDs
+/// Why [`Scene::moved_to_lights`] refused: the scene's light layers aren't all on the same lights
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DifferentLeds;
+pub struct DifferentLights;
 
-impl fmt::Display for DifferentLeds {
+impl fmt::Display for DifferentLights {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "a scene with layers on different LEDs can't be moved to other LEDs")
+    write!(f, "a scene with layers on different lights can't be moved to other lights")
   }
 }
 
-impl std::error::Error for DifferentLeds {}
+impl std::error::Error for DifferentLights {}
 
 fn is_zero(z: &i8) -> bool {
   *z == 0
@@ -480,25 +480,25 @@ mod tests {
   }
 
   #[test]
-  fn a_layer_with_no_leds_says_so() {
-    let source = "Scene(version: 2, layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])";
-    assert_eq!(Scene::load(source).unwrap().layers[0].as_leds().unwrap().leds, None);
+  fn a_layer_with_no_lights_says_so() {
+    let source = "Scene(version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])";
+    assert_eq!(Scene::load(source).unwrap().layers[0].as_lights().unwrap().lights, None);
   }
 
   #[test]
   fn layers_survive_a_save_in_order() {
     let scene = Scene::new(vec![
-      LedLayer::sequence(LedQ::names(["b", "a"]).reverse(), layer().name("under")).at_z(-1).into(),
-      LedLayer::area(LedQ::Every, "Backbox", layer().name("over")).into(),
+      LightLayer::sequence(LightQ::names(["b", "a"]).reverse(), layer().name("under")).at_z(-1).into(),
+      LightLayer::area(LightQ::Every, "Backbox", layer().name("over")).into(),
       DisplayLayer::new("Dmd", layer().name("screen")).at_z(2).into(),
     ]);
     let read = Scene::load(&scene.save().unwrap()).unwrap();
     let names: Vec<_> = read.layers.iter().map(|layer| layer.layer().unwrap().name.clone().unwrap()).collect();
     assert_eq!(names, ["under", "over", "screen"]);
 
-    let under = read.layers[0].as_leds().unwrap();
-    assert_eq!((&under.leds, under.z, &under.surface), (&scene.layers[0].as_leds().unwrap().leds, -1, &LedSurface::Sequence));
-    assert_eq!(read.layers[1].as_leds().unwrap().surface, LedSurface::Area("Backbox".into()));
+    let under = read.layers[0].as_lights().unwrap();
+    assert_eq!((&under.lights, under.z, &under.surface), (&scene.layers[0].as_lights().unwrap().lights, -1, &LightSurface::Sequence));
+    assert_eq!(read.layers[1].as_lights().unwrap().surface, LightSurface::Area("Backbox".into()));
     let screen = read.layers[2].as_display().unwrap();
     assert_eq!((screen.display.as_str(), screen.z), ("Dmd", 2));
   }
@@ -509,12 +509,12 @@ mod tests {
   #[test]
   fn a_layer_says_what_its_on() {
     let written = Scene::new(vec![
-      LedLayer::area(LedQ::tag::<Playfield>(), "Playfield", layer()).into(),
+      LightLayer::area(LightQ::tag::<Playfield>(), "Playfield", layer()).into(),
       DisplayLayer::new("Dmd", layer()).into(),
     ])
     .save()
     .unwrap();
-    assert!(written.contains(r#"Leds("#), "{written}");
+    assert!(written.contains(r#"Lights("#), "{written}");
     assert!(written.contains(r#"Tag("Playfield")"#), "{written}");
     assert!(written.contains(r#"surface: Area("Playfield")"#), "{written}");
     assert!(written.contains(r#"Display("#), "{written}");
@@ -523,17 +523,17 @@ mod tests {
 
   #[test]
   fn a_surface_says_how_a_layer_is_seen() {
-    assert_eq!(LedSurface::Sequence.sampled_as(), scene::Surface::Sequence);
-    assert_eq!(LedSurface::Sequence.plane(), None);
-    assert_eq!(LedSurface::Area("Backbox".into()).sampled_as(), scene::Surface::Area);
-    assert_eq!(LedSurface::Area("Backbox".into()).plane(), Some("Backbox"));
+    assert_eq!(LightSurface::Sequence.sampled_as(), scene::Surface::Sequence);
+    assert_eq!(LightSurface::Sequence.plane(), None);
+    assert_eq!(LightSurface::Area("Backbox".into()).sampled_as(), scene::Surface::Area);
+    assert_eq!(LightSurface::Area("Backbox".into()).plane(), Some("Backbox"));
   }
 
   #[test]
   fn what_a_layer_cant_play_is_refused_by_its_place_in_the_scene() {
     let track = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
     let changing = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::HueShift(track));
-    let scene = Scene::new(vec![DisplayLayer::new("Dmd", layer()).into(), LedLayer::sequence(LedQ::Every, Layer::new(changing)).into()]);
+    let scene = Scene::new(vec![DisplayLayer::new("Dmd", layer()).into(), LightLayer::sequence(LightQ::Every, Layer::new(changing)).into()]);
     assert_eq!(scene.check(), Err(SceneError::NoTiming { layer: "layer 2".into() }));
   }
 
@@ -544,27 +544,27 @@ mod tests {
   }
 
   #[test]
-  fn led_layers_on_the_same_leds_can_be_moved_together() {
+  fn light_layers_on_the_same_lights_can_be_moved_together() {
     let scene = Scene::new(vec![
-      LedLayer::sequence(LedQ::name("lane"), layer()).into(),
+      LightLayer::sequence(LightQ::name("lane"), layer()).into(),
       DisplayLayer::new("Dmd", layer()).into(),
-      LedLayer::area(LedQ::name("lane"), "Playfield", layer()).at_z(1).into(),
+      LightLayer::area(LightQ::name("lane"), "Playfield", layer()).at_z(1).into(),
     ]);
-    let moved = scene.moved_to_leds(LedQ::name("other")).unwrap();
-    let leds: Vec<_> = moved.layers.iter().filter_map(SceneLayer::as_leds).map(|layer| (layer.leds.clone(), layer.z)).collect();
-    assert_eq!(leds, [(Some(LedQ::name("other")), 0), (Some(LedQ::name("other")), 1)]);
+    let moved = scene.moved_to_lights(LightQ::name("other")).unwrap();
+    let lights: Vec<_> = moved.layers.iter().filter_map(SceneLayer::as_lights).map(|layer| (layer.lights.clone(), layer.z)).collect();
+    assert_eq!(lights, [(Some(LightQ::name("other")), 0), (Some(LightQ::name("other")), 1)]);
   }
 
   #[test]
-  fn led_layers_on_different_leds_cant_be_moved() {
-    let scene = Scene::new(vec![LedLayer::sequence(LedQ::name("a"), layer()).into(), LedLayer::sequence(LedQ::name("b"), layer()).into()]);
-    assert_eq!(scene.moved_to_leds(LedQ::name("other")).unwrap_err(), DifferentLeds);
+  fn light_layers_on_different_lights_cant_be_moved() {
+    let scene = Scene::new(vec![LightLayer::sequence(LightQ::name("a"), layer()).into(), LightLayer::sequence(LightQ::name("b"), layer()).into()]);
+    assert_eq!(scene.moved_to_lights(LightQ::name("other")).unwrap_err(), DifferentLights);
   }
 
   #[test]
   fn a_sound_layer_survives_a_save() {
     let scene = Scene::new(vec![
-      LedLayer::sequence(LedQ::name("lane"), layer()).into(),
+      LightLayer::sequence(LightQ::name("lane"), layer()).into(),
       SoundLayer::new("sounds/zap.mp3").start(0.25).skip(0.5).end(0.75).name("hits").into(),
     ])
     .timing(Timing::new(1.0, Cycle::Once));
@@ -630,7 +630,7 @@ mod tests {
 
   #[test]
   fn a_file_from_before_variables_says_params() {
-    let scene = Scene::load(r#"Scene(version: 2, params: {"size": Float(2.0)}, layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Param("color")))))])"#).unwrap();
+    let scene = Scene::load(r#"Scene(version: 2, params: {"size": Float(2.0)}, layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Param("color")))))])"#).unwrap();
     assert_eq!(scene.variables["size"], Value::Float(2.0));
     assert_eq!(scene.inputs().variables.keys().collect::<Vec<_>>(), ["color"]);
   }

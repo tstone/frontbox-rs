@@ -107,11 +107,11 @@
 //! each with its own `ScoopBallEntered<S>` and `ScoopEjected<S>`.
 //!
 //! ## Attract Mode
-//! `AttractSystem` (at the root) plays a list of scenes on every LED, one after another, for as long as `GamePhase` is
+//! `AttractSystem` (at the root) plays a list of scenes on every light, one after another, for as long as `GamePhase` is
 //! `None`.
 //!
 //! A scene that should play alongside the others while no game is running (e.g. an animation on the start button's
-//! LEDs) is a second `AttractSystem` with just that scene.
+//! lights) is a second `AttractSystem` with just that scene.
 //!
 //! ## Credits and the Start Button
 //! `CreditsSystem` (at the root) counts coins into credits, and adds a player on a start press, spending a credit, or

@@ -326,7 +326,7 @@ impl MachineBoot for Neuron {
     let hardware = Hardware::new(
       SwitchLookup::new(setup.io_network.switches.clone(), connection.switch_states),
       DriverLookup::new(setup.io_network.drivers.clone()),
-      LedLookup::new(&setup.expansion_boards),
+      LightLookup::new(&setup.expansion_boards),
       connection.io_network.boards,
       setup.expansion_boards.clone(),
     );

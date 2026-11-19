@@ -16,9 +16,9 @@ impl From<Vec<SwitchQ>> for SwitchQ {
   }
 }
 
-impl From<Vec<LedQ>> for LedQ {
-  fn from(value: Vec<LedQ>) -> Self {
-    LedQ::any(value.iter().collect())
+impl From<Vec<LightQ>> for LightQ {
+  fn from(value: Vec<LightQ>) -> Self {
+    LightQ::any(value.iter().collect())
   }
 }
 
@@ -46,15 +46,15 @@ impl From<&LazyLock<DriverDefinition>> for DriverQ {
   }
 }
 
-impl From<LazyLock<LedDefinition>> for LedQ {
+impl From<LazyLock<LedDefinition>> for LightQ {
   fn from(value: LazyLock<LedDefinition>) -> Self {
-    LedQ::names(value.names())
+    LightQ::names(value.names())
   }
 }
 
-impl From<&LazyLock<LedDefinition>> for LedQ {
+impl From<&LazyLock<LedDefinition>> for LightQ {
   fn from(value: &LazyLock<LedDefinition>) -> Self {
-    LedQ::names(value.names())
+    LightQ::names(value.names())
   }
 }
 
@@ -72,13 +72,13 @@ impl From<Vec<&LazyLock<DriverDefinition>>> for DriverQ {
   }
 }
 
-impl From<Vec<&LazyLock<LedDefinition>>> for LedQ {
+impl From<Vec<&LazyLock<LedDefinition>>> for LightQ {
   fn from(value: Vec<&LazyLock<LedDefinition>>) -> Self {
     // defs.names() yields a collection of String references; clone each String
     let names: IndexSet<String> = value
       .iter()
       .flat_map(|defs| defs.names().iter().cloned())
       .collect();
-    LedQ::names(&names)
+    LightQ::names(&names)
   }
 }

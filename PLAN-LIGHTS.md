@@ -119,19 +119,19 @@ products is built on top:
 
 | Today | After | Why |
 |---|---|---|
-| `LED` (the runtime struct) | `Light` | Any light source, not only LEDs |
-| `LedQ` | `LightQ` | |
-| `LedLookup`, `ctx.leds` | `LightLookup`, `ctx.lights` | |
+| `LED` (the runtime struct) | `Light` (done) | Any light source, not only LEDs |
+| `LedQ` | `LightQ` (done) | |
+| `LedLookup`, `ctx.leds` | `LightLookup`, `ctx.lights` (done) | |
 | `LedSystem` | `LightManager` (trait), `LayeredLightManager` (implementation) | The trait follows `BallManager`. The implementation is named for how it works, composing in z-layers, as other approaches are possible |
 | `LedSystemExt` | `LightManagerExt` | |
-| `declare_leds`, `declare_leds_flashing`, `declare_led_colors`, `declare_leds_inactive`, `undeclare_leds`, `activate_led_declarations`, `deactivate_led_declarations`, `set_led_conflict_resolution` | `declare_lights`, ... (`led` → `light` throughout) | |
-| `LedConflictResolution` | `LightConflictResolution` | |
+| `declare_leds`, `declare_leds_flashing`, `declare_led_colors`, `declare_leds_inactive`, `undeclare_leds`, `activate_led_declarations`, `deactivate_led_declarations`, `set_led_conflict_resolution` | `declare_lights`, ... (`led` → `light` throughout) (done) | |
+| `LedConflictResolution` | `LightConflictResolution` (done) | |
 | `LedDeclarations`, `LedIdentifications`, `LedIdentificationsExt` (`.at_z`), `IdentificationAtZ` | removed (phase 2) | The trait takes plain arguments, and z is passed with the declaration |
 | `LayeredLightManager::monitor` | removed (phase 2) | Nothing calls it |
-| `LedPlacement`, `LedLayer`, `LedSurface`, `SceneLayer::Leds` | `LightPlacement`, `LightLayer`, `LightSurface`, `SceneLayer::Lights` | |
-| `led_radius`, `DEFAULT_LED_RADIUS`, `set_led_radius` | `light_radius`, ... (stays in core) | A physical size, which the console needs too |
+| `LedPlacement`, `LedLayer`, `LedSurface`, `SceneLayer::Leds` | `LightPlacement`, `LightLayer`, `LightSurface`, `SceneLayer::Lights` (done) | |
+| `led_radius`, `DEFAULT_LED_RADIUS`, `set_led_radius` | `light_radius`, ... (stays in core) (done) | A physical size, which the console needs too |
 | crate `frontbox-led` | `frontbox-lighting` | The crate is the subject, lighting; what it manages are lights |
-| log target `frontbox::led` | `frontbox::lighting` | Update `doc/logging.md` |
+| log target `frontbox::led` | `frontbox::lighting` (done) | Update `doc/logging.md` |
 | `LedAddress` (as a light's identity) | `LightAddress` (phase 2) | A light's address, of which `LedAddress` is the EXP case |
 | `LedAddress` (as a place on an LED port) | unchanged | It's specifically an LED port, among the kinds of EXP port |
 | `LedDefinition` | unchanged | It defines LEDs, which are one kind of light |
@@ -144,17 +144,22 @@ source that turns on. "Lighting" names only the subject: the crate and the log t
 
 Each phase builds, passes tests, and leaves the machine behaving as before, except where a phase says otherwise.
 
-### 3. Rename
+### 3. Rename (done)
 
-Everything else in the [Names](#names) table, in one change.
+Everything else in the [Names](#names) table, in one change. "LED" stays wherever something is only about LEDs:
+`LedAddress`, `LedDefinition`, `LedPort`, `ChannelOrder`, `led_color`, the raw writes on `ctx.lights` (`set` and the
+rest take an EXP address and indexes), lowering and sending in `LayeredLightManager`, and the console's live colors from
+the machine (`ServerMessage::Leds`), which are keyed by LED address. `Light` and `LightLookup` moved out of `exp` to
+`hardware`, as phase 4 adds lights from the IO network.
 
-- **Scene files.** `SceneLayer::Leds` and `LedLayer.leds` are written into scene files. They're renamed outright
-  (`Lights`, `lights`), with no aliases, and old files no longer load. This repo's scenes have no LED layers. Lotko's
-  scenes are migrated in the same change (`Leds(` → `Lights(`, `leds:` → `lights:` inside those layers).
-- **The console.** Regenerate the TS types (`ts` feature). Then update `frontbox-console/web`: `sceneModel.ts`,
-  `LedPicker.tsx` (→ `LightPicker.tsx`), `configNodes.ts`, `LayerPlace.tsx`.
+- **Scene files.** `SceneLayer::Leds` and `LedLayer.leds` are renamed outright (`Lights`, `lights`), with no aliases,
+  and old files no longer load. Neither repo has scene files with light layers, so there was nothing to migrate.
+  `convert_v1_scenes` reads a v1 file's layers as today's, so a v1 file now needs `leds:` renamed first.
+- **The console.** TS types regenerated. The scenes tab (`LightPicker.tsx` and the rest) and the scene preview's
+  messages (`RenderedScene.light_colors`, `RenderedClip.lights`, `SceneSize.lights`) use lights. The machine tab
+  reads `hardware.lights` but otherwise still shows LEDs, until phase 4.
 - **Log target.** `frontbox::led` → `frontbox::lighting`, and `doc/logging.md`.
-- **Docs.** README, doc comments and examples.
+- **Docs.** README, TODO, doc comments and examples.
 
 ### 4. Driver lights
 

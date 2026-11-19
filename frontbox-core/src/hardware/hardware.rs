@@ -10,7 +10,7 @@ const MAX_LEDS_PER_BREAKOUT: usize = 128;
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
-  pub leds: LedLookup,
+  pub lights: LightLookup,
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
@@ -19,7 +19,7 @@ impl Hardware {
   pub fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
-    leds: LedLookup,
+    lights: LightLookup,
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
@@ -55,7 +55,7 @@ impl Hardware {
     Self {
       switches,
       drivers,
-      leds,
+      lights,
       io_network,
       exp_network,
     }
@@ -325,7 +325,7 @@ mod tests {
   fn duplicate_hardware_config_keys_panic_at_boot() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
     let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
-    Hardware::new(switches, drivers, LedLookup::default(), vec![], vec![]);
+    Hardware::new(switches, drivers, LightLookup::default(), vec![], vec![]);
   }
 
   static STRIP_64: LazyLock<LedDefinition> =

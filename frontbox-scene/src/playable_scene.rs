@@ -18,7 +18,7 @@ use crate::*;
 /// # use frontbox_gfx::prelude::*;
 /// let scene = Scene::load(r#"Scene(
 ///   version: 2,
-///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
+///   layers: [Lights(lights: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
 /// )"#).unwrap();
 ///
 /// let scene = PlayableScene::new(scene).variable("color", Rgba::red());
@@ -33,7 +33,7 @@ use crate::*;
 ///   version: 2,
 ///   variables: {"color": Value("unlit")},
 ///   values: {"lit": Color(Fixed(255, 0, 0, 255)), "unlit": Color(Fixed(0, 0, 0, 255))},
-///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
+///   layers: [Lights(lights: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Variable("color")))))],
 /// )"#).unwrap();
 ///
 /// let scene = PlayableScene::new(scene).variable("color", Value::named("lit"));
@@ -48,7 +48,7 @@ use crate::*;
 /// let scene = Scene::load(r#"Scene(
 ///   version: 2,
 ///   timing: (duration: 0.5),
-///   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+///   layers: [Lights(lights: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
 /// )"#).unwrap();
 ///
 /// let scene = PlayableScene::completing(scene).unwrap();
@@ -124,10 +124,10 @@ impl<C> PlayableScene<C> {
     self
   }
 
-  /// Plays the scene's LED layers on `leds`, for when which LEDs is only known in the game. See
-  /// [`Scene::moved_to_leds`].
-  pub fn on_leds(mut self, leds: LedQ) -> Result<Self, DifferentLeds> {
-    self.scene = Arc::new(Arc::unwrap_or_clone(self.scene).moved_to_leds(leds)?);
+  /// Plays the scene's light layers on `lights`, for when which lights is only known in the game. See
+  /// [`Scene::moved_to_lights`].
+  pub fn on_lights(mut self, lights: LightQ) -> Result<Self, DifferentLights> {
+    self.scene = Arc::new(Arc::unwrap_or_clone(self.scene).moved_to_lights(lights)?);
     Ok(self)
   }
 

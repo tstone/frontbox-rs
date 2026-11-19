@@ -3,7 +3,7 @@ use axum::extract::ws::{Message, Utf8Bytes};
 use frontbox_gfx::scene::Content;
 use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  AppPlane, ConfigDomainValue, DEFAULT_LED_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted, SwitchState,
+  AppPlane, ConfigDomainValue, DEFAULT_LIGHT_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted, SwitchState,
   SystemDespawned, SystemSpawned,
 };
 use frontbox_metrics::MetricsDb;
@@ -48,7 +48,7 @@ impl ConsoleHub {
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
-        led_radius: DEFAULT_LED_RADIUS,
+        light_radius: DEFAULT_LIGHT_RADIUS,
         content: content(None),
         control: None,
         metrics: None,
@@ -212,8 +212,8 @@ impl ConsoleHub {
     }
   }
 
-  pub fn set_led_radius(&self, radius: f32) {
-    self.state.lock().unwrap().led_radius = radius;
+  pub fn set_light_radius(&self, radius: f32) {
+    self.state.lock().unwrap().light_radius = radius;
   }
 
   /// Uses the app's content folder, or none
@@ -234,14 +234,14 @@ impl ConsoleHub {
 
   fn preview_machine(&self) -> PreviewMachine {
     let state = self.state.lock().unwrap();
-    let leds = state
+    let lights = state
       .snapshot
       .hardware
       .as_ref()
-      .map(|hardware| hardware.leds.clone())
+      .map(|hardware| hardware.lights.clone())
       .unwrap_or_default();
     let displays = state.snapshot.displays.iter().map(|display| (display.name.clone(), (display.width as usize, display.height as usize)));
-    PreviewMachine { leds, radius: state.led_radius, displays: displays.collect() }
+    PreviewMachine { lights, radius: state.light_radius, displays: displays.collect() }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
@@ -278,7 +278,7 @@ impl ConsoleHub {
   pub fn set_hardware(&self, hardware: Hardware) {
     let mut state = self.state.lock().unwrap();
     state.led_names = hardware
-      .leds
+      .lights
       .values()
       .filter_map(|led| {
         let address = led.address.led()?;
@@ -648,7 +648,7 @@ struct HubState {
   snapshot: Snapshot,
   started: Instant,
   next_seq: u64,
-  led_radius: f32,
+  light_radius: f32,
   content: Content,
   /// Image files for `snapshot.planes`, by the same index
   plane_images: Vec<Option<PathBuf>>,

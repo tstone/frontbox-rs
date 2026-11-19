@@ -1,15 +1,15 @@
 import { createEffect, createSignal, on, Show, untrack, useContext } from 'solid-js'
 import { machine } from '../../state/console'
-import type { LedQ } from '../../types/generated/LedQ'
-import LedPicker, { canPick, ledPick, ledsLabel, pickedQuery, type LedPick } from './LedPicker'
+import type { LightQ } from '../../types/generated/LightQ'
+import LightPicker, { canPick, lightPick, lightsLabel, pickedQuery, type LightPick } from './LightPicker'
 import { SceneContext } from './SceneFields'
-import { layerPlace, ledsCase, type LayerPlace, type Lens, type Scene } from './sceneModel'
+import { layerPlace, lightsCase, type LayerPlace, type Lens, type Scene } from './sceneModel'
 
-// a layer with no LEDs yet says so in its own row
-const LEDS_NOTES = {
+// a layer with no lights yet says so in its own row
+const LIGHTS_NOTES = {
   None: null,
-  Replaceable: 'Code can replace these LEDs.',
-  Fixed: "Layers are on different LEDs, so code can't replace them.",
+  Replaceable: 'Code can replace these lights.',
+  Fixed: "Layers are on different lights, so code can't replace them.",
 }
 
 /** The names of the planes a layer can cover, as one with no extent has no size to give it */
@@ -31,8 +31,8 @@ export function displayNames(scene: Scene) {
 export type NewLayerPlace = 'Sequence' | 'Area' | 'Display'
 
 export const NEW_LAYER_OPTIONS: { value: NewLayerPlace; label: string }[] = [
-  { value: 'Sequence', label: 'LED sequence' },
-  { value: 'Area', label: 'LED area' },
+  { value: 'Sequence', label: 'Light sequence' },
+  { value: 'Area', label: 'Light area' },
   { value: 'Display', label: 'Display' },
 ]
 
@@ -45,49 +45,49 @@ export function newPlace(scene: Scene, kind: NewLayerPlace): LayerPlace {
   return places.findLast((place) => place.startsWith(prefix)) ?? (first as LayerPlace)
 }
 
-/** What code can do with a scene's LEDs, which comes of the LEDs its layers are on */
-export function LedsNote() {
+/** What code can do with a scene's lights, which comes of the lights its layers are on */
+export function LightsNote() {
   const scene = useContext(SceneContext)!
   return (
-    <Show when={scene.get().layers.some((layer) => layer.display === undefined) && LEDS_NOTES[ledsCase(scene.get())]}>
+    <Show when={scene.get().layers.some((layer) => layer.display === undefined) && LIGHTS_NOTES[lightsCase(scene.get())]}>
       {(note) => <p class="scene-note">{note()}</p>}
     </Show>
   )
 }
 
-/** Which LEDs a layer is on. New layers start on every LED, and only a scene from before then has none. */
-export function LayerLeds(props: { lens: Lens<LedQ | undefined> }) {
+/** Which lights a layer is on. New layers start on every light, and only a scene from before then has none. */
+export function LayerLights(props: { lens: Lens<LightQ | undefined> }) {
   // what's been picked each way is kept here to come back to, as the file only has the way that's in use
-  const [pick, setPick] = createSignal(ledPick(props.lens.get() ?? 'Every'))
+  const [pick, setPick] = createSignal(lightPick(props.lens.get() ?? 'Every'))
   createEffect(
     on(
       () => props.lens.get(),
-      (leds) => {
-        const query = leds ?? 'Every'
-        if (JSON.stringify(pickedQuery(untrack(pick))) !== JSON.stringify(query)) setPick(ledPick(query))
+      (lights) => {
+        const query = lights ?? 'Every'
+        if (JSON.stringify(pickedQuery(untrack(pick))) !== JSON.stringify(query)) setPick(lightPick(query))
       },
     ),
   )
-  const choose = (chosen: LedPick) => {
+  const choose = (chosen: LightPick) => {
     setPick(chosen)
     props.lens.set(pickedQuery(chosen))
   }
 
   const label = () => {
-    const leds = props.lens.get()
-    return leds === undefined ? 'None' : ledsLabel(leds)
+    const lights = props.lens.get()
+    return lights === undefined ? 'None' : lightsLabel(lights)
   }
   const title = () => {
-    const leds = props.lens.get()
-    return leds === undefined || canPick(leds) ? label() : 'Replaced if chosen here. Edit it in Raw to keep it.'
+    const lights = props.lens.get()
+    return lights === undefined || canPick(lights) ? label() : 'Replaced if chosen here. Edit it in Raw to keep it.'
   }
 
   return (
-    <div class="scene-layer-leds">
+    <div class="scene-layer-lights">
       <span class="scene-note" title={title()}>
         {label()}
       </span>
-      <LedPicker pick={pick()} onChange={choose} />
+      <LightPicker pick={pick()} onChange={choose} />
     </div>
   )
 }

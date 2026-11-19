@@ -38,7 +38,7 @@ pub trait LightManager: SpawnableSystem {
   /// Keeps `owner`'s declarations but stops showing them
   fn deactivate_by_system(&mut self, owner: u64);
   /// How these lights choose between declarations from different systems at the same z
-  fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LedConflictResolution);
+  fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LightConflictResolution);
   /// The colors declared for a light by any system, in no particular order
   fn declared_colors(&self, light: &LightAddress) -> Vec<Rgba<u8>>;
 }

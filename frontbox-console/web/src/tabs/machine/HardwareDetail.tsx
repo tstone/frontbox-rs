@@ -2,7 +2,7 @@ import { For, type JSX, Show } from 'solid-js'
 import { describeDriverMode, describeSwitchConfig, hexAddress } from '../../lib/hardwareConfig'
 import { driverMode, machine } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
-import type { LED } from '../../types/generated/LED'
+import type { Light } from '../../types/generated/Light'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import type { ResolvedExpansionBoard } from '../../types/generated/ResolvedExpansionBoard'
 import type { ResolvedIoBoard } from '../../types/generated/ResolvedIoBoard'
@@ -62,7 +62,7 @@ function SwitchDetail(props: { switch: Switch }) {
   )
 }
 
-function LedDetail(props: { led: LED }) {
+function LedDetail(props: { led: Light }) {
   const exp = props.led.address.led.exp
   // an LED's breakout comes from its port (port / 4), not the board's own breakout, so match on address
   const board = () => machine.hardware?.exp_network.find((b) => b.address === exp.board_address)

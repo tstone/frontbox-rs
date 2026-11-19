@@ -17,7 +17,7 @@ use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 /// request, so nothing carries over to the next turn. Ball management, by contrast, is global.
 ///
 /// ## Requests
-/// Other systems don't turn ball save on and off; they place a request, much like declaring LEDs. Ball save is active
+/// Other systems don't turn ball save on and off; they place a request, much like declaring light colors. Ball save is active
 /// while any request is.
 /// - Each system has at most one request. A new one replaces that system's previous one.
 /// - Requests from different systems overlap: a timed request runs to its own deadline and never shortens another.
@@ -184,7 +184,7 @@ impl System for BallSaveSystem {
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
-    // Overriding skips the default LED deactivation; clearing stops the scene instead
+    // Overriding skips the default light deactivation; clearing stops the scene instead
     self.clear(ctx);
   }
 

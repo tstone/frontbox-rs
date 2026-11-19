@@ -6,14 +6,14 @@
  */
 export type SceneSize = { 
 /**
- * Points along the strip of `Sequence` LED layers
+ * Points along the strip of `Sequence` light layers
  */
-leds: number, 
+lights: number, 
 /**
- * Points across a display the machine doesn't have, and the width of an LED layer on a plane it doesn't have
+ * Points across a display the machine doesn't have, and the width of a light layer on a plane it doesn't have
  */
 width: number, 
 /**
- * Points down a display the machine doesn't have, and the height of an LED layer on a plane it doesn't have
+ * Points down a display the machine doesn't have, and the height of a light layer on a plane it doesn't have
  */
 height: number, };

@@ -7,7 +7,7 @@
 //! 2. Define your [hardware](mod@crate::hardware).
 //! 3. Write a [system](mod@crate::systems).
 //! 4. Emit some [events](mod@crate::systems::event).
-//! 5. Turn on some LEDs (see `frontbox-lighting`).
+//! 5. Turn on some lights (see `frontbox-lighting`).
 //! 6. [Choreograph](mod@crate::systems::timer) something.
 
 pub mod app;
@@ -40,7 +40,7 @@ pub mod prelude {
   pub use crate::hardware_defs;
   pub use crate::location::*;
   pub use crate::machine::{
-    BootSwitchMisalignmentFound, ContextDrivers, ContextLeds, ContextSwitches, MachineDisconnected, MachineReconnected,
+    BootSwitchMisalignmentFound, ContextDrivers, ContextLights, ContextSwitches, MachineDisconnected, MachineReconnected,
     MachineSystem, MisalignedSwitch, SwitchClosed, SwitchOpened,
   };
   pub use crate::metrics::{

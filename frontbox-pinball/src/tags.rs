@@ -1,9 +1,9 @@
 //! Tags for the parts of a pinball machine. Most describe where hardware is or what it's part of, and can go on
-//! switches, drivers and LEDs alike. A game can define its own as well (see `frontbox_core::hardware::Tag`).
+//! switches, drivers and lights alike. A game can define its own as well (see `frontbox_core::hardware::Tag`).
 
 use frontbox_core::prelude::*;
 
-// -- LEDs --
+// -- Lights --
 
 #[derive(Tag)]
 pub struct GeneralIllumination;

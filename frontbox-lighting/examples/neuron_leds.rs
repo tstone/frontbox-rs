@@ -3,17 +3,17 @@ use frontbox_lighting::prelude::*;
 use std::io::Write;
 
 /**
- * This example demonstrates declaring LED colors, and animating them with scenes
+ * This example demonstrates declaring light colors, and animating them with scenes
  */
 
 #[derive(Tag)]
 pub struct Lane;
 
-pub mod leds {
+pub mod lights {
   use super::*;
 
   hardware_defs! {
-    // like other hardware, LEDs can be arbitrary tagged for later querying
+    // like other hardware, lights can be arbitrary tagged for later querying
     pub DEMO1: LedDefinition = LedDefinition::single("demo1").tag(Lane);
     pub DEMO2: LedDefinition = LedDefinition::single("demo2");
     pub DEMO3: LedDefinition = LedDefinition::single("demo3");
@@ -29,7 +29,7 @@ async fn main() {
 
   let exp_network = ExpNetwork::new(vec![ExpBoard::neuron().wire_led_port(
     1,
-    LedPort::ws2812().leds(vec![&leds::DEMO1, &leds::DEMO2, &leds::DEMO3, &leds::DEMO4]),
+    LedPort::ws2812().leds(vec![&lights::DEMO1, &lights::DEMO2, &lights::DEMO3, &lights::DEMO4]),
   )]);
 
   App::new(BootConfig {
@@ -39,7 +39,7 @@ async fn main() {
   .configure(|app| {
     app.system(SceneSystem::new());
     app.system(LayeredLightManager::new());
-    app.system(LedExample::new());
+    app.system(LightExample::new());
   })
   .run()
   .await;
@@ -49,7 +49,7 @@ async fn main() {
 const FLASH: &str = r#"Scene(
   version: 2,
   timing: (duration: 0.9, cycle: Forever),
-  layers: [Leds(leds: Name("demo3"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
+  layers: [Lights(lights: Name("demo3"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
     keys: [
       (at: 0.0, value: (0, 0, 0, 255), curve: ExponentialInOut),
       (at: 0.45, value: (128, 0, 128, 255), curve: ExponentialInOut),
@@ -63,7 +63,7 @@ const FLASH: &str = r#"Scene(
 const SEQUENCE: &str = r#"Scene(
   version: 2,
   timing: (duration: 2.1, cycle: Forever),
-  layers: [Leds(leds: Name("demo4"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
+  layers: [Lights(lights: Name("demo4"), surface: Sequence, layer: (fill: (base: Solid(Keyframes(
     keys: [
       (at: 0.0, value: (0, 0, 0, 255), curve: EaseInOut),
       (at: 1.5, value: (255, 0, 0, 255), curve: Linear),
@@ -74,12 +74,12 @@ const SEQUENCE: &str = r#"Scene(
   )))))],
 )"#;
 
-struct LedExample {
+struct LightExample {
   flash: ScenePlayer,
   sequence: ScenePlayer,
 }
 
-impl LedExample {
+impl LightExample {
   fn new() -> Self {
     Self {
       flash: ScenePlayer::new(Scene::load(FLASH).unwrap()),
@@ -88,15 +88,15 @@ impl LedExample {
   }
 }
 
-impl System for LedExample {
+impl System for LightExample {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Declare individually
-    ctx.declare_leds(&leds::DEMO1.q(), 0, Rgba::blue());
-    ctx.declare_leds(&leds::DEMO2.q(), 3, Rgba::yellow().with_alpha(127));
+    ctx.declare_lights(&lights::DEMO1.q(), 0, Rgba::blue());
+    ctx.declare_lights(&lights::DEMO2.q(), 3, Rgba::yellow().with_alpha(127));
 
-    // Or declare a color per LED
-    ctx.declare_led_colors(
-      &vec![leds::DEMO1.q(), leds::DEMO2.q(), leds::DEMO3.q()],
+    // Or declare a color per light
+    ctx.declare_light_colors(
+      &vec![lights::DEMO1.q(), lights::DEMO2.q(), lights::DEMO3.q()],
       5,
       |count| {
         (0..count)

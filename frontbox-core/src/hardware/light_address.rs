@@ -47,19 +47,19 @@ pub enum Channels {
   Rgb,
 }
 
-impl Contextual<Vec<LightAddress>> for LedQ {
+impl Contextual<Vec<LightAddress>> for LightQ {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
     self.query_addresses(ctx.into())
   }
 }
 
-impl Contextual<Vec<LightAddress>> for Vec<LedQ> {
+impl Contextual<Vec<LightAddress>> for Vec<LightQ> {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
     self.iter().flat_map(|q| q.query_addresses(ctx.into())).collect()
   }
 }
 
-impl Contextual<Vec<LightAddress>> for Vec<&LedQ> {
+impl Contextual<Vec<LightAddress>> for Vec<&LightQ> {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
     self.iter().flat_map(|q| q.query_addresses(ctx.into())).collect()
   }

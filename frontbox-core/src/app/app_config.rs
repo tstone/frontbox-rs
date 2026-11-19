@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::app::{BootConfig, DEFAULT_LED_RADIUS, PlatformKind};
+use crate::app::{BootConfig, DEFAULT_LIGHT_RADIUS, PlatformKind};
 use crate::location::AppPlane;
 
 #[derive(Debug, Clone)]
@@ -10,7 +10,7 @@ pub struct AppConfig {
   pub platform: PlatformKind,
   pub system_interval: Duration,
   pub watchdog_interval: Option<Duration>,
-  pub led_radius: f32,
+  pub light_radius: f32,
   /// See [`BootConfig::content_path`]
   pub content_path: Option<PathBuf>,
   /// See [`App::plane`](crate::app::App::plane)
@@ -23,7 +23,7 @@ impl AppConfig {
       platform: boot.platform.kind(),
       system_interval: boot.system_interval,
       watchdog_interval: boot.platform.watchdog_interval(),
-      led_radius: boot.led_radius,
+      light_radius: boot.light_radius,
       content_path: boot.content_path.clone(),
       planes: Vec::new(),
     }
@@ -36,7 +36,7 @@ impl Default for AppConfig {
       platform: PlatformKind::Virtual,
       system_interval: Duration::ZERO,
       watchdog_interval: None,
-      led_radius: DEFAULT_LED_RADIUS,
+      light_radius: DEFAULT_LIGHT_RADIUS,
       content_path: None,
       planes: Vec::new(),
     }

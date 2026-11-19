@@ -90,7 +90,7 @@ pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualH
   Hardware::new(
     SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
     DriverLookup::new(boot_config.io_network.drivers),
-    LedLookup::new(&expansion_boards),
+    LightLookup::new(&expansion_boards),
     io_network_boards,
     expansion_boards,
   )

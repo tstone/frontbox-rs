@@ -17,25 +17,25 @@ static WIDE: ReferencePlane = ReferencePlane::new("Wide").extent(Vec2::new(20.0,
 static OFFSET: LazyLock<ReferencePlane> =
   LazyLock::new(|| ReferencePlane::new("Offset").origin(Vec3::new(100.0, 0.0, 0.0)).extent(Vec2::new(10.0, 10.0)).build());
 
-/// LEDs "led0".. at these locations, with every plane added
-fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LightAddress>) {
+/// Lights "light0".. at these locations, with every plane added
+fn placed_lights(locations: &[Option<Vec3>]) -> (TestContext, Vec<LightAddress>) {
   let mut context = TestContext::default();
   context.insert_system(LayeredLightManager::new());
   context.insert_system(SceneSystem::new());
   let addresses: Vec<_> = (0..locations.len()).map(|i| LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8))).collect();
   for (i, address) in addresses.iter().enumerate() {
-    context.insert_led(LED { name: format!("led{i}"), address: address.clone(), location: locations[i], ..Default::default() });
+    context.insert_light(Light { name: format!("light{i}"), address: address.clone(), location: locations[i], ..Default::default() });
   }
   context.add_plane(&PLANE);
   context.add_plane(&WIDE);
   context.add_plane(&OFFSET);
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.on_spawn(&context.sys_ctx()));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.on_spawn(&context.sys_ctx()));
   (context, addresses)
 }
 
-/// Three LEDs, "led0" to "led2", with no location
-fn three_leds() -> (TestContext, Vec<LightAddress>) {
-  placed_leds(&[None, None, None])
+/// Three lights, "light0" to "light2", with no location
+fn three_lights() -> (TestContext, Vec<LightAddress>) {
+  placed_lights(&[None, None, None])
 }
 
 fn at(x: f32, y: f32) -> Option<Vec3> {
@@ -58,10 +58,10 @@ fn tick(context: &TestContext, delta: Duration) {
   with_scenes(context, |scenes| scenes.on_tick(delta, &context.sys_ctx()));
 }
 
-/// What each LED shows, `None` where nothing gives it a color
+/// What each light shows, `None` where nothing gives it a color
 fn shown(context: &TestContext, addresses: &[LightAddress]) -> Vec<Option<Rgba<u8>>> {
-  let resolved = context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.resolve(&context.sys_ctx())).unwrap();
-  addresses.iter().map(|address| resolved.iter().find(|(led, _)| led == address).and_then(|(_, color)| *color)).collect()
+  let resolved = context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.resolve(&context.sys_ctx())).unwrap();
+  addresses.iter().map(|address| resolved.iter().find(|(light, _)| light == address).and_then(|(_, color)| *color)).collect()
 }
 
 fn played(context: &TestContext, addresses: &[LightAddress], scene: Scene) -> Vec<Option<Rgba<u8>>> {
@@ -84,29 +84,29 @@ fn red_to_blue() -> Layer {
   }))
 }
 
-/// One layer along some LEDs
-fn on(leds: LedQ, layer: Layer) -> Scene {
-  Scene::new(vec![LedLayer::sequence(leds, layer).into()])
+/// One layer along some lights
+fn on(lights: LightQ, layer: Layer) -> Scene {
+  Scene::new(vec![LightLayer::sequence(lights, layer).into()])
 }
 
 /// One layer across a plane
-fn across(plane: &str, leds: LedQ, layer: Layer) -> Scene {
-  Scene::new(vec![LedLayer::area(leds, plane, layer).into()])
+fn across(plane: &str, lights: LightQ, layer: Layer) -> Scene {
+  Scene::new(vec![LightLayer::area(lights, plane, layer).into()])
 }
 
-fn on_plane(leds: LedQ, layer: Layer) -> Scene {
-  across("Plane", leds, layer)
+fn on_plane(lights: LightQ, layer: Layer) -> Scene {
+  across("Plane", lights, layer)
 }
 
 fn timed(cycle: Cycle) -> Scene {
-  on(LedQ::name("led0"), solid(Rgba::red())).timing(Timing::new(1.0, cycle))
+  on(LightQ::name("light0"), solid(Rgba::red())).timing(Timing::new(1.0, cycle))
 }
 
 #[test]
-fn an_image_runs_along_the_leds() {
-  let (context, addresses) = three_leds();
+fn an_image_runs_along_the_lights() {
+  let (context, addresses) = three_lights();
   let art = image::RgbaImage::from_fn(8, 1, |x, _| if x < 4 { Rgba::red() } else { Rgba::blue() });
-  let mut scene = on(LedQ::names(vec!["led0", "led1", "led2"]), Layer::new(Fill::new(FillNode::image("art.png"))));
+  let mut scene = on(LightQ::names(vec!["light0", "light1", "light2"]), Layer::new(Fill::new(FillNode::image("art.png"))));
   scene.assets.insert_picture("art.png", Picture::new(art));
   play(&context, PlayableScene::new(scene));
   let shown = shown(&context, &addresses);
@@ -114,20 +114,20 @@ fn an_image_runs_along_the_leds() {
 }
 
 #[test]
-fn gradient_runs_along_the_leds() {
-  let (context, addresses) = three_leds();
-  let scene = on(LedQ::names(vec!["led0", "led1", "led2"]), red_to_blue());
+fn gradient_runs_along_the_lights() {
+  let (context, addresses) = three_lights();
+  let scene = on(LightQ::names(vec!["light0", "light1", "light2"]), red_to_blue());
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red()), Some(Rgba([127, 0, 128, 255])), Some(Rgba::blue())]);
 }
 
 #[test]
 fn time_moves_tracks() {
-  let (context, addresses) = three_leds();
+  let (context, addresses) = three_lights();
   let track = Prop::Keyframes(Keyframes {
     keys: vec![Key::new(0.0, Color(Rgba([0, 0, 0, 255])), Curve::Linear), Key::new(1.0, Color(Rgba([200, 0, 0, 255])), Curve::Linear)],
     cycle: Cycle::Once,
   });
-  let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(track)))).timing(Timing::new(1.0, Cycle::Once));
+  let scene = on(LightQ::name("light0"), Layer::new(Fill::new(FillNode::Solid(track)))).timing(Timing::new(1.0, Cycle::Once));
   play(&context, PlayableScene::new(scene));
 
   tick(&context, Duration::from_millis(500));
@@ -135,8 +135,8 @@ fn time_moves_tracks() {
 }
 
 #[test]
-fn clears_the_leds_once_complete() {
-  let (context, addresses) = three_leds();
+fn clears_the_lights_once_complete() {
+  let (context, addresses) = three_lights();
   play(&context, PlayableScene::new(timed(Cycle::Once)));
 
   tick(&context, Duration::from_millis(500));
@@ -147,18 +147,18 @@ fn clears_the_leds_once_complete() {
 
 #[test]
 fn can_hold_its_last_moment() {
-  let (context, addresses) = three_leds();
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red())).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold))));
+  let (context, addresses) = three_lights();
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red())).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold))));
   tick(&context, Duration::from_secs(2));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
 
 #[test]
 fn each_play_picks_its_own_random_values() {
-  let (context, addresses) = three_leds();
+  let (context, addresses) = three_lights();
   let spread = Spread::Color { hue: (0.0, 360.0), brightness: (1.0, 1.0), alpha: (1.0, 1.0) };
   let color = Prop::Random(Random { picks: vec![Pick::new(0.0)], spread, seed: 0, force_unique: true });
-  let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(color)))).timing(Timing::new(1.0, Cycle::Once));
+  let scene = on(LightQ::name("light0"), Layer::new(Fill::new(FillNode::Solid(color)))).timing(Timing::new(1.0, Cycle::Once));
 
   let mut shots = vec![];
   for _ in 0..8 {
@@ -171,7 +171,7 @@ fn each_play_picks_its_own_random_values() {
 
 #[test]
 fn a_scene_that_repeats_forever_keeps_playing() {
-  let (context, addresses) = three_leds();
+  let (context, addresses) = three_lights();
   play(&context, PlayableScene::new(timed(Cycle::Forever)));
   tick(&context, Duration::from_secs(100));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
@@ -179,16 +179,16 @@ fn a_scene_that_repeats_forever_keeps_playing() {
 
 #[test]
 fn a_static_scene_keeps_playing() {
-  let (context, addresses) = three_leds();
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+  let (context, addresses) = three_lights();
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))));
   tick(&context, Duration::from_secs(100));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
 
 #[test]
-fn stop_clears_the_leds() {
-  let (context, addresses) = three_leds();
-  let id = play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+fn stop_clears_the_lights() {
+  let (context, addresses) = three_lights();
+  let id = play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
   with_scenes(&context, |scenes| scenes.remove(id));
@@ -197,8 +197,8 @@ fn stop_clears_the_leds() {
 
 #[test]
 fn params_set_by_the_game() {
-  let (context, addresses) = three_leds();
-  let scene = on(LedQ::name("led0"), Layer::new(Fill::new(FillNode::Solid(Prop::Variable("color".into())))));
+  let (context, addresses) = three_lights();
+  let scene = on(LightQ::name("light0"), Layer::new(Fill::new(FillNode::Solid(Prop::Variable("color".into())))));
   let mut player = ScenePlayer::started(PlayableScene::new(scene).variable("color", Rgba::red()), &context.sys_ctx());
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
@@ -209,36 +209,36 @@ fn params_set_by_the_game() {
 #[test]
 fn a_scene_takes_its_size_from_the_plane() {
   // the same scene on a plane twice as wide: halfway across its gradient is further along
-  let (context, addresses) = placed_leds(&[at(20.0, 5.0)]);
-  assert_eq!(played(&context, &addresses, across("Wide", LedQ::every(), red_to_blue())), vec![Some(Rgba::blue())]);
+  let (context, addresses) = placed_lights(&[at(20.0, 5.0)]);
+  assert_eq!(played(&context, &addresses, across("Wide", LightQ::every(), red_to_blue())), vec![Some(Rgba::blue())]);
 }
 
 #[test]
-fn colors_come_from_where_leds_are_not_their_order() {
+fn colors_come_from_where_lights_are_not_their_order() {
   // out of order and unevenly spread: along a list these would be red, purple, blue
-  let (context, addresses) = placed_leds(&[at(10.0, 5.0), at(0.0, 5.0), at(5.0, 5.0)]);
+  let (context, addresses) = placed_lights(&[at(10.0, 5.0), at(0.0, 5.0), at(5.0, 5.0)]);
   assert_eq!(
-    played(&context, &addresses, on_plane(LedQ::every(), red_to_blue())),
+    played(&context, &addresses, on_plane(LightQ::every(), red_to_blue())),
     vec![Some(Rgba::blue()), Some(Rgba::red()), Some(Rgba([127, 0, 128, 255]))]
   );
 }
 
 #[test]
-fn only_leds_matching_the_query_take_part() {
-  let (context, addresses) = placed_leds(&[at(1.0, 1.0), at(2.0, 2.0)]);
-  assert_eq!(played(&context, &addresses, on_plane(LedQ::name("led1"), solid(Rgba::red()))), vec![None, Some(Rgba::red())]);
+fn only_lights_matching_the_query_take_part() {
+  let (context, addresses) = placed_lights(&[at(1.0, 1.0), at(2.0, 2.0)]);
+  assert_eq!(played(&context, &addresses, on_plane(LightQ::name("light1"), solid(Rgba::red()))), vec![None, Some(Rgba::red())]);
 }
 
 #[test]
-fn leds_without_a_location_dont_take_part() {
-  let (context, addresses) = placed_leds(&[None, at(2.0, 2.0)]);
-  assert_eq!(played(&context, &addresses, on_plane(LedQ::every(), solid(Rgba::red()))), vec![None, Some(Rgba::red())]);
+fn lights_without_a_location_dont_take_part() {
+  let (context, addresses) = placed_lights(&[None, at(2.0, 2.0)]);
+  assert_eq!(played(&context, &addresses, on_plane(LightQ::every(), solid(Rgba::red()))), vec![None, Some(Rgba::red())]);
 }
 
 #[test]
 fn a_layer_with_no_shape_stops_at_the_edge_of_the_plane() {
-  let (context, addresses) = placed_leds(&[at(2.0, 2.0), at(11.0, 2.0)]);
-  assert_eq!(played(&context, &addresses, on_plane(LedQ::every(), solid(Rgba::red()))), vec![Some(Rgba::red()), None]);
+  let (context, addresses) = placed_lights(&[at(2.0, 2.0), at(11.0, 2.0)]);
+  assert_eq!(played(&context, &addresses, on_plane(LightQ::every(), solid(Rgba::red()))), vec![Some(Rgba::red()), None]);
 }
 
 /// A circle of radius 2 around this position
@@ -247,20 +247,20 @@ fn circle(at: Prop<Vec2>) -> Shape {
 }
 
 #[test]
-fn a_shape_reaches_leds_past_the_edge_of_the_plane() {
-  let (context, addresses) = placed_leds(&[at(11.0, 5.0), at(20.0, 5.0)]);
-  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Vec2::new(11.0, 5.0).into())));
+fn a_shape_reaches_lights_past_the_edge_of_the_plane() {
+  let (context, addresses) = placed_lights(&[at(11.0, 5.0), at(20.0, 5.0)]);
+  let scene = on_plane(LightQ::every(), solid(Rgba::red()).region(circle(Vec2::new(11.0, 5.0).into())));
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red()), None]);
 }
 
 #[test]
-fn an_led_a_shape_moves_off_is_given_up() {
-  let (context, addresses) = placed_leds(&[at(5.0, 5.0)]);
+fn an_light_a_shape_moves_off_is_given_up() {
+  let (context, addresses) = placed_lights(&[at(5.0, 5.0)]);
   let path = Keyframes {
     keys: vec![Key::new(0.0, Vec2::new(5.0, 5.0), Curve::Linear), Key::new(1.0, Vec2::new(50.0, 5.0), Curve::Linear)],
     cycle: Cycle::Once,
   };
-  let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Prop::Keyframes(path)))).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold));
+  let scene = on_plane(LightQ::every(), solid(Rgba::red()).region(circle(Prop::Keyframes(path)))).timing(Timing::new(1.0, Cycle::Once).end(EndBehavior::Hold));
   play(&context, PlayableScene::new(scene));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 
@@ -271,42 +271,42 @@ fn an_led_a_shape_moves_off_is_given_up() {
 #[test]
 fn positions_are_relative_to_the_plane() {
   // the plane starts at x = 100, so x = 110 is its far edge and x = 5 is off it
-  let (context, addresses) = placed_leds(&[at(110.0, 5.0), at(5.0, 5.0)]);
-  assert_eq!(played(&context, &addresses, across("Offset", LedQ::every(), red_to_blue())), vec![Some(Rgba::blue()), None]);
+  let (context, addresses) = placed_lights(&[at(110.0, 5.0), at(5.0, 5.0)]);
+  assert_eq!(played(&context, &addresses, across("Offset", LightQ::every(), red_to_blue())), vec![Some(Rgba::blue()), None]);
 }
 
 #[test]
-fn leds_off_the_surface_project_straight_onto_it() {
-  let (context, addresses) = placed_leds(&[Some(Vec3::new(0.0, 5.0, 1.5))]);
-  assert_eq!(played(&context, &addresses, on_plane(LedQ::every(), red_to_blue())), vec![Some(Rgba::red())]);
+fn lights_off_the_surface_project_straight_onto_it() {
+  let (context, addresses) = placed_lights(&[Some(Vec3::new(0.0, 5.0, 1.5))]);
+  assert_eq!(played(&context, &addresses, on_plane(LightQ::every(), red_to_blue())), vec![Some(Rgba::red())]);
 }
 
 #[test]
-fn led_radius_softens_shape_edges() {
-  // how much of a circle's edge shows on an LED just inside it
+fn light_radius_softens_shape_edges() {
+  // how much of a circle's edge shows on a light just inside it
   let coverage = |radius: f32| {
-    let (mut context, addresses) = placed_leds(&[at(5.0, 6.95)]);
-    context.set_led_radius(radius);
-    let scene = on_plane(LedQ::every(), solid(Rgba::red()).region(circle(Vec2::new(5.0, 5.0).into())));
+    let (mut context, addresses) = placed_lights(&[at(5.0, 6.95)]);
+    context.set_light_radius(radius);
+    let scene = on_plane(LightQ::every(), solid(Rgba::red()).region(circle(Vec2::new(5.0, 5.0).into())));
     played(&context, &addresses, scene)[0].unwrap()[3]
   };
 
-  let default = coverage(DEFAULT_LED_RADIUS);
+  let default = coverage(DEFAULT_LIGHT_RADIUS);
   let soft = coverage(2.0);
   assert!(soft < default && soft > 127, "{soft} vs {default}");
 }
 
 #[test]
 fn a_layer_on_a_plane_the_app_doesnt_have_shows_nothing() {
-  let (context, addresses) = placed_leds(&[at(5.0, 5.0)]);
-  assert_eq!(played(&context, &addresses, across("Nowhere", LedQ::every(), solid(Rgba::red()))), vec![None]);
+  let (context, addresses) = placed_lights(&[at(5.0, 5.0)]);
+  assert_eq!(played(&context, &addresses, across("Nowhere", LightQ::every(), solid(Rgba::red()))), vec![None]);
 }
 
 #[test]
 fn a_higher_z_is_drawn_over_a_lower_one() {
-  let (context, addresses) = three_leds();
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
-  let over = play(&context, PlayableScene::new(Scene::new(vec![LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).at_z(1).into()])));
+  let (context, addresses) = three_lights();
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))));
+  let over = play(&context, PlayableScene::new(Scene::new(vec![LightLayer::sequence(LightQ::name("light0"), solid(Rgba::blue())).at_z(1).into()])));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::blue()));
 
   with_scenes(&context, |scenes| scenes.remove(over));
@@ -314,80 +314,80 @@ fn a_higher_z_is_drawn_over_a_lower_one() {
 }
 
 fn two_layers(under: &str, over: &str) -> Scene {
-  Scene::new(vec![LedLayer::sequence(LedQ::name(under), solid(Rgba::red())).into(), LedLayer::sequence(LedQ::name(over), solid(Rgba::blue())).at_z(2).into()])
+  Scene::new(vec![LightLayer::sequence(LightQ::name(under), solid(Rgba::red())).into(), LightLayer::sequence(LightQ::name(over), solid(Rgba::blue())).at_z(2).into()])
     .timing(Timing::new(1.0, Cycle::Once))
 }
 
 #[test]
-fn layers_play_on_their_own_leds() {
-  let (context, addresses) = three_leds();
-  assert_eq!(played(&context, &addresses, two_layers("led0", "led2")), vec![Some(Rgba::red()), None, Some(Rgba::blue())]);
+fn layers_play_on_their_own_lights() {
+  let (context, addresses) = three_lights();
+  assert_eq!(played(&context, &addresses, two_layers("light0", "light2")), vec![Some(Rgba::red()), None, Some(Rgba::blue())]);
 }
 
 #[test]
 fn layers_run_on_one_clock_and_clear_together() {
-  let (context, addresses) = three_leds();
-  play(&context, PlayableScene::new(two_layers("led0", "led1")));
+  let (context, addresses) = three_lights();
+  play(&context, PlayableScene::new(two_layers("light0", "light1")));
   tick(&context, Duration::from_secs(1));
   assert_eq!(shown(&context, &addresses), vec![None, None, None]);
 }
 
 #[test]
-fn each_layer_spreads_over_its_own_leds() {
-  let (context, addresses) = three_leds();
+fn each_layer_spreads_over_its_own_lights() {
+  let (context, addresses) = three_lights();
   let scene = Scene::new(vec![
-    LedLayer::sequence(LedQ::names(vec!["led0", "led1"]), red_to_blue()).into(),
-    LedLayer::sequence(LedQ::name("led2"), red_to_blue()).into(),
+    LightLayer::sequence(LightQ::names(vec!["light0", "light1"]), red_to_blue()).into(),
+    LightLayer::sequence(LightQ::name("light2"), red_to_blue()).into(),
   ]);
-  // on its own, the third LED is the start of its layer
+  // on its own, the third light is the start of its layer
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red()), Some(Rgba::blue()), Some(Rgba::red())]);
 }
 
 #[test]
 fn each_layer_is_measured_against_its_own_plane() {
   // x = 10 is halfway along Wide, and x = 110 is the far edge of Offset, which starts at x = 100
-  let (context, addresses) = placed_leds(&[at(10.0, 5.0), at(110.0, 5.0)]);
-  let gradient = |leds: &str, plane: &str| LedLayer::area(LedQ::name(leds), plane, red_to_blue()).into();
-  let scene = Scene::new(vec![gradient("led0", "Wide"), gradient("led1", "Offset")]);
+  let (context, addresses) = placed_lights(&[at(10.0, 5.0), at(110.0, 5.0)]);
+  let gradient = |lights: &str, plane: &str| LightLayer::area(LightQ::name(lights), plane, red_to_blue()).into();
+  let scene = Scene::new(vec![gradient("light0", "Wide"), gradient("light1", "Offset")]);
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba([127, 0, 128, 255])), Some(Rgba::blue())]);
 }
 
 #[test]
 fn a_scene_can_mix_a_sequence_with_an_area() {
-  let (context, addresses) = placed_leds(&[at(5.0, 5.0), None]);
+  let (context, addresses) = placed_lights(&[at(5.0, 5.0), None]);
   let scene = Scene::new(vec![
-    LedLayer::area(LedQ::name("led0"), "Plane", solid(Rgba::red())).into(),
-    LedLayer::sequence(LedQ::name("led1"), solid(Rgba::blue())).into(),
+    LightLayer::area(LightQ::name("light0"), "Plane", solid(Rgba::red())).into(),
+    LightLayer::sequence(LightQ::name("light1"), solid(Rgba::blue())).into(),
   ]);
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red()), Some(Rgba::blue())]);
 }
 
 #[test]
 fn layers_on_one_z_blend_rather_than_replace_each_other() {
-  let (context, addresses) = three_leds();
-  let scene = Scene::new(vec![LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).into(), LedLayer::sequence(LedQ::name("led0"), see_through(Rgba::red())).into()]);
+  let (context, addresses) = three_lights();
+  let scene = Scene::new(vec![LightLayer::sequence(LightQ::name("light0"), solid(Rgba::blue())).into(), LightLayer::sequence(LightQ::name("light0"), see_through(Rgba::red())).into()]);
   let shown = played(&context, &addresses, scene)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
   assert_eq!(shown[3], 255);
 }
 
 #[test]
-fn a_layer_that_misses_an_led_leaves_it_to_the_others_on_its_z() {
-  let (context, addresses) = placed_leds(&[at(5.0, 5.0)]);
+fn a_layer_that_misses_an_light_leaves_it_to_the_others_on_its_z() {
+  let (context, addresses) = placed_lights(&[at(5.0, 5.0)]);
   let far_away = Shape::new(ShapeNode::circle(1.0)).transform(Transform::Translate(Vec2::new(50.0, 50.0).into()));
   let scene = Scene::new(vec![
-    LedLayer::area(LedQ::every(), "Plane", solid(Rgba::red())).into(),
-    LedLayer::area(LedQ::every(), "Plane", solid(Rgba::blue()).region(far_away)).into(),
+    LightLayer::area(LightQ::every(), "Plane", solid(Rgba::red())).into(),
+    LightLayer::area(LightQ::every(), "Plane", solid(Rgba::blue()).region(far_away)).into(),
   ]);
   assert_eq!(played(&context, &addresses, scene), vec![Some(Rgba::red())]);
 }
 
 #[test]
 fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
-  let (context, addresses) = placed_leds(&[at(2.0, 5.0), at(8.0, 5.0)]);
+  let (context, addresses) = placed_lights(&[at(2.0, 5.0), at(8.0, 5.0)]);
   let left_half = Shape::new(ShapeNode::Rect { width: 5.0.into(), height: 10.0.into() }).transform(Transform::Translate(Vec2::new(2.5, 5.0).into()));
-  play(&context, PlayableScene::new(on_plane(LedQ::every(), solid(Rgba::blue()))));
-  play(&context, PlayableScene::new(on_plane(LedQ::every(), see_through(Rgba::red()).region(left_half))));
+  play(&context, PlayableScene::new(on_plane(LightQ::every(), solid(Rgba::blue()))));
+  play(&context, PlayableScene::new(on_plane(LightQ::every(), see_through(Rgba::red()).region(left_half))));
 
   let shown = shown(&context, &addresses);
   let blended = shown[0].unwrap();
@@ -398,17 +398,17 @@ fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
 
 #[test]
 fn a_playback_is_drawn_over_declarations_on_its_z() {
-  let (context, addresses) = three_leds();
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.declare(OWNER + 1, 0, &[(addresses[0].clone(), Rgba::blue())], false));
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
+  let (context, addresses) = three_lights();
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.declare(OWNER + 1, 0, &[(addresses[0].clone(), Rgba::blue())], false));
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
 }
 
 #[test]
-fn an_inactive_owners_playback_gives_its_leds_back() {
-  let (context, addresses) = three_leds();
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::red()))));
+fn an_inactive_owners_playback_gives_its_lights_back() {
+  let (context, addresses) = three_lights();
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))));
   with_scenes(&context, |scenes| scenes.on_event(&SystemDeactivated::new(OWNER, ROOT_GROUP), &context.sys_ctx()));
   assert_eq!(shown(&context, &addresses)[0], None);
 
@@ -417,13 +417,13 @@ fn an_inactive_owners_playback_gives_its_leds_back() {
 }
 
 #[test]
-fn a_moved_scene_plays_on_the_new_leds_keeping_its_zs() {
-  let (context, addresses) = three_leds();
+fn a_moved_scene_plays_on_the_new_lights_keeping_its_zs() {
+  let (context, addresses) = three_lights();
   let scene = Scene::new(vec![
-    LedLayer::sequence(LedQ::name("led0"), solid(Rgba::red())).into(),
-    LedLayer::sequence(LedQ::name("led0"), solid(Rgba::blue())).at_z(3).into(),
+    LightLayer::sequence(LightQ::name("light0"), solid(Rgba::red())).into(),
+    LightLayer::sequence(LightQ::name("light0"), solid(Rgba::blue())).at_z(3).into(),
   ]);
-  play(&context, PlayableScene::new(scene).on_leds(LedQ::name("led1")).unwrap());
+  play(&context, PlayableScene::new(scene).on_lights(LightQ::name("light1")).unwrap());
   let shown = shown(&context, &addresses);
   assert_eq!(shown, vec![None, Some(Rgba::blue()), None]);
 }
@@ -432,23 +432,23 @@ fn a_moved_scene_plays_on_the_new_leds_keeping_its_zs() {
 struct Playfield;
 
 #[test]
-fn a_tag_finds_the_leds_that_have_it() {
-  let (mut context, addresses) = three_leds();
+fn a_tag_finds_the_lights_that_have_it() {
+  let (mut context, addresses) = three_lights();
   let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 9));
-  context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.on_spawn(&context.sys_ctx()));
+  context.insert_light(Light { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.on_spawn(&context.sys_ctx()));
 
-  play(&context, PlayableScene::new(on(LedQ::tag::<Playfield>(), solid(Rgba::red()))));
+  play(&context, PlayableScene::new(on(LightQ::tag::<Playfield>(), solid(Rgba::red()))));
   assert_eq!(shown(&context, &[address])[0], Some(Rgba::red()));
   assert_eq!(shown(&context, &addresses)[0], None);
 }
 
 /// Red where traversal "wave" has just been: one edge a second out from `from`, fading over a step
-fn wave(from: &str, surface: LedSurface) -> Scene {
+fn wave(from: &str, surface: LightSurface) -> Scene {
   let shown = Prop::Visit(VisitResponse { smooth_out: Some(1.0), ..VisitResponse::new("wave", 0.0, 1.0) });
   let wave = Traversal::new("wave", NodeRef::name(from), TraversalAlgorithm::BreadthFirst { wander: 0.0.into() }, 1.0);
   let fill = Fill::new(FillNode::Solid(Color(Rgba::red()).into())).adjust(ColorAdjust::Opacity(shown));
-  let layer = LedLayer { leds: Some(LedQ::every()), z: 0, surface, layer: Layer::new(fill).graph(GraphMask::new(vec![wave])) };
+  let layer = LightLayer { lights: Some(LightQ::every()), z: 0, surface, layer: Layer::new(fill).graph(GraphMask::new(vec![wave])) };
   Scene::new(vec![layer.into()]).timing(Timing::new(10.0, Cycle::Once))
 }
 
@@ -456,25 +456,25 @@ fn lit(context: &TestContext, addresses: &[LightAddress]) -> Vec<bool> {
   shown(context, addresses).iter().map(|color| color.is_some_and(|color| color[3] > 127)).collect()
 }
 
-/// Four LEDs in a row on the plane, one apart
+/// Four lights in a row on the plane, one apart
 fn row() -> (TestContext, Vec<LightAddress>) {
-  placed_leds(&(0..4).map(|x| at(x as f32 + 1.0, 5.0)).collect::<Vec<_>>())
+  placed_lights(&(0..4).map(|x| at(x as f32 + 1.0, 5.0)).collect::<Vec<_>>())
 }
 
 #[test]
-fn a_traversal_moves_across_the_leds_it_reaches() {
+fn a_traversal_moves_across_the_lights_it_reaches() {
   let (context, addresses) = row();
-  play(&context, PlayableScene::new(wave("led0", LedSurface::Area("Plane".into()))));
+  play(&context, PlayableScene::new(wave("light0", LightSurface::Area("Plane".into()))));
   assert_eq!(lit(&context, &addresses), [true, false, false, false]);
   tick(&context, Duration::from_secs(2));
   assert_eq!(lit(&context, &addresses), [false, false, true, false]);
 }
 
 #[test]
-fn leds_off_the_plane_are_left_out_of_its_graph() {
+fn lights_off_the_plane_are_left_out_of_its_graph() {
   // the third is raised above the plane, so the wave can't go through it to the fourth
-  let (context, addresses) = placed_leds(&[Some(Vec3::new(1.0, 5.0, 0.0)), Some(Vec3::new(2.0, 5.0, 0.4)), Some(Vec3::new(3.0, 5.0, 2.0)), Some(Vec3::new(4.0, 5.0, 0.0))]);
-  play(&context, PlayableScene::new(wave("led0", LedSurface::Area("Plane".into()))));
+  let (context, addresses) = placed_lights(&[Some(Vec3::new(1.0, 5.0, 0.0)), Some(Vec3::new(2.0, 5.0, 0.4)), Some(Vec3::new(3.0, 5.0, 2.0)), Some(Vec3::new(4.0, 5.0, 0.0))]);
+  play(&context, PlayableScene::new(wave("light0", LightSurface::Area("Plane".into()))));
   tick(&context, Duration::from_secs(1));
   assert_eq!(lit(&context, &addresses), [false, true, false, false]);
   tick(&context, Duration::from_secs(1));
@@ -484,16 +484,16 @@ fn leds_off_the_plane_are_left_out_of_its_graph() {
 #[test]
 fn a_sequence_is_a_chain_in_its_order() {
   let (context, addresses) = row();
-  play(&context, PlayableScene::new(wave("led3", LedSurface::Sequence)));
+  play(&context, PlayableScene::new(wave("light3", LightSurface::Sequence)));
   tick(&context, Duration::from_secs(1));
   assert_eq!(lit(&context, &addresses), [false, false, true, false]);
 }
 
 #[test]
 fn a_playback_from_another_owner_composites_the_same() {
-  let (context, addresses) = three_leds();
-  play_as(&context, OWNER + 1, PlayableScene::new(on(LedQ::name("led0"), solid(Rgba::blue()))));
-  play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
+  let (context, addresses) = three_lights();
+  play_as(&context, OWNER + 1, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::blue()))));
+  play(&context, PlayableScene::new(on(LightQ::name("light0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
 }

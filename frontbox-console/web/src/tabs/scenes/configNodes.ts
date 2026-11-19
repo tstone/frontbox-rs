@@ -3,7 +3,7 @@ import type { BezierPoint } from '../../types/generated/BezierPoint'
 import type { ColorAdjust } from '../../types/generated/ColorAdjust'
 import type { GraphMask } from '../../types/generated/GraphMask'
 import type { Layer } from '../../types/generated/Layer'
-import type { LedQ } from '../../types/generated/LedQ'
+import type { LightQ } from '../../types/generated/LightQ'
 import type { Mask } from '../../types/generated/Mask'
 import type { Modulated } from '../../types/generated/Modulated'
 import type { NodeRef } from '../../types/generated/NodeRef'
@@ -95,9 +95,9 @@ export type NodeData =
   | { kind: 'layer'; lens: Lens<SceneLayer>; unnamed: string }
   | { kind: 'sound'; lens: Lens<SoundLayer>; unnamed: string }
   | { kind: 'place'; lens: Lens<SceneLayer> }
-  | { kind: 'leds'; lens: Lens<LedQ | undefined> }
+  | { kind: 'lights'; lens: Lens<LightQ | undefined> }
   | { kind: 'z'; lens: Lens<SceneLayer> }
-  /** With `layer`, a layer's region, which on an LED scene can be its graph instead */
+  /** With `layer`, a layer's region, which on a light scene can be its graph instead */
   | { kind: 'region'; lens: Lens<Shape | undefined>; layer?: Lens<SceneLayer> }
   /** The shape a sweep goes around */
   | { kind: 'path'; lens: Lens<Shape> }
@@ -291,20 +291,20 @@ function branch(node: ConfigNode): ConfigNode {
 /** Where a layer is, then what it draws and where */
 function layerChildren(id: string, lens: Lens<SceneLayer>, surface: Surface): ConfigNode[] {
   const layer = lens.get()
-  const led = layer.display === undefined
+  const light = layer.display === undefined
   const place: ConfigNode[] = [
-    // a sequence is on its LEDs alone, so only an area's plane and a display layer's display can be picked
+    // a sequence is on its lights alone, so only an area's plane and a display layer's display can be picked
     ...(layer.surface !== 'Sequence' ? [{ id: `${id}/place`, label: 'Draws on', kind: 'place' as const, lens, value: layer.surface ?? layer.display }] : []),
-    ...(led ? [{ id: `${id}/leds`, label: 'LEDs', kind: 'leds' as const, lens: field(lens, 'leds'), value: layer.leds }] : []),
+    ...(light ? [{ id: `${id}/lights`, label: 'Lights', kind: 'lights' as const, lens: field(lens, 'lights'), value: layer.lights }] : []),
     { id: `${id}/z`, label: 'Z-index', kind: 'z', lens, value: layer.z },
   ]
-  // a sequence's LEDs are already the ones it shows on, so it only has a region its file gave it, to be removed
-  const regions = led && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
+  // a sequence's lights are already the ones it shows on, so it only has a region its file gave it, to be removed
+  const regions = light && layer.surface === 'Sequence' && !layer.region ? [] : [regionNode(`${id}/region`, field(lens, 'region'), surface, lens)]
   const fill = fillNode(`${id}/fill`, field(lens, 'fill'), surface)
   const mask = maskNode(`${id}/mask`, field(lens, 'mask'), surface)
   const visible = propNode(`${id}/visible`, 'Visible', { lens: layerVisible(lens) as Lens<Prop<SceneValue>>, variableName: 'visible', fallback: true, ranges: both(UNIT) }, surface)
-  // on an LED layer the mask comes first, as it's over everything else the layer is
-  return led ? [visible, mask, ...place, ...regions, fill] : [visible, ...place, ...regions, fill, mask]
+  // on a light layer the mask comes first, as it's over everything else the layer is
+  return light ? [visible, mask, ...place, ...regions, fill] : [visible, ...place, ...regions, fill, mask]
 }
 
 /** A mask's region, or a layer's, which can be its graph instead */
@@ -536,7 +536,7 @@ function traversalNode(id: string, lens: Lens<Traversal>, layer: Lens<SceneLayer
   return branch({ id, label: traversal.name, kind: 'traversal', lens, layer, value: traversal, fields: true, place, children })
 }
 
-/** An LED is chosen by name in its fields, and a position is a prop under it */
+/** A light is chosen by name in its fields, and a position is a prop under it */
 function nodeRefNode(id: string, label: string, lens: Lens<NodeRef>, surface: Surface): ConfigNode {
   const current = lens.get()
   const children =

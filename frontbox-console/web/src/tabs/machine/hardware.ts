@@ -5,7 +5,7 @@ import { LED_OFF, ledColor, ledColorKnown } from '../../lib/leds'
 import { type ConsoleState, driverMode, driverState } from '../../state/console'
 import type { Driver } from '../../types/generated/Driver'
 import type { Hardware } from '../../types/generated/Hardware'
-import type { LED } from '../../types/generated/LED'
+import type { Light } from '../../types/generated/Light'
 import type { PlaneView } from '../../types/generated/PlaneView'
 import type { ResolvedExpansionBoard } from '../../types/generated/ResolvedExpansionBoard'
 import type { ResolvedIoBoard } from '../../types/generated/ResolvedIoBoard'
@@ -61,7 +61,7 @@ export const defaultHardwareKinds: HardwareKind[] = ['manual-drivers', 'automati
 export type HardwareRef =
   | { kind: 'driver'; driver: Driver }
   | { kind: 'switch'; switch: Switch }
-  | { kind: 'led'; led: LED }
+  | { kind: 'led'; led: Light }
   | { kind: 'io-board'; board: ResolvedIoBoard; index: number }
   | { kind: 'exp-board'; board: ResolvedExpansionBoard }
   | { kind: 'plane'; plane: PlaneView }
@@ -138,7 +138,7 @@ function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
           }
         })
     case 'leds':
-      return Object.values(hw.leds.by_name)
+      return Object.values(hw.lights.by_name)
         .map((led) => {
           const { exp, port, index } = led.address.led
           return {

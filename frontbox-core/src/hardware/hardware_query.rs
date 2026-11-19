@@ -7,7 +7,7 @@ use crate::prelude::*;
 pub enum QueryableHardware {
   Switch,
   Driver,
-  LED,
+  Light,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,9 +46,9 @@ impl HardwareQuery {
           .map(Into::into)
           .collect(),
       ),
-      QueryableHardware::LED => HardwareQuery::Names(
+      QueryableHardware::Light => HardwareQuery::Names(
         self
-          .get_led_names(ctx)
+          .get_light_names(ctx)
           .into_iter()
           .map(Into::into)
           .collect(),
@@ -84,14 +84,14 @@ impl HardwareQuery {
     }
   }
 
-  pub fn matches_led(&self, led: &LED) -> bool {
+  pub fn matches_light(&self, light: &Light) -> bool {
     match self {
-      Self::Name(name) => led.name == *name,
-      Self::Names(names) => names.contains(&led.name),
-      Self::Tag(tag) => led.has_typed_tag(*tag),
-      Self::And(qs) => qs.iter().all(|q| q.matches_led(led)),
-      Self::Or(qs) => qs.iter().any(|q| q.matches_led(led)),
-      Self::Location(plane, region) => led
+      Self::Name(name) => light.name == *name,
+      Self::Names(names) => names.contains(&light.name),
+      Self::Tag(tag) => light.has_typed_tag(*tag),
+      Self::And(qs) => qs.iter().all(|q| q.matches_light(light)),
+      Self::Or(qs) => qs.iter().any(|q| q.matches_light(light)),
+      Self::Location(plane, region) => light
         .location
         .map(|location| region.within(plane.to_relative(location)))
         .unwrap_or(false),
@@ -123,49 +123,49 @@ impl HardwareQuery {
       .collect()
   }
 
-  /// Resolve the query into a reference for all matching LEDs
-  pub fn get_leds<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c LED> {
-    let leds = ctx
-      .leds
+  /// Resolve the query into a reference for all matching lights
+  pub fn get_lights<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Light> {
+    let lights = ctx
+      .lights
       .values()
-      .filter(|led| self.matches_led(led))
+      .filter(|light| self.matches_light(light))
       .collect::<Vec<_>>();
 
-    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", leds.len(), self, leds);
-    leds
+    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} lights for query {:?}: {:?}", lights.len(), self, lights);
+    lights
   }
 
-  /// Resolve the query into a the names of all matching LEDs
-  pub fn get_led_names<'c>(&self, ctx: &'c ServiceContext) -> Vec<String> {
+  /// Resolve the query into a the names of all matching lights
+  pub fn get_light_names<'c>(&self, ctx: &'c ServiceContext) -> Vec<String> {
     ctx
-      .leds
+      .lights
       .query(&self)
       .iter()
       .map(|d| d.name.clone())
       .collect()
   }
 
-  /// Resolve the query into a the address of all matching LEDs
-  pub fn get_leds_addresses(&self, ctx: &ServiceContext) -> Vec<LightAddress> {
+  /// Resolve the query into a the address of all matching lights
+  pub fn get_light_addresses(&self, ctx: &ServiceContext) -> Vec<LightAddress> {
     let addrs = match self {
       // maintain order for name/names
-      Self::Name(name) => match ctx.leds.get(name) {
-        Some(led) => vec![led.address.clone()],
+      Self::Name(name) => match ctx.lights.get(name) {
+        Some(light) => vec![light.address.clone()],
         None => Vec::new(),
       },
       Self::Names(names) => names
         .iter()
-        .filter_map(|n| ctx.leds.get(n))
-        .map(|led| led.address.clone())
+        .filter_map(|n| ctx.lights.get(n))
+        .map(|light| light.address.clone())
         .collect(),
-      Self::Or(qs) => qs.iter().flat_map(|q| q.get_leds_addresses(ctx)).collect(),
+      Self::Or(qs) => qs.iter().flat_map(|q| q.get_light_addresses(ctx)).collect(),
       _ => {
         let mut matches: Vec<LightAddress> = ctx
-          .leds
+          .lights
           .values()
-          .filter_map(|led| {
-            if self.matches_led(led) {
-              Some(led.address.clone())
+          .filter_map(|light| {
+            if self.matches_light(light) {
+              Some(light.address.clone())
             } else {
               None
             }
@@ -178,7 +178,7 @@ impl HardwareQuery {
       }
     };
 
-    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} LEDS for query {:?}: {:?}", addrs.len(), self, addrs);
+    log::trace!(target: "frontbox::hardware", "HardwareQuery: Got {} lights for query {:?}: {:?}", addrs.len(), self, addrs);
     addrs
   }
 }
@@ -186,7 +186,7 @@ impl HardwareQuery {
 pub trait HardwareTagExt {
   fn get_switches<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a Switch>;
   fn get_drivers<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a Driver>;
-  fn get_leds<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a LED>;
+  fn get_lights<'a>(&self, ctx: &'a ServiceContext) -> Vec<&'a Light>;
 }
 
 impl HardwareTagExt for Option<HardwareQuery> {
@@ -204,8 +204,8 @@ impl HardwareTagExt for Option<HardwareQuery> {
       .unwrap_or_default()
   }
 
-  fn get_leds<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c LED> {
-    self.as_ref().map(|q| q.get_leds(ctx)).unwrap_or_default()
+  fn get_lights<'c>(&self, ctx: &'c ServiceContext) -> Vec<&'c Light> {
+    self.as_ref().map(|q| q.get_lights(ctx)).unwrap_or_default()
   }
 }
 
@@ -324,122 +324,122 @@ mod tests {
   }
 
   #[test]
-  fn get_leds_addresses_name() {
+  fn get_light_addresses_name() {
     let mut context = TestContext::default();
-    context.base.leds.insert(
-      "led1".to_string(),
-      LED {
-        name: "led1".to_string(),
+    context.base.lights.insert(
+      "light1".to_string(),
+      Light {
+        name: "light1".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 1)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led2".to_string(),
-      LED {
-        name: "led2".to_string(),
+    context.base.lights.insert(
+      "light2".to_string(),
+      Light {
+        name: "light2".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 2)),
         ..Default::default()
       },
     );
 
-    let q = Q::name("led1");
-    let leds = q.get_leds_addresses(&context.svc_ctx());
+    let q = Q::name("light1");
+    let lights = q.get_light_addresses(&context.svc_ctx());
 
-    assert_eq!(leds.len(), 1);
-    assert_eq!(leds[0].led().unwrap().index, 1);
+    assert_eq!(lights.len(), 1);
+    assert_eq!(lights[0].led().unwrap().index, 1);
   }
 
   #[test]
-  fn get_leds_addresses_names() {
+  fn get_light_addresses_names() {
     let mut context = TestContext::default();
-    context.base.leds.insert(
-      "led1".to_string(),
-      LED {
-        name: "led1".to_string(),
+    context.base.lights.insert(
+      "light1".to_string(),
+      Light {
+        name: "light1".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 1)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led2".to_string(),
-      LED {
-        name: "led2".to_string(),
+    context.base.lights.insert(
+      "light2".to_string(),
+      Light {
+        name: "light2".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 2)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led3".to_string(),
-      LED {
-        name: "led3".to_string(),
+    context.base.lights.insert(
+      "light3".to_string(),
+      Light {
+        name: "light3".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 3)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led4".to_string(),
-      LED {
-        name: "led4".to_string(),
+    context.base.lights.insert(
+      "light4".to_string(),
+      Light {
+        name: "light4".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 4)),
         ..Default::default()
       },
     );
 
-    let q = Q::names(vec!["led2", "led3"]);
-    let leds = q.get_leds_addresses(&context.svc_ctx());
+    let q = Q::names(vec!["light2", "light3"]);
+    let lights = q.get_light_addresses(&context.svc_ctx());
 
-    assert_eq!(leds.len(), 2);
-    assert_eq!(leds[0].led().unwrap().index, 2);
-    assert_eq!(leds[1].led().unwrap().index, 3);
+    assert_eq!(lights.len(), 2);
+    assert_eq!(lights[0].led().unwrap().index, 2);
+    assert_eq!(lights[1].led().unwrap().index, 3);
   }
 
   // The goal here is to ensure that using names, even through `any` maintain their order
   #[test]
-  fn get_leds_addresses_any_names() {
+  fn get_light_addresses_any_names() {
     let mut context = TestContext::default();
-    context.base.leds.insert(
-      "led1".to_string(),
-      LED {
-        name: "led1".to_string(),
+    context.base.lights.insert(
+      "light1".to_string(),
+      Light {
+        name: "light1".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 5)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led2".to_string(),
-      LED {
-        name: "led2".to_string(),
+    context.base.lights.insert(
+      "light2".to_string(),
+      Light {
+        name: "light2".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 8)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led3".to_string(),
-      LED {
-        name: "led3".to_string(),
+    context.base.lights.insert(
+      "light3".to_string(),
+      Light {
+        name: "light3".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 3)),
         ..Default::default()
       },
     );
-    context.base.leds.insert(
-      "led4".to_string(),
-      LED {
-        name: "led4".to_string(),
+    context.base.lights.insert(
+      "light4".to_string(),
+      Light {
+        name: "light4".to_string(),
         address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 4)),
         ..Default::default()
       },
     );
 
     let q = Q::any(vec![
-      &Q::names(vec!["led1", "led2"]),
-      &Q::names(vec!["led3", "led4"]),
+      &Q::names(vec!["light1", "light2"]),
+      &Q::names(vec!["light3", "light4"]),
     ]);
-    let leds = q.get_leds_addresses(&context.svc_ctx());
+    let lights = q.get_light_addresses(&context.svc_ctx());
 
-    assert_eq!(leds[0].led().unwrap().index, 5);
-    assert_eq!(leds[1].led().unwrap().index, 8);
-    assert_eq!(leds[2].led().unwrap().index, 3);
-    assert_eq!(leds[3].led().unwrap().index, 4);
+    assert_eq!(lights[0].led().unwrap().index, 5);
+    assert_eq!(lights[1].led().unwrap().index, 8);
+    assert_eq!(lights[2].led().unwrap().index, 3);
+    assert_eq!(lights[3].led().unwrap().index, 4);
   }
 }

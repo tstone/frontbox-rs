@@ -27,9 +27,9 @@ impl AlternateResolver {
     }
   }
 
-  pub fn resolve(&mut self, led: LightAddress, colors: Vec<Rgba<u8>>) -> Rgba<u8> {
-    // check first if we have an existing system for this led, and if it's still valid
-    if let Some(entry) = self.states.get_mut(&led) {
+  pub fn resolve(&mut self, light: LightAddress, colors: Vec<Rgba<u8>>) -> Rgba<u8> {
+    // check first if we have an existing system for this light, and if it's still valid
+    if let Some(entry) = self.states.get_mut(&light) {
       if entry.colors == colors {
         if entry.acc_duration >= self.alternate_duration {
           entry.acc_duration = Duration::ZERO;
@@ -47,10 +47,10 @@ impl AlternateResolver {
         return entry.colors[entry.idx];
       }
     } else {
-      log::trace!(target: "frontbox::led", "Creating new alternating state");
+      log::trace!(target: "frontbox::lighting", "Creating new alternating state");
       // no existing record of colors, create a new one
       self.states.insert(
-        led.clone(),
+        light.clone(),
         AlternatingEntry {
           colors: colors.clone(),
           acc_duration: Duration::from_millis(0),

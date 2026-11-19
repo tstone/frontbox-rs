@@ -49,8 +49,8 @@ pub struct ServiceContext<'a> {
   pub drivers: ContextDrivers<'a>,
   /// Look up switches and their state, and configure how they report
   pub switches: ContextSwitches<'a>,
-  /// Look up LEDs, and set them directly
-  pub leds: ContextLeds<'a>,
+  /// Look up lights, and set LEDs directly
+  pub lights: ContextLights<'a>,
 }
 
 impl<'a> ServiceContext<'a> {
@@ -65,7 +65,7 @@ impl<'a> ServiceContext<'a> {
       app_sender,
       drivers: ContextDrivers::new(base, groups, app_sender),
       switches: ContextSwitches::new(base, groups, app_sender),
-      leds: ContextLeds::new(base, groups, app_sender),
+      lights: ContextLights::new(base, groups, app_sender),
     }
   }
 

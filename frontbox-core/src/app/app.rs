@@ -117,7 +117,7 @@ impl App {
         let (mut machine, mut hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
 
-        app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
+        app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
         self
           .tracers
           .iter_mut()
@@ -136,7 +136,7 @@ impl App {
         let (mut machine, mut hardware) =
           vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
 
-        app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
+        app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
         self
           .tracers
           .iter_mut()

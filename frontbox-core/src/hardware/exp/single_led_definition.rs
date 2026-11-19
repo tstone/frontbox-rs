@@ -14,8 +14,8 @@ pub struct SingleLedDefinition {
 }
 
 impl SingleLedDefinition {
-  pub fn q(&self) -> LedQ {
-    LedQ::name(self.name.clone())
+  pub fn q(&self) -> LightQ {
+    LightQ::name(self.name.clone())
   }
 }
 

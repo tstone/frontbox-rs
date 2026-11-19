@@ -53,7 +53,7 @@ impl SingleLedDefinitionBuilder {
     LedDefinition::new(self.name, self.tags, 1, locations, self.config)
   }
 
-  pub fn q(&self) -> LedQ {
-    LedQ::name(self.name)
+  pub fn q(&self) -> LightQ {
+    LightQ::name(self.name)
   }
 }

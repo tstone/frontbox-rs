@@ -51,7 +51,7 @@ export default function SceneNameDialog(props: NameProps & { open: boolean; onCl
                 ref={input}
                 type="text"
                 aria-label="Name"
-                placeholder="attract, or led/attract to put it in a folder"
+                placeholder="attract, or light/attract to put it in a folder"
                 spellcheck={false}
                 value={typed()}
                 onInput={(e) => setTyped(e.currentTarget.value)}

@@ -2,7 +2,7 @@
 //!
 //! <div class="warning">Stability Level: Low</div>
 //!
-//! A [`Scene`] is layers on one timeline, each saying what it's drawn on (LEDs, or a display), or sounds played at set
+//! A [`Scene`] is layers on one timeline, each saying what it's drawn on (lights, or a display), or sounds played at set
 //! times. It's what's written to a `.scene` file. The drawn layers themselves, and how they're sampled, are in
 //! [`frontbox_gfx::scene`]; this crate adds where they go, and playing them.
 //!
@@ -22,7 +22,7 @@
 //! let scene = Scene::load(r#"Scene(
 //!   version: 2,
 //!   timing: (duration: 0.5),
-//!   layers: [Leds(leds: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+//!   layers: [Lights(lights: Name("lane"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
 //! )"#).unwrap();
 //!
 //! // plays to its end even if this system goes away
@@ -65,7 +65,7 @@ pub mod prelude {
   pub use frontbox_gfx::scene::{Content, EndBehavior, Timing, Value, VariableType};
 
   pub use crate::{
-    Completes, DisplayLayer, LedLayer, LedSurface, PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted,
+    Completes, DisplayLayer, LightLayer, LightSurface, PlayableScene, PlaybackId, Scene, SceneLayer, ScenePlaybackCompleted,
     ScenePlayer, SceneSystem, SceneSystemExt, Sends, SentVariable, SoundLayer,
   };
 }

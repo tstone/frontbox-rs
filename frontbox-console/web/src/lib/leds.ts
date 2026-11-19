@@ -32,7 +32,7 @@ export function cssColor({ r, g, b }: Rgb): string | null {
 export function ledColor(name: string): string | null {
   const wire = machine.led_colors[name]
   if (!wire) return null
-  const order = machine.hardware?.leds.configs[name]?.channel_order ?? 'RGB'
+  const order = machine.hardware?.lights.configs[name]?.channel_order ?? 'RGB'
   return cssColor(toRgb(wire, order))
 }
 

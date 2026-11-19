@@ -5,20 +5,20 @@ import { createMemo, createSignal, For, Index, Show } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import { ledIndex, ledName, ledStrip } from '../../lib/format'
 import { machine } from '../../state/console'
-import type { LED } from '../../types/generated/LED'
-import type { LedQ } from '../../types/generated/LedQ'
+import type { Light } from '../../types/generated/Light'
+import type { LightQ } from '../../types/generated/LightQ'
 import { byName } from '../machine/hardware'
 import { moved, removed } from './sceneModel'
 
 const PICK_KINDS = ['Every', 'By name', 'By tag'] as const
 
 /** What's been picked each way is held while another way is in use, to come back to */
-export type LedPick = { kind: (typeof PICK_KINDS)[number]; names: string[]; tags: string[] }
+export type LightPick = { kind: (typeof PICK_KINDS)[number]; names: string[]; tags: string[] }
 
-export const EVERY_LED: LedPick = { kind: 'Every', names: [], tags: [] }
+export const EVERY_LIGHT: LightPick = { kind: 'Every', names: [], tags: [] }
 
-/** Having nothing chosen is every LED */
-export function pickedQuery(pick: LedPick): LedQ {
+/** Having nothing chosen is every light */
+export function pickedQuery(pick: LightPick): LightQ {
   if (pick.kind === 'By name' && pick.names.length > 0) return { Names: pick.names }
   if (pick.kind === 'By tag' && pick.tags.length === 1) return { Tag: pick.tags[0] }
   if (pick.kind === 'By tag' && pick.tags.length > 1) return { Or: pick.tags.map((tag) => ({ Tag: tag })) }
@@ -26,7 +26,7 @@ export function pickedQuery(pick: LedPick): LedQ {
 }
 
 /** The tags of a query that's only tags */
-function queryTags(query: LedQ): string[] | null {
+function queryTags(query: LightQ): string[] | null {
   if (query !== 'Every' && 'Tag' in query) return [query.Tag]
   if (query === 'Every' || !('Or' in query)) return null
   const tags = query.Or.map(queryTags)
@@ -34,46 +34,46 @@ function queryTags(query: LedQ): string[] | null {
 }
 
 /** The names of a query that's only names */
-function queryNames(query: LedQ): string[] | null {
+function queryNames(query: LightQ): string[] | null {
   if (query === 'Every') return null
   if ('Name' in query) return [query.Name]
   return 'Names' in query ? query.Names : null
 }
 
-/** Whether a query is one this can show. A file can say more, such as reversing or skipping LEDs. */
-export const canPick = (query: LedQ) => query === 'Every' || queryNames(query) !== null || queryTags(query) !== null
+/** Whether a query is one this can show. A file can say more, such as reversing or skipping lights. */
+export const canPick = (query: LightQ) => query === 'Every' || queryNames(query) !== null || queryTags(query) !== null
 
-/** A query that this can't show starts over from every LED */
-export function ledPick(query: LedQ): LedPick {
+/** A query that this can't show starts over from every light */
+export function lightPick(query: LightQ): LightPick {
   const [names, tags] = [queryNames(query), queryTags(query)]
-  if (names) return { ...EVERY_LED, kind: 'By name', names }
-  if (tags) return { ...EVERY_LED, kind: 'By tag', tags }
-  return EVERY_LED
+  if (names) return { ...EVERY_LIGHT, kind: 'By name', names }
+  if (tags) return { ...EVERY_LIGHT, kind: 'By tag', tags }
+  return EVERY_LIGHT
 }
 
-export function ledsLabel(query: LedQ): string {
-  if (query === 'Every') return 'Every LED'
+export function lightsLabel(query: LightQ): string {
+  if (query === 'Every') return 'Every light'
   const [names, tags] = [queryNames(query), queryTags(query)]
   if (tags) return tags.join(', ')
-  if (names) return names.length === 1 ? ledName(names[0]) : `${names.length} LEDs`
+  if (names) return names.length === 1 ? ledName(names[0]) : `${names.length} lights`
   return 'A custom query'
 }
 
 /**
- * A button that opens a choice of the machine's LEDs: every one, those of some tags, or a search of them to choose from,
- * a strip at a time or an LED at a time. Names and tags stay in the order they're ticked, a strip from its first LED to
+ * A button that opens a choice of the machine's lights: every one, those of some tags, or a search of them to choose from,
+ * a strip at a time or a light at a time. Names and tags stay in the order they're ticked, a strip from its first light to
  * its last, and that order is shown beneath them to change, as it's the order a sequence runs along them.
  */
-export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPick) => void }) {
+export default function LightPicker(props: { pick: LightPick; onChange: (pick: LightPick) => void }) {
   const [filter, setFilter] = createSignal('')
   const search = () => filter().trim().toLowerCase()
   const matches = (name: string) => ledName(name).toLowerCase().includes(search())
 
-  const change = (pick: Partial<LedPick>) => props.onChange({ ...props.pick, ...pick })
+  const change = (pick: Partial<LightPick>) => props.onChange({ ...props.pick, ...pick })
 
-  const leds = createMemo(() => Object.values(machine.hardware?.leds.by_name ?? {}))
-  const rows = createMemo(() => ledRows(leds().map((led) => led.name)))
-  const tags = createMemo(() => ledTags(leds()))
+  const lights = createMemo(() => Object.values(machine.hardware?.lights.by_name ?? {}))
+  const rows = createMemo(() => lightRows(lights().map((light) => light.name)))
+  const tags = createMemo(() => lightTags(lights()))
   const chosen = createMemo(() => new Set(props.pick.names))
 
   const choose = (names: string[], on: boolean) => {
@@ -87,8 +87,8 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
 
   const query = () => pickedQuery(props.pick)
   const byTag = () => props.pick.kind === 'By tag'
-  const order = createMemo(() => (byTag() ? props.pick.tags.map((tag) => ({ label: tag, names: [tag] })) : ledRuns(props.pick.names, rows())))
-  const setOrder = (next: LedRow[]) => {
+  const order = createMemo(() => (byTag() ? props.pick.tags.map((tag) => ({ label: tag, names: [tag] })) : lightRuns(props.pick.names, rows())))
+  const setOrder = (next: LightRow[]) => {
     const names = next.flatMap((row) => row.names)
     change(byTag() ? { tags: names } : { names })
   }
@@ -96,21 +96,21 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
 
   return (
     <Popover.Root lazyMount unmountOnExit positioning={{ placement: 'bottom-start' }}>
-      <Popover.Trigger class="scene-led-button" classList={{ chosen: query() !== 'Every' }} aria-label="Choose LEDs" title="Choose LEDs">
+      <Popover.Trigger class="scene-light-button" classList={{ chosen: query() !== 'Every' }} aria-label="Choose lights" title="Choose lights">
         <svg viewBox="0 0 16 16" aria-hidden="true">
           <path d="M2 3h12L9.5 8.5v5l-3-1.5V8.5z" />
         </svg>
       </Popover.Trigger>
       <Portal>
         <Popover.Positioner>
-          <Popover.Content class="scene-led-picker">
+          <Popover.Content class="scene-light-picker">
             <SegmentGroup.Root
               class="scene-prop-kind"
-              aria-label="Choose LEDs by"
+              aria-label="Choose lights by"
               value={props.pick.kind}
               onValueChange={(details) => {
                 setFilter('')
-                change({ kind: details.value as LedPick['kind'] })
+                change({ kind: details.value as LightPick['kind'] })
               }}
             >
               <SegmentGroup.Indicator />
@@ -128,25 +128,25 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
               <input
                 type="search"
                 placeholder={byTag() ? 'Search by tag' : 'Search by name'}
-                aria-label={byTag() ? 'Search LED tags' : 'Search LEDs by name'}
+                aria-label={byTag() ? 'Search light tags' : 'Search lights by name'}
                 autocomplete="off"
                 spellcheck={false}
                 value={filter()}
                 onInput={(e) => setFilter(e.currentTarget.value)}
               />
-              <div class="scene-led-list">
+              <div class="scene-light-list">
                 <Show
                   when={byTag()}
                   fallback={
-                    <For each={rows().filter((row) => row.names.some(matches))} fallback={noMatch('The machine has no LEDs')}>
+                    <For each={rows().filter((row) => row.names.some(matches))} fallback={noMatch('The machine has no lights')}>
                       {(row) => <Row row={row} chosen={chosen()} matches={matches} searching={search() !== ''} onChoose={choose} />}
                     </For>
                   }
                 >
-                  <For each={tags().filter((tag) => tag.name.toLowerCase().includes(search()))} fallback={noMatch('No LED has a tag')}>
+                  <For each={tags().filter((tag) => tag.name.toLowerCase().includes(search()))} fallback={noMatch('No light has a tag')}>
                     {(tag) => (
-                      <div class="scene-led-row">
-                        <LedCheck
+                      <div class="scene-light-row">
+                        <LightCheck
                           label={tag.name}
                           count={tag.count}
                           checked={props.pick.tags.includes(tag.name)}
@@ -157,15 +157,15 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
                   </For>
                 </Show>
               </div>
-              <h3 class="scene-led-order-title">Runs in this order</h3>
-              <ol class="scene-led-order">
-                <Index each={order()} fallback={<p class="scene-note">{byTag() ? 'Tick tags to put them in order' : 'Tick LEDs to put them in order'}</p>}>
+              <h3 class="scene-light-order-title">Runs in this order</h3>
+              <ol class="scene-light-order">
+                <Index each={order()} fallback={<p class="scene-note">{byTag() ? 'Tick tags to put them in order' : 'Tick lights to put them in order'}</p>}>
                   {(row, index) => (
                     <li>
-                      <span class="scene-led-place">{index + 1}</span>
-                      <span class="scene-led-order-label">{row().label}</span>
+                      <span class="scene-light-place">{index + 1}</span>
+                      <span class="scene-light-order-label">{row().label}</span>
                       <Show when={row().names.length > 1}>
-                        <span class="scene-led-count">{row().names.length}</span>
+                        <span class="scene-light-count">{row().names.length}</span>
                       </Show>
                       <button type="button" aria-label={`Move ${row().label} up`} disabled={index === 0} onClick={() => setOrder(moved(order(), index, -1))}>
                         ↑
@@ -187,7 +187,7 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
               </ol>
             </Show>
             <footer>
-              <span class="scene-note">{ledsLabel(query())}</span>
+              <span class="scene-note">{lightsLabel(query())}</span>
               <Show when={query() !== 'Every'}>
                 <button type="button" onClick={() => change(byTag() ? { tags: [] } : { names: [] })}>
                   Clear
@@ -201,9 +201,9 @@ export default function LedPicker(props: { pick: LedPick; onChange: (pick: LedPi
   )
 }
 
-/** An LED, or a strip that opens out to its LEDs. A search for particular LEDs of a strip opens it to those. */
+/** A light, or a strip that opens out to its lights. A search for particular lights of a strip opens it to those. */
 function Row(props: {
-  row: LedRow
+  row: LightRow
   chosen: Set<string>
   matches: (name: string) => boolean
   searching: boolean
@@ -220,8 +220,8 @@ function Row(props: {
 
   return (
     <>
-      <div class="scene-led-row">
-        <LedCheck
+      <div class="scene-light-row">
+        <LightCheck
           label={props.row.label}
           count={isStrip() ? props.row.names.length : undefined}
           checked={checked()}
@@ -230,8 +230,8 @@ function Row(props: {
         <Show when={isStrip()}>
           <button
             type="button"
-            class="scene-led-expand"
-            aria-label={`LEDs of ${props.row.label}`}
+            class="scene-light-expand"
+            aria-label={`lights of ${props.row.label}`}
             aria-expanded={expanded()}
             onClick={() => setOpen(!expanded())}
           >
@@ -242,11 +242,11 @@ function Row(props: {
         </Show>
       </div>
       <Show when={expanded()}>
-        <div class="scene-led-children">
+        <div class="scene-light-children">
           <For each={shown()}>
             {(name) => (
-              <div class="scene-led-row">
-                <LedCheck label={ledName(name)} checked={props.chosen.has(name)} onChange={(on) => props.onChoose([name], on)} />
+              <div class="scene-light-row">
+                <LightCheck label={ledName(name)} checked={props.chosen.has(name)} onChange={(on) => props.onChoose([name], on)} />
               </div>
             )}
           </For>
@@ -256,7 +256,7 @@ function Row(props: {
   )
 }
 
-function LedCheck(props: { label: string; count?: number; checked: boolean | 'indeterminate'; onChange: (on: boolean) => void }) {
+function LightCheck(props: { label: string; count?: number; checked: boolean | 'indeterminate'; onChange: (on: boolean) => void }) {
   return (
     <Checkbox.Root checked={props.checked} onCheckedChange={(details) => props.onChange(details.checked === true)}>
       <Checkbox.Control>
@@ -265,17 +265,17 @@ function LedCheck(props: { label: string; count?: number; checked: boolean | 'in
       </Checkbox.Control>
       <Checkbox.Label>{props.label}</Checkbox.Label>
       <Show when={props.count !== undefined}>
-        <span class="scene-led-count">{props.count}</span>
+        <span class="scene-light-count">{props.count}</span>
       </Show>
       <Checkbox.HiddenInput />
     </Checkbox.Root>
   )
 }
 
-/** The LEDs of a definition in order, which reach the console with only their names to tie them together. One is an LED on its own. */
-type LedRow = { label: string; names: string[] }
+/** The lights of a definition in order, which reach the console with only their names to tie them together. One is a light on its own. */
+type LightRow = { label: string; names: string[] }
 
-function ledRows(names: string[]): LedRow[] {
+function lightRows(names: string[]): LightRow[] {
   const rows = new Map<string, string[]>()
   for (const name of names.toSorted((a, b) => byName.compare(ledName(a), ledName(b)))) {
     const label = ledStrip(name) ?? name
@@ -284,8 +284,8 @@ function ledRows(names: string[]): LedRow[] {
   return [...rows].map(([label, names]) => ({ label, names }))
 }
 
-/** The chosen LEDs in order, with those that follow on along a strip taken together, as a whole strip is many names */
-function ledRuns(names: string[], rows: LedRow[]): LedRow[] {
+/** The chosen lights in order, with those that follow on along a strip taken together, as a whole strip is many names */
+function lightRuns(names: string[], rows: LightRow[]): LightRow[] {
   const runs: string[][] = []
   for (const name of names) {
     const run = runs.at(-1)
@@ -295,20 +295,20 @@ function ledRuns(names: string[], rows: LedRow[]): LedRow[] {
   return runs.map((names) => ({ label: runLabel(names, rows), names }))
 }
 
-function followsOn(led: string, next: string): boolean {
-  const index = ledIndex(led)
-  return index !== null && ledStrip(led) === ledStrip(next) && ledIndex(next) === index + 1
+function followsOn(light: string, next: string): boolean {
+  const index = ledIndex(light)
+  return index !== null && ledStrip(light) === ledStrip(next) && ledIndex(next) === index + 1
 }
 
-function runLabel(names: string[], rows: LedRow[]): string {
+function runLabel(names: string[], rows: LightRow[]): string {
   const strip = ledStrip(names[0]) ?? names[0]
   if (rows.find((row) => row.label === strip)?.names.length === names.length) return strip
   return names.length === 1 ? ledName(names[0]) : `${strip}[${ledIndex(names[0])}..${ledIndex(names.at(-1)!)}]`
 }
 
-/** Every tag on the machine's LEDs, with how many have it */
-function ledTags(leds: LED[]): { name: string; count: number }[] {
+/** Every tag on the machine's lights, with how many have it */
+function lightTags(lights: Light[]): { name: string; count: number }[] {
   const counts = new Map<string, number>()
-  for (const name of leds.flatMap((led) => led.tags)) counts.set(name, (counts.get(name) ?? 0) + 1)
+  for (const name of lights.flatMap((light) => light.tags)) counts.set(name, (counts.get(name) ?? 0) + 1)
   return [...counts].map(([name, count]) => ({ name, count })).toSorted((a, b) => byName.compare(a.name, b.name))
 }

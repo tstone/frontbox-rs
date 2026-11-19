@@ -39,13 +39,13 @@ static REAR_DRIVER: LazyLock<DriverDefinition> = LazyLock::new(|| {
     .build()
 });
 
-/// A scene with the given timing line, on an LED the machine doesn't have
+/// A scene with the given timing line, on a light the machine doesn't have
 fn scene(timing: &str) -> PlayableScene<Completes> {
   let scene = format!(
     r#"Scene(
       version: 2,
       {timing}
-      layers: [Leds(leds: Name("scoop_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+      layers: [Lights(lights: Name("scoop_light"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
     )"#
   );
   PlayableScene::completing(Scene::load(&scene).unwrap()).unwrap()

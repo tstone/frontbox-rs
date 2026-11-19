@@ -34,7 +34,7 @@
 - Need to probably move pixel font rendering into gfx with real TTF rendering
 - New curves for flame/flicker, stutter, glitch
 - Ability to compose curves in editor
-- Ability to compose LedQ in editor (are Reverse, Take, etc. still needed?)
+- Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
 - Plane stitching for playback (or should this just be real 3d rendering?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
@@ -76,16 +76,16 @@
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
 - Outer glow/drop shadow on regions
 
-### LEDs
+### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
 - `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
-- LED and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
+- Light and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
   budget (~80 chars/ms), sending the largest changes first.
 - `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
-- Keep each LED's declarations ordered by `(z, order)` to drop the per-tick sort.
-- `led_graph.rs` `GRAPHS` cache is never evicted (grows with each LED position edit in the console).
-- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for LEDs
+- Keep each light's declarations ordered by `(z, order)` to drop the per-tick sort.
+- `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
+- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for lights
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
 - Single channel flasher support
 - NeoSeg support

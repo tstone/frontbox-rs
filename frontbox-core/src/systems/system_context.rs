@@ -32,7 +32,7 @@ use crate::prelude::*;
 /// - `ctx.states`: read and set states
 /// - `ctx.drivers`: look up, configure, activate, and deactivate drivers
 /// - `ctx.switches`: look up switches and their state, and configure how they report
-/// - `ctx.leds`: look up LEDs, and set them directly
+/// - `ctx.lights`: look up lights, and set LEDs directly
 ///
 /// **Important**: SystemContext is specific to the system it was given, and should not be shared to other systems.
 pub struct SystemContext<'a> {
@@ -45,7 +45,7 @@ pub struct SystemContext<'a> {
   pub states: ContextStates<'a>,
   pub drivers: ContextDrivers<'a>,
   pub switches: ContextSwitches<'a>,
-  pub leds: ContextLeds<'a>,
+  pub lights: ContextLights<'a>,
 }
 
 impl<'a> SystemContext<'a> {
@@ -66,7 +66,7 @@ impl<'a> SystemContext<'a> {
       states: ContextStates::new(handle, ctx),
       drivers: ctx.drivers,
       switches: ctx.switches,
-      leds: ctx.leds,
+      lights: ctx.lights,
     }
   }
 

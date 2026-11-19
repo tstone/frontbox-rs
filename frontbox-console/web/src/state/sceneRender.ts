@@ -46,10 +46,10 @@ export type SceneClip = {
   frames: number
   /** The strip and the displays, as a render has them */
   canvases: ClipCanvasFrames[]
-  /** Where each LED's colors are in a frame */
-  ledIndex: Map<string, number>
-  /** Each frame's LEDs, as red, green, and blue */
-  leds: Uint8Array
+  /** Where each light's colors are in a frame */
+  lightIndex: Map<string, number>
+  /** Each frame's lights, as red, green, and blue */
+  lights: Uint8Array
   /** The clips the cycle starts, in the order they start */
   sounds: ClipSound[]
 }
@@ -133,7 +133,7 @@ const sameTarget = (a: ClipTarget, b: ClipTarget | null) =>
   b !== null &&
   a.seed === b.seed &&
   a.source === b.source &&
-  a.size.leds === b.size.leds &&
+  a.size.lights === b.size.lights &&
   a.size.width === b.size.width &&
   a.size.height === b.size.height &&
   a.reference?.name === b.reference?.name &&
@@ -181,7 +181,7 @@ export function receiveSceneClip(message: ArrayBuffer) {
   if (clipInFlight?.id !== header.id) return
   const { target, cycle } = clipInFlight
 
-  const { frames, leds, sounds } = header
+  const { frames, lights, sounds } = header
   // each canvas's frames go together, one canvas after another
   let start = 4 + headerLength
   const canvases = header.canvases.map((canvas) => {
@@ -193,8 +193,8 @@ export function receiveSceneClip(message: ArrayBuffer) {
   const clip = {
     frames,
     canvases,
-    ledIndex: new Map(leds.map((name, index) => [name, index])),
-    leds: new Uint8Array(message, start),
+    lightIndex: new Map(lights.map((name, index) => [name, index])),
+    lights: new Uint8Array(message, start),
     sounds,
   }
   setClips((rendered) => new Map(sameTarget(target, clipsRendered) ? [...rendered, [cycle, clip]] : [[cycle, clip]]))

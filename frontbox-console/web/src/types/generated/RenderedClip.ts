@@ -5,7 +5,7 @@ import type { ClipSound } from "./ClipSound";
 /**
  * How to read a clip, which is the one thing sent as a binary message: this as JSON, its length before it as a
  * little-endian `u32`. After it come each canvas's frames, canvas by canvas, with red, green, blue, and alpha for each
- * point as in `RenderedCanvas::colors`, then the frames' LEDs, as red, green, and blue in the order of `leds`.
+ * point as in `RenderedCanvas::colors`, then the frames' lights, as red, green, and blue in the order of `lights`.
  */
 export type RenderedClip = { 
 /**
@@ -21,9 +21,9 @@ frames: number,
  */
 canvases: Array<ClipCanvas>, 
 /**
- * The name of each LED the scene lands on
+ * The name of each light the scene lands on
  */
-leds: Array<string>, 
+lights: Array<string>, 
 /**
  * The sounds its sound layers start in the cycle, in the order they start
  */

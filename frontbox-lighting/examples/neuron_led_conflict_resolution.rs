@@ -3,12 +3,12 @@ use frontbox_lighting::prelude::*;
 use std::io::Write;
 
 /**
- * This example demonstrates how blending modes interact with two competing systems trying to control the same LED.
- * System 1 and System 2 both flash the same LED on and off, but at different rates. When they are both on, the
+ * This example demonstrates how blending modes interact with two competing systems trying to control the same light.
+ * System 1 and System 2 both flash the same light on and off, but at different rates. When they are both on, the
  * resolver mode kicks in.
  */
 
-pub mod leds {
+pub mod lights {
   use super::*;
 
   hardware_defs! {
@@ -23,7 +23,7 @@ async fn main() {
     .init();
 
   let exp_network = ExpNetwork::new(vec![
-    ExpBoard::neuron().wire_led_port(1, LedPort::ws2812().leds(vec![&leds::DEMO1])),
+    ExpBoard::neuron().wire_led_port(1, LedPort::ws2812().leds(vec![&lights::DEMO1])),
   ]);
 
   App::new(BootConfig {
@@ -39,7 +39,7 @@ async fn main() {
   .await;
 }
 
-/// This implementation flashes an LED by pre-declaring an LED state then using activate/deactivate for flashing. This is efficient approach since it re-uses the same declaration.
+/// This implementation flashes a light by pre-declaring a light state then using activate/deactivate for flashing. This is efficient approach since it re-uses the same declaration.
 struct System1;
 
 #[derive(serde::Serialize, Event)]
@@ -50,14 +50,14 @@ pub struct Off;
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     ctx.timers.start_multi(events![On, Off], Timer::Forever(Duration::from_secs(4)));
-    ctx.declare_leds(&leds::DEMO1.q(), 0, Rgba::red());
+    ctx.declare_lights(&lights::DEMO1.q(), 0, Rgba::red());
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<On>() {
-      ctx.set_led_conflict_resolution(&leds::DEMO1.q(), LedConflictResolution::Alternate);
+      ctx.set_light_conflict_resolution(&lights::DEMO1.q(), LightConflictResolution::Alternate);
     } else if event.is::<Off>() {
-      ctx.set_led_conflict_resolution(&leds::DEMO1.q(), LedConflictResolution::Mix);
+      ctx.set_light_conflict_resolution(&lights::DEMO1.q(), LightConflictResolution::Mix);
     }
   }
 }
@@ -66,6 +66,6 @@ struct System2;
 
 impl System for System2 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.declare_leds(&leds::DEMO1.q(), 0, Rgba::blue());
+    ctx.declare_lights(&lights::DEMO1.q(), 0, Rgba::blue());
   }
 }

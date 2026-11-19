@@ -27,7 +27,7 @@ import type { SceneSource } from '../../types/generated/SceneSource'
 import PlayfieldView, { type PreviewSpace } from '../machine/PlayfieldView'
 import ConfigPanel from './ConfigPanel'
 import ConfirmDialog from './ConfirmDialog'
-import { LedsNote } from './LayerPlace'
+import { LightsNote } from './LayerPlace'
 import { createPlayback } from './playback'
 import { Dropdown, NumberBox, LayerSurfacesContext, NodePickingContext, RegionVisibilityContext, RevealContext, SceneContext, ShapePosesContext, type NodePicking, type RegionVisibility, type ShapePoses } from './SceneFields'
 import { openTransform } from './configNodes'
@@ -38,7 +38,7 @@ import ShapeHandles, { layerUnder } from './ShapeHandles'
 import Timeline from './Timeline'
 
 /**
- * What the preview shows: the machine, with the LEDs and the displays that have a place on it, the strip of the
+ * What the preview shows: the machine, with the lights and the displays that have a place on it, the strip of the
  * `Sequence` layers, which is where their handles are, or one display on its own
  */
 type View = 'Machine' | 'Strip' | `Display:${string}`
@@ -107,12 +107,12 @@ function clipFrameColors({ width, height, points }: ClipCanvasFrames, frame: num
   return points.subarray(frame * length, (frame + 1) * length)
 }
 
-/** An LED's color in a frame of a clip, as CSS or `null` for off */
-function clipLedColor({ ledIndex, leds, frames }: SceneClip, frame: number, name: string) {
-  const index = ledIndex.get(name)
+/** A light's color in a frame of a clip, as CSS or `null` for off */
+function clipLightColor({ lightIndex, lights, frames }: SceneClip, frame: number, name: string) {
+  const index = lightIndex.get(name)
   if (index === undefined) return null
-  const at = (frame * (leds.length / frames) / 3 + index) * 3
-  return cssColor({ r: leds[at], g: leds[at + 1], b: leds[at + 2] })
+  const at = (frame * (lights.length / frames) / 3 + index) * 3
+  return cssColor({ r: lights[at], g: lights[at + 1], b: lights[at + 2] })
 }
 
 /**
@@ -139,7 +139,7 @@ export default function SceneEditor(props: {
   const [fileWork, setFileWork] = createSignal<'saving' | 'deleting' | null>(null)
   const [fileError, setFileError] = createSignal<string | null>(null)
   const [confirming, setConfirming] = createSignal<'close' | 'reset' | 'delete' | null>(null)
-  const [leds, setLeds] = createSignal(32)
+  const [lights, setLights] = createSignal(32)
   const [width, setWidth] = createSignal(128)
   const [height, setHeight] = createSignal(32)
   const [chosenView, setView] = createSignal<View>('Machine')
@@ -165,8 +165,8 @@ export default function SceneEditor(props: {
   // what's on show, which stays put while the source doesn't parse
   const [drawn, setDrawn] = createSignal<RenderedScene | null>(null)
 
-  const size = createMemo(() => ({ leds: leds(), width: width(), height: height() }), undefined, {
-    equals: (a, b) => a.leds === b.leds && a.width === b.width && a.height === b.height,
+  const size = createMemo(() => ({ lights: lights(), width: width(), height: height() }), undefined, {
+    equals: (a, b) => a.lights === b.lights && a.width === b.width && a.height === b.height,
   })
 
   // each play of the scene makes its own random choices, as each playback in the game does
@@ -478,12 +478,12 @@ export default function SceneEditor(props: {
     return rendered ? new Uint8ClampedArray(rendered.colors) : null
   }
 
-  const ledColors = () => drawn()?.led_colors ?? {}
+  const lightColors = () => drawn()?.light_colors ?? {}
 
-  const ledColor = (name: string) => {
+  const lightColor = (name: string) => {
     const shown = clipFrame()
-    if (shown) return clipLedColor(shown.clip, shown.frame, name)
-    const color = ledColors()[name]
+    if (shown) return clipLightColor(shown.clip, shown.frame, name)
+    const color = lightColors()[name]
     return color ? cssColor(color) : null
   }
 
@@ -589,7 +589,7 @@ export default function SceneEditor(props: {
     <>
       <GraphOverlay
         space={space}
-        // still there to click on while choosing one of its LEDs
+        // still there to click on while choosing one of its lights
         graph={openShown() || nodePicking.choosing[0]() !== null ? selectedGraph() : null}
         layer={selected()?.layer ?? null}
         highlighted={nodePicking.highlighted[0]()}
@@ -728,7 +728,7 @@ export default function SceneEditor(props: {
               <span class="scene-note">A sequence has no place on the machine, so its handles are on the strip</span>
             </Show>
             <Show when={view() === 'Strip'}>
-              <NumberBox min="1" aria-label="Number of LEDs" value={leds()} onNumber={setLeds} />
+              <NumberBox min="1" aria-label="Number of lights" value={lights()} onNumber={setLights} />
             </Show>
             <Show when={viewDisplay(view()) !== null && !machineHasDisplay(viewDisplay(view())!)}>
               <span class="scene-note" title="The machine has no display by this name, so it's previewed at this size">
@@ -774,8 +774,8 @@ export default function SceneEditor(props: {
               <Splitter.Panel id="source">
                 <div class="scene-source">
                   <Show when={scene() !== null}>
-                    <div class="scene-leds">
-                      <LedsNote />
+                    <div class="scene-lights">
+                      <LightsNote />
                     </div>
                   </Show>
                   <div class="scene-source-header">
@@ -828,7 +828,7 @@ export default function SceneEditor(props: {
                 {/* both stay up, so the camera and the last render are still there on the way back */}
                 <div class="scene-machine" classList={{ stale: error() !== null, 'scene-choosing-node': nodePicking.choosing[0]() !== null }} hidden={!onMachine()}>
                   <PlayfieldView
-                    ledColor={ledColor}
+                    ledColor={lightColor}
                     displayFrame={previewDisplayFrame}
                     plane={() => (isSequence() ? null : plane())}
                     outline={outline}

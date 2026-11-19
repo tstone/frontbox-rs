@@ -59,13 +59,13 @@ impl LedDefinition {
   }
 
   /// Query for LED(s) in this definition
-  pub fn q(&self) -> LedQ {
-    LedQ::names(&self.names)
+  pub fn q(&self) -> LightQ {
+    LightQ::names(&self.names)
   }
 }
 
-impl Into<LedQ> for LedDefinition {
-  fn into(self) -> LedQ {
+impl Into<LightQ> for LedDefinition {
+  fn into(self) -> LightQ {
     self.q()
   }
 }

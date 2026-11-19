@@ -14,10 +14,10 @@ Frontbox is a homebrew arcade framework, with pinball inclinations, built for [F
 **In**: 
   - Core framework (systems, events, routines, states, timers)
   - FAST protocol handshaking, boot sequence, and watchdog management
-  - Hardware support: drivers (coils), switches, and LEDs
+  - Hardware support: drivers (coils), switches, and lights (LEDs)
   - Ball management (trough, plunge lane, auto-plunger, ball search)
   - Competitive game management (game lifecycle, player tracking, turn tracking, extra ball, etc.)
-  - Combined LED + display + sound scenes with built-in editor
+  - Combined light + display + sound scenes with built-in editor
   - Coin-based and free play game start
   - Music playback, sound effect playback, and callback playback with ducking
   - Operator config (adjustable game/hardware settings)
@@ -63,7 +63,7 @@ Systems can be grouped or go active/inactive independently. Systems interact wit
 - A `BallActive` event is emitted.
 - A `SkillShotTargetsSystem` was running. Its `is_active` state was set to `ctx.states.is(TurnPhase::Active)`
 - The ball hits a target, causing another switch event
-- `SkillShotTargetsSystem` recognizes the switch event is for its target, so it calls `ctx.add_points` to award the player points. It also applies an LED effect during its `on_tick` handler, and plays a sound effect via `ctx.play_sfx`.
+- `SkillShotTargetsSystem` recognizes the switch event is for its target, so it calls `ctx.add_points` to award the player points. It also applies a light effect during its `on_tick` handler, and plays a sound effect via `ctx.play_sfx`.
 
 Most of all this happens automatically. Games primarily implement game modes through custom systems, which use the same means of interaction: receive events, send events, participate in routines, call methods on others systems, or interact with the context (`ctx`).
 
@@ -116,7 +116,7 @@ A: Yes:
 ###  Extras
 
 - Pinball -- Lighting things up
-- LEDs -- Lighting things up
+- Lights -- Lighting things up
 - DMD -- Dot matrix display rendering
 
 ## License

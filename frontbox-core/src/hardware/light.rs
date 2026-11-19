@@ -1,9 +1,10 @@
 
 use crate::prelude::*;
 
+/// A light source: anything that turns on, addressed by where it's wired ([`LightAddress`])
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct LED {
+pub struct Light {
   pub name: String,
   pub address: LightAddress,
   #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
@@ -12,7 +13,7 @@ pub struct LED {
   pub location: Option<Vec3>,
 }
 
-impl LED {
+impl Light {
   pub fn has_tag<T: Tag + 'static>(&self) -> bool {
     self
       .tags
@@ -25,34 +26,10 @@ impl LED {
   }
 }
 
-impl PartialEq for LED {
+impl PartialEq for Light {
   fn eq(&self, other: &Self) -> bool {
     self.name == other.name
   }
 }
 
-impl Eq for LED {}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, serde::Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct LedAddress {
-  pub exp: ExpAddress,
-  /// The LED port on the board, 0-based. Only for display: `index` already counts from the start of the breakout.
-  pub port: u8,
-  pub index: u8,
-}
-
-impl LedAddress {
-  pub fn new(exp: ExpAddress, port: u8, index: u8) -> Self {
-    Self { exp, port, index }
-  }
-
-  pub fn board(&self) -> u8 {
-    self.exp.board_address
-  }
-
-  pub fn breakout(&self) -> Option<u8> {
-    self.exp.breakout
-  }
-
-}
+impl Eq for Light {}
