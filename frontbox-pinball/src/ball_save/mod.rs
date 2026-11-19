@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use frontbox_core::prelude::*;
 use frontbox_scene::{PlayableScene, ScenePlayer};
 
-use crate::ball_management::{BallManager, Launch};
+use crate::ball_management::{BallManagerExt, Launch};
 use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
@@ -207,8 +207,8 @@ impl System for BallSaveSystem {
       ctx.routines.complete_step::<BallDraining>();
       return;
     }
-    let Some(mut ball_manager) = ctx.systems.get::<BallManager>() else {
-      log::error!(target: "frontbox::ball_save", "No BallManager to relaunch the saved ball(s); letting the drain stand");
+    let Some(mut ball_manager) = ctx.ball_manager() else {
+      log::error!(target: "frontbox::ball_save", "No ball management to relaunch the saved ball(s); letting the drain stand");
       ctx.routines.complete_step::<BallDraining>();
       return;
     };
@@ -257,20 +257,24 @@ mod tests {
   use std::sync::{Arc, Mutex};
 
   use super::*;
-  use crate::ball_management::BallManagement;
+  use crate::ball_management::BallManager;
 
   const A: u64 = 1;
   const B: u64 = 2;
 
   /// Records ejects, standing in for real ball management
   #[derive(Clone, Default)]
-  struct FakeBallManagement {
+  struct FakeBallManager {
     ejects: Arc<Mutex<Vec<(u8, Launch)>>>,
   }
 
-  impl System for FakeBallManagement {}
+  impl System for FakeBallManager {
+    fn provides(provides: &mut Provides<Self>) {
+      provides.add::<dyn BallManager>(|s| s);
+    }
+  }
 
-  impl BallManagement for FakeBallManagement {
+  impl BallManager for FakeBallManager {
     fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64 {
       self.eject_many(1, launch, ctx)
     }
@@ -320,9 +324,9 @@ mod tests {
 
     fn with(mut save: BallSaveSystem) -> Self {
       let mut ctx = TestContext::default();
-      let balls = FakeBallManagement::default();
+      let balls = FakeBallManager::default();
       let ejects = balls.ejects.clone();
-      ctx.insert_system(BallManager::new(balls));
+      ctx.insert_system(balls);
       save.on_spawn(&ctx.sys_ctx());
       Self { save, ctx, ejects }
     }

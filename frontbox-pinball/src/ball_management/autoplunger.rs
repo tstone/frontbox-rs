@@ -3,7 +3,7 @@ use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
 
-/// An autoplunger coil, and optionally the buttons that let the player fire it. Built with `BallManager::standard`.
+/// An autoplunger coil, and optionally the buttons that let the player fire it. Built with `StandardBallManager::builder`.
 #[derive(Clone)]
 pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,

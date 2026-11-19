@@ -28,7 +28,7 @@ impl<T: System> Provides<T> {
   /// enough:
   ///
   /// ```rust,ignore
-  /// provides.add::<dyn BallManagement>(|s| s);
+  /// provides.add::<dyn BallManager>(|s| s);
   /// ```
   pub fn add<I: ?Sized + 'static>(&mut self, cast: fn(&mut T) -> &mut I) -> &mut Self {
     let cast: Cast<I> = Box::new(cast_fn(move |system| {
@@ -70,7 +70,7 @@ impl ProvidedTraits {
 }
 
 struct ProvidedTrait {
-  /// Of the trait object, e.g. `TypeId::of::<dyn BallManagement>()`
+  /// Of the trait object, e.g. `TypeId::of::<dyn BallManager>()`
   type_id: TypeId,
   /// A [`Cast`] to that trait
   cast: Box<dyn Any + Send + Sync>,

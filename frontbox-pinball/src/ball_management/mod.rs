@@ -1,20 +1,20 @@
 mod autoplunger;
-mod ball_management;
-mod ball_management_ext;
+mod ball_manager;
+mod ball_manager_ext;
 mod ball_search;
 mod plunge_lane;
-mod standard_ball_management;
-mod standard_ball_management_config;
+mod standard_ball_manager;
+mod standard_ball_manager_config;
 mod trough;
 mod trough_management_config;
 
 pub use autoplunger::*;
-pub use ball_management::*;
-pub use ball_management_ext::*;
+pub use ball_manager::*;
+pub use ball_manager_ext::*;
 pub use ball_search::*;
 pub use plunge_lane::*;
-pub use standard_ball_management::*;
-pub use standard_ball_management_config::*;
+pub use standard_ball_manager::*;
+pub use standard_ball_manager_config::*;
 pub use trough::*;
 pub use trough_management_config::*;
 
@@ -35,12 +35,12 @@ pub struct BallsExitedPlay {
   /// Balls that left play
   pub count: u8,
   /// Balls still in play afterwards. Balls are in play once they have left the trough, which includes balls resting
-  /// in holders (`BallManagement::set_balls_held`) and a ball in the plunge lane waiting to be launched for a request,
-  /// but not one kept there for the next request (see `BallManagement::cancel_ejects`).
+  /// in holders (`BallManager::set_balls_held`) and a ball in the plunge lane waiting to be launched for a request,
+  /// but not one kept there for the next request (see `BallManager::cancel_ejects`).
   pub in_play: u8,
 }
 
-/// Emitted when the balls resting in holders (scoops, VUKs) change, as reported with `BallManagement::set_balls_held`.
+/// Emitted when the balls resting in holders (scoops, VUKs) change, as reported with `BallManager::set_balls_held`.
 /// Held balls are still in play, so this doesn't change `in_play`.
 #[derive(serde::Serialize, Event)]
 pub struct BallsHeldChanged {

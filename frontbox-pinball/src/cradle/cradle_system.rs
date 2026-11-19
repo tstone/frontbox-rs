@@ -1,7 +1,7 @@
 use frontbox_core::prelude::*;
 
 use crate::ball_management::{
-  BallEnteredPlay, BallEnteredPlungeLane, BallExitedPlungeLane, BallManager, BallsExitedPlay, BallsHeldChanged,
+  BallEnteredPlay, BallEnteredPlungeLane, BallExitedPlungeLane, BallManagerExt, BallsExitedPlay, BallsHeldChanged,
   MaxBallsInPlayChanged,
 };
 use crate::cradle::Cradle;
@@ -73,7 +73,7 @@ impl CradleSystem {
 
   /// Balls in play that aren't held or waiting in the plunge lane
   fn balls_loose(&self, ctx: &SystemContext) -> u8 {
-    ctx.systems.get::<BallManager>().map_or(0, |ball_manager| {
+    ctx.ball_manager().map_or(0, |ball_manager| {
       let waiting = u8::from(ball_manager.is_ball_in_plunge_lane(ctx.into()));
       ball_manager
         .balls_in_play(ctx.into())

@@ -48,7 +48,7 @@ impl<'a> ContextSystems<'a> {
   /// Lookup a system by a trait it provides (see [`System::provides`]): the nearest one matches first
   ///
   /// ```rust,ignore
-  /// if let Some(mut balls) = ctx.systems.get_dyn::<dyn BallManagement>() { /* ... */ }
+  /// if let Some(mut balls) = ctx.systems.get_dyn::<dyn BallManager>() { /* ... */ }
   /// ```
   pub fn get_dyn<I: ?Sized + 'static>(&self) -> Option<RefMut<'_, I>> {
     self.ctx.get_dyn::<I>(self.handle)

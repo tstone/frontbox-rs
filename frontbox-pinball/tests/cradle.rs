@@ -56,7 +56,7 @@ fn app() -> App {
     ..BootConfig::default()
   });
   app
-    .system(BallManager::standard(TROUGH, EJECT).plunge_lane(PLUNGE).build())
+    .system(StandardBallManager::builder(TROUGH, EJECT).plunge_lane(PLUNGE).build())
     .system(CradleSystem::new(
       SwitchQ::name(INLANE).or(SwitchQ::name(TARGET)),
       SwitchQ::name(LEFT_FLIPPER).or(SwitchQ::name(RIGHT_FLIPPER)),

@@ -5,17 +5,17 @@ use frontbox_core::prelude::*;
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManagement, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged, EjectCompleted,
+  BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged, EjectCompleted,
   Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
-  StandardBallManagementConfig, TroughEjectFailed, TroughOccupancyChanged,
+  StandardBallManagerConfig, StandardBuilder, TroughEjectFailed, TroughOccupancyChanged,
 };
 use crate::{configs, metrics};
 
 /// Ball management for machines where every ball not in play comes to rest in a single trough, optionally ejecting
-/// into a plunge lane (with or without an autoplunger). Set up with `BallManager::standard`.
-pub struct StandardBallManagement {
+/// into a plunge lane (with or without an autoplunger). Set up with `StandardBallManager::builder`.
+pub struct StandardBallManager {
   handle: SystemHandle,
-  config: StandardBallManagementConfig,
+  config: StandardBallManagerConfig,
   /// Balls found when the count was last established, plus any that turned up since
   balls_found: u8,
   /// Balls resting in each holder, by the holder's id, as it last reported
@@ -80,9 +80,41 @@ enum EjectState {
   Available,
 }
 
-impl StandardBallManagement {
-  pub fn new(config: StandardBallManagementConfig) -> Self {
-    StandardBallManagement {
+impl StandardBallManager {
+  /// The standard setup: a single trough, optionally ejecting into a plunge lane, optionally with an autoplunger.
+  /// Only the hardware the machine has is given, and only valid setups can be written (e.g. a launch button needs an
+  /// autoplunger). Settings can be given at any point in the chain.
+  ///
+  /// ```rust,ignore
+  /// // Ejects straight into play
+  /// StandardBallManager::builder(TROUGH_SWITCHES, "trough_eject").build()
+  ///
+  /// // Manual plunger
+  /// StandardBallManager::builder(TROUGH_SWITCHES, "trough_eject")
+  ///   .jam_switch("trough_jam")
+  ///   .plunge_lane("shooter_lane")
+  ///   .build()
+  ///
+  /// // Manual plunger and autoplunger, with launch buttons (or autoplunger only, with launch buttons)
+  /// StandardBallManager::builder(TROUGH_SWITCHES, "trough_eject")
+  ///   .jam_switch("trough_jam")
+  ///   .plunge_lane("shooter_lane")
+  ///   .autoplunger("autoplunger")
+  ///   .launch_button(SwitchQ::names(["launch_button", "action_button"]))
+  ///   .build()
+  /// ```
+  ///
+  /// * `trough_switch_names` - Trough switches, ordered nearest the eject to farthest
+  /// * `eject_coil_name` - The trough eject coil
+  pub fn builder(
+    trough_switch_names: impl IntoIterator<Item = &'static str>,
+    eject_coil_name: &'static str,
+  ) -> StandardBuilder {
+    StandardBuilder::new(trough_switch_names, eject_coil_name)
+  }
+
+  pub fn new(config: StandardBallManagerConfig) -> Self {
+    StandardBallManager {
       handle: SystemHandle::default(),
       balls_found: 0, // set on spawn
       config,
@@ -479,7 +511,7 @@ impl StandardBallManagement {
   }
 }
 
-impl BallManagement for StandardBallManagement {
+impl BallManager for StandardBallManager {
   fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64 {
     self.eject_many(1, launch, ctx)
   }
@@ -655,7 +687,11 @@ impl BallManagement for StandardBallManagement {
   }
 }
 
-impl System for StandardBallManagement {
+impl System for StandardBallManager {
+  fn provides(provides: &mut Provides<Self>) {
+    provides.add::<dyn BallManager>(|s| s);
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
 
@@ -732,7 +768,6 @@ struct VerifyLaunch;
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ball_management::BallManager;
 
   // Ids: t1..t5 = 0..4, plunge = 5, launch = 6
   const TROUGH: [&str; 5] = ["t1", "t2", "t3", "t4", "t5"];
@@ -740,7 +775,7 @@ mod tests {
   const LAUNCH: &str = "launch";
 
   struct Fixture {
-    system: StandardBallManagement,
+    system: StandardBallManager,
     ctx: TestContext,
     switch_states: Vec<bool>,
   }
@@ -748,12 +783,12 @@ mod tests {
   impl Fixture {
     /// Spawns ball management with `balls` in a 5 switch trough, alongside a spawned trough for it to query
     fn spawn(balls: usize) -> Self {
-      Self::build(balls, BallManager::standard(TROUGH, "eject").config())
+      Self::build(balls, StandardBallManager::builder(TROUGH, "eject").config())
     }
 
     /// As `spawn`, with a plunge lane and optionally an autoplunger (whose launch button is the `launch` switch)
     fn with_lane(balls: usize, autoplunger: bool, launch_button: bool) -> Self {
-      let lane = BallManager::standard(TROUGH, "eject").plunge_lane(PLUNGE);
+      let lane = StandardBallManager::builder(TROUGH, "eject").plunge_lane(PLUNGE);
       let config = match (autoplunger, launch_button) {
         (false, _) => lane.config(),
         (true, false) => lane.autoplunger("autoplunger").config(),
@@ -765,7 +800,7 @@ mod tests {
       Self::build(balls, config)
     }
 
-    fn build(balls: usize, config: StandardBallManagementConfig) -> Self {
+    fn build(balls: usize, config: StandardBallManagerConfig) -> Self {
       let mut ctx = TestContext::default();
       for (id, name) in TROUGH.iter().chain([PLUNGE, LAUNCH].iter()).enumerate() {
         ctx.insert_switch(Switch {
@@ -793,7 +828,7 @@ mod tests {
         ctx.insert_system(plunge_lane);
       }
 
-      let mut system = StandardBallManagement::new(config);
+      let mut system = StandardBallManager::new(config);
       system.on_spawn(&ctx.sys_ctx());
 
       let mut fixture = Self {
@@ -1002,7 +1037,7 @@ mod tests {
   #[test]
   #[should_panic(expected = "switches that don't exist: [\"t9\", \"jam\"]")]
   fn spawn_panics_naming_trough_switches_that_dont_exist() {
-    let config = BallManager::standard(["t1", "t9"], "eject")
+    let config = StandardBallManager::builder(["t1", "t9"], "eject")
       .jam_switch("jam")
       .config();
     Fixture::build(1, config);

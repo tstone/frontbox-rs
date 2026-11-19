@@ -64,7 +64,7 @@ static AUTOPLUNGER_COIL: LazyLock<DriverDefinition> =
 
 fn app() -> App {
   app_with(
-    BallManager::standard(TROUGH, EJECT)
+    StandardBallManager::builder(TROUGH, EJECT)
       .plunge_lane(PLUNGE)
       .build(),
   )
@@ -73,14 +73,14 @@ fn app() -> App {
 /// The machine with an autoplunger in its plunge lane, and no launch button
 fn app_with_autoplunger() -> App {
   app_with(
-    BallManager::standard(TROUGH, EJECT)
+    StandardBallManager::builder(TROUGH, EJECT)
       .plunge_lane(PLUNGE)
       .autoplunger(AUTOPLUNGER)
       .build(),
   )
 }
 
-fn app_with(ball_manager: BallManager) -> App {
+fn app_with(ball_manager: StandardBallManager) -> App {
   let mut board = IoBoard::custom(16, 8)
     .wire_switch(3, &PLUNGE_SWITCH)
     .wire_switch(4, &START_SWITCH)

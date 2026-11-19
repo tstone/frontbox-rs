@@ -6,7 +6,7 @@ use crate::ball_management::{
   BallEnteredPlungeLane, BallExitedPlungeLane, BallReenteredPlungeLane,
 };
 
-/// A plunge (shooter) lane that balls are ejected into, and launched from. Built with `BallManager::standard`.
+/// A plunge (shooter) lane that balls are ejected into, and launched from. Built with `StandardBallManager::builder`.
 #[derive(Clone)]
 pub struct PlungeLaneConfig {
   pub(super) switch_name: &'static str,

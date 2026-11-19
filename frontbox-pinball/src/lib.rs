@@ -25,7 +25,7 @@
 //! In detail:
 //! 1. A player's turn begins with the game manager activating the player's group and starting the `TurnStarting` routine. `RoutineStarted<TurnStarting>` is broadcast first: this is the time for "start of turn" mechanics, like music, and the playfield drivers are turned on.
 //! 2. Each participant of the routine (player-up or shoot-again display, skill shot selection, etc.) takes its turn before the ball comes out.
-//! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks the `BallManager` for a ball.
+//! 3. Once the last participant completes its step, `RoutineCompleted<TurnStarting>` is broadcast, and the game manager asks ball management for a ball.
 //! 4. When the ball enters play (`BallEnteredPlay`), or a `ball_in_play_switches` switch is hit, whichever comes first, `TurnActive` is emitted. This happens once per turn, unlike `BallEnteredPlay`, which ball management emits for every ball that goes into play.
 //! 5. Each time balls leave play (`BallsExitedPlay`), the game manager starts the `BallDraining` routine. Its participants (ball save, an outlane save, etc.) each get the chance to save the drain, and one that does halts the routine. A drain that comes in while another is being decided waits its turn. See "Overview: A Drain" below.
 //! 6. When a drain that left no ball in play completes without being halted, or at once when the player tilts, the game manager starts the `TurnEnding` routine, with a `TurnEndReason`. `RoutineStarted<TurnEnding>` is broadcast first, signaling that play is over: this is the time for modes to clean up, and the playfield drivers are turned off.
@@ -75,7 +75,7 @@
 //!
 //! To receive the benefits of this crate, these systems must be added to the root of the app:
 //! - `GameManager` - Either competitive or cooperative
-//! - `BallManager` - e.g. `BallManager::standard`
+//! - `BallManager` - e.g. `StandardBallManager::builder`
 //! - `CreditsSystem` - adds players on a start press, on free play or for a credit
 //!
 //! ## Ball Save, Multiball, Extra Balls, and Similar Mechanics
@@ -87,7 +87,7 @@
 //! (`GameManagementExt`), up to the `MAX_EXTRA_BALLS` operator config's limit per game; it returns false when the
 //! limit is reached, so the caller can award something else.
 //!
-//! A multiball is a mode asking the `BallManager` for more balls, usually with a ball save request alongside. It knows
+//! A multiball is a mode asking ball management for more balls, usually with a ball save request alongside. It knows
 //! it's over from `RoutineCompleted<BallDraining>`: a drain completing with `RoutineCompletion::AllSteps` wasn't saved,
 //! and its `in_play` is how many balls are left.
 //!

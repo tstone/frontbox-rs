@@ -51,7 +51,7 @@ fn app(max_players: u8, credits: CreditsSystem) -> App {
     ..BootConfig::default()
   });
   app
-    .system(BallManager::standard(TROUGH, EJECT).build())
+    .system(StandardBallManager::builder(TROUGH, EJECT).build())
     .system(GameManager::competitive(max_players, vec![], SwitchQ::name(START)))
     .system(credits)
     .system(GameOverDisplay)

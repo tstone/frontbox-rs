@@ -54,9 +54,9 @@ pub trait System: Any {
   /// Lets callers reach whichever implementation the app added, without knowing which one it is.
   ///
   /// ```rust,ignore
-  /// impl System for StandardBallManagement {
+  /// impl System for StandardBallManager {
   ///   fn provides(provides: &mut Provides<Self>) {
-  ///     provides.add::<dyn BallManagement>(|s| s);
+  ///     provides.add::<dyn BallManager>(|s| s);
   ///   }
   /// }
   /// ```

@@ -1,12 +1,11 @@
-use std::ops::{Deref, DerefMut};
-
-use frontbox_core::{delegate_system, prelude::*};
-
-use crate::ball_management::StandardBuilder;
+use frontbox_core::prelude::*;
 
 /// Ball management is the single owner of the balls: how many there are, where they are, and getting them into play,
 /// along with all of the ball handling hardware for its machine (e.g. trough, plunge lane, autoplunger, launch buttons)
 /// It spawns whatever child systems it needs to run it. Other systems talk to ball management directly, not child systems.
+///
+/// Other systems find it by this trait, `ctx.systems.get_dyn::<dyn BallManager>()` or `ctx.ball_manager()`, so
+/// an implementation lists it in [`System::provides`].
 ///
 /// ## Responsibilities
 /// - **Counting balls.** Knows how many balls are in play, in the trough, resting in holders (scoops, VUKs), and locked
@@ -43,7 +42,7 @@ use crate::ball_management::StandardBuilder;
 /// - `MaxBallsInPlayChanged` - Emitted when the number of balls that could be in play changes (e.g. a ball is locked,
 ///   released from a lock, found or lost)
 /// - `BallsHeldChanged` - Emitted when a holder reports a change in the balls resting in it
-pub trait BallManagement: SpawnableSystem {
+pub trait BallManager: SpawnableSystem {
   /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry.
   fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64;
   /// Puts `count` balls into play. Returns the id `EjectCompleted` will carry once they all are.
@@ -91,66 +90,6 @@ pub trait BallManagement: SpawnableSystem {
   fn set_balls_locked(&mut self, locker: u64, count: u8, ctx: &ServiceContext);
   /// Balls locked out of play. They're not counted in `balls_in_play`.
   fn balls_locked(&self) -> u8;
-}
-
-pub struct BallManager {
-  inner: Box<dyn BallManagement>,
-}
-
-impl BallManager {
-  pub fn new(ball_management: impl BallManagement + 'static) -> Self {
-    Self {
-      inner: Box::new(ball_management),
-    }
-  }
-
-  /// The standard setup: a single trough, optionally ejecting into a plunge lane, optionally with an autoplunger.
-  /// Only the hardware the machine has is given, and only valid setups can be written (e.g. a launch button needs an
-  /// autoplunger). Settings can be given at any point in the chain.
-  ///
-  /// ```rust,ignore
-  /// // Ejects straight into play
-  /// BallManager::standard(TROUGH_SWITCHES, "trough_eject").build()
-  ///
-  /// // Manual plunger
-  /// BallManager::standard(TROUGH_SWITCHES, "trough_eject")
-  ///   .jam_switch("trough_jam")
-  ///   .plunge_lane("shooter_lane")
-  ///   .build()
-  ///
-  /// // Manual plunger and autoplunger, with launch buttons (or autoplunger only, with launch buttons)
-  /// BallManager::standard(TROUGH_SWITCHES, "trough_eject")
-  ///   .jam_switch("trough_jam")
-  ///   .plunge_lane("shooter_lane")
-  ///   .autoplunger("autoplunger")
-  ///   .launch_button(SwitchQ::names(["launch_button", "action_button"]))
-  ///   .build()
-  /// ```
-  ///
-  /// * `trough_switch_names` - Trough switches, ordered nearest the eject to farthest
-  /// * `eject_coil_name` - The trough eject coil
-  pub fn standard(
-    trough_switch_names: impl IntoIterator<Item = &'static str>,
-    eject_coil_name: &'static str,
-  ) -> StandardBuilder {
-    StandardBuilder::new(trough_switch_names, eject_coil_name)
-  }
-}
-
-delegate_system!(BallManager, inner);
-
-impl Deref for BallManager {
-  type Target = dyn BallManagement;
-
-  fn deref(&self) -> &Self::Target {
-    self.inner.as_ref()
-  }
-}
-
-impl DerefMut for BallManager {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    self.inner.as_mut()
-  }
 }
 
 /// The intent behind putting a ball into play. How it is carried out depends on the machine's hardware.

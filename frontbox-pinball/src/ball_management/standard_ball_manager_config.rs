@@ -2,12 +2,12 @@ use frontbox_core::prelude::*;
 use frontbox_scene::{Completes, PlayableScene};
 
 use crate::ball_management::{
-  AutoPlungerConfig, BallManager, PlungeLaneConfig, StandardBallManagement, TroughManagementConfig,
+  AutoPlungerConfig, PlungeLaneConfig, StandardBallManager, TroughManagementConfig,
 };
 
-/// Configuration for `StandardBallManagement`, built with `BallManager::standard`
+/// Configuration for `StandardBallManager`, built with `StandardBallManager::builder`
 #[derive(Clone)]
-pub struct StandardBallManagementConfig {
+pub struct StandardBallManagerConfig {
   pub(super) trough: TroughManagementConfig,
   pub(super) launcher: Launcher,
 }
@@ -23,7 +23,7 @@ pub(super) enum Launcher {
   AutoPlunger(PlungeLaneConfig, AutoPlungerConfig),
 }
 
-impl StandardBallManagementConfig {
+impl StandardBallManagerConfig {
   pub(super) fn plunge_lane(&self) -> Option<&PlungeLaneConfig> {
     match &self.launcher {
       Launcher::Direct => None,
@@ -84,12 +84,12 @@ impl StandardBuilder {
     }
   }
 
-  pub fn build(self) -> BallManager {
-    BallManager::new(StandardBallManagement::new(self.config()))
+  pub fn build(self) -> StandardBallManager {
+    StandardBallManager::new(self.config())
   }
 
-  pub(super) fn config(self) -> StandardBallManagementConfig {
-    StandardBallManagementConfig {
+  pub(super) fn config(self) -> StandardBallManagerConfig {
+    StandardBallManagerConfig {
       trough: self.trough,
       launcher: Launcher::Direct,
     }
@@ -106,12 +106,12 @@ impl StandardPlungeLaneBuilder {
     }
   }
 
-  pub fn build(self) -> BallManager {
-    BallManager::new(StandardBallManagement::new(self.config()))
+  pub fn build(self) -> StandardBallManager {
+    StandardBallManager::new(self.config())
   }
 
-  pub(super) fn config(self) -> StandardBallManagementConfig {
-    StandardBallManagementConfig {
+  pub(super) fn config(self) -> StandardBallManagerConfig {
+    StandardBallManagerConfig {
       trough: self.trough,
       launcher: Launcher::PlungeLane(self.lane),
     }
@@ -152,12 +152,12 @@ impl StandardAutoPlungerBuilder {
     self
   }
 
-  pub fn build(self) -> BallManager {
-    BallManager::new(StandardBallManagement::new(self.config()))
+  pub fn build(self) -> StandardBallManager {
+    StandardBallManager::new(self.config())
   }
 
-  pub(super) fn config(self) -> StandardBallManagementConfig {
-    StandardBallManagementConfig {
+  pub(super) fn config(self) -> StandardBallManagerConfig {
+    StandardBallManagerConfig {
       trough: self.trough,
       launcher: Launcher::AutoPlunger(self.lane, self.autoplunger),
     }
@@ -240,15 +240,15 @@ mod tests {
 
   #[test]
   fn each_stage_builds_its_launcher() {
-    let direct = BallManager::standard(["t1"], "eject").config();
+    let direct = StandardBallManager::builder(["t1"], "eject").config();
     assert!(matches!(direct.launcher, Launcher::Direct));
 
-    let lane = BallManager::standard(["t1"], "eject")
+    let lane = StandardBallManager::builder(["t1"], "eject")
       .plunge_lane("plunge")
       .config();
     assert!(matches!(lane.launcher, Launcher::PlungeLane(_)));
 
-    let autoplunger = BallManager::standard(["t1"], "eject")
+    let autoplunger = StandardBallManager::builder(["t1"], "eject")
       .plunge_lane("plunge")
       .autoplunger("autoplunger")
       .launch_button(SwitchQ::name("launch"))
@@ -259,7 +259,7 @@ mod tests {
 
   #[test]
   fn earlier_settings_can_be_given_at_later_stages() {
-    let config = BallManager::standard(["t1", "t2"], "eject")
+    let config = StandardBallManager::builder(["t1", "t2"], "eject")
       .plunge_lane("plunge")
       .autoplunger("autoplunger")
       .jam_switch("jam")

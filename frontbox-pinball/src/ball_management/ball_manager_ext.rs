@@ -1,8 +1,13 @@
+use std::cell::RefMut;
+
 use frontbox_core::prelude::*;
 
 use crate::ball_management::{BallManager, Launch};
 
-pub trait BallManagementExt {
+pub trait BallManagerExt {
+  /// The running ball management, for calls not covered below. `None` if it isn't running, or is in use.
+  fn ball_manager(&self) -> Option<RefMut<'_, dyn BallManager>>;
+
   /// Puts a ball into play. Balls are queued and launched one at a time. Returns the id `EjectCompleted` will carry,
   /// or `None` if ball management isn't running.
   fn eject_ball(&self, launch: Launch) -> Option<u64>;
@@ -28,7 +33,11 @@ pub trait BallManagementExt {
   fn set_balls_locked(&self, count: u8);
 }
 
-impl<'a> BallManagementExt for SystemContext<'a> {
+impl<'a> BallManagerExt for SystemContext<'a> {
+  fn ball_manager(&self) -> Option<RefMut<'_, dyn BallManager>> {
+    self.systems.get_dyn::<dyn BallManager>()
+  }
+
   fn eject_ball(&self, launch: Launch) -> Option<u64> {
     let ctx = self;
     with_ball_manager(self, |manager| manager.eject(launch, ctx.into()))
@@ -43,7 +52,7 @@ impl<'a> BallManagementExt for SystemContext<'a> {
 
   fn can_auto_launch(&self) -> bool {
     self
-      .systems.get::<BallManager>()
+      .ball_manager()
       .map(|manager| manager.can_auto_launch())
       .unwrap_or(false)
   }
@@ -55,7 +64,7 @@ impl<'a> BallManagementExt for SystemContext<'a> {
 
   fn balls_in_play(&self) -> u8 {
     self
-      .systems.get::<BallManager>()
+      .ball_manager()
       .map(|manager| manager.balls_in_play(self.into()))
       .unwrap_or(0)
   }
@@ -82,11 +91,11 @@ impl<'a> BallManagementExt for SystemContext<'a> {
   }
 }
 
-fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut BallManager) -> T) -> Option<T> {
-  if let Some(mut system) = ctx.systems.get::<BallManager>() {
-    Some(f(&mut system))
+fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut dyn BallManager) -> T) -> Option<T> {
+  if let Some(mut system) = ctx.ball_manager() {
+    Some(f(&mut *system))
   } else {
-    log::error!(target: "frontbox::ball_management", "BallManager not running.");
+    log::error!(target: "frontbox::ball_management", "Ball management is not running.");
     None
   }
 }

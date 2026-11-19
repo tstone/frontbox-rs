@@ -112,7 +112,7 @@
 //! 3. `ctx.systems.with::<S, _>` - Runs a closure on `S`, logging a warning if it isn't running
 //!
 //! Each has a `_dyn` form (`get_dyn`, `expect_dyn`, `with_dyn`) that looks a system up by a trait it provides
-//! instead, such as `ctx.systems.get_dyn::<dyn BallManagement>()`. See [`System::provides`].
+//! instead, such as `ctx.systems.get_dyn::<dyn BallManager>()`. See [`System::provides`].
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
