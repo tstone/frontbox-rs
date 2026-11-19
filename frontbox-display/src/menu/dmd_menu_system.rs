@@ -5,7 +5,6 @@ use frontbox_scene::prelude::*;
 #[cfg(feature = "sound")]
 use frontbox_sound::*;
 
-use crate::menu::{MenuRow, MenuSection};
 use crate::*;
 
 const SELECT_SND: &str = "dmd_menu_select";
@@ -23,17 +22,20 @@ const ROW_HEIGHT: f32 = 7.0;
 /// How long the selection takes to slide to another row
 const SLIDE_DURATION: Duration = Duration::from_millis(120);
 
-/// The operator menu, shown on the DMD while the coin door is open. It's drawn from fragments: scenes for its parts,
-/// `frame`, `selection`, `heading`, `row`, `edit`, `about`, and `confirm`, in `frontbox/128x32/menu/` unless
-/// [`fragments`](Self::fragments) names another folder. A game changes how the menu looks by putting its own files
-/// under those names in its content folder.
+/// The operator menu described by a [`MenuSection`], shown on the DMD while the coin door is open. The four menu
+/// buttons move through it: inc and dec move the selection or change the setting being edited, select opens the
+/// selected row, and back returns to where it was opened from.
+///
+/// It's drawn from fragments: scenes for its parts, `frame`, `selection`, `heading`, `row`, `edit`, `about`, and
+/// `confirm`, in `frontbox/128x32/menu/` unless [`fragments`](Self::fragments) names another folder. A game changes how
+/// the menu looks by putting its own files under those names in its content folder.
 ///
 /// Each part is played as a copy of its fragment, moved down to its row. The copies are drawn frame first, then the
 /// selection, then the rows from the top. The code sets their variables:
 ///
 /// - `selection`: `offset`, how far it's moved from the first row to the selected one. It slides there when the
 ///   selection moves.
-/// - `heading`: `text`
+/// - `heading`: `text`, the section's name above its rows, or a heading among them
 /// - `row`: `label`, `value`, `opens` (it opens a section, screen, or action, so it shows the arrow), `has_value`
 ///   (it's a setting), and `changed` (a setting that isn't at its default). Each variable whose default points at a
 ///   value named `selected_…` or `normal_…` is pointed at the one for whether the row is selected, so a fragment can
@@ -54,21 +56,18 @@ pub struct DmdMenuSystem {
   active_section: &'static MenuSection,
   /// The sections above the active one, each with the row that was selected in it, so going back selects it again
   parents: Vec<(&'static MenuSection, usize)>,
-  /// Index into the active section's rows
+  /// Index into the active section's [`listed`] rows
   selected_row: usize,
   screen: Screen,
   // indicates that something about the display changed and needs to be re-rendered
   requires_render: bool,
+  /// The selection moved within the rows already shown, so it slides to its row. Otherwise, such as going back to a
+  /// section, it's put there straight away.
+  slide_selection: bool,
 }
 
 impl DmdMenuSystem {
   pub fn new(switch_names: MenuSwitches, root: &'static MenuSection) -> Self {
-    let root: &'static MenuSection = {
-      let mut root = root.clone();
-      root.rows.push(MenuRow::Special("About"));
-      Box::leak(Box::new(root))
-    };
-
     Self {
       switch_names,
       folder: "frontbox/128x32/menu".into(),
@@ -77,9 +76,10 @@ impl DmdMenuSystem {
       shown: Vec::new(),
       active_section: root,
       parents: Vec::new(),
-      selected_row: Self::first_non_header_row(root),
+      selected_row: Self::first_selectable(root),
       screen: Screen::Rows,
       requires_render: true,
+      slide_selection: false,
     }
   }
 
@@ -96,17 +96,20 @@ impl DmdMenuSystem {
     self
   }
 
-  fn first_non_header_row(section: &'static MenuSection) -> usize {
-    section
-      .rows
+  fn first_selectable(section: &'static MenuSection) -> usize {
+    listed(section)
       .iter()
-      .position(|r| !matches!(r, MenuRow::Heading(_)))
+      .position(Listed::selectable)
       .unwrap_or(0)
   }
 
-  fn selected(&self) -> &'static MenuRow {
+  /// The selected row, or `None` in a section without rows, where only its name is listed
+  fn selected(&self) -> Option<&'static MenuRow> {
     let section: &'static MenuSection = self.active_section;
-    &section.rows[self.selected_row]
+    self
+      .selected_row
+      .checked_sub(1)
+      .and_then(|index| section.rows.get(index))
   }
 
   fn activate_section(&mut self, section: &'static MenuSection, selected_row: usize) {
@@ -121,25 +124,26 @@ impl DmdMenuSystem {
   }
 
   fn navigate_fwd(&mut self, ctx: &SystemContext) {
-    let row = self.selected();
+    let Some(row) = self.selected() else {
+      return;
+    };
     match (self.screen, row) {
-      (Screen::Rows, MenuRow::Heading(_)) => return,
-      (Screen::Rows, _) | (Screen::Confirm, _) => ctx.play_sfx(SELECT_SND),
-      (Screen::Edit | Screen::About, _) => return,
+      (Screen::Rows, MenuRow::Heading(_)) | (Screen::Edit | Screen::About, _) => return,
+      _ => ctx.play_sfx(SELECT_SND),
     }
     match (self.screen, row) {
       (Screen::Confirm, MenuRow::Action(_, _, action)) => {
         self.open(Screen::Rows);
-        action(ctx);
+        action(ctx.into());
       }
       (_, MenuRow::Section(section)) => {
         self.parents.push((self.active_section, self.selected_row));
-        self.activate_section(section, Self::first_non_header_row(section));
+        self.activate_section(section, Self::first_selectable(section));
       }
       (_, MenuRow::Config(_)) => self.open(Screen::Edit),
-      (_, MenuRow::Special(_)) => self.open(Screen::About),
+      (_, MenuRow::Screen(MenuScreen::About)) => self.open(Screen::About),
       (_, MenuRow::Action(_, true, _)) => self.open(Screen::Confirm),
-      (_, MenuRow::Action(_, false, action)) => action(ctx),
+      (_, MenuRow::Action(_, false, action)) => action(ctx.into()),
       (_, MenuRow::Heading(_)) => {}
     }
   }
@@ -158,19 +162,18 @@ impl DmdMenuSystem {
 
   fn navigate_inc(&mut self, ctx: &SystemContext) {
     match (self.screen, self.selected()) {
-      (Screen::Edit, MenuRow::Config(config)) => {
+      (Screen::Edit, Some(MenuRow::Config(config))) => {
         let value = ctx.config.inc(config);
         log::debug!(target: "frontbox::display", "increment: {}", config.format(value));
         self.requires_render = true;
       }
       (Screen::Rows, _) => {
-        let rows = &self.active_section.rows;
-        // skip headings
-        let next =
-          (self.selected_row + 1..rows.len()).find(|&i| !matches!(rows[i], MenuRow::Heading(_)));
+        let listed = listed(self.active_section);
+        let next = (self.selected_row + 1..listed.len()).find(|&i| listed[i].selectable());
         if let Some(next) = next {
           self.selected_row = next;
           self.requires_render = true;
+          self.slide_selection = true;
         }
       }
       _ => return,
@@ -180,19 +183,19 @@ impl DmdMenuSystem {
 
   fn navigate_dec(&mut self, ctx: &SystemContext) {
     match (self.screen, self.selected()) {
-      (Screen::Edit, MenuRow::Config(config)) => {
+      (Screen::Edit, Some(MenuRow::Config(config))) => {
         ctx.config.dec(config);
         self.requires_render = true;
       }
       (Screen::Rows, _) => {
-        let rows = &self.active_section.rows;
-        // skip headings
+        let listed = listed(self.active_section);
         let prev = (0..self.selected_row)
           .rev()
-          .find(|&i| !matches!(rows[i], MenuRow::Heading(_)));
+          .find(|&i| listed[i].selectable());
         if let Some(prev) = prev {
           self.selected_row = prev;
           self.requires_render = true;
+          self.slide_selection = true;
         }
       }
       _ => return,
@@ -230,7 +233,7 @@ impl DmdMenuSystem {
         player.set_variable(name, value, ctx);
       }
       for (name, value) in part.eased {
-        if same_place {
+        if same_place && self.slide_selection {
           player.ease_variable(name, value, SLIDE_DURATION, Curve::EaseOut, ctx);
         } else {
           player.set_variable(name, value, ctx);
@@ -245,7 +248,7 @@ impl DmdMenuSystem {
   /// What the menu shows now, in the order it's drawn
   fn parts(&self, ctx: &SystemContext) -> Vec<Part> {
     match (self.screen, self.selected()) {
-      (Screen::Edit, MenuRow::Config(config)) => {
+      (Screen::Edit, Some(MenuRow::Config(config))) => {
         let value = ctx.config.inspect(config);
         return vec![
           Part::new(Fragment::Edit, 0)
@@ -255,7 +258,7 @@ impl DmdMenuSystem {
             .variable("changed", !config.is_default(value)),
         ];
       }
-      (Screen::Confirm, MenuRow::Action(label, ..)) => {
+      (Screen::Confirm, Some(MenuRow::Action(label, ..))) => {
         return vec![Part::new(Fragment::Confirm, 0).variable("label", *label)];
       }
       (Screen::About, _) => {
@@ -264,21 +267,24 @@ impl DmdMenuSystem {
       _ => {}
     }
 
-    let all_rows = &self.active_section.rows;
+    let listed = listed(self.active_section);
     let first = self
       .selected_row
       .saturating_sub(2)
-      .min(all_rows.len().saturating_sub(ROWS_SHOWN));
-    let rows = all_rows.iter().enumerate().skip(first).take(ROWS_SHOWN);
+      .min(listed.len().saturating_sub(ROWS_SHOWN));
+    let rows = listed.iter().enumerate().skip(first).take(ROWS_SHOWN);
     let selection = Vec2::new(0.0, (self.selected_row - first) as f32 * ROW_HEIGHT);
     let mut parts = vec![
       Part::new(Fragment::Frame, 0),
       Part::new(Fragment::Selection, 0).eased("offset", selection),
     ];
-    for (row, (index, menu_row)) in rows.enumerate() {
-      let part = match menu_row {
-        MenuRow::Heading(text) => Part::new(Fragment::Heading, row).variable("text", text.as_str()),
-        MenuRow::Config(config) => {
+    for (row, (index, listed_row)) in rows.enumerate() {
+      let part = match listed_row {
+        Listed::Name(name) => Part::new(Fragment::Heading, row).variable("text", *name),
+        Listed::Row(MenuRow::Heading(text)) => {
+          Part::new(Fragment::Heading, row).variable("text", text.as_str())
+        }
+        Listed::Row(MenuRow::Config(config)) => {
           let value = ctx.config.inspect(config);
           Part::new(Fragment::Row, row).row(
             config.label,
@@ -287,11 +293,15 @@ impl DmdMenuSystem {
             !config.is_default(value),
           )
         }
-        MenuRow::Section(section) => {
+        Listed::Row(MenuRow::Section(section)) => {
           Part::new(Fragment::Row, row).row(&section.name, "", true, false)
         }
-        MenuRow::Special(name) => Part::new(Fragment::Row, row).row(name, "", true, false),
-        MenuRow::Action(text, ..) => Part::new(Fragment::Row, row).row(text, "", true, false),
+        Listed::Row(MenuRow::Screen(screen)) => {
+          Part::new(Fragment::Row, row).row(screen.label(), "", true, false)
+        }
+        Listed::Row(MenuRow::Action(text, ..)) => {
+          Part::new(Fragment::Row, row).row(text, "", true, false)
+        }
       };
       let selected = index == self.selected_row;
       parts.push(match &self.fragments {
@@ -351,6 +361,7 @@ impl System for DmdMenuSystem {
     if self.requires_render {
       self.show(ctx);
       self.requires_render = false;
+      self.slide_selection = false;
     }
   }
 
@@ -381,6 +392,27 @@ enum Screen {
   About,
   /// Asking to confirm the selected action
   Confirm,
+}
+
+/// A line in the list the DMD shows for a section
+#[derive(Clone, Copy)]
+enum Listed {
+  /// The section's name, as a heading above its rows
+  Name(&'static str),
+  Row(&'static MenuRow),
+}
+
+impl Listed {
+  fn selectable(&self) -> bool {
+    !matches!(self, Listed::Name(_) | Listed::Row(MenuRow::Heading(_)))
+  }
+}
+
+/// The section's name, then its rows
+fn listed(section: &'static MenuSection) -> Vec<Listed> {
+  std::iter::once(Listed::Name(&section.name))
+    .chain(section.rows.iter().map(Listed::Row))
+    .collect()
 }
 
 pub struct MenuSwitches {
@@ -651,7 +683,8 @@ mod tests {
   fn menu() -> DmdMenuSystem {
     let root = MenuSection::root()
       .section(MenuSection::new("Audio"))
-      .section(MenuSection::new("Lights"));
+      .section(MenuSection::new("Lights"))
+      .about();
     DmdMenuSystem::new(SWITCHES, Box::leak(Box::new(root)))
   }
 
@@ -755,6 +788,47 @@ mod tests {
     assert!(halfway.y > 7.0 && halfway.y < 14.0, "{halfway}");
     advance(&context, 100);
     assert_eq!(offset(&context), Some(Value::Vec2(Vec2::new(0.0, 14.0))));
+  }
+
+  #[test]
+  fn going_back_puts_the_selection_on_its_row_without_sliding() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    let ctx = context.sys_ctx();
+    menu.navigate_inc(&ctx);
+    menu.navigate_fwd(&ctx);
+    menu.on_tick(Duration::ZERO, &ctx);
+    ctx
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(Duration::from_millis(200), &ctx));
+    menu.navigate_back(&ctx);
+    menu.on_tick(Duration::ZERO, &ctx);
+    ctx
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(Duration::from_millis(1), &ctx));
+    let scenes = ctx.systems.get::<SceneSystem>().unwrap();
+    let (_, selection) = scenes.shown().nth(1).unwrap();
+    assert_eq!(
+      selection.moment().variables.get("offset"),
+      Some(&Value::Vec2(Vec2::new(0.0, 14.0)))
+    );
+  }
+
+  #[test]
+  fn a_section_without_rows_lists_only_its_name() {
+    let mut context = TestContext::default();
+    let mut menu = spawned(&mut context);
+    menu.navigate_fwd(&context.sys_ctx());
+    for navigate in [
+      DmdMenuSystem::navigate_inc,
+      DmdMenuSystem::navigate_dec,
+      DmdMenuSystem::navigate_fwd,
+    ] {
+      navigate(&mut menu, &context.sys_ctx());
+    }
+    let parts = menu.parts(&context.sys_ctx());
+    assert_eq!(parts.len(), 3);
+    assert_eq!(variable(&parts[2], "text"), Some(&Value::from("Audio")));
   }
 
   #[test]

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use frontbox_core::prelude::*;
-use frontbox_display::menu::*;
 
 fn main() {
   hardware_defs! {
@@ -20,5 +19,6 @@ fn main() {
 
   let _menu = MenuSection::root()
     .section(MenuSection::new("Section 1").configs(DROP_COIL.configs()))
-    .section(MenuSection::new("Section 2"));
+    .section(MenuSection::new("Section 2"))
+    .about();
 }

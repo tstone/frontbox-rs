@@ -132,8 +132,11 @@
 //!
 //! ### Menus
 //!
-//! A driver's configs are listed with `configs()`, e.g. for a `frontbox-display` menu section. A static config is
-//! added with `display()`.
+//! A [`MenuSection`] describes the operator menu: which configs are listed, how they're grouped, and the actions and
+//! screens alongside them. It's only a description, so one menu can be shown on any display. Each display decides how
+//! to lay it out, move through it, and change values (`DmdMenuSystem` in `frontbox-display` shows it on a DMD).
+//!
+//! A driver's configs are listed with `configs()`. A static config is added with `display()`.
 //!
 //! ```rust,ignore
 //! MenuSection::new("Left Flipper").configs(LEFT_FLIPPER.configs())
@@ -152,6 +155,7 @@ mod config_definition;
 mod config_domain;
 mod config_type;
 mod hardware_value;
+mod menu_section;
 mod range;
 
 pub use choices::*;
@@ -161,4 +165,5 @@ pub use config_definition::*;
 pub use config_domain::*;
 pub use config_type::*;
 pub use hardware_value::*;
+pub use menu_section::*;
 pub use range::*;

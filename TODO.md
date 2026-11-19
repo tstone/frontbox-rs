@@ -115,8 +115,8 @@
   during a game.
 - Menu: ease left/right between sections (a scene transition, see Scenes/Editor)
 - Anchoring or scaling so a single scene works on displays of different resolutions
-- Menu: move `MenuSection` out of `frontbox-display` so the console's config view can show the same tree, and other
-  displays can draw it.
+- Menu: show the `MenuSection` tree in other places. The console's config view can list the whole tree at once,
+  and an alphanumeric display needs its own system with its own navigation, as `DmdMenuSystem` has.
 - Snap eased positions to whole pixels (`Transform::Snap(step)` or a display setting); the menu selection slide
   shimmers.
 - Fit text: a text region with a list of fonts/sizes, picking the largest that fits.
