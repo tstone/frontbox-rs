@@ -1,7 +1,7 @@
 //! # Frontbox Graphics
 //!
 //! Colors, animation, and rendering that don't depend on the rest of Frontbox: nothing here knows about systems,
-//! hardware, or LEDs. Crates that connect graphics to a machine (like `frontbox-led`) build on top of this one.
+//! hardware, or LEDs. Crates that connect graphics to a machine (like `frontbox-lighting`) build on top of this one.
 //!
 //! - [`animation`] -- Easing curves, cycles, and values that can be eased between
 //! - [`color`] -- Named colors and color adjustments for `Rgba<u8>`

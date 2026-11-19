@@ -22,7 +22,7 @@ may depend on general crates (`image`, `palette`, `glam`, `serde`, `ron`).
 gfx describes what a layer looks like and how it moves, and samples one layer at a time. What a layer is drawn on (which
 LEDs, which plane, which display) and its z belong to `frontbox-scene`, whose `Scene` is layers on one timeline, each
 saying what it's on. That's what's written to a `.scene` file, so a scene file does name hardware. Placing layers on
-hardware belongs to the crates that draw them (`frontbox-led`, and a display crate). Only this crate stays free of it.
+hardware belongs to the crates that draw them (`frontbox-lighting`, and a display crate). Only this crate stays free of it.
 
 ## Definitions are data
 

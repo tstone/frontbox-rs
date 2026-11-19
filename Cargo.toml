@@ -5,7 +5,7 @@ members = [
     "frontbox-derive",
     "frontbox-gfx",
     "frontbox-scene",
-    "frontbox-led",
+    "frontbox-lighting",
     "frontbox-metrics",
     "frontbox-console",
     "frontbox-display",

@@ -21,7 +21,7 @@
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_led::prelude::*;
+//! # use frontbox_lighting::prelude::*;
 //! # mod leds {
 //! #   use frontbox_core::prelude::*;
 //! #   hardware_defs! {
@@ -44,7 +44,7 @@
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_led::prelude::*;
+//! # use frontbox_lighting::prelude::*;
 //! pub struct Example {
 //!   lit: bool,
 //!   scene: ScenePlayer,
@@ -70,7 +70,7 @@
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
-//! # use frontbox_led::prelude::*;
+//! # use frontbox_lighting::prelude::*;
 //! # fn example(ctx: &SystemContext, hit: PlayableScene<Completes>) {
 //! ctx.play_scene(&hit);
 //! # }

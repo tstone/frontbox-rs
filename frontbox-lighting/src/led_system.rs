@@ -29,7 +29,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
-/// # use frontbox_led::prelude::*;
+/// # use frontbox_lighting::prelude::*;
 /// # mod leds {
 /// #   use frontbox_core::prelude::*;
 /// #   hardware_defs! {
@@ -66,7 +66,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
-/// # use frontbox_led::prelude::*;
+/// # use frontbox_lighting::prelude::*;
 /// # fn example(ctx: &SystemContext) {
 /// ctx.deactivate_led_declarations();
 /// # }
@@ -80,7 +80,7 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 ///
 /// ```rust
 /// # use frontbox_core::prelude::*;
-/// # use frontbox_led::prelude::*;
+/// # use frontbox_lighting::prelude::*;
 /// # mod leds {
 /// #   use frontbox_core::prelude::*;
 /// #   hardware_defs! {

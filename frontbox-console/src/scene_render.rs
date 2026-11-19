@@ -2,7 +2,7 @@ use frontbox_core::prelude::{LedLookup, LedQ, Rgb, Vec2};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
 use frontbox_gfx::scene::{Bounds, Content, LayerFrame, Variables, Sample, ShapePose, Surface, Timing};
-use frontbox_led::{LedPlacement, PlacedLayer, led_color};
+use frontbox_lighting::{LedPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
 

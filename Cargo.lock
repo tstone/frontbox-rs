@@ -1128,7 +1128,7 @@ dependencies = [
  "frontbox-display",
  "frontbox-dmd",
  "frontbox-gfx",
- "frontbox-led",
+ "frontbox-lighting",
  "frontbox-metrics",
  "frontbox-pinball",
  "frontbox-scene",
@@ -1220,7 +1220,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "frontbox-led"
+name = "frontbox-lighting"
 version = "0.1.0"
 dependencies = [
  "dyn-clone",
@@ -1258,7 +1258,7 @@ dependencies = [
  "frontbox-core",
  "frontbox-display",
  "frontbox-gfx",
- "frontbox-led",
+ "frontbox-lighting",
  "frontbox-scene",
  "log",
  "serde",

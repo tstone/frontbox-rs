@@ -7,7 +7,7 @@
 //! 2. Define your [hardware](mod@crate::hardware).
 //! 3. Write a [system](mod@crate::systems).
 //! 4. Emit some [events](mod@crate::systems::event).
-//! 5. Turn on some LEDs (see `frontbox-led`).
+//! 5. Turn on some LEDs (see `frontbox-lighting`).
 //! 6. [Choreograph](mod@crate::systems::timer) something.
 
 pub mod app;

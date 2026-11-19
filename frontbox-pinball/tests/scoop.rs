@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use frontbox_core::prelude::*;
 use frontbox_core::testing::Scenario;
-use frontbox_led::prelude::*;
+use frontbox_lighting::prelude::*;
 use frontbox_pinball::*;
 
 struct Lower;
