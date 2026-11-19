@@ -5,8 +5,6 @@
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
-- System groups need to be able to contain other system groups (recursive parent lookup)
-- Start pressed while a game can't be started (balls from the last game still coming home, a game ending) is ignored without a word. Emit an event for it (e.g. `GameStartRefused`, with the reason) so a game can attach feedback: a sound, a DMD flash, a lamp.
 - System::tagged as a "convention over configuration" alternative
 - FreePlay becomes the "you passed this score threshold and earn a game"/knocker hit
 

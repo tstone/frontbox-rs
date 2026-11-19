@@ -115,7 +115,8 @@
 //! ## Credits and the Start Button
 //! `CreditsSystem` (at the root) counts coins into credits, and adds a player on a start press, spending a credit, or
 //! none with the `FREE_PLAY` operator config on (the default). It flashes the start lamp while a press would add a
-//! player. `CreditsChanged` is emitted whenever the credits change, for a display to show them.
+//! player. `CreditsChanged` is emitted whenever the credits change, for a display to show them. A press that adds no
+//! player emits `StartRefused`, with the reason (no credit, a game in progress or ending, balls still coming home).
 
 mod attract_system;
 pub mod ball_management;

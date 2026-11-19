@@ -3,16 +3,17 @@ use std::path::{Path, PathBuf};
 use frontbox_core::prelude::*;
 use frontbox_core::toml;
 
-use crate::credits::CreditsChanged;
+use crate::credits::{CreditsChanged, StartRefused, StartRefusedReason};
 use crate::tags::Cabinet;
-use crate::{GameManager, PlayerEntry, configs, metrics};
+use crate::{GameManager, GamePhase, PlayerEntry, configs, metrics};
 
 /// Counts coins into credits, and adds a player when the start button is pressed while one can be added
 /// (`PlayerEntry::Open`), spending a credit for them. With `configs::FREE_PLAY` on, a player is added without one.
 ///
 /// Every `configs::COINS_PER_CREDIT` coins, from any of the coin switches, make a credit, up to `configs::MAX_CREDITS`.
-/// Coins count at any time, during a game and on free play too, so money put in isn't lost. A press with no credit
-/// (free play off) is ignored.
+/// Coins count at any time, during a game and on free play too, so money put in isn't lost. A press that adds no
+/// player (no credit with free play off, or a game that can't take one) emits `StartRefused` with the reason, for the
+/// game to give feedback.
 ///
 /// With a start lamp, the lamp flashes while a press would add a player, and is off otherwise.
 ///
@@ -124,12 +125,13 @@ impl CreditsSystem {
 
   fn on_start_pressed(&mut self, ctx: &SystemContext) {
     if !ctx.states.is(PlayerEntry::Open) {
+      Self::refuse(Self::entry_closed_reason(ctx), ctx);
       return;
     }
 
     let free_play = configs::FREE_PLAY.get(ctx);
     if !free_play && self.saved.credits == 0 {
-      log::info!(target: "frontbox::credits", "Start pressed with no credits, ignored");
+      Self::refuse(StartRefusedReason::NoCredits, ctx);
       return;
     }
 
@@ -137,15 +139,34 @@ impl CreditsSystem {
       log::warn!(target: "frontbox::credits", "GameManager not found, can't add a player");
       return;
     };
-    if !game_manager.add_player(ctx.into()) || free_play {
+    let added = game_manager.add_player(ctx.into());
+    drop(game_manager);
+    if !added {
+      Self::refuse(Self::entry_closed_reason(ctx), ctx);
       return;
     }
-    drop(game_manager);
+    if free_play {
+      return;
+    }
 
     self.saved.credits -= 1;
     ctx.metrics.inc(&metrics::CREDITS_SPENT);
     log::info!(target: "frontbox::credits", "Credit spent adding a player, {} left", self.saved.credits);
     self.changed(ctx);
+  }
+
+  fn refuse(reason: StartRefusedReason, ctx: &SystemContext) {
+    log::info!(target: "frontbox::credits", "Start pressed, no player added: {reason:?}");
+    ctx.emit(StartRefused { reason });
+  }
+
+  /// Why the game manager can't take a player, from the game's phase
+  fn entry_closed_reason(ctx: &SystemContext) -> StartRefusedReason {
+    match ctx.states.get::<GamePhase>() {
+      GamePhase::None => StartRefusedReason::BallsReturning,
+      GamePhase::Starting | GamePhase::Active => StartRefusedReason::GameInProgress,
+      GamePhase::Ending => StartRefusedReason::GameEnding,
+    }
   }
 
   /// Whether a start press now would add a player

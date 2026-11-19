@@ -142,13 +142,15 @@ fn free_play_starts_a_game_without_spending_a_credit() {
 }
 
 #[test]
-fn free_play_ignores_a_press_while_a_game_cant_be_started() {
+fn free_play_refuses_a_press_while_a_game_cant_be_started() {
   let mut s = start(1);
   end_game(&mut s);
   let added = s.record(|_: &PlayerAdded| ());
+  let refused = s.record(|e: &StartRefused| e.reason);
 
   s.hit_switch(START);
   assert!(added.take().is_empty());
+  assert_eq!(refused.take(), [StartRefusedReason::GameEnding]);
 
   // once the game has ended, the next press starts one
   s.emit(GameOverDone);
@@ -170,12 +172,14 @@ fn a_credit_starts_a_game() {
 }
 
 #[test]
-fn with_no_credit_a_press_is_ignored() {
+fn with_no_credit_a_press_is_refused() {
   let mut s = coin_op(1);
   let added = s.record(|_: &PlayerAdded| ());
+  let refused = s.record(|e: &StartRefused| e.reason);
 
   s.hit_switch(START);
   assert!(added.take().is_empty());
+  assert_eq!(refused.take(), [StartRefusedReason::NoCredits]);
   assert!(s.act(|ctx| ctx.states.is(GamePhase::None)));
 }
 
@@ -216,10 +220,12 @@ fn a_press_once_the_game_is_full_spends_no_credit() {
   let mut s = coin_op(1);
   s.hit_switch(COIN_LEFT);
   s.hit_switch(COIN_LEFT);
+  let refused = s.record(|e: &StartRefused| e.reason);
 
   s.hit_switch(START);
   s.hit_switch(START);
   assert_eq!(credits(&mut s), 1);
+  assert_eq!(refused.take(), [StartRefusedReason::GameInProgress]);
 }
 
 // Coins
