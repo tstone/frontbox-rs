@@ -63,7 +63,7 @@ function SwitchDetail(props: { switch: Switch }) {
 }
 
 function LedDetail(props: { led: LED }) {
-  const exp = props.led.address.exp
+  const exp = props.led.address.led.exp
   // an LED's breakout comes from its port (port / 4), not the board's own breakout, so match on address
   const board = () => machine.hardware?.exp_network.find((b) => b.address === exp.board_address)
   return (
@@ -74,7 +74,7 @@ function LedDetail(props: { led: LED }) {
       </Field>
       <Field label="Breakout">{exp.breakout ?? 'None'}</Field>
       {/* ports are 0-based in the address but numbered from 1 on the PCB and in `wire_led_port` */}
-      <Field label="Port">{props.led.address.port + 1}</Field>
+      <Field label="Port">{props.led.address.led.port + 1}</Field>
     </Fields>
   )
 }

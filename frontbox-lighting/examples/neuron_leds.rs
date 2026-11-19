@@ -91,12 +91,13 @@ impl LedExample {
 impl System for LedExample {
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Declare individually
-    ctx.declare_leds(&leds::DEMO1.q(), Rgba::blue());
-    ctx.declare_leds(&leds::DEMO2.q().at_z(3), Rgba::yellow().with_alpha(127));
+    ctx.declare_leds(&leds::DEMO1.q(), 0, Rgba::blue());
+    ctx.declare_leds(&leds::DEMO2.q(), 3, Rgba::yellow().with_alpha(127));
 
     // Or declare a color per LED
     ctx.declare_led_colors(
-      &vec![leds::DEMO1.q(), leds::DEMO2.q(), leds::DEMO3.q()].at_z(5),
+      &vec![leds::DEMO1.q(), leds::DEMO2.q(), leds::DEMO3.q()],
+      5,
       |count| {
         (0..count)
           .map(|i| Rgba::blue().mix_with(Rgba::red(), i as f32 / count as f32))

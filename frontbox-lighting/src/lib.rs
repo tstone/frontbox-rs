@@ -29,7 +29,7 @@
 //! #   }
 //! # }
 //! # fn example(ctx: &SystemContext) {
-//! ctx.declare_leds(&leds::LANE.q(), Rgba::green());
+//! ctx.declare_leds(&leds::LANE.q(), 0, Rgba::green());
 //! # }
 //! ```
 //!
@@ -107,9 +107,6 @@
 
 mod alternate_resolver;
 mod led_graph;
-mod led_declarations;
-mod led_identifications;
-mod led_identifications_ext;
 mod led_placement;
 mod layered_light_manager;
 mod light_manager;
@@ -118,10 +115,7 @@ mod light_manager_ext;
 mod scene_tests;
 
 pub(crate) use alternate_resolver::*;
-pub use led_declarations::*;
 pub use led_graph::*;
-pub use led_identifications::*;
-pub use led_identifications_ext::*;
 pub use led_placement::*;
 pub use layered_light_manager::*;
 pub use light_manager::*;
@@ -129,11 +123,8 @@ pub use light_manager_ext::*;
 
 pub mod prelude {
   pub use crate::led_graph::*;
-  pub use crate::led_identifications::*;
-  pub use crate::led_identifications_ext::*;
   pub use crate::led_placement::*;
   pub use crate::layered_light_manager::*;
-  pub use crate::led_declarations::*;
   pub use crate::light_manager::*;
   pub use crate::light_manager_ext::*;
   pub use frontbox_gfx::prelude::*;

@@ -53,7 +53,7 @@ impl LedPlacement {
   /// The color of each LED a layer lands on, by z from the bottom. On one z the layers are drawn bottom to top in the
   /// scene's order. Layers with a graph use the visits from the last [`Self::update_visits`].
   pub fn colors(&self, scene: &Scene, moment: &Moment) -> Vec<(i8, &PlacedLed, Rgba<u8>)> {
-    let mut by_z: BTreeMap<i8, HashMap<&LedAddress, (&PlacedLed, Rgba<u8>)>> = BTreeMap::new();
+    let mut by_z: BTreeMap<i8, HashMap<&LightAddress, (&PlacedLed, Rgba<u8>)>> = BTreeMap::new();
     for placed in &self.layers {
       let (Some(layer), Some(first)) = (placed.layer(scene), placed.placed.first()) else {
         continue;
@@ -126,7 +126,7 @@ impl PlacedLayer {
 /// An LED a layer lands on
 #[derive(Debug, Clone)]
 pub struct PlacedLed {
-  pub address: LedAddress,
+  pub address: LightAddress,
   pub name: String,
   /// Where it samples the layer
   pub at: Sample,
@@ -182,7 +182,7 @@ mod tests {
   fn placed_leds(locations: &[Option<Vec3>]) -> TestContext {
     let mut context = TestContext::default();
     for (i, location) in locations.iter().enumerate() {
-      let address = LedAddress::new(ExpAddress::default(), 0, i as u8);
+      let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8));
       context.insert_led(LED { name: format!("led{i}"), address, location: *location, ..Default::default() });
     }
     context.add_plane(&PLANE);

@@ -491,7 +491,7 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LED, LedAddress, ReferencePlane, Vec3};
+  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LED, LedAddress, LightAddress, ReferencePlane, Vec3};
   use std::sync::LazyLock;
 
   const RED_TO_BLUE: &str = r#"Scene(
@@ -524,7 +524,7 @@ mod tests {
     leds.add_plane(&WIDE);
     for (i, &location) in locations.iter().enumerate() {
       let name = format!("led{i}");
-      let address = LedAddress::new(ExpAddress::default(), 0, i as u8);
+      let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8));
       leds.insert(name.clone(), LED { name, address, location, ..Default::default() });
     }
     leds

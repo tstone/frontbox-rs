@@ -23,13 +23,14 @@ use crate::*;
 /// - Which scenes play. That's the `SceneSystem`.
 /// - What a light means to the game. Systems declare what they want shown; light management only shows it.
 pub trait LightManager: SpawnableSystem {
-  /// Declares colors for `owner` (its `ctx.id()`), shown from the next render
-  fn declare(&mut self, owner: u64, declarations: LedDeclarations<'_>);
-  /// Declares colors for `owner`, not shown until `activate_by_system`. Lets a system prepare declarations in advance
-  /// and show them all at once.
-  fn declare_inactive(&mut self, owner: u64, declarations: LedDeclarations<'_>);
-  /// Removes what `owner` declared on these lights at their z
-  fn undeclare(&mut self, owner: u64, identifications: LedIdentifications);
+  /// Declares a color on each light for `owner` (its `ctx.id()`) at `z`, shown from the next render. `flashing` flashes
+  /// them on and off, in step with every other flashing declaration.
+  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool);
+  /// Declares like [`Self::declare`], but not shown until `activate_by_system`. Lets a system prepare declarations in
+  /// advance and show them all at once.
+  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool);
+  /// Removes what `owner` declared on these lights at `z`
+  fn undeclare(&mut self, owner: u64, z: i8, lights: &[LightAddress]);
   /// Removes everything `owner` declared
   fn undeclare_by_system(&mut self, owner: u64);
   /// Shows `owner`'s declarations again
@@ -37,7 +38,7 @@ pub trait LightManager: SpawnableSystem {
   /// Keeps `owner`'s declarations but stops showing them
   fn deactivate_by_system(&mut self, owner: u64);
   /// How these lights choose between declarations from different systems at the same z
-  fn set_conflict_resolution(&mut self, identifications: LedIdentifications, resolution: LedConflictResolution);
-  /// The colors declared for an LED by any system, in no particular order
-  fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>>;
+  fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LedConflictResolution);
+  /// The colors declared for a light by any system, in no particular order
+  fn declared_colors(&self, light: &LightAddress) -> Vec<Rgba<u8>>;
 }

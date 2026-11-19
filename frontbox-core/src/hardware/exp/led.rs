@@ -5,7 +5,7 @@ use crate::prelude::*;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LED {
   pub name: String,
-  pub address: LedAddress,
+  pub address: LightAddress,
   #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
   #[cfg_attr(feature = "ts", ts(type = "[number, number, number] | null"))]

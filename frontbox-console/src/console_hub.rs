@@ -280,12 +280,9 @@ impl ConsoleHub {
     state.led_names = hardware
       .leds
       .values()
-      .map(|led| {
-        let exp = &led.address.exp;
-        (
-          (exp.board_address, exp.breakout, led.address.index),
-          led.name.clone(),
-        )
+      .filter_map(|led| {
+        let address = led.address.led()?;
+        Some(((address.exp.board_address, address.exp.breakout, address.index), led.name.clone()))
       })
       .collect();
     state.snapshot.hardware = Some(hardware);

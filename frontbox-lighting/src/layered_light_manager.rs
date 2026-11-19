@@ -42,21 +42,20 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 /// #   }
 /// # }
 /// # fn example(ctx: &SystemContext) {
-/// // declare LEDs by name...
-/// ctx.declare_leds(
-///   &leds::EXAMPLE.q().at_z(3),
-///   Rgba::yellow()
-/// );
+/// // declare LEDs by name, at z 3...
+/// ctx.declare_leds(&leds::EXAMPLE.q(), 3, Rgba::yellow());
 ///
 /// // ...or by group
 /// ctx.declare_leds(
 ///   &vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
+///   0,
 ///   Rgba::red()
 /// );
 ///
 /// // ...or with a color per LED
 /// ctx.declare_led_colors(
 ///   &vec![&leds::EX1.q(), &leds::EX2.q(), &leds::EX3.q()],
+///   0,
 ///   |count| (0..count).map(|i| Rgba::red().mix_with(Rgba::yellow(), i as f32 / count as f32)).collect(),
 /// );
 /// # }
@@ -91,33 +90,29 @@ pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 /// # }
 /// # fn example(ctx: &SystemContext) {
 /// // higher layer declares 50% transparent red
-/// ctx.declare_leds(
-///   &leds::EXAMPLE.q().at_z(1),
-///   Rgba::red().with_alpha_f32(0.5)
-/// );
+/// ctx.declare_leds(&leds::EXAMPLE.q(), 1, Rgba::red().with_alpha_f32(0.5));
 ///
 /// // over top of white
-/// ctx.declare_leds(&leds::EXAMPLE.q(), Rgba::white());
+/// ctx.declare_leds(&leds::EXAMPLE.q(), 0, Rgba::white());
 ///
 /// // final color renders as pink [255, 127, 127, 255]
 /// # }
 /// ```
 
 pub struct LayeredLightManager {
-  all_addresses: Vec<LedAddress>,
-  // Rule: Systems cannot contradict themselves. Declarations are thus unique by led/system/z-index.
-  declarations: HashMap<LedAddress, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
-  /// What each LED was last set to, so only LEDs that change are sent
+  all_lights: Vec<LightAddress>,
+  // Rule: Systems cannot contradict themselves. Declarations are thus unique by light/system/z-index.
+  declarations: HashMap<LightAddress, HashMap<DeclarationIdentifier, StatefulLedDeclaration>>,
+  /// What each LED address was last set to, so only those that change are sent
   prior_render: HashMap<LedAddress, Rgb>,
-  conflict_resolution: HashMap<LedAddress, LedConflictResolution>,
+  conflict_resolution: HashMap<LightAddress, LedConflictResolution>,
   alternate_resolver: AlternateResolver,
-  monitored: HashSet<LedAddress>,
   /// The `order` the next new declaration gets
   next_order: u64,
   /// Where each shown playback's LED layers land, worked out the first time it's shown, as LEDs don't move
   placements: HashMap<PlaybackId, LedPlacement>,
-  /// This frame's colors from playbacks, by LED: a z and a color for each that reaches it, in the order they started
-  played: HashMap<LedAddress, Vec<(i8, Rgba<u8>)>>,
+  /// This frame's colors from playbacks, by light: a z and a color for each that reaches it, in the order they started
+  played: HashMap<LightAddress, Vec<(i8, Rgba<u8>)>>,
   /// How far into [`FLASH_PERIOD`] flashing declarations are
   flash_clock: Duration,
 }
@@ -126,11 +121,10 @@ impl LayeredLightManager {
   pub fn new() -> Self {
     Self {
       declarations: HashMap::new(),
-      all_addresses: Vec::new(),
+      all_lights: Vec::new(),
       prior_render: HashMap::new(),
       conflict_resolution: HashMap::new(),
       alternate_resolver: AlternateResolver::new(),
-      monitored: HashSet::new(),
       next_order: 0,
       placements: HashMap::new(),
       played: HashMap::new(),
@@ -144,10 +138,10 @@ impl LayeredLightManager {
   }
 
   #[allow(unused)]
-  pub(crate) fn declarations_for(&self, addr: &LedAddress) -> Vec<StatefulLedDeclaration> {
+  pub(crate) fn declarations_for(&self, light: &LightAddress) -> Vec<StatefulLedDeclaration> {
     self
       .declarations
-      .get(addr)
+      .get(light)
       .map(|ds| ds.values().copied().collect())
       .unwrap_or(Vec::new())
   }
@@ -157,22 +151,14 @@ impl LayeredLightManager {
     self.prior_render.clear();
     self.conflict_resolution.clear();
     self.alternate_resolver.reset();
-    self.monitored.clear();
   }
 
-  /// Log calculations for these LEDs at a higher level (mainly used for debugging)
-  pub fn monitor(&mut self, identifications: impl Into<LedIdentifications>) {
-    identifications.into().leds.iter().for_each(|addr| {
-      self.monitored.insert(addr.clone());
-    });
-  }
+  fn declare_inner(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool, active: bool) {
+    log::trace!(target: "frontbox::led", "System {owner} declared at z {z} (flashing: {flashing}): {colors:?}");
 
-  fn declare_inner(&mut self, owning_system: u64, declarations: LedDeclarations<'_>, active: bool) {
-    log::trace!(target: "frontbox::led", "LED declarations declared: {:?}", declarations);
-
-    let id = DeclarationIdentifier { system_id: owning_system, z_index: declarations.z_index };
-    for (led, color) in declarations.pairings {
-      let on_led = self.declarations.entry(led.clone()).or_default();
+    let id = DeclarationIdentifier { system_id: owner, z_index: z };
+    for (light, color) in colors {
+      let on_led = self.declarations.entry(light.clone()).or_default();
       let order = match on_led.get(&id) {
         Some(existing) => existing.order,
         None => {
@@ -182,43 +168,30 @@ impl LayeredLightManager {
       };
       let declaration = StatefulLedDeclaration {
         active,
-        color,
+        color: *color,
         order,
-        flashing: declarations.flashing,
+        flashing,
       };
-      if self.monitored.contains(led) {
-        log::info!(
-          target: "frontbox::led",
-          "Declaration by system {} for monitored LED {:?}: {:?}",
-          owning_system,
-          led,
-          declaration
-        );
-      }
-
       on_led.insert(id, declaration);
     }
   }
 
-  /// The color each LED shows this frame, from the declarations and the playbacks shown. `None` for one nothing gives a
-  /// color.
-  pub(crate) fn resolve(&mut self, ctx: &SystemContext) -> Vec<(LedAddress, Option<Rgba<u8>>)> {
+  /// The color each light shows this frame, from the declarations and the playbacks shown. `None` for one nothing gives
+  /// a color.
+  pub(crate) fn resolve(&mut self, ctx: &SystemContext) -> Vec<(LightAddress, Option<Rgba<u8>>)> {
     self.draw_playbacks(ctx);
     let flash_on = self.flash_on();
     let undeclared = HashMap::new();
-    let mut resolved = Vec::with_capacity(self.all_addresses.len());
-    for led in self.all_addresses.iter() {
+    let mut resolved = Vec::with_capacity(self.all_lights.len());
+    for led in self.all_lights.iter() {
       let declarations = self.declarations.get(led);
       let played = self.played.get(led).map_or(&[][..], Vec::as_slice);
       if declarations.is_none() && played.is_empty() {
-        log::trace!(target: "frontbox::led", "Nothing gives a color to LED at {:?}", led);
+        log::trace!(target: "frontbox::led", "Nothing gives a color to light at {:?}", led);
         resolved.push((led.clone(), None));
         continue;
       }
       let declarations = declarations.unwrap_or(&undeclared);
-      if self.monitored.contains(led) {
-        log::info!(target: "frontbox::led", "Current declarations for LED {:?}: {:?}, and from playbacks: {:?}", led, declarations, played);
-      }
 
       // every z with something on it for this LED
       let z_indexes = declarations
@@ -239,10 +212,6 @@ impl LayeredLightManager {
         &self.conflict_resolution,
         &mut self.alternate_resolver,
       );
-
-      if self.monitored.contains(led) {
-        log::info!(target: "frontbox::led", "Setting led {:?} to {:?}", led, final_color);
-      }
       resolved.push((led.clone(), Some(final_color)));
     }
     resolved
@@ -270,12 +239,12 @@ impl LayeredLightManager {
   }
 
   fn resolve_led_color(
-    led: &LedAddress,
+    led: &LightAddress,
     mut z_indexes: Vec<i8>,
     declarations: &HashMap<DeclarationIdentifier, StatefulLedDeclaration>,
     played: &[(i8, Rgba<u8>)],
     flash_on: bool,
-    conflict_resolution: &HashMap<LedAddress, LedConflictResolution>,
+    conflict_resolution: &HashMap<LightAddress, LedConflictResolution>,
     alternate_resolver: &mut AlternateResolver,
   ) -> Rgba<u8> {
     let max_z = z_indexes.iter().max().unwrap_or(&i8::MIN);
@@ -338,38 +307,25 @@ impl LayeredLightManager {
 }
 
 impl LightManager for LayeredLightManager {
-  fn declared_colors(&self, addr: &LedAddress) -> Vec<Rgba<u8>> {
-    self.declarations_for(addr).iter().map(|d| d.color).collect()
+  fn declared_colors(&self, light: &LightAddress) -> Vec<Rgba<u8>> {
+    self.declarations_for(light).iter().map(|d| d.color).collect()
   }
 
-  fn declare(&mut self, owner: u64, declarations: LedDeclarations<'_>) {
-    self.declare_inner(owner, declarations, true);
+  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool) {
+    self.declare_inner(owner, z, colors, flashing, true);
   }
 
-  fn declare_inactive(&mut self, owner: u64, declarations: LedDeclarations<'_>) {
-    self.declare_inner(owner, declarations, false);
+  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool) {
+    self.declare_inner(owner, z, colors, flashing, false);
   }
 
-  fn undeclare(&mut self, system_id: u64, identifications: LedIdentifications) {
-    let target_id = DeclarationIdentifier {
-      system_id,
-      z_index: identifications.z_index,
-    };
-
-    for led in identifications.leds {
-      if self.monitored.contains(&led) {
-        log::info!(
-          target: "frontbox::led",
-          "Undeclare by system {} of monitored LED {:?}",
-          system_id,
-          led
-        );
-      }
-
-      if let Some(declarations) = self.declarations.get_mut(&led) {
+  fn undeclare(&mut self, system_id: u64, z: i8, lights: &[LightAddress]) {
+    let target_id = DeclarationIdentifier { system_id, z_index: z };
+    for light in lights {
+      if let Some(declarations) = self.declarations.get_mut(light) {
         declarations.retain(|id, _| id != &target_id);
         if declarations.is_empty() {
-          self.declarations.remove(&led);
+          self.declarations.remove(light);
         }
       }
     }
@@ -403,9 +359,9 @@ impl LightManager for LayeredLightManager {
     }
   }
 
-  fn set_conflict_resolution(&mut self, identifications: LedIdentifications, resolution: LedConflictResolution) {
-    for led in identifications.leds {
-      self.conflict_resolution.insert(led.clone(), resolution);
+  fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LedConflictResolution) {
+    for light in lights {
+      self.conflict_resolution.insert(light.clone(), resolution);
     }
   }
 }
@@ -416,8 +372,8 @@ impl System for LayeredLightManager {
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    // Create a copy of all LEDs addresses to reference during rendering
-    self.all_addresses = ctx.leds.values().map(|led| led.address.clone()).collect();
+    // Create a copy of every light's address to reference during rendering
+    self.all_lights = ctx.leds.values().map(|led| led.address.clone()).collect();
   }
 
   fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
@@ -442,12 +398,7 @@ impl System for LayeredLightManager {
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
-    let mut leds_to_set: Vec<(LedAddress, Rgb)> = self
-      .resolve(ctx)
-      .into_iter()
-      // an LED nothing gives a color is turned off, which is filtered out below if it's already off
-      .map(|(led, color)| (led, color.map_or(Rgb::black(), led_color)))
-      .collect();
+    let mut leds_to_set = lower(self.resolve(ctx));
 
     // filter out LEDs that are the same as the prior render to avoid redundant updates
     // "there are hard limits to the amount of data that can go out over the EXP bus of about 80 characters per millisecond" -- ecurtz
@@ -537,7 +488,18 @@ fn place(scene: &Scene, ctx: &SystemContext) -> LedPlacement {
   LedPlacement::new(scene, &ctx.leds, ctx.led_radius)
 }
 
-/// The color an LED shows for this one, as if composited over an LED that's off: alpha dims it toward black
+/// What to write to each LED address for the colors its lights show. A light nothing gives a color is turned off,
+/// which `on_render` leaves out if it's already off.
+fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>) -> Vec<(LedAddress, Rgb)> {
+  resolved
+    .into_iter()
+    .map(|(light, color)| match light {
+      LightAddress::Exp { led, channels: Channels::Rgb } => (led, color.map_or(Rgb::black(), led_color)),
+    })
+    .collect()
+}
+
+/// The RGB an LED shows for a color, as if composited over an LED that's off: alpha dims it toward black
 pub fn led_color(color: Rgba<u8>) -> Rgb {
   let [r, g, b, _] = color.composite_over(Rgba::black()).0;
   Rgb::new(r, g, b)
@@ -551,24 +513,18 @@ mod tests {
   #[test]
   fn declare_and_undeclare_systems() {
     let mut system = LayeredLightManager::new();
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
-    );
+    system.declare(42, 0, &[(led.clone(), Rgba::red())], false);
     assert!(system.declarations.get(&led).unwrap().len() == 1);
-    system.declare(
-      43,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
-    );
+    system.declare(43, 0, &[(led.clone(), Rgba::red())], false);
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
-    system.undeclare(42, LedIdentifications::new(vec![led.clone()], 0));
+    system.undeclare(42, 0, &[led.clone()]);
 
     // the declaration for system 43 should still be there
     assert!(system.declarations.get(&led).unwrap().len() == 1);
@@ -578,21 +534,15 @@ mod tests {
   #[test]
   fn declare_overwrite() {
     let mut system = LayeredLightManager::new();
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
-    );
+    system.declare(42, 0, &[(led.clone(), Rgba::red())], false);
     assert_eq!(system.declarations.get(&led).unwrap().len(), 1);
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::blue())], 0),
-    );
+    system.declare(42, 0, &[(led.clone(), Rgba::blue())], false);
 
     let final_map = system.declarations.get(&led).unwrap();
     assert_eq!(final_map.len(), 1);
@@ -605,32 +555,26 @@ mod tests {
   #[test]
   fn declare_and_undeclare_multiple() {
     let mut system = LayeredLightManager::new();
-    let led1 = LedAddress {
+    let led1 = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
-    let led2 = LedAddress {
+    });
+    let led2 = LightAddress::rgb(LedAddress {
       exp: ExpAddress {
         board_address: 3,
         breakout: None,
       },
       port: 0,
       index: 2,
-    };
+    });
 
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led1.clone(), Rgba::red())], 0),
-    );
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led2.clone(), Rgba::red())], 0),
-    );
+    system.declare(42, 0, &[(led1.clone(), Rgba::red())], false);
+    system.declare(42, 0, &[(led2.clone(), Rgba::red())], false);
     assert_eq!(system.declarations.get(&led1).unwrap().len(), 1);
     assert_eq!(system.declarations.get(&led2).unwrap().len(), 1);
 
-    system.undeclare(42, LedIdentifications::new(vec![led1.clone()], 0));
+    system.undeclare(42, 0, &[led1.clone()]);
 
     // the declaration for led2 should still be there
     assert_eq!(system.declarations.get(&led2).unwrap().len(), 1);
@@ -640,23 +584,17 @@ mod tests {
   #[test]
   fn declare_and_undeclare_z_index() {
     let mut system = LayeredLightManager::new();
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 1),
-    );
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::blue())], 2),
-    );
+    system.declare(42, 1, &[(led.clone(), Rgba::red())], false);
+    system.declare(42, 2, &[(led.clone(), Rgba::blue())], false);
     assert!(system.declarations.get(&led).unwrap().len() == 2);
 
-    system.undeclare(42, LedIdentifications::new(vec![led.clone()], 1));
+    system.undeclare(42, 1, &[led.clone()]);
 
     // the declaration for z-index 2 should still be there
     assert!(system.declarations.get(&led).unwrap().len() == 1);
@@ -664,11 +602,11 @@ mod tests {
 
   #[test]
   fn alpha_fall_through_ignores_disabled() {
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
     let declarations = HashMap::from([
       (
@@ -716,11 +654,11 @@ mod tests {
 
   #[test]
   fn resolve_color() {
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
     let declarations = HashMap::from([
       (
@@ -767,11 +705,11 @@ mod tests {
 
   #[test]
   fn resolve_color_conflict() {
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
     let declarations = HashMap::from([
       (
@@ -822,11 +760,11 @@ mod tests {
   // alpha compositing test - top semi-transparent declaration should composite with the next highest declaration below it
   #[test]
   fn resolve_color_alpha_compositing() {
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
     let declarations = HashMap::from([
       (
@@ -880,15 +818,12 @@ mod tests {
   fn follows_system_activity() {
     let ctx = TestContext::default();
     let mut system = LayeredLightManager::new();
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
-    system.declare(
-      42,
-      LedDeclarations::new(vec![(&led.clone(), Rgba::red())], 0),
-    );
+    });
+    system.declare(42, 0, &[(led.clone(), Rgba::red())], false);
     let is_active = |system: &LayeredLightManager| system.declarations[&led].values().all(|d| d.active);
 
     system.on_event(&SystemDeactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
@@ -903,13 +838,13 @@ mod tests {
   fn is_found_as_the_light_manager() {
     let mut ctx = TestContext::default();
     ctx.insert_system(LayeredLightManager::new());
-    let led = LedAddress {
+    let led = LightAddress::rgb(LedAddress {
       exp: ExpAddress::new(3, None),
       port: 0,
       index: 1,
-    };
+    });
 
-    ctx.sys_ctx().declare_leds(&LedIdentifications::new(vec![led.clone()], 0), Rgba::red());
+    ctx.sys_ctx().declare_leds(&vec![led.clone()], 0, Rgba::red());
 
     let colors = ctx.sys_ctx().light_manager().unwrap().declared_colors(&led);
     assert_eq!(colors, vec![Rgba::red()]);
@@ -918,12 +853,12 @@ mod tests {
   /// Which color wins on one LED when systems 1 to `systems` declare on the same z in that order, and then the first changes
   /// its color
   fn first_wins_of(systems: u64) -> Rgba<u8> {
-    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    let led = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
     for id in 1..=systems {
-      system.declare(id, LedDeclarations::new(vec![(&led, Rgba([id as u8, 0, 0, 255]))], 0));
+      system.declare(id, 0, &[(led.clone(), Rgba([id as u8, 0, 0, 255]))], false);
     }
-    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
+    system.declare(1, 0, &[(led.clone(), Rgba::blue())], false);
     LayeredLightManager::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new())
   }
 
@@ -935,22 +870,22 @@ mod tests {
 
   #[test]
   fn a_declaration_made_again_after_its_given_up_goes_to_the_back() {
-    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    let led = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
-    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
-    system.declare(2, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
-    system.undeclare(1, LedIdentifications::new(vec![led.clone()], 0));
-    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::red())], 0));
+    system.declare(1, 0, &[(led.clone(), Rgba::red())], false);
+    system.declare(2, 0, &[(led.clone(), Rgba::blue())], false);
+    system.undeclare(1, 0, &[led.clone()]);
+    system.declare(1, 0, &[(led.clone(), Rgba::red())], false);
     let color = LayeredLightManager::resolve_led_color(&led, vec![0], &system.declarations[&led], &[], true, &HashMap::new(), &mut AlternateResolver::new());
     assert_eq!(color, Rgba::blue());
   }
 
   #[test]
   fn a_flashing_declaration_shows_through_to_the_layer_below_while_its_off() {
-    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    let led = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
-    system.declare(1, LedDeclarations::new(vec![(&led, Rgba::blue())], 0));
-    system.declare(2, LedDeclarations::new(vec![(&led, Rgba::green())], 1).flashing());
+    system.declare(1, 0, &[(led.clone(), Rgba::blue())], false);
+    system.declare(2, 1, &[(led.clone(), Rgba::green())], true);
     let color = |flash_on: bool, system: &LayeredLightManager| {
       let z_indexes = system.declarations[&led].iter().filter(|(_, d)| d.shows(flash_on)).map(|(id, _)| id.z_index).sorted().collect();
       LayeredLightManager::resolve_led_color(&led, z_indexes, &system.declarations[&led], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())
@@ -968,13 +903,21 @@ mod tests {
   }
 
   #[test]
-  fn led_color_keeps_opaque_colors() {
-    assert_eq!(led_color(Rgba([255, 128, 0, 255])), Rgb::new(255, 128, 0));
+  fn an_rgb_light_keeps_opaque_colors() {
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    let lowered = lower(vec![(LightAddress::rgb(led.clone()), Some(Rgba([255, 128, 0, 255])))]);
+    assert_eq!(lowered, vec![(led, Rgb::new(255, 128, 0))]);
   }
 
   #[test]
-  fn led_color_dims_translucent_colors_toward_off() {
+  fn an_rgb_light_dims_translucent_colors_toward_off() {
     assert_eq!(led_color(Rgba([255, 0, 200, 128])), Rgb::new(128, 0, 100));
     assert_eq!(led_color(Rgba::transparent()), Rgb::black());
+  }
+
+  #[test]
+  fn a_light_nothing_gives_a_color_is_turned_off() {
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    assert_eq!(lower(vec![(LightAddress::rgb(led.clone()), None)]), vec![(led, Rgb::black())]);
   }
 }

@@ -140,7 +140,7 @@ function rowsOf(machine: ConsoleState, kind: HardwareKind): HardwareRow[] {
     case 'leds':
       return Object.values(hw.leds.by_name)
         .map((led) => {
-          const { exp, port, index } = led.address
+          const { exp, port, index } = led.address.led
           return {
             key: `led:${led.name}`,
             name: ledName(led.name),

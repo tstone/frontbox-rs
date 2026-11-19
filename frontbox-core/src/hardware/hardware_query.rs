@@ -146,7 +146,7 @@ impl HardwareQuery {
   }
 
   /// Resolve the query into a the address of all matching LEDs
-  pub fn get_leds_addresses(&self, ctx: &ServiceContext) -> Vec<LedAddress> {
+  pub fn get_leds_addresses(&self, ctx: &ServiceContext) -> Vec<LightAddress> {
     let addrs = match self {
       // maintain order for name/names
       Self::Name(name) => match ctx.leds.get(name) {
@@ -160,7 +160,7 @@ impl HardwareQuery {
         .collect(),
       Self::Or(qs) => qs.iter().flat_map(|q| q.get_leds_addresses(ctx)).collect(),
       _ => {
-        let mut matches: Vec<LedAddress> = ctx
+        let mut matches: Vec<LightAddress> = ctx
           .leds
           .values()
           .filter_map(|led| {
@@ -173,10 +173,7 @@ impl HardwareQuery {
           .collect();
 
         // For other non-ordered results (e.g. by take) sort by hardware addres to maintain consistent order
-        matches.sort_by_key(|addr| {
-          ((addr.exp.board_address as u32 * 10) + addr.exp.breakout.unwrap_or(0) as u32)
-            * addr.index as u32
-        });
+        matches.sort_by_key(|addr| addr.hardware_order());
         matches
       }
     };
@@ -333,7 +330,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 1),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 1)),
         ..Default::default()
       },
     );
@@ -341,7 +338,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 2),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 2)),
         ..Default::default()
       },
     );
@@ -350,7 +347,7 @@ mod tests {
     let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds.len(), 1);
-    assert_eq!(leds[0].index, 1);
+    assert_eq!(leds[0].led().unwrap().index, 1);
   }
 
   #[test]
@@ -360,7 +357,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 1),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 1)),
         ..Default::default()
       },
     );
@@ -368,7 +365,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 2),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 2)),
         ..Default::default()
       },
     );
@@ -376,7 +373,7 @@ mod tests {
       "led3".to_string(),
       LED {
         name: "led3".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 3),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 3)),
         ..Default::default()
       },
     );
@@ -384,7 +381,7 @@ mod tests {
       "led4".to_string(),
       LED {
         name: "led4".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 4),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 4)),
         ..Default::default()
       },
     );
@@ -393,8 +390,8 @@ mod tests {
     let leds = q.get_leds_addresses(&context.svc_ctx());
 
     assert_eq!(leds.len(), 2);
-    assert_eq!(leds[0].index, 2);
-    assert_eq!(leds[1].index, 3);
+    assert_eq!(leds[0].led().unwrap().index, 2);
+    assert_eq!(leds[1].led().unwrap().index, 3);
   }
 
   // The goal here is to ensure that using names, even through `any` maintain their order
@@ -405,7 +402,7 @@ mod tests {
       "led1".to_string(),
       LED {
         name: "led1".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 5),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 5)),
         ..Default::default()
       },
     );
@@ -413,7 +410,7 @@ mod tests {
       "led2".to_string(),
       LED {
         name: "led2".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 8),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 8)),
         ..Default::default()
       },
     );
@@ -421,7 +418,7 @@ mod tests {
       "led3".to_string(),
       LED {
         name: "led3".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 3),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 3)),
         ..Default::default()
       },
     );
@@ -429,7 +426,7 @@ mod tests {
       "led4".to_string(),
       LED {
         name: "led4".to_string(),
-        address: LedAddress::new(ExpAddress::default(), 0, 4),
+        address: LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 4)),
         ..Default::default()
       },
     );
@@ -440,9 +437,9 @@ mod tests {
     ]);
     let leds = q.get_leds_addresses(&context.svc_ctx());
 
-    assert_eq!(leds[0].index, 5);
-    assert_eq!(leds[1].index, 8);
-    assert_eq!(leds[2].index, 3);
-    assert_eq!(leds[3].index, 4);
+    assert_eq!(leds[0].led().unwrap().index, 5);
+    assert_eq!(leds[1].led().unwrap().index, 8);
+    assert_eq!(leds[2].led().unwrap().index, 3);
+    assert_eq!(leds[3].led().unwrap().index, 4);
   }
 }

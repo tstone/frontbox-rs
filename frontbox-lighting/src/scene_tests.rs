@@ -18,11 +18,11 @@ static OFFSET: LazyLock<ReferencePlane> =
   LazyLock::new(|| ReferencePlane::new("Offset").origin(Vec3::new(100.0, 0.0, 0.0)).extent(Vec2::new(10.0, 10.0)).build());
 
 /// LEDs "led0".. at these locations, with every plane added
-fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
+fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LightAddress>) {
   let mut context = TestContext::default();
   context.insert_system(LayeredLightManager::new());
   context.insert_system(SceneSystem::new());
-  let addresses: Vec<_> = (0..locations.len()).map(|i| LedAddress::new(ExpAddress::default(), 0, i as u8)).collect();
+  let addresses: Vec<_> = (0..locations.len()).map(|i| LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8))).collect();
   for (i, address) in addresses.iter().enumerate() {
     context.insert_led(LED { name: format!("led{i}"), address: address.clone(), location: locations[i], ..Default::default() });
   }
@@ -34,7 +34,7 @@ fn placed_leds(locations: &[Option<Vec3>]) -> (TestContext, Vec<LedAddress>) {
 }
 
 /// Three LEDs, "led0" to "led2", with no location
-fn three_leds() -> (TestContext, Vec<LedAddress>) {
+fn three_leds() -> (TestContext, Vec<LightAddress>) {
   placed_leds(&[None, None, None])
 }
 
@@ -59,12 +59,12 @@ fn tick(context: &TestContext, delta: Duration) {
 }
 
 /// What each LED shows, `None` where nothing gives it a color
-fn shown(context: &TestContext, addresses: &[LedAddress]) -> Vec<Option<Rgba<u8>>> {
+fn shown(context: &TestContext, addresses: &[LightAddress]) -> Vec<Option<Rgba<u8>>> {
   let resolved = context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.resolve(&context.sys_ctx())).unwrap();
   addresses.iter().map(|address| resolved.iter().find(|(led, _)| led == address).and_then(|(_, color)| *color)).collect()
 }
 
-fn played(context: &TestContext, addresses: &[LedAddress], scene: Scene) -> Vec<Option<Rgba<u8>>> {
+fn played(context: &TestContext, addresses: &[LightAddress], scene: Scene) -> Vec<Option<Rgba<u8>>> {
   play(context, scene);
   shown(context, addresses)
 }
@@ -399,7 +399,7 @@ fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
 #[test]
 fn a_playback_is_drawn_over_declarations_on_its_z() {
   let (context, addresses) = three_leds();
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.declare(OWNER + 1, (&addresses[0], Rgba::blue()).into()));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.declare(OWNER + 1, 0, &[(addresses[0].clone(), Rgba::blue())], false));
   play(&context, PlayableScene::new(on(LedQ::name("led0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");
@@ -434,7 +434,7 @@ struct Playfield;
 #[test]
 fn a_tag_finds_the_leds_that_have_it() {
   let (mut context, addresses) = three_leds();
-  let address = LedAddress::new(ExpAddress::default(), 0, 9);
+  let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, 9));
   context.insert_led(LED { name: "tagged".into(), address: address.clone(), tags: vec![Box::new(Playfield)], ..Default::default() });
   context.sys_ctx().systems.with::<LayeredLightManager, _>(|leds| leds.on_spawn(&context.sys_ctx()));
 
@@ -452,12 +452,12 @@ fn wave(from: &str, surface: LedSurface) -> Scene {
   Scene::new(vec![layer.into()]).timing(Timing::new(10.0, Cycle::Once))
 }
 
-fn lit(context: &TestContext, addresses: &[LedAddress]) -> Vec<bool> {
+fn lit(context: &TestContext, addresses: &[LightAddress]) -> Vec<bool> {
   shown(context, addresses).iter().map(|color| color.is_some_and(|color| color[3] > 127)).collect()
 }
 
 /// Four LEDs in a row on the plane, one apart
-fn row() -> (TestContext, Vec<LedAddress>) {
+fn row() -> (TestContext, Vec<LightAddress>) {
   placed_leds(&(0..4).map(|x| at(x as f32 + 1.0, 5.0)).collect::<Vec<_>>())
 }
 

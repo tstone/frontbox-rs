@@ -40,7 +40,7 @@ impl LedLookup {
             led.definition.name.to_string(),
             LED {
               name: led.definition.name.to_string(),
-              address,
+              address: LightAddress::rgb(address),
               tags: led.definition.tags.clone(),
               location: led.definition.location,
             },
@@ -136,13 +136,7 @@ impl LedLookup {
           .collect();
 
         // For other non-ordered results (e.g. by take) sort by hardware address to maintain consistent order
-        matches.sort_by_key(|led| {
-          (
-            led.address.board(),
-            led.address.breakout(),
-            led.address.index,
-          )
-        });
+        matches.sort_by_key(|led| led.address.hardware_order());
         Box::new(matches.into_iter())
       }
     }
@@ -202,7 +196,7 @@ mod tests {
     let mut leds = LedLookup::default();
     for &(board, breakout, index) in addresses {
       let name = format!("{board}.{}.{index}", breakout.unwrap_or(0));
-      let address = LedAddress::new(ExpAddress::new(board, breakout), 0, index);
+      let address = LightAddress::rgb(LedAddress::new(ExpAddress::new(board, breakout), 0, index));
       leds.insert(name.clone(), LED { name, address, ..Default::default() });
     }
     leds

@@ -114,7 +114,7 @@ impl LedQ {
     ctx.leds.query_iter(&self).collect()
   }
 
-  pub fn query_addresses<'c>(&'c self, ctx: &'c ServiceContext) -> Vec<LedAddress> {
+  pub fn query_addresses<'c>(&'c self, ctx: &'c ServiceContext) -> Vec<LightAddress> {
     ctx
       .leds
       .query_iter(&self)

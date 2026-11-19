@@ -5,29 +5,31 @@ use frontbox_gfx::prelude::*;
 
 use crate::*;
 
+/// Declaring through light management from a system. Each method resolves its targets, typically an `LedQ`, to the
+/// lights they reach, and declares at `z` as the calling system.
 pub trait LightManagerExt {
   /// The running light management, for calls not covered below. `None` if it isn't running, or is in use.
   fn light_manager(&self) -> Option<RefMut<'_, dyn LightManager>>;
 
-  /// Declare one color for every LED the targets resolve to
-  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
-  /// Declare one color for every LED the targets resolve to, flashing on and off
-  fn declare_leds_flashing<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
-  /// Declare colors for the targets, given by `colors` from the number of LEDs they resolve to
-  fn declare_led_colors<T: Contextual<LedIdentifications>>(
+  /// Declare one color at `z` for every light the targets resolve to
+  fn declare_leds<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
+  /// Declare one color at `z` for every light the targets resolve to, flashing on and off
+  fn declare_leds_flashing<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
+  /// Declare colors at `z` for the targets, given by `colors` from the number of lights they resolve to
+  fn declare_led_colors<T: Contextual<Vec<LightAddress>>>(
     &self,
     targets: &T,
+    z: i8,
     colors: impl FnOnce(usize) -> Vec<Rgba<u8>>,
   );
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>);
-  fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T);
+  /// Declare one color at `z` for every light the targets resolve to, not shown until
+  /// [`activate_led_declarations`](Self::activate_led_declarations)
+  fn declare_leds_inactive<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
+  /// Take back what this system declared at `z` on the lights the targets resolve to
+  fn undeclare_leds<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8);
   fn activate_led_declarations(&self);
   fn deactivate_led_declarations(&self);
-  fn set_led_conflict_resolution<T: Contextual<LedIdentifications>>(
-    &self,
-    targets: &T,
-    resolution: LedConflictResolution,
-  );
+  fn set_led_conflict_resolution<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, resolution: LedConflictResolution);
 }
 
 impl<'a> LightManagerExt for SystemContext<'a> {
@@ -35,43 +37,41 @@ impl<'a> LightManagerExt for SystemContext<'a> {
     self.systems.get_dyn::<dyn LightManager>()
   }
 
-  fn declare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
-    self.declare_led_colors(targets, |count| vec![color; count]);
+  fn declare_leds<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
+    self.declare_led_colors(targets, z, |count| vec![color; count]);
   }
 
-  fn declare_leds_flashing<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
+  fn declare_leds_flashing<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
     with_light_manager(self, |manager| {
-      let targets = targets.resolve(&self);
-      let pairings = targets.leds.iter().map(|led| (led, color)).collect();
-      manager.declare(self.id(), LedDeclarations::new(pairings, targets.z_index).flashing());
+      let colors = one_color(targets.resolve(self), color);
+      manager.declare(self.id(), z, &colors, true);
     });
   }
 
-  fn declare_led_colors<T: Contextual<LedIdentifications>>(
+  fn declare_led_colors<T: Contextual<Vec<LightAddress>>>(
     &self,
     targets: &T,
+    z: i8,
     colors: impl FnOnce(usize) -> Vec<Rgba<u8>>,
   ) {
     with_light_manager(self, |manager| {
-      let targets = targets.resolve(&self);
-      let colors = colors(targets.leds.len());
-      let declarations = LedDeclarations::new(targets.leds.iter().zip(colors).collect(), targets.z_index);
-      manager.declare(self.id(), declarations);
+      let lights = targets.resolve(self);
+      let colors = colors(lights.len());
+      let colors: Vec<_> = lights.into_iter().zip(colors).collect();
+      manager.declare(self.id(), z, &colors, false);
     });
   }
 
-  fn declare_leds_inactive<T: Contextual<LedIdentifications>>(&self, targets: &T, color: Rgba<u8>) {
+  fn declare_leds_inactive<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
     with_light_manager(self, |manager| {
-      let targets = targets.resolve(&self);
-      let pairings = targets.leds.iter().map(|led| (led, color)).collect();
-      manager.declare_inactive(self.id(), LedDeclarations::new(pairings, targets.z_index));
+      let colors = one_color(targets.resolve(self), color);
+      manager.declare_inactive(self.id(), z, &colors, false);
     });
   }
 
-  fn undeclare_leds<T: Contextual<LedIdentifications>>(&self, targets: &T) {
+  fn undeclare_leds<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8) {
     with_light_manager(self, |manager| {
-      let targets = targets.resolve(&self);
-      manager.undeclare(self.id(), targets.into());
+      manager.undeclare(self.id(), z, &targets.resolve(self));
     });
   }
 
@@ -87,16 +87,15 @@ impl<'a> LightManagerExt for SystemContext<'a> {
     });
   }
 
-  fn set_led_conflict_resolution<T: Contextual<LedIdentifications>>(
-    &self,
-    targets: &T,
-    resolution: LedConflictResolution,
-  ) {
+  fn set_led_conflict_resolution<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, resolution: LedConflictResolution) {
     with_light_manager(self, |manager| {
-      let targets = targets.resolve(&self);
-      manager.set_conflict_resolution(targets.into(), resolution);
+      manager.set_conflict_resolution(&targets.resolve(self), resolution);
     });
   }
+}
+
+fn one_color(lights: Vec<LightAddress>, color: Rgba<u8>) -> Vec<(LightAddress, Rgba<u8>)> {
+  lights.into_iter().map(|light| (light, color)).collect()
 }
 
 fn with_light_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut dyn LightManager) -> T) {
