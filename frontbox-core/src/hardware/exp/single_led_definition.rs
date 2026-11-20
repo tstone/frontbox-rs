@@ -6,6 +6,7 @@ use crate::prelude::*;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SingleLedDefinition {
   pub name: Cow<'static, str>,
+  pub channels: LedChannels,
   pub config: Option<LedConfiguration>,
   #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,

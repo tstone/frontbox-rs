@@ -43,7 +43,7 @@ impl LightLookup {
             led.definition.name.to_string(),
             Light {
               name: led.definition.name.to_string(),
-              address: LightAddress::rgb(address),
+              address: LightAddress::Exp { led: address, channels: led.definition.channels },
               tags: led.definition.tags.clone(),
               location: led.definition.location,
               color: None,

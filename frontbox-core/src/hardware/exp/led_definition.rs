@@ -14,12 +14,14 @@ impl LedDefinition {
     name: &'static str,
     tags: Vec<Box<dyn Tag>>,
     count: u16,
+    channels: LedChannels,
     locations: Vec<Vec3>,
     config: Option<LedConfiguration>,
   ) -> Self {
     let children: Vec<SingleLedDefinition> = (0..count)
       .map(|index| SingleLedDefinition {
         name: Self::child_name(name, index),
+        channels,
         tags: tags.clone(),
         location: locations.get(index as usize).map(|loc| *loc),
         config: config.clone(),
@@ -84,5 +86,12 @@ mod tests {
   fn test_names() {
     let def = LedDefinition::multi("test").count(8);
     assert_eq!(def.build().names().len(), 8);
+  }
+
+  #[test]
+  fn test_channels() {
+    assert_eq!(LedDefinition::single("rgb").build().children()[0].channels, LedChannels::Rgb);
+    let def = LedDefinition::single("flasher").channel(LedChannel::G).build();
+    assert_eq!(def.children()[0].channels, LedChannels::One(LedChannel::G));
   }
 }

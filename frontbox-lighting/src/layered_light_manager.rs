@@ -541,13 +541,28 @@ fn place(scene: &Scene, ctx: &SystemContext) -> LightPlacement {
 }
 
 /// What to write to each address for the colors its lights show. A light nothing gives a color is turned off, which
-/// `on_render` leaves out if it's already off.
+/// `on_render` leaves out if it's already off. Single-channel lights on the same LED address are written as one RGB.
 fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>, threshold: f32, thresholds: &HashMap<LightAddress, f32>) -> Lowered {
   let mut lowered = Lowered::default();
+  // Where each LED address with single-channel lights is in `lowered.leds`
+  let mut shared: HashMap<LedAddress, usize> = HashMap::new();
   for (light, color) in resolved {
     let color = color.map_or(Rgb::black(), led_color);
     match light {
-      LightAddress::Exp { led, channels: Channels::Rgb } => lowered.leds.push((led, color)),
+      LightAddress::Exp { led, channels: LedChannels::Rgb } => lowered.leds.push((led, color)),
+      LightAddress::Exp { led, channels: LedChannels::One(channel) } => {
+        let index = *shared.entry(led.clone()).or_insert_with(|| {
+          lowered.leds.push((led, Rgb::black()));
+          lowered.leds.len() - 1
+        });
+        let value = color.r.max(color.g).max(color.b);
+        let rgb = &mut lowered.leds[index].1;
+        match channel {
+          LedChannel::R => rgb.r = value,
+          LedChannel::G => rgb.g = value,
+          LedChannel::B => rgb.b = value,
+        }
+      }
       LightAddress::Driver { driver } => {
         let threshold = thresholds.get(&light).copied().unwrap_or(threshold);
         lowered.drivers.push((driver, brightness(color) >= threshold));
@@ -978,6 +993,21 @@ mod tests {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
     let lowered = lower(vec![(LightAddress::rgb(led.clone()), Some(Rgba([255, 128, 0, 255])))], DEFAULT_THRESHOLD, &HashMap::new());
     assert_eq!(lowered.leds, vec![(led, Rgb::new(255, 128, 0))]);
+  }
+
+  #[test]
+  fn single_channel_lights_share_their_led_address() {
+    let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
+    let one = |channel| LightAddress::Exp { led: led.clone(), channels: LedChannels::One(channel) };
+    let lowered = lower(
+      vec![
+        (one(LedChannel::R), Some(Rgba([0, 200, 0, 255]))),
+        (one(LedChannel::B), Some(Rgba([255, 0, 0, 128]))),
+      ],
+      DEFAULT_THRESHOLD,
+      &HashMap::new(),
+    );
+    assert_eq!(lowered.leds, vec![(led, Rgb::new(200, 0, 128))], "each writes its brightness into its channel");
   }
 
   #[test]

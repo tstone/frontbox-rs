@@ -9,7 +9,7 @@ use crate::prelude::*;
 #[serde(tag = "kind")]
 pub enum LightAddress {
   /// Written over the EXP bus as part of an LED address's RGB
-  Exp { led: LedAddress, channels: Channels },
+  Exp { led: LedAddress, channels: LedChannels },
   /// A driver powering a bulb, turned on and off over its virtual switch
   Driver { driver: &'static str },
 }
@@ -17,7 +17,7 @@ pub enum LightAddress {
 impl LightAddress {
   /// An RGB LED, using all three channels of its LED address
   pub fn rgb(led: LedAddress) -> Self {
-    Self::Exp { led, channels: Channels::Rgb }
+    Self::Exp { led, channels: LedChannels::Rgb }
   }
 
   /// The LED address it's written to, if it's written over the EXP bus
@@ -55,9 +55,20 @@ impl Default for LightAddress {
 /// Which channels of an LED address a light uses
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum Channels {
+pub enum LedChannels {
   /// All three, as one color (an RGB LED)
   Rgb,
+  /// One of them, as one brightness
+  One(LedChannel),
+}
+
+/// One channel of an LED address, by its position on the wire
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum LedChannel {
+  R,
+  G,
+  B,
 }
 
 impl Contextual<Vec<LightAddress>> for LightQ {

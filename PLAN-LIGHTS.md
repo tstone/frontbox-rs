@@ -6,21 +6,21 @@ scene placement the same way an LED does.
 
 ## The model
 
-The `Exp` address grows a single-channel `Channels` case:
+The `Exp` address grows a single-channel `LedChannels` case:
 
 ```rust
-enum Channels {
+enum LedChannels {
   /// All three, as one color (an RGB LED)
   Rgb,
   /// One of them, as one brightness
-  One(Channel), // R, G or B
+  One(LedChannel), // R, G or B
 }
 ```
 
 What's wired to an LED address might be one RGB LED or up to three single-channel lights. No two lights share a
 `LightAddress`; for single-channel lights, core's boot check makes sure of that.
 
-A light with `Channels::One` shows one brightness, as a driver light does: the largest channel of its color after
+A light with `LedChannels::One` shows one brightness, as a driver light does: the largest channel of its color after
 compositing over black, so alpha dims it. When lowered, it writes that brightness into its channel of the LED address.
 
 ### Kinds, not products
@@ -41,7 +41,6 @@ Each phase builds, passes tests, and leaves the machine behaving as before, exce
 
 ### 5. Single-channel lights on an LED address
 
-- **Definition.** `LedDefinition::single` takes a channel (`.channel(Channel::G)`), giving `Channels::One`.
 - **A generic helper for 1 to 3 lights on one LED address**, in R, G, B order.
 - **Core's boot check** is that no channel is used by two lights, including an `Rgb` light, which uses all three.
   Reject the config with an error naming the LED address and both lights. This is what makes a `LightAddress`
@@ -58,7 +57,7 @@ Each phase builds, passes tests, and leaves the machine behaving as before, exce
 
 ### Later, not in this plan
 
-- **NeoSeg** as its own module. Nothing about it is added to `LightAddress` or `Channels`.
+- **NeoSeg** as its own module. Nothing about it is added to `LightAddress` or `LedChannels`.
   - **Segments.** Each segment is a single-channel light (`Exp { led, channels: One(..) }`) with a name such as
     `score.3.g` and a position from the segment layout. Scenes see only these lights, so sweeps across the display
     work with nothing NeoSeg-specific.
