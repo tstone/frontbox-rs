@@ -83,13 +83,21 @@ impl Debug for AppMessage {
       AppMessage::SpawnSystem(parent, _) => write!(f, "SpawnSystem(parent={})", parent.id),
       AppMessage::ReplaceSystem(handle, _) => write!(f, "ReplaceSystem({})", handle.id),
       AppMessage::DespawnSystem(handle) => write!(f, "DespawnSystem({})", handle.id),
-      AppMessage::ActivateChild(parent, child) => write!(f, "ActivateChild({}, parent={})", child, parent.id),
-      AppMessage::DeactivateChild(parent, child) => write!(f, "DeactivateChild({}, parent={})", child, parent.id),
-      AppMessage::DespawnChild(parent, child) => write!(f, "DespawnChild({}, parent={})", child, parent.id),
+      AppMessage::ActivateChild(parent, child) => {
+        write!(f, "ActivateChild({}, parent={})", child, parent.id)
+      }
+      AppMessage::DeactivateChild(parent, child) => {
+        write!(f, "DeactivateChild({}, parent={})", child, parent.id)
+      }
+      AppMessage::DespawnChild(parent, child) => {
+        write!(f, "DespawnChild({}, parent={})", child, parent.id)
+      }
       AppMessage::CreateTimer(handle, timer_id, timer, _signals) => {
         write!(f, "CreateTimer({}:{}, {:?})", handle.id, timer_id, timer)
       }
-      AppMessage::CancelTimer(handle, timer_id) => write!(f, "CancelTimer({}:{})", handle.id, timer_id),
+      AppMessage::CancelTimer(handle, timer_id) => {
+        write!(f, "CancelTimer({}:{})", handle.id, timer_id)
+      }
       AppMessage::SetTimerPaused(handle, timer_id, paused) => {
         write!(f, "SetTimerPaused({}:{}, {})", handle.id, timer_id, paused)
       }
@@ -104,7 +112,9 @@ impl Debug for AppMessage {
         write!(f, "HaltRoutine({}, {:?})", handle.id, type_id)
       }
       AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
-      AppMessage::SystemActivityChanged(handle) => write!(f, "SystemActivityChanged({})", handle.id),
+      AppMessage::SystemActivityChanged(handle) => {
+        write!(f, "SystemActivityChanged({})", handle.id)
+      }
       AppMessage::SetState(state) => write!(f, "SetState({:?})", state),
       // An LED batch holds every changed LED and is sent several times a tick, so for performance simplify it
       AppMessage::TracerEvent(TraceEvent::LedsRGBChange {

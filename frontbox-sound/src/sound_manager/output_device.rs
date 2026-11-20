@@ -54,7 +54,11 @@ impl OutputDevice {
           match device.default_output_config() {
             Ok(config) if config.sample_format() == SampleFormat::F32 => {}
             Ok(config) => {
-              reasons.push(format!("'{}' takes {} samples, not f32", name, config.sample_format()));
+              reasons.push(format!(
+                "'{}' takes {} samples, not f32",
+                name,
+                config.sample_format()
+              ));
               continue;
             }
             Err(e) => {

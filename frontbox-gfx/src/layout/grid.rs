@@ -48,7 +48,10 @@ impl Grid {
   fn fit(&self) -> Fit {
     let cells = self.cells();
     let cell = (self.size / cells).max_element();
-    Fit { origin: (self.size - cells * cell) / 2.0, cell }
+    Fit {
+      origin: (self.size - cells * cell) / 2.0,
+      cell,
+    }
   }
 }
 
@@ -97,13 +100,19 @@ mod tests {
   #[test]
   fn a_wider_grid_covers_past_the_sides() {
     let covers = Grid::new(4, 1, Vec2::new(2.0, 2.0)).covers();
-    assert_eq!(covers, Bounds::new(Vec2::new(-3.0, 0.0), Vec2::new(5.0, 2.0)));
+    assert_eq!(
+      covers,
+      Bounds::new(Vec2::new(-3.0, 0.0), Vec2::new(5.0, 2.0))
+    );
   }
 
   #[test]
   fn a_taller_grid_covers_past_the_top_and_bottom() {
     let covers = Grid::new(1, 4, Vec2::new(2.0, 2.0)).covers();
-    assert_eq!(covers, Bounds::new(Vec2::new(0.0, -3.0), Vec2::new(2.0, 5.0)));
+    assert_eq!(
+      covers,
+      Bounds::new(Vec2::new(0.0, -3.0), Vec2::new(2.0, 5.0))
+    );
   }
 
   #[test]

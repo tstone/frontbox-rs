@@ -34,20 +34,40 @@ impl VirtualHardware {
       .switches
       .iter()
       .map(|switch| {
-        let inverted = switch.definition.config.as_ref().is_some_and(|config| config.inverted);
+        let inverted = switch
+          .definition
+          .config
+          .as_ref()
+          .is_some_and(|config| config.inverted);
         let closed = switch.definition.initial_state == Some(SwitchState::Closed);
         (switch.id, VirtualSwitch { inverted, closed })
       })
       .collect();
     let wired_slots = switches.keys().max().map_or(0, |id| id + 1);
-    let board_slots = io_network.boards.iter().map(|board| board.switch_count as usize).sum();
+    let board_slots = io_network
+      .boards
+      .iter()
+      .map(|board| board.switch_count as usize)
+      .sum();
 
     Self {
-      switch_ids: io_network.switches.iter().map(|s| (s.definition.name, s.id)).collect(),
+      switch_ids: io_network
+        .switches
+        .iter()
+        .map(|s| (s.definition.name, s.id))
+        .collect(),
       switches,
       switch_slots: wired_slots.max(board_slots),
-      drivers: io_network.drivers.iter().map(|d| (d.id, DriverRecord::default())).collect(),
-      driver_ids: io_network.drivers.iter().map(|d| (d.definition.name, d.id)).collect(),
+      drivers: io_network
+        .drivers
+        .iter()
+        .map(|d| (d.id, DriverRecord::default()))
+        .collect(),
+      driver_ids: io_network
+        .drivers
+        .iter()
+        .map(|d| (d.definition.name, d.id))
+        .collect(),
       triggers: DriverTriggers::default(),
       watchdog_enabled: false,
       connected: true,
@@ -89,8 +109,15 @@ impl VirtualHardware {
   pub fn switch_report(&self) -> Vec<SwitchState> {
     (0..self.switch_slots)
       .map(|id| {
-        let raw_closed = self.switches.get(&id).is_some_and(|switch| switch.closed != switch.inverted);
-        if raw_closed { SwitchState::Closed } else { SwitchState::Open }
+        let raw_closed = self
+          .switches
+          .get(&id)
+          .is_some_and(|switch| switch.closed != switch.inverted);
+        if raw_closed {
+          SwitchState::Closed
+        } else {
+          SwitchState::Open
+        }
       })
       .collect()
   }
@@ -116,7 +143,9 @@ impl VirtualHardware {
     match message {
       MachineMessage::WatchdogPing => self.watchdog_enabled = true,
       MachineMessage::WatchdogClear => self.watchdog_enabled = false,
-      MachineMessage::RefreshSwitchState => return vec![AppMessage::SyncSwitchStates(self.switch_report())],
+      MachineMessage::RefreshSwitchState => {
+        return vec![AppMessage::SyncSwitchStates(self.switch_report())];
+      }
       MachineMessage::ConfigureDriver { driver_id, config } => {
         // a DL disconnects the driver from how it was triggered
         self.triggers.cleared(*driver_id);
@@ -126,7 +155,11 @@ impl VirtualHardware {
         // sent as a DL, but the machine triggers the driver again the way it was straight after
         self.drivers.entry(*driver_id).or_default().config = Some(config.clone());
       }
-      MachineMessage::TriggerDriver { driver_id, mode, switch } => {
+      MachineMessage::TriggerDriver {
+        driver_id,
+        mode,
+        switch,
+      } => {
         self.triggers.triggered(*driver_id, *mode, *switch);
         let record = self.drivers.entry(*driver_id).or_default();
         if matches!(mode, DriverTriggerControlMode::Manual) && record.can_fire() {
@@ -149,7 +182,9 @@ impl VirtualHardware {
       return None;
     }
     switch.closed = closed;
-    self.connected.then_some(AppMessage::SwitchStateChange(switch_id, state))
+    self
+      .connected
+      .then_some(AppMessage::SwitchStateChange(switch_id, state))
   }
 
   /// Lose the connection to the app, as pulling the USB cable would, returning what the machine tells the app. From
@@ -175,7 +210,10 @@ impl VirtualHardware {
       return None;
     }
     self.connected = true;
-    self.drivers.values_mut().for_each(|driver| driver.config = None);
+    self
+      .drivers
+      .values_mut()
+      .for_each(|driver| driver.config = None);
     self.triggers = DriverTriggers::default();
     self.watchdog_enabled = true;
     Some(AppMessage::MachineReconnected(self.switch_report()))
@@ -220,11 +258,18 @@ mod tests {
 
   use super::*;
 
-  static START: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("start").build());
-  static TROUGH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
-  static DOOR: LazyLock<SwitchDefinition> =
-    LazyLock::new(|| SwitchDefinition::new("door").inverted().initially_closed().build());
-  static EJECT: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::new("eject").build());
+  static START: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("start").build());
+  static TROUGH: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
+  static DOOR: LazyLock<SwitchDefinition> = LazyLock::new(|| {
+    SwitchDefinition::new("door")
+      .inverted()
+      .initially_closed()
+      .build()
+  });
+  static EJECT: LazyLock<DriverDefinition> =
+    LazyLock::new(|| DriverDefinition::new("eject").build());
 
   const START_ID: usize = 0;
   const DOOR_ID: usize = 1;
@@ -254,11 +299,18 @@ mod tests {
   }
 
   fn configure(hw: &mut VirtualHardware, config: DriverConfig) {
-    hw.apply(&MachineMessage::ConfigureDriver { driver_id: EJECT_ID, config });
+    hw.apply(&MachineMessage::ConfigureDriver {
+      driver_id: EJECT_ID,
+      config,
+    });
   }
 
   fn trigger(hw: &mut VirtualHardware, mode: DriverTriggerControlMode, switch: Option<usize>) {
-    hw.apply(&MachineMessage::TriggerDriver { driver_id: EJECT_ID, mode, switch });
+    hw.apply(&MachineMessage::TriggerDriver {
+      driver_id: EJECT_ID,
+      mode,
+      switch,
+    });
   }
 
   fn eject(hw: &VirtualHardware) -> VirtualDriver {
@@ -338,8 +390,16 @@ mod tests {
     hw.set_switch(TROUGH_ID, SwitchState::Closed);
     let mut lookup = SwitchLookup::new(
       vec![
-        IoAddressed { definition: &*START, assignment: IoAddress::new(0, 0), id: START_ID },
-        IoAddressed { definition: &*TROUGH, assignment: IoAddress::new(0, 3), id: TROUGH_ID },
+        IoAddressed {
+          definition: &*START,
+          assignment: IoAddress::new(0, 0),
+          id: START_ID,
+        },
+        IoAddressed {
+          definition: &*TROUGH,
+          assignment: IoAddress::new(0, 3),
+          id: TROUGH_ID,
+        },
       ],
       Vec::new(),
     );
@@ -352,11 +412,19 @@ mod tests {
   fn configuring_a_driver_leaves_it_off_until_triggered() {
     let mut hw = hardware();
     configure(&mut hw, pulse());
-    assert!(matches!(eject(&hw).config, Some(DriverConfig::Pulse { .. })));
+    assert!(matches!(
+      eject(&hw).config,
+      Some(DriverConfig::Pulse { .. })
+    ));
     assert_eq!(eject(&hw).trigger, DriverTrigger::Off);
 
     trigger(&mut hw, DriverTriggerControlMode::Automatic, Some(START_ID));
-    assert_eq!(eject(&hw).trigger, DriverTrigger::Automatic { switch: Some(START_ID) });
+    assert_eq!(
+      eject(&hw).trigger,
+      DriverTrigger::Automatic {
+        switch: Some(START_ID)
+      }
+    );
   }
 
   #[test]
@@ -373,9 +441,17 @@ mod tests {
     let mut hw = hardware();
     configure(&mut hw, pulse());
     trigger(&mut hw, DriverTriggerControlMode::Automatic, Some(START_ID));
-    hw.apply(&MachineMessage::UpdateDriverConfig { driver_id: EJECT_ID, config: DriverConfig::Disabled });
+    hw.apply(&MachineMessage::UpdateDriverConfig {
+      driver_id: EJECT_ID,
+      config: DriverConfig::Disabled,
+    });
     assert!(matches!(eject(&hw).config, Some(DriverConfig::Disabled)));
-    assert_eq!(eject(&hw).trigger, DriverTrigger::Automatic { switch: Some(START_ID) });
+    assert_eq!(
+      eject(&hw).trigger,
+      DriverTrigger::Automatic {
+        switch: Some(START_ID)
+      }
+    );
   }
 
   #[test]
@@ -410,14 +486,22 @@ mod tests {
     configure(&mut hw, pulse());
     trigger(&mut hw, DriverTriggerControlMode::Automatic, Some(START_ID));
     trigger(&mut hw, DriverTriggerControlMode::Manual, None);
-    assert_eq!(eject(&hw).trigger, DriverTrigger::Automatic { switch: Some(START_ID) });
+    assert_eq!(
+      eject(&hw).trigger,
+      DriverTrigger::Automatic {
+        switch: Some(START_ID)
+      }
+    );
   }
 
   #[test]
   fn a_disconnect_is_reported_once_and_expires_the_watchdog() {
     let mut hw = hardware();
     hw.apply(&MachineMessage::WatchdogPing);
-    assert!(matches!(hw.disconnect(), Some(AppMessage::MachineDisconnected)));
+    assert!(matches!(
+      hw.disconnect(),
+      Some(AppMessage::MachineDisconnected)
+    ));
     assert!(hw.disconnect().is_none());
     assert!(!hw.connected());
     assert!(!hw.watchdog_enabled());

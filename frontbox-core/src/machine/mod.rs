@@ -35,10 +35,10 @@ pub mod vm; // virtual
 use fast_protocol::{DriverConfig, DriverTriggerControlMode, FastBinaryDispatch, FastCommand};
 use std::time::Duration;
 
+pub use context_hardware::*;
 pub use driver_triggers::DriverTrigger;
 pub use events::*;
 pub use machine::*;
-pub use context_hardware::*;
 pub use machine_system::*;
 
 #[derive(Debug)]

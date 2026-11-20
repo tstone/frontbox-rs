@@ -71,7 +71,10 @@ impl Scenario {
   /// Lose the connection to the machine, as pulling its USB cable would. The app is told, and from then on nothing it
   /// sends reaches the hardware and switch changes aren't reported. Panics if it's already disconnected.
   pub fn disconnect_machine(&mut self) {
-    let disconnected = self.hardware.disconnect().unwrap_or_else(|| panic!("The machine is already disconnected"));
+    let disconnected = self
+      .hardware
+      .disconnect()
+      .unwrap_or_else(|| panic!("The machine is already disconnected"));
     self.harness.send(disconnected);
     self.settle();
   }
@@ -79,7 +82,10 @@ impl Scenario {
   /// Bring the connection to the machine back after `disconnect_machine`. The hardware comes back as if it lost power,
   /// and the app is told along with the switches' states. Panics if it's still connected.
   pub fn reconnect_machine(&mut self) {
-    let reconnected = self.hardware.reconnect().unwrap_or_else(|| panic!("The machine is still connected"));
+    let reconnected = self
+      .hardware
+      .reconnect()
+      .unwrap_or_else(|| panic!("The machine is still connected"));
     self.harness.send(reconnected);
     self.settle();
   }
@@ -87,7 +93,10 @@ impl Scenario {
   /// Let time pass, ticking at the app's interval as the machine would, so timers run as they would there
   pub fn advance(&mut self, duration: Duration) {
     let interval = self.harness.tick_interval();
-    assert!(!interval.is_zero(), "The app's system interval is zero, so time can't pass");
+    assert!(
+      !interval.is_zero(),
+      "The app's system interval is zero, so time can't pass"
+    );
     let mut left = duration;
     while !left.is_zero() {
       let delta = left.min(interval);
@@ -114,7 +123,10 @@ impl Scenario {
 
   /// Record each `E` emitted from now on, as `record` maps it, e.g. `s.record(|e: &BallSaved| e.count)`. Use
   /// `|_: &E| ()` to just count them.
-  pub fn record<E: Event, T: 'static>(&mut self, record: impl Fn(&E) -> T + 'static) -> Recording<T> {
+  pub fn record<E: Event, T: 'static>(
+    &mut self,
+    record: impl Fn(&E) -> T + 'static,
+  ) -> Recording<T> {
     let recording = Recording::default();
     let into = recording.clone();
     self.taps.borrow_mut().push(Box::new(move |event| {
@@ -205,14 +217,22 @@ impl ScenarioBuilder {
       virtual_hardware.set_switch(id, state);
     }
     let mut hardware = vm::read_hardware(parts.boot_config, &virtual_hardware);
-    app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
+    app_config
+      .planes
+      .iter()
+      .for_each(|plane| hardware.lights.add_plane(plane.plane));
     let state = AppState::from_hardware(hardware, parts.configs, app_config);
     virtual_hardware.configure_drivers(&state);
 
     let (machine_tx, machine_rx) = mpsc::unbounded_channel();
     let (app_tx, app_rx) = mpsc::unbounded_channel();
     let bridge = SystemContainer::new(MachineSystem::new(machine_tx, app_tx.clone()));
-    let harness = Harness::with(state, Routines::new(parts.routines), bridge.id(), (app_tx, app_rx));
+    let harness = Harness::with(
+      state,
+      Routines::new(parts.routines),
+      bridge.id(),
+      (app_tx, app_rx),
+    );
 
     let taps = Taps::default();
     let mut scenario = Scenario {
@@ -276,14 +296,23 @@ mod tests {
   use super::*;
   use crate::machine::DriverTrigger;
 
-  static START: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("start").build());
-  static TROUGH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
-  static DOOR: LazyLock<SwitchDefinition> =
-    LazyLock::new(|| SwitchDefinition::new("door").inverted().initially_closed().build());
+  static START: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("start").build());
+  static TROUGH: LazyLock<SwitchDefinition> =
+    LazyLock::new(|| SwitchDefinition::new("trough").inverted().build());
+  static DOOR: LazyLock<SwitchDefinition> = LazyLock::new(|| {
+    SwitchDefinition::new("door")
+      .inverted()
+      .initially_closed()
+      .build()
+  });
   static FLIPPER: LazyLock<SwitchDefinition> =
     LazyLock::new(|| SwitchDefinition::new("flipper").initially_open().build());
-  static KICKER: LazyLock<DriverDefinition> =
-    LazyLock::new(|| DriverDefinition::new("kicker").mode(DriverMode::pulse().build()).build());
+  static KICKER: LazyLock<DriverDefinition> = LazyLock::new(|| {
+    DriverDefinition::new("kicker")
+      .mode(DriverMode::pulse().build())
+      .build()
+  });
 
   fn app() -> App {
     let mut app = App::new(BootConfig {
@@ -335,7 +364,9 @@ mod tests {
         self.kicks += 1;
         ctx.drivers.activate("kicker", ActivationMode::Tap);
         ctx.emit(Kicked(self.kicks));
-        ctx.timers.start(SettleTimer, Timer::Once(Duration::from_secs(1)));
+        ctx
+          .timers
+          .start(SettleTimer, Timer::Once(Duration::from_secs(1)));
       } else if event.is::<SettleTimer>() {
         ctx.emit(KickSettled);
       }
@@ -346,7 +377,10 @@ mod tests {
   fn it_boots_with_drivers_configured_and_the_watchdog_running() {
     let s = Scenario::new(app()).start();
     let kicker = s.hardware().driver("kicker").unwrap();
-    assert!(matches!(kicker.config, Some(fast_protocol::DriverConfig::Pulse { .. })));
+    assert!(matches!(
+      kicker.config,
+      Some(fast_protocol::DriverConfig::Pulse { .. })
+    ));
     assert_eq!(kicker.trigger, DriverTrigger::Off);
     assert!(s.hardware().watchdog_enabled());
   }
@@ -371,7 +405,11 @@ mod tests {
   impl System for Misalignments {
     fn on_event(&mut self, event: &dyn Event, _ctx: &SystemContext) {
       if let Some(found) = event.downcast_ref::<BootSwitchMisalignmentFound>() {
-        let mut switches: Vec<_> = found.switches.iter().map(|m| (m.switch.name, m.expected)).collect();
+        let mut switches: Vec<_> = found
+          .switches
+          .iter()
+          .map(|m| (m.switch.name, m.expected))
+          .collect();
         switches.sort();
         self.0.borrow_mut().push(switches);
       }
@@ -388,10 +426,16 @@ mod tests {
   #[test]
   fn switches_out_of_their_initial_state_at_boot_are_reported_to_the_apps_systems() {
     let (app, found) = app_hearing_misalignments();
-    Scenario::new(app).open(["door"]).closed(["flipper"]).start();
+    Scenario::new(app)
+      .open(["door"])
+      .closed(["flipper"])
+      .start();
     assert_eq!(
       *found.borrow(),
-      [vec![("door", SwitchState::Closed), ("flipper", SwitchState::Open)]]
+      [vec![
+        ("door", SwitchState::Closed),
+        ("flipper", SwitchState::Open)
+      ]]
     );
   }
 
@@ -440,7 +484,10 @@ mod tests {
     let mut s = Scenario::new(app()).start();
     s.hit_switch("start");
     s.hit_switch("start");
-    assert_eq!(s.act(|ctx| ctx.systems.with::<Kicker, _>(|k| k.kicks())), Some(2));
+    assert_eq!(
+      s.act(|ctx| ctx.systems.with::<Kicker, _>(|k| k.kicks())),
+      Some(2)
+    );
   }
 
   #[test]
@@ -494,12 +541,19 @@ mod tests {
   #[test]
   fn a_reconnect_configures_and_triggers_drivers_as_they_were() {
     let mut s = Scenario::new(app()).start();
-    s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::VirtualSwitchOn));
+    s.act(|ctx| {
+      ctx
+        .drivers
+        .activate("kicker", ActivationMode::VirtualSwitchOn)
+    });
     s.disconnect_machine();
 
     s.reconnect_machine();
     let kicker = s.hardware().driver("kicker").unwrap();
-    assert!(matches!(kicker.config, Some(fast_protocol::DriverConfig::Pulse { .. })));
+    assert!(matches!(
+      kicker.config,
+      Some(fast_protocol::DriverConfig::Pulse { .. })
+    ));
     assert_eq!(kicker.trigger, DriverTrigger::On);
 
     s.act(|ctx| ctx.drivers.activate("kicker", ActivationMode::Tap));

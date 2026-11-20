@@ -86,7 +86,9 @@ impl DmdAttractSystem {
   /// The first screen from `index` on, going by `step`, that has something to show. `None` if none does.
   fn showable_from(&self, index: usize, step: isize, ctx: &SystemContext) -> Option<usize> {
     let count = self.screens.len() as isize;
-    (0..count).map(|n| (index as isize + n * step).rem_euclid(count) as usize).find(|&at| self.can_show(at, ctx))
+    (0..count)
+      .map(|n| (index as isize + n * step).rem_euclid(count) as usize)
+      .find(|&at| self.can_show(at, ctx))
   }
 
   /// Moves to the next screen that has something to show, `step` screens on (1, or -1 to go back), and shows it
@@ -115,7 +117,9 @@ impl DmdAttractSystem {
     if let AttractScreen::LastScore(player) = self.screens[index]
       && let Some(score) = self.last_scores.get(player)
     {
-      scene = scene.variable("label", format!("Player {}", player + 1)).variable("score", Value::Int(*score as i64));
+      scene = scene
+        .variable("label", format!("Player {}", player + 1))
+        .variable("score", Value::Int(*score as i64));
     }
     self.player = Some(ScenePlayer::started(scene, ctx));
   }
@@ -123,13 +127,27 @@ impl DmdAttractSystem {
   /// Moves on after a screen's time, counting from now
   fn schedule_next(&mut self, ctx: &SystemContext) {
     ctx.timers.cancel(self.timer_id.take());
-    self.timer_id = Some(ctx.timers.start(NextScreen, Timer::Forever(self.screen_duration)));
+    self.timer_id = Some(
+      ctx
+        .timers
+        .start(NextScreen, Timer::Forever(self.screen_duration)),
+    );
   }
 }
 
 impl System for DmdAttractSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Shows the attract screens on the DMD, such as the last game's scores, while no game is running",
+    )
+  }
+
   fn is_active(&self, ctx: &SystemContext) -> bool {
-    ctx.states.is(GamePhase::None) && !ctx.systems.get::<DmdMenuSystem>().is_some_and(|menu| menu.is_active(ctx))
+    ctx.states.is(GamePhase::None)
+      && !ctx
+        .systems
+        .get::<DmdMenuSystem>()
+        .is_some_and(|menu| menu.is_active(ctx))
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
@@ -139,8 +157,15 @@ impl System for DmdAttractSystem {
       .iter()
       .map(|screen| match screen {
         AttractScreen::Scene(name) => open_scene(&content, name, Sends { variables: &[] }, self.z),
-        AttractScreen::LastScore(_) => open_scene(&content, LAST_SCORE_SCENE, LAST_SCORE_SENDS, self.z),
-        AttractScreen::PressStart => open_scene(&content, PRESS_START_SCENE, Sends { variables: &[] }, self.z),
+        AttractScreen::LastScore(_) => {
+          open_scene(&content, LAST_SCORE_SCENE, LAST_SCORE_SENDS, self.z)
+        }
+        AttractScreen::PressStart => open_scene(
+          &content,
+          PRESS_START_SCENE,
+          Sends { variables: &[] },
+          self.z,
+        ),
       })
       .collect();
     self.schedule_next(ctx);
@@ -160,7 +185,11 @@ impl System for DmdAttractSystem {
     } else if let Some(ended) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
       self.last_scores = ended.routine.scores.clone();
       // the scores the players finished with
-      if let Some(first) = self.screens.iter().position(|screen| *screen == AttractScreen::LastScore(0)) {
+      if let Some(first) = self
+        .screens
+        .iter()
+        .position(|screen| *screen == AttractScreen::LastScore(0))
+      {
         self.show(first, ctx);
         self.schedule_next(ctx);
       }
@@ -201,8 +230,18 @@ pub enum AttractScreen {
 
 const LAST_SCORE_SENDS: Sends = Sends {
   variables: &[
-    SentVariable { name: "label", sent_as: VariableType::Text, values: &[], about: "Who the score is for, e.g. Player 1" },
-    SentVariable { name: "score", sent_as: VariableType::Number, values: &[], about: "The score they finished with" },
+    SentVariable {
+      name: "label",
+      sent_as: VariableType::Text,
+      values: &[],
+      about: "Who the score is for, e.g. Player 1",
+    },
+    SentVariable {
+      name: "score",
+      sent_as: VariableType::Number,
+      values: &[],
+      about: "The score they finished with",
+    },
   ],
 };
 
@@ -223,7 +262,11 @@ mod tests {
     attract
   }
 
-  const SCREENS: [AttractScreen; 3] = [AttractScreen::LastScore(0), AttractScreen::PressStart, AttractScreen::LastScore(1)];
+  const SCREENS: [AttractScreen; 3] = [
+    AttractScreen::LastScore(0),
+    AttractScreen::PressStart,
+    AttractScreen::LastScore(1),
+  ];
 
   #[test]
   fn screens_with_nothing_to_show_are_skipped() {
@@ -237,8 +280,17 @@ mod tests {
   fn a_game_ending_shows_its_first_score_then_steps_through_the_rest() {
     let mut context = TestContext::default();
     let mut attract = spawned(&mut context, SCREENS.to_vec());
-    let ending = GameEnding { scores: vec![100, 200], reason: crate::GameEndReason::Completed };
-    attract.on_event(&RoutineCompleted { routine: ending, completion: RoutineCompletion::AllSteps }, &context.sys_ctx());
+    let ending = GameEnding {
+      scores: vec![100, 200],
+      reason: crate::GameEndReason::Completed,
+    };
+    attract.on_event(
+      &RoutineCompleted {
+        routine: ending,
+        completion: RoutineCompletion::AllSteps,
+      },
+      &context.sys_ctx(),
+    );
     assert_eq!(attract.current, 0);
     attract.step(1, &context.sys_ctx());
     assert_eq!(attract.current, 2);
@@ -251,6 +303,9 @@ mod tests {
   #[test]
   fn the_bundled_scenes_fit_what_is_sent() {
     let content = content_with_bundled(None);
-    assert_eq!(LAST_SCORE_SENDS.check(&Scene::open(&content, LAST_SCORE_SCENE).unwrap()), []);
+    assert_eq!(
+      LAST_SCORE_SENDS.check(&Scene::open(&content, LAST_SCORE_SCENE).unwrap()),
+      []
+    );
   }
 }

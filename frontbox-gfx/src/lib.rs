@@ -10,8 +10,8 @@
 
 pub mod animation;
 pub mod color;
-pub mod scene;
 pub mod layout;
+pub mod scene;
 
 pub mod prelude {
   pub use crate::animation::Cycle;

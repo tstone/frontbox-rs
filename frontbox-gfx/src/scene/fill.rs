@@ -16,7 +16,10 @@ impl Fill {
   /// axis, in unit box units. `None` if a transform collapses it, so it draws nothing.
   pub(crate) fn prepare<'a>(&'a self, footprint: Vec2, env: &Env<'a>) -> Option<PreparedFill<'a>> {
     // on a Sequence, the lap is the unit box plus one sample's width, as samples reach half a width past each end
-    let env = &Env { lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x), ..*env };
+    let env = &Env {
+      lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x),
+      ..*env
+    };
     let to_scene = self.to_scene(Vec2::ZERO, env)?;
     let to_local = to_scene.inverse();
     Some(PreparedFill {
@@ -24,7 +27,11 @@ impl Fill {
       to_local,
       footprint: to_local.matrix2.abs() * footprint,
       base: self.base.resolve(env),
-      adjust: self.adjust.iter().map(|adjust| (adjust, adjust.amount(env))).collect(),
+      adjust: self
+        .adjust
+        .iter()
+        .map(|adjust| (adjust, adjust.amount(env)))
+        .collect(),
     })
   }
 
@@ -36,8 +43,14 @@ impl Fill {
 
   pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
     self.base.read_inputs(inputs);
-    self.transform.iter().for_each(|transform| transform.read_inputs(inputs));
-    self.adjust.iter().for_each(|adjust| adjust.read_inputs(inputs));
+    self
+      .transform
+      .iter()
+      .for_each(|transform| transform.read_inputs(inputs));
+    self
+      .adjust
+      .iter()
+      .for_each(|adjust| adjust.read_inputs(inputs));
   }
 }
 
@@ -88,7 +101,10 @@ pub struct Stop {
 
 impl Stop {
   pub fn new(at: f32, color: impl Into<Prop<Color>>) -> Self {
-    Self { at, color: color.into() }
+    Self {
+      at,
+      color: color.into(),
+    }
   }
 }
 
@@ -113,7 +129,9 @@ impl GradientStyle {
       Self::Linear => (p.x + 0.5).clamp(0.0, 1.0),
       Self::Radial => (p.length() * 2.0).clamp(0.0, 1.0),
       // in f64, as f32 `atan2` is off by one step on some platforms (macOS gives just under pi for 9 o'clock)
-      Self::Conical => ((p.y as f64).atan2(p.x as f64) / std::f64::consts::TAU).rem_euclid(1.0) as f32,
+      Self::Conical => {
+        ((p.y as f64).atan2(p.x as f64) / std::f64::consts::TAU).rem_euclid(1.0) as f32
+      }
     }
   }
 }
@@ -121,7 +139,10 @@ impl GradientStyle {
 impl FillNode {
   /// An image, on its first frame
   pub fn image(name: impl Into<String>) -> Self {
-    Self::Image { name: name.into(), frame: None }
+    Self::Image {
+      name: name.into(),
+      frame: None,
+    }
   }
 
   fn is_animated(&self) -> bool {
@@ -138,7 +159,9 @@ impl FillNode {
       Self::Solid(color) => color.read_inputs(inputs),
       Self::Gradient { stops, .. } => stops.iter().for_each(|stop| stop.color.read_inputs(inputs)),
       Self::Image { frame, .. } => frame.iter().for_each(|frame| frame.read_inputs(inputs)),
-      Self::Spritesheet { sprite, .. } => sprite.iter().for_each(|sprite| sprite.read_inputs(inputs)),
+      Self::Spritesheet { sprite, .. } => {
+        sprite.iter().for_each(|sprite| sprite.read_inputs(inputs))
+      }
     }
   }
 
@@ -152,20 +175,38 @@ impl FillNode {
   fn resolve<'a>(&self, env: &Env<'a>) -> ResolvedFillNode<'a> {
     match self {
       Self::Solid(color) => ResolvedFillNode::Solid(color.resolve(env).0),
-      Self::Gradient { stops, style } => {
-        ResolvedFillNode::Gradient { stops: stops.iter().map(|stop| (stop.at, stop.color.resolve(env).0)).collect(), style: *style }
-      }
+      Self::Gradient { stops, style } => ResolvedFillNode::Gradient {
+        stops: stops
+          .iter()
+          .map(|stop| (stop.at, stop.color.resolve(env).0))
+          .collect(),
+        style: *style,
+      },
       Self::Image { name, frame } => ResolvedFillNode::Image {
         picture: env.assets.picture(name),
-        frame: frame.as_ref().map_or(0.0, |frame| frame.resolve_truncated(env)),
+        frame: frame
+          .as_ref()
+          .map_or(0.0, |frame| frame.resolve_truncated(env)),
       },
-      Self::Spritesheet { name, rows, columns, sprite } => {
+      Self::Spritesheet {
+        name,
+        rows,
+        columns,
+        sprite,
+      } => {
         let (rows, columns) = ((*rows).max(1), (*columns).max(1));
-        let sprite = sprite.as_ref().map_or(0.0, |sprite| sprite.resolve_truncated(env)).max(0.0) as u32;
+        let sprite = sprite
+          .as_ref()
+          .map_or(0.0, |sprite| sprite.resolve_truncated(env))
+          .max(0.0) as u32;
         let sprite = sprite.min(rows * columns - 1);
         let size = Vec2::new(1.0 / columns as f32, 1.0 / rows as f32);
         let min = Vec2::new((sprite % columns) as f32, (sprite / columns) as f32) * size;
-        ResolvedFillNode::Sprite { picture: env.assets.picture(name), min, size }
+        ResolvedFillNode::Sprite {
+          picture: env.assets.picture(name),
+          min,
+          size,
+        }
       }
     }
   }
@@ -186,8 +227,12 @@ impl PreparedFill<'_> {
   /// The color at a point in the unit box
   pub(crate) fn color(&self, p: Vec2) -> Rgba<u8> {
     let p = self.wrap.map_or(p, |wrap| wrap.apply(p));
-    let color = self.base.color(self.to_local.transform_point2(p), self.footprint);
-    self.adjust.iter().fold(color, |color, (adjust, amount)| adjust.apply(color, *amount))
+    let color = self
+      .base
+      .color(self.to_local.transform_point2(p), self.footprint);
+    self.adjust.iter().fold(color, |color, (adjust, amount)| {
+      adjust.apply(color, *amount)
+    })
   }
 }
 
@@ -195,11 +240,21 @@ impl PreparedFill<'_> {
 enum ResolvedFillNode<'a> {
   Solid(Rgba<u8>),
   /// Each stop's `at` and color
-  Gradient { stops: Vec<(f32, Rgba<u8>)>, style: GradientStyle },
+  Gradient {
+    stops: Vec<(f32, Rgba<u8>)>,
+    style: GradientStyle,
+  },
   /// `None` for an image that isn't loaded, which draws nothing
-  Image { picture: Option<&'a Picture>, frame: f32 },
+  Image {
+    picture: Option<&'a Picture>,
+    frame: f32,
+  },
   /// The part of an image from `min`, `size` across, in units of the whole image
-  Sprite { picture: Option<&'a Picture>, min: Vec2, size: Vec2 },
+  Sprite {
+    picture: Option<&'a Picture>,
+    min: Vec2,
+    size: Vec2,
+  },
 }
 
 impl ResolvedFillNode<'_> {
@@ -207,10 +262,12 @@ impl ResolvedFillNode<'_> {
     match self {
       Self::Solid(color) => *color,
       Self::Gradient { stops, style } => gradient(stops, style.at(p)),
-      Self::Image { picture, frame } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color(*frame, p, footprint)),
-      Self::Sprite { picture, min, size } => {
-        picture.map_or(Rgba([0, 0, 0, 0]), |picture| picture.color_within(0.0, *min, *size, p, footprint))
-      }
+      Self::Image { picture, frame } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
+        picture.color(*frame, p, footprint)
+      }),
+      Self::Sprite { picture, min, size } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
+        picture.color_within(0.0, *min, *size, p, footprint)
+      }),
     }
   }
 }
@@ -238,9 +295,9 @@ fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::scene::{Variables, Prop};
   use crate::scene::Transform;
   use crate::scene::value::tests::env;
+  use crate::scene::{Prop, Variables};
 
   const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
   const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
@@ -258,7 +315,9 @@ mod tests {
 
   fn color(fill: &Fill, x: f32, y: f32) -> Rgba<u8> {
     let variables = Variables::new();
-    fill.prepare(Vec2::ZERO, &env(0.0, &variables)).map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
+    fill
+      .prepare(Vec2::ZERO, &env(0.0, &variables))
+      .map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
   }
 
   #[test]
@@ -319,9 +378,19 @@ mod tests {
   fn a_fill_ignores_transforms_that_copy_or_cut_a_shape() {
     let center = || Prop::Fixed(Vec2::ZERO);
     let fill = red_to_blue()
-      .transform(Transform::Mirror { center: center(), rotation: 0.0.into() })
-      .transform(Transform::Revolve { center: center(), angle: 180.0.into(), count: 3.0.into() })
-      .transform(Transform::Bisect { center: center(), rotation: 0.0.into() });
+      .transform(Transform::Mirror {
+        center: center(),
+        rotation: 0.0.into(),
+      })
+      .transform(Transform::Revolve {
+        center: center(),
+        angle: 180.0.into(),
+        count: 3.0.into(),
+      })
+      .transform(Transform::Bisect {
+        center: center(),
+        rotation: 0.0.into(),
+      });
     assert_eq!(color(&fill, -0.5, 0.0), RED);
     assert_eq!(color(&fill, 0.5, 0.0), BLUE);
   }

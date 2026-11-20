@@ -299,13 +299,21 @@ fn ms(ms: u64) -> Duration {
 #[test]
 fn the_playfield_drivers_are_live_only_during_a_turn() {
   let mut g = Game::start();
-  let sling_live = |g: &Game| matches!(g.hardware().driver(SLING).unwrap().trigger, DriverTrigger::Automatic { .. });
+  let sling_live = |g: &Game| {
+    matches!(
+      g.hardware().driver(SLING).unwrap().trigger,
+      DriverTrigger::Automatic { .. }
+    )
+  };
   assert!(!sling_live(&g), "no game is being played");
 
   g.hit_switch(START);
   assert!(sling_live(&g), "the first turn has begun");
   // the pop is fired by the game (a ball search), not by a switch, so it's left alone
-  assert_eq!(g.hardware().driver(POP).unwrap().trigger, DriverTrigger::Off);
+  assert_eq!(
+    g.hardware().driver(POP).unwrap().trigger,
+    DriverTrigger::Off
+  );
 
   // A tilt ends the turn at once, while the ball is still rolling down
   g.serve();
@@ -768,7 +776,10 @@ fn a_ball_a_search_cant_find_is_replaced_and_the_turn_goes_on() {
   // Three rounds find nothing, so the ball is given up on and another put into play, without using up the turn
   g.advance(Duration::from_secs(27));
   assert_eq!(g.drop_resets(), 3);
-  assert!(failed.take().is_empty(), "the last round gets its pause too");
+  assert!(
+    failed.take().is_empty(),
+    "the last round gets its pause too"
+  );
   g.advance(Duration::from_secs(6));
   assert_eq!(failed.take(), [(3, 0)]);
   assert_eq!(g.ejects(), 2);
@@ -825,7 +836,11 @@ fn a_held_ball_being_released_puts_off_a_ball_search() {
   g.advance(Duration::from_secs(14));
   g.act(|ctx| ctx.set_balls_held(0));
   g.advance(Duration::from_secs(2));
-  assert_eq!(g.drop_resets(), 0, "it hasn't had the chance to hit a switch");
+  assert_eq!(
+    g.drop_resets(),
+    0,
+    "it hasn't had the chance to hit a switch"
+  );
   g.advance(Duration::from_secs(14));
   assert_eq!(g.drop_resets(), 1);
 }

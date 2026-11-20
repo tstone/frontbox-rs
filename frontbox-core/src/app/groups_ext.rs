@@ -67,7 +67,11 @@ impl GroupsExt for Groups {
   fn instances(&self, type_id: TypeId) -> Vec<SystemHandle> {
     self
       .iter()
-      .filter_map(|(key, group)| group.id_by_type_id(&type_id).map(|id| SystemHandle::new(id, *key)))
+      .filter_map(|(key, group)| {
+        group
+          .id_by_type_id(&type_id)
+          .map(|id| SystemHandle::new(id, *key))
+      })
       .collect()
   }
 

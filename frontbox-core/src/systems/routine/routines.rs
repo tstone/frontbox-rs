@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use super::{RoutineDefinition, RoutineStart};
 use crate::app::app_message::AppMessage;
-use crate::app::app_tracer::{RoutineSkipReason, TraceEvent, TracerSenders};
+use crate::app::app_tracer::{RoutineSkipReason, StepEnding, TraceEvent, TracerSenders};
 use crate::app::event_box::EventBox;
 use crate::app::run_loop::{apply_to_system, is_system_active};
 use crate::app::{Groups, GroupsExt};
@@ -125,7 +125,8 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
-    if self.end_step(caller, type_id, "step completion").is_some() {
+    if let Some(routine) = self.end_step(caller, type_id, "step completion") {
+      trace_step_ended(tracer_txs, routine.name, caller, StepEnding::Completed);
       self.advance(type_id, groups, base, app_sender, tracer_txs);
     }
   }
@@ -151,10 +152,10 @@ impl Routines {
       Self::describe(groups, caller)
     );
     routine.halted = true;
+    trace_step_ended(tracer_txs, routine.name, caller, StepEnding::Halted);
     tracer_txs.send(TraceEvent::RoutineHalted {
       routine: routine.name,
       participant: caller.id,
-
     });
     self.advance(type_id, groups, base, app_sender, tracer_txs);
   }
@@ -169,7 +170,11 @@ impl Routines {
     app_sender: &mpsc::UnboundedSender<AppMessage>,
     tracer_txs: &TracerSenders,
   ) {
-    let Some((&type_id, routine)) = self.running.iter().find(|(_, routine)| routine.id == routine_id) else {
+    let Some((&type_id, routine)) = self
+      .running
+      .iter()
+      .find(|(_, routine)| routine.id == routine_id)
+    else {
       log::debug!(
         target: "frontbox::routines",
         "Ignoring a cancel of routine {} from system {}: it isn't running",
@@ -191,11 +196,24 @@ impl Routines {
     }
 
     log::debug!(target: "frontbox::routines", "Routine {} cancelled", routine.name);
-    self.complete(type_id, RoutineCompletion::Cancelled, app_sender, tracer_txs);
+    if let Some(current) = routine.current {
+      trace_step_ended(tracer_txs, routine.name, current, StepEnding::Cancelled);
+    }
+    self.complete(
+      type_id,
+      RoutineCompletion::Cancelled,
+      app_sender,
+      tracer_txs,
+    );
   }
 
   /// Ends the caller's step, if it's the current participant of the routine
-  fn end_step(&mut self, caller: SystemHandle, type_id: TypeId, what: &str) -> Option<&mut RunningRoutine> {
+  fn end_step(
+    &mut self,
+    caller: SystemHandle,
+    type_id: TypeId,
+    what: &str,
+  ) -> Option<&mut RunningRoutine> {
     let Some(routine) = self.running.get_mut(&type_id) else {
       log::debug!(
         target: "frontbox::routines",
@@ -288,6 +306,7 @@ impl Routines {
           routine.name,
           current.id
         );
+        trace_step_ended(tracer_txs, routine.name, current, StepEnding::Stopped);
         routine.current = None;
         routine.step_ended = true;
       }
@@ -322,6 +341,9 @@ impl Routines {
             routine.name,
             routine.origin.id
           );
+          if let Some(current) = routine.current {
+            trace_step_ended(tracer_txs, routine.name, current, StepEnding::Abandoned);
+          }
           tracer_txs.send(TraceEvent::RoutineAbandoned {
             routine: routine.name,
             origin: routine.origin.id,
@@ -417,7 +439,6 @@ impl Routines {
       tracer_txs.send(TraceEvent::RoutineStep {
         routine: routine.name,
         participant: handle.id,
-
       });
 
       // completing only sends a message, so the participant can't re-enter the routine from here
@@ -489,6 +510,19 @@ impl Routines {
   pub(super) fn is_running(&self, type_id: TypeId) -> bool {
     self.running.contains_key(&type_id)
   }
+}
+
+fn trace_step_ended(
+  tracer_txs: &TracerSenders,
+  routine: &'static str,
+  participant: SystemHandle,
+  ending: StepEnding,
+) {
+  tracer_txs.send(TraceEvent::RoutineStepEnded {
+    routine,
+    participant: participant.id,
+    ending,
+  });
 }
 
 struct RunningRoutine {

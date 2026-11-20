@@ -3,6 +3,9 @@ import { createStore, produce, reconcile } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
+import type { HistoryEntry } from '../types/generated/HistoryEntry'
+import type { StepEnding } from '../types/generated/StepEnding'
+import type { System } from '../types/generated/System'
 import { shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
@@ -14,6 +17,10 @@ import { type Connection, connect, type ConnectionStatus } from './socket'
 /** How many trace records the log keeps. Mirrors the hub; LED color changes aren't logged. */
 const LOG_CAPACITY = 2500
 const RECENT_EVENTS_PER_SYSTEM = 10
+/** Mirrors the hub */
+const HISTORY_PER_SYSTEM = 300
+/** Despawned systems kept to look back at. Mirrors the hub */
+const DESPAWNED_KEPT = 50
 
 export type ConsoleState = Snapshot & {
   connection: ConnectionStatus
@@ -156,6 +163,9 @@ function markFired(id: number) {
  */
 function applyTrace(s: ConsoleState, record: TraceRecord) {
   const event = record.event
+  const at_ms = record.at_ms
+  // despawned systems are kept for a while, but nothing more happens to them
+  const running = (id: number) => s.systems.find((sys) => sys.id === id && sys.despawned_ms === null)
 
   if ('StateChange' in event) {
     const { name, value } = event.StateChange
@@ -164,16 +174,48 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     // not logged: the `StateChanged` event it comes with is
     return
   } else if ('SystemSpawned' in event) {
-    const { id, name, parent, active } = event.SystemSpawned
-    s.systems.push({ id, name, parent, active, recent_events: [] })
+    const { id, name, parent, active, group, description } = event.SystemSpawned
+    s.systems.push({
+      id,
+      name,
+      parent,
+      active,
+      group,
+      description,
+      spawned_ms: at_ms,
+      despawned_ms: null,
+      history: [{ kind: 'Spawned', at_ms, active }],
+      recent_events: [],
+    })
   } else if ('SystemDespawned' in event) {
     // its children are despawned with it, each traced on its own
-    const { id } = event.SystemDespawned
-    s.systems = s.systems.filter((sys) => sys.id !== id)
+    const { id, cause } = event.SystemDespawned
+    const sys = running(id)
+    if (sys) {
+      sys.despawned_ms = at_ms
+      sys.active = false
+      endOpenSteps(sys, at_ms, 'Stopped')
+      pushHistory(sys, { kind: 'Despawned', at_ms, cause })
+    }
+    forgetOldDespawned(s)
   } else if ('SystemActiveStateChange' in event) {
-    const { id, active } = event.SystemActiveStateChange
-    const sys = s.systems.find((sys) => sys.id === id)
-    if (sys) sys.active = active
+    const { id, active, cause } = event.SystemActiveStateChange
+    const sys = running(id)
+    if (sys) {
+      sys.active = active
+      pushHistory(sys, { kind: 'ActivityChanged', at_ms, seq: record.seq, active, cause })
+    }
+  } else if ('RoutineStepEnded' in event) {
+    const { routine, participant, ending } = event.RoutineStepEnded
+    const sys = s.systems.find((sys) => sys.id === participant)
+    const open = sys?.history.findLast(
+      (entry): entry is Extract<HistoryEntry, { kind: 'RoutineStep' }> =>
+        entry.kind === 'RoutineStep' && entry.routine === routine && entry.ended_ms === null,
+    )
+    if (open) {
+      open.ended_ms = at_ms
+      open.ending = ending
+    }
   } else if ('SwitchStateChange' in event) {
     const { switch_id, state } = event.SwitchStateChange
     s.switches[switch_id] = state
@@ -190,6 +232,8 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     const { routine, participant } = event.RoutineStep
     const progress = s.routines.find((r) => r.routine === routine)
     if (progress) progress.current = participant
+    const sys = running(participant)
+    if (sys) pushHistory(sys, { kind: 'RoutineStep', routine, started_ms: at_ms, ended_ms: null, ending: null })
   } else if ('RoutinePaused' in event || 'RoutineHalted' in event) {
     // paused once the step in progress is over, and a halt ends it, so no one holds it
     const { routine } = 'RoutinePaused' in event ? event.RoutinePaused : event.RoutineHalted
@@ -204,17 +248,43 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     // never sent as traces: the hub keeps LEDs and configs as current state and sends them as `Leds` and `Configs`
     return
   } else if (event.Event.sender !== null) {
-    const sender = event.Event.sender
-    const sys = s.systems.find((sys) => sys.id === sender)
+    const sys = running(event.Event.sender)
     if (sys) {
       sys.recent_events.push(record)
       if (sys.recent_events.length > RECENT_EVENTS_PER_SYSTEM) sys.recent_events.shift()
+      pushHistory(sys, { kind: 'Emitted', at_ms, seq: record.seq, event: event.Event.type_name })
     }
   }
 
   s.game = record.game
   s.log.push(record)
   if (s.log.length > LOG_CAPACITY) s.log.splice(0, s.log.length - LOG_CAPACITY)
+}
+
+function pushHistory(system: System, entry: HistoryEntry) {
+  system.history.push(entry)
+  if (system.history.length > HISTORY_PER_SYSTEM) system.history.shift()
+}
+
+/** Ends the routine steps the system still holds, as when it's despawned mid-step */
+function endOpenSteps(system: System, at_ms: number, how: StepEnding) {
+  for (const entry of system.history) {
+    if (entry.kind === 'RoutineStep' && entry.ended_ms === null) {
+      entry.ended_ms = at_ms
+      entry.ending = how
+    }
+  }
+}
+
+/** Drops the earliest despawned systems beyond the number kept, ties going by place in the list */
+function forgetOldDespawned(s: ConsoleState) {
+  const despawned = s.systems
+    .map((sys, index) => ({ at: sys.despawned_ms, index }))
+    .filter((d): d is { at: number; index: number } => d.at !== null)
+  if (despawned.length <= DESPAWNED_KEPT) return
+  despawned.sort((a, b) => a.at - b.at || a.index - b.index)
+  const dropped = new Set(despawned.slice(0, despawned.length - DESPAWNED_KEPT).map((d) => d.index))
+  s.systems = s.systems.filter((_, index) => !dropped.has(index))
 }
 
 /**

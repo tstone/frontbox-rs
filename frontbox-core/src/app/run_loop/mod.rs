@@ -35,8 +35,12 @@ use crate::systems::SystemContainer;
 use crate::systems::routine::Routines;
 use crate::systems::state::{clear_states_owned_by, set_state};
 
-pub(crate) use delivery::{apply_to_system, apply_to_systems, emit_event_to_origin, emit_event_to_others, is_system_active};
 use delivery::cascade_activity;
+use delivery::delivering;
+pub(crate) use delivery::{
+  apply_to_system, apply_to_systems, current_delivery, emit_event_to_origin, emit_event_to_others,
+  is_system_active,
+};
 
 use delivery::emit_activity_changed;
 use timing::{spawn_system_ticker, tick_delta};
@@ -88,14 +92,24 @@ impl RunLoop {
     routines: Routines,
   ) {
     let tracers = TracerSenders::new(app_tracers.iter().map(|tracer| tracer.sender()).collect());
-    let mut run_loop = Self::new(base, app_sender.clone(), tracers, routines, machine_system_id);
+    let mut run_loop = Self::new(
+      base,
+      app_sender.clone(),
+      tracers,
+      routines,
+      machine_system_id,
+    );
 
     for system in initial_systems {
       run_loop.spawn_system(system, None);
     }
 
     let (tick_tx, mut tick_rx) = watch::channel(());
-    spawn_system_ticker(run_loop.base.system_interval, tick_tx, run_loop.resync.clone());
+    spawn_system_ticker(
+      run_loop.base.system_interval,
+      tick_tx,
+      run_loop.resync.clone(),
+    );
     run_loop.trace_configs();
 
     // listen for ctrl-c to trigger shutdown
@@ -164,10 +178,24 @@ impl RunLoop {
         self.emit_event(sender, event_box);
       }
       AppMessage::EmitEventOriginFirst(origin, event_box) => {
-        emit_event_to_origin(origin, event_box, &self.groups, &self.base, &self.app_sender, &self.tracers);
+        emit_event_to_origin(
+          origin,
+          event_box,
+          &self.groups,
+          &self.base,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::EmitEventToOthers(handled_by, event_box) => {
-        emit_event_to_others(handled_by, event_box, &self.groups, &self.base, &self.app_sender, &self.tracers);
+        emit_event_to_others(
+          handled_by,
+          event_box,
+          &self.groups,
+          &self.base,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::SwitchStateChange(id, state) => {
         self.switch_state_changed(Some(self.machine_system_id), id, state);
@@ -176,12 +204,18 @@ impl RunLoop {
         self.base.switches.update_switch_states(switch_states);
       }
       AppMessage::MachineDisconnected => {
-        self.emit_event(Some(self.machine_system_id), EventBox::new(MachineDisconnected));
+        self.emit_event(
+          Some(self.machine_system_id),
+          EventBox::new(MachineDisconnected),
+        );
       }
       AppMessage::MachineReconnected(switch_states) => {
         // switches that changed while disconnected are taken as they are now, without events for the changes
         self.base.switches.update_switch_states(switch_states);
-        self.emit_event(Some(self.machine_system_id), EventBox::new(MachineReconnected));
+        self.emit_event(
+          Some(self.machine_system_id),
+          EventBox::new(MachineReconnected),
+        );
       }
       AppMessage::ConfigChanged(key) => {
         self.base.config.save();
@@ -189,7 +223,9 @@ impl RunLoop {
       }
       AppMessage::DriverModeChange(driver_id, mode) => {
         self.base.drivers.set_mode(driver_id, mode.clone());
-        self.tracers.send(TraceEvent::DriverModeChange { driver_id, mode });
+        self
+          .tracers
+          .send(TraceEvent::DriverModeChange { driver_id, mode });
       }
       AppMessage::Shutdown(scope) => {
         log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
@@ -209,7 +245,7 @@ impl RunLoop {
         self.activation_changed(&despawned);
       }
       AppMessage::DespawnSystem(handle) => {
-        let despawned = self.despawn_system(handle);
+        let despawned = self.despawn_system(handle, DespawnCause::Itself);
         self.activation_changed(&despawned);
       }
       AppMessage::ActivateChild(parent, child) => {
@@ -226,7 +262,7 @@ impl RunLoop {
       }
       AppMessage::DespawnChild(parent, child) => {
         if let Some(child) = self.child_of(parent, child, "despawn") {
-          let despawned = self.despawn_system(child);
+          let despawned = self.despawn_system(child, DespawnCause::Parent { id: parent.id });
           self.activation_changed(&despawned);
         }
       }
@@ -248,22 +284,52 @@ impl RunLoop {
         }
       }
       AppMessage::CancelRoutine(handle, routine_id) => {
-        self.routines.cancel(handle, routine_id, &self.groups, &self.app_sender, &self.tracers);
+        self.routines.cancel(
+          handle,
+          routine_id,
+          &self.groups,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::BeginRoutine(type_id) => {
-        self.routines.begin(type_id, &self.groups, &self.base, &self.app_sender, &self.tracers);
+        self.routines.begin(
+          type_id,
+          &self.groups,
+          &self.base,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::CompleteRoutineStep(handle, type_id) => {
-        self.routines.complete_step(handle, type_id, &self.groups, &self.base, &self.app_sender, &self.tracers);
+        self.routines.complete_step(
+          handle,
+          type_id,
+          &self.groups,
+          &self.base,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::HaltRoutine(handle, type_id) => {
-        self.routines.halt(handle, type_id, &self.groups, &self.base, &self.app_sender, &self.tracers);
+        self.routines.halt(
+          handle,
+          type_id,
+          &self.groups,
+          &self.base,
+          &self.app_sender,
+          &self.tracers,
+        );
       }
       AppMessage::SystemActivityChanged(handle) => {
         self.activation_changed(&[handle]);
       }
       AppMessage::SetState(state) => {
-        let (owner, name, value) = (state.owner, state.name, (state.to_json)(state.value.as_ref()));
+        let (owner, name, value) = (
+          state.owner,
+          state.name,
+          (state.to_json)(state.value.as_ref()),
+        );
         if let Some(changed) = set_state(&mut self.groups, state) {
           self.tracers.send(TraceEvent::StateChange {
             name,
@@ -283,7 +349,12 @@ impl RunLoop {
   fn handle_tracer_control(&mut self, command: TracerControlEvent) {
     match command {
       TracerControlEvent::OpenSwitch { switch_id } => {
-        if self.base.switches.is_closed_by_id(switch_id).unwrap_or(false) {
+        if self
+          .base
+          .switches
+          .is_closed_by_id(switch_id)
+          .unwrap_or(false)
+        {
           log::warn!(target: "frontbox::console", "Tracer forcibly opening switch {switch_id}...");
           self.switch_state_changed(None, switch_id, SwitchState::Open);
         }
@@ -297,12 +368,27 @@ impl RunLoop {
       TracerControlEvent::SetConfig { key, value } => {
         // saved, emitted and applied to hardware through `AppMessage::ConfigChanged`, like a menu edit
         match self.base.config.set_by_key(&key, value) {
-          Ok(()) => log::info!(target: "frontbox::console", "Tracer set config '{key}' to {value:?}"),
+          Ok(()) => {
+            log::info!(target: "frontbox::console", "Tracer set config '{key}' to {value:?}")
+          }
           Err(err) => log::warn!(target: "frontbox::console", "Tracer couldn't set config: {err}"),
         }
       }
-      TracerControlEvent::PlaySound { sound, volume, skip, length } => {
-        self.emit_event(None, EventBox::new(SoundPreviewRequested { sound, volume, skip, length }));
+      TracerControlEvent::PlaySound {
+        sound,
+        volume,
+        skip,
+        length,
+      } => {
+        self.emit_event(
+          None,
+          EventBox::new(SoundPreviewRequested {
+            sound,
+            volume,
+            skip,
+            length,
+          }),
+        );
       }
     }
   }
@@ -343,9 +429,13 @@ impl RunLoop {
 
   /// Tell routines that these systems were despawned or may have changed activity
   fn activation_changed(&mut self, handles: &[SystemHandle]) {
-    self
-      .routines
-      .system_activation_changed(handles, &self.groups, &self.base, &self.app_sender, &self.tracers);
+    self.routines.system_activation_changed(
+      handles,
+      &self.groups,
+      &self.base,
+      &self.app_sender,
+      &self.tracers,
+    );
   }
 
   /// Tells tracers every config in use. Hardware configs are all known at boot, so they're listed even if nothing has

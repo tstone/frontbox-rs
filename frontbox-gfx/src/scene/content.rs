@@ -1,6 +1,8 @@
 use image::codecs::gif::GifDecoder;
 use image::error::{LimitError, LimitErrorKind};
-use image::{AnimationDecoder, ImageDecoder, ImageError, ImageFormat, ImageReader, ImageResult, Limits};
+use image::{
+  AnimationDecoder, ImageDecoder, ImageError, ImageFormat, ImageReader, ImageResult, Limits,
+};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
@@ -64,19 +66,32 @@ pub struct Content {
 
 impl Content {
   pub fn new(root: impl Into<PathBuf>) -> Self {
-    Self { root: Some(root.into()), ..Self::without_folder() }
+    Self {
+      root: Some(root.into()),
+      ..Self::without_folder()
+    }
   }
 
   /// For an app without a content folder
   pub fn without_folder() -> Self {
-    Self { root: None, decoded: Arc::default(), fonts: Arc::default(), bundled_fonts: Arc::default(), bundled_scenes: Arc::default() }
+    Self {
+      root: None,
+      decoded: Arc::default(),
+      fonts: Arc::default(),
+      bundled_fonts: Arc::default(),
+      bundled_scenes: Arc::default(),
+    }
   }
 
   /// Adds fonts that aren't in the folder, such as those a crate comes with. A name given here is used before a file
   /// of the same name, so give them names without an extension, which a file in the folder can't have.
   pub fn with_fonts<'a>(mut self, fonts: impl IntoIterator<Item = (&'a str, Font)>) -> Self {
     let mut bundled = (*self.bundled_fonts).clone();
-    bundled.extend(fonts.into_iter().map(|(name, font)| (name.to_owned(), font)));
+    bundled.extend(
+      fonts
+        .into_iter()
+        .map(|(name, font)| (name.to_owned(), font)),
+    );
     self.bundled_fonts = Arc::new(bundled);
     self
   }
@@ -103,7 +118,12 @@ impl Content {
 
   /// Every font name, sorted: those from [`Self::with_fonts`], and those in the folder
   pub fn font_names(&self) -> Vec<String> {
-    let mut names: Vec<String> = self.bundled_fonts.keys().cloned().chain(self.names(is_font_name)).collect();
+    let mut names: Vec<String> = self
+      .bundled_fonts
+      .keys()
+      .cloned()
+      .chain(self.names(is_font_name))
+      .collect();
     names.sort();
     names
   }
@@ -115,7 +135,12 @@ impl Content {
 
   /// Every scene name, sorted: those in the folder, and those from [`Self::with_scenes`]
   pub fn scene_names(&self) -> Vec<String> {
-    let mut names: Vec<String> = self.bundled_scenes.keys().cloned().chain(self.names(is_scene_name)).collect();
+    let mut names: Vec<String> = self
+      .bundled_scenes
+      .keys()
+      .cloned()
+      .chain(self.names(is_scene_name))
+      .collect();
     names.sort();
     names.dedup();
     names
@@ -163,17 +188,37 @@ impl Content {
       Ok(stamp) => stamp,
       Err(error) => {
         self.decoded.lock().unwrap().remove(name);
-        return Err(ContentError::Read { name: name.into(), error });
+        return Err(ContentError::Read {
+          name: name.into(),
+          error,
+        });
       }
     };
-    if let Some(decoded) = self.decoded.lock().unwrap().get(name).filter(|decoded| decoded.stamp == stamp) {
+    if let Some(decoded) = self
+      .decoded
+      .lock()
+      .unwrap()
+      .get(name)
+      .filter(|decoded| decoded.stamp == stamp)
+    {
       return Ok(decoded.picture.clone());
     }
 
-    let bytes = fs::read(&path).map_err(|error| ContentError::Read { name: name.into(), error })?;
+    let bytes = fs::read(&path).map_err(|error| ContentError::Read {
+      name: name.into(),
+      error,
+    })?;
     let picture = Arc::new(decode(name, &bytes)?);
-    let decoded = Decoded { stamp, picture: picture.clone() };
-    keep(&mut self.decoded.lock().unwrap(), name, decoded, MAX_DECODED_BYTES);
+    let decoded = Decoded {
+      stamp,
+      picture: picture.clone(),
+    };
+    keep(
+      &mut self.decoded.lock().unwrap(),
+      name,
+      decoded,
+      MAX_DECODED_BYTES,
+    );
     Ok(picture)
   }
 
@@ -187,7 +232,10 @@ impl Content {
       return Err(ContentError::BadFontName(name.into()));
     }
     let path = self.file(name).ok_or(ContentError::NoFolder)?;
-    let read = |error| ContentError::ReadFont { name: name.into(), error };
+    let read = |error| ContentError::ReadFont {
+      name: name.into(),
+      error,
+    };
     let stamp = match stamp(&path) {
       Ok(stamp) => stamp,
       Err(error) => {
@@ -195,20 +243,37 @@ impl Content {
         return Err(read(error));
       }
     };
-    if let Some((_, font)) = self.fonts.lock().unwrap().get(name).filter(|(loaded, _)| *loaded == stamp) {
+    if let Some((_, font)) = self
+      .fonts
+      .lock()
+      .unwrap()
+      .get(name)
+      .filter(|(loaded, _)| *loaded == stamp)
+    {
       return Ok(font.clone());
     }
-    let font = Font::new(fs::read(&path).map_err(read)?).map_err(|_| ContentError::NotAFont(name.into()))?;
-    self.fonts.lock().unwrap().insert(name.into(), (stamp, font.clone()));
+    let font =
+      Font::new(fs::read(&path).map_err(read)?).map_err(|_| ContentError::NotAFont(name.into()))?;
+    self
+      .fonts
+      .lock()
+      .unwrap()
+      .insert(name.into(), (stamp, font.clone()));
     Ok(font)
   }
 
   /// Loads every image and font a scene's layers use, given in the scene's order. A missing one is an error here,
   /// rather than a layer silently drawing nothing.
-  pub fn assets_for<'a>(&self, layers: impl IntoIterator<Item = &'a Layer>) -> Result<Assets, LayerAssetError> {
+  pub fn assets_for<'a>(
+    &self,
+    layers: impl IntoIterator<Item = &'a Layer>,
+  ) -> Result<Assets, LayerAssetError> {
     let mut assets = Assets::new();
     for (index, layer) in layers.into_iter().enumerate() {
-      let failed = |error| LayerAssetError { layer: layer.label(index), error };
+      let failed = |error| LayerAssetError {
+        layer: layer.label(index),
+        error,
+      };
       for name in layer.image_names() {
         assets.insert_picture(name, self.picture(name).map_err(failed)?);
       }
@@ -226,7 +291,10 @@ impl Content {
 
     write_new(&path, bytes).map_err(|error| match error.kind() {
       io::ErrorKind::AlreadyExists => ContentError::Taken(name.into()),
-      _ => ContentError::Write { name: name.into(), error },
+      _ => ContentError::Write {
+        name: name.into(),
+        error,
+      },
     })
   }
 
@@ -250,7 +318,10 @@ impl Content {
     match (fs::read_to_string(path), bundled) {
       (Ok(source), _) => Ok(source),
       (Err(error), Some(source)) if error.kind() == io::ErrorKind::NotFound => Ok(source.clone()),
-      (Err(error), _) => Err(SceneFileError::Read { name: name.into(), error }),
+      (Err(error), _) => Err(SceneFileError::Read {
+        name: name.into(),
+        error,
+      }),
     }
   }
 
@@ -260,7 +331,10 @@ impl Content {
 
     write_new(&path, source.as_bytes()).map_err(|error| match error.kind() {
       io::ErrorKind::AlreadyExists => SceneFileError::Taken(name.into()),
-      _ => SceneFileError::Write { name: name.into(), error },
+      _ => SceneFileError::Write {
+        name: name.into(),
+        error,
+      },
     })
   }
 
@@ -272,14 +346,20 @@ impl Content {
     let saving = path.with_extension("scene.saving");
     replace(&path, &saving, source.as_bytes()).map_err(|error| {
       let _ = fs::remove_file(&saving);
-      SceneFileError::Write { name: name.into(), error }
+      SceneFileError::Write {
+        name: name.into(),
+        error,
+      }
     })
   }
 
   /// Deletes a scene file. Its parent folders are left, even if empty.
   pub fn delete_scene(&self, name: &str) -> Result<(), SceneFileError> {
     let path = self.scene_path(name)?;
-    fs::remove_file(path).map_err(|error| SceneFileError::Delete { name: name.into(), error })
+    fs::remove_file(path).map_err(|error| SceneFileError::Delete {
+      name: name.into(),
+      error,
+    })
   }
 }
 
@@ -303,7 +383,11 @@ fn stamp(path: &Path) -> io::Result<Stamp> {
 /// anything still holding them.
 fn keep(decoded: &mut HashMap<String, Decoded>, name: &str, added: Decoded, limit: u64) {
   decoded.remove(name);
-  let total = decoded.values().map(|decoded| decoded.picture.bytes()).sum::<u64>() + added.picture.bytes();
+  let total = decoded
+    .values()
+    .map(|decoded| decoded.picture.bytes())
+    .sum::<u64>()
+    + added.picture.bytes();
   if total > limit {
     decoded.clear();
   }
@@ -318,29 +402,47 @@ pub enum ContentError {
   /// Not a valid image path inside the folder
   BadName(String),
   /// Couldn't read the file, including when it doesn't exist
-  Read { name: String, error: io::Error },
-  Decode { name: String, error: image::ImageError },
+  Read {
+    name: String,
+    error: io::Error,
+  },
+  Decode {
+    name: String,
+    error: image::ImageError,
+  },
   /// Not a valid font path inside the folder
   BadFontName(String),
   /// Couldn't read a font's file, including when it doesn't exist
-  ReadFont { name: String, error: io::Error },
+  ReadFont {
+    name: String,
+    error: io::Error,
+  },
   NotAFont(String),
   /// An image by this name already exists
   Taken(String),
-  Write { name: String, error: io::Error },
+  Write {
+    name: String,
+    error: io::Error,
+  },
 }
 
 impl fmt::Display for ContentError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::NoFolder => f.write_str(NO_FOLDER),
-      Self::BadName(name) => write!(f, "\"{name}\" isn't the name of an image in the content folder"),
+      Self::BadName(name) => write!(
+        f,
+        "\"{name}\" isn't the name of an image in the content folder"
+      ),
       Self::Read { name, error } if error.kind() == io::ErrorKind::NotFound => {
         write!(f, "there's no image \"{name}\" in the content folder")
       }
       Self::Read { name, error } => write!(f, "couldn't read image \"{name}\": {error}"),
       Self::Decode { name, error } => write!(f, "couldn't decode image \"{name}\": {error}"),
-      Self::BadFontName(name) => write!(f, "\"{name}\" isn't the name of a font in the content folder"),
+      Self::BadFontName(name) => write!(
+        f,
+        "\"{name}\" isn't the name of a font in the content folder"
+      ),
       Self::ReadFont { name, error } if error.kind() == io::ErrorKind::NotFound => {
         write!(f, "there's no font \"{name}\" in the content folder")
       }
@@ -377,20 +479,34 @@ pub enum SceneFileError {
   /// Not a valid scene path inside the folder
   BadName(String),
   /// Couldn't read the file, including when it doesn't exist
-  Read { name: String, error: io::Error },
+  Read {
+    name: String,
+    error: io::Error,
+  },
   /// A scene by this name already exists
   Taken(String),
-  Write { name: String, error: io::Error },
+  Write {
+    name: String,
+    error: io::Error,
+  },
   /// Couldn't delete the file, including when it doesn't exist
-  Delete { name: String, error: io::Error },
+  Delete {
+    name: String,
+    error: io::Error,
+  },
 }
 
 impl fmt::Display for SceneFileError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
       Self::NoFolder => f.write_str(NO_FOLDER),
-      Self::BadName(name) => write!(f, "\"{name}\" isn't the name of a scene in the content folder"),
-      Self::Read { name, error } | Self::Delete { name, error } if error.kind() == io::ErrorKind::NotFound => {
+      Self::BadName(name) => write!(
+        f,
+        "\"{name}\" isn't the name of a scene in the content folder"
+      ),
+      Self::Read { name, error } | Self::Delete { name, error }
+        if error.kind() == io::ErrorKind::NotFound =>
+      {
         write!(f, "there's no scene \"{name}\" in the content folder")
       }
       Self::Read { name, error } => write!(f, "couldn't read scene \"{name}\": {error}"),
@@ -422,15 +538,18 @@ fn scan(folder: &Path, prefix: &str, wanted: fn(&str) -> bool, names: &mut Vec<S
 }
 
 fn is_image_name(name: &str) -> bool {
-  is_inside(name) && extension(name).is_some_and(|extension| IMAGE_EXTENSIONS.contains(&extension.as_str()))
+  is_inside(name)
+    && extension(name).is_some_and(|extension| IMAGE_EXTENSIONS.contains(&extension.as_str()))
 }
 
 fn is_font_name(name: &str) -> bool {
-  is_inside(name) && extension(name).is_some_and(|extension| FONT_EXTENSIONS.contains(&extension.as_str()))
+  is_inside(name)
+    && extension(name).is_some_and(|extension| FONT_EXTENSIONS.contains(&extension.as_str()))
 }
 
 fn is_sound_name(name: &str) -> bool {
-  is_inside(name) && extension(name).is_some_and(|extension| SOUND_EXTENSIONS.contains(&extension.as_str()))
+  is_inside(name)
+    && extension(name).is_some_and(|extension| SOUND_EXTENSIONS.contains(&extension.as_str()))
 }
 
 fn is_scene_name(name: &str) -> bool {
@@ -440,12 +559,15 @@ fn is_scene_name(name: &str) -> bool {
 /// Whether a name is a relative, `/`-separated path that can't escape the folder on any OS. Names come from scene files,
 /// which anyone with console access can write, so they're untrusted.
 fn is_inside(name: &str) -> bool {
-  let safe = |part: &str| !part.is_empty() && part != "." && part != ".." && !part.contains(['\\', ':']);
+  let safe =
+    |part: &str| !part.is_empty() && part != "." && part != ".." && !part.contains(['\\', ':']);
   name.split('/').all(safe)
 }
 
 fn extension(name: &str) -> Option<String> {
-  name.rsplit_once('.').map(|(_, extension)| extension.to_ascii_lowercase())
+  name
+    .rsplit_once('.')
+    .map(|(_, extension)| extension.to_ascii_lowercase())
 }
 
 /// Creates a new file, failing if it exists, along with any missing parent folders. Removes the file if the write fails.
@@ -453,7 +575,10 @@ fn write_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
   if let Some(folder) = path.parent() {
     fs::create_dir_all(folder)?;
   }
-  let mut file = fs::OpenOptions::new().write(true).create_new(true).open(path)?;
+  let mut file = fs::OpenOptions::new()
+    .write(true)
+    .create_new(true)
+    .open(path)?;
   file.write_all(bytes).inspect_err(|_| {
     let _ = fs::remove_file(path);
   })
@@ -469,7 +594,10 @@ fn replace(path: &Path, saving: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 fn decode(name: &str, bytes: &[u8]) -> Result<Picture, ContentError> {
-  let failed = |error| ContentError::Decode { name: name.into(), error };
+  let failed = |error| ContentError::Decode {
+    name: name.into(),
+    error,
+  };
   let mut limits = Limits::default();
   limits.max_image_width = Some(MAX_IMAGE_SIDE);
   limits.max_image_height = Some(MAX_IMAGE_SIDE);
@@ -481,7 +609,10 @@ fn decode(name: &str, bytes: &[u8]) -> Result<Picture, ContentError> {
     return gif(bytes, limits).map_err(failed);
   }
   reader.limits(limits);
-  reader.decode().map(|image| Picture::new(image.into_rgba8())).map_err(failed)
+  reader
+    .decode()
+    .map(|image| Picture::new(image.into_rgba8()))
+    .map_err(failed)
 }
 
 /// Decodes a GIF frame by frame, stopping as soon as it passes a limit
@@ -498,7 +629,9 @@ fn gif(bytes: &[u8], limits: Limits) -> ImageResult<Picture> {
     let image = frame.into_buffer();
     total += image.as_raw().len() as u64;
     if frames.len() == MAX_FRAMES || total > MAX_DECODED_BYTES {
-      return Err(ImageError::Limits(LimitError::from_kind(LimitErrorKind::InsufficientMemory)));
+      return Err(ImageError::Limits(LimitError::from_kind(
+        LimitErrorKind::InsufficientMemory,
+      )));
     }
     frames.push(image);
   }
@@ -545,7 +678,9 @@ mod tests {
 
   fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = Cursor::new(Vec::new());
-    RgbaImage::from_pixel(width, height, RED).write_to(&mut bytes, ImageFormat::Png).unwrap();
+    RgbaImage::from_pixel(width, height, RED)
+      .write_to(&mut bytes, ImageFormat::Png)
+      .unwrap();
     bytes.into_inner()
   }
 
@@ -589,16 +724,28 @@ mod tests {
     folder.write("notes.txt", b"");
 
     let content = Content::new(&folder.0);
-    assert_eq!(content.sound_names(), ["sounds/callouts/Jackpot.WAV", "sounds/hit.mp3"]);
-    assert!(matches!(content.sound_path("../hit.mp3"), Err(ContentError::BadName(_))));
-    assert!(matches!(content.sound_path("title.png"), Err(ContentError::BadName(_))));
+    assert_eq!(
+      content.sound_names(),
+      ["sounds/callouts/Jackpot.WAV", "sounds/hit.mp3"]
+    );
+    assert!(matches!(
+      content.sound_path("../hit.mp3"),
+      Err(ContentError::BadName(_))
+    ));
+    assert!(matches!(
+      content.sound_path("title.png"),
+      Err(ContentError::BadName(_))
+    ));
   }
 
   #[test]
   fn a_folder_that_is_not_there_has_no_images() {
     let content = Content::new("there/is/no/such/folder");
     assert!(content.image_names().is_empty());
-    assert!(matches!(content.picture("a.png"), Err(ContentError::Read { .. })));
+    assert!(matches!(
+      content.picture("a.png"),
+      Err(ContentError::Read { .. })
+    ));
   }
 
   #[test]
@@ -614,13 +761,19 @@ mod tests {
       "a//b.png",
       "",
     ] {
-      assert!(matches!(content.image_path(name), Err(ContentError::BadName(_))), "{name}");
+      assert!(
+        matches!(content.image_path(name), Err(ContentError::BadName(_))),
+        "{name}"
+      );
     }
   }
 
   #[test]
   fn only_images_can_be_named() {
-    assert!(matches!(Content::new("root").image_path("attract.scene"), Err(ContentError::BadName(_))));
+    assert!(matches!(
+      Content::new("root").image_path("attract.scene"),
+      Err(ContentError::BadName(_))
+    ));
     assert!(Content::new("root").image_path("dmd/A.PNG").is_ok());
   }
 
@@ -630,7 +783,9 @@ mod tests {
     folder.write("dmd/a.png", &png(3, 2));
     folder.write("unused.png", &png(1, 1));
 
-    let images = Content::new(&folder.0).assets_for(&drawing("dmd/a.png")).unwrap();
+    let images = Content::new(&folder.0)
+      .assets_for(&drawing("dmd/a.png"))
+      .unwrap();
     assert_eq!(images.picture("dmd/a.png").unwrap().width(), 3);
     assert!(images.picture("unused.png").is_none());
   }
@@ -638,7 +793,9 @@ mod tests {
   #[test]
   fn a_scene_naming_a_missing_image_says_which() {
     let folder = Folder::new();
-    let error = Content::new(&folder.0).assets_for(&drawing("logo.png")).unwrap_err();
+    let error = Content::new(&folder.0)
+      .assets_for(&drawing("logo.png"))
+      .unwrap_err();
     assert!(error.to_string().contains("logo.png"), "{error}");
   }
 
@@ -646,11 +803,20 @@ mod tests {
   fn a_missing_image_is_blamed_on_the_layer_that_draws_it() {
     let folder = Folder::new();
     let mut scene = drawing("logo.png");
-    assert_eq!(Content::new(&folder.0).assets_for(&scene).unwrap_err().layer, "layer 1");
+    assert_eq!(
+      Content::new(&folder.0)
+        .assets_for(&scene)
+        .unwrap_err()
+        .layer,
+      "layer 1"
+    );
 
     scene[0].name = Some("title".into());
     let error = Content::new(&folder.0).assets_for(&scene).unwrap_err();
-    assert_eq!(error.to_string(), "layer \"title\": there's no image \"logo.png\" in the content folder");
+    assert_eq!(
+      error.to_string(),
+      "layer \"title\": there's no image \"logo.png\" in the content folder"
+    );
   }
 
   const PIXEL_FONT: &[u8] = include_bytes!("../../tests/fonts/LCDBlock.ttf");
@@ -666,7 +832,10 @@ mod tests {
     folder.write("fonts/pixel.ttf", PIXEL_FONT);
     folder.write("fonts/Other.OTF", PIXEL_FONT);
     folder.write("fonts/readme.txt", b"");
-    assert_eq!(Content::new(&folder.0).font_names(), ["fonts/Other.OTF", "fonts/pixel.ttf"]);
+    assert_eq!(
+      Content::new(&folder.0).font_names(),
+      ["fonts/Other.OTF", "fonts/pixel.ttf"]
+    );
   }
 
   #[test]
@@ -674,7 +843,9 @@ mod tests {
     let folder = Folder::new();
     folder.write("a.png", &png(1, 1));
     folder.write("fonts/pixel.ttf", PIXEL_FONT);
-    let assets = Content::new(&folder.0).assets_for(&writing("fonts/pixel.ttf")).unwrap();
+    let assets = Content::new(&folder.0)
+      .assets_for(&writing("fonts/pixel.ttf"))
+      .unwrap();
     assert!(assets.font("fonts/pixel.ttf").is_some());
     assert!(assets.picture("a.png").is_some());
   }
@@ -683,9 +854,17 @@ mod tests {
   fn a_missing_font_is_blamed_on_the_layer_that_writes_in_it() {
     let folder = Folder::new();
     folder.write("a.png", &png(1, 1));
-    let error = Content::new(&folder.0).assets_for(&writing("fonts/pixel.ttf")).unwrap_err();
-    assert_eq!(error.to_string(), "layer 1: there's no font \"fonts/pixel.ttf\" in the content folder");
-    assert!(matches!(Content::new(&folder.0).font("pixel.png"), Err(ContentError::BadFontName(_))));
+    let error = Content::new(&folder.0)
+      .assets_for(&writing("fonts/pixel.ttf"))
+      .unwrap_err();
+    assert_eq!(
+      error.to_string(),
+      "layer 1: there's no font \"fonts/pixel.ttf\" in the content folder"
+    );
+    assert!(matches!(
+      Content::new(&folder.0).font("pixel.png"),
+      Err(ContentError::BadFontName(_))
+    ));
   }
 
   #[test]
@@ -693,11 +872,16 @@ mod tests {
     let folder = Folder::new();
     folder.write("fonts/pixel.ttf", PIXEL_FONT);
     let pixel = Font::new(PIXEL_FONT.to_vec()).unwrap();
-    let content = Content::new(&folder.0).with_fonts([("Pixel", pixel.clone())]).with_fonts([("Other", pixel)]);
+    let content = Content::new(&folder.0)
+      .with_fonts([("Pixel", pixel.clone())])
+      .with_fonts([("Other", pixel)]);
     assert_eq!(content.font_names(), ["Other", "Pixel", "fonts/pixel.ttf"]);
     assert!(content.font("Pixel").is_ok());
     assert!(content.clone().font("Other").is_ok());
-    assert!(matches!(content.font("Missing"), Err(ContentError::BadFontName(_))));
+    assert!(matches!(
+      content.font("Missing"),
+      Err(ContentError::BadFontName(_))
+    ));
   }
 
   #[test]
@@ -707,17 +891,32 @@ mod tests {
     assert_eq!(content.font_names(), ["Pixel"]);
     assert!(content.font("Pixel").is_ok());
     assert!(content.image_names().is_empty() && content.scene_names().is_empty());
-    assert!(matches!(content.font("fonts/pixel.ttf"), Err(ContentError::NoFolder)));
-    assert!(matches!(content.picture("a.png"), Err(ContentError::NoFolder)));
-    assert!(matches!(content.add_scene("a.scene", ""), Err(SceneFileError::NoFolder)));
-    assert_eq!(content.read_scene("a.scene").unwrap_err().to_string(), "the app has no content folder");
+    assert!(matches!(
+      content.font("fonts/pixel.ttf"),
+      Err(ContentError::NoFolder)
+    ));
+    assert!(matches!(
+      content.picture("a.png"),
+      Err(ContentError::NoFolder)
+    ));
+    assert!(matches!(
+      content.add_scene("a.scene", ""),
+      Err(SceneFileError::NoFolder)
+    ));
+    assert_eq!(
+      content.read_scene("a.scene").unwrap_err().to_string(),
+      "the app has no content folder"
+    );
   }
 
   #[test]
   fn a_file_that_is_not_a_font_says_which() {
     let folder = Folder::new();
     folder.write("a.ttf", b"not a font");
-    assert!(matches!(Content::new(&folder.0).font("a.ttf"), Err(ContentError::NotAFont(_))));
+    assert!(matches!(
+      Content::new(&folder.0).font("a.ttf"),
+      Err(ContentError::NotAFont(_))
+    ));
   }
 
   #[test]
@@ -727,7 +926,10 @@ mod tests {
     let content = Content::new(&folder.0);
     assert!(content.font("a.ttf").is_ok());
     folder.write("a.ttf", b"not a font now");
-    assert!(matches!(content.font("a.ttf"), Err(ContentError::NotAFont(_))));
+    assert!(matches!(
+      content.font("a.ttf"),
+      Err(ContentError::NotAFont(_))
+    ));
   }
 
   #[test]
@@ -767,7 +969,10 @@ mod tests {
     folder.write("a.png", &png(2, 2));
     let content = Content::new(&folder.0);
 
-    assert!(matches!(content.add_image("a.png", &png(9, 9)), Err(ContentError::Taken(_))));
+    assert!(matches!(
+      content.add_image("a.png", &png(9, 9)),
+      Err(ContentError::Taken(_))
+    ));
     assert_eq!(content.picture("a.png").unwrap().width(), 2);
   }
 
@@ -775,8 +980,14 @@ mod tests {
   fn only_a_real_image_can_be_added() {
     let folder = Folder::new();
     let content = Content::new(&folder.0);
-    assert!(matches!(content.add_image("a.png", b"not a png"), Err(ContentError::Decode { .. })));
-    assert!(matches!(content.add_image("../a.png", &png(1, 1)), Err(ContentError::BadName(_))));
+    assert!(matches!(
+      content.add_image("a.png", b"not a png"),
+      Err(ContentError::Decode { .. })
+    ));
+    assert!(matches!(
+      content.add_image("../a.png", &png(1, 1)),
+      Err(ContentError::BadName(_))
+    ));
     assert!(content.image_names().is_empty());
   }
 
@@ -786,8 +997,15 @@ mod tests {
     folder.write("a.gif", &gif_of([RED, BLUE, RED]));
     let picture = Content::new(&folder.0).picture("a.gif").unwrap();
 
-    assert_eq!((picture.frames(), picture.width(), picture.height()), (3, 2, 2));
-    assert!((picture.duration() - 0.3).abs() < 0.001, "{}", picture.duration());
+    assert_eq!(
+      (picture.frames(), picture.width(), picture.height()),
+      (3, 2, 2)
+    );
+    assert!(
+      (picture.duration() - 0.3).abs() < 0.001,
+      "{}",
+      picture.duration()
+    );
     assert_eq!(picture.color(1.0, glam::Vec2::ZERO, glam::Vec2::ZERO), BLUE);
   }
 
@@ -795,7 +1013,10 @@ mod tests {
   fn a_gif_is_known_by_what_is_in_it_not_its_name() {
     let folder = Folder::new();
     folder.write("a.png", &gif_of([RED, BLUE]));
-    assert_eq!(Content::new(&folder.0).picture("a.png").unwrap().frames(), 2);
+    assert_eq!(
+      Content::new(&folder.0).picture("a.png").unwrap().frames(),
+      2
+    );
   }
 
   #[test]
@@ -839,7 +1060,10 @@ mod tests {
     let folder = Folder::new();
     let bytes = gif_of([RED, BLUE, RED]);
     folder.write("a.gif", &bytes[..bytes.len() - 8]);
-    assert!(matches!(Content::new(&folder.0).picture("a.gif"), Err(ContentError::Decode { .. })));
+    assert!(matches!(
+      Content::new(&folder.0).picture("a.gif"),
+      Err(ContentError::Decode { .. })
+    ));
   }
 
   #[test]
@@ -864,7 +1088,8 @@ mod tests {
     assert_eq!(kept.keys().collect::<Vec<_>>(), ["c"]);
   }
 
-  const SCENE: &str = "(version: 1, viewport: Area, layers: [(fill: (base: Solid(Fixed(255, 0, 0, 255))))])";
+  const SCENE: &str =
+    "(version: 1, viewport: Area, layers: [(fill: (base: Solid(Fixed(255, 0, 0, 255))))])";
 
   #[test]
   fn scenes_are_found_however_the_folder_is_organized() {
@@ -873,14 +1098,28 @@ mod tests {
     folder.write("dmd/modes/Hurry Up.SCENE", b"");
     folder.write("title.png", &png(1, 1));
 
-    assert_eq!(Content::new(&folder.0).scene_names(), ["attract.scene", "dmd/modes/Hurry Up.SCENE"]);
+    assert_eq!(
+      Content::new(&folder.0).scene_names(),
+      ["attract.scene", "dmd/modes/Hurry Up.SCENE"]
+    );
   }
 
   #[test]
   fn no_scene_name_leads_out_of_the_folder() {
     let content = Content::new("root");
-    for name in ["../secret.scene", "a/../../secret.scene", "/etc/secret.scene", "C:/secret.scene", "a\\..\\secret.scene", "a.png", ""] {
-      assert!(matches!(content.scene_path(name), Err(SceneFileError::BadName(_))), "{name}");
+    for name in [
+      "../secret.scene",
+      "a/../../secret.scene",
+      "/etc/secret.scene",
+      "C:/secret.scene",
+      "a\\..\\secret.scene",
+      "a.png",
+      "",
+    ] {
+      assert!(
+        matches!(content.scene_path(name), Err(SceneFileError::BadName(_))),
+        "{name}"
+      );
     }
   }
 
@@ -899,7 +1138,10 @@ mod tests {
     folder.write("a.scene", b"what was there");
     let content = Content::new(&folder.0);
 
-    assert!(matches!(content.add_scene("a.scene", SCENE), Err(SceneFileError::Taken(_))));
+    assert!(matches!(
+      content.add_scene("a.scene", SCENE),
+      Err(SceneFileError::Taken(_))
+    ));
     assert_eq!(content.read_scene("a.scene").unwrap(), "what was there");
   }
 
@@ -929,47 +1171,72 @@ mod tests {
   fn deleting_a_missing_scene_says_which() {
     let folder = Folder::new();
     let error = Content::new(&folder.0).delete_scene("a.scene").unwrap_err();
-    assert_eq!(error.to_string(), "there's no scene \"a.scene\" in the content folder");
+    assert_eq!(
+      error.to_string(),
+      "there's no scene \"a.scene\" in the content folder"
+    );
   }
 
   #[test]
   fn deleting_stays_in_the_folder() {
     let content = Content::new("root");
-    assert!(matches!(content.delete_scene("../secret.scene"), Err(SceneFileError::BadName(_))));
+    assert!(matches!(
+      content.delete_scene("../secret.scene"),
+      Err(SceneFileError::BadName(_))
+    ));
   }
 
   #[test]
   fn a_broken_scene_can_still_be_opened() {
     let folder = Folder::new();
     folder.write("a.scene", b"(oops");
-    assert_eq!(Content::new(&folder.0).read_scene("a.scene").unwrap(), "(oops");
+    assert_eq!(
+      Content::new(&folder.0).read_scene("a.scene").unwrap(),
+      "(oops"
+    );
   }
 
   #[test]
   fn a_bundled_scene_is_read_until_a_file_replaces_it() {
     let folder = Folder::new();
-    let content = Content::new(&folder.0).with_scenes([("frontbox/points.scene", "bundled"), ("not a scene", "")]);
+    let content = Content::new(&folder.0)
+      .with_scenes([("frontbox/points.scene", "bundled"), ("not a scene", "")]);
     assert_eq!(content.scene_names(), ["frontbox/points.scene"]);
-    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "bundled");
+    assert_eq!(
+      content.read_scene("frontbox/points.scene").unwrap(),
+      "bundled"
+    );
 
     folder.write("frontbox/points.scene", b"changed");
     assert_eq!(content.scene_names(), ["frontbox/points.scene"]);
-    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "changed");
+    assert_eq!(
+      content.read_scene("frontbox/points.scene").unwrap(),
+      "changed"
+    );
     assert!(content.is_bundled_scene("frontbox/points.scene"));
   }
 
   #[test]
   fn without_a_folder_bundled_scenes_can_still_be_read() {
     let content = Content::without_folder().with_scenes([("frontbox/points.scene", "bundled")]);
-    assert_eq!(content.read_scene("frontbox/points.scene").unwrap(), "bundled");
-    assert!(matches!(content.read_scene("other.scene"), Err(SceneFileError::NoFolder)));
+    assert_eq!(
+      content.read_scene("frontbox/points.scene").unwrap(),
+      "bundled"
+    );
+    assert!(matches!(
+      content.read_scene("other.scene"),
+      Err(SceneFileError::NoFolder)
+    ));
   }
 
   #[test]
   fn a_missing_scene_says_which() {
     let folder = Folder::new();
     let error = Content::new(&folder.0).read_scene("a.scene").unwrap_err();
-    assert_eq!(error.to_string(), "there's no scene \"a.scene\" in the content folder");
+    assert_eq!(
+      error.to_string(),
+      "there's no scene \"a.scene\" in the content folder"
+    );
   }
 
   #[test]

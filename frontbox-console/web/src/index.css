@@ -131,3 +131,21 @@ body {
   letter-spacing: 0.06em;
   color: var(--muted);
 }
+
+/* a search box that filters what's below it, as on the systems and events tabs */
+input.search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+input.search:focus {
+  border-color: var(--accent);
+  outline: none;
+}

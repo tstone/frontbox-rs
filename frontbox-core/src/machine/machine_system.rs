@@ -375,7 +375,10 @@ impl MachineSystem {
       .switches
       .misaligned()
       .into_iter()
-      .map(|(switch, expected)| MisalignedSwitch { switch: switch.clone(), expected })
+      .map(|(switch, expected)| MisalignedSwitch {
+        switch: switch.clone(),
+        expected,
+      })
       .collect();
     if switches.is_empty() {
       return;
@@ -393,6 +396,10 @@ impl MachineSystem {
 }
 
 impl System for MachineSystem {
+  fn description() -> Option<&'static str> {
+    Some("Talks to the FAST hardware: passes switch changes in, and driver and light commands out")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.driver_modes = ctx
       .drivers
@@ -482,18 +489,19 @@ mod tests {
   impl Harness {
     fn new() -> Self {
       let mut ctx = TestContext::default();
-      ctx.base.drivers = DriverLookup::new(vec![
-        IoAddressed {
-          definition: &*COIL_DEF,
-          assignment: IoAddress::new(0, 0),
-          id: COIL_ID,
-        },
-        IoAddressed {
-          definition: &*OTHER_DEF,
-          assignment: IoAddress::new(0, 1),
-          id: 0xB,
-        },
-      ],
+      ctx.base.drivers = DriverLookup::new(
+        vec![
+          IoAddressed {
+            definition: &*COIL_DEF,
+            assignment: IoAddress::new(0, 0),
+            id: COIL_ID,
+          },
+          IoAddressed {
+            definition: &*OTHER_DEF,
+            assignment: IoAddress::new(0, 1),
+            id: 0xB,
+          },
+        ],
         &[IoBoard {
           description: "test",
           switch_count: 8,
@@ -634,7 +642,10 @@ mod tests {
     let mut harness = Harness::new();
     harness.activate(ActivationMode::Automatic);
     harness.activate(ActivationMode::Tap);
-    assert_eq!(harness.driver_commands(), vec!["TL:A,0,12\r", "TL:A,1,\r", "TL:A,0,12\r"]);
+    assert_eq!(
+      harness.driver_commands(),
+      vec!["TL:A,0,12\r", "TL:A,1,\r", "TL:A,0,12\r"]
+    );
   }
 
   #[test]

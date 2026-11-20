@@ -46,6 +46,10 @@ impl PlayfieldDrivers {
 }
 
 impl System for PlayfieldDrivers {
+  fn description() -> Option<&'static str> {
+    Some("Turns the flippers, slingshots, and pop bumpers on for each turn, and off when it ends")
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<RoutineStarted<TurnStarting>>() {
       self.activate(ctx);

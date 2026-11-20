@@ -119,6 +119,12 @@ impl SwitchComboSystem {
 }
 
 impl System for SwitchComboSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Watches for a set of switches pressed together, such as both flipper buttons, and acts when they are",
+    )
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.switch_names = self.query.query_names(ctx.into());
     if self.switch_names.is_empty() {

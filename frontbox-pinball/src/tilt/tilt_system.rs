@@ -98,6 +98,10 @@ impl TiltSystem {
 }
 
 impl System for TiltSystem {
+  fn description() -> Option<&'static str> {
+    Some("Warns the player when the tilt bob swings, and tilts them once they're out of warnings")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // the player's group is spawned as they're added, so this is the start of their game
     self.warnings = ctx.config.get(&configs::TILT_WARNINGS);

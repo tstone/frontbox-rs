@@ -94,13 +94,21 @@ impl<'a> ServiceContext<'a> {
   }
 
   /// Lookup a system by type among the children of the system with id `parent`
-  pub(crate) fn get_in<T: System + 'static>(&self, parent: u64, handle: SystemHandle) -> Option<RefMut<'_, T>> {
+  pub(crate) fn get_in<T: System + 'static>(
+    &self,
+    parent: u64,
+    handle: SystemHandle,
+  ) -> Option<RefMut<'_, T>> {
     let parent = self.groups.find(parent)?;
     let found = self.groups.child_of_type(parent, TypeId::of::<T>())?;
     self.borrow_found::<T>(found, handle)
   }
 
-  fn borrow_found<T: System + 'static>(&self, found: SystemHandle, caller: SystemHandle) -> Option<RefMut<'_, T>> {
+  fn borrow_found<T: System + 'static>(
+    &self,
+    found: SystemHandle,
+    caller: SystemHandle,
+  ) -> Option<RefMut<'_, T>> {
     match self.groups.get(&found.group)?.borrow_by_type::<T>() {
       Ok(system) => system,
       Err(busy) => {
@@ -152,10 +160,16 @@ impl<'a> ServiceContext<'a> {
 
   /// Start up a new system as a child of `parent`, returning its id. Only reachable through `SystemContext`, so the
   /// parent is always the caller.
-  pub(crate) fn spawn_child(&self, parent: SystemHandle, system: impl Into<SpawnableSystemContainer>) -> u64 {
+  pub(crate) fn spawn_child(
+    &self,
+    parent: SystemHandle,
+    system: impl Into<SpawnableSystemContainer>,
+  ) -> u64 {
     let system = system.into();
     let id = system.id();
-    let _ = self.app_sender.send(AppMessage::SpawnSystem(parent, system));
+    let _ = self
+      .app_sender
+      .send(AppMessage::SpawnSystem(parent, system));
     id
   }
 
@@ -170,7 +184,9 @@ impl<'a> ServiceContext<'a> {
   }
 
   pub(crate) fn despawn_child(&self, parent: SystemHandle, child: u64) {
-    let _ = self.app_sender.send(AppMessage::DespawnChild(parent, child));
+    let _ = self
+      .app_sender
+      .send(AppMessage::DespawnChild(parent, child));
   }
 
   /// Despawn self and immediately spawn a new system in its place
@@ -188,10 +204,14 @@ impl<'a> ServiceContext<'a> {
     let _ = self.app_sender.send(AppMessage::DespawnSystem(handle));
   }
 
-
   // --- Timers ---
 
-  pub(crate) fn timer(&self, handle: SystemHandle, signal: impl Event + 'static, timer: Timer) -> u64 {
+  pub(crate) fn timer(
+    &self,
+    handle: SystemHandle,
+    signal: impl Event + 'static,
+    timer: Timer,
+  ) -> u64 {
     let timer_id = SystemContainer::next_id();
     self
       .app_sender
@@ -220,7 +240,9 @@ impl<'a> ServiceContext<'a> {
   }
 
   pub(crate) fn cancel_timer(&self, handle: SystemHandle, timer_id: u64) {
-    let _ = self.app_sender.send(AppMessage::CancelTimer(handle, timer_id));
+    let _ = self
+      .app_sender
+      .send(AppMessage::CancelTimer(handle, timer_id));
   }
 
   pub(crate) fn set_timer_paused(&self, handle: SystemHandle, timer_id: u64, paused: bool) {

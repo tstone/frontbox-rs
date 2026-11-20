@@ -11,13 +11,20 @@ pub struct Visits {
 impl Visits {
   /// The visits the layer's responses see at one node
   pub(crate) fn at(&self, node: usize) -> NodeVisits<'_> {
-    NodeVisits { traversals: &self.traversals, node }
+    NodeVisits {
+      traversals: &self.traversals,
+      node,
+    }
   }
 
   /// Seconds from the first visit to the last for each of the layer's traversals, in its order. `None` for one that
   /// visits nothing.
   pub fn lengths(&self) -> Vec<Option<f32>> {
-    self.traversals.iter().map(TraversalVisits::length).collect()
+    self
+      .traversals
+      .iter()
+      .map(TraversalVisits::length)
+      .collect()
   }
 }
 
@@ -35,8 +42,18 @@ pub(crate) struct TraversalVisits {
 
 impl TraversalVisits {
   fn length(&self) -> Option<f32> {
-    let first = self.by_node.iter().filter_map(|times| times.first()).copied().reduce(f32::min)?;
-    let last = self.by_node.iter().filter_map(|times| times.last()).copied().fold(first, f32::max);
+    let first = self
+      .by_node
+      .iter()
+      .filter_map(|times| times.first())
+      .copied()
+      .reduce(f32::min)?;
+    let last = self
+      .by_node
+      .iter()
+      .filter_map(|times| times.last())
+      .copied()
+      .fold(first, f32::max);
     Some(last - first)
   }
 }
@@ -52,7 +69,10 @@ impl<'a> NodeVisits<'a> {
   /// This node's visit times from the named traversal, and its rate. `None` if there's no traversal by that name.
   pub fn of(&self, traversal: &str) -> Option<(&'a [f32], f32)> {
     let found = self.find(traversal)?;
-    Some((found.by_node.get(self.node).map_or(&[][..], Vec::as_slice), found.rate))
+    Some((
+      found.by_node.get(self.node).map_or(&[][..], Vec::as_slice),
+      found.rate,
+    ))
   }
 
   /// Where the named traversal starts and ends this cycle
@@ -61,6 +81,9 @@ impl<'a> NodeVisits<'a> {
   }
 
   fn find(&self, traversal: &str) -> Option<&'a TraversalVisits> {
-    self.traversals.iter().find(|visits| visits.name == traversal)
+    self
+      .traversals
+      .iter()
+      .find(|visits| visits.name == traversal)
   }
 }

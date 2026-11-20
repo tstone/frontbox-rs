@@ -23,7 +23,9 @@ impl DriverTriggers {
   ) {
     match mode {
       DriverTriggerControlMode::Automatic => {
-        self.triggers.insert(driver_id, DriverTrigger::Automatic { switch });
+        self
+          .triggers
+          .insert(driver_id, DriverTrigger::Automatic { switch });
       }
       DriverTriggerControlMode::On => {
         self.triggers.insert(driver_id, DriverTrigger::On);
@@ -42,7 +44,11 @@ impl DriverTriggers {
   }
 
   pub fn current_trigger(&self, driver_id: usize) -> DriverTrigger {
-    self.triggers.get(&driver_id).copied().unwrap_or(DriverTrigger::Off)
+    self
+      .triggers
+      .get(&driver_id)
+      .copied()
+      .unwrap_or(DriverTrigger::Off)
   }
 
   /// The TL that puts the driver back the way it was after a DL, unless it was off
@@ -53,18 +59,29 @@ impl DriverTriggers {
         DriverTriggerControlMode::Automatic,
         switch,
       )),
-      DriverTrigger::On => Some(TriggerDriverCommand::new(driver_id, DriverTriggerControlMode::On, None)),
+      DriverTrigger::On => Some(TriggerDriverCommand::new(
+        driver_id,
+        DriverTriggerControlMode::On,
+        None,
+      )),
       DriverTrigger::Off => None,
     }
   }
 
   /// Every driver that isn't off, with the mode and switch to trigger it the way it is again
-  pub fn live(&self) -> impl Iterator<Item = (usize, DriverTriggerControlMode, Option<usize>)> + '_ {
-    self.triggers.iter().filter_map(|(driver_id, trigger)| match trigger {
-      DriverTrigger::Automatic { switch } => Some((*driver_id, DriverTriggerControlMode::Automatic, *switch)),
-      DriverTrigger::On => Some((*driver_id, DriverTriggerControlMode::On, None)),
-      DriverTrigger::Off => None,
-    })
+  pub fn live(
+    &self,
+  ) -> impl Iterator<Item = (usize, DriverTriggerControlMode, Option<usize>)> + '_ {
+    self
+      .triggers
+      .iter()
+      .filter_map(|(driver_id, trigger)| match trigger {
+        DriverTrigger::Automatic { switch } => {
+          Some((*driver_id, DriverTriggerControlMode::Automatic, *switch))
+        }
+        DriverTrigger::On => Some((*driver_id, DriverTriggerControlMode::On, None)),
+        DriverTrigger::Off => None,
+      })
   }
 
   /// Drivers the hardware fires on its own when this switch changes
@@ -72,7 +89,12 @@ impl DriverTriggers {
     self
       .triggers
       .iter()
-      .filter(move |(_, trigger)| **trigger == DriverTrigger::Automatic { switch: Some(switch_id) })
+      .filter(move |(_, trigger)| {
+        **trigger
+          == DriverTrigger::Automatic {
+            switch: Some(switch_id),
+          }
+      })
       .map(|(driver_id, _)| *driver_id)
   }
 }

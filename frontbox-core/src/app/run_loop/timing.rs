@@ -2,18 +2,44 @@ use super::*;
 
 impl RunLoop {
   pub(super) fn tick(&mut self, delta: Duration) {
-    // Tick first is where most systems should do any time-based processing
-    apply_to_systems(&self.groups, &self.base, &self.app_sender, &self.tracers, |system, ctx| {
-      system.on_tick(delta, ctx);
-    });
-    self.routines.tick(delta, &self.groups, &self.base, &self.app_sender, &self.tracers);
-    // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
-    apply_to_systems(&self.groups, &self.base, &self.app_sender, &self.tracers, |system, ctx| {
-      system.on_render(ctx);
+    delivering("tick", || {
+      // Tick first is where most systems should do any time-based processing
+      apply_to_systems(
+        &self.groups,
+        &self.base,
+        &self.app_sender,
+        &self.tracers,
+        |system, ctx| {
+          system.on_tick(delta, ctx);
+        },
+      );
+      self.routines.tick(
+        delta,
+        &self.groups,
+        &self.base,
+        &self.app_sender,
+        &self.tracers,
+      );
+      // Render is when systems that depend on what others systems have done (e.g. LED or DMD rendering) occur
+      apply_to_systems(
+        &self.groups,
+        &self.base,
+        &self.app_sender,
+        &self.tracers,
+        |system, ctx| {
+          system.on_render(ctx);
+        },
+      );
     });
   }
 
-  pub(super) fn create_timer(&self, handle: SystemHandle, timer_id: u64, timer: Timer, signals: Vec<Box<dyn Event>>) {
+  pub(super) fn create_timer(
+    &self,
+    handle: SystemHandle,
+    timer_id: u64,
+    timer: Timer,
+    signals: Vec<Box<dyn Event>>,
+  ) {
     if let Some(mut system) = self.groups.system(handle) {
       log::debug!(target: "frontbox::timers", "Creating timer for {} ({})", system.name(), handle.id);
       system.create_timer(timer, timer_id, signals);
@@ -62,7 +88,7 @@ impl RunLoop {
   }
 }
 
-/// If run loop processing starts running behind, this is a multiplier for how many intervals to allow before clamping the delta passed to systems. 
+/// If run loop processing starts running behind, this is a multiplier for how many intervals to allow before clamping the delta passed to systems.
 /// This is to avoid things incorrectly appearing as happening at once after a stall in the run loop processing. ie. it's the most that downstream
 /// systems will be told that time has passed since the last tick, even if more time has actually passed.
 const MAX_TICK_INTERVALS: u32 = 4;
@@ -112,7 +138,10 @@ mod tests {
 
     h.tick_by(ms(10));
 
-    assert_eq!(log.take(), ["1 on_tick", "2 on_tick", "1 on_render", "2 on_render"]);
+    assert_eq!(
+      log.take(),
+      ["1 on_tick", "2 on_tick", "1 on_render", "2 on_render"]
+    );
   }
 
   /// Timers a `Poke` to itself 100ms after it spawns, and counts the `Poke`s it hears
@@ -135,7 +164,10 @@ mod tests {
 
   fn spawn_timed(h: &mut Harness) -> (SystemHandle, u64, Rc<Cell<u32>>) {
     let (timer, pokes) = (Rc::new(Cell::new(0)), Rc::new(Cell::new(0)));
-    let handle = h.spawn(Timed { timer: timer.clone(), pokes: pokes.clone() });
+    let handle = h.spawn(Timed {
+      timer: timer.clone(),
+      pokes: pokes.clone(),
+    });
     (handle, timer.get(), pokes)
   }
 
@@ -154,7 +186,10 @@ mod tests {
 
     h.tick_by(ms(200));
     assert_eq!(pokes.get(), 1, "a `Timer::Once` fires once");
-    assert!(!log.take().contains(&"1 heard Poke".to_string()), "only the system that started it hears it");
+    assert!(
+      !log.take().contains(&"1 heard Poke".to_string()),
+      "only the system that started it hears it"
+    );
   }
 
   #[test]
@@ -192,8 +227,17 @@ mod tests {
   #[test]
   fn tick_delta_is_the_measured_time_clamped_to_a_few_intervals() {
     let interval = Duration::from_millis(80);
-    assert_eq!(tick_delta(Duration::from_millis(95), interval), Duration::from_millis(95));
-    assert_eq!(tick_delta(Duration::from_millis(40), interval), Duration::from_millis(40));
-    assert_eq!(tick_delta(Duration::from_secs(3), interval), interval * MAX_TICK_INTERVALS);
+    assert_eq!(
+      tick_delta(Duration::from_millis(95), interval),
+      Duration::from_millis(95)
+    );
+    assert_eq!(
+      tick_delta(Duration::from_millis(40), interval),
+      Duration::from_millis(40)
+    );
+    assert_eq!(
+      tick_delta(Duration::from_secs(3), interval),
+      interval * MAX_TICK_INTERVALS
+    );
   }
 }

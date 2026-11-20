@@ -21,7 +21,8 @@ impl<'a> TiltExt for SystemContext<'a> {
 
   fn tilt_warnings(&self) -> u8 {
     self
-      .systems.get::<TiltSystem>()
+      .systems
+      .get::<TiltSystem>()
       .map(|tilt| tilt.warnings())
       .unwrap_or(0)
   }

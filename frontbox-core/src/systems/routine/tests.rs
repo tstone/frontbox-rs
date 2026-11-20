@@ -435,7 +435,15 @@ fn every_instance_of_a_type_takes_a_step_before_the_next_type() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 1 in root", "step 1 in player", "step 2 in root", "completed"]);
+  assert_eq!(
+    h.log(),
+    [
+      "step 1 in root",
+      "step 1 in player",
+      "step 2 in root",
+      "completed"
+    ]
+  );
 }
 
 #[test]
@@ -461,7 +469,10 @@ fn only_active_groups_take_a_step() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 1 in player 1", "step 1 in player 3", "completed"]);
+  assert_eq!(
+    h.log(),
+    ["step 1 in player 1", "step 1 in player 3", "completed"]
+  );
 }
 
 #[test]
@@ -471,12 +482,19 @@ fn an_interval_waits_between_instances_of_a_type() {
   h.step::<1>("player 2", true);
   let origin = h.origin(ROOT_GROUP_NAME);
 
-  h.ctx(origin).routines.new(Sequencing).interval(Duration::from_millis(100)).start();
+  h.ctx(origin)
+    .routines
+    .new(Sequencing)
+    .interval(Duration::from_millis(100))
+    .start();
   h.pump();
   assert_eq!(h.log(), ["step 1 in player 1"]);
 
   h.tick(Duration::from_millis(100));
-  assert_eq!(h.log(), ["step 1 in player 1", "step 1 in player 2", "completed"]);
+  assert_eq!(
+    h.log(),
+    ["step 1 in player 1", "step 1 in player 2", "completed"]
+  );
 }
 
 #[test]
@@ -954,7 +972,15 @@ fn an_interval_waits_between_steps() {
 
   // no wait after the last step
   h.tick(Duration::from_millis(250));
-  assert_eq!(h.log(), ["step 1 in root", "step 2 in root", "step 3 in root", "completed"]);
+  assert_eq!(
+    h.log(),
+    [
+      "step 1 in root",
+      "step 2 in root",
+      "step 3 in root",
+      "completed"
+    ]
+  );
 }
 
 #[test]

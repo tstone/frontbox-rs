@@ -3,7 +3,9 @@ use std::time::Instant;
 
 use frontbox_core::prelude::*;
 
-use crate::ball_management::{BallEnteredPlay, BallManagerExt, BallSearchFailed, BallsExitedPlay, Launch};
+use crate::ball_management::{
+  BallEnteredPlay, BallManagerExt, BallSearchFailed, BallsExitedPlay, Launch,
+};
 use crate::*;
 
 static PLAYER_GROUP_NAMES: [&str; 6] = [
@@ -263,7 +265,8 @@ impl CompetitiveGame {
     self.in_play_check_timer = Some(
       ctx
         .for_system(self.handle)
-        .timers.start(CheckBallsInPlay, Timer::Forever(IN_PLAY_CHECK_INTERVAL)),
+        .timers
+        .start(CheckBallsInPlay, Timer::Forever(IN_PLAY_CHECK_INTERVAL)),
     );
     let session = self.session.as_ref().unwrap();
     self.turn_active_at = Some(Instant::now());
@@ -277,7 +280,8 @@ impl CompetitiveGame {
   /// goes first, as only one routine of a type runs at a time.
   fn drained(&mut self, count: u8, in_play: u8, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    if ctx.states.is(CoinDoor::Open) && ctx.config.get(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN) {
+    if ctx.states.is(CoinDoor::Open) && ctx.config.get(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN)
+    {
       log::info!(target: "frontbox::game_manager", "{} ball(s) drained with the coin door open, putting them back into play", count);
       if let Some(mut ball_manager) = ctx.ball_manager() {
         ball_manager.eject_many(count, Launch::Auto, ctx.into());
@@ -390,7 +394,6 @@ impl CompetitiveGame {
       .is_some_and(|ball_manager| ball_manager.ejects_pending())
   }
 
-
   fn advance_turn(&mut self, ctx: &ServiceContext) {
     self.waiting_for_balls = false;
     let max_turn_count = ctx.config.get(&configs::TURN_COUNT);
@@ -416,7 +419,10 @@ impl CompetitiveGame {
       return;
     }
 
-    ctx.for_system(self.handle).systems.deactivate(self.player_groups[player as usize]);
+    ctx
+      .for_system(self.handle)
+      .systems
+      .deactivate(self.player_groups[player as usize]);
     ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
@@ -460,7 +466,8 @@ impl CompetitiveGame {
 
     ctx
       .for_system(self.handle)
-      .routines.start(GameEnding { scores, reason });
+      .routines
+      .start(GameEnding { scores, reason });
   }
 
   /// `GameEnding` completed: the game is over
@@ -480,7 +487,8 @@ impl CompetitiveGame {
       self.ball_return_timer = Some(
         ctx
           .for_system(self.handle)
-          .timers.start(BallReturnTimedOut, BALL_RETURN_TIMEOUT.once()),
+          .timers
+          .start(BallReturnTimedOut, BALL_RETURN_TIMEOUT.once()),
       );
     }
     self.update_player_entry(ctx);
@@ -488,7 +496,10 @@ impl CompetitiveGame {
 
   /// The balls from the last game came home, or stopped being waited for
   fn balls_returned(&mut self, ctx: &ServiceContext) {
-    ctx.for_system(self.handle).timers.cancel(self.ball_return_timer.take());
+    ctx
+      .for_system(self.handle)
+      .timers
+      .cancel(self.ball_return_timer.take());
     self.update_player_entry(ctx);
   }
 
@@ -510,6 +521,10 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
+  fn description() -> Option<&'static str> {
+    Some("Runs a game where players take turns, each with their own score and balls")
+  }
+
   fn provides(provides: &mut Provides<Self>) {
     provides.add::<dyn GameManager>(|s| s);
   }
@@ -578,7 +593,8 @@ impl System for CompetitiveGame {
           self.drain_decided(done, ctx.into());
         } else if event.is::<CheckBallsInPlay>() {
           self.check_balls_in_play(ctx.into());
-        } else if let Some(BallSearchFailed { in_play: 0, .. }) = event.downcast_ref::<BallSearchFailed>()
+        } else if let Some(BallSearchFailed { in_play: 0, .. }) =
+          event.downcast_ref::<BallSearchFailed>()
           && !self.draining
         {
           self.replace_lost_ball(ctx.into());
@@ -626,7 +642,10 @@ impl GameManager for CompetitiveGame {
     let group_name = Self::player_group_name(session.player_count() - 1);
 
     let svc_ctx = ctx.for_system(self.handle);
-    let group = svc_ctx.systems.spawn(Group::new(group_name, copy));
+    let group = svc_ctx.systems.spawn(
+      Group::new(group_name, copy)
+        .described("One player's own systems (modes, ball save, tilt), active during their turns"),
+    );
     svc_ctx.systems.deactivate(group);
     self.player_groups.push(group);
     svc_ctx.emit(PlayerAdded);
@@ -764,8 +783,13 @@ impl GameManager for CompetitiveGame {
 
 /// No ball is left in play: the last one drained, or was lost
 fn is_last_ball_gone(event: &dyn Event) -> bool {
-  matches!(event.downcast_ref::<BallsExitedPlay>(), Some(BallsExitedPlay { in_play: 0, .. }))
-    || matches!(event.downcast_ref::<BallSearchFailed>(), Some(BallSearchFailed { in_play: 0, .. }))
+  matches!(
+    event.downcast_ref::<BallsExitedPlay>(),
+    Some(BallsExitedPlay { in_play: 0, .. })
+  ) || matches!(
+    event.downcast_ref::<BallSearchFailed>(),
+    Some(BallSearchFailed { in_play: 0, .. })
+  )
 }
 
 // -- Signals --

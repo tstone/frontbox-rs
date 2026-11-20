@@ -44,7 +44,10 @@ impl Music {
     // picked up partway into the last crossfade, there'd be too little left to fade out over
     let from = from.min(length - crossfade);
     let at = clock_seconds(clock) + START_LEAD;
-    let mut data = sound.clone().start_time(clock_time(clock, at)).start_position(from);
+    let mut data = sound
+      .clone()
+      .start_time(clock_time(clock, at))
+      .start_position(from);
     if crossfade == 0.0 {
       data = data.loop_region(..);
     }
@@ -61,7 +64,11 @@ impl Music {
       path: path.to_path_buf(),
       sound,
       crossfade,
-      playing: Pass { handle, start: at, from },
+      playing: Pass {
+        handle,
+        start: at,
+        from,
+      },
       next: None,
     };
     music.schedule_next(track, clock);
@@ -70,7 +77,11 @@ impl Music {
 
   /// Move on to the next pass once it's started, and schedule the one after
   pub fn update(&mut self, track: &mut TrackHandle, clock: &ClockHandle) {
-    if self.next.as_ref().is_some_and(|next| clock_seconds(clock) >= next.start) {
+    if self
+      .next
+      .as_ref()
+      .is_some_and(|next| clock_seconds(clock) >= next.start)
+    {
       self.playing = self.next.take().unwrap();
       self.schedule_next(track, clock);
     }
@@ -86,7 +97,11 @@ impl Music {
 
   /// Fade out for a crossfade into other music
   pub fn crossfade_out(&mut self, duration: Duration) {
-    self.stop(Tween { duration, easing: FADE_OUT_EASING, ..Default::default() });
+    self.stop(Tween {
+      duration,
+      easing: FADE_OUT_EASING,
+      ..Default::default()
+    });
   }
 
   /// How far into the track the latest pass is, in seconds. Read from the clock, which a lost device leaves where it
@@ -117,7 +132,11 @@ impl Music {
       .start_time(clock_time(clock, at))
       .start_position(from)
       // timed on the clock, as a fade-in runs from when the sound is played, not when it starts
-      .fade_in_tween(Tween { start_time: clock_time(clock, at), duration: fade, easing: FADE_IN_EASING });
+      .fade_in_tween(Tween {
+        start_time: clock_time(clock, at),
+        duration: fade,
+        easing: FADE_IN_EASING,
+      });
     match track.play(data) {
       Ok(handle) => {
         self.playing.handle.stop(Tween {
@@ -125,7 +144,11 @@ impl Music {
           duration: fade,
           easing: FADE_OUT_EASING,
         });
-        self.next = Some(Pass { handle, start: at, from });
+        self.next = Some(Pass {
+          handle,
+          start: at,
+          from,
+        });
       }
       Err(e) => log::error!(
         target: "frontbox::sound",

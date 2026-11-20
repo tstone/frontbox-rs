@@ -43,6 +43,10 @@ impl WatchdogSystem {
 }
 
 impl System for WatchdogSystem {
+  fn description() -> Option<&'static str> {
+    Some("Pings the FAST hardware so it keeps 48V on. Without it, no coils can fire.")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
 

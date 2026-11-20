@@ -14,7 +14,12 @@ pub trait LightManagerExt {
   /// Declare one color at `z` for every light the targets resolve to
   fn declare_lights<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
   /// Declare one color at `z` for every light the targets resolve to, flashing on and off
-  fn declare_lights_flashing<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
+  fn declare_lights_flashing<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    z: i8,
+    color: Rgba<u8>,
+  );
   /// Declare colors at `z` for the targets, given by `colors` from the number of lights they resolve to
   fn declare_light_colors<T: Contextual<Vec<LightAddress>>>(
     &self,
@@ -24,12 +29,21 @@ pub trait LightManagerExt {
   );
   /// Declare one color at `z` for every light the targets resolve to, not shown until
   /// [`activate_light_declarations`](Self::activate_light_declarations)
-  fn declare_lights_inactive<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>);
+  fn declare_lights_inactive<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    z: i8,
+    color: Rgba<u8>,
+  );
   /// Take back what this system declared at `z` on the lights the targets resolve to
   fn undeclare_lights<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8);
   fn activate_light_declarations(&self);
   fn deactivate_light_declarations(&self);
-  fn set_light_conflict_resolution<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, resolution: LightConflictResolution);
+  fn set_light_conflict_resolution<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    resolution: LightConflictResolution,
+  );
 }
 
 impl<'a> LightManagerExt for SystemContext<'a> {
@@ -41,7 +55,12 @@ impl<'a> LightManagerExt for SystemContext<'a> {
     self.declare_light_colors(targets, z, |count| vec![color; count]);
   }
 
-  fn declare_lights_flashing<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
+  fn declare_lights_flashing<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    z: i8,
+    color: Rgba<u8>,
+  ) {
     with_light_manager(self, |manager| {
       let colors = one_color(targets.resolve(self), color);
       manager.declare(self.id(), z, &colors, LightMode::Flashing);
@@ -62,7 +81,12 @@ impl<'a> LightManagerExt for SystemContext<'a> {
     });
   }
 
-  fn declare_lights_inactive<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
+  fn declare_lights_inactive<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    z: i8,
+    color: Rgba<u8>,
+  ) {
     with_light_manager(self, |manager| {
       let colors = one_color(targets.resolve(self), color);
       manager.declare_inactive(self.id(), z, &colors, LightMode::Solid);
@@ -87,7 +111,11 @@ impl<'a> LightManagerExt for SystemContext<'a> {
     });
   }
 
-  fn set_light_conflict_resolution<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, resolution: LightConflictResolution) {
+  fn set_light_conflict_resolution<T: Contextual<Vec<LightAddress>>>(
+    &self,
+    targets: &T,
+    resolution: LightConflictResolution,
+  ) {
     with_light_manager(self, |manager| {
       manager.set_conflict_resolution(&targets.resolve(self), resolution);
     });

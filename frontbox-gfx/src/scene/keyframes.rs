@@ -35,7 +35,11 @@ impl<T: Animatable> Keyframes<T> {
       let (a, b) = (&pair[0], &pair[1]);
       if time < b.at {
         let span = b.at - a.at;
-        let phase = if span > 0.0 { (time - a.at) / span } else { 1.0 };
+        let phase = if span > 0.0 {
+          (time - a.at) / span
+        } else {
+          1.0
+        };
         return a.value.interpolate(&b.value, b.curve.sample(phase));
       }
     }
@@ -66,7 +70,7 @@ impl<T> Key<T> {
 mod tests {
   use super::*;
   use crate::scene::value::tests::env;
-  use crate::scene::{Variables, Prop};
+  use crate::scene::{Prop, Variables};
 
   fn track(cycle: Cycle) -> Prop<f32> {
     Prop::Keyframes(Keyframes {
@@ -92,7 +96,10 @@ mod tests {
   fn the_first_keys_curve_does_nothing() {
     let variables = Variables::new();
     let prop = Prop::Keyframes(Keyframes {
-      keys: vec![Key::new(0.0, 0.0, Curve::EaseIn), Key::new(1.0, 10.0, Curve::Linear)],
+      keys: vec![
+        Key::new(0.0, 0.0, Curve::EaseIn),
+        Key::new(1.0, 10.0, Curve::Linear),
+      ],
       cycle: Cycle::Forever,
     });
     assert_eq!(prop.resolve(&env(0.5, &variables)), 5.0);
@@ -117,7 +124,10 @@ mod tests {
   #[test]
   fn empty_track_is_the_default() {
     let variables = Variables::new();
-    let prop: Prop<f32> = Prop::Keyframes(Keyframes { keys: vec![], cycle: Cycle::Once });
+    let prop: Prop<f32> = Prop::Keyframes(Keyframes {
+      keys: vec![],
+      cycle: Cycle::Once,
+    });
     assert_eq!(prop.resolve(&env(1.0, &variables)), 0.0);
   }
 }

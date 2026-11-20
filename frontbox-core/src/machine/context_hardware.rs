@@ -178,10 +178,7 @@ impl<'a> ContextLights<'a> {
   pub fn set_all(&self, address: ExpAddress, color: Rgb) {
     let mut groups = group_by_order(self.machine.base.lights.orders_on(address));
     groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
-    let base = groups
-      .first()
-      .map(|(order, _)| *order)
-      .unwrap_or_default();
+    let base = groups.first().map(|(order, _)| *order).unwrap_or_default();
 
     self.machine.with(|machine, _| {
       machine.set_all_leds(address, base.reorder(color));

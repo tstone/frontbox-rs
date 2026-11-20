@@ -36,7 +36,14 @@ pub struct SoundLayer {
 impl SoundLayer {
   /// `sound` played at the start
   pub fn new(sound: impl Into<String>) -> Self {
-    Self { name: None, sound: sound.into(), volume: full_volume(), start: 0.0, skip: 0.0, end: None }
+    Self {
+      name: None,
+      sound: sound.into(),
+      volume: full_volume(),
+      start: 0.0,
+      skip: 0.0,
+      end: None,
+    }
   }
 
   pub fn name(mut self, name: impl Into<String>) -> Self {
@@ -79,17 +86,25 @@ impl SoundLayer {
   /// after the top in a static scene
   pub fn check(&self, index: usize, timing: Option<Timing>) -> Result<(), SceneError> {
     if timing.is_none() && (self.volume.is_animated() || self.start != 0.0) {
-      return Err(SceneError::NoTiming { layer: self.label(index) });
+      return Err(SceneError::NoTiming {
+        layer: self.label(index),
+      });
     }
     if !(self.skip >= 0.0) {
-      return Err(SceneError::NegativeSkip { layer: self.label(index) });
+      return Err(SceneError::NegativeSkip {
+        layer: self.label(index),
+      });
     }
     let duration = timing.map_or(f32::INFINITY, |timing| timing.duration);
     if !(self.start >= 0.0 && self.start < duration) {
-      return Err(SceneError::StartOutsideCycle { layer: self.label(index) });
+      return Err(SceneError::StartOutsideCycle {
+        layer: self.label(index),
+      });
     }
     match self.end {
-      Some(end) if !(end > self.start) => Err(SceneError::EndBeforeStart { layer: self.label(index) }),
+      Some(end) if !(end > self.start) => Err(SceneError::EndBeforeStart {
+        layer: self.label(index),
+      }),
       _ => Ok(()),
     }
   }
@@ -98,7 +113,12 @@ impl SoundLayer {
   /// in a start right at the top. If it's passed more than once in that time, as a long stall can pass several cycles,
   /// it's only given at its last.
   pub fn started(&self, timing: Option<Timing>, after: Option<f32>, until: f32) -> Option<f32> {
-    last_start(self.start, timing, after.unwrap_or(f32::NEG_INFINITY), until)
+    last_start(
+      self.start,
+      timing,
+      after.unwrap_or(f32::NEG_INFINITY),
+      until,
+    )
   }
 
   /// Seconds it plays before it's cut off, or `None` to play to its end
@@ -168,14 +188,22 @@ mod tests {
     assert_eq!(layer.started(timing, None, 0.3), None);
     assert_eq!(layer.started(timing, Some(0.3), 0.4), Some(0.4));
     assert_eq!(layer.started(timing, Some(0.4), 2.0), None);
-    assert_eq!(SoundLayer::new("a.wav").started(timing, None, 0.0), Some(0.0), "right at the top");
+    assert_eq!(
+      SoundLayer::new("a.wav").started(timing, None, 0.0),
+      Some(0.0),
+      "right at the top"
+    );
   }
 
   #[test]
   fn each_cycle_starts_it_again() {
     let (layer, timing) = (layer(), Some(Timing::new(1.0, Cycle::Times(2))));
     assert_eq!(layer.started(timing, Some(1.0), 1.5), Some(1.4));
-    assert_eq!(layer.started(timing, Some(1.5), 2.5), None, "no third cycle");
+    assert_eq!(
+      layer.started(timing, Some(1.5), 2.5),
+      None,
+      "no third cycle"
+    );
   }
 
   #[test]
@@ -195,9 +223,19 @@ mod tests {
   fn a_start_outside_a_cycle_is_refused() {
     let timing = Some(Timing::new(1.0, Cycle::Once));
     let late = SoundLayer::new("a.wav").start(1.0).name("hits");
-    assert_eq!(late.check(0, timing), Err(SceneError::StartOutsideCycle { layer: "layer \"hits\"".into() }));
+    assert_eq!(
+      late.check(0, timing),
+      Err(SceneError::StartOutsideCycle {
+        layer: "layer \"hits\"".into()
+      })
+    );
     let early = SoundLayer::new("a.wav").start(-0.1);
-    assert_eq!(early.check(2, timing), Err(SceneError::StartOutsideCycle { layer: "layer 3".into() }));
+    assert_eq!(
+      early.check(2, timing),
+      Err(SceneError::StartOutsideCycle {
+        layer: "layer 3".into()
+      })
+    );
     assert_eq!(layer().check(0, timing), Ok(()));
   }
 
@@ -206,19 +244,34 @@ mod tests {
     let timing = Some(Timing::new(1.0, Cycle::Once));
     assert_eq!(layer().end(1.5).check(0, timing), Ok(()));
     assert_eq!(layer().start(0.5).end(1.5).length(), Some(1.0));
-    assert_eq!(layer().end(0.4).check(0, timing), Err(SceneError::EndBeforeStart { layer: "layer 1".into() }));
+    assert_eq!(
+      layer().end(0.4).check(0, timing),
+      Err(SceneError::EndBeforeStart {
+        layer: "layer 1".into()
+      })
+    );
   }
 
   #[test]
   fn it_can_skip_into_its_sound_but_not_before_it() {
     let timing = Some(Timing::new(1.0, Cycle::Once));
     assert_eq!(layer().skip(0.25).check(0, timing), Ok(()));
-    assert_eq!(layer().skip(-0.25).check(0, timing), Err(SceneError::NegativeSkip { layer: "layer 1".into() }));
+    assert_eq!(
+      layer().skip(-0.25).check(0, timing),
+      Err(SceneError::NegativeSkip {
+        layer: "layer 1".into()
+      })
+    );
   }
 
   #[test]
   fn a_static_scene_can_only_start_it_at_the_top() {
-    assert_eq!(layer().check(0, None), Err(SceneError::NoTiming { layer: "layer 1".into() }));
+    assert_eq!(
+      layer().check(0, None),
+      Err(SceneError::NoTiming {
+        layer: "layer 1".into()
+      })
+    );
     assert_eq!(SoundLayer::new("a.wav").end(0.5).check(0, None), Ok(()));
   }
 }

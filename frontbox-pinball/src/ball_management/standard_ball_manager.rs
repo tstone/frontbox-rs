@@ -5,8 +5,8 @@ use frontbox_core::prelude::*;
 use crate::ball_management::trough::TroughSystem;
 use crate::ball_management::{
   AutoPlungerFired, AutoPlungerSystem, BallEnteredPlay, BallEnteredPlungeLane,
-  BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged, EjectCompleted,
-  Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
+  BallExitedPlungeLane, BallManager, BallReenteredPlungeLane, BallsExitedPlay, BallsHeldChanged,
+  EjectCompleted, Launch, LaunchMethod, Launcher, MaxBallsInPlayChanged, PlungeLaneSystem,
   StandardBallManagerConfig, StandardBuilder, TroughEjectFailed, TroughOccupancyChanged,
 };
 use crate::{configs, metrics};
@@ -506,7 +506,8 @@ impl StandardBallManager {
   /// Whether a ball is resting on the plunge lane switch right now
   fn is_lane_ball_resting(&self, ctx: &SystemContext) -> bool {
     ctx
-      .systems.get::<PlungeLaneSystem>()
+      .systems
+      .get::<PlungeLaneSystem>()
       .is_some_and(|lane| lane.is_ball_resting(ctx.into()))
   }
 }
@@ -553,7 +554,13 @@ impl BallManager for StandardBallManager {
   }
 
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
-    self.in_play(ctx.for_system(self.handle).systems.expect::<TroughSystem>().occupancy())
+    self.in_play(
+      ctx
+        .for_system(self.handle)
+        .systems
+        .expect::<TroughSystem>()
+        .occupancy(),
+    )
   }
 
   fn is_ball_in_plunge_lane(&self, ctx: &ServiceContext) -> bool {
@@ -688,6 +695,10 @@ impl BallManager for StandardBallManager {
 }
 
 impl System for StandardBallManager {
+  fn description() -> Option<&'static str> {
+    Some("Keeps track of how many balls are in play, and puts new ones into play from the trough")
+  }
+
   fn provides(provides: &mut Provides<Self>) {
     provides.add::<dyn BallManager>(|s| s);
   }
@@ -783,7 +794,10 @@ mod tests {
   impl Fixture {
     /// Spawns ball management with `balls` in a 5 switch trough, alongside a spawned trough for it to query
     fn spawn(balls: usize) -> Self {
-      Self::build(balls, StandardBallManager::builder(TROUGH, "eject").config())
+      Self::build(
+        balls,
+        StandardBallManager::builder(TROUGH, "eject").config(),
+      )
     }
 
     /// As `spawn`, with a plunge lane and optionally an autoplunger (whose launch button is the `launch` switch)
@@ -887,12 +901,18 @@ mod tests {
       let switch = self.ctx.base.switches.by_name(LAUNCH).unwrap().clone();
       let ctx = self.ctx.sys_ctx();
       ctx
-        .systems.expect::<AutoPlungerSystem>()
+        .systems
+        .expect::<AutoPlungerSystem>()
         .on_event(&SwitchClosed::new(switch), &ctx);
     }
 
     fn is_launch_button_armed(&self) -> bool {
-      self.ctx.sys_ctx().systems.expect::<AutoPlungerSystem>().is_armed()
+      self
+        .ctx
+        .sys_ctx()
+        .systems
+        .expect::<AutoPlungerSystem>()
+        .is_armed()
     }
 
     /// Delivers autoplunger fires emitted since the last call to ball management, as the app would, and returns them
@@ -946,7 +966,8 @@ mod tests {
       self
         .ctx
         .sys_ctx()
-        .systems.expect::<TroughSystem>()
+        .systems
+        .expect::<TroughSystem>()
         .set_occupancy(current_occupancy);
       self.deliver(&TroughOccupancyChanged {
         current_occupancy,
@@ -957,12 +978,16 @@ mod tests {
 
     /// Simulate `holder` reporting how many balls are resting in it
     fn hold(&mut self, holder: u64, count: u8) {
-      self.system.set_balls_held(holder, count, &self.ctx.svc_ctx());
+      self
+        .system
+        .set_balls_held(holder, count, &self.ctx.svc_ctx());
     }
 
     /// Simulate `locker` reporting how many balls are locked in it
     fn lock(&mut self, locker: u64, count: u8) {
-      self.system.set_balls_locked(locker, count, &self.ctx.svc_ctx());
+      self
+        .system
+        .set_balls_locked(locker, count, &self.ctx.svc_ctx());
     }
 
     fn balls_in_play(&self) -> u8 {
@@ -1212,7 +1237,11 @@ mod tests {
     f.trough_changed(3, 0, 1); // another ball served
     f.trough_changed(4, 1, 0);
     assert_eq!(f.drained_events(), vec![(1, 0)]);
-    assert_eq!(f.max_changed_events(), vec![], "a drain, not a ball turning up");
+    assert_eq!(
+      f.max_changed_events(),
+      vec![],
+      "a drain, not a ball turning up"
+    );
   }
 
   #[test]
@@ -1246,7 +1275,10 @@ mod tests {
     f.lock(1, 1);
     assert_eq!(f.system.balls_found, 5);
     assert_eq!(f.balls_in_play(), 0);
-    assert!(f.max_changed_events().is_empty(), "nothing more could be in play");
+    assert!(
+      f.max_changed_events().is_empty(),
+      "nothing more could be in play"
+    );
   }
 
   #[test]
@@ -1746,7 +1778,10 @@ mod tests {
     assert_eq!(f.system.balls_found, 5, "trough and lane");
 
     f.eject_many(1, Launch::Player);
-    assert!(f.system.trough_ejecting.is_none(), "served by the lane ball");
+    assert!(
+      f.system.trough_ejecting.is_none(),
+      "served by the lane ball"
+    );
     assert_eq!(f.balls_in_play(), 1);
 
     f.lane_exited();
@@ -1827,7 +1862,10 @@ mod tests {
     assert!(f.system.trough_ejecting.is_some());
 
     f.system.cancel_ejects(&f.ctx.svc_ctx());
-    assert!(f.system.trough_ejecting.is_none(), "doesn't block the next request");
+    assert!(
+      f.system.trough_ejecting.is_none(),
+      "doesn't block the next request"
+    );
     assert_eq!(f.completed_events(), vec![(id, 1, 0)]);
   }
 

@@ -3,7 +3,7 @@ use image::Rgba;
 use palette::{FromColor, Hsv, Srgb};
 
 use crate::animation::Lerp;
-use crate::scene::{Color, NamedValue, Prop, VariableType, Spread, Value};
+use crate::scene::{Color, NamedValue, Prop, Spread, Value, VariableType};
 
 /// A type a `Prop` can hold
 pub trait Animatable: Lerp + Clone + Default + PartialEq {
@@ -101,10 +101,25 @@ impl Animatable for Color {
 
   fn from_spread(spread: &Spread, [hue_rnd, brightness_rnd, alpha_rnd]: [f32; 3]) -> Option<Self> {
     match *spread {
-      Spread::Color { hue, brightness, alpha } => {
-        let picked = Hsv::new(rng_range(hue, hue_rnd), 1.0, rng_range(brightness, brightness_rnd));
-        let (r, g, b) = Srgb::from_color(picked).into_format::<u8>().into_components();
-        Some(Color(Rgba([r, g, b, (rng_range(alpha, alpha_rnd) * 255.0).round() as u8])))
+      Spread::Color {
+        hue,
+        brightness,
+        alpha,
+      } => {
+        let picked = Hsv::new(
+          rng_range(hue, hue_rnd),
+          1.0,
+          rng_range(brightness, brightness_rnd),
+        );
+        let (r, g, b) = Srgb::from_color(picked)
+          .into_format::<u8>()
+          .into_components();
+        Some(Color(Rgba([
+          r,
+          g,
+          b,
+          (rng_range(alpha, alpha_rnd) * 255.0).round() as u8,
+        ])))
       }
       _ => None,
     }

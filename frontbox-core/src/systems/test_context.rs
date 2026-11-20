@@ -53,12 +53,7 @@ impl TestContext {
   }
 
   pub fn sys_ctx(&self) -> SystemContext<'_> {
-    SystemContext::new(
-      &self.base,
-      SystemHandle::default(),
-      &self.groups,
-      &self.tx,
-    )
+    SystemContext::new(&self.base, SystemHandle::default(), &self.groups, &self.tx)
   }
 
   fn app_messages(&mut self) -> Vec<AppMessage> {

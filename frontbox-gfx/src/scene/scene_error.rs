@@ -22,11 +22,21 @@ pub enum SceneError {
 impl fmt::Display for SceneError {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     match self {
-      Self::NoTiming { layer } => write!(f, "{layer} changes over time, so the scene needs a timing"),
+      Self::NoTiming { layer } => {
+        write!(f, "{layer} changes over time, so the scene needs a timing")
+      }
       Self::NoDuration => write!(f, "a scene's duration must be more than zero"),
-      Self::SameTraversalName { layer, traversal } => write!(f, "{layer} has more than one traversal named \"{traversal}\""),
-      Self::NoSpeed { layer, traversal } => write!(f, "traversal \"{traversal}\" in {layer} needs a rate or duration more than zero"),
-      Self::StartOutsideCycle { layer } => write!(f, "{layer} has to start within a cycle of the scene"),
+      Self::SameTraversalName { layer, traversal } => write!(
+        f,
+        "{layer} has more than one traversal named \"{traversal}\""
+      ),
+      Self::NoSpeed { layer, traversal } => write!(
+        f,
+        "traversal \"{traversal}\" in {layer} needs a rate or duration more than zero"
+      ),
+      Self::StartOutsideCycle { layer } => {
+        write!(f, "{layer} has to start within a cycle of the scene")
+      }
       Self::EndBeforeStart { layer } => write!(f, "{layer} has to end after it starts"),
       Self::NegativeSkip { layer } => write!(f, "{layer} can't skip less than none of its sound"),
     }

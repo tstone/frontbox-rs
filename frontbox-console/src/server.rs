@@ -1,6 +1,6 @@
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::body::Bytes;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::response::{IntoResponse, Json, Response};
@@ -31,7 +31,9 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     .route("/content/images", get(content_images))
     .route(
       "/content/images/{*name}",
-      get(content_image).put(add_content_image).layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
+      get(content_image)
+        .put(add_content_image)
+        .layer(DefaultBodyLimit::max(MAX_IMAGE_BYTES)),
     )
     .route("/content/image-info/{*name}", get(content_image_info))
     .route("/content/sounds", get(content_sounds))
@@ -40,7 +42,10 @@ pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
     .route("/content/scenes", get(content_scenes))
     .route(
       "/content/scenes/{*name}",
-      get(content_scene).post(add_content_scene).put(save_content_scene).delete(delete_content_scene),
+      get(content_scene)
+        .post(add_content_scene)
+        .put(save_content_scene)
+        .delete(delete_content_scene),
     )
     .fallback(static_handler)
     .with_state(hub);
@@ -231,9 +236,11 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
       duration: picture.duration(),
     })
     .into_response(),
-    Ok(Err(ContentError::Decode { name, error })) => {
-      (StatusCode::UNPROCESSABLE_ENTITY, ContentError::Decode { name, error }.to_string()).into_response()
-    }
+    Ok(Err(ContentError::Decode { name, error })) => (
+      StatusCode::UNPROCESSABLE_ENTITY,
+      ContentError::Decode { name, error }.to_string(),
+    )
+      .into_response(),
     Ok(Err(err)) => (StatusCode::NOT_FOUND, err.to_string()).into_response(),
     Err(err) => {
       log::error!(target: "frontbox::console", "Reading an image stopped: {err}");
@@ -243,7 +250,11 @@ async fn content_image_info(Path(name): Path<String>, State(hub): State<ConsoleH
 }
 
 /// Adds an image to the content folder. The reply to a failure is text for showing to whoever is adding it.
-async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHub>, bytes: Bytes) -> Response {
+async fn add_content_image(
+  Path(name): Path<String>,
+  State(hub): State<ConsoleHub>,
+  bytes: Bytes,
+) -> Response {
   let content = hub.content();
   let added = tokio::task::spawn_blocking(move || content.add_image(&name, &bytes)).await;
   match added {
@@ -251,10 +262,13 @@ async fn add_content_image(Path(name): Path<String>, State(hub): State<ConsoleHu
     Ok(Err(err)) => {
       let status = match err {
         ContentError::Taken(_) | ContentError::NoFolder => StatusCode::CONFLICT,
-        ContentError::Write { .. } | ContentError::Read { .. } | ContentError::ReadFont { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        ContentError::BadName(_) | ContentError::Decode { .. } | ContentError::BadFontName(_) | ContentError::NotAFont(_) => {
-          StatusCode::UNPROCESSABLE_ENTITY
+        ContentError::Write { .. } | ContentError::Read { .. } | ContentError::ReadFont { .. } => {
+          StatusCode::INTERNAL_SERVER_ERROR
         }
+        ContentError::BadName(_)
+        | ContentError::Decode { .. }
+        | ContentError::BadFontName(_)
+        | ContentError::NotAFont(_) => StatusCode::UNPROCESSABLE_ENTITY,
       };
       (status, err.to_string()).into_response()
     }
@@ -284,10 +298,21 @@ async fn content_fonts(State(hub): State<ConsoleHub>) -> Response {
     let info = |name: String| {
       let font = content.font(&name).ok();
       let pixel_size = font.as_ref().and_then(|font| font.pixel_size());
-      let cap_height = font.zip(pixel_size).and_then(|(font, size)| font.cap_height(size)).map(f32::round);
-      FontInfo { name, pixel_size, cap_height }
+      let cap_height = font
+        .zip(pixel_size)
+        .and_then(|(font, size)| font.cap_height(size))
+        .map(f32::round);
+      FontInfo {
+        name,
+        pixel_size,
+        cap_height,
+      }
     };
-    content.font_names().into_iter().map(info).collect::<Vec<_>>()
+    content
+      .font_names()
+      .into_iter()
+      .map(info)
+      .collect::<Vec<_>>()
   };
   match tokio::task::spawn_blocking(fonts).await {
     Ok(fonts) => Json(fonts).into_response(),
@@ -340,12 +365,20 @@ async fn content_scene(Path(name): Path<String>, State(hub): State<ConsoleHub>) 
 
 /// Adds a scene to the content folder. The reply is the file as it's been written, or text for showing to whoever is
 /// adding it.
-async fn add_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: Json<SceneSource>) -> Response {
+async fn add_content_scene(
+  hub: State<ConsoleHub>,
+  name: Path<String>,
+  source: Json<SceneSource>,
+) -> Response {
   write_scene(hub, name, source, StatusCode::CREATED, Content::add_scene).await
 }
 
 /// Saves a scene over the one in the content folder. Replies as `add_content_scene` does.
-async fn save_content_scene(hub: State<ConsoleHub>, name: Path<String>, source: Json<SceneSource>) -> Response {
+async fn save_content_scene(
+  hub: State<ConsoleHub>,
+  name: Path<String>,
+  source: Json<SceneSource>,
+) -> Response {
   write_scene(hub, name, source, StatusCode::OK, Content::save_scene).await
 }
 
@@ -444,9 +477,16 @@ impl HeldSwitches {
         self.hub.set_switch(switch_id, closed);
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
-      ClientMessage::PlaySound { sound, volume, skip, length } => self.hub.play_sound(sound, volume, skip, length),
+      ClientMessage::PlaySound {
+        sound,
+        volume,
+        skip,
+        length,
+      } => self.hub.play_sound(sound, volume, skip, length),
       // replied to by the session, which has the socket
-      ClientMessage::QueryMetrics | ClientMessage::RenderScene { .. } | ClientMessage::RenderClip { .. } => {}
+      ClientMessage::QueryMetrics
+      | ClientMessage::RenderScene { .. }
+      | ClientMessage::RenderClip { .. } => {}
     }
   }
 }
@@ -454,7 +494,9 @@ impl HeldSwitches {
 impl Drop for HeldSwitches {
   fn drop(&mut self) {
     for switch_id in self.held.drain() {
-      self.hub.set_switch(switch_id, self.hub.initially_closed(switch_id));
+      self
+        .hub
+        .set_switch(switch_id, self.hub.initially_closed(switch_id));
     }
   }
 }

@@ -84,7 +84,6 @@ impl Curve {
   pub fn compose(self, next: Self) -> Self {
     Curve::Compose(Box::new(self), Box::new(next))
   }
-
 }
 
 #[inline]
@@ -194,7 +193,10 @@ mod tests {
     for i in 0..=10 {
       let phase = i as f32 / 10.0;
       let reflected = Curve::EaseIn.reflect().sample(phase);
-      assert!((reflected - Curve::EaseOut.sample(phase)).abs() < 0.001, "at {phase}");
+      assert!(
+        (reflected - Curve::EaseOut.sample(phase)).abs() < 0.001,
+        "at {phase}"
+      );
     }
   }
 

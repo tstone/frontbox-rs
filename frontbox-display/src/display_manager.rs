@@ -40,7 +40,10 @@ impl DisplayManager {
   pub fn run(mut self) {
     loop {
       let received = match self.connection {
-        Connection::Connected => self.frames.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        Connection::Connected => self
+          .frames
+          .recv()
+          .map_err(|_| RecvTimeoutError::Disconnected),
         Connection::Waiting { retry_at, .. } => self
           .frames
           .recv_timeout(retry_at.saturating_duration_since(Instant::now())),
@@ -125,5 +128,8 @@ impl DisplayManager {
 enum Connection {
   Connected,
   /// The last attempt to open it failed, and the next starts at `retry_at`
-  Waiting { retry_at: Instant, failures: u32 },
+  Waiting {
+    retry_at: Instant,
+    failures: u32,
+  },
 }

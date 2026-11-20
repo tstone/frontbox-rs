@@ -91,7 +91,10 @@ impl<'a> BallManagerExt for SystemContext<'a> {
   }
 }
 
-fn with_ball_manager<T>(ctx: &SystemContext, f: impl FnOnce(&mut dyn BallManager) -> T) -> Option<T> {
+fn with_ball_manager<T>(
+  ctx: &SystemContext,
+  f: impl FnOnce(&mut dyn BallManager) -> T,
+) -> Option<T> {
   if let Some(mut system) = ctx.ball_manager() {
     Some(f(&mut *system))
   } else {

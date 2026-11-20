@@ -40,7 +40,11 @@ impl ReferencePlaneBuilder {
   /// past its origin, and the extent becomes their bounds.
   pub fn outline(mut self, points: impl Into<Vec<Vec2>>) -> Self {
     self.plane.outline = points.into();
-    self.plane.extent = self.plane.outline.iter().fold(Vec2::ZERO, |bounds, point| bounds.max(*point));
+    self.plane.extent = self
+      .plane
+      .outline
+      .iter()
+      .fold(Vec2::ZERO, |bounds, point| bounds.max(*point));
     self
   }
 

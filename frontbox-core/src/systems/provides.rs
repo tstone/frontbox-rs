@@ -60,7 +60,10 @@ impl ProvidedTraits {
     &self,
     system: &'a mut (dyn System + 'static),
   ) -> Option<&'a mut I> {
-    let provided = self.0.iter().find(|provided| provided.type_id == TypeId::of::<I>())?;
+    let provided = self
+      .0
+      .iter()
+      .find(|provided| provided.type_id == TypeId::of::<I>())?;
     let cast = provided
       .cast
       .downcast_ref::<Cast<I>>()
@@ -128,10 +131,18 @@ mod tests {
     ctx.insert_system(Provider::default());
     let sys = ctx.sys_ctx();
 
-    assert_eq!(sys.systems.with_dyn::<dyn Counter, _>(|counter| counter.bump()), Some(1));
+    assert_eq!(
+      sys
+        .systems
+        .with_dyn::<dyn Counter, _>(|counter| counter.bump()),
+      Some(1)
+    );
     assert_eq!(sys.systems.expect_dyn::<dyn Counter>().bump(), 2);
     // and still by its own type
-    assert_eq!(sys.systems.get::<Provider>().map(|provider| provider.0), Some(2));
+    assert_eq!(
+      sys.systems.get::<Provider>().map(|provider| provider.0),
+      Some(2)
+    );
   }
 
   #[test]

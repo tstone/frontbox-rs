@@ -58,7 +58,14 @@ impl SingleLedDefinitionBuilder {
       Some(loc) => vec![loc],
       None => Vec::new(),
     };
-    LedDefinition::new(self.name, self.tags, 1, self.channels, locations, self.config)
+    LedDefinition::new(
+      self.name,
+      self.tags,
+      1,
+      self.channels,
+      locations,
+      self.config,
+    )
   }
 
   pub(crate) fn name(&self) -> &'static str {

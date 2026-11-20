@@ -27,8 +27,10 @@ static TROUGH_SWITCHES: LazyLock<Vec<SwitchDefinition>> = LazyLock::new(|| {
 });
 static PLUNGE_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| PlungeLaneSystem::switch_definition(PLUNGE).build());
-static INLANE_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(INLANE).build());
-static TARGET_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(TARGET).build());
+static INLANE_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(INLANE).build());
+static TARGET_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(TARGET).build());
 static LEFT_FLIPPER_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| SwitchDefinition::new(LEFT_FLIPPER).build());
 static RIGHT_FLIPPER_SWITCH: LazyLock<SwitchDefinition> =
@@ -56,7 +58,11 @@ fn app() -> App {
     ..BootConfig::default()
   });
   app
-    .system(StandardBallManager::builder(TROUGH, EJECT).plunge_lane(PLUNGE).build())
+    .system(
+      StandardBallManager::builder(TROUGH, EJECT)
+        .plunge_lane(PLUNGE)
+        .build(),
+    )
     .system(CradleSystem::new(
       SwitchQ::name(INLANE).or(SwitchQ::name(TARGET)),
       SwitchQ::name(LEFT_FLIPPER).or(SwitchQ::name(RIGHT_FLIPPER)),

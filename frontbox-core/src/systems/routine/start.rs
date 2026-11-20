@@ -27,7 +27,11 @@ pub struct RoutineBuilder<'a> {
 }
 
 impl<'a> RoutineBuilder<'a> {
-  pub(crate) fn new<E: Event + Clone>(origin: SystemHandle, ctx: ServiceContext<'a>, routine: E) -> Self {
+  pub(crate) fn new<E: Event + Clone>(
+    origin: SystemHandle,
+    ctx: ServiceContext<'a>,
+    routine: E,
+  ) -> Self {
     Self {
       origin,
       ctx,

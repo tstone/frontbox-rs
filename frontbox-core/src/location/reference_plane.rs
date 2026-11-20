@@ -108,7 +108,12 @@ impl ReferencePlane {
       return self.outline.clone();
     }
     let Vec2 { x, y } = self.extent;
-    vec![Vec2::ZERO, Vec2::new(x, 0.0), Vec2::new(x, y), Vec2::new(0.0, y)]
+    vec![
+      Vec2::ZERO,
+      Vec2::new(x, 0.0),
+      Vec2::new(x, y),
+      Vec2::new(0.0, y),
+    ]
   }
 
   /// Map a given point relative to a plane to its absolute existence in the world

@@ -1,7 +1,9 @@
 use glam::Vec2;
 use serde::{Deserialize, Serialize};
 
-use crate::scene::{Bounds, Env, Fill, Inputs, PreparedArea, Sample, Shape, fill_outline, prepare_area};
+use crate::scene::{
+  Bounds, Env, Fill, Inputs, PreparedArea, Sample, Shape, fill_outline, prepare_area,
+};
 
 /// Controls where a layer shows, using the alpha of the mask's own fill and region. The layer is visible in proportion
 /// to the mask's opacity; the mask's colors are never drawn.
@@ -23,7 +25,11 @@ pub struct Mask {
 
 impl Mask {
   pub fn new(fill: Fill) -> Self {
-    Self { fill, region: None, invert: false }
+    Self {
+      fill,
+      region: None,
+      invert: false,
+    }
   }
 
   pub fn region(mut self, region: Shape) -> Self {
@@ -42,12 +48,23 @@ impl Mask {
 
   pub(crate) fn read_inputs(&self, inputs: &mut Inputs) {
     self.fill.read_inputs(inputs);
-    self.region.iter().for_each(|region| region.read_inputs(inputs));
+    self
+      .region
+      .iter()
+      .for_each(|region| region.read_inputs(inputs));
   }
 
   /// The mask resolved for samples of `radius`
-  pub(crate) fn prepare<'a>(&'a self, viewport: Bounds, radius: f32, env: &Env<'a>) -> PreparedMask<'a> {
-    PreparedMask { area: prepare_area(&self.fill, self.region.as_ref(), viewport, radius, env), invert: self.invert }
+  pub(crate) fn prepare<'a>(
+    &'a self,
+    viewport: Bounds,
+    radius: f32,
+    env: &Env<'a>,
+  ) -> PreparedMask<'a> {
+    PreparedMask {
+      area: prepare_area(&self.fill, self.region.as_ref(), viewport, radius, env),
+      invert: self.invert,
+    }
   }
 
   pub(crate) fn outline(&self, viewport: Bounds, env: &Env) -> Vec<Vec<Vec2>> {
@@ -65,7 +82,10 @@ pub(crate) struct PreparedMask<'a> {
 impl PreparedMask<'_> {
   /// How visible the layer is at a sample, 0 to 1
   pub(crate) fn amount(&self, at: &Sample) -> f32 {
-    let opacity = self.area.as_ref().map_or(0.0, |area| area.color(at)[3] as f32 / 255.0);
+    let opacity = self
+      .area
+      .as_ref()
+      .map_or(0.0, |area| area.color(at)[3] as f32 / 255.0);
     if self.invert { 1.0 - opacity } else { opacity }
   }
 }

@@ -95,7 +95,10 @@ impl App {
   }
 
   pub async fn run(mut self) {
-    let app_config = AppConfig { planes: std::mem::take(&mut self.planes), ..AppConfig::from_boot_config(&self.boot_config) };
+    let app_config = AppConfig {
+      planes: std::mem::take(&mut self.planes),
+      ..AppConfig::from_boot_config(&self.boot_config)
+    };
     let (app_sender, app_receiver) = mpsc::unbounded_channel::<AppMessage>();
     let (tracer_ctl_sender, tracer_ctl_receiver) = mpsc::unbounded_channel::<TracerControlEvent>();
 
@@ -117,11 +120,18 @@ impl App {
         let (mut machine, mut hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
 
-        app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
-        self
-          .tracers
-          .iter_mut()
-          .for_each(|tr| tr.init(&hardware, &app_config, tracer_ctl_sender.clone(), metrics_db.clone()));
+        app_config
+          .planes
+          .iter()
+          .for_each(|plane| hardware.lights.add_plane(plane.plane));
+        self.tracers.iter_mut().for_each(|tr| {
+          tr.init(
+            &hardware,
+            &app_config,
+            tracer_ctl_sender.clone(),
+            metrics_db.clone(),
+          )
+        });
         let state = AppState::from_hardware(hardware, self.configs, app_config);
         machine.on_pre_run(&state).await;
 
@@ -136,11 +146,18 @@ impl App {
         let (mut machine, mut hardware) =
           vm::VirtualMachine::boot(self.boot_config, app_sender.clone()).await;
 
-        app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
-        self
-          .tracers
-          .iter_mut()
-          .for_each(|tr| tr.init(&hardware, &app_config, tracer_ctl_sender.clone(), metrics_db.clone()));
+        app_config
+          .planes
+          .iter()
+          .for_each(|plane| hardware.lights.add_plane(plane.plane));
+        self.tracers.iter_mut().for_each(|tr| {
+          tr.init(
+            &hardware,
+            &app_config,
+            tracer_ctl_sender.clone(),
+            metrics_db.clone(),
+          )
+        });
         let state = AppState::from_hardware(hardware, self.configs, app_config);
         machine.on_pre_run(&state).await;
 

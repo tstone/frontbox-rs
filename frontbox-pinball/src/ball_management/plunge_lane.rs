@@ -93,7 +93,11 @@ impl PlungeLaneSystem {
   fn on_lane_switch_opened(&mut self, ctx: &SystemContext) {
     log::info!(target: "frontbox::ball_management::plunge_lane", "Ball exited");
     self.cancel_timer(ctx);
-    self.wait_timer_id = Some(ctx.timers.start(TimesUpBallsGone, Timer::Once(self.re_enter_timeout)));
+    self.wait_timer_id = Some(
+      ctx
+        .timers
+        .start(TimesUpBallsGone, Timer::Once(self.re_enter_timeout)),
+    );
   }
 
   /// Plays the ball present scene while a ball is in the lane during a game, and stops it otherwise (e.g. a game quit
@@ -111,6 +115,10 @@ impl PlungeLaneSystem {
 }
 
 impl System for PlungeLaneSystem {
+  fn description() -> Option<&'static str> {
+    Some("Watches the plunge lane, where balls wait to be launched into play")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
 
@@ -227,13 +235,17 @@ mod tests {
     }
 
     fn set_game_phase(&mut self, phase: GamePhase) {
-      let owner = *self.game_owner.get_or_insert_with(|| self.ctx.insert_system(GameOwner));
+      let owner = *self
+        .game_owner
+        .get_or_insert_with(|| self.ctx.insert_system(GameOwner));
       self.ctx.svc_ctx().for_system(owner).states.set(phase);
       self.ctx.apply_states();
     }
 
     fn scene_playing(&mut self) -> bool {
-      self.lane.on_tick(Duration::from_millis(10), &self.ctx.sys_ctx());
+      self
+        .lane
+        .on_tick(Duration::from_millis(10), &self.ctx.sys_ctx());
       self.lane.ball_present_scene.as_ref().unwrap().is_started()
     }
 

@@ -31,10 +31,24 @@ impl Harness {
     Self::with_state(AppState::default())
   }
 
+  /// A harness whose traces are sent to the returned receiver, as an attached tracer gets them
+  #[cfg(test)]
+  pub(crate) fn tracing() -> (Self, mpsc::UnboundedReceiver<TraceEvent>) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let mut harness = Self::new();
+    harness.run_loop.tracers = TracerSenders::new(vec![tx]);
+    (harness, rx)
+  }
+
   /// A harness over the given app state, e.g. one with switches
   #[cfg(test)]
   pub(crate) fn with_state(base: AppState) -> Self {
-    Self::with(base, Routines::new(Default::default()), 0, mpsc::unbounded_channel())
+    Self::with(
+      base,
+      Routines::new(Default::default()),
+      0,
+      mpsc::unbounded_channel(),
+    )
   }
 
   /// A harness over the given app state and routines, as `App::run` sets them up. `machine_system_id` is the system
@@ -43,12 +57,21 @@ impl Harness {
     mut base: AppState,
     routines: Routines,
     machine_system_id: u64,
-    channel: (mpsc::UnboundedSender<AppMessage>, mpsc::UnboundedReceiver<AppMessage>),
+    channel: (
+      mpsc::UnboundedSender<AppMessage>,
+      mpsc::UnboundedReceiver<AppMessage>,
+    ),
   ) -> Self {
     let (tx, rx) = channel;
     // as in `App::run`, so config changes emit `ConfigChanged`
     base.config.app_sender = Some(tx.clone());
-    let run_loop = RunLoop::new(base, tx, TracerSenders::new(Vec::new()), routines, machine_system_id);
+    let run_loop = RunLoop::new(
+      base,
+      tx,
+      TracerSenders::new(Vec::new()),
+      routines,
+      machine_system_id,
+    );
     Self { run_loop, rx }
   }
 
@@ -88,10 +111,16 @@ impl Harness {
   }
 
   /// Spawn the system as a child of `parent`, or at the top level, then settle. Panics if it couldn't be spawned.
-  pub(crate) fn spawn_under(&mut self, parent: Option<SystemHandle>, system: impl Into<SystemContainer>) -> SystemHandle {
+  pub(crate) fn spawn_under(
+    &mut self,
+    parent: Option<SystemHandle>,
+    system: impl Into<SystemContainer>,
+  ) -> SystemHandle {
     let system = system.into();
     let name = system.name();
-    let handle = self.spawn_system(system, parent).unwrap_or_else(|| panic!("{name} wasn't spawned"));
+    let handle = self
+      .spawn_system(system, parent)
+      .unwrap_or_else(|| panic!("{name} wasn't spawned"));
     self.settle();
     handle
   }

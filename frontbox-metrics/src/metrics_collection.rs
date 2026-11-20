@@ -76,7 +76,10 @@ impl MetricsCollection {
       return;
     };
     drop(writer.sender); // the task ends once it has written what's queued
-    if tokio::time::timeout(CLOSE_TIMEOUT, writer.task).await.is_err() {
+    if tokio::time::timeout(CLOSE_TIMEOUT, writer.task)
+      .await
+      .is_err()
+    {
       log::error!(target: "frontbox::metrics", "Timed out writing the last metrics at shutdown");
     }
   }
@@ -492,7 +495,12 @@ mod tests {
     metrics.set_player(0);
     metrics.record_for_player(&score, 1, 20);
 
-    let players: Vec<_> = metrics.take_batch().samples.iter().map(|s| s.player).collect();
+    let players: Vec<_> = metrics
+      .take_batch()
+      .samples
+      .iter()
+      .map(|s| s.player)
+      .collect();
     assert_eq!(players, vec![None, Some(1)]);
   }
 

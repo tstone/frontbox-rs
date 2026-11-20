@@ -19,7 +19,13 @@ pub struct DisplayDefinition {
 impl DisplayDefinition {
   /// `name` is what a scene's `Display` layers name it by. Its size is the device's.
   pub fn new(name: impl Into<String>, device: impl DisplayDevice) -> Self {
-    Self { name: name.into(), size: device.size(), device: Box::new(device), hard_edges: true, mirrors: Vec::new() }
+    Self {
+      name: name.into(),
+      size: device.size(),
+      device: Box::new(device),
+      hard_edges: true,
+      mirrors: Vec::new(),
+    }
   }
 
   /// Shape edges partly cover the pixels they pass through, rather than each pixel being in or out. That's smoother on a

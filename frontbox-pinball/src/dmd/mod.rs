@@ -12,7 +12,11 @@ pub(crate) fn open_scene(content: &Content, name: &str, sends: Sends, z: i8) -> 
   match Scene::open(content, name) {
     Ok(mut scene) => {
       sends.log_mismatches(name, &scene);
-      scene.layers.iter_mut().filter_map(SceneLayer::as_display_mut).for_each(|layer| layer.z = z);
+      scene
+        .layers
+        .iter_mut()
+        .filter_map(SceneLayer::as_display_mut)
+        .for_each(|layer| layer.z = z);
       Some(scene)
     }
     Err(error) => {

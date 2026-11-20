@@ -16,5 +16,8 @@ pub(super) enum Connection {
     failures: u32,
   },
   /// The last attempt failed, and the next starts at `retry_at`
-  Waiting { retry_at: Instant, failures: u32 },
+  Waiting {
+    retry_at: Instant,
+    failures: u32,
+  },
 }

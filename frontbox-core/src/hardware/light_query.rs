@@ -98,7 +98,12 @@ impl LightQ {
 
   /// As queries get more complex, it can sometimes be useful to pre-compute them into a list of names rather than dynamically re-computing them each time they are needed.
   pub fn precompute(&self, ctx: &ServiceContext) -> Self {
-    LightQ::Names(self.query_iter(ctx).map(|light| light.name.clone()).collect())
+    LightQ::Names(
+      self
+        .query_iter(ctx)
+        .map(|light| light.name.clone())
+        .collect(),
+    )
   }
 
   /// Resolve the query into a reference for all matching lights

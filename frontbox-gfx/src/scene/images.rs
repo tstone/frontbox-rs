@@ -21,7 +21,10 @@ impl Picture {
 
   /// Frames of equal size, and their total duration in seconds
   pub fn animated(frames: impl IntoIterator<Item = RgbaImage>, duration: f32) -> Self {
-    Self { frames: frames.into_iter().map(levels).collect(), duration }
+    Self {
+      frames: frames.into_iter().map(levels).collect(),
+      duration,
+    }
   }
 
   pub fn width(&self) -> u32 {
@@ -44,7 +47,12 @@ impl Picture {
 
   /// Memory used by pixel data, including every mipmap level
   pub(crate) fn bytes(&self) -> u64 {
-    self.frames.iter().flatten().map(|image| image.as_raw().len() as u64).sum()
+    self
+      .frames
+      .iter()
+      .flatten()
+      .map(|image| image.as_raw().len() as u64)
+      .sum()
   }
 
   /// The color of a frame at a point in the unit box, with the image's top left at `-0.5`. `frame` is truncated and
@@ -57,7 +65,14 @@ impl Picture {
 
   /// [`Picture::color`] for the part of the image from `min`, `size` across, in units of the whole image, such as one
   /// sprite of a sheet. Pixels outside that part never show.
-  pub(crate) fn color_within(&self, frame: f32, min: Vec2, size: Vec2, p: Vec2, footprint: Vec2) -> Rgba<u8> {
+  pub(crate) fn color_within(
+    &self,
+    frame: f32,
+    min: Vec2,
+    size: Vec2,
+    p: Vec2,
+    footprint: Vec2,
+  ) -> Rgba<u8> {
     let at = p + 0.5;
     let reaches = (at.cmpge(-footprint) & at.cmple(Vec2::ONE + footprint)).all();
     if !reaches || self.width() == 0 || self.height() == 0 {
@@ -75,7 +90,10 @@ impl Picture {
       let last = (((min + size) * pixels as f32).ceil() as u32).clamp(first + 1, pixels) - 1;
       (((min + at * size) * pixels as f32) as u32).clamp(first, last)
     };
-    *image.get_pixel(index(at.x, min.x, size.x, image.width()), index(at.y, min.y, size.y, image.height()))
+    *image.get_pixel(
+      index(at.x, min.x, size.x, image.width()),
+      index(at.y, min.y, size.y, image.height()),
+    )
   }
 }
 
@@ -94,11 +112,20 @@ fn halved(image: &RgbaImage) -> Option<RgbaImage> {
   if width.max(height) <= 1 || width == 0 || height == 0 {
     return None;
   }
-  Some(RgbaImage::from_fn(width.div_ceil(2), height.div_ceil(2), |x, y| {
-    let (left, top) = (x * 2, y * 2);
-    let corners = [(left, top), (left + 1, top), (left, top + 1), (left + 1, top + 1)];
-    average(corners.map(|(x, y)| *image.get_pixel(x.min(width - 1), y.min(height - 1))))
-  }))
+  Some(RgbaImage::from_fn(
+    width.div_ceil(2),
+    height.div_ceil(2),
+    |x, y| {
+      let (left, top) = (x * 2, y * 2);
+      let corners = [
+        (left, top),
+        (left + 1, top),
+        (left, top + 1),
+        (left + 1, top + 1),
+      ];
+      average(corners.map(|(x, y)| *image.get_pixel(x.min(width - 1), y.min(height - 1))))
+    },
+  ))
 }
 
 /// Weighted by alpha, so a transparent pixel's RGB doesn't bleed into the color
@@ -108,7 +135,10 @@ fn average(pixels: [Rgba<u8>; 4]) -> Rgba<u8> {
     return Rgba([0, 0, 0, 0]);
   }
   let channel = |c: usize| {
-    let total: u32 = pixels.iter().map(|pixel| pixel[c] as u32 * pixel[3] as u32).sum();
+    let total: u32 = pixels
+      .iter()
+      .map(|pixel| pixel[c] as u32 * pixel[3] as u32)
+      .sum();
     ((total + alpha / 2) / alpha) as u8
   };
   Rgba([channel(0), channel(1), channel(2), ((alpha + 2) / 4) as u8])
@@ -125,12 +155,18 @@ mod tests {
 
   /// Red on the left half and blue on the right
   fn halves() -> Picture {
-    Picture::new(RgbaImage::from_fn(4, 4, |x, _| if x < 2 { RED } else { BLUE }))
+    Picture::new(RgbaImage::from_fn(
+      4,
+      4,
+      |x, _| if x < 2 { RED } else { BLUE },
+    ))
   }
 
   /// Every other pixel red and blue
   fn checkers(size: u32) -> Picture {
-    Picture::new(RgbaImage::from_fn(size, size, |x, y| if (x + y) % 2 == 0 { RED } else { BLUE }))
+    Picture::new(RgbaImage::from_fn(size, size, |x, y| {
+      if (x + y) % 2 == 0 { RED } else { BLUE }
+    }))
   }
 
   #[test]
@@ -154,8 +190,14 @@ mod tests {
     let picture = halves();
     assert_eq!(picture.color(0.0, Vec2::new(-0.5, -0.5), Vec2::ZERO), RED);
     assert_eq!(picture.color(0.0, Vec2::new(0.5, 0.5), Vec2::ZERO), BLUE);
-    assert_eq!(picture.color(0.0, Vec2::new(0.51, 0.0), Vec2::ZERO), Rgba([0, 0, 0, 0]));
-    assert_eq!(picture.color(0.0, Vec2::new(0.0, -0.51), Vec2::ZERO), Rgba([0, 0, 0, 0]));
+    assert_eq!(
+      picture.color(0.0, Vec2::new(0.51, 0.0), Vec2::ZERO),
+      Rgba([0, 0, 0, 0])
+    );
+    assert_eq!(
+      picture.color(0.0, Vec2::new(0.0, -0.51), Vec2::ZERO),
+      Rgba([0, 0, 0, 0])
+    );
   }
 
   #[test]
@@ -164,27 +206,43 @@ mod tests {
     let reach = Vec2::splat(0.1);
     assert_eq!(picture.color(0.0, Vec2::new(-0.55, 0.0), reach), RED);
     assert_eq!(picture.color(0.0, Vec2::new(0.55, 0.0), reach), BLUE);
-    assert_eq!(picture.color(0.0, Vec2::new(-0.65, 0.0), reach), Rgba([0, 0, 0, 0]));
-    assert_eq!(picture.color(0.0, Vec2::new(f32::NAN, 0.0), reach), Rgba([0, 0, 0, 0]));
+    assert_eq!(
+      picture.color(0.0, Vec2::new(-0.65, 0.0), reach),
+      Rgba([0, 0, 0, 0])
+    );
+    assert_eq!(
+      picture.color(0.0, Vec2::new(f32::NAN, 0.0), reach),
+      Rgba([0, 0, 0, 0])
+    );
   }
 
   #[test]
   fn a_sample_covering_many_pixels_gets_their_average() {
     let color = checkers(64).color(0.0, Vec2::ZERO, Vec2::splat(0.1));
-    assert!((126..=129).contains(&color[0]) && (126..=129).contains(&color[2]), "{color:?}");
+    assert!(
+      (126..=129).contains(&color[0]) && (126..=129).contains(&color[2]),
+      "{color:?}"
+    );
   }
 
   #[test]
   fn a_sample_stays_steady_as_fine_detail_moves_under_it() {
     let picture = checkers(256);
-    let colors: Vec<_> = (0..50).map(|i| picture.color(0.0, Vec2::new(i as f32 / 300.0, 0.0), Vec2::splat(0.1))).collect();
+    let colors: Vec<_> = (0..50)
+      .map(|i| picture.color(0.0, Vec2::new(i as f32 / 300.0, 0.0), Vec2::splat(0.1)))
+      .collect();
     let reds = || colors.iter().map(|color| color[0]);
-    assert!(reds().max().unwrap() - reds().min().unwrap() <= 2, "{colors:?}");
+    assert!(
+      reds().max().unwrap() - reds().min().unwrap() <= 2,
+      "{colors:?}"
+    );
   }
 
   #[test]
   fn a_flat_image_still_shrinks_along_its_long_side() {
-    let picture = Picture::new(RgbaImage::from_fn(8, 1, |x, _| if x % 2 == 0 { RED } else { BLUE }));
+    let picture = Picture::new(RgbaImage::from_fn(8, 1, |x, _| {
+      if x % 2 == 0 { RED } else { BLUE }
+    }));
     assert_eq!(picture.frames[0][1].dimensions(), (4, 1));
     assert_eq!(picture.frames[0].last().unwrap().dimensions(), (1, 1));
   }
@@ -197,7 +255,10 @@ mod tests {
   #[test]
   fn an_image_with_no_pixels_draws_nothing() {
     let picture = Picture::new(RgbaImage::new(0, 0));
-    assert_eq!(picture.color(0.0, Vec2::ZERO, Vec2::ZERO), Rgba([0, 0, 0, 0]));
+    assert_eq!(
+      picture.color(0.0, Vec2::ZERO, Vec2::ZERO),
+      Rgba([0, 0, 0, 0])
+    );
   }
 
   /// One frame each of red, green, and blue
@@ -225,7 +286,10 @@ mod tests {
   fn frames_past_the_ends_are_the_ends() {
     assert_eq!(three_frames().color(-4.0, Vec2::ZERO, Vec2::ZERO), RED);
     assert_eq!(three_frames().color(3.0, Vec2::ZERO, Vec2::ZERO), BLUE);
-    assert_eq!(three_frames().color(f32::INFINITY, Vec2::ZERO, Vec2::ZERO), BLUE);
+    assert_eq!(
+      three_frames().color(f32::INFINITY, Vec2::ZERO, Vec2::ZERO),
+      BLUE
+    );
     assert_eq!(three_frames().color(f32::NAN, Vec2::ZERO, Vec2::ZERO), RED);
   }
 
@@ -246,6 +310,9 @@ mod tests {
   fn no_frames_draw_nothing() {
     let picture = Picture::animated([], 0.0);
     assert_eq!(picture.frames(), 0);
-    assert_eq!(picture.color(0.0, Vec2::ZERO, Vec2::ZERO), Rgba([0, 0, 0, 0]));
+    assert_eq!(
+      picture.color(0.0, Vec2::ZERO, Vec2::ZERO),
+      Rgba([0, 0, 0, 0])
+    );
   }
 }

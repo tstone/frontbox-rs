@@ -32,13 +32,19 @@ pub enum TraceEvent {
     parent: Option<u64>,
     /// Whether it started active, which it doesn't under an inactive parent
     active: bool,
+    /// Whether it's a `Group`, in which case `name` is the group's own name
+    group: bool,
+    /// What it's for, from [`System::description`](crate::systems::System::description)
+    description: Option<&'static str>,
   },
   SystemDespawned {
     id: u64,
+    cause: DespawnCause,
   },
   SystemActiveStateChange {
     id: u64,
     active: bool,
+    cause: ActivityCause,
   },
   /// A state changed value. `None` once its owner despawned, so no system sets it.
   StateChange {
@@ -95,6 +101,12 @@ pub enum TraceEvent {
   RoutineResumed {
     routine: &'static str,
   },
+  /// The participant's step is over
+  RoutineStepEnded {
+    routine: &'static str,
+    participant: u64,
+    ending: StepEnding,
+  },
   /// The current participant halted the routine. It completes once its origin is active.
   RoutineHalted {
     routine: &'static str,
@@ -117,9 +129,54 @@ pub enum TraceEvent {
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum RoutineSkipReason {
-  /// No instance in reach of the origin
+  /// No system of its type is running
   Missing,
   Inactive,
+}
+
+/// Why a system became active, or stopped being active
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum ActivityCause {
+  /// Its parent activated or deactivated it
+  Parent { id: u64 },
+  /// An ancestor became active or stopped, and the change reached it. `id` is the ancestor where it started.
+  Ancestor { id: u64 },
+  /// Its own `is_active` changed. `during` is what was being delivered when the framework noticed: an event's type name,
+  /// or `"tick"`. Usually a state change just before it is what changed it.
+  IsActive { during: Option<&'static str> },
+}
+
+/// Why a system was despawned
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum DespawnCause {
+  /// It despawned itself
+  Itself,
+  /// One of its handlers panicked
+  Panicked,
+  /// It replaced itself with another system
+  Replaced,
+  /// Its parent despawned it
+  Parent { id: u64 },
+  /// An ancestor was despawned. `id` is the ancestor where it started.
+  Ancestor { id: u64 },
+}
+
+/// How a routine participant's step came to an end
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum StepEnding {
+  /// It completed its step
+  Completed,
+  /// It halted the routine
+  Halted,
+  /// It was despawned or deactivated mid-step
+  Stopped,
+  /// The routine's origin cancelled it
+  Cancelled,
+  /// The routine's origin was despawned
+  Abandoned,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

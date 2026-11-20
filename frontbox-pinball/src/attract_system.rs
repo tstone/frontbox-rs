@@ -21,11 +21,18 @@ pub struct AttractSystem {
 
 impl AttractSystem {
   pub fn new(scenes: Vec<Scene>) -> Self {
-    Self { scenes: scenes.into_iter().map(ScenePlayer::new).collect(), current: 0 }
+    Self {
+      scenes: scenes.into_iter().map(ScenePlayer::new).collect(),
+      current: 0,
+    }
   }
 }
 
 impl System for AttractSystem {
+  fn description() -> Option<&'static str> {
+    Some("Plays the attract mode scenes while no game is running")
+  }
+
   fn is_active(&self, ctx: &SystemContext) -> bool {
     ctx.states.is(GamePhase::None)
   }
@@ -82,14 +89,27 @@ mod tests {
   /// The names of the scenes showing
   fn showing(context: &TestContext) -> Vec<String> {
     let names = context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| {
-      scenes.shown().map(|(_, playback)| playback.scene().layers[0].layer().unwrap().name.clone().unwrap()).collect()
+      scenes
+        .shown()
+        .map(|(_, playback)| {
+          playback.scene().layers[0]
+            .layer()
+            .unwrap()
+            .name
+            .clone()
+            .unwrap()
+        })
+        .collect()
     });
     names.unwrap()
   }
 
   /// Ticks the scenes, then attract mode, as the run loop would
   fn tick(attract: &mut AttractSystem, context: &TestContext, delta: Duration) {
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
     attract.on_tick(delta, &context.sys_ctx());
   }
 
@@ -160,7 +180,11 @@ mod tests {
     attract.on_reactivate(&context.sys_ctx());
 
     tick(&mut attract, &context, Duration::from_millis(600));
-    assert_eq!(showing(&context), ["blue"], "still the second scene, with a whole second to play");
+    assert_eq!(
+      showing(&context),
+      ["blue"],
+      "still the second scene, with a whole second to play"
+    );
   }
 
   #[test]
@@ -173,10 +197,17 @@ mod tests {
     for phase in [GamePhase::Starting, GamePhase::Active, GamePhase::Ending] {
       context.svc_ctx().for_system(owner).states.set(phase);
       context.apply_states();
-      assert!(!system.is_active(&context.svc_ctx().for_system(owner)), "{phase:?}");
+      assert!(
+        !system.is_active(&context.svc_ctx().for_system(owner)),
+        "{phase:?}"
+      );
     }
 
-    context.svc_ctx().for_system(owner).states.set(GamePhase::None);
+    context
+      .svc_ctx()
+      .for_system(owner)
+      .states
+      .set(GamePhase::None);
     context.apply_states();
     assert!(system.is_active(&context.svc_ctx().for_system(owner)));
   }

@@ -30,14 +30,21 @@ pub struct SceneSystem {
 
 impl SceneSystem {
   pub fn new() -> Self {
-    Self { playbacks: Vec::new() }
+    Self {
+      playbacks: Vec::new(),
+    }
   }
 
   /// Plays a scene to its end, owned by no system
   pub fn play(&mut self, scene: &PlayableScene<Completes>) -> PlaybackId {
     let id = PlaybackId::next();
     log::debug!(target: "frontbox::scene", "Playing {id:?} to its end");
-    self.playbacks.push(HeldPlayback { id, owner: None, owner_active: true, playback: Playback::new(scene) });
+    self.playbacks.push(HeldPlayback {
+      id,
+      owner: None,
+      owner_active: true,
+      playback: Playback::new(scene),
+    });
     id
   }
 
@@ -45,7 +52,12 @@ impl SceneSystem {
   pub fn start<C>(&mut self, owner: u64, scene: &PlayableScene<C>) -> PlaybackId {
     let id = PlaybackId::next();
     log::debug!(target: "frontbox::scene", "System {owner} started {id:?}");
-    self.playbacks.push(HeldPlayback { id, owner: Some(owner), owner_active: true, playback: Playback::new(scene) });
+    self.playbacks.push(HeldPlayback {
+      id,
+      owner: Some(owner),
+      owner_active: true,
+      playback: Playback::new(scene),
+    });
     id
   }
 
@@ -56,7 +68,11 @@ impl SceneSystem {
 
   /// A playback that's still here, to change its variables
   pub fn playback(&mut self, id: PlaybackId) -> Option<&mut Playback> {
-    self.playbacks.iter_mut().find(|held| held.id == id).map(|held| &mut held.playback)
+    self
+      .playbacks
+      .iter_mut()
+      .find(|held| held.id == id)
+      .map(|held| &mut held.playback)
   }
 
   /// Whether a playback is still held. One goes when it's removed, when it completes unless it holds its last moment,
@@ -67,15 +83,28 @@ impl SceneSystem {
 
   /// The playbacks to draw this frame, in the order they started
   pub fn shown(&self) -> impl Iterator<Item = (PlaybackId, &Playback)> {
-    self.playbacks.iter().filter(|held| held.owner_active && held.playback.is_shown()).map(|held| (held.id, &held.playback))
+    self
+      .playbacks
+      .iter()
+      .filter(|held| held.owner_active && held.playback.is_shown())
+      .map(|held| (held.id, &held.playback))
   }
 
   fn owned_by(&mut self, owner: u64) -> impl Iterator<Item = &mut HeldPlayback> {
-    self.playbacks.iter_mut().filter(move |held| held.owner == Some(owner))
+    self
+      .playbacks
+      .iter_mut()
+      .filter(move |held| held.owner == Some(owner))
   }
 }
 
 impl System for SceneSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Keeps the scenes that are playing, such as light shows and animations, and moves them along",
+    )
+  }
+
   fn on_tick(&mut self, delta: Duration, ctx: &SystemContext) {
     for held in self.playbacks.iter_mut().filter(|held| held.owner_active) {
       let was_complete = held.playback.is_complete();
@@ -91,7 +120,9 @@ impl System for SceneSystem {
     if let Some(SystemDespawned { id, .. }) = event.downcast_ref::<SystemDespawned>() {
       self.playbacks.retain(|held| held.owner != Some(*id));
     } else if let Some(SystemDeactivated { id, .. }) = event.downcast_ref::<SystemDeactivated>() {
-      self.owned_by(*id).for_each(|held| held.owner_active = false);
+      self
+        .owned_by(*id)
+        .for_each(|held| held.owner_active = false);
     } else if let Some(SystemReactivated { id, .. }) = event.downcast_ref::<SystemReactivated>() {
       self.owned_by(*id).for_each(|held| held.owner_active = true);
     }
@@ -136,15 +167,22 @@ mod tests {
   }
 
   fn completing(duration: f32) -> PlayableScene<Completes> {
-    PlayableScene::completing(Scene::new(vec![]).timing(Timing::new(duration, Cycle::Once))).unwrap()
+    PlayableScene::completing(Scene::new(vec![]).timing(Timing::new(duration, Cycle::Once)))
+      .unwrap()
   }
 
   fn tick(context: &TestContext, delta: Duration) {
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_tick(delta, &context.sys_ctx()));
   }
 
   fn send(context: &TestContext, event: impl Event) {
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&event, &context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.on_event(&event, &context.sys_ctx()));
   }
 
   fn with_scenes<R>(context: &TestContext, f: impl FnOnce(&mut SceneSystem) -> R) -> R {
@@ -180,14 +218,29 @@ mod tests {
     tick(&context, Duration::from_secs(1));
     assert!(!with_scenes(&context, |scenes| scenes.contains(id)));
     let events = context.events_emitted();
-    let completed: Vec<_> = events.iter().filter_map(|event| event.event.downcast_ref::<ScenePlaybackCompleted>()).collect();
-    assert_eq!(completed.iter().map(|event| event.playback).collect::<Vec<_>>(), [id]);
+    let completed: Vec<_> = events
+      .iter()
+      .filter_map(|event| event.event.downcast_ref::<ScenePlaybackCompleted>())
+      .collect();
+    assert_eq!(
+      completed
+        .iter()
+        .map(|event| event.playback)
+        .collect::<Vec<_>>(),
+      [id]
+    );
   }
 
   #[test]
   fn one_that_holds_stays_until_removed() {
     let context = context();
-    let id = start(&context, OWNER, Scene::new(vec![]).timing(Timing::new(0.5, Cycle::Once).end(EndBehavior::Hold)).into());
+    let id = start(
+      &context,
+      OWNER,
+      Scene::new(vec![])
+        .timing(Timing::new(0.5, Cycle::Once).end(EndBehavior::Hold))
+        .into(),
+    );
     tick(&context, Duration::from_secs(1));
     assert_eq!(shown(&context), [id]);
     with_scenes(&context, |scenes| scenes.remove(id));
@@ -204,7 +257,14 @@ mod tests {
 
     send(&context, SystemReactivated::new(OWNER));
     assert_eq!(shown(&context), [id]);
-    assert_eq!(with_scenes(&context, |scenes| scenes.playback(id).unwrap().moment().time), 0.0);
+    assert_eq!(
+      with_scenes(&context, |scenes| scenes
+        .playback(id)
+        .unwrap()
+        .moment()
+        .time),
+      0.0
+    );
   }
 
   #[test]
@@ -223,7 +283,14 @@ mod tests {
     tick(&context, Duration::from_millis(500));
     send(&context, SystemDespawned::new(OWNER));
     assert_eq!(shown(&context), [id]);
-    assert_eq!(with_scenes(&context, |scenes| scenes.playback(id).unwrap().moment().time), 0.5);
+    assert_eq!(
+      with_scenes(&context, |scenes| scenes
+        .playback(id)
+        .unwrap()
+        .moment()
+        .time),
+      0.5
+    );
 
     tick(&context, Duration::from_millis(600));
     assert!(!with_scenes(&context, |scenes| scenes.contains(id)));

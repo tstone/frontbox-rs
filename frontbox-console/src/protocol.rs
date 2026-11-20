@@ -3,9 +3,11 @@ use frontbox_core::prelude::DriverMode;
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
-use frontbox_core::prelude::app_tracer::{ConfigView, DriverState, TraceEvent};
-use frontbox_scene::Scene;
+use frontbox_core::prelude::app_tracer::{
+  ActivityCause, ConfigView, DespawnCause, DriverState, StepEnding, TraceEvent,
+};
 use frontbox_metrics::CounterTotal;
+use frontbox_scene::Scene;
 use std::collections::{BTreeMap, VecDeque};
 use ts_rs::TS;
 
@@ -22,9 +24,14 @@ pub enum ServerMessage {
   /// Sent only to the client that asked, in reply to `RenderScene`
   SceneRendered(RenderedScene),
   /// Sent only to the client that asked, when the scene in a `RenderScene` can't be rendered
-  SceneRenderFailed { error: String },
+  SceneRenderFailed {
+    error: String,
+  },
   /// Sent only to the client that asked, when the scene in a `RenderClip` can't be rendered
-  SceneClipFailed { id: u32, error: String },
+  SceneClipFailed {
+    id: u32,
+    error: String,
+  },
 }
 
 #[derive(Clone, Default, serde::Serialize, TS)]
@@ -84,8 +91,52 @@ pub struct System {
   /// The system that spawned it, or `None` at the top level
   pub parent: Option<u64>,
   pub active: bool,
+  /// Whether it's a `Group`, named by its own name rather than its type's
+  pub group: bool,
+  /// What it's for, when it says
+  pub description: Option<&'static str>,
+  /// When it was spawned, in milliseconds since the console started (as `TraceRecord::at_ms`)
+  pub spawned_ms: u64,
+  /// When it was despawned. A despawned system is kept for a while, to look back at.
+  pub despawned_ms: Option<u64>,
+  /// What happened to it, oldest first. Only the latest are kept.
+  #[ts(as = "Vec<HistoryEntry>")]
+  pub history: VecDeque<HistoryEntry>,
   #[ts(as = "Vec<TraceRecord>")]
   pub recent_events: VecDeque<TraceRecord>,
+}
+
+/// Something that happened to a system, for its history. Times are in milliseconds since the console started.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, TS)]
+#[serde(tag = "kind")]
+pub enum HistoryEntry {
+  Spawned {
+    at_ms: u64,
+    active: bool,
+  },
+  ActivityChanged {
+    at_ms: u64,
+    seq: u64,
+    active: bool,
+    cause: ActivityCause,
+  },
+  /// It held a routine's step, from `started_ms` until `ended_ms`, or still does
+  RoutineStep {
+    routine: &'static str,
+    started_ms: u64,
+    ended_ms: Option<u64>,
+    ending: Option<StepEnding>,
+  },
+  /// It emitted an event, by type name. `seq` finds it in the log.
+  Emitted {
+    at_ms: u64,
+    seq: u64,
+    event: &'static str,
+  },
+  Despawned {
+    at_ms: u64,
+    cause: DespawnCause,
+  },
 }
 
 #[derive(Clone, serde::Serialize, TS)]
@@ -354,7 +405,12 @@ pub enum ClientMessage {
   },
   /// Play a sound from the content folder on the machine, as a scene preview reaches the start of one of its sounds. Nothing plays if
   /// the app has no sound system.
-  PlaySound { sound: String, volume: f32, skip: f32, length: Option<f32> },
+  PlaySound {
+    sound: String,
+    volume: f32,
+    skip: f32,
+    length: Option<f32>,
+  },
 }
 
 /// A scene to render, as either of the forms the console edits it in
@@ -389,4 +445,3 @@ pub struct SceneSize {
   /// Points down a display the machine doesn't have, and the height of a light layer on a plane it doesn't have
   pub height: usize,
 }
-

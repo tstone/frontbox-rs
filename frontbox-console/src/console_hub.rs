@@ -1,15 +1,15 @@
 use axum::body::Bytes;
 use axum::extract::ws::{Message, Utf8Bytes};
-use frontbox_gfx::scene::Content;
-use frontbox_core::prelude::app_tracer::{ConfigView, TraceEvent, TracerControlEvent};
+use frontbox_core::prelude::app_tracer::{ConfigView, StepEnding, TraceEvent, TracerControlEvent};
 use frontbox_core::prelude::{
-  AppPlane, ConfigDomainValue, DEFAULT_LIGHT_RADIUS, Hardware, Rgb, RoutineCompleted, RoutineStarted, SwitchState,
-  SystemDespawned, SystemSpawned,
+  AppPlane, ConfigDomainValue, DEFAULT_LIGHT_RADIUS, Hardware, Rgb, RoutineCompleted,
+  RoutineStarted, SwitchState, SystemDespawned, SystemSpawned,
 };
+use frontbox_gfx::scene::Content;
 use frontbox_metrics::MetricsDb;
 use frontbox_pinball::{GameEnding, GameStarting, TurnStarting};
 use std::any::type_name;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -20,6 +20,10 @@ use crate::scene_render::{PreviewMachine, render_clip, render_scene};
 
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
+/// Entries kept in each system's history. Mirrored in `web/src/state/console.ts`.
+const HISTORY_PER_SYSTEM: usize = 300;
+/// Despawned systems kept to look back at, latest first. Mirrored in `web/src/state/console.ts`.
+const DESPAWNED_KEPT: usize = 50;
 
 /// Messages buffered per client for events and other state. A client further behind than this gets everything again.
 const BROADCAST_CAPACITY: usize = 1024;
@@ -93,7 +97,11 @@ impl ConsoleHub {
           origin: origin.to_array(),
           rotation: rotation.to_array(),
           extent: plane.extent.to_array(),
-          corners: plane.corners().iter().map(|corner| corner.to_array()).collect(),
+          corners: plane
+            .corners()
+            .iter()
+            .map(|corner| corner.to_array())
+            .collect(),
           image: plane
             .image
             .as_ref()
@@ -159,7 +167,12 @@ impl ConsoleHub {
     let Some(control) = &state.control else {
       return;
     };
-    let _ = control.send(TracerControlEvent::PlaySound { sound, volume, skip, length });
+    let _ = control.send(TracerControlEvent::PlaySound {
+      sound,
+      volume,
+      skip,
+      length,
+    });
   }
 
   pub fn set_metrics(&self, metrics: Option<MetricsDb>) {
@@ -178,7 +191,11 @@ impl ConsoleHub {
   ) -> Option<Utf8Bytes> {
     let machine = self.preview_machine();
     let content = self.content();
-    let message = match tokio::task::spawn_blocking(move || render_scene(source, size, machine, content, time, cycle, reference, seed)).await {
+    let message = match tokio::task::spawn_blocking(move || {
+      render_scene(source, size, machine, content, time, cycle, reference, seed)
+    })
+    .await
+    {
       Ok(Ok(rendered)) => ServerMessage::SceneRendered(rendered),
       Ok(Err(error)) => ServerMessage::SceneRenderFailed { error },
       Err(err) => {
@@ -200,9 +217,14 @@ impl ConsoleHub {
     seed: u32,
   ) -> Option<Message> {
     let machine = self.preview_machine();
-    let failed = |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
+    let failed =
+      |error: String| serialize(&ServerMessage::SceneClipFailed { id, error }).map(Message::Text);
     let content = self.content();
-    match tokio::task::spawn_blocking(move || render_clip(id, source, size, machine, content, cycle, reference, seed)).await {
+    match tokio::task::spawn_blocking(move || {
+      render_clip(id, source, size, machine, content, cycle, reference, seed)
+    })
+    .await
+    {
       Ok(Ok(clip)) => Some(Message::Binary([&[BINARY_CLIP][..], &clip].concat().into())),
       Ok(Err(error)) => failed(error),
       Err(err) => {
@@ -240,8 +262,17 @@ impl ConsoleHub {
       .as_ref()
       .map(|hardware| hardware.lights.clone())
       .unwrap_or_default();
-    let displays = state.snapshot.displays.iter().map(|display| (display.name.clone(), (display.width as usize, display.height as usize)));
-    PreviewMachine { lights, radius: state.light_radius, displays: displays.collect() }
+    let displays = state.snapshot.displays.iter().map(|display| {
+      (
+        display.name.clone(),
+        (display.width as usize, display.height as usize),
+      )
+    });
+    PreviewMachine {
+      lights,
+      radius: state.light_radius,
+      displays: displays.collect(),
+    }
   }
 
   /// Every counter's total, read from the metrics database off the async runtime, as a message for one client
@@ -282,7 +313,14 @@ impl ConsoleHub {
       .values()
       .filter_map(|led| {
         let address = led.address.led()?;
-        Some(((address.exp.board_address, address.exp.breakout, address.index), led.name.clone()))
+        Some((
+          (
+            address.exp.board_address,
+            address.exp.breakout,
+            address.index,
+          ),
+          led.name.clone(),
+        ))
       })
       .collect();
     state.snapshot.hardware = Some(hardware);
@@ -309,7 +347,10 @@ impl ConsoleHub {
   pub fn add_display(&self, view: DisplayView) -> usize {
     let mut state = self.state.lock().unwrap();
     state.snapshot.displays.push(view);
-    state.display_frames.push(DisplayFrame { latest: None, pending: false });
+    state.display_frames.push(DisplayFrame {
+      latest: None,
+      pending: false,
+    });
     if let Some(init) = serialize(&ServerMessage::Init(state.snapshot.clone())) {
       let _ = self.tx.send(init);
     }
@@ -323,14 +364,21 @@ impl ConsoleHub {
     message.extend(frame.iter().flat_map(|pixel| pixel.0));
     let mut state = self.state.lock().unwrap();
     if let Some(feed) = state.display_frames.get_mut(display) {
-      *feed = DisplayFrame { latest: Some(message.into()), pending: true };
+      *feed = DisplayFrame {
+        latest: Some(message.into()),
+        pending: true,
+      };
     }
   }
 
   /// Every display's newest frame, for a client that's just connected or fell behind
   pub fn display_frames(&self) -> Vec<Bytes> {
     let state = self.state.lock().unwrap();
-    state.display_frames.iter().filter_map(|feed| feed.latest.clone()).collect()
+    state
+      .display_frames
+      .iter()
+      .filter_map(|feed| feed.latest.clone())
+      .collect()
   }
 
   /// Called on a timer by the tracer
@@ -491,6 +539,7 @@ impl GameTransition {
 /// Mirror of the reducer in `web/src/state/console.ts`. Game tracking is not mirrored; see `ingest`.
 fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
   let systems = &mut snapshot.systems;
+  let at_ms = record.at_ms;
   match &record.event {
     TraceEvent::StateChange { name, value } => {
       match value {
@@ -505,18 +554,51 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       name,
       parent,
       active,
+      group,
+      description,
     } => systems.push(System {
       id: *id,
       name,
       parent: *parent,
       active: *active,
+      group: *group,
+      description: *description,
+      spawned_ms: at_ms,
+      despawned_ms: None,
+      history: VecDeque::from([HistoryEntry::Spawned {
+        at_ms,
+        active: *active,
+      }]),
       recent_events: VecDeque::new(),
     }),
     // its children are despawned with it, each traced on its own
-    TraceEvent::SystemDespawned { id } => systems.retain(|s| s.id != *id),
-    TraceEvent::SystemActiveStateChange { id, active } => {
-      if let Some(system) = systems.iter_mut().find(|s| s.id == *id) {
+    TraceEvent::SystemDespawned { id, cause } => {
+      if let Some(system) = running(systems, *id) {
+        system.despawned_ms = Some(at_ms);
+        system.active = false;
+        end_open_steps(system, at_ms, StepEnding::Stopped);
+        push_history(
+          system,
+          HistoryEntry::Despawned {
+            at_ms,
+            cause: *cause,
+          },
+        );
+      }
+      forget_old_despawned(systems);
+    }
+    TraceEvent::SystemActiveStateChange { id, active, cause } => {
+      if let Some(system) = running(systems, *id) {
         system.active = *active;
+        push_history(
+          system,
+          HistoryEntry::ActivityChanged {
+            at_ms,
+            seq: record.seq,
+            active: *active,
+            cause: *cause,
+          },
+        );
       }
     }
     TraceEvent::SwitchStateChange { switch_id, state } => {
@@ -530,13 +612,22 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
     }
     TraceEvent::Event {
       sender: Some(sender),
+      type_name,
       ..
     } => {
-      if let Some(system) = snapshot.systems.iter_mut().find(|s| s.id == *sender) {
+      if let Some(system) = running(systems, *sender) {
         if system.recent_events.len() >= RECENT_EVENTS_PER_SYSTEM {
           system.recent_events.pop_front();
         }
         system.recent_events.push_back(record.clone());
+        push_history(
+          system,
+          HistoryEntry::Emitted {
+            at_ms,
+            seq: record.seq,
+            event: type_name,
+          },
+        );
       }
     }
     TraceEvent::Event { .. } => {}
@@ -545,9 +636,48 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       origin: *origin,
       current: None,
     }),
-    TraceEvent::RoutineStep { routine, participant } => {
+    TraceEvent::RoutineStep {
+      routine,
+      participant,
+    } => {
       if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
         progress.current = Some(*participant);
+      }
+      if let Some(system) = running(systems, *participant) {
+        push_history(
+          system,
+          HistoryEntry::RoutineStep {
+            routine,
+            started_ms: at_ms,
+            ended_ms: None,
+            ending: None,
+          },
+        );
+      }
+    }
+    TraceEvent::RoutineStepEnded {
+      routine,
+      participant,
+      ending,
+    } => {
+      if let Some(system) = systems.iter_mut().find(|s| s.id == *participant) {
+        let open = system
+          .history
+          .iter_mut()
+          .rev()
+          .find_map(|entry| match entry {
+            HistoryEntry::RoutineStep {
+              routine: step_routine,
+              ended_ms,
+              ending,
+              ..
+            } if step_routine == routine && ended_ms.is_none() => Some((ended_ms, ending)),
+            _ => None,
+          });
+        if let Some((ended_ms, step_ending)) = open {
+          *ended_ms = Some(at_ms);
+          *step_ending = Some(*ending);
+        }
       }
     }
     // paused once the step in progress is over, and a halt ends it, so no one holds it
@@ -572,6 +702,58 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
     snapshot.log.pop_front();
   }
   snapshot.log.push_back(record.clone());
+}
+
+/// The running system with this id. Despawned systems are kept for a while, but nothing more happens to them.
+fn running(systems: &mut [System], id: u64) -> Option<&mut System> {
+  systems
+    .iter_mut()
+    .find(|s| s.id == id && s.despawned_ms.is_none())
+}
+
+fn push_history(system: &mut System, entry: HistoryEntry) {
+  if system.history.len() >= HISTORY_PER_SYSTEM {
+    system.history.pop_front();
+  }
+  system.history.push_back(entry);
+}
+
+/// Ends the routine steps the system still holds, as when it's despawned mid-step
+fn end_open_steps(system: &mut System, at_ms: u64, how: StepEnding) {
+  for entry in system.history.iter_mut() {
+    if let HistoryEntry::RoutineStep {
+      ended_ms: ended_ms @ None,
+      ending,
+      ..
+    } = entry
+    {
+      *ended_ms = Some(at_ms);
+      *ending = Some(how);
+    }
+  }
+}
+
+/// Drops the earliest despawned systems beyond the number kept
+fn forget_old_despawned(systems: &mut Vec<System>) {
+  // by when, then by place in the list, as several are often despawned in the same millisecond
+  let mut despawned: Vec<(u64, usize)> = systems
+    .iter()
+    .enumerate()
+    .filter_map(|(index, s)| s.despawned_ms.map(|at| (at, index)))
+    .collect();
+  if despawned.len() <= DESPAWNED_KEPT {
+    return;
+  }
+  despawned.sort_unstable();
+  let dropped: HashSet<usize> = despawned[..despawned.len() - DESPAWNED_KEPT]
+    .iter()
+    .map(|(_, index)| *index)
+    .collect();
+  let mut index = 0;
+  systems.retain(|_| {
+    index += 1;
+    !dropped.contains(&(index - 1))
+  });
 }
 
 fn serialize(message: &ServerMessage) -> Option<Utf8Bytes> {
@@ -639,6 +821,7 @@ fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use frontbox_core::prelude::app_tracer::{ActivityCause, DespawnCause};
   use frontbox_core::prelude::{Config, Ranges};
 
   fn turns(value: i64) -> ConfigView {
@@ -665,7 +848,10 @@ mod tests {
   #[test]
   fn state_traces_update_the_states_without_logging() {
     let hub = ConsoleHub::new();
-    let set = |value| TraceEvent::StateChange { name: "Phase", value };
+    let set = |value| TraceEvent::StateChange {
+      name: "Phase",
+      value,
+    };
 
     hub.ingest(set(Some("Active".into())));
     {
@@ -679,22 +865,187 @@ mod tests {
     assert!(state.snapshot.states.is_empty());
   }
 
+  fn spawned(id: u64, parent: Option<u64>) -> TraceEvent {
+    TraceEvent::SystemSpawned {
+      id,
+      name: "player1",
+      parent,
+      active: true,
+      group: true,
+      description: None,
+    }
+  }
+
+  /// The history of the system with this id
+  fn history(hub: &ConsoleHub, id: u64) -> Vec<HistoryEntry> {
+    let state = hub.state.lock().unwrap();
+    let system = state.snapshot.systems.iter().find(|s| s.id == id).unwrap();
+    system.history.iter().cloned().collect()
+  }
+
   #[test]
-  fn systems_are_listed_with_their_parents_until_despawned() {
+  fn systems_are_listed_with_their_parents_and_kept_once_despawned() {
     let hub = ConsoleHub::new();
-    let spawned = |id, parent| TraceEvent::SystemSpawned { id, name: "player1", parent, active: true };
 
     hub.ingest(spawned(1, None));
     hub.ingest(spawned(2, Some(1)));
     {
       let state = hub.state.lock().unwrap();
-      let parents: Vec<_> = state.snapshot.systems.iter().map(|s| (s.id, s.parent)).collect();
+      let parents: Vec<_> = state
+        .snapshot
+        .systems
+        .iter()
+        .map(|s| (s.id, s.parent))
+        .collect();
       assert_eq!(parents, [(1, None), (2, Some(1))]);
     }
 
-    hub.ingest(TraceEvent::SystemDespawned { id: 2 });
+    hub.ingest(TraceEvent::SystemDespawned {
+      id: 2,
+      cause: DespawnCause::Itself,
+    });
     let state = hub.state.lock().unwrap();
-    assert_eq!(state.snapshot.systems.len(), 1);
+    let despawned: Vec<_> = state
+      .snapshot
+      .systems
+      .iter()
+      .map(|s| (s.id, s.despawned_ms.is_some()))
+      .collect();
+    assert_eq!(despawned, [(1, false), (2, true)]);
+  }
+
+  #[test]
+  fn only_the_latest_despawned_systems_are_kept() {
+    let hub = ConsoleHub::new();
+    for id in 0..(DESPAWNED_KEPT as u64 + 5) {
+      hub.ingest(spawned(id, None));
+      hub.ingest(TraceEvent::SystemDespawned {
+        id,
+        cause: DespawnCause::Itself,
+      });
+    }
+
+    let state = hub.state.lock().unwrap();
+    assert_eq!(state.snapshot.systems.len(), DESPAWNED_KEPT);
+    assert!(
+      state
+        .snapshot
+        .systems
+        .iter()
+        .any(|s| s.id == DESPAWNED_KEPT as u64 + 4),
+      "the latest is kept"
+    );
+    assert!(
+      !state.snapshot.systems.iter().any(|s| s.id == 0),
+      "the earliest is dropped"
+    );
+  }
+
+  #[test]
+  fn a_systems_history_records_its_activity_with_causes() {
+    let hub = ConsoleHub::new();
+    hub.ingest(spawned(1, None));
+    hub.ingest(spawned(2, Some(1)));
+    let cause = ActivityCause::Parent { id: 1 };
+
+    hub.ingest(TraceEvent::SystemActiveStateChange {
+      id: 2,
+      active: false,
+      cause,
+    });
+
+    let entries = history(&hub, 2);
+    assert!(matches!(
+      entries[0],
+      HistoryEntry::Spawned { active: true, .. }
+    ));
+    assert!(
+      matches!(entries[1], HistoryEntry::ActivityChanged { active: false, cause: c, .. } if c == cause)
+    );
+  }
+
+  #[test]
+  fn a_routine_step_runs_until_it_ends() {
+    let hub = ConsoleHub::new();
+    hub.ingest(spawned(1, None));
+
+    hub.ingest(TraceEvent::RoutineStep {
+      routine: "TurnEnding",
+      participant: 1,
+    });
+    assert!(matches!(
+      history(&hub, 1)[1],
+      HistoryEntry::RoutineStep {
+        ended_ms: None,
+        ending: None,
+        ..
+      }
+    ));
+
+    hub.ingest(TraceEvent::RoutineStepEnded {
+      routine: "TurnEnding",
+      participant: 1,
+      ending: StepEnding::Halted,
+    });
+    assert!(matches!(
+      history(&hub, 1)[1],
+      HistoryEntry::RoutineStep {
+        ended_ms: Some(_),
+        ending: Some(StepEnding::Halted),
+        ..
+      }
+    ));
+  }
+
+  #[test]
+  fn a_despawn_mid_step_ends_the_step() {
+    let hub = ConsoleHub::new();
+    hub.ingest(spawned(1, None));
+    hub.ingest(TraceEvent::RoutineStep {
+      routine: "TurnEnding",
+      participant: 1,
+    });
+
+    hub.ingest(TraceEvent::SystemDespawned {
+      id: 1,
+      cause: DespawnCause::Itself,
+    });
+
+    let entries = history(&hub, 1);
+    assert!(matches!(
+      entries[1],
+      HistoryEntry::RoutineStep {
+        ending: Some(StepEnding::Stopped),
+        ..
+      }
+    ));
+    assert!(matches!(
+      entries[2],
+      HistoryEntry::Despawned {
+        cause: DespawnCause::Itself,
+        ..
+      }
+    ));
+  }
+
+  #[test]
+  fn events_a_system_emits_are_in_its_history() {
+    let hub = ConsoleHub::new();
+    hub.ingest(spawned(1, None));
+
+    hub.ingest(TraceEvent::Event {
+      type_name: "BallSaved",
+      event: None,
+      sender: Some(1),
+    });
+
+    assert!(matches!(
+      history(&hub, 1)[1],
+      HistoryEntry::Emitted {
+        event: "BallSaved",
+        ..
+      }
+    ));
   }
 
   #[test]
@@ -717,7 +1068,12 @@ mod tests {
   }
 
   fn display(name: &str) -> DisplayView {
-    DisplayView { name: name.into(), width: 2, height: 1, placement: None }
+    DisplayView {
+      name: name.into(),
+      width: 2,
+      height: 1,
+      placement: None,
+    }
   }
 
   #[test]
@@ -735,6 +1091,13 @@ mod tests {
     let newest = [BINARY_DISPLAY_FRAME, 1, 7, 8, 9, 10, 11, 12];
     assert_eq!(frames.try_recv().unwrap()[..], newest);
     assert!(frames.try_recv().is_err());
-    assert_eq!(hub.display_frames().iter().map(|frame| &frame[..]).collect::<Vec<_>>(), [&newest[..]]);
+    assert_eq!(
+      hub
+        .display_frames()
+        .iter()
+        .map(|frame| &frame[..])
+        .collect::<Vec<_>>(),
+      [&newest[..]]
+    );
   }
 }

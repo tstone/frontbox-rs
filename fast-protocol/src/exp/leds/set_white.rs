@@ -33,7 +33,8 @@ mod tests {
 
   #[test]
   fn test_request() {
-    let result = SetWhiteCommand::new(ExpAddress::new(0x48, None), vec![(0, 0xFF), (1, 0x80)]).to_string();
+    let result =
+      SetWhiteCommand::new(ExpAddress::new(0x48, None), vec![(0, 0xFF), (1, 0x80)]).to_string();
     assert_eq!(result, "RW@48:0FF,180\r");
   }
 }

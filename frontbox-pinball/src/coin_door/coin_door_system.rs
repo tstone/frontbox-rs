@@ -24,6 +24,12 @@ impl CoinDoorSystem {
 }
 
 impl System for CoinDoorSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Notes when the coin door is open, so the game stays out of the way of an operator working on the machine",
+    )
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     if ctx.switches.is_open(self.switch).unwrap_or(false) {
       ctx.states.set(CoinDoor::Open);

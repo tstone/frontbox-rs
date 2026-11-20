@@ -187,10 +187,20 @@ impl LayeredLightManager {
     self.alternate_resolver.reset();
   }
 
-  fn declare_inner(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode, active: bool) {
+  fn declare_inner(
+    &mut self,
+    owner: u64,
+    z: i8,
+    colors: &[(LightAddress, Rgba<u8>)],
+    mode: LightMode,
+    active: bool,
+  ) {
     log::trace!(target: "frontbox::lighting", "System {owner} declared at z {z} ({mode:?}): {colors:?}");
 
-    let id = DeclarationIdentifier { system_id: owner, z_index: z };
+    let id = DeclarationIdentifier {
+      system_id: owner,
+      z_index: z,
+    };
     for (light, color) in colors {
       let on_light = self.declarations.entry(light.clone()).or_default();
       let order = match on_light.get(&id) {
@@ -261,11 +271,18 @@ impl LayeredLightManager {
     let mut shown = HashSet::new();
     for (id, playback) in scenes.shown() {
       shown.insert(id);
-      let placement = self.placements.entry(id).or_insert_with(|| place(playback.scene(), ctx));
+      let placement = self
+        .placements
+        .entry(id)
+        .or_insert_with(|| place(playback.scene(), ctx));
       placement.update_visits(playback.scene(), &playback.moment());
       for (z, light, color) in placement.colors(playback.scene(), &playback.moment()) {
         if color[3] > 0 {
-          self.played.entry(light.address.clone()).or_default().push((z, color));
+          self
+            .played
+            .entry(light.address.clone())
+            .or_default()
+            .push((z, color));
         }
       }
     }
@@ -319,7 +336,10 @@ impl LayeredLightManager {
     };
 
     // playbacks on this z are drawn over its declarations, in the order they started
-    let top_color = played.iter().filter(|(z, _)| z == max_z).fold(top_color, |below, (_, color)| color.composite_over(below));
+    let top_color = played
+      .iter()
+      .filter(|(z, _)| z == max_z)
+      .fold(top_color, |below, (_, color)| color.composite_over(below));
 
     // if the top color is transparent, composite it with the next highest declaration below it
     if top_color.alpha() < 255 && z_indexes.len() > 1 {
@@ -342,19 +362,32 @@ impl LayeredLightManager {
 
 impl LightManager for LayeredLightManager {
   fn declared_colors(&self, light: &LightAddress) -> Vec<Rgba<u8>> {
-    self.declarations_for(light).iter().map(|d| d.color).collect()
+    self
+      .declarations_for(light)
+      .iter()
+      .map(|d| d.color)
+      .collect()
   }
 
   fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode) {
     self.declare_inner(owner, z, colors, mode, true);
   }
 
-  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode) {
+  fn declare_inactive(
+    &mut self,
+    owner: u64,
+    z: i8,
+    colors: &[(LightAddress, Rgba<u8>)],
+    mode: LightMode,
+  ) {
     self.declare_inner(owner, z, colors, mode, false);
   }
 
   fn undeclare(&mut self, system_id: u64, z: i8, lights: &[LightAddress]) {
-    let target_id = DeclarationIdentifier { system_id, z_index: z };
+    let target_id = DeclarationIdentifier {
+      system_id,
+      z_index: z,
+    };
     for light in lights {
       if let Some(declarations) = self.declarations.get_mut(light) {
         declarations.retain(|id, _| id != &target_id);
@@ -393,7 +426,11 @@ impl LightManager for LayeredLightManager {
     }
   }
 
-  fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LightConflictResolution) {
+  fn set_conflict_resolution(
+    &mut self,
+    lights: &[LightAddress],
+    resolution: LightConflictResolution,
+  ) {
     for light in lights {
       self.conflict_resolution.insert(light.clone(), resolution);
     }
@@ -401,17 +438,30 @@ impl LightManager for LayeredLightManager {
 }
 
 impl System for LayeredLightManager {
+  fn description() -> Option<&'static str> {
+    Some("Decides the color of each light, combining everything shown on it in layers")
+  }
+
   fn provides(provides: &mut Provides<Self>) {
     provides.add::<dyn LightManager>(|s| s);
   }
 
   fn on_spawn(&mut self, ctx: &SystemContext) {
     // Create a copy of every light's address to reference during rendering
-    self.all_lights = ctx.lights.values().map(|light| light.address.clone()).collect();
+    self.all_lights = ctx
+      .lights
+      .values()
+      .map(|light| light.address.clone())
+      .collect();
     self.thresholds = self
       .threshold_queries
       .iter()
-      .flat_map(|(query, threshold)| query.resolve(ctx).into_iter().map(|light| (light, *threshold)))
+      .flat_map(|(query, threshold)| {
+        query
+          .resolve(ctx)
+          .into_iter()
+          .map(|light| (light, *threshold))
+      })
       .collect();
   }
 
@@ -438,7 +488,10 @@ impl System for LayeredLightManager {
   }
 
   fn on_render(&mut self, ctx: &SystemContext) {
-    let Lowered { leds: mut leds_to_set, drivers } = lower(self.resolve(ctx), self.threshold, &self.thresholds);
+    let Lowered {
+      leds: mut leds_to_set,
+      drivers,
+    } = lower(self.resolve(ctx), self.threshold, &self.thresholds);
 
     for (driver, on) in drivers {
       if self.prior_drivers.insert(driver, on) == Some(on) {
@@ -446,9 +499,13 @@ impl System for LayeredLightManager {
       }
       log::debug!(target: "frontbox::lighting", "Turning driver light {driver} {}", if on { "on" } else { "off" });
       if on {
-        ctx.drivers.activate(driver, ActivationMode::VirtualSwitchOn);
+        ctx
+          .drivers
+          .activate(driver, ActivationMode::VirtualSwitchOn);
       } else {
-        ctx.drivers.deactivate(driver, DeactivationMode::VirtualSwitchOff);
+        ctx
+          .drivers
+          .deactivate(driver, DeactivationMode::VirtualSwitchOff);
       }
     }
 
@@ -480,9 +537,7 @@ impl System for LayeredLightManager {
 
       for (address, leds) in outgoing.into_iter() {
         for chunk in leds.chunks(LED_SET_BATCH_SIZE) {
-          ctx
-            .lights
-            .set(address, chunk.to_vec());
+          ctx.lights.set(address, chunk.to_vec());
         }
       }
     }
@@ -542,15 +597,25 @@ fn place(scene: &Scene, ctx: &SystemContext) -> LightPlacement {
 
 /// What to write to each address for the colors its lights show. A light nothing gives a color is turned off, which
 /// `on_render` leaves out if it's already off. Single-channel lights on the same LED address are written as one RGB.
-fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>, threshold: f32, thresholds: &HashMap<LightAddress, f32>) -> Lowered {
+fn lower(
+  resolved: Vec<(LightAddress, Option<Rgba<u8>>)>,
+  threshold: f32,
+  thresholds: &HashMap<LightAddress, f32>,
+) -> Lowered {
   let mut lowered = Lowered::default();
   // Where each LED address with single-channel lights is in `lowered.leds`
   let mut shared: HashMap<LedAddress, usize> = HashMap::new();
   for (light, color) in resolved {
     let color = color.map_or(Rgb::black(), led_color);
     match light {
-      LightAddress::Exp { led, channels: LedChannels::Rgb } => lowered.leds.push((led, color)),
-      LightAddress::Exp { led, channels: LedChannels::One(channel) } => {
+      LightAddress::Exp {
+        led,
+        channels: LedChannels::Rgb,
+      } => lowered.leds.push((led, color)),
+      LightAddress::Exp {
+        led,
+        channels: LedChannels::One(channel),
+      } => {
         let index = *shared.entry(led.clone()).or_insert_with(|| {
           lowered.leds.push((led, Rgb::black()));
           lowered.leds.len() - 1
@@ -565,7 +630,9 @@ fn lower(resolved: Vec<(LightAddress, Option<Rgba<u8>>)>, threshold: f32, thresh
       }
       LightAddress::Driver { driver } => {
         let threshold = thresholds.get(&light).copied().unwrap_or(threshold);
-        lowered.drivers.push((driver, brightness(color) >= threshold));
+        lowered
+          .drivers
+          .push((driver, brightness(color) >= threshold));
       }
     }
   }
@@ -910,7 +977,8 @@ mod tests {
       index: 1,
     });
     system.declare(42, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
-    let is_active = |system: &LayeredLightManager| system.declarations[&light].values().all(|d| d.active);
+    let is_active =
+      |system: &LayeredLightManager| system.declarations[&light].values().all(|d| d.active);
 
     system.on_event(&SystemDeactivated::new(42), &ctx.sys_ctx());
     assert!(!is_active(&system));
@@ -930,9 +998,15 @@ mod tests {
       index: 1,
     });
 
-    ctx.sys_ctx().declare_lights(&vec![light.clone()], 0, Rgba::red());
+    ctx
+      .sys_ctx()
+      .declare_lights(&vec![light.clone()], 0, Rgba::red());
 
-    let colors = ctx.sys_ctx().light_manager().unwrap().declared_colors(&light);
+    let colors = ctx
+      .sys_ctx()
+      .light_manager()
+      .unwrap()
+      .declared_colors(&light);
     assert_eq!(colors, vec![Rgba::red()]);
   }
 
@@ -942,10 +1016,23 @@ mod tests {
     let light = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
     for id in 1..=systems {
-      system.declare(id, 0, &[(light.clone(), Rgba([id as u8, 0, 0, 255]))], LightMode::Solid);
+      system.declare(
+        id,
+        0,
+        &[(light.clone(), Rgba([id as u8, 0, 0, 255]))],
+        LightMode::Solid,
+      );
     }
     system.declare(1, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
-    LayeredLightManager::resolve_light_color(&light, vec![0], &system.declarations[&light], &[], true, &HashMap::new(), &mut AlternateResolver::new())
+    LayeredLightManager::resolve_light_color(
+      &light,
+      vec![0],
+      &system.declarations[&light],
+      &[],
+      true,
+      &HashMap::new(),
+      &mut AlternateResolver::new(),
+    )
   }
 
   #[test]
@@ -962,7 +1049,15 @@ mod tests {
     system.declare(2, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
     system.undeclare(1, 0, &[light.clone()]);
     system.declare(1, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
-    let color = LayeredLightManager::resolve_light_color(&light, vec![0], &system.declarations[&light], &[], true, &HashMap::new(), &mut AlternateResolver::new());
+    let color = LayeredLightManager::resolve_light_color(
+      &light,
+      vec![0],
+      &system.declarations[&light],
+      &[],
+      true,
+      &HashMap::new(),
+      &mut AlternateResolver::new(),
+    );
     assert_eq!(color, Rgba::blue());
   }
 
@@ -973,8 +1068,21 @@ mod tests {
     system.declare(1, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
     system.declare(2, 1, &[(light.clone(), Rgba::green())], LightMode::Flashing);
     let color = |flash_on: bool, system: &LayeredLightManager| {
-      let z_indexes = system.declarations[&light].iter().filter(|(_, d)| d.shows(flash_on)).map(|(id, _)| id.z_index).sorted().collect();
-      LayeredLightManager::resolve_light_color(&light, z_indexes, &system.declarations[&light], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())
+      let z_indexes = system.declarations[&light]
+        .iter()
+        .filter(|(_, d)| d.shows(flash_on))
+        .map(|(id, _)| id.z_index)
+        .sorted()
+        .collect();
+      LayeredLightManager::resolve_light_color(
+        &light,
+        z_indexes,
+        &system.declarations[&light],
+        &[],
+        flash_on,
+        &HashMap::new(),
+        &mut AlternateResolver::new(),
+      )
     };
     assert_eq!(color(true, &system), Rgba::green());
     assert_eq!(color(false, &system), Rgba::blue());
@@ -991,14 +1099,24 @@ mod tests {
   #[test]
   fn an_rgb_light_keeps_opaque_colors() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let lowered = lower(vec![(LightAddress::rgb(led.clone()), Some(Rgba([255, 128, 0, 255])))], DEFAULT_THRESHOLD, &HashMap::new());
+    let lowered = lower(
+      vec![(
+        LightAddress::rgb(led.clone()),
+        Some(Rgba([255, 128, 0, 255])),
+      )],
+      DEFAULT_THRESHOLD,
+      &HashMap::new(),
+    );
     assert_eq!(lowered.leds, vec![(led, Rgb::new(255, 128, 0))]);
   }
 
   #[test]
   fn single_channel_lights_share_their_led_address() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    let one = |channel| LightAddress::Exp { led: led.clone(), channels: LedChannels::One(channel) };
+    let one = |channel| LightAddress::Exp {
+      led: led.clone(),
+      channels: LedChannels::One(channel),
+    };
     let lowered = lower(
       vec![
         (one(LedChannel::R), Some(Rgba([0, 200, 0, 255]))),
@@ -1007,7 +1125,11 @@ mod tests {
       DEFAULT_THRESHOLD,
       &HashMap::new(),
     );
-    assert_eq!(lowered.leds, vec![(led, Rgb::new(200, 0, 128))], "each writes its brightness into its channel");
+    assert_eq!(
+      lowered.leds,
+      vec![(led, Rgb::new(200, 0, 128))],
+      "each writes its brightness into its channel"
+    );
   }
 
   #[test]
@@ -1019,7 +1141,15 @@ mod tests {
   #[test]
   fn a_light_nothing_gives_a_color_is_turned_off() {
     let led = LedAddress::new(ExpAddress::new(3, None), 0, 1);
-    assert_eq!(lower(vec![(LightAddress::rgb(led.clone()), None)], DEFAULT_THRESHOLD, &HashMap::new()).leds, vec![(led, Rgb::black())]);
+    assert_eq!(
+      lower(
+        vec![(LightAddress::rgb(led.clone()), None)],
+        DEFAULT_THRESHOLD,
+        &HashMap::new()
+      )
+      .leds,
+      vec![(led, Rgb::black())]
+    );
   }
 
   /// Whether a driver light lowered from `color` is on, with the default threshold or `threshold` for it
@@ -1034,7 +1164,10 @@ mod tests {
   #[test]
   fn a_driver_light_is_on_at_or_above_its_threshold() {
     assert!(driver_on(Some(Rgba::white()), None));
-    assert!(driver_on(Some(Rgba([0, 128, 0, 255])), None), "the largest channel is its brightness");
+    assert!(
+      driver_on(Some(Rgba([0, 128, 0, 255])), None),
+      "the largest channel is its brightness"
+    );
     assert!(!driver_on(Some(Rgba([100, 100, 100, 255])), None));
     assert!(!driver_on(None, None));
   }

@@ -89,18 +89,34 @@ impl Output {
   }
 
   /// Play a sound at `volume`, where 1.0 is as recorded, from `skip` into it, and fade it out by `length` if given
-  pub fn play_sfx(&mut self, key: &str, sound: StaticSoundData, volume: f32, skip: Duration, length: Option<Duration>) {
+  pub fn play_sfx(
+    &mut self,
+    key: &str,
+    sound: StaticSoundData,
+    volume: f32,
+    skip: Duration,
+    length: Option<Duration>,
+  ) {
     log::debug!(target: "frontbox::sound", "🔊 Playing SFX '{}'", key);
     let mut sound = sound.volume(amplitude_to_db(volume));
     if !skip.is_zero() {
       // starting partway in clicks as stopping early does
-      sound = sound.start_position(skip.as_secs_f64()).fade_in_tween(Tween { duration: CUT_FADE, ..Default::default() });
+      sound = sound
+        .start_position(skip.as_secs_f64())
+        .fade_in_tween(Tween {
+          duration: CUT_FADE,
+          ..Default::default()
+        });
     }
     match self.manager.play(sound) {
       Ok(mut handle) => {
         if let Some(length) = length {
           let fade = CUT_FADE.min(length);
-          handle.stop(Tween { start_time: StartTime::Delayed(length - fade), duration: fade, ..Default::default() });
+          handle.stop(Tween {
+            start_time: StartTime::Delayed(length - fade),
+            duration: fade,
+            ..Default::default()
+          });
         }
       }
       Err(e) => log::error!(target: "frontbox::sound", "Failed to play SFX '{}': {:?}", key, e),
@@ -182,7 +198,15 @@ impl Output {
       (None, true) => Some(CUT_FADE),
       (None, false) => None,
     };
-    match Music::start(&mut self.music_track, &self.clock, path, sound, crossfade, from, fade_in) {
+    match Music::start(
+      &mut self.music_track,
+      &self.clock,
+      path,
+      sound,
+      crossfade,
+      from,
+      fade_in,
+    ) {
       Ok(music) => {
         log::info!(target: "frontbox::sound", "🎵 Playing music {}", path.display());
         if let Some(mut old_music) = self.active_music.replace(music) {

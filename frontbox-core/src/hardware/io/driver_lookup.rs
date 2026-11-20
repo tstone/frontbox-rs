@@ -33,7 +33,12 @@ impl DriverLookup {
         voltage: boards
           .get(addressed.assignment.board_idx as usize)
           .map(|board| board.voltage_at(addressed.assignment.pin))
-          .unwrap_or_else(|| panic!("Driver {} is wired to board {}, which isn't in the I/O network", addressed.definition.name, addressed.assignment.board_idx)),
+          .unwrap_or_else(|| {
+            panic!(
+              "Driver {} is wired to board {}, which isn't in the I/O network",
+              addressed.definition.name, addressed.assignment.board_idx
+            )
+          }),
       };
 
       by_id.insert(addressed.id, driver.clone());
@@ -170,7 +175,10 @@ mod tests {
     ]);
     let drivers = DriverLookup::new(network.drivers, &network.boards);
 
-    assert_eq!(drivers.by_name("coil").unwrap().voltage, DriverVoltage::High);
+    assert_eq!(
+      drivers.by_name("coil").unwrap().voltage,
+      DriverVoltage::High
+    );
     assert_eq!(drivers.by_name("lamp").unwrap().voltage, DriverVoltage::Low);
   }
 }

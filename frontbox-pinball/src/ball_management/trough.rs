@@ -150,9 +150,13 @@ impl TroughSystem {
   fn eject_inner(&mut self, ctx: &SystemContext) {
     self.eject_state = EjectState::Verifying {
       target_occupancy: self.read_switch_occupancy(ctx.into()).saturating_sub(1),
-      timer_id: ctx.timers.start(VerifyEject, self.config.eject_verification_time.once()),
+      timer_id: ctx
+        .timers
+        .start(VerifyEject, self.config.eject_verification_time.once()),
     };
-    ctx.drivers.activate(self.config.eject_coil_name, ActivationMode::Tap);
+    ctx
+      .drivers
+      .activate(self.config.eject_coil_name, ActivationMode::Tap);
   }
 
   /// Number of balls in the trough according to the switches right now, settled or not
@@ -224,12 +228,16 @@ impl TroughSystem {
         ctx.timers.cancel(timer_id);
         max_timer_id
       }
-      OccupancyState::Ready => ctx.timers.start(MaxSettle, self.config.occupancy_settling_max.once()),
+      OccupancyState::Ready => ctx
+        .timers
+        .start(MaxSettle, self.config.occupancy_settling_max.once()),
     };
 
     self.occupancy_state = OccupancyState::Settling {
       max_timer_id,
-      settling_timer_id: ctx.timers.start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
+      settling_timer_id: ctx
+        .timers
+        .start(VerifyOccupancy, self.config.occupancy_settling_time.once()),
     }
   }
 
@@ -280,6 +288,10 @@ impl TroughSystem {
 }
 
 impl System for TroughSystem {
+  fn description() -> Option<&'static str> {
+    Some("Counts the balls in the trough, and ejects them into play")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
     self.last_occupancy = self.read_switch_occupancy(ctx.into());

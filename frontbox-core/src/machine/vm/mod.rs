@@ -68,7 +68,10 @@ impl Machine for VirtualMachine {
 
 /// The app's view of the hardware the boot config describes, read from the virtual hardware at boot as it would be
 /// from real boards
-pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualHardware) -> Hardware {
+pub(crate) fn read_hardware(
+  boot_config: BootConfig,
+  virtual_hardware: &VirtualHardware,
+) -> Hardware {
   let io_network_boards = boot_config
     .io_network
     .boards
@@ -89,8 +92,14 @@ pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualH
   let expansion_boards = Hardware::resolve_expansion_boards(&boot_config.exp_network.boards);
 
   Hardware::new(
-    SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
-    DriverLookup::new(boot_config.io_network.drivers.clone(), &boot_config.io_network.boards),
+    SwitchLookup::new(
+      boot_config.io_network.switches,
+      virtual_hardware.switch_report(),
+    ),
+    DriverLookup::new(
+      boot_config.io_network.drivers.clone(),
+      &boot_config.io_network.boards,
+    ),
     LightLookup::new(&expansion_boards, &boot_config.io_network.drivers),
     io_network_boards,
     expansion_boards,

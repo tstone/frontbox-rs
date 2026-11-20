@@ -71,6 +71,13 @@ impl MultiLedDefinitionBuilder {
       Some(count) => count,
       None => located,
     };
-    LedDefinition::new(self.name, self.tags, count, LedChannels::Rgb, self.locations, self.config)
+    LedDefinition::new(
+      self.name,
+      self.tags,
+      count,
+      LedChannels::Rgb,
+      self.locations,
+      self.config,
+    )
   }
 }

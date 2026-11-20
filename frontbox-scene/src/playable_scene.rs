@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use frontbox_core::prelude::*;
-use frontbox_gfx::scene::{EndBehavior, Variables, Value};
+use frontbox_gfx::scene::{EndBehavior, Value, Variables};
 
 use crate::*;
 
@@ -80,7 +80,10 @@ impl PlayableScene<Completes> {
   /// refused.
   pub fn completing(scene: impl Into<Arc<Scene>>) -> Result<Self, NeverCompletes> {
     let playable = PlayableScene::unchecked(scene.into());
-    let clears = playable.scene.timing.is_some_and(|timing| timing.end == EndBehavior::Clear);
+    let clears = playable
+      .scene
+      .timing
+      .is_some_and(|timing| timing.end == EndBehavior::Clear);
     match playable.scene_length() {
       Some(_) if clears => Ok(playable),
       _ => Err(NeverCompletes),
@@ -96,7 +99,12 @@ impl PlayableScene<Completes> {
 
 impl<C> PlayableScene<C> {
   fn unchecked(scene: Arc<Scene>) -> Self {
-    Self { scene, variables: Variables::new(), speed: 1.0, completes: PhantomData }
+    Self {
+      scene,
+      variables: Variables::new(),
+      speed: 1.0,
+      completes: PhantomData,
+    }
   }
 
   /// Sets a variable, taking the place of the scene's default. A [`Value::named`] points it at one of the scene's named
@@ -163,7 +171,12 @@ impl From<Arc<Scene>> for PlayableScene {
 
 impl From<PlayableScene<Completes>> for PlayableScene {
   fn from(playable: PlayableScene<Completes>) -> Self {
-    Self { scene: playable.scene, variables: playable.variables, speed: playable.speed, completes: PhantomData }
+    Self {
+      scene: playable.scene,
+      variables: playable.variables,
+      speed: playable.speed,
+      completes: PhantomData,
+    }
   }
 }
 
@@ -181,7 +194,10 @@ pub struct NeverCompletes;
 
 impl fmt::Display for NeverCompletes {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "the scene never goes away. Give it a timing that plays a set number of times and clears at the end")
+    write!(
+      f,
+      "the scene never goes away. Give it a timing that plays a set number of times and clears at the end"
+    )
   }
 }
 
@@ -206,8 +222,14 @@ mod tests {
 
   #[test]
   fn a_scene_that_never_completes_is_refused() {
-    assert_eq!(PlayableScene::completing(Scene::new(vec![])).unwrap_err(), NeverCompletes);
-    assert_eq!(PlayableScene::completing(timed(0.5, Cycle::Forever)).unwrap_err(), NeverCompletes);
+    assert_eq!(
+      PlayableScene::completing(Scene::new(vec![])).unwrap_err(),
+      NeverCompletes
+    );
+    assert_eq!(
+      PlayableScene::completing(timed(0.5, Cycle::Forever)).unwrap_err(),
+      NeverCompletes
+    );
   }
 
   #[test]
@@ -218,21 +240,34 @@ mod tests {
 
   #[test]
   fn one_that_isnt_checked_may_have_no_length() {
-    assert_eq!(PlayableScene::new(timed(0.5, Cycle::Once)).length(), Some(Duration::from_millis(500)));
-    assert_eq!(PlayableScene::new(timed(0.5, Cycle::Forever)).length(), None);
+    assert_eq!(
+      PlayableScene::new(timed(0.5, Cycle::Once)).length(),
+      Some(Duration::from_millis(500))
+    );
+    assert_eq!(
+      PlayableScene::new(timed(0.5, Cycle::Forever)).length(),
+      None
+    );
   }
 
   #[test]
   fn over_sets_how_long_a_cycle_takes() {
-    let playable = PlayableScene::completing(timed(2.0, Cycle::Times(3))).unwrap().over(Duration::from_secs(1));
+    let playable = PlayableScene::completing(timed(2.0, Cycle::Times(3)))
+      .unwrap()
+      .over(Duration::from_secs(1));
     assert_eq!(playable.length(), Duration::from_secs(3));
-    let unchanged = PlayableScene::completing(timed(2.0, Cycle::Once)).unwrap().over(Duration::ZERO);
+    let unchanged = PlayableScene::completing(timed(2.0, Cycle::Once))
+      .unwrap()
+      .over(Duration::ZERO);
     assert_eq!(unchanged.length(), Duration::from_secs(2));
   }
 
   #[test]
   fn one_that_completes_can_go_where_either_is_taken() {
-    let playable: PlayableScene = PlayableScene::completing(timed(0.5, Cycle::Once)).unwrap().variable("y", 1.0).into();
+    let playable: PlayableScene = PlayableScene::completing(timed(0.5, Cycle::Once))
+      .unwrap()
+      .variable("y", 1.0)
+      .into();
     assert_eq!(playable.length(), Some(Duration::from_millis(500)));
     assert!(playable.variables().get("y").is_some());
   }

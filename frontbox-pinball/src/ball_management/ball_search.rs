@@ -114,12 +114,10 @@ impl BallSearchSystem {
   /// playfield
   fn has_loose_ball(&self, ctx: &SystemContext) -> bool {
     ctx.states.is(CoinDoor::Closed)
-      && ctx
-        .ball_manager()
-        .is_some_and(|ball_manager| {
-          ball_manager.balls_in_play(ctx.into()) > ball_manager.balls_held()
-            && !ball_manager.is_ball_in_plunge_lane(ctx.into())
-        })
+      && ctx.ball_manager().is_some_and(|ball_manager| {
+        ball_manager.balls_in_play(ctx.into()) > ball_manager.balls_held()
+          && !ball_manager.is_ball_in_plunge_lane(ctx.into())
+      })
   }
 
   /// One of the `hold_switches` is closed
@@ -203,12 +201,10 @@ impl BallSearchSystem {
 
   fn give_up(&mut self, ctx: &SystemContext) {
     log::warn!(target: "frontbox::ball_management::ball_search", "Ball search gave up after {} rounds", self.rounds);
-    let in_play = ctx
-      .ball_manager()
-      .map_or(0, |mut ball_manager| {
-        ball_manager.remove_missing_ball(ctx.into());
-        ball_manager.balls_in_play(ctx.into())
-      });
+    let in_play = ctx.ball_manager().map_or(0, |mut ball_manager| {
+      ball_manager.remove_missing_ball(ctx.into());
+      ball_manager.balls_in_play(ctx.into())
+    });
     ctx.emit(BallSearchFailed {
       rounds: self.rounds,
       in_play,
@@ -220,6 +216,12 @@ impl BallSearchSystem {
 }
 
 impl System for BallSearchSystem {
+  fn description() -> Option<&'static str> {
+    Some(
+      "Fires coils to knock a stuck ball loose, when no playfield switch has been hit for a while",
+    )
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.restart_delay(ctx);
   }
@@ -241,10 +243,14 @@ impl System for BallSearchSystem {
       self.restart_delay(ctx);
     } else if event.is::<BallsExitedPlay>() || event.is::<BallEnteredPlay>() {
       self.ball_seen(ctx);
-    } else if let Some(BallsHeldChanged { delta: ..0, .. }) = event.downcast_ref::<BallsHeldChanged>() {
+    } else if let Some(BallsHeldChanged { delta: ..0, .. }) =
+      event.downcast_ref::<BallsHeldChanged>()
+    {
       // a holder released its ball, which hasn't had the chance to hit a switch yet
       self.restart_delay(ctx);
-    } else if let Some(MaxBallsInPlayChanged { delta: 1.., .. }) = event.downcast_ref::<MaxBallsInPlayChanged>() {
+    } else if let Some(MaxBallsInPlayChanged { delta: 1.., .. }) =
+      event.downcast_ref::<MaxBallsInPlayChanged>()
+    {
       // a lock released its ball, or one that wasn't counted turned up, which may not have hit a switch yet
       self.restart_delay(ctx);
     } else if let Some(changed) = event.downcast_ref::<StateChanged<CoinDoor>>() {

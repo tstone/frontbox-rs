@@ -5,7 +5,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
-use crate::app::app_tracer::TraceEvent;
+use crate::app::app_tracer::{ActivityCause, TraceEvent};
+use crate::app::run_loop::current_delivery;
 use crate::prelude::Event;
 use crate::prelude::app_tracer::TracerSenders;
 use crate::systems::*;
@@ -16,6 +17,7 @@ static INCR_ID: AtomicU64 = AtomicU64::new(1);
 pub struct SystemContainer {
   id: u64,
   name: &'static str,
+  description: Option<&'static str>,
   inner: Box<dyn System>,
   timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
@@ -32,6 +34,7 @@ impl SystemContainer {
     Self {
       id: Self::next_id(),
       name: type_name_of_val(&system),
+      description: T::description(),
       inner: Box::new(system),
       timers: HashMap::new(),
       last_active_state: true,
@@ -54,6 +57,16 @@ impl SystemContainer {
   /// Name it for display, in place of its type's name (e.g. a `Group` by what it holds)
   pub(crate) fn set_name(&mut self, name: &'static str) {
     self.name = name;
+  }
+
+  /// What the system is for, from [`System::description`], for the console
+  pub fn description(&self) -> Option<&'static str> {
+    self.description
+  }
+
+  /// Describe it, in place of its type's description (e.g. a `Group` by what it holds)
+  pub(crate) fn set_description(&mut self, description: &'static str) {
+    self.description = Some(description);
   }
 
   pub fn type_id(&self) -> TypeId {
@@ -88,7 +101,11 @@ impl SystemContainer {
 
   /// [`catch_panic`](Self::catch_panic), and if `f` panics, retire the system: mark it faulted so nothing more is
   /// handed to it, and queue its despawn. `ctx` must be this system's context.
-  pub(crate) fn retire_on_panic<T>(&mut self, ctx: &SystemContext, f: impl FnOnce(&mut Self) -> T) -> Option<T> {
+  pub(crate) fn retire_on_panic<T>(
+    &mut self,
+    ctx: &SystemContext,
+    f: impl FnOnce(&mut Self) -> T,
+  ) -> Option<T> {
     let result = self.catch_panic(f);
     if result.is_none() && !self.faulted {
       log::error!(
@@ -156,13 +173,19 @@ impl SystemContainer {
     ctx: &SystemContext,
     tracer_txs: &TracerSenders,
   ) -> ActivityCheck {
-    self.check_activity(true, ctx, tracer_txs)
+    // its parent is active and lets it run, as before, so only its own `is_active` can have changed
+    let cause = ActivityCause::IsActive {
+      during: current_delivery(),
+    };
+    self.check_activity(true, cause, ctx, tracer_txs)
   }
 
-  /// [`handle_active`](Self::handle_active), for when its parent's activity has changed to `parent_active`
+  /// [`handle_active`](Self::handle_active), for when its parent's activity has changed to `parent_active`, or its
+  /// parent has activated or deactivated it. `cause` is what to trace if its activity changes.
   pub(crate) fn check_activity(
     &mut self,
     parent_active: bool,
+    cause: ActivityCause,
     ctx: &SystemContext,
     tracer_txs: &TracerSenders,
   ) -> ActivityCheck {
@@ -170,20 +193,15 @@ impl SystemContainer {
 
     if fresh != self.last_active_state {
       if fresh {
-        // system just became active
         self.on_reactivate(ctx);
-        tracer_txs.send(TraceEvent::SystemActiveStateChange {
-          id: self.id,
-          active: true,
-        });
       } else {
-        // system just became inactive
         self.on_deactivate(ctx);
-        tracer_txs.send(TraceEvent::SystemActiveStateChange {
-          id: self.id,
-          active: false,
-        });
       }
+      tracer_txs.send(TraceEvent::SystemActiveStateChange {
+        id: self.id,
+        active: fresh,
+        cause,
+      });
       // so routines waiting on this system look again
       ctx.routines.report_activity_changed();
     }
@@ -215,7 +233,9 @@ impl SystemContainer {
   }
 
   pub(crate) fn create_timer(&mut self, timer: Timer, id: u64, signals: Vec<Box<dyn Event>>) {
-    self.timers.insert(id, TimerAccumulator::new(timer, signals));
+    self
+      .timers
+      .insert(id, TimerAccumulator::new(timer, signals));
   }
 
   pub(crate) fn cancel_timer(&mut self, timer_id: u64) {
@@ -279,6 +299,7 @@ impl<T: System + 'static> From<T> for SystemContainer {
 pub struct SpawnableSystemContainer {
   id: u64,
   name: &'static str,
+  description: Option<&'static str>,
   inner: Box<dyn SpawnableSystem>,
   timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
@@ -292,6 +313,7 @@ impl SpawnableSystemContainer {
     Self {
       id: SystemContainer::next_id(),
       name: type_name_of_val(&system),
+      description: T::description(),
       inner: Box::new(system),
       timers: HashMap::new(),
       last_active_state: true,
@@ -309,6 +331,7 @@ impl SpawnableSystemContainer {
     SystemContainer {
       id: self.id,
       name: self.name,
+      description: self.description,
       inner: self.inner,
       timers: self.timers,
       last_active_state: self.last_active_state,
@@ -330,6 +353,7 @@ impl<T: SpawnableSystem + 'static> From<T> for SpawnableSystemContainer {
 #[derive(Clone)]
 pub struct ChildSystemContainer {
   name: &'static str,
+  description: Option<&'static str>,
   inner: Box<dyn ChildSystem>,
   timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
@@ -342,6 +366,7 @@ impl ChildSystemContainer {
   pub fn new<T: ChildSystem + 'static>(system: T) -> Self {
     Self {
       name: type_name_of_val(&system),
+      description: T::description(),
       inner: Box::new(system),
       timers: HashMap::new(),
       last_active_state: true,
@@ -356,6 +381,7 @@ impl ChildSystemContainer {
     SystemContainer {
       id: SystemContainer::next_id(),
       name: self.name,
+      description: self.description,
       inner: self.inner,
       timers: self.timers,
       last_active_state: self.last_active_state,

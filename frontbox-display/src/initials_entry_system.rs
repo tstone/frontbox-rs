@@ -74,6 +74,10 @@ impl InitialsEntrySystem {
 }
 
 impl System for InitialsEntrySystem {
+  fn description() -> Option<&'static str> {
+    Some("Lets a player enter their 3 initials, such as for a high score")
+  }
+
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if let Some(event) = event.downcast_ref::<SwitchClosed>() {
       if self.decrement_switches.matches(&event.switch) {

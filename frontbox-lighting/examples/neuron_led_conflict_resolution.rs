@@ -49,7 +49,9 @@ pub struct Off;
 
 impl System for System1 {
   fn on_spawn(&mut self, ctx: &SystemContext) {
-    ctx.timers.start_multi(events![On, Off], Timer::Forever(Duration::from_secs(4)));
+    ctx
+      .timers
+      .start_multi(events![On, Off], Timer::Forever(Duration::from_secs(4)));
     ctx.declare_lights(&lights::DEMO1.q(), 0, Rgba::red());
   }
 

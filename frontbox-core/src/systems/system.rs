@@ -50,6 +50,23 @@ pub trait System: Any {
     true
   }
 
+  /// One sentence on what the system is for, shown in the console. Written for someone running the machine and
+  /// wondering why it's there, rather than for someone reading its code.
+  ///
+  /// ```rust,ignore
+  /// impl System for TroughSystem {
+  ///   fn description() -> Option<&'static str> {
+  ///     Some("Counts the balls in the trough and ejects them into the shooter lane")
+  ///   }
+  /// }
+  /// ```
+  fn description() -> Option<&'static str>
+  where
+    Self: Sized,
+  {
+    None
+  }
+
   /// The traits this system can be looked up by, besides its own type, with `ctx.systems.get_dyn::<dyn Trait>()`.
   /// Lets callers reach whichever implementation the app added, without knowing which one it is.
   ///

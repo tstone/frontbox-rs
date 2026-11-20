@@ -309,7 +309,10 @@ mod tests {
   #[test]
   fn finds_unknown_switch_references() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]), &[high_voltage_board()]);
+    let drivers = DriverLookup::new(
+      addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]),
+      &[high_voltage_board()],
+    );
 
     assert_eq!(
       Hardware::unknown_switch_references(&drivers, &switches),
@@ -349,7 +352,10 @@ mod tests {
 
   #[test]
   fn an_explicit_key_resolves_a_duplicate() {
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]), &[high_voltage_board()]);
+    let drivers = DriverLookup::new(
+      addressed(vec![&*LEFT, &*RIGHT_KEYED]),
+      &[high_voltage_board()],
+    );
     assert!(Hardware::duplicate_config_keys(&drivers).is_empty());
   }
 
@@ -461,10 +467,26 @@ mod tests {
     let led = LedAddress::new(ExpAddress::new(1, Some(0)), 0, 0);
     let mut lights = LightLookup::default();
     for name in ["a", "b"] {
-      let address = LightAddress::Exp { led: led.clone(), channels: LedChannels::One(LedChannel::G) };
-      lights.insert(name.into(), Light { name: name.into(), address, ..Default::default() });
+      let address = LightAddress::Exp {
+        led: led.clone(),
+        channels: LedChannels::One(LedChannel::G),
+      };
+      lights.insert(
+        name.into(),
+        Light {
+          name: name.into(),
+          address,
+          ..Default::default()
+        },
+      );
     }
-    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], vec![]);
+    Hardware::new(
+      SwitchLookup::new(vec![], vec![]),
+      DriverLookup::new(vec![], &[]),
+      lights,
+      vec![],
+      vec![],
+    );
   }
 
   static REORDERED_FLASHER: LazyLock<LedDefinition> = LazyLock::new(|| {
@@ -479,7 +501,13 @@ mod tests {
     let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*REORDERED_FLASHER]));
     let boards = Hardware::resolve_expansion_boards(&vec![board]);
     let lights = LightLookup::new(&boards, &[]);
-    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], boards);
+    Hardware::new(
+      SwitchLookup::new(vec![], vec![]),
+      DriverLookup::new(vec![], &[]),
+      lights,
+      vec![],
+      boards,
+    );
   }
 
   #[test]

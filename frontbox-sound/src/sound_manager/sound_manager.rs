@@ -81,7 +81,9 @@ impl SoundManager {
     match message {
       SoundManagerMessage::PreloadPath(name, path) => self.preload(name, path),
       SoundManagerMessage::PreloadEmbedded(name, bytes) => self.preload_embedded(name, bytes),
-      SoundManagerMessage::PlaySfx(key, volume, skip, length) => self.play_sfx(key, volume, skip, length),
+      SoundManagerMessage::PlaySfx(key, volume, skip, length) => {
+        self.play_sfx(key, volume, skip, length)
+      }
       SoundManagerMessage::PlayCallout(request) => self.play_callout(request),
       SoundManagerMessage::SetCalloutVolume(db) => self.set_callout_volume(db),
       SoundManagerMessage::PlayMusic(path, crossfade) => self.play_music(path, crossfade),
@@ -141,9 +143,11 @@ impl SoundManager {
           Ok(Ok(opened)) => self.on_opened(opened, failures, now),
           Ok(Err(reason)) => self.retry_later(failures + 1, reason, now),
           Err(TryRecvError::Empty) => {}
-          Err(TryRecvError::Closed) => {
-            self.retry_later(failures + 1, "the attempt ended without an answer".into(), now)
-          }
+          Err(TryRecvError::Closed) => self.retry_later(
+            failures + 1,
+            "the attempt ended without an answer".into(),
+            now,
+          ),
         }
       }
       Connection::Waiting { retry_at, failures } => {
@@ -159,7 +163,11 @@ impl SoundManager {
     let output = match Output::new(opened.manager, self.callout_volume, now) {
       Ok(output) => output,
       Err(_) => {
-        self.retry_later(failures + 1, "kira couldn't add the music and callout tracks".into(), now);
+        self.retry_later(
+          failures + 1,
+          "kira couldn't add the music and callout tracks".into(),
+          now,
+        );
         return;
       }
     };
@@ -334,7 +342,11 @@ impl SoundManager {
   }
 
   fn play_music(&mut self, path: PathBuf, crossfade: Duration) {
-    let music = MusicRequest { path, crossfade, from: 0.0 };
+    let music = MusicRequest {
+      path,
+      crossfade,
+      from: 0.0,
+    };
     if let Connection::Connected(_) = self.connection {
       self.start_music(music);
     } else {

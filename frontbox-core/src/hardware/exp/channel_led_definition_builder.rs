@@ -17,7 +17,9 @@ pub struct ChannelLedDefinitionBuilder {
 
 impl ChannelLedDefinitionBuilder {
   pub fn new() -> Self {
-    Self { lights: [None, None, None] }
+    Self {
+      lights: [None, None, None],
+    }
   }
 
   pub fn r(self, light: SingleLedDefinitionBuilder) -> Self {
@@ -94,7 +96,13 @@ mod tests {
       .g(LedDefinition::single("gi"))
       .b(LedDefinition::single("strobe"))
       .build();
-    assert_eq!(channels(&def), vec![LedChannels::One(LedChannel::G), LedChannels::One(LedChannel::B)]);
+    assert_eq!(
+      channels(&def),
+      vec![
+        LedChannels::One(LedChannel::G),
+        LedChannels::One(LedChannel::B)
+      ]
+    );
     assert_eq!(def.address_count(), 1);
   }
 
@@ -115,6 +123,8 @@ mod tests {
   #[test]
   #[should_panic(expected = "decide its channel")]
   fn a_light_given_its_own_channel_panics() {
-    LedDefinition::channels().r(LedDefinition::single("a").channel(LedChannel::B)).build();
+    LedDefinition::channels()
+      .r(LedDefinition::single("a").channel(LedChannel::B))
+      .build();
   }
 }

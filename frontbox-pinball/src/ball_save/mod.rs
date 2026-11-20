@@ -175,6 +175,10 @@ impl BallSaveSystem {
 }
 
 impl System for BallSaveSystem {
+  fn description() -> Option<&'static str> {
+    Some("Gives the player back a ball that drains while ball save is on")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
   }
@@ -480,8 +484,7 @@ mod tests {
     let mut f = Fixture::spawn();
     f.request_until_released(A);
     f.request_until_released(B);
-    f.save
-      .on_event(&SystemDespawned::new(A), &f.ctx.sys_ctx());
+    f.save.on_event(&SystemDespawned::new(A), &f.ctx.sys_ctx());
     assert!(!f.save.requests.contains_key(&A));
     assert!(f.save.requests.contains_key(&B));
   }

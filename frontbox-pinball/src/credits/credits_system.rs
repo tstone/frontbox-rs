@@ -194,6 +194,10 @@ impl CreditsSystem {
 }
 
 impl System for CreditsSystem {
+  fn description() -> Option<&'static str> {
+    Some("Counts coins into credits, and adds a player when start is pressed")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
   }
@@ -275,7 +279,11 @@ mod tests {
     ctx.svc_ctx().config.set(&configs::FREE_PLAY, false);
     ctx.insert_system(RefusingGame);
     let owner = ctx.insert_system(EntryOwner);
-    ctx.svc_ctx().for_system(owner).states.set(PlayerEntry::Open);
+    ctx
+      .svc_ctx()
+      .for_system(owner)
+      .states
+      .set(PlayerEntry::Open);
     ctx.apply_states();
 
     let mut credits = CreditsSystem::new(SwitchQ::name(START));

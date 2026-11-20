@@ -204,12 +204,10 @@
 //! ```
 mod context_namespaces;
 mod contextual;
-pub mod timer;
-mod timer_ext;
 pub mod event;
 mod group;
-pub mod routine;
 mod provides;
+pub mod routine;
 mod service_context;
 pub mod state;
 mod system;
@@ -219,18 +217,18 @@ mod system_group;
 mod system_handle;
 #[cfg(any(test, feature = "testing"))]
 mod test_context;
+pub mod timer;
+mod timer_ext;
 
 pub use context_namespaces::*;
 pub use contextual::*;
-pub use timer::*;
-pub use timer_ext::*;
 pub use event::*;
 pub use group::Group;
+pub(crate) use provides::ProvidedTraits;
+pub use provides::Provides;
 pub use routine::{
   RoutineBuilder, RoutineCompleted, RoutineCompletion, RoutineDefinition, RoutineStarted,
 };
-pub use provides::Provides;
-pub(crate) use provides::ProvidedTraits;
 pub use service_context::*;
 pub use state::{State, StateChanged};
 pub use system::*;
@@ -240,6 +238,8 @@ pub(crate) use system_group::*;
 pub use system_handle::*;
 #[cfg(any(test, feature = "testing"))]
 pub use test_context::*;
+pub use timer::*;
+pub use timer_ext::*;
 
 use std::any::TypeId;
 use std::cell::{RefCell, RefMut};
@@ -273,7 +273,11 @@ impl Systems {
   }
 
   pub fn names(&self) -> Vec<&'static str> {
-    self.systems.keys().filter_map(|id| self.name_of(id)).collect()
+    self
+      .systems
+      .keys()
+      .filter_map(|id| self.name_of(id))
+      .collect()
   }
 
   /// The system's name, readable even while the system is borrowed

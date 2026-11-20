@@ -5,7 +5,7 @@ use image::Rgba;
 use serde::{Deserialize, Serialize};
 
 use crate::animation::Lerp;
-use crate::scene::{Bounds, Assets, NamedValue, NodeVisits, Timing, Values};
+use crate::scene::{Assets, Bounds, NamedValue, NodeVisits, Timing, Values};
 
 /// Variable values by name
 pub type Variables = BTreeMap<String, Value>;
@@ -48,7 +48,9 @@ impl Lerp for Value {
       (Self::Float(from), Self::Float(to)) => Self::Float(from.interpolate(to, t)),
       (Self::Vec2(from), Self::Vec2(to)) => Self::Vec2(from.interpolate(to, t)),
       (Self::Color(from), Self::Color(to)) => Self::Color(from.interpolate(to, t)),
-      (Self::Int(from), Self::Int(to)) => Self::Int((*from as f64).interpolate(&(*to as f64), t).round() as i64),
+      (Self::Int(from), Self::Int(to)) => {
+        Self::Int((*from as f64).interpolate(&(*to as f64), t).round() as i64)
+      }
       _ => other.clone(),
     }
   }
@@ -121,7 +123,11 @@ impl From<&str> for Value {
 /// Sampling returns plain `Rgba<u8>`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(from = "(u8, u8, u8, u8)", into = "(u8, u8, u8, u8)")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(type = "[number, number, number, number]"))]
+#[cfg_attr(
+  feature = "ts",
+  derive(ts_rs::TS),
+  ts(type = "[number, number, number, number]")
+)]
 pub struct Color(pub Rgba<u8>);
 
 impl Default for Color {
@@ -201,7 +207,13 @@ impl<'a> Env<'a> {
     if self.depth >= MAX_VALUE_DEPTH {
       return None;
     }
-    Some((self.values.get(name)?, Env { depth: self.depth + 1, ..*self }))
+    Some((
+      self.values.get(name)?,
+      Env {
+        depth: self.depth + 1,
+        ..*self
+      },
+    ))
   }
 }
 
@@ -214,6 +226,20 @@ pub(crate) mod tests {
   use crate::scene::no_values;
 
   pub(crate) fn env<'a>(time: f32, variables: &'a Variables) -> Env<'a> {
-    Env { time, cycle: 0, timing: None, playback_seed: 0, variables, defaults: variables, values: no_values(), depth: 0, assets: Assets::none(), viewport: Bounds::sized(Vec2::new(100.0, 50.0)), lap: None, visits: None, fill_frame: Affine2::IDENTITY }
+    Env {
+      time,
+      cycle: 0,
+      timing: None,
+      playback_seed: 0,
+      variables,
+      defaults: variables,
+      values: no_values(),
+      depth: 0,
+      assets: Assets::none(),
+      viewport: Bounds::sized(Vec2::new(100.0, 50.0)),
+      lap: None,
+      visits: None,
+      fill_frame: Affine2::IDENTITY,
+    }
   }
 }

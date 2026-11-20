@@ -111,7 +111,9 @@ impl<C> ScenePlayer<C> {
     ctx: &SystemContext,
   ) {
     let (name, value) = (name.into(), value.into());
-    self.with_playback(ctx, |playback| playback.insert_variable(name.clone(), value.clone()));
+    self.with_playback(ctx, |playback| {
+      playback.insert_variable(name.clone(), value.clone())
+    });
     self.scene.set_variable(name, value);
   }
 

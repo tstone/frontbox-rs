@@ -34,15 +34,23 @@ pub enum StrokeAlign {
 impl ShapeAdjust {
   pub(crate) fn prepare(&self, env: &Env) -> PreparedStroke {
     match self {
-      Self::Stroke { width, align, color } => {
-        PreparedStroke { width: width.resolve(env), align: *align, color: color.as_ref().map(|color| color.resolve(env).0) }
-      }
+      Self::Stroke {
+        width,
+        align,
+        color,
+      } => PreparedStroke {
+        width: width.resolve(env),
+        align: *align,
+        color: color.as_ref().map(|color| color.resolve(env).0),
+      },
     }
   }
 
   pub(crate) fn is_animated(&self) -> bool {
     match self {
-      Self::Stroke { width, color, .. } => width.is_animated() || color.as_ref().is_some_and(Prop::is_animated),
+      Self::Stroke { width, color, .. } => {
+        width.is_animated() || color.as_ref().is_some_and(Prop::is_animated)
+      }
     }
   }
 
@@ -101,12 +109,20 @@ mod tests {
   use super::*;
 
   fn stroke(width: f32, align: StrokeAlign) -> PreparedStroke {
-    PreparedStroke { width, align, color: None }
+    PreparedStroke {
+      width,
+      align,
+      color: None,
+    }
   }
 
   #[test]
   fn a_band_is_on_the_side_of_the_edge_it_is_aligned_to() {
-    for (align, inside, outside) in [(StrokeAlign::Inside, -2.0, 0.0), (StrokeAlign::Centered, -1.0, 1.0), (StrokeAlign::Outside, 0.0, 2.0)] {
+    for (align, inside, outside) in [
+      (StrokeAlign::Inside, -2.0, 0.0),
+      (StrokeAlign::Centered, -1.0, 1.0),
+      (StrokeAlign::Outside, 0.0, 2.0),
+    ] {
       let band = stroke(2.0, align);
       assert_eq!(band.band(inside), 0.0, "{align:?}");
       assert_eq!(band.band(outside), 0.0, "{align:?}");

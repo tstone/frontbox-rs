@@ -34,15 +34,28 @@ impl Bounds {
   pub fn to_unit(&self, p: Vec2) -> Vec2 {
     let size = self.size();
     let offset = p - self.center();
-    let axis = |offset: f32, size: f32| if size.abs() > f32::EPSILON { offset / size } else { -0.5 };
+    let axis = |offset: f32, size: f32| {
+      if size.abs() > f32::EPSILON {
+        offset / size
+      } else {
+        -0.5
+      }
+    };
     Vec2::new(axis(offset.x, size.x), axis(offset.y, size.y))
   }
 
   /// [`Self::to_unit`] as an affine, except that a zero-length axis maps to 0
   pub fn to_unit_affine(&self) -> Affine2 {
     let size = self.size();
-    let axis = |size: f32| if size.abs() > f32::EPSILON { 1.0 / size } else { 0.0 };
-    Affine2::from_scale(Vec2::new(axis(size.x), axis(size.y))) * Affine2::from_translation(-self.center())
+    let axis = |size: f32| {
+      if size.abs() > f32::EPSILON {
+        1.0 / size
+      } else {
+        0.0
+      }
+    };
+    Affine2::from_scale(Vec2::new(axis(size.x), axis(size.y)))
+      * Affine2::from_translation(-self.center())
   }
 
   /// Larger by `amount` on every side
@@ -52,15 +65,29 @@ impl Bounds {
 
   /// The smallest box around this one after `affine` is applied to it
   pub(crate) fn transformed(&self, affine: Affine2) -> Self {
-    let corners = [self.min, Vec2::new(self.max.x, self.min.y), self.max, Vec2::new(self.min.x, self.max.y)].map(|p| affine.transform_point2(p));
+    let corners = [
+      self.min,
+      Vec2::new(self.max.x, self.min.y),
+      self.max,
+      Vec2::new(self.min.x, self.max.y),
+    ]
+    .map(|p| affine.transform_point2(p));
     let start = Self::new(corners[0], corners[0]);
-    corners.into_iter().fold(start, |bounds, p| Self::new(bounds.min.min(p), bounds.max.max(p)))
+    corners.into_iter().fold(start, |bounds, p| {
+      Self::new(bounds.min.min(p), bounds.max.max(p))
+    })
   }
 
   /// Converts a length to unit box units on each axis. A zero-length axis gives 0.
   pub fn to_unit_length(&self, length: f32) -> Vec2 {
     let size = self.size();
-    let axis = |size: f32| if size.abs() > f32::EPSILON { length / size.abs() } else { 0.0 };
+    let axis = |size: f32| {
+      if size.abs() > f32::EPSILON {
+        length / size.abs()
+      } else {
+        0.0
+      }
+    };
     Vec2::new(axis(size.x), axis(size.y))
   }
 }
@@ -81,7 +108,10 @@ mod tests {
   fn to_unit_length_scales_by_each_axis() {
     let rect = Bounds::new(Vec2::new(10.0, 0.0), Vec2::new(20.0, 4.0));
     assert_eq!(rect.to_unit_length(2.0), Vec2::new(0.2, 0.5));
-    assert_eq!(Bounds::new(Vec2::ZERO, Vec2::new(0.0, 2.0)).to_unit_length(1.0), Vec2::new(0.0, 0.5));
+    assert_eq!(
+      Bounds::new(Vec2::ZERO, Vec2::new(0.0, 2.0)).to_unit_length(1.0),
+      Vec2::new(0.0, 0.5)
+    );
   }
 
   #[test]

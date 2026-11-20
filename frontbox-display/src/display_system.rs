@@ -26,14 +26,23 @@ pub struct DisplaySystem {
 
 impl DisplaySystem {
   pub fn new() -> Self {
-    Self { displays: Vec::new(), unknown: HashSet::new() }
+    Self {
+      displays: Vec::new(),
+      unknown: HashSet::new(),
+    }
   }
 
   /// Adds a display. A second display with the same name takes the place of the first.
   pub fn display(mut self, definition: DisplayDefinition) -> Self {
-    if self.displays.iter().any(|display| display.name == definition.name) {
+    if self
+      .displays
+      .iter()
+      .any(|display| display.name == definition.name)
+    {
       log::warn!(target: "frontbox::display", "🖥️ {} was added twice; the last one wins", definition.name);
-      self.displays.retain(|display| display.name != definition.name);
+      self
+        .displays
+        .retain(|display| display.name != definition.name);
     }
     self.displays.push(Display::new(definition));
     self
@@ -43,10 +52,19 @@ impl DisplaySystem {
   fn layers<'a>(&mut self, scenes: &'a SceneSystem) -> Vec<Vec<(&'a Playback, &'a DisplayLayer)>> {
     let mut layers: Vec<Vec<_>> = self.displays.iter().map(|_| Vec::new()).collect();
     let all = scenes.shown().flat_map(|(_, playback)| {
-      playback.scene().layers.iter().filter_map(SceneLayer::as_display).map(move |layer| (playback, layer))
+      playback
+        .scene()
+        .layers
+        .iter()
+        .filter_map(SceneLayer::as_display)
+        .map(move |layer| (playback, layer))
     });
     for (playback, layer) in all {
-      match self.displays.iter().position(|display| display.name == layer.display) {
+      match self
+        .displays
+        .iter()
+        .position(|display| display.name == layer.display)
+      {
         Some(index) => layers[index].push((playback, layer)),
         None => {
           if self.unknown.insert(layer.display.clone()) {
@@ -56,7 +74,9 @@ impl DisplaySystem {
       }
     }
     // stable, so on the same z, playbacks stay in the order they started and layers in the order their scene has them
-    layers.iter_mut().for_each(|layers| layers.sort_by_key(|(_, layer)| layer.z));
+    layers
+      .iter_mut()
+      .for_each(|layers| layers.sort_by_key(|(_, layer)| layer.z));
     layers
   }
 }
@@ -68,9 +88,16 @@ impl Default for DisplaySystem {
 }
 
 impl System for DisplaySystem {
+  fn description() -> Option<&'static str> {
+    Some("Draws the scenes that are playing onto the displays, such as the DMD")
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     for display in &mut self.displays {
-      display.mirrors.iter_mut().for_each(|mirror| mirror.attach(&display.name, display.size));
+      display
+        .mirrors
+        .iter_mut()
+        .for_each(|mirror| mirror.attach(&display.name, display.size));
       let Some(manager) = display.manager.take() else {
         continue;
       };
@@ -123,11 +150,26 @@ struct Display {
 
 impl Display {
   fn new(definition: DisplayDefinition) -> Self {
-    let DisplayDefinition { name, size, device, hard_edges, mirrors } = definition;
+    let DisplayDefinition {
+      name,
+      size,
+      device,
+      hard_edges,
+      mirrors,
+    } = definition;
     let (width, height) = (size.width as usize, size.height as usize);
     let grid = Grid::new(width, height, Vec2::new(width as f32, height as f32));
     // a sample with no radius is either in a shape or out of it
-    let samples = grid.samples().map(|at| if hard_edges { Sample::new(at.pos, 0.0) } else { at }).collect();
+    let samples = grid
+      .samples()
+      .map(|at| {
+        if hard_edges {
+          Sample::new(at.pos, 0.0)
+        } else {
+          at
+        }
+      })
+      .collect();
     let (tx, rx) = mpsc::channel();
     Self {
       manager: Some(DisplayManager::new(name.clone(), device, rx)),
@@ -154,8 +196,13 @@ impl Display {
         *pixel = prepared.sample(at).composite_over(*pixel);
       }
     }
-    let over_black = self.pixels.iter().map(|pixel| pixel.composite_over(Rgba::black()));
-    over_black.map(|Rgba([r, g, b, _])| Rgb([r, g, b])).collect()
+    let over_black = self
+      .pixels
+      .iter()
+      .map(|pixel| pixel.composite_over(Rgba::black()));
+    over_black
+      .map(|Rgba([r, g, b, _])| Rgb([r, g, b]))
+      .collect()
   }
 
   /// Sends `frame` to the device and mirrors, unless it's the one they already have
@@ -163,7 +210,10 @@ impl Display {
     if frame == self.last_frame {
       return;
     }
-    self.mirrors.iter_mut().for_each(|mirror| mirror.show(&frame));
+    self
+      .mirrors
+      .iter_mut()
+      .for_each(|mirror| mirror.show(&frame));
     // fails once the device's thread has gone, or on a virtual platform where it never started
     let _ = self.device.send(frame.clone());
     self.last_frame = frame;
@@ -181,7 +231,10 @@ mod tests {
   use super::*;
 
   /// 4 x 2, so a frame is short enough to write out
-  const SIZE: DisplaySize = DisplaySize { width: 4, height: 2 };
+  const SIZE: DisplaySize = DisplaySize {
+    width: 4,
+    height: 2,
+  };
   const RED: Rgb<u8> = Rgb([255, 0, 0]);
   const BLUE: Rgb<u8> = Rgb([0, 0, 255]);
   const BLACK: Rgb<u8> = Rgb([0, 0, 0]);
@@ -229,38 +282,62 @@ mod tests {
     let mut context = TestContext::default();
     context.insert_system(SceneSystem::new());
     context.insert_system(DisplaySystem::new().display(definition));
-    context.sys_ctx().systems.with::<DisplaySystem, _>(|displays| displays.on_spawn(&context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<DisplaySystem, _>(|displays| displays.on_spawn(&context.sys_ctx()));
     context
   }
 
   fn recorded() -> (TestContext, Recorder) {
     let recorder = Recorder::default();
-    (context(DisplayDefinition::new("Dmd", Device).mirror(recorder.clone())), recorder)
+    (
+      context(DisplayDefinition::new("Dmd", Device).mirror(recorder.clone())),
+      recorder,
+    )
   }
 
   fn play(context: &TestContext, layers: &str) {
     let scene = Scene::load(&format!("Scene(version: 2, layers: [{layers}])")).unwrap();
-    context.sys_ctx().systems.with::<SceneSystem, _>(|scenes| scenes.start(1, &PlayableScene::new(scene)));
+    context
+      .sys_ctx()
+      .systems
+      .with::<SceneSystem, _>(|scenes| scenes.start(1, &PlayableScene::new(scene)));
   }
 
   fn render(context: &TestContext) {
-    context.sys_ctx().systems.with::<DisplaySystem, _>(|displays| displays.on_render(&context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<DisplaySystem, _>(|displays| displays.on_render(&context.sys_ctx()));
   }
 
   fn solid(display: &str, z: i8, (r, g, b): (u8, u8, u8)) -> String {
-    format!(r#"Display(display: "{display}", z: {z}, layer: (fill: (base: Solid(Fixed({r}, {g}, {b}, 255)))))"#)
+    format!(
+      r#"Display(display: "{display}", z: {z}, layer: (fill: (base: Solid(Fixed({r}, {g}, {b}, 255)))))"#
+    )
   }
 
   #[test]
   fn a_mirror_is_told_which_display_it_shows() {
     let (_context, recorder) = recorded();
-    assert_eq!(*recorder.attached.lock().unwrap(), Some(("Dmd".into(), SIZE)));
+    assert_eq!(
+      *recorder.attached.lock().unwrap(),
+      Some(("Dmd".into(), SIZE))
+    );
   }
 
   #[test]
   fn a_layer_is_drawn_on_the_display_it_names() {
     let (context, recorder) = recorded();
-    play(&context, &format!("{}, {}", solid("Dmd", 0, (255, 0, 0)), solid("Other", 1, (0, 0, 255))));
+    play(
+      &context,
+      &format!(
+        "{}, {}",
+        solid("Dmd", 0, (255, 0, 0)),
+        solid("Other", 1, (0, 0, 255))
+      ),
+    );
     render(&context);
     assert_eq!(recorder.frames(), [vec![RED; 8]]);
   }
@@ -316,7 +393,11 @@ mod tests {
     assert!(!partial(&hard.frames()[0]), "{:?}", hard.frames());
 
     let soft = Recorder::default();
-    let context = self::context(DisplayDefinition::new("Dmd", Device).soft_edges().mirror(soft.clone()));
+    let context = self::context(
+      DisplayDefinition::new("Dmd", Device)
+        .soft_edges()
+        .mirror(soft.clone()),
+    );
     play(&context, circle);
     render(&context);
     assert!(partial(&soft.frames()[0]), "{:?}", soft.frames());
@@ -327,7 +408,10 @@ mod tests {
     let (context, recorder) = recorded();
     play(&context, &solid("Dmd", 0, (255, 0, 0)));
     render(&context);
-    context.sys_ctx().systems.with::<DisplaySystem, _>(|displays| displays.on_despawn(&context.sys_ctx()));
+    context
+      .sys_ctx()
+      .systems
+      .with::<DisplaySystem, _>(|displays| displays.on_despawn(&context.sys_ctx()));
     assert_eq!(recorder.frames(), [vec![RED; 8], vec![BLACK; 8]]);
   }
 }

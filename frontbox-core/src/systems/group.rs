@@ -14,7 +14,9 @@ use crate::prelude::*;
 /// # struct ModeSystem;
 /// # impl System for ModeSystem {}
 /// # fn example(ctx: &SystemContext) {
-/// let player = ctx.systems.spawn(Group::new("player1", systems![ModeSystem]));
+/// let player = ctx
+///   .systems
+///   .spawn(Group::new("player1", systems![ModeSystem]).described("Player 1's modes"));
 ///
 /// ctx.systems.deactivate(player);
 /// ctx.systems.activate(player);
@@ -24,6 +26,7 @@ use crate::prelude::*;
 #[derive(Clone)]
 pub struct Group {
   name: &'static str,
+  description: Option<&'static str>,
   /// Spawned with the group, then empty
   children: Vec<ChildSystemContainer>,
 }
@@ -31,11 +34,25 @@ pub struct Group {
 impl Group {
   /// `name` is for display (logs, the console), and doesn't need to be unique
   pub fn new(name: &'static str, children: Vec<ChildSystemContainer>) -> Self {
-    Self { name, children }
+    Self {
+      name,
+      description: None,
+      children,
+    }
+  }
+
+  /// What the group holds, for the console, in place of the description every group has
+  pub fn described(mut self, description: &'static str) -> Self {
+    self.description = Some(description);
+    self
   }
 
   pub fn name(&self) -> &'static str {
     self.name
+  }
+
+  pub(crate) fn group_description(&self) -> Option<&'static str> {
+    self.description
   }
 
   pub(crate) fn take_children(&mut self) -> Vec<ChildSystemContainer> {
@@ -43,4 +60,8 @@ impl Group {
   }
 }
 
-impl System for Group {}
+impl System for Group {
+  fn description() -> Option<&'static str> {
+    Some("Holds systems that are switched on and off together")
+  }
+}

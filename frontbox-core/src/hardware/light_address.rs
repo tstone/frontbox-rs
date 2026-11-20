@@ -9,7 +9,10 @@ use crate::prelude::*;
 #[serde(tag = "kind")]
 pub enum LightAddress {
   /// Written over the EXP bus as part of an LED address's RGB
-  Exp { led: LedAddress, channels: LedChannels },
+  Exp {
+    led: LedAddress,
+    channels: LedChannels,
+  },
   /// A driver powering a bulb, turned on and off over its virtual switch
   Driver { driver: &'static str },
 }
@@ -17,7 +20,10 @@ pub enum LightAddress {
 impl LightAddress {
   /// An RGB LED, using all three channels of its LED address
   pub fn rgb(led: LedAddress) -> Self {
-    Self::Exp { led, channels: LedChannels::Rgb }
+    Self::Exp {
+      led,
+      channels: LedChannels::Rgb,
+    }
   }
 
   /// The LED address it's written to, if it's written over the EXP bus
@@ -84,13 +90,19 @@ impl Contextual<Vec<LightAddress>> for LightQ {
 
 impl Contextual<Vec<LightAddress>> for Vec<LightQ> {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
-    self.iter().flat_map(|q| q.query_addresses(ctx.into())).collect()
+    self
+      .iter()
+      .flat_map(|q| q.query_addresses(ctx.into()))
+      .collect()
   }
 }
 
 impl Contextual<Vec<LightAddress>> for Vec<&LightQ> {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
-    self.iter().flat_map(|q| q.query_addresses(ctx.into())).collect()
+    self
+      .iter()
+      .flat_map(|q| q.query_addresses(ctx.into()))
+      .collect()
   }
 }
 

@@ -181,7 +181,10 @@ fn a_ball_that_passed_the_lower_entrance_switch_entered_that_way() {
   s.advance(past(EJECT_DELAY));
   s.open_switch(LOWER);
   s.close_switch(LOWER);
-  assert!(entered.take().is_empty(), "not until the kicker has settled");
+  assert!(
+    entered.take().is_empty(),
+    "not until the kicker has settled"
+  );
   s.advance(past(KICK_SETTLE));
   assert_eq!(entered.take(), [ScoopEntry::Direct]);
 }
@@ -296,7 +299,11 @@ fn a_ball_that_wont_leave_is_kicked_less_and_less_often() {
   s.advance(Duration::from_millis(8500));
   assert_eq!(taps(&s, REAR_COIL), 6);
   s.advance(Duration::from_secs(60));
-  assert!(taps(&s, REAR_COIL) < 12, "kicked {} times", taps(&s, REAR_COIL));
+  assert!(
+    taps(&s, REAR_COIL) < 12,
+    "kicked {} times",
+    taps(&s, REAR_COIL)
+  );
 
   // it left, so the next ball starts over
   s.open_switch(REAR);
