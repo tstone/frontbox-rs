@@ -1,8 +1,8 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createSignal, Show } from 'solid-js'
-import { formatElapsed, groupLabel, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
+import { formatElapsed, shortName, traceBody, traceCategory, traceType, type TraceCategory } from '../lib/format'
 import { hexAddress } from '../lib/hardwareConfig'
-import { groupName, machine, systemName } from '../state/console'
+import { machine, systemName } from '../state/console'
 import type { TraceRecord } from '../types/generated/TraceRecord'
 import './TraceRow.css'
 
@@ -75,12 +75,6 @@ function summary(record: TraceRecord): string {
     const { id, active } = event.SystemActiveStateChange
     return `${systemName(id)} ${active ? 'activated' : 'deactivated'}`
   }
-  if ('SystemGroupSpawned' in event) return groupLabel(event.SystemGroupSpawned.id, event.SystemGroupSpawned.name)
-  if ('SystemGroupDespawned' in event) return groupLabel(event.SystemGroupDespawned.id, event.SystemGroupDespawned.name)
-  if ('SystemGroupActiveStateChange' in event) {
-    const { id, active } = event.SystemGroupActiveStateChange
-    return `${groupName(id)} ${active ? 'activated' : 'deactivated'}`
-  }
   if ('LedsRGBChange' in event) {
     const { expansion, states } = event.LedsRGBChange
     return `${states.length} LED${states.length === 1 ? '' : 's'} on ${hexAddress(expansion)}`
@@ -95,7 +89,7 @@ function summary(record: TraceRecord): string {
   }
   if ('RoutineSkipped' in event) {
     const { routine, participant, reason } = event.RoutineSkipped
-    const why = reason === 'Missing' ? 'not in reach' : 'inactive'
+    const why = reason === 'Missing' ? 'not running' : 'inactive'
     return `${shortName(routine)} skipped ${shortName(participant)} (${why})`
   }
   if ('RoutineRejected' in event) {

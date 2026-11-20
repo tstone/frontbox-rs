@@ -28,31 +28,20 @@ pub enum TraceEvent {
   SystemSpawned {
     id: u64,
     name: &'static str,
-    group: GroupId,
+    /// The system that spawned it, or `None` at the top level
+    parent: Option<u64>,
+    /// Whether it started active, which it doesn't under an inactive parent
+    active: bool,
   },
   SystemDespawned {
     id: u64,
-    group: GroupId,
-  },
-  SystemGroupSpawned {
-    id: GroupId,
-    name: &'static str,
-  },
-  SystemGroupDespawned {
-    id: GroupId,
-    name: &'static str,
   },
   SystemActiveStateChange {
     id: u64,
     active: bool,
   },
-  SystemGroupActiveStateChange {
-    id: GroupId,
-    active: bool,
-  },
-  /// A state set in the group changed value. `None` once its owner despawned, so the group no longer sets it.
+  /// A state changed value. `None` once its owner despawned, so no system sets it.
   StateChange {
-    group: GroupId,
     name: &'static str,
     value: Option<serde_json::Value>,
   },
@@ -93,8 +82,6 @@ pub enum TraceEvent {
   RoutineStep {
     routine: &'static str,
     participant: u64,
-    /// The participant's group. Copies of a system in several groups share an id.
-    group: GroupId,
   },
   RoutineSkipped {
     routine: &'static str,
@@ -112,7 +99,6 @@ pub enum TraceEvent {
   RoutineHalted {
     routine: &'static str,
     participant: u64,
-    group: GroupId,
   },
   RoutineCompleted {
     routine: &'static str,

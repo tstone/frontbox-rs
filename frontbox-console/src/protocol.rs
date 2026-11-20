@@ -1,6 +1,5 @@
 use frontbox_core::prelude::ConfigDomainValue;
 use frontbox_core::prelude::DriverMode;
-use frontbox_core::prelude::GroupId;
 use frontbox_core::prelude::Hardware;
 use frontbox_core::prelude::Rgb;
 use frontbox_core::prelude::SwitchState;
@@ -32,7 +31,10 @@ pub enum ServerMessage {
 pub struct Snapshot {
   /// `None` until `AppTracer::init` has been called
   pub hardware: Option<Hardware>,
-  pub groups: Vec<SystemGroup>,
+  /// Every running system, in spawn order. Each names its parent, which together make the system tree.
+  pub systems: Vec<System>,
+  /// Every state that's set, by type name, as JSON. States have one value for the whole machine.
+  pub states: BTreeMap<&'static str, serde_json::Value>,
   pub switches: BTreeMap<usize, SwitchState>,
   pub drivers: BTreeMap<usize, DriverState>,
   /// Modes drivers were re-configured with while running, by id. A driver not here is in its defined mode.
@@ -70,32 +72,17 @@ pub struct GameState {
 pub struct RoutineProgress {
   pub routine: &'static str,
   pub origin: u64,
-  /// The system whose step is in progress
-  pub current: Option<RoutineParticipant>,
-}
-
-#[derive(Clone, serde::Serialize, TS)]
-pub struct RoutineParticipant {
-  pub id: u64,
-  /// Copies of a system in several groups share an id
-  pub group: GroupId,
-}
-
-#[derive(Clone, serde::Serialize, TS)]
-pub struct SystemGroup {
-  pub id: GroupId,
-  /// For display; names don't need to be unique
-  pub name: &'static str,
-  pub active: bool,
-  pub systems: Vec<System>,
-  /// The states set in this group, by type name, as JSON. Reading one falls back to the root's when it isn't here.
-  pub states: BTreeMap<&'static str, serde_json::Value>,
+  /// The id of the system whose step is in progress
+  pub current: Option<u64>,
 }
 
 #[derive(Clone, serde::Serialize, TS)]
 pub struct System {
   pub id: u64,
+  /// Its type's name, or a `Group`'s own name
   pub name: &'static str,
+  /// The system that spawned it, or `None` at the top level
+  pub parent: Option<u64>,
   pub active: bool,
   #[ts(as = "Vec<TraceRecord>")]
   pub recent_events: VecDeque<TraceRecord>,

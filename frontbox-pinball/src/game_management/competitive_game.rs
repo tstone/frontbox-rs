@@ -26,8 +26,8 @@ const BALL_RETURN_TIMEOUT: Duration = Duration::from_secs(30);
 /// - Routine: `GameStarting` - Started at the root. The first turn begins on its `RoutineCompleted`, and players can
 ///   still be added while it runs.
 ///
-/// Each turn goes through these, in order. The routines are started in the current player's group, so their
-/// participants can be in the player template as well as at the root.
+/// Each turn goes through these, in order. Only the current player's group is active while they run, so participants
+/// in the player template take a step for that player only.
 /// - Routine: `TurnStarting` - Started at the start of a player's turn, once their group is active. The ball is ejected
 ///   on its `RoutineCompleted`, so participants can hold the serve (e.g. a player-up display). A served ball that
 ///   drains before the turn goes active is served again.
@@ -73,8 +73,8 @@ pub struct CompetitiveGame {
   /// The phase of the current turn. Kept here as well as set as a state, since a state reads as its old value until the
   /// run loop gets to it.
   turn_phase: TurnPhase,
-  /// The group of each player added to the game, by player index
-  player_groups: Vec<GroupHandle>,
+  /// The id of each player's `Group`, a child of this system, by player index
+  player_groups: Vec<u64>,
   handle: SystemHandle,
   /// When the current turn became active, for `metrics::BALL_TIME`
   turn_active_at: Option<Instant>,
@@ -171,7 +171,7 @@ impl CompetitiveGame {
     let ctx = &ctx.for_system(self.handle);
     let player = self.session.as_ref().unwrap().current_player();
 
-    ctx.groups.activate(&self.player_groups[player as usize]);
+    ctx.systems.activate(self.player_groups[player as usize]);
     ctx.metrics.set_player(player);
     ctx.metrics.inc(&metrics::TURNS_PLAYED);
 
@@ -184,16 +184,12 @@ impl CompetitiveGame {
     self.tilted = false;
     self.waiting_for_balls = false;
     let session = self.session.as_ref().unwrap();
-    let group = &self.player_groups[session.current_player() as usize];
-    ctx
-      .routines
-      .new(TurnStarting {
-        current_player: session.current_player(),
-        turn: session.current_player_turn(),
-        reason,
-      })
-      .group(group)
-      .start();
+    // the player's group is active by now, so its systems are the participants
+    ctx.routines.start(TurnStarting {
+      current_player: session.current_player(),
+      turn: session.current_player_turn(),
+      reason,
+    });
 
     ctx.emit(Synchronize);
   }
@@ -322,13 +318,7 @@ impl CompetitiveGame {
   fn start_ball_draining(&mut self, draining: BallDraining, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "{} ball(s) drained, {} left in play", draining.count, draining.in_play);
     self.draining = true;
-    let group = &self.player_groups[draining.current_player as usize];
-    ctx
-      .for_system(self.handle)
-      .routines
-      .new(draining)
-      .group(group)
-      .start();
+    ctx.for_system(self.handle).routines.start(draining);
   }
 
   fn drain_decided(&mut self, done: &RoutineCompleted<BallDraining>, ctx: &ServiceContext) {
@@ -358,17 +348,11 @@ impl CompetitiveGame {
       ctx.metrics.record(&metrics::BALL_TIME, active_at.elapsed());
     }
     let session = self.session.as_ref().unwrap();
-    let group = &self.player_groups[session.current_player() as usize];
-    ctx
-      .for_system(self.handle)
-      .routines
-      .new(TurnEnding {
-        current_player: session.current_player(),
-        turn: session.current_player_turn(),
-        reason,
-      })
-      .group(group)
-      .start();
+    ctx.for_system(self.handle).routines.start(TurnEnding {
+      current_player: session.current_player(),
+      turn: session.current_player_turn(),
+      reason,
+    });
   }
 
   /// `TurnEnding` completed. The turn advances once no ball is left in play: balls released during the routine, or
@@ -432,7 +416,7 @@ impl CompetitiveGame {
       return;
     }
 
-    ctx.deactivate_system_group(&self.player_groups[player as usize]);
+    ctx.for_system(self.handle).systems.deactivate(self.player_groups[player as usize]);
     ctx.metrics.flush();
 
     // increment the previous player's turn before advancing to next player/turn
@@ -483,7 +467,7 @@ impl CompetitiveGame {
   fn end_game(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Game ended");
     for group in self.player_groups.drain(..) {
-      ctx.despawn_system_group(group);
+      ctx.for_system(self.handle).systems.despawn(group);
     }
     self.session = None;
     self.set_game_phase(GamePhase::None, ctx);
@@ -637,14 +621,14 @@ impl GameManager for CompetitiveGame {
       session.player_count()
     );
 
-    // create copy of systems for new player as a new system group
+    // a copy of the template for the new player, in a group of their own that's only active during their turns
     let copy = self.systems_template.to_vec();
     let group_name = Self::player_group_name(session.player_count() - 1);
 
     let svc_ctx = ctx.for_system(self.handle);
-    self
-      .player_groups
-      .push(svc_ctx.groups.spawn(group_name, copy, false));
+    let group = svc_ctx.systems.spawn(Group::new(group_name, copy));
+    svc_ctx.systems.deactivate(group);
+    self.player_groups.push(group);
     svc_ctx.emit(PlayerAdded);
     self.update_player_entry(ctx);
     true
@@ -668,7 +652,7 @@ impl GameManager for CompetitiveGame {
     if self.game_phase == GamePhase::Active {
       // the turn is over without a TurnEnding; its group's systems stop as it deactivates
       self.set_turn_phase(TurnPhase::Ending, ctx.into());
-      ctx.groups.deactivate(&self.player_groups[player as usize]);
+      ctx.systems.deactivate(self.player_groups[player as usize]);
       ctx.metrics.flush();
     }
     self.start_game_ending(reason, ctx.into());
@@ -706,6 +690,10 @@ impl GameManager for CompetitiveGame {
 
   fn session(&self) -> Option<&GameSession> {
     self.session.as_ref()
+  }
+
+  fn player_group(&self, player: u8) -> Option<u64> {
+    self.player_groups.get(player as usize).copied()
   }
 
   fn clear_multiplier(&mut self) {

@@ -23,14 +23,16 @@ pub enum AppMessage {
   MachineReconnected(Vec<SwitchState>),
   ConfigChanged(&'static str),
   DriverModeChange(usize, DriverMode),
-  SpawnSystem(GroupId, SpawnableSystemContainer),
+  /// Spawn a child of the system
+  SpawnSystem(SystemHandle, SpawnableSystemContainer),
   ReplaceSystem(SystemHandle, SpawnableSystemContainer),
   DespawnSystem(SystemHandle),
-  /// Spawn a group owned by the system
-  SpawnSystemGroup(SystemHandle, GroupHandle, Vec<ChildSystemContainer>, bool),
-  DespawnSystemGroup(GroupId),
-  ActivateSystemGroup(GroupId),
-  DeactivateSystemGroup(GroupId),
+  /// The system lets its child with this id run again
+  ActivateChild(SystemHandle, u64),
+  /// The system stops its child with this id
+  DeactivateChild(SystemHandle, u64),
+  /// The system despawns its child with this id
+  DespawnChild(SystemHandle, u64),
   CreateTimer(SystemHandle, u64, Timer, Vec<Box<dyn Event>>),
   CancelTimer(SystemHandle, u64),
   SetTimerPaused(SystemHandle, u64, bool),
@@ -78,27 +80,12 @@ impl Debug for AppMessage {
       AppMessage::DriverModeChange(driver, mode) => {
         write!(f, "DriverModeChange({}, {:?})", driver, mode)
       }
-      AppMessage::SpawnSystem(group, _) => write!(f, "SpawnSystem({})", group),
-      AppMessage::ReplaceSystem(handle, _) => {
-        write!(f, "ReplaceSystem({}, {})", handle.id, handle.group)
-      }
-      AppMessage::DespawnSystem(handle) => {
-        write!(f, "DespawnSystem({}, {})", handle.id, handle.group)
-      }
-      AppMessage::SpawnSystemGroup(owner, group, _, exclusive) => {
-        write!(
-          f,
-          "SpawnSystemGroup({} {}, owner={}:{}, exclusive={})",
-          group.id(),
-          group.name(),
-          owner.group,
-          owner.id,
-          exclusive
-        )
-      }
-      AppMessage::DespawnSystemGroup(id) => write!(f, "DespawnSystemGroup({})", id),
-      AppMessage::ActivateSystemGroup(id) => write!(f, "ActivateSystemGroup({})", id),
-      AppMessage::DeactivateSystemGroup(id) => write!(f, "DeactivateSystemGroup({})", id),
+      AppMessage::SpawnSystem(parent, _) => write!(f, "SpawnSystem(parent={})", parent.id),
+      AppMessage::ReplaceSystem(handle, _) => write!(f, "ReplaceSystem({})", handle.id),
+      AppMessage::DespawnSystem(handle) => write!(f, "DespawnSystem({})", handle.id),
+      AppMessage::ActivateChild(parent, child) => write!(f, "ActivateChild({}, parent={})", child, parent.id),
+      AppMessage::DeactivateChild(parent, child) => write!(f, "DeactivateChild({}, parent={})", child, parent.id),
+      AppMessage::DespawnChild(parent, child) => write!(f, "DespawnChild({}, parent={})", child, parent.id),
       AppMessage::CreateTimer(handle, timer_id, timer, _signals) => {
         write!(f, "CreateTimer({}:{}, {:?})", handle.id, timer_id, timer)
       }
@@ -117,9 +104,7 @@ impl Debug for AppMessage {
         write!(f, "HaltRoutine({}, {:?})", handle.id, type_id)
       }
       AppMessage::BeginRoutine(type_id) => write!(f, "BeginRoutine({:?})", type_id),
-      AppMessage::SystemActivityChanged(handle) => {
-        write!(f, "SystemActivityChanged({}, {})", handle.id, handle.group)
-      }
+      AppMessage::SystemActivityChanged(handle) => write!(f, "SystemActivityChanged({})", handle.id),
       AppMessage::SetState(state) => write!(f, "SetState({:?})", state),
       // An LED batch holds every changed LED and is sent several times a tick, so for performance simplify it
       AppMessage::TracerEvent(TraceEvent::LedsRGBChange {

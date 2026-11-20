@@ -1,60 +1,65 @@
 import { Splitter } from '@ark-ui/solid/splitter'
 import { createTreeCollection, TreeView } from '@ark-ui/solid/tree-view'
 import { createMemo, createSignal, For, Show } from 'solid-js'
-import { groupLabel, shortName } from '../../lib/format'
+import { shortName } from '../../lib/format'
 import { machine } from '../../state/console'
 import type { System } from '../../types/generated/System'
-import type { SystemGroup } from '../../types/generated/SystemGroup'
 import SystemDetail from './SystemDetail'
 import './SystemsTab.css'
 
-type GroupNode = { id: string; label: string; kind: 'group'; group: SystemGroup; children: SystemNode[] }
-type SystemNode = { id: string; label: string; kind: 'system'; group: SystemGroup; system: System }
-type Node = GroupNode | SystemNode
+type SystemNode = { id: string; label: string; system: System; children: SystemNode[] }
 
 export default function SystemsTab() {
-  const groups = createMemo<GroupNode[]>(() =>
-    machine.groups.map((group) => ({
-      id: `group:${group.id}`,
-      label: groupLabel(group.id, group.name),
-      kind: 'group',
-      group,
-      children: group.systems.map((system) => ({
-        // include the group: systems spawned into several groups (e.g. one per player) can share an id
-        id: `system:${group.id}:${system.id}`,
-        label: shortName(system.name),
-        kind: 'system',
-        group,
-        system,
-      })),
-    })),
-  )
+  // the system tree, from each system's parent: top-level systems first, each followed by its children
+  const roots = createMemo<SystemNode[]>(() => {
+    const children = new Map<number | null, System[]>()
+    for (const system of machine.systems) {
+      const siblings = children.get(system.parent) ?? []
+      siblings.push(system)
+      children.set(system.parent, siblings)
+    }
+    const node = (system: System): SystemNode => ({
+      id: `system:${system.id}`,
+      label: shortName(system.name),
+      system,
+      children: (children.get(system.id) ?? []).map(node),
+    })
+    return (children.get(null) ?? []).map(node)
+  })
+
+  const allNodes = () => {
+    const nodes: SystemNode[] = []
+    const visit = (node: SystemNode) => {
+      nodes.push(node)
+      node.children.forEach(visit)
+    }
+    roots().forEach(visit)
+    return nodes
+  }
 
   const collection = createMemo(() =>
-    createTreeCollection<Node | { id: string; label: string; children: GroupNode[] }>({
+    createTreeCollection<SystemNode | { id: string; label: string; children: SystemNode[] }>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.label,
-      rootNode: { id: 'root', label: '', children: groups() },
+      rootNode: { id: 'root', label: '', children: roots() },
     }),
   )
 
-  // Track what's collapsed rather than what's expanded, so groups spawned later start open
+  // Track what's collapsed rather than what's expanded, so systems spawned later start open
   const [collapsed, setCollapsed] = createSignal<string[]>([])
-  const groupIds = () => groups().map((g) => g.id)
-  const expanded = () => groupIds().filter((id) => !collapsed().includes(id))
+  const branchIds = () => allNodes().filter((node) => node.children.length > 0).map((node) => node.id)
+  const expanded = () => branchIds().filter((id) => !collapsed().includes(id))
 
   const [selected, setSelected] = createSignal<string | null>(null)
-  const selectedNode = () =>
-    groups()
-      .flatMap((group): Node[] => [group, ...group.children])
-      .find((node) => node.id === selected())
+  const selectedNode = () => allNodes().find((node) => node.id === selected())
+  const parentOf = (system: System) => machine.systems.find((s) => s.id === system.parent)
 
   return (
     <Splitter.Root class="systems-tab" panels={[{ id: 'tree', minSize: 15 }, { id: 'detail' }]} defaultSize={[30, 70]}>
       {/* Ark sets overflow: hidden inline on panels, so each scrolls an inner element instead */}
       <Splitter.Panel id="tree">
         <div class="tree-panel pane">
-          <Show when={groups().length > 0} fallback={<p class="empty">No systems yet.</p>}>
+          <Show when={roots().length > 0} fallback={<p class="empty">No systems yet.</p>}>
             <TreeView.Root
               collection={collection()}
               selectionMode="single"
@@ -62,11 +67,11 @@ export default function SystemsTab() {
               onSelectionChange={(details) => setSelected(details.selectedValue[0] ?? null)}
               expandedValue={expanded()}
               onExpandedChange={(details) =>
-                setCollapsed(groupIds().filter((id) => !details.expandedValue.includes(id)))
+                setCollapsed(branchIds().filter((id) => !details.expandedValue.includes(id)))
               }
             >
               <TreeView.Tree>
-                <For each={groups()}>{(group, index) => <GroupBranch node={group} indexPath={[index()]} />}</For>
+                <For each={roots()}>{(node, index) => <SystemTreeNode node={node} indexPath={[index()]} />}</For>
               </TreeView.Tree>
             </TreeView.Root>
           </Show>
@@ -76,10 +81,10 @@ export default function SystemsTab() {
       <Splitter.Panel id="detail">
         <div class="detail-panel pane">
           {/* keyed, so the detail re-renders when the selection moves to a different node */}
-          <Show when={selectedNode()} keyed fallback={<p class="empty">Select a system to see more about it.</p>}>
-            {(node) =>
-              node.kind === 'system' ? <SystemDetail system={node.system} group={node.group} /> : <GroupDetail group={node.group} />
-            }
+          <Show when={selectedNode()} keyed fallback={<MachineStates />}>
+            {(node) => (
+              <SystemDetail system={node.system} parent={parentOf(node.system)} children={node.children.length} />
+            )}
           </Show>
         </div>
       </Splitter.Panel>
@@ -87,69 +92,67 @@ export default function SystemsTab() {
   )
 }
 
-function GroupBranch(props: { node: GroupNode; indexPath: number[] }) {
+/** A system, as a branch when it has children */
+function SystemTreeNode(props: { node: SystemNode; indexPath: number[] }) {
+  const tags = () => (
+    <>
+      <For each={routinesHeldBy(props.node.system.id)}>
+        {(routine) => (
+          <span class="routine-tag" title={`Taking its step in ${routine.routine}`}>
+            {shortName(routine.routine)}
+          </span>
+        )}
+      </For>
+      <Show when={!props.node.system.active}>
+        <span class="inactive-tag">inactive</span>
+      </Show>
+    </>
+  )
+
   return (
     <TreeView.NodeProvider node={props.node} indexPath={props.indexPath}>
-      <TreeView.Branch classList={{ inactive: !props.node.group.active }}>
-        <TreeView.BranchControl>
-          <TreeView.BranchIndicator>›</TreeView.BranchIndicator>
-          <TreeView.BranchText>{props.node.label}</TreeView.BranchText>
-          <Show when={!props.node.group.active}>
-            <span class="inactive-tag">inactive</span>
-          </Show>
-          <span class="count">{props.node.children.length}</span>
-        </TreeView.BranchControl>
-        <TreeView.BranchContent>
-          <TreeView.BranchIndentGuide />
-          <For each={props.node.children}>
-            {(child, index) => (
-              <TreeView.NodeProvider node={child} indexPath={[...props.indexPath, index()]}>
-                <TreeView.Item classList={{ inactive: !child.system.active }} title={child.system.name}>
-                  <TreeView.ItemText>{child.label}</TreeView.ItemText>
-                  <For each={routinesHeldBy(child.group.id, child.system.id)}>
-                    {(routine) => (
-                      <span class="routine-tag" title={`Taking its step in ${routine.routine}`}>
-                        {shortName(routine.routine)}
-                      </span>
-                    )}
-                  </For>
-                  <Show when={!child.system.active}>
-                    <span class="inactive-tag">inactive</span>
-                  </Show>
-                </TreeView.Item>
-              </TreeView.NodeProvider>
-            )}
-          </For>
-        </TreeView.BranchContent>
-      </TreeView.Branch>
+      <Show
+        when={props.node.children.length > 0}
+        fallback={
+          <TreeView.Item classList={{ inactive: !props.node.system.active }} title={props.node.system.name}>
+            <TreeView.ItemText>{props.node.label}</TreeView.ItemText>
+            {tags()}
+          </TreeView.Item>
+        }
+      >
+        <TreeView.Branch classList={{ inactive: !props.node.system.active }}>
+          <TreeView.BranchControl title={props.node.system.name}>
+            <TreeView.BranchIndicator>›</TreeView.BranchIndicator>
+            <TreeView.BranchText>{props.node.label}</TreeView.BranchText>
+            {tags()}
+            <span class="count">{props.node.children.length}</span>
+          </TreeView.BranchControl>
+          <TreeView.BranchContent>
+            <TreeView.BranchIndentGuide />
+            <For each={props.node.children}>
+              {(child, index) => <SystemTreeNode node={child} indexPath={[...props.indexPath, index()]} />}
+            </For>
+          </TreeView.BranchContent>
+        </TreeView.Branch>
+      </Show>
     </TreeView.NodeProvider>
   )
 }
 
 /** Routines whose current step belongs to the system */
-function routinesHeldBy(group: number, id: number) {
-  return machine.routines.filter((r) => r.current?.id === id && r.current.group === group)
+function routinesHeldBy(id: number) {
+  return machine.routines.filter((r) => r.current === id)
 }
 
-function GroupDetail(props: { group: SystemGroup }) {
+/** Shown with nothing selected: the states, which have one value for the whole machine */
+function MachineStates() {
   return (
     <article class="detail">
-      <h2>
-        {groupLabel(props.group.id, props.group.name)}
-        <span class={`badge ${props.group.active ? 'ok' : 'warn'}`}>{props.group.active ? 'Active' : 'Inactive'}</span>
-      </h2>
-      <dl>
-        <dt>Kind</dt>
-        <dd>System group</dd>
-        <dt>ID</dt>
-        <dd class="mono">{props.group.id}</dd>
-        <dt>Systems</dt>
-        <dd>{props.group.systems.length}</dd>
-      </dl>
+      <p class="empty">Select a system to see more about it.</p>
       <h3>States</h3>
-      <Show when={Object.keys(props.group.states).length > 0} fallback={<p class="empty">No states set in this group.</p>}>
+      <Show when={Object.keys(machine.states).length > 0} fallback={<p class="empty">No states set.</p>}>
         <dl>
-          <For each={Object.entries(props.group.states)}>
+          <For each={Object.entries(machine.states)}>
             {([name, value]) => (
               <>
                 <dt title={name}>{shortName(name)}</dt>

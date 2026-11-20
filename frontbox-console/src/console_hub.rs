@@ -490,67 +490,32 @@ impl GameTransition {
 
 /// Mirror of the reducer in `web/src/state/console.ts`. Game tracking is not mirrored; see `ingest`.
 fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
-  let groups = &mut snapshot.groups;
+  let systems = &mut snapshot.systems;
   match &record.event {
-    TraceEvent::SystemGroupSpawned { id, name } => {
-      if !groups.iter().any(|g| g.id == *id) {
-        groups.push(SystemGroup {
-          id: *id,
-          name,
-          active: true,
-          systems: Vec::new(),
-          states: BTreeMap::new(),
-        });
-      }
-    }
-    TraceEvent::SystemGroupDespawned { id, .. } => groups.retain(|g| g.id != *id),
-    TraceEvent::SystemGroupActiveStateChange { id, active } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.id == *id) {
-        group.active = *active;
-      }
-    }
-    TraceEvent::StateChange {
-      group: group_id,
-      name,
-      value,
-    } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
-        match value {
-          Some(value) => group.states.insert(name, value.clone()),
-          None => group.states.remove(name),
-        };
-      }
+    TraceEvent::StateChange { name, value } => {
+      match value {
+        Some(value) => snapshot.states.insert(name, value.clone()),
+        None => snapshot.states.remove(name),
+      };
       // not logged: the `StateChanged` event it comes with is
       return;
     }
     TraceEvent::SystemSpawned {
       id,
       name,
-      group: group_id,
-    } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
-        group.systems.push(System {
-          id: *id,
-          name,
-          active: true,
-          recent_events: VecDeque::new(),
-        });
-      }
-    }
-    TraceEvent::SystemDespawned {
-      id,
-      group: group_id,
-    } => {
-      if let Some(group) = groups.iter_mut().find(|g| g.id == *group_id) {
-        group.systems.retain(|s| s.id != *id);
-      }
-    }
+      parent,
+      active,
+    } => systems.push(System {
+      id: *id,
+      name,
+      parent: *parent,
+      active: *active,
+      recent_events: VecDeque::new(),
+    }),
+    // its children are despawned with it, each traced on its own
+    TraceEvent::SystemDespawned { id } => systems.retain(|s| s.id != *id),
     TraceEvent::SystemActiveStateChange { id, active } => {
-      if let Some(system) = groups
-        .iter_mut()
-        .flat_map(|g| g.systems.iter_mut())
-        .find(|s| s.id == *id)
-      {
+      if let Some(system) = systems.iter_mut().find(|s| s.id == *id) {
         system.active = *active;
       }
     }
@@ -567,11 +532,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       sender: Some(sender),
       ..
     } => {
-      if let Some(system) = groups
-        .iter_mut()
-        .flat_map(|g| g.systems.iter_mut())
-        .find(|s| s.id == *sender)
-      {
+      if let Some(system) = snapshot.systems.iter_mut().find(|s| s.id == *sender) {
         if system.recent_events.len() >= RECENT_EVENTS_PER_SYSTEM {
           system.recent_events.pop_front();
         }
@@ -584,16 +545,9 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       origin: *origin,
       current: None,
     }),
-    TraceEvent::RoutineStep {
-      routine,
-      participant,
-      group,
-    } => {
+    TraceEvent::RoutineStep { routine, participant } => {
       if let Some(progress) = snapshot.routines.iter_mut().find(|r| r.routine == *routine) {
-        progress.current = Some(RoutineParticipant {
-          id: *participant,
-          group: *group,
-        });
+        progress.current = Some(*participant);
       }
     }
     // paused once the step in progress is over, and a halt ends it, so no one holds it
@@ -685,7 +639,7 @@ fn switch_control(switch_id: usize, closed: bool) -> TracerControlEvent {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{Config, ROOT_GROUP, Ranges};
+  use frontbox_core::prelude::{Config, Ranges};
 
   fn turns(value: i64) -> ConfigView {
     let config = Config::new("Turns", "", 3u8, Ranges::u8(1, 5));
@@ -709,29 +663,38 @@ mod tests {
   }
 
   #[test]
-  fn state_traces_update_their_group_without_logging() {
+  fn state_traces_update_the_states_without_logging() {
     let hub = ConsoleHub::new();
-    let group = ROOT_GROUP;
-    hub.ingest(TraceEvent::SystemGroupSpawned {
-      id: group,
-      name: "root",
-    });
-    let set = |value| TraceEvent::StateChange {
-      group,
-      name: "Phase",
-      value,
-    };
+    let set = |value| TraceEvent::StateChange { name: "Phase", value };
 
     hub.ingest(set(Some("Active".into())));
     {
       let state = hub.state.lock().unwrap();
-      assert_eq!(state.snapshot.groups[0].states["Phase"], "Active");
-      assert_eq!(state.snapshot.log.len(), 1, "only the group spawn");
+      assert_eq!(state.snapshot.states["Phase"], "Active");
+      assert!(state.snapshot.log.is_empty());
     }
 
     hub.ingest(set(None));
     let state = hub.state.lock().unwrap();
-    assert!(state.snapshot.groups[0].states.is_empty());
+    assert!(state.snapshot.states.is_empty());
+  }
+
+  #[test]
+  fn systems_are_listed_with_their_parents_until_despawned() {
+    let hub = ConsoleHub::new();
+    let spawned = |id, parent| TraceEvent::SystemSpawned { id, name: "player1", parent, active: true };
+
+    hub.ingest(spawned(1, None));
+    hub.ingest(spawned(2, Some(1)));
+    {
+      let state = hub.state.lock().unwrap();
+      let parents: Vec<_> = state.snapshot.systems.iter().map(|s| (s.id, s.parent)).collect();
+      assert_eq!(parents, [(1, None), (2, Some(1))]);
+    }
+
+    hub.ingest(TraceEvent::SystemDespawned { id: 2 });
+    let state = hub.state.lock().unwrap();
+    assert_eq!(state.snapshot.systems.len(), 1);
   }
 
   #[test]

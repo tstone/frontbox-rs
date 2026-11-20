@@ -2,48 +2,118 @@
 
 | # | Finding | Effect | Size of fix |
 |---|---|---|---|
-| B1 | The game manager does four jobs behind one trait | A second game type means rewriting all of it | Medium |
+| B1 | The game manager does four jobs behind one trait | Teams, split flipper, or any other game type means rewriting all of it | Large |
+| B2 | Game types can't be picked at the start of a game | No tournament, team, or split flipper choice from a menu | Medium, later |
 | C | Missing pinball behavior | Credits, bonus, match, multiball, and more | Varies |
 
 ## B. Architecture and types
 
 ### B1. The game manager does four jobs
 
-`CompetitiveGame` runs the game and turn lifecycle, owns the player groups, keeps scores and multipliers, and keeps
-extra balls. `GameManager` exposes all four, so a second implementation (cooperative, timed, a tournament
-variant) has to rewrite about 600 lines to change one of them. `GameState` shows the cost already: it has a
-`Cooperative` variant nothing constructs, and every accessor is written out twice, once per variant, for 280 lines.
+`CompetitiveGame` is about 600 lines of logic doing four things:
 
-**Suggestion.**
+| Part | Lines | Differs between game types? |
+|---|---|---|
+| Turn: serve, going active, the drain queue and `BallDraining`, `TurnEnding`, waiting for balls, the in-play check, lost balls, coin door drains, tilt | ~300 | No |
+| Game: `GameStarting` and `GameEnding`, player entry, the ball return timer, quit | ~120 | Rarely |
+| Scores and extra balls: points, multipliers, ignoring points after a tilt | ~80 | Only in who owns them |
+| Rotation: who is up next, which group to activate, when the game is over | ~60 | Yes |
 
-- `GameState` as a struct: `players: Vec<Player>`, `current`, and `teams: Option<...>` when that exists. `Player`
-  holds `score`, `turn`, `extra_balls`, `extra_balls_granted`. That replaces five parallel `Vec`s and both variants.
-- Scoring as its own root system (`ScoreSystem`), with the fixes from A7. The game manager reads final scores from it.
-- What varies between game types is who is up next and when the game is over. Make that the trait, a few methods over
-  `GameState`, and keep one lifecycle implementation.
+`GameManager` exposes all four. `GameSession` keeps players as five parallel `Vec`s, with a `Cooperative` variant
+nothing constructs, and every accessor written out twice. Beside the phases, `CompetitiveGame` keeps flags that each
+mean something in one phase only (`ball_served`, `draining`, `tilted`, `waiting_for_balls`,
+`found_no_ball_in_play`), and `start_turn`, `tilt`, and `start_game_ending` each reset a different subset.
 
-### B2. Phases with flags beside them
+The game types this has to support:
 
-`CompetitiveGame` has `turn_phase` and `game_phase`, plus `ball_served`, `draining`, `tilted`, and
-`waiting_for_balls`. Each flag only means something in one phase, and `start_turn`, `tilt`, and `start_game_ending`
-each reset a different subset. Since then, `in_play_check_timer`, `found_no_ball_in_play`, and `ball_return_timer`
-have joined them.
+- **Teams (co-op).** Each player still has their own turns, extra balls, and score. Players on a team share one system
+  group (modes, progress) and their points: a point scored by any teammate is added to every teammate's score.
+  Competitive play is the case where every team has one player.
+- **Split flipper.** Two players compete at the same time, one flipper each, on the whole playfield. Each owns the
+  shots made from their flipper. There's one ball, so a drain ends the turn for both.
+- **Tournament.** Standard rules with different config.
+- Others later, such as timed play, where a turn ends for other reasons.
 
-**Suggestion.** Keep the public `TurnPhase` state as it is, and hold a private enum with the detail inside it:
-`Starting { served }`, `Active { deciding_drain }`, `Ending { routine_completed }`. The match in `on_event` then
-has to say what each one does with each event.
+**Suggestion.** Split along what a turn is, who it belongs to, and who is up next:
+
+| Piece | Kind | Job | Knows about players? |
+|---|---|---|---|
+| `GameSession` | data | Players and teams | yes |
+| `ScoreSystem` | root system | Scores and multipliers per team | teams only |
+| `TurnSystem` | root system | Runs one turn in one or more groups, owns `TurnPhase` | no |
+| Game manager | root system | Game lifecycle and rotation | yes |
+
+- **`GameSession` as a struct.** `players: Vec<Player>` (turn, extra balls, extra balls granted, team index) and
+  `teams: Vec<Team>` (group, score). Competitive play makes one team per player. This replaces both variants.
+- **`ScoreSystem`.** Scores are kept per team, and a player's score is their team's. The core call is
+  `add_points(team, points)`, for split flipper, where the shot decides who scores. Rules code mostly uses
+  `add_points_to_current`, which scores for the team whose turn it is. Points are ignored for the rest of a tilted
+  turn, and the game manager reads final scores from it. `add_points` and the multiplier methods leave the
+  `GameManager` trait.
+- **`TurnSystem`.** `start(groups, reason)` runs one turn: the serve, going active, drains, `TurnEnding`, and waiting
+  for balls. It emits `TurnCompleted { reason }` once no ball is left in play. It takes a list of groups, as split
+  flipper runs both players' groups on one ball. `end(reason)` ends the turn from outside: a tilt now, a timer later.
+  It knows nothing about players or turn order. Inside, a private enum replaces the flags: `Starting { served }`,
+  `Active { deciding_drain }`, `Ending { routine_completed }`, so the match in `on_event` says what each phase does
+  with each event. Most of today's `CompetitiveGame` tests are turn tests, and move with it.
+- **The game manager** keeps the game lifecycle, player entry, and rotation. On `TurnCompleted` it picks who is up
+  next or ends the game. Extra balls stay here, since "the same player again" means something different in each game
+  type. Rename it `Game`, since it handles teams as well.
+- **Two templates.** `team_systems` (modes, progress) is spawned once per team, and `player_systems` (`TiltSystem`)
+  once per player, so teammates don't share tilt warnings that last the game. In competitive play they come to the
+  same thing.
+- **Teams in `Game`.** A team count in config, with players assigned in turn (`player % teams`: with 4 players and 2
+  teams, players 1 and 3 play against 2 and 4). A team's group is spawned with its first player, and a player who
+  joins later joins that group and its score.
+- **`dyn GameManager` stays the only interface** the start button, credits, and displays use: `add_player`,
+  `quit_game`, `session`. A game type with very different rules (split flipper) is its own game manager that reuses
+  `TurnSystem` and `ScoreSystem`. Some duplication of the game lifecycle there is fine.
+
+Open: `GameEnding.scores` lists a team's shared score once per teammate, so every teammate enters initials for the
+same score.
+
+### B2. Picking a game type
+
+Not for now. Machines usually offer a menu while no game is running (hold a flipper or the action button): standard,
+tournament, teams, split flipper. Most choices are config, not different systems:
+
+| Choice | What changes |
+|---|---|
+| Standard | nothing |
+| Tournament | config: fixed seed, no extra balls, no random awards |
+| Teams | config: team count |
+| Split flipper | a different game manager, and which flippers are enabled for whom |
+
+- **Config overrides for one game.** "No extra balls" must not overwrite the operator's saved setting, so overrides
+  are reverted when the game ends. This covers three of the four choices.
+- **Swapping systems.** Lookups and states search the caller's group, then the root, and nothing else
+  (`GroupsExt::nearest`, `nearest_state`). So the game manager, `TurnSystem`, and `ScoreSystem` must be root
+  systems, and swapping a game type means despawning and spawning root systems one at a time. There are two ways
+  out, to choose between when split flipper is built:
+  1. Lookups follow the owner chain: the caller's group, then the group of the system that owns it, and so on up to
+     the root. A game type is then one group the selector spawns, with the player groups inside it, and despawning it
+     removes everything. Root systems still need `GamePhase` and `TurnPhase`, so those are set at the root
+     explicitly.
+  2. A `GameType` returns the systems it needs, and the selector despawns the old set and spawns the new one. This
+     needs no change to core.
+- The menu opens only with no game running and the balls home, the same as `PlayerEntry`.
+
+For now, `TurnSystem` and `ScoreSystem` should not assume they are the only instance, or that they live at the root.
 
 ### B5. Requests keyed by owner
 
-`BallSaveSystem.requests`, lotko's scoop `holds`, LED declarations, and the multiplier in A7 are the same thing: a
-value per requesting system, removed when that system releases it or despawns, sometimes with a time limit.
-`TODO.md` asks whether a "hold" should be a framework feature. Yes: a small collection type in core
-(`Requests<T>`: insert by owner id, release, expire on tick, drop on `SystemDespawned`) would replace the hand-written
-copies, and each one today handles despawn and deactivation slightly differently.
+`BallSaveSystem.requests`, lotko's scoop `holds`, LED declarations, and score multipliers are the same thing: a value
+per requesting system, removed when that system releases it or despawns, sometimes with a time limit. `TODO.md` asks
+whether a "hold" should be a framework feature. Yes: a small collection type in core (`Requests<T>`: insert by owner
+id, release, expire on tick, drop on `SystemDespawned`) would replace the hand-written copies, and each one today
+handles despawn and deactivation slightly differently. `ScoreSystem`'s multipliers would be its first new user.
 
 ### B6. Events and names
 
-- `PlayerAdded` has no fields. Listeners need the player's index and the new count.
+- Turn events and routines name one `current_player`. They should carry the team and the players who are up, since
+  two are up at once in split flipper. Do this before teams, as every listener changes.
+- `PointsAdded` names one player. It should carry the team, since every teammate's display changes.
+- `PlayerAdded` has no fields. Listeners need the player's index, their team, and the new count.
 - `GameEnding.scores` is `Vec<(&'static str, u32)>`, where the string is the system group's name. Pass the index, or a
   `Player`, and let presenters name it.
 - The same value is `current_player` in the routines and `player_index` in the events.
@@ -111,7 +181,8 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
 
 | Missing | Notes |
 |---|---|
-| Team and cooperative play | Half declared in `GameState`. B1 makes it a small addition |
+| Team and cooperative play | B1 |
+| Split flipper | B1 and B2, plus flippers enabled per player |
 | Tournament settings | Fixed seed (the `RandSystem` item), no extra balls, no random awards |
 | Last game's scores | Kept after `GameEnding` for attract mode |
 
@@ -135,14 +206,17 @@ Not in `TODO.md`, in rough order of how soon a machine needs them.
 
 One thing about the tests. Game management is tested against a fake ball manager, and ball management against events
 delivered by hand. `tests/game_flow.rs` fills the gap between them: a real `CompetitiveGame`, `StandardBallManager`,
-trough, and lane, driven only by switch changes. It now covers the lane, tilt, quit, and multiball cases. A5 and A6
-are the next scenarios for it.
+trough, and lane, driven only by switch changes. It now covers the lane, tilt, quit, and multiball cases. It is the check
+that B1's split doesn't change behavior, and teams are the next scenario for it.
 
 ## Suggested order
 
-1. The small items in A8.
-2. **A5**, with an end-to-end test that shows it first. It is contained in
-   `standard_ball_management.rs` and the game manager's `on_event`.
-3. **A6**, with `ejects_pending()`.
-4. **A7 with B1 and B5**: scoring as its own system, `GameState` as a struct, requests in core.
-5. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.
+1. **`GameSession` as a struct** of players and teams, with one team per player. No change in behavior.
+2. **`ScoreSystem`**, with explicit owners. B5 if the multipliers need it.
+3. **`TurnSystem`**, starting a list of groups, with the private phase enum. The turn tests move with it, and
+   `tests/game_flow.rs` passes unchanged.
+4. **B6**, at least the team and players on turn events and `PointsAdded`.
+5. **Teams in `Game`**: groups by team, the two templates, and team count in config. A `game_flow` test of 4 players
+   on 2 teams, where player 3 picks up a mode player 1 started.
+6. From section C: credits, the multiball helper, and attract as a routine, in whichever order the next game needs.
+7. Later: config overrides for one game, then the game type menu (B2).

@@ -121,19 +121,16 @@
 //! ### Setting how it runs
 //!
 //! `ctx.routines.start(routine)` runs it with the defaults. `ctx.routines.new(routine)` returns a [`RoutineBuilder`]
-//! for setting how it runs, which does nothing until its `start`:
-//!
-//! - [`RoutineBuilder::group`] looks participants up from a group other than the origin's own (see "Nearest wins").
-//! - [`RoutineBuilder::interval`] waits between one participant completing its step and the next being handed the
-//!   routine, so participants that each fire a coil don't fire at once. The origin decides the timing, and
-//!   participants complete as soon as they're done.
+//! for setting how it runs, which does nothing until its `start`. [`RoutineBuilder::interval`] waits between one
+//! participant completing its step and the next being handed the routine, so participants that each fire a coil don't
+//! fire at once. The origin decides the timing, and participants complete as soon as they're done.
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
 //! # #[derive(Serialize, Event, Clone)]
-//! # struct TurnEnding { player: u8 }
-//! # fn example(ctx: &SystemContext, player: &GroupHandle) {
-//! ctx.routines.new(TurnEnding { player: 1 }).group(player).start();
+//! # struct Searching;
+//! # fn example(ctx: &SystemContext) {
+//! ctx.routines.new(Searching).interval(Duration::from_millis(250)).start();
 //! # }
 //! ```
 //!
@@ -142,9 +139,10 @@
 //! - **One per type** -- Only one routine of a given type runs at a time. A second start is ignored with a warning, and
 //!   broadcasts nothing.
 //! - **Empty or undefined** routines complete immediately, still broadcasting both events.
-//! - **Nearest wins** -- Each listed type resolves to one instance, searched for from the routine's group and then the
-//!   root, the same as `ctx.get`. That's the origin's own group, or the group given to `RoutineBuilder::group`, so the
-//!   owner of a player's group can start a routine meant for that player's systems.
+//! - **Every active instance** -- Each listed type is handed to every active system of that type, wherever it is, in
+//!   the order events are delivered, before the next type is. Whoever starts the routine doesn't say where its
+//!   participants are: with only the current player's systems active, only theirs take a step, and with two players'
+//!   systems active, both do.
 //! - **Inactive or missing participants are skipped.**
 //! - **Only the current participant can complete its step or halt** -- Both are keyed to the caller, so a system that
 //!   does work on a participant's behalf reports back, and the participant completes. Late or duplicate completions

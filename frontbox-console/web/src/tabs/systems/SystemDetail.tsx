@@ -1,10 +1,9 @@
 import { For, Show } from 'solid-js'
 import TraceRow from '../../components/TraceRow'
-import { groupLabel, shortName } from '../../lib/format'
+import { shortName } from '../../lib/format'
 import type { System } from '../../types/generated/System'
-import type { SystemGroup } from '../../types/generated/SystemGroup'
 
-export default function SystemDetail(props: { system: System; group: SystemGroup }) {
+export default function SystemDetail(props: { system: System; parent: System | undefined; children: number }) {
   // newest first
   const recentEvents = () => [...props.system.recent_events].reverse()
 
@@ -21,8 +20,10 @@ export default function SystemDetail(props: { system: System; group: SystemGroup
         <dd class="mono">{props.system.name}</dd>
         <dt>ID</dt>
         <dd class="mono">{props.system.id}</dd>
-        <dt>Group</dt>
-        <dd>{groupLabel(props.group.id, props.group.name)}</dd>
+        <dt>Parent</dt>
+        <dd>{props.parent ? shortName(props.parent.name) : 'None (top level)'}</dd>
+        <dt>Children</dt>
+        <dd>{props.children}</dd>
       </dl>
 
       <section class="recent-events">

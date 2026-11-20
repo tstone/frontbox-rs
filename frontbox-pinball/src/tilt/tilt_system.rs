@@ -239,6 +239,9 @@ mod tests {
       self.tilts.fetch_add(1, Ordering::SeqCst);
     }
     fn add_player_system(&mut self, _system: ChildSystemContainer) {}
+    fn player_group(&self, _player: u8) -> Option<u64> {
+      None
+    }
     fn session(&self) -> Option<&GameSession> {
       None
     }

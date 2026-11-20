@@ -409,10 +409,10 @@ fn a_playback_is_drawn_over_declarations_on_its_z() {
 fn an_inactive_owners_playback_gives_its_lights_back() {
   let (context, addresses) = three_lights();
   play(&context, PlayableScene::new(on(LightQ::name("light0"), solid(Rgba::red()))));
-  with_scenes(&context, |scenes| scenes.on_event(&SystemDeactivated::new(OWNER, ROOT_GROUP), &context.sys_ctx()));
+  with_scenes(&context, |scenes| scenes.on_event(&SystemDeactivated::new(OWNER), &context.sys_ctx()));
   assert_eq!(shown(&context, &addresses)[0], None);
 
-  with_scenes(&context, |scenes| scenes.on_event(&SystemReactivated::new(OWNER, ROOT_GROUP), &context.sys_ctx()));
+  with_scenes(&context, |scenes| scenes.on_event(&SystemReactivated::new(OWNER), &context.sys_ctx()));
   assert_eq!(shown(&context, &addresses)[0], Some(Rgba::red()));
 }
 

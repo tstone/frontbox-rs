@@ -1,14 +1,31 @@
 use std::any::TypeId;
 use std::cell::RefMut;
 
-use crate::app::Groups;
+use crate::app::{Groups, ROOT_GROUP};
 use crate::prelude::*;
+use crate::systems::GroupId;
 
-/// Lookups across system groups
+/// Finding systems in the tree. Each system's children are kept in a group it owns, and the top-level systems in the
+/// root's.
 pub(crate) trait GroupsExt {
-  /// The instance of the type nearest to the group: in the group itself, then the root. Nearest wins, so an instance
-  /// in a player's group takes priority over one at the root.
-  fn nearest(&self, from: GroupId, type_id: TypeId) -> Option<SystemHandle>;
+  /// The instance of the type nearest to `from`: among its children, then its siblings, then its parent's siblings,
+  /// and so on up to the top level
+  fn nearest(&self, from: SystemHandle, type_id: TypeId) -> Option<SystemHandle>;
+
+  /// The instance of the type among the system's children
+  fn child_of_type(&self, parent: SystemHandle, type_id: TypeId) -> Option<SystemHandle>;
+
+  /// Every instance of the type, in the order events are delivered
+  fn instances(&self, type_id: TypeId) -> Vec<SystemHandle>;
+
+  /// The group holding the system's children, if it has had any
+  fn children_group(&self, owner: SystemHandle) -> Option<GroupId>;
+
+  /// The system's parent, or `None` for a top-level system
+  fn parent(&self, handle: SystemHandle) -> Option<SystemHandle>;
+
+  /// The handle of the system with this id, wherever it is
+  fn find(&self, id: u64) -> Option<SystemHandle>;
 
   fn system(&self, handle: SystemHandle) -> Option<RefMut<'_, SystemContainer>>;
 
@@ -21,7 +38,7 @@ pub(crate) trait GroupsExt {
 }
 
 impl GroupsExt for Groups {
-  fn nearest(&self, from: GroupId, type_id: TypeId) -> Option<SystemHandle> {
+  fn nearest(&self, from: SystemHandle, type_id: TypeId) -> Option<SystemHandle> {
     let search = |key: GroupId| {
       self
         .get(&key)
@@ -29,13 +46,47 @@ impl GroupsExt for Groups {
         .map(|id| SystemHandle::new(id, key))
     };
 
-    search(from).or_else(|| {
-      if from != ROOT_GROUP {
-        search(ROOT_GROUP)
-      } else {
-        None
+    if let Some(found) = self.children_group(from).and_then(search) {
+      return Some(found);
+    }
+    let mut key = from.group;
+    loop {
+      if let Some(found) = search(key) {
+        return Some(found);
       }
-    })
+      key = self.get(&key)?.owner?.group;
+    }
+  }
+
+  fn child_of_type(&self, parent: SystemHandle, type_id: TypeId) -> Option<SystemHandle> {
+    let key = self.children_group(parent)?;
+    let id = self.get(&key)?.id_by_type_id(&type_id)?;
+    Some(SystemHandle::new(id, key))
+  }
+
+  fn instances(&self, type_id: TypeId) -> Vec<SystemHandle> {
+    self
+      .iter()
+      .filter_map(|(key, group)| group.id_by_type_id(&type_id).map(|id| SystemHandle::new(id, *key)))
+      .collect()
+  }
+
+  fn children_group(&self, owner: SystemHandle) -> Option<GroupId> {
+    self
+      .iter()
+      .find(|(key, group)| **key != ROOT_GROUP && group.owner == Some(owner))
+      .map(|(key, _)| *key)
+  }
+
+  fn parent(&self, handle: SystemHandle) -> Option<SystemHandle> {
+    self.get(&handle.group)?.owner
+  }
+
+  fn find(&self, id: u64) -> Option<SystemHandle> {
+    self
+      .iter()
+      .find(|(_, group)| group.contains_id(&id))
+      .map(|(key, _)| SystemHandle::new(id, *key))
   }
 
   fn system(&self, handle: SystemHandle) -> Option<RefMut<'_, SystemContainer>> {

@@ -2,15 +2,18 @@
 import type { ConfigView } from "./ConfigView";
 import type { DriverMode } from "./DriverMode";
 import type { DriverState } from "./DriverState";
-import type { GroupId } from "./GroupId";
 import type { Rgb } from "./Rgb";
 import type { RoutineCompletion } from "./RoutineCompletion";
 import type { RoutineSkipReason } from "./RoutineSkipReason";
 import type { SwitchState } from "./SwitchState";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type TraceEvent = { "Event": { type_name: string, event: JsonValue | null, sender: number | null, } } | { "SystemSpawned": { id: number, name: string, group: GroupId, } } | { "SystemDespawned": { id: number, group: GroupId, } } | { "SystemGroupSpawned": { id: GroupId, name: string, } } | { "SystemGroupDespawned": { id: GroupId, name: string, } } | { "SystemActiveStateChange": { id: number, active: boolean, } } | { "SystemGroupActiveStateChange": { id: GroupId, active: boolean, } } | { "StateChange": { group: GroupId, name: string, value: JsonValue | null, } } | { "DriverStateChange": { driver_id: number, state: DriverState, } } | { "DriverModeChange": { driver_id: number, mode: DriverMode, } } | { "SwitchStateChange": { switch_id: number, state: SwitchState, } } | { "LedsRGBChange": { expansion: number, breakout: number | null, states: Array<[number, Rgb]>, } } | { "ConfigsInUse": { configs: Array<ConfigView>, } } | { "ConfigChange": { config: ConfigView, } } | { "RoutineStarted": { routine: string, origin: number, } } | { "RoutineRejected": { routine: string, origin: number, running_origin: number, } } | { "RoutineStep": { routine: string, participant: number, 
+export type TraceEvent = { "Event": { type_name: string, event: JsonValue | null, sender: number | null, } } | { "SystemSpawned": { id: number, name: string, 
 /**
- * The participant's group. Copies of a system in several groups share an id.
+ * The system that spawned it, or `None` at the top level
  */
-group: GroupId, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineHalted": { routine: string, participant: number, group: GroupId, } } | { "RoutineCompleted": { routine: string, origin: number, completion: RoutineCompletion, } } | { "RoutineAbandoned": { routine: string, origin: number, } };
+parent: number | null, 
+/**
+ * Whether it started active, which it doesn't under an inactive parent
+ */
+active: boolean, } } | { "SystemDespawned": { id: number, } } | { "SystemActiveStateChange": { id: number, active: boolean, } } | { "StateChange": { name: string, value: JsonValue | null, } } | { "DriverStateChange": { driver_id: number, state: DriverState, } } | { "DriverModeChange": { driver_id: number, mode: DriverMode, } } | { "SwitchStateChange": { switch_id: number, state: SwitchState, } } | { "LedsRGBChange": { expansion: number, breakout: number | null, states: Array<[number, Rgb]>, } } | { "ConfigsInUse": { configs: Array<ConfigView>, } } | { "ConfigChange": { config: ConfigView, } } | { "RoutineStarted": { routine: string, origin: number, } } | { "RoutineRejected": { routine: string, origin: number, running_origin: number, } } | { "RoutineStep": { routine: string, participant: number, } } | { "RoutineSkipped": { routine: string, participant: string, reason: RoutineSkipReason, } } | { "RoutinePaused": { routine: string, } } | { "RoutineResumed": { routine: string, } } | { "RoutineHalted": { routine: string, participant: number, } } | { "RoutineCompleted": { routine: string, origin: number, completion: RoutineCompletion, } } | { "RoutineAbandoned": { routine: string, origin: number, } };

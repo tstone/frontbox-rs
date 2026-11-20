@@ -5,31 +5,19 @@ use crate::app::{Groups, GroupsExt};
 use crate::prelude::*;
 use crate::systems::state::StoredState;
 
-/// The value of `S` nearest to `from`: as set in the group itself, then the root. The default if neither has set it.
-pub(crate) fn nearest_state<S: State>(groups: &Groups, from: GroupId) -> S {
-  let search = |key: GroupId| {
-    groups
-      .get(&key)?
-      .states
-      .get(&TypeId::of::<S>())?
-      .value
-      .downcast_ref::<S>()
-      .cloned()
-  };
+// States are machine-wide, so they're all kept in the root's map, whichever system set them.
 
-  search(from)
-    .or_else(|| {
-      if from != ROOT_GROUP {
-        search(ROOT_GROUP)
-      } else {
-        None
-      }
-    })
+/// The value of `S`, or the default if it hasn't been set
+pub(crate) fn state<S: State>(groups: &Groups) -> S {
+  groups
+    .get(&ROOT_GROUP)
+    .and_then(|root| root.states.get(&TypeId::of::<S>()))
+    .and_then(|stored| stored.value.downcast_ref::<S>().cloned())
     .unwrap_or_default()
 }
 
-/// Stores a state in its owner's group, returning the `StateChanged` to broadcast if its value changed. Ignored if
-/// another system in the group owns it, or if the owner has been despawned since setting it.
+/// Stores a state, returning the `StateChanged` to broadcast if its value changed. Ignored if another system owns it,
+/// or if the owner has been despawned since setting it.
 pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<EventBox> {
   if !groups.contains_system(state.owner) {
     log::warn!(
@@ -41,8 +29,8 @@ pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<Event
     return None;
   }
 
-  let group = groups.get_mut(&state.owner.group)?;
-  match group.states.get_mut(&state.type_id) {
+  let states = &mut groups.get_mut(&ROOT_GROUP)?.states;
+  match states.get_mut(&state.type_id) {
     Some(stored) if stored.owner != state.owner => {
       log::warn!(
         target: "frontbox::systems",
@@ -60,7 +48,7 @@ pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<Event
     }
     None => {
       let changed = (state.into_changed)(None, Some(state.value.as_ref()));
-      group.states.insert(state.type_id, state);
+      states.insert(state.type_id, state);
       changed
     }
   }
@@ -68,11 +56,11 @@ pub(crate) fn set_state(groups: &mut Groups, state: StoredState) -> Option<Event
 
 /// Drops the states the system owns, returning them. See [`StoredState::changed_to_default`] for what to broadcast.
 pub(crate) fn clear_states_owned_by(groups: &mut Groups, owner: SystemHandle) -> Vec<StoredState> {
-  let Some(group) = groups.get_mut(&owner.group) else {
+  let Some(root) = groups.get_mut(&ROOT_GROUP) else {
     return Vec::new();
   };
 
-  let owned: Vec<TypeId> = group
+  let owned: Vec<TypeId> = root
     .states
     .iter()
     .filter(|(_, state)| state.owner == owner)
@@ -81,6 +69,6 @@ pub(crate) fn clear_states_owned_by(groups: &mut Groups, owner: SystemHandle) ->
 
   owned
     .into_iter()
-    .filter_map(|type_id| group.states.remove(&type_id))
+    .filter_map(|type_id| root.states.remove(&type_id))
     .collect()
 }

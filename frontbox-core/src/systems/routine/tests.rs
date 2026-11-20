@@ -6,6 +6,9 @@ use std::rc::Rc;
 use tokio::sync::mpsc;
 
 use super::*;
+
+/// What these tests call the top level, which this harness keeps as a group of its own
+const ROOT_GROUP_NAME: &str = "root";
 use crate::app::app_message::AppMessage;
 use crate::app::app_tracer::TracerSenders;
 use crate::app::run_loop::{
@@ -138,7 +141,7 @@ impl Harness {
   fn new(definition: RoutineDefinition) -> Self {
     let (tx, rx) = mpsc::unbounded_channel();
     let mut groups = Groups::new();
-    groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
+    groups.insert(ROOT_GROUP, SystemGroup::new());
 
     Self {
       base: AppState::default(),
@@ -158,7 +161,7 @@ impl Harness {
       return *id;
     }
     let id = GroupId::next();
-    self.groups.insert(id, SystemGroup::new(name));
+    self.groups.insert(id, SystemGroup::new());
     self.group_ids.insert(name, id);
     id
   }
@@ -353,12 +356,7 @@ impl Harness {
 
   fn set_group_active(&mut self, name: &'static str, active: bool) {
     let key = self.group(name);
-    let group = self.groups.get_mut(&key).unwrap();
-    if active {
-      group.activate()
-    } else {
-      group.deactivate()
-    }
+    self.groups[&key].set_active(active);
     let handles = self.groups.handles_in(key);
     self.changed(&handles);
   }
@@ -428,7 +426,7 @@ fn a_second_start_is_ignored_while_running() {
 }
 
 #[test]
-fn nearest_instance_wins() {
+fn every_instance_of_a_type_takes_a_step_before_the_next_type() {
   let mut h = Harness::new(routine![Step<1>, Step<2>]);
   h.step::<1>(ROOT_GROUP_NAME, true);
   h.step::<1>("player", true);
@@ -437,11 +435,11 @@ fn nearest_instance_wins() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
+  assert_eq!(h.log(), ["step 1 in root", "step 1 in player", "step 2 in root", "completed"]);
 }
 
 #[test]
-fn participants_out_of_reach_are_skipped() {
+fn participants_are_found_wherever_they_are() {
   let mut h = Harness::new(routine![Step<1>, Step<2>]);
   h.step::<1>("player", true);
   h.step::<2>(ROOT_GROUP_NAME, true);
@@ -449,21 +447,36 @@ fn participants_out_of_reach_are_skipped() {
 
   h.start(origin);
 
-  assert_eq!(h.log(), ["step 2 in root", "completed"]);
+  assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
 }
 
 #[test]
-fn started_in_a_group_reaches_its_participants() {
-  let mut h = Harness::new(routine![Step<1>, Step<2>]);
-  h.step::<1>("player", true);
-  h.step::<2>(ROOT_GROUP_NAME, true);
+fn only_active_groups_take_a_step() {
+  let mut h = Harness::new(routine![Step<1>]);
+  h.step::<1>("player 1", true);
+  h.step::<1>("player 2", true);
+  h.step::<1>("player 3", true);
   let origin = h.origin(ROOT_GROUP_NAME);
-  let player = GroupHandle::new(h.group("player"), "player");
+  h.set_group_active("player 2", false);
 
-  h.ctx(origin).routines.new(Sequencing).group(&player).start();
+  h.start(origin);
+
+  assert_eq!(h.log(), ["step 1 in player 1", "step 1 in player 3", "completed"]);
+}
+
+#[test]
+fn an_interval_waits_between_instances_of_a_type() {
+  let mut h = Harness::new(routine![Step<1>]);
+  h.step::<1>("player 1", true);
+  h.step::<1>("player 2", true);
+  let origin = h.origin(ROOT_GROUP_NAME);
+
+  h.ctx(origin).routines.new(Sequencing).interval(Duration::from_millis(100)).start();
   h.pump();
+  assert_eq!(h.log(), ["step 1 in player 1"]);
 
-  assert_eq!(h.log(), ["step 1 in player", "step 2 in root", "completed"]);
+  h.tick(Duration::from_millis(100));
+  assert_eq!(h.log(), ["step 1 in player 1", "step 1 in player 2", "completed"]);
 }
 
 #[test]
@@ -556,7 +569,7 @@ fn a_group_deactivated_and_reactivated_in_a_row_still_ends_the_step() {
 }
 
 #[test]
-fn copies_in_other_groups_dont_affect_the_step() {
+fn copies_of_a_template_each_take_their_own_step() {
   #[derive(Clone)]
   struct Waiting;
 
@@ -565,7 +578,7 @@ fn copies_in_other_groups_dont_affect_the_step() {
   }
 
   let mut h = Harness::new(routine![Waiting, Step<1>]);
-  // copies of a child system keep its id, as when one is spawned into each player's group
+  // as when a template is spawned into each player's group
   let template = ChildSystemContainer::new(Waiting);
   let player1 = h.group("player 1");
   let player2 = h.group("player 2");
@@ -573,16 +586,19 @@ fn copies_in_other_groups_dont_affect_the_step() {
     let container = template.clone().to_system_container();
     h.groups[&group].insert(container);
   }
-  let id = *h.groups[&player1].ids()[0];
+  let first = SystemHandle::new(*h.groups[&player1].ids()[0], player1);
+  let second = SystemHandle::new(*h.groups[&player2].ids()[0], player2);
+  assert_ne!(first.id, second.id, "each copy gets its own id");
   h.step::<1>(ROOT_GROUP_NAME, true);
-  let origin = h.origin("player 2");
+  let origin = h.origin(ROOT_GROUP_NAME);
 
   h.start(origin);
-  h.set_group_active("player 1", false);
-  h.complete(SystemHandle::new(id, player1));
+  // the second copy's step hasn't begun, so its completion doesn't count
+  h.complete(second);
+  h.complete(first);
   assert!(h.log().is_empty());
 
-  h.complete(SystemHandle::new(id, player2));
+  h.complete(second);
   assert_eq!(h.log(), ["step 1 in root", "completed"]);
 }
 

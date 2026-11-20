@@ -36,6 +36,7 @@ use crate::systems::routine::Routines;
 use crate::systems::state::{clear_states_owned_by, set_state};
 
 pub(crate) use delivery::{apply_to_system, apply_to_systems, emit_event_to_origin, emit_event_to_others, is_system_active};
+use delivery::cascade_activity;
 
 use delivery::emit_activity_changed;
 use timing::{spawn_system_ticker, tick_delta};
@@ -62,11 +63,7 @@ impl RunLoop {
     machine_system_id: u64,
   ) -> Self {
     let mut groups = Groups::new();
-    groups.insert(ROOT_GROUP, SystemGroup::new(ROOT_GROUP_NAME));
-    tracers.send(TraceEvent::SystemGroupSpawned {
-      id: ROOT_GROUP,
-      name: ROOT_GROUP_NAME,
-    });
+    groups.insert(ROOT_GROUP, SystemGroup::new());
 
     Self {
       base,
@@ -94,7 +91,7 @@ impl RunLoop {
     let mut run_loop = Self::new(base, app_sender.clone(), tracers, routines, machine_system_id);
 
     for system in initial_systems {
-      run_loop.spawn_system(system, ROOT_GROUP);
+      run_loop.spawn_system(system, None);
     }
 
     let (tick_tx, mut tick_rx) = watch::channel(());
@@ -198,11 +195,15 @@ impl RunLoop {
         log::warn!(target: "frontbox::run_loop", "⏹️ Shutdown command received, shutting down...");
         return ControlFlow::Break(scope);
       }
-      AppMessage::SpawnSystem(group, system) => {
-        self.spawn_system(system.to_system_container(), group);
+      AppMessage::SpawnSystem(parent, system) => {
+        if self.groups.contains_system(parent) {
+          self.spawn_system(system.to_system_container(), Some(parent));
+        } else {
+          log::warn!(target: "frontbox::systems", "System {} spawned a child after it was despawned, ignored", parent.id);
+        }
       }
-      // Routines hear about despawns and group activity here, after the change, rather than through a message of
-      // their own, so they see it in queue order: a group deactivated and then reactivated still ends a step.
+      // Routines hear about despawns and activity changes here, after the change, rather than through a message of
+      // their own, so they see it in queue order: a system deactivated and then reactivated still ends a step.
       AppMessage::ReplaceSystem(handle, system) => {
         let despawned = self.replace_system(handle, system.to_system_container());
         self.activation_changed(&despawned);
@@ -211,20 +212,23 @@ impl RunLoop {
         let despawned = self.despawn_system(handle);
         self.activation_changed(&despawned);
       }
-      AppMessage::SpawnSystemGroup(owner, group, child_systems, active) => {
-        self.spawn_system_group(owner, group, child_systems, active);
+      AppMessage::ActivateChild(parent, child) => {
+        if let Some(child) = self.child_of(parent, child, "activate") {
+          let changed = self.set_system_enabled(child, true);
+          self.activation_changed(&changed);
+        }
       }
-      AppMessage::DespawnSystemGroup(group) => {
-        let despawned = self.despawn_system_group(group);
-        self.activation_changed(&despawned);
+      AppMessage::DeactivateChild(parent, child) => {
+        if let Some(child) = self.child_of(parent, child, "deactivate") {
+          let changed = self.set_system_enabled(child, false);
+          self.activation_changed(&changed);
+        }
       }
-      AppMessage::ActivateSystemGroup(group) => {
-        self.activate_system_group(group);
-        self.activation_changed(&self.groups.handles_in(group));
-      }
-      AppMessage::DeactivateSystemGroup(group) => {
-        self.deactivate_system_group(group);
-        self.activation_changed(&self.groups.handles_in(group));
+      AppMessage::DespawnChild(parent, child) => {
+        if let Some(child) = self.child_of(parent, child, "despawn") {
+          let despawned = self.despawn_system(child);
+          self.activation_changed(&despawned);
+        }
       }
       AppMessage::CreateTimer(handle, timer_id, timer, signals) => {
         self.create_timer(handle, timer_id, timer, signals);
@@ -262,7 +266,6 @@ impl RunLoop {
         let (owner, name, value) = (state.owner, state.name, (state.to_json)(state.value.as_ref()));
         if let Some(changed) = set_state(&mut self.groups, state) {
           self.tracers.send(TraceEvent::StateChange {
-            group: owner.group,
             name,
             value: Some(value),
           });

@@ -33,13 +33,13 @@ where
 {
   let mut result: Option<T> = None;
 
-  if groups.get(&handle.group).is_some_and(|group| group.active)
+  if groups.get(&handle.group).is_some_and(SystemGroup::is_active)
     && let Some(mut system) = groups.system(handle)
     && !system.is_faulted()
   {
     let ctx = SystemContext::new(base, handle, groups, app_sender);
     result = system.retire_on_panic(&ctx, |system| {
-      if handle_active(system, &ctx, app_sender, tracer_txs) {
+      if handle_active(system, &ctx, groups, base, app_sender, tracer_txs) {
         Some(handler(system, &ctx))
       } else {
         log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
@@ -75,7 +75,7 @@ pub(crate) fn apply_to_systems<F>(
   F: FnMut(&mut SystemContainer, &SystemContext),
 {
   for (key, group) in groups {
-    if group.active {
+    if group.is_active() {
       for cell in group.values() {
         let mut system = cell.borrow_mut();
         if system.is_faulted() {
@@ -84,7 +84,7 @@ pub(crate) fn apply_to_systems<F>(
         let handle = SystemHandle::new(system.id(), *key);
         let ctx = SystemContext::new(base, handle, groups, app_sender);
         system.retire_on_panic(&ctx, |system| {
-          if handle_active(system, &ctx, app_sender, tracer_txs) {
+          if handle_active(system, &ctx, groups, base, app_sender, tracer_txs) {
             handler(system, &ctx);
           } else {
             log::trace!(target: "frontbox::systems::delivery", "System {} is inactive, skipping", system.id());
@@ -141,18 +141,67 @@ pub(crate) fn emit_event_to_others(
 }
 
 /// Whether the system is active, firing its deactivate/reactivate handler and broadcasting the change if its activity
-/// changed since it was last checked
+/// changed since it was last checked. A change reaches its children too.
 fn handle_active(
   system: &mut SystemContainer,
   ctx: &SystemContext,
+  groups: &Groups,
+  base: &AppState,
   app_sender: &mpsc::UnboundedSender<AppMessage>,
   tracer_txs: &TracerSenders,
 ) -> bool {
   let check = system.handle_active(ctx, tracer_txs);
   if check.changed {
     emit_activity_changed(ctx.handle(), check.active, app_sender);
+    // routines hear about the system itself through `handle_active`
+    for child in cascade_activity(ctx.handle(), check.active, groups, base, app_sender, tracer_txs) {
+      let _ = app_sender.send(AppMessage::SystemActivityChanged(child));
+    }
   }
   check.active
+}
+
+/// The system became active, or stopped being active: its children follow, and theirs in turn. Each child is active
+/// only while its parent is, its parent lets it be, and its own `is_active` says so. Returns the descendants whose
+/// activity changed, after firing their handlers and broadcasting the change.
+pub(crate) fn cascade_activity(
+  owner: SystemHandle,
+  active: bool,
+  groups: &Groups,
+  base: &AppState,
+  app_sender: &mpsc::UnboundedSender<AppMessage>,
+  tracer_txs: &TracerSenders,
+) -> Vec<SystemHandle> {
+  let Some(key) = groups.children_group(owner) else {
+    return Vec::new();
+  };
+  let group = &groups[&key];
+  if group.is_active() == active {
+    return Vec::new();
+  }
+  group.set_active(active);
+
+  let mut changed = Vec::new();
+  for handle in groups.handles_in(key) {
+    let Some(mut system) = groups.system(handle) else {
+      continue;
+    };
+    if system.is_faulted() {
+      continue;
+    }
+    let ctx = SystemContext::new(base, handle, groups, app_sender);
+    let check = system.retire_on_panic(&ctx, |system| system.check_activity(active, &ctx, tracer_txs));
+    drop(system);
+
+    if let Some(check) = check
+      && check.changed
+    {
+      emit_activity_changed(handle, check.active, app_sender);
+      changed.push(handle);
+      changed.extend(cascade_activity(handle, check.active, groups, base, app_sender, tracer_txs));
+    }
+  }
+  changed
 }
 
 /// Broadcast [`SystemReactivated`] or [`SystemDeactivated`], once the system's own handler has run
@@ -162,9 +211,9 @@ pub(super) fn emit_activity_changed(
   app_sender: &mpsc::UnboundedSender<AppMessage>,
 ) {
   let event = if active {
-    EventBox::new(SystemReactivated::new(handle.id, handle.group))
+    EventBox::new(SystemReactivated::new(handle.id))
   } else {
-    EventBox::new(SystemDeactivated::new(handle.id, handle.group))
+    EventBox::new(SystemDeactivated::new(handle.id))
   };
   let _ = app_sender.send(EmitEvent(None, event));
 }

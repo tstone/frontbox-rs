@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 pub(crate) type StateValue = dyn Any + Send + Sync;
 
-/// A state's value and who owns it, as held in its group. Also how a context sends a state it set to the run loop.
+/// A state's value and who owns it, as the run loop holds it. Also how a context sends a state it set to the run loop.
 pub struct StoredState {
   pub(crate) owner: SystemHandle,
   pub(crate) type_id: TypeId,

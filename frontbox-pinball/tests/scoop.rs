@@ -253,7 +253,7 @@ fn a_despawned_systems_hold_is_cleared() {
   s.close_switch(LOWER);
   hold_lower(&mut s, 1);
 
-  s.emit(SystemDespawned::new(1, ROOT_GROUP));
+  s.emit(SystemDespawned::new(1));
   s.advance(past(EJECT_DELAY));
   assert_eq!(taps(&s, LOWER_COIL), 1);
 }

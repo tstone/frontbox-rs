@@ -251,6 +251,9 @@ mod tests {
     fn quit_game(&mut self, _reason: GameEndReason, _ctx: &ServiceContext) {}
     fn tilt(&mut self, _ctx: &ServiceContext) {}
     fn add_player_system(&mut self, _system: ChildSystemContainer) {}
+    fn player_group(&self, _player: u8) -> Option<u64> {
+      None
+    }
     fn session(&self) -> Option<&GameSession> {
       None
     }

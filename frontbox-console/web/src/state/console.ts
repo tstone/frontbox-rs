@@ -3,7 +3,7 @@ import { createStore, produce, reconcile } from 'solid-js/store'
 import type { ServerMessage } from '../types/generated/ServerMessage'
 import type { Snapshot } from '../types/generated/Snapshot'
 import type { TraceRecord } from '../types/generated/TraceRecord'
-import { groupLabel, shortName } from '../lib/format'
+import { shortName } from '../lib/format'
 import type { ClientMessage } from '../types/generated/ClientMessage'
 import type { DriverMode } from '../types/generated/DriverMode'
 import { receiveMetricTotals } from './metricsQuery'
@@ -31,7 +31,8 @@ const firedTimers = new Map<number, ReturnType<typeof setTimeout>>()
 const [state, setState] = createStore<ConsoleState>({
   connection: 'connecting',
   hardware: null,
-  groups: [],
+  systems: [],
+  states: {},
   switches: {},
   drivers: {},
   driver_modes: {},
@@ -66,7 +67,8 @@ export function sendToMachine(message: ClientMessage) {
 function handleMessage(message: ServerMessage) {
   switch (message.type) {
     case 'Init': {
-      const { hardware, groups, switches, drivers, driver_modes, game, planes, displays, led_colors, configs, log } = message
+      const { hardware, systems, states, switches, drivers, driver_modes, game, planes, displays, led_colors, configs, log } =
+        message
       // Hardware rarely changes between snapshots (they also arrive on every game start and end, and when a client
       // falls behind), so reconcile it and the LED colors into what's already there instead of replacing them, which
       // would rebuild everything that reads them.
@@ -74,7 +76,7 @@ function handleMessage(message: ServerMessage) {
         setState('hardware', reconcile(hardware))
         setState('led_colors', reconcile(led_colors))
         setState('configs', reconcile(configs))
-        setState({ groups, switches, drivers, driver_modes, game, planes, displays, log })
+        setState({ systems, states, switches, drivers, driver_modes, game, planes, displays, log })
       })
       break
     }
@@ -154,37 +156,23 @@ function markFired(id: number) {
  */
 function applyTrace(s: ConsoleState, record: TraceRecord) {
   const event = record.event
-  const group = (id: number) => s.groups.find((g) => g.id === id)
 
-  if ('SystemGroupSpawned' in event) {
-    const { id, name } = event.SystemGroupSpawned
-    if (!group(id)) s.groups.push({ id, name, active: true, systems: [], states: {} })
-  } else if ('SystemGroupDespawned' in event) {
-    const { id } = event.SystemGroupDespawned
-    s.groups = s.groups.filter((g) => g.id !== id)
-  } else if ('SystemGroupActiveStateChange' in event) {
-    const { id, active } = event.SystemGroupActiveStateChange
-    const g = group(id)
-    if (g) g.active = active
-  } else if ('StateChange' in event) {
-    const { group: groupId, name, value } = event.StateChange
-    const g = group(groupId)
-    if (g) {
-      if (value === null) delete g.states[name]
-      else g.states[name] = value
-    }
+  if ('StateChange' in event) {
+    const { name, value } = event.StateChange
+    if (value === null) delete s.states[name]
+    else s.states[name] = value
     // not logged: the `StateChanged` event it comes with is
     return
   } else if ('SystemSpawned' in event) {
-    const { id, name, group: groupId } = event.SystemSpawned
-    group(groupId)?.systems.push({ id, name, active: true, recent_events: [] })
+    const { id, name, parent, active } = event.SystemSpawned
+    s.systems.push({ id, name, parent, active, recent_events: [] })
   } else if ('SystemDespawned' in event) {
-    const { id, group: groupId } = event.SystemDespawned
-    const g = group(groupId)
-    if (g) g.systems = g.systems.filter((sys) => sys.id !== id)
+    // its children are despawned with it, each traced on its own
+    const { id } = event.SystemDespawned
+    s.systems = s.systems.filter((sys) => sys.id !== id)
   } else if ('SystemActiveStateChange' in event) {
     const { id, active } = event.SystemActiveStateChange
-    const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === id)
+    const sys = s.systems.find((sys) => sys.id === id)
     if (sys) sys.active = active
   } else if ('SwitchStateChange' in event) {
     const { switch_id, state } = event.SwitchStateChange
@@ -199,9 +187,9 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     const { routine, origin } = event.RoutineStarted
     s.routines.push({ routine, origin, current: null })
   } else if ('RoutineStep' in event) {
-    const { routine, participant, group } = event.RoutineStep
+    const { routine, participant } = event.RoutineStep
     const progress = s.routines.find((r) => r.routine === routine)
-    if (progress) progress.current = { id: participant, group }
+    if (progress) progress.current = participant
   } else if ('RoutinePaused' in event || 'RoutineHalted' in event) {
     // paused once the step in progress is over, and a halt ends it, so no one holds it
     const { routine } = 'RoutinePaused' in event ? event.RoutinePaused : event.RoutineHalted
@@ -217,7 +205,7 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     return
   } else if (event.Event.sender !== null) {
     const sender = event.Event.sender
-    const sys = s.groups.flatMap((g) => g.systems).find((sys) => sys.id === sender)
+    const sys = s.systems.find((sys) => sys.id === sender)
     if (sys) {
       sys.recent_events.push(record)
       if (sys.recent_events.length > RECENT_EVENTS_PER_SYSTEM) sys.recent_events.shift()
@@ -234,24 +222,10 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
  * from its spawn record in the log.
  */
 export function systemName(id: number): string {
-  for (const group of state.groups) {
-    const system = group.systems.find((s) => s.id === id)
-    if (system) return shortName(system.name)
-  }
+  const system = state.systems.find((s) => s.id === id)
+  if (system) return shortName(system.name)
   const spawned = state.log.find((r) => 'SystemSpawned' in r.event && r.event.SystemSpawned.id === id)
   if (spawned && 'SystemSpawned' in spawned.event) return shortName(spawned.event.SystemSpawned.name)
   return `System #${id}`
-}
-
-/**
- * A group's label by id: from the running groups, or, for one that has since despawned, from its spawn record in the
- * log.
- */
-export function groupName(id: number): string {
-  const group = state.groups.find((g) => g.id === id)
-  if (group) return groupLabel(group.id, group.name)
-  const spawned = state.log.find((r) => 'SystemGroupSpawned' in r.event && r.event.SystemGroupSpawned.id === id)
-  if (spawned && 'SystemGroupSpawned' in spawned.event) return groupLabel(id, spawned.event.SystemGroupSpawned.name)
-  return `Group #${id}`
 }
 

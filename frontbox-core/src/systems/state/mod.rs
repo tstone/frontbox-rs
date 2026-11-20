@@ -19,7 +19,7 @@
 //!
 //! ## Setting
 //!
-//! A state belongs to the first system to set it, in that system's group. Other systems can read it, but only its
+//! A state belongs to the first system to set it. Other systems can read it, but only its
 //! owner can set it; anyone else trying is ignored, with a warning. When the owner is despawned, the state goes back
 //! to its default, and the next system to set it owns it.
 //!
@@ -48,12 +48,10 @@
 //! # }
 //! ```
 //!
-//! ## Groups
+//! ## One value for the whole machine
 //!
-//! Each group has its own states. A system reads the value set in its own group, then the root's, the same nearness
-//! as looking up a system. Since every player has their own group, a state set by a system in a player's group is that
-//! player's: it's still there when their next turn comes around, and goes when the group is despawned. A root system
-//! can't see a state set in a group.
+//! A state has one value, whichever system set it and wherever that system is: every system reads the same one. A
+//! player's own progress belongs in their systems' fields, which last between their turns, not in a state.
 
 mod states;
 mod stored_state;

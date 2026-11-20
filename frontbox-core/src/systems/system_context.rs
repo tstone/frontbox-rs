@@ -25,8 +25,7 @@ use crate::prelude::*;
 ///
 /// The rest of what a system can do is grouped into namespaces, each acting as this system:
 ///
-/// - `ctx.systems`: look up, spawn, and despawn systems
-/// - `ctx.groups`: spawn and manage system groups
+/// - `ctx.systems`: look up systems, and spawn, activate, deactivate, and despawn this system's children
 /// - `ctx.timers`: schedule signals back to this system
 /// - `ctx.routines`: start and take part in routines
 /// - `ctx.states`: read and set states
@@ -39,7 +38,6 @@ pub struct SystemContext<'a> {
   handle: SystemHandle,
   ctx: ServiceContext<'a>,
   pub systems: ContextSystems<'a>,
-  pub groups: ContextGroups<'a>,
   pub timers: ContextTimers<'a>,
   pub routines: ContextRoutines<'a>,
   pub states: ContextStates<'a>,
@@ -49,7 +47,7 @@ pub struct SystemContext<'a> {
 }
 
 impl<'a> SystemContext<'a> {
-  pub fn new(
+  pub(crate) fn new(
     base: &'a AppState,
     handle: SystemHandle,
     groups: &'a Groups,
@@ -60,7 +58,6 @@ impl<'a> SystemContext<'a> {
       handle,
       ctx,
       systems: ContextSystems::new(handle, ctx),
-      groups: ContextGroups::new(handle, ctx),
       timers: ContextTimers::new(handle, ctx),
       routines: ContextRoutines::for_system(handle, ctx),
       states: ContextStates::new(handle, ctx),
@@ -76,7 +73,7 @@ impl<'a> SystemContext<'a> {
     self.handle.id
   }
 
-  /// The complete handle (group + ID) for the current system. A handle lets whoever holds it act as the system, so
+  /// The complete handle for the current system. A handle lets whoever holds it act as the system, so
   /// keep it to the system itself; see [`SystemHandle`].
   pub fn handle(&self) -> SystemHandle {
     self.handle

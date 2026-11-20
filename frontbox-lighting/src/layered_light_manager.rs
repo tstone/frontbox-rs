@@ -912,10 +912,10 @@ mod tests {
     system.declare(42, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     let is_active = |system: &LayeredLightManager| system.declarations[&light].values().all(|d| d.active);
 
-    system.on_event(&SystemDeactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
+    system.on_event(&SystemDeactivated::new(42), &ctx.sys_ctx());
     assert!(!is_active(&system));
 
-    system.on_event(&SystemReactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
+    system.on_event(&SystemReactivated::new(42), &ctx.sys_ctx());
     assert!(is_active(&system));
   }
 

@@ -6,6 +6,7 @@
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
 - System::tagged as a "convention over configuration" alternative
 - FreePlay becomes the "you passed this score threshold and earn a game"/knocker hit
+- Config overrides that last for the duration of a game (e.g. tournament mode)
 
 ## Design Choices/Core
 

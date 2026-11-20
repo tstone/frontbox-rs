@@ -274,9 +274,9 @@ mod tests {
     played(&mut rx);
 
     let ctx = context.sys_ctx();
-    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemDeactivated::new(ctx.id(), ROOT_GROUP), &ctx));
+    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemDeactivated::new(ctx.id()), &ctx));
     tick(&context, Duration::from_millis(500));
-    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemReactivated::new(ctx.id(), ROOT_GROUP), &ctx));
+    ctx.systems.with::<SceneSystem, _>(|scenes| scenes.on_event(&SystemReactivated::new(ctx.id()), &ctx));
     tick(&context, Duration::ZERO);
     assert!(played(&mut rx).is_empty());
   }

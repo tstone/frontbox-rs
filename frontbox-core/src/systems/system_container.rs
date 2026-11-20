@@ -10,7 +10,8 @@ use crate::prelude::Event;
 use crate::prelude::app_tracer::TracerSenders;
 use crate::systems::*;
 
-static INCR_ID: AtomicU64 = AtomicU64::new(0);
+// from 1, so a default `SystemHandle` (id 0) never refers to a system
+static INCR_ID: AtomicU64 = AtomicU64::new(1);
 
 pub struct SystemContainer {
   id: u64,
@@ -19,6 +20,8 @@ pub struct SystemContainer {
   timers: HashMap<u64, TimerAccumulator>,
   last_active_state: bool,
   faulted: bool,
+  /// Whether its parent lets it run (`ctx.systems.activate` and `deactivate`). Always true for a top-level system.
+  enabled: bool,
   as_any: fn(&dyn System) -> &dyn Any,
   as_any_mut: fn(&mut dyn System) -> &mut dyn Any,
   provided: ProvidedTraits,
@@ -33,6 +36,7 @@ impl SystemContainer {
       timers: HashMap::new(),
       last_active_state: true,
       faulted: false,
+      enabled: true,
       as_any: |s| s as &dyn Any,
       as_any_mut: |s| s as &mut dyn Any,
       provided: Provides::<T>::collect(),
@@ -45,6 +49,11 @@ impl SystemContainer {
 
   pub fn name(&self) -> &'static str {
     &self.name
+  }
+
+  /// Name it for display, in place of its type's name (e.g. a `Group` by what it holds)
+  pub(crate) fn set_name(&mut self, name: &'static str) {
+    self.name = name;
   }
 
   pub fn type_id(&self) -> TypeId {
@@ -98,8 +107,8 @@ impl SystemContainer {
     INCR_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
   }
 
-  /// Called when the system is deactivated, by its own `is_active` or its group's. The run loop broadcasts
-  /// [`SystemDeactivated`] afterwards.
+  /// Called when the system is deactivated, by its own `is_active`, its parent, or an ancestor stopping. The run loop
+  /// broadcasts [`SystemDeactivated`] afterwards.
   pub(crate) fn on_deactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
       target: "frontbox::systems",
@@ -110,8 +119,8 @@ impl SystemContainer {
     self.inner.on_deactivate(ctx);
   }
 
-  /// Called when the system is re-activated after being deactivated, by its own `is_active` or its group's. The run
-  /// loop broadcasts [`SystemReactivated`] afterwards.
+  /// Called when the system is re-activated after being deactivated. The run loop broadcasts [`SystemReactivated`]
+  /// afterwards.
   pub(crate) fn on_reactivate(&mut self, ctx: &SystemContext) {
     log::debug!(
       target: "frontbox::systems",
@@ -122,20 +131,42 @@ impl SystemContainer {
     self.inner.on_reactivate(ctx);
   }
 
-  /// Prepare the system to run, and fire initial lifecycle events
-  pub(crate) fn initialize(&mut self, ctx: &SystemContext) {
-    self.last_active_state = self.inner.is_active(&ctx);
+  /// Prepare the system to run, and fire initial lifecycle events. `parent_active` is whether its parent is active,
+  /// so it can be.
+  pub(crate) fn initialize(&mut self, ctx: &SystemContext, parent_active: bool) {
+    self.last_active_state = parent_active && self.enabled && self.inner.is_active(&ctx);
     self.on_spawn(ctx);
   }
 
+  /// Whether the system was active when last checked
+  pub(crate) fn was_active(&self) -> bool {
+    self.last_active_state
+  }
+
+  /// Let the system run, or stop it, as its parent asks. Takes effect at the next check of its activity.
+  pub(crate) fn set_enabled(&mut self, enabled: bool) {
+    self.enabled = enabled;
+  }
+
   /// Checks if the system is active and fires reactivate/deactivate handlers if it has changed since the last check.
-  /// Use `is_active` if you just want to check the active state without firing handlers.
+  /// Only called while its parent is active. Use `is_active` if you just want to check the active state without firing
+  /// handlers.
   pub(crate) fn handle_active(
     &mut self,
     ctx: &SystemContext,
     tracer_txs: &TracerSenders,
   ) -> ActivityCheck {
-    let fresh = self.inner.is_active(ctx);
+    self.check_activity(true, ctx, tracer_txs)
+  }
+
+  /// [`handle_active`](Self::handle_active), for when its parent's activity has changed to `parent_active`
+  pub(crate) fn check_activity(
+    &mut self,
+    parent_active: bool,
+    ctx: &SystemContext,
+    tracer_txs: &TracerSenders,
+  ) -> ActivityCheck {
+    let fresh = parent_active && self.enabled && self.inner.is_active(ctx);
 
     if fresh != self.last_active_state {
       if fresh {
@@ -270,6 +301,10 @@ impl SpawnableSystemContainer {
     }
   }
 
+  pub fn id(&self) -> u64 {
+    self.id
+  }
+
   pub fn to_system_container(self) -> SystemContainer {
     SystemContainer {
       id: self.id,
@@ -278,6 +313,7 @@ impl SpawnableSystemContainer {
       timers: self.timers,
       last_active_state: self.last_active_state,
       faulted: false,
+      enabled: true,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
       provided: self.provided,
@@ -293,7 +329,6 @@ impl<T: SpawnableSystem + 'static> From<T> for SpawnableSystemContainer {
 
 #[derive(Clone)]
 pub struct ChildSystemContainer {
-  id: u64,
   name: &'static str,
   inner: Box<dyn ChildSystem>,
   timers: HashMap<u64, TimerAccumulator>,
@@ -306,7 +341,6 @@ pub struct ChildSystemContainer {
 impl ChildSystemContainer {
   pub fn new<T: ChildSystem + 'static>(system: T) -> Self {
     Self {
-      id: SystemContainer::next_id(),
       name: type_name_of_val(&system),
       inner: Box::new(system),
       timers: HashMap::new(),
@@ -317,14 +351,16 @@ impl ChildSystemContainer {
     }
   }
 
+  /// The system, ready to spawn. Each one gets a new id, since a template is copied once for every player.
   pub fn to_system_container(self) -> SystemContainer {
     SystemContainer {
-      id: self.id,
+      id: SystemContainer::next_id(),
       name: self.name,
       inner: self.inner,
       timers: self.timers,
       last_active_state: self.last_active_state,
       faulted: false,
+      enabled: true,
       as_any: self.as_any,
       as_any_mut: self.as_any_mut,
       provided: self.provided,
@@ -369,7 +405,7 @@ mod tests {
     let tracers = TracerSenders::new(Vec::new());
     let active = Rc::new(Cell::new(true));
     let mut system = SystemContainer::new(Toggled(active.clone()));
-    system.initialize(&ctx.sys_ctx());
+    system.initialize(&ctx.sys_ctx(), true);
     let mut check = || {
       let check = system.handle_active(&ctx.sys_ctx(), &tracers);
       (check.active, check.changed)

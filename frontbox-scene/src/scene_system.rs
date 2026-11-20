@@ -198,11 +198,11 @@ mod tests {
   fn an_inactive_owners_playbacks_pause_and_hide() {
     let context = context();
     let id = start(&context, OWNER, timed(1.0, Cycle::Once));
-    send(&context, SystemDeactivated::new(OWNER, ROOT_GROUP));
+    send(&context, SystemDeactivated::new(OWNER));
     tick(&context, Duration::from_millis(500));
     assert!(shown(&context).is_empty());
 
-    send(&context, SystemReactivated::new(OWNER, ROOT_GROUP));
+    send(&context, SystemReactivated::new(OWNER));
     assert_eq!(shown(&context), [id]);
     assert_eq!(with_scenes(&context, |scenes| scenes.playback(id).unwrap().moment().time), 0.0);
   }
@@ -211,7 +211,7 @@ mod tests {
   fn a_despawned_owners_playbacks_go_with_it() {
     let context = context();
     let id = start(&context, OWNER, timed(1.0, Cycle::Forever));
-    send(&context, SystemDespawned::new(OWNER, ROOT_GROUP));
+    send(&context, SystemDespawned::new(OWNER));
     assert!(!with_scenes(&context, |scenes| scenes.contains(id)));
   }
 
@@ -219,9 +219,9 @@ mod tests {
   fn a_scene_handed_off_plays_to_its_end_whatever_systems_do() {
     let context = context();
     let id = with_scenes(&context, |scenes| scenes.play(&completing(1.0)));
-    send(&context, SystemDeactivated::new(OWNER, ROOT_GROUP));
+    send(&context, SystemDeactivated::new(OWNER));
     tick(&context, Duration::from_millis(500));
-    send(&context, SystemDespawned::new(OWNER, ROOT_GROUP));
+    send(&context, SystemDespawned::new(OWNER));
     assert_eq!(shown(&context), [id]);
     assert_eq!(with_scenes(&context, |scenes| scenes.playback(id).unwrap().moment().time), 0.5);
 
@@ -233,8 +233,8 @@ mod tests {
   fn other_owners_are_left_alone() {
     let context = context();
     let id = start(&context, OWNER + 1, timed(1.0, Cycle::Forever));
-    send(&context, SystemDeactivated::new(OWNER, ROOT_GROUP));
-    send(&context, SystemDespawned::new(OWNER, ROOT_GROUP));
+    send(&context, SystemDeactivated::new(OWNER));
+    send(&context, SystemDespawned::new(OWNER));
     assert_eq!(shown(&context), [id]);
   }
 }

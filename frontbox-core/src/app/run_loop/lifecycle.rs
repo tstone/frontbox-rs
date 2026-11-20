@@ -1,66 +1,88 @@
 use super::*;
 
 impl RunLoop {
-  pub(super) fn spawn_system(&mut self, system: SystemContainer, group: GroupId) {
+  /// Spawns the system as a child of `parent`, or at the top level. Returns its handle, or `None` if it was refused: a
+  /// parent can't have two children of one type, except [`Group`]s. A `Group`'s children are spawned with it.
+  pub(super) fn spawn_system(&mut self, mut system: SystemContainer, parent: Option<SystemHandle>) -> Option<SystemHandle> {
     let system_id = system.id();
-
-    let was_spawned = match self.groups.get_mut(&group) {
-      Some(parent) => match parent.id_by_type_id(&system.type_id()) {
-        Some(existing_id) => {
-          log::warn!(
-            target: "frontbox::systems",
-            "Could not spawn system {} because group {} already has one ({}). Only one system of a type may run per group.",
-            system.name(),
-            group,
-            existing_id
-          );
-          false
-        }
-        None => {
-          parent.insert(system);
-          true
-        }
-      },
-      None => {
-        log::warn!(
-          target: "frontbox::systems",
-          "Could not spawn system {} because group {} does not exist.",
-          system.name(),
-          group
-        );
-        false
-      }
+    let group = match parent {
+      None => ROOT_GROUP,
+      Some(parent) => self.children_group_of(parent)?,
     };
+    let is_group = system.type_id() == TypeId::of::<Group>();
+    if let Some(group) = system.downcast_mut::<Group>() {
+      let name = group.name();
+      system.set_name(name);
+    }
 
-    if was_spawned {
-      let handle = SystemHandle::new(system_id, group);
+    let siblings = self.groups.get_mut(&group)?;
+    if !is_group && let Some(existing_id) = siblings.id_by_type_id(&system.type_id()) {
+      log::warn!(
+        target: "frontbox::systems",
+        "Could not spawn system {} because its parent already has one ({}). Only one system of a type may run with the \
+         same parent.",
+        system.name(),
+        existing_id
+      );
+      return None;
+    }
+    let parent_active = siblings.is_active();
+    siblings.insert(system);
+
+    let handle = SystemHandle::new(system_id, group);
+    let children = {
       let mut system = self.groups.system(handle).unwrap();
       log::info!(
         target: "frontbox::systems",
         "🌐 Spawned system {} ({})", system.name(), system.id());
 
       let ctx = SystemContext::new(&self.base, handle, &self.groups, &self.app_sender);
-      system.retire_on_panic(&ctx, |system| system.initialize(&ctx));
+      system.retire_on_panic(&ctx, |system| system.initialize(&ctx, parent_active));
 
       self.tracers.send(TraceEvent::SystemSpawned {
         id: system_id,
         name: system.name(),
-        group,
+        parent: parent.map(|parent| parent.id),
+        active: system.was_active(),
       });
+      system.downcast_mut::<Group>().map(Group::take_children).unwrap_or_default()
+    };
 
-      let event = SystemSpawned::new(system_id, group);
-      let _ = self.app_sender.send(EmitEvent(None, EventBox::new(event)));
+    let event = SystemSpawned::new(system_id);
+    let _ = self.app_sender.send(EmitEvent(None, EventBox::new(event)));
+
+    for child in children {
+      self.spawn_system(child.to_system_container(), Some(handle));
     }
+    Some(handle)
+  }
+
+  /// The group holding the system's children, made for its first child. `None` if the system isn't running.
+  fn children_group_of(&mut self, parent: SystemHandle) -> Option<GroupId> {
+    if let Some(existing) = self.groups.children_group(parent) {
+      return Some(existing);
+    }
+    let Some(parent_system) = self.groups.system(parent) else {
+      log::warn!(target: "frontbox::systems", "Could not spawn a child of system {}, which isn't running", parent.id);
+      return None;
+    };
+    let active = parent_system.was_active();
+    drop(parent_system);
+
+    let id = GroupId::next();
+    self.groups.insert(id, SystemGroup::owned_by(parent, active));
+    Some(id)
   }
 
   pub(super) fn replace_system(&mut self, old_handle: SystemHandle, new_system: SystemContainer) -> Vec<SystemHandle> {
+    let parent = self.groups.parent(old_handle);
     let despawned = self.despawn_system(old_handle);
-    self.spawn_system(new_system, old_handle.group);
+    self.spawn_system(new_system, parent);
     despawned
   }
 
-  /// Despawns the system, along with the groups it owns. Returns the handles of every system despawned: the system
-  /// itself, then those in its groups.
+  /// Despawns the system and its children. Returns the handles of every system despawned: the system itself, then its
+  /// children's.
   pub(super) fn despawn_system(&mut self, handle: SystemHandle) -> Vec<SystemHandle> {
     let Some(cell) = self
       .groups
@@ -80,18 +102,14 @@ impl RunLoop {
         target: "frontbox::systems",
         "🌐 Despawned system {} ({})", system.name(), system.id());
 
-      self.tracers.send(TraceEvent::SystemDespawned {
-        id: handle.id,
-        group: handle.group,
-      });
+      self.tracers.send(TraceEvent::SystemDespawned { id: handle.id });
 
-      let event = SystemDespawned::new(handle.id, handle.group);
+      let event = SystemDespawned::new(handle.id);
       let _ = self.app_sender.send(EmitEvent(None, EventBox::new(event)));
     }
 
     for state in clear_states_owned_by(&mut self.groups, handle) {
       self.tracers.send(TraceEvent::StateChange {
-        group: handle.group,
         name: state.name,
         value: None,
       });
@@ -101,138 +119,77 @@ impl RunLoop {
     }
 
     let mut despawned = vec![handle];
-    let owned: Vec<GroupId> = self
-      .groups
-      .iter()
-      .filter(|(_, group)| group.owner == Some(handle))
-      .map(|(id, _)| *id)
-      .collect();
-    for group in owned {
-      despawned.extend(self.despawn_system_group(group));
+    if let Some(children) = self.groups.children_group(handle) {
+      for child in self.groups.handles_in(children) {
+        despawned.extend(self.despawn_system(child));
+      }
+      let _ = self.groups.shift_remove(&children);
     }
     despawned
   }
 
-  pub(super) fn spawn_system_group(
-    &mut self,
-    owner: SystemHandle,
-    group: GroupHandle,
-    child_systems: Vec<ChildSystemContainer>,
-    active: bool,
-  ) {
-    let id = group.id();
-    self.groups.insert(id, SystemGroup::owned_by(group.name(), owner));
-    log::info!(target: "frontbox::systems", "🌐 Spawned system group {} ({})", group.name(), id);
-
-    self.tracers.send(TraceEvent::SystemGroupSpawned {
-      id,
-      name: group.name(),
-    });
-
-    for child in child_systems {
-      self.spawn_system(child.to_system_container(), id);
+  /// The caller's child with this id. Logs a warning and returns `None` for any other system.
+  pub(super) fn child_of(&self, caller: SystemHandle, child: u64, what: &str) -> Option<SystemHandle> {
+    let found = self
+      .groups
+      .children_group(caller)
+      .map(|group| SystemHandle::new(child, group))
+      .filter(|handle| self.groups.contains_system(*handle));
+    if found.is_none() {
+      log::warn!(
+        target: "frontbox::systems",
+        "{} tried to {} system {}, which isn't its child, ignored",
+        self.groups.system_name(caller).unwrap_or("A despawned system"),
+        what,
+        child
+      );
     }
-
-    if !active {
-      self.deactivate_system_group(id);
-    }
+    found
   }
 
-  /// Despawns the group and its systems, returning the handles of every system despawned
-  pub(super) fn despawn_system_group(&mut self, id: GroupId) -> Vec<SystemHandle> {
-    let Some(name) = self.groups.get(&id).map(|group| group.name) else {
-      log::warn!(target: "frontbox::systems", "No system group {} found, cannot despawn", id);
+  /// The parent lets its child run, or stops it. Returns every system whose activity changed: the child and its
+  /// children.
+  pub(super) fn set_system_enabled(&mut self, handle: SystemHandle, enabled: bool) -> Vec<SystemHandle> {
+    let Some(mut system) = self.groups.system(handle) else {
       return Vec::new();
     };
-
-    let mut despawned = Vec::new();
-    for handle in self.groups.handles_in(id) {
-      despawned.extend(self.despawn_system(handle));
+    system.set_enabled(enabled);
+    if system.is_faulted() {
+      return Vec::new();
     }
+    let parent_active = self.groups.get(&handle.group).is_some_and(SystemGroup::is_active);
+    let ctx = SystemContext::new(&self.base, handle, &self.groups, &self.app_sender);
+    let check = system.retire_on_panic(&ctx, |system| system.check_activity(parent_active, &ctx, &self.tracers));
+    drop(system);
 
-    self.tracers.send(TraceEvent::SystemGroupDespawned { id, name });
-
-    let _ = self.groups.shift_remove(&id);
-    log::info!(target: "frontbox::systems", "🌐 Despawned system group {} ({})", name, id);
-    despawned
-  }
-
-  pub(super) fn activate_system_group(&mut self, id: GroupId) {
-    let Some(group) = self.groups.get_mut(&id) else {
-      log::warn!(target: "frontbox::systems", "No system group {} found, cannot activate", id);
-      return;
-    };
-
-    if !group.active {
-      group.active = true;
-    } else {
-      return;
-    }
-
-    for handle in self.groups.handles_in(id) {
-      let mut system = self.groups.system(handle).unwrap();
-      if system.is_faulted() {
-        continue;
+    match check {
+      Some(check) if check.changed => {
+        emit_activity_changed(handle, check.active, &self.app_sender);
+        let mut changed = vec![handle];
+        changed.extend(cascade_activity(handle, check.active, &self.groups, &self.base, &self.app_sender, &self.tracers));
+        changed
       }
-      let ctx = SystemContext::new(&self.base, handle, &self.groups, &self.app_sender);
-
-      let reactivated = system.retire_on_panic(&ctx, |system| {
-        let active = system.is_active(&ctx);
-        if active {
-          system.on_reactivate(&ctx);
-        }
-        active
-      });
-      if reactivated == Some(true) {
-        emit_activity_changed(handle, true, &self.app_sender);
-      }
+      _ => Vec::new(),
     }
-
-    self.tracers.send(TraceEvent::SystemGroupActiveStateChange { id, active: true });
-  }
-
-  pub(super) fn deactivate_system_group(&mut self, id: GroupId) {
-    let Some(group) = self.groups.get_mut(&id) else {
-      log::warn!(target: "frontbox::systems", "No system group {} found, cannot deactivate", id);
-      return;
-    };
-
-    if group.active {
-      group.active = false;
-    } else {
-      return;
-    }
-
-    for handle in self.groups.handles_in(id) {
-      let mut system = self.groups.system(handle).unwrap();
-      if system.is_faulted() {
-        continue;
-      }
-      let ctx = SystemContext::new(&self.base, handle, &self.groups, &self.app_sender);
-      if system.retire_on_panic(&ctx, |system| system.on_deactivate(&ctx))
-        .is_some()
-      {
-        emit_activity_changed(handle, false, &self.app_sender);
-      }
-    }
-
-    self.tracers.send(TraceEvent::SystemGroupActiveStateChange { id, active: false });
   }
 }
 
 #[cfg(test)]
 mod tests {
+  use std::cell::Cell;
+  use std::rc::Rc;
+
   use super::*;
   use crate::app::run_loop::test_support::*;
 
-  /// Put the probe in `group` through all its handlers: an event, a tick, the group deactivating and reactivating, and
-  /// a despawn. Returns what it logged.
-  fn run_through_every_handler(h: &mut Harness, probe: SystemHandle, log: &Log<String>) -> Vec<String> {
+  /// Put the probe, a child of `parent`, through all its handlers: an event, a tick, `parent` deactivating and
+  /// reactivating it, and a despawn. Returns what it logged.
+  fn run_through_every_handler(h: &mut Harness, parent: SystemHandle, probe: SystemHandle, log: &Log<String>) -> Vec<String> {
     h.emit(Poke);
     h.tick_by(Duration::from_millis(10));
-    h.send(AppMessage::DeactivateSystemGroup(probe.group));
-    h.send(AppMessage::ActivateSystemGroup(probe.group));
-    h.send(AppMessage::DespawnSystem(probe));
+    h.send(AppMessage::DeactivateChild(parent, probe.id));
+    h.send(AppMessage::ActivateChild(parent, probe.id));
+    h.send(AppMessage::DespawnChild(parent, probe.id));
     h.settle();
     log.take()
   }
@@ -241,17 +198,17 @@ mod tests {
     ["1 on_spawn", "1 heard Poke", "1 on_tick", "1 on_render", "1 on_deactivate", "1 on_reactivate", "1 on_despawn"];
 
   #[test]
-  fn a_system_spawned_by_message_gets_every_handler() {
+  fn a_system_spawned_by_message_is_a_child_of_the_spawner_and_gets_every_handler() {
     let mut h = Harness::new();
     let log = Log::default();
     let owner = h.spawn(Owner::<1>);
-    let group = h.spawn_group_of(owner, "group", vec![], true);
 
-    h.send(AppMessage::SpawnSystem(group, Probe::<1>(log.clone()).into()));
+    h.send(AppMessage::SpawnSystem(owner, Probe::<1>(log.clone()).into()));
     h.settle();
-    let probe = h.groups.handles_in(group)[0];
+    let probe = h.children_of(owner)[0];
 
-    assert_eq!(run_through_every_handler(&mut h, probe, &log), EVERY_HANDLER);
+    assert_eq!(h.groups.parent(probe), Some(owner));
+    assert_eq!(run_through_every_handler(&mut h, owner, probe, &log), EVERY_HANDLER);
   }
 
   #[test]
@@ -260,9 +217,17 @@ mod tests {
     let log = Log::default();
     let owner = h.spawn(Owner::<1>);
     let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
-    let probe = h.groups.handles_in(group)[0];
+    let probe = h.children_of(group)[0];
 
-    assert_eq!(run_through_every_handler(&mut h, probe, &log), EVERY_HANDLER);
+    h.emit(Poke);
+    h.tick_by(Duration::from_millis(10));
+    // through the group, which its member follows
+    h.send(AppMessage::DeactivateChild(owner, group.id));
+    h.send(AppMessage::ActivateChild(owner, group.id));
+    h.send(AppMessage::DespawnChild(group, probe.id));
+    h.settle();
+
+    assert_eq!(log.take(), EVERY_HANDLER);
   }
 
   #[test]
@@ -276,24 +241,73 @@ mod tests {
   }
 
   #[test]
-  fn a_second_system_of_a_type_in_a_group_is_refused() {
+  fn a_second_system_of_a_type_with_the_same_parent_is_refused() {
     let mut h = Harness::new();
     let log = Log::default();
-    h.spawn(Probe::<1>(log.clone()));
+    let owner = h.spawn(Owner::<1>);
+    h.spawn_under(Some(owner), Probe::<1>(log.clone()));
 
-    h.send(AppMessage::SpawnSystem(ROOT_GROUP, Probe::<1>(log.clone()).into()));
+    h.send(AppMessage::SpawnSystem(owner, Probe::<1>(log.clone()).into()));
     h.settle();
 
     assert_eq!(log.take(), ["1 on_spawn"]);
-    assert_eq!(h.groups.handles_in(ROOT_GROUP).len(), 1);
+    assert_eq!(h.children_of(owner).len(), 1);
   }
 
   #[test]
-  fn spawning_into_a_missing_group_is_refused() {
+  fn systems_of_a_type_can_run_under_different_parents() {
     let mut h = Harness::new();
     let log = Log::default();
+    let top = h.spawn(Probe::<1>(log.clone()));
+    let owner = h.spawn(Owner::<1>);
 
-    h.send(AppMessage::SpawnSystem(GroupId::next(), Probe::<1>(log.clone()).into()));
+    h.spawn_under(Some(owner), Probe::<1>(log.clone()));
+
+    assert_eq!(log.take(), ["1 on_spawn", "1 on_spawn"]);
+    assert!(h.is_running(top));
+  }
+
+  #[test]
+  fn several_groups_can_run_with_the_same_parent() {
+    let mut h = Harness::new();
+    let owner = h.spawn(Owner::<1>);
+
+    h.spawn_group(owner, "player1");
+    h.spawn_group(owner, "player2");
+
+    assert_eq!(h.children_of(owner).len(), 2);
+  }
+
+  #[test]
+  fn a_group_is_named_for_display() {
+    let mut h = Harness::new();
+    let owner = h.spawn(Owner::<1>);
+
+    let group = h.spawn_group(owner, "player1");
+
+    assert_eq!(h.groups.system_name(group), Some("player1"));
+  }
+
+  #[test]
+  fn copies_of_a_template_get_their_own_ids() {
+    let mut h = Harness::new();
+    let owner = h.spawn(Owner::<1>);
+    let template: Vec<ChildSystemContainer> = vec![Member.into()];
+
+    let first = h.spawn_group_of(owner, "player1", template.clone(), true);
+    let second = h.spawn_group_of(owner, "player2", template, true);
+
+    assert_ne!(h.children_of(first)[0].id, h.children_of(second)[0].id);
+  }
+
+  #[test]
+  fn a_child_of_a_despawned_system_is_refused() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    h.despawn_system(owner);
+
+    h.send(AppMessage::SpawnSystem(owner, Probe::<1>(log.clone()).into()));
     h.settle();
 
     assert_eq!(log.take(), Vec::<String>::new());
@@ -316,12 +330,12 @@ mod tests {
   }
 
   #[test]
-  fn replacing_a_system_puts_the_new_one_in_its_group() {
+  fn replacing_a_system_keeps_its_parent() {
     let mut h = Harness::new();
     let log = Log::default();
     let owner = h.spawn(Owner::<1>);
     let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
-    let old = h.groups.handles_in(group)[0];
+    let old = h.children_of(group)[0];
     log.take();
 
     h.send(AppMessage::ReplaceSystem(old, Probe::<2>(log.clone()).into()));
@@ -329,43 +343,41 @@ mod tests {
 
     assert_eq!(log.take(), ["1 on_despawn", "2 on_spawn"]);
     assert!(!h.is_running(old));
-    assert_eq!(h.groups.handles_in(group).len(), 1);
+    assert_eq!(h.children_of(group).len(), 1);
   }
 
   #[test]
-  fn despawning_an_owner_despawns_its_groups() {
+  fn despawning_a_parent_despawns_its_children_and_theirs() {
     let mut h = Harness::new();
     let owner = h.spawn(Owner::<1>);
     let other = h.spawn(Owner::<2>);
     let player1 = h.spawn_group(owner, "player1");
     let player2 = h.spawn_group(owner, "player2");
     let others = h.spawn_group(other, "other");
-    let members: Vec<SystemHandle> = [player1, player2]
-      .into_iter()
-      .flat_map(|group| h.groups.handles_in(group))
-      .collect();
+    let (member1, member2) = (h.children_of(player1)[0], h.children_of(player2)[0]);
 
     let despawned = h.despawn_system(owner);
 
-    assert!(!h.groups.contains_key(&player1));
-    assert!(!h.groups.contains_key(&player2));
-    assert!(h.groups.contains_key(&others));
-    assert_eq!(despawned, [vec![owner], members].concat());
+    assert_eq!(despawned, [owner, player1, member1, player2, member2]);
+    assert!(h.is_running(others));
+    assert_eq!(h.children_of(others).len(), 1);
   }
 
   #[test]
-  fn groups_with_the_same_name_are_separate() {
+  fn only_the_parent_can_change_or_despawn_a_child() {
     let mut h = Harness::new();
-    let first_owner = h.spawn(Owner::<1>);
-    let second_owner = h.spawn(Owner::<2>);
-    let first = h.spawn_group(first_owner, "player1");
-    let second = h.spawn_group(second_owner, "player1");
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let other = h.spawn(Owner::<2>);
+    let probe = h.spawn_under(Some(owner), Probe::<1>(log.clone()));
+    log.take();
 
-    h.despawn_system(first_owner);
+    h.send(AppMessage::DeactivateChild(other, probe.id));
+    h.send(AppMessage::DespawnChild(other, probe.id));
+    h.settle();
 
-    assert!(!h.groups.contains_key(&first));
-    assert_eq!(h.groups[&second].owner, Some(second_owner));
-    assert_eq!(h.groups.handles_in(second).len(), 1);
+    assert_eq!(log.take(), Vec::<String>::new());
+    assert!(h.is_running(probe));
   }
 
   #[test]
@@ -380,34 +392,95 @@ mod tests {
   }
 
   #[test]
-  fn a_group_changing_activity_is_broadcast_for_its_systems() {
+  fn a_child_spawned_under_an_inactive_parent_starts_inactive() {
     let mut h = Harness::new();
+    let log = Log::default();
     let owner = h.spawn(Owner::<1>);
-    let group = h.spawn_group(owner, "group");
-    let member = h.groups.handles_in(group)[0];
-    let heard = h.listen();
+    let group = h.spawn_group_of(owner, "group", vec![], false);
 
-    h.send(AppMessage::DeactivateSystemGroup(group));
-    h.settle();
-    assert_eq!(heard.take(), [Heard::Deactivated(member.id)]);
+    h.spawn_under(Some(group), Probe::<1>(log.clone()));
+    h.emit(Poke);
+    assert_eq!(log.take(), ["1 on_spawn"]);
 
-    h.send(AppMessage::ActivateSystemGroup(group));
+    h.send(AppMessage::ActivateChild(owner, group.id));
     h.settle();
-    assert_eq!(heard.take(), [Heard::Reactivated(member.id)]);
+    assert_eq!(log.take(), ["1 on_reactivate"]);
   }
 
   #[test]
-  fn activating_an_active_group_does_nothing() {
+  fn a_change_of_activity_is_broadcast_for_each_descendant() {
+    let mut h = Harness::new();
+    let owner = h.spawn(Owner::<1>);
+    let group = h.spawn_group(owner, "group");
+    let member = h.children_of(group)[0];
+    let heard = h.listen();
+
+    h.send(AppMessage::DeactivateChild(owner, group.id));
+    h.settle();
+    assert_eq!(heard.take(), [Heard::Deactivated(group.id), Heard::Deactivated(member.id)]);
+
+    h.send(AppMessage::ActivateChild(owner, group.id));
+    h.settle();
+    assert_eq!(heard.take(), [Heard::Reactivated(group.id), Heard::Reactivated(member.id)]);
+  }
+
+  #[test]
+  fn activating_an_active_child_does_nothing() {
     let mut h = Harness::new();
     let log = Log::default();
     let owner = h.spawn(Owner::<1>);
     let group = h.spawn_group_of(owner, "group", vec![Probe::<1>(log.clone()).into()], true);
     log.take();
 
-    h.send(AppMessage::ActivateSystemGroup(group));
+    h.send(AppMessage::ActivateChild(owner, group.id));
     h.settle();
 
     assert_eq!(log.take(), Vec::<String>::new());
+  }
+
+  #[test]
+  fn a_child_deactivated_by_its_parent_stays_inactive_when_an_ancestor_comes_back() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let owner = h.spawn(Owner::<1>);
+    let middle = h.spawn_under(Some(owner), Owner::<2>);
+    let probe = h.spawn_under(Some(middle), Probe::<1>(log.clone()));
+    log.take();
+
+    h.send(AppMessage::DeactivateChild(middle, probe.id));
+    h.send(AppMessage::DeactivateChild(owner, middle.id));
+    h.send(AppMessage::ActivateChild(owner, middle.id));
+    h.settle();
+
+    assert_eq!(log.take(), ["1 on_deactivate"]);
+  }
+
+  /// Active while its flag is set
+  struct Toggled(Rc<Cell<bool>>);
+
+  impl System for Toggled {
+    fn is_active(&self, _ctx: &SystemContext) -> bool {
+      self.0.get()
+    }
+  }
+
+  #[test]
+  fn children_stop_while_their_parent_is_inactive_by_its_own_is_active() {
+    let mut h = Harness::new();
+    let log = Log::default();
+    let active = Rc::new(Cell::new(true));
+    let parent = h.spawn(Toggled(active.clone()));
+    h.spawn_under(Some(parent), Probe::<1>(log.clone()));
+    log.take();
+
+    // noticed the next time the parent is checked, as with any change to `is_active`
+    active.set(false);
+    h.emit(Poke);
+    assert_eq!(log.take(), ["1 on_deactivate"]);
+
+    active.set(true);
+    h.emit(Poke);
+    assert_eq!(log.take(), ["1 on_reactivate", "1 heard Poke"]);
   }
 
   /// Panics on its way out
@@ -426,5 +499,78 @@ mod tests {
 
     assert_eq!(h.despawn_system(handle), vec![handle]);
     assert!(!h.is_running(handle));
+  }
+}
+
+#[cfg(test)]
+mod lookup_tests {
+  use super::*;
+  use crate::app::run_loop::test_support::*;
+
+  /// Which system `from` finds when it looks up `T`, by id
+  fn found<T: System + 'static>(h: &Harness, from: SystemHandle) -> Option<u64> {
+    let ctx = h.service_context().for_system(from);
+    ctx.systems.get::<T>().map(|_| ()).and_then(|_| h.groups.nearest(from, TypeId::of::<T>()).map(|handle| handle.id))
+  }
+
+  #[test]
+  fn a_system_finds_its_own_children_first() {
+    let mut h = Harness::new();
+    let parent = h.spawn(Owner::<1>);
+    let top = h.spawn(Member);
+    let child = h.spawn_under(Some(parent), Member);
+
+    assert_eq!(found::<Member>(&h, parent), Some(child.id));
+    assert_ne!(child.id, top.id);
+  }
+
+  #[test]
+  fn a_system_finds_its_siblings_and_each_level_up() {
+    let mut h = Harness::new();
+    let top = h.spawn(Owner::<2>);
+    let game = h.spawn(Owner::<1>);
+    let player = h.spawn_group(game, "player1");
+    let member = h.children_of(player)[0];
+
+    // its parent's sibling
+    assert_eq!(found::<Owner<2>>(&h, member), Some(top.id));
+    // its grandparent, which sits at the top level
+    assert_eq!(found::<Owner<1>>(&h, member), Some(game.id));
+  }
+
+  #[test]
+  fn a_system_doesnt_find_another_systems_children() {
+    let mut h = Harness::new();
+    let game = h.spawn(Owner::<1>);
+    let other = h.spawn(Owner::<2>);
+    h.spawn_group(game, "player1");
+
+    assert_eq!(found::<Member>(&h, other), None);
+  }
+
+  #[test]
+  fn each_group_finds_its_own_copy() {
+    let mut h = Harness::new();
+    let game = h.spawn(Owner::<1>);
+    let template: Vec<ChildSystemContainer> = vec![Member.into(), Owner::<2>.into()];
+    let player1 = h.spawn_group_of(game, "player1", template.clone(), true);
+    let player2 = h.spawn_group_of(game, "player2", template, true);
+    let (member1, owner1) = (h.children_of(player1)[0], h.children_of(player1)[1]);
+    let (member2, owner2) = (h.children_of(player2)[0], h.children_of(player2)[1]);
+
+    assert_eq!(found::<Member>(&h, owner1), Some(member1.id));
+    assert_eq!(found::<Member>(&h, owner2), Some(member2.id));
+  }
+
+  #[test]
+  fn get_in_looks_among_a_named_systems_children() {
+    let mut h = Harness::new();
+    let game = h.spawn(Owner::<1>);
+    let other = h.spawn(Owner::<2>);
+    let player = h.spawn_group(game, "player1");
+
+    let ctx = h.service_context().for_system(other);
+    assert!(ctx.systems.get_in::<Member>(player.id).is_some());
+    assert!(ctx.systems.get_in::<Member>(game.id).is_none(), "only its children, not theirs");
   }
 }
