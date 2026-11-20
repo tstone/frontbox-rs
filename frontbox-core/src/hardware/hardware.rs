@@ -439,6 +439,22 @@ mod tests {
     assert_eq!(port.length, 33);
   }
 
+  static SEGMENTS: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::packed()
+      .lights(["a", "b", "c", "d"].map(LedDefinition::single))
+      .build()
+  });
+
+  #[test]
+  fn packed_lights_take_the_led_addresses_they_reach() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*SEGMENTS, &*STRIP_32]));
+    let port = &Hardware::resolve_expansion_boards(&vec![board])[0].led_ports[0];
+
+    let ids: Vec<usize> = port.leds.iter().map(|led| led.id).collect();
+    assert_eq!(&ids[..5], &[0, 0, 0, 1, 2]);
+    assert_eq!(port.length, 34);
+  }
+
   #[test]
   #[should_panic(expected = "Lights share a channel of an LED address")]
   fn lights_sharing_a_channel_panic_at_boot() {

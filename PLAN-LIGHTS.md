@@ -31,7 +31,7 @@ products is built on top:
 - **Single-channel flashers**: single-channel lights on a shared LED address, made with `LedDefinition::channels`.
   They need no new code in light management.
 - **NeoSeg**:
-  - A definition helper turns a digit into its segment lights.
+  - A definition helper turns a digit into its segment lights, built on `LedDefinition::packed`.
   - Text comes from a separate system holding the character table, which declares on those lights through the public
     API.
 
@@ -41,11 +41,13 @@ products is built on top:
   - **Segments.** Each segment is a single-channel light (`Exp { led, channels: One(..) }`) with a name such as
     `score.3.g` and a position from the segment layout. Scenes see only these lights, so sweeps across the display
     work with nothing NeoSeg-specific.
-  - **The definition helper.** It takes a port, a starting index, a digit count and a layout, and produces the
-    segment lights and a `SegmentDisplay`: per digit, the light for each segment, in the character table's order.
-  - **Channel order.** Brief testing showed the channels out of the expected order, possibly because segments pack
-    across LED address boundaries, so one digit starts partway through the previous one's last LED address. The helper
-    owns working out LED addresses and channels, so either layout fits. Work out the real order on hardware first.
+  - **The definition helper.** It takes a digit count, a layout, and a wire-order table (each segment's position
+    along the wire within a digit), and produces a `LedDefinition::packed` of the segment lights and a
+    `SegmentDisplay`: per digit, the light for each segment, in the character table's order.
+  - **Wire order.** Brief testing showed the channels out of the expected order. A likely cause is that digits pack
+    back to back, so one digit starts partway through the previous one's last LED address, which is how `packed`
+    lays lights out. Work out the real order on hardware first, by lighting one segment at a time, and put it in the
+    wire-order table.
   - **The text system.** It takes the `SegmentDisplay`, looks each character up in its table, and declares brightness
     on the segment lights through light management.
 - **Text from scenes.** Playing text from a scene needs a new layer kind, and `SceneLayer` is a closed enum in
@@ -56,7 +58,6 @@ products is built on top:
   that have a light, such as a `DriverQ::not`. Lowering one to a pulse instead of a hold is a second way to write a
   `Driver` address.
 - **PWM dimming** of driver lights (by reconfiguring hold power).
-- **Hysteresis** on the threshold, if a scene shows a lamp chattering.
 
 ## Check afterwards
 

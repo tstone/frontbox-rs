@@ -37,7 +37,7 @@ impl ChannelLedDefinitionBuilder {
     let children: Vec<_> = self
       .lights
       .into_iter()
-      .zip(CHANNELS)
+      .zip(LedChannel::ALL)
       .filter_map(|(light, channel)| light.map(|light| light.build_on(channel)))
       .collect();
     if children.is_empty() {
@@ -61,8 +61,6 @@ impl ChannelLedDefinitionBuilder {
     self
   }
 }
-
-const CHANNELS: [LedChannel; 3] = [LedChannel::R, LedChannel::G, LedChannel::B];
 
 #[cfg(test)]
 mod tests {
@@ -115,7 +113,7 @@ mod tests {
   }
 
   #[test]
-  #[should_panic(expected = "its channel is the method it's given to")]
+  #[should_panic(expected = "decide its channel")]
   fn a_light_given_its_own_channel_panics() {
     LedDefinition::channels().r(LedDefinition::single("a").channel(LedChannel::B)).build();
   }

@@ -260,7 +260,7 @@ impl DerefMut for LightLookup {
 
 fn channels_used(channels: LedChannels) -> Vec<LedChannel> {
   match channels {
-    LedChannels::Rgb => vec![LedChannel::R, LedChannel::G, LedChannel::B],
+    LedChannels::Rgb => LedChannel::ALL.to_vec(),
     LedChannels::One(channel) => vec![channel],
   }
 }

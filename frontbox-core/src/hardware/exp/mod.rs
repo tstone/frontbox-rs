@@ -7,6 +7,7 @@ mod led_definition;
 mod led_layout;
 mod led_port;
 mod multi_led_definition_builder;
+mod packed_led_definition_builder;
 mod single_led_definition;
 mod single_led_definition_builder;
 
@@ -19,5 +20,6 @@ pub use led_definition::*;
 pub use led_layout::*;
 pub use led_port::*;
 pub use multi_led_definition_builder::*;
+pub use packed_led_definition_builder::*;
 pub use single_led_definition::*;
 pub use single_led_definition_builder::*;

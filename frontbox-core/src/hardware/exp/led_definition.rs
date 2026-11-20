@@ -57,6 +57,12 @@ impl LedDefinition {
     ChannelLedDefinitionBuilder::new()
   }
 
+  /// Single-channel lights back to back along the wire, three to an LED address, such as the segments of a
+  /// display. See [`PackedLedDefinitionBuilder`].
+  pub fn packed() -> PackedLedDefinitionBuilder {
+    PackedLedDefinitionBuilder::new()
+  }
+
   pub(crate) fn child_name(name: &'static str, index: u16) -> Cow<'static, str> {
     Cow::Owned(format!("___child::{}::{}", name, index))
   }

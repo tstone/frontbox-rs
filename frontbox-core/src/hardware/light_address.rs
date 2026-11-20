@@ -71,6 +71,11 @@ pub enum LedChannel {
   B,
 }
 
+impl LedChannel {
+  /// In order on the wire
+  pub const ALL: [LedChannel; 3] = [LedChannel::R, LedChannel::G, LedChannel::B];
+}
+
 impl Contextual<Vec<LightAddress>> for LightQ {
   fn resolve(&self, ctx: &SystemContext) -> Vec<LightAddress> {
     self.query_addresses(ctx.into())
