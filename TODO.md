@@ -19,6 +19,9 @@
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
 - Motor support: new MotorDefinition w/ FAST protocol + Machine support for motor commands
+- Low-voltage drivers over the EXP bus, on a FAST FP-LUM-0709: one LED channel as a PWM output for things that
+  aren't lights (motors, relays, etc.), owned by a system and kept out of light management so scenes can't turn
+  them on. Core's boot check should count these as using a channel too, so a light and an output can't share one.
 - Switch test mode for display menu
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Config: No extra balls/points instead

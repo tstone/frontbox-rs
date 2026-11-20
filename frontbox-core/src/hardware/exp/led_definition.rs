@@ -51,9 +51,10 @@ impl LedDefinition {
     MultiLedDefinitionBuilder::new(name)
   }
 
-  /// 1 to 3 single-channel lights on one LED address, on its R, G and B channels in the order given
-  pub fn channels(lights: impl IntoIterator<Item = SingleLedDefinitionBuilder>) -> ChannelLedDefinitionBuilder {
-    ChannelLedDefinitionBuilder::new(lights)
+  /// Up to 3 single-channel lights on one LED address, one per channel, such as single-channel flashers or the
+  /// outputs of a FAST FP-LUM-0709. See [`ChannelLedDefinitionBuilder`].
+  pub fn channels() -> ChannelLedDefinitionBuilder {
+    ChannelLedDefinitionBuilder::new()
   }
 
   pub(crate) fn child_name(name: &'static str, index: u16) -> Cow<'static, str> {
@@ -120,7 +121,10 @@ mod tests {
   #[test]
   fn test_address_count() {
     assert_eq!(LedDefinition::multi("strip").count(5).build().address_count(), 5);
-    let def = LedDefinition::channels([LedDefinition::single("a"), LedDefinition::single("b")]).build();
+    let def = LedDefinition::channels()
+      .r(LedDefinition::single("a"))
+      .g(LedDefinition::single("b"))
+      .build();
     assert_eq!(def.address_count(), 1);
   }
 }

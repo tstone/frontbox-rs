@@ -400,7 +400,10 @@ mod tests {
   }
 
   static FLASHERS: LazyLock<LedDefinition> = LazyLock::new(|| {
-    LedDefinition::channels([LedDefinition::single("flasher_a"), LedDefinition::single("flasher_b")]).build()
+    LedDefinition::channels()
+      .r(LedDefinition::single("flasher_a"))
+      .g(LedDefinition::single("flasher_b"))
+      .build()
   });
 
   #[test]

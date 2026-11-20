@@ -61,12 +61,16 @@ impl SingleLedDefinitionBuilder {
     LedDefinition::new(self.name, self.tags, 1, self.channels, locations, self.config)
   }
 
+  pub(crate) fn name(&self) -> &'static str {
+    self.name
+  }
+
   /// Builds the light on `channel` for a [`ChannelLedDefinitionBuilder`]. Panics if a channel was already given,
-  /// since its place in the list decides it.
+  /// since the method it's given to decides it.
   pub(crate) fn build_on(self, channel: LedChannel) -> SingleLedDefinition {
     if self.channels != LedChannels::Rgb {
       panic!(
-        "LED \"{}\" is given a channel, but in LedDefinition::channels its place in the list decides its channel",
+        "LED \"{}\" is given a channel, but in LedDefinition::channels its channel is the method it's given to",
         self.name
       );
     }

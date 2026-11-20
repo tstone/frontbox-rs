@@ -1,38 +1,64 @@
 use crate::prelude::*;
 
-/// 1 to 3 single-channel lights on one LED address, such as single-channel flashers. Each light takes the next
-/// channel, R, G then B, in the order given.
+/// Up to 3 single-channel lights on one LED address, one per channel. A channel given no light is left unused.
 ///
 /// ```ignore
-/// LedDefinition::channels([
-///   LedDefinition::single("flasher_left").tag(Flasher),
-///   LedDefinition::single("flasher_right").tag(Flasher),
-/// ])
+/// LedDefinition::channels()
+///   .r(LedDefinition::single("flasher_left").tag(Flasher))
+///   .b(LedDefinition::single("flasher_right").tag(Flasher))
 /// ```
+///
+/// This also fits FAST's FP-LUM-0709, a board that takes one LED address and turns its R, G and B into three
+/// low-voltage outputs (up to 12V, under 2A for the whole board). Each output used for lighting, such as GI or a
+/// strobe, is a light here. To drive an RGB strip from it instead, use one [`LedDefinition::single`].
 pub struct ChannelLedDefinitionBuilder {
-  lights: Vec<SingleLedDefinitionBuilder>,
+  lights: [Option<SingleLedDefinitionBuilder>; 3],
 }
 
 impl ChannelLedDefinitionBuilder {
-  pub fn new(lights: impl IntoIterator<Item = SingleLedDefinitionBuilder>) -> Self {
-    Self {
-      lights: lights.into_iter().collect(),
-    }
+  pub fn new() -> Self {
+    Self { lights: [None, None, None] }
   }
 
-  /// Panics with no lights, more than 3, or a light given its own channel
+  pub fn r(self, light: SingleLedDefinitionBuilder) -> Self {
+    self.with(LedChannel::R, light)
+  }
+
+  pub fn g(self, light: SingleLedDefinitionBuilder) -> Self {
+    self.with(LedChannel::G, light)
+  }
+
+  pub fn b(self, light: SingleLedDefinitionBuilder) -> Self {
+    self.with(LedChannel::B, light)
+  }
+
+  /// Panics with no lights, or a light given its own channel
   pub fn build(self) -> LedDefinition {
-    let count = self.lights.len();
-    if count == 0 || count > CHANNELS.len() {
-      panic!("LedDefinition::channels takes 1 to 3 lights, but was given {}", count);
-    }
-    let children = self
+    let children: Vec<_> = self
       .lights
       .into_iter()
       .zip(CHANNELS)
-      .map(|(light, channel)| light.build_on(channel))
+      .filter_map(|(light, channel)| light.map(|light| light.build_on(channel)))
       .collect();
-    LedDefinition::from_children(children, vec![0; count])
+    if children.is_empty() {
+      panic!("LedDefinition::channels was given no lights");
+    }
+    let offsets = vec![0; children.len()];
+    LedDefinition::from_children(children, offsets)
+  }
+
+  fn with(mut self, channel: LedChannel, light: SingleLedDefinitionBuilder) -> Self {
+    let slot = &mut self.lights[channel as usize];
+    if let Some(existing) = slot {
+      panic!(
+        "LedDefinition::channels was given \"{}\" and \"{}\" for channel {:?}",
+        existing.name(),
+        light.name(),
+        channel
+      );
+    }
+    *slot = Some(light);
+    self
   }
 }
 
@@ -42,17 +68,19 @@ const CHANNELS: [LedChannel; 3] = [LedChannel::R, LedChannel::G, LedChannel::B];
 mod tests {
   use super::*;
 
+  fn channels(def: &LedDefinition) -> Vec<LedChannels> {
+    def.children().iter().map(|child| child.channels).collect()
+  }
+
   #[test]
-  fn lights_take_channels_in_order() {
-    let def = LedDefinition::channels([
-      LedDefinition::single("a"),
-      LedDefinition::single("b"),
-      LedDefinition::single("c"),
-    ])
-    .build();
-    let channels: Vec<_> = def.children().iter().map(|child| child.channels).collect();
+  fn each_light_takes_its_channel() {
+    let def = LedDefinition::channels()
+      .b(LedDefinition::single("c"))
+      .r(LedDefinition::single("a"))
+      .g(LedDefinition::single("b"))
+      .build();
     assert_eq!(
-      channels,
+      channels(&def),
       vec![
         LedChannels::One(LedChannel::R),
         LedChannels::One(LedChannel::G),
@@ -63,14 +91,32 @@ mod tests {
   }
 
   #[test]
-  #[should_panic(expected = "takes 1 to 3 lights")]
-  fn more_than_three_lights_panic() {
-    LedDefinition::channels((0..4).map(|_| LedDefinition::single("a"))).build();
+  fn unused_channels_are_skipped() {
+    let def = LedDefinition::channels()
+      .g(LedDefinition::single("gi"))
+      .b(LedDefinition::single("strobe"))
+      .build();
+    assert_eq!(channels(&def), vec![LedChannels::One(LedChannel::G), LedChannels::One(LedChannel::B)]);
+    assert_eq!(def.address_count(), 1);
   }
 
   #[test]
-  #[should_panic(expected = "its place in the list decides its channel")]
+  #[should_panic(expected = "given no lights")]
+  fn no_lights_panic() {
+    LedDefinition::channels().build();
+  }
+
+  #[test]
+  #[should_panic(expected = "given \"a\" and \"b\" for channel G")]
+  fn a_channel_given_twice_panics() {
+    LedDefinition::channels()
+      .g(LedDefinition::single("a"))
+      .g(LedDefinition::single("b"));
+  }
+
+  #[test]
+  #[should_panic(expected = "its channel is the method it's given to")]
   fn a_light_given_its_own_channel_panics() {
-    LedDefinition::channels([LedDefinition::single("a").channel(LedChannel::B)]).build();
+    LedDefinition::channels().r(LedDefinition::single("a").channel(LedChannel::B)).build();
   }
 }
