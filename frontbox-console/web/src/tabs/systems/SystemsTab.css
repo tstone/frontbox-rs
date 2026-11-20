@@ -460,7 +460,7 @@
   font-size: 0.8125rem;
 }
 
-.detail .reported-status [data-scope='json-tree-view'][data-part='root'] {
+.detail .reported-status .json-view {
   max-height: 20rem;
   overflow: auto;
 }

@@ -37,6 +37,8 @@ pub struct StandardBallManager {
   launch_verify_timer_id: Option<u64>,
   /// Times the autoplunger has fired again at the ball in the lane without moving it
   launch_retries: u8,
+  /// The trough it spawned, so it can report once the trough is running
+  trough_id: u64,
   reported: StatusReporter<ReportedStatus>,
 }
 
@@ -129,6 +131,7 @@ impl StandardBallManager {
       launch_verify_timer_id: None,
       launch_retries: 0,
       reported: StatusReporter::new(),
+      trough_id: 0, // set on spawn
     }
   }
 
@@ -733,7 +736,7 @@ impl System for StandardBallManager {
     let trough = TroughSystem::new(trough_config);
     // Until the ball count is established (e.g. at game start), assume the balls in the trough now are all the balls there are
     self.balls_found = trough.read_switch_occupancy(ctx.into());
-    ctx.systems.spawn(trough);
+    self.trough_id = ctx.systems.spawn(trough);
 
     if let Some(autoplunger) = self.config.autoplunger() {
       ctx.systems.spawn(AutoPlungerSystem::new(autoplunger));
@@ -741,7 +744,6 @@ impl System for StandardBallManager {
     if let Some(lane) = self.config.plunge_lane() {
       ctx.systems.spawn(PlungeLaneSystem::new(lane));
     }
-    self.report(ctx);
   }
 
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
@@ -771,6 +773,11 @@ impl System for StandardBallManager {
       self.on_lane_arrival_timed_out(ctx);
     } else if event.is::<VerifyLaunch>() {
       self.verify_launch(ctx);
+    } else if let Some(spawned) = event.downcast_ref::<SystemSpawned>() {
+      // reported once the trough can be asked how many balls are in it
+      if spawned.id != self.trough_id {
+        return;
+      }
     } else {
       return;
     }

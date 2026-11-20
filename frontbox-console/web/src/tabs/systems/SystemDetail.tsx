@@ -1,6 +1,7 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js'
 import { Braces, CirclePlus, CircleX, Mail, Route, ToggleLeft, ToggleRight } from '../../components/icons'
+import JsonView from '../../components/JsonView'
 import { formatElapsed, shortName, traceBody } from '../../lib/format'
 import { machine } from '../../state/console'
 import type { HistoryEntry } from '../../types/generated/HistoryEntry'
@@ -73,9 +74,7 @@ export default function SystemDetail(props: { system: System; parent: System | u
               <h3 class="pane-title">Status</h3>
               <span class="meta">Reported at {formatElapsed(record().at_ms)}</span>
             </div>
-            <JsonTreeView.Root data={traceBody(record())} defaultExpandedDepth={3}>
-              <JsonTreeView.Tree arrow={<span>›</span>} />
-            </JsonTreeView.Root>
+            <JsonView data={traceBody(record())} />
           </section>
         )}
       </Show>
@@ -145,9 +144,14 @@ function ActivityRow(props: { entry: HistoryEntry; system: System; highlighted: 
           <Show when={record()} fallback={<p class="meta">No longer kept by the console</p>}>
             {(r) => (
               <Show when={traceBody(r()) != null} fallback={<p class="meta">No data</p>}>
-                <JsonTreeView.Root data={traceBody(r())} defaultExpandedDepth={3}>
-                  <JsonTreeView.Tree arrow={<span>›</span>} />
-                </JsonTreeView.Root>
+                <Show
+                  when={props.entry.kind === 'Emitted'}
+                  fallback={<JsonView data={traceBody(r())} />}
+                >
+                  <JsonTreeView.Root data={traceBody(r())} defaultExpandedDepth={3}>
+                    <JsonTreeView.Tree arrow={<span>›</span>} />
+                  </JsonTreeView.Root>
+                </Show>
               </Show>
             )}
           </Show>
