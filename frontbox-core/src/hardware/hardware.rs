@@ -52,6 +52,29 @@ impl Hardware {
       );
     }
 
+    let shared_channels = lights.shared_channels();
+    if !shared_channels.is_empty() {
+      let list = shared_channels
+        .iter()
+        .map(|(led, first, second)| format!("  {}: \"{}\" and \"{}\"", led, first, second))
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!("Lights share a channel of an LED address:\n{}", list);
+    }
+
+    let reordered = lights.reordered_single_channels();
+    if !reordered.is_empty() {
+      let list = reordered
+        .iter()
+        .map(|(led, light)| format!("  {}: \"{}\"", led, light))
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!(
+        "An LED address with single-channel lights must keep the default channel order, since a single channel is named by its position on the wire:\n{}",
+        list
+      );
+    }
+
     Self {
       switches,
       drivers,
@@ -414,6 +437,33 @@ mod tests {
     let ids: Vec<usize> = port.leds.iter().map(|led| led.id).collect();
     assert_eq!(&ids[..3], &[0, 0, 1]);
     assert_eq!(port.length, 33);
+  }
+
+  #[test]
+  #[should_panic(expected = "Lights share a channel of an LED address")]
+  fn lights_sharing_a_channel_panic_at_boot() {
+    let led = LedAddress::new(ExpAddress::new(1, Some(0)), 0, 0);
+    let mut lights = LightLookup::default();
+    for name in ["a", "b"] {
+      let address = LightAddress::Exp { led: led.clone(), channels: LedChannels::One(LedChannel::G) };
+      lights.insert(name.into(), Light { name: name.into(), address, ..Default::default() });
+    }
+    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], vec![]);
+  }
+
+  static REORDERED_FLASHER: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::channels()
+      .r(LedDefinition::single("flasher").channel_order(ChannelOrder::GRB))
+      .build()
+  });
+
+  #[test]
+  #[should_panic(expected = "must keep the default channel order")]
+  fn a_channel_order_on_single_channel_lights_panics_at_boot() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*REORDERED_FLASHER]));
+    let boards = Hardware::resolve_expansion_boards(&vec![board]);
+    let lights = LightLookup::new(&boards, &[]);
+    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], boards);
   }
 
   #[test]

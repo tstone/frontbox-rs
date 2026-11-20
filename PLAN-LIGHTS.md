@@ -35,22 +35,7 @@ products is built on top:
   - Text comes from a separate system holding the character table, which declares on those lights through the public
     API.
 
-## Phases
-
-Each phase builds, passes tests, and leaves the machine behaving as before, except where a phase says otherwise.
-
-### 5. Single-channel lights on an LED address
-
-- **Core's boot check** is that no channel is used by two lights, including an `Rgb` light, which uses all three.
-  Reject the config with an error naming the LED address and both lights. This is what makes a `LightAddress`
-  unique to one light.
-- **No channel order with single channels.** Core reorders an LED address's RGB by its `ChannelOrder` when writing
-  it, which would move a single-channel light onto another channel. So `One(..)` names a position on the wire, and an
-  LED address with a single-channel light must keep the default order. Reject a config that gives it another, naming
-  the LED address and the light.
-- **`TODO.md`.** Remove "Single channel flasher support".
-
-### Later, not in this plan
+## Later, not in this plan
 
 - **NeoSeg** as its own module. Nothing about it is added to `LightAddress` or `LedChannels`.
   - **Segments.** Each segment is a single-channel light (`Exp { led, channels: One(..) }`) with a name such as
@@ -77,6 +62,5 @@ Each phase builds, passes tests, and leaves the machine behaving as before, exce
 
 - **Performance of keying by `LightAddress`.** Light management keys its per-frame work by `LightAddress`, an enum,
   rather than by an index. A real machine has about 250 to 350 LEDs. DMD-sized displays don't go through light
-  management, and what usually pushes the count higher is cabinet lighting, such as a 3m strip. Once phase 5 is in,
-  profile a frame at that size and at a few long strips' worth more. If hashing addresses shows up, give lights an
+  management, and what usually pushes the count higher is cabinet lighting, such as a 3m strip. Profile a frame at that size and at a few long strips' worth more. If hashing addresses shows up, give lights an
   index inside `LayeredLightManager`, without changing the trait.

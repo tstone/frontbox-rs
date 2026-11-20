@@ -23,3 +23,9 @@ impl LedAddress {
     self.exp.breakout
   }
 }
+
+impl std::fmt::Display for LedAddress {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "LED {} on port {} of board {:X}", self.index, self.port + 1, self.board())
+  }
+}

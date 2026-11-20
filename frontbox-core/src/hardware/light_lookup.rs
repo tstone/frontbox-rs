@@ -187,6 +187,61 @@ impl LightLookup {
       .filter(move |((exp, _), _)| *exp == address)
       .map(|((_, index), order)| (*index, *order))
   }
+
+  /// (LED address, first light, second light) for each pair of lights that use a channel of the same LED address. An
+  /// RGB light uses all three.
+  pub(crate) fn shared_channels(&self) -> Vec<(LedAddress, String, String)> {
+    let mut shared = Vec::new();
+    for (led, lights) in self.by_led_address() {
+      let mut users: [Option<&str>; 3] = [None, None, None];
+      for light in lights {
+        let LightAddress::Exp { channels, .. } = &light.address else { continue };
+        for channel in channels_used(*channels) {
+          let user = &mut users[channel as usize];
+          match user {
+            Some(first) => shared.push((led.clone(), first.to_string(), light.name.clone())),
+            None => *user = Some(light.name.as_str()),
+          }
+        }
+      }
+    }
+    // an RGB light sharing with another reaches it on more than one channel
+    shared.dedup();
+    shared
+  }
+
+  /// (LED address, light) for each light given a channel order on an LED address with single-channel lights. A
+  /// single-channel light names a channel by its position on the wire, which reordering would move.
+  pub(crate) fn reordered_single_channels(&self) -> Vec<(LedAddress, String)> {
+    let mut reordered = Vec::new();
+    for (led, lights) in self.by_led_address() {
+      let has_single = lights
+        .iter()
+        .any(|light| matches!(light.address, LightAddress::Exp { channels: LedChannels::One(_), .. }));
+      if !has_single {
+        continue;
+      }
+      for light in lights {
+        let order = self.configs.get(&light.name).map(|config| config.channel_order).unwrap_or_default();
+        if order != ChannelOrder::default() {
+          reordered.push((led.clone(), light.name.clone()));
+        }
+      }
+    }
+    reordered
+  }
+
+  /// The lights on each LED address, in hardware order, with a light's name breaking ties
+  fn by_led_address(&self) -> Vec<(LedAddress, Vec<&Light>)> {
+    let mut lights: Vec<&Light> = self.by_name.values().filter(|light| light.address.led().is_some()).collect();
+    lights.sort_by(|a, b| (a.address.hardware_order(), &a.name).cmp(&(b.address.hardware_order(), &b.name)));
+    lights
+      .into_iter()
+      .chunk_by(|light| light.address.led().cloned())
+      .into_iter()
+      .filter_map(|(led, lights)| led.map(|led| (led, lights.collect())))
+      .collect()
+  }
 }
 
 impl Deref for LightLookup {
@@ -200,6 +255,13 @@ impl Deref for LightLookup {
 impl DerefMut for LightLookup {
   fn deref_mut(&mut self) -> &mut Self::Target {
     &mut self.by_name
+  }
+}
+
+fn channels_used(channels: LedChannels) -> Vec<LedChannel> {
+  match channels {
+    LedChannels::Rgb => vec![LedChannel::R, LedChannel::G, LedChannel::B],
+    LedChannels::One(channel) => vec![channel],
   }
 }
 
@@ -301,6 +363,68 @@ mod tests {
       },
     );
     assert_eq!(names(&lights, &LightQ::every()), ["1.0.0", "lamp"]);
+  }
+
+  fn led(index: u8) -> LedAddress {
+    LedAddress::new(ExpAddress::new(1, Some(0)), 0, index)
+  }
+
+  fn insert(lights: &mut LightLookup, name: &str, led: LedAddress, channels: LedChannels) {
+    let address = LightAddress::Exp { led, channels };
+    lights.insert(name.into(), Light { name: name.into(), address, ..Default::default() });
+  }
+
+  #[test]
+  fn lights_on_different_channels_share_nothing() {
+    let mut lights = LightLookup::default();
+    insert(&mut lights, "a", led(0), LedChannels::One(LedChannel::R));
+    insert(&mut lights, "b", led(0), LedChannels::One(LedChannel::B));
+    insert(&mut lights, "c", led(1), LedChannels::Rgb);
+    assert!(lights.shared_channels().is_empty());
+  }
+
+  #[test]
+  fn two_lights_on_one_channel_share_it() {
+    let mut lights = LightLookup::default();
+    insert(&mut lights, "a", led(0), LedChannels::One(LedChannel::G));
+    insert(&mut lights, "b", led(0), LedChannels::One(LedChannel::G));
+    assert_eq!(lights.shared_channels(), vec![(led(0), "a".to_string(), "b".to_string())]);
+  }
+
+  #[test]
+  fn an_rgb_light_shares_every_channel() {
+    let mut lights = LightLookup::default();
+    insert(&mut lights, "a", led(0), LedChannels::Rgb);
+    insert(&mut lights, "b", led(0), LedChannels::One(LedChannel::B));
+    insert(&mut lights, "c", led(0), LedChannels::Rgb);
+    assert_eq!(
+      lights.shared_channels(),
+      vec![
+        (led(0), "a".to_string(), "b".to_string()),
+        (led(0), "a".to_string(), "c".to_string()),
+      ]
+    );
+  }
+
+  static REORDERED: std::sync::LazyLock<LedDefinition> = std::sync::LazyLock::new(|| {
+    LedDefinition::channels()
+      .r(LedDefinition::single("plain"))
+      .g(LedDefinition::single("reordered").channel_order(ChannelOrder::GRB))
+      .build()
+  });
+  static REORDERED_RGB: std::sync::LazyLock<LedDefinition> =
+    std::sync::LazyLock::new(|| LedDefinition::single("rgb").channel_order(ChannelOrder::GRB).build());
+
+  #[test]
+  fn a_channel_order_on_single_channel_lights_is_reported() {
+    let board = ExpBoard::fp_exp0061(JumperState::Open, JumperState::Open)
+      .wire_led_port(1, LedPort::ws2812().leds(vec![&*REORDERED, &*REORDERED_RGB]));
+    let lights = LightLookup::new(&Hardware::resolve_expansion_boards(&vec![board]), &[]);
+
+    let reordered = lights.reordered_single_channels();
+    assert_eq!(reordered.len(), 1);
+    assert!(reordered[0].1.contains("reordered"));
+    assert_eq!(reordered[0].0.index, 0);
   }
 
   #[test]

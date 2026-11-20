@@ -89,7 +89,6 @@
 - `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
 - Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for lights
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
-- Single channel flasher support
 - NeoSeg support
 - Evaluate if declaring named colors with FAST and reference by ID is worth itc
 
