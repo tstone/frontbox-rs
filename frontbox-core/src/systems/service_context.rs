@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::app::GroupsExt;
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 use crate::systems::routine::RoutineBuilder;
 use crate::systems::state::{StoredState, state};
@@ -82,6 +83,11 @@ impl<'a> ServiceContext<'a> {
       .app_sender
       .send(AppMessage::EmitEvent(Some(sender), EventBox::new(event)))
       .ok();
+  }
+
+  /// Send something to tracers only
+  pub(crate) fn trace(&self, event: TraceEvent) {
+    self.app_sender.send(AppMessage::TracerEvent(event)).ok();
   }
 
   // -- Systems access --

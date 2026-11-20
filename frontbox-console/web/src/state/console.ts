@@ -18,6 +18,8 @@ import { type Connection, connect, type ConnectionStatus } from './socket'
 const LOG_CAPACITY = 2500
 const RECENT_EVENTS_PER_SYSTEM = 10
 /** Mirrors the hub */
+const RECENT_STATES_PER_SYSTEM = 10
+/** Mirrors the hub */
 const HISTORY_PER_SYSTEM = 300
 /** Despawned systems kept to look back at. Mirrors the hub */
 const DESPAWNED_KEPT = 50
@@ -186,6 +188,7 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
       despawned_ms: null,
       history: [{ kind: 'Spawned', at_ms, active }],
       recent_events: [],
+      recent_states: [],
     })
   } else if ('SystemDespawned' in event) {
     // its children are despawned with it, each traced on its own
@@ -204,6 +207,13 @@ function applyTrace(s: ConsoleState, record: TraceRecord) {
     if (sys) {
       sys.active = active
       pushHistory(sys, { kind: 'ActivityChanged', at_ms, seq: record.seq, active, cause })
+    }
+  } else if ('SystemStateReported' in event) {
+    const sys = running(event.SystemStateReported.id)
+    if (sys) {
+      sys.recent_states.push(record)
+      if (sys.recent_states.length > RECENT_STATES_PER_SYSTEM) sys.recent_states.shift()
+      pushHistory(sys, { kind: 'StateReported', at_ms, seq: record.seq })
     }
   } else if ('RoutineStepEnded' in event) {
     const { routine, participant, ending } = event.RoutineStepEnded

@@ -122,7 +122,12 @@ pub enum TraceEvent {
     routine: &'static str,
     origin: u64,
   },
-  // TODO: some kind of game-specific state push that is JSON encodable
+  /// A system reported its state, for tracers only, with
+  /// [`SystemContext::report_state`](crate::systems::SystemContext::report_state)
+  SystemStateReported {
+    id: u64,
+    state: serde_json::Value,
+  },
 }
 
 /// Why a routine participant didn't get a step

@@ -104,6 +104,9 @@ pub struct System {
   pub history: VecDeque<HistoryEntry>,
   #[ts(as = "Vec<TraceRecord>")]
   pub recent_events: VecDeque<TraceRecord>,
+  /// The latest states it reported (`SystemStateReported`), oldest first. The last is its state now.
+  #[ts(as = "Vec<TraceRecord>")]
+  pub recent_states: VecDeque<TraceRecord>,
 }
 
 /// Something that happened to a system, for its history. Times are in milliseconds since the console started.
@@ -132,6 +135,11 @@ pub enum HistoryEntry {
     at_ms: u64,
     seq: u64,
     event: &'static str,
+  },
+  /// It reported its state. `seq` finds it in `System::recent_states` or the log.
+  StateReported {
+    at_ms: u64,
+    seq: u64,
   },
   Despawned {
     at_ms: u64,

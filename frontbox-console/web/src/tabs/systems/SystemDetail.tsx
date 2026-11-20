@@ -1,12 +1,13 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js'
-import { CirclePlus, CircleX, Mail, Route, ToggleLeft, ToggleRight } from '../../components/icons'
+import { Braces, CirclePlus, CircleX, Mail, Route, ToggleLeft, ToggleRight } from '../../components/icons'
 import { formatElapsed, shortName, traceBody } from '../../lib/format'
 import { machine } from '../../state/console'
 import type { HistoryEntry } from '../../types/generated/HistoryEntry'
 import type { System } from '../../types/generated/System'
 import type { TraceRecord } from '../../types/generated/TraceRecord'
 import SystemTimeline, { describe, entryKey, entryTime, type Hovered } from './SystemTimeline'
+import { pausedAt } from './timelinePause'
 
 /** How the activity is ordered. Shared by every system, so switching systems keeps it. */
 const [newestFirst, setNewestFirst] = createSignal(true)
@@ -14,6 +15,11 @@ const [newestFirst, setNewestFirst] = createSignal(true)
 export default function SystemDetail(props: { system: System; parent: System | undefined; children: number }) {
   // everything that happened to it, and the events it emitted
   const activity = () => (newestFirst() ? [...props.system.history].reverse() : props.system.history)
+  // the latest state it reported, as of the moment the timeline is paused at
+  const state = () => {
+    const until = pausedAt() ?? Infinity
+    return props.system.recent_states.findLast((r) => r.at_ms <= until)
+  }
   const status = () => (props.system.despawned_ms !== null ? 'Despawned' : props.system.active ? 'Active' : 'Inactive')
 
   // what the pointer is on, in the timeline or the activity list, so the other one points it out
@@ -60,6 +66,20 @@ export default function SystemDetail(props: { system: System; parent: System | u
         </Show>
       </dl>
 
+      <Show when={state()}>
+        {(record) => (
+          <section class="reported-state">
+            <div class="section-header">
+              <h3 class="pane-title">State</h3>
+              <span class="meta">Reported at {formatElapsed(record().at_ms)}</span>
+            </div>
+            <JsonTreeView.Root data={traceBody(record())} defaultExpandedDepth={3}>
+              <JsonTreeView.Tree arrow={<span>›</span>} />
+            </JsonTreeView.Root>
+          </section>
+        )}
+      </Show>
+
       <SystemTimeline system={props.system} hovered={hovered()} onHover={setHovered} />
 
       <section class="activity-log">
@@ -91,18 +111,20 @@ export default function SystemDetail(props: { system: System; parent: System | u
   )
 }
 
-/** One thing that happened to the system. An event it emitted opens to show what it carried. */
+/**
+ * One thing that happened to the system. An event it emitted opens to show what it carried, and a state it reported
+ * opens to show the state.
+ */
 function ActivityRow(props: { entry: HistoryEntry; system: System; highlighted: boolean; onHover: () => void }) {
   const [open, setOpen] = createSignal(false)
-  // the event, while the console still has it: the system's latest few are kept, older ones only while in the log
+  // the record, while the console still has it: the system's latest few are kept, older ones only while in the log
   const record = (): TraceRecord | undefined => {
     const entry = props.entry
-    if (entry.kind !== 'Emitted') return undefined
-    return (
-      props.system.recent_events.find((r) => r.seq === entry.seq) ?? machine.log.find((r) => r.seq === entry.seq)
-    )
+    if (entry.kind !== 'Emitted' && entry.kind !== 'StateReported') return undefined
+    const recent = entry.kind === 'Emitted' ? props.system.recent_events : props.system.recent_states
+    return recent.find((r) => r.seq === entry.seq) ?? machine.log.find((r) => r.seq === entry.seq)
   }
-  const opens = () => props.entry.kind === 'Emitted'
+  const opens = () => props.entry.kind === 'Emitted' || props.entry.kind === 'StateReported'
 
   return (
     <li
@@ -140,6 +162,7 @@ const KIND_LABELS: Record<HistoryEntry['kind'], string> = {
   ActivityChanged: 'Activity changed',
   RoutineStep: 'Routine step',
   Emitted: 'Event emitted',
+  StateReported: 'State reported',
   Despawned: 'Despawned',
 }
 
@@ -153,6 +176,8 @@ function icon(entry: HistoryEntry): JSX.Element {
       return <Route size={14} />
     case 'Emitted':
       return <Mail size={14} />
+    case 'StateReported':
+      return <Braces size={14} />
     case 'Despawned':
       return <CircleX size={14} />
   }

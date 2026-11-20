@@ -14,6 +14,8 @@ pub struct AppState {
   pub config: ConfigCollection,
   pub metrics: MetricsCollection,
   pub(crate) app_config: AppConfig,
+  /// Whether a tracer is attached, so what's only for tracers can be skipped without one
+  pub(crate) traced: bool,
 }
 
 impl AppState {
@@ -31,6 +33,7 @@ impl AppState {
       app_config,
       config,
       metrics: MetricsCollection::default(),
+      traced: false,
     }
   }
 }

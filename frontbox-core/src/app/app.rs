@@ -115,7 +115,7 @@ impl App {
         .ok()
     });
 
-    let (app_state, machine_sender) = match self.boot_config.platform {
+    let (mut app_state, machine_sender) = match self.boot_config.platform {
       Platform::Neuron { .. } => {
         let (mut machine, mut hardware) =
           neuron::Neuron::boot(self.boot_config, app_sender.clone()).await;
@@ -170,6 +170,7 @@ impl App {
       }
     };
 
+    app_state.traced = !self.tracers.is_empty();
     if let Some(db) = metrics_db {
       app_state.metrics.begin_store_task(db);
     }

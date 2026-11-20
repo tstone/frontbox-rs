@@ -409,6 +409,44 @@ mod tests {
     assert!(h.resync.notified().now_or_never().is_some());
   }
 
+  /// Reports how many `Poke`s it has heard, on each one
+  #[derive(Default)]
+  struct Reporter {
+    pokes: u32,
+  }
+
+  impl System for Reporter {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes += 1;
+        ctx.report_state(&serde_json::json!({ "pokes": self.pokes }));
+      }
+    }
+  }
+
+  #[test]
+  fn a_reported_state_reaches_tracers_with_the_reporter() {
+    let (mut h, mut traces) = Harness::tracing();
+    let reporter = h.spawn(Reporter::default());
+
+    h.emit(Poke);
+    h.emit(Poke);
+
+    let reports: Vec<_> = std::iter::from_fn(|| traces.try_recv().ok())
+      .filter_map(|trace| match trace {
+        TraceEvent::SystemStateReported { id, state } => Some((id, state)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      reports,
+      [
+        (reporter.id, serde_json::json!({ "pokes": 1 })),
+        (reporter.id, serde_json::json!({ "pokes": 2 })),
+      ]
+    );
+  }
+
   /// Records, on each `Poke`, whether it could look itself up
   struct SelfLookup(Rc<RefCell<Vec<bool>>>);
 

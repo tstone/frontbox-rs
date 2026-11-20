@@ -37,6 +37,7 @@ impl Harness {
     let (tx, rx) = mpsc::unbounded_channel();
     let mut harness = Self::new();
     harness.run_loop.tracers = TracerSenders::new(vec![tx]);
+    harness.run_loop.base.traced = true;
     (harness, rx)
   }
 

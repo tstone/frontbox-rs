@@ -17,6 +17,8 @@
   --cat-switch: #1f6feb;
   --cat-driver: #d9480f;
   --cat-system: #7a7585;
+  /* states systems report about themselves */
+  --cat-state: #c2255c;
 
   /* 3D view */
   --plane: #8e879c;
@@ -56,6 +58,7 @@
     --cat-switch: #58a6ff;
     --cat-driver: #ff8a4c;
     --cat-system: #938ca0;
+    --cat-state: #f06595;
 
     --plane: #6d6679;
     --hw-dot: #d4d1da;

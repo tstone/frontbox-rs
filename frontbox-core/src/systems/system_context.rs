@@ -3,6 +3,7 @@ use std::ops::Deref;
 use tokio::sync::mpsc;
 
 use crate::prelude::app_message::{AppMessage, ShutdownScope};
+use crate::prelude::app_tracer::TraceEvent;
 use crate::prelude::*;
 
 /// # SystemContext
@@ -82,6 +83,42 @@ impl<'a> SystemContext<'a> {
   /// Dispatch an event to all other active systems
   pub fn emit<E: Event>(&self, event: E) {
     self.ctx.emit(self.id(), event);
+  }
+
+  /// Send this system's state to tracers, such as the console, which shows the latest on the system's page. Any value
+  /// that serializes to JSON works, and only tracers see it: no system hears about it. Report when the state changes,
+  /// rather than every tick, since each report is kept in the system's history.
+  ///
+  /// Nothing is serialized when no tracer is attached, but the value is still built, so pass a reference to what the
+  /// system already has rather than building one to report.
+  ///
+  /// ```rust
+  /// # use frontbox_core::prelude::*;
+  /// #[derive(serde::Serialize)]
+  /// struct Progress {
+  ///   targets_hit: u8,
+  ///   lit: bool,
+  /// }
+  ///
+  /// # fn example(progress: &Progress, ctx: &SystemContext) {
+  /// ctx.report_state(progress);
+  /// # }
+  /// ```
+  ///
+  /// This isn't one of the machine's states in `ctx.states`, which other systems read and hear about.
+  pub fn report_state(&self, state: &impl serde::Serialize) {
+    if !self.ctx.base.traced {
+      return;
+    }
+    match serde_json::to_value(state) {
+      Ok(state) => self.ctx.trace(TraceEvent::SystemStateReported {
+        id: self.id(),
+        state,
+      }),
+      Err(e) => {
+        log::warn!(target: "frontbox::systems", "System {} reported a state that can't be serialized: {e}", self.id())
+      }
+    }
   }
 
   /// Unregisters drivers, clears the EXP network, and halts the framework
