@@ -28,8 +28,8 @@ compositing over black, so alpha dims it. When lowered, it writes that brightnes
 Light management knows lights and the two kinds of address, and nothing about any specific product. Support for
 products is built on top:
 
-- **Single-channel flashers**: single-channel lights on a shared LED address, made with a definition helper. They
-  need no new code in light management.
+- **Single-channel flashers**: single-channel lights on a shared LED address, made with `LedDefinition::channels`.
+  They need no new code in light management.
 - **NeoSeg**:
   - A definition helper turns a digit into its segment lights.
   - Text comes from a separate system holding the character table, which declares on those lights through the public
@@ -41,7 +41,6 @@ Each phase builds, passes tests, and leaves the machine behaving as before, exce
 
 ### 5. Single-channel lights on an LED address
 
-- **A generic helper for 1 to 3 lights on one LED address**, in R, G, B order.
 - **Core's boot check** is that no channel is used by two lights, including an `Rgb` light, which uses all three.
   Reject the config with an error naming the LED address and both lights. This is what makes a `LightAddress`
   unique to one light.
@@ -49,10 +48,6 @@ Each phase builds, passes tests, and leaves the machine behaving as before, exce
   it, which would move a single-channel light onto another channel. So `One(..)` names a position on the wire, and an
   LED address with a single-channel light must keep the default order. Reject a config that gives it another, naming
   the LED address and the light.
-- **The flasher helper** defines a chain of single-channel flashers on a port. The boards take channels one after
-  another along the chain, so the helper assigns LED addresses and channels in that order. Only the last LED address
-  can be partly used. The rule lives in the helper because it's how flasher boards read the chain, not a rule about
-  LED addresses. Other hardware, such as a NeoSeg digit, can leave channels unused mid-port.
 - **`TODO.md`.** Remove "Single channel flasher support".
 
 ### Later, not in this plan

@@ -140,14 +140,15 @@ impl Hardware {
         .iter()
         .enumerate()
         .for_each(|(i, led)| {
+          let led_offset = multi_def.offset(i as u16).unwrap_or(i as u16) as usize;
           addressed_leds.push(ExpAddressed {
             definition: led.clone(),
             assignment: ExpAddress::new(board.address, Some(port_idx / 4)),
-            id: i + port_led_total_count + offset as usize,
+            id: led_offset + port_led_total_count + offset as usize,
           });
         });
 
-      port_led_total_count += multi_def.children().len();
+      port_led_total_count += multi_def.address_count() as usize;
     }
 
     log::trace!(target: "frontbox::hardware", "Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
@@ -396,6 +397,20 @@ mod tests {
       .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_65]));
 
     Hardware::resolve_expansion_boards(&vec![board]);
+  }
+
+  static FLASHERS: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::channels([LedDefinition::single("flasher_a"), LedDefinition::single("flasher_b")]).build()
+  });
+
+  #[test]
+  fn channel_lights_share_one_led_address() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*FLASHERS, &*STRIP_32]));
+    let port = &Hardware::resolve_expansion_boards(&vec![board])[0].led_ports[0];
+
+    let ids: Vec<usize> = port.leds.iter().map(|led| led.id).collect();
+    assert_eq!(&ids[..3], &[0, 0, 1]);
+    assert_eq!(port.length, 33);
   }
 
   #[test]
