@@ -21,7 +21,7 @@ use crate::scene_render::{PreviewMachine, render_clip, render_scene};
 const LOG_CAPACITY: usize = 2500;
 const RECENT_EVENTS_PER_SYSTEM: usize = 10;
 /// Mirrored in `web/src/state/console.ts`
-const RECENT_STATES_PER_SYSTEM: usize = 10;
+const RECENT_STATUSES_PER_SYSTEM: usize = 10;
 /// Entries kept in each system's history. Mirrored in `web/src/state/console.ts`.
 const HISTORY_PER_SYSTEM: usize = 300;
 /// Despawned systems kept to look back at, latest first. Mirrored in `web/src/state/console.ts`.
@@ -572,7 +572,7 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
         active: *active,
       }]),
       recent_events: VecDeque::new(),
-      recent_states: VecDeque::new(),
+      recent_statuses: VecDeque::new(),
     }),
     // its children are despawned with it, each traced on its own
     TraceEvent::SystemDespawned { id, cause } => {
@@ -634,15 +634,15 @@ fn apply(snapshot: &mut Snapshot, record: &TraceRecord) {
       }
     }
     TraceEvent::Event { .. } => {}
-    TraceEvent::SystemStateReported { id, .. } => {
+    TraceEvent::SystemStatusReported { id, .. } => {
       if let Some(system) = running(systems, *id) {
-        if system.recent_states.len() >= RECENT_STATES_PER_SYSTEM {
-          system.recent_states.pop_front();
+        if system.recent_statuses.len() >= RECENT_STATUSES_PER_SYSTEM {
+          system.recent_statuses.pop_front();
         }
-        system.recent_states.push_back(record.clone());
+        system.recent_statuses.push_back(record.clone());
         push_history(
           system,
-          HistoryEntry::StateReported {
+          HistoryEntry::StatusReported {
             at_ms,
             seq: record.seq,
           },
@@ -1067,24 +1067,24 @@ mod tests {
   }
 
   #[test]
-  fn states_a_system_reports_are_in_its_history_and_the_latest_is_kept() {
+  fn statuses_a_system_reports_are_in_its_history_and_the_latest_is_kept() {
     let hub = ConsoleHub::new();
     hub.ingest(spawned(1, None));
 
-    for pokes in 1..=RECENT_STATES_PER_SYSTEM + 2 {
-      hub.ingest(TraceEvent::SystemStateReported {
+    for pokes in 1..=RECENT_STATUSES_PER_SYSTEM + 2 {
+      hub.ingest(TraceEvent::SystemStatusReported {
         id: 1,
-        state: serde_json::json!({ "pokes": pokes }),
+        status: serde_json::json!({ "pokes": pokes }),
       });
     }
 
-    assert!(matches!(history(&hub, 1)[1], HistoryEntry::StateReported { .. }));
+    assert!(matches!(history(&hub, 1)[1], HistoryEntry::StatusReported { .. }));
     let state = hub.state.lock().unwrap();
     let system = &state.snapshot.systems[0];
-    assert_eq!(system.recent_states.len(), RECENT_STATES_PER_SYSTEM);
+    assert_eq!(system.recent_statuses.len(), RECENT_STATUSES_PER_SYSTEM);
     assert!(matches!(
-      &system.recent_states.back().unwrap().event,
-      TraceEvent::SystemStateReported { state, .. } if *state == serde_json::json!({ "pokes": RECENT_STATES_PER_SYSTEM + 2 })
+      &system.recent_statuses.back().unwrap().event,
+      TraceEvent::SystemStatusReported { status, .. } if *status == serde_json::json!({ "pokes": RECENT_STATUSES_PER_SYSTEM + 2 })
     ));
   }
 

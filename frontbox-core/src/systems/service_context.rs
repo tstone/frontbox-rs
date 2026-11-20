@@ -110,6 +110,10 @@ impl<'a> ServiceContext<'a> {
     self.borrow_found::<T>(found, handle)
   }
 
+  pub(crate) fn name_of(&self, id: u64) -> Option<&'static str> {
+    self.groups.system_name(self.groups.find(id)?)
+  }
+
   fn borrow_found<T: System + 'static>(
     &self,
     found: SystemHandle,

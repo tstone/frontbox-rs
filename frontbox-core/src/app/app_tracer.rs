@@ -122,11 +122,11 @@ pub enum TraceEvent {
     routine: &'static str,
     origin: u64,
   },
-  /// A system reported its state, for tracers only, with
-  /// [`SystemContext::report_state`](crate::systems::SystemContext::report_state)
-  SystemStateReported {
+  /// A system reported its status, for tracers only, with
+  /// [`SystemContext::report_status`](crate::systems::SystemContext::report_status)
+  SystemStatusReported {
     id: u64,
-    state: serde_json::Value,
+    status: serde_json::Value,
   },
 }
 

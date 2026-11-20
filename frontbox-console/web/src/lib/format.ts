@@ -29,7 +29,7 @@ export function traceCategory(record: TraceRecord): TraceCategory {
 export function traceBody(record: TraceRecord): unknown {
   const event = record.event
   if ('Event' in event) return event.Event.event
-  if ('SystemStateReported' in event) return event.SystemStateReported.state
+  if ('SystemStatusReported' in event) return event.SystemStatusReported.status
   return Object.values(event)[0]
 }
 

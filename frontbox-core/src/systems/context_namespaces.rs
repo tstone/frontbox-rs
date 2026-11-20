@@ -79,6 +79,12 @@ impl<'a> ContextSystems<'a> {
     self.ctx.get_in::<T>(parent, self.handle)
   }
 
+  /// The name of the running system with this id, such as `frontbox_pinball::scoop::ScoopSystem<lotko::Lower>`.
+  /// Readable while that system is in use.
+  pub fn name_of(&self, id: u64) -> Option<&'static str> {
+    self.ctx.name_of(id)
+  }
+
   /// Start up a new system as a child of this one. Returns its id, which [`activate`](Self::activate),
   /// [`deactivate`](Self::deactivate), and [`despawn`](Self::despawn) take. The child is despawned along with this
   /// system, and is only active while this system is.

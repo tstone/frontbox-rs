@@ -85,8 +85,8 @@ impl<'a> SystemContext<'a> {
     self.ctx.emit(self.id(), event);
   }
 
-  /// Send this system's state to tracers, such as the console, which shows the latest on the system's page. Any value
-  /// that serializes to JSON works, and only tracers see it: no system hears about it. Report when the state changes,
+  /// Send this system's status to tracers, such as the console, which shows the latest on the system's page. Any value
+  /// that serializes to JSON works, and only tracers see it: no system hears about it. Report when the status changes,
   /// rather than every tick, since each report is kept in the system's history.
   ///
   /// Nothing is serialized when no tracer is attached, but the value is still built, so pass a reference to what the
@@ -101,24 +101,30 @@ impl<'a> SystemContext<'a> {
   /// }
   ///
   /// # fn example(progress: &Progress, ctx: &SystemContext) {
-  /// ctx.report_state(progress);
+  /// ctx.report_status(progress);
   /// # }
   /// ```
   ///
-  /// This isn't one of the machine's states in `ctx.states`, which other systems read and hear about.
-  pub fn report_state(&self, state: &impl serde::Serialize) {
-    if !self.ctx.base.traced {
+  /// This isn't one of the machine's states in `ctx.states`, which other systems read and hear about. To report only
+  /// when the status changes, see [`StatusReporter`].
+  pub fn report_status(&self, status: &impl serde::Serialize) {
+    if !self.is_traced() {
       return;
     }
-    match serde_json::to_value(state) {
-      Ok(state) => self.ctx.trace(TraceEvent::SystemStateReported {
+    match serde_json::to_value(status) {
+      Ok(status) => self.ctx.trace(TraceEvent::SystemStatusReported {
         id: self.id(),
-        state,
+        status,
       }),
       Err(e) => {
-        log::warn!(target: "frontbox::systems", "System {} reported a state that can't be serialized: {e}", self.id())
+        log::warn!(target: "frontbox::systems", "System {} reported a status that can't be serialized: {e}", self.id())
       }
     }
+  }
+
+  /// Whether a tracer is attached, so a reported status would be seen
+  pub(crate) fn is_traced(&self) -> bool {
+    self.ctx.base.traced
   }
 
   /// Unregisters drivers, clears the EXP network, and halts the framework

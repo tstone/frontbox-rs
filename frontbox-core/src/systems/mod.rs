@@ -214,6 +214,7 @@ mod system;
 mod system_container;
 mod system_context;
 mod system_group;
+mod status_reporter;
 mod system_handle;
 #[cfg(any(test, feature = "testing"))]
 mod test_context;
@@ -235,6 +236,7 @@ pub use system::*;
 pub use system_container::*;
 pub use system_context::*;
 pub(crate) use system_group::*;
+pub use status_reporter::StatusReporter;
 pub use system_handle::*;
 #[cfg(any(test, feature = "testing"))]
 pub use test_context::*;

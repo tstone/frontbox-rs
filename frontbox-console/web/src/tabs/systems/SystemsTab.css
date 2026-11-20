@@ -449,27 +449,27 @@
   color: var(--accent);
 }
 
-/* ---- states the system reported ---- */
+/* ---- statuses the system reported ---- */
 
-.detail .reported-state {
+.detail .reported-status {
   margin-top: 2rem;
 }
 
-.detail .reported-state .meta {
+.detail .reported-status .meta {
   color: var(--muted);
   font-size: 0.8125rem;
 }
 
-.detail .reported-state [data-scope='json-tree-view'][data-part='root'] {
+.detail .reported-status [data-scope='json-tree-view'][data-part='root'] {
   max-height: 20rem;
   overflow: auto;
 }
 
 .detail .timeline-body .reported .mark {
-  stroke: var(--cat-state);
+  stroke: var(--cat-status);
   stroke-width: 2;
 }
 
-.detail .activity-log li.StateReported .icon {
-  color: var(--cat-state);
+.detail .activity-log li.StatusReported .icon {
+  color: var(--cat-status);
 }

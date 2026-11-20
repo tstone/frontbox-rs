@@ -32,6 +32,6 @@ despawned_ms: number | null,
  */
 history: Array<HistoryEntry>, recent_events: Array<TraceRecord>, 
 /**
- * The latest states it reported (`SystemStateReported`), oldest first. The last is its state now.
+ * The latest statuses it reported (`SystemStatusReported`), oldest first. The last is its status now.
  */
-recent_states: Array<TraceRecord>, };
+recent_statuses: Array<TraceRecord>, };

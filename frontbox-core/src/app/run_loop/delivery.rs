@@ -419,13 +419,13 @@ mod tests {
     fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
       if event.is::<Poke>() {
         self.pokes += 1;
-        ctx.report_state(&serde_json::json!({ "pokes": self.pokes }));
+        ctx.report_status(&serde_json::json!({ "pokes": self.pokes }));
       }
     }
   }
 
   #[test]
-  fn a_reported_state_reaches_tracers_with_the_reporter() {
+  fn a_reported_status_reaches_tracers_with_the_reporter() {
     let (mut h, mut traces) = Harness::tracing();
     let reporter = h.spawn(Reporter::default());
 
@@ -434,7 +434,7 @@ mod tests {
 
     let reports: Vec<_> = std::iter::from_fn(|| traces.try_recv().ok())
       .filter_map(|trace| match trace {
-        TraceEvent::SystemStateReported { id, state } => Some((id, state)),
+        TraceEvent::SystemStatusReported { id, status } => Some((id, status)),
         _ => None,
       })
       .collect();
@@ -445,6 +445,41 @@ mod tests {
         (reporter.id, serde_json::json!({ "pokes": 2 })),
       ]
     );
+  }
+
+  /// Reports every second `Poke` it has heard, on each one, through a `StatusReporter`
+  #[derive(Default)]
+  struct PairReporter {
+    pokes: u32,
+    reported: StatusReporter<u32>,
+  }
+
+  impl System for PairReporter {
+    fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
+      if event.is::<Poke>() {
+        self.pokes += 1;
+        let pairs = self.pokes / 2;
+        self.reported.report(ctx, || pairs);
+      }
+    }
+  }
+
+  #[test]
+  fn a_status_reporter_only_reports_changes() {
+    let (mut h, mut traces) = Harness::tracing();
+    h.spawn(PairReporter::default());
+
+    for _ in 0..4 {
+      h.emit(Poke);
+    }
+
+    let reports: Vec<_> = std::iter::from_fn(|| traces.try_recv().ok())
+      .filter_map(|trace| match trace {
+        TraceEvent::SystemStatusReported { status, .. } => Some(status),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(reports, [0, 1, 2].map(|pairs| serde_json::json!(pairs)));
   }
 
   /// Records, on each `Poke`, whether it could look itself up

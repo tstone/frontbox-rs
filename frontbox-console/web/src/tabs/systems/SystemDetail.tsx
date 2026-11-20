@@ -15,10 +15,10 @@ const [newestFirst, setNewestFirst] = createSignal(true)
 export default function SystemDetail(props: { system: System; parent: System | undefined; children: number }) {
   // everything that happened to it, and the events it emitted
   const activity = () => (newestFirst() ? [...props.system.history].reverse() : props.system.history)
-  // the latest state it reported, as of the moment the timeline is paused at
-  const state = () => {
+  // the latest status it reported, as of the moment the timeline is paused at
+  const reportedStatus = () => {
     const until = pausedAt() ?? Infinity
-    return props.system.recent_states.findLast((r) => r.at_ms <= until)
+    return props.system.recent_statuses.findLast((r) => r.at_ms <= until)
   }
   const status = () => (props.system.despawned_ms !== null ? 'Despawned' : props.system.active ? 'Active' : 'Inactive')
 
@@ -66,11 +66,11 @@ export default function SystemDetail(props: { system: System; parent: System | u
         </Show>
       </dl>
 
-      <Show when={state()}>
+      <Show when={reportedStatus()}>
         {(record) => (
-          <section class="reported-state">
+          <section class="reported-status">
             <div class="section-header">
-              <h3 class="pane-title">State</h3>
+              <h3 class="pane-title">Status</h3>
               <span class="meta">Reported at {formatElapsed(record().at_ms)}</span>
             </div>
             <JsonTreeView.Root data={traceBody(record())} defaultExpandedDepth={3}>
@@ -112,19 +112,19 @@ export default function SystemDetail(props: { system: System; parent: System | u
 }
 
 /**
- * One thing that happened to the system. An event it emitted opens to show what it carried, and a state it reported
- * opens to show the state.
+ * One thing that happened to the system. An event it emitted opens to show what it carried, and a status it reported
+ * opens to show the status.
  */
 function ActivityRow(props: { entry: HistoryEntry; system: System; highlighted: boolean; onHover: () => void }) {
   const [open, setOpen] = createSignal(false)
   // the record, while the console still has it: the system's latest few are kept, older ones only while in the log
   const record = (): TraceRecord | undefined => {
     const entry = props.entry
-    if (entry.kind !== 'Emitted' && entry.kind !== 'StateReported') return undefined
-    const recent = entry.kind === 'Emitted' ? props.system.recent_events : props.system.recent_states
+    if (entry.kind !== 'Emitted' && entry.kind !== 'StatusReported') return undefined
+    const recent = entry.kind === 'Emitted' ? props.system.recent_events : props.system.recent_statuses
     return recent.find((r) => r.seq === entry.seq) ?? machine.log.find((r) => r.seq === entry.seq)
   }
-  const opens = () => props.entry.kind === 'Emitted' || props.entry.kind === 'StateReported'
+  const opens = () => props.entry.kind === 'Emitted' || props.entry.kind === 'StatusReported'
 
   return (
     <li
@@ -162,7 +162,7 @@ const KIND_LABELS: Record<HistoryEntry['kind'], string> = {
   ActivityChanged: 'Activity changed',
   RoutineStep: 'Routine step',
   Emitted: 'Event emitted',
-  StateReported: 'State reported',
+  StatusReported: 'Status reported',
   Despawned: 'Despawned',
 }
 
@@ -176,7 +176,7 @@ function icon(entry: HistoryEntry): JSX.Element {
       return <Route size={14} />
     case 'Emitted':
       return <Mail size={14} />
-    case 'StateReported':
+    case 'StatusReported':
       return <Braces size={14} />
     case 'Despawned':
       return <CircleX size={14} />

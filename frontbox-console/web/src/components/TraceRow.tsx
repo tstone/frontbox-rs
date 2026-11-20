@@ -79,9 +79,9 @@ function summary(record: TraceRecord): string {
     const { id, active, cause } = event.SystemActiveStateChange
     return `${systemName(id)} ${active ? 'activated' : 'deactivated'} ${activityCause(cause)}`
   }
-  if ('SystemStateReported' in event) {
-    const { id, state } = event.SystemStateReported
-    return `${systemName(id)}: ${JSON.stringify(state)}`
+  if ('SystemStatusReported' in event) {
+    const { id, status } = event.SystemStatusReported
+    return `${systemName(id)}: ${JSON.stringify(status)}`
   }
   if ('RoutineStepEnded' in event) {
     const { routine, participant, ending } = event.RoutineStepEnded

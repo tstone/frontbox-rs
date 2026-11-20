@@ -9,7 +9,7 @@ import type { System } from '../../types/generated/System'
 type Step = Extract<HistoryEntry, { kind: 'RoutineStep' }>
 type Change = Extract<HistoryEntry, { kind: 'ActivityChanged' | 'Spawned' | 'Despawned' }>
 type Emitted = Extract<HistoryEntry, { kind: 'Emitted' }>
-type Reported = Extract<HistoryEntry, { kind: 'StateReported' }>
+type Reported = Extract<HistoryEntry, { kind: 'StatusReported' }>
 
 /** How far back the timeline looks, in milliseconds. `null` for the system's whole life. */
 const WINDOWS: { label: string; ms: number | null }[] = [
@@ -22,13 +22,13 @@ const WINDOWS: { label: string; ms: number | null }[] = [
 /** Lane height and the gap between lanes, in pixels */
 const LANE = 22
 const GAP = 6
-const LANES = ['Active', 'Routines', 'Emitted', 'State', 'Children'] as const
+const LANES = ['Active', 'Routines', 'Emitted', 'Status', 'Children'] as const
 const laneY = (lane: (typeof LANES)[number]) => 4 + LANES.indexOf(lane) * (LANE + GAP)
 const HEIGHT = laneY('Children') + LANE + 4
 
 /**
  * A system's history over time, in five lanes: when it was active, the routine steps it held, the events it emitted,
- * the states it reported, and its children spawning and despawning. Hovering anything says what it was and why. Positions are percentages of
+ * the statuses it reported, and its children spawning and despawning. Hovering anything says what it was and why. Positions are percentages of
  * the width, so the SVG stretches to the panel without squashing its text.
  *
  * Pausing (`timelinePause`, for every system) freezes it at that moment. The history keeps being recorded meanwhile,
@@ -87,7 +87,7 @@ export default function SystemTimeline(props: {
     )
   const steps = () => history().filter((e): e is Step => e.kind === 'RoutineStep' && (stepEnd(e) ?? end()) >= start())
   const emitted = () => history().filter((e): e is Emitted => e.kind === 'Emitted' && inWindow(e.at_ms))
-  const reported = () => history().filter((e): e is Reported => e.kind === 'StateReported' && inWindow(e.at_ms))
+  const reported = () => history().filter((e): e is Reported => e.kind === 'StatusReported' && inWindow(e.at_ms))
 
   // its children spawning and despawning. Despawned ones are only kept for a while, so older ones drop off.
   const childMarks = () =>
@@ -211,8 +211,8 @@ export default function SystemTimeline(props: {
               <Mark
                 class="reported"
                 at={pct(x(r.at_ms))}
-                y1={laneY('State') + 3}
-                y2={laneY('State') + LANE - 3}
+                y1={laneY('Status') + 3}
+                y2={laneY('Status') + LANE - 3}
                 {...hover(() => describe(r), r)}
               />
             )}
@@ -300,8 +300,8 @@ export function describe(entry: HistoryEntry): string {
     }
     case 'Emitted':
       return `Emitted ${shortName(entry.event)}`
-    case 'StateReported':
-      return 'Reported its state'
+    case 'StatusReported':
+      return 'Reported its status'
     case 'Despawned':
       return `Despawned ${despawnCause(entry.cause)}`
   }
@@ -315,8 +315,8 @@ export function entryKey(entry: HistoryEntry): string {
   switch (entry.kind) {
     case 'Emitted':
       return `emitted-${entry.seq}`
-    case 'StateReported':
-      return `state-${entry.seq}`
+    case 'StatusReported':
+      return `status-${entry.seq}`
     case 'RoutineStep':
       return `step-${entry.started_ms}-${entry.routine}`
     default:
