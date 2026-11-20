@@ -399,7 +399,7 @@ fn two_playbacks_of_one_system_on_one_z_are_drawn_in_the_order_they_started() {
 #[test]
 fn a_playback_is_drawn_over_declarations_on_its_z() {
   let (context, addresses) = three_lights();
-  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.declare(OWNER + 1, 0, &[(addresses[0].clone(), Rgba::blue())], false));
+  context.sys_ctx().systems.with::<LayeredLightManager, _>(|lights| lights.declare(OWNER + 1, 0, &[(addresses[0].clone(), Rgba::blue())], LightMode::Solid));
   play(&context, PlayableScene::new(on(LightQ::name("light0"), see_through(Rgba::red()))));
   let shown = shown(&context, &addresses)[0].unwrap();
   assert!(shown[0] > 100 && shown[2] > 100, "{shown:?}");

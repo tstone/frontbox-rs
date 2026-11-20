@@ -23,12 +23,12 @@ use crate::*;
 /// - Which scenes play. That's the `SceneSystem`.
 /// - What a light means to the game. Systems declare what they want shown; light management only shows it.
 pub trait LightManager: SpawnableSystem {
-  /// Declares a color on each light for `owner` (its `ctx.id()`) at `z`, shown from the next render. `flashing` flashes
-  /// them on and off, in step with every other flashing declaration.
-  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool);
+  /// Declares a color on each light for `owner` (its `ctx.id()`) at `z`, shown from the next render, solid or flashing
+  /// by `mode`.
+  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode);
   /// Declares like [`Self::declare`], but not shown until `activate_by_system`. Lets a system prepare declarations in
   /// advance and show them all at once.
-  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool);
+  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode);
   /// Removes what `owner` declared on these lights at `z`
   fn undeclare(&mut self, owner: u64, z: i8, lights: &[LightAddress]);
   /// Removes everything `owner` declared
@@ -41,4 +41,13 @@ pub trait LightManager: SpawnableSystem {
   fn set_conflict_resolution(&mut self, lights: &[LightAddress], resolution: LightConflictResolution);
   /// The colors declared for a light by any system, in no particular order
   fn declared_colors(&self, light: &LightAddress) -> Vec<Rgba<u8>>;
+}
+
+/// How a declared color shows
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightMode {
+  /// On the whole time
+  Solid,
+  /// On and off, in step with every other flashing declaration, once each [`FLASH_PERIOD`]
+  Flashing,
 }

@@ -88,9 +88,9 @@ fn declare_status(context: &TestContext) {
   let colored = |color: Rgba<u8>, lights: &[LightAddress]| lights.iter().map(|light| (light.clone(), color)).collect::<Vec<_>>();
   let every_other: Vec<_> = all.iter().step_by(2).cloned().collect();
   ctx.systems.with::<LayeredLightManager, _>(|lights| {
-    lights.declare(1, 0, &colored(Rgba::blue(), &all), false);
-    lights.declare(2, 1, &colored(Rgba([255, 0, 0, 128]), &all), false);
-    lights.declare(3, 2, &colored(Rgba::white(), &every_other), true);
+    lights.declare(1, 0, &colored(Rgba::blue(), &all), LightMode::Solid);
+    lights.declare(2, 1, &colored(Rgba([255, 0, 0, 128]), &all), LightMode::Solid);
+    lights.declare(3, 2, &colored(Rgba::white(), &every_other), LightMode::Flashing);
   });
 }
 

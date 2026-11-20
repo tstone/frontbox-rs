@@ -187,8 +187,8 @@ impl LayeredLightManager {
     self.alternate_resolver.reset();
   }
 
-  fn declare_inner(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool, active: bool) {
-    log::trace!(target: "frontbox::lighting", "System {owner} declared at z {z} (flashing: {flashing}): {colors:?}");
+  fn declare_inner(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode, active: bool) {
+    log::trace!(target: "frontbox::lighting", "System {owner} declared at z {z} ({mode:?}): {colors:?}");
 
     let id = DeclarationIdentifier { system_id: owner, z_index: z };
     for (light, color) in colors {
@@ -204,7 +204,7 @@ impl LayeredLightManager {
         active,
         color: *color,
         order,
-        flashing,
+        mode,
       };
       on_light.insert(id, declaration);
     }
@@ -345,12 +345,12 @@ impl LightManager for LayeredLightManager {
     self.declarations_for(light).iter().map(|d| d.color).collect()
   }
 
-  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool) {
-    self.declare_inner(owner, z, colors, flashing, true);
+  fn declare(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode) {
+    self.declare_inner(owner, z, colors, mode, true);
   }
 
-  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], flashing: bool) {
-    self.declare_inner(owner, z, colors, flashing, false);
+  fn declare_inactive(&mut self, owner: u64, z: i8, colors: &[(LightAddress, Rgba<u8>)], mode: LightMode) {
+    self.declare_inner(owner, z, colors, mode, false);
   }
 
   fn undeclare(&mut self, system_id: u64, z: i8, lights: &[LightAddress]) {
@@ -496,13 +496,13 @@ pub struct StatefulLightDeclaration {
   /// Counts up with each new declaration, and stays the same when a system changes the color of one it already made, so
   /// conflicts are resolved in the order systems first declared
   pub order: u64,
-  pub flashing: bool,
+  pub mode: LightMode,
 }
 
 impl StatefulLightDeclaration {
   /// Whether it gives its light a color this frame: it's active, and if it flashes, the flash is on
   fn shows(&self, flash_on: bool) -> bool {
-    self.active && (flash_on || !self.flashing)
+    self.active && (flash_on || self.mode == LightMode::Solid)
   }
 }
 
@@ -605,9 +605,9 @@ mod tests {
       index: 1,
     });
 
-    system.declare(42, 0, &[(light.clone(), Rgba::red())], false);
+    system.declare(42, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     assert!(system.declarations.get(&light).unwrap().len() == 1);
-    system.declare(43, 0, &[(light.clone(), Rgba::red())], false);
+    system.declare(43, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     assert!(system.declarations.get(&light).unwrap().len() == 2);
 
     system.undeclare(42, 0, &[light.clone()]);
@@ -626,9 +626,9 @@ mod tests {
       index: 1,
     });
 
-    system.declare(42, 0, &[(light.clone(), Rgba::red())], false);
+    system.declare(42, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     assert_eq!(system.declarations.get(&light).unwrap().len(), 1);
-    system.declare(42, 0, &[(light.clone(), Rgba::blue())], false);
+    system.declare(42, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
 
     let final_map = system.declarations.get(&light).unwrap();
     assert_eq!(final_map.len(), 1);
@@ -655,8 +655,8 @@ mod tests {
       index: 2,
     });
 
-    system.declare(42, 0, &[(light1.clone(), Rgba::red())], false);
-    system.declare(42, 0, &[(light2.clone(), Rgba::red())], false);
+    system.declare(42, 0, &[(light1.clone(), Rgba::red())], LightMode::Solid);
+    system.declare(42, 0, &[(light2.clone(), Rgba::red())], LightMode::Solid);
     assert_eq!(system.declarations.get(&light1).unwrap().len(), 1);
     assert_eq!(system.declarations.get(&light2).unwrap().len(), 1);
 
@@ -676,8 +676,8 @@ mod tests {
       index: 1,
     });
 
-    system.declare(42, 1, &[(light.clone(), Rgba::red())], false);
-    system.declare(42, 2, &[(light.clone(), Rgba::blue())], false);
+    system.declare(42, 1, &[(light.clone(), Rgba::red())], LightMode::Solid);
+    system.declare(42, 2, &[(light.clone(), Rgba::blue())], LightMode::Solid);
     assert!(system.declarations.get(&light).unwrap().len() == 2);
 
     system.undeclare(42, 1, &[light.clone()]);
@@ -704,7 +704,7 @@ mod tests {
           active: true,
           color: Rgba::default(),
           order: 1,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
       (
@@ -716,7 +716,7 @@ mod tests {
           active: false, // final color should NOT be red
           color: Rgba::red(),
           order: 2,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
     ]);
@@ -756,7 +756,7 @@ mod tests {
           active: true,
           color: Rgba::red(),
           order: 3,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
       (
@@ -768,7 +768,7 @@ mod tests {
           active: true,
           color: Rgba::blue(),
           order: 4,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
     ]);
@@ -807,7 +807,7 @@ mod tests {
           active: true,
           color: Rgba::red(),
           order: 5,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
       (
@@ -819,7 +819,7 @@ mod tests {
           active: true,
           color: Rgba::blue(),
           order: 6,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
     ]);
@@ -862,7 +862,7 @@ mod tests {
           active: true,
           color: Rgba([255, 0, 0, 127]), // semi-transparent red
           order: 7,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
       (
@@ -874,7 +874,7 @@ mod tests {
           active: true,
           color: Rgba([255, 255, 255, 255]), // opaque white
           order: 8,
-          flashing: false,
+          mode: LightMode::Solid,
         },
       ),
     ]);
@@ -909,7 +909,7 @@ mod tests {
       port: 0,
       index: 1,
     });
-    system.declare(42, 0, &[(light.clone(), Rgba::red())], false);
+    system.declare(42, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     let is_active = |system: &LayeredLightManager| system.declarations[&light].values().all(|d| d.active);
 
     system.on_event(&SystemDeactivated::new(42, ROOT_GROUP), &ctx.sys_ctx());
@@ -942,9 +942,9 @@ mod tests {
     let light = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
     for id in 1..=systems {
-      system.declare(id, 0, &[(light.clone(), Rgba([id as u8, 0, 0, 255]))], false);
+      system.declare(id, 0, &[(light.clone(), Rgba([id as u8, 0, 0, 255]))], LightMode::Solid);
     }
-    system.declare(1, 0, &[(light.clone(), Rgba::blue())], false);
+    system.declare(1, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
     LayeredLightManager::resolve_light_color(&light, vec![0], &system.declarations[&light], &[], true, &HashMap::new(), &mut AlternateResolver::new())
   }
 
@@ -958,10 +958,10 @@ mod tests {
   fn a_declaration_made_again_after_its_given_up_goes_to_the_back() {
     let light = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
-    system.declare(1, 0, &[(light.clone(), Rgba::red())], false);
-    system.declare(2, 0, &[(light.clone(), Rgba::blue())], false);
+    system.declare(1, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
+    system.declare(2, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
     system.undeclare(1, 0, &[light.clone()]);
-    system.declare(1, 0, &[(light.clone(), Rgba::red())], false);
+    system.declare(1, 0, &[(light.clone(), Rgba::red())], LightMode::Solid);
     let color = LayeredLightManager::resolve_light_color(&light, vec![0], &system.declarations[&light], &[], true, &HashMap::new(), &mut AlternateResolver::new());
     assert_eq!(color, Rgba::blue());
   }
@@ -970,8 +970,8 @@ mod tests {
   fn a_flashing_declaration_shows_through_to_the_layer_below_while_its_off() {
     let light = LightAddress::rgb(LedAddress::new(ExpAddress::new(3, None), 0, 1));
     let mut system = LayeredLightManager::new();
-    system.declare(1, 0, &[(light.clone(), Rgba::blue())], false);
-    system.declare(2, 1, &[(light.clone(), Rgba::green())], true);
+    system.declare(1, 0, &[(light.clone(), Rgba::blue())], LightMode::Solid);
+    system.declare(2, 1, &[(light.clone(), Rgba::green())], LightMode::Flashing);
     let color = |flash_on: bool, system: &LayeredLightManager| {
       let z_indexes = system.declarations[&light].iter().filter(|(_, d)| d.shows(flash_on)).map(|(id, _)| id.z_index).sorted().collect();
       LayeredLightManager::resolve_light_color(&light, z_indexes, &system.declarations[&light], &[], flash_on, &HashMap::new(), &mut AlternateResolver::new())

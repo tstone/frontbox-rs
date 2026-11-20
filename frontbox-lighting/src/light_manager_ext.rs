@@ -44,7 +44,7 @@ impl<'a> LightManagerExt for SystemContext<'a> {
   fn declare_lights_flashing<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
     with_light_manager(self, |manager| {
       let colors = one_color(targets.resolve(self), color);
-      manager.declare(self.id(), z, &colors, true);
+      manager.declare(self.id(), z, &colors, LightMode::Flashing);
     });
   }
 
@@ -58,14 +58,14 @@ impl<'a> LightManagerExt for SystemContext<'a> {
       let lights = targets.resolve(self);
       let colors = colors(lights.len());
       let colors: Vec<_> = lights.into_iter().zip(colors).collect();
-      manager.declare(self.id(), z, &colors, false);
+      manager.declare(self.id(), z, &colors, LightMode::Solid);
     });
   }
 
   fn declare_lights_inactive<T: Contextual<Vec<LightAddress>>>(&self, targets: &T, z: i8, color: Rgba<u8>) {
     with_light_manager(self, |manager| {
       let colors = one_color(targets.resolve(self), color);
-      manager.declare_inactive(self.id(), z, &colors, false);
+      manager.declare_inactive(self.id(), z, &colors, LightMode::Solid);
     });
   }
 
