@@ -27,6 +27,7 @@ struct Assets;
 pub(crate) async fn serve(hub: ConsoleHub, addr: SocketAddr) {
   let app = Router::new()
     .route("/ws", get(ws_handler))
+    .route("/export", get(export))
     .route("/planes/{index}/image", get(plane_image))
     .route("/content/images", get(content_images))
     .route(
@@ -179,6 +180,25 @@ async fn client_session(mut socket: WebSocket, hub: ConsoleHub) {
       }
     }
   }
+}
+
+/// Everything the console has, as a JSON file to download, named by when (UTC)
+async fn export(State(hub): State<ConsoleHub>) -> Response {
+  let Ok(Some(json)) = tokio::task::spawn_blocking(move || hub.export()).await else {
+    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+  };
+  let stamp = humantime::format_rfc3339_seconds(std::time::SystemTime::now())
+    .to_string()
+    .replace(':', "-");
+  let disposition = format!("attachment; filename=\"frontbox-console-{stamp}.json\"");
+  (
+    [
+      (header::CONTENT_TYPE, "application/json".to_string()),
+      (header::CONTENT_DISPOSITION, disposition),
+    ],
+    json,
+  )
+    .into_response()
 }
 
 /// A plane's image, read from disk on each request so it can be edited while the machine runs
@@ -477,6 +497,8 @@ impl HeldSwitches {
         self.hub.set_switch(switch_id, closed);
       }
       ClientMessage::SetConfig { key, value } => self.hub.set_config(key, value),
+      ClientMessage::ClearHistory => self.hub.clear_history(),
+      ClientMessage::SetClearOnGameStart { clear } => self.hub.set_clear_on_game_start(clear),
       ClientMessage::PlaySound {
         sound,
         volume,

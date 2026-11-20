@@ -51,6 +51,7 @@ const [state, setState] = createStore<ConsoleState>({
   displays: [],
   led_colors: {},
   configs: {},
+  clear_on_game_start: true,
   log: [],
   firing: {},
 })

@@ -50,7 +50,10 @@ impl ConsoleHub {
     let (displays_tx, _) = broadcast::channel(DISPLAY_BROADCAST_CAPACITY);
     Self {
       state: Arc::new(Mutex::new(HubState {
-        snapshot: Snapshot::default(),
+        snapshot: Snapshot {
+          clear_on_game_start: true,
+          ..Snapshot::default()
+        },
         started: Instant::now(),
         next_seq: 0,
         plane_images: Vec::new(),
@@ -451,10 +454,12 @@ impl ConsoleHub {
     state.next_seq += 1;
 
     // Game starts and ends reset clients with a fresh `Init` so that game tracking only has to
-    // live here. The console only shows the current game, so a start also drops the log.
+    // live here. A start can also clear the history, for a fresh look at the new game.
     let message = match transition {
       Some(GameTransition::Started) => {
-        state.snapshot.log.clear();
+        if state.snapshot.clear_on_game_start {
+          clear_history(&mut state.snapshot, record.at_ms);
+        }
         apply(&mut state.snapshot, &record);
         ServerMessage::Init(state.snapshot.clone())
       }
@@ -472,6 +477,48 @@ impl ConsoleHub {
     if let Some(message) = serialize(&message) {
       // no receivers is fine; nobody has the page open
       let _ = self.tx.send(message);
+    }
+  }
+
+  /// Clears the log, systems' histories, and despawned systems, for a fresh look at what happens next. What's current
+  /// is kept: running systems, their latest status, routines, states, switches, and configs.
+  pub fn clear_history(&self) {
+    let mut state = self.state.lock().unwrap();
+    let at_ms = state.started.elapsed().as_millis() as u64;
+    clear_history(&mut state.snapshot, at_ms);
+    self.send_init(&state);
+  }
+
+  pub fn set_clear_on_game_start(&self, clear: bool) {
+    let mut state = self.state.lock().unwrap();
+    state.snapshot.clear_on_game_start = clear;
+    self.send_init(&state);
+  }
+
+  /// Everything the console has, as pretty JSON to look over away from the machine. Serialized off the lock, as it
+  /// can be a few megabytes.
+  pub fn export(&self) -> Option<String> {
+    let (snapshot, console_ms) = {
+      let state = self.state.lock().unwrap();
+      (state.snapshot.clone(), state.started.elapsed().as_millis() as u64)
+    };
+    let export = Export {
+      exported_at: humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string(),
+      console_ms,
+      snapshot,
+    };
+    match serde_json::to_string_pretty(&export) {
+      Ok(json) => Some(json),
+      Err(err) => {
+        log::error!(target: "frontbox::console", "Unable to serialize the console export: {err}");
+        None
+      }
+    }
+  }
+
+  fn send_init(&self, state: &HubState) {
+    if let Some(init) = serialize(&ServerMessage::Init(state.snapshot.clone())) {
+      let _ = self.tx.send(init);
     }
   }
 
@@ -751,6 +798,33 @@ fn end_open_steps(system: &mut System, at_ms: u64, how: StepEnding) {
   }
 }
 
+/// Drops the log, despawned systems, and each running system's history and recent events, as of `at_ms`. A system
+/// keeps its latest status, and the routine steps it still holds, so what's current still shows.
+fn clear_history(snapshot: &mut Snapshot, at_ms: u64) {
+  snapshot.log.clear();
+  snapshot.systems.retain(|system| system.despawned_ms.is_none());
+  for system in &mut snapshot.systems {
+    let held = system.history.drain(..).filter(|entry| {
+      matches!(
+        entry,
+        HistoryEntry::RoutineStep {
+          ended_ms: None,
+          ..
+        }
+      )
+    });
+    system.history = std::iter::once(HistoryEntry::HistoryCleared {
+      at_ms,
+      active: system.active,
+    })
+    .chain(held)
+    .collect();
+    system.recent_events.clear();
+    let latest = system.recent_statuses.pop_back();
+    system.recent_statuses = latest.into_iter().collect();
+  }
+}
+
 /// Drops the earliest despawned systems beyond the number kept
 fn forget_old_despawned(systems: &mut Vec<System>) {
   // by when, then by place in the list, as several are often despawned in the same millisecond
@@ -782,6 +856,16 @@ fn serialize(message: &ServerMessage) -> Option<Utf8Bytes> {
       None
     }
   }
+}
+
+/// The console's state as exported, with when
+#[derive(serde::Serialize)]
+struct Export {
+  /// The wall-clock time, in UTC
+  exported_at: String,
+  /// The console's time then, in milliseconds since it started, to compare with the `at_ms` times in it
+  console_ms: u64,
+  snapshot: Snapshot,
 }
 
 /// What a client gets when it first connects
@@ -1085,6 +1169,60 @@ mod tests {
     assert!(matches!(
       &system.recent_statuses.back().unwrap().event,
       TraceEvent::SystemStatusReported { status, .. } if *status == serde_json::json!({ "pokes": RECENT_STATUSES_PER_SYSTEM + 2 })
+    ));
+  }
+
+  #[test]
+  fn clearing_the_history_keeps_only_what_is_current() {
+    let hub = ConsoleHub::new();
+    hub.ingest(spawned(1, None));
+    hub.ingest(spawned(2, None));
+    hub.ingest(TraceEvent::SystemDespawned {
+      id: 2,
+      cause: DespawnCause::Itself,
+    });
+    for pokes in 0..2 {
+      hub.ingest(TraceEvent::SystemStatusReported {
+        id: 1,
+        status: serde_json::json!({ "pokes": pokes }),
+      });
+    }
+    hub.ingest(TraceEvent::RoutineStep {
+      routine: "TurnEnding",
+      participant: 1,
+    });
+    hub.ingest(TraceEvent::RoutineStep {
+      routine: "BallDraining",
+      participant: 1,
+    });
+    hub.ingest(TraceEvent::RoutineStepEnded {
+      routine: "BallDraining",
+      participant: 1,
+      ending: StepEnding::Completed,
+    });
+
+    hub.clear_history();
+
+    let entries = history(&hub, 1);
+    assert!(matches!(
+      entries[..],
+      [
+        HistoryEntry::HistoryCleared { active: true, .. },
+        HistoryEntry::RoutineStep {
+          routine: "TurnEnding",
+          ended_ms: None,
+          ..
+        }
+      ]
+    ));
+    let state = hub.state.lock().unwrap();
+    assert!(state.snapshot.log.is_empty());
+    assert_eq!(state.snapshot.systems.len(), 1, "the despawned system is gone");
+    let statuses = &state.snapshot.systems[0].recent_statuses;
+    assert_eq!(statuses.len(), 1);
+    assert!(matches!(
+      &statuses[0].event,
+      TraceEvent::SystemStatusReported { status, .. } if *status == serde_json::json!({ "pokes": 1 })
     ));
   }
 

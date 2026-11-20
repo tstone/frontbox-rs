@@ -45,4 +45,8 @@ displays: Array<DisplayView>,
 /**
  * Operator configs in use, by key, with their current values
  */
-configs: { [key in string]: ConfigView }, log: Array<TraceRecord>, };
+configs: { [key in string]: ConfigView }, 
+/**
+ * Whether a game starting clears the history, as `ClientMessage::ClearHistory` does
+ */
+clear_on_game_start: boolean, log: Array<TraceRecord>, };

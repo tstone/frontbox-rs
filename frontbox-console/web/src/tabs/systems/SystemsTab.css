@@ -118,8 +118,15 @@
 
 /* ---- timeline ---- */
 
+/* pinned to the top of the panel while scrolling, so it stays in reach of the activity below */
 .detail .system-timeline {
-  margin-top: 2rem;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 1.25rem;
+  padding: 0.75rem 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
 .detail .timeline-header,
@@ -137,7 +144,33 @@
 
 .detail .timeline-controls {
   display: flex;
+  align-items: stretch;
   gap: 0.25rem;
+}
+
+.detail .timeline-controls button {
+  display: inline-flex;
+  align-items: center;
+}
+
+.detail .timeline-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.detail .timeline-controls .separator {
+  width: 1px;
+  margin: 0 0.25rem;
+  background: var(--border);
+}
+
+.detail .timeline-body svg.pannable {
+  cursor: grab;
+}
+
+.detail .timeline-body svg.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .detail .timeline-controls button,
@@ -240,11 +273,8 @@
 
 /* positioned, so a row's `offsetTop` is measured from the list when scrolling to it */
 .detail .activity-log ol {
-  position: relative;
-  max-height: 28rem;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
   border-top: 1px solid var(--border);
   list-style: none;
 }

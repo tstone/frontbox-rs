@@ -56,6 +56,8 @@ pub struct Snapshot {
   pub displays: Vec<DisplayView>,
   /// Operator configs in use, by key, with their current values
   pub configs: BTreeMap<&'static str, ConfigView>,
+  /// Whether a game starting clears the history, as `ClientMessage::ClearHistory` does
+  pub clear_on_game_start: bool,
   #[ts(as = "Vec<TraceRecord>")]
   pub log: VecDeque<TraceRecord>, // oldest first
 }
@@ -140,6 +142,12 @@ pub enum HistoryEntry {
   StatusReported {
     at_ms: u64,
     seq: u64,
+  },
+  /// Its history from before was cleared (`ConsoleHub::clear_history`). It was `active` then, and a routine step it
+  /// still held is kept.
+  HistoryCleared {
+    at_ms: u64,
+    active: bool,
   },
   Despawned {
     at_ms: u64,
@@ -380,6 +388,11 @@ pub enum ClientMessage {
     key: String,
     value: ConfigDomainValue,
   },
+  /// Clear the log, systems' histories, and despawned systems, keeping what's current. Every client is sent a new
+  /// `Init`.
+  ClearHistory,
+  /// Have a game starting clear the history, or not
+  SetClearOnGameStart { clear: bool },
   /// Ask for every counter's total. Answered with `MetricTotals`.
   QueryMetrics,
   /// Render a moment of a scene. Answered with `SceneRendered` or `SceneRenderFailed`.

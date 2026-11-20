@@ -1,6 +1,6 @@
 import { JsonTreeView } from '@ark-ui/solid/json-tree-view'
 import { createEffect, createSignal, For, Show, type JSX } from 'solid-js'
-import { Braces, CirclePlus, CircleX, Mail, Route, ToggleLeft, ToggleRight } from '../../components/icons'
+import { Braces, CirclePlus, CircleX, Eraser, Mail, Route, ToggleLeft, ToggleRight } from '../../components/icons'
 import JsonView from '../../components/JsonView'
 import { formatElapsed, shortName, traceBody } from '../../lib/format'
 import { machine } from '../../state/console'
@@ -26,17 +26,21 @@ export default function SystemDetail(props: { system: System; parent: System | u
   // what the pointer is on, in the timeline or the activity list, so the other one points it out
   const [hovered, setHovered] = createSignal<Hovered | null>(null)
 
-  // an entry hovered in the timeline is scrolled to in the list, which scrolls on its own so the page doesn't move
+  // an entry hovered in the timeline is scrolled to in the list, by scrolling the panel just enough to show it below
+  // the timeline, which stays pinned to the panel's top
   let list: HTMLOListElement | undefined
   createEffect(() => {
     const h = hovered()
     if (!list || h?.from !== 'timeline') return
     const row = list.querySelector<HTMLElement>(`[data-key="${CSS.escape(h.key)}"]`)
-    if (!row) return
-    const top = row.offsetTop - list.offsetTop
-    if (top < list.scrollTop) list.scrollTop = top
-    else if (top + row.offsetHeight > list.scrollTop + list.clientHeight)
-      list.scrollTop = top + row.offsetHeight - list.clientHeight
+    const panel = list.closest<HTMLElement>('.pane')
+    const timeline = panel?.querySelector<HTMLElement>('.system-timeline')
+    if (!row || !panel || !timeline) return
+    const rowBounds = row.getBoundingClientRect()
+    const visibleTop = timeline.getBoundingClientRect().bottom
+    const visibleBottom = panel.getBoundingClientRect().bottom
+    if (rowBounds.top < visibleTop) panel.scrollTop -= visibleTop - rowBounds.top
+    else if (rowBounds.bottom > visibleBottom) panel.scrollTop += rowBounds.bottom - visibleBottom
   })
 
   return (
@@ -167,6 +171,7 @@ const KIND_LABELS: Record<HistoryEntry['kind'], string> = {
   RoutineStep: 'Routine step',
   Emitted: 'Event emitted',
   StatusReported: 'Status reported',
+  HistoryCleared: 'History cleared',
   Despawned: 'Despawned',
 }
 
@@ -182,6 +187,8 @@ function icon(entry: HistoryEntry): JSX.Element {
       return <Mail size={14} />
     case 'StatusReported':
       return <Braces size={14} />
+    case 'HistoryCleared':
+      return <Eraser size={14} />
     case 'Despawned':
       return <CircleX size={14} />
   }
