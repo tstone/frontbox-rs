@@ -1223,6 +1223,7 @@ dependencies = [
 name = "frontbox-lighting"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "dyn-clone",
  "env_logger",
  "fast-protocol",

@@ -14,8 +14,13 @@ itertools = "0.14.0"
 log = "0.4.29"
 
 [dev-dependencies]
+criterion = "0.8.2"
 serde = { version = "1.0.228", features = ["derive"] }
 frontbox-core = { path = "../frontbox-core", features = ["testing"] }
 env_logger = "0.11.9"
 serde_json = "1.0.149"
 tokio = { version = "1", features = ["full"] }
+
+[[bench]]
+name = "frame"
+harness = false
