@@ -39,4 +39,5 @@ pub struct ResolvedIoBoard {
   pub description: &'static str,
   pub switch_count: u16,
   pub driver_count: u16,
+  pub driver_voltage: DriverVoltage,
 }

@@ -1,14 +1,14 @@
 import { machine } from '../state/console'
-import type { LedChannels } from '../types/generated/LedChannels'
+import type { ChannelOrder } from '../types/generated/ChannelOrder'
 import type { Rgb } from '../types/generated/Rgb'
 
 /**
  * Colors are traced in the order they're sent on the wire, which depends on how each LED is wired (GRB, BRG, ...).
- * This puts them back in red, green, blue order. Mirrors `LedChannels::reorder` in
- * frontbox-core/src/hardware/exp/led_channels.rs.
+ * This puts them back in red, green, blue order. Mirrors `ChannelOrder::reorder` in
+ * frontbox-core/src/hardware/exp/channel_order.rs.
  */
-function toRgb({ r: first, g: second, b: third }: Rgb, channels: LedChannels): Rgb {
-  switch (channels) {
+function toRgb({ r: first, g: second, b: third }: Rgb, order: ChannelOrder): Rgb {
+  switch (order) {
     case 'GRB':
       return { r: second, g: first, b: third }
     case 'BRG':
@@ -32,8 +32,8 @@ export function cssColor({ r, g, b }: Rgb): string | null {
 export function ledColor(name: string): string | null {
   const wire = machine.led_colors[name]
   if (!wire) return null
-  const channels = machine.hardware?.leds.configs[name]?.channels ?? 'RGB'
-  return cssColor(toRgb(wire, channels))
+  const order = machine.hardware?.lights.configs[name]?.channel_order ?? 'RGB'
+  return cssColor(toRgb(wire, order))
 }
 
 /** Whether the console has seen a color for this LED, so "off" can be told apart from "unknown" */

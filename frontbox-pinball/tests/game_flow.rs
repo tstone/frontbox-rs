@@ -5,6 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use frontbox_core::machine::DriverTrigger;
 use frontbox_core::prelude::*;
 use frontbox_core::testing::Scenario;
 use frontbox_pinball::*;
@@ -23,6 +24,8 @@ const LOCK: &str = "lock";
 const DROP_RESET: &str = "drop_reset";
 const POP: &str = "pop";
 const FLIPPER: &str = "flipper";
+/// A slingshot, fired by its own switch
+const SLING: &str = "sling";
 const AUTOPLUNGER: &str = "autoplunger";
 /// Closed while the door is shut
 const COIN_DOOR: &str = "coin_door";
@@ -47,6 +50,8 @@ static COIN_DOOR_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| SwitchDefinition::new(COIN_DOOR).build());
 static FLIPPER_SWITCH: LazyLock<SwitchDefinition> =
   LazyLock::new(|| SwitchDefinition::new(FLIPPER).build());
+static SLING_SWITCH: LazyLock<SwitchDefinition> =
+  LazyLock::new(|| SwitchDefinition::new(SLING).build());
 static EJECT_COIL: LazyLock<DriverDefinition> =
   LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
 static DROP_RESET_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
@@ -59,12 +64,21 @@ static POP_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
     .mode(DriverMode::pulse().build())
     .build()
 });
+static SLING_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| {
+  DriverDefinitionBuilder::new(SLING)
+    .mode(
+      DriverMode::pulse()
+        .trigger_mode(DriverTriggerMode::Switch(SLING))
+        .build(),
+    )
+    .build()
+});
 static AUTOPLUNGER_COIL: LazyLock<DriverDefinition> =
   LazyLock::new(|| AutoPlungerSystem::coil_definition(AUTOPLUNGER).build());
 
 fn app() -> App {
   app_with(
-    BallManager::standard(TROUGH, EJECT)
+    StandardBallManager::builder(TROUGH, EJECT)
       .plunge_lane(PLUNGE)
       .build(),
   )
@@ -73,15 +87,15 @@ fn app() -> App {
 /// The machine with an autoplunger in its plunge lane, and no launch button
 fn app_with_autoplunger() -> App {
   app_with(
-    BallManager::standard(TROUGH, EJECT)
+    StandardBallManager::builder(TROUGH, EJECT)
       .plunge_lane(PLUNGE)
       .autoplunger(AUTOPLUNGER)
       .build(),
   )
 }
 
-fn app_with(ball_manager: BallManager) -> App {
-  let mut board = IoBoard::custom(16, 8)
+fn app_with(ball_manager: StandardBallManager) -> App {
+  let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
     .wire_switch(3, &PLUNGE_SWITCH)
     .wire_switch(4, &START_SWITCH)
     .wire_switch(5, &PLAYFIELD_SWITCH)
@@ -89,10 +103,12 @@ fn app_with(ball_manager: BallManager) -> App {
     .wire_switch(7, &LOCK_SWITCH)
     .wire_switch(8, &COIN_DOOR_SWITCH)
     .wire_switch(9, &FLIPPER_SWITCH)
+    .wire_switch(10, &SLING_SWITCH)
     .wire_driver(0, &EJECT_COIL)
     .wire_driver(1, &DROP_RESET_COIL)
     .wire_driver(2, &POP_COIL)
-    .wire_driver(3, &AUTOPLUNGER_COIL);
+    .wire_driver(3, &AUTOPLUNGER_COIL)
+    .wire_driver(4, &SLING_COIL);
   for (pin, switch) in TROUGH_SWITCHES.iter().enumerate() {
     board = board.wire_switch(pin as u16, switch);
   }
@@ -106,7 +122,7 @@ fn app_with(ball_manager: BallManager) -> App {
   });
   app
     .system(ball_manager)
-    .system(GameManager::competitive(
+    .system(CompetitiveGame::new(
       1,
       vec![
         BallSaveSystem::new().into(),
@@ -116,6 +132,7 @@ fn app_with(ball_manager: BallManager) -> App {
       SwitchQ::name(PLAYFIELD),
     ))
     .system(CreditsSystem::new(SwitchQ::name(START)))
+    .system(PlayfieldDrivers::new(DriverQ::names([SLING, POP])))
     .system(
       BallSearchSystem::new(SwitchQ::name(PLAYFIELD))
         .hold_switches(SwitchQ::name(FLIPPER))
@@ -277,6 +294,32 @@ impl DerefMut for Game {
 
 fn ms(ms: u64) -> Duration {
   Duration::from_millis(ms)
+}
+
+#[test]
+fn the_playfield_drivers_are_live_only_during_a_turn() {
+  let mut g = Game::start();
+  let sling_live = |g: &Game| matches!(g.hardware().driver(SLING).unwrap().trigger, DriverTrigger::Automatic { .. });
+  assert!(!sling_live(&g), "no game is being played");
+
+  g.hit_switch(START);
+  assert!(sling_live(&g), "the first turn has begun");
+  // the pop is fired by the game (a ball search), not by a switch, so it's left alone
+  assert_eq!(g.hardware().driver(POP).unwrap().trigger, DriverTrigger::Off);
+
+  // A tilt ends the turn at once, while the ball is still rolling down
+  g.serve();
+  g.act(|ctx| ctx.tilt());
+  g.advance(ms(100));
+  assert!(!sling_live(&g), "the turn is ending");
+
+  // The ball comes home, and the next turn makes the playfield live again
+  g.drain();
+  assert!(sling_live(&g), "the next turn has begun");
+
+  g.act(|ctx| ctx.quit_game(GameEndReason::Quit));
+  g.advance(ms(100));
+  assert!(!sling_live(&g), "the game is ending");
 }
 
 #[test]

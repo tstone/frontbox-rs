@@ -35,7 +35,7 @@ export const TraversalsContext = createContext<Accessor<string[]>>(() => [])
 
 /** Choosing a node of the open layer's graph by clicking it in the preview */
 export type NodePicking = {
-  /** The LEDs in the open layer's graph, by name, as the machine last built it */
+  /** The lights in the open layer's graph, by name, as the machine last built it */
   nodes: Accessor<string[]>
   /** What a click in the preview chooses a node for, while one is being chosen */
   choosing: Signal<{ choose: (name: string) => void } | null>

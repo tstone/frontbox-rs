@@ -6,6 +6,7 @@ use crate::prelude::*;
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SingleLedDefinition {
   pub name: Cow<'static, str>,
+  pub channels: LedChannels,
   pub config: Option<LedConfiguration>,
   #[cfg_attr(feature = "ts", ts(type = "Array<string>"))]
   pub tags: Vec<Box<dyn Tag>>,
@@ -14,8 +15,8 @@ pub struct SingleLedDefinition {
 }
 
 impl SingleLedDefinition {
-  pub fn q(&self) -> LedQ {
-    LedQ::name(self.name.clone())
+  pub fn q(&self) -> LightQ {
+    LightQ::name(self.name.clone())
   }
 }
 
@@ -36,5 +37,5 @@ impl HardwareDefinition for SingleLedDefinition {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LedConfiguration {
-  pub channels: LedChannels,
+  pub channel_order: ChannelOrder,
 }

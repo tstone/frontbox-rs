@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::*;
 
 /// Plays scenes: holds a [`Playback`] for each one playing and moves their clocks. Systems that show a kind of layer read
-/// the playbacks from here each frame: `LedSystem` draws their LED layers.
+/// the playbacks from here each frame: `LightManager` draws their light layers.
 ///
 /// A system plays a scene one of two ways:
 ///

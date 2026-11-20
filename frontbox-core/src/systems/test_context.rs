@@ -31,16 +31,16 @@ impl TestContext {
     self.base.drivers.insert(driver.name, driver);
   }
 
-  pub fn insert_led(&mut self, led: LED) {
-    self.base.leds.insert(led.name.to_string(), led);
+  pub fn insert_light(&mut self, light: Light) {
+    self.base.lights.insert(light.name.to_string(), light);
   }
 
   pub fn add_plane(&mut self, plane: &'static ReferencePlane) {
-    self.base.leds.add_plane(plane);
+    self.base.lights.add_plane(plane);
   }
 
-  pub fn set_led_radius(&mut self, radius: f32) {
-    self.base.app_config.led_radius = radius;
+  pub fn set_light_radius(&mut self, radius: f32) {
+    self.base.app_config.light_radius = radius;
   }
 
   /// Manually set the current state of all switches for test setup

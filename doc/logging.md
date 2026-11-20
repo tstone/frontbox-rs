@@ -71,6 +71,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | `frontbox::coin_door` | Coin door open and close |
 | `frontbox::cradle` | The player starting and ending a cradle |
 | `frontbox::game_manager` | Games, players, turns, the quit combo |
+| `frontbox::playfield_drivers` | Playfield drivers going live for a turn, and off after it |
 | `frontbox::credits` | Coins, credits, and start presses that add a player or are refused |
 | `frontbox::high_scores` | Saving high scores |
 
@@ -79,7 +80,7 @@ A filter matches every target that starts with it, so `frontbox::ball_management
 | Target | Covers |
 |---|---|
 | `frontbox::scene` | Scene playbacks starting and ending, scenes that don't fit what the system playing them sends, variables pointed at values the scene doesn't have |
-| `frontbox::led` | LED declarations and rendering |
+| `frontbox::lighting` | Light declarations and rendering |
 | `frontbox::sound` | Audio output, sound effects, callouts, music |
 | `frontbox::display` | Opening and losing displays, scenes drawn on displays that weren't added, menus, initials entry, the DMD attract and points screens' scenes |
 | `frontbox::console` | The web console server, its clients, and commands sent from it |

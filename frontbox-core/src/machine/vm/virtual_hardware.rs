@@ -233,7 +233,7 @@ mod tests {
 
   fn hardware() -> VirtualHardware {
     VirtualHardware::new(&IoNetwork::new(vec![
-      IoBoard::custom(8, 8)
+      IoBoard::custom(8, 8, DriverVoltage::High)
         .wire_switch(START_ID as u16, &START)
         .wire_switch(DOOR_ID as u16, &DOOR)
         .wire_switch(TROUGH_ID as u16, &TROUGH)

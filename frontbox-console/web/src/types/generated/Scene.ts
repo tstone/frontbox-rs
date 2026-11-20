@@ -6,7 +6,7 @@ import type { Value } from "./Value";
 
 /**
  * Layers on one timeline, each saying what it's drawn on or that it's sound, as written to a `.scene` file. Each system
- * plays the layers it knows: `LedSystem` plays [`LedLayer`]s, a display plays the [`DisplayLayer`]s for it, and
+ * plays the layers it knows: `LightManager` plays [`LightLayer`]s, a display plays the [`DisplayLayer`]s for it, and
  * `SoundSystem` plays [`SoundLayer`]s. A [`Playback`](crate::Playback) holds what's only true while one plays.
  *
  * ```rust
@@ -15,7 +15,7 @@ import type { Value } from "./Value";
  *   version: 2,
  *   timing: (duration: 0.5),
  *   layers: [
- *     Leds(leds: Tag("Playfield"), z: 1, surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+ *     Lights(lights: Tag("Playfield"), z: 1, surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
  *     Sound(sound: "sounds/zap.mp3"),
  *   ],
  * )"#).unwrap();

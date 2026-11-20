@@ -158,7 +158,7 @@
   margin-left: auto;
 }
 
-.scene-leds {
+.scene-lights {
   display: flex;
   flex: none;
   flex-wrap: wrap;
@@ -168,8 +168,8 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* nothing to say while a layer has no LEDs, as its LEDs row says so */
-.scene-leds:empty {
+/* nothing to say while a layer has no lights, as its lights row says so */
+.scene-lights:empty {
   display: none;
 }
 
@@ -1360,14 +1360,14 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-tree-controls .scene-layer-leds {
+.scene-tree-controls .scene-layer-lights {
   flex: 1;
   flex-wrap: nowrap;
   gap: 0.25rem;
   min-width: 0;
 }
 
-.scene-tree-controls .scene-layer-leds .scene-note {
+.scene-tree-controls .scene-layer-lights .scene-note {
   overflow: hidden;
   padding-left: 0.375rem;
   font-size: inherit;
@@ -1535,7 +1535,7 @@ label.scene-button:hover {
   outline: none;
 }
 
-.scene-layer-leds {
+.scene-layer-lights {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2455,7 +2455,7 @@ label.scene-button:hover {
   box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
 }
 
-.scene-led-button {
+.scene-light-button {
   display: grid;
   place-items: center;
   flex: none;
@@ -2469,17 +2469,17 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-led-button:hover {
+.scene-light-button:hover {
   background: var(--surface-hover);
   color: var(--text);
 }
 
-.scene-led-button.chosen {
+.scene-light-button.chosen {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.scene-led-button svg {
+.scene-light-button svg {
   width: 1rem;
   height: 1rem;
   fill: none;
@@ -2488,7 +2488,7 @@ label.scene-button:hover {
   stroke-linejoin: round;
 }
 
-.scene-led-picker {
+.scene-light-picker {
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -2501,12 +2501,12 @@ label.scene-button:hover {
   box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
 }
 
-.scene-led-picker .scene-prop-kind [data-part='item'] {
+.scene-light-picker .scene-prop-kind [data-part='item'] {
   flex: 1;
   text-align: center;
 }
 
-.scene-led-picker input[type='search'] {
+.scene-light-picker input[type='search'] {
   box-sizing: border-box;
   width: 100%;
   padding: 0.375rem 0.5rem;
@@ -2518,22 +2518,22 @@ label.scene-button:hover {
   font-size: 0.875rem;
 }
 
-.scene-led-picker input[type='search']:focus-visible {
+.scene-light-picker input[type='search']:focus-visible {
   border-color: var(--accent);
   outline: none;
 }
 
-.scene-led-list {
+.scene-light-list {
   overflow-y: auto;
   height: min(20rem, 45vh);
 }
 
-.scene-led-row {
+.scene-light-row {
   display: flex;
   align-items: center;
 }
 
-.scene-led-row [data-scope='checkbox'][data-part='root'] {
+.scene-light-row [data-scope='checkbox'][data-part='root'] {
   display: flex;
   flex: 1;
   align-items: center;
@@ -2544,25 +2544,25 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-led-row [data-scope='checkbox'][data-part='root']:hover {
+.scene-light-row [data-scope='checkbox'][data-part='root']:hover {
   background: var(--surface-hover);
 }
 
-.scene-led-row [data-scope='checkbox'][data-part='label'] {
+.scene-light-row [data-scope='checkbox'][data-part='label'] {
   overflow: hidden;
   font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.scene-led-count {
+.scene-light-count {
   margin-left: auto;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 0.75rem;
 }
 
-.scene-led-expand {
+.scene-light-expand {
   display: grid;
   place-items: center;
   flex: none;
@@ -2576,12 +2576,12 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-led-expand:hover {
+.scene-light-expand:hover {
   background: var(--surface-hover);
   color: var(--text);
 }
 
-.scene-led-expand svg {
+.scene-light-expand svg {
   width: 0.875rem;
   height: 0.875rem;
   fill: none;
@@ -2590,15 +2590,15 @@ label.scene-button:hover {
   transition: transform 0.15s;
 }
 
-.scene-led-expand[aria-expanded='true'] svg {
+.scene-light-expand[aria-expanded='true'] svg {
   transform: rotate(90deg);
 }
 
-.scene-led-children {
+.scene-light-children {
   margin-left: 1.25rem;
 }
 
-.scene-led-order-title {
+.scene-light-order-title {
   margin: 0;
   color: var(--muted);
   font-size: 0.75rem;
@@ -2607,7 +2607,7 @@ label.scene-button:hover {
   text-transform: uppercase;
 }
 
-.scene-led-order {
+.scene-light-order {
   overflow-y: auto;
   height: 7rem;
   margin: 0;
@@ -2615,13 +2615,13 @@ label.scene-button:hover {
   list-style: none;
 }
 
-.scene-led-order li {
+.scene-light-order li {
   display: flex;
   align-items: center;
   gap: 0.375rem;
 }
 
-.scene-led-place {
+.scene-light-place {
   flex: none;
   width: 1.25rem;
   color: var(--muted);
@@ -2630,7 +2630,7 @@ label.scene-button:hover {
   text-align: right;
 }
 
-.scene-led-order-label {
+.scene-light-order-label {
   overflow: hidden;
   flex: 1;
   font-size: 0.8125rem;
@@ -2638,11 +2638,11 @@ label.scene-button:hover {
   white-space: nowrap;
 }
 
-.scene-led-order .scene-led-count {
+.scene-light-order .scene-light-count {
   margin-left: 0;
 }
 
-.scene-led-order button {
+.scene-light-order button {
   flex: none;
   width: 1.5rem;
   height: 1.5rem;
@@ -2655,17 +2655,17 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-led-order button:hover:enabled {
+.scene-light-order button:hover:enabled {
   background: var(--surface-hover);
   color: var(--text);
 }
 
-.scene-led-order button:disabled {
+.scene-light-order button:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-.scene-led-picker footer {
+.scene-light-picker footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2673,7 +2673,7 @@ label.scene-button:hover {
   min-height: 1.75rem;
 }
 
-.scene-led-picker footer button {
+.scene-light-picker footer button {
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2684,7 +2684,7 @@ label.scene-button:hover {
   cursor: pointer;
 }
 
-.scene-led-picker footer button:hover {
+.scene-light-picker footer button:hover {
   background: var(--surface-hover);
 }
 

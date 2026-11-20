@@ -1,7 +1,7 @@
 use frontbox_core::prelude::*;
 use frontbox_core::provided::SwitchComboSystem;
 
-use crate::{GameEndReason, GameManagementExt, GamePhase};
+use crate::{GameEndReason, GameManagerExt, GamePhase};
 
 /// Quits the game in progress when every switch in `switches` (typically a flipper button + the start button) is held for over a second
 pub fn quit_game_combo(switches: impl Into<SwitchQ>) -> SwitchComboSystem {

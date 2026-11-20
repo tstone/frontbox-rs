@@ -6,7 +6,7 @@ use frontbox_core::prelude::*;
 use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::scoop::{ScoopBallEntered, ScoopEjectStarted, ScoopEjected, ScoopEntry};
-use crate::{BallManagementExt, BallSearching, PlayerTilted, TurnEnding};
+use crate::{BallManagerExt, BallSearching, PlayerTilted, TurnEnding};
 
 /// A "scoop" (saucer, kickout hole): a hole with an occupancy switch and a coil that kicks it back out.
 ///

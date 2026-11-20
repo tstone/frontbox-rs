@@ -82,6 +82,7 @@ pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualH
       board_revision: 0,
       switch_count: board.switch_count,
       driver_count: board.driver_count,
+      driver_voltage: board.driver_voltage,
     })
     .collect::<Vec<_>>();
 
@@ -89,8 +90,8 @@ pub(crate) fn read_hardware(boot_config: BootConfig, virtual_hardware: &VirtualH
 
   Hardware::new(
     SwitchLookup::new(boot_config.io_network.switches, virtual_hardware.switch_report()),
-    DriverLookup::new(boot_config.io_network.drivers),
-    LedLookup::new(&expansion_boards),
+    DriverLookup::new(boot_config.io_network.drivers.clone(), &boot_config.io_network.boards),
+    LightLookup::new(&expansion_boards, &boot_config.io_network.drivers),
     io_network_boards,
     expansion_boards,
   )

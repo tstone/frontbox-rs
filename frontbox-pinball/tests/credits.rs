@@ -7,6 +7,7 @@ use std::time::Duration;
 use frontbox_core::machine::DriverTrigger;
 use frontbox_core::prelude::*;
 use frontbox_core::testing::Scenario;
+use frontbox_lighting::LayeredLightManager;
 use frontbox_pinball::*;
 
 // The machine: a two-ball trough, a start button with a lamp, and two coin slots. Its game ends with a game-over
@@ -29,11 +30,10 @@ static START_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinit
 static COIN_LEFT_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(COIN_LEFT).build());
 static COIN_RIGHT_SWITCH: LazyLock<SwitchDefinition> = LazyLock::new(|| SwitchDefinition::new(COIN_RIGHT).build());
 static EJECT_COIL: LazyLock<DriverDefinition> = LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
-static START_LAMP_DRIVER: LazyLock<DriverDefinition> =
-  LazyLock::new(|| CreditsSystem::start_lamp_driver(START_LAMP).build());
+static START_LAMP_DRIVER: LazyLock<DriverDefinition> = LazyLock::new(|| DriverDefinition::light(START_LAMP).build());
 
 fn app(max_players: u8, credits: CreditsSystem) -> App {
-  let mut board = IoBoard::custom(16, 8)
+  let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
     .wire_switch(4, &START_SWITCH)
     .wire_switch(5, &COIN_LEFT_SWITCH)
     .wire_switch(6, &COIN_RIGHT_SWITCH)
@@ -51,8 +51,9 @@ fn app(max_players: u8, credits: CreditsSystem) -> App {
     ..BootConfig::default()
   });
   app
-    .system(BallManager::standard(TROUGH, EJECT).build())
-    .system(GameManager::competitive(max_players, vec![], SwitchQ::name(START)))
+    .system(StandardBallManager::builder(TROUGH, EJECT).build())
+    .system(CompetitiveGame::new(max_players, vec![], SwitchQ::name(START)))
+    .system(LayeredLightManager::new())
     .system(credits)
     .system(GameOverDisplay)
     .routine::<GameEnding>(routine![GameOverDisplay]);
@@ -87,7 +88,7 @@ fn end_game(s: &mut Scenario) {
 fn credits_system() -> CreditsSystem {
   CreditsSystem::new(SwitchQ::name(START))
     .coin_switches(SwitchQ::names([COIN_LEFT, COIN_RIGHT]))
-    .start_lamp(START_LAMP)
+    .start_lamp(LightQ::name(START_LAMP))
 }
 
 fn start(max_players: u8) -> Scenario {

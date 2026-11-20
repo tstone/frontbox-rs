@@ -1,4 +1,4 @@
-//! The hardware namespaces on [`ServiceContext`] and [`SystemContext`]: `ctx.drivers`, `ctx.switches`, and `ctx.leds`.
+//! The hardware namespaces on [`ServiceContext`] and [`SystemContext`]: `ctx.drivers`, `ctx.switches`, and `ctx.lights`.
 //! Each reads the hardware lookup it derefs to, and sends commands to the hardware through [`MachineSystem`].
 //!
 //! Neither acts as the calling system, so they're the same on both contexts.
@@ -116,17 +116,17 @@ impl Deref for ContextSwitches<'_> {
   }
 }
 
-/// `ctx.leds`: look up LEDs (through [`LedLookup`]), and set them directly
+/// `ctx.lights`: look up lights (through [`LightLookup`]), and set LEDs directly
 ///
 /// Setting an LED forces it to a color on the hardware right away. It isn't declared, so it isn't rendered, flattened,
-/// or resolved against other declarations: if `LedSystem` (in `frontbox-led`) is running and an LED is declared, the next render that
+/// or resolved against other declarations: if `LightManager` (in `frontbox-lighting`) is running and an LED is declared, the next render that
 /// changes it writes over whatever was set here.
 #[derive(Clone, Copy)]
-pub struct ContextLeds<'a> {
+pub struct ContextLights<'a> {
   machine: MachineAccess<'a>,
 }
 
-impl<'a> ContextLeds<'a> {
+impl<'a> ContextLights<'a> {
   pub(crate) fn new(
     base: &'a AppState,
     groups: &'a Groups,
@@ -144,12 +144,12 @@ impl<'a> ContextLeds<'a> {
   /// Set the color of each LED, by index on the port/breakout, in a single command (RD). Each color is put into the
   /// channel order of its LED.
   pub fn set(&self, address: ExpAddress, led_states: Vec<(u8, Rgb)>) {
-    let leds = &self.machine.base.leds;
+    let lights = &self.machine.base.lights;
     let led_states = led_states
       .into_iter()
       .map(|(index, color)| {
-        let channels = leds.channels_at(address, index);
-        (index, channels.reorder(color))
+        let order = lights.order_at(address, index);
+        (index, order.reorder(color))
       })
       .collect();
     self
@@ -160,15 +160,15 @@ impl<'a> ContextLeds<'a> {
   /// Set the LEDs at `indexes` on a port/breakout to the same color (RB). LEDs that take their channels in different
   /// orders are sent in a command per order.
   pub fn set_multiple(&self, address: ExpAddress, color: Rgb, indexes: Vec<u8>) {
-    let leds = &self.machine.base.leds;
-    let groups = group_by_channels(
+    let lights = &self.machine.base.lights;
+    let groups = group_by_order(
       indexes
         .into_iter()
-        .map(|index| (index, leds.channels_at(address, index))),
+        .map(|index| (index, lights.order_at(address, index))),
     );
     self.machine.with(|machine, _| {
-      for (channels, indexes) in groups {
-        machine.set_multiple_leds(address, channels.reorder(color), indexes);
+      for (order, indexes) in groups {
+        machine.set_multiple_leds(address, order.reorder(color), indexes);
       }
     });
   }
@@ -176,17 +176,17 @@ impl<'a> ContextLeds<'a> {
   /// Set every LED on a port/breakout to the same color (RA). The color is sent in the channel order most of its
   /// LEDs take, then LEDs that take another order are set again in theirs (RB).
   pub fn set_all(&self, address: ExpAddress, color: Rgb) {
-    let mut groups = group_by_channels(self.machine.base.leds.channels_on(address));
+    let mut groups = group_by_order(self.machine.base.lights.orders_on(address));
     groups.sort_by_key(|(_, indexes)| std::cmp::Reverse(indexes.len()));
     let base = groups
       .first()
-      .map(|(channels, _)| *channels)
+      .map(|(order, _)| *order)
       .unwrap_or_default();
 
     self.machine.with(|machine, _| {
       machine.set_all_leds(address, base.reorder(color));
-      for (channels, indexes) in groups.into_iter().skip(1) {
-        machine.set_multiple_leds(address, channels.reorder(color), indexes);
+      for (order, indexes) in groups.into_iter().skip(1) {
+        machine.set_multiple_leds(address, order.reorder(color), indexes);
       }
     });
   }
@@ -199,11 +199,11 @@ impl<'a> ContextLeds<'a> {
   }
 }
 
-impl Deref for ContextLeds<'_> {
-  type Target = LedLookup;
+impl Deref for ContextLights<'_> {
+  type Target = LightLookup;
 
   fn deref(&self) -> &Self::Target {
-    &self.machine.base.leds
+    &self.machine.base.lights
   }
 }
 
@@ -241,12 +241,12 @@ impl MachineAccess<'_> {
 }
 
 /// Group LED indexes by the channel order their LEDs take, keeping the order each first appears in
-fn group_by_channels(leds: impl Iterator<Item = (u8, LedChannels)>) -> Vec<(LedChannels, Vec<u8>)> {
-  let mut groups: Vec<(LedChannels, Vec<u8>)> = Vec::new();
-  for (index, channels) in leds {
-    match groups.iter_mut().find(|(c, _)| *c == channels) {
+fn group_by_order(leds: impl Iterator<Item = (u8, ChannelOrder)>) -> Vec<(ChannelOrder, Vec<u8>)> {
+  let mut groups: Vec<(ChannelOrder, Vec<u8>)> = Vec::new();
+  for (index, order) in leds {
+    match groups.iter_mut().find(|(o, _)| *o == order) {
       Some((_, indexes)) => indexes.push(index),
-      None => groups.push((channels, vec![index])),
+      None => groups.push((order, vec![index])),
     }
   }
   groups
@@ -257,19 +257,19 @@ mod tests {
   use super::*;
 
   #[test]
-  fn test_group_by_channels() {
+  fn test_group_by_order() {
     let leds = [
-      (0, LedChannels::GRB),
-      (1, LedChannels::RGB),
-      (2, LedChannels::GRB),
-      (3, LedChannels::BRG),
+      (0, ChannelOrder::GRB),
+      (1, ChannelOrder::RGB),
+      (2, ChannelOrder::GRB),
+      (3, ChannelOrder::BRG),
     ];
     assert_eq!(
-      group_by_channels(leds.into_iter()),
+      group_by_order(leds.into_iter()),
       vec![
-        (LedChannels::GRB, vec![0, 2]),
-        (LedChannels::RGB, vec![1]),
-        (LedChannels::BRG, vec![3]),
+        (ChannelOrder::GRB, vec![0, 2]),
+        (ChannelOrder::RGB, vec![1]),
+        (ChannelOrder::BRG, vec![3]),
       ]
     );
   }

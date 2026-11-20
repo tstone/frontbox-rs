@@ -1,7 +1,6 @@
 ## Headless
 
 - RandSystem (interface) that manages seed per game.
-- LedSystem becomes the implementation of an interface
 - Shutdown should probably have some way of configuration an FnOnce instead of the current system that hard-codes linux-specific shutdown handling
 - Generalized systems: lane (single/multi-entrance), StartupEject (takes pairs of SwitchQ/DriverQ and fires drivers who have an active switch)
 - ShotSystem which is a generalized system to handle emitting an event on shot hit (re-roll delay/dedupe, multi-entrance, optional hit scene)
@@ -10,7 +9,6 @@
 
 ## Design Choices/Core
 
-- Implement a proper LampDriver that also supports flashing
 - Revisit if `Synchronize` event still makes sense or not
 - Should a "hold" (like how BallSave uses them) be a framework feature?
 - Clean up hardware exports
@@ -21,6 +19,9 @@
 - Reference plane builder for standard pinball forms (Stern, Williams, Custom)
 - Ball management: a failed trough eject (`TroughEjectFailed`) currently drops the ball, which can leave a turn with no ball. Re-queue it with a growing backoff (recovers from power blips and jams) and emit a public event so the game can show it and record it in audits. Kick strength can be escalated with MachineSystem::configure_driver`. Needs: audits. Open questions: retry forever or give up, and should `Launch::Auto`balls (e.g. multiball) be skipped sooner than`Launch::Player`
 - Motor support: new MotorDefinition w/ FAST protocol + Machine support for motor commands
+- Low-voltage drivers over the EXP bus, on a FAST FP-LUM-0709: one LED channel as a PWM output for things that
+  aren't lights (motors, relays, etc.), owned by a system and kept out of light management so scenes can't turn
+  them on. Core's boot check should count these as using a channel too, so a light and an output can't share one.
 - Switch test mode for display menu
 - Operator metrics can be reset (e.g. when a coil is replaced)
 - Config: No extra balls/points instead
@@ -35,7 +36,7 @@
 - Need to probably move pixel font rendering into gfx with real TTF rendering
 - New curves for flame/flicker, stutter, glitch
 - Ability to compose curves in editor
-- Ability to compose LedQ in editor (are Reverse, Take, etc. still needed?)
+- Ability to compose LightQ in editor (are Reverse, Take, etc. still needed?)
 - Plane stitching for playback (or should this just be real 3d rendering?)
 - SVG import for layer shapes
 - Animations should be able to be specified as relative to the frame rate
@@ -77,19 +78,17 @@
 - Images on hard-edged displays are point-sampled and alias when shrunk: give images their own footprint.
 - Outer glow/drop shadow on regions
 
-### LEDs
+### Lighting
 
 - Alternate resolver doesn't work with animated inputs: key its state on declaration ids, not colors
 - `Mix` conflict resolution isn't an average: it folds with `mix_with(c, 0.5)`, weighting the last color 50%
-- LedSystem becomes an interface
-- LED and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
+- Light and display frames at their own rate instead of once per tick. A higher LED rate needs a per-frame EXP bus
   budget (~80 chars/ms), sending the largest changes first.
 - `undeclare_by_system` leaves empty maps behind; clean them up as `undeclare` does.
-- Keep each LED's declarations ordered by `(z, order)` to drop the per-tick sort.
-- `led_graph.rs` `GRAPHS` cache is never evicted (grows with each LED position edit in the console).
-- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for LEDs
+- Keep each light's declarations ordered by `(z, order)` to drop the per-tick sort.
+- `light_graph.rs` `GRAPHS` cache is never evicted (grows with each light position edit in the console).
+- Scenes are good for moments but not for status. Figure out what the equivalent of status looks like for lights
 - Defining (hardware) an LED grid like strip, but with rows/cols and serpentine directions?
-- Single channel flasher support
 - NeoSeg support
 - Evaluate if declaring named colors with FAST and reference by ID is worth itc
 

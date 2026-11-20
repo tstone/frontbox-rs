@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use frontbox_core::prelude::*;
 
-use crate::ball_management::{BallEnteredPlay, BallManager, BallSearchFailed, BallsExitedPlay, Launch};
+use crate::ball_management::{BallEnteredPlay, BallManagerExt, BallSearchFailed, BallsExitedPlay, Launch};
 use crate::*;
 
 static PLAYER_GROUP_NAMES: [&str; 6] = [
@@ -63,7 +63,7 @@ const BALL_RETURN_TIMEOUT: Duration = Duration::from_secs(30);
 ///   game isn't full.
 ///
 /// ## Requires
-/// - `BallManager` at the root
+/// - A `BallManager` at the root
 pub struct CompetitiveGame {
   /// This is the template to spin up a new group for the player
   systems_template: Vec<ChildSystemContainer>,
@@ -132,6 +132,13 @@ impl CompetitiveGame {
     }
   }
 
+  /// The machine's tilt bob. Each player gets a `TiltSystem` reading it, which warns them on a swing and tilts them
+  /// once they're out of warnings.
+  pub fn tilt_bob(mut self, bob: impl Into<SwitchQ>) -> Self {
+    self.add_player_system(TiltSystem::new(bob).into());
+    self
+  }
+
   fn player_group_name(player: u8) -> &'static str {
     PLAYER_GROUP_NAMES[player as usize]
   }
@@ -144,7 +151,7 @@ impl CompetitiveGame {
 
     // Start a game assuming the number of balls in the trough is how many there should be
     // this avoids weird cases where a ball search may have abandoned a ball previously
-    if let Some(mut ball_manager) = sys_ctx.systems.get::<BallManager>() {
+    if let Some(mut ball_manager) = sys_ctx.ball_manager() {
       ball_manager.establish_ball_count(ctx);
     }
 
@@ -239,7 +246,7 @@ impl CompetitiveGame {
     log::info!(target: "frontbox::game_manager", "Serving the ball");
     self.ball_served = true;
     let ctx = &ctx.for_system(self.handle);
-    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+    if let Some(mut ball_manager) = ctx.ball_manager() {
       ball_manager.eject(Launch::Player, ctx.into());
     }
   }
@@ -248,7 +255,7 @@ impl CompetitiveGame {
   fn replace_lost_ball(&mut self, ctx: &ServiceContext) {
     log::info!(target: "frontbox::game_manager", "Last ball in play was lost, putting another into play");
     let ctx = &ctx.for_system(self.handle);
-    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+    if let Some(mut ball_manager) = ctx.ball_manager() {
       ball_manager.eject(Launch::Auto, ctx.into());
     }
   }
@@ -276,7 +283,7 @@ impl CompetitiveGame {
     let ctx = &ctx.for_system(self.handle);
     if ctx.states.is(CoinDoor::Open) && ctx.config.get(&configs::IGNORE_DRAINS_WITH_COIN_DOOR_OPEN) {
       log::info!(target: "frontbox::game_manager", "{} ball(s) drained with the coin door open, putting them back into play", count);
-      if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+      if let Some(mut ball_manager) = ctx.ball_manager() {
         ball_manager.eject_many(count, Launch::Auto, ctx.into());
       }
       return;
@@ -379,7 +386,7 @@ impl CompetitiveGame {
   /// Play has stopped: no more balls are launched, and a ball left in the plunge lane serves the next turn
   fn cancel_ejects(&self, ctx: &ServiceContext) {
     let ctx = &ctx.for_system(self.handle);
-    if let Some(mut ball_manager) = ctx.systems.get::<BallManager>() {
+    if let Some(mut ball_manager) = ctx.ball_manager() {
       ball_manager.cancel_ejects(ctx.into());
     }
   }
@@ -387,7 +394,7 @@ impl CompetitiveGame {
   fn balls_in_play(&self, ctx: &ServiceContext) -> u8 {
     let ctx = &ctx.for_system(self.handle);
     ctx
-      .systems.get::<BallManager>()
+      .ball_manager()
       .map(|ball_manager| ball_manager.balls_in_play(ctx.into()))
       .unwrap_or(0)
   }
@@ -395,7 +402,7 @@ impl CompetitiveGame {
   fn ejects_pending(&self, ctx: &ServiceContext) -> bool {
     ctx
       .for_system(self.handle)
-      .systems.get::<BallManager>()
+      .ball_manager()
       .is_some_and(|ball_manager| ball_manager.ejects_pending())
   }
 
@@ -519,6 +526,10 @@ impl CompetitiveGame {
 }
 
 impl System for CompetitiveGame {
+  fn provides(provides: &mut Provides<Self>) {
+    provides.add::<dyn GameManager>(|s| s);
+  }
+
   fn on_spawn(&mut self, ctx: &SystemContext) {
     self.handle = ctx.handle();
     self.update_player_entry(ctx.into());
@@ -601,7 +612,7 @@ impl System for CompetitiveGame {
   }
 }
 
-impl GameManagement for CompetitiveGame {
+impl GameManager for CompetitiveGame {
   fn add_player(&mut self, ctx: &ServiceContext) -> bool {
     // checked here as well as through `PlayerEntry`, which reads as its old value until the run loop gets to it
     if !self.is_player_addable() {
@@ -783,7 +794,7 @@ mod tests {
   use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
   use super::*;
-  use crate::ball_management::{BallManagement, LaunchMethod};
+  use crate::ball_management::{BallManager, LaunchMethod};
 
   fn done<E: Event>(routine: E, completion: RoutineCompletion) -> RoutineCompleted<E> {
     RoutineCompleted {
@@ -807,9 +818,13 @@ mod tests {
     ejects_pending: Arc<AtomicBool>,
   }
 
-  impl System for FakeBalls {}
+  impl System for FakeBalls {
+    fn provides(provides: &mut Provides<Self>) {
+      provides.add::<dyn BallManager>(|s| s);
+    }
+  }
 
-  impl BallManagement for FakeBalls {
+  impl BallManager for FakeBalls {
     fn eject(&mut self, _launch: Launch, _ctx: &ServiceContext) -> u64 {
       0
     }
@@ -877,10 +892,10 @@ mod tests {
       ctx.svc_ctx().config.set(&configs::TURN_COUNT, turns);
       let in_play = Arc::new(AtomicU8::new(0));
       let ejects_pending = Arc::new(AtomicBool::new(false));
-      ctx.insert_system(BallManager::new(FakeBalls {
+      ctx.insert_system(FakeBalls {
         in_play: in_play.clone(),
         ejects_pending: ejects_pending.clone(),
-      }));
+      });
       let mut game = CompetitiveGame::new(max_players, Vec::new(), SwitchQ::names([]));
       game.on_spawn(&ctx.sys_ctx());
       game.add_player(&ctx.svc_ctx());

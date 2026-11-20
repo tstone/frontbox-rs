@@ -1,8 +1,8 @@
-use frontbox_core::prelude::{LedLookup, LedQ, Rgb, Vec2};
+use frontbox_core::prelude::{LightLookup, LightQ, Rgb, Vec2};
 use frontbox_gfx::prelude::{Rgba, RgbaColor};
 use frontbox_gfx::layout::{Grid, Line};
 use frontbox_gfx::scene::{Bounds, Content, LayerFrame, Variables, Sample, ShapePose, Surface, Timing};
-use frontbox_led::{LedPlacement, PlacedLayer, led_color};
+use frontbox_lighting::{LightPlacement, PlacedLayer, led_color};
 use frontbox_scene::{Moment, Scene, SceneLayer};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,7 +12,7 @@ use crate::protocol::{
 };
 
 /// The most points one render will sample. A render costs the machine time and anything on the network can ask for
-/// one. This is far more than any DMD or list of LEDs.
+/// one. This is far more than any DMD or list of lights.
 const MAX_SAMPLES: usize = 1 << 18;
 
 /// The most points one clip will sample, across all of its frames. About 30 MB of colors.
@@ -22,7 +22,7 @@ const CLIP_FRAMES_PER_SECOND: f32 = 30.0;
 
 /// The machine a scene is previewed on
 pub(crate) struct PreviewMachine {
-  pub leds: LedLookup,
+  pub lights: LightLookup,
   pub radius: f32,
   /// Each display's width and height in pixels, by the name it was added under
   pub displays: BTreeMap<String, (usize, usize)>,
@@ -93,11 +93,11 @@ pub(crate) fn render_scene(
   let mask_outlines =
     frames().map(|drawn| drawn.map_or(Vec::new(), |(layer, frame)| rendered_outline(&layer.mask_outline(&frame)))).collect();
   let mask_shapes = rendered_shapes(frames().map(|drawn| drawn.and_then(|(layer, frame)| layer.mask_pose(&frame))));
-  let led_colors = led_colors(&shown, &views, &moment, reference.as_ref().map(|reference| (reference, &reference_moment)));
+  let light_colors = light_colors(&shown, &views, &moment, reference.as_ref().map(|reference| (reference, &reference_moment)));
   let graphs = (0..shown.layers.len()).map(|index| views.placed(index).and_then(rendered_graph)).collect();
   let ron = scene.save().map_err(|err| err.to_string())?;
 
-  Ok(RenderedScene { scene, ron, canvases, outlines, shapes, mask_outlines, mask_shapes, led_colors, graphs, reference_error })
+  Ok(RenderedScene { scene, ron, canvases, outlines, shapes, mask_outlines, mask_shapes, light_colors, graphs, reference_error })
 }
 
 /// Renders every frame of one cycle of a scene, for a client to play without coming back to the machine until the next.
@@ -122,34 +122,34 @@ pub(crate) fn render_clip(
   let canvases = Canvas::all(&scene, reference.as_ref().map(|reference| &reference.scene), size, &machine)?;
   let mut reference = reference.map(|reference| reference.drawn_on(&canvases));
   let mut views = Views::of(&scene, size, &machine);
-  let mut leds = views.led_names();
-  leds.extend(reference.iter().flat_map(|reference| reference.views.led_names()));
+  let mut lights = views.light_names();
+  lights.extend(reference.iter().flat_map(|reference| reference.views.light_names()));
   // a frame at each end, so that a clip finishes on the scene's last moment
   let frames = ((timing.duration * CLIP_FRAMES_PER_SECOND).ceil() as usize).saturating_add(1);
   // no more than a render samples, so this can't overflow
   let points: usize = canvases.iter().map(|canvas| canvas.width * canvas.height).sum();
-  let total = points.saturating_add(leds.len()).saturating_mul(frames);
+  let total = points.saturating_add(lights.len()).saturating_mul(frames);
   if total > MAX_CLIP_SAMPLES {
     return Err(format!("this clip is {total} points, more than the {MAX_CLIP_SAMPLES} one can sample"));
   }
 
-  let led_count = leds.len();
+  let light_count = lights.len();
   let variables = Variables::new();
   let top = Moment { time: 0.0, playback_seed: seed, variables: &variables };
   let sounds = scene.sounds_in_cycle(&top, cycle).into_iter();
   let sounds = sounds.map(|start| ClipSound { at: start.time.rem_euclid(timing.duration), sound: start.sound.into(), volume: start.volume, skip: start.skip, length: start.length });
   let sounds = sounds.collect();
   let clip_canvases = canvases.iter().map(|canvas| ClipCanvas { display: canvas.display.clone(), width: canvas.width, height: canvas.height });
-  let header = RenderedClip { id, frames, canvases: clip_canvases.collect(), leds: leds.iter().cloned().collect(), sounds };
+  let header = RenderedClip { id, frames, canvases: clip_canvases.collect(), lights: lights.iter().cloned().collect(), sounds };
   let header = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
 
-  let mut clip = Vec::with_capacity(4 + header.len() + frames * (points * 4 + led_count * 3));
+  let mut clip = Vec::with_capacity(4 + header.len() + frames * (points * 4 + light_count * 3));
   clip.extend((header.len() as u32).to_le_bytes());
   clip.extend(header);
 
   // each canvas's frames go together
   let mut drawn: Vec<Vec<u8>> = canvases.iter().map(|canvas| Vec::with_capacity(frames * canvas.width * canvas.height * 4)).collect();
-  let mut leds_shown = Vec::with_capacity(frames * led_count * 3);
+  let mut lights_shown = Vec::with_capacity(frames * light_count * 3);
   for index in 0..frames {
     let time = timing.cycle_time(cycle, timing.duration * index as f32 / (frames - 1) as f32);
     let moment = Moment { time, playback_seed: seed, variables: &variables };
@@ -167,12 +167,12 @@ pub(crate) fn render_clip(
         None => colors,
       });
     }
-    // every LED is shown every frame, and in name order, as `leds` has them
-    let shown = led_colors(&scene, &views, &moment, reference.as_ref().map(|reference| (reference, &moment)));
-    leds_shown.extend(leds.iter().map(|name| shown.get(name).copied().unwrap_or(Rgb { r: 0, g: 0, b: 0 })).flat_map(|Rgb { r, g, b }| [r, g, b]));
+    // every light is shown every frame, and in name order, as `lights` has them
+    let shown = light_colors(&scene, &views, &moment, reference.as_ref().map(|reference| (reference, &moment)));
+    lights_shown.extend(lights.iter().map(|name| shown.get(name).copied().unwrap_or(Rgb { r: 0, g: 0, b: 0 })).flat_map(|Rgb { r, g, b }| [r, g, b]));
   }
   clip.extend(drawn.into_iter().flatten());
-  clip.extend(leds_shown);
+  clip.extend(lights_shown);
   Ok(clip)
 }
 
@@ -209,11 +209,11 @@ fn with_assets(scene: Scene, content: &Content) -> Result<Scene, String> {
   scene.with_assets(content).map_err(|err| err.to_string())
 }
 
-/// What each LED shows, as [`Views::led_colors`] has it, with a reference scene's LEDs over or under
-fn led_colors(scene: &Scene, views: &Views, moment: &Moment, reference: Option<(&Reference, &Moment)>) -> BTreeMap<String, Rgb> {
-  let mut shown = views.led_colors(scene, moment);
+/// What each light shows, as [`Views::light_colors`] has it, with a reference scene's lights over or under
+fn light_colors(scene: &Scene, views: &Views, moment: &Moment, reference: Option<(&Reference, &Moment)>) -> BTreeMap<String, Rgb> {
+  let mut shown = views.light_colors(scene, moment);
   if let Some((reference, moment)) = reference {
-    for (name, theirs) in reference.views.led_colors(&reference.scene, moment) {
+    for (name, theirs) in reference.views.light_colors(&reference.scene, moment) {
       shown.entry(name).and_modify(|ours| *ours = reference.stacked(*ours, theirs)).or_insert(theirs);
     }
   }
@@ -270,8 +270,8 @@ impl Reference {
 
 /// What each layer of a scene is drawn on in a render
 struct Views {
-  /// Its LED layers on the machine's LEDs. One with no LEDs chosen yet previews on every LED.
-  placement: LedPlacement,
+  /// Its light layers on the machine's lights. One with no lights chosen yet previews on every light.
+  placement: LightPlacement,
   /// By the scene's layers
   layers: Vec<View>,
 }
@@ -279,9 +279,9 @@ struct Views {
 /// What a layer is drawn on
 struct View {
   surface: Surface,
-  /// In its own units. An LED layer on a plane the machine doesn't have reaches no LEDs, and is the size of the render.
+  /// In its own units. A light layer on a plane the machine doesn't have reaches no lights, and is the size of the render.
   size: Vec2,
-  /// Where an LED layer is in the placement
+  /// Where a light layer is in the placement
   placed: Option<usize>,
 }
 
@@ -289,12 +289,12 @@ impl Views {
   fn of(scene: &Scene, size: SceneSize, machine: &PreviewMachine) -> Self {
     let render_size = Vec2::new(size.width as f32, size.height as f32);
     let mut chosen = scene.clone();
-    for layer in chosen.layers.iter_mut().filter_map(SceneLayer::as_leds_mut).filter(|layer| layer.leds.is_none()) {
-      layer.leds = Some(LedQ::Every);
+    for layer in chosen.layers.iter_mut().filter_map(SceneLayer::as_lights_mut).filter(|layer| layer.lights.is_none()) {
+      layer.lights = Some(LightQ::Every);
     }
-    let placement = LedPlacement::new(&chosen, &machine.leds, machine.radius);
+    let placement = LightPlacement::new(&chosen, &machine.lights, machine.radius);
     let layers = scene.layers.iter().enumerate().map(|(index, layer)| match layer {
-      SceneLayer::Leds(_) => {
+      SceneLayer::Lights(_) => {
         let placed = placement.layers().iter().position(|placed| placed.index == index);
         let on = placed.map(|placed| &placement.layers()[placed]);
         let surface = on.map_or(Surface::Area, |on| on.surface);
@@ -320,23 +320,23 @@ impl Views {
     scene.frame(moment, view.surface, view.size, self.placed(index).and_then(PlacedLayer::kept_visits))
   }
 
-  /// What each LED shows while the scene plays on them alone, as the LED system would resolve it: higher z on top, and
+  /// What each light shows while the scene plays on them alone, as light management would resolve it: higher z on top, and
   /// within a z, later layers on top
-  fn led_colors(&self, scene: &Scene, moment: &Moment) -> BTreeMap<String, Rgba<u8>> {
+  fn light_colors(&self, scene: &Scene, moment: &Moment) -> BTreeMap<String, Rgba<u8>> {
     let mut shown: BTreeMap<String, Rgba<u8>> = BTreeMap::new();
-    for (_, led, color) in self.placement.colors(scene, moment) {
-      shown.entry(led.name.clone()).and_modify(|below| *below = color.composite_over(*below)).or_insert(color);
+    for (_, light, color) in self.placement.colors(scene, moment) {
+      shown.entry(light.name.clone()).and_modify(|below| *below = color.composite_over(*below)).or_insert(color);
     }
     shown
   }
 
-  /// Every LED a layer is on, by name
-  fn led_names(&self) -> BTreeSet<String> {
-    self.placement.layers().iter().flat_map(|placed| placed.placed.iter().map(|led| led.name.clone())).collect()
+  /// Every light a layer is on, by name
+  fn light_names(&self) -> BTreeSet<String> {
+    self.placement.layers().iter().flat_map(|placed| placed.placed.iter().map(|light| light.name.clone())).collect()
   }
 }
 
-/// What's drawn in a render apart from the LEDs: a display's screen, or a strip of the `Sequence` layers on LEDs. An LED
+/// What's drawn in a render apart from the lights: a display's screen, or a strip of the `Sequence` layers on lights. A light
 /// layer covering an `Area` is only seen on the machine.
 struct Canvas {
   /// The display, by name, or `None` for the strip
@@ -361,7 +361,7 @@ impl Canvas {
     }
     // counted before anything is sampled, as a size can be anything a client asks for
     let rows = strips(scene).len();
-    let strip = if rows > 0 { size.leds.saturating_mul(rows) } else { 0 };
+    let strip = if rows > 0 { size.lights.saturating_mul(rows) } else { 0 };
     let points = displays.iter().fold(strip, |total, display| {
       let (width, height) = machine.display_size(display, size);
       total.saturating_add(width.saturating_mul(height))
@@ -370,18 +370,18 @@ impl Canvas {
       return Err(format!("{points} points is more than the {MAX_SAMPLES} a render can sample"));
     }
     let displays = displays.into_iter().map(|display| Self::display(scene, display, machine.display_size(display, size)));
-    Ok(Self::strip(scene, size.leds).into_iter().chain(displays).collect())
+    Ok(Self::strip(scene, size.lights).into_iter().chain(displays).collect())
   }
 
-  /// The strip of the scene's `Sequence` layers, `leds` points long, with a row for each set of LEDs. `None` for a scene
+  /// The strip of the scene's `Sequence` layers, `lights` points long, with a row for each set of lights. `None` for a scene
   /// without any.
-  fn strip(scene: &Scene, leds: usize) -> Option<Self> {
+  fn strip(scene: &Scene, lights: usize) -> Option<Self> {
     let rows = strips(scene);
     if rows.is_empty() {
       return None;
     }
-    let line = Line::new(leds);
-    Some(Self { display: None, width: leds, height: rows.len(), samples: line.samples().collect(), covers: line.covers(), rows })
+    let line = Line::new(lights);
+    Some(Self { display: None, width: lights, height: rows.len(), samples: line.samples().collect(), covers: line.covers(), rows })
   }
 
   /// A display's screen, with whichever of the scene's layers are on it
@@ -404,7 +404,7 @@ impl Canvas {
         .collect();
       self.samples.iter().flat_map(move |at| {
         let color = layers.iter().fold(Rgba([0, 0, 0, 0]), |below, (layer, graph)| {
-          // the strip has as many points as asked for, not one per LED, so each shows its nearest node
+          // the strip has as many points as asked for, not one per light, so each shows its nearest node
           let at = graph.and_then(|graph| graph.nearest(at.pos)).map_or(*at, |node| at.at_node(node));
           layer.sample(&at).composite_over(below)
         });
@@ -427,15 +427,15 @@ fn display_layers(scene: &Scene, display: &str) -> Vec<usize> {
   layers
 }
 
-/// The strip's rows: one for each set of LEDs the `Sequence` layers are on, with the layers there in the order they're
-/// shown on an LED
+/// The strip's rows: one for each set of lights the `Sequence` layers are on, with the layers there in the order they're
+/// shown on a light
 fn strips(scene: &Scene) -> Vec<Vec<usize>> {
-  let mut rows: Vec<(&Option<LedQ>, Vec<usize>)> = Vec::new();
-  let sequences = scene.layers.iter().enumerate().filter_map(|(index, layer)| Some((index, layer.as_leds()?)));
+  let mut rows: Vec<(&Option<LightQ>, Vec<usize>)> = Vec::new();
+  let sequences = scene.layers.iter().enumerate().filter_map(|(index, layer)| Some((index, layer.as_lights()?)));
   for (index, layer) in sequences.filter(|(_, layer)| layer.surface.plane().is_none()) {
-    match rows.iter_mut().find(|(leds, _)| *leds == &layer.leds) {
+    match rows.iter_mut().find(|(lights, _)| *lights == &layer.lights) {
       Some((_, row)) => row.push(index),
-      None => rows.push((&layer.leds, vec![index])),
+      None => rows.push((&layer.lights, vec![index])),
     }
   }
   for (_, row) in &mut rows {
@@ -491,23 +491,23 @@ fn rendered_shape(pose: &ShapePose) -> RenderedShape {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use frontbox_core::prelude::{DEFAULT_LED_RADIUS, ExpAddress, LED, LedAddress, ReferencePlane, Vec3};
+  use frontbox_core::prelude::{DEFAULT_LIGHT_RADIUS, ExpAddress, Light, LedAddress, LightAddress, ReferencePlane, Vec3};
   use std::sync::LazyLock;
 
   const RED_TO_BLUE: &str = r#"Scene(
-    version: 2, layers: [Leds(surface: Sequence, layer: (fill: (base: Gradient(stops: [
+    version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Gradient(stops: [
         (at: 0.0, color: Fixed(255, 0, 0, 255)),
         (at: 1.0, color: Fixed(0, 0, 255, 255)),
       ]))))],)"#;
 
-  const SIZE: SceneSize = SceneSize { leds: 3, width: 4, height: 2 };
+  const SIZE: SceneSize = SceneSize { lights: 3, width: 4, height: 2 };
 
   fn ron(source: &str) -> SceneSource {
     SceneSource::Ron(source.into())
   }
 
-  fn no_leds() -> PreviewMachine {
-    PreviewMachine { leds: leds(&[]), radius: DEFAULT_LED_RADIUS, displays: BTreeMap::new() }
+  fn no_lights() -> PreviewMachine {
+    PreviewMachine { lights: lights(&[]), radius: DEFAULT_LIGHT_RADIUS, displays: BTreeMap::new() }
   }
 
   /// The one canvas a render drew on
@@ -516,18 +516,18 @@ mod tests {
     &rendered.canvases[0]
   }
 
-  /// LEDs in hardware order, with these locations, on a machine with the planes here
-  fn leds(locations: &[Option<Vec3>]) -> LedLookup {
-    let mut leds = LedLookup::default();
-    leds.add_plane(&PLANE);
-    leds.add_plane(&SQUARE);
-    leds.add_plane(&WIDE);
+  /// Lights in hardware order, with these locations, on a machine with the planes here
+  fn lights(locations: &[Option<Vec3>]) -> LightLookup {
+    let mut lights = LightLookup::default();
+    lights.add_plane(&PLANE);
+    lights.add_plane(&SQUARE);
+    lights.add_plane(&WIDE);
     for (i, &location) in locations.iter().enumerate() {
-      let name = format!("led{i}");
-      let address = LedAddress::new(ExpAddress::default(), 0, i as u8);
-      leds.insert(name.clone(), LED { name, address, location, ..Default::default() });
+      let name = format!("light{i}");
+      let address = LightAddress::rgb(LedAddress::new(ExpAddress::default(), 0, i as u8));
+      lights.insert(name.clone(), Light { name, address, location, ..Default::default() });
     }
-    leds
+    lights
   }
 
   static PLANE: LazyLock<ReferencePlane> = LazyLock::new(|| {
@@ -542,31 +542,31 @@ mod tests {
 
   /// Red at x = 0, blue at x = 10
   const AREA: &str = r#"Scene(
-    version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Gradient(stops: [
+    version: 2, layers: [Lights(surface: Area("Square"), layer: (fill: (base: Gradient(stops: [
         (at: 0.0, color: Fixed(255, 0, 0, 255)),
         (at: 1.0, color: Fixed(0, 0, 255, 255)),
       ]))))],)"#;
 
   fn colors(source: &str, target: PreviewMachine) -> BTreeMap<String, Rgb> {
-    render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None, 0).unwrap().led_colors
+    render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None, 0).unwrap().light_colors
   }
 
   #[test]
-  fn a_sequence_spreads_over_the_leds_in_order() {
-    let target = PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() };
+  fn a_sequence_spreads_over_the_lights_in_order() {
+    let target = PreviewMachine { lights: lights(&[None, None, None]), ..no_lights() };
     let colors = colors(RED_TO_BLUE, target);
-    assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
-    assert_eq!(colors["led2"], Rgb::new(0, 0, 255));
+    assert_eq!(colors["light0"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light2"], Rgb::new(0, 0, 255));
   }
 
   #[test]
-  fn a_sequence_spreads_over_only_the_chosen_leds_in_their_order() {
-    let source = RED_TO_BLUE.replace("surface: Sequence,", r#"surface: Sequence, leds: Names(["led2", "led0"]),"#);
-    let target = PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() };
+  fn a_sequence_spreads_over_only_the_chosen_lights_in_their_order() {
+    let source = RED_TO_BLUE.replace("surface: Sequence,", r#"surface: Sequence, lights: Names(["light2", "light0"]),"#);
+    let target = PreviewMachine { lights: lights(&[None, None, None]), ..no_lights() };
     let colors = colors(&source, target);
     assert_eq!(colors.len(), 2);
-    assert_eq!(colors["led2"], Rgb::new(255, 0, 0));
-    assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
+    assert_eq!(colors["light2"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light0"], Rgb::new(0, 0, 255));
   }
 
   /// Red on `ring` and blue on `center`, for a second
@@ -576,34 +576,34 @@ mod tests {
         version: 2,
         timing: (duration: 1.0),
         layers: [
-          Leds(leds: Names({ring:?}), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
-          Leds(leds: Names({center:?}), surface: Sequence, layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))),
+          Lights(lights: Names({ring:?}), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+          Lights(lights: Names({center:?}), surface: Sequence, layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))),
         ],
       )"#
     )
   }
 
   fn three() -> PreviewMachine {
-    PreviewMachine { leds: leds(&[None, None, None]), ..no_leds() }
+    PreviewMachine { lights: lights(&[None, None, None]), ..no_lights() }
   }
 
   #[test]
-  fn every_layer_plays_on_its_own_leds_at_once() {
-    let colors = colors(&two_layers(&["led0", "led1"], &["led2"]), three());
-    assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
-    assert_eq!(colors["led1"], Rgb::new(255, 0, 0));
-    assert_eq!(colors["led2"], Rgb::new(0, 0, 255));
+  fn every_layer_plays_on_its_own_lights_at_once() {
+    let colors = colors(&two_layers(&["light0", "light1"], &["light2"]), three());
+    assert_eq!(colors["light0"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light1"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light2"], Rgb::new(0, 0, 255));
   }
 
   #[test]
   fn the_later_layer_is_on_top_where_they_overlap() {
-    let colors = colors(&two_layers(&["led0"], &["led0"]), three());
-    assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
+    let colors = colors(&two_layers(&["light0"], &["light0"]), three());
+    assert_eq!(colors["light0"], Rgb::new(0, 0, 255));
   }
 
   #[test]
-  fn each_set_of_leds_gets_a_row_of_the_strip() {
-    let rendered = render_scene(ron(&two_layers(&["led0"], &["led1"])), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+  fn each_set_of_lights_gets_a_row_of_the_strip() {
+    let rendered = render_scene(ron(&two_layers(&["light0"], &["light1"])), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!((only(&rendered).width, only(&rendered).height), (3, 2));
     assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
     assert_eq!(only(&rendered).colors[12..16], [0, 0, 255, 255]);
@@ -611,31 +611,31 @@ mod tests {
 
   #[test]
   fn a_clip_plays_every_layer_on_one_timeline() {
-    let clip = render_clip(1, ron(&two_layers(&["led0"], &["led2"])), SIZE, three(), Content::without_folder(), 0, None, 0).unwrap();
+    let clip = render_clip(1, ron(&two_layers(&["light0"], &["light2"])), SIZE, three(), Content::without_folder(), 0, None, 0).unwrap();
     let header_length = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     let header: serde_json::Value = serde_json::from_slice(&clip[4..4 + header_length]).unwrap();
-    assert_eq!(header["leds"], serde_json::json!(["led0", "led2"]));
+    assert_eq!(header["lights"], serde_json::json!(["light0", "light2"]));
     assert_eq!(header["canvases"][0]["height"], 2);
     assert_eq!(clip[clip.len() - 6..], [255, 0, 0, 0, 0, 255]);
   }
 
-  /// Red where a wave has just been, going one edge a second from `led0`, each LED fading over a step
+  /// Red where a wave has just been, going one edge a second from `light0`, each light fading over a step
   const WAVE: &str = r#"Scene(
-    version: 2, timing: (duration: 10.0, cycle: Once), layers: [Leds(surface: Area("Square"), layer: (
+    version: 2, timing: (duration: 10.0, cycle: Once), layers: [Lights(surface: Area("Square"), layer: (
       fill: (base: Solid(Fixed(255, 0, 0, 255)), adjust: [Opacity(Visit(traversal: "wave", from: 0.0, to: 1.0, smooth_out: 1.0))]),
-      graph: (traversals: [(name: "wave", from: Name("led0"), algorithm: BreadthFirst(), speed: Rate(Fixed(1.0)))]),
+      graph: (traversals: [(name: "wave", from: Name("light0"), algorithm: BreadthFirst(), speed: Rate(Fixed(1.0)))]),
     ))],)"#;
 
   #[test]
-  fn a_graph_is_built_from_the_leds_a_layer_lands_on_and_traversed() {
+  fn a_graph_is_built_from_the_lights_a_layer_lands_on_and_traversed() {
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
-    let target = PreviewMachine { leds: leds(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_leds() };
+    let target = PreviewMachine { lights: lights(&[at(1.0), at(2.0), at(3.0), at(4.0)]), ..no_lights() };
     let rendered = render_scene(ron(WAVE), SIZE, target, Content::without_folder(), 2.0, Some(0), None, 0).unwrap();
-    let lit: Vec<bool> = (0..4).map(|i| rendered.led_colors[&format!("led{i}")] != Rgb::new(0, 0, 0)).collect();
+    let lit: Vec<bool> = (0..4).map(|i| rendered.light_colors[&format!("light{i}")] != Rgb::new(0, 0, 0)).collect();
     assert_eq!(lit, [false, false, true, false]);
 
     let graph = rendered.graphs[0].as_ref().unwrap();
-    assert_eq!(graph.names, ["led0", "led1", "led2", "led3"]);
+    assert_eq!(graph.names, ["light0", "light1", "light2", "light3"]);
     assert_eq!(graph.nodes[1], [2.0, 5.0]);
     assert_eq!(graph.edges, [[0, 1], [1, 2], [2, 3]]);
     // three edges at one a second
@@ -651,56 +651,56 @@ mod tests {
   #[test]
   fn a_strip_shows_a_graph_on_a_sequence_at_its_nearest_nodes() {
     let source = WAVE.replace(r#"Area("Square")"#, "Sequence");
-    let rendered = render_scene(ron(&source), SceneSize { leds: 5, ..SIZE }, three(), Content::without_folder(), 1.0, Some(0), None, 0).unwrap();
-    // three LEDs in a chain, seen on a strip of five: points halfway between two LEDs show the first of them
+    let rendered = render_scene(ron(&source), SceneSize { lights: 5, ..SIZE }, three(), Content::without_folder(), 1.0, Some(0), None, 0).unwrap();
+    // three lights in a chain, seen on a strip of five: points halfway between two lights show the first of them
     let alphas: Vec<u8> = only(&rendered).colors.chunks(4).map(|color| color[3]).collect();
     assert_eq!(alphas, [0, 0, 255, 255, 0]);
   }
 
   #[test]
-  fn an_area_colors_leds_by_where_they_are_on_the_plane() {
+  fn an_area_colors_lights_by_where_they_are_on_the_plane() {
     let at = |x: f32| Some(Vec3::new(100.0 + x, 5.0, 0.0));
-    let target = PreviewMachine { leds: leds(&[at(10.0), at(0.0)]), ..no_leds() };
+    let target = PreviewMachine { lights: lights(&[at(10.0), at(0.0)]), ..no_lights() };
     let colors = colors(&AREA.replace("Square", "Plane"), target);
-    assert_eq!(colors["led0"], Rgb::new(0, 0, 255));
-    assert_eq!(colors["led1"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light0"], Rgb::new(0, 0, 255));
+    assert_eq!(colors["light1"], Rgb::new(255, 0, 0));
   }
 
   #[test]
-  fn leds_past_the_edge_of_the_plane_show_the_shapes_that_reach_them() {
+  fn lights_past_the_edge_of_the_plane_show_the_shapes_that_reach_them() {
     let source = r#"Scene(
-      version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))), Leds(surface: Area("Square"), layer: (
+      version: 2, layers: [Lights(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))), Lights(surface: Area("Square"), layer: (
           region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(15.0, 5.0))]),
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
         ))],)"#;
     let at = |x: f32| Some(Vec3::new(x, 5.0, 0.0));
-    let target = PreviewMachine { leds: leds(&[at(15.0), at(25.0)]), ..no_leds() };
+    let target = PreviewMachine { lights: lights(&[at(15.0), at(25.0)]), ..no_lights() };
     let colors = colors(source, target);
-    assert_eq!(colors["led0"], Rgb::new(255, 0, 0));
-    assert_eq!(colors["led1"], Rgb::new(0, 0, 0));
+    assert_eq!(colors["light0"], Rgb::new(255, 0, 0));
+    assert_eq!(colors["light1"], Rgb::new(0, 0, 0));
   }
 
   #[test]
-  fn shape_edges_on_leds_fade_across_the_radius_the_machine_was_booted_with() {
+  fn shape_edges_on_lights_fade_across_the_radius_the_machine_was_booted_with() {
     let source = r#"Scene(
-      version: 2, layers: [Leds(surface: Area("Square"), layer: (
+      version: 2, layers: [Lights(surface: Area("Square"), layer: (
         region: (base: Ellipse(rx: Fixed(0.5), ry: Fixed(0.5)), transform: [Scale(Fixed(4.0)), Translate(Fixed(5.0, 5.0))]),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
     let brightness = |radius| {
       let target = PreviewMachine {
-        leds: leds(&[Some(Vec3::new(5.0, 6.95, 0.0))]),
+        lights: lights(&[Some(Vec3::new(5.0, 6.95, 0.0))]),
         radius,
-        ..no_leds()
+        ..no_lights()
       };
-      colors(source, target)["led0"].r
+      colors(source, target)["light0"].r
     };
-    assert!(brightness(2.0) < brightness(DEFAULT_LED_RADIUS));
+    assert!(brightness(2.0) < brightness(DEFAULT_LIGHT_RADIUS));
   }
 
   #[test]
-  fn a_sequence_renders_to_leds() {
-    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+  fn a_sequence_renders_to_lights() {
+    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!((only(&rendered).width, only(&rendered).height), (3, 1));
     assert_eq!(only(&rendered).colors.len(), 12);
     assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
@@ -709,7 +709,7 @@ mod tests {
 
   #[test]
   fn a_display_renders_to_pixels_and_covers_what_it_was_asked_for() {
-    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!((only(&rendered).width, only(&rendered).height), (4, 2));
     let area = &only(&rendered).area;
     assert_eq!((area.x, area.y, area.width, area.height), (0.0, 0.0, 4.0, 2.0));
@@ -717,21 +717,21 @@ mod tests {
 
   #[test]
   fn area_layers_have_no_strip() {
-    let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let source = r#"Scene(version: 2, layers: [Lights(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
+    let rendered = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert!(rendered.canvases.is_empty());
   }
 
   /// Red on a strip, green on the `Dmd`, and blue on the `Lcd`
   const EVERYWHERE: &str = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [
-    Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+    Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
     Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 255, 0, 255))))),
     Display(display: "Lcd", layer: (fill: (base: Solid(Fixed(0, 0, 255, 255))))),
   ])"#;
 
   /// A machine with a 3 by 1 `Dmd`
   fn with_dmd() -> PreviewMachine {
-    PreviewMachine { displays: BTreeMap::from([("Dmd".into(), (3, 1))]), ..no_leds() }
+    PreviewMachine { displays: BTreeMap::from([("Dmd".into(), (3, 1))]), ..no_lights() }
   }
 
   #[test]
@@ -772,59 +772,59 @@ mod tests {
   }
 
   #[test]
-  fn layers_on_the_same_leds_share_a_row_of_the_strip_in_the_order_theyre_shown() {
-    let layer = |z: i8, color: &str| format!(r#"Leds(leds: Name("led0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
+  fn layers_on_the_same_lights_share_a_row_of_the_strip_in_the_order_theyre_shown() {
+    let layer = |z: i8, color: &str| format!(r#"Lights(lights: Name("light0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", layer(1, "255, 0, 0, 255"), layer(0, "0, 0, 255, 255"));
-    let rendered = render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(&source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!(only(&rendered).height, 1);
     assert_eq!(only(&rendered).colors[..4], [255, 0, 0, 255]);
   }
 
   #[test]
-  fn a_higher_z_is_on_top_on_the_leds_whatever_the_order_of_the_layers() {
-    let layer = |z: i8, color: &str| format!(r#"Leds(leds: Name("led0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
+  fn a_higher_z_is_on_top_on_the_lights_whatever_the_order_of_the_layers() {
+    let layer = |z: i8, color: &str| format!(r#"Lights(lights: Name("light0"), z: {z}, surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", layer(1, "255, 0, 0, 255"), layer(0, "0, 0, 255, 255"));
-    assert_eq!(colors(&source, three())["led0"], Rgb::new(255, 0, 0));
+    assert_eq!(colors(&source, three())["light0"], Rgb::new(255, 0, 0));
   }
 
   #[test]
   fn each_layer_is_seen_on_its_own_plane() {
-    let gradient = |leds: &str, plane: &str| {
+    let gradient = |lights: &str, plane: &str| {
       format!(
-        r#"Leds(leds: Name("{leds}"), surface: Area("{plane}"), layer: (region: (base: Rect(width: Fixed(2.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), fill: (base: Solid(Fixed(255, 0, 0, 255)))))"#
+        r#"Lights(lights: Name("{lights}"), surface: Area("{plane}"), layer: (region: (base: Rect(width: Fixed(2.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), fill: (base: Solid(Fixed(255, 0, 0, 255)))))"#
       )
     };
-    let source = format!("Scene(version: 2, layers: [{}, {}])", gradient("led0", "Square"), gradient("led1", "Plane"));
+    let source = format!("Scene(version: 2, layers: [{}, {}])", gradient("light0", "Square"), gradient("light1", "Plane"));
     // the same spot on each plane, which is somewhere different on the machine
-    let target = PreviewMachine { leds: leds(&[Some(Vec3::new(5.0, 5.0, 0.0)), Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_leds() };
+    let target = PreviewMachine { lights: lights(&[Some(Vec3::new(5.0, 5.0, 0.0)), Some(Vec3::new(105.0, 5.0, 0.0))]), ..no_lights() };
     let rendered = render_scene(ron(&source), SIZE, target, Content::without_folder(), 0.0, None, None, 0).unwrap();
-    assert_eq!(rendered.led_colors["led0"], Rgb::new(255, 0, 0));
-    assert_eq!(rendered.led_colors["led1"], Rgb::new(255, 0, 0));
+    assert_eq!(rendered.light_colors["light0"], Rgb::new(255, 0, 0));
+    assert_eq!(rendered.light_colors["light1"], Rgb::new(255, 0, 0));
     assert_eq!(rendered.outlines[0], rendered.outlines[1]);
   }
 
   #[test]
   fn each_layer_outlines_what_its_on() {
-    let on = |plane: &str| format!(r#"Leds(surface: Area("{plane}"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))"#);
+    let on = |plane: &str| format!(r#"Lights(surface: Area("{plane}"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))"#);
     let source = format!("Scene(version: 2, layers: [{}, {}])", on("Square"), on("Wide"));
-    let outlines = render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().outlines;
+    let outlines = render_scene(ron(&source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().outlines;
     assert_eq!(outlines[0], [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]);
     assert_eq!(outlines[1], [[[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]]]);
   }
 
   #[test]
   fn a_layer_with_no_shape_outlines_the_plane() {
-    let target = no_leds();
-    let source = r#"Scene(version: 2, layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
+    let target = no_lights();
+    let source = r#"Scene(version: 2, layers: [Lights(surface: Area("Square"), layer: (fill: (base: Solid(Fixed(1, 2, 3, 255)))))])"#;
     let outlines = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None, 0).unwrap().outlines;
     assert_eq!(outlines, [[[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]]]);
   }
 
   #[test]
   fn a_shape_outlines_where_it_is_on_the_plane() {
-    let target = no_leds();
+    let target = no_lights();
     let source = r#"Scene(
-      version: 2, layers: [Leds(surface: Area("Square"), layer: (
+      version: 2, layers: [Lights(surface: Area("Square"), layer: (
         region: (base: Polygon(points: [Fixed(0.0, 0.0), Fixed(1.0, 0.0), Fixed(0.0, 1.0)]), transform: [Translate(Fixed(2.0, 3.0))]),
         fill: (base: Solid(Fixed(1, 2, 3, 255))),
       ))],)"#;
@@ -834,7 +834,7 @@ mod tests {
 
   #[test]
   fn a_layer_with_no_shape_outlines_a_whole_sequence() {
-    let outlines = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().outlines;
+    let outlines = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().outlines;
     assert_eq!(outlines, [[[[0.0, -0.5], [1.0, -0.5], [1.0, 0.5], [0.0, 0.5]]]]);
   }
 
@@ -842,14 +842,14 @@ mod tests {
   fn a_rendered_shape_has_its_transforms_at_that_moment() {
     let source = r#"Scene(
       version: 2, timing: (duration: 2.0),
-      layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))), Leds(surface: Sequence, layer: (
+      layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))), Lights(surface: Sequence, layer: (
           fill: (base: Solid(Fixed(255, 0, 0, 255))),
           region: (
             base: Rect(width: Fixed(0.5), height: Fixed(0.25)),
             transform: [Translate(Keyframes(keys: [(at: 0.0, value: (0.0, 0.0)), (at: 2.0, value: (1.0, 0.0))], cycle: Once))],
           ),
         ))],)"#;
-    let shapes = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 1.0, Some(0), None, 0).unwrap().shapes;
+    let shapes = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 1.0, Some(0), None, 0).unwrap().shapes;
     assert!(shapes[0].is_none());
     let rect = shapes[1].as_ref().unwrap();
     assert_eq!(rect.transforms, [[1.0, 0.0, 0.0, 1.0, 0.5, 0.0]]);
@@ -858,7 +858,7 @@ mod tests {
 
   #[test]
   fn a_sequences_area_gives_each_point_the_same_room() {
-    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().canvases.remove(0).area;
+    let area = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().canvases.remove(0).area;
     assert_eq!((area.x, area.y, area.width, area.height), (-0.25, -0.5, 1.5, 1.0));
   }
 
@@ -870,7 +870,7 @@ mod tests {
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],
     )"#;
-    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 5, height: 5 }, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(source), SceneSize { lights: 0, width: 5, height: 5 }, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     let pixel = |x: usize, y: usize| &only(&rendered).colors[(y * 5 + x) * 4..][..4];
     assert_eq!(pixel(2, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
@@ -878,34 +878,34 @@ mod tests {
 
   #[test]
   fn reports_where_a_scene_is_wrong() {
-    let error = render_scene(ron("Scene(version: 2, layers: [Leds(surface: Sequence, layer: (fill: (base: Nope)))])"), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0);
+    let error = render_scene(ron("Scene(version: 2, layers: [Lights(surface: Sequence, layer: (fill: (base: Nope)))])"), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0);
     assert!(error.err().unwrap().contains("1:"));
   }
 
   #[test]
   fn refuses_a_size_too_large_to_sample() {
-    let size = SceneSize { leds: usize::MAX, ..SIZE };
-    assert!(render_scene(ron(RED_TO_BLUE), size, no_leds(), Content::without_folder(), 0.0, None, None, 0).is_err());
+    let size = SceneSize { lights: usize::MAX, ..SIZE };
+    assert!(render_scene(ron(RED_TO_BLUE), size, no_lights(), Content::without_folder(), 0.0, None, None, 0).is_err());
   }
 
   #[test]
   fn a_definition_renders_like_its_ron() {
-    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
-    let from_definition = render_scene(SceneSource::Definition(from_ron.scene.clone()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let from_ron = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let from_definition = render_scene(SceneSource::Definition(from_ron.scene.clone()), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!(only(&from_definition).colors, only(&from_ron).colors);
     assert_eq!(from_definition.ron, from_ron.ron);
   }
 
   fn solid(color: &str, timing: &str) -> Scene {
-    let source = format!("Scene(version: 2, {timing} layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))])");
-    render_scene(ron(&source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene
+    let source = format!("Scene(version: 2, {timing} layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed({color})))))])");
+    render_scene(ron(&source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene
   }
 
   #[test]
   fn a_preview_draws_what_it_shows_and_gives_back_the_scene() {
     let (scene, shown) = (solid("255, 0, 0, 255", ""), solid("0, 0, 255, 255", ""));
-    let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
-    let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let from_definition = render_scene(SceneSource::Definition(scene.clone()), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let preview = render_scene(SceneSource::Preview { scene, shown }, SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!(only(&preview).colors[0..3], [0, 0, 255]);
     assert_eq!(preview.ron, from_definition.ron);
   }
@@ -914,7 +914,7 @@ mod tests {
   fn a_clip_of_a_preview_is_of_what_it_shows() {
     let timing = "timing: (duration: 1.0),";
     let source = SceneSource::Preview { scene: solid("255, 0, 0, 255", timing), shown: solid("0, 0, 255, 255", timing) };
-    let clip = render_clip(0, source, SIZE, no_leds(), Content::without_folder(), 0, None, 0).unwrap();
+    let clip = render_clip(0, source, SIZE, no_lights(), Content::without_folder(), 0, None, 0).unwrap();
     let header = u32::from_le_bytes(clip[0..4].try_into().unwrap()) as usize;
     assert_eq!(clip[4 + header..7 + header], [0, 0, 255]);
   }
@@ -923,11 +923,11 @@ mod tests {
   fn what_a_client_keeps_on_a_track_for_itself_doesnt_reach_the_file() {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
-      layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (9, 8, 7, 255))])))))],)"#;
-    let scene = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene;
+      layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (9, 8, 7, 255))])))))],)"#;
+    let scene = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene;
     let mut json = serde_json::to_value(&scene).unwrap();
-    json["layers"][0]["Leds"]["layer"]["fill"]["base"]["Solid"]["Keyframes"]["hidden"] = true.into();
-    let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0);
+    json["layers"][0]["Lights"]["layer"]["fill"]["base"]["Solid"]["Keyframes"]["hidden"] = true.into();
+    let back = render_scene(SceneSource::Definition(serde_json::from_value(json).unwrap()), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0);
     let back = back.unwrap();
     assert!(!back.ron.contains("hidden"), "{}", back.ron);
   }
@@ -936,10 +936,10 @@ mod tests {
   fn a_definition_is_held_to_the_same_rules_as_a_file() {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0),
-      layers: [Leds(surface: Area("Square"), layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))])))))],)"#;
-    let mut scene = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene;
+      layers: [Lights(surface: Area("Square"), layer: (fill: (base: Solid(Keyframes(keys: [(at: 0.0, value: (0, 0, 0, 255))])))))],)"#;
+    let mut scene = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap().scene;
     scene.timing = None;
-    let error = render_scene(SceneSource::Definition(scene), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).err().unwrap();
+    let error = render_scene(SceneSource::Definition(scene), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).err().unwrap();
     assert!(error.contains("timing"), "{error}");
   }
 
@@ -948,7 +948,7 @@ mod tests {
     ron(&format!(
       r#"Scene(
         version: 2, timing: (duration: 2.0, cycle: {cycle}),
-        layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [
+        layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Keyframes(keys: [
           (at: 0.0, value: (0, 0, 0, 255)),
           (at: 2.0, value: (200, 0, 0, 255)),
         ])))))],)"#
@@ -963,13 +963,13 @@ mod tests {
 
   #[test]
   fn renders_any_moment() {
-    let rendered = render_scene(rising("Once"), SIZE, no_leds(), Content::without_folder(), 1.0, None, None, 0).unwrap();
+    let rendered = render_scene(rising("Once"), SIZE, no_lights(), Content::without_folder(), 1.0, None, None, 0).unwrap();
     assert_eq!(only(&rendered).colors[..4], [100, 0, 0, 255]);
   }
 
   #[test]
   fn the_end_of_a_cycle_is_its_last_moment_however_often_it_repeats() {
-    let rendered = render_scene(rising("Forever"), SIZE, no_leds(), Content::without_folder(), 2.0, None, None, 0).unwrap();
+    let rendered = render_scene(rising("Forever"), SIZE, no_lights(), Content::without_folder(), 2.0, None, None, 0).unwrap();
     assert_eq!(only(&rendered).colors[..4], [200, 0, 0, 255]);
     assert!(rendered.ron.contains("Forever"), "{}", rendered.ron);
   }
@@ -980,13 +980,13 @@ mod tests {
       ron(&format!(
         r#"Scene(
           version: 2, timing: (duration: 1.0, cycle: {cycle}),
-          layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Random(
+          layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Random(
             picks: [(at: 0.0, smooth_in: 1.0)],
             spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
           )))))],)"#
       ))
     };
-    let colors = |source, time| render_scene(source, SIZE, no_leds(), Content::without_folder(), time, None, None, 0).unwrap().canvases.remove(0).colors;
+    let colors = |source, time| render_scene(source, SIZE, no_lights(), Content::without_folder(), time, None, None, 0).unwrap().canvases.remove(0).colors;
     assert_ne!(colors(scene("Forever"), 0.25), colors(scene("Forever"), 0.75));
     assert_eq!(colors(scene("Once"), 0.25), colors(scene("Once"), 0.75));
     assert_eq!(colors(scene("Times(1)"), 0.25), colors(scene("Times(1)"), 0.75));
@@ -997,7 +997,7 @@ mod tests {
     ron(&format!(
       r#"Scene(
         version: 2, timing: (duration: 1.0, cycle: {cycle}),
-        layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Random(
+        layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Random(
           picks: [(at: 0.0, smooth_in: {smooth_in})],
           spread: Color(hue: (0.0, 360.0), brightness: (1.0, 1.0)),
         )))))],)"#
@@ -1027,7 +1027,7 @@ mod tests {
   }
 
   const IMAGE: &str = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Image(name: "art/a.png"))))])"#;
-  const TWO_POINTS: SceneSize = SceneSize { leds: 0, width: 2, height: 1 };
+  const TWO_POINTS: SceneSize = SceneSize { lights: 0, width: 2, height: 1 };
 
   #[test]
   fn a_render_shows_a_mask_and_says_where_it_is() {
@@ -1043,7 +1043,7 @@ mod tests {
         )),
       ],
     )"#;
-    let rendered = render_scene(ron(source), SceneSize { leds: 0, width: 10, height: 5 }, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(source), SceneSize { lights: 0, width: 10, height: 5 }, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     let pixel = |x: usize, y: usize| &only(&rendered).colors[(y * 10 + x) * 4..][..4];
     assert_eq!(pixel(5, 2), [255, 0, 0, 255]);
     assert_eq!(pixel(0, 2), [0, 0, 255, 255]);
@@ -1056,7 +1056,7 @@ mod tests {
   #[test]
   fn a_scene_draws_its_images_from_the_content_folder() {
     let content = content("draws");
-    let rendered = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), content.clone(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(IMAGE), TWO_POINTS, no_lights(), content.clone(), 0.0, None, None, 0).unwrap();
     assert_eq!(only(&rendered).colors, [255, 0, 0, 255, 0, 0, 255, 255]);
     let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
@@ -1065,7 +1065,7 @@ mod tests {
   fn a_clip_draws_its_images_too() {
     let content = content("clip");
     let source = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Image(name: "art/a.png"))))])"#;
-    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), content.clone(), 0, None, 0).unwrap();
+    let clip = render_clip(0, ron(source), TWO_POINTS, no_lights(), content.clone(), 0, None, 0).unwrap();
     let header = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     assert_eq!(clip[4 + header..][..8], [255, 0, 0, 255, 0, 0, 255, 255]);
     let _ = std::fs::remove_dir_all(content.root().unwrap());
@@ -1088,7 +1088,7 @@ mod tests {
       name: "a.gif",
       frame: Keyframes(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 2.0)]),
     ))))])"#;
-    let clip = render_clip(0, ron(source), TWO_POINTS, no_leds(), content.clone(), 0, None, 0).unwrap();
+    let clip = render_clip(0, ron(source), TWO_POINTS, no_lights(), content.clone(), 0, None, 0).unwrap();
     let header = u32::from_le_bytes(clip[..4].try_into().unwrap()) as usize;
     let frames = &clip[4 + header..];
     assert_eq!(frames[..4], [255, 0, 0, 255]);
@@ -1100,21 +1100,21 @@ mod tests {
   fn a_missing_image_is_an_error_naming_it() {
     let content = content("missing");
     let source = IMAGE.replace("art/a.png", "art/b.png");
-    let error = render_scene(ron(&source), TWO_POINTS, no_leds(), content.clone(), 0.0, None, None, 0).err().unwrap();
+    let error = render_scene(ron(&source), TWO_POINTS, no_lights(), content.clone(), 0.0, None, None, 0).err().unwrap();
     assert!(error.contains("art/b.png"), "{error}");
     let _ = std::fs::remove_dir_all(content.root().unwrap());
   }
 
   #[test]
   fn a_machine_with_no_content_folder_says_so_only_when_a_scene_needs_one() {
-    let error = render_scene(ron(IMAGE), TWO_POINTS, no_leds(), Content::without_folder(), 0.0, None, None, 0).err().unwrap();
+    let error = render_scene(ron(IMAGE), TWO_POINTS, no_lights(), Content::without_folder(), 0.0, None, None, 0).err().unwrap();
     assert!(error.contains("no content folder"), "{error}");
-    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).is_ok());
+    assert!(render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).is_ok());
   }
 
   #[test]
   fn each_cycle_of_a_scene_has_a_clip_of_its_own() {
-    let clip = |cycle| render_clip(0, picking("Forever", 0.0), SIZE, no_leds(), Content::without_folder(), cycle, None, 0).unwrap();
+    let clip = |cycle| render_clip(0, picking("Forever", 0.0), SIZE, no_lights(), Content::without_folder(), cycle, None, 0).unwrap();
     let first = clip(0);
     assert_eq!(first, clip(0));
     assert_ne!(read_clip(&first).1, read_clip(&clip(1)).1);
@@ -1123,16 +1123,16 @@ mod tests {
 
   #[test]
   fn a_seed_gives_the_same_random_choices_every_time_and_another_seed_gives_others() {
-    let clip = |seed| render_clip(0, picking("Once", 0.0), SIZE, no_leds(), Content::without_folder(), 0, None, seed).unwrap();
+    let clip = |seed| render_clip(0, picking("Once", 0.0), SIZE, no_lights(), Content::without_folder(), 0, None, seed).unwrap();
     assert_eq!(clip(1), clip(1));
     assert_ne!(read_clip(&clip(1)).1, read_clip(&clip(2)).1);
-    let moment = |seed| only(&render_scene(picking("Once", 0.0), SIZE, no_leds(), Content::without_folder(), 0.0, Some(0), None, seed).unwrap()).colors.clone();
+    let moment = |seed| only(&render_scene(picking("Once", 0.0), SIZE, no_lights(), Content::without_folder(), 0.0, Some(0), None, seed).unwrap()).colors.clone();
     assert_ne!(moment(1), moment(2));
   }
 
   #[test]
   fn the_first_cycle_of_a_clip_has_nothing_to_smooth_from() {
-    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 0, None, 0).unwrap();
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_lights(), Content::without_folder(), 0, None, 0).unwrap();
     let (header, colors) = read_clip(&clip);
     let frames = header["frames"].as_u64().unwrap() as usize;
     assert_eq!(colors[..12], colors[(frames - 1) * 12..]);
@@ -1140,11 +1140,11 @@ mod tests {
 
   #[test]
   fn a_moment_of_a_cycle_is_what_its_clip_shows() {
-    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 4, None, 0).unwrap();
+    let clip = render_clip(0, picking("Forever", 1.0), SIZE, no_lights(), Content::without_folder(), 4, None, 0).unwrap();
     let (header, colors) = read_clip(&clip);
     let frames = header["frames"].as_u64().unwrap() as usize;
     let middle = (frames - 1) / 2;
-    let moment = render_scene(picking("Forever", 1.0), SIZE, no_leds(), Content::without_folder(), 0.5, Some(4), None, 0).unwrap();
+    let moment = render_scene(picking("Forever", 1.0), SIZE, no_lights(), Content::without_folder(), 0.5, Some(4), None, 0).unwrap();
     assert_eq!(only(&moment).colors, colors[middle * 12..][..12]);
   }
 
@@ -1152,7 +1152,7 @@ mod tests {
   fn a_clip_has_the_sounds_its_cycle_starts_and_draws_nothing_for_them() {
     let source = r#"Scene(
       version: 2, timing: (duration: 1.0, cycle: Forever), layers: [
-        Leds(leds: Name("led0"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
+        Lights(lights: Name("light0"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255))))),
         Sound(sound: "sounds/b.wav", volume: Fixed(0.5), start: 0.6, skip: 0.5, end: 0.85),
         Sound(sound: "sounds/a.wav", volume: Fixed(0.5), start: 0.1),
       ],)"#;
@@ -1173,7 +1173,7 @@ mod tests {
 
   #[test]
   fn a_clip_runs_from_the_start_of_a_cycle_to_its_end() {
-    let clip = render_clip(7, rising("Forever"), SIZE, no_leds(), Content::without_folder(), 0, None, 0).unwrap();
+    let clip = render_clip(7, rising("Forever"), SIZE, no_lights(), Content::without_folder(), 0, None, 0).unwrap();
     let (header, colors) = read_clip(&clip);
     assert_eq!(header["id"], 7);
     assert_eq!(header["canvases"][0]["width"], 3);
@@ -1188,29 +1188,29 @@ mod tests {
   }
 
   #[test]
-  fn a_clip_has_the_leds_after_the_points_with_nothing_behind_them_as_off() {
+  fn a_clip_has_the_lights_after_the_points_with_nothing_behind_them_as_off() {
     let source = r#"Scene(
       version: 2, timing: (duration: 0.1),
-      layers: [Leds(surface: Sequence, layer: (fill: (base: Solid(Fixed(200, 0, 0, 128)))))],)"#;
-    let target = PreviewMachine { leds: leds(&[None, None]), ..no_leds() };
+      layers: [Lights(surface: Sequence, layer: (fill: (base: Solid(Fixed(200, 0, 0, 128)))))],)"#;
+    let target = PreviewMachine { lights: lights(&[None, None]), ..no_lights() };
     let clip = render_clip(0, ron(source), SIZE, target, Content::without_folder(), 0, None, 0).unwrap();
     let (header, colors) = read_clip(&clip);
-    assert_eq!(header["leds"], serde_json::json!(["led0", "led1"]));
+    assert_eq!(header["lights"], serde_json::json!(["light0", "light1"]));
 
     let frames = header["frames"].as_u64().unwrap() as usize;
-    let leds = &colors[frames * 3 * 4..];
-    assert_eq!(leds.len(), frames * 2 * 3);
-    assert_eq!(leds[..6], [100, 0, 0, 100, 0, 0]);
+    let lights = &colors[frames * 3 * 4..];
+    assert_eq!(lights.len(), frames * 2 * 3);
+    assert_eq!(lights[..6], [100, 0, 0, 100, 0, 0]);
   }
 
   #[test]
-  fn a_display_layer_is_drawn_on_its_own_screen_and_reaches_no_leds() {
+  fn a_display_layer_is_drawn_on_its_own_screen_and_reaches_no_lights() {
     let source = r#"Scene(version: 2, layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))])"#;
-    let target = PreviewMachine { leds: leds(&[None]), ..no_leds() };
+    let target = PreviewMachine { lights: lights(&[None]), ..no_lights() };
     let rendered = render_scene(ron(source), SIZE, target, Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!((only(&rendered).width, only(&rendered).height), (4, 2));
     assert_eq!((only(&rendered).area.width, only(&rendered).area.height), (4.0, 2.0));
-    assert!(rendered.led_colors.is_empty());
+    assert!(rendered.light_colors.is_empty());
     assert!(rendered.ron.starts_with("Scene("), "{}", rendered.ron);
   }
 
@@ -1222,13 +1222,13 @@ mod tests {
 
   #[test]
   fn a_static_scene_has_no_clip() {
-    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0, None, 0).is_err());
+    assert!(render_clip(0, ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0, None, 0).is_err());
   }
 
   #[test]
   fn refuses_a_clip_too_big_to_send() {
-    let size = SceneSize { leds: 1 << 18, width: 0, height: 0 };
-    let error = render_clip(0, rising("Once"), size, no_leds(), Content::without_folder(), 0, None, 0).unwrap_err();
+    let size = SceneSize { lights: 1 << 18, width: 0, height: 0 };
+    let error = render_clip(0, rising("Once"), size, no_lights(), Content::without_folder(), 0, None, 0).unwrap_err();
     assert!(error.contains("more than"), "{error}");
   }
 
@@ -1238,16 +1238,16 @@ mod tests {
       version: 2, variables: {"tint": Color(1, 2, 3, 4), "size": Float(2.5), "at": Vec2(0.5, 0.25)},
       
       timing: (duration: 2.0, cycle: Forever),
-      layers: [Leds(surface: Area("Square"), layer: (
+      layers: [Lights(surface: Area("Square"), layer: (
         region: (
           base: Polygon(points: [Fixed(0.0, 0.0), Variable("at"), Fixed(1.0, 0.0)]),
           transform: [Rotate(Keyframes(keys: [(at: 0.0, value: 0.0), (at: 1.0, value: 90.0, curve: Steps(4))], cycle: Times(2)))],
         ),
         fill: (base: Solid(Variable("tint")), adjust: [HueShift(Variable("size"))]),
       ))],)"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     let json = serde_json::to_string(&rendered.scene).unwrap();
-    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!(back.ron, rendered.ron);
   }
 
@@ -1255,16 +1255,16 @@ mod tests {
   fn a_sweep_survives_the_editor_and_only_on_a_position() {
     let source = r#"Scene(
       version: 2, timing: (duration: 2.0, cycle: Forever),
-      layers: [Leds(surface: Area("Square"), layer: (
+      layers: [Lights(surface: Area("Square"), layer: (
         region: (
           base: Ellipse(rx: Fixed(1.0), ry: Fixed(1.0)),
           transform: [Translate(Sweep(path: (base: Rect(width: Fixed(4.0), height: Fixed(2.0)), transform: [Translate(Fixed(5.0, 5.0))]), position: Keyframes(keys: [(at: 0.5, value: 0.0), (at: 1.5, value: 1.0)])))],
         ),
         fill: (base: Solid(Fixed(255, 0, 0, 255))),
       ))],)"#;
-    let rendered = render_scene(ron(source), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(source), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     let json = serde_json::to_string(&rendered.scene).unwrap();
-    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let back = render_scene(SceneSource::Definition(serde_json::from_str(&json).unwrap()), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
     assert_eq!(back.ron, rendered.ron);
 
     let path = rendered.shapes[0].as_ref().unwrap().paths[0].as_ref().unwrap();
@@ -1278,7 +1278,7 @@ mod tests {
   /// The first sweep in a scene as JSON
   fn sweep_of(json: &str) -> String {
     let scene: serde_json::Value = serde_json::from_str(json).unwrap();
-    scene["layers"][0]["Leds"]["layer"]["region"]["transform"][0]["Translate"].to_string()
+    scene["layers"][0]["Lights"]["layer"]["region"]["transform"][0]["Translate"].to_string()
   }
 
   fn solid_display(color: &str) -> String {
@@ -1288,7 +1288,7 @@ mod tests {
   fn with_reference(source: &str, reference: &str, above: bool) -> Vec<u8> {
     let content = Content::without_folder().with_scenes([("reference.scene", reference)]);
     let reference = ReferenceScene { name: "reference.scene".into(), above };
-    render_scene(ron(source), TWO_POINTS, no_leds(), content, 0.0, None, Some(reference), 0).unwrap().canvases.remove(0).colors
+    render_scene(ron(source), TWO_POINTS, no_lights(), content, 0.0, None, Some(reference), 0).unwrap().canvases.remove(0).colors
   }
 
   #[test]
@@ -1309,7 +1309,7 @@ mod tests {
     let content = Content::without_folder().with_scenes([("reference.scene", solid_display("0, 0, 255, 255").as_str())]);
     let clear = r#"Scene(version: 2, timing: (duration: 0.1, cycle: Once), layers: [Display(display: "Dmd", layer: (fill: (base: Solid(Fixed(0, 0, 0, 0)))))])"#;
     let reference = ReferenceScene { name: "reference.scene".into(), above: false };
-    let clip = render_clip(0, ron(clear), TWO_POINTS, no_leds(), content, 0, Some(reference), 0).unwrap();
+    let clip = render_clip(0, ron(clear), TWO_POINTS, no_lights(), content, 0, Some(reference), 0).unwrap();
     let (header, points) = read_clip(&clip);
     assert_eq!(points.len(), header["frames"].as_u64().unwrap() as usize * 8);
     assert!(points.chunks_exact(4).all(|point| point == [0, 0, 255, 255]));
@@ -1318,8 +1318,8 @@ mod tests {
   #[test]
   fn a_missing_reference_scene_is_left_out_and_says_why() {
     let reference = ReferenceScene { name: "gone.scene".into(), above: true };
-    let alone = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, None, 0).unwrap();
-    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_leds(), Content::without_folder(), 0.0, None, Some(reference), 0).unwrap();
+    let alone = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, None, 0).unwrap();
+    let rendered = render_scene(ron(RED_TO_BLUE), SIZE, no_lights(), Content::without_folder(), 0.0, None, Some(reference), 0).unwrap();
     assert_eq!(only(&rendered).colors, only(&alone).colors);
     let error = rendered.reference_error.unwrap();
     assert!(error.starts_with("gone.scene can't be shown with this scene"), "{error}");

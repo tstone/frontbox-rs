@@ -32,6 +32,3 @@ impl serde::Serialize for dyn Tag {
 
 #[derive(Tag)]
 pub struct Button;
-
-#[derive(Tag)]
-pub(crate) struct _FrontboxDrivenLamp;

@@ -37,7 +37,7 @@ static EJECT_COIL: LazyLock<DriverDefinition> =
   LazyLock::new(|| TroughSystem::eject_coil_definition(EJECT).build());
 
 fn app() -> App {
-  let mut board = IoBoard::custom(16, 8)
+  let mut board = IoBoard::custom(16, 8, DriverVoltage::High)
     .wire_switch(3, &PLUNGE_SWITCH)
     .wire_switch(4, &INLANE_SWITCH)
     .wire_switch(5, &TARGET_SWITCH)
@@ -56,7 +56,7 @@ fn app() -> App {
     ..BootConfig::default()
   });
   app
-    .system(BallManager::standard(TROUGH, EJECT).plunge_lane(PLUNGE).build())
+    .system(StandardBallManager::builder(TROUGH, EJECT).plunge_lane(PLUNGE).build())
     .system(CradleSystem::new(
       SwitchQ::name(INLANE).or(SwitchQ::name(TARGET)),
       SwitchQ::name(LEFT_FLIPPER).or(SwitchQ::name(RIGHT_FLIPPER)),

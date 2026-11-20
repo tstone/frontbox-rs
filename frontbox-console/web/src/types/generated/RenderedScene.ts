@@ -18,7 +18,7 @@ scene: Scene,
  */
 ron: string, 
 /**
- * The strip of its `Sequence` LED layers, if it has any, then each display it or the reference scene draws on
+ * The strip of its `Sequence` light layers, if it has any, then each display it or the reference scene draws on
  */
 canvases: Array<RenderedCanvas>, 
 /**
@@ -38,12 +38,12 @@ mask_outlines: Array<Array<Array<[number, number]>>>,
  */
 mask_shapes: Array<RenderedShape | null>, 
 /**
- * What each LED the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
+ * What each light the scene lands on would show, by name. Unlike colors from the machine these are in red, green, blue
  * order, however the LED is wired.
  */
-led_colors: { [key in string]: Rgb }, 
+light_colors: { [key in string]: Rgb }, 
 /**
- * The graph each layer is limited to, built from the LEDs it lands on. `None` for a layer without one.
+ * The graph each layer is limited to, built from the lights it lands on. `None` for a layer without one.
  */
 graphs: Array<RenderedGraph | null>, 
 /**

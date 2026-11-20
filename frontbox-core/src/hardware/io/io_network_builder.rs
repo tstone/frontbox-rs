@@ -18,6 +18,7 @@ impl IoNetworkBuilder {
         description: board.description,
         switch_count: board.switch_count,
         driver_count: board.driver_count,
+        driver_voltage: board.driver_voltage,
       });
 
       for wired in &board.switches {

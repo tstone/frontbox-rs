@@ -45,6 +45,33 @@ impl<'a> ContextSystems<'a> {
     }
   }
 
+  /// Lookup a system by a trait it provides (see [`System::provides`]): the nearest one matches first
+  ///
+  /// ```rust,ignore
+  /// if let Some(mut balls) = ctx.systems.get_dyn::<dyn BallManager>() { /* ... */ }
+  /// ```
+  pub fn get_dyn<I: ?Sized + 'static>(&self) -> Option<RefMut<'_, I>> {
+    self.ctx.get_dyn::<I>(self.handle)
+  }
+
+  /// Lookup a system by a trait it provides; panic if none does or it's already in use
+  pub fn expect_dyn<I: ?Sized + 'static>(&self) -> RefMut<'_, I> {
+    self.ctx.expect_dyn::<I>(self.handle)
+  }
+
+  /// Run `f` on the system providing the trait `I`, looked up as [`get_dyn`](Self::get_dyn) does. Logs a warning and
+  /// returns `None` if none is running, or an error if it's already in use.
+  pub fn with_dyn<I: ?Sized + 'static, R>(&self, f: impl FnOnce(&mut I) -> R) -> Option<R> {
+    match self.get_dyn::<I>() {
+      Some(mut system) => Some(f(&mut system)),
+      None => {
+        // `get_dyn` has already logged an error if it's in use
+        log::warn!(target: "frontbox::systems", "No system providing {} is running, or it is in use.", type_name::<I>());
+        None
+      }
+    }
+  }
+
   /// Start up a new system in this system's group
   pub fn spawn(&self, system: impl Into<SpawnableSystemContainer>) {
     self.ctx.spawn_system(self.handle.group, system);

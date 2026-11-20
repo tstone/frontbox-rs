@@ -8,7 +8,7 @@ use crate::prelude::*;
 pub struct AppState {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
-  pub leds: LedLookup,
+  pub lights: LightLookup,
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
   pub config: ConfigCollection,
@@ -25,7 +25,7 @@ impl AppState {
     Self {
       switches: hardware.switches,
       drivers: hardware.drivers,
-      leds: hardware.leds,
+      lights: hardware.lights,
       io_network: hardware.io_network,
       exp_network: hardware.exp_network,
       app_config,

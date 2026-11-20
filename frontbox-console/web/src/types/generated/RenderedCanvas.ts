@@ -6,7 +6,7 @@ import type { RenderedArea } from "./RenderedArea";
  */
 export type RenderedCanvas = { 
 /**
- * The display, by name, or `None` for the strip of `Sequence` LED layers
+ * The display, by name, or `None` for the strip of `Sequence` light layers
  */
 display: string | null, width: number, height: number, 
 /**

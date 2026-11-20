@@ -205,7 +205,7 @@ impl ScenarioBuilder {
       virtual_hardware.set_switch(id, state);
     }
     let mut hardware = vm::read_hardware(parts.boot_config, &virtual_hardware);
-    app_config.planes.iter().for_each(|plane| hardware.leds.add_plane(plane.plane));
+    app_config.planes.iter().for_each(|plane| hardware.lights.add_plane(plane.plane));
     let state = AppState::from_hardware(hardware, parts.configs, app_config);
     virtual_hardware.configure_drivers(&state);
 
@@ -288,7 +288,7 @@ mod tests {
   fn app() -> App {
     let mut app = App::new(BootConfig {
       io_network: IoNetwork::new(vec![
-        IoBoard::custom(8, 8)
+        IoBoard::custom(8, 8, DriverVoltage::High)
           .wire_switch(0, &START)
           .wire_switch(1, &TROUGH)
           .wire_switch(2, &DOOR)

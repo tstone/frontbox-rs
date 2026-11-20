@@ -3,6 +3,7 @@ use crate::prelude::*;
 pub struct SingleLedDefinitionBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
+  channels: LedChannels,
   location: Option<Vec3>,
   config: Option<LedConfiguration>,
 }
@@ -11,6 +12,7 @@ impl SingleLedDefinitionBuilder {
     Self {
       name,
       tags: Vec::new(),
+      channels: LedChannels::Rgb,
       location: None,
       config: None,
     }
@@ -26,6 +28,12 @@ impl SingleLedDefinitionBuilder {
     self
   }
 
+  /// Uses one channel of its LED address, as one brightness, instead of all three as a color
+  pub fn channel(mut self, channel: LedChannel) -> Self {
+    self.channels = LedChannels::One(channel);
+    self
+  }
+
   pub fn location(mut self, location: Vec3) -> Self {
     self.location = Some(location);
     self
@@ -36,8 +44,8 @@ impl SingleLedDefinitionBuilder {
     self
   }
 
-  pub fn channels(mut self, channels: LedChannels) -> Self {
-    self.config_mut().channels = channels;
+  pub fn channel_order(mut self, order: ChannelOrder) -> Self {
+    self.config_mut().channel_order = order;
     self
   }
 
@@ -50,10 +58,32 @@ impl SingleLedDefinitionBuilder {
       Some(loc) => vec![loc],
       None => Vec::new(),
     };
-    LedDefinition::new(self.name, self.tags, 1, locations, self.config)
+    LedDefinition::new(self.name, self.tags, 1, self.channels, locations, self.config)
   }
 
-  pub fn q(&self) -> LedQ {
-    LedQ::name(self.name)
+  pub(crate) fn name(&self) -> &'static str {
+    self.name
+  }
+
+  /// Builds the light on `channel`, for a builder that decides channels itself ([`ChannelLedDefinitionBuilder`],
+  /// [`PackedLedDefinitionBuilder`]). Panics if the light was already given a channel.
+  pub(crate) fn build_on(self, channel: LedChannel) -> SingleLedDefinition {
+    if self.channels != LedChannels::Rgb {
+      panic!(
+        "LED \"{}\" is given a channel, but LedDefinition::channels and LedDefinition::packed decide its channel",
+        self.name
+      );
+    }
+    SingleLedDefinition {
+      name: LedDefinition::child_name(self.name, 0),
+      channels: LedChannels::One(channel),
+      tags: self.tags,
+      location: self.location,
+      config: self.config,
+    }
+  }
+
+  pub fn q(&self) -> LightQ {
+    LightQ::name(self.name)
   }
 }

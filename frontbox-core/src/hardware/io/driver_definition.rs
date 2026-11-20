@@ -8,6 +8,9 @@ pub struct DriverDefinition {
   pub tags: Vec<Box<dyn Tag>>,
   pub location: Option<Vec3>,
   pub mode: Option<DriverMode>,
+  /// For a driver powering a bulb ([`DriverDefinition::light`]), the bulb's color. A driver with one is also a light,
+  /// named the same, that light management turns on and off.
+  pub bulb: Option<Rgb>,
 }
 
 impl DriverDefinition {
@@ -15,9 +18,10 @@ impl DriverDefinition {
     DriverDefinitionBuilder::new(name)
   }
 
-  /// Lamps use low-voltage drivers to turn on and off
-  pub fn lamp(name: &'static str) -> LampDefinitionBuilder {
-    LampDefinitionBuilder::new(name)
+  /// A driver powering a bulb, such as a lamp on a low-voltage driver. It's also a light, of the same name, which
+  /// light management turns on and off over the driver's virtual switch.
+  pub fn light(name: &'static str) -> DriverLightBuilder {
+    DriverLightBuilder::new(name)
   }
 
   pub fn configs(&self) -> Vec<&ConfigDefinition> {
@@ -128,23 +132,33 @@ impl DriverDefinitionBuilder {
       tags: self.tags,
       location: self.location,
       mode: self.mode,
+      bulb: None,
     }
   }
 }
 
-pub struct LampDefinitionBuilder {
+/// Builds a driver light. See [`DriverDefinition::light`].
+pub struct DriverLightBuilder {
   name: &'static str,
   tags: Vec<Box<dyn Tag>>,
   location: Option<Vec3>,
+  color: Rgb,
 }
 
-impl LampDefinitionBuilder {
+impl DriverLightBuilder {
   pub fn new(name: &'static str) -> Self {
     Self {
       name,
-      tags: vec![Box::new(tags::_FrontboxDrivenLamp)],
+      tags: Vec::new(),
       location: None,
+      color: Rgb::new(255, 255, 255),
     }
+  }
+
+  /// The bulb's color, white by default. It only says what the light looks like, such as in the console's previews.
+  pub fn color(mut self, color: Rgb) -> Self {
+    self.color = color;
+    self
   }
 
   pub fn tag(mut self, tag: impl Tag + 'static) -> Self {
@@ -162,6 +176,7 @@ impl LampDefinitionBuilder {
     self
   }
 
+  /// Held on at full power while its virtual switch is on, and off while it's off
   pub fn build(self) -> DriverDefinition {
     DriverDefinition {
       name: self.name,
@@ -174,6 +189,7 @@ impl LampDefinitionBuilder {
           .secondary_pwm_power(Power::FULL)
           .build(),
       ),
+      bulb: Some(self.color),
     }
   }
 }

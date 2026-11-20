@@ -6,18 +6,18 @@ use std::collections::HashMap;
 use frontbox_core::prelude::*;
 use frontbox_scene::{PlayableScene, ScenePlayer};
 
-use crate::ball_management::{BallManager, Launch};
+use crate::ball_management::{BallManagerExt, Launch};
 use crate::{BallDraining, TurnActive, TurnPhase, configs, metrics};
 
 /// Saves balls that drain while a ball save is active, by relaunching them as though the drain never happened.
 ///
 /// ## Per player
-/// Ball save belongs in the player's system group (the `GameManager` player template), not at the root. It is only
+/// Ball save belongs in the player's system group (the game manager's player template), not at the root. It is only
 /// active while that player's turn is beginning or active. When the turn ends it deactivates, which clears every
 /// request, so nothing carries over to the next turn. Ball management, by contrast, is global.
 ///
 /// ## Requests
-/// Other systems don't turn ball save on and off; they place a request, much like declaring LEDs. Ball save is active
+/// Other systems don't turn ball save on and off; they place a request, much like declaring light colors. Ball save is active
 /// while any request is.
 /// - Each system has at most one request. A new one replaces that system's previous one.
 /// - Requests from different systems overlap: a timed request runs to its own deadline and never shortens another.
@@ -184,7 +184,7 @@ impl System for BallSaveSystem {
   }
 
   fn on_deactivate(&mut self, ctx: &SystemContext) {
-    // Overriding skips the default LED deactivation; clearing stops the scene instead
+    // Overriding skips the default light deactivation; clearing stops the scene instead
     self.clear(ctx);
   }
 
@@ -207,8 +207,8 @@ impl System for BallSaveSystem {
       ctx.routines.complete_step::<BallDraining>();
       return;
     }
-    let Some(mut ball_manager) = ctx.systems.get::<BallManager>() else {
-      log::error!(target: "frontbox::ball_save", "No BallManager to relaunch the saved ball(s); letting the drain stand");
+    let Some(mut ball_manager) = ctx.ball_manager() else {
+      log::error!(target: "frontbox::ball_save", "No ball management to relaunch the saved ball(s); letting the drain stand");
       ctx.routines.complete_step::<BallDraining>();
       return;
     };
@@ -257,20 +257,24 @@ mod tests {
   use std::sync::{Arc, Mutex};
 
   use super::*;
-  use crate::ball_management::BallManagement;
+  use crate::ball_management::BallManager;
 
   const A: u64 = 1;
   const B: u64 = 2;
 
   /// Records ejects, standing in for real ball management
   #[derive(Clone, Default)]
-  struct FakeBallManagement {
+  struct FakeBallManager {
     ejects: Arc<Mutex<Vec<(u8, Launch)>>>,
   }
 
-  impl System for FakeBallManagement {}
+  impl System for FakeBallManager {
+    fn provides(provides: &mut Provides<Self>) {
+      provides.add::<dyn BallManager>(|s| s);
+    }
+  }
 
-  impl BallManagement for FakeBallManagement {
+  impl BallManager for FakeBallManager {
     fn eject(&mut self, launch: Launch, ctx: &ServiceContext) -> u64 {
       self.eject_many(1, launch, ctx)
     }
@@ -320,9 +324,9 @@ mod tests {
 
     fn with(mut save: BallSaveSystem) -> Self {
       let mut ctx = TestContext::default();
-      let balls = FakeBallManagement::default();
+      let balls = FakeBallManager::default();
       let ejects = balls.ejects.clone();
-      ctx.insert_system(BallManager::new(balls));
+      ctx.insert_system(balls);
       save.on_spawn(&ctx.sys_ctx());
       Self { save, ctx, ejects }
     }

@@ -6,7 +6,7 @@ use crate::ball_management::{
   BallEnteredPlungeLane, BallExitedPlungeLane, BallReenteredPlungeLane,
 };
 
-/// A plunge (shooter) lane that balls are ejected into, and launched from. Built with `BallManager::standard`.
+/// A plunge (shooter) lane that balls are ejected into, and launched from. Built with `StandardBallManager::builder`.
 #[derive(Clone)]
 pub struct PlungeLaneConfig {
   pub(super) switch_name: &'static str,
@@ -173,12 +173,12 @@ mod tests {
   struct GameOwner;
   impl System for GameOwner {}
 
-  /// A scene on an LED the machine doesn't have, that plays until stopped
+  /// A scene on a light the machine doesn't have, that plays until stopped
   fn scene() -> PlayableScene {
     let scene = frontbox_scene::Scene::load(
       r#"Scene(
         version: 2,
-        layers: [Leds(leds: Name("plunge_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+        layers: [Lights(lights: Name("plunge_light"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
       )"#,
     );
     PlayableScene::new(scene.unwrap())

@@ -6,7 +6,7 @@ use crate::GamePhase;
 /// Attract mode: while no game is running, plays a list of scenes, each until it completes, and starts over at the end of
 /// the list
 ///
-/// Each plays on whichever LEDs and plane it says. A scene that never completes (static, or repeating forever) plays until
+/// Each plays on whichever lights and plane it says. A scene that never completes (static, or repeating forever) plays until
 /// the system goes inactive, and the scenes after it aren't reached. A scene that draws images or text needs them loaded
 /// with [`Scene::with_assets`].
 ///
@@ -54,7 +54,7 @@ mod tests {
   use frontbox_gfx::animation::Cycle;
   use frontbox_gfx::prelude::*;
   use frontbox_gfx::scene::*;
-  use frontbox_scene::{LedLayer, SceneSystem};
+  use frontbox_scene::{LightLayer, SceneSystem};
 
   use super::*;
 
@@ -71,7 +71,7 @@ mod tests {
   /// A scene that says what it is in its layer's name
   fn named(name: &str) -> Scene {
     let layer = Layer::new(Fill::new(FillNode::Solid(Color(Rgba::red()).into()))).name(name);
-    Scene::new(vec![LedLayer::sequence(LedQ::every(), layer).into()])
+    Scene::new(vec![LightLayer::sequence(LightQ::every(), layer).into()])
   }
 
   /// One second of a scene

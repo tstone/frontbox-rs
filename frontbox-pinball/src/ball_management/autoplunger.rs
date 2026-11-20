@@ -3,7 +3,7 @@ use frontbox_scene::{Completes, PlayableScene, ScenePlayer, SceneSystemExt};
 
 use crate::ball_management::{AutoPlungerFired, LaunchMethod, PlungeLaneSystem};
 
-/// An autoplunger coil, and optionally the buttons that let the player fire it. Built with `BallManager::standard`.
+/// An autoplunger coil, and optionally the buttons that let the player fire it. Built with `StandardBallManager::builder`.
 #[derive(Clone)]
 pub struct AutoPlungerConfig {
   pub(super) coil_name: &'static str,
@@ -220,13 +220,13 @@ struct BeforeLaunchSceneCompleted;
 mod tests {
   use super::*;
 
-  /// A one second scene on an LED the machine doesn't have
+  /// A one second scene on a light the machine doesn't have
   fn scene() -> PlayableScene<Completes> {
     let scene = frontbox_scene::Scene::load(
       r#"Scene(
         version: 2,
         timing: (duration: 1.0),
-        layers: [Leds(leds: Name("launch_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+        layers: [Lights(lights: Name("launch_light"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
       )"#,
     );
     PlayableScene::completing(scene.unwrap()).unwrap()

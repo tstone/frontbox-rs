@@ -49,6 +49,22 @@ pub trait System: Any {
   fn is_active(&self, ctx: &SystemContext) -> bool {
     true
   }
+
+  /// The traits this system can be looked up by, besides its own type, with `ctx.systems.get_dyn::<dyn Trait>()`.
+  /// Lets callers reach whichever implementation the app added, without knowing which one it is.
+  ///
+  /// ```rust,ignore
+  /// impl System for StandardBallManager {
+  ///   fn provides(provides: &mut Provides<Self>) {
+  ///     provides.add::<dyn BallManager>(|s| s);
+  ///   }
+  /// }
+  /// ```
+  fn provides(provides: &mut Provides<Self>)
+  where
+    Self: Sized,
+  {
+  }
 }
 
 /// A system which can be spawned dynamically during runtime.

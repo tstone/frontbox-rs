@@ -124,7 +124,7 @@ impl AppTracer for WebTracer {
     // the app calls this at boot, inside its runtime
     self.hub.set_control(control);
     self.hub.set_metrics(metrics);
-    self.hub.set_led_radius(config.led_radius);
+    self.hub.set_light_radius(config.light_radius);
     self.hub.set_content(config.content_path.clone());
     self.hub.set_planes(&config.planes);
     self.start();

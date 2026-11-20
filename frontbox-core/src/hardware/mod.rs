@@ -4,7 +4,7 @@
 //!
 //! - drivers (coils)
 //! - switches
-//! - LEDs
+//! - lights (LEDs)
 //!
 //! ### Common Configuration & Identification
 //!
@@ -12,9 +12,9 @@
 //!
 //! - **Name** - Name is a unique, static string identifier that will always refer to that exact piece of hardware. In most cases this is explicitly given, but in some cases (e.g. LED strips) it is automatically generated.
 //! - **Tags** - Tags are just empty structs which are a way to arbitrarily classify something (e.g. on the playfield, part of a mech, of a type, etc.). These can be user-defined.
-//! - **Location** - Location specifies where something is in space, and is typically used for LED canvas rendering or complex spatial effects.
+//! - **Location** - Location specifies where something is in space, and is typically used for light canvas rendering or complex spatial effects.
 //!
-//! Thus, in Frontbox hardware can typically always be referenced in these 3 ways: directly by it's name, or implicitly but it's tags or location. See hardware querying ([SwitchQ], [DriverQ], [LedQ]) for details on how this works.
+//! Thus, in Frontbox hardware can typically always be referenced in these 3 ways: directly by it's name, or implicitly but it's tags or location. See hardware querying ([SwitchQ], [DriverQ], [LightQ]) for details on how this works.
 //!
 //! ```rust
 //! # use frontbox_core::prelude::*;
@@ -128,7 +128,10 @@ mod hardware;
 mod hardware_definition;
 mod hardware_query_conversions;
 mod io;
-mod led_query;
+mod light;
+mod light_address;
+mod light_lookup;
+mod light_query;
 mod region;
 mod switch_query;
 
@@ -140,6 +143,9 @@ pub use hardware_definition::*;
 #[allow(unused)]
 pub use hardware_query_conversions::*;
 pub use io::*;
-pub use led_query::*;
+pub use light::*;
+pub use light_address::*;
+pub use light_lookup::*;
+pub use light_query::*;
 pub use region::*;
 pub use switch_query::*;

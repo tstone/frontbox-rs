@@ -10,7 +10,7 @@ const MAX_LEDS_PER_BREAKOUT: usize = 128;
 pub struct Hardware {
   pub switches: SwitchLookup,
   pub drivers: DriverLookup,
-  pub leds: LedLookup,
+  pub lights: LightLookup,
   pub io_network: Vec<ResolvedIoBoard>,
   pub exp_network: Vec<ResolvedExpansionBoard>,
 }
@@ -19,7 +19,7 @@ impl Hardware {
   pub fn new(
     switches: SwitchLookup,
     drivers: DriverLookup,
-    leds: LedLookup,
+    lights: LightLookup,
     io_network: Vec<ResolvedIoBoard>,
     exp_network: Vec<ResolvedExpansionBoard>,
   ) -> Self {
@@ -52,10 +52,33 @@ impl Hardware {
       );
     }
 
+    let shared_channels = lights.shared_channels();
+    if !shared_channels.is_empty() {
+      let list = shared_channels
+        .iter()
+        .map(|(led, first, second)| format!("  {}: \"{}\" and \"{}\"", led, first, second))
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!("Lights share a channel of an LED address:\n{}", list);
+    }
+
+    let reordered = lights.reordered_single_channels();
+    if !reordered.is_empty() {
+      let list = reordered
+        .iter()
+        .map(|(led, light)| format!("  {}: \"{}\"", led, light))
+        .collect::<Vec<_>>()
+        .join("\n");
+      panic!(
+        "An LED address with single-channel lights must keep the default channel order, since a single channel is named by its position on the wire:\n{}",
+        list
+      );
+    }
+
     Self {
       switches,
       drivers,
-      leds,
+      lights,
       io_network,
       exp_network,
     }
@@ -140,14 +163,15 @@ impl Hardware {
         .iter()
         .enumerate()
         .for_each(|(i, led)| {
+          let led_offset = multi_def.offset(i as u16).unwrap_or(i as u16) as usize;
           addressed_leds.push(ExpAddressed {
             definition: led.clone(),
             assignment: ExpAddress::new(board.address, Some(port_idx / 4)),
-            id: i + port_led_total_count + offset as usize,
+            id: led_offset + port_led_total_count + offset as usize,
           });
         });
 
-      port_led_total_count += multi_def.children().len();
+      port_led_total_count += multi_def.address_count() as usize;
     }
 
     log::trace!(target: "frontbox::hardware", "Mapped {} leds: {:?}", addressed_leds.len(), addressed_leds);
@@ -273,10 +297,19 @@ mod tests {
       .collect()
   }
 
+  fn high_voltage_board() -> IoBoard {
+    IoBoard {
+      description: "test",
+      switch_count: 16,
+      driver_count: 16,
+      driver_voltage: DriverVoltage::High,
+    }
+  }
+
   #[test]
   fn finds_unknown_switch_references() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]));
+    let drivers = DriverLookup::new(addressed(vec![&*GOOD, &*TYPO, &*FLIPPER, &*VIRTUAL]), &[high_voltage_board()]);
 
     assert_eq!(
       Hardware::unknown_switch_references(&drivers, &switches),
@@ -307,7 +340,7 @@ mod tests {
 
   #[test]
   fn identical_hardware_configs_on_one_key_are_duplicates() {
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]), &[high_voltage_board()]);
     assert_eq!(
       Hardware::duplicate_config_keys(&drivers),
       vec![("Initial Power", "left", "right")]
@@ -316,7 +349,7 @@ mod tests {
 
   #[test]
   fn an_explicit_key_resolves_a_duplicate() {
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]));
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT_KEYED]), &[high_voltage_board()]);
     assert!(Hardware::duplicate_config_keys(&drivers).is_empty());
   }
 
@@ -324,8 +357,8 @@ mod tests {
   #[should_panic(expected = "Hardware config keys must be unique")]
   fn duplicate_hardware_config_keys_panic_at_boot() {
     let switches = SwitchLookup::new(addressed(vec![&*SWITCH]), vec![]);
-    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]));
-    Hardware::new(switches, drivers, LedLookup::default(), vec![], vec![]);
+    let drivers = DriverLookup::new(addressed(vec![&*LEFT, &*RIGHT]), &[high_voltage_board()]);
+    Hardware::new(switches, drivers, LightLookup::default(), vec![], vec![]);
   }
 
   static STRIP_64: LazyLock<LedDefinition> =
@@ -387,6 +420,66 @@ mod tests {
       .wire_led_port(2, LedPort::ws2812().leds(vec![&*STRIP_65]));
 
     Hardware::resolve_expansion_boards(&vec![board]);
+  }
+
+  static FLASHERS: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::channels()
+      .r(LedDefinition::single("flasher_a"))
+      .g(LedDefinition::single("flasher_b"))
+      .build()
+  });
+
+  #[test]
+  fn channel_lights_share_one_led_address() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*FLASHERS, &*STRIP_32]));
+    let port = &Hardware::resolve_expansion_boards(&vec![board])[0].led_ports[0];
+
+    let ids: Vec<usize> = port.leds.iter().map(|led| led.id).collect();
+    assert_eq!(&ids[..3], &[0, 0, 1]);
+    assert_eq!(port.length, 33);
+  }
+
+  static SEGMENTS: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::packed()
+      .lights(["a", "b", "c", "d"].map(LedDefinition::single))
+      .build()
+  });
+
+  #[test]
+  fn packed_lights_take_the_led_addresses_they_reach() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*SEGMENTS, &*STRIP_32]));
+    let port = &Hardware::resolve_expansion_boards(&vec![board])[0].led_ports[0];
+
+    let ids: Vec<usize> = port.leds.iter().map(|led| led.id).collect();
+    assert_eq!(&ids[..5], &[0, 0, 0, 1, 2]);
+    assert_eq!(port.length, 34);
+  }
+
+  #[test]
+  #[should_panic(expected = "Lights share a channel of an LED address")]
+  fn lights_sharing_a_channel_panic_at_boot() {
+    let led = LedAddress::new(ExpAddress::new(1, Some(0)), 0, 0);
+    let mut lights = LightLookup::default();
+    for name in ["a", "b"] {
+      let address = LightAddress::Exp { led: led.clone(), channels: LedChannels::One(LedChannel::G) };
+      lights.insert(name.into(), Light { name: name.into(), address, ..Default::default() });
+    }
+    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], vec![]);
+  }
+
+  static REORDERED_FLASHER: LazyLock<LedDefinition> = LazyLock::new(|| {
+    LedDefinition::channels()
+      .r(LedDefinition::single("flasher").channel_order(ChannelOrder::GRB))
+      .build()
+  });
+
+  #[test]
+  #[should_panic(expected = "must keep the default channel order")]
+  fn a_channel_order_on_single_channel_lights_panics_at_boot() {
+    let board = exp_board().wire_led_port(1, LedPort::ws2812().leds(vec![&*REORDERED_FLASHER]));
+    let boards = Hardware::resolve_expansion_boards(&vec![board]);
+    let lights = LightLookup::new(&boards, &[]);
+    Hardware::new(SwitchLookup::new(vec![], vec![]), DriverLookup::new(vec![], &[]), lights, vec![], boards);
   }
 
   #[test]

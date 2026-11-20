@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use frontbox_core::prelude::*;
 use frontbox_core::testing::Scenario;
-use frontbox_led::prelude::*;
+use frontbox_lighting::prelude::*;
 use frontbox_pinball::*;
 
 struct Lower;
@@ -39,13 +39,13 @@ static REAR_DRIVER: LazyLock<DriverDefinition> = LazyLock::new(|| {
     .build()
 });
 
-/// A scene with the given timing line, on an LED the machine doesn't have
+/// A scene with the given timing line, on a light the machine doesn't have
 fn scene(timing: &str) -> PlayableScene<Completes> {
   let scene = format!(
     r#"Scene(
       version: 2,
       {timing}
-      layers: [Leds(leds: Name("scoop_led"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
+      layers: [Lights(lights: Name("scoop_light"), surface: Sequence, layer: (fill: (base: Solid(Fixed(255, 0, 0, 255)))))],
     )"#
   );
   PlayableScene::completing(Scene::load(&scene).unwrap()).unwrap()
@@ -54,7 +54,7 @@ fn scene(timing: &str) -> PlayableScene<Completes> {
 fn app() -> App {
   let mut app = App::new(BootConfig {
     io_network: IoNetwork::new(vec![
-      IoBoard::custom(8, 8)
+      IoBoard::custom(8, 8, DriverVoltage::High)
         .wire_switch(0, &LOWER_SWITCH)
         .wire_switch(1, &LOWER_ENTRANCE_SWITCH)
         .wire_switch(2, &REAR_SWITCH)

@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use frontbox_core::prelude::*;
 
 use crate::ball_management::{
-  BallEnteredPlay, BallManager, BallSearchFailed, BallSearching, BallsExitedPlay,
+  BallEnteredPlay, BallManagerExt, BallSearchFailed, BallSearching, BallsExitedPlay,
   BallsHeldChanged, MaxBallsInPlayChanged,
 };
 use crate::{CoinDoor, configs, metrics};
@@ -70,7 +70,8 @@ impl BallSearchSystem {
     self
   }
 
-  /// Coils to fire after the routine in each round
+  /// Coils to fire after the routine in each round. To leave out lamps on low-voltage drivers, narrow the query with
+  /// [`DriverQ::voltage`], e.g. `DriverQ::tag::<Playfield>().and(DriverQ::voltage(DriverVoltage::High))`.
   pub fn coils(mut self, coils: DriverQ) -> Self {
     self.coils = Some(coils);
     self
@@ -114,8 +115,7 @@ impl BallSearchSystem {
   fn has_loose_ball(&self, ctx: &SystemContext) -> bool {
     ctx.states.is(CoinDoor::Closed)
       && ctx
-        .systems
-        .get::<BallManager>()
+        .ball_manager()
         .is_some_and(|ball_manager| {
           ball_manager.balls_in_play(ctx.into()) > ball_manager.balls_held()
             && !ball_manager.is_ball_in_plunge_lane(ctx.into())
@@ -204,8 +204,7 @@ impl BallSearchSystem {
   fn give_up(&mut self, ctx: &SystemContext) {
     log::warn!(target: "frontbox::ball_management::ball_search", "Ball search gave up after {} rounds", self.rounds);
     let in_play = ctx
-      .systems
-      .get::<BallManager>()
+      .ball_manager()
       .map_or(0, |mut ball_manager| {
         ball_manager.remove_missing_ball(ctx.into());
         ball_manager.balls_in_play(ctx.into())

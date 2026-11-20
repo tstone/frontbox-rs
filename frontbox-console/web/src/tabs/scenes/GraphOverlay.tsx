@@ -13,7 +13,7 @@ const PRECISION = 1000
 const ARC_POINTS = 48
 
 /**
- * The edges of the open layer's graph, drawn over the preview, with each node as a dot that names its LED. `highlighted`
+ * The edges of the open layer's graph, drawn over the preview, with each node as a dot that names its light. `highlighted`
  * is pointed out, and while `choosing` the nodes are drawn larger to click on. A traversal that starts from or goes to a
  * position has a handle there.
  */

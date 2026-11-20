@@ -14,7 +14,7 @@ import type { Prop } from '../../types/generated/Prop'
 import type { Pick } from '../../types/generated/Pick'
 import type { Random } from '../../types/generated/Random'
 import type { GraphMask } from '../../types/generated/GraphMask'
-import type { LedLayer } from '../../types/generated/LedLayer'
+import type { LightLayer } from '../../types/generated/LightLayer'
 import type { Scene as SceneFile } from '../../types/generated/Scene'
 import type { SceneLayer as SceneFileLayer } from '../../types/generated/SceneLayer'
 import type { SceneSource } from '../../types/generated/SceneSource'
@@ -441,8 +441,8 @@ export function freshTraversalName(layer: SceneLayer, base: string) {
 }
 
 /**
- * What a layer draws on, as one string so a dropdown can offer them all: `Sequence` for LEDs in order, `Area:<plane>`
- * for LEDs where they are on a plane, or `Display:<display>`
+ * What a layer draws on, as one string so a dropdown can offer them all: `Sequence` for lights in order, `Area:<plane>`
+ * for lights where they are on a plane, or `Display:<display>`
  */
 export type LayerPlace = 'Sequence' | `Area:${string}` | `Display:${string}`
 
@@ -452,26 +452,26 @@ export function layerPlace(layer: SceneLayer): LayerPlace {
   return plane === null ? 'Sequence' : `Area:${plane}`
 }
 
-/** The display a place is, which is `null` for LEDs */
+/** The display a place is, which is `null` for lights */
 export const placeDisplay = (place: LayerPlace) => (place.startsWith('Display:') ? place.slice('Display:'.length) : null)
 
 /**
- * Where a new layer on `place` goes: on the LEDs and at the z of the last layer there, so that stacking is the easy
- * thing to do. A first layer on LEDs is on every LED.
+ * Where a new layer on `place` goes: on the lights and at the z of the last layer there, so that stacking is the easy
+ * thing to do. A first layer on lights is on every light.
  */
 export function newLayerPlace(scene: Scene, place: LayerPlace): Omit<SceneLayer, keyof Layer> {
   const display = placeDisplay(place)
   if (display !== null) return { display, z: scene.layers.findLast((layer) => layer.display === display)?.z }
   const under = scene.layers.findLast((layer) => layer.display === undefined)
-  return { leds: under?.leds ?? 'Every', z: under?.z, surface: place === 'Sequence' ? 'Sequence' : { Area: place.slice('Area:'.length) } }
+  return { lights: under?.lights ?? 'Every', z: under?.z, surface: place === 'Sequence' ? 'Sequence' : { Area: place.slice('Area:'.length) } }
 }
 
-/** What code can do with a scene's LEDs: nothing as it can't play yet, replace them all, or leave them as they are */
-export function ledsCase(scene: Scene) {
+/** What code can do with a scene's lights: nothing as it can't play yet, replace them all, or leave them as they are */
+export function lightsCase(scene: Scene) {
   const layers = scene.layers.filter((layer) => layer.display === undefined)
-  if (layers.some((layer) => layer.leds === undefined)) return 'None'
-  const leds = new Set(layers.map((layer) => JSON.stringify(layer.leds)))
-  return leds.size <= 1 ? 'Replaceable' : 'Fixed'
+  if (layers.some((layer) => layer.lights === undefined)) return 'None'
+  const lights = new Set(layers.map((layer) => JSON.stringify(layer.lights)))
+  return lights.size <= 1 ? 'Replaceable' : 'Fixed'
 }
 
 type PropLens = Lens<Prop<SceneValue>>
@@ -737,10 +737,10 @@ function held(prop: Prop<SceneValue>): Prop<SceneValue> {
 }
 
 /**
- * A layer as the editor works on it, with what it's drawn on alongside what it draws: LEDs, with `leds`, `surface`, and
+ * A layer as the editor works on it, with what it's drawn on alongside what it draws: lights, with `lights`, `surface`, and
  * `z`, or a display, named by `display`.
  */
-export type SceneLayer = Layer & Partial<Omit<LedLayer, 'layer'>> & { display?: string }
+export type SceneLayer = Layer & Partial<Omit<LightLayer, 'layer'>> & { display?: string }
 
 /**
  * A scene as the editor works on it, with everything about a layer in one place. Its sound layers are apart from the
@@ -755,7 +755,7 @@ export function editedScene({ layers, ...scene }: SceneFile): Scene {
       const { layer, ...place } = on.Display
       return [{ ...layer, ...place }]
     }
-    const { layer, ...place } = on.Leds
+    const { layer, ...place } = on.Lights
     return [{ ...layer, ...place }]
   })
   const sounds = layers.flatMap((on) => ('Sound' in on ? [on.Sound] : []))
@@ -763,8 +763,8 @@ export function editedScene({ layers, ...scene }: SceneFile): Scene {
 }
 
 function sceneFile({ layers, sounds, ...scene }: Scene): SceneFile {
-  const placed = layers.map(({ leds, z, surface, display, ...layer }): SceneFileLayer =>
-    display !== undefined ? { Display: { display, z, layer } } : { Leds: { leds, z, surface: surface ?? 'Sequence', layer } },
+  const placed = layers.map(({ lights, z, surface, display, ...layer }): SceneFileLayer =>
+    display !== undefined ? { Display: { display, z, layer } } : { Lights: { lights, z, surface: surface ?? 'Sequence', layer } },
   )
   return { ...scene, layers: [...placed, ...sounds.map((sound): SceneFileLayer => ({ Sound: sound }))] }
 }

@@ -5,7 +5,7 @@
  */
 export type RenderedGraph = { 
 /**
- * The LED each node is, by name
+ * The light each node is, by name
  */
 names: Array<string>, nodes: Array<[number, number]>, 
 /**
