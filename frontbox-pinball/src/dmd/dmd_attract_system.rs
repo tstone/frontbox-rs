@@ -9,8 +9,9 @@ const LAST_SCORE_SCENE: &str = "frontbox/128x32/attract/last_score.scene";
 const PRESS_START_SCENE: &str = "frontbox/128x32/attract/press_start.scene";
 
 /// Attract mode on the DMD: while no game is running and the operator menu isn't open, shows a list of screens one after
-/// another, each for the same time, and starts over at the end of the list. The flipper buttons step back and forward
-/// through them. When a game ends, it goes to the first of the last game's scores.
+/// another, and starts over at the end of the list. The flipper buttons step back and forward
+/// through them. When a game ends, it goes to the first of the last game's scores. A scene that plays a set number of
+/// times stays up until it ends; every other screen is shown for the same time.
 ///
 /// ```rust,ignore
 /// app.system(
@@ -59,7 +60,7 @@ impl DmdAttractSystem {
     self
   }
 
-  /// How long each screen is shown. 6 seconds unless this says otherwise.
+  /// How long each screen that loops or doesn't animate is shown. 6 seconds unless this says otherwise.
   pub fn screen_duration(mut self, duration: Duration) -> Self {
     self.screen_duration = duration;
     self
@@ -124,14 +125,20 @@ impl DmdAttractSystem {
     self.player = Some(ScenePlayer::started(scene, ctx));
   }
 
-  /// Moves on after a screen's time, counting from now
+  /// How long screen `index` is shown: a scene that plays a set number of times, until it ends
+  fn duration_of(&self, index: usize) -> Duration {
+    self
+      .scenes
+      .get(index)
+      .and_then(|scene| scene.as_ref()?.timing?.length())
+      .map_or(self.screen_duration, Duration::from_secs_f32)
+  }
+
+  /// Moves on after the current screen's time, counting from now
   fn schedule_next(&mut self, ctx: &SystemContext) {
     ctx.timers.cancel(self.timer_id.take());
-    self.timer_id = Some(
-      ctx
-        .timers
-        .start(NextScreen, Timer::Forever(self.screen_duration)),
-    );
+    let duration = self.duration_of(self.current);
+    self.timer_id = Some(ctx.timers.start(NextScreen, Timer::Once(duration)));
   }
 }
 
@@ -182,6 +189,7 @@ impl System for DmdAttractSystem {
   fn on_event(&mut self, event: &dyn Event, ctx: &SystemContext) {
     if event.is::<NextScreen>() {
       self.step(1, ctx);
+      self.schedule_next(ctx);
     } else if let Some(ended) = event.downcast_ref::<RoutineCompleted<GameEnding>>() {
       self.last_scores = ended.routine.scores.clone();
       // the scores the players finished with
