@@ -2,7 +2,8 @@ use super::*;
 
 impl RunLoop {
   /// Spawns the system as a child of `parent`, or at the top level. Returns its handle, or `None` if it was refused: a
-  /// parent can't have two children of one type, except [`Group`]s. A `Group`'s children are spawned with it.
+  /// parent can't have two children of one type, except [`Group`]s and [`Multi`]s. Their children are spawned with
+  /// them. A `Multi`'s children are copies, which can share a type as they're left out of the type table.
   pub(super) fn spawn_system(
     &mut self,
     mut system: SystemContainer,
@@ -13,17 +14,24 @@ impl RunLoop {
       None => ROOT_GROUP,
       Some(parent) => self.children_group_of(parent)?,
     };
-    let is_group = system.type_id() == TypeId::of::<Group>();
-    if let Some(group) = system.downcast_mut::<Group>() {
-      let (name, description) = (group.name(), group.group_description());
+    // systems that only hold others, named by whoever made them
+    let holder = if let Some(group) = system.downcast_mut::<Group>() {
+      Some((group.name(), group.group_description()))
+    } else if let Some(multi) = system.downcast_mut::<Multi>() {
+      Some((multi.name(), multi.multi_description()))
+    } else {
+      None
+    };
+    if let Some((name, description)) = holder {
       system.set_name(name);
       if let Some(description) = description {
         system.set_description(description);
       }
     }
+    let is_holder = holder.is_some();
 
     let siblings = self.groups.get_mut(&group)?;
-    if !is_group && let Some(existing_id) = siblings.id_by_type_id(&system.type_id()) {
+    if !is_holder && let Some(existing_id) = siblings.id_by_type_id(&system.type_id()) {
       log::warn!(
         target: "frontbox::systems",
         "Could not spawn system {} because its parent already has one ({}). Only one system of a type may run with the \
@@ -34,7 +42,7 @@ impl RunLoop {
       return None;
     }
     let parent_active = siblings.is_active();
-    siblings.insert(system);
+    siblings.add(system);
 
     let handle = SystemHandle::new(system_id, group);
     let children = {
@@ -51,20 +59,23 @@ impl RunLoop {
         name: system.name(),
         parent: parent.map(|parent| parent.id),
         active: system.was_active(),
-        group: is_group,
+        group: is_holder,
         description: system.description(),
       });
-      system
-        .downcast_mut::<Group>()
-        .map(Group::take_children)
-        .unwrap_or_default()
+      let mut children: Vec<SystemContainer> = Vec::new();
+      if let Some(group) = system.downcast_mut::<Group>() {
+        children.extend(group.take_children().into_iter().map(|child| child.to_system_container()));
+      } else if let Some(multi) = system.downcast_mut::<Multi>() {
+        children.extend(multi.take_copies().into_iter().map(|copy| copy.to_system_container()));
+      }
+      children
     };
 
     let event = SystemSpawned::new(system_id);
     let _ = self.app_sender.send(EmitEvent(None, EventBox::new(event)));
 
     for child in children {
-      self.spawn_system(child.to_system_container(), Some(handle));
+      self.spawn_system(child, Some(handle));
     }
     Some(handle)
   }
@@ -79,12 +90,13 @@ impl RunLoop {
       return None;
     };
     let active = parent_system.was_active();
+    let copies = parent_system.type_id() == TypeId::of::<Multi>();
     drop(parent_system);
 
     let id = GroupId::next();
     self
       .groups
-      .insert(id, SystemGroup::owned_by(parent, active));
+      .insert(id, SystemGroup::owned_by(parent, active, copies));
     Some(id)
   }
 
@@ -855,5 +867,82 @@ mod cause_tests {
         (player.id, Some("Player 1's systems")),
       ]
     );
+  }
+}
+
+#[cfg(test)]
+mod multi_tests {
+  use super::*;
+  use crate::app::run_loop::test_support::*;
+
+  /// The system `from` finds when it looks up `T`
+  fn found<T: System + 'static>(h: &Harness, from: SystemHandle) -> Option<u64> {
+    let ctx = h.service_context().for_system(from);
+    ctx.systems.get::<T>()?;
+    h.groups.nearest(from, TypeId::of::<T>()).map(|handle| handle.id)
+  }
+
+  #[test]
+  fn a_multi_runs_each_copy_and_each_hears_events() {
+    let mut h = Harness::new();
+    let (first, second) = (Log::default(), Log::default());
+    let multi = h.spawn(Multi::new(
+      "listeners",
+      vec![Listener(first.clone()), Listener(second.clone())],
+    ));
+    first.take();
+    second.take();
+
+    h.emit(Poke);
+
+    assert_eq!(h.children_of(multi).len(), 2);
+    assert!(first.take().contains(&Heard::Poke));
+    assert!(second.take().contains(&Heard::Poke));
+  }
+
+  #[test]
+  fn copies_cant_be_looked_up_or_join_routines() {
+    let mut h = Harness::new();
+    let multi = h.spawn(Multi::new("members", vec![Member, Member]));
+    let other = h.spawn(Owner::<1>);
+
+    assert_eq!(found::<Member>(&h, other), None);
+    assert_eq!(found::<Member>(&h, multi), None);
+    // what routines hand off to
+    assert!(h.groups.instances(TypeId::of::<Member>()).is_empty());
+  }
+
+  #[test]
+  fn a_copy_looks_up_systems_above_it() {
+    let mut h = Harness::new();
+    let top = h.spawn(Owner::<1>);
+    let multi = h.spawn(Multi::new("members", vec![Member, Member]));
+    let copy = h.children_of(multi)[0];
+
+    assert_eq!(found::<Owner<1>>(&h, copy), Some(top.id));
+  }
+
+  #[test]
+  fn multis_sit_beside_each_other_and_a_system_of_the_copied_type() {
+    let mut h = Harness::new();
+    let plain = h.spawn(Member);
+    h.spawn(Multi::new("members", vec![Member]));
+    h.spawn(Multi::new("more members", vec![Member]));
+    let other = h.spawn(Owner::<1>);
+
+    assert_eq!(found::<Member>(&h, other), Some(plain.id));
+  }
+
+  #[test]
+  fn a_copy_despawning_leaves_the_others() {
+    let mut h = Harness::new();
+    let multi = h.spawn(Multi::new("members", vec![Member, Member]));
+    let (first, second) = (h.children_of(multi)[0], h.children_of(multi)[1]);
+
+    h.despawn_system(first, DespawnCause::Itself);
+
+    assert!(!h.is_running(first));
+    assert!(h.is_running(second));
+    assert!(h.is_running(multi));
   }
 }

@@ -88,8 +88,10 @@
 //! 2. **A lookup by type searches the caller's children, then its parent's children, then that system's parent's, up
 //!    to the top level.** The first match wins. So a system finds what it spawned, its siblings, and every top-level
 //!    system. `ctx.systems.get_in` looks among a named system's children instead.
-//! 3. **A type can run once among one parent's children.** A second is refused. [`Group`] is the exception, so a
-//!    system can spawn one per player, each holding that player's copy of the same systems.
+//! 3. **A type can run once among one parent's children.** A second is refused. [`Group`] is an exception, so a
+//!    system can spawn one per player, each holding that player's copy of the same systems. To run several copies of
+//!    one type side by side, put them in a [`Multi`]. Lookups and routines don't find a `Multi`'s copies, so there's
+//!    never a question of which one was meant.
 //! 4. **Events, routines, and states don't depend on where a system is.** Every event reaches every active system, a
 //!    parent before its children. A routine is handed to every active system of each type it lists. A state has one
 //!    value for the whole machine.
@@ -206,6 +208,7 @@ mod context_namespaces;
 mod contextual;
 pub mod event;
 mod group;
+mod multi;
 mod provides;
 pub mod routine;
 mod service_context;
@@ -225,6 +228,7 @@ pub use context_namespaces::*;
 pub use contextual::*;
 pub use event::*;
 pub use group::Group;
+pub use multi::Multi;
 pub(crate) use provides::ProvidedTraits;
 pub use provides::Provides;
 pub use routine::{
@@ -296,6 +300,13 @@ impl Systems {
       self.type_to_id.insert(*type_id, system.id());
     }
     self.id_to_types.insert(system.id(), types);
+    self.id_to_name.insert(system.id(), system.name());
+    self.systems.insert(system.id(), RefCell::new(system));
+  }
+
+  /// Insert the system without entering its type in the type table, so lookups by type and routines don't find it
+  pub(crate) fn insert_unlisted(&mut self, system: SystemContainer) {
+    self.id_to_types.insert(system.id(), Vec::new());
     self.id_to_name.insert(system.id(), system.name());
     self.systems.insert(system.id(), RefCell::new(system));
   }

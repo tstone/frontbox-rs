@@ -19,6 +19,9 @@ pub struct SystemGroup {
   pub(crate) owner: Option<SystemHandle>,
   /// Every state, kept in the root's. See [states](crate::systems::state)
   pub(crate) states: HashMap<TypeId, StoredState>,
+  /// Whether these are a [`Multi`]'s copies. They're left out of the type table, so they can share a type, and
+  /// lookups and routines don't find them.
+  pub(crate) copies: bool,
 }
 
 impl SystemGroup {
@@ -28,14 +31,25 @@ impl SystemGroup {
       active: Cell::new(true),
       owner: None,
       states: HashMap::new(),
+      copies: false,
     }
   }
 
-  pub(crate) fn owned_by(owner: SystemHandle, active: bool) -> Self {
+  /// The children of `owner`. `copies` if the owner is a [`Multi`].
+  pub(crate) fn owned_by(owner: SystemHandle, active: bool, copies: bool) -> Self {
     Self {
       owner: Some(owner),
       active: Cell::new(active),
+      copies,
       ..Self::new()
+    }
+  }
+
+  /// Add a system to the group, in the type table unless the group holds copies
+  pub(crate) fn add(&mut self, system: SystemContainer) {
+    match self.copies {
+      true => self.systems.insert_unlisted(system),
+      false => self.systems.insert(system),
     }
   }
 
