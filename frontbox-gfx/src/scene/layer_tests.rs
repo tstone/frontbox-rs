@@ -804,6 +804,7 @@ fn a_masks_image_is_one_the_scene_draws() {
   let image = Fill::new(FillNode::Image {
     name: "stencil.png".into(),
     frame: None,
+    size: ImageSize::Stretch,
   });
   let scene = masked(Mask::new(image));
   assert_eq!(scene.image_names().collect::<Vec<_>>(), ["stencil.png"]);
@@ -1297,6 +1298,7 @@ fn playing(frame: Prop<f32>) -> Scene {
   let image = FillNode::Image {
     name: "a.gif".into(),
     frame: Some(frame),
+    size: ImageSize::Stretch,
   };
   Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))])
     .timing(Timing::new(1.0, Cycle::Forever))
@@ -1389,6 +1391,7 @@ fn a_frame_that_changes_needs_timing() {
   let image = FillNode::Image {
     name: "a.gif".into(),
     frame: Some(Prop::Keyframes(track)),
+    size: ImageSize::Stretch,
   };
   let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]);
   assert!(matches!(scene.check(), Err(SceneError::NoTiming { .. })));
@@ -2088,6 +2091,7 @@ fn sprites_drawn(sprite: Prop<f32>) -> Vec<(u8, u8)> {
     rows: 2,
     columns: 3,
     sprite: Some(sprite),
+    size: ImageSize::Stretch,
   };
   let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(fill))]);
   let (variables, size) = (Variables::new(), Vec2::new(2.0, 2.0));
@@ -2132,4 +2136,109 @@ fn a_sprite_past_the_last_is_the_last_and_a_part_is_truncated() {
     sprites_drawn(Prop::Fixed(1.9)),
     [(1, 0), (1, 1), (1, 2), (1, 3)]
   );
+}
+
+/// What a 4 x 2 grid draws of a 4 x 8 image whose red is each pixel's column and green its row, at `size`, with
+/// `transform`. `None` where nothing is drawn.
+fn tall_image_drawn(size: ImageSize, transform: Vec<Transform>) -> Vec<Option<(u8, u8)>> {
+  let art = image::RgbaImage::from_fn(4, 8, |x, y| Rgba([x as u8, y as u8, 0, 255]));
+  let mut assets = Assets::new();
+  assets.insert_picture("forest.png", Picture::new(art));
+  let mut fill = Fill::new(FillNode::Image {
+    name: "forest.png".into(),
+    frame: None,
+    size,
+  });
+  fill.transform = transform;
+  let scene = Scene::new(Surface::Area, vec![Layer::new(fill)]);
+  let (variables, size) = (Variables::new(), Vec2::new(4.0, 2.0));
+  let frame = LayerFrame {
+    time: 0.0,
+    playback_seed: 0,
+    variables: &variables,
+    assets: &assets,
+    size,
+    surface: Surface::Area,
+    visits: None,
+    timing: None,
+    defaults: no_variables(),
+    values: no_values(),
+  };
+  Grid::new(4, 2, size)
+    .samples()
+    .map(|at| scene.sample(&at, &frame))
+    .map(|Rgba([r, g, _, a])| (a > 0).then_some((r, g)))
+    .collect()
+}
+
+#[test]
+fn a_stretched_image_fills_its_region() {
+  let rows: Vec<_> = tall_image_drawn(ImageSize::Stretch, vec![])
+    .into_iter()
+    .map(|pixel| pixel.unwrap().1)
+    .collect();
+  assert_eq!(rows, [2, 2, 2, 2, 6, 6, 6, 6]);
+}
+
+#[test]
+fn an_image_at_its_native_size_is_a_scene_unit_a_pixel_centered_on_its_region() {
+  let drawn = tall_image_drawn(ImageSize::Native, vec![]);
+  let expected: Vec<_> = [3, 4]
+    .into_iter()
+    .flat_map(|y| (0..4).map(move |x| Some((x, y))))
+    .collect();
+  assert_eq!(drawn, expected);
+}
+
+#[test]
+fn a_translate_pans_across_an_image_at_its_native_size() {
+  // 1.5 region heights down is 3 scene units, which brings the image's top to the top of the region
+  let down = Transform::Translate(Vec2::new(0.0, 1.5).into());
+  let drawn = tall_image_drawn(ImageSize::Native, vec![down]);
+  let expected: Vec<_> = [0, 1]
+    .into_iter()
+    .flat_map(|y| (0..4).map(move |x| Some((x, y))))
+    .collect();
+  assert_eq!(drawn, expected);
+}
+
+#[test]
+fn a_sprite_at_its_native_size_is_the_sprites_pixels() {
+  let sheet = image::RgbaImage::from_fn(6, 4, |x, y| {
+    Rgba([(x / 2 + y / 2 * 3) as u8, (x % 2 + y % 2 * 2) as u8, 0, 255])
+  });
+  let mut assets = Assets::new();
+  assets.insert_picture("sheet.png", Picture::new(sheet));
+  let fill = FillNode::Spritesheet {
+    name: "sheet.png".into(),
+    rows: 2,
+    columns: 3,
+    sprite: Some(Prop::Fixed(4.0)),
+    size: ImageSize::Native,
+  };
+  let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(fill))]);
+  let (variables, size) = (Variables::new(), Vec2::new(4.0, 4.0));
+  let frame = LayerFrame {
+    time: 0.0,
+    playback_seed: 0,
+    variables: &variables,
+    assets: &assets,
+    size,
+    surface: Surface::Area,
+    visits: None,
+    timing: None,
+    defaults: no_variables(),
+    values: no_values(),
+  };
+  let drawn: Vec<_> = Grid::new(4, 4, size)
+    .samples()
+    .map(|at| scene.sample(&at, &frame))
+    .map(|Rgba([r, g, _, a])| (a > 0).then_some((r, g)))
+    .collect();
+  // the 2 x 2 sprite covers the middle of the 4 x 4 region, and the edge around it is empty
+  let mut expected = vec![None; 16];
+  for (i, g) in [(5, 0), (6, 1), (9, 2), (10, 3)] {
+    expected[i] = Some((4, g));
+  }
+  assert_eq!(drawn, expected);
 }

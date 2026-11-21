@@ -66,7 +66,6 @@
   calibration go). Fixes dark fringes fading to transparent and precision loss in `ColorAdjust` chains.
 - Strokes on `Polyline`/`Bezier`: give their edge an unsigned distance to the line.
 - `ShapeAdjust::Feather(width)` for soft edges.
-- Merge `Circle` into `Ellipse`.
 - Name `(fill, region)` as one type shared by `Layer` and `Mask`: collapses `outlines`/`mask_outlines` and
   `shapes`/`mask_shapes`, allows `mask: Vec<...>` and masks with a `graph`.
 - `Stop::at` as a `Prop<f32>`.

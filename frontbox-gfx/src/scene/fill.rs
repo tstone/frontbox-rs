@@ -8,13 +8,20 @@ use crate::scene::{Color, ColorAdjust, Env, Inputs, Node, Picture, Prop, Transfo
 /// The colors a layer is drawn with
 ///
 /// A fill is defined over a unit box from `-0.5` to `0.5`, which is stretched over its region's local bounds (or the
-/// viewport, with no region). So a fill always fits its region, and moves and rotates with it.
+/// viewport, with no region). So a fill always fits its region, and moves and rotates with it. An image at its
+/// [`ImageSize::Native`] size is the exception: each of its pixels is one scene unit, centered on the box.
 pub type Fill = Node<FillNode, ColorAdjust>;
 
 impl Fill {
   /// The fill as it is in `env`, to color any number of samples with. `footprint` is the samples' radius along each
-  /// axis, in unit box units. `None` if a transform collapses it, so it draws nothing.
-  pub(crate) fn prepare<'a>(&'a self, footprint: Vec2, env: &Env<'a>) -> Option<PreparedFill<'a>> {
+  /// axis, in unit box units, and `size` is the unit box's size in scene units. `None` if a transform collapses it, so
+  /// it draws nothing.
+  pub(crate) fn prepare<'a>(
+    &'a self,
+    footprint: Vec2,
+    size: Vec2,
+    env: &Env<'a>,
+  ) -> Option<PreparedFill<'a>> {
     // on a Sequence, the lap is the unit box plus one sample's width, as samples reach half a width past each end
     let env = &Env {
       lap: env.lap.map(|_| 1.0 + 2.0 * footprint.x),
@@ -26,7 +33,7 @@ impl Fill {
       wrap: self.wrap(Vec2::ZERO, to_scene, env),
       to_local,
       footprint: to_local.matrix2.abs() * footprint,
-      base: self.base.resolve(env),
+      base: self.base.resolve(size, env),
       adjust: self
         .adjust
         .iter()
@@ -66,8 +73,8 @@ pub enum FillNode {
     #[serde(default)]
     style: GradientStyle,
   },
-  /// An image stretched over the unit box, and transparent outside it. On a `Sequence`, samples run along its middle
-  /// row.
+  /// An image over the unit box at its `size`, and transparent outside it. On a `Sequence`, samples run along its
+  /// middle row.
   Image {
     /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
@@ -76,8 +83,12 @@ pub enum FillNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     frame: Option<Prop<f32>>,
+    #[serde(default, skip_serializing_if = "ImageSize::is_stretch")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<ImageSize>", optional))]
+    size: ImageSize,
   },
-  /// One sprite from an image laid out as a grid of equal sprites, stretched over the unit box like an `Image`
+  /// One sprite from an image laid out as a grid of equal sprites, drawn like an `Image`. Its `Native` size is the
+  /// sprite's pixels.
   Spritesheet {
     /// Path within the [`Content`](crate::scene::Content) folder. Empty draws nothing, for an image not chosen yet.
     name: String,
@@ -88,6 +99,9 @@ pub enum FillNode {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     sprite: Option<Prop<f32>>,
+    #[serde(default, skip_serializing_if = "ImageSize::is_stretch")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<ImageSize>", optional))]
+    size: ImageSize,
   },
 }
 
@@ -136,12 +150,40 @@ impl GradientStyle {
   }
 }
 
+/// How big an image is drawn
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ImageSize {
+  /// Stretched over the unit box, so it fills its region
+  #[default]
+  Stretch,
+  /// One scene unit for each pixel, centered on the unit box. Whatever is past the region's edges is cut off, so a
+  /// `Translate` pans across an image bigger than its region.
+  Native,
+}
+
+impl ImageSize {
+  fn is_stretch(&self) -> bool {
+    *self == Self::Stretch
+  }
+
+  /// What a point in the unit box is multiplied by to give the point in the image's own unit box, for a unit box
+  /// `unit_box` across in scene units and an image `pixels` across
+  fn scale(self, unit_box: Vec2, pixels: Vec2) -> Vec2 {
+    match self {
+      Self::Stretch => Vec2::ONE,
+      Self::Native => unit_box / pixels.max(Vec2::ONE),
+    }
+  }
+}
+
 impl FillNode {
-  /// An image, on its first frame
+  /// An image, on its first frame, stretched over its region
   pub fn image(name: impl Into<String>) -> Self {
     Self::Image {
       name: name.into(),
       frame: None,
+      size: ImageSize::Stretch,
     }
   }
 
@@ -172,7 +214,8 @@ impl FillNode {
     }
   }
 
-  fn resolve<'a>(&self, env: &Env<'a>) -> ResolvedFillNode<'a> {
+  /// The node resolved in `env`, for a unit box `unit_box` across in scene units
+  fn resolve<'a>(&self, unit_box: Vec2, env: &Env<'a>) -> ResolvedFillNode<'a> {
     match self {
       Self::Solid(color) => ResolvedFillNode::Solid(color.resolve(env).0),
       Self::Gradient { stops, style } => ResolvedFillNode::Gradient {
@@ -182,17 +225,22 @@ impl FillNode {
           .collect(),
         style: *style,
       },
-      Self::Image { name, frame } => ResolvedFillNode::Image {
-        picture: env.assets.picture(name),
-        frame: frame
-          .as_ref()
-          .map_or(0.0, |frame| frame.resolve_truncated(env)),
-      },
+      Self::Image { name, frame, size } => {
+        let picture = env.assets.picture(name);
+        ResolvedFillNode::Image {
+          picture,
+          frame: frame
+            .as_ref()
+            .map_or(0.0, |frame| frame.resolve_truncated(env)),
+          scale: size.scale(unit_box, picture.map_or(Vec2::ONE, pixels)),
+        }
+      }
       Self::Spritesheet {
         name,
         rows,
         columns,
         sprite,
+        size: image_size,
       } => {
         let (rows, columns) = ((*rows).max(1), (*columns).max(1));
         let sprite = sprite
@@ -202,10 +250,13 @@ impl FillNode {
         let sprite = sprite.min(rows * columns - 1);
         let size = Vec2::new(1.0 / columns as f32, 1.0 / rows as f32);
         let min = Vec2::new((sprite % columns) as f32, (sprite / columns) as f32) * size;
+        let picture = env.assets.picture(name);
+        let sprite_pixels = picture.map_or(Vec2::ONE, |picture| pixels(picture) * size);
         ResolvedFillNode::Sprite {
-          picture: env.assets.picture(name),
+          picture,
           min,
           size,
+          scale: image_size.scale(unit_box, sprite_pixels),
         }
       }
     }
@@ -244,16 +295,20 @@ enum ResolvedFillNode<'a> {
     stops: Vec<(f32, Rgba<u8>)>,
     style: GradientStyle,
   },
-  /// `None` for an image that isn't loaded, which draws nothing
+  /// `None` for an image that isn't loaded, which draws nothing. `scale` takes a point in the unit box to the image's
+  /// own unit box.
   Image {
     picture: Option<&'a Picture>,
     frame: f32,
+    scale: Vec2,
   },
-  /// The part of an image from `min`, `size` across, in units of the whole image
+  /// The part of an image from `min`, `size` across, in units of the whole image. `scale` is as for `Image`, to the
+  /// sprite's own unit box.
   Sprite {
     picture: Option<&'a Picture>,
     min: Vec2,
     size: Vec2,
+    scale: Vec2,
   },
 }
 
@@ -262,14 +317,28 @@ impl ResolvedFillNode<'_> {
     match self {
       Self::Solid(color) => *color,
       Self::Gradient { stops, style } => gradient(stops, style.at(p)),
-      Self::Image { picture, frame } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
-        picture.color(*frame, p, footprint)
+      Self::Image {
+        picture,
+        frame,
+        scale,
+      } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
+        picture.color(*frame, p * *scale, footprint * *scale)
       }),
-      Self::Sprite { picture, min, size } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
-        picture.color_within(0.0, *min, *size, p, footprint)
+      Self::Sprite {
+        picture,
+        min,
+        size,
+        scale,
+      } => picture.map_or(Rgba([0, 0, 0, 0]), |picture| {
+        picture.color_within(0.0, *min, *size, p * *scale, footprint * *scale)
       }),
     }
   }
+}
+
+/// A picture's width and height in pixels
+fn pixels(picture: &Picture) -> Vec2 {
+  Vec2::new(picture.width() as f32, picture.height() as f32)
 }
 
 fn gradient(stops: &[(f32, Rgba<u8>)], t: f32) -> Rgba<u8> {
@@ -316,7 +385,7 @@ mod tests {
   fn color(fill: &Fill, x: f32, y: f32) -> Rgba<u8> {
     let variables = Variables::new();
     fill
-      .prepare(Vec2::ZERO, &env(0.0, &variables))
+      .prepare(Vec2::ZERO, Vec2::ONE, &env(0.0, &variables))
       .map_or(Rgba([0, 0, 0, 0]), |fill| fill.color(Vec2::new(x, y)))
   }
 

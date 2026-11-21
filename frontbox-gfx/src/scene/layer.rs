@@ -424,13 +424,18 @@ pub(crate) fn prepare_area<'a>(
   radius: f32,
   env: &Env<'a>,
 ) -> Option<PreparedArea<'a>> {
-  let (clip, footprint) = match region {
-    None => (Clip::Viewport(viewport), viewport.to_unit_length(radius)),
+  let (clip, footprint, size) = match region {
+    None => (
+      Clip::Viewport(viewport),
+      viewport.to_unit_length(radius),
+      viewport.size(),
+    ),
     Some(shape) => {
       let shape = shape.prepare(env)?;
       let footprint =
         shape.to_local.matrix2.abs() * Vec2::splat(radius) * shape.bounds.to_unit_length(1.0);
-      (Clip::Shape(shape), footprint)
+      let size = shape.bounds.size();
+      (Clip::Shape(shape), footprint, size)
     }
   };
   let env = &Env {
@@ -438,7 +443,7 @@ pub(crate) fn prepare_area<'a>(
     ..*env
   };
   Some(PreparedArea {
-    fill: fill.prepare(footprint, env)?,
+    fill: fill.prepare(footprint, size, env)?,
     clip,
   })
 }

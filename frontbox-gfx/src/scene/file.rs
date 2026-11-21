@@ -633,6 +633,7 @@ mod tests {
     let image = FillNode::Image {
       name: "a.gif".into(),
       frame: Some(Prop::Keyframes(frame)),
+      size: ImageSize::Stretch,
     };
     let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))])
       .timing(Timing::new(1.0, Cycle::Once));
@@ -671,6 +672,39 @@ mod tests {
   }
 
   #[test]
+  fn an_image_keeps_its_native_size_when_written_and_read() {
+    let image = FillNode::Image {
+      name: "forest.png".into(),
+      frame: None,
+      size: ImageSize::Native,
+    };
+    let scene = Scene::new(Surface::Area, vec![Layer::new(Fill::new(image))]);
+    let written = save(&scene).unwrap();
+    assert!(written.contains("size: Native"), "{written}");
+    let read = load(&written).unwrap();
+
+    let art = image::RgbaImage::from_fn(1, 4, |_, y| Rgba([y as u8, 0, 0, 255]));
+    let (mut assets, variables) = (Assets::new(), Variables::new());
+    assets.insert_picture("forest.png", Picture::new(art));
+    let size = Vec2::new(1.0, 2.0);
+    let frame = LayerFrame {
+      time: 0.0,
+      playback_seed: 0,
+      variables: &variables,
+      assets: &assets,
+      size,
+      surface: scene.surface,
+      visits: None,
+      timing: None,
+      defaults: no_variables(),
+      values: no_values(),
+    };
+    let at = Sample::new(Vec2::new(0.5, 0.5), 0.5);
+    assert_eq!(read.sample(&at, &frame), scene.sample(&at, &frame));
+    assert_eq!(read.sample(&at, &frame), Rgba([1, 0, 0, 255]));
+  }
+
+  #[test]
   fn an_image_is_written_and_read_by_its_name() {
     let scene = Scene::new(
       Surface::Area,
@@ -678,7 +712,9 @@ mod tests {
     );
     let written = save(&scene).unwrap();
     assert!(
-      written.contains(r#"name: "dmd/title.png""#) && !written.contains("frame"),
+      written.contains(r#"name: "dmd/title.png""#)
+        && !written.contains("frame")
+        && !written.contains("size"),
       "{written}"
     );
 

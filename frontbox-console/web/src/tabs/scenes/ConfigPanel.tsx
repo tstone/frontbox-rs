@@ -17,6 +17,7 @@ import type { Color } from '../../types/generated/Color'
 import type { GradientStyle } from '../../types/generated/GradientStyle'
 import type { FillNode } from '../../types/generated/FillNode'
 import type { ImageInfo } from '../../types/generated/ImageInfo'
+import type { ImageSize } from '../../types/generated/ImageSize'
 import type { Mask } from '../../types/generated/Mask'
 import type { NodeRef } from '../../types/generated/NodeRef'
 import type { NumberFormat } from '../../types/generated/NumberFormat'
@@ -257,6 +258,10 @@ const TEXT_OVERFLOW_OPTIONS: { value: TextOverflow; label: string }[] = [
   { value: 'Wrap', label: 'Wraps onto more lines' },
   { value: 'Ellipsis', label: 'Cut short with …' },
 ]
+const IMAGE_SIZE_OPTIONS: { value: ImageSize; label: string }[] = [
+  { value: 'Stretch', label: 'Stretch to fit' },
+  { value: 'Native', label: 'Native (a pixel per unit)' },
+]
 const STROKE_ALIGN_OPTIONS: { value: StrokeAlign; label: string }[] = [
   { value: 'Inside', label: 'Inside the edge' },
   { value: 'Centered', label: 'Centered on the edge' },
@@ -347,6 +352,8 @@ type ConfigTree = {
   isSelected(id: string): boolean
   move(place: ListPlace, by: number): void
   remove(place: ListPlace): void
+  /** Shifts the nodes of a list from `index` on down a place, for an item put in at `index` */
+  insert(listId: string, index: number): void
   /** The place of the row being dragged, which can be dropped elsewhere in its list */
   dragging(): ListPlace | null
   setDragging(place: ListPlace | null): void
@@ -428,6 +435,7 @@ export default function ConfigPanel(props: { selection: Signal<Selection | null>
         list.set(spread ? spreadStops(after as Stop[]) : after)
         relocate(listId, (i) => (i === index ? null : i > index ? i - 1 : i))
       }),
+    insert: (listId, index) => relocate(listId, (i) => (i >= index ? i + 1 : i)),
     dragging,
     setDragging,
     layerOptions: () => options(),
@@ -1647,9 +1655,11 @@ function FillKindPicker(props: { node: Extract<ConfigNode, { kind: 'fill' }> }) 
       if (next === 'Solid') {
         base().set({ Solid: color ?? { Fixed: WHITE } })
       } else if (next === 'Image') {
-        base().set({ Image: { name: 'Spritesheet' in current ? current.Spritesheet.name : '' } })
+        const sheet = 'Spritesheet' in current ? current.Spritesheet : undefined
+        base().set({ Image: { name: sheet?.name ?? '', size: sheet?.size } })
       } else if (next === 'Spritesheet') {
-        base().set({ Spritesheet: { name: 'Image' in current ? current.Image.name : '', rows: 1, columns: 1 } })
+        const image = 'Image' in current ? current.Image : undefined
+        base().set({ Spritesheet: { name: image?.name ?? '', rows: 1, columns: 1, size: image?.size } })
       } else if ('Gradient' in current) {
         base().set({ Gradient: { ...current.Gradient, style: next } })
       } else {
@@ -1699,7 +1709,8 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
     if (next === name()) return
     const current = frame()
     choosing = next
-    props.lens.set(current && !('Fixed' in current) ? { name: next, frame: current } : { name: next })
+    const size = props.lens.get().size
+    props.lens.set(current && !('Fixed' in current) ? { name: next, frame: current, size } : { name: next, size })
   }
 
   // an animated image plays from the start, unless it's been given something else to do
@@ -1719,6 +1730,7 @@ function ImageEditor(props: { lens: Lens<ImageFill> }) {
   return (
     <>
       <ImagePicker lens={{ get: name, set: choose }} />
+      <ImageSizeField lens={field(props.lens, 'size')} />
       <Show when={info()}>
         {(known) => (
           <div class="scene-fit">
@@ -1755,8 +1767,23 @@ function SpritesheetEditor(props: { lens: Lens<SpritesheetFill> }) {
       <FieldRow label="Columns">
         <NumberBox class="scene-tree-number" aria-label="Columns" min="1" step="1" value={props.lens.get().columns} onNumber={count('columns')} />
       </FieldRow>
+      <ImageSizeField lens={field(props.lens, 'size')} />
       <Show when={sprite()}>{(text) => <span class="scene-note">{text()}</span>}</Show>
     </>
+  )
+}
+
+/** Whether an image is stretched over its region or drawn at its own size, which a `Translate` then pans across */
+function ImageSizeField(props: { lens: Lens<ImageSize | undefined> }) {
+  return (
+    <FieldRow label="Size">
+      <Dropdown
+        label="Size"
+        options={IMAGE_SIZE_OPTIONS}
+        value={props.lens.get() ?? 'Stretch'}
+        onChange={(size) => props.lens.set(size === 'Stretch' ? undefined : size)}
+      />
+    </FieldRow>
   )
 }
 
@@ -2010,17 +2037,22 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
   const transforms = () => [...TRANSFORM_OPTIONS, ...(props.node.shape ? SHAPE_TRANSFORM_OPTIONS : []), ...(traversals().length > 0 ? [FIT_OPTION] : [])]
   const groups = () => [transforms(), ...(props.node.adjusts ? [ADJUST_OPTIONS] : []), ...(props.node.shape ? [[STROKE_OPTION]] : [])]
   const owner = () => props.node.id.slice(0, props.node.id.lastIndexOf('/'))
+  // a new modifier is selected and expanded, so its props show
+  const show = (id: string) => {
+    tree.select(id)
+    tree.expand(id)
+  }
   const add = (kind: TransformKind | AdjustKind | 'Stroke') =>
     batch(() => {
       if (kind === 'Stroke') {
         const strokes = orEmpty(field(props.node.shape!, 'adjust'))
         const list = strokes.get()
         strokes.set([...list, newStroke(surface())])
-        tree.select(`${owner()}/adjust/${list.length}`)
+        show(`${owner()}/adjust/${list.length}`)
       } else if (kind in ADJUSTS) {
         const list = props.node.adjusts!.get()
         props.node.adjusts!.set([...list, newAdjust(kind as AdjustKind)])
-        tree.select(`${owner()}/adjust/${list.length}`)
+        show(`${owner()}/adjust/${list.length}`)
       } else {
         const list = props.node.transforms.get()
         const shape = props.node.shape?.get()
@@ -2030,7 +2062,8 @@ function AddModifier(props: { node: Extract<ConfigNode, { kind: 'modifiers' }> }
         const inOwnSpace = COPY_KINDS.includes(kind as CopyKind) || RESHAPE_KINDS.includes(kind as ReshapeKind)
         const index = inOwnSpace && placed >= 0 ? placed : list.length
         props.node.transforms.set([...list.slice(0, index), newTransform(kind as TransformKind, traversals(), size), ...list.slice(index)])
-        tree.select(`${owner()}/transform/${index}`)
+        tree.insert(`${owner()}/transform`, index)
+        show(`${owner()}/transform/${index}`)
       }
     })
   return (

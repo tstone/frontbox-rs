@@ -74,7 +74,10 @@ impl Picture {
     footprint: Vec2,
   ) -> Rgba<u8> {
     let at = p + 0.5;
-    let reaches = (at.cmpge(-footprint) & at.cmple(Vec2::ONE + footprint)).all();
+    // a sample that only touches the edge doesn't reach, so an image smaller than its region doesn't spread a pixel
+    let inside = at.cmpge(Vec2::ZERO) & at.cmple(Vec2::ONE);
+    let overlaps = at.cmpgt(-footprint) & at.cmplt(Vec2::ONE + footprint);
+    let reaches = (inside | overlaps).all();
     if !reaches || self.width() == 0 || self.height() == 0 {
       return Rgba([0, 0, 0, 0]);
     }
